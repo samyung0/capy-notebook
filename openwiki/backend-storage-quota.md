@@ -76,7 +76,7 @@ Storage is charged once per logical row owned by a user:
 | Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only       |
 | Materials     | `materials.size_bytes`     | always; set from content JSON |
 | Trashed rows  | same as above              | until the 30-day purge        |
-| Chat Undo     | none                       | never: the loaded room holds it in memory (Epo 2026-10-20) |
+| Chat Undo     | none                       | never: the browser keeps its payload, the server stores only the receipt (Epo 2026-10-21) |
 
 **Uploader pays** (Sam 2026-10-18, Google Drive's My Drive model). The payer
 of a row is the account that uploaded, imported, cloned or created it, in any
@@ -973,11 +973,10 @@ stored pass drops too (a unit newer than W only ends a run), except a deleted
 block's children, which Yjs drops with the block either way. It can also
 keep units the stored base dropped: a refused or skipped pass, or one that
 found nothing while the stored pass did, leaves its document whole. A check
-of what a payload names therefore reads both documents (Q419). While the
-room keeps agent steps it keeps its
-document whole: their live Undo reverts against the room document's own
-deleted content and redo links, which a reload drops (durable Undo removes
-those steps). Kept list items keep their origins, and a map value drops its
+of what a payload names therefore reads both documents (Q419). Rooms with
+agent edits waiting to be stored collect like any other (Q432): those
+edits' deletions are newer than any window. Kept list items keep their
+origins, and a map value drops its
 origin only when nothing behind it stays, so tabs holding the full history
 and tabs loading the collected state agree.
 
@@ -987,9 +986,13 @@ and tabs loading the collected state agree.
   and the deletions its own updates made, each held 25 h after it arrived
   (Undo reaches back 24 h, Q2), as columns of the session's client-id row
   (migration 0117), written with the store that holds them; and the
-  deletions of agent steps, each held 25 h from its agent edit, an hour past
-  the room's 24 h offer of its Undo and Redo (`material_yjs_documents.agent_held`;
-  Q385, Q390). A session counts while connected and 24 h after it was last
+  deletions of agent edits and their Undo or Redo, each held 25 h from its
+  agent edit, an hour past the 24 h offer of that Undo
+  (`material_yjs_documents.agent_held`; Q385, Q390), written with the store
+  that saves the edit when its room admitted it (Q402), or in the agent
+  write's own transaction when no room is loaded (`note_store::hold_agent`).
+  A fold reads them from the document row under its lock
+  (`note_store::fold`). A session counts while connected and 24 h after it was last
   seen, and ends earlier on a clean Leave naming it. A session row whose
   held deletions cannot be read is dropped alone, written lost (its tab
   returns as late) and reported, and the note loads (Q382, Q385); so are

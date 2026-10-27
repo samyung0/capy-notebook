@@ -143,7 +143,7 @@ func (s *Store) CreateAgentFileOperation(ctx context.Context, draft AgentFileDra
 		return AgentOperation{}, false, err
 	}
 	// Its Undo moves it to the trash (UndoFileStep).
-	if err := markFileUndoTx(ctx, tx, &op); err != nil {
+	if err := markFileUndoTx(ctx, tx, &op, undoExpiry(time.Now().Unix())); err != nil {
 		return AgentOperation{}, false, err
 	}
 	if err := tx.Commit(ctx); err != nil {

@@ -59,12 +59,14 @@ def tool_end(
     *,
     error: dict[str, str] | None = None,
     effects: list[dict[str, Any]] | None = None,
+    undo_payloads: list[dict[str, Any]] | None = None,
     ended_at: str,
     applied: int | None = None,
     total: int | None = None,
 ) -> dict[str, Any]:
-    """``applied`` of ``total`` only for a call that ended with commands
-    unapplied."""
+    """``undo_payloads`` reach the browser on this event alone (Go forwards
+    them and saves nothing of them); ``applied`` of ``total`` only for a call
+    that ended with commands unapplied."""
     event: dict[str, Any] = {
         "type": "tool_end",
         "callId": call_id,
@@ -75,6 +77,8 @@ def tool_end(
         event["error"] = error
     if effects:
         event["effects"] = effects
+    if undo_payloads:
+        event["undoPayloads"] = undo_payloads
     if applied is not None and total is not None:
         event["applied"], event["total"] = applied, total
     return event

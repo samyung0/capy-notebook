@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { isApiError } from '@/api/client';
 import { useUndoEdit } from '@/api/hooks';
+import { showErrorToast } from '@/api/queryClient';
 import type {
   ChatMessage,
   ChatSteps,
@@ -23,7 +24,9 @@ import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { errorKind } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { forgetUndoPayload, useUndoPayload } from '@/lib/undoPayloads';
 import { toolErrorMessage } from '../toolErrorMessage';
 import { ActivityIcon } from './ActivityIcon';
 import { LangAnswer } from './LangAnswer';
@@ -43,6 +46,7 @@ import {
   toolIcon,
   unappliedWarning,
   undoAction,
+  undoGone,
   undoRefused,
 } from './trace';
 
@@ -306,6 +310,16 @@ function toastRefusal(effect: Undoable, code: string) {
  * showing the step, waits for the first one's answer. */
 const undoing = new Set<string>();
 
+/** Whether a step's Undo trashes or restores a file the chat created (it
+ * needs no payload), as opposed to reverting an edit. */
+function fileStep(effect: ResourceEffect) {
+  return (
+    effect.operation === 'created' ||
+    effect.operation === 'trashed' ||
+    effect.operation === 'restored'
+  );
+}
+
 /** Whether `at` (an ISO time; none: never) has passed, re-rendering when it does. */
 function usePassed(at: string | undefined): boolean {
   const end = at ? Date.parse(at) : Number.POSITIVE_INFINITY;
@@ -321,11 +335,12 @@ function usePassed(at: string | undefined): boolean {
 }
 
 /** Undo on created, edited and restored effects; Redo once undone. Hidden
- * unless the server says the step is available, and once its edit's 24 h
- * passed (Q385). A refusal hides it for the session; an unknown outcome (no
- * answer, a server error) or a refusal for a moment (the Office pause, a busy
- * room) keeps it, and the server answers a retry with the step's receipt if
- * the first one landed. */
+ * unless the server says the step is available and, for an edit, the browser
+ * still holds its Undo payload, and once the edit's 24 h passed (Q385). A
+ * refusal hides it for the session; an unknown outcome (no answer, a server
+ * error) or a refusal for a moment (the Office pause, a busy room) keeps it,
+ * and the server answers a retry with the step's receipt if the first one
+ * landed. Offline it fails with the offline toast. */
 function UndoButton({
   effect,
   handlers,
@@ -336,9 +351,11 @@ function UndoButton({
   const { mutate: undo, isPending } = useUndoEdit();
   const redo = undoAction(effect.operation) === 'redo';
   const { operationId, status, expiresAt } = effect.undo;
-  // An edit's Undo and Redo are offered 24 h after the edit (Q385).
+  const payload = useUndoPayload(fileStep(effect) ? undefined : operationId);
+  // An agent step's Undo and Redo are offered 24 h after it (Q385, Q162).
   const expired = usePassed(expiresAt);
-  if (status !== 'available' || expired) return null;
+  if (status !== 'available' || expired || (!fileStep(effect) && !payload))
+    return null;
   return (
     <Button
       className="px-1.5 py-1"
@@ -346,21 +363,30 @@ function UndoButton({
       onClick={() => {
         if (undoing.has(operationId)) return;
         undoing.add(operationId);
-        undo(operationId, {
-          onError: (error) => {
-            toastRefusal(effect, isApiError(error) ? (error.code ?? '') : '');
-            if (undoRefused(error)) handlers.onUndoRefused(effect);
-          },
-          onSettled: () => undoing.delete(operationId),
-          onSuccess: (receipt) => {
-            if (receipt.outcome === 'succeeded' && receipt.effect) {
-              handlers.onUndoApplied(operationId, receipt.effect);
-              return;
-            }
-            toastRefusal(effect, receipt.error?.code ?? '');
-            handlers.onUndoRefused(effect);
-          },
-        });
+        undo(
+          { operationId, payload },
+          {
+            onError: (error) => {
+              if (errorKind(error) === 'offline') showErrorToast(error);
+              else
+                toastRefusal(
+                  effect,
+                  isApiError(error) ? (error.code ?? '') : ''
+                );
+              if (undoGone(error)) forgetUndoPayload(operationId);
+              if (undoRefused(error)) handlers.onUndoRefused(effect);
+            },
+            onSettled: () => undoing.delete(operationId),
+            onSuccess: (receipt) => {
+              if (receipt.outcome === 'succeeded' && receipt.effect) {
+                handlers.onUndoApplied(operationId, receipt.effect);
+                return;
+              }
+              toastRefusal(effect, receipt.error?.code ?? '');
+              handlers.onUndoRefused(effect);
+            },
+          }
+        );
       }}
       size="xs"
       variant={redo ? 'ghost-hover' : 'danger-light'}

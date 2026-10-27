@@ -8,19 +8,22 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
-	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
-// The chat's Undo works like the editor's undo and lasts only while the edit
-// is live (Epo 2026-10-20). An edit's Undo and Redo revert its Yjs items in
-// the collaboration room that holds them (`/internal/documents/undo`), which
-// keeps nothing once it unloads; a created file's Undo trashes it and Redo
-// restores it. Nothing is stored for an Undo but receipts: each step's
-// receipt names the step it reversed (agent_operations.undo_of), which is
-// what a reload follows to show where a chain stands.
+// The chat's Undo works like the editor's undo (Epo 2026-10-20) and survives
+// the room closing (Epo 2026-10-21): an edit's receipt comes with its Undo
+// payload, which the browser keeps for a day and sends back; the
+// collaboration server writes it as an edit (`/internal/documents/undo`),
+// with its receipt in the same transaction, and answers with the receipt and
+// the Redo payload. A created file's Undo trashes it and Redo restores it.
+// Every step is offered for 24 h from its agent edit or created file (Q385,
+// Q162). Nothing is stored for an Undo but receipts: each step's receipt
+// names the step it reversed (agent_operations.undo_of), which is what a
+// reload follows to show where a chain stands.
 
-// ErrUndoUnavailable means the step's room no longer holds it, the step was
-// used, or nothing of the edit is left.
+// ErrUndoUnavailable means the step has no valid payload (none sent, a
+// signature that does not match, another lineage, past its 24 h), the step
+// was used, or nothing of the edit is left.
 var ErrUndoUnavailable = errors.New("undo is no longer available for this edit")
 
 // undoUnavailableCode is the collaboration service's refusal of a step it no
@@ -40,22 +43,54 @@ func (s *Store) UndoStep(ctx context.Context, operationID string) (AgentOperatio
 	return *op, nil
 }
 
+// PendingUndoStep is a step its room admitted and has not stored yet (Q402,
+// Q403): its signed payload names the step's document, and the room, which
+// holds the step's receipt, checks the actor. ErrNotFound when the payload
+// is not this server's for that step.
+func (s *Store) PendingUndoStep(stepID string, payload *UndoPayload) (AgentOperation, error) {
+	if payload == nil || payload.OperationID != stepID {
+		return AgentOperation{}, ErrNotFound
+	}
+	for _, kind := range []agenttools.ResourceKind{agenttools.KindMaterial, agenttools.KindSourceFile} {
+		resource := agenttools.ResourceRef{Kind: kind, ID: payload.DocumentID}
+		if s.verifyUndoPayload(stepID, resource, payload) {
+			return AgentOperation{
+				ID: stepID,
+				Effect: &agenttools.ResourceEffect{
+					Operation: agenttools.EffectEdited, Resource: resource, OperationID: stepID,
+					Undo: &agenttools.UndoRef{OperationID: stepID, Status: agenttools.UndoAvailable, ExpiresAt: undoExpiry(payload.IssuedAt)},
+				},
+			}, nil
+		}
+	}
+	return AgentOperation{}, ErrNotFound
+}
+
 // UndoReceipt is the receipt of the Undo (or Redo) that reversed a step:
 // ErrNotFound while the step is unused.
 func (s *Store) UndoReceipt(ctx context.Context, stepID string) (AgentOperation, error) {
-	var id string
-	err := s.pool.QueryRow(ctx, `SELECT id FROM agent_operations WHERE undo_of=$1`, stepID).Scan(&id)
-	if isNoRows(err) {
+	op, err := undoReceiptTx(ctx, s.pool, stepID)
+	if err != nil {
+		return AgentOperation{}, err
+	}
+	if op == nil {
 		return AgentOperation{}, ErrNotFound
 	}
-	if err != nil {
-		return AgentOperation{}, err
-	}
-	op, err := getAgentOperation(ctx, s.pool, id)
-	if err != nil {
-		return AgentOperation{}, err
-	}
 	return *op, nil
+}
+
+// undoReceiptTx is UndoReceipt under the caller's query handle; nil while the
+// step is unused.
+func undoReceiptTx(ctx context.Context, q rowQueryer, stepID string) (*AgentOperation, error) {
+	var id string
+	err := q.QueryRow(ctx, `SELECT id FROM agent_operations WHERE undo_of=$1`, stepID).Scan(&id)
+	if isNoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return getAgentOperation(ctx, q, id)
 }
 
 // FileStep reports whether a step's Undo trashes or restores a file the chat
@@ -69,9 +104,10 @@ func FileStep(step AgentOperation) bool {
 }
 
 // markFileUndoTx puts a file step's Undo ref on its receipt (a created file's
-// trash, a trashed file's restore): the receipt row must already exist.
-func markFileUndoTx(ctx context.Context, tx pgx.Tx, receipt *AgentOperation) error {
-	receipt.Effect.Undo = &agenttools.UndoRef{OperationID: receipt.ID, Status: agenttools.UndoAvailable}
+// trash, a trashed file's restore), offered until `expires` (Q162: a day from
+// the created file, as an edit's): the receipt row must already exist.
+func markFileUndoTx(ctx context.Context, tx pgx.Tx, receipt *AgentOperation, expires *time.Time) error {
+	receipt.Effect.Undo = &agenttools.UndoRef{OperationID: receipt.ID, Status: agenttools.UndoAvailable, ExpiresAt: expires}
 	_, err := tx.Exec(ctx, `UPDATE agent_operations SET effect=$2 WHERE id=$1`, receipt.ID, receipt.Effect)
 	return err
 }
@@ -88,9 +124,14 @@ func linkUndoTx(ctx context.Context, tx pgx.Tx, receiptID, step string) error {
 
 // UndoFileStep runs a created file's Undo (the ordinary trash) or Redo (the
 // ordinary restore of the trash episode its Undo receipt names) under the
-// Undo's operation id. A restore is the owner's (the trash rule), so a
-// trashed file gets its Redo ref only when the actor owns it.
+// Undo's operation id, within the created file's day (Q162). A restore is the
+// owner's (the trash rule), so a trashed file gets its Redo ref only when the
+// actor owns it; the Redo keeps the created file's day.
 func (s *Store) UndoFileStep(ctx context.Context, actorID string, step AgentOperation, op AgentOperation) (AgentOperation, error) {
+	expires := step.Effect.Undo.ExpiresAt
+	if expires != nil && !time.Now().Before(*expires) {
+		return AgentOperation{}, ErrUndoUnavailable
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return AgentOperation{}, err
@@ -123,7 +164,7 @@ func (s *Store) UndoFileStep(ctx context.Context, actorID string, step AgentOper
 		return AgentOperation{}, err
 	}
 	if receipt.Effect.Operation != agenttools.EffectTrashed || owner == actorID {
-		if err := markFileUndoTx(ctx, tx, &receipt); err != nil {
+		if err := markFileUndoTx(ctx, tx, &receipt, expires); err != nil {
 			return AgentOperation{}, err
 		}
 	}
@@ -145,71 +186,58 @@ func resourceOwnerTx(ctx context.Context, tx pgx.Tx, kind agenttools.ResourceKin
 	return owner, err
 }
 
-// UndoDocumentEdit reverts an edit step in the collaboration room holding it
-// (an Undo, or the Undo of an Undo: Redo), then records the receipt, whose
-// own Undo ref names the step the room now holds; none when the room keeps
-// no such step (its revert would be too large to send, Epo 2026-10-21). The
-// room answers with the id it keeps that step under: this request's, or an
-// earlier request's whose answer was lost, and the receipt takes that id, so
-// a reversed step always ends with one receipt. It carries no provenance: an
-// undo restores the text only, because provenance only grows — over-crediting
-// a source is harmless and under-crediting one is the licence risk.
-func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, step AgentOperation, op DocumentOperation) (AgentOperation, error) {
+// UndoDocumentEdit writes an edit step's Undo payload, sent back by the
+// browser, through the collaboration server (an Undo, or the Undo of an Undo:
+// Redo). The payload must carry this server's signature for this step and
+// document, within its 24 h. The collaboration server commits the receipt
+// (`undo_edit`, naming the step) with the write (r1 M2), so a lost answer
+// still ends with exactly one receipt, which a retry is answered with. The
+// receipt's own Undo ref and payload come with the Redo payload; none when
+// the server builds none (too large, Epo 2026-10-21). It carries no
+// provenance: an undo restores the text only, because provenance only grows
+// — over-crediting a source is harmless and under-crediting one is the
+// licence risk.
+func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, step AgentOperation, payload *UndoPayload, op DocumentOperation) (AgentOperation, error) {
 	resource := step.Effect.Resource
 	if resource.Kind == agenttools.KindSourceFile {
-		// The maintenance pause refuses an Office Undo as it refuses the edit.
+		// The maintenance pause refuses an Office Undo as it refuses the edit,
+		// for a moment: the chat keeps the step.
 		if err := s.officeEditRefusal(ctx, resource.ID); err != nil {
 			return AgentOperation{}, err
 		}
 	}
-	var answer struct {
-		OperationID string     `json:"operationId"`
-		Reversible  bool       `json:"reversible"`
-		ExpiresAt   *time.Time `json:"expiresAt"`
+	if !s.verifyUndoPayload(step.ID, resource, payload) {
+		return AgentOperation{}, ErrUndoUnavailable
 	}
-	err := s.postDocumentAuthority(ctx, "/internal/documents/undo", map[string]any{
-		"actorUserId": actorID, "operation": op, "undoOf": step.ID,
-		"target": DocumentTarget{Kind: resource.Kind, ID: resource.ID},
-	}, &answer)
+	target := DocumentTarget{Kind: resource.Kind, ID: resource.ID}
+	req := documentRequest{
+		Target: target, ActorUserID: actorID, Operation: &op, UndoOf: step.ID,
+		Undo: &UndoPayload{Epoch: payload.Epoch, IssuedAt: payload.IssuedAt, Updates: payload.Updates},
+	}
+	if resource.Kind == agenttools.KindMaterial {
+		room, err := s.MaterialRoom(ctx, resource.ID)
+		if err != nil {
+			return AgentOperation{}, err
+		}
+		req.Room = room
+	}
+	var out DocumentEdit
+	err := s.postDocumentAuthority(ctx, "/internal/documents/undo", req, &out)
 	var refusal *EditRefusal
 	if errors.As(err, &refusal) && refusal.Code == undoUnavailableCode {
+		// The step's receipt may have committed under a request whose answer
+		// was lost while this one waited: that receipt answers.
+		if existing, err := s.UndoReceipt(ctx, step.ID); err == nil {
+			return existing, nil
+		}
 		return AgentOperation{}, ErrUndoUnavailable
 	}
 	if err != nil {
 		return AgentOperation{}, err
 	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return AgentOperation{}, err
-	}
-	defer tx.Rollback(ctx)
-	id := op.ID
-	if answer.OperationID != "" {
-		id = answer.OperationID
-	}
-	operation := agenttools.EffectEditUndone
-	if step.Effect.Operation == agenttools.EffectEditUndone {
-		operation = agenttools.EffectEdited
-	}
-	receipt := AgentOperation{
-		ID: id, Kind: "undo_edit", ToolVersion: 1, RequestHash: op.RequestHash, ActorUserID: actorID,
-		WorkspaceID: step.WorkspaceID, ConversationID: op.ConversationID, MessageID: op.MessageID,
-		Outcome: agenttools.OutcomeSucceeded,
-		Effect: &agenttools.ResourceEffect{
-			Operation: operation, Resource: resource, OperationID: id,
-		},
-	}
-	if answer.Reversible {
-		// Offered until the room drops it, 24 h after the agent edit (Q385).
-		receipt.Effect.Undo = &agenttools.UndoRef{OperationID: id, Status: agenttools.UndoAvailable, ExpiresAt: answer.ExpiresAt}
-	}
-	if err := insertAgentOperationTx(ctx, tx, receipt); err != nil {
-		return AgentOperation{}, err
-	}
-	if err := linkUndoTx(ctx, tx, receipt.ID, step.ID); err != nil {
-		return AgentOperation{}, err
-	}
-	return receipt, tx.Commit(ctx)
+	receipt := out.AgentOperation
+	receipt.UndoPayload = s.signUndoPayload(receipt.ID, target, receipt.UndoPayload)
+	return receipt, nil
 }
 
 // LatestSteps follows each given receipt's chain (undo_of) to its latest
@@ -252,38 +280,11 @@ func (s *Store) LatestSteps(ctx context.Context, operationIDs []string) (map[str
 	return out, nil
 }
 
-// undoStatusWait bounds the undo-status ask a conversation load waits on, so
-// a hung collaboration server shows no Undo instead of holding the load.
-const undoStatusWait = 2 * time.Second
-
-// LiveUndoSteps asks the collaboration service which of the given edit
-// steps a loaded room still holds; only those keep their Undo after a reload.
-func (s *Store) LiveUndoSteps(ctx context.Context, operationIDs []string) (map[string]bool, error) {
-	live := map[string]bool{}
-	if len(operationIDs) == 0 {
-		return live, nil
-	}
-	ctx, cancel := context.WithTimeout(ctx, undoStatusWait)
-	defer cancel()
-	var out struct {
-		Live []string `json:"live"`
-	}
-	if err := s.postDocumentAuthority(ctx, "/internal/documents/undo-status",
-		map[string]any{"operationIds": operationIDs}, &out); err != nil {
-		return nil, err
-	}
-	for _, id := range out.Live {
-		live[id] = true
-	}
-	return live, nil
-}
-
 // refreshUndoStatuses shows each receipt with an Undo ref where its chain
-// stands now (after an Undo, the edit_undone or trashed effect) and keeps the
-// ref only on an edit step a loaded room still holds: a conversation opened
-// later shows created files and closed rooms without Undo or Redo (Epo
-// 2026-10-20). When the collaboration service cannot say within
-// undoStatusWait, no ref stays.
+// stands now (after an Undo, the edit_undone or trashed effect). Every step
+// keeps its ref with its 24 h (Q385, Q162): the browser offers an edit's Undo
+// while it holds the step's payload (Epo 2026-10-21), a created file's until
+// its day ends.
 func (s *Store) refreshUndoStatuses(ctx context.Context, messages []Message) error {
 	var ids []string
 	for _, m := range messages {
@@ -302,17 +303,6 @@ func (s *Store) refreshUndoStatuses(ctx context.Context, messages []Message) err
 	if err != nil {
 		return err
 	}
-	var edits []string
-	for _, step := range steps {
-		if step.Effect != nil && !FileStep(step) {
-			edits = append(edits, step.ID)
-		}
-	}
-	live, err := s.LiveUndoSteps(ctx, edits)
-	if err != nil {
-		obs.Log(ctx).Warn("undo status unavailable; chat history shows no Undo", "error", err)
-		live = map[string]bool{}
-	}
 	for mi := range messages {
 		for bi := range messages[mi].Activity {
 			for ei := range messages[mi].Activity[bi].Effects {
@@ -324,7 +314,7 @@ func (s *Store) refreshUndoStatuses(ctx context.Context, messages []Message) err
 				if ok && step.Effect != nil {
 					*effect = *step.Effect
 				}
-				if !ok || step.Effect == nil || !live[step.ID] {
+				if !ok || step.Effect == nil {
 					effect.Undo = nil
 				}
 			}

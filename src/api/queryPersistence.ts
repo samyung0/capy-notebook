@@ -61,6 +61,12 @@ export function dehydratePersisted(client: QueryClient): DehydratedState {
   });
 }
 
+/** Deletes the stored cache (signed out, or the account's deletion
+ * confirmed here, Q315). */
+export function forgetPersistedQueries(): Promise<void> {
+  return del(KEY).catch(() => undefined);
+}
+
 /**
  * Restores the account's stored cache into an empty client and keeps storing
  * it. Restored queries are marked stale, so each refetches on first use while
@@ -72,7 +78,7 @@ export async function startQueryPersistence(
   identity: string | null
 ): Promise<() => void> {
   if (identity === null) {
-    await del(KEY).catch(() => undefined);
+    await forgetPersistedQueries();
     return () => undefined;
   }
   const buster = `${RELEASE ?? 'dev'}:${identity}`;

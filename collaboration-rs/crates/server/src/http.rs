@@ -39,9 +39,13 @@ pub fn router(app: Shared) -> Router {
         )
         .route("/internal/documents/inspect", post(document))
         .route("/internal/documents/edit", post(document))
-        .route("/internal/documents/undo", post(document))
-        .route("/internal/documents/undo-status", post(document))
+        // An Undo payload (8 MiB of updates, base64) is larger than commands.
+        .route(
+            "/internal/documents/undo",
+            post(document).layer(axum::extract::DefaultBodyLimit::max(MAX_UNDO_BODY + 1)),
+        )
         .route("/internal/documents/create", post(document))
+        .route("/internal/materials/live", post(live_note))
         .route("/internal/commands", post(command))
         .route("/internal/markdown/convert", post(markdown))
         // Reads its own body within a writer's sync cap (`drafts.rs`).
@@ -219,6 +223,10 @@ fn authorized(app: &Shared, headers: &HeaderMap) -> bool {
 /// The largest internal command body (two documents and their envelope).
 pub const MAX_INTERNAL_BODY: usize = 2 * 2 * 1024 * 1024 + 1024 * 1024;
 
+/// The largest Undo body: a payload of at most `ydoc::MAX_UPDATE_BYTES` in
+/// base64 (4/3 of it) and its envelope.
+pub const MAX_UNDO_BODY: usize = 12 * 1024 * 1024;
+
 /// An internal route's JSON object body, or the 400 that answers it.
 fn json_object(body: &[u8], invalid: &str) -> Result<Value, Box<Response>> {
     let refused = || {
@@ -372,7 +380,7 @@ async fn publish_source_refresh(
     source_answer("source_publish", result)
 }
 
-/// `/internal/documents/{inspect,edit,undo,undo-status,create}`: direct AI
+/// `/internal/documents/{inspect,edit,undo,create}`: direct AI
 /// edits, their Undo and the agent's new Office files (`edits.rs`).
 async fn document(
     State(app): State<Shared>,
@@ -386,13 +394,28 @@ async fn document(
             json!({ "message": "invalid service secret" }),
         );
     }
-    if body.len() > MAX_INTERNAL_BODY {
+    let limit = if uri.path().ends_with("/undo") {
+        MAX_UNDO_BODY
+    } else {
+        MAX_INTERNAL_BODY
+    };
+    if body.len() > limit {
         return json_response(
             StatusCode::BAD_REQUEST,
             json!({ "code": "invalid_input", "message": "command body is too large" }),
         );
     }
-    match crate::edits::document(&app, uri.path(), &body).await {
+    // The work runs to its end once started (r1 M2): a gateway that went away
+    // (its timeout, a restart) cannot cut an edit or an Undo between its
+    // commit and its live room's update.
+    let work = tokio::spawn({
+        let (app, path) = (app.clone(), uri.path().to_owned());
+        async move { crate::edits::document(&app, &path, &body).await }
+    });
+    let result = work
+        .await
+        .unwrap_or_else(|error| Err(crate::edits::DocumentError::Unknown(error.to_string())));
+    match result {
         Ok(value) => json_response(StatusCode::OK, value),
         Err(error) => {
             let (status, body) = error.status_and_body();
@@ -402,6 +425,36 @@ async fn document(
             if status >= 500 {
                 crate::observe::capture(error.message(), None, &[("stage", "document_request")]);
             }
+            let status = StatusCode::from_u16(status).unwrap_or(StatusCode::SERVICE_UNAVAILABLE);
+            json_response(status, body)
+        }
+    }
+}
+
+/// `/internal/materials/live`: a note room's live content when it holds edits
+/// its projected content lacks, for a detailed read's note changes (Q417).
+async fn live_note(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> Response {
+    if !authorized(&app, &headers) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            json!({ "message": "invalid service secret" }),
+        );
+    }
+    #[derive(serde::Deserialize)]
+    struct Room {
+        room: String,
+    }
+    let Ok(Room { room }) = serde_json::from_slice(&body) else {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "code": "invalid_input", "message": "invalid live request" }),
+        );
+    };
+    match crate::edits::live_note(&app, &room).await {
+        Ok(value) => json_response(StatusCode::OK, value),
+        Err(error) => {
+            crate::observe::capture(error.message(), None, &[("stage", "live_note")]);
+            let (status, body) = error.status_and_body();
             let status = StatusCode::from_u16(status).unwrap_or(StatusCode::SERVICE_UNAVAILABLE);
             json_response(status, body)
         }
@@ -698,7 +751,6 @@ pub(crate) mod tests {
             handoff: Default::default(),
             source_joins: Default::default(),
             markdown: None,
-            agent_steps: Default::default(),
         })
     }
 

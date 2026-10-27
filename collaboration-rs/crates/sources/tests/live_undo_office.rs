@@ -85,6 +85,29 @@ impl File {
         (cost, captured.change(room))
     }
 
+    /// The agent's commands as the server runs them for a durable Undo (Epo
+    /// 2026-10-21): the engine's result merged on a working copy that keeps
+    /// what it deletes, the room applying the copy's update as any update
+    /// (what it deleted collected), and the payload the copy builds.
+    fn durable_edit(&self, room: &Doc, commands: &[Command]) -> Vec<u8> {
+        let state = state(room);
+        let applied =
+            office_service::apply_commands(&self.base, self.checkpoint(&state), commands).unwrap();
+        let copy = doc_of(&state);
+        let captured = {
+            let _keep = ydoc::undo::keep(&copy);
+            let mut txn = copy.transact_mut_with(ydoc::undo::ORIGIN);
+            txn.apply_update(Update::decode_v1(&applied.state).unwrap())
+                .unwrap();
+            Captured::of(&mut txn)
+        };
+        let update = copy
+            .transact()
+            .encode_state_as_update_v1(&room.transact().state_vector());
+        ydoc::apply(room, Update::decode_v1(&update).unwrap()).unwrap();
+        ydoc::undo::payload(&copy, captured).unwrap()
+    }
+
     /// A person's edit: the engine's commands merged into the room as an
     /// update the room keeps no Undo for.
     fn person_edit(&self, room: &Doc, commands: &[Command]) {
@@ -561,6 +584,113 @@ fn doc_of(state: &[u8]) -> Doc {
 fn state(doc: &Doc) -> Vec<u8> {
     doc.transact()
         .encode_state_as_update_v1(&StateVector::default())
+}
+
+/// `doc` stored and loaded again, as a room unload and reload does: deleted
+/// content is gone, the tombstones stay.
+fn reloaded(doc: &Doc) -> Doc {
+    doc_of(&state(doc))
+}
+
+/// A working copy of `doc` with a durable Undo payload applied, as the
+/// server's Undo writes it; panics unless it changed the document.
+fn undone(doc: &Doc, payload: &[u8]) -> Doc {
+    let copy = doc_of(&state(doc));
+    let applied = ydoc::undo::apply_payload(&copy, Update::decode_v1(payload).unwrap()).unwrap();
+    assert!(
+        matches!(applied, ydoc::undo::Applied::Changed(_)),
+        "{applied:?}"
+    );
+    copy
+}
+
+/// Review r1 L6: XLSX `delete_sheet` and `delete_rows` undone from their
+/// durable payloads after the room stored and reloaded (the deleted sheet's
+/// and band's content collected, their tombstones kept): the cells come back
+/// and the formulas reading them compute again. Fails if a copy anchors on a
+/// collected unit (part of the sheet or band would come back empty).
+#[test]
+fn a_durable_undo_restores_a_deleted_sheet_and_row_band_after_a_reload() {
+    let file = File::open(Format::Xlsx, GRADES);
+    let room = file.room();
+    let (sheet, _) = file.sheets(&room).remove(0);
+    file.agent_edit(
+        &room,
+        &[
+            Command::AddSheet {
+                name: "Data".into(),
+                after: None,
+            },
+            set_range(
+                "Data",
+                "A1:A3",
+                &[&[""], &[""], &[""]],
+                &[&["5"], &["6"], &["7"]],
+            ),
+            set_range(&sheet, "Z1", &[&[""]], &[&["=SUM(Data!A1:A3)"]]),
+            set_range(&sheet, "A100:A101", &[&[""], &[""]], &[&["3"], &["4"]]),
+            set_range(&sheet, "Z2", &[&[""]], &[&["=A100+A101"]]),
+        ],
+    );
+    let read = |room: &Doc| {
+        (
+            file.sheets(room),
+            file.cells(room, &sheet, "Z1:Z2"),
+            file.cells(room, "Data", "A1:A3"),
+            file.cells(room, &sheet, "A100:A101"),
+        )
+    };
+    let before = read(&room);
+    assert_eq!(before.1, ["Z1==SUM(Data!A1:A3)→18", "Z2==A100+A101→7"]);
+    let sheet_undo = file.durable_edit(
+        &room,
+        &[Command::DeleteSheet {
+            sheet: "Data".into(),
+            expected_name: "Data".into(),
+        }],
+    );
+    let room = reloaded(&room);
+    assert!(file.sheets(&room).iter().all(|(_, name)| name != "Data"));
+    let room = undone(&room, &sheet_undo);
+    assert_eq!(read(&room), before);
+    let rows_undo = file.durable_edit(
+        &room,
+        &[Command::DeleteRows {
+            sheet: sheet.clone(),
+            at: 100,
+            count: 2,
+            expected: vec![vec!["3".into()], vec!["4".into()]],
+        }],
+    );
+    let room = reloaded(&room);
+    assert!(file.cells(&room, &sheet, "A100:A101").is_empty());
+    assert_eq!(read(&undone(&room, &rows_undo)), before);
+}
+
+/// Review r1 L6: a PPTX `delete_slide` undone from its durable payload after
+/// the room stored and reloaded brings the slide back in its place with its
+/// text. Fails if part of the slide comes back empty.
+#[test]
+fn a_durable_undo_restores_a_deleted_slide_after_a_reload() {
+    let file = File::open(Format::Pptx, LESSON_PPTX);
+    let room = file.room();
+    let slides = file.slides(&room);
+    let texts = [file.slide_text(&room, 1), file.slide_text(&room, 2)];
+    let undo = file.durable_edit(
+        &room,
+        &[Command::DeleteSlide {
+            slide_id: slides[0].clone(),
+            expected_text: texts[0].clone(),
+        }],
+    );
+    let room = reloaded(&room);
+    assert_ne!(file.slides(&room), slides);
+    let room = undone(&room, &undo);
+    assert_eq!(file.slides(&room), slides);
+    assert_eq!(
+        [file.slide_text(&room, 1), file.slide_text(&room, 2)],
+        texts
+    );
 }
 
 /// DOCX and PPTX `replace_text`: Undo puts the paragraph's text back, Redo

@@ -1525,6 +1525,7 @@ def _tool_end(call: ToolCall, result: ToolResult, run: _Run) -> dict[str, Any]:
         result.outcome,
         error=result.error_payload(),
         effects=result.effects or None,
+        undo_payloads=result.undo_payloads or None,
         ended_at=run.ended_at,
     )
 

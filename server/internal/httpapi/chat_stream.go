@@ -81,41 +81,44 @@ func chatQueryTooLong(text string) bool {
 // tool_progress | tool_end | citations | checkpoint | turn_checkpoint |
 // pending_sources | done | error.
 type pipeChatEvent struct {
-	Type              string                      `json:"type"`
-	SentryEventID     string                      `json:"sentryEventId,omitempty"`
-	FileIDs           []string                    `json:"fileIds,omitempty"`
-	Omitted           *bool                       `json:"omitted,omitempty"` // pointer so false survives serialization
-	Phase             string                      `json:"phase,omitempty"`
-	BlockID           string                      `json:"blockId,omitempty"`
-	Kind              string                      `json:"kind,omitempty"`
-	Text              string                      `json:"text,omitempty"`
-	CallID            string                      `json:"callId,omitempty"`
-	Name              string                      `json:"name,omitempty"`
-	Detail            string                      `json:"detail,omitempty"`
-	Outcome           string                      `json:"outcome,omitempty"`
-	ToolError         *agenttools.ToolError       `json:"error,omitempty"`
-	Effects           []agenttools.ResourceEffect `json:"effects,omitempty"`
-	StartedAt         string                      `json:"startedAt,omitempty"` // tool_start
-	EndedAt           string                      `json:"endedAt,omitempty"`   // tool_end
-	Applied           *int                        `json:"applied,omitempty"`   // tool_progress; tool_end with commands unapplied
-	Total             *int                        `json:"total,omitempty"`     // pointers so 0 survives
-	Citations         []store.Citation            `json:"citations,omitempty"`
-	Version           int                         `json:"version,omitempty"`
-	TokenCount        int                         `json:"tokenCount,omitempty"`
-	GenerationID      string                      `json:"generationId,omitempty"`
-	Message           string                      `json:"message,omitempty"`
-	Code              string                      `json:"code,omitempty"`
-	RetryAfterSeconds int                         `json:"retryAfterSeconds,omitempty"`
-	Usage             pipeUsage                   `json:"usage,omitempty"`
-	Activity          []store.ActivityBlock       `json:"activity,omitempty"`
-	ToolEvidence      json.RawMessage             `json:"toolEvidence,omitempty"`
-	Answer            string                      `json:"answer,omitempty"`
-	ThroughMessageID  string                      `json:"throughMessageId,omitempty"`
-	Summary           string                      `json:"summary,omitempty"`
-	ProviderSlug      string                      `json:"providerSlug,omitempty"`
-	ModelSlug         string                      `json:"modelSlug,omitempty"`
-	ModelVersion      int                         `json:"modelVersion,omitempty"`
-	EstimatedTokens   int                         `json:"estimatedTokens,omitempty"`
+	Type          string                      `json:"type"`
+	SentryEventID string                      `json:"sentryEventId,omitempty"`
+	FileIDs       []string                    `json:"fileIds,omitempty"`
+	Omitted       *bool                       `json:"omitted,omitempty"` // pointer so false survives serialization
+	Phase         string                      `json:"phase,omitempty"`
+	BlockID       string                      `json:"blockId,omitempty"`
+	Kind          string                      `json:"kind,omitempty"`
+	Text          string                      `json:"text,omitempty"`
+	CallID        string                      `json:"callId,omitempty"`
+	Name          string                      `json:"name,omitempty"`
+	Detail        string                      `json:"detail,omitempty"`
+	Outcome       string                      `json:"outcome,omitempty"`
+	ToolError     *agenttools.ToolError       `json:"error,omitempty"`
+	Effects       []agenttools.ResourceEffect `json:"effects,omitempty"`
+	// UndoPayloads ride a tool_end to the browser only (Epo 2026-10-21):
+	// never part of the activity or evidence the turn saves.
+	UndoPayloads      []json.RawMessage     `json:"undoPayloads,omitempty"`
+	StartedAt         string                `json:"startedAt,omitempty"` // tool_start
+	EndedAt           string                `json:"endedAt,omitempty"`   // tool_end
+	Applied           *int                  `json:"applied,omitempty"`   // tool_progress; tool_end with commands unapplied
+	Total             *int                  `json:"total,omitempty"`     // pointers so 0 survives
+	Citations         []store.Citation      `json:"citations,omitempty"`
+	Version           int                   `json:"version,omitempty"`
+	TokenCount        int                   `json:"tokenCount,omitempty"`
+	GenerationID      string                `json:"generationId,omitempty"`
+	Message           string                `json:"message,omitempty"`
+	Code              string                `json:"code,omitempty"`
+	RetryAfterSeconds int                   `json:"retryAfterSeconds,omitempty"`
+	Usage             pipeUsage             `json:"usage,omitempty"`
+	Activity          []store.ActivityBlock `json:"activity,omitempty"`
+	ToolEvidence      json.RawMessage       `json:"toolEvidence,omitempty"`
+	Answer            string                `json:"answer,omitempty"`
+	ThroughMessageID  string                `json:"throughMessageId,omitempty"`
+	Summary           string                `json:"summary,omitempty"`
+	ProviderSlug      string                `json:"providerSlug,omitempty"`
+	ModelSlug         string                `json:"modelSlug,omitempty"`
+	ModelVersion      int                   `json:"modelVersion,omitempty"`
+	EstimatedTokens   int                   `json:"estimatedTokens,omitempty"`
 }
 
 // chatStream persists the user turn, reserves an assistant row, relays the
@@ -325,7 +328,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if forward {
-				send(ev)
+				send(withinUndoLimit(ev))
 			}
 		})
 	}
@@ -379,6 +382,20 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	send(map[string]any{"type": "done", "status": status, "tokenCount": saved.tokens, "generationId": saved.genID})
+}
+
+// withinUndoLimit drops a tool_end's Undo payloads past what one may carry
+// (an 8 MiB update in base64 and its envelope): that edit then has no Undo
+// in the browser, rather than a cut payload.
+func withinUndoLimit(ev pipeChatEvent) pipeChatEvent {
+	size := 0
+	for _, payload := range ev.UndoPayloads {
+		size += len(payload)
+	}
+	if size > undoBodyLimit {
+		ev.UndoPayloads = nil
+	}
+	return ev
 }
 
 // chatTurn is the trusted per-turn context the pipeline receives beside the

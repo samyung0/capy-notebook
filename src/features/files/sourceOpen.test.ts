@@ -10,6 +10,7 @@ vi.mock('@/api/client', () => ({ api: { get, post } }));
 vi.mock('@/lib/sourceCache', () => ({ cacheSource, readCachedSource }));
 vi.mock('./sourceProvider', () => ({ warmSourceSocket: vi.fn() }));
 
+import { keepUndoPayloads, undoPayload } from '@/lib/undoPayloads';
 import {
   dropSourceOpens,
   holdSource,
@@ -57,6 +58,31 @@ afterEach(() => {
 });
 
 describe('opening a source from its route', () => {
+  // Q122, review r1 L9: a source's session or token in a newer epoch drops
+  // that file's agent Undo payloads made before it (their Undo would be
+  // refused); another file's stay.
+  it("drops a file's agent Undo payloads once its session or token shows a newer epoch", async () => {
+    const payload = (operationId: string, documentId: string) => ({
+      documentId,
+      epoch: 1,
+      issuedAt: Math.floor(Date.now() / 1000),
+      mac: 'f'.repeat(64),
+      operationId,
+      updates: { source: 'dW5kbw==' },
+    });
+    keepUndoPayloads([
+      payload('op_session', 'f_epoch'),
+      payload('op_token', 'f_token'),
+      payload('op_other', 'f_other'),
+    ]);
+    get.mockResolvedValue({ ...SESSION, epoch: 2, fileId: 'f_epoch' });
+    post.mockResolvedValue({ ...TOKEN, room: 'source:f_token:epoch:2' });
+    await takeSourceOpen('f_epoch', 'edit');
+    expect(await undoPayload('op_session')).toBeUndefined();
+    expect(await undoPayload('op_token')).toBeUndefined();
+    expect(await undoPayload('op_other')).toBeDefined();
+  });
+
   it('hands the view the session and bytes the route started, reading each once', async () => {
     get.mockResolvedValue(SESSION);
     prefetchSourceOpen('f_view', 'view');

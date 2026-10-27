@@ -2,11 +2,13 @@ package store
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,116 +44,149 @@ func undoTestEdit(t *testing.T, s *Store, owner, fileID string) AgentOperation {
 	return *op
 }
 
-// undoTestExpiry is when undoTestAuthority's rooms stop offering a step.
-var undoTestExpiry = time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
-
-// undoTestAuthority answers the collaboration service's Undo routes: every
-// Undo lands under the id `kept` gives (the request's when it gives ""), its
-// reverse kept, and undo-status names the steps in `live`. It counts the
-// Undos it was asked.
-func undoTestAuthority(t *testing.T, s *Store, live func() []string, asked *[]string) *int {
-	t.Helper()
-	return undoTestAuthorityKeeping(t, s, live, asked, func(string) string { return "" })
+// undoTestRequest is the Undo the collaboration service is sent.
+type undoTestRequest struct {
+	ActorUserID string            `json:"actorUserId"`
+	Operation   DocumentOperation `json:"operation"`
+	Target      DocumentTarget    `json:"target"`
+	Undo        UndoPayload       `json:"undo"`
+	UndoOf      string            `json:"undoOf"`
 }
 
-func undoTestAuthorityKeeping(t *testing.T, s *Store, live func() []string, asked *[]string, kept func(step string) string) *int {
+// undoTestAuthority answers the collaboration service's Undo route as it
+// does for a text source: the Undo's checkpoint commits its receipt, naming
+// the step (r1 M2), the Redo ref goes on it when there is a Redo payload
+// (none when `redo` is nil), and the answer is that receipt with the payload,
+// carrying the edit's time. It records each request's body. `answer`
+// overrides the reply once the receipt committed (a lost answer).
+func undoTestAuthority(t *testing.T, s *Store, redo map[string]string, asked *[]map[string]any) *func(http.ResponseWriter) {
 	t.Helper()
-	undos := new(int)
+	answer := new(func(http.ResponseWriter))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/internal/documents/undo":
-			var body struct {
-				UndoOf    string            `json:"undoOf"`
-				Operation DocumentOperation `json:"operation"`
-				Target    DocumentTarget    `json:"target"`
-			}
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			*undos++
-			id := kept(body.UndoOf)
-			if id == "" {
-				id = body.Operation.ID
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"operationId": id, "reversible": true, "expiresAt": undoTestExpiry})
-		case "/internal/documents/undo-status":
-			var body struct {
-				OperationIDs []string `json:"operationIds"`
-			}
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			*asked = body.OperationIDs
-			_ = json.NewEncoder(w).Encode(map[string][]string{"live": live()})
-		default:
+		if r.URL.Path != "/internal/documents/undo" {
 			http.NotFound(w, r)
+			return
 		}
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		_ = json.Unmarshal(raw, &body)
+		*asked = append(*asked, body)
+		var req undoTestRequest
+		_ = json.Unmarshal(raw, &req)
+		ctx := context.Background()
+		doc, err := s.SourceSession(ctx, req.ActorUserID, req.Target.ID)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		save := sourceTestSave(doc, req.ActorUserID, "undone")
+		save.Operation = &SourceCheckpointOperation{
+			Receipt: SourceCheckpointReceipt{ID: req.Operation.ID, ToolVersion: 1, RequestHash: req.Operation.RequestHash, ActorUserID: req.ActorUserID},
+			UndoOf:  req.UndoOf,
+		}
+		saved, err := s.SaveSourceCheckpoint(ctx, req.Target.ID, save)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		out := map[string]any{"operationId": saved.Operation.ID, "kind": saved.Operation.Kind, "outcome": "succeeded"}
+		effect := *saved.Operation.Effect
+		if redo != nil {
+			effect.Undo = &agenttools.UndoRef{OperationID: saved.Operation.ID, Status: agenttools.UndoAvailable, ExpiresAt: undoExpiry(req.Undo.IssuedAt)}
+			if _, err := s.pool.Exec(ctx, `UPDATE agent_operations SET effect=$2 WHERE id=$1`, saved.Operation.ID, effect); err != nil {
+				t.Error(err)
+			}
+			out["undoPayload"] = map[string]any{"epoch": 1, "issuedAt": req.Undo.IssuedAt, "updates": redo}
+		}
+		out["effect"] = effect
+		if *answer != nil {
+			(*answer)(w)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(out)
 	}))
 	t.Cleanup(srv.Close)
 	s.ConfigureCollaboration(srv.URL, "undo-secret")
-	return undos
+	return answer
 }
 
-// A step whose Undo landed in the room but whose receipt was not written (a
-// lost answer, a failed insert) ends with one receipt: the room answers the
-// next request with the id it kept the reverse under, the receipt takes that
-// id, and the step's receipt is then found for any later request.
-func TestALostUndoAnswerEndsWithOneReceipt(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "undo_lost")
-	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
-	edit := undoTestEdit(t, s, owner, file.ID)
-	earlier := uid("op")
-	var asked []string
-	undoTestAuthorityKeeping(t, s, func() []string { return nil }, &asked, func(string) string { return earlier })
-	if _, err := s.UndoReceipt(ctx, edit.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("receipt of an unused step: %v", err)
-	}
-	undo, err := s.UndoDocumentEdit(ctx, owner, edit, DocumentOperation{ID: uid("op"), RequestHash: "u1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if undo.ID != earlier || undo.Effect.Undo.OperationID != earlier {
-		t.Fatalf("receipt %s (ref %+v), want the room's %s", undo.ID, undo.Effect.Undo, earlier)
-	}
-	found, err := s.UndoReceipt(ctx, edit.ID)
-	if err != nil || found.ID != earlier {
-		t.Fatalf("step's receipt = %+v err = %v", found, err)
-	}
+// undoTestPayload is the payload the collaboration service built for `step`,
+// signed as EditDocument signs it: made now.
+func undoTestPayload(t *testing.T, s *Store, step AgentOperation, update string) *UndoPayload {
+	t.Helper()
+	return undoTestPayloadAt(t, s, step, update, time.Now().Unix())
 }
 
-// An edit's Undo runs in its room, then records an undo_edit receipt whose
-// own ref is the Redo; Redo's receipt is an edit again. A step the room no
-// longer holds is refused.
-func TestDocumentUndoRecordsTheRoomsSteps(t *testing.T) {
+// undoTestPayloadAt is undoTestPayload for an agent edit made at `issuedAt`.
+func undoTestPayloadAt(t *testing.T, s *Store, step AgentOperation, update string, issuedAt int64) *UndoPayload {
+	t.Helper()
+	resource := step.Effect.Resource
+	signed := s.signUndoPayload(step.ID, DocumentTarget{Kind: resource.Kind, ID: resource.ID},
+		&UndoPayload{Epoch: 1, IssuedAt: issuedAt, Updates: map[string]string{"source": base64.StdEncoding.EncodeToString([]byte(update))}})
+	if signed == nil {
+		t.Fatal("the payload was not signed")
+	}
+	return signed
+}
+
+// An edit's Undo sends its payload (without the signature) and the step it
+// reverses to the collaboration service, whose checkpoint commits an
+// undo_edit receipt naming that step; its own ref is the Redo, carrying the
+// Redo payload signed under the receipt's id with the edit's time (Q385);
+// Redo's receipt is an edit again. An Undo the service builds no Redo for
+// (too large, Epo 2026-10-21) has a receipt with no ref and no payload.
+func TestDocumentUndoSendsItsPayloadAndReturnsTheRedo(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "undo_room")
+	owner := newBlobTestUser(t, s, "undo_payload")
 	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
 	edit := undoTestEdit(t, s, owner, file.ID)
-	var asked []string
-	undoTestAuthority(t, s, func() []string { return nil }, &asked)
+	var asked []map[string]any
+	undoTestAuthority(t, s, map[string]string{"source": base64.StdEncoding.EncodeToString([]byte("redo"))}, &asked)
 
-	undo, err := s.UndoDocumentEdit(ctx, owner, edit, DocumentOperation{ID: uid("op"), RequestHash: "u1"})
+	undo, err := s.UndoDocumentEdit(ctx, owner, edit, undoTestPayload(t, s, edit, "undo"), DocumentOperation{ID: uid("op"), RequestHash: "u1"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if undo.Kind != "undo_edit" || undo.Effect.Operation != agenttools.EffectEditUndone || undo.Effect.Undo.OperationID != undo.ID {
 		t.Fatalf("undo = %+v %+v", undo, undo.Effect)
 	}
-	redo, err := s.UndoDocumentEdit(ctx, owner, undo, DocumentOperation{ID: uid("op"), RequestHash: "u2"})
+	sent, _ := asked[0]["undo"].(map[string]any)
+	if sent["mac"] != nil || sent["updates"].(map[string]any)["source"] != base64.StdEncoding.EncodeToString([]byte("undo")) ||
+		asked[0]["undoOf"] != edit.ID || sent["issuedAt"] == nil {
+		t.Fatalf("sent %v", asked[0])
+	}
+	if undo.UndoPayload == nil || undo.UndoPayload.OperationID != undo.ID ||
+		!s.verifyUndoPayload(undo.ID, edit.Effect.Resource, undo.UndoPayload) {
+		t.Fatalf("redo payload = %+v", undo.UndoPayload)
+	}
+	if got, err := s.UndoReceipt(ctx, edit.ID); err != nil || got.ID != undo.ID {
+		t.Fatalf("the step's receipt = %+v err = %v", got, err)
+	}
+	redo, err := s.UndoDocumentEdit(ctx, owner, undo, undo.UndoPayload, DocumentOperation{ID: uid("op"), RequestHash: "u2"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if redo.Effect.Operation != agenttools.EffectEdited || redo.Effect.Undo.OperationID != redo.ID {
 		t.Fatalf("redo = %+v", redo.Effect)
 	}
-	// Q385: each receipt's Undo is offered until the room drops its step.
-	for _, step := range []AgentOperation{undo, redo} {
-		if at := step.Effect.Undo.ExpiresAt; at == nil || !at.Equal(undoTestExpiry) {
-			t.Fatalf("step %s offered until %v, want %v", step.ID, at, undoTestExpiry)
-		}
-	}
 	steps, err := s.LatestSteps(ctx, []string{edit.ID})
 	if err != nil || steps[edit.ID].ID != redo.ID {
 		t.Fatalf("latest = %+v err = %v", steps, err)
+	}
+
+	undoTestAuthority(t, s, nil, &asked)
+	last, err := s.UndoDocumentEdit(ctx, owner, redo, redo.UndoPayload, DocumentOperation{ID: uid("op"), RequestHash: "u3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last.Effect.Operation != agenttools.EffectEditUndone {
+		t.Fatalf("undo of redo = %+v", last.Effect)
+	}
+	if last.Effect.Undo != nil || last.UndoPayload != nil {
+		t.Fatalf("no Redo payload, yet = %+v %+v", last.Effect, last.UndoPayload)
 	}
 
 	gone := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -160,71 +195,177 @@ func TestDocumentUndoRecordsTheRoomsSteps(t *testing.T) {
 	}))
 	t.Cleanup(gone.Close)
 	s.ConfigureCollaboration(gone.URL, "undo-secret")
-	if _, err := s.UndoDocumentEdit(ctx, owner, redo, DocumentOperation{ID: uid("op"), RequestHash: "u3"}); !errors.Is(err, ErrUndoUnavailable) {
-		t.Fatalf("step the room no longer holds: %v", err)
+	edit2 := undoTestEdit(t, s, owner, file.ID)
+	if _, err := s.UndoDocumentEdit(ctx, owner, edit2, undoTestPayload(t, s, edit2, "u"), DocumentOperation{ID: uid("op"), RequestHash: "u4"}); !errors.Is(err, ErrUndoUnavailable) {
+		t.Fatalf("a payload the service refuses: %v", err)
 	}
 }
 
-// An Undo whose reverse the room does not keep (its revert would be too
-// large to send, Epo 2026-10-21) records a receipt with no Undo ref, so the
-// chat offers no Redo.
-func TestAnUndoTheRoomCannotReverseOffersNoRedo(t *testing.T) {
+// Security regression (durable Undo payload, Epo 2026-10-21): the browser
+// keeps the payload, so it is untrusted when it comes back. Only a payload
+// this server signed for this step of this document, within its 24 h, is
+// sent on: none at all, a changed update, a changed epoch, a changed time, a
+// bad signature, another step's payload, one signed for another file and one
+// past its 24 h (r1 L4, Q385) are refused before the collaboration service
+// is asked. Fails if the signature or lifetime check goes.
+func TestAnUndoPayloadMustCarryTheServersSignature(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "undo_oversized")
+	owner := newBlobTestUser(t, s, "undo_signed")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	_, other := sourceTestFile(t, s, owner, "other.txt", "txt")
+	edit := undoTestEdit(t, s, owner, file.ID)
+	otherEdit := undoTestEdit(t, s, owner, other.ID)
+	var asked []map[string]any
+	undoTestAuthority(t, s, nil, &asked)
+	tamper := func(change func(*UndoPayload)) *UndoPayload {
+		payload := *undoTestPayload(t, s, edit, "undo")
+		payload.Updates = map[string]string{"source": payload.Updates["source"]}
+		change(&payload)
+		return &payload
+	}
+	forOtherFile := s.signUndoPayload(edit.ID, DocumentTarget{Kind: agenttools.KindSourceFile, ID: other.ID},
+		&UndoPayload{Epoch: 1, IssuedAt: time.Now().Unix(), Updates: map[string]string{"source": base64.StdEncoding.EncodeToString([]byte("undo"))}})
+	for name, payload := range map[string]*UndoPayload{
+		"none":           nil,
+		"changed update": tamper(func(p *UndoPayload) { p.Updates["source"] = base64.StdEncoding.EncodeToString([]byte("undid")) }),
+		"changed epoch":  tamper(func(p *UndoPayload) { p.Epoch = 2 }),
+		"changed time":   tamper(func(p *UndoPayload) { p.IssuedAt++ }),
+		"past 24 h":      undoTestPayloadAt(t, s, edit, "undo", time.Now().Add(-undoOffer).Unix()),
+		"bad mac":        tamper(func(p *UndoPayload) { p.MAC = strings.Repeat("0", 64) }),
+		"another step":   undoTestPayload(t, s, otherEdit, "undo"),
+		"another file":   forOtherFile,
+	} {
+		if _, err := s.UndoDocumentEdit(ctx, owner, edit, payload, DocumentOperation{ID: uid("op"), RequestHash: "u_" + name}); !errors.Is(err, ErrUndoUnavailable) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if len(asked) != 0 {
+		t.Fatalf("the collaboration service was asked: %v", asked)
+	}
+	almost := undoTestPayloadAt(t, s, edit, "undo", time.Now().Add(time.Minute-undoOffer).Unix())
+	if _, err := s.UndoDocumentEdit(ctx, owner, edit, almost, DocumentOperation{ID: uid("op"), RequestHash: "u_ok"}); err != nil {
+		t.Fatalf("the signed payload within its 24 h: %v", err)
+	}
+}
+
+// Review r1 M2: the collaboration service commits the Undo's receipt with
+// its write, so an answer lost after the commit (a gateway timeout, a
+// restart) still ends with exactly one receipt for the step, and a retry is
+// answered with it, also when the service refuses the payload as applied
+// already (an insert-only edit's payload has nothing left to do: r1 L9).
+// Fails if Go writes the receipt only once an answer arrives.
+func TestALostUndoAnswerEndsWithOneReceipt(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "undo_lost")
 	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
 	edit := undoTestEdit(t, s, owner, file.ID)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Operation DocumentOperation `json:"operation"`
+	var asked []map[string]any
+	answer := undoTestAuthority(t, s, map[string]string{"source": base64.StdEncoding.EncodeToString([]byte("redo"))}, &asked)
+	*answer = func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadGateway) }
+	payload := undoTestPayload(t, s, edit, "undo")
+	first := uid("op")
+	if _, err := s.UndoDocumentEdit(ctx, owner, edit, payload, DocumentOperation{ID: first, RequestHash: "u1"}); err == nil {
+		t.Fatal("a lost answer reported success")
+	}
+	receipts := func() int {
+		var n int
+		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM agent_operations WHERE undo_of=$1`, edit.ID).Scan(&n); err != nil {
+			t.Fatal(err)
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		_ = json.NewEncoder(w).Encode(map[string]any{"operationId": body.Operation.ID, "reversible": false})
-	}))
-	t.Cleanup(srv.Close)
-	s.ConfigureCollaboration(srv.URL, "undo-secret")
-	undo, err := s.UndoDocumentEdit(ctx, owner, edit, DocumentOperation{ID: uid("op"), RequestHash: "u1"})
+		return n
+	}
+	if n := receipts(); n != 1 {
+		t.Fatalf("receipts after a lost answer = %d", n)
+	}
+	*answer = func(w http.ResponseWriter) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"code":"undo_unavailable","message":"nothing of this edit is left to undo"}`))
+	}
+	retry, err := s.UndoDocumentEdit(ctx, owner, edit, payload, DocumentOperation{ID: uid("op"), RequestHash: "u2"})
+	if err != nil || retry.ID != first {
+		t.Fatalf("retry = %+v err = %v", retry, err)
+	}
+	if n := receipts(); n != 1 {
+		t.Fatalf("receipts after the retry = %d", n)
+	}
+}
+
+// Epo 2026-10-21 (Editor): a payload passes through in transit only. After
+// an edit's Undo, no agent_operations row holds the payload's update, the
+// Redo payload's or a signature. Fails if a receipt stores its payload.
+func TestUndoPayloadsAreNeverStored(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "undo_unstored")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	edit := undoTestEdit(t, s, owner, file.ID)
+	redoUpdate := base64.StdEncoding.EncodeToString([]byte("redo-payload-bytes"))
+	var asked []map[string]any
+	undoTestAuthority(t, s, map[string]string{"source": redoUpdate}, &asked)
+	payload := undoTestPayload(t, s, edit, "undo-payload-bytes")
+	undo, err := s.UndoDocumentEdit(ctx, owner, edit, payload, DocumentOperation{ID: uid("op"), RequestHash: "u1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if undo.Effect.Operation != agenttools.EffectEditUndone || undo.Effect.Undo != nil {
-		t.Fatalf("undo = %+v", undo.Effect)
+	var rows string
+	if err := s.pool.QueryRow(ctx, `SELECT string_agg(row_to_json(a)::text, '') FROM agent_operations a WHERE id = ANY($1)`,
+		[]string{edit.ID, undo.ID}).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	for _, held := range []string{payload.Updates["source"], payload.MAC, redoUpdate, undo.UndoPayload.MAC, "undoPayload"} {
+		if strings.Contains(rows, held) {
+			t.Fatalf("a receipt row holds %q: %s", held, rows)
+		}
 	}
 }
 
-// A conversation load asks undo-status for at most undoStatusWait: a hung
-// collaboration server leaves the receipts without Undo instead of holding
-// the load for the client's 20 s.
-func TestChatHistoryShowsNoUndoWhenUndoStatusHangs(t *testing.T) {
+// A reloaded conversation shows each chain where it stands. Every step keeps
+// its Undo ref: the browser offers an edit's while it holds the step's
+// payload (Epo 2026-10-21), a created file's for its day (Q162, Epo
+// 2026-10-22). Fails if a created file loses its Undo on a reload.
+func TestChatHistoryKeepsUndoOnEverySteps(t *testing.T) {
 	s := openAccessTestStore(t)
-	owner := newBlobTestUser(t, s, "undo_hung")
-	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
-	edit := undoTestEdit(t, s, owner, file.ID)
-	hung := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-r.Context().Done():
-		case <-time.After(10 * time.Second):
-		}
-		_ = json.NewEncoder(w).Encode(map[string][]string{"live": {edit.ID}})
-	}))
-	t.Cleanup(hung.Close)
-	s.ConfigureCollaboration(hung.URL, "undo-secret")
-	messages := []Message{{Activity: []ActivityBlock{{Effects: []agenttools.ResourceEffect{*edit.Effect}}}}}
-	started := time.Now()
-	if err := s.refreshUndoStatuses(context.Background(), messages); err != nil {
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "undo_history")
+	ws, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	held := undoTestEdit(t, s, owner, file.ID)
+	undone := undoTestEdit(t, s, owner, file.ID)
+	created, _, err := s.CreateMaterialOperation(ctx, MaterialDraft{
+		ID: uid("mat"), ActorUserID: owner, WorkspaceID: ws.ID, Kind: "flashcards", Title: "Cells",
+		Cards: [][2]string{{"Cell", "Unit of life"}},
+	}, AgentOperation{ID: uid("op"), RequestHash: "c1", ActorUserID: owner, WorkspaceID: ws.ID})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if elapsed := time.Since(started); elapsed > 2*undoStatusWait {
-		t.Fatalf("the load waited %v on undo-status", elapsed)
+	var asked []map[string]any
+	undoTestAuthority(t, s, map[string]string{"source": base64.StdEncoding.EncodeToString([]byte("redo"))}, &asked)
+	undo, err := s.UndoDocumentEdit(ctx, owner, undone, undoTestPayload(t, s, undone, "undo"), DocumentOperation{ID: uid("op"), RequestHash: "u1"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if undo := messages[0].Activity[0].Effects[0].Undo; undo != nil {
-		t.Fatalf("a hung undo-status kept the Undo: %+v", undo)
+	messages := []Message{{Activity: []ActivityBlock{{Effects: []agenttools.ResourceEffect{
+		*held.Effect, *undone.Effect, *created.Effect,
+	}}}}}
+	if err := s.refreshUndoStatuses(ctx, messages); err != nil {
+		t.Fatal(err)
+	}
+	effects := messages[0].Activity[0].Effects
+	if effects[0].Undo == nil || effects[0].Undo.OperationID != held.ID {
+		t.Fatalf("edit = %+v", effects[0])
+	}
+	if effects[1].Operation != agenttools.EffectEditUndone || effects[1].Undo == nil || effects[1].Undo.OperationID != undo.ID {
+		t.Fatalf("undone edit = %+v", effects[1])
+	}
+	if effects[2].Operation != agenttools.EffectCreated || effects[2].Undo == nil || effects[2].Undo.ExpiresAt == nil {
+		t.Fatalf("created file = %+v", effects[2])
 	}
 }
 
 // A material the chat created carries an Undo that trashes it; that step's
 // Undo (Redo) restores it, whose Undo trashes it again. A used step is
-// refused.
+// refused. Each is offered for the created file's day (Q162), then refused.
 func TestCreatedMaterialUndoTrashesAndRedoRestores(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -249,8 +390,13 @@ func TestCreatedMaterialUndoTrashesAndRedoRestores(t *testing.T) {
 		}
 		return s.UndoFileStep(ctx, owner, step, AgentOperation{ID: uid("op"), RequestHash: "u_" + id})
 	}
+	day := created.Effect.Undo.ExpiresAt
+	if day == nil || time.Until(*day) < 23*time.Hour || time.Until(*day) > undoOffer {
+		t.Fatalf("created file offered until %v", day)
+	}
 	trashed, err := step(created.ID)
-	if err != nil || trashed.Effect.Operation != agenttools.EffectTrashed || trashed.Effect.Undo == nil {
+	if err != nil || trashed.Effect.Operation != agenttools.EffectTrashed || trashed.Effect.Undo == nil ||
+		!trashed.Effect.Undo.ExpiresAt.Equal(*day) {
 		t.Fatalf("undo of create = %+v err = %v", trashed.Effect, err)
 	}
 	var inTrash bool
@@ -276,58 +422,120 @@ func TestCreatedMaterialUndoTrashesAndRedoRestores(t *testing.T) {
 	if err != nil || steps[created.ID].ID != again.ID {
 		t.Fatalf("latest = %+v err = %v", steps, err)
 	}
+	// Past the day, the step is refused (Q162).
+	if _, err := s.pool.Exec(ctx, `UPDATE agent_operations SET effect = jsonb_set(effect, '{undo,expiresAt}', to_jsonb($2::text)) WHERE id=$1`,
+		again.ID, time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := step(again.ID); !errors.Is(err, ErrUndoUnavailable) {
+		t.Fatalf("a step past its day: %v", err)
+	}
 }
 
-// A reloaded conversation shows each chain where it stands and keeps Undo
-// only on an edit step a loaded room holds: not on an edit whose room
-// unloaded, nor on a created file (Epo 2026-10-20 Q2).
-func TestChatHistoryKeepsUndoOnlyForStepsARoomHolds(t *testing.T) {
+// Q432 (Epo 2026-10-27): a room's save passes over an agent step it cannot
+// write, each in a nested transaction: one whose chat was deleted (a missing
+// conversation) and a Redo naming a step that is not stored. The save lands
+// with the step it can write. Fails if one bad step refuses the save.
+func TestARoomSavePassesOverAStepItCannotWrite(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "undo_history")
-	ws, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
-	held := undoTestEdit(t, s, owner, file.ID)
-	unloaded := undoTestEdit(t, s, owner, file.ID)
-	undone := undoTestEdit(t, s, owner, file.ID)
-	created, _, err := s.CreateMaterialOperation(ctx, MaterialDraft{
-		ID: uid("mat"), ActorUserID: owner, WorkspaceID: ws.ID, Kind: "flashcards", Title: "Cells",
-		Cards: [][2]string{{"Cell", "Unit of life"}},
-	}, AgentOperation{ID: uid("op"), RequestHash: "c1", ActorUserID: owner, WorkspaceID: ws.ID})
+	owner := newBlobTestUser(t, s, "room_skip")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	step := func(id string) SourceCheckpointReceipt {
+		return SourceCheckpointReceipt{ID: id, ToolVersion: 1, RequestHash: "h_" + id, ActorUserID: owner}
+	}
+	orphan, redo, kept := step(uid("op")), step(uid("op")), step(uid("op"))
+	orphan.ConversationID = uid("conv")
+	save := sourceTestSave(sourceTestSeed(t, s, owner, file.ID), owner, "room")
+	save.Operations = []SourceCheckpointOperation{
+		{Receipt: orphan},
+		{Receipt: redo, UndoOf: uid("op")},
+		{Receipt: kept},
+	}
+	saved, err := s.SaveSourceCheckpoint(ctx, file.ID, save)
+	if err != nil || saved.Checkpoint == 0 {
+		t.Fatalf("the save = %+v %v", saved, err)
+	}
+	var ids []string
+	rows, err := s.pool.Query(ctx, `SELECT id FROM agent_operations WHERE actor_user_id=$1`, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var live, asked []string
-	undoTestAuthority(t, s, func() []string { return live }, &asked)
-	undo, err := s.UndoDocumentEdit(ctx, owner, undone, DocumentOperation{ID: uid("op"), RequestHash: "u1"})
-	if err != nil {
-		t.Fatal(err)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
 	}
-	live = []string{held.ID, undo.ID}
+	if rows.Err() != nil || len(ids) != 1 || ids[0] != kept.ID {
+		t.Fatalf("receipts = %v %v, want only %s", ids, rows.Err(), kept.ID)
+	}
+}
 
-	messages := []Message{{Activity: []ActivityBlock{{Effects: []agenttools.ResourceEffect{
-		*held.Effect, *unloaded.Effect, *undone.Effect, *created.Effect,
-	}}}}}
-	if err := s.refreshUndoStatuses(ctx, messages); err != nil {
+// Q402 (Epo 2026-10-26): a room's save writes the agent steps the room
+// admitted with its checkpoint, each with its Undo ref, an Undo naming its
+// step; a step stored already (or naming a step another receipt reversed)
+// is passed over and the save still lands. A direct edit's retry is
+// answered with its receipt as replayed and saves nothing (review r2 M1).
+// Fails if the save drops its steps, stores a step twice or refuses the
+// save, or if a replay is not marked.
+func TestARoomSaveWritesItsAgentStepsWithItsCheckpoint(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "room_steps")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	step := func(id string) SourceCheckpointReceipt {
+		return SourceCheckpointReceipt{ID: id, ToolVersion: 1, RequestHash: "h_" + id, ActorUserID: owner}
+	}
+	edit, undo, later := uid("op"), uid("op"), uid("op")
+	expires := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	ref := &agenttools.UndoRef{OperationID: edit, Status: agenttools.UndoAvailable, ExpiresAt: &expires}
+	save := sourceTestSave(sourceTestSeed(t, s, owner, file.ID), owner, "room")
+	save.Operations = []SourceCheckpointOperation{
+		{Receipt: step(edit), Undo: ref},
+		{Receipt: step(undo), UndoOf: edit},
+	}
+	saved, err := s.SaveSourceCheckpoint(ctx, file.ID, save)
+	if err != nil {
 		t.Fatal(err)
 	}
-	effects := messages[0].Activity[0].Effects
-	if effects[0].Undo == nil || effects[0].Undo.OperationID != held.ID {
-		t.Fatalf("held edit = %+v", effects[0])
+	first, err := getAgentOperation(ctx, s.pool, edit)
+	if err != nil || first.Effect.Undo == nil || first.Effect.Undo.OperationID != edit || first.Effect.Operation != agenttools.EffectEdited {
+		t.Fatalf("the edit's receipt = %+v %v", first, err)
 	}
-	if effects[1].Undo != nil {
-		t.Fatalf("unloaded edit = %+v", effects[1])
+	if reversed, err := s.UndoReceipt(ctx, edit); err != nil || reversed.ID != undo || reversed.Effect.Operation != agenttools.EffectEditUndone {
+		t.Fatalf("the Undo's receipt = %+v %v", reversed, err)
 	}
-	if effects[2].Operation != agenttools.EffectEditUndone || effects[2].Undo == nil || effects[2].Undo.OperationID != undo.ID {
-		t.Fatalf("undone edit = %+v", effects[2])
+	// The next save carries the edit again and an Undo of the same step
+	// under another id: both passed over, the new step written, the save in.
+	next := sourceTestSave(sourceTestSeed(t, s, owner, file.ID), owner, "more")
+	next.Operations = []SourceCheckpointOperation{
+		{Receipt: step(edit), Undo: ref},
+		{Receipt: step(uid("op")), UndoOf: edit},
+		{Receipt: step(later)},
 	}
-	if effects[3].Operation != agenttools.EffectCreated || effects[3].Undo != nil {
-		t.Fatalf("created file = %+v", effects[3])
+	again, err := s.SaveSourceCheckpoint(ctx, file.ID, next)
+	if err != nil || again.Checkpoint != saved.Checkpoint+1 || again.Replayed {
+		t.Fatalf("the next save = %+v %v", again, err)
 	}
-	// Only edit steps are asked about.
-	slices.Sort(asked)
-	want := []string{held.ID, unloaded.ID, undo.ID}
-	slices.Sort(want)
-	if !slices.Equal(asked, want) {
-		t.Fatalf("asked %v want %v", asked, want)
+	var receipts int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM agent_operations WHERE actor_user_id=$1`, owner).Scan(&receipts); err != nil {
+		t.Fatal(err)
+	}
+	if receipts != 3 {
+		t.Fatalf("receipts = %d, want the edit, its Undo and the later step", receipts)
+	}
+	// A direct edit retried after its checkpoint committed.
+	direct := uid("op")
+	single := sourceTestSave(sourceTestSeed(t, s, owner, file.ID), owner, "direct")
+	single.Operation = &SourceCheckpointOperation{Receipt: step(direct)}
+	committed, err := s.SaveSourceCheckpoint(ctx, file.ID, single)
+	if err != nil || committed.Replayed {
+		t.Fatalf("the direct edit = %+v %v", committed, err)
+	}
+	replayed, err := s.SaveSourceCheckpoint(ctx, file.ID, single)
+	if err != nil || !replayed.Replayed || replayed.Operation.ID != direct || replayed.Checkpoint != committed.Checkpoint {
+		t.Fatalf("the retry = %+v %v", replayed, err)
 	}
 }

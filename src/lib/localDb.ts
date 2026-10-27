@@ -1,5 +1,5 @@
 import { USE_MSW } from '@/api/auth';
-import type { Question } from '@/api/types';
+import type { Question, UndoPayload } from '@/api/types';
 import type { Answers } from '@/features/quizzes/grade';
 import type { SrsRating } from '@/lib/srs';
 import type { SrsState } from './srs';
@@ -7,7 +7,8 @@ import type { SrsState } from './srs';
 /**
  * Browser-local data: signed-out visitors' quiz attempts and flashcard reviews
  * on shared standalone materials (never sent to the server or imported into an
- * account on sign-in). Later offline work adds stores in new database
+ * account on sign-in), and the signed-in account's agent Undo payloads for a
+ * day (`undoPayloads.ts`). Later offline work adds stores in new database
  * versions.
  *
  * Every call rejects when IndexedDB is unavailable (some private modes);
@@ -44,7 +45,14 @@ export interface LocalCardState {
   srs: SrsState;
 }
 
-const VERSION = 3;
+/** An agent step's Undo payload exactly as the server sent it (Epo
+ * 2026-10-21). */
+export interface LocalUndoPayload extends UndoPayload {
+  documentId: string;
+  operationId: string;
+}
+
+const VERSION = 4;
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -74,6 +82,13 @@ function open(): Promise<IDBDatabase> {
       // Version 2 kept removed note images' bytes; the server keeps them in
       // its trash now.
       if (oldVersion === 2) database.deleteObjectStore('keptAssets');
+      if (oldVersion < 4) {
+        const payloads = database.createObjectStore('undoPayloads', {
+          keyPath: 'operationId',
+        });
+        payloads.createIndex('issuedAt', 'issuedAt');
+        payloads.createIndex('documentId', 'documentId');
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -148,4 +163,76 @@ export async function anonymousId(): Promise<string> {
     t.objectStore('meta').put(id, 'anonymousId');
   });
   return id;
+}
+
+export function localUndoPayload(
+  operationId: string
+): Promise<LocalUndoPayload | undefined> {
+  return run(['undoPayloads'], 'readonly', (t) =>
+    t.objectStore('undoPayloads').get(operationId)
+  );
+}
+
+export function saveLocalUndoPayload(payload: LocalUndoPayload): Promise<void> {
+  return run(['undoPayloads'], 'readwrite', (t) => {
+    t.objectStore('undoPayloads').put(payload);
+  });
+}
+
+/** Drops a document's payloads made in a lineage before `epoch`. */
+export function deleteLocalUndoPayloadsBefore(
+  documentId: string,
+  epoch: number
+): Promise<void> {
+  return run(['undoPayloads'], 'readwrite', (t) => {
+    t
+      .objectStore('undoPayloads')
+      .index('documentId')
+      .openCursor(IDBKeyRange.only(documentId)).onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
+        .result;
+      if (!cursor) return;
+      if ((cursor.value as LocalUndoPayload).epoch < epoch) cursor.delete();
+      cursor.continue();
+    };
+  });
+}
+
+/** The account the stored payloads belong to (M1): none yet, or signed out. */
+export function localUndoPayloadsOwner(): Promise<string | undefined> {
+  return run(['meta'], 'readonly', (t) =>
+    t.objectStore('meta').get('undoPayloadsOwner')
+  );
+}
+
+/** Deletes every stored payload and gives the store to `owner` (none: signed
+ * out), in one transaction. */
+export function claimLocalUndoPayloads(owner: string | null): Promise<void> {
+  return run(['meta', 'undoPayloads'], 'readwrite', (t) => {
+    t.objectStore('undoPayloads').clear();
+    const meta = t.objectStore('meta');
+    if (owner) meta.put(owner, 'undoPayloadsOwner');
+    else meta.delete('undoPayloadsOwner');
+  });
+}
+
+/** Drops one payload, and every payload issued before `before` (Unix
+ * seconds). */
+export function deleteLocalUndoPayloads(
+  operationId: string | null,
+  before: number
+): Promise<void> {
+  return run(['undoPayloads'], 'readwrite', (t) => {
+    const store = t.objectStore('undoPayloads');
+    if (operationId) store.delete(operationId);
+    store
+      .index('issuedAt')
+      .openCursor(IDBKeyRange.upperBound(before, true)).onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
+        .result;
+      if (!cursor) return;
+      cursor.delete();
+      cursor.continue();
+    };
+  });
 }

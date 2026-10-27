@@ -83,6 +83,10 @@ class ToolResult:
     pending: str = ""
     # A search's documents with unindexed edits, by id: their passages say so.
     unindexed: dict[str, int] = field(default_factory=dict)
+    # An edit's signed Undo payloads (Epo 2026-10-21): opaque, for the
+    # tool_end event to the browser only, never in the model's context, the
+    # stored activity or the evidence.
+    undo_payloads: list[dict[str, Any]] = field(default_factory=list)
     # An Office edit the engine cut at a per-call limit: (applied, total) of
     # the call's commands.
     progress: tuple[int, int] | None = None
@@ -1297,12 +1301,17 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             f"Created {resource.get('materialKind') or 'file'} '{title}' (id {rid}).{notice} "
             f"It is now in the workspace.{_block_ids(effect)}"
         )
-    return ToolResult(text_parts=[text], effects=[effect])
+    payload = body.get("undoPayload")
+    return ToolResult(
+        text_parts=[text],
+        effects=[effect],
+        undo_payloads=[payload] if isinstance(payload, dict) else [],
+    )
 
 
 def _undo_note(effect: dict[str, Any]) -> str:
-    """An edit has an Undo only when a room someone has open took it (Epo
-    2026-10-20)."""
+    """An edit has an Undo when the server sent its payload: one small
+    enough to send back (Epo 2026-10-21)."""
     return " The user can undo this from the chat result." if effect.get("undo") else ""
 
 
@@ -2339,7 +2348,11 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     )
     if isinstance(body, ToolResult):
         return body
-    changes = ctx.pending_sources.for_read(rid)
+    changes = (
+        await ctx.pending_sources.read_note(rid)
+        if kind == "material"
+        else ctx.pending_sources.for_read(rid)
+    )
     shown = None
     if kind == "material":
         seen = ctx.seen_blocks.setdefault(rid, {})

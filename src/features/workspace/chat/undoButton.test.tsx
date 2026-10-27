@@ -1,15 +1,19 @@
+import 'fake-indexeddb/auto';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { parseHTML } from 'linkedom';
 import { act, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
-import { api } from '@/api/client';
+import { ApiError, api } from '@/api/client';
+import { getMaterialCollaborationToken } from '@/api/hooks';
 import type {
   ChatMessage,
   OperationReceipt,
   ResourceEffect,
 } from '@/api/types';
 import { getLocale, m } from '@/i18n';
+import { localUndoPayload } from '@/lib/localDb';
+import { keepUndoPayloads, undoPayload } from '@/lib/undoPayloads';
 import { ChatTrace, type UndoHandlers } from './ChatTrace';
 
 // Each render records the buttons' props, and the test calls onClick; a
@@ -39,6 +43,20 @@ afterEach(() => {
 const at = (s: number) =>
   new Date(Date.UTC(2026, 9, 20, 12, 0, s)).toISOString();
 
+// One time for every payload of a test file: two calls across a second
+// boundary would differ.
+const issuedAt = Math.floor(Date.now() / 1000);
+
+const payload = (operationId: string) => ({
+  documentId: 'mat_1',
+  epoch: 1,
+  issuedAt,
+  mac: 'f'.repeat(64),
+  operationId,
+  updates: { content: 'dW5kbw==' },
+});
+
+/** An edit's receipt in a finished turn. */
 function trace(handlers: UndoHandlers, id: string, expiresAt?: string) {
   const edit: ResourceEffect = {
     operation: 'edited',
@@ -72,16 +90,22 @@ function trace(handlers: UndoHandlers, id: string, expiresAt?: string) {
   );
 }
 
-function renderUndo(handlers: UndoHandlers, id: string, expiresAt?: string) {
+/** The Undo button of an edit's receipt, if it shows one. */
+function maybeUndoButton(
+  handlers: UndoHandlers,
+  id: string,
+  expiresAt?: string
+) {
   buttons.length = 0;
   renderToStaticMarkup(trace(handlers, id, expiresAt));
-  return buttons.find(({ children }) => children === m.chat_undo_edit());
+  return buttons.find(({ children }) => children === m.chat_undo_edit())
+    ?.onClick;
 }
 
 function undoButton(handlers: UndoHandlers, id: string) {
-  const button = renderUndo(handlers, id);
-  if (!button?.onClick) throw new Error('no Undo button');
-  return button.onClick;
+  const click = maybeUndoButton(handlers, id);
+  if (!click) throw new Error('no Undo button');
+  return click;
 }
 
 const handlers = () => ({
@@ -90,14 +114,16 @@ const handlers = () => ({
 });
 
 it('hides an Undo 24 h after its edit (Q385)', () => {
+  keepUndoPayloads([payload('op_fresh'), payload('op_expired')]);
   const now = Date.now();
   const soon = new Date(now + 60_000).toISOString();
   const past = new Date(now - 1).toISOString();
-  expect(renderUndo(handlers(), 'op_fresh', soon)).toBeDefined();
-  expect(renderUndo(handlers(), 'op_expired', past)).toBeUndefined();
+  expect(maybeUndoButton(handlers(), 'op_fresh', soon)).toBeDefined();
+  expect(maybeUndoButton(handlers(), 'op_expired', past)).toBeUndefined();
 });
 
 it('hides a mounted Undo when its 24 h end (Q385)', async () => {
+  keepUndoPayloads([payload('op_mounted')]);
   vi.useFakeTimers();
   try {
     const end = new Date(Date.now() + 60_000).toISOString();
@@ -114,14 +140,101 @@ it('hides a mounted Undo when its 24 h end (Q385)', async () => {
   }
 });
 
-it('sends one Undo for two clicks while the first is out', async () => {
+it('sends one Undo, with its payload, for two clicks while the first is out', async () => {
   const post = vi
     .spyOn(api, 'post')
     .mockReturnValue(new Promise<OperationReceipt>(() => {}));
+  keepUndoPayloads([payload('op_two_clicks')]);
   const click = undoButton(handlers(), 'op_two_clicks');
   click();
   click();
   await vi.waitFor(() => expect(post).toHaveBeenCalled());
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(post).toHaveBeenCalledOnce();
+  expect(post.mock.calls[0][1]).toMatchObject({
+    payload: payload('op_two_clicks'),
+  });
+});
+
+// Epo 2026-10-21: an edit's Undo is its payload; with none kept (a lost
+// stream, blocked storage, a day gone by) the receipt offers no Undo.
+it('offers no Undo on an edit whose payload the browser does not hold', () => {
+  expect(maybeUndoButton(handlers(), 'op_no_payload')).toBeUndefined();
+});
+
+// Q122 (Epo 2026-10-22): once a token shows the document in a newer
+// lineage, its payload goes and the receipt shows no Undo, rather than one
+// that fails on click.
+it('offers no Undo once the document moved to a newer lineage', async () => {
+  keepUndoPayloads([payload('op_compacted')]);
+  await vi.waitFor(async () =>
+    expect(await localUndoPayload('op_compacted')).toBeDefined()
+  );
+  expect(maybeUndoButton(handlers(), 'op_compacted')).toBeDefined();
+  vi.spyOn(api, 'post').mockResolvedValue({
+    room: 'material:mat_1:schema:2',
+  });
+  await getMaterialCollaborationToken('mat_1');
+  expect(maybeUndoButton(handlers(), 'op_compacted')).toBeUndefined();
+  await vi.waitFor(async () =>
+    expect(await localUndoPayload('op_compacted')).toBeUndefined()
+  );
+});
+
+// Review r1 L7: only a refusal for good (`undo_unavailable`: a bad
+// signature, another lineage, past its day, nothing left) drops the stored
+// payload. Another (over quota here) hides the button for the session and
+// keeps the payload, so the Undo can work once the account recovers.
+it('drops the payload only when its Undo is refused for good', async () => {
+  const refuse = (status: number, code: string) =>
+    vi
+      .spyOn(api, 'post')
+      .mockRejectedValueOnce(
+        new ApiError(status, 'Refused', undefined, { code })
+      );
+  // A click's own callbacks run only while its receipt is mounted.
+  const refusedClick = async (id: string) => {
+    const refused = handlers();
+    buttons.length = 0;
+    const root = createRoot(document.getElementById('root') as never);
+    await act(async () => root.render(trace(refused, id)));
+    const click = buttons.find(
+      ({ children }) => children === m.chat_undo_edit()
+    )?.onClick;
+    await act(async () => click?.());
+    await vi.waitFor(() => expect(refused.onUndoRefused).toHaveBeenCalled());
+    await act(async () => root.unmount());
+  };
+  keepUndoPayloads([payload('op_quota'), payload('op_gone')]);
+  refuse(403, 'quota_rejected');
+  await refusedClick('op_quota');
+  expect(await undoPayload('op_quota')).toBeDefined();
+  refuse(409, 'undo_unavailable');
+  await refusedClick('op_gone');
+  expect(await undoPayload('op_gone')).toBeUndefined();
+});
+
+// Redo across a room close (Epo 2026-10-21): the Undo's answer brings the
+// Redo payload, which is kept, and the used payload goes.
+it("keeps the Undo's Redo payload and drops the used one", async () => {
+  const next = { ...payload('op_redo'), operationId: 'op_redo' };
+  vi.spyOn(api, 'post').mockResolvedValue({
+    effect: {
+      operation: 'edit_undone',
+      operationId: 'op_redo',
+      resource: { id: 'mat_1', kind: 'material', title: 'Cells' },
+      undo: { operationId: 'op_redo', status: 'available' },
+    },
+    kind: 'undo_edit',
+    operationId: 'op_redo',
+    outcome: 'succeeded',
+    toolVersion: 1,
+    undoPayload: next,
+  } satisfies OperationReceipt);
+  keepUndoPayloads([payload('op_undo')]);
+  undoButton(handlers(), 'op_undo')();
+  await vi.waitFor(async () =>
+    expect(await undoPayload('op_redo')).toMatchObject(next)
+  );
+  expect(await undoPayload('op_undo')).toBeUndefined();
 });

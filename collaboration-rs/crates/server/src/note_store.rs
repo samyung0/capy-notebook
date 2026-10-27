@@ -271,8 +271,10 @@ pub async fn load(
 
 /// One store: rechecks every contributor in the snapshot, then appends the
 /// row and advances `stored_version`, with the note sessions' changed rows
-/// (`sessions.rs`) in the same transaction, so a held deletion is durable
-/// with the state that holds it. Returns the new version.
+/// (`sessions.rs`) and the agent steps the room admitted (`receipts`, Q402)
+/// in the same transaction, so a held deletion and a step's receipt are
+/// durable with the state that holds them. Returns the new version.
+#[allow(clippy::too_many_arguments)]
 pub async fn append(
     pool: &Pool,
     material_id: &str,
@@ -281,12 +283,14 @@ pub async fn append(
     row: &[u8],
     actors: &[String],
     sessions: &sessions::Unsaved,
+    receipts: &[AgentReceipt],
 ) -> Result<i64, StoreError> {
     if cfg!(debug_assertions) && material_id.contains(IT_STORE_LATER) {
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     }
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
+    lock_operations(&tx, receipts.iter().map(|receipt| receipt.id.as_str())).await?;
     access::lock_material(&tx, material_id).await?;
     // The sessions' users are locked with the accounts, in their order,
     // before the material (review r2 M2); none of them refuses the store.
@@ -318,16 +322,170 @@ pub async fn append(
     let version = current.get::<_, i64>("stored_version") + 1;
     append_row(&tx, doc, material_id, version, row).await?;
     save_sessions(&tx, material_id, sessions).await?;
+    write_receipts(&tx, material_id, receipts).await?;
     tx.commit().await?;
     Ok(version)
 }
 
-/// A note's sessions as stored (`sessions.rs`): those seen within the cap,
-/// the ids whose records were lost, and the agent holds. A session record
-/// that cannot be read is dropped alone (Q382, Epo 2026-10-26): its row is
-/// written lost (`sessions::LOST`, its tab late when it returns, Q385) and
-/// the caller reports it; agent holds that cannot be read are dropped and
-/// reported too, and the note loads (Q386, Epo 2026-10-26).
+/// An agent step's receipt (`agent_operations`), written with the write that
+/// holds its change: a direct write's own transaction, or the store of the
+/// room that admitted it (Q402). The Undo payload itself is never stored.
+#[derive(Clone, Debug)]
+pub struct AgentReceipt {
+    pub id: String,
+    /// `edit_document`, or `undo_edit` for an Undo or Redo.
+    pub kind: &'static str,
+    pub tool_version: i32,
+    pub request_hash: String,
+    pub actor: String,
+    pub workspace_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub message_id: Option<String>,
+    pub call_id: Option<String>,
+    pub effect: Value,
+    /// The step an Undo or Redo reverses.
+    pub undo_of: Option<String>,
+    /// The books the gateway merged into the material's record (an edit's).
+    pub provenance: Option<Value>,
+    /// What a note's write deleted, and its agent edit's time (Q390).
+    pub held: Option<(yrs::IdSet, std::time::SystemTime)>,
+}
+
+impl AgentReceipt {
+    /// The receipt as the gateway reads it.
+    pub fn answer(&self) -> Value {
+        let mut receipt = serde_json::json!({
+            "effect": self.effect,
+            "kind": self.kind,
+            "operationId": self.id,
+            "outcome": "succeeded",
+            "toolVersion": self.tool_version,
+        });
+        if let Some(call) = &self.call_id {
+            receipt["callId"] = serde_json::json!(call);
+        }
+        if let Some(workspace) = &self.workspace_id {
+            receipt["workspaceId"] = serde_json::json!(workspace);
+        }
+        receipt
+    }
+}
+
+/// The agent operations' advisory locks, in id order and before any other
+/// lock (the direct write takes its own first too): a retry holds its lock
+/// from its receipt check to its room's answer, so a store never commits a
+/// receipt between the two (Q402).
+pub(crate) async fn lock_operations<'a>(
+    tx: &Transaction<'_>,
+    ids: impl Iterator<Item = &'a str>,
+) -> Result<(), StoreError> {
+    let mut ids: Vec<&str> = ids.collect();
+    ids.sort_unstable();
+    ids.dedup();
+    for id in ids {
+        tx.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            &[&format!("agent-operation:{id}")],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Writes a room store's agent receipts in its transaction, which holds the
+/// material's lock, each under a savepoint: one that cannot be written (its
+/// chat deleted, its actor purged) is rolled back alone, reported, and
+/// passed over, so the store still saves everyone's edits (Q432).
+pub(crate) async fn write_receipts(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    receipts: &[AgentReceipt],
+) -> Result<(), StoreError> {
+    for receipt in receipts {
+        tx.batch_execute("SAVEPOINT agent_receipt").await?;
+        match write_receipt(tx, material_id, receipt).await {
+            Ok(()) => tx.batch_execute("RELEASE SAVEPOINT agent_receipt").await?,
+            Err(error) => {
+                tx.batch_execute("ROLLBACK TO SAVEPOINT agent_receipt")
+                    .await?;
+                crate::observe::log(
+                    crate::observe::Level::Warn,
+                    "agent receipt passed over",
+                    serde_json::json!({
+                        "error": error.to_string(),
+                        "operation": receipt.id,
+                        "room": material_id,
+                    }),
+                );
+                crate::observe::capture(
+                    "agent receipt passed over",
+                    None,
+                    &[("material_id", material_id)],
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One agent receipt in the caller's transaction, which holds the
+/// material's lock: the provenance its edit credits, the receipt row and the
+/// holds of what it deleted. One already stored, or naming a step another
+/// receipt reversed, is passed over and logged.
+pub(crate) async fn write_receipt(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    receipt: &AgentReceipt,
+) -> Result<(), StoreError> {
+    if let Some(provenance) = &receipt.provenance {
+        tx.execute(
+            "UPDATE materials SET provenance=$2 WHERE id=$1",
+            &[&material_id, provenance],
+        )
+        .await?;
+    }
+    let written = tx
+        .execute(
+            "INSERT INTO agent_operations
+             (id, kind, tool_version, request_hash, actor_user_id, workspace_id, conversation_id,
+              message_id, call_id, outcome, effect, undo_of)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'succeeded',$10,$11)
+             ON CONFLICT DO NOTHING",
+            &[
+                &receipt.id,
+                &receipt.kind,
+                &receipt.tool_version,
+                &receipt.request_hash,
+                &receipt.actor,
+                &receipt.workspace_id,
+                &receipt.conversation_id,
+                &receipt.message_id,
+                &receipt.call_id,
+                &receipt.effect,
+                &receipt.undo_of,
+            ],
+        )
+        .await?;
+    if written == 0 {
+        crate::observe::log(
+            crate::observe::Level::Warn,
+            "agent receipt passed over",
+            serde_json::json!({ "operation": receipt.id, "room": material_id }),
+        );
+    }
+    if let Some((held, edited)) = &receipt.held
+        && !held.is_empty()
+    {
+        hold_agent(tx, material_id, held.clone(), *edited).await?;
+    }
+    Ok(())
+}
+
+/// A note's sessions as stored (`sessions.rs`): those seen within the cap
+/// and the ids whose records were lost. A session record that cannot be read
+/// is dropped alone (Q382, Epo 2026-10-26): its row is written lost
+/// (`sessions::LOST`, its tab late when it returns, Q385) and the caller
+/// reports it. The agent holds are not the room's (see [hold_agent]).
 pub async fn load_sessions(
     pool: &Pool,
     material_id: &str,
@@ -351,13 +509,6 @@ pub async fn load_sessions(
             &[&material_id, &sessions::LOST],
         )
         .await?;
-    let agent: Option<Vec<u8>> = client
-        .query_opt(
-            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
-            &[&material_id],
-        )
-        .await?
-        .and_then(|row| row.get(0));
     let (sessions, damaged) = sessions::Sessions::load(
         rows.iter().map(|row| {
             (
@@ -369,7 +520,6 @@ pub async fn load_sessions(
             )
         }),
         lost.iter().map(|row| row.get::<_, i64>(0) as u64),
-        agent,
     );
     if !damaged.sessions.is_empty() {
         let clients: Vec<i64> = damaged.sessions.iter().map(|&id| id as i64).collect();
@@ -388,7 +538,7 @@ pub async fn load_sessions(
 /// records, in one statement (review r1 L2): a live session's version and
 /// last seen, its held deletions only when they changed (review r2 L4), an
 /// ended one's cleared (the record's row is made if its first write's has
-/// not landed yet), and the agent holds when they changed. Never for an
+/// not landed yet). Never for an
 /// account whose deletion began or ended (review r1 L5): a store locked the
 /// live ones first (`lock_boundary`'s bystanders), so a purge waits for it
 /// and then deletes what it wrote; the unload write (`save_sessions_now`)
@@ -443,14 +593,51 @@ pub(crate) async fn save_sessions(
         )
         .await?;
     }
-    if let Some(agent) = &unsaved.agent {
+    Ok(())
+}
+
+/// Holds what an agent edit, or its Undo or Redo, deleted in a note
+/// (`sessions::agent_held`, Q390): written in the write's own transaction,
+/// which holds the document row, whether or not a room is loaded, so no
+/// fold collects what its Undo payload may restore (P2). `edited` is the
+/// agent edit's time. A stored record that cannot be read is dropped and
+/// reported, and the write goes on (Q386).
+pub(crate) async fn hold_agent(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    ids: yrs::IdSet,
+    edited: std::time::SystemTime,
+) -> Result<(), StoreError> {
+    let stored: Option<Vec<u8>> = tx
+        .query_one(
+            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
+            &[&material_id],
+        )
+        .await?
+        .get(0);
+    let now = std::time::SystemTime::now();
+    let (held, damaged) = sessions::agent_held(stored.as_deref(), ids, edited, now);
+    if damaged {
+        unreadable_agent_holds(material_id);
+    }
+    if held != stored {
         tx.execute(
             "UPDATE material_yjs_documents SET agent_held=$2 WHERE material_id=$1",
-            &[&material_id, agent],
+            &[&material_id, &held],
         )
         .await?;
     }
     Ok(())
+}
+
+/// Q386 (Epo 2026-10-26): an agent holds record that cannot be read is
+/// dropped and reported; the note loads and is written as before.
+fn unreadable_agent_holds(material_id: &str) {
+    crate::observe::capture(
+        "unreadable agent holds",
+        None,
+        &[("room", material_id), ("stage", "agent_holds")],
+    );
 }
 
 /// The sessions' rows when a note room unloads (the acknowledgements and
@@ -596,7 +783,7 @@ pub async fn fold(
     let current = tx
         .query(
             &format!(
-                "SELECT s.state, d.room_schema, m.kind
+                "SELECT s.state, d.room_schema, d.agent_held, m.kind
                  FROM {state_table} s
                  JOIN material_yjs_documents d ON d.material_id=s.material_id
                  JOIN materials m ON m.id=s.material_id
@@ -616,8 +803,33 @@ pub async fn fold(
         Doc::Content => Model::of(current.get("kind")),
         Doc::Keys => Model::Item(items::Kind::QuizKeys),
     };
+    // What the agent holds keep, read under the document row this fold
+    // holds, so it covers every row it folds: the collection's part of H
+    // beside the room's session holds (never from room memory: holds of an
+    // edit not stored yet belong to rows past `through`). The open room's
+    // live pass takes the same H (`Folded::collected`).
+    let mut holds = holds;
+    if doc == Doc::Content && current.get::<_, String>("kind") == "note" {
+        let stored: Option<Vec<u8>> = current.get("agent_held");
+        let (held, damaged) =
+            sessions::agent_holds(stored.as_deref(), std::time::SystemTime::now());
+        // Dropped once reported (Q386, review r2 L1): later folds read none.
+        if damaged {
+            unreadable_agent_holds(material_id);
+            tx.execute(
+                "UPDATE material_yjs_documents SET agent_held=NULL WHERE material_id=$1",
+                &[&material_id],
+            )
+            .await?;
+        }
+        if let Some(holds) = holds.as_mut() {
+            holds.held.merge_with(held);
+        }
+    }
     let rows = doc_rows(&tx, doc, material_id, through).await?;
     let Some(&(last, _)) = rows.last() else {
+        // Nothing to fold; a dropped holds record still commits.
+        tx.commit().await?;
         return Ok(None);
     };
     let windows = match holds {

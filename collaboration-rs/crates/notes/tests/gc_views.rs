@@ -18,8 +18,12 @@
 //! room open also collects the room's own document at the same window and
 //! held set, and the room swaps the result in (Q401):
 //! tabs joining after load the collected state, open tabs keep their
-//! tombstones. As the server does, the room keeps its document whole while
-//! it keeps agent steps (until a day passes or the room reloads).
+//! tombstones. Agent edits are admitted by the open room and stored at once
+//! (Q402, Q403), their deletions held in the document's agent record from
+//! their edit (25 h), and the live pass runs while the agent has steps
+//! (Q432). The agent's Undo is modelled as a live revert; a live swap drops
+//! it (the server's payload Undo after a swap is checked against what the
+//! room collected, rooms.rs).
 //!
 //! The window and H come from the room's `Sessions`, driven as the room
 //! drives it: a JOIN names the tab's version and the step 1 answer syncs it,
@@ -942,7 +946,7 @@ impl World {
             .filter(|(_, row)| row.version == sessions::LOST)
             .map(|(&client, _)| client)
             .collect();
-        let (loaded, damaged) = sessions::Sessions::load(rows, lost, self.agent_held.clone());
+        let (loaded, damaged) = sessions::Sessions::load(rows, lost);
         for client in damaged.sessions {
             tally.damaged += 1;
             self.session_rows.insert(
@@ -979,10 +983,15 @@ impl World {
                 stored.held = row.held;
             }
         }
-        if let Some(agent) = unsaved.agent {
-            self.agent_held = agent;
-        }
         self.sessions.saved(unsaved.through);
+    }
+
+    /// An agent edit's (or its Undo's) deletions, held in the document's
+    /// agent record from the edit, as the room's store writes them
+    /// (`note_store::hold_agent`, Q402).
+    fn agent_deleted(&mut self, deleted: IdSet) {
+        self.agent_held =
+            sessions::agent_held(self.agent_held.as_deref(), deleted, self.clock, self.clock).0;
     }
 
     fn connected(&self) -> bool {
@@ -1135,7 +1144,7 @@ impl World {
         self.s.apply_as(AGENT, &ops);
         self.r.apply_as(AGENT, &ops);
         let deleted = self.s.delete_set().diff(&before);
-        self.sessions.agent_deleted(deleted, self.clock);
+        self.agent_deleted(deleted);
         self.room_store();
         self.hear();
         tally.agent_edits += 1;
@@ -1463,7 +1472,7 @@ impl World {
             self.r.apply_as(AGENT, ops);
         }
         let deleted = self.s.delete_set().diff(&before);
-        self.sessions.agent_deleted(deleted, self.clock);
+        self.agent_deleted(deleted);
         self.room_store();
         self.hear();
         tally.agent_edits += 1;
@@ -1492,7 +1501,7 @@ impl World {
         self.s.refresh();
         self.r.refresh();
         let deleted = self.s.delete_set().diff(&before);
-        self.sessions.agent_deleted(deleted, self.clock);
+        self.agent_deleted(deleted);
         self.room_store();
         self.hear();
         tally.agent_undos += 1;
@@ -1528,7 +1537,11 @@ impl World {
         if whole.value() != folded.value() {
             tally.reloads_differ += 1;
         }
-        let holds = self.sessions.holds(self.clock);
+        let mut holds = self.sessions.holds(self.clock);
+        // The agent record, read under the fold's lock (`note_store::fold`).
+        holds
+            .held
+            .merge_with(sessions::agent_holds(self.agent_held.as_deref(), self.clock).0);
         let now = Window::of(&folded.doc.transact(), self.version);
         let window = match holds.reached {
             None => Some(now.clone()),
@@ -1594,7 +1607,7 @@ impl World {
     }
 
     /// The open room collects its own document at a fold's window and held
-    /// set and swaps the result in (Q401), unless it keeps agent steps. The
+    /// set and swaps the result in (Q401), agent steps or not (Q432). The
     /// new document must read as S does, with the same state vector and
     /// nothing pending, and no connected tab, nor one that would come back
     /// raw, may name a unit it dropped. As at the stored fold, units are
@@ -1603,9 +1616,6 @@ impl World {
     /// them as deleted items; an edit next to one lands in a deleted block,
     /// lost with or without the collection.
     fn collect_live(&mut self, window: &Window, held: &IdSet, tally: &mut Tally) {
-        if !(self.agent_s.undo_stack().is_empty() && self.agent_s.redo_stack().is_empty()) {
-            return;
-        }
         let client = self.s.doc.client_id();
         let collected = gc::collect(&self.s.doc, window, held, Some(client));
         if collected.units == 0 {
@@ -1633,6 +1643,7 @@ impl World {
         }
         self.s = live;
         self.agent_s = undo_manager(&self.s, AGENT);
+        self.agent_r.clear_all();
         tally.live_collections += 1;
         tally.live_units += collected.units;
     }

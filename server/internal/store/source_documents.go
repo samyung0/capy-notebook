@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
@@ -146,6 +147,11 @@ type SourceCheckpoint struct {
 	// A direct AI edit commits its receipt with the checkpoint so the saved
 	// state and the durable effect cannot diverge.
 	Operation *SourceCheckpointOperation `json:"operation,omitempty"`
+	// A room's save carries the agent steps the room admitted since its last
+	// save (Q402): each receipt is written with this checkpoint, in order;
+	// one already stored, or naming a step another receipt reversed, is
+	// passed over, never answered in place of the save.
+	Operations []SourceCheckpointOperation `json:"operations,omitempty" maxItems:"256"`
 	// A text source's opening characters as saved (openwiki/thumbnails.md),
 	// written to files.preview with the checkpoint. The collaboration server
 	// sends it with every text save; an Office save carries none.
@@ -158,9 +164,13 @@ const sourcePreviewChars = 600
 
 // SourceCheckpointOperation is the receipt side of a source edit checkpoint.
 // The receipt commits without an Undo ref: the collaboration service adds it
-// once the source's live room took the edit (its Undo lives there).
+// with the edit's payload. An Undo's (UndoOf: the step it reverses) is an
+// `undo_edit` receipt naming that step, committed with the write (r1 M2).
 type SourceCheckpointOperation struct {
 	Receipt SourceCheckpointReceipt `json:"receipt"`
+	UndoOf  string                  `json:"undoOf,omitempty"`
+	// A room's agent step carries its Undo ref, written with its receipt.
+	Undo *agenttools.UndoRef `json:"undo,omitempty"`
 }
 
 // SourceCheckpointReceipt is the trusted operation identity the collaboration
@@ -460,6 +470,9 @@ func sha256Hex(s string) bool {
 type SourceCheckpointSaved struct {
 	Checkpoint int64           `json:"checkpoint"`
 	Operation  *AgentOperation `json:"operation,omitempty"`
+	// The operation (or its step's Undo) was stored already: its receipt
+	// answers and this save wrote nothing (review r2 M1).
+	Replayed bool `json:"replayed,omitempty"`
 }
 
 func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in SourceCheckpoint) (SourceCheckpointSaved, error) {
@@ -494,7 +507,20 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 			// Same edit already committed (a retried request): answer with the
 			// recorded receipt and the current checkpoint, without saving again.
 			out.Operation = existing
+			out.Replayed = true
 			return out, tx.Commit(ctx)
+		}
+		// A step reversed already (another request's Undo): its receipt.
+		if step := in.Operation.UndoOf; step != "" {
+			done, err := undoReceiptTx(ctx, tx, step)
+			if err != nil {
+				return out, err
+			}
+			if done != nil {
+				out.Operation = done
+				out.Replayed = true
+				return out, tx.Commit(ctx)
+			}
 		}
 	}
 	// The maintenance pause refuses committing an Office agent edit (a
@@ -575,7 +601,59 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		}
 		out.Operation = &receipt
 	}
+	if err := s.commitRoomOperationsTx(ctx, tx, fileID, ws, in.Operations); err != nil {
+		return out, err
+	}
 	return out, tx.Commit(ctx)
+}
+
+// commitRoomOperationsTx writes a room save's agent steps (Q402) in its
+// checkpoint's transaction, in order, each in a nested transaction: one
+// that cannot be written (its chat deleted, a Redo naming a step that was
+// passed over) is rolled back alone and reported, and the save still lands
+// with everyone's edits (Q432). A step already stored, or naming a step
+// another receipt reversed, is passed over and logged.
+func (s *Store) commitRoomOperationsTx(ctx context.Context, tx pgx.Tx, fileID, ws string, ops []SourceCheckpointOperation) error {
+	for _, op := range ops {
+		nested, err := tx.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		if err := s.commitRoomOperationTx(ctx, nested, fileID, ws, op); err != nil {
+			if rollback := nested.Rollback(ctx); rollback != nil {
+				return rollback
+			}
+			obs.Log(ctx).Warn("agent receipt passed over", "file_id", fileID, "operation_id", op.Receipt.ID, "error", err)
+			obs.CaptureErr(ctx, errors.New("agent receipt passed over"), map[string]string{"file_id": fileID})
+			continue
+		}
+		if err := nested.Commit(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// commitRoomOperationTx writes one room agent step in tx.
+func (s *Store) commitRoomOperationTx(ctx context.Context, tx pgx.Tx, fileID, ws string, op SourceCheckpointOperation) error {
+	existing, err := lockAgentOperationTx(ctx, tx, op.Receipt.ID, op.Receipt.RequestHash)
+	if errors.Is(err, ErrOperationConflict) {
+		existing, err = &AgentOperation{ID: op.Receipt.ID}, nil
+	}
+	if err != nil {
+		return err
+	}
+	if existing == nil && op.UndoOf != "" {
+		if existing, err = undoReceiptTx(ctx, tx, op.UndoOf); err != nil {
+			return err
+		}
+	}
+	if existing != nil {
+		obs.Log(ctx).Warn("room agent step passed over", "file_id", fileID, "operation_id", op.Receipt.ID)
+		return nil
+	}
+	_, err = s.commitSourceOperationTx(ctx, tx, fileID, ws, op)
+	return err
 }
 
 // validSourcePreview: at most sourcePreviewChars characters of UTF-8 with no
@@ -602,9 +680,26 @@ func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, 
 	}
 	receipt.Kind = "edit_document"
 	effect.Operation = agenttools.EffectEdited
+	if op.UndoOf != "" {
+		receipt.Kind = "undo_edit"
+		var undone *string
+		if err := tx.QueryRow(ctx, `SELECT effect->>'operation' FROM agent_operations WHERE id=$1`, op.UndoOf).Scan(&undone); err != nil {
+			return AgentOperation{}, err
+		}
+		effect.Operation = agenttools.EffectEditUndone
+		if undone != nil && agenttools.EffectOperation(*undone) == agenttools.EffectEditUndone {
+			effect.Operation = agenttools.EffectEdited
+		}
+	}
+	effect.Undo = op.Undo
 	receipt.Effect = &effect
 	if err := insertAgentOperationTx(ctx, tx, receipt); err != nil {
 		return AgentOperation{}, err
+	}
+	if op.UndoOf != "" {
+		if err := linkUndoTx(ctx, tx, receipt.ID, op.UndoOf); err != nil {
+			return AgentOperation{}, err
+		}
 	}
 	return receipt, nil
 }

@@ -4,9 +4,11 @@
 //! through the notes crate's text commands and Office through the engine's
 //! commands. The change commits as one row through the checkpoint CAS with
 //! the operation's receipt; a moved checkpoint applies the commands again on
-//! the new state (3 attempts), an ended epoch never will. The edit's own Yjs
-//! items go to the live room, which keeps them for its Undo (`ydoc::undo`);
-//! with no room loaded the edit has no Undo.
+//! the new state (3 attempts), an ended epoch never will. Every edit returns
+//! its Undo payload (`ydoc::undo`, Epo 2026-10-21 and 2026-10-22); a payload
+//! sent back is written the same way, its checkpoint carrying the Undo's
+//! receipt, which names the step it reverses (r1 M2), and returns its Redo
+//! payload.
 
 use notes::edit::DocumentCommand;
 use office_service::Command;
@@ -33,24 +35,62 @@ pub struct EditInput {
     pub file_id: String,
     /// The operation identity (`id`, `requestHash`, `toolVersion`, ...).
     pub operation: Value,
+    /// An Undo (or Redo): the payload sent back, written instead of commands.
+    pub undo: Option<SentBack>,
 }
 
-/// A committed edit: the receipt, its room, what that room lacks of it, the
-/// stored cover it makes and the checkpoint it reached. `notice` is the
-/// Office engine's note on the characters the agent's text lost (Epo
-/// 2026-10-15), for the tool result. `captured` is the edit's own items,
-/// when a live room took part (its Undo).
+/// An Undo payload sent back: the epoch it was made in, its update and the
+/// step it reverses (its receipt's `undo_of`).
+#[derive(Clone, Debug)]
+pub struct SentBack {
+    pub epoch: i64,
+    pub update: Vec<u8>,
+    pub undo_of: String,
+}
+
+/// A committed edit: the receipt (none for a payload applied before), its room, what that
+/// room lacks of it (none when a payload had been applied before and nothing
+/// was written), the stored cover it makes and the checkpoint it reached.
+/// `notice` is the Office engine's note on the characters the agent's text
+/// lost (Epo 2026-10-15), for the tool result. `undo` is the payload that
+/// reverses the write (an edit's Undo, an Undo's Redo), made in `epoch`.
 pub struct EditResult {
     pub receipt: Value,
     pub notice: Option<String>,
     pub room: String,
-    pub update: Vec<u8>,
+    pub update: Option<Vec<u8>>,
     pub durable: ydoc::Durable,
     pub checkpoint: u64,
     pub row_bytes: usize,
-    pub captured: Option<Captured>,
-    /// What its Undo may send ([crate::undo_cost]).
-    pub undo_cost: usize,
+    pub undo: Option<Vec<u8>>,
+    pub epoch: i64,
+}
+
+/// A loaded room's agent edit ([Sources::edit_live]): the change for the
+/// room to admit (none: an Undo payload applied before), the engine's
+/// notice, and the payload reversing it, made in `epoch`.
+pub struct LiveEdit {
+    pub update: Option<Vec<u8>>,
+    pub notice: Option<String>,
+    pub undo: Option<Vec<u8>>,
+    pub epoch: i64,
+}
+
+/// What an edit's change did to its working copy ([Sources::apply_input]).
+enum Applied {
+    Changed {
+        captured: Captured,
+        undo_cost: usize,
+        notice: Option<String>,
+        /// An Office edit's inserted and deleted text (Q405).
+        edited: TextCount,
+    },
+    /// An Undo payload applied before: nothing to write.
+    Before,
+}
+
+fn undo_gone(message: &str) -> SourceError {
+    edit_error("undo_unavailable", message)
 }
 
 fn edit_error(code: &str, message: impl Into<String>) -> SourceError {
@@ -170,6 +210,11 @@ impl Sources {
                 None,
             ));
         }
+        if let Some(undo) = &input.undo
+            && ydoc::undo::refused_across_compaction(undo.epoch, session.epoch as i64)
+        {
+            return Err(undo_gone("this edit can no longer be undone"));
+        }
         let room = SourceRoom {
             file_id: input.file_id.clone(),
             epoch: session.epoch,
@@ -199,9 +244,6 @@ impl Sources {
             )
             .await?;
         let live_state = live(&name).await;
-        // The edit's Undo lives in the room: none without one (Epo 2026-10-20);
-        // the server puts its ref on the receipt once the room took it.
-        let undoable = live_state.is_some();
         // The durable document, then the live room's (both off the runtime).
         let (doc, durable, live_vector) = tokio::task::spawn_blocking(
             move || -> Result<(Doc, ydoc::Durable, Option<StateVector>), SourceError> {
@@ -224,78 +266,70 @@ impl Sources {
         )
         .await
         .map_err(|error| SourceError::Other(format!("source edit: {error}")))??;
-        let mut notice = None;
-        let undo_cost: usize;
-        // An Office edit's text, counted here when no room took part; an open
-        // room counts what it applies (Q405).
-        let mut edited = TextCount::default();
-        let captured = match office(session.format) {
-            None => {
-                let root = doc.get_or_insert_text(TEXT_ROOT);
-                let commands: Vec<DocumentCommand> =
-                    parse(Value::Array(input.commands.clone()), "commands")?;
-                undo_cost = commands
-                    .iter()
-                    .map(|command| crate::undo_cost::document(command, |_| 0))
-                    .fold(0, usize::saturating_add);
-                let mut txn = doc.transact_mut();
-                notes::edit::apply_text_commands(&mut txn, &root, &commands)?;
-                Captured::of(&mut txn)
-            }
-            Some(format) => {
-                let state = doc
-                    .transact()
-                    .encode_state_as_update_v1(&StateVector::default());
-                let on = On {
-                    format,
-                    base: &base,
-                    base_sha256: &sha,
-                    room: Some(&name),
-                };
-                let commands: Vec<Command> =
-                    parse(Value::Array(input.commands.clone()), "commands")?;
-                let applied = self
-                    .engines()
-                    .apply_commands(on, &state, &commands)
-                    .await
-                    .map_err(office_error)?;
-                // One `touched` a command the engine applied: the commands
-                // its limits left out cost nothing.
-                undo_cost = commands
-                    .iter()
-                    .zip(&applied.touched)
-                    .map(|(command, touched)| crate::undo_cost::office(command, *touched))
-                    .fold(0, usize::saturating_add);
-                notice = applied.notice;
-                // The engine's state is the checkpoint plus its edits: merged
-                // in, what it adds is the edit.
-                let update = yrs::Update::decode_v1(&applied.state)
-                    .map_err(|error| SourceError::State(error.to_string()))?;
-                let mut txn = doc.transact_mut();
-                txn.apply_update(update)
-                    .map_err(|error| SourceError::State(error.to_string()))?;
-                if !undoable {
-                    edited = edited_text(&txn);
-                }
-                Captured::of(&mut txn)
+        let on_base = (base.as_slice(), sha.as_str());
+        // An Office edit's text is counted here, where no room took part; an
+        // open room counts what it admits (Q405).
+        let (captured, undo_cost, notice, edited) = match self
+            .apply_input(
+                input,
+                session.format,
+                on_base,
+                &name,
+                &doc,
+                stored.image_cap,
+            )
+            .await?
+        {
+            Applied::Changed {
+                captured,
+                undo_cost,
+                notice,
+                edited,
+            } => (captured, undo_cost, notice, edited),
+            // Applied before (a retry whose answer was lost): done, nothing
+            // written, no Redo.
+            Applied::Before => {
+                return Ok(EditResult {
+                    receipt: Value::Null,
+                    notice: None,
+                    room: name,
+                    update: None,
+                    durable,
+                    checkpoint: stored.checkpoint,
+                    row_bytes: 0,
+                    undo: None,
+                    epoch: session.epoch as i64,
+                });
             }
         };
         let whole = doc
             .transact()
             .encode_state_as_update_v1(&StateVector::default());
-        if whole.len() as u64
-            > crate::admission_cap(crate::state_cap(
-                seed.state.len() as u64,
-                base.len() as u64,
-                stored.export_cap,
-            ))
-        {
+        let admission = crate::admission_cap(crate::state_cap(
+            seed.state.len() as u64,
+            base.len() as u64,
+            stored.export_cap,
+        ));
+        if whole.len() as u64 > admission {
+            // An Undo pressed once it no longer fits is refused for good
+            // (Epo 2026-10-21): a person filled the file since.
+            if input.undo.is_some() {
+                return Err(undo_gone("this edit is too large to undo"));
+            }
             return Err(SourceError::request(
                 413,
                 "Source checkpoint exceeds byte limit",
                 None,
             ));
         }
+        // An Undo's payload must fit what the room may take, as the room's
+        // estimate judged it (Epo 2026-10-21): within the 8 MiB update cap
+        // and the admission headroom past the state.
+        let fits = |len: usize| {
+            len <= ydoc::MAX_UPDATE_BYTES && whole.len() as u64 + len as u64 <= admission
+        };
+        // Every edit's Undo payload, room loaded or not (Epo 2026-10-22).
+        let offered = fits(undo_cost);
         // Office effects are read on demand (Q405): the edit adds its count.
         let (effects, net_tokens, preview) = match office(session.format) {
             Some(_) => (
@@ -323,11 +357,15 @@ impl Sources {
         check_update_size(&row)?;
         // A text source's first row carries its seed (see store).
         let row = if seeded && office(session.format).is_none() {
-            whole
+            whole.clone()
         } else {
             row
         };
-        let operation = json!({ "receipt": operation });
+        // The receipt commits with the checkpoint, an Undo's naming its step.
+        let receipt_operation = match &input.undo {
+            Some(undo) => json!({ "receipt": operation, "undoOf": undo.undo_of }),
+            None => json!({ "receipt": operation }),
+        };
         let body = CheckpointBody {
             actor_ids: vec![input.actor_user_id.clone()],
             epoch: session.epoch,
@@ -340,7 +378,8 @@ impl Sources {
             base_source_sha256: seeded.then(|| sha.clone()),
             seed_bytes: (seeded && office(session.format).is_none())
                 .then_some(seed.state.len() as u64),
-            operation: Some(operation),
+            operation: Some(receipt_operation),
+            operations: Vec::new(),
             preview,
         };
         let saved: CheckpointSaved = self
@@ -351,20 +390,247 @@ impl Sources {
         let receipt = saved
             .operation
             .ok_or_else(|| SourceError::Other("checkpoint did not return a receipt".into()))?;
+        // Another request for this operation (or the step's Undo) committed
+        // first: its receipt answers, and this request's own change, which
+        // nothing stored, reaches no room (review r2 M1).
+        if saved.replayed {
+            return Ok(EditResult {
+                receipt,
+                notice: None,
+                room: name,
+                update: None,
+                durable: after,
+                checkpoint: saved.checkpoint,
+                row_bytes: 0,
+                undo: None,
+                epoch: session.epoch as i64,
+            });
+        }
         let update = match &live_vector {
             Some(vector) => doc.transact().encode_state_as_update_v1(vector),
             None => row.clone(),
         };
+        // Built last: it reverts the change on this working copy.
+        let undo = offered
+            .then(|| ydoc::undo::payload(&doc, captured))
+            .flatten()
+            .filter(|payload| fits(payload.len()));
         Ok(EditResult {
             receipt,
             notice,
             room: name,
-            update,
+            update: Some(update),
             durable: after,
             checkpoint: saved.checkpoint,
             row_bytes: row.len(),
-            captured: undoable.then_some(captured),
+            undo,
+            epoch: session.epoch as i64,
+        })
+    }
+
+    /// The edit's commands, or the Undo payload sent back, on `doc` (the
+    /// durable state with the live room, or a loaded room's snapshot): the
+    /// change it made and what its Undo may send ([crate::undo_cost]; an
+    /// Undo's Redo is measured once built), or a payload applied before.
+    async fn apply_input(
+        &self,
+        input: &EditInput,
+        format: crate::SourceFormat,
+        (base, sha): (&[u8], &str),
+        name: &str,
+        doc: &Doc,
+        image_cap: u64,
+    ) -> Result<Applied, SourceError> {
+        let mut notice = None;
+        let mut undo_cost = 0;
+        let mut edited = TextCount::default();
+        let captured = match (&input.undo, office(format)) {
+            (Some(undo), format) => {
+                let update = yrs::Update::decode_v1(&undo.update)
+                    .map_err(|_| edit_error("invalid_input", "invalid undo payload"))?;
+                // What an Office room admits from a writer (its roots,
+                // pptx:meta), as for a person's update.
+                if let Some(format) = format {
+                    match crate::admit::office_update_violation(
+                        &doc.transact(),
+                        &update,
+                        format,
+                        image_cap,
+                    ) {
+                        Err(message) => return Err(edit_error("invalid_input", message)),
+                        Ok(true) => return Err(undo_gone("this edit can no longer be undone")),
+                        Ok(false) => {}
+                    }
+                }
+                match ydoc::undo::apply_payload(doc, update)
+                    .map_err(|_| undo_gone("this edit can no longer be undone"))?
+                {
+                    ydoc::undo::Applied::Changed(change) => change,
+                    ydoc::undo::Applied::Before => return Ok(Applied::Before),
+                    ydoc::undo::Applied::Nothing => {
+                        return Err(undo_gone("nothing of this edit is left to undo"));
+                    }
+                    ydoc::undo::Applied::Unheld => {
+                        return Err(undo_gone("this edit can no longer be undone"));
+                    }
+                }
+            }
+            (None, None) => {
+                let root = doc.get_or_insert_text(TEXT_ROOT);
+                let commands: Vec<DocumentCommand> =
+                    parse(Value::Array(input.commands.clone()), "commands")?;
+                undo_cost = commands
+                    .iter()
+                    .map(|command| crate::undo_cost::document(command, |_| 0))
+                    .fold(0, usize::saturating_add);
+                let _keep = ydoc::undo::keep(doc);
+                let mut txn = doc.transact_mut_with(ydoc::undo::ORIGIN);
+                notes::edit::apply_text_commands(&mut txn, &root, &commands)?;
+                Captured::of(&mut txn)
+            }
+            (None, Some(format)) => {
+                let state = doc
+                    .transact()
+                    .encode_state_as_update_v1(&StateVector::default());
+                let on = On {
+                    format,
+                    base,
+                    base_sha256: sha,
+                    room: Some(name),
+                };
+                let commands: Vec<Command> =
+                    parse(Value::Array(input.commands.clone()), "commands")?;
+                let applied = self
+                    .engines()
+                    .apply_commands(on, &state, &commands)
+                    .await
+                    .map_err(office_error)?;
+                // One `touched` a command the engine applied: the commands
+                // its limits left out cost nothing.
+                undo_cost = commands
+                    .iter()
+                    .zip(&applied.touched)
+                    .map(|(command, touched)| crate::undo_cost::office(command, *touched))
+                    .fold(0, usize::saturating_add);
+                notice = applied.notice;
+                // The engine's state is the checkpoint plus its edits: merged
+                // in, what it adds is the edit.
+                let update = yrs::Update::decode_v1(&applied.state)
+                    .map_err(|error| SourceError::State(error.to_string()))?;
+                let _keep = ydoc::undo::keep(doc);
+                let mut txn = doc.transact_mut_with(ydoc::undo::ORIGIN);
+                txn.apply_update(update)
+                    .map_err(|error| SourceError::State(error.to_string()))?;
+                edited = edited_text(&txn);
+                Captured::of(&mut txn)
+            }
+        };
+        Ok(Applied::Changed {
+            captured,
             undo_cost,
+            notice,
+            edited,
+        })
+    }
+
+    /// An agent edit, Undo or Redo of a source whose room is loaded (Q402):
+    /// computed on the room's snapshot `live` under a client id it does not
+    /// hold, for the room to admit as a person's edit. The room's admission
+    /// checks its caps and an Office update's parts; the Undo payload is
+    /// offered when it fits the room's state cap, as an edit's always is.
+    pub async fn edit_live(
+        &self,
+        input: &EditInput,
+        session: &crate::gateway::SourceSession,
+        live: Vec<u8>,
+    ) -> Result<LiveEdit, SourceError> {
+        if session.access != "write" {
+            return Err(SourceError::request(
+                403,
+                "Source is not editable by this actor",
+                None,
+            ));
+        }
+        if let Some(undo) = &input.undo
+            && ydoc::undo::refused_across_compaction(undo.epoch, session.epoch as i64)
+        {
+            return Err(undo_gone("this edit can no longer be undone"));
+        }
+        let record = self.room_cap(&session.room);
+        let job = Job::default();
+        let reader = record.map_or(Reader::Job(&job), |(_, generation)| {
+            Reader::Room(generation)
+        });
+        let (base, sha) = self.bound_base(session, reader).await?;
+        let (doc, durable) = tokio::task::spawn_blocking(move || -> Result<_, SourceError> {
+            let update = yrs::Update::decode_v1(&live)
+                .map_err(|error| SourceError::State(error.to_string()))?;
+            let held = update.state_vector();
+            let doc = loop {
+                let doc = ydoc::scratch_doc();
+                if held.get(&doc.client_id()) == 0 {
+                    break doc;
+                }
+            };
+            ydoc::apply(&doc, update).map_err(|error| SourceError::State(error.to_string()))?;
+            let durable = ydoc::Durable::of(&doc.transact());
+            Ok((doc, durable))
+        })
+        .await
+        .map_err(|error| SourceError::Other(format!("source edit: {error}")))??;
+        // The payload's pre-check reads no image cap: the room's admission
+        // checks the change's pictures against its own.
+        let (captured, undo_cost, notice) = match self
+            .apply_input(
+                input,
+                session.format,
+                (&base, &sha),
+                &session.room,
+                &doc,
+                u64::MAX,
+            )
+            .await?
+        {
+            // The room counts what it admits (Q405).
+            Applied::Changed {
+                captured,
+                undo_cost,
+                notice,
+                ..
+            } => (captured, undo_cost, notice),
+            Applied::Before => {
+                return Ok(LiveEdit {
+                    update: None,
+                    notice: None,
+                    undo: None,
+                    epoch: session.epoch as i64,
+                });
+            }
+        };
+        // The change the room admits: the room's live markers stay out.
+        let (row, whole) = {
+            let txn = doc.transact();
+            let (row, _) = ydoc::delta_update(&txn, &durable, &[]);
+            (
+                row,
+                txn.encode_state_as_update_v1(&StateVector::default()).len(),
+            )
+        };
+        check_update_size(&row)?;
+        let admission = crate::admission_cap(
+            record.map_or(crate::MAX_SOURCE_STATE_BYTES as u64, |(cap, _)| cap),
+        );
+        let fits =
+            |len: usize| len <= ydoc::MAX_UPDATE_BYTES && whole as u64 + len as u64 <= admission;
+        let undo = fits(undo_cost)
+            .then(|| ydoc::undo::payload(&doc, captured))
+            .flatten()
+            .filter(|payload| fits(payload.len()));
+        Ok(LiveEdit {
+            update: Some(row),
+            notice,
+            undo,
+            epoch: session.epoch as i64,
         })
     }
 }

@@ -244,6 +244,11 @@ not offline use: without a service worker the app itself does not load offline.
   user ID: a new release, another account, or an entry older than 7 days is
   discarded. Signing out deletes it. Edit drafts live in their own database and
   are not touched.
+- Chat Undo payloads (`src/lib/undoPayloads.ts`, store `undoPayloads` in
+  `capy-local`) are kept for 24 hours and dropped once their document shows a
+  newer lineage. Every read and write is guarded: blocked or failing storage
+  keeps them in memory for the page's life, which only means no Undo after a
+  reload.
 - Restored queries are marked stale, so each refetches on first use regardless
   of `staleTime`. A stored query whose refetch answers 401 or 404 drops its data,
   so a workspace the account lost shows the private state, not last visit's copy.
@@ -523,13 +528,20 @@ error code that `toolErrorMessage` localizes; an unknown code falls back to the
 generic tool failure copy. `invalidateForEffects` refreshes the affected
 queries (files, materials, trash) when a receipt lands. A refused Undo or
 Redo (a 4xx: `undo_unavailable`, `invalid_input`, `quota_rejected`) shows an
-error toast with its localized message and disables that button for the
-session; no text is added under the receipt. A refusal for a moment
-(`office_editing_paused`, `unavailable_target`: the room keeps the step) and an
-unknown outcome (no answer, a 5xx) show the toast and keep the button: the
-server answers a retry with the step's receipt when the first request landed
-(`undoRefused` in `src/features/workspace/chat/trace.ts`). A second click
-while a request is out sends nothing.
+error toast with its localized message and hides that button for the
+session; no text is added under the receipt. Only `undo_unavailable` (a bad
+signature, another lineage, past its day, nothing left to revert) also drops
+the step's stored payload; other refusals keep it, so after a reload the
+button can work once the account is back under quota (review r1 L7,
+`undoGone`). Offline, Undo shows the offline toast and sends nothing (nothing
+queues). A refusal for a moment (`office_editing_paused`,
+`unavailable_target`) and an unknown outcome (no answer, a 5xx) show the
+toast and keep the button: the server answers a retry with the step's
+receipt when the first request landed (`undoRefused` in
+`src/features/workspace/chat/trace.ts`). A second click while a request is
+out sends nothing. The stored payloads are the signed-in account's alone: a
+sign-out or another account deletes them (review r1 M1, see [agentic
+retrieval](../agentic-retrieval.md)).
 
 ## Development scenario panel
 

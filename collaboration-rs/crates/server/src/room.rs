@@ -14,7 +14,6 @@ use std::time::{Duration, Instant};
 use bytes::BytesMut;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
-use ydoc::undo::{Captured, Change};
 use yrs::{Doc, ReadTxn, StateVector, Transact};
 
 use crate::app::{Outbox, RoomHandle, RoomView, Shared, ViewState};
@@ -157,10 +156,12 @@ pub enum RoomCmd {
     SetPaused(bool),
     /// The room's whole state (a server edit merges the live room).
     Snapshot(oneshot::Sender<Vec<u8>>),
+    /// A note's whole state when it holds edits its projected content lacks
+    /// (unsaved, being stored, or stored and not projected yet), else none:
+    /// a detailed read's live note content (Q417).
+    LiveNote(oneshot::Sender<Option<Vec<u8>>>),
     /// A server edit committed beside the room's stores.
     ServiceEdit(Box<ServiceEdit>),
-    /// Undo or Redo of an agent edit this room holds (`ydoc::undo`).
-    AgentUndo(Box<AgentUndo>),
     /// A children pass for an update this room holds (`children.rs`).
     ChildPass(Box<ChildPass>),
     /// The API's answer to the running pass.
@@ -184,6 +185,24 @@ pub enum RoomCmd {
     PeerStored(notes::limits::Metrics, Vec<items::quiz::ItemsPart>),
     /// Stored drafts from a browser with no editor open (`drafts.rs`).
     Draft(Box<Draft>),
+    /// An agent edit, Undo or Redo admitted like a person's edit (Q402).
+    AgentEdit(Box<AgentEdit>),
+    /// A quiz's keys update its content room admits with its own (Q403):
+    /// admitted here alone, its answer back to the content room.
+    AgentKeys {
+        actor: String,
+        update: Vec<u8>,
+        undo: bool,
+        reply: oneshot::Sender<Result<(), crate::edits::DocumentError>>,
+    },
+    /// What this room holds of an agent operation before its request
+    /// computes (Q402): see [AgentSteps::known].
+    AgentKnown {
+        id: String,
+        request_hash: String,
+        undo_of: Option<String>,
+        reply: oneshot::Sender<Result<Option<Value>, crate::edits::DocumentError>>,
+    },
 }
 
 /// A draft send: a writer's update without a channel. The reply is the
@@ -238,54 +257,160 @@ pub struct ChildPass {
     pub notify: Option<MemberKey>,
 }
 
-/// A server edit (an agent edit, a command) committed as its own row: what
-/// the live room lacks of it, the stored cover it makes, the note's stored
-/// version or the source's checkpoint it reached, and for an agent edit its
-/// operation id with its own items, which the room keeps for its Undo.
+/// A server edit committed as its own row (a command, a repair, an agent
+/// edit written while no room was loaded): what the live room lacks of it,
+/// the stored cover it makes, and the note's stored version or the source's
+/// checkpoint it reached.
 pub struct ServiceEdit {
     pub update: Vec<u8>,
     pub durable: ydoc::Durable,
     pub version: u64,
     pub row_bytes: usize,
-    /// The agent edit's id, its items and what its Undo may send
-    /// (`sources::undo_cost`).
-    pub step: Option<(String, Captured, usize)>,
-    /// Answers whether this room kept `step` for its Undo.
-    pub taken: Option<oneshot::Sender<bool>>,
 }
 
-/// An agent step a room keeps for its Undo or Redo: the change to revert,
-/// what its revert may send, and when its agent edit was made (Q385: it goes
-/// 24 h after that).
-struct AgentStep {
-    change: Change,
-    cost: usize,
-    edited: std::time::SystemTime,
-}
+/// The token id of the context an agent edit is admitted under (Q402): its
+/// actor's write, with no token or channel of its own.
+pub const AGENT_TOKEN: &str = "agent-edit";
 
-/// An Undo or Redo of the agent step `step` (`edits::undo`), under the chat
-/// actor's contributor marker; the step that reverses it is kept as `next`.
-/// The reply comes once the room stored it.
-pub struct AgentUndo {
-    pub step: String,
-    pub next: String,
+/// Why an Office writer's update is refused during the maintenance pause.
+const OFFICE_PAUSED: &str = "Office editing is paused";
+
+/// An agent edit, Undo or Redo for a loaded room to admit like a person's
+/// edit (Q402): computed on the room's snapshot, admitted in the room's
+/// queue, answered at admission, its receipt stored with the room's next
+/// store, which starts at once (Q403).
+pub struct AgentEdit {
+    /// The chat's user, as whom the edit is admitted.
     pub actor: String,
-    pub reply: oneshot::Sender<Result<Reverted, String>>,
+    /// The receipt the room's store writes; an Undo's operation and chat
+    /// identity are filled from its step.
+    pub receipt: note_store::AgentReceipt,
+    /// The step an Undo or Redo reverses, as stored (none: not stored yet,
+    /// or unknown).
+    pub step: Option<AgentStep>,
+    /// This room's update (none: it changes nothing here).
+    pub update: Option<Vec<u8>>,
+    /// A quiz's keys update: this content room has its keys room admit it
+    /// in the same step, both or neither (Q403).
+    pub keys: Option<Vec<u8>>,
+    pub reply: oneshot::Sender<AgentAnswer>,
 }
 
-/// What an Undo or Redo of an agent step came to in one room.
-#[derive(Debug)]
-pub enum Reverted {
-    /// Reverted (stored, or its store retrying), the step that reverses it
-    /// kept under this id: the request's, or an earlier request's whose
-    /// answer was lost.
-    Done(String),
-    /// Nothing of the step was left to revert here.
-    Nothing,
-    /// The room holds no such step (used already, or the room reloaded).
-    Missing,
-    /// Refused before anything was stored: the error code and why.
-    Refused { code: &'static str, message: String },
+/// A room's answer to an agent edit: the receipt and whether this request
+/// was admitted (false: a retry's, or another request's for the same step),
+/// or the refusal a person's edit would get.
+pub type AgentAnswer = Result<(Value, bool), crate::edits::DocumentError>;
+
+/// What an Undo needs of the step it reverses.
+#[derive(Clone, Debug)]
+pub struct AgentStep {
+    pub actor: String,
+    pub conversation_id: Option<String>,
+    pub message_id: Option<String>,
+    /// The step's own effect (`edited`, `edit_undone`).
+    pub operation: Option<String>,
+}
+
+impl AgentStep {
+    fn of(receipt: &note_store::AgentReceipt) -> Self {
+        AgentStep {
+            actor: receipt.actor.clone(),
+            conversation_id: receipt.conversation_id.clone(),
+            message_id: receipt.message_id.clone(),
+            operation: receipt.effect["operation"].as_str().map(str::to_owned),
+        }
+    }
+}
+
+/// The agent steps a room admitted (Q402): waiting for a store, written by
+/// the running one, and stored this life (the last [AGENT_STORED_KEPT], for
+/// an Undo of a step stored while its request was on the way).
+#[derive(Default)]
+struct AgentSteps {
+    pending: Vec<note_store::AgentReceipt>,
+    storing: Vec<note_store::AgentReceipt>,
+    stored: VecDeque<note_store::AgentReceipt>,
+}
+
+const AGENT_STORED_KEPT: usize = 256;
+
+/// The agent steps a room keeps waiting for a store (pending and storing)
+/// before it refuses new ones (Q432): a checkpoint carries at most this
+/// many, and a store failing for good holds them.
+const AGENT_UNSTORED_MAX: usize = 256;
+
+impl AgentSteps {
+    fn find(
+        &self,
+        matches: impl Fn(&note_store::AgentReceipt) -> bool,
+    ) -> Option<&note_store::AgentReceipt> {
+        self.pending
+            .iter()
+            .chain(&self.storing)
+            .chain(&self.stored)
+            .find(|receipt| matches(receipt))
+    }
+
+    /// The receipt of a step this room holds for this request: its own
+    /// (a retry's), or another request's that reversed the same step.
+    fn known(
+        &self,
+        id: &str,
+        request_hash: &str,
+        undo_of: Option<&str>,
+    ) -> Result<Option<Value>, crate::edits::DocumentError> {
+        if let Some(known) = self.find(|known| known.id == id) {
+            if known.request_hash != request_hash {
+                return Err(crate::edits::DocumentError::edit(
+                    "invalid_input",
+                    "operation id already used with a different request",
+                ));
+            }
+            return Ok(Some(known.answer()));
+        }
+        Ok(undo_of
+            .and_then(|of| self.find(|known| known.undo_of.as_deref() == Some(of)))
+            .map(note_store::AgentReceipt::answer))
+    }
+
+    /// A store takes every waiting step.
+    fn claim(&mut self) -> Vec<note_store::AgentReceipt> {
+        self.storing = std::mem::take(&mut self.pending);
+        self.storing.clone()
+    }
+
+    /// The running store committed: its steps are stored.
+    fn stored(&mut self) {
+        for mut receipt in self.storing.drain(..) {
+            receipt.held = None;
+            receipt.provenance = None;
+            self.stored.push_back(receipt);
+        }
+        while self.stored.len() > AGENT_STORED_KEPT {
+            self.stored.pop_front();
+        }
+    }
+
+    /// The room threw its unsaved state away: its unstored steps are lost
+    /// with everyone's unsaved edits (Q402), and a retry finds none.
+    fn discard(&mut self) {
+        self.pending.clear();
+        self.storing.clear();
+    }
+
+    /// The running store failed: its steps wait for the next one, first.
+    fn unclaim(&mut self) {
+        let mut storing = std::mem::take(&mut self.storing);
+        storing.append(&mut self.pending);
+        self.pending = storing;
+    }
+}
+
+/// [Room::check_update]'s checked update, for [Room::apply_update].
+struct Checked {
+    update: yrs::Update,
+    written: Vec<u64>,
+    heavy: bool,
 }
 
 struct Member {
@@ -494,15 +619,7 @@ struct Store {
     retry_delay: Duration,
     failed_event: Option<String>,
     waiters: Vec<oneshot::Sender<Result<(), String>>>,
-    /// Stores that took their snapshot so far.
-    snapshots: u64,
-    /// Agent Undos waiting on the store that takes them: the id their reverse
-    /// is kept under and the snapshot that holds the revert.
-    undo_waiters: Vec<(String, u64, UndoReply)>,
 }
-
-/// Where an agent Undo's answer goes.
-type UndoReply = oneshot::Sender<Result<Reverted, String>>;
 
 /// See `sync_message`: not a valid update, so a release build refuses it.
 #[cfg(debug_assertions)]
@@ -513,20 +630,31 @@ const IT_PANIC_UPDATE: &[u8] = b"capy-it-panic";
 #[cfg(debug_assertions)]
 const IT_PANIC_LOAD: &str = "capy-it-panic-load";
 
-/// See `agent_undo`: an Undo whose new step id starts with this is refused
-/// in a quiz's keys room, in debug builds only.
-#[cfg(debug_assertions)]
-pub const IT_REFUSE_KEYS_UNDO: &str = "capy-it-refuse-keys-undo";
-/// See `service_edit`: a server edit whose step id starts with this fails to
-/// apply, in debug builds only.
+/// See `service_edit`: a server edit of a material whose id holds this fails
+/// to apply, in debug builds only.
 #[cfg(debug_assertions)]
 pub const IT_FAIL_SERVICE_EDIT: &str = "capy-it-fail-service-edit";
 
-/// See `service_edit`: a quiz's keys room stamps a step whose id starts
-/// with this 10 s after its edit, so its rooms' 24 h end apart, in debug
+/// See `start_store`: a store of a material whose id holds this commits a
+/// second late, in debug builds only.
+#[cfg(debug_assertions)]
+pub const IT_SLOW_STORE: &str = "capy-it-slow-store";
+
+/// See `edits::edit_in_room`: an agent edit of a material whose id holds
+/// this computes three seconds late, in debug builds only.
+#[cfg(debug_assertions)]
+pub const IT_SLOW_COMPUTE: &str = "capy-it-slow-compute";
+
+/// See `edits::source_request`: a no-room source edit whose operation id
+/// holds this waits half a second after its stored receipt check, in debug
 /// builds only.
 #[cfg(debug_assertions)]
-pub const IT_KEYS_LATER: &str = "capy-it-keys-later";
+pub const IT_SLOW_RECHECK: &str = "capy-it-slow-recheck";
+
+/// See `RoomCmd::AgentKeys`: the keys room of a quiz whose id holds this
+/// refuses an agent edit's part, in debug builds only.
+#[cfg(debug_assertions)]
+const IT_REFUSE_AGENT_KEYS: &str = "capy-it-refuse-agent-keys";
 
 /// See `edits::send_writes`: a note edit whose step id starts with this
 /// reaches its room 3 s after its rows committed, in debug builds only.
@@ -561,6 +689,8 @@ pub struct Room {
     flush_at: Option<Instant>,
     markers: Markers,
     receipts: Vec<String>,
+    /// The agent steps this room admitted (Q402).
+    agent: AgentSteps,
     durable: ydoc::Durable,
     store: Store,
     idle_at: Option<Instant>,
@@ -584,17 +714,6 @@ pub struct Room {
     applying: bool,
     /// The room reloads from the stored document (`reload`).
     reloading: bool,
-    /// The agent edits (and their Undo and Redo steps) this room keeps the
-    /// items of, by operation id (`ydoc::undo`), with what each one's revert
-    /// may send (the edit's `sources::undo_cost`) and when the agent edit was
-    /// made: each goes 24 h after its edit (Q385, `AgentStep`), or with the
-    /// room.
-    agent_changes: HashMap<String, AgentStep>,
-    /// When the earliest of them goes.
-    agent_expiry: Option<Instant>,
-    /// Steps this room reverted, by the id their reverse is kept under, so a
-    /// request repeated after a lost answer gets the same answer.
-    agent_reverted: HashMap<String, String>,
     /// When waiting opens look at their users' budgets again, and the next
     /// one's place.
     open_at: Option<Instant>,
@@ -819,13 +938,6 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                     let message = format!("session {client}: unreadable held deletions");
                     observe::capture(&message, None, &[("room", &room), ("stage", "sessions")]);
                 }
-                if damaged.agent {
-                    observe::capture(
-                        "unreadable agent holds",
-                        None,
-                        &[("room", &room), ("stage", "sessions")],
-                    );
-                }
                 Some(sessions)
             } else {
                 None
@@ -1021,6 +1133,7 @@ async fn run(
         window: Vec::new(),
         flush_at: None,
         receipts: Vec::new(),
+        agent: AgentSteps::default(),
         durable,
         store: Store {
             dirty: false,
@@ -1032,8 +1145,6 @@ async fn run(
             retry_delay: RETRY_FIRST / 2,
             failed_event: None,
             waiters: Vec::new(),
-            snapshots: 0,
-            undo_waiters: Vec::new(),
         },
         idle_at: None,
         kind,
@@ -1047,9 +1158,6 @@ async fn run(
         rows_running: false,
         applying: false,
         reloading: false,
-        agent_changes: HashMap::new(),
-        agent_expiry: None,
-        agent_reverted: HashMap::new(),
         open_at: None,
         openings: 0,
     };
@@ -1118,7 +1226,6 @@ impl Room {
             self.idle_at,
             self.open_at,
             presence,
-            self.agent_expiry,
         ]
         .into_iter()
         .flatten()
@@ -1165,9 +1272,6 @@ impl Room {
         if self.presence_dirty && self.presence_at.is_some_and(|at| at <= now) {
             self.send_presence(now);
         }
-        if self.agent_expiry.is_some_and(|at| at <= now) {
-            self.expire_agent_steps();
-        }
     }
 
     /// The handoff's view of the room, when something it reads changed.
@@ -1202,7 +1306,6 @@ impl Room {
             && !self.store.running
             && self.store.retry_at.is_none()
             && self.store.waiters.is_empty()
-            && self.store.undo_waiters.is_empty()
             && !markers::pending(&self.doc)
     }
 
@@ -1397,8 +1500,17 @@ impl Room {
                 let state = self.encoded(StateVector::default()).await;
                 let _ = reply.send(state);
             }
+            RoomCmd::LiveNote(reply) => {
+                let unprojected = matches!(&self.kind,
+                    Kindly::Note(note) if note.stored_version > note.projected_version);
+                let state = if self.store.dirty || self.store.running || unprojected {
+                    Some(self.encoded(StateVector::default()).await)
+                } else {
+                    None
+                };
+                let _ = reply.send(state);
+            }
             RoomCmd::ServiceEdit(edit) => self.service_edit(*edit),
-            RoomCmd::AgentUndo(undo) => self.agent_undo(*undo).await,
             RoomCmd::Items(parts) => self.follow_items(&parts),
             RoomCmd::PeerLoaded => {
                 if let Kindly::Note(note) = &mut self.kind {
@@ -1427,6 +1539,44 @@ impl Room {
             }
             RoomCmd::ChildAnswer { pass, plan, answer } => self.child_answer(*pass, plan, answer),
             RoomCmd::Draft(draft) => self.draft(*draft).await,
+            RoomCmd::AgentEdit(edit) => self.agent_edit(*edit).await,
+            RoomCmd::AgentKeys {
+                actor,
+                update,
+                undo,
+                reply,
+            } => {
+                // Debug builds only: the integration test's keys room that
+                // refuses a quiz edit's part, which its content room must
+                // then keep out too.
+                #[cfg(debug_assertions)]
+                if self.name.contains(IT_REFUSE_AGENT_KEYS) {
+                    let _ = reply.send(Err(crate::edits::DocumentError::Unavailable(
+                        crate::edits::ROOM_RESET,
+                    )));
+                    return;
+                }
+                let context = agent_context(&actor);
+                let granted = self.server_ids(&update);
+                let outcome = self.admit_update(None, &context, false, &update, None, &granted);
+                let admitted = matches!(outcome, Outcome::Admitted);
+                let _ = reply.send(match outcome {
+                    Outcome::Admitted => Ok(()),
+                    outcome => Err(agent_refusal(outcome, undo)),
+                });
+                // Stored at once, as its content room's part (Q403).
+                if admitted {
+                    self.start_store().await;
+                }
+            }
+            RoomCmd::AgentKnown {
+                id,
+                request_hash,
+                undo_of,
+                reply,
+            } => {
+                let _ = reply.send(self.agent.known(&id, &request_hash, undo_of.as_deref()));
+            }
         }
     }
 
@@ -1568,6 +1718,190 @@ impl Room {
             Some(refusal) => Err(refusal),
             None => Ok(()),
         }
+    }
+
+    /// An agent edit, Undo or Redo (Q402): a retry or a reversed step's
+    /// second request answers with the receipt this room holds; otherwise
+    /// the update goes through a person's admission (a quiz's keys through
+    /// its keys room's, in the same step), the receipt waits for the store,
+    /// which starts at once (Q403), and the answer goes at admission.
+    async fn agent_edit(&mut self, edit: AgentEdit) {
+        let AgentEdit {
+            actor,
+            mut receipt,
+            step,
+            update,
+            keys,
+            reply,
+        } = edit;
+        match self
+            .admit_agent(&actor, &mut receipt, step, update, keys)
+            .await
+        {
+            Ok(Some(known)) => {
+                let _ = reply.send(Ok((known, false)));
+            }
+            Ok(None) => {
+                let _ = reply.send(Ok((receipt.answer(), true)));
+                self.agent.pending.push(receipt);
+                self.content_changed();
+                self.start_store().await;
+            }
+            Err(refusal) => {
+                let _ = reply.send(Err(refusal));
+            }
+        }
+    }
+
+    async fn admit_agent(
+        &mut self,
+        actor: &str,
+        receipt: &mut note_store::AgentReceipt,
+        step: Option<AgentStep>,
+        update: Option<Vec<u8>>,
+        keys: Option<Vec<u8>>,
+    ) -> Result<Option<Value>, crate::edits::DocumentError> {
+        use crate::edits::{DocumentError, UNDO_GONE, undo_unavailable};
+        let undo = receipt.undo_of.clone();
+        if let Some(known) =
+            self.agent
+                .known(&receipt.id, &receipt.request_hash, undo.as_deref())?
+        {
+            return Ok(Some(known));
+        }
+        if self.agent.pending.len() + self.agent.storing.len() >= AGENT_UNSTORED_MAX {
+            return Err(DocumentError::Unavailable(
+                "too many agent edits of this document wait to be saved",
+            ));
+        }
+        if let Some(of) = &undo {
+            // The step as this room admitted it, else as stored: a click
+            // before its store works (Q403).
+            let Some(step) = self
+                .agent
+                .find(|known| &known.id == of)
+                .map(AgentStep::of)
+                .or(step)
+            else {
+                return Err(undo_unavailable(UNDO_GONE));
+            };
+            if step.actor != actor {
+                return Err(DocumentError::Lifecycle(
+                    "the step is another user's".into(),
+                ));
+            }
+            receipt.conversation_id = receipt.conversation_id.take().or(step.conversation_id);
+            receipt.message_id = receipt.message_id.take().or(step.message_id);
+            receipt.effect["operation"] =
+                json!(if step.operation.as_deref() == Some("edit_undone") {
+                    "edited"
+                } else {
+                    "edit_undone"
+                });
+            if update.is_none() && keys.is_none() {
+                return Err(undo_unavailable(UNDO_GONE));
+            }
+        }
+        let context = agent_context(actor);
+        let undoing = undo.is_some();
+        if let Some(keys) = keys {
+            // Checked here first, applied once the keys room admitted its
+            // part: nothing else runs in this room meanwhile, so the check
+            // holds (Q403).
+            if let Some(update) = &update {
+                let granted = self.server_ids(update);
+                match self.check_update(None, &context, false, update, None, &granted) {
+                    Ok(_) | Err(Outcome::Admitted) => {}
+                    Err(outcome) => return Err(agent_refusal(outcome, undoing)),
+                }
+                if let Kindly::Note(note) = &mut self.kind {
+                    note.validator.invalidate();
+                }
+            }
+            // Loaded for this edit if it unloaded since its snapshot: its
+            // stored state is then what the edit was computed on (Q403).
+            let Kindly::Note(note) = &self.kind else {
+                return Err(DocumentError::Unavailable(crate::edits::ROOM_RESET));
+            };
+            let name = RoomName::Material {
+                material_id: note.material_id.clone(),
+                schema: note.schema,
+                keys: true,
+            };
+            let peer = self
+                .app
+                .rooms
+                .get_or_spawn(&name.to_string(), |id| spawn(&self.app, &name, id, actor));
+            let (done, answer) = oneshot::channel();
+            let sent = peer
+                .tx
+                .send(RoomCmd::AgentKeys {
+                    actor: actor.to_owned(),
+                    update: keys,
+                    undo: undoing,
+                    reply: done,
+                })
+                .await;
+            if sent.is_err() {
+                return Err(DocumentError::Unavailable(crate::edits::ROOM_RESET));
+            }
+            match answer.await {
+                Ok(Ok(())) => {}
+                Ok(Err(refusal)) => return Err(refusal),
+                Err(_) => return Err(DocumentError::Unavailable(crate::edits::ROOM_RESET)),
+            }
+        }
+        if let Some(update) = update {
+            // Computed on a snapshot: a live collection since may have
+            // dropped a unit it names, which would integrate as collected
+            // (Q419, Q432).
+            if matches!(self.kind, Kindly::Note(_))
+                && ydoc::decode(&update)
+                    .is_ok_and(|decoded| ydoc::gc::names_collected(&self.doc.transact(), &decoded))
+            {
+                return Err(if undoing {
+                    undo_unavailable(UNDO_GONE)
+                } else {
+                    DocumentError::Unavailable(crate::edits::ROOM_RESET)
+                });
+            }
+            let granted = self.server_ids(&update);
+            let outcome = self.admit_update(None, &context, false, &update, None, &granted);
+            if !matches!(outcome, Outcome::Admitted) {
+                // The check above passed on this same state; logged if the
+                // keys landed alone all the same.
+                log(
+                    Level::Warn,
+                    "agent edit refused at its apply",
+                    json!({ "room": self.name }),
+                );
+                return Err(agent_refusal(outcome, undoing));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The ids an agent's update writes under that no user holds (Q402):
+    /// the server's, the edit's scratch id and those an Undo or Redo payload
+    /// carries from the step it reverses. An id recorded to a user, bound to
+    /// a channel or the room's own stays refused.
+    fn server_ids(&self, update: &[u8]) -> Vec<u64> {
+        let Ok(decoded) = ydoc::decode(update) else {
+            return Vec::new();
+        };
+        let recorded = self.client_ids.ids();
+        let state = self.doc.transact().state_vector();
+        client_ids::written(&state, &decoded)
+            .into_iter()
+            .filter(|id| {
+                !recorded.contains(id)
+                    && *id != self.doc.client_id().get()
+                    && !self
+                        .members
+                        .values()
+                        .any(|member| member.client == *id || member.worker == Some(*id))
+            })
+            .collect()
     }
 
     /// A draft's receipt: answered once nothing is left to store, so after
@@ -1848,15 +2182,11 @@ impl Room {
     }
 
     /// A server edit reaches the editors; it is durable already, so the room
-    /// stays clean and its cover takes the edit's row in. An agent edit's own
-    /// items stay here for its Undo, what it deleted kept from collection.
+    /// stays clean and its cover takes the edit's row in.
     fn service_edit(&mut self, edit: ServiceEdit) {
         // Debug builds only: the integration test's server edit that fails.
         #[cfg(debug_assertions)]
-        let failing = edit
-            .step
-            .as_ref()
-            .is_some_and(|(id, _, _)| id.starts_with(IT_FAIL_SERVICE_EDIT));
+        let failing = self.name.contains(IT_FAIL_SERVICE_EDIT);
         #[cfg(not(debug_assertions))]
         let failing = false;
         let applied = ydoc::decode(&edit.update)
@@ -1865,11 +2195,7 @@ impl Room {
                 if failing {
                     return Err("integration test apply failure".to_owned());
                 }
-                match edit.step {
-                    Some(_) => ydoc::undo::apply_kept(&self.doc, update),
-                    None => ydoc::apply(&self.doc, update),
-                }
-                .map_err(|error| error.to_string())
+                ydoc::apply(&self.doc, update).map_err(|error| error.to_string())
             });
         let update = match applied {
             Ok(update) => update,
@@ -1879,9 +2205,6 @@ impl Room {
                     None,
                     &[("room", &self.name), ("stage", "service_edit")],
                 );
-                if let Some(reply) = edit.taken {
-                    let _ = reply.send(false);
-                }
                 // Its row committed: the room reloads from the stored
                 // document, which holds it (Q389), and counts nothing past
                 // it meanwhile.
@@ -1893,37 +2216,7 @@ impl Room {
         if let Kindly::Source(source) = &mut self.kind {
             source.estimate.applied(update.len() as u64, 0);
         }
-        // The editors get the edit first; its Undo is judged after.
-        let changed = !update.is_empty();
         self.broadcast_update(None, update);
-        // A room that loaded after the edit committed holds its items already,
-        // without what it deleted: no Undo there. Nor where its Undo's
-        // estimate is too large to send (Epo 2026-10-21).
-        let mut taken = false;
-        if let Some((id, items, cost)) = edit.step
-            && changed
-            && self.update_fits(cost)
-        {
-            let edited = std::time::SystemTime::now();
-            // Debug builds only: the integration test of a step whose rooms'
-            // 24 h end apart.
-            #[cfg(debug_assertions)]
-            let edited = if self.name.starts_with("keys:") && id.starts_with(IT_KEYS_LATER) {
-                edited + Duration::from_secs(10)
-            } else {
-                edited
-            };
-            let step = AgentStep {
-                change: items.change(&self.doc),
-                cost,
-                edited,
-            };
-            self.keep_agent_step(id, step);
-            taken = true;
-        }
-        if let Some(reply) = edit.taken {
-            let _ = reply.send(taken);
-        }
         self.durable.union(&edit.durable);
         self.app
             .stats
@@ -1968,227 +2261,6 @@ impl Room {
             self.close_channel(key, None, 0, crate::edits::ROOM_RESET);
         }
         self.flush();
-    }
-
-    /// Undo or Redo of an agent step (`edits::undo`): reverted as the
-    /// editor's undo reverts (`ydoc::undo`), so other people's later changes
-    /// stay; a note the store would refuse is put back at once. The result
-    /// goes out like a writer's update under the actor's contributor marker
-    /// (the store checks the actor's access), and the reply waits for the
-    /// first store that holds it, even when people typed on meanwhile (a store
-    /// that failed and retries still answers done: the revert stays in the
-    /// room). The step that reverses it stays as `next`. A step
-    /// this room reverted already answers done again, with the id its reverse
-    /// is kept under, so a request whose answer was lost can be repeated.
-    async fn agent_undo(&mut self, undo: AgentUndo) {
-        let AgentUndo {
-            step,
-            next,
-            actor,
-            reply,
-        } = undo;
-        let Some(AgentStep {
-            change,
-            cost,
-            edited,
-        }) = self.agent_changes.remove(&step)
-        else {
-            let answer = match self.agent_reverted.get(&step) {
-                Some(kept) => Reverted::Done(kept.clone()),
-                None => Reverted::Missing,
-            };
-            let _ = reply.send(Ok(answer));
-            return;
-        };
-        let refused = if self.discard_pending.is_some()
-            || !self.forced_unload.is_empty()
-            || self.app.evictions.blocks(&self.name, false)
-        {
-            Some(("unavailable_target", crate::edits::ROOM_RESET))
-        } else if matches!(self.kind, Kindly::Source(_)) && self.app.handoff().busy(&self.name) {
-            // A publication handoff holds every writer read-only, as drafts.
-            Some(("unavailable_target", "a publication is under way"))
-        } else if self.unsupported().is_some() {
-            Some(("unsupported_operation", UNSUPPORTED_BLOCK))
-        } else if matches!(&self.kind, Kindly::Source(source) if source.paused) {
-            Some(("office_editing_paused", "Office editing is paused"))
-        } else {
-            None
-        };
-        // Debug builds only: the integration tests' refusal of a quiz's keys
-        // room, to check the content room is put back.
-        #[cfg(debug_assertions)]
-        let refused = refused.or_else(|| {
-            (self.name.starts_with("keys:") && next.starts_with(IT_REFUSE_KEYS_UNDO))
-                .then_some(("unavailable_target", "integration test refusal"))
-        });
-        if let Some((code, message)) = refused {
-            self.agent_changes.insert(
-                step,
-                AgentStep {
-                    change,
-                    cost,
-                    edited,
-                },
-            );
-            let _ = reply.send(Ok(Reverted::Refused {
-                code,
-                message: message.into(),
-            }));
-            return;
-        }
-        // An Undo whose estimate no longer fits is refused (Epo 2026-10-21):
-        // a source room may have grown toward its cap since. The step goes.
-        if !self.update_fits(cost) {
-            self.app.agent_steps.release(&step, &self.name);
-            let _ = reply.send(Ok(Reverted::Refused {
-                code: "undo_unavailable",
-                message: "this edit is too large to undo".into(),
-            }));
-            return;
-        }
-        let doc = self.doc.clone();
-        let Some(reverted) = tokio::task::block_in_place(|| ydoc::undo::revert(&doc, change))
-        else {
-            self.app.agent_steps.release(&step, &self.name);
-            let _ = reply.send(Ok(Reverted::Nothing));
-            return;
-        };
-        let ydoc::undo::Reverted { update, next: back } = reverted;
-        // An Undo or Redo that leaves a note with no block gets its empty
-        // paragraph, the repair every writer gets (Epo 2026-10-22), in a
-        // transaction of its own: the step's reverse holds only the revert,
-        // so a Redo neither fails nor takes the paragraph out.
-        let repaired = match &self.kind {
-            Kindly::Note(note) if note.model == crate::model::Model::Note => {
-                let kind = note.kind.clone();
-                tokio::task::block_in_place(|| {
-                    let mut txn = doc.transact_mut();
-                    notes::repair::emptied(&mut txn, &kind).then(|| ydoc::committed_update(txn))
-                })
-            }
-            _ => None,
-        };
-        if let Kindly::Note(note) = &self.kind {
-            let (model, kind, previous, peer) = (
-                note.model,
-                note.kind.clone(),
-                note.durable_metrics,
-                note.validator.peer(),
-            );
-            if let Err(error) =
-                tokio::task::block_in_place(|| validate(&doc, model, &kind, previous, peer))
-            {
-                self.broadcast_update(None, update);
-                if let Some(repaired) = repaired {
-                    self.broadcast_update(None, repaired);
-                }
-                let restored = back.and_then(|back| {
-                    tokio::task::block_in_place(|| ydoc::undo::revert(&doc, back))
-                });
-                match restored {
-                    Some(restored) => {
-                        self.broadcast_update(None, restored.update);
-                        match restored.next {
-                            Some(again) => {
-                                let step_again = AgentStep {
-                                    change: again,
-                                    cost,
-                                    edited,
-                                };
-                                self.keep_agent_step(step, step_again);
-                            }
-                            None => self.app.agent_steps.release(&step, &self.name),
-                        }
-                    }
-                    None => {
-                        self.app.agent_steps.release(&step, &self.name);
-                        observe::capture(
-                            "a refused agent Undo could not be put back",
-                            None,
-                            &[("room", &self.name), ("stage", "agent_undo")],
-                        );
-                    }
-                }
-                self.content_changed();
-                let (code, message) = match error {
-                    StoreError::Limit { code, .. } => ("quota_rejected", code.as_str().to_owned()),
-                    other => ("invalid_input", other.to_string()),
-                };
-                let _ = reply.send(Ok(Reverted::Refused { code, message }));
-                return;
-            }
-        }
-        let context = Context {
-            access: Access::Write,
-            expires_at: i64::MAX,
-            token_id: String::new(),
-            user_id: actor.clone(),
-            client_id: None,
-            worker_client_id: None,
-            viewer: false,
-            parent: None,
-            identity: Default::default(),
-        };
-        if let Some(marker) = self.markers.write(&self.doc, &context) {
-            self.broadcast_update(None, marker);
-        }
-        match &mut self.kind {
-            // Content the validator did not admit: its growth bound is stale.
-            Kindly::Note(note) => note.validator.invalidate(),
-            // An upper bound: what the revert freed is not counted.
-            Kindly::Source(source) => source.estimate.applied(update.len() as u64, 0),
-        }
-        // An Undo that brings back a quiz or an image gets a children pass,
-        // as a person's undo does.
-        if matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Note)
-            && let Ok(decoded) = ydoc::decode(&update)
-            && notes::children::child_writes(&self.doc.transact(), &decoded).is_some()
-        {
-            self.child_passes.push_back(ChildPass {
-                actor,
-                update: update.clone(),
-                notify: None,
-            });
-            self.next_child_pass();
-        }
-        self.content_changed();
-        self.broadcast_update(None, update);
-        if let Some(repaired) = repaired {
-            self.broadcast_update(None, repaired);
-        }
-        self.app.agent_steps.revert(&step, &self.name);
-        self.agent_reverted.insert(step, next.clone());
-        // Its reverse (the same edit's other side) is kept only when its
-        // estimate fits, as an edit's is.
-        // Its reverse keeps the agent edit's time: an Undo or Redo does not
-        // restart the 24 h (Q385).
-        if let Some(back) = back
-            && self.update_fits(cost)
-        {
-            let reverse = AgentStep {
-                change: back,
-                cost,
-                edited,
-            };
-            self.keep_agent_step(next.clone(), reverse);
-        }
-        // The next store's snapshot holds the revert.
-        let snapshot = self.store.snapshots + 1;
-        self.store.undo_waiters.push((next, snapshot, reply));
-        self.start_store().await;
-    }
-
-    /// Whether an update of `len` bytes may go out (Epo 2026-10-21): within
-    /// the 8 MiB update cap and, in a source room, its admission cap.
-    fn update_fits(&self, len: usize) -> bool {
-        len <= ydoc::MAX_UPDATE_BYTES
-            && match &self.kind {
-                Kindly::Source(source) => {
-                    source.estimate.bytes + len as u64 <= sources::admission_cap(source.state_cap)
-                }
-                Kindly::Note(_) => true,
-            }
     }
 
     /// Sends `notification` (if any) and CLOSED, and forgets the channel.
@@ -2244,7 +2316,7 @@ impl Room {
         }
         self.store.dirty = false;
         self.store.retry_at = None;
-        self.fail_undo_waiters("collaboration room discarded");
+        self.agent.discard();
         self.answer_store_waiters(Err("collaboration room discarded".into()));
         let _ = reply.send(Ok(()));
     }
@@ -2393,16 +2465,13 @@ impl Room {
     /// get the collected state, open tabs keep their tombstones. The state
     /// vector, the unstored edits, the room's own marker chains and its
     /// window stay. A guard refusal (or a panic) keeps the document as it
-    /// is, reported once. While the room keeps agent steps it waits: their
-    /// live Undo reverts against this document's own deleted content and
-    /// redo links, which a reload drops (durable Undo removes those steps).
+    /// is, reported once. Agent edits waiting to be stored do not hold it
+    /// back (Q432): their deletions are newer than any window, and their
+    /// Undo is a payload checked against what the room holds collected.
     async fn collect_live(&mut self, window: &ydoc::gc::Window, held: yrs::IdSet) {
         let Kindly::Note(note) = &self.kind else {
             return;
         };
-        if !self.agent_changes.is_empty() {
-            return;
-        }
         let (doc, model, started) = (self.doc.clone(), note.model, Instant::now());
         let window = window.clone();
         let collected = tokio::task::spawn_blocking(move || {
@@ -3018,8 +3087,8 @@ impl Room {
 
     /// A writer's update through every check that reads the room, then the
     /// apply and the broadcast. `writer` is its channel, or none for a draft
-    /// send: nothing to acknowledge or tell of a children refusal, and every
-    /// editor receives the update.
+    /// send or an agent edit (Q402): nothing to acknowledge or tell of a
+    /// children refusal, and every editor receives the update.
     fn admit_update(
         &mut self,
         writer: Option<MemberKey>,
@@ -3029,35 +3098,58 @@ impl Room {
         decoded: Option<yrs::Update>,
         granted: &[u64],
     ) -> Outcome {
+        match self.check_update(writer, context, read_only, bytes, decoded, granted) {
+            Ok(checked) => self.apply_update(writer, context, bytes, checked),
+            Err(outcome) => outcome,
+        }
+    }
+
+    /// [Room::admit_update]'s checks: the update to apply, or the outcome
+    /// (an update with nothing new is admitted without an apply).
+    fn check_update(
+        &mut self,
+        writer: Option<MemberKey>,
+        context: &Context,
+        read_only: bool,
+        bytes: &[u8],
+        decoded: Option<yrs::Update>,
+        granted: &[u64],
+    ) -> Result<Checked, Outcome> {
         if self.app.evictions.blocks(&self.name, false) {
-            return Outcome::refused(Class::Unavailable, "collaboration room is being reset");
+            return Err(Outcome::refused(
+                Class::Unavailable,
+                "collaboration room is being reset",
+            ));
         }
         if context.expires_at <= crate::auth::now_seconds() {
-            return Outcome::refused(Class::Permission, "collaboration token expired");
+            return Err(Outcome::refused(
+                Class::Permission,
+                "collaboration token expired",
+            ));
         }
         // A draft send decoded its update already (the no-op check).
         let Some(update) = decoded.or_else(|| ydoc::decode(bytes).ok()) else {
-            return Outcome::refused(Class::Malformed, "malformed update");
+            return Err(Outcome::refused(Class::Malformed, "malformed update"));
         };
         let changes = ydoc::contains_changes(&self.doc.transact(), &update);
         if read_only {
             if changes {
-                return Outcome::refused(
+                return Err(Outcome::refused(
                     Class::Permission,
                     "read-only connection sent a document update",
-                );
+                ));
             }
             self.ack(writer);
-            return Outcome::Admitted;
+            return Err(Outcome::Admitted);
         }
         // A document holding a block this version cannot edit stays as it is
         // (a writer whose access came back after it joined, a draft).
         if changes && let Some(notice) = self.unsupported() {
-            return Outcome::Refused {
+            return Err(Outcome::Refused {
                 payloads: vec![notice],
                 reason: UNSUPPORTED_BLOCK.into(),
                 class: Class::Permission,
-            };
+            });
         }
         // A writer that slipped past the maintenance pause: it goes read-only
         // (or to recovery with unsent changes) and its update is refused.
@@ -3070,17 +3162,17 @@ impl Room {
                 "type": "source-editing-paused",
             })
             .to_string();
-            return Outcome::Refused {
+            return Err(Outcome::Refused {
                 payloads: vec![payload],
-                reason: "Office editing is paused".into(),
+                reason: OFFICE_PAUSED.into(),
                 class: Class::Unavailable,
-            };
+            });
         }
         if markers::check(&self.doc.transact(), &update, self.doc.client_id()).is_err() {
-            return Outcome::refused(
+            return Err(Outcome::refused(
                 Class::Malformed,
                 "client update changed collaboration metadata",
-            );
+            ));
         }
         // A writer adds structs only under ids its user holds (Q213): ones
         // recorded to the user, bound to one of the user's live channels (a
@@ -3099,10 +3191,10 @@ impl Room {
                 || bound.contains(&id)
                 || granted.contains(&id)
         }) {
-            return self.foreign_update_refused(context, client, bytes.len());
+            return Err(self.foreign_update_refused(context, client, bytes.len()));
         }
         // Recorded once the update is accepted and applied (r2 S1).
-        let mut written = client_ids::written(&state, &update);
+        let written = client_ids::written(&state, &update);
         // Admission and apply run off the runtime's workers while the room
         // waits, unless the update is a small edit of a few structs (REVIEW2
         // S1, REVIEW3 S1): a trial on a copy, a source's exact measure near
@@ -3161,37 +3253,40 @@ impl Room {
             admit()
         };
         match verdict {
-            Verdict::Unheld => return Outcome::Unheld,
+            Verdict::Unheld => return Err(Outcome::Unheld),
             // A draft send only: the editor's join shows it for review.
             Verdict::Hidden => {
-                return Outcome::refused(
+                return Err(Outcome::refused(
                     Class::Hidden,
                     "the drafts type into a block the room deleted",
-                );
+                ));
             }
             Verdict::Accept => {}
             Verdict::Source(sources::Refusal::Malformed(message)) => {
-                return Outcome::refused(Class::Malformed, message);
+                return Err(Outcome::refused(Class::Malformed, message));
             }
             Verdict::Source(refusal) => {
-                return self.source_update_refused(writer, context, &refusal, bytes.len());
+                return Err(self.source_update_refused(writer, context, &refusal, bytes.len()));
             }
             Verdict::Limit(code, metrics) => {
                 let payload = self.rejection_payload(code, metrics, None);
-                incidents::record(
-                    &self.app,
-                    vec![Incident {
-                        cause: Cause::new(IncidentKind::OverLimit, code.as_str()),
-                        room: self.name.clone(),
-                        size_bytes: Some(bytes.len() as u64),
-                        user_id: Some(context.user_id.clone()),
-                    }],
-                );
-                return Outcome::Refused {
+                // An agent edit refused here loses no one's work (Q432).
+                if context.token_id != AGENT_TOKEN {
+                    incidents::record(
+                        &self.app,
+                        vec![Incident {
+                            cause: Cause::new(IncidentKind::OverLimit, code.as_str()),
+                            room: self.name.clone(),
+                            size_bytes: Some(bytes.len() as u64),
+                            user_id: Some(context.user_id.clone()),
+                        }],
+                    );
+                }
+                return Err(Outcome::Refused {
                     payloads: vec![payload],
                     reason: "invalid material document".into(),
                     class: Class::Limit,
-                };
+                });
             }
             // Refused on entry (Epo 2026-10-18): the room keeps its state, the
             // writer's editor reloads it on a fresh document and channel on
@@ -3203,18 +3298,38 @@ impl Room {
                     "room": self.name,
                     "type": "document-rejected",
                 });
-                return Outcome::Refused {
+                return Err(Outcome::Refused {
                     payloads: vec![payload.to_string()],
                     reason: error,
                     class: Class::Malformed,
-                };
+                });
             }
         }
         self.placed(writer, context);
         if !changes {
             self.ack(writer);
-            return Outcome::Admitted;
+            return Err(Outcome::Admitted);
         }
+        Ok(Checked {
+            update,
+            written,
+            heavy,
+        })
+    }
+
+    /// [Room::admit_update]'s apply of a checked update and its broadcast.
+    fn apply_update(
+        &mut self,
+        writer: Option<MemberKey>,
+        context: &Context,
+        bytes: &[u8],
+        checked: Checked,
+    ) -> Outcome {
+        let Checked {
+            update,
+            mut written,
+            heavy,
+        } = checked;
         let mut applied = 0;
         self.applying = true;
         if let Some(marker) = self.markers.write(&self.doc, context) {
@@ -3278,10 +3393,12 @@ impl Room {
             }
         }
         // The first accepted write under an id in this room's life records
-        // it as the user's (Q236), or refreshes its row once a day (M3).
-        if let Some(rows) =
-            self.client_ids
-                .first_writes(&context.user_id, &written, std::time::Instant::now())
+        // it as the user's (Q236), or refreshes its row once a day (M3). An
+        // agent edit's scratch id is the server's, as before Q402.
+        if context.token_id != AGENT_TOKEN
+            && let Some(rows) =
+                self.client_ids
+                    .first_writes(&context.user_id, &written, std::time::Instant::now())
         {
             self.write_rows(rows);
         }
@@ -3359,15 +3476,17 @@ impl Room {
             "update under another user's client id refused",
             json!({ "client": client, "room": self.name, "user_id": context.user_id }),
         );
-        incidents::record(
-            &self.app,
-            vec![Incident {
-                cause: Cause::new(IncidentKind::SaveRefused, "client_id"),
-                room: self.name.clone(),
-                size_bytes: Some(bytes as u64),
-                user_id: Some(context.user_id.clone()),
-            }],
-        );
+        if context.token_id != AGENT_TOKEN {
+            incidents::record(
+                &self.app,
+                vec![Incident {
+                    cause: Cause::new(IncidentKind::SaveRefused, "client_id"),
+                    room: self.name.clone(),
+                    size_bytes: Some(bytes as u64),
+                    user_id: Some(context.user_id.clone()),
+                }],
+            );
+        }
         // `unassigned`: the browser does not resend them as they are; it
         // re-applies them under its assigned id (Epo 2026-10-24).
         let payload = match &self.kind {
@@ -3434,15 +3553,17 @@ impl Room {
                 Class::Malformed,
             ),
         };
-        incidents::record(
-            &self.app,
-            vec![Incident {
-                cause,
-                room: self.name.clone(),
-                size_bytes: Some(bytes as u64),
-                user_id: Some(context.user_id.clone()),
-            }],
-        );
+        if context.token_id != AGENT_TOKEN {
+            incidents::record(
+                &self.app,
+                vec![Incident {
+                    cause,
+                    room: self.name.clone(),
+                    size_bytes: Some(bytes as u64),
+                    user_id: Some(context.user_id.clone()),
+                }],
+            );
+        }
         Outcome::Refused {
             payloads: vec![payload],
             reason: refusal.message().to_owned(),
@@ -3887,7 +4008,6 @@ impl Room {
         };
         let claimed = self.receipts.clone();
         self.store.dirty = false;
-        self.store.snapshots += 1;
         self.store.first_change = None;
         let started = Instant::now();
         // Checked (and repaired) first: the row holds what a repair wrote.
@@ -3920,19 +4040,31 @@ impl Room {
             return;
         };
         let (material_id, schema, doc_kind) = (note.material_id.clone(), note.schema, note.doc);
+        let Some(handle) = self.own_handle() else {
+            return;
+        };
+        // The agent steps this snapshot holds go in its transaction (Q402).
+        let receipts = self.agent.claim();
         let actors: Vec<String> = {
-            let mut actors: Vec<String> = contributors.iter().map(|c| c.user_id.clone()).collect();
+            let mut actors: Vec<String> = contributors
+                .iter()
+                .map(|c| c.user_id.clone())
+                .chain(receipts.iter().map(|receipt| receipt.actor.clone()))
+                .collect();
             actors.sort();
             actors.dedup();
             actors
-        };
-        let Some(handle) = self.own_handle() else {
-            return;
         };
         self.store.running = true;
         self.view_dirty = true;
         let app = self.app.clone();
         tokio::spawn(async move {
+            // Debug builds only: the integration tests' store that commits
+            // a second late, so an agent edit's answer comes first.
+            #[cfg(debug_assertions)]
+            if material_id.contains(IT_SLOW_STORE) {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
             let result = note_store::append(
                 &app.db,
                 &material_id,
@@ -3941,6 +4073,7 @@ impl Room {
                 &row,
                 &actors,
                 &session_rows,
+                &receipts,
             )
             .await
             .map_err(StoreFailure::Note);
@@ -4145,43 +4278,6 @@ impl Room {
         })
     }
 
-    /// Keeps an agent step for its Undo or Redo until 24 h after its agent
-    /// edit (Q385): what it deleted is held as long (review r1 M3,
-    /// `sessions.rs`), and the step registry offers it until then.
-    fn keep_agent_step(&mut self, id: String, step: AgentStep) {
-        if let Some(sessions) = &mut self.sessions {
-            sessions.agent_deleted(step.change.deletions().clone(), step.edited);
-        }
-        let until = step.edited + self.app.config.agent_undo;
-        self.app.agent_steps.hold(&id, &self.name, until);
-        let at = instant_at(until);
-        self.agent_expiry = Some(self.agent_expiry.map_or(at, |next| next.min(at)));
-        self.agent_changes.insert(id, step);
-    }
-
-    /// Agent steps 24 h past their agent edit go (Q385), from this room and
-    /// the step registry: an Undo or Redo of one is answered as of a step
-    /// this room no longer has.
-    fn expire_agent_steps(&mut self) {
-        let now = std::time::SystemTime::now();
-        let undo = self.app.config.agent_undo;
-        let mut next = None;
-        let mut expired = Vec::new();
-        for (id, step) in &self.agent_changes {
-            let until = step.edited + undo;
-            if until <= now {
-                expired.push(id.clone());
-            } else {
-                next = Some(next.map_or(until, |at: std::time::SystemTime| at.min(until)));
-            }
-        }
-        for id in expired {
-            self.agent_changes.remove(&id);
-            self.app.agent_steps.release(&id, &self.name);
-        }
-        self.agent_expiry = next.map(instant_at);
-    }
-
     /// A clean Leave (Q236): the channel's recorded ids its token offered
     /// expire; an id it bound otherwise (another tab's, r2 N6) stays.
     fn left_clean(&mut self, key: MemberKey) {
@@ -4352,12 +4448,20 @@ impl Room {
             }
         };
         self.store.dirty = false;
-        self.store.snapshots += 1;
         self.store.first_change = None;
+        let Some(handle) = self.own_handle() else {
+            return;
+        };
+        // The agent steps this snapshot holds go in its checkpoint (Q402).
+        let receipts = self.agent.claim();
         let mut actors: Vec<String> = Vec::new();
-        for contributor in &contributors {
-            if !actors.contains(&contributor.user_id) {
-                actors.push(contributor.user_id.clone());
+        for user in contributors
+            .iter()
+            .map(|contributor| &contributor.user_id)
+            .chain(receipts.iter().map(|receipt| &receipt.actor))
+        {
+            if !actors.contains(user) {
+                actors.push(user.clone());
             }
         }
         let bytes = state.as_ref().map_or(row.len(), Vec::len);
@@ -4368,9 +4472,7 @@ impl Room {
             actors,
             retry_event: self.store.failed_event.clone(),
             edits,
-        };
-        let Some(handle) = self.own_handle() else {
-            return;
+            operations: receipts.iter().map(source_operation).collect(),
         };
         self.store.running = true;
         self.view_dirty = true;
@@ -4416,12 +4518,14 @@ impl Room {
             Ok(version) => version,
             Err(error) => {
                 self.markers.unclaim(&contributors);
+                self.agent.unclaim();
                 self.store.dirty = true;
                 self.store.first_change.get_or_insert(started);
                 self.store_failed(error, started, row_bytes, claimed);
                 return;
             }
         };
+        self.agent.stored();
         let timings = match self.kind {
             Kindly::Note(_) => &self.app.health.material,
             Kindly::Source(_) => &self.app.health.source,
@@ -4492,7 +4596,6 @@ impl Room {
         }
         self.announce_stored(version);
         self.project_on_cadence();
-        self.answer_stored_undos();
         if self.store.dirty || markers::pending(&self.doc) {
             if self.store.again {
                 self.store.again = false;
@@ -4543,7 +4646,6 @@ impl Room {
                 "store refused the document",
                 json!({ "error": error.to_string(), "room": self.name }),
             );
-            self.fail_undo_waiters(&error.to_string());
             self.answer_store_waiters(Err(error.to_string()));
             self.reject_after_store(&error, bytes);
             return;
@@ -4673,7 +4775,6 @@ impl Room {
             source.failing_since = None;
         }
         let cause = incidents::Cause::from_source(&error.discard_cause(slow_limit));
-        self.fail_undo_waiters(&error.to_string());
         self.answer_store_waiters(Err(error.to_string()));
         let eviction = uuid::Uuid::new_v4().to_string();
         let payload = json!({
@@ -4686,38 +4787,10 @@ impl Room {
         self.reject_room(cause, bytes, &eviction, payload);
     }
 
-    /// Answers the store's waiters. An agent Undo is done either way: a
-    /// failed store is retried with the revert still in the room; a store the
-    /// room gives up on calls `fail_undo_waiters` first.
+    /// Answers the store's waiters.
     fn answer_store_waiters(&mut self, result: Result<(), String>) {
         for waiter in self.store.waiters.drain(..) {
             let _ = waiter.send(result.clone());
-        }
-        for (kept, _, waiter) in self.store.undo_waiters.drain(..) {
-            let _ = waiter.send(Ok(Reverted::Done(kept)));
-        }
-    }
-
-    /// Answers the agent Undos whose revert the store that just ended held,
-    /// though the room is dirty again: people typing on would otherwise keep
-    /// an Undo waiting until it times out (review r2 M2). Only one store runs
-    /// at a time, so the one that ended took the latest snapshot.
-    fn answer_stored_undos(&mut self) {
-        let stored = self.store.snapshots;
-        let (done, waiting): (Vec<_>, Vec<_>) = std::mem::take(&mut self.store.undo_waiters)
-            .into_iter()
-            .partition(|(_, snapshot, _)| *snapshot <= stored);
-        self.store.undo_waiters = waiting;
-        for (kept, _, waiter) in done {
-            let _ = waiter.send(Ok(Reverted::Done(kept)));
-        }
-    }
-
-    /// The room drops what it holds (a discard, a store refused for good):
-    /// the agent Undos waiting on it did not land.
-    fn fail_undo_waiters(&mut self, error: &str) {
-        for (_, _, waiter) in self.store.undo_waiters.drain(..) {
-            let _ = waiter.send(Err(error.to_owned()));
         }
     }
 
@@ -4785,6 +4858,7 @@ impl Room {
         self.store.retry_at = None;
         self.discard_pending = Some(cause);
         self.view_dirty = true;
+        self.agent.discard();
     }
 
     // ---------------------------------------------------------------- projection
@@ -4921,8 +4995,6 @@ impl Room {
             "room_unload",
             json!({ "bytes": stored_bytes(&self.kind), "room": self.name }),
         );
-        // The live Undo of agent edits ends with the room (Epo 2026-10-20).
-        self.app.agent_steps.forget_room(&self.name);
         // A reload's next room may load now.
         if std::mem::take(&mut self.reloading) {
             self.app.evictions.end(&self.name, true);
@@ -5013,7 +5085,7 @@ impl Room {
             };
             // The log folds while the room is empty (DESIGN.md 3.5).
             let folding = async {
-                if !(session_rows.rows.is_empty() && session_rows.agent.is_none())
+                if !session_rows.rows.is_empty()
                     && let Err(error) =
                         note_store::save_sessions_now(&app.db, &material_id, &session_rows).await
                 {
@@ -5079,6 +5151,88 @@ async fn one_process(
 static WITHHELD: std::sync::LazyLock<std::sync::Mutex<HashSet<&'static str>>> =
     std::sync::LazyLock::new(Default::default);
 
+/// An agent step as a source room's checkpoint carries it (Go's
+/// `SourceCheckpointOperation`): its identity, the step it reverses and its
+/// Undo ref, which Go writes with the checkpoint (Q402).
+fn source_operation(receipt: &note_store::AgentReceipt) -> Value {
+    let mut operation = json!({
+        "receipt": {
+            "actorUserId": receipt.actor,
+            "callId": receipt.call_id,
+            "conversationId": receipt.conversation_id,
+            "id": receipt.id,
+            "messageId": receipt.message_id,
+            "requestHash": receipt.request_hash,
+            "toolVersion": receipt.tool_version,
+        },
+    });
+    if let Some(of) = &receipt.undo_of {
+        operation["undoOf"] = json!(of);
+    }
+    if !receipt.effect["undo"].is_null() {
+        operation["undo"] = receipt.effect["undo"].clone();
+    }
+    operation
+}
+
+/// The context an agent edit is admitted under: its actor's write, with no
+/// token, channel or client id of its own (Q402).
+fn agent_context(actor: &str) -> Context {
+    Context {
+        access: Access::Write,
+        expires_at: i64::MAX,
+        token_id: AGENT_TOKEN.to_owned(),
+        user_id: actor.to_owned(),
+        client_id: None,
+        worker_client_id: None,
+        viewer: false,
+        parent: None,
+        identity: Box::default(),
+    }
+}
+
+/// A person's refusal as the agent hears it (Q402): the edit's own codes
+/// (an Undo past a limit: too large to undo).
+fn agent_refusal(outcome: Outcome, undo: bool) -> crate::edits::DocumentError {
+    use crate::edits::{DocumentError, UNDO_TOO_LARGE, undo_unavailable};
+    let Outcome::Refused {
+        payloads,
+        reason,
+        class,
+    } = outcome
+    else {
+        // Content the room no longer holds: its life ended meanwhile.
+        return DocumentError::Unavailable(crate::edits::ROOM_RESET);
+    };
+    match class {
+        Class::Limit if undo => undo_unavailable(UNDO_TOO_LARGE),
+        Class::Limit => {
+            let code = payloads
+                .first()
+                .and_then(|payload| serde_json::from_str::<Value>(payload).ok())
+                .and_then(|payload| payload["code"].as_str().map(str::to_owned));
+            match code {
+                Some(code) => DocumentError::Quota(code),
+                None => DocumentError::Source {
+                    status: 413,
+                    message: "Source checkpoint exceeds byte limit".into(),
+                },
+            }
+        }
+        Class::Unavailable if reason == OFFICE_PAUSED => DocumentError::Source {
+            status: 423,
+            message: reason,
+        },
+        Class::Unavailable => DocumentError::Unavailable(crate::edits::ROOM_RESET),
+        Class::Permission if reason == UNSUPPORTED_BLOCK => {
+            DocumentError::edit("unsupported_operation", reason)
+        }
+        Class::Permission => DocumentError::Lifecycle(reason),
+        Class::Malformed => DocumentError::edit("invalid_input", reason),
+        _ => DocumentError::Unknown(reason),
+    }
+}
+
 /// What admission decided about a writer's update.
 enum Verdict {
     Accept,
@@ -5137,14 +5291,6 @@ fn validate(
         });
     }
     Ok((metrics, code))
-}
-
-/// The instant a wall-clock `time` falls at (now when it has passed).
-fn instant_at(time: std::time::SystemTime) -> Instant {
-    let now = Instant::now();
-    now + time
-        .duration_since(std::time::SystemTime::now())
-        .unwrap_or_default()
 }
 
 async fn sleep_until(deadline: Option<Instant>) {

@@ -6,6 +6,7 @@
  */
 import type { ResourceEffect } from './resourceEffect.ts';
 import type { ToolError } from './toolError.ts';
+import type { UndoPayload } from './undoPayload.ts';
 
 export interface AgentOperation {
   /** A URL to the JSON Schema for this object. */
@@ -17,5 +18,7 @@ export interface AgentOperation {
   operationId: string;
   outcome: string;
   toolVersion: number;
+  /** The step's signed Undo payload, on a fresh receipt only; never stored */
+  undoPayload?: UndoPayload;
   workspaceId?: string;
 }

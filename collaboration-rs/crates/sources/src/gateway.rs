@@ -100,6 +100,10 @@ pub struct CheckpointBody {
     pub seed_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation: Option<Value>,
+    /// A room store's agent steps (Q402): each written with this checkpoint,
+    /// one already stored passed over, never answered in its place.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub operations: Vec<Value>,
     /// A text source's opening characters, which Go writes to the file's
     /// `preview` (`TextSave::preview`); none for an Office source.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -112,6 +116,10 @@ pub struct CheckpointSaved {
     pub checkpoint: u64,
     #[serde(default)]
     pub operation: Option<Value>,
+    /// The operation's receipt (or its step's Undo) was stored already and
+    /// answered in place of this save, which wrote nothing (review r2 M1).
+    #[serde(default)]
+    pub replayed: bool,
 }
 
 /// `GET .../refresh-candidate?jobId`: a claimed source export.

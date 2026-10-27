@@ -342,7 +342,12 @@ def _note_change(kind="text", block="p2"):
 @pytest.fixture
 def gateway(monkeypatch):
     """Go's note-changes endpoint and the notes' published index identities."""
-    state = {"notes": [_note_change()], "posts": [], "identities": [("m_1", "rgc_a")]}
+    state = {
+        "notes": [_note_change()],
+        "live": {"notes": [], "live": False},
+        "posts": [],
+        "identities": [("m_1", "rgc_a")],
+    }
 
     class Response:
         def __init__(self, body):
@@ -359,7 +364,9 @@ def gateway(monkeypatch):
     def post(url, **kwargs):
         state["posts"].append((url, kwargs["json"]))
         if url.endswith("/note-changes"):
-            return Response(state["notes"])
+            return Response(
+                state["live"] if kwargs["json"].get("live") else state["notes"]
+            )
         return Response({"before": "| r1 | 1 |", "after": "| r1 | 9 |"})
 
     async def snapshot(*_args, **_kwargs):
@@ -395,6 +402,32 @@ async def test_note_changes_ride_with_the_turn_and_a_new_note_index_invalidates_
     gateway["identities"] = [("m_1", "rgc_b")]
     with pytest.raises(pending.SourceChanged):
         await sources.validate()
+
+
+async def test_a_detailed_note_read_takes_unsaved_typing_from_its_open_room(gateway):
+    """Q417 (Epo 2026-10-27): the turn reads stored changes and asks no room;
+    inspecting a note asks for that one note's open room, which answers its
+    unsaved typing, or none when it holds no unsaved edit (the stored changes
+    stand)."""
+    gateway["notes"] = {"notes": [_note_change()]}
+    clean = await pending.load("ws", ["m_1"])
+    clean.read_ids = set()
+    shown = await clean.read_note("m_1")
+    assert gateway["posts"][-1] == (
+        "http://gateway/api/internal/note-changes",
+        {"workspaceId": "ws", "materialIds": ["m_1"], "live": True},
+    )
+    assert '"after":"nuclei"' in shown
+
+    typed = _note_change()
+    typed["changes"][0]["after"] = "nuclei divide"
+    gateway["live"] = {"notes": [typed], "live": True}
+    sources = await pending.load("ws", ["m_1"])
+    sources.read_ids = set()
+    assert "live" not in gateway["posts"][-1][1]
+    shown = await sources.read_note("m_1")
+    assert '"after":"nuclei divide"' in shown
+    await sources.validate()
 
 
 async def test_an_unreadable_note_change_says_sources_may_be_outdated(gateway):

@@ -469,6 +469,7 @@ async fn save_text(
                 actors: vec![h.user.clone()],
                 retry_event: None,
                 edits: None,
+                operations: Vec::new(),
             },
         )
         .await?;
@@ -654,6 +655,7 @@ async fn an_agent_edit_on_a_checkpoint_that_keeps_moving_stops_after_three_attem
         commands: vec![json!({ "type": "replace_text", "expectedText": "abc", "text": "abd" })],
         file_id: room.file_id.clone(),
         operation: json!({ "id": "op_moving", "requestHash": "h1" }),
+        undo: None,
     };
     let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
     let Err(error) = h.sources.apply_edit(input, live).await else {
@@ -720,6 +722,7 @@ async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
                 actors: vec![h.user.clone()],
                 edits: None,
                 retry_event: None,
+                operations: Vec::new(),
             },
         )
         .await
@@ -735,6 +738,7 @@ async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
         })],
         file_id: room.file_id.clone(),
         operation: json!({ "id": "op_full", "requestHash": "h1" }),
+        undo: None,
     };
     let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
     let Err(error) = h.sources.apply_edit(input, live).await else {
@@ -902,6 +906,7 @@ async fn an_office_room_appends_rows_with_its_text_count_and_checks_its_seed_on_
                 edits: h.sources.take_edits(&room),
                 actors: vec![h.user.clone()],
                 retry_event: None,
+                operations: Vec::new(),
             },
         )
         .await
@@ -1004,6 +1009,7 @@ async fn save_office(
                 text: None,
                 actors: vec![h.user.clone()],
                 retry_event: None,
+                operations: Vec::new(),
             },
         )
         .await?;
@@ -1291,6 +1297,7 @@ async fn an_edit_applied_while_a_save_runs_stays_unsaved() {
                 text: None,
                 actors: vec![h.user.clone()],
                 retry_event: None,
+                operations: Vec::new(),
             },
         )
         .await

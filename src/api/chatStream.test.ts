@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { undoPayload } from '@/lib/undoPayloads';
 import { chatTurn, streamChat, WORKSPACE_ONLY_DEFAULT } from './chatStream';
 
 vi.mock('./auth', () => ({
@@ -25,6 +26,53 @@ describe('the per-turn chat body', () => {
       openResource: { id: 'f_1', kind: 'file' },
       workspaceOnly: true,
     });
+  });
+});
+
+// Epo 2026-10-21: an edit's Undo payload rides its tool_end. One of
+// megabytes arrives whole across many reads and is kept for its receipt.
+describe('the Undo payloads a tool_end carries', () => {
+  it('keeps a large payload delivered in many reads', async () => {
+    const update = 'A'.repeat(3 * 1024 * 1024);
+    const payload = {
+      documentId: 'mat_1',
+      epoch: 1,
+      issuedAt: Math.floor(Date.now() / 1000),
+      mac: 'f'.repeat(64),
+      operationId: 'op_streamed',
+      updates: { content: update },
+    };
+    const event = `data: ${JSON.stringify({
+      callId: 'c1',
+      endedAt: '2026-10-22T10:00:00Z',
+      outcome: 'succeeded',
+      type: 'tool_end',
+      undoPayloads: [payload],
+    })}
+
+data: {"type":"done","status":"complete"}
+
+`;
+    const bytes = new TextEncoder().encode(event);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let at = 0; at < bytes.length; at += 64 * 1024)
+          controller.enqueue(bytes.slice(at, at + 64 * 1024));
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status: 200 }))
+    );
+    const ended = vi.fn();
+    await streamChat(
+      'ws_1',
+      { text: 'Edit it', workspaceOnly: false },
+      { onToolEnd: ended }
+    );
+    expect(ended).toHaveBeenCalledOnce();
+    expect(await undoPayload('op_streamed')).toMatchObject(payload);
   });
 });
 

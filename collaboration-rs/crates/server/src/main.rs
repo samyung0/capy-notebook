@@ -234,7 +234,6 @@ async fn serve(config: Config) -> Result<(), String> {
         handoff: Default::default(),
         source_joins: Default::default(),
         markdown,
-        agent_steps: Default::default(),
     });
     let rooms: Arc<dyn sources::Rooms> = Arc::new(source_rooms::ServerRooms {
         app: Arc::downgrade(&app),

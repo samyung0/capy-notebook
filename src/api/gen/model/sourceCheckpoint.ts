@@ -24,6 +24,11 @@ export interface SourceCheckpoint {
   /** @minimum 0 */
   netTokens: number;
   operation?: SourceCheckpointOperation;
+  /**
+     * @maxItems 256
+     * @nullable
+     */
+  operations?: SourceCheckpointOperation[] | null;
   pendingEffects: unknown;
   preview?: string;
   /** @minimum 0 */

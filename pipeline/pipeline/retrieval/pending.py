@@ -61,6 +61,9 @@ class PendingSources:
     _delivered: set[str] = field(default_factory=set, repr=False)
     omitted_ids: set[str] = field(default_factory=set, repr=False)
     _note_ids: set[str] = field(default_factory=set, repr=False)
+    # Each scoped note's published index (None: not indexed), for a note a
+    # detailed read finds changed.
+    _note_index: dict[str, Any] = field(default_factory=dict, repr=False)
     # The candidates pending_hints prepared for matching, once per load.
     hint_pool: list[Any] | None = field(default=None, repr=False)
     _workspace_id: str | None = field(default=None, repr=False)
@@ -181,6 +184,34 @@ class PendingSources:
         self._delivered = previous._delivered - {changed}
         self.omitted_ids = set(previous.omitted_ids)
 
+    async def read_note(self, material_id: str) -> str:
+        """for_read of a note the agent reads in detail (inspect_document):
+        its changes from its open room when that room holds edits not stored,
+        else the turn's stored read (Q417, Epo 2026-10-27). One note per
+        request; a failed read says sources may be outdated."""
+        if (
+            material_id in self._note_ids
+            and material_id not in self._delivered
+            and self._workspace_id is not None
+        ):
+            try:
+                live = await asyncio.to_thread(
+                    _live_note_changes, self._workspace_id, material_id
+                )
+            except (requests.RequestException, ValueError, KeyError) as exc:
+                obs.capture_error(exc, surface="pending_notes")
+                self.notes_unread = True
+                live = None
+            if live is not None:
+                self.notes = [
+                    n for n in self.notes if str(n["materialId"]) != material_id
+                ] + live
+                baseline = [r for r in self._note_baseline if r[0] != material_id]
+                if live:
+                    baseline.append((material_id, self._note_index.get(material_id)))
+                self._note_baseline = sorted(baseline)
+        return self.for_read(material_id)
+
     def for_read(self, document_id: str) -> str:
         """The changes a chat read of this document appends to its own tool
         result, once per turn (Epo 2026-10-20): nothing earlier in the
@@ -253,6 +284,22 @@ def _office_changes(workspace_id: str, ids: list[str]) -> dict[str, Any]:
     )
     obs.raise_internal_response(response)
     return response.json()
+
+
+def _live_note_changes(
+    workspace_id: str, material_id: str
+) -> list[dict[str, Any]] | None:
+    """One note's changes from its open room (Q417); None when no loaded
+    room holds edits not stored."""
+    response = requests.post(
+        cfg.gateway_url.rstrip("/") + "/api/internal/note-changes",
+        headers={"X-Pipeline-Secret": cfg.pipeline_secret},
+        json={"workspaceId": workspace_id, "materialIds": [material_id], "live": True},
+        timeout=30,
+    )
+    obs.raise_internal_response(response)
+    body = response.json()
+    return body["notes"] if body["live"] else None
 
 
 def _identities(rows: list[dict[str, Any]]) -> list[tuple]:
@@ -348,6 +395,7 @@ async def load(workspace_id: str, file_ids: list[str] | None = None) -> PendingS
     # instead of pairing new passages with changes measured before it.
     identities = dict(await _note_identities(workspace_id, selected))
     sources._note_ids = set(identities)
+    sources._note_index = identities
     try:
         notes = await asyncio.to_thread(_note_changes, workspace_id, selected)
     except (requests.RequestException, ValueError, KeyError) as exc:

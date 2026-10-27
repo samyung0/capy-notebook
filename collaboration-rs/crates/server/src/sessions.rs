@@ -6,11 +6,11 @@
 //! Undo of it may restore, each released 25 h after it arrived, since editors'
 //! Undo reaches back at most 24 h. A session counts while connected and for
 //! 24 h after it was last seen; it ends earlier on a clean Leave naming it.
-//! Agent steps' deletions are held 24 h too (review r1 M3). A later fold
-//! reads what must stay from here ([Sessions::holds]): the oldest version
-//! every counted session reached, never past a draft group the room admitted
-//! but has not stored (Q400), and the held deletions. Notes only (Q274):
-//! item rooms keep their whole history.
+//! A later fold reads what must stay from here ([Sessions::holds]): the
+//! oldest version every counted session reached, never past a draft group
+//! the room admitted but has not stored (Q400), and the held deletions, with
+//! the agent holds stored beside the document ([agent_held]). Notes only
+//! (Q274): item rooms keep their whole history.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -26,13 +26,10 @@ pub const COUNTED_FOR: Duration = Duration::from_secs(24 * 60 * 60);
 /// How long a held deletion stays after it arrived (Q2): an hour past the
 /// editors' 24 h Undo, which runs on the tab's clock.
 pub const HELD_FOR: Duration = Duration::from_secs(25 * 60 * 60);
-/// How long after an agent edit its Undo and Redo are offered (Q385, Epo
-/// 2026-10-26).
-pub const AGENT_UNDO_FOR: Duration = Duration::from_secs(24 * 60 * 60);
-/// How long an agent step's deletions stay held, from the agent edit: an
-/// hour past its Undo's [AGENT_UNDO_FOR], as a person's are past theirs, so
-/// a wall clock stepping back never offers an Undo whose holds went (review
-/// r3 N8).
+/// How long an agent edit's deletions (and its Undo's and Redo's) stay
+/// held, from the agent edit (Q390): an hour past its payload's offer
+/// (`ydoc::undo::OFFERED_FOR`), as a person's are past theirs, so a wall
+/// clock stepping back never offers an Undo whose holds went (review r3 N8).
 pub const AGENT_HELD_FOR: Duration = Duration::from_secs(25 * 60 * 60);
 /// Deletions arriving within this of a batch's first join it, stamped with
 /// the latest arrival, so a session keeps at most one batch a minute.
@@ -44,7 +41,8 @@ pub struct Holds {
     /// The oldest stored version every counted session reached; none when
     /// no session counts.
     pub reached: Option<i64>,
-    /// Every counted session's held deletions and the agent steps' (H).
+    /// Every counted session's held deletions (with the stored agent holds,
+    /// [agent_holds], they make H).
     pub held: IdSet,
 }
 
@@ -130,34 +128,25 @@ pub struct Row {
 /// its tab is late when it returns, whatever version it names (Q385).
 pub const LOST: i64 = -1;
 
-/// What a store writes of the sessions: the changed rows, the agent holds
-/// when they changed (none inside: none are left), and the change count
-/// they reach ([Sessions::saved]).
+/// What a store writes of the sessions: the changed rows and the change
+/// count they reach ([Sessions::saved]).
 #[derive(Debug, Default)]
 pub struct Unsaved {
     pub rows: Vec<Row>,
-    pub agent: Option<Option<Vec<u8>>>,
     pub through: u64,
 }
 
-/// Stored records that could not be read (Q382, Epo 2026-10-26): each such
-/// session is dropped alone and reported, and its id is remembered as lost
-/// (Q385: its tab returns as late); agent holds that cannot be read are
-/// dropped and reported too (Q386, Epo 2026-10-26).
+/// Stored session records that could not be read (Q382, Epo 2026-10-26):
+/// each such session is dropped alone and reported, and its id is
+/// remembered as lost (Q385: its tab returns as late).
 #[derive(Debug, Default, PartialEq)]
 pub struct Damaged {
     pub sessions: Vec<u64>,
-    pub agent: bool,
 }
 
 #[derive(Debug, Default)]
 pub struct Sessions {
     sessions: HashMap<u64, Session>,
-    /// Agent steps' deletions (review r1 M3): the live agent edits' now, a
-    /// durable Undo payload's once that wiring lands; each batch released
-    /// [AGENT_HELD_FOR] after it arrived.
-    agent: Vec<Batch>,
-    agent_changed: u64,
     /// Ids whose session record was lost: a JOIN or draft group under one is
     /// late (Q385).
     lost: HashSet<u64>,
@@ -202,13 +191,12 @@ pub fn whole(stored: i64, gaps: &BTreeSet<i64>) -> i64 {
 }
 
 impl Sessions {
-    /// Sessions as their rows stored them (those seen within the cap), the
-    /// ids whose records were lost, and the agent holds; a record that cannot
-    /// be read is left out and its id lost (Q382, Q385).
+    /// Sessions as their rows stored them (those seen within the cap) and
+    /// the ids whose records were lost; a record that cannot be read is left
+    /// out and its id lost (Q382, Q385).
     pub fn load(
         rows: impl IntoIterator<Item = (u64, String, i64, SystemTime, Option<Vec<u8>>)>,
         lost: impl IntoIterator<Item = u64>,
-        agent: Option<Vec<u8>>,
     ) -> (Self, Damaged) {
         let mut damaged = Damaged::default();
         let mut sessions = HashMap::new();
@@ -229,23 +217,11 @@ impl Sessions {
             session.acked = true;
             sessions.insert(client, session);
         }
-        let agent = match agent.map(|bytes| decode_held(&bytes)) {
-            Some(Some(agent)) => agent,
-            Some(None) => {
-                damaged.agent = true;
-                Vec::new()
-            }
-            None => Vec::new(),
-        };
-        // Unreadable agent holds are written again, cleared.
-        let changes = u64::from(damaged.agent);
         let sessions = Sessions {
             sessions,
-            agent,
-            agent_changed: changes,
             lost,
             draft_floor: None,
-            changes,
+            changes: 0,
             saved: 0,
         };
         (sessions, damaged)
@@ -375,19 +351,6 @@ impl Sessions {
         true
     }
 
-    /// An agent step deleted `ids`, which its Undo or Redo may bring back:
-    /// held [AGENT_HELD_FOR] from `edited`, the agent edit's time (an Undo or
-    /// Redo of it keeps that time, Q385). A durable Undo payload records its
-    /// deletions here too, once that wiring lands.
-    pub fn agent_deleted(&mut self, ids: IdSet, edited: SystemTime) {
-        if ids.is_empty() {
-            return;
-        }
-        hold(&mut self.agent, ids, edited);
-        self.changes += 1;
-        self.agent_changed = self.changes;
-    }
-
     /// A draft group naming `version` was admitted (Q400, review r3 M1): a
     /// fold's window stays at or below it until a store whose snapshot was
     /// taken after this commits ([Sessions::saved]), whichever trigger folds.
@@ -419,13 +382,6 @@ impl Sessions {
                 session.held_changed = session.changed;
             }
         }
-        let before = self.agent.len();
-        self.agent
-            .retain(|batch| since(batch.at, now) < AGENT_HELD_FOR);
-        if self.agent.len() != before {
-            self.changes += 1;
-            self.agent_changed = self.changes;
-        }
     }
 
     /// What a fold must keep now: the oldest version every counted session
@@ -443,17 +399,13 @@ impl Sessions {
                 held.merge_with(batch.ids.clone());
             }
         }
-        for batch in &self.agent {
-            held.merge_with(batch.ids.clone());
-        }
         Holds { reached, held }
     }
 
     /// The rows of sessions changed since the last save that `recorded`
-    /// says have a row (an accepted write recorded their id to their user),
-    /// the agent holds when they changed, and the change count they reach: a
-    /// store writes them in its transaction, so a held deletion is durable
-    /// with the state holding it.
+    /// says have a row (an accepted write recorded their id to their user)
+    /// and the change count they reach: a store writes them in its
+    /// transaction, so a held deletion is durable with the state holding it.
     pub fn unsaved(&mut self, now: SystemTime, recorded: impl Fn(u64, &str) -> bool) -> Unsaved {
         self.expire(now);
         let rows = self
@@ -473,11 +425,8 @@ impl Sessions {
                 }
             })
             .collect();
-        let agent = (self.agent_changed > self.saved)
-            .then(|| (!self.agent.is_empty()).then(|| encode_held(&self.agent)));
         Unsaved {
             rows,
-            agent,
             through: self.changes,
         }
     }
@@ -492,6 +441,50 @@ impl Sessions {
         }
         self.sessions
             .retain(|_, session| !(session.ended && session.changed <= saved));
+    }
+}
+
+/// The agent holds as `material_yjs_documents.agent_held` stores them (review
+/// r1 M3): what agent edits, their Undos and Redos deleted, so P2 never
+/// collects what an unexpired Undo payload may name. Each batch is held
+/// [AGENT_HELD_FOR] from its agent edit (`edited`, which an Undo or Redo
+/// keeps, Q385, Q390), written in the edit's own transaction whether or not
+/// a room is loaded. The stored record with `ids` added and expired batches
+/// gone (none when nothing is left), and whether the stored one could not be
+/// read (Q386: dropped; the caller reports it).
+pub fn agent_held(
+    stored: Option<&[u8]>,
+    ids: IdSet,
+    edited: SystemTime,
+    now: SystemTime,
+) -> (Option<Vec<u8>>, bool) {
+    let (mut held, damaged) = agent_batches(stored, now);
+    if !ids.is_empty() {
+        hold(&mut held, ids, edited);
+    }
+    ((!held.is_empty()).then(|| encode_held(&held)), damaged)
+}
+
+/// What the stored agent holds keep at `now`, a fold's part of H beside
+/// [Sessions::holds], and whether the record could not be read (Q386).
+pub fn agent_holds(stored: Option<&[u8]>, now: SystemTime) -> (IdSet, bool) {
+    let (held, damaged) = agent_batches(stored, now);
+    let mut ids = IdSet::new();
+    for batch in held {
+        ids.merge_with(batch.ids);
+    }
+    (ids, damaged)
+}
+
+/// The unexpired batches of a stored agent record (none when unreadable).
+fn agent_batches(stored: Option<&[u8]>, now: SystemTime) -> (Vec<Batch>, bool) {
+    match stored.map(decode_held) {
+        Some(Some(mut held)) => {
+            held.retain(|batch| since(batch.at, now) < AGENT_HELD_FOR);
+            (held, false)
+        }
+        Some(None) => (Vec::new(), true),
+        None => (Vec::new(), false),
     }
 }
 
@@ -675,7 +668,6 @@ mod tests {
                 (row.client as u64, row.user, row.version, seen, row.held)
             }),
             [],
-            None,
         );
         let holds = next.holds(now);
         assert_eq!((holds.reached, holds.held), (Some(2), ids(9, 0, 1)));
@@ -706,9 +698,8 @@ mod tests {
     }
 
     /// Q382 (Epo 2026-10-26): a session row whose held deletions cannot be
-    /// read is dropped alone, as if it had ended, and the rest load; agent
-    /// holds that cannot be read are dropped and written again cleared.
-    /// Fails if one damaged record fails the load or drops the others.
+    /// read is dropped alone, as if it had ended, and the rest load. Fails if
+    /// one damaged record fails the load or drops the others.
     #[test]
     fn a_damaged_record_drops_only_its_own_session() {
         let now = start();
@@ -721,17 +712,10 @@ mod tests {
             (7, "u_a".to_owned(), 4, now, Some(vec![9])),
             (8, "u_b".to_owned(), 5, now, Some(good)),
         ];
-        let (mut sessions, damaged) = Sessions::load(rows, [6], Some(vec![1]));
-        assert_eq!(
-            damaged,
-            Damaged {
-                sessions: vec![7],
-                agent: true
-            }
-        );
+        let (mut sessions, damaged) = Sessions::load(rows, [6]);
+        assert_eq!(damaged, Damaged { sessions: vec![7] });
         let holds = sessions.holds(now);
         assert_eq!((holds.reached, holds.held), (Some(5), ids(9, 0, 3)));
-        assert_eq!(sessions.unsaved(now, |_, _| true).agent, Some(None));
         // Its id, and one lost before, are remembered lost (Q385).
         assert!(sessions.lost(7) && sessions.lost(6) && !sessions.lost(8));
     }
@@ -788,22 +772,39 @@ mod tests {
         assert_eq!(sessions.holds(now).held, IdSet::new());
     }
 
-    /// Review r1 M3 (Editor 2026-10-26, plan change): an agent step's
-    /// deletions are held from its agent edit, whatever the sessions do, an
-    /// hour past its Undo's 24 h (review r3 N8), and are written with the
-    /// stores and read back. Fails if they are not held, or held past 25 h.
+    /// Review r1 M3, Q390: an agent edit's deletions are held from the edit,
+    /// an hour past its payload's 24 h (review r3 N8); an Undo's, added
+    /// later with the edit's time, are held as long; the record drops what
+    /// expired. Q386: an unreadable record is dropped and said so. Fails if
+    /// a batch is not held, held past 25 h, or held from its own time.
     #[test]
-    fn agent_deletions_are_held_25_hours() {
+    fn agent_deletions_are_held_25_hours_from_the_edit() {
         let now = start();
-        let mut sessions = Sessions::default();
-        sessions.agent_deleted(ids(3, 0, 2), now);
-        assert_eq!(sessions.holds(now).reached, None);
-        assert_eq!(sessions.holds(now + 24 * HOUR).held, ids(3, 0, 2));
-        let agent = sessions.unsaved(now, |_, _| true).agent;
-        let (mut loaded, _) = Sessions::load([], [], agent.flatten());
-        assert_eq!(loaded.holds(now + 24 * HOUR).held, ids(3, 0, 2));
-        assert_eq!(loaded.holds(now + 25 * HOUR).held, IdSet::new());
-        assert_eq!(loaded.unsaved(now, |_, _| true).agent, Some(None));
+        let (stored, damaged) = agent_held(None, ids(3, 0, 2), now, now);
+        assert!(!damaged);
+        let held = |stored: &Option<Vec<u8>>, at| agent_holds(stored.as_deref(), at).0;
+        assert_eq!(held(&stored, now + 24 * HOUR), ids(3, 0, 2));
+        assert_eq!(held(&stored, now + 25 * HOUR), IdSet::new());
+        // The Undo, an hour later, keeps the edit's time.
+        let (stored, _) = agent_held(stored.as_deref(), ids(5, 0, 1), now, now + HOUR);
+        let mut both = ids(3, 0, 2);
+        both.merge_with(ids(5, 0, 1));
+        assert_eq!(held(&stored, now + 24 * HOUR), both);
+        assert_eq!(held(&stored, now + 25 * HOUR), IdSet::new());
+        // A later edit's write drops what expired.
+        let later = now + 26 * HOUR;
+        let (stored, _) = agent_held(stored.as_deref(), ids(6, 0, 1), later, later);
+        assert_eq!(held(&stored, later), ids(6, 0, 1));
+        let gone = later + 25 * HOUR;
+        assert_eq!(
+            agent_held(stored.as_deref(), IdSet::new(), gone, gone).0,
+            None
+        );
+        // Q386: unreadable, dropped and said so; the new batch is kept.
+        let (stored, damaged) = agent_held(Some(&[9]), ids(3, 0, 2), now, now);
+        assert!(damaged);
+        assert_eq!(held(&stored, now), ids(3, 0, 2));
+        assert!(agent_holds(Some(&[9]), now).1);
     }
 
     /// Review r1 N1: a batch's arrival is stored rounded up to the second,

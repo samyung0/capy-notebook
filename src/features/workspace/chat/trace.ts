@@ -577,6 +577,14 @@ const temporaryUndoRefusals = new Set([
   'unavailable_target',
 ]);
 
+/** Whether a refused Undo or Redo can never apply: a bad signature, another
+ * lineage, past its 24 h, nothing left to undo (`undo_unavailable`). Its
+ * payload goes; other refusals (over quota, a note's block cap, a rate limit)
+ * keep it, so the button can work later (r1 L7). */
+export function undoGone(error: unknown): boolean {
+  return isApiError(error) && error.code === 'undo_unavailable';
+}
+
 /** Whether a failed Undo or Redo was refused (its step is gone: hide the
  * button) rather than of unknown outcome (no answer, a server error) or
  * refused for a moment, which keep the button: a retry gets the step's

@@ -51,6 +51,7 @@ import {
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { CopyError, errorCopy } from '@/lib/errors';
 import { officeMark } from '@/lib/officeMarks';
+import { sawRoom } from '@/lib/undoPayloads';
 import { PresenceContext } from './fileModeContext';
 import { createOfficeCursors } from './officeCursors';
 import { takeSourceOpen } from './sourceOpen';
@@ -1086,6 +1087,7 @@ export function useSourceSession(
           if (cancelled)
             throw new SourceSessionError(m.source_edit_session_changed());
           initialToken = null;
+          sawRoom(token.room);
           if (token.epoch !== session.epoch || token.room !== session.room) {
             replace();
             throw new SourceSessionError(m.source_edit_session_changed());

@@ -2,6 +2,7 @@ import { api } from '@/api/client';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import { clearOfficeMarks, officeMark } from '@/lib/officeMarks';
 import { cacheSource, readCachedSource } from '@/lib/sourceCache';
+import { retireUndoPayloads, sawRoom } from '@/lib/undoPayloads';
 import { warmSourceSocket } from './sourceProvider';
 
 export type SourceOpenMode = 'view' | 'edit';
@@ -78,6 +79,8 @@ function startOpen(
     )
     .then((value) => {
       officeMark('session', { mode });
+      // A newer epoch retires the file's agent Undo payloads (Q122).
+      retireUndoPayloads(value.fileId, value.epoch);
       return value;
     });
   const credentials =
@@ -90,6 +93,7 @@ function startOpen(
           )
           .then((value) => {
             officeMark('token');
+            sawRoom(value.room);
             // The room joins on this socket when its editor takes the open.
             warmSourceSocket(value.url);
             return value;

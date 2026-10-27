@@ -170,6 +170,9 @@ pub struct Save {
     /// An Office room's edit count and version as of the row
     /// ([`Sources::take_edits`]).
     pub edits: Option<(TextCount, u64)>,
+    /// The agent steps the room admitted since its last store (Q402), which
+    /// Go writes with the checkpoint (`SourceCheckpointOperation`s).
+    pub operations: Vec<serde_json::Value>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -810,6 +813,13 @@ impl Sources {
             .is_some_and(|edits| edits.unsaved())
     }
 
+    /// A loaded room's state cap and load generation, by room name.
+    pub(crate) fn room_cap(&self, room: &str) -> Option<(u64, u64)> {
+        lock(&self.rooms)
+            .get(room)
+            .map(|record| (record.state_cap, record.generation))
+    }
+
     /// The durable checkpoint this instance knows for a loaded room.
     pub fn known_checkpoint(&self, room: &SourceRoom) -> Option<u64> {
         lock(&self.rooms)
@@ -1151,6 +1161,7 @@ impl Sources {
                 base_source_sha256: seed_report.0,
                 seed_bytes: seed_report.1,
                 operation: None,
+                operations: save.operations.clone(),
                 preview: text.as_ref().map(|text| text.preview.clone()),
             };
             let result: Result<CheckpointSaved, SourceError> = self

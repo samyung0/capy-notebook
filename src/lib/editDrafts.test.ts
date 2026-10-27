@@ -69,6 +69,7 @@ vi.mock('@/api/client', async (load) => ({
 import {
   applyDrafts,
   DRAFT_EXPIRY_MS,
+  deleteAccountDrafts,
   deleteDocumentDrafts,
   deleteDrafts,
   draftBytes,
@@ -136,6 +137,23 @@ describe('the draft store', () => {
     expect((await readDrafts(key)).map((row) => row.id)).toEqual(['b']);
     await deleteDocumentDrafts(key);
     expect(await readDrafts(key)).toEqual([]);
+  });
+
+  // Q315 (privacy): the browser where an account's deletion is confirmed
+  // deletes that account's drafts, every document of it, and another
+  // account's stay. Fails if a document of the account is left.
+  it('deletes every draft of an account whose deletion was confirmed, and only its own', async () => {
+    await putDrafts([
+      draft('a', { key: 'u_gone:material:m1' }),
+      draft('b', { key: 'u_gone:file:f1' }),
+      draft('c', { key: 'u_kept:material:m1' }),
+    ]);
+    await deleteAccountDrafts('u_gone');
+    expect(await readDrafts('u_gone:material:m1')).toEqual([]);
+    expect(await readDrafts('u_gone:file:f1')).toEqual([]);
+    expect(
+      (await readDrafts('u_kept:material:m1')).map((row) => row.id)
+    ).toEqual(['c']);
   });
 
   it('keeps a source base once, until its last row goes', async () => {
