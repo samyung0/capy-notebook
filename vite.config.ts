@@ -153,13 +153,15 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
         '@betteroffice/xlsx/viewer',
         '@betteroffice/xlsx-react',
       ],
-      // Worker imports (the export worker's, the Mermaid worker's linkedom)
-      // are outside the initial crawl. Discovering these on the first Word
-      // export or diagram otherwise reloads every open development page.
+      // Worker imports (the export worker's, the Mermaid worker's linkedom
+      // and mermaid) are outside the initial crawl. Discovering these on the
+      // first Word export or diagram otherwise reloads every open development
+      // page.
       include: [
         'buffer',
         'katex',
         'linkedom/worker',
+        'mermaid',
         'pdfjs-dist/legacy/build/pdf.mjs',
       ],
     },

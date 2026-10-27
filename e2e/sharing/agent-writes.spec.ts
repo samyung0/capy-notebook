@@ -1129,21 +1129,19 @@ test.describe('agent writes to notes', () => {
         type: 'replace_block',
       },
     ]);
-    await expect
-      .poll(
-        async () => (await projection(ownerApi, id)).map((node) => node.source),
-        {
-          timeout: 20_000,
-        }
-      )
-      .toEqual([rewritten]);
+    // The open room admits it like a person's edit (Q402): the agent's next
+    // read has it at once, while a diagram's projection, which no View read
+    // asks for, follows at the room's idle projection (30 s).
+    const sources = async () =>
+      (await blocks(anonymousApi, id)).map((block) => block.text);
+    await expect.poll(sources).toEqual([rewritten]);
     for (const page of pages)
       await expect(page.getByText('Estuary').first()).toBeVisible({
         timeout: 20_000,
       });
 
     await undo(ownerApi, operation);
-    await projectionIs(ownerApi, id, before);
+    await expect.poll(sources).toEqual([source]);
     for (const page of pages)
       await expect(page.getByText('Estuary')).toHaveCount(0, {
         timeout: 20_000,
