@@ -4228,6 +4228,10 @@ panicking engine process and any other engine failure stay a 503
 write whose retries run out and whose receipt is absent says what the service
 last answered (`the service answered 503 (…) on 3 tries; nothing was saved`);
 the POST makes at most 3 attempts, 0.25 s and 0.5 s apart (parts design Q12).
+When every attempt timed out the first may still be computing (a large DOCX
+with no room) or saving (a room's save after admission, Q403), so with no
+receipt yet the tool says the edit may still be applied and to read the
+document again before redoing it, never that nothing was saved (Q448).
 A `chapter_id` naming no chapter of the workspace is refused in the pipeline
 before anything is built (`tools.unknown_chapter`, for notes, decks and new
 quizzes).
@@ -4443,7 +4447,16 @@ savepoint (a nested transaction in Go), logged and reported to Sentry as
 "agent receipt passed over" with the material or file id, and the store
 commits everyone's edits; a room refuses new agent edits with
 `unavailable_target` once 256 of its steps wait unstored (Q432,
-`AGENT_UNSTORED_MAX`; a checkpoint carries at most 256). A request holds
+`AGENT_UNSTORED_MAX`; a checkpoint carries at most 256). While its saves
+fail (a store retrying after a failure, or an Office save failing within
+its slow-save clock) a room refuses agent edits, Undo and Redo before
+anything applies, since an agent step lives only in the room until stored
+(Q456, `Room::saves_failing`, the content and keys rooms alike): an edit as
+409 `saves_failing`, which the tool turns into an `unavailable_target`
+result telling the model the server is failing and not to try again this
+turn (`tools.py` `SAVES_FAILING`); an Undo or Redo as 409
+`unavailable_target`, which the chat keeps as a refusal for a moment (its
+button stays). People keep editing as before. A request holds
 a pooled connection and its operation's advisory lock only for its receipt
 checks (the stored receipt, then the room's: `known`) and for its
 admission, never through the compute or an Office engine call (Q432): the

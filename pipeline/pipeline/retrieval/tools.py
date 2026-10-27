@@ -1845,6 +1845,7 @@ async def _post_operation(
     last_status = 0
     last_detail = ""
     last_event_id = None
+    timeouts = 0
     for attempt in range(_POST_ATTEMPTS):
         try:
 
@@ -1875,6 +1876,8 @@ async def _post_operation(
         except (requests.Timeout, requests.ConnectionError) as exc:
             last_exc = exc
             last_event_id = None
+            # Only a timeout leaves the request possibly still running.
+            timeouts += isinstance(exc, requests.Timeout)
             log.warning("operation POST attempt failed: %s", exc)
         except requests.RequestException as exc:
             last_exc = exc
@@ -1892,6 +1895,14 @@ async def _post_operation(
         raise obs.with_event_id(
             TurnFailed("mutation outcome is unknown"), last_event_id
         ) from last_exc
+    if recovered is None and timeouts == _POST_ATTEMPTS:
+        # Every try timed out: the first may still be computing or saving and
+        # land after this answer (Q448), so the model re-reads before redoing.
+        return _failed(
+            f"Could not {failure} in time: the service did not answer on "
+            f"{_POST_ATTEMPTS} tries and has no record of it yet. It may still "
+            "be applied; read the document again before redoing it."
+        )
     if recovered is None:
         # Nothing was saved; say what the service last answered, so the model
         # can tell a passing outage from a write it should change.
@@ -1954,7 +1965,16 @@ _GATEWAY_CODES = {
     "storage_quota_exceeded": "quota_rejected",
     "account_over_quota": "lifecycle_rejected",
     "permission_denied": "lifecycle_rejected",
+    "saves_failing": "unavailable_target",
 }
+
+# A room whose saves are failing refuses agent edits before anything applies
+# (Q456): another try this turn meets the same failing server.
+SAVES_FAILING = (
+    "The server is failing to save this document right now, so the edit was "
+    "not applied. Do not try this or another edit of it again this turn; tell "
+    "the user the server is having trouble saving."
+)
 
 # Gateway codes for an actor who may no longer act in the workspace: a role
 # change, a removed membership, a frozen or locked account. Chat turns run no
@@ -1988,6 +2008,8 @@ def _gateway_refused(
         code = ""
     if code in _NO_PERMISSION_CODES:
         detail = "\n\n".join(part for part in (detail, NO_PERMISSION) if part)
+    if code == "saves_failing":
+        detail = "\n\n".join(part for part in (detail, SAVES_FAILING) if part)
     return _refused(text, code=_gateway_error_code(resp), detail=detail)
 
 

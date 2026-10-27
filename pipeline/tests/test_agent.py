@@ -3112,6 +3112,75 @@ async def test_edit_document_posts_commands_and_refreshes_the_turn_view(monkeypa
     assert "The user can undo this" in result.text()
 
 
+async def test_an_edit_whose_every_try_timed_out_may_still_land(monkeypatch):
+    """Q448: every POST timed out and no receipt is stored yet, so the first
+    may still be computing or saving: the tool tells the model to re-read
+    before redoing, never that nothing was saved."""
+    ctx = _owner_ctx()
+    ctx.file_ids = ["f_1"]
+    posts = {"n": 0}
+
+    def _post(*_a, **_k):
+        posts["n"] += 1
+        raise tools.requests.ReadTimeout("slow")
+
+    async def _nosleep(*_a, **_k):
+        return None
+
+    _gateway(monkeypatch, post=_post, get=lambda *_a, **_k: _JsonResp({}, 404))
+    monkeypatch.setattr(tools.asyncio, "sleep", _nosleep)
+    ctx.skills_read = {"editing"}
+    result = await tools.run(
+        "edit_document",
+        {
+            "target": {"kind": "source_file", "id": "f_1"},
+            "commands": [{"type": "replace_text", "expected_text": "a", "text": "b"}],
+            "_tool_call_id": "c1",
+        },
+        ctx,
+    )
+    assert result.failed and posts["n"] == 3
+    assert "may still be applied" in result.error
+    assert "read the document again" in result.error
+    assert "nothing was saved" not in result.error
+
+
+async def test_an_edit_refused_for_failing_saves_says_not_to_retry(monkeypatch):
+    """Q456: a room whose saves fail refuses the edit `saves_failing`; the tool
+    answers unavailable and tells the model the server is failing and not to
+    try again this turn."""
+    ctx = _owner_ctx()
+    ctx.file_ids = ["f_1"]
+    posts = {"n": 0}
+
+    def _post(*_a, **_k):
+        posts["n"] += 1
+        return _JsonResp(
+            {
+                "code": "saves_failing",
+                "message": "the document's saves are failing; nothing was applied",
+            },
+            409,
+        )
+
+    _gateway(monkeypatch, post=_post)
+    ctx.skills_read = {"editing"}
+    result = await tools.run(
+        "edit_document",
+        {
+            "target": {"kind": "source_file", "id": "f_1"},
+            "commands": [{"type": "replace_text", "expected_text": "a", "text": "b"}],
+            "_tool_call_id": "c1",
+        },
+        ctx,
+    )
+    assert result.refused and posts["n"] == 1
+    assert result.error_code == "unavailable_target"
+    text = agent._result_text(result, [])
+    assert tools.SAVES_FAILING in text
+    assert "Do not try this or another edit of it again this turn" in text
+
+
 async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_commands(
     monkeypatch,
 ):
