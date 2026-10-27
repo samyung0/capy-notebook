@@ -6,7 +6,15 @@ import {
   yTextToSlateElement,
 } from '@slate-yjs/core';
 import { createPlateEditor } from 'platejs/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const toasts = vi.hoisted(() => ({ copyMergeFailed: 0 }));
+vi.mock('../saveFailure', () => ({
+  toastCopyMergeFailed: () => {
+    toasts.copyMergeFailed++;
+  },
+}));
+
 import * as Y from 'yjs';
 import type { MaterialValue } from '@/features/materials/document';
 import { DRAFT_EXPIRY_MS } from '@/lib/editDrafts';
@@ -143,6 +151,20 @@ describe('the copy merge at the bind', () => {
         { block: 'b', mine: block('b', 'Body typed'), source: 'expired' },
       ],
     });
+  });
+
+  // Q433: a bind merge that throws keeps the copies (null: NoteEditorCore
+  // deletes no row) and tells the user they are added at the next open.
+  it('tells the user and keeps the copies when the merge throws', () => {
+    const { editor, merged, sync } = copyEditor();
+    editor.tf.insertText(' typed', { at: { offset: 4, path: [1, 0] } });
+    vi.spyOn(editor.tf, 'withoutNormalizing').mockImplementation(() => {
+      throw new Error('broken');
+    });
+    const before = toasts.copyMergeFailed;
+    sync(PROJECTION);
+    expect(merged).toEqual([null]);
+    expect(toasts.copyMergeFailed).toBe(before + 1);
   });
 
   // Review r1 L3: the Yjs history works on the bound document only; before

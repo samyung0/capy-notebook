@@ -1428,14 +1428,9 @@ export function NoteEditorCore({
         mine,
       });
     if (!pairs.length) return;
-    let merged: ReturnType<typeof mergeAtBind>;
-    try {
-      merged = mergeAtBind(editor, pairs);
-    } catch (error) {
-      // The rows stay for the next open's merge.
-      captureException(error, { tags: { component: 'note-copy-merge' } });
-      return;
-    }
+    const merged = mergeAtBind(editor, pairs);
+    // It threw (reported and told, Q433): the rows stay for the next open.
+    if (!merged) return;
     // A bind before the mount's first paint (a swap's hidden build) reports
     // no value change.
     if (merged.applied) scheduleCheckpoint();

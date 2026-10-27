@@ -1190,6 +1190,7 @@
   "editor_outdated_publishing": "The update is still being published. Try again in a minute.",
   "editor_outdated_unstored": "Capy was updated. Reload to keep editing. This device couldn't store your unsent edits, so reloading loses them.",
   "editor_drafts_lost": "Some unsaved edits from your last session couldn't be restored.",
+  "editor_copy_merge_failed": "Some offline edits couldn't be added yet. They're kept and will be added when you reopen this note.",
   "item_edits_refused": "Your latest changes couldn't be saved. They're shown read-only to copy until you reload.",
   "item_leave_unsent": "Some changes haven't reached the server yet. Leave anyway?",
   "editor_save_failed_undone": "Your latest changes couldn't be saved and were undone.",

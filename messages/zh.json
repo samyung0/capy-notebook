@@ -1190,6 +1190,7 @@
   "editor_outdated_publishing": "更新仍在发布中。请一分钟后再试。",
   "editor_outdated_unstored": "Capy 已更新。请重新加载以继续编辑。此设备无法保存你未发送的编辑，重新加载会丢失这些编辑。",
   "editor_drafts_lost": "上次会话中有部分未保存的编辑无法恢复。",
+  "editor_copy_merge_failed": "部分离线编辑暂时无法加入。它们已保存，重新打开此笔记时会加入。",
   "item_edits_refused": "最近的更改无法保存。在重新加载之前，它们会以只读方式显示，方便复制。",
   "item_leave_unsent": "部分更改尚未送达服务器。仍要离开吗？",
   "editor_save_failed_undone": "你最近的更改无法保存，已被撤销。",

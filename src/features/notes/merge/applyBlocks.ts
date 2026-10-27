@@ -1,3 +1,4 @@
+import { captureException } from '@sentry/react';
 import { type YHistoryEditor, YjsEditor } from '@slate-yjs/core';
 import type { Descendant } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
@@ -6,6 +7,7 @@ import type {
   MaterialValue,
 } from '@/features/materials/document';
 import { DRAFT_EXPIRY_MS } from '@/lib/editDrafts';
+import { toastCopyMergeFailed } from '../saveFailure';
 import {
   type CopyPair,
   type MergeStep,
@@ -210,24 +212,31 @@ export interface BoundCopy extends CopyPair {
  * change a block between the diff and its step. A copy whose last edit is
  * past the 7-day expiry is never merged (Q412, Q421: the tab's own included)
  * and becomes pieces whole (`expired`). Returns whether a step applied, the
- * conflicts and the expired copies' pieces.
+ * conflicts and the expired copies' pieces; null when the merge threw, which
+ * is reported and told (Q433): the copies' rows stay for the next open.
  */
 export function mergeAtBind(
   editor: PlateEditor,
   copies: BoundCopy[],
   now = Date.now()
 ) {
-  const live = copies.filter(
-    ({ editedAt }) => now - editedAt <= DRAFT_EXPIRY_MS
-  );
-  const { conflicts, steps } = mergeCopies(
-    live,
-    editor.children as MaterialValue
-  );
-  if (steps.length) asOneStep(editor, () => applyMergeSteps(editor, steps));
-  const value = editor.children as MaterialValue;
-  const expired = copies
-    .filter((copy) => !live.includes(copy))
-    .flatMap((copy) => piecesFromCopy(copy, value, 'expired', now));
-  return { applied: steps.length > 0, conflicts, expired };
+  try {
+    const live = copies.filter(
+      ({ editedAt }) => now - editedAt <= DRAFT_EXPIRY_MS
+    );
+    const { conflicts, steps } = mergeCopies(
+      live,
+      editor.children as MaterialValue
+    );
+    if (steps.length) asOneStep(editor, () => applyMergeSteps(editor, steps));
+    const value = editor.children as MaterialValue;
+    const expired = copies
+      .filter((copy) => !live.includes(copy))
+      .flatMap((copy) => piecesFromCopy(copy, value, 'expired', now));
+    return { applied: steps.length > 0, conflicts, expired };
+  } catch (error) {
+    captureException(error, { tags: { component: 'note-copy-merge' } });
+    toastCopyMergeFailed();
+    return null;
+  }
 }

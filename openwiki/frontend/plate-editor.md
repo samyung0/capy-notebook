@@ -2260,7 +2260,8 @@ room joins (`src/features/notes/merge/`):
   race over the network can both apply, and Yjs keeps both texts (accepted,
   as the merge view's plan does). A merge that throws is reported to Sentry
   (`note-copy-merge`) and the rows stay for the next open, with the last
-  second of typing (`stop` writes what is pending).
+  second of typing (`stop` writes what is pending); a toast says the
+  offline edits are kept and will be added when the note reopens (Q433).
 - **Cost** (measured 2026-10-26 and 2026-10-27 on the developer PC, Chromium
   at CPU x4, Vite dev build, the 2.0 MB load-test note of 3,652 blocks,
   bound headless with no render). The diff takes 41-56 ms on the main
