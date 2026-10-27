@@ -5740,7 +5740,7 @@ engine's baseline diff, or XLSX overrides through the room's replica) and
 keeps the result on the file's row (Q423, Epo 2026-10-27):
 `source_documents.effects_cache` holds `{"at": {epoch, checkpoint,
 baseRevision, engine}, "effects"}`, served only while `at` names the row's
-version and this engine, and not charged to storage (migration 0124).
+version and this engine, and not charged to storage (migration 0123).
 `engine` is the first 16 hex digits of the engine program's SHA-256, hashed
 once per process (Q435), so a new build, a BetterOffice pin bump included,
 reads every file anew without a manual bump; an entry that no longer decodes

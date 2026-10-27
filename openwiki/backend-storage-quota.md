@@ -510,7 +510,7 @@ stored editing state and unfolded rows (`log_bytes`) beyond what the file's
 bytes already hold (migration 0043 dropped the stored baseline; it derives from
 the base). Below, "state" means the stored state plus `log_bytes`; a fold
 moves bytes from the rows into the state. The effects caches are not charged
-(Q415, Q423, migration 0124): `source_documents.effects_cache` (an Office
+(Q415, Q423, migration 0123): `source_documents.effects_cache` (an Office
 file's read effects) is outside `storage_bytes`, and `materials.effects_cache`
 (a note's changes) outside `size_bytes`. Each holds one read's trimmed effects
 for one version and is cleared when that version moves. Text pending effects
