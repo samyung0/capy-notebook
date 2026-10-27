@@ -2,11 +2,18 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import './feedback.css';
 
-/** Leapfrog dots in an 18px square; a size-* class resizes it. */
-export function Spinner({ className }: { className?: string }) {
+/** Leapfrog dots in an 18px square; a size-* class resizes it. `label`
+ * names what is in progress (Loading by default). */
+export function Spinner({
+  className,
+  label,
+}: {
+  className?: string;
+  label?: string;
+}) {
   return (
     <span
-      aria-label={m.a11y_loading()}
+      aria-label={label ?? m.a11y_loading()}
       className={cn('spinner', className)}
       data-slot="spinner"
       role="status"

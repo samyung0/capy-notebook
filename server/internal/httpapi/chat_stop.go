@@ -16,13 +16,25 @@ import (
 // relaying it: one API instance today; several would need a shared channel
 // to the instance holding the turn.
 type runningTurn struct {
-	convID     string
-	cancelPipe context.CancelFunc
+	userID, convID string
+	cancelPipe     context.CancelFunc
 
 	mu       sync.Mutex
 	state    turnState
 	stopped  bool
 	finished bool
+	// The browsers reading the turn and what they were sent (chat_resume.go).
+	events  [][]byte
+	readers map[*browserWriter]struct{}
+	over    bool
+	ended   chan struct{}
+}
+
+func newRunningTurn(userID, convID string, cancelPipe context.CancelFunc) *runningTurn {
+	return &runningTurn{
+		userID: userID, convID: convID, cancelPipe: cancelPipe,
+		readers: make(map[*browserWriter]struct{}), ended: make(chan struct{}),
+	}
 }
 
 // turnState is what the relay has heard of a turn so far.
@@ -134,10 +146,14 @@ func (s *turnState) save(status string) turnSave {
 	}
 }
 
-func (a *api) finalizeTurn(ctx context.Context, msgID, status string, s turnSave) {
+// finalizeTurn saves the turn's row with its ending and tells the user's tabs
+// its conversation has no running turn any more.
+func (a *api) finalizeTurn(ctx context.Context, run *runningTurn, msgID, status string, s turnSave) {
 	if err := a.s.FinalizeAssistantMessage(ctx, msgID, s.content, status, s.tokens, s.citations, s.genID, s.activity, s.toolEvidence, s.errorCode); err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"stage": "chat_finalize"})
+		return
 	}
+	a.publishChatTurn(ctx, run.userID, run.convID, status)
 }
 
 type stopTurnInput struct {
@@ -176,7 +192,10 @@ func (a *api) stopTurn(ctx context.Context, in *stopTurnInput) (*Empty, error) {
 		return &Empty{}, nil
 	}
 	run.stopped = true
-	a.finalizeTurn(saveCtx, in.MessageID, "aborted", run.state.save("aborted"))
+	a.finalizeTurn(saveCtx, run, in.MessageID, "aborted", run.state.save("aborted"))
+	// Every browser reading the turn sees it end now, in any tab.
+	run.sendLocked(map[string]any{"type": "done", "status": "aborted"})
+	run.endLocked()
 	run.mu.Unlock()
 	if a.pipe == nil {
 		run.cancelPipe()

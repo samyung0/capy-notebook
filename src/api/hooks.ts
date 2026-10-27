@@ -50,6 +50,7 @@ import type {
   CalendarEvent,
   Chapter,
   ChatPrefs,
+  ChatStatus,
   CheckQuizQuestionReq,
   CloneFileReq,
   CloneMaterialReq,
@@ -399,6 +400,10 @@ export function applyNotificationEvent(
     applyIngestEvent(qc, null, event);
     return;
   }
+  if (event.type === 'chat_turn') {
+    applyChatTurn(qc, event.conversationId, event.status);
+    return;
+  }
   // Stripe or the reload worker changed billing. A pending billing save
   // refetches when it settles, so it is left to that refetch.
   if (event.type === 'billing') {
@@ -468,6 +473,28 @@ export function applyNotificationEvent(
   }
 }
 
+const isConversationList = (query: { queryKey: QueryKey }) =>
+  query.queryKey.includes('conversations');
+
+/** Marks a conversation running, or not, in every cached conversation list;
+ * one no list holds yet (a turn just started elsewhere) refetches them. */
+function applyChatTurn(
+  qc: QueryClient,
+  conversationId: string,
+  status: ChatStatus
+) {
+  let listed = false;
+  qc.setQueriesData<Conversation[]>({ predicate: isConversationList }, (list) =>
+    list?.map((conversation) => {
+      if (conversation.id !== conversationId) return conversation;
+      listed = true;
+      return { ...conversation, running: status === 'streaming' };
+    })
+  );
+  if (!listed && status === 'streaming')
+    void qc.invalidateQueries({ predicate: isConversationList });
+}
+
 /** The one SSE connection a signed-in tab holds: notifications always, plus
  * ingest progress and tree changes for the workspace being viewed. Redis
  * Pub/Sub and Postgres NOTIFY replay nothing, so every connect refetches the
@@ -502,6 +529,8 @@ export function useEventStream(wsId: string) {
       for (const queryKey of keys) {
         void qc.refetchQueries({ queryKey, type: 'active' });
       }
+      // The running marks, whose events this stream carries.
+      void qc.refetchQueries({ predicate: isConversationList, type: 'active' });
     };
     // One ingest raises several tree events seconds apart and a bulk write
     // raises one per transaction, so a trailing debounce per kind collapses a

@@ -17,15 +17,18 @@ const { document, window } = parseHTML(
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 // What the selected thread's messages read answers with.
-const thread = vi.hoisted(() => ({ error: null as unknown }));
+const thread = vi.hoisted(() => ({
+  asked: [] as (string | null)[],
+  error: null as unknown,
+}));
 vi.mock('@/api/hooks', async (original) => ({
   ...(await original<typeof import('@/api/hooks')>()),
   useConversations: () => ({ data: [] }),
   useMe: () => ({ data: undefined }),
-  useMessages: (id: string | null) => ({
-    data: undefined,
-    error: id ? thread.error : null,
-  }),
+  useMessages: (id: string | null) => {
+    thread.asked.push(id);
+    return { data: undefined, error: id ? thread.error : null };
+  },
   useWorkspaces: () => ({ data: [{ iconId: 'flask', id: 'ws_bio' }] }),
 }));
 vi.mock('@/lib/useMediaQuery', () => ({ useMediaQuery: () => true }));
@@ -187,4 +190,48 @@ it('sends a spoken question once as a new chat, not again when the panel mounts 
   await mount();
   expect(stream.send).toHaveBeenCalledTimes(1);
   expect(stream.send.mock.calls[0][0]).toBe(request.prompt);
+});
+
+it('reopens the chat a reload kept in its own scope, behind a request it mounts with (T19)', async () => {
+  const stored = new Map([
+    ['capy.chat.open.account', '"c_kept"'],
+    ['capy.chat.open.ws_bio', '"c_ws"'],
+  ]);
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => stored.get(key) ?? null,
+    removeItem: (key: string) => stored.delete(key),
+    setItem: (key: string, value: string) => stored.set(key, value),
+  });
+  const firstAsked = async (node: ReactNode) => {
+    thread.asked = [];
+    const root = createRoot(document.getElementById('root') as never);
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          {node}
+        </QueryClientProvider>
+      )
+    );
+    const text = document.body.textContent ?? '';
+    act(() => root.unmount());
+    return { asked: thread.asked, first: thread.asked[0], text };
+  };
+  expect((await firstAsked(<ChatPanel workspaceId="ws_bio" />)).first).toBe(
+    'c_ws'
+  );
+  stored.set('capy.chat.open.account', '"c_kept"');
+  const linked = await firstAsked(
+    <ChatPanel request={{ id: 'c_url', seq: 0 }} workspaceId={null} />
+  );
+  expect(linked.first).toBe('c_url');
+  expect(linked.asked).not.toContain('c_kept');
+  // A kept chat that is gone opens a new chat; a linked one says not found.
+  stored.set('capy.chat.open.account', '"c_kept"');
+  thread.error = new ApiError(404, 'Not Found');
+  const gone = await firstAsked(<ChatPanel workspaceId={null} />);
+  expect(gone.first).toBe('c_kept');
+  expect(gone.text).toContain(m.chat_empty());
+  expect(gone.text).not.toContain(m.error_not_found_title());
+  thread.error = null;
+  vi.unstubAllGlobals();
 });

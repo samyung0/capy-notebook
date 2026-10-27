@@ -1,14 +1,16 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type ChatStreamBody,
+  type ChatStreamHandlers,
   chatErrorMessage,
+  resumeChat,
   streamChat,
 } from '@/api/chatStream';
 import { isApiError, qk } from '@/api/client';
 import { updateConversationBodyTitleMax } from '@/api/gen/validators';
-import { useStopChatTurn } from '@/api/hooks';
+import { messagesQuery, useStopChatTurn } from '@/api/hooks';
 import type {
   ActivityBlock,
   ChatMessage,
@@ -120,6 +122,7 @@ function listTurn(
         : {
             createdAt: now,
             id,
+            running: true,
             title,
             updatedAt: now,
             workspaceId: workspaceId ?? '',
@@ -186,12 +189,30 @@ export function turnStopper(
   };
 }
 
+/** Resolves once the browser is online (at once unless it says it is
+ * offline) or `signal` aborts. */
+function online(signal: AbortSignal): Promise<void> {
+  if (navigator.onLine !== false) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      window.removeEventListener('online', done);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    window.addEventListener('online', done);
+    signal.addEventListener('abort', done);
+  });
+}
+
 /** One conversation's live state. A turn keeps streaming into its own thread
- * after the learner starts or opens another conversation. */
+ * after the learner starts or opens another conversation; a turn this tab
+ * follows without having sent it (`resumed`) streams only while shown
+ * (Epo 2026-10-27, T19). */
 type Thread = {
   conversationId: string | null;
   messages: LiveMessage[];
   pendingSources: PendingSources | null;
+  resumed?: boolean;
   streaming: boolean;
 };
 
@@ -202,12 +223,20 @@ const emptyThread = (): Thread => ({
   streaming: false,
 });
 
+/** Opens one connection to a turn's events. */
+type Connect = (
+  handlers: ChatStreamHandlers,
+  signal: AbortSignal
+) => Promise<void>;
+
 /**
  * Client state machine for the shown conversation plus any turns still
  * streaming in conversations the learner left. Holds each message list,
  * drives the SSE streams, and tracks each in-flight assistant turn so blocks
  * land on the right bubble. Stop asks the server to end the turn, then stops
- * reading; leaving a conversation, or the page, does not end its turn.
+ * reading; leaving a conversation, or the page, does not end its turn. A
+ * conversation whose history ends in a turn still running follows it again,
+ * and a dropped connection reconnects once online (Epo 2026-10-27, T19).
  * A null `workspaceId` is the account chat.
  */
 export function useChatStream(workspaceId: string | null) {
@@ -222,9 +251,18 @@ export function useChatStream(workspaceId: string | null) {
   const threadsRef = useRef(threads);
   threadsRef.current = threads;
   const { mutateAsync: stopTurn } = useStopChatTurn();
-  // Each streaming thread's Stop.
+  // Each streaming thread's Stop, and each resumed thread's way to stop
+  // reading when it is no longer shown.
   const stopRefs = useRef(new Map<string, () => void>());
+  const leaveRefs = useRef(new Map<string, () => void>());
   const shown = threads[active] ?? emptyThread();
+
+  useEffect(() => {
+    const leaving = leaveRefs.current;
+    return () => {
+      for (const leave of leaving.values()) leave();
+    };
+  }, []);
 
   const update = useCallback((key: string, up: (t: Thread) => Thread) => {
     setThreads((prev) =>
@@ -246,17 +284,368 @@ export function useChatStream(workspaceId: string | null) {
     [setMessagesIn]
   );
 
-  /** Shows `key`, dropping every other thread that has finished streaming. */
+  /** Shows `key`, dropping every other thread that has finished streaming
+   * or that follows a turn this tab did not send. */
   const show = useCallback((key: string, thread?: Thread) => {
     activeRef.current = key;
     setActive(key);
+    for (const [k, leave] of leaveRefs.current) if (k !== key) leave();
     setThreads((prev) => {
       const next: Record<string, Thread> = {};
-      for (const [k, t] of Object.entries(prev)) if (t.streaming) next[k] = t;
+      for (const [k, t] of Object.entries(prev))
+        if (t.streaming && !t.resumed) next[k] = t;
       next[key] = thread ?? prev[key] ?? emptyThread();
       return next;
     });
   }, []);
+
+  /** Streams one turn into message `rowId` of thread `key`: `connect` opens
+   * the first connection, and `named` is a turn the server already named (one
+   * this tab follows again), and `newTitle` a sent turn's new conversation's
+   * title for the list. A drop after the server named the turn reconnects
+   * once the browser is online, and the replay rebuilds the message. */
+  const follow = useCallback(
+    async (
+      key: string,
+      rowId: string,
+      connect: Connect,
+      named: TurnIds | null,
+      newTitle?: string
+    ) => {
+      const setMessages = (up: (prev: LiveMessage[]) => LiveMessage[]) =>
+        setMessagesIn(key, up);
+      const resumed = named !== null;
+      let ids = named;
+      let currentId = rowId;
+      let conversationId = ids?.conversationId ?? null;
+      let terminal = false;
+      let citationVersion = -1;
+      let citations = 0;
+      let completed = false;
+      let left = false;
+      // A turn followed again was sent, and is counted, by its own tab.
+      const complete = (status: string) => {
+        if (completed || resumed) return;
+        completed = true;
+        track('chat_turn_completed', {
+          citations,
+          status,
+          workspaceId,
+        });
+      };
+
+      const ac = new AbortController();
+      const stopper = turnStopper(stopTurn, () => ac.abort());
+      if (ids) stopper.named(ids);
+      stopRefs.current.set(key, stopper.stop);
+      const leave = () => {
+        left = true;
+        ac.abort();
+      };
+      if (resumed) leaveRefs.current.set(key, leave);
+
+      const fail = (message: string, code?: string) => {
+        if (terminal || ac.signal.aborted) return;
+        terminal = true;
+        complete('error');
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === currentId
+              ? {
+                  ...msg,
+                  ...(code === 'response_flagged'
+                    ? {
+                        citations: [],
+                        content: '',
+                        currentBlockId: undefined,
+                        currentBlockText: '',
+                      }
+                    : {}),
+                  error: message,
+                  status: 'error',
+                }
+              : msg
+          )
+        );
+      };
+
+      // What the current connection did: started (the turn is named),
+      // dropped, or found the turn over.
+      const conn = {
+        dropped: null as { error?: unknown } | null,
+        gone: false,
+        started: false,
+      };
+      // Each call's tool, for what its end refreshes.
+      const toolNames = new Map<string, string>();
+      const handlers: ChatStreamHandlers = {
+        onBlockDelta: (blockId, delta) =>
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === currentId && msg.currentBlockId === blockId
+                ? {
+                    ...msg,
+                    currentBlockText: (msg.currentBlockText ?? '') + delta,
+                  }
+                : msg
+            )
+          ),
+        onBlockEnd: (blockId, kind) =>
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.id !== currentId || msg.currentBlockId !== blockId) {
+                return msg;
+              }
+              const text = msg.currentBlockText ?? '';
+              if (kind === 'answer') {
+                return {
+                  ...msg,
+                  content: text,
+                  currentBlockId: undefined,
+                  currentBlockText: '',
+                };
+              }
+              const activity: ActivityBlock[] = [
+                ...(msg.activity ?? []),
+                { id: blockId, kind: 'narration', text },
+              ];
+              return {
+                ...msg,
+                activity,
+                currentBlockId: undefined,
+                currentBlockText: '',
+              };
+            })
+          ),
+        onBlockStart: (blockId) =>
+          patch(key, currentId, {
+            currentBlockId: blockId,
+            currentBlockText: '',
+          }),
+        onCitations: (next, version) => {
+          if (!shouldApplyCitations(version, citationVersion)) return;
+          citationVersion = version;
+          citations = next.length;
+          patch(key, currentId, { citations: next });
+        },
+        onDone: ({ status }) => {
+          if (terminal) return;
+          terminal = true;
+          complete(status);
+          patch(key, currentId, {
+            currentBlockId: undefined,
+            currentBlockText: '',
+            status,
+          });
+        },
+        onDrop: (error) => {
+          conn.dropped = { error };
+        },
+        onError: fail,
+        onGone: () => {
+          conn.gone = true;
+        },
+        onPendingSources: (sources) =>
+          update(key, (t) => ({ ...t, pendingSources: sources })),
+        onPhase: (phase) => patch(key, currentId, { phase }),
+        // Every connection starts with the turn's first event, and the
+        // message is rebuilt from there.
+        onStart: ({
+          messageId,
+          conversationId: cid,
+          modelDisplayName,
+          providerSlug,
+          modelSlug,
+          modelVersion,
+        }) => {
+          conn.started = true;
+          currentId = messageId;
+          conversationId = cid;
+          citationVersion = -1;
+          if (!ids) {
+            ids = { conversationId: cid, messageId };
+            stopper.named(ids);
+            // The server saved the message before this first event, so the
+            // list moves now rather than at the turn's end.
+            listTurn(qc, workspaceId, cid, newTitle);
+          }
+          update(key, (t) => ({
+            ...t,
+            conversationId: cid,
+            messages: t.messages.map((msg) =>
+              msg.id === rowId || msg.id === messageId
+                ? {
+                    ...msg,
+                    activity: [],
+                    citations: undefined,
+                    content: '',
+                    conversationId: cid,
+                    currentBlockId: undefined,
+                    currentBlockText: '',
+                    error: undefined,
+                    id: messageId,
+                    modelDisplayName,
+                    modelSlug,
+                    modelVersion,
+                    phase: 'planning',
+                    providerSlug,
+                    status: 'streaming',
+                  }
+                : msg
+            ),
+          }));
+        },
+        // Server times when the event carries them, else this clock.
+        onToolEnd: (callId, result) => {
+          const endedAt = result.endedAt ?? new Date().toISOString();
+          invalidateForEffects(qc, workspaceId, result.effects);
+          // A workspace account chat made has no effect (no Undo, Epo
+          // 2026-10-28): its lists refetch as after the New workspace
+          // dialog.
+          if (
+            toolNames.get(callId) === 'create_workspace' &&
+            result.outcome === 'succeeded'
+          ) {
+            void qc.invalidateQueries({ queryKey: ['workspaces'] });
+            void qc.invalidateQueries({ queryKey: ['tags'] });
+          }
+          // A chapter chat made has no effect either (Epo 2026-10-29); the
+          // account chat's names no workspace, so every chapter list refetches.
+          if (
+            toolNames.get(callId) === 'create_chapter' &&
+            result.outcome === 'succeeded'
+          ) {
+            void qc.invalidateQueries({
+              predicate: ({ queryKey }) =>
+                queryKey[0] === 'workspace' && queryKey[2] === 'chapters',
+            });
+          }
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.id !== currentId) return msg;
+              return {
+                ...msg,
+                activity: (msg.activity ?? []).map((block) =>
+                  block.kind === 'tool' && block.callId === callId
+                    ? {
+                        ...block,
+                        applied: result.applied,
+                        effects: result.effects,
+                        endedAt,
+                        error: result.error,
+                        outcome: result.outcome,
+                        total: result.total,
+                      }
+                    : block
+                ),
+              };
+            })
+          );
+        },
+        onToolProgress: (callId, { applied, total }) =>
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === currentId
+                ? {
+                    ...msg,
+                    activity: (msg.activity ?? []).map((block) =>
+                      block.kind === 'tool' && block.callId === callId
+                        ? { ...block, applied, total }
+                        : block
+                    ),
+                  }
+                : msg
+            )
+          ),
+        onToolStart: (callId, name, detail, startedAt) => {
+          toolNames.set(callId, name);
+          const tool: ToolBlock = {
+            callId,
+            detail,
+            id: callId,
+            kind: 'tool',
+            name,
+            startedAt: startedAt ?? new Date().toISOString(),
+          };
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.id !== currentId) return msg;
+              const activity = [...(msg.activity ?? [])];
+              if (
+                !activity.some(
+                  (block) => block.kind === 'tool' && block.callId === callId
+                )
+              ) {
+                activity.push(tool);
+              }
+              return { ...msg, activity };
+            })
+          );
+        },
+      };
+
+      try {
+        let open = connect;
+        for (;;) {
+          Object.assign(conn, { dropped: null, gone: false, started: false });
+          await open(handlers, ac.signal);
+          if (ac.signal.aborted) break;
+          if (conn.gone && ids) {
+            // The turn ended since its row was read: show the row as saved.
+            const rows = await qc.fetchQuery({
+              ...messagesQuery(ids.conversationId),
+              staleTime: 0,
+            });
+            const row = rows.find(({ id }) => id === currentId);
+            terminal = true;
+            if (row)
+              patch(key, currentId, {
+                ...toChatMessage(row),
+                currentBlockId: undefined,
+                currentBlockText: '',
+              });
+            break;
+          }
+          if (!conn.dropped) break;
+          // A connection that never started has no turn to come back to.
+          if (!(conn.started && ids)) {
+            fail(errorCopy(conn.dropped.error, m.chat_failed()));
+            break;
+          }
+          await online(ac.signal);
+          const { conversationId: cid, messageId } = ids;
+          open = (h, signal) => resumeChat(cid, messageId, h, signal);
+        }
+      } catch (error) {
+        fail(errorCopy(error, m.chat_failed()));
+      } finally {
+        if (ac.signal.aborted && !left) {
+          complete('aborted');
+          patch(key, currentId, { status: 'aborted' });
+        }
+        if (stopRefs.current.get(key) === stopper.stop)
+          stopRefs.current.delete(key);
+        if (leaveRefs.current.get(key) === leave) leaveRefs.current.delete(key);
+        // A turn that finished after the learner left its conversation drops
+        // its thread; reopening it reads the history.
+        setThreads((prev) => {
+          if (!prev[key]) return prev;
+          if (key === activeRef.current)
+            return {
+              ...prev,
+              [key]: { ...prev[key], resumed: false, streaming: false },
+            };
+          const rest = { ...prev };
+          delete rest[key];
+          return rest;
+        });
+        void qc.invalidateQueries({ queryKey: qk.conversations(workspaceId) });
+        if (conversationId)
+          void qc.invalidateQueries({ queryKey: qk.messages(conversationId) });
+      }
+    },
+    [qc, patch, setMessagesIn, stopTurn, update, workspaceId]
+  );
 
   const hydrate = useCallback(
     (convId: string | null, history: ChatMessage[]) => {
@@ -268,13 +657,34 @@ export function useChatStream(workspaceId: string | null) {
         show(live[0]);
         return;
       }
-      show(tempId(), {
+      const key = tempId();
+      const last = history.at(-1);
+      const running =
+        convId && last?.role === 'assistant' && last.status === 'streaming'
+          ? { conversationId: convId, messageId: last.id }
+          : null;
+      show(key, {
         ...emptyThread(),
         conversationId: convId,
         messages: history,
+        resumed: !!running,
+        streaming: !!running,
       });
+      if (running)
+        void follow(
+          key,
+          running.messageId,
+          (handlers, signal) =>
+            resumeChat(
+              running.conversationId,
+              running.messageId,
+              handlers,
+              signal
+            ),
+          running
+        );
     },
-    [show]
+    [follow, show]
   );
 
   const startNew = useCallback(() => show(tempId()), [show]);
@@ -341,9 +751,6 @@ export function useChatStream(workspaceId: string | null) {
       const key = activeRef.current;
       const thread = threadsRef.current[key];
       if (!trimmed || thread?.streaming) return;
-      const setMessages = (up: (prev: LiveMessage[]) => LiveMessage[]) =>
-        setMessagesIn(key, up);
-
       const userMsg: ChatMessage = {
         content: trimmed,
         id: tempId(),
@@ -351,22 +758,7 @@ export function useChatStream(workspaceId: string | null) {
         status: 'complete',
       };
       const placeholderId = tempId();
-      let currentId = placeholderId;
-      let conversationId = thread?.conversationId ?? null;
-      const newTitle = conversationId ? undefined : titleFrom(trimmed);
-      let terminal = false;
-      let citationVersion = -1;
-      let citations = 0;
-      let completed = false;
-      const complete = (status: string) => {
-        if (completed) return;
-        completed = true;
-        track('chat_turn_completed', {
-          citations,
-          status,
-          workspaceId,
-        });
-      };
+      const newTitle = thread?.conversationId ? undefined : titleFrom(trimmed);
       track('chat_turn_sent', { hasScope: false, workspaceId });
       markGettingStarted('chat');
       setThreads((prev) => ({
@@ -391,261 +783,20 @@ export function useChatStream(workspaceId: string | null) {
           streaming: true,
         },
       }));
-
-      const ac = new AbortController();
-      const stopper = turnStopper(stopTurn, () => ac.abort());
-      stopRefs.current.set(key, stopper.stop);
-
-      const fail = (message: string, code?: string) => {
-        if (terminal || ac.signal.aborted) return;
-        terminal = true;
-        complete('error');
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === currentId
-              ? {
-                  ...msg,
-                  ...(code === 'response_flagged'
-                    ? {
-                        citations: [],
-                        content: '',
-                        currentBlockId: undefined,
-                        currentBlockText: '',
-                      }
-                    : {}),
-                  error: message,
-                  status: 'error',
-                }
-              : msg
-          )
-        );
+      const body: ChatStreamBody = {
+        conversationId: thread?.conversationId ?? undefined,
+        ...turn,
+        text: trimmed,
       };
-
-      // Each call's tool, for what its end refreshes.
-      const toolNames = new Map<string, string>();
-      try {
-        await streamChat(
-          workspaceId,
-          {
-            conversationId: thread?.conversationId ?? undefined,
-            ...turn,
-            text: trimmed,
-          },
-          {
-            onBlockDelta: (blockId, delta) =>
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === currentId && msg.currentBlockId === blockId
-                    ? {
-                        ...msg,
-                        currentBlockText: (msg.currentBlockText ?? '') + delta,
-                      }
-                    : msg
-                )
-              ),
-            onBlockEnd: (blockId, kind) =>
-              setMessages((prev) =>
-                prev.map((msg) => {
-                  if (msg.id !== currentId || msg.currentBlockId !== blockId) {
-                    return msg;
-                  }
-                  const text = msg.currentBlockText ?? '';
-                  if (kind === 'answer') {
-                    return {
-                      ...msg,
-                      content: text,
-                      currentBlockId: undefined,
-                      currentBlockText: '',
-                    };
-                  }
-                  const activity: ActivityBlock[] = [
-                    ...(msg.activity ?? []),
-                    { id: blockId, kind: 'narration', text },
-                  ];
-                  return {
-                    ...msg,
-                    activity,
-                    currentBlockId: undefined,
-                    currentBlockText: '',
-                  };
-                })
-              ),
-            onBlockStart: (blockId) =>
-              patch(key, currentId, {
-                currentBlockId: blockId,
-                currentBlockText: '',
-              }),
-            onCitations: (next, version) => {
-              if (!shouldApplyCitations(version, citationVersion)) return;
-              citationVersion = version;
-              citations = next.length;
-              patch(key, currentId, { citations: next });
-            },
-            onDone: ({ status }) => {
-              if (terminal) return;
-              terminal = true;
-              complete(status);
-              patch(key, currentId, {
-                currentBlockId: undefined,
-                currentBlockText: '',
-                status,
-              });
-            },
-            onError: fail,
-            onPendingSources: (sources) =>
-              update(key, (t) => ({ ...t, pendingSources: sources })),
-            onPhase: (phase) => patch(key, currentId, { phase }),
-            onStart: ({
-              messageId,
-              conversationId: cid,
-              modelDisplayName,
-              providerSlug,
-              modelSlug,
-              modelVersion,
-            }) => {
-              currentId = messageId;
-              conversationId = cid;
-              stopper.named({ conversationId: cid, messageId });
-              // The server saved the message before this first event, so the
-              // list moves now rather than at the turn's end.
-              listTurn(qc, workspaceId, cid, newTitle);
-              update(key, (t) => ({
-                ...t,
-                conversationId: cid,
-                messages: t.messages.map((msg) =>
-                  msg.id === placeholderId
-                    ? {
-                        ...msg,
-                        conversationId: cid,
-                        id: messageId,
-                        modelDisplayName,
-                        modelSlug,
-                        modelVersion,
-                        providerSlug,
-                      }
-                    : msg
-                ),
-              }));
-            },
-            // Server times when the event carries them, else this clock.
-            onToolEnd: (callId, result) => {
-              const endedAt = result.endedAt ?? new Date().toISOString();
-              invalidateForEffects(qc, workspaceId, result.effects);
-              // A workspace account chat made has no effect (no Undo, Epo
-              // 2026-10-28): its lists refetch as after the New workspace
-              // dialog.
-              if (
-                toolNames.get(callId) === 'create_workspace' &&
-                result.outcome === 'succeeded'
-              ) {
-                void qc.invalidateQueries({ queryKey: ['workspaces'] });
-                void qc.invalidateQueries({ queryKey: ['tags'] });
-              }
-              // A chapter chat made has no effect either (Epo 2026-10-29); the
-              // account chat's names no workspace, so every chapter list refetches.
-              if (
-                toolNames.get(callId) === 'create_chapter' &&
-                result.outcome === 'succeeded'
-              ) {
-                void qc.invalidateQueries({
-                  predicate: ({ queryKey }) =>
-                    queryKey[0] === 'workspace' && queryKey[2] === 'chapters',
-                });
-              }
-              setMessages((prev) =>
-                prev.map((msg) => {
-                  if (msg.id !== currentId) return msg;
-                  return {
-                    ...msg,
-                    activity: (msg.activity ?? []).map((block) =>
-                      block.kind === 'tool' && block.callId === callId
-                        ? {
-                            ...block,
-                            applied: result.applied,
-                            effects: result.effects,
-                            endedAt,
-                            error: result.error,
-                            outcome: result.outcome,
-                            total: result.total,
-                          }
-                        : block
-                    ),
-                  };
-                })
-              );
-            },
-            onToolProgress: (callId, { applied, total }) =>
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === currentId
-                    ? {
-                        ...msg,
-                        activity: (msg.activity ?? []).map((block) =>
-                          block.kind === 'tool' && block.callId === callId
-                            ? { ...block, applied, total }
-                            : block
-                        ),
-                      }
-                    : msg
-                )
-              ),
-            onToolStart: (callId, name, detail, startedAt) => {
-              toolNames.set(callId, name);
-              const tool: ToolBlock = {
-                callId,
-                detail,
-                id: callId,
-                kind: 'tool',
-                name,
-                startedAt: startedAt ?? new Date().toISOString(),
-              };
-              setMessages((prev) =>
-                prev.map((msg) => {
-                  if (msg.id !== currentId) return msg;
-                  const activity = [...(msg.activity ?? [])];
-                  if (
-                    !activity.some(
-                      (block) =>
-                        block.kind === 'tool' && block.callId === callId
-                    )
-                  ) {
-                    activity.push(tool);
-                  }
-                  return { ...msg, activity };
-                })
-              );
-            },
-          },
-          ac.signal
-        );
-        if (!terminal && !ac.signal.aborted) {
-          fail(m.chat_failed());
-        }
-      } catch (error) {
-        fail(errorCopy(error, m.chat_failed()));
-      } finally {
-        if (ac.signal.aborted) {
-          complete('aborted');
-          patch(key, currentId, { status: 'aborted' });
-        }
-        if (stopRefs.current.get(key) === stopper.stop)
-          stopRefs.current.delete(key);
-        // A turn that finished after the learner left its conversation drops
-        // its thread; reopening it reads the history.
-        setThreads((prev) => {
-          if (!prev[key]) return prev;
-          if (key === activeRef.current)
-            return { ...prev, [key]: { ...prev[key], streaming: false } };
-          const rest = { ...prev };
-          delete rest[key];
-          return rest;
-        });
-        void qc.invalidateQueries({ queryKey: qk.conversations(workspaceId) });
-        if (conversationId)
-          void qc.invalidateQueries({ queryKey: qk.messages(conversationId) });
-      }
+      await follow(
+        key,
+        placeholderId,
+        (handlers, signal) => streamChat(workspaceId, body, handlers, signal),
+        null,
+        newTitle
+      );
     },
-    [qc, patch, setMessagesIn, stopTurn, update, workspaceId]
+    [follow, workspaceId]
   );
 
   return {

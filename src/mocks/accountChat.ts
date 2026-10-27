@@ -1,9 +1,17 @@
 import { delay, HttpResponse, http } from 'msw';
 import type { ChatStreamBody } from '@/api/chatStream';
 import { createConversationBodyTitleMax } from '@/api/gen/validators';
-import type { ActivityBlock, Citation, Conversation } from '@/api/types';
+import type { ActivityBlock, Citation } from '@/api/types';
 import { mockChatModel } from './chatFixtures';
-import { chatMessages, conversations, files, uid, workspaces } from './db';
+import {
+  chatMessages,
+  conversations,
+  files,
+  listedConversation,
+  type MockConversation,
+  uid,
+  workspaces,
+} from './db';
 
 /** An account chat's citations: one Biology 101 file and one standalone file,
  * each naming where it lives as the account tools do. */
@@ -46,14 +54,14 @@ export const accountChatHandlers = [
           : time(b.pinnedAt) - time(a.pinnedAt) ||
             time(b.updatedAt) - time(a.updatedAt)
       );
-    return HttpResponse.json(list);
+    return HttpResponse.json(list.map(listedConversation));
   }),
   http.post('/api/conversations', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as {
       title?: string;
     };
     const now = new Date().toISOString();
-    const conversation: Conversation = {
+    const conversation: MockConversation = {
       createdAt: now,
       id: uid('conv'),
       title: body.title ?? '',
@@ -61,7 +69,9 @@ export const accountChatHandlers = [
       workspaceId: '',
     };
     conversations.push(conversation);
-    return HttpResponse.json(conversation, { status: 201 });
+    return HttpResponse.json(listedConversation(conversation), {
+      status: 201,
+    });
   }),
   http.post('/api/chat/stream', async ({ request }) => {
     const body = (await request.json()) as ChatStreamBody;

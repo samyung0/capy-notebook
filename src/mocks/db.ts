@@ -74,6 +74,7 @@ import {
   buildEditorNoteValue,
   EDITOR_NOTE,
   EDITOR_WORKSPACE_ID,
+  RUNNING_CHAT,
 } from './editorSeed';
 import { errorMaterials } from './errorMaterials';
 import { markdownSamples } from './markdownSamples';
@@ -2321,7 +2322,20 @@ for (const { material, trashed } of galleryMaterials)
   if (!trashed) materials.push(material);
 
 /* ---------------- chat: conversations + messages ---------------- */
-export const conversations: Conversation[] = [
+/** A conversation as stored; whether it is running comes from its messages. */
+export type MockConversation = Omit<Conversation, 'running'>;
+
+export const listedConversation = (
+  conversation: MockConversation
+): Conversation => ({
+  ...conversation,
+  running: chatMessages.some(
+    (msg) =>
+      msg.conversationId === conversation.id && msg.status === 'streaming'
+  ),
+});
+
+export const conversations: MockConversation[] = [
   {
     createdAt: days(1),
     id: 'conv_seed1',
@@ -2924,6 +2938,34 @@ materials.push(
 );
 /* ---------------- editor matrix fixtures (e2e/editor) ---------------- */
 if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
+  conversations.push({
+    createdAt: hours(1),
+    id: RUNNING_CHAT.id,
+    title: RUNNING_CHAT.title,
+    updatedAt: hours(1),
+    workspaceId: EDITOR_WORKSPACE_ID,
+  });
+  chatMessages.push(
+    {
+      citations: null,
+      content: RUNNING_CHAT.question,
+      conversationId: RUNNING_CHAT.id,
+      createdAt: hours(1),
+      id: 'm_e2e_running_question',
+      role: 'user',
+      status: 'complete',
+    },
+    {
+      ...mockChatModel,
+      citations: null,
+      content: '',
+      conversationId: RUNNING_CHAT.id,
+      createdAt: hours(1),
+      id: RUNNING_CHAT.answerId,
+      role: 'assistant',
+      status: 'streaming',
+    }
+  );
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,

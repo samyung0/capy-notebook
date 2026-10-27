@@ -295,9 +295,10 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, scope chatScope
 	// that cannot reach the pipeline hangs up on it.
 	pipeCtx, cancelPipe := context.WithCancel(ctx)
 	defer cancelPipe()
-	run := &runningTurn{convID: conv.ID, cancelPipe: cancelPipe}
+	run := newRunningTurn(userID, conv.ID, cancelPipe)
 	a.turns.Store(assistant.ID, run)
 	defer a.turns.Delete(assistant.ID)
+	a.publishChatTurn(ctx, userID, conv.ID, "streaming")
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -306,10 +307,13 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, scope chatScope
 
 	// The browser reads the events on its own writer: the relay never waits
 	// for it, and a browser that left misses the rest of the turn, which goes
-	// on. The response closes after the last event is written.
+	// on (another tab may follow it, chat_resume.go). The response closes
+	// after the last event is written.
 	browser := newBrowserWriter(w, flusher.Flush)
 	defer browser.finish()
-	send := browser.send
+	run.join(browser)
+	defer run.end()
+	send := run.send
 
 	send(map[string]any{
 		"type":             "start",
@@ -406,10 +410,10 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, scope chatScope
 		case err != nil:
 			obs.CaptureErr(saveCtx, err, map[string]string{"stage": "chat_stopped_calls"})
 		case !added:
-			a.finalizeTurn(saveCtx, assistant.ID, status, saved)
+			a.finalizeTurn(saveCtx, run, assistant.ID, status, saved)
 		}
 	} else {
-		a.finalizeTurn(saveCtx, assistant.ID, status, saved)
+		a.finalizeTurn(saveCtx, run, assistant.ID, status, saved)
 	}
 	charge.settle(saveCtx)
 

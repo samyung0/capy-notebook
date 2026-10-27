@@ -1409,6 +1409,8 @@ components:
         pinnedAt:
           format: date-time
           type: string
+        running:
+          type: boolean
         title:
           type: string
         updatedAt:
@@ -1423,6 +1425,7 @@ components:
         - title
         - createdAt
         - updatedAt
+        - running
       type: object
     Cover:
       additionalProperties: false

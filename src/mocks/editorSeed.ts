@@ -7,6 +7,16 @@
 
 export const EDITOR_WORKSPACE_ID = 'ws_bio';
 
+/** A conversation whose answer is still running when the page loads: the
+ * chat follows it again, and Stop saves it stopped (T19). */
+export const RUNNING_CHAT = {
+  answerId: 'm_e2e_running_answer',
+  id: 'conv_e2e_running',
+  partialAnswer: 'Mitochondria turn food into energy the cell can use',
+  question: 'What do mitochondria do?',
+  title: 'A running answer',
+};
+
 export const EDITOR_NOTE = {
   firstParagraph: 'First paragraph alpha',
   headingText: 'Editor matrix heading',

@@ -28,6 +28,9 @@ type notificationEvent struct {
 	Type         string              `json:"type"`
 	Notification *store.Notification `json:"notification,omitempty"`
 	IDs          []string            `json:"ids,omitempty"`
+	// chat_turn
+	ConversationID string `json:"conversationId,omitempty"`
+	Status         string `json:"status,omitempty"`
 }
 
 func (a *api) publishNotificationEvent(ctx context.Context, userID string, event notificationEvent) {

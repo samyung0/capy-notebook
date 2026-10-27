@@ -24,13 +24,16 @@ type Conversation struct {
 	PinnedAt *time.Time `json:"pinnedAt,omitempty"`
 	// Set while the thread is out of the list, in the archived dialog.
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+	// A turn of the thread is still streaming (Epo 2026-10-27, T19).
+	Running bool `json:"running"`
 }
 
-const conversationCols = `id, COALESCE(workspace_id,''), COALESCE(title,''), created_at, updated_at, pinned_at, archived_at`
+const conversationCols = `id, COALESCE(workspace_id,''), COALESCE(title,''), created_at, updated_at, pinned_at, archived_at,
+	EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id AND m.status = 'streaming')`
 
 func scanConversation(row pgx.Row) (Conversation, error) {
 	var c Conversation
-	err := row.Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt, &c.PinnedAt, &c.ArchivedAt)
+	err := row.Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt, &c.PinnedAt, &c.ArchivedAt, &c.Running)
 	return c, err
 }
 
@@ -462,9 +465,10 @@ func (s *Store) archivedConversationsTx(ctx context.Context, userID, wsID, stmt 
 
 /* ---------------------------------------------------------------- messages */
 
-// ListMessages returns a conversation's history in chronological order,
-// excluding still-streaming rows (orphans from a crashed stream). Ownership is
-// enforced against userID.
+// ListMessages returns a conversation's history in chronological order. A
+// still-streaming row is a running turn (a crash's are aborted at boot), which
+// the browser follows (Epo 2026-10-27, T19). Ownership is enforced against
+// userID.
 func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Message, error) {
 	if _, err := s.GetConversation(ctx, userID, convID); err != nil {
 		return nil, err
@@ -472,7 +476,7 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, conversation_id, role, content, status, metadata - 'toolEvidence', created_at
 		   FROM messages
-		  WHERE conversation_id=$1 AND status <> 'streaming'
+		  WHERE conversation_id=$1
 		  ORDER BY created_at, id`, convID)
 	if err != nil {
 		return nil, err

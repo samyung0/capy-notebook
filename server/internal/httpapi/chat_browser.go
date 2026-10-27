@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
@@ -29,9 +28,8 @@ func newBrowserWriter(w io.Writer, flush func()) *browserWriter {
 	return b
 }
 
-// send queues one event; it never blocks on the browser.
-func (b *browserWriter) send(v any) {
-	data, _ := json.Marshal(v)
+// send queues one encoded event; it never blocks on the browser.
+func (b *browserWriter) send(data []byte) {
 	b.mu.Lock()
 	if !b.gone {
 		b.queue = append(b.queue, data)

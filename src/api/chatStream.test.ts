@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { undoPayload } from '@/lib/undoPayloads';
-import { chatTurn, streamChat, WORKSPACE_ONLY_DEFAULT } from './chatStream';
+import {
+  chatTurn,
+  resumeChat,
+  streamChat,
+  WORKSPACE_ONLY_DEFAULT,
+} from './chatStream';
 
 vi.mock('./auth', () => ({
   authHeaders: async () => ({ Authorization: 'Bearer token' }),
@@ -149,5 +154,75 @@ describe('the waiting phase', () => {
       'block b_1',
       'done',
     ]);
+  });
+});
+
+/** A response whose body sends `events` and then stays open. */
+function openStream(events: object[]) {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const ev of events)
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
+    },
+  });
+}
+
+// Epo 2026-10-27, T19: a running turn is followed again after a reload or
+// a dropped connection.
+describe('following a turn', () => {
+  it('reports a connection lost before the last event as a drop', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            `data: ${JSON.stringify({ conversationId: 'c_1', messageId: 'm_1', type: 'start' })}\n\n`
+          )
+      )
+    );
+    const onDrop = vi.fn();
+    const onError = vi.fn();
+    await streamChat(
+      'ws_1',
+      { text: 'hi', workspaceOnly: false },
+      { onDrop, onError }
+    );
+    expect(onDrop).toHaveBeenCalledOnce();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('reads a running turn from its stream, and a turn that ended is gone', async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetch);
+    const onGone = vi.fn();
+    await resumeChat('c_1', 'm_1', { onGone });
+    expect(onGone).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/conversations/c_1/messages/m_1/stream'),
+      expect.objectContaining({ method: 'GET' })
+    );
+  });
+
+  it('stops reading at the last event though the response stays open', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            openStream([
+              { conversationId: 'c_1', messageId: 'm_1', type: 'start' },
+              { status: 'aborted', type: 'done' },
+            ])
+          )
+      )
+    );
+    const onDone = vi.fn();
+    const onDrop = vi.fn();
+    await resumeChat('c_1', 'm_1', { onDone, onDrop });
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'aborted' })
+    );
+    expect(onDrop).not.toHaveBeenCalled();
   });
 });

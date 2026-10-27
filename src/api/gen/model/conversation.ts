@@ -12,6 +12,7 @@ export interface Conversation {
   createdAt: string;
   id: string;
   pinnedAt?: string;
+  running: boolean;
   title: string;
   updatedAt: string;
   /** Empty for an account conversation */

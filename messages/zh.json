@@ -702,6 +702,7 @@
   "chat_empty": "让我总结或创建点什么…",
   "chat_send": "发送消息",
   "chat_stop": "停止回复",
+  "chat_running": "正在回答",
   "voice_record": "语音输入",
   "voice_stop": "停止录音",
   "voice_transcribing": "正在转写…",

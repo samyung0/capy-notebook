@@ -91,6 +91,7 @@ describe('a sent turn lists its conversation before its stream ends', () => {
     createdAt: '2026-10-01T00:00:00Z',
     id,
     pinnedAt,
+    running: false,
     title: id,
     updatedAt: '2026-10-01T00:00:00Z',
     workspaceId: 'ws',

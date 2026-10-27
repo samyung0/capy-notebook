@@ -7,7 +7,7 @@ import {
 } from '@/api/hooks';
 import type { Conversation } from '@/api/types';
 import { ConfirmDialog } from '@/components/ui/Dialog';
-import { SkeletonList } from '@/components/ui/feedback';
+import { SkeletonList, Spinner } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { sampleChats } from '@/features/guide/tourSamples';
@@ -85,6 +85,13 @@ export function ConversationList({
           <span className="line-clamp-1 flex-1 translate-y-px">
             {c.title || m.chat_untitled()}
           </span>
+          {/* A turn still answering, in any tab (Epo 2026-10-27, T19). */}
+          {c.running && (
+            <Spinner
+              className="ml-1.5 size-3.5 shrink-0"
+              label={m.chat_running()}
+            />
+          )}
         </button>
         <HoverActions
           className={cn(

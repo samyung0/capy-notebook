@@ -702,6 +702,7 @@
   "chat_empty": "Ask me to summarize or create something…",
   "chat_send": "Send message",
   "chat_stop": "Stop response",
+  "chat_running": "Answering",
   "voice_record": "Voice input",
   "voice_stop": "Stop recording",
   "voice_transcribing": "Transcribing…",

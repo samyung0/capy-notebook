@@ -47,7 +47,11 @@ export default function AccountChat() {
   const { data: unread } = useUnreadNotificationCount({
     errorBoundary: false,
   });
-  const [request, setRequest] = useState<ChatRequest>();
+  // The URL's conversation is the panel's first, ahead of the one a reload
+  // kept (T19).
+  const [request, setRequest] = useState<ChatRequest | undefined>(() =>
+    conversationId ? { id: conversationId, seq: 0 } : undefined
+  );
   const [active, setActive] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
   const activeRef = useRef<string | null>(null);

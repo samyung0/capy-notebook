@@ -2930,8 +2930,10 @@ current pending changes applied. Embedded source instructions remain untrusted.
    credit settlement and AI request slot follow the pipeline, a browser that
    stops reading only delays its own copy, no event is dropped while it reads,
    and no write time limit is set (Epo 2026-10-21). The response closes after
-   the last event is written. Only Stop (below) or the
-   pipeline's own bounds end a turn early. A chat stream and its connections
+   the last event is written. Another tab, or the same one after a reload or
+   a dropped connection, follows the turn again from its first event
+   ([Following a running turn](#following-a-running-turn)). Only Stop (below)
+   or the pipeline's own bounds end a turn early. A chat stream and its connections
    run no periodic check (Epo 2026-10-21): no access re-check in Go and no
    disconnect polling in the pipeline. Permission lost mid-turn (a role
    change, a removed membership, a frozen or locked account) surfaces through
@@ -3263,7 +3265,7 @@ call keeps its empty tool record (empty lists).
 | Context cap, compaction failure | `agent._run_turn` `error`, state from `run_agent` | all | retained, passages cited so far | `error` |
 | Turn time cap | none exists; a provider call past its deadline is a provider error | — | — | — |
 | User stop | `chat_stop.go` saves the row at once; `chat_stream.go` adds the late calls (`store.AddStoppedTurnCalls`) | all, the calls running at the stop included, plus receipts | retained, passages cited so far | `aborted` |
-| Browser disconnect without Stop | the turn runs on (`chat_stream.go` on a detached context) | as the turn's own ending | as the turn's own ending | the turn's |
+| Browser disconnect without Stop | the turn runs on (`chat_stream.go` on a detached context); the browser may follow it again (`chat_resume.go`) | as the turn's own ending | as the turn's own ending | the turn's |
 | Permission lost mid-turn | the refused tool call tells the agent to stop editing (`permission_denied`, account lock codes) | as the turn's own ending | as the turn's own ending | the turn's |
 | Tool exception | `tools.run`: a failed result, the turn goes on | its failed row | its error text | the turn's |
 | `TurnFailed`, `SourceChanged`, step exceptions, empty answer, provider error or busy, rejected key | `agent._run_turn` `error`, state from `run_agent` | all, a batch cut short included | retained, passages cited so far | `error` |
@@ -3283,7 +3285,9 @@ Stop ends a turn at once (Epo 2026-10-21). The browser sends
 `POST /api/conversations/{id}/messages/{messageId}/stop` (204; 404 unless the
 caller owns the conversation and may still chat in its workspace and the id
 is one of its assistant rows; a finished or already stopped turn answers 204
-and nothing changes), then stops reading.
+and nothing changes), then stops reading. A Stop from any tab ends every
+browser following the turn: Go sends them `done {status: aborted}` at once and
+closes their streams.
 
 1. Go finds the turn in `api.turns`, the turns this API process relays by
    assistant message id. A stop must reach the instance relaying the stream:
@@ -3317,6 +3321,62 @@ and nothing changes), then stops reading.
    `aborted` with that state instead. No error is reported or sent for a
    stopped turn. The browser that stopped reading sees the late calls on its
    next history load.
+
+### Following a running turn
+
+A turn outlives its browser connection, and a browser can follow it again
+(Epo 2026-10-27, T19): after a reload, a closed and reopened tab, or a dropped
+connection.
+
+- Go keeps, on the turn's `runningTurn` (`chat_resume.go`), every event its
+  browsers were sent, without Undo payloads, and the browsers reading it now.
+  The POST response is the first; each send queues to all of them and keeps
+  the event, and nothing waits on a browser. The events live until the turn
+  ends: its text and tool rows, tens to hundreds of KB.
+- `GET /api/conversations/{id}/messages/{messageId}/stream` (raw chi, the
+  default rate bucket): 404 unless the caller owns the conversation (as for
+  Stop, so an account conversation follows the same way). A turn this
+  process relays answers SSE: every event so far from `start`, then the rest
+  live, closing after the last. Any other id answers 204 (the turn ended
+  since the browser read its row, or another instance relays it, which needs
+  the same shared channel as Stop).
+- Undo payloads reach only the browsers reading when the edit's `tool_end`
+  is sent: an edit made while no tab read the turn shows no Undo (Epo
+  2026-10-27, T19).
+- History (`ListMessages`) includes the `streaming` row with its last
+  checkpoint; a crash's are aborted at boot. The conversation lists carry
+  `running` (an assistant row still `streaming`, partial index
+  `messages_streaming_idx`), and `/api/stream` sends
+  `{type: chat_turn, conversationId, status}` on the `notification` event
+  when a row starts streaming and when it is saved with its ending.
+- The browser: `ChatPanel` keeps the shown conversation's id in localStorage
+  per chat scope (`capy.chat.open.<workspaceId>`, the account chat's
+  `capy.chat.open.account`), written when one mounts in the panel or a new
+  chat's first send gets its id, and removed when the panel unmounts
+  (another page) or shows a new chat. A reload or reopened tab opens it in
+  the panel's first render, with a loading skeleton in place of the empty
+  chat until its history arrives; a kept conversation that is gone (404)
+  opens a new chat. On `/chat/{id}` the URL's conversation opens first
+  instead (`AccountChat` mounts the panel with it as its request), and a
+  requested one that is gone shows not found. When a history ends in a `streaming`
+  assistant row this tab is not reading, `useChatStream` follows it
+  (`resumeChat`): the `start` event empties the row and the replay rebuilds
+  it, the composer shows Stop, and Stop works as for a turn sent here. Only
+  the shown conversation follows a turn it did not send: showing another
+  stops reading it (the turn runs on); a turn the tab sent keeps its stream
+  in the background as before. A 204 reads the row again and shows it as
+  saved.
+- A connection that drops after the turn's `start` (a network error, a
+  stream that ends before `done` or `error`) shows no error: once the
+  browser is online the tab follows the turn again, and the replay rebuilds
+  the message; one that drops before `start` (a send that never reached the
+  turn) fails as before. Every connection stops reading at the turn's last
+  event, so a Stop from another tab ends it at once.
+- Every other conversation with a running turn shows a spinner ("Answering")
+  in the conversation lists (`ConversationList`), patched from the
+  `chat_turn` events in every cached list; a turn in a conversation no list
+  holds yet refetches them, and every events-stream connect refetches them
+  too.
 
 ### Chat below lg
 

@@ -64,6 +64,7 @@ import { getFileKind } from '@/features/workspace/sourceUpload';
 import { DEV_SHARE_LINK_SECRET, sharePath } from '@/lib/shareLink';
 import { accountChatHandlers } from './accountChat';
 import { gradeQuestions, learnerView } from './answerKeys';
+import { mockResumeStream } from './chatResume';
 import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
 import {
@@ -2667,7 +2668,7 @@ export const handlers = [
           : time(b.pinnedAt) - time(a.pinnedAt) ||
             time(b.updatedAt) - time(a.updatedAt)
       );
-    return HttpResponse.json(list);
+    return HttpResponse.json(list.map(db.listedConversation));
   }),
   // Archiving drops the pin, as on the server.
   http.patch('/api/conversations/:id', async ({ params, request }) => {
@@ -2682,7 +2683,7 @@ export const handlers = [
       conv.archivedAt = body.archived ? (conv.archivedAt ?? now) : undefined;
       if (body.archived) conv.pinnedAt = undefined;
     }
-    return HttpResponse.json(conv);
+    return HttpResponse.json(db.listedConversation(conv));
   }),
   ...[
     [
@@ -2725,20 +2726,25 @@ export const handlers = [
         workspaceId: params.id as string,
       };
       db.conversations.push(conv);
-      return HttpResponse.json(conv, { status: 201 });
+      return HttpResponse.json(db.listedConversation(conv), { status: 201 });
     }
   ),
   http.get('/api/conversations/:id/messages', async ({ params }) => {
     const list = db.chatMessages.filter(
-      (msg) => msg.conversationId === params.id && msg.status !== 'streaming'
+      (msg) => msg.conversationId === params.id
     );
     return HttpResponse.json(list);
   }),
-  // The mock stream ends when the browser stops reading after this.
-  http.post(
-    '/api/conversations/:id/messages/:messageId/stop',
-    () => new HttpResponse(null, { status: 204 })
-  ),
+  // The mock stream ends when the browser stops reading after this; a row
+  // still streaming (the e2e seed's running turn) is saved stopped.
+  http.post('/api/conversations/:id/messages/:messageId/stop', ({ params }) => {
+    const row = db.chatMessages.find(
+      (msg) => msg.id === params.messageId && msg.status === 'streaming'
+    );
+    if (row) row.status = 'aborted';
+    return new HttpResponse(null, { status: 204 });
+  }),
+  mockResumeStream,
   http.delete('/api/conversations/:id', async ({ params }) => {
     const i = db.conversations.findIndex((c) => c.id === params.id);
     if (i >= 0) db.conversations.splice(i, 1);

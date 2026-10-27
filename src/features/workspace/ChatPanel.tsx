@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { flushSync } from 'react-dom';
 import { chatTurn, WORKSPACE_ONLY_DEFAULT } from '@/api/chatStream';
+import { isApiError } from '@/api/client';
 import {
   useConversations,
   useMe,
@@ -26,6 +27,7 @@ import type {
 } from '@/api/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { CharCount } from '@/components/ui/Input';
@@ -41,6 +43,13 @@ import { audioStartMs, formatClock } from '@/features/files/citationRegions';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
+import {
+  isString,
+  PREF_KEYS,
+  readPref,
+  removePref,
+  writePref,
+} from '@/lib/localPrefs';
 import { textLength } from '@/lib/textLength';
 import { userColorPairDark } from '@/lib/userColor';
 import {
@@ -407,7 +416,13 @@ export function ChatPanel({
   const [text, setText] = useState('');
   const overLimit = textLength(text) > CHAT_CHARACTER_LIMIT;
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [selectId, setSelectId] = useState<string | null>(null);
+  // The conversation this panel showed before a reload or a closed tab opens
+  // again in its first render (Epo 2026-10-27, T19); a request the panel
+  // mounts with (the account chat's URL) wins over it.
+  const [restoredId] = useState(() =>
+    request ? null : readPref(PREF_KEYS.openChat(workspaceId), null, isString)
+  );
+  const [selectId, setSelectId] = useState(request ? request.id : restoredId);
   // Workspace only applies per message; it stays where the learner left it.
   const [workspaceOnly, setWorkspaceOnly] = useState(WORKSPACE_ONLY_DEFAULT);
   const { data: history, error: historyError } = useMessages(selectId, {
@@ -415,6 +430,8 @@ export function ChatPanel({
   });
   // A thread the link names that is gone or not the caller's (review r1 F2).
   const missingThread = !!selectId && isMissing(historyError);
+  const opening =
+    selectId !== null && conversationId !== selectId && !historyError;
   const hydratedRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
@@ -476,6 +493,19 @@ export function ChatPanel({
     }
   }, [selectId, history, hydrate]);
 
+  // The shown conversation is kept while the panel is mounted: leaving the
+  // page forgets it, a reload or a closed tab does not.
+  const shownId = selectId ?? conversationId;
+  useEffect(() => {
+    const key = PREF_KEYS.openChat(workspaceId);
+    if (shownId) writePref(key, shownId);
+    else removePref(key);
+  }, [shownId, workspaceId]);
+  useEffect(
+    () => () => removePref(PREF_KEYS.openChat(workspaceId)),
+    [workspaceId]
+  );
+
   // Keep the newest message in view as tokens stream in or a thread opens;
   // an Undo on an older receipt changes messages too and must not scroll.
   const shownCount = useRef(0);
@@ -497,6 +527,17 @@ export function ChatPanel({
     setSelectId(null);
     startNew();
   }
+  // A kept conversation that is gone (deleted, archived away) opens a new
+  // chat; a requested one shows it is missing.
+  const forgetGone = useEffectEvent(() => {
+    if (
+      selectId === restoredId &&
+      isApiError(historyError) &&
+      historyError.status === 404
+    )
+      openNew();
+  });
+  useEffect(() => forgetGone(), [historyError]);
   function openThread(id: string) {
     hydratedRef.current = null;
     setSelectId(id);
@@ -588,7 +629,10 @@ export function ChatPanel({
         )}
         ref={scrollRef}
       >
-        {!messages.length && (
+        {!messages.length && opening && (
+          <SkeletonList className="mt-auto" count={3} rowHeight={56} />
+        )}
+        {!(messages.length || opening) && (
           <div className="m-auto max-w-[80%] text-center">
             <Icon
               className="non-scaling-svg mx-auto mb-2 size-6.5"

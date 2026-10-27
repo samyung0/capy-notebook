@@ -514,14 +514,16 @@ A signed-in tab holds `GET /api/stream` open for its whole life, with
 `?workspace=` set on the workspace page. It carries three named SSE events:
 `notification` (read and removed events patch the notification caches; a
 created event refetches the list and the unread count, because the list joins
-each row's workspace and member for its icon), `ingest` (patched into
+each row's workspace and member for its icon; a `chat_turn` event patches a
+conversation's running mark in every cached conversation list,
+[agentic-retrieval.md](../agentic-retrieval.md#following-a-running-turn)), `ingest` (patched into
 the file caches) and `tree` (`{kind: files | materials}`, which invalidates
 that workspace list plus the chapters list after a 300 ms trailing debounce
 per kind, so one ingest's several writes cost one refetch; a hidden tab only
 marks them stale and reads them on focus). Neither Redis Pub/Sub nor Postgres
 NOTIFY replays missed events, so every successful connection refetches the
-notification list, the unread count, and the file, material and chapter
-lists. A connection that succeeds after a failed attempt (a redeploy, a
+notification list, the unread count, the file, material and chapter lists,
+and the conversation lists. A connection that succeeds after a failed attempt (a redeploy, a
 dropped network) also refetches every active query in error, so the error
 states above recover without Retry. There is no polling while disconnected; the workspace lists keep only
 `refetchOnWindowFocus`. A list read carries the client-only `ingestPct` over

@@ -154,7 +154,8 @@ type api struct {
 	// attempt ends (internal_documents.go).
 	operations operationLocks
 	// turns are the chat turns this process relays, by assistant message id,
-	// so a stop request reaches its relay (chat_stop.go).
+	// so a stop request reaches its relay (chat_stop.go) and a browser can
+	// follow it again (chat_resume.go).
 	turns sync.Map
 }
 
@@ -318,6 +319,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
 	r.Post("/api/chat/stream", a.accountChatStream)
+	r.Get("/api/conversations/{id}/messages/{messageId}/stream", a.resumeTurn)
 	r.Post("/api/workspaces/{id}/ai/copilot", a.aiCopilot)
 	if cfg.PipelineSecret != "" {
 		r.Post("/api/internal/materials", a.internalCreateMaterial)
