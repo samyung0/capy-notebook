@@ -226,13 +226,14 @@ for (const [format, name] of [
             window.dispatchEvent(event);
             return event.defaultPrevented;
           });
-        expect(await blocksUnload()).toBe(true);
+        // Q465: with working device storage, held edits never block leaving.
+        expect(await blocksUnload()).toBe(false);
         await saveOffice(page, format);
         await expect
           .poll(() => runtime.evaluate(() => window.officeInputProbe.flushed))
           .toBe(true);
         await expect(page.locator('[data-save-state="saved"]')).toHaveCount(0);
-        expect(await blocksUnload()).toBe(true);
+        expect(await blocksUnload()).toBe(false);
       } finally {
         await runtime.evaluate(() => {
           window.officeInputProbe.hold = false;
