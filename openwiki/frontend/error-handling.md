@@ -267,10 +267,11 @@ not offline use: without a service worker the app itself does not load offline.
 Resetting a boundary also resets TanStack Query's error state before retrying.
 
 A page has one main landmark. `AppShell` owns it and marks its children with
-`InShellMain`, so a boundary or router fallback rendered inside the shell
-(a pane boundary, a route error or not-found) frames itself in a plain `div`;
-outside the shell (the root boundary, a public route) the fallback is the
-`main`.
+`InShellMain`, so a page fallback rendered inside the shell (a route error or
+not-found) frames itself in a plain `div`; outside the shell (the root
+boundary, a public route) the fallback is the `main`. A pane boundary draws no
+panel of its own: its error state fills the card it sits in, which keeps that
+card's frost over a page frame.
 
 A route chunk the deploy removed (a missing `/assets/*` name is a 404
 `no-store` from the assets Worker, deployment-runbook §1) fails as a
