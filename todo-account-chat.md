@@ -177,6 +177,9 @@ listing stay workspace-only.
   search over its workspace files and the caller's no-workspace files
   together, so owned, member and no-workspace files rank alike. Spaces of
   different embedding models still merge by rank before the one rerank.
+  Epo expects workspaces with different embedding models or dimensions only
+  after the desktop app ships, which is far off, so mixed-pin ranking needs
+  no tuning now.
 - **Tuning and scale (Windows PC):** account search quality, and the
   no-workspace vector leg. It filters on `workspace_id IS NULL`, which every
   user's standalone vectors share, so the vector index may return few of the
