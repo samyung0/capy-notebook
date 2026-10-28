@@ -77,11 +77,8 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, actorID, w
 	if err != nil {
 		return nil, false, err
 	}
-	// The owner removes any member and a member leaves by removing itself
-	// (Epo 2026-10-28); the owner's own row never matches the delete. An empty
-	// actor is refused, never read as the owner.
-	leaving := actorID != "" && memberID == actorID
-	if ownerID != actorID && !leaving {
+	// An empty actor is refused, never read as the owner.
+	if ownerID != actorID {
 		return nil, false, ErrForbidden
 	}
 
