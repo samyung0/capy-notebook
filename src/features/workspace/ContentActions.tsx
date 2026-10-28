@@ -60,6 +60,7 @@ export function ContentActions({
   renameFieldLabel,
   renameTitle,
   readOnly = false,
+  canRename = true,
   workspaceId,
   workspaceName,
 }: {
@@ -95,6 +96,9 @@ export function ContentActions({
   propertiesClassName?: string;
   propertyLabelClassName?: string;
   readOnly?: boolean;
+  /** Rename aside from readOnly: a payer who may trash a file it can no
+   * longer edit (FileRights). */
+  canRename?: boolean;
   renameFieldLabel?: string;
   renameTitle?: string;
   workspaceId: string;
@@ -124,7 +128,7 @@ export function ContentActions({
   // open or view, Rename, Share, Move, Clone, Properties, Delete.
   const items: MenuItem[] = [
     ...leadingItems,
-    ...(!readOnly && content
+    ...(!readOnly && canRename && content
       ? [
           {
             icon: 'pencil' as const,
@@ -136,7 +140,8 @@ export function ContentActions({
     ...(onShare
       ? [{ icon: 'link' as const, label: m.action_share(), onClick: onShare }]
       : []),
-    ...(!readOnly && content && (moveTo || showMove)
+    // Move to… follows its own right: a payer moves what it cannot edit.
+    ...(content && (moveTo || (!readOnly && showMove))
       ? [
           moveTo
             ? {

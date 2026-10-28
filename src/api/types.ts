@@ -602,6 +602,7 @@ import type {
 import type { Answers } from '@/features/quizzes/grade';
 import type {
   ListAttemptsSort,
+  ListOwnedFilesScope,
   ListOwnedFilesSort,
   ListOwnedMaterialsSort,
   ListPastReviewsSort,
@@ -691,13 +692,16 @@ export interface MaterialListParams {
 export type FileListSort = ListOwnedFilesSort;
 /** A file with no workspace is standalone, its uploader's alone. */
 export type FileListLocation = MaterialListLocation;
+/** owned: what the caller pays for (My files); all: also every file of its
+ * own and member workspaces (All files); member: what it can open. */
+export type FileListScope = ListOwnedFilesScope;
 export interface FileListParams {
   dir?: 'asc' | 'desc';
   kinds?: FileKind[];
   locations?: FileListLocation[];
   /** Name contains, any case. */
   q?: string;
-  scope?: ListScope;
+  scope?: FileListScope;
   sort?: FileListSort;
   workspaceIds?: string[];
 }

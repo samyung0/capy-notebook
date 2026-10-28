@@ -27,6 +27,9 @@ export interface SortOption<V extends string = string> {
 }
 
 export interface FilterSection {
+  /** A one-of section's default: shown active, yet neither named on the
+   * trigger nor counted as a filter to reset. */
+  defaultValue?: string;
   emptyLabel?: string;
   key: string;
   label: string;
@@ -195,7 +198,11 @@ export function FilterPopover({
     () =>
       filters.flatMap((section) =>
         section.options
-          .filter((option) => section.selected.includes(option.value))
+          .filter(
+            (option) =>
+              section.selected.includes(option.value) &&
+              option.value !== section.defaultValue
+          )
           .map((option) => option.label)
       ),
     [filters]

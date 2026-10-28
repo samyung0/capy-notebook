@@ -15,13 +15,15 @@ describe('list search', () => {
       parseFilesSearch({
         dir: 'up',
         kind: 'pdf,quiz,doc',
-        location: 'standalone',
+        location: 'workspace',
+        owner: 'all',
         sort: 'title',
         workspace: 'ws_a,ws_b',
       })
     ).toEqual({
       kind: 'pdf,doc',
-      location: 'standalone',
+      location: 'workspace',
+      owner: 'all',
       workspace: 'ws_a,ws_b',
     });
     expect(
@@ -56,9 +58,10 @@ describe('list search', () => {
 
   it('builds the list queries the loaders prefetch', () => {
     expect(fileListParams({})).toEqual({ dir: 'desc', sort: 'added' });
-    expect(fileListParams({ location: 'standalone' })).toEqual({
+    expect(fileListParams({ location: 'workspace', owner: 'all' })).toEqual({
       dir: 'desc',
-      locations: ['standalone'],
+      locations: ['workspace'],
+      scope: 'all',
       sort: 'added',
     });
     expect(

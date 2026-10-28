@@ -2616,5 +2616,10 @@
   "merge_strip": "Some of your edits couldn't sync into this note.",
   "merge_title": "Edits to review",
   "merge_yours": "Yours",
-  "merge_yours_deleted": "You deleted this block."
+  "merge_yours_deleted": "You deleted this block.",
+  "files_filter_owner": "Owner",
+  "files_owner_mine": "My files",
+  "files_owner_all": "All files",
+  "files_location_all": "All locations",
+  "files_location_workspace": "Workspace only"
 }

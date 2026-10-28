@@ -1730,7 +1730,7 @@ export const ListOwnedFilesQueryParams = zod.object({
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
   "location": zod.string().optional().describe('Comma-separated locations: workspace, standalone'),
   "q": zod.string().max(listOwnedFilesQueryQMax).optional().describe('Keeps files whose name holds this text, any case'),
-  "scope": zod.enum(['owned', 'member']).default(listOwnedFilesQueryScopeDefault).describe('owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of'),
+  "scope": zod.enum(['owned', 'all', 'member']).default(listOwnedFilesQueryScopeDefault).describe('owned: the files the caller pays for, wherever they sit (the Files page\'s My files); all: those plus every file in its own workspaces and those it is a member of (All files); member: the files the caller can open, in its workspaces, those it is a member of and link or public ones it opened'),
   "sort": zod.enum(['added', 'name', 'size', 'kind', 'workspace']).default(listOwnedFilesQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listOwnedFilesQueryDirDefault),
   "limit": zod.int().min(1).max(listOwnedFilesQueryLimitMax).default(listOwnedFilesQueryLimitDefault),
@@ -1804,6 +1804,12 @@ export const ListOwnedFilesResponse = zod.object({
 })).nullish()
 }).optional(),
   "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
@@ -1897,6 +1903,12 @@ export const MoveFilesResponseItem = zod.object({
 })).nullish()
 }).optional(),
   "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
@@ -1996,6 +2008,12 @@ export const GetFileResponse = zod.object({
 })).nullish()
 }).optional(),
   "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
@@ -2085,6 +2103,12 @@ export const UpdateFileResponse = zod.object({
 })).nullish()
 }).optional(),
   "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
@@ -2373,6 +2397,12 @@ export const CloneFileResponse = zod.object({
 })).nullish()
 }).optional(),
   "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
@@ -5474,6 +5504,12 @@ export const ListRecentResponse = zod.object({
 })).nullish()
 }).optional(),
   "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
@@ -7031,6 +7067,12 @@ export const ListWorkspaceFilesResponseItem = zod.object({
 })).nullish()
 }).optional(),
   "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
@@ -7122,6 +7164,12 @@ export const CreateBlankFileResponse = zod.object({
 })).nullish()
 }).optional(),
   "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
@@ -7547,6 +7595,12 @@ export const ListWorkspaceRecentResponse = zod.object({
 })).nullish()
 }).optional(),
   "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),

@@ -51,7 +51,7 @@ type filesListInput struct {
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
 	Location    string `query:"location" doc:"Comma-separated locations: workspace, standalone"`
 	Query       string `query:"q" maxLength:"120" doc:"Keeps files whose name holds this text, any case"`
-	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"`
+	Scope       string `query:"scope" enum:"owned,all,member" default:"owned" doc:"owned: the files the caller pays for, wherever they sit (the Files page's My files); all: those plus every file in its own workspaces and those it is a member of (All files); member: the files the caller can open, in its workspaces, those it is a member of and link or public ones it opened"`
 	Sort        string `query:"sort" enum:"added,name,size,kind,workspace" default:"added"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"40"`
@@ -179,7 +179,7 @@ func (a *api) listOwnedFiles(ctx context.Context, in *filesListInput) (*filePage
 		}
 	}
 	page, err := a.s.ListOwnedFiles(ctx, userID(ctx), store.FileListFilter{
-		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), Locations: csv(in.Location), Query: strings.TrimSpace(in.Query), Member: in.Scope == "member",
+		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), Locations: csv(in.Location), Query: strings.TrimSpace(in.Query), Member: in.Scope == "member", All: in.Scope == "all",
 		Sort: in.Sort, Ascending: in.Dir == "asc", Limit: in.Limit, Cursor: in.Cursor,
 	})
 	if err != nil {
