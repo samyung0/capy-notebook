@@ -84,4 +84,9 @@ overrides:
 # `pnpm audit --prod` (CI job audit_pnpm) fails on any advisory not listed
 # here. Each entry says why it waits.
 auditConfig:
-  ignoreGhsas: []
+  ignoreGhsas:
+    # deepmerge <=4.3.1 prototype poisoning (low), no fixed release. Only
+    # @vanilla-extract/css (vendored BlockSuite's styles) uses it, to merge the
+    # style objects of `.css.ts` sources while the CSS is built; no user input
+    # reaches it (Epo 2026-10-28).
+    - GHSA-gcqx-w48m-w2h4
