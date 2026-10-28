@@ -8,9 +8,9 @@
 //
 // A tool's result text reaches the browser only for the tools that keep it
 // whole (search_files_summary, list_sources, the creates), through the turn's
-// saved toolEvidence, so those are asserted from the message row; a read's
-// unindexed changes are not visible here (pipeline and Go tests cover them),
-// only that the read of an edited, unindexed file succeeds.
+// saved toolEvidence, so those are asserted from the message row. A read's
+// unindexed changes are not visible here: the Agent visibility lane checks
+// them (pipeline/tests/stack, Q534).
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { type Citation, citations, scripted } from './chat';
@@ -266,22 +266,4 @@ test('account chat: search, list, read and write across workspaces and no worksp
       `workspace_id=${made[0].id}`
     )
   );
-  // The edit is saved and waits unindexed (auto processing is off).
-  await run.poll(
-    'the edit pending',
-    () =>
-      run.query(
-        'SELECT pending_effects FROM source_documents WHERE file_id=%s',
-        [ownText]
-      ),
-    (rows) =>
-      Array.isArray(rows[0]?.pending_effects) &&
-      rows[0].pending_effects.length > 0
-  );
-
-  // Turn 3: a read of the edited, unindexed file carries its changes.
-  await scripted(page, [
-    [{ arguments: { file_id: ownText }, name: 'read_document' }],
-    'root = Answer([a])\na = Md("Scripted account read ran.")',
-  ]);
 });

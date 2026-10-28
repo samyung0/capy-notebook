@@ -14,6 +14,7 @@ const production = [
   'on:\n  workflow_dispatch:\njobs:',
   '  gate:\n    uses: ./.github/workflows/uat-quality.yml',
   '  perf:\n    uses: ./.github/workflows/perf.yml',
+  '  visibility:\n    uses: ./.github/workflows/agent-visibility.yml',
   '  deploy:\n    with:\n      environment_name: production\n',
 ].join('\n');
 
@@ -22,6 +23,7 @@ const RUNS_LOCALLY = /must run locally/;
 const CALLABLE = /callable by deployment flows/;
 const UAT_MANUAL = /deploy-uat\.yml must be workflow_dispatch-only/;
 const PERF_CALL = /perf\.yml/;
+const VISIBILITY_CALL = /agent-visibility\.yml/;
 
 test('the checked-in workflows keep agent work local and gates callable', () => {
   assert.doesNotThrow(validateRepositoryBoundaries);
@@ -38,11 +40,10 @@ test('a scheduled workflow is rejected', () => {
   );
 });
 
-test('only audit.yml may be scheduled, and it still may not run a scanner', () => {
+test('only audit.yml and agent-visibility.yml may be scheduled, and neither may run a scanner', () => {
   const daily = 'on:\n  push:\n  schedule:\n    - cron: "17 3 * * *"\n';
-  assert.doesNotThrow(() =>
-    validateWorkflowIsDeterministic(daily, 'audit.yml')
-  );
+  for (const file of ['audit.yml', 'agent-visibility.yml'])
+    assert.doesNotThrow(() => validateWorkflowIsDeterministic(daily, file));
   assert.throws(
     () => validateWorkflowIsDeterministic(daily, 'ci.yml'),
     SCHEDULED
@@ -99,5 +100,14 @@ test('production promotion cannot drop a required gate', () => {
         reusable
       ),
     PERF_CALL
+  );
+  assert.throws(
+    () =>
+      validateDeploymentWorkflows(
+        uat,
+        production.replace('agent-visibility.yml', 'nothing.yml'),
+        reusable
+      ),
+    VISIBILITY_CALL
   );
 });

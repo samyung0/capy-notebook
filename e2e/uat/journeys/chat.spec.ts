@@ -10,7 +10,8 @@
 // capture_knowledge_page), because UAT has no knowledge library, and
 // search_web, which charges per search, so Workspace only is on; create_deck
 // and write_slide, because a stored deck enqueues a paid
-// parse and index; resolve_source_change, which needs pending Office images.
+// parse and index; resolve_source_change, whose result UAT cannot see (the
+// Agent visibility lane checks it, pipeline/tests/stack, Q534).
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { showPanelView } from '../../helpers/panelView';

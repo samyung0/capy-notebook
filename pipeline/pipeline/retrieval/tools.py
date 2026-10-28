@@ -926,7 +926,23 @@ async def _search_files_content(args: dict[str, Any], ctx: ToolContext) -> ToolR
         if _overlap_footer(overlap, len(labelled))
         else ""
     )
-    return ToolResult(passages=labelled, text_parts=[footer])
+    # Each passage says how many of its document's edits are not indexed yet,
+    # as workspace chat's do (Q527): its changes load as a read would load them,
+    # one Go call per item at once (Go refuses a whole /changes call over one
+    # unreadable item); a failed load leaves only that item's line out.
+    sources = ctx.pending_sources
+    documents = {p.file_id: p.kind for p in labelled}
+    await asyncio.gather(
+        *(
+            sources.load_item("material" if kind == "material" else "source_file", rid)
+            for rid, kind in documents.items()
+        )
+    )
+    unindexed = sources.unindexed_counts()
+    for passage in labelled:
+        if passage.file_id in unindexed:
+            ctx.passage_flags.setdefault(passage.chunk_id, unindexed[passage.file_id])
+    return ToolResult(passages=labelled, text_parts=[footer], unindexed=unindexed)
 
 
 def workspaces_text(ctx: ToolContext) -> str:
@@ -2096,7 +2112,7 @@ async def _post_material(
     if images:
         payload["figures"] = _figure_images(images)
     await ctx.pending_sources.validate()
-    return await _post_operation(
+    result = await _post_operation(
         "/api/internal/materials",
         payload,
         operation_id(ctx.assistant_message_id, call_id),
@@ -2105,6 +2121,10 @@ async def _post_material(
         # Go stores each figure in the bucket before the note.
         timeout=60 if images else 10,
     )
+    if result.effects:
+        # A same-turn read of the new id finds it (Q536), as after an edit.
+        ctx._scope_outline = None
+    return result
 
 
 def _new_ids(ctx: ToolContext, call_id: str) -> Callable[[], str]:
@@ -3846,7 +3866,10 @@ async def _inspect_office_document(
     )
     if isinstance(body, ToolResult):
         return body
-    ctx.pending_sources.read(rid)
+    # The read carries the file's unindexed changes, as the other reads do
+    # (Q526); account chat loads them first.
+    await ctx.pending_sources.load_item("source_file", rid)
+    changes = ctx.pending_sources.for_read(rid)
     scoped = body.get("scoped")
     if isinstance(scoped, dict) and "items" in scoped:
         result = await _office_items(ctx, args, rid, body, scoped)
@@ -3857,6 +3880,7 @@ async def _inspect_office_document(
         result = _result(_render_inspection(body, source=True))
     if access:
         result.text_parts.append(access)
+    result.pending = changes
     return result
 
 
@@ -4295,6 +4319,7 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             "the export and the store.",
         )
     record["file"] = result.effects[0]["resource"]["id"]
+    ctx._scope_outline = None  # a same-turn read finds the new file (Q536)
     result.text_parts = [
         (
             f"{outline}\n\nEvery slide is written. The deck is stored as "

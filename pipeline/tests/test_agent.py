@@ -636,6 +636,62 @@ async def test_create_material_clamps_model_title(monkeypatch):
     assert len(seen["title"]) == tools.MATERIAL_TITLE_MAX
 
 
+@pytest.mark.parametrize(
+    ("tool", "args", "kind"),
+    [
+        ("create_material", {"kind": "note", "title": "New", "content": "x"}, "note"),
+        (
+            "add_questions",
+            {
+                "title": "Quiz",
+                "questions": [
+                    {"question": "Q?", "options": ["a", "b"], "correct": "a"}
+                ],
+            },
+            "quiz",
+        ),
+    ],
+)
+async def test_a_same_turn_read_finds_what_the_turn_created(
+    monkeypatch, tool, args, kind
+):
+    """Q536: a create drops the turn's cached outline, as an edit does, so a
+    read of the new id finds it instead of saying it may have been deleted."""
+    ctx = _owner_ctx()
+    ctx.skills_read = {skills.EDITING, skills.NOTE_BUILDING}
+    _gateway(
+        monkeypatch,
+        post=lambda *_a, **_k: _JsonResp(_receipt("created", "material", "mat_new")),
+    )
+    created = {
+        "id": "mat_new",
+        "name": "New",
+        "kind": "material",
+        "material_kind": kind,
+        "chapter_id": None,
+        "chunks": 0,
+    }
+    outline = {"chapters": [], "files": [*ctx._scope_outline["files"], created]}
+
+    async def workspace_outline(*_args):
+        return outline
+
+    async def read_file_range(**_kwargs):
+        return []
+
+    monkeypatch.setattr(tools.store, "workspace_outline", workspace_outline)
+    monkeypatch.setattr(tools.store, "read_file_range", read_file_range)
+
+    made = await tools.run(tool, {**args, "_tool_call_id": "c1"}, ctx)
+    read = await tools.run("read_document", {"file_id": "mat_new"}, ctx)
+
+    assert not made.refused, made.text()
+    if kind == "note":
+        assert not read.refused and read.text() == "No passages at that position."
+    else:
+        assert read.text().startswith("mat_new is a quiz, which has no passages")
+
+
 async def test_create_material_refuses_an_unknown_chapter_before_sending(monkeypatch):
     ctx = ToolContext(
         workspace_id="ws_1",
@@ -5924,7 +5980,28 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
         return _JsonResp(next(bodies))
 
     ctx = _office_ctx(monkeypatch, post=_post)
-    ctx.pending_sources.read_ids = set()
+    ctx.pending_sources = pending.PendingSources(
+        [
+            {
+                "fileId": "f_1",
+                "name": "grades.xlsx",
+                "epoch": 1,
+                "checkpoint": 4,
+                "indexedCheckpoint": 2,
+                "changes": [
+                    {
+                        "id": "c_1",
+                        "kind": "text",
+                        "operation": "replace",
+                        "label": "Grades!C9",
+                        "before": "41",
+                        "after": "77",
+                    }
+                ],
+            }
+        ],
+        read_ids=set(),
+    )
 
     def inspect(**args):
         return tools.run(
@@ -5942,10 +6019,13 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
         "kind": "source_file",
         "id": "f_1",
     }
-    # Reading a file delivers its pending changes (Epo 2026-10-20).
-    assert ctx.pending_sources.read_ids == {"f_1"}
+    # Reading a file delivers its pending changes once per turn (Epo
+    # 2026-10-20), cells outside the range read included (Q526); only then do
+    # its search line and hints stop.
+    assert '"label":"Grades!C9","before":"41","after":"77"' in sheets.pending
     cells = await inspect(sheet="Grades", range="A1:B2")
     assert cells.text().endswith(source_block("A1: Name\nB2: =SUM(B3:B9) → 512"))
+    assert cells.pending == ""
     assert sent[1]["office"] == {"sheet": "Grades", "range": "A1:B2"}
     # A DOCX page is the engine's scoped read, its first page listing the
     # paragraph styles, at most 50 and a count of the rest (Epo 2026-10-21).

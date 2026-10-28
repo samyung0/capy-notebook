@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import psycopg
 import pytest
 
 from pipeline.prompts import chat as chat_prompts
@@ -645,6 +646,152 @@ async def test_an_account_read_carries_its_items_changes(monkeypatch):
     monkeypatch.setattr(pending, "_snapshot", republished)
     with pytest.raises(pending.SourceChanged):
         await ctx.pending_sources.validate()
+
+
+def _item_changes(asked: list, after: str):
+    """Go's /api/internal/changes for one file with one unindexed change."""
+
+    def item_changes(user_id, kind, item_id, live):
+        asked.append((kind, item_id))
+        return {
+            "files": [
+                {
+                    "fileId": item_id,
+                    "name": "grades.xlsx",
+                    "workspaceId": "ws_1",
+                    "epoch": 1,
+                    "checkpoint": 4,
+                    "indexedCheckpoint": 2,
+                    "changes": [{"id": "c_1", "operation": "replace", "after": after}],
+                }
+            ],
+            "notes": [],
+            "unread": [],
+        }
+
+    return item_changes
+
+
+async def _snapshot(workspace_id, file_ids, *, evidence=True):
+    return [
+        {
+            "fileId": f,
+            "revision": 1,
+            "content_id": "rc",
+            "epoch": 1,
+            "indexedCheckpoint": 2,
+        }
+        for f in file_ids
+    ]
+
+
+async def test_an_account_office_inspect_carries_its_items_changes(monkeypatch):
+    """Q526: inspect_office_document loads the file's changes and appends
+    them once per turn, as read_document does."""
+    gateway = _Gateway([_row("source_file", "f_9", ws="ws_1", edit=True)])
+
+    async def read(path, payload, failure, *args, **kwargs):
+        if path.endswith("/documents/inspect"):
+            return {
+                "format": "xlsx",
+                "title": "grades.xlsx",
+                "scoped": {
+                    "sheets": [{"id": "0", "name": "Grades", "usedRange": "A1:B2"}]
+                },
+            }
+        return await gateway.read(path, payload, failure)
+
+    asked: list = []
+    monkeypatch.setattr(tools, "_gateway_read", read)
+    monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
+    monkeypatch.setattr(pending, "_item_changes", _item_changes(asked, "B2 now 77"))
+    monkeypatch.setattr(pending, "_snapshot", _snapshot)
+    ctx = _account(pending_sources=pending.PendingSources.for_account("u_1"))
+
+    first = await tools._inspect_office_document({"file_id": "f_9"}, ctx)
+    again = await tools._inspect_office_document({"file_id": "f_9"}, ctx)
+
+    assert '"after":"B2 now 77"' in first.pending and again.pending == ""
+    assert asked == [("source_file", "f_9")]
+
+
+async def test_account_search_passages_say_their_edits_are_not_indexed(monkeypatch):
+    """Q527: as workspace chat's do, a file's or a note's passage, loading
+    each passage's item as a read; an item whose load fails (here the
+    database) only loses its line, and its read says sources may be outdated."""
+    ids = ("f_edited", "f_still", "mat_note", "f_broken")
+    found = [
+        Passage(
+            chunk_id=f"c_{rid}",
+            file_id=rid,
+            file_name=f"{rid}.xlsx",
+            chunk_idx=0,
+            section_path="",
+            text="t",
+            kind="material" if rid.startswith("mat_") else "file",
+        )
+        for rid in ids
+    ]
+
+    async def search_account(**_kwargs):
+        return found
+
+    async def item_places(file_ids, material_ids):
+        return {
+            rid: {
+                "workspace_id": "ws_1",
+                "chapter_id": None,
+                "chapter_name": None,
+                "owner_id": "u_1",
+            }
+            for rid in [*file_ids, *material_ids]
+        }
+
+    asked: list = []
+    edited = _item_changes(asked, "77")
+
+    def item_changes(user_id, kind, item_id, live):
+        body = edited(user_id, kind, item_id, live)
+        if item_id == "mat_note":
+            note = {"materialId": item_id, "title": "Tides", "revision": 3}
+            return {**body, "files": [], "notes": [{**note, "changes": [{}, {}]}]}
+        return body if item_id == "f_edited" else {**body, "files": []}
+
+    async def note_identities(workspace_id, material_ids):
+        return [(material_ids[0], "rc_note")]
+
+    async def snapshot(workspace_id, file_ids, *, evidence=True):
+        if file_ids == ["f_broken"]:
+            raise psycopg.OperationalError("the database went away")
+        return await _snapshot(workspace_id, file_ids, evidence=evidence)
+
+    async def read_file_range(**_kwargs):
+        return []
+
+    gateway = _Gateway([_row("source_file", "f_broken", ws="ws_1")])
+    monkeypatch.setattr(tools, "_gateway_read", gateway.read)
+    monkeypatch.setattr(tools, "search_account", search_account)
+    monkeypatch.setattr(tools.store, "item_places", item_places)
+    monkeypatch.setattr(tools.store, "read_file_range", read_file_range)
+    monkeypatch.setattr(pending, "_item_changes", item_changes)
+    monkeypatch.setattr(pending, "_note_identities", note_identities)
+    monkeypatch.setattr(pending, "_snapshot", snapshot)
+    ctx = _account(pending_sources=pending.PendingSources.for_account("u_1"))
+
+    result = await tools._search_files_content({"query": "grades"}, ctx)
+    text = tools.render_result(result, list(enumerate(result.passages, 1)))
+    read = await tools._read_document({"file_id": "f_broken"}, ctx)
+
+    assert [p.file_id for p in result.passages] == list(ids)
+    assert sorted(asked) == [
+        ("material", "mat_note"),
+        ("source_file", "f_edited"),
+        ("source_file", "f_still"),
+    ]
+    assert '[1] "f_edited.xlsx" has 1 edit not indexed yet' in text
+    assert '[3] "mat_note.xlsx" has 2 edits not indexed yet' in text
+    assert ctx.passage_flags == {"c_f_edited": 1, "c_mat_note": 2}
+    assert read.pending == pending.NOTICE
 
 
 async def test_account_resolves_go_through_the_items_check(monkeypatch):

@@ -98,6 +98,9 @@ assert.equal(quality.on.workflow_dispatch.inputs.critical_paths.default, true);
 assert.equal(quality.on.workflow_call.inputs.critical_paths.default, false);
 assert.equal(promotion.jobs.uat_quality_gate.with.critical_paths, true);
 assert(promotion.jobs.deploy_production.needs.includes('uat_quality_gate'));
+// The Agent visibility lane gates promotion (Q531).
+assert.equal(promotion.jobs.agent_visibility.uses, './.github/workflows/agent-visibility.yml');
+assert(promotion.jobs.deploy_production.needs.includes('agent_visibility'));
 const job = quality.jobs.critical_paths;
 assert.equal(job.environment, 'uat');
 assert.equal(job.steps.find(s => s.uses?.startsWith('actions/checkout')).with.submodules, 'recursive');

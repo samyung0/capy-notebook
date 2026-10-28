@@ -9,6 +9,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+import psycopg
 import requests
 
 from .. import obs
@@ -85,7 +86,8 @@ class PendingSources:
     async def load_item(self, kind: str, item_id: str, *, live: bool = False) -> None:
         """An account read's item: its changes and the index they pair with,
         once per turn (a live read of a note again, from its open room). A
-        failed read says sources may be outdated."""
+        failed load (Go, the collaboration service or the database) says
+        sources may be outdated at the item's read, and fails nothing else."""
         if self._account_user is None or item_id in self._delivered:
             return
         if item_id in self._loaded and not live:
@@ -94,23 +96,24 @@ class PendingSources:
         self._loaded.add(item_id)
         if not (cfg.gateway_url and cfg.pipeline_secret):
             return
-        # The index identity first, as load() does: an index published after
-        # it fails the next validate instead of pairing new passages with
-        # changes measured before it.
-        if kind == "material":
-            identities = await _note_identities(None, [item_id])
-            self._note_index |= dict(identities)
-        else:
-            rows = await _snapshot(None, [item_id], evidence=False)
         try:
+            # The index identity first, as load() does: an index published
+            # after it fails the next validate instead of pairing new passages
+            # with changes measured before it.
+            if kind == "material":
+                identities = await _note_identities(None, [item_id])
+            else:
+                rows = await _snapshot(None, [item_id], evidence=False)
             body = await asyncio.to_thread(
                 _item_changes, self._account_user, kind, item_id, live
             )
-        except (requests.RequestException, ValueError, KeyError) as exc:
+        except (requests.RequestException, ValueError, KeyError, psycopg.Error) as exc:
             # Only this item's read says sources may be outdated.
             obs.capture_error(exc, surface="pending_item")
             self.unread_files.add(item_id)
             return
+        if kind == "material":
+            self._note_index |= dict(identities)
         fields = (
             "fileId",
             "name",
