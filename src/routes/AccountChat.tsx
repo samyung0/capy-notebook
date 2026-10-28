@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useCanGoBack,
   useNavigate,
@@ -5,7 +6,11 @@ import {
   useRouter,
 } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useUnreadNotificationCount } from '@/api/hooks';
+import {
+  fileQuery,
+  materialQuery,
+  useUnreadNotificationCount,
+} from '@/api/hooks';
 import type { Citation, ResourceRef } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Panel } from '@/components/app/layout';
@@ -32,6 +37,7 @@ import { useMediaQuery } from '@/lib/useMediaQuery';
 export default function AccountChat() {
   const { conversationId } = useParams({ strict: false });
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const router = useRouter();
   const canGoBack = useCanGoBack();
   const lg = useMediaQuery('(min-width: 1024px)');
@@ -83,51 +89,56 @@ export default function AccountChat() {
     else void navigate({ to: '/' });
   }
 
-  // Cited and created items open where they live: a workspace item in its
-  // workspace, a standalone one on its own page.
-  function openCitation(citation: Citation) {
-    const { materialId, workspaceId } = citation;
+  // Cited and created items open where they live now (Epo 2026-10-28,
+  // review M1), read again on click so a Move after the answer does not
+  // strand the link: a workspace item in its workspace (a citation at its
+  // page), a standalone one on its own page, which also shows an item gone
+  // or out of reach.
+  async function openItem(
+    kind: 'file' | 'material',
+    id: string,
+    search: Record<string, unknown>
+  ) {
+    // Fresh, not the cache: the item may have moved since it was read.
+    const item = await (kind === 'file'
+      ? queryClient.fetchQuery({ ...fileQuery(id), staleTime: 0 })
+      : queryClient.fetchQuery({ ...materialQuery(id), staleTime: 0 })
+    ).catch(() => null);
+    const workspaceId = item?.workspaceId;
     if (workspaceId)
       void navigate({
         params: { workspaceId },
-        search: materialId
-          ? { material: materialId, mode: 'view' }
-          : searchFromOpenItem({
-              id: citation.fileId,
-              kind: 'file',
-              page: citation.pageStart ?? undefined,
-            }),
+        search,
         to: '/workspaces/$workspaceId',
       });
-    else if (materialId)
+    else if (kind === 'material')
       void navigate({
-        params: { materialId },
+        params: { materialId: id },
         to: '/materials/$materialId',
+      });
+    else void navigate({ params: { fileId: id }, to: '/files/$fileId' });
+  }
+  function openCitation(citation: Citation) {
+    const { materialId } = citation;
+    if (materialId)
+      void openItem('material', materialId, {
+        material: materialId,
+        mode: 'view',
       });
     else
-      void navigate({
-        params: { fileId: citation.fileId },
-        to: '/files/$fileId',
-      });
+      void openItem(
+        'file',
+        citation.fileId,
+        searchFromOpenItem({
+          id: citation.fileId,
+          kind: 'file',
+          page: citation.pageStart ?? undefined,
+        })
+      );
   }
   function openResource(ref: ResourceRef) {
-    const material = ref.kind === 'material';
-    if (ref.workspaceId)
-      void navigate({
-        params: { workspaceId: ref.workspaceId },
-        search: searchFromOpenItem(
-          material
-            ? { id: ref.id, kind: 'material' }
-            : { id: ref.id, kind: 'file' }
-        ),
-        to: '/workspaces/$workspaceId',
-      });
-    else if (material)
-      void navigate({
-        params: { materialId: ref.id },
-        to: '/materials/$materialId',
-      });
-    else void navigate({ params: { fileId: ref.id }, to: '/files/$fileId' });
+    const kind = ref.kind === 'material' ? 'material' : 'file';
+    void openItem(kind, ref.id, searchFromOpenItem({ id: ref.id, kind }));
   }
 
   // The Chat panel's row: Back, the Chats menu below lg, the title and New

@@ -2439,6 +2439,7 @@ async def _post_operation(
                     f"Could not {failure}: {detail or resp.status_code}",
                     detail=explain(details) if explain and details else "",
                     not_found=not_found,
+                    account=ctx.account,
                 )
         except requests.Timeout as exc:
             last_exc = exc
@@ -2563,14 +2564,27 @@ NO_PERMISSION = (
     "make no more tool calls and tell the user the work stopped because they "
     "lack permission."
 )
+# Account chat's refusal for one item or workspace the user only views (Epo
+# 2026-10-28): other files and workspaces may still be editable.
+ACCOUNT_NO_EDIT = (
+    "The user can view this but not edit it there, so nothing was changed. Do "
+    "not try this edit again; other files and workspaces may still be "
+    "editable. Tell the user."
+)
 
 
 def _gateway_refused(
-    resp: requests.Response, text: str, *, detail: str = "", not_found: str = ""
+    resp: requests.Response,
+    text: str,
+    *,
+    detail: str = "",
+    not_found: str = "",
+    account: bool = False,
 ) -> ToolResult:
     """A gateway refusal as a tool result; one for lack of permission tells
-    the model, after the error, to stop editing, and a plain not found adds
-    `not_found` when given."""
+    the model, after the error, to stop editing (in account chat, a refusal
+    for one item only that edit), and a plain not found adds `not_found` when
+    given."""
     try:
         code = str(resp.json().get("code") or "")
     except ValueError:
@@ -2580,7 +2594,12 @@ def _gateway_refused(
     if resp.status_code == 404 and not_found:
         detail = "\n\n".join(part for part in (detail, not_found) if part)
     if code in _NO_PERMISSION_CODES:
-        detail = "\n\n".join(part for part in (detail, NO_PERMISSION) if part)
+        stop = (
+            ACCOUNT_NO_EDIT
+            if account and code == "permission_denied"
+            else NO_PERMISSION
+        )
+        detail = "\n\n".join(part for part in (detail, stop) if part)
     if code == "saves_failing":
         detail = "\n\n".join(part for part in (detail, SAVES_FAILING) if part)
     if code == "workspace_limit_exceeded":

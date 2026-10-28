@@ -216,8 +216,8 @@ listing stay workspace-only.
   another (its receipt cascades away). Hits' "view and edit" in
   search_files_content is the workspace right only (a PDF passage can say
   it); summary hits use the item's own editability.
-- Earlier review items still open: E1 (permission_denied stops every edit),
-  E2, M1 (citations open the old workspace after a Move), T2, T3, P1, Q489.
+- Done: E1 (a view-only refusal stops only that edit), M1 (citations and
+  created items open where they live now). Still open: E2, T2, T3, Q489.
 
 ## After the first version
 

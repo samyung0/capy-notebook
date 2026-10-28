@@ -6,10 +6,13 @@ import { streamChat } from '@/api/chatStream';
 const page = vi.hoisted(() => ({
   chat: {} as Record<string, unknown>,
   lists: [] as Record<string, unknown>[],
+  navigate: vi.fn(),
+  // Where the server says an item lives now ('' for no workspace).
+  where: '',
 }));
 vi.mock('@tanstack/react-router', () => ({
   useCanGoBack: () => false,
-  useNavigate: () => vi.fn(),
+  useNavigate: () => page.navigate,
   useParams: () => ({}),
   useRouter: () => ({ history: { back: vi.fn() } }),
 }));
@@ -17,7 +20,14 @@ vi.mock('@/api/auth', () => ({
   authHeaders: async () => ({}),
   USE_MSW: false,
 }));
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({
+    fetchQuery: async () => ({ workspaceId: page.where || undefined }),
+  }),
+}));
 vi.mock('@/api/hooks', () => ({
+  fileQuery: (id: string) => ({ queryKey: ['file', id] }),
+  materialQuery: (id: string) => ({ queryKey: ['material', id] }),
   useUnreadNotificationCount: () => ({ data: { count: 0 } }),
 }));
 vi.mock('@/lib/useMediaQuery', () => ({ useMediaQuery: () => true }));
@@ -76,6 +86,29 @@ it('posts an account turn to the account chat stream', async () => {
     expect.objectContaining({
       body: JSON.stringify({ text: 'hi', workspaceOnly: true }),
       method: 'POST',
+    })
+  );
+});
+
+it('opens a citation where its file lives now, not where the answer found it', async () => {
+  renderToStaticMarkup(<AccountChat />);
+  const open = page.chat.onOpenCitation as (citation: object) => void;
+
+  page.where = 'ws_now';
+  open({ fileId: 'f_1', pageStart: 3, workspaceId: 'ws_old' });
+  await vi.waitFor(() =>
+    expect(page.navigate).toHaveBeenLastCalledWith({
+      params: { workspaceId: 'ws_now' },
+      search: { file: 'f_1', page: 3 },
+      to: '/workspaces/$workspaceId',
+    })
+  );
+  page.where = '';
+  open({ fileId: 'f_1', pageStart: 3, workspaceId: 'ws_old' });
+  await vi.waitFor(() =>
+    expect(page.navigate).toHaveBeenLastCalledWith({
+      params: { fileId: 'f_1' },
+      to: '/files/$fileId',
     })
   );
 });
