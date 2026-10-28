@@ -249,18 +249,16 @@ func TestStandaloneFileMovesIntoAWorkspaceWithItsIndex(t *testing.T) {
 	if len(moved) != 1 || moved[0].ID != file.ID || moved[0].WorkspaceID != ws.ID || moved[0].ChapterID == nil {
 		t.Fatalf("moved = %+v, want the same file in a new chapter of the workspace", moved)
 	}
-	var aliasWorkspace, payer string
-	if err := s.pool.QueryRow(ctx, `SELECT fc.workspace_id, f.user_id FROM rag_file_contents fc
-		JOIN rag_contents rc ON rc.id=fc.content_id AND rc.workspace_id=$2
-		JOIN files f ON f.id=fc.file_id WHERE fc.file_id=$1`, file.ID, ws.ID).Scan(&aliasWorkspace, &payer); err != nil {
+	// The owner-scoped content row itself moves into the workspace
+	// (migration 0126): nothing is copied.
+	var aliasContent, payer string
+	if err := s.pool.QueryRow(ctx, `SELECT fc.content_id, f.user_id FROM rag_file_contents fc
+		JOIN rag_contents rc ON rc.id=fc.content_id AND rc.workspace_id=$2 AND rc.user_id IS NULL
+		JOIN files f ON f.id=fc.file_id WHERE fc.file_id=$1 AND fc.workspace_id=$2`, file.ID, ws.ID).Scan(&aliasContent, &payer); err != nil {
 		t.Fatalf("index not carried into the workspace: %v", err)
 	}
-	if payer != owner {
-		t.Fatalf("payer = %s, want the uploader %s", payer, owner)
-	}
-	var oldLeft bool
-	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM rag_contents WHERE id=$1)`, content).Scan(&oldLeft); err != nil || oldLeft {
-		t.Fatalf("owner-scoped content kept after the move: %v, %v", oldLeft, err)
+	if aliasContent != content || payer != owner {
+		t.Fatalf("content %s payer %s, want the re-tagged %s paid by the uploader %s", aliasContent, payer, content, owner)
 	}
 }
 
@@ -338,8 +336,9 @@ func indexFile(t *testing.T, s *Store, fileID, wsID, owner, wsPinOf, hash string
 }
 
 // R1 and R2 of the 2026-10-27 review: an indexed workspace file moves with
-// its index into the target's space, and no thumbnail key names a file of
-// another workspace afterwards.
+// its index into the target's space (its own content row re-tagged, content
+// it shares with another file copied: migration 0126), and no thumbnail key
+// names a file of another workspace afterwards.
 func TestIndexedWorkspaceFileMovesWithItsIndexAndOwnThumbnailsOnly(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -356,6 +355,13 @@ func TestIndexedWorkspaceFileMovesWithItsIndexAndOwnThumbnailsOnly(t *testing.T)
 	sibling := uploadWorkspaceFile(t, s, owner, src.ID)
 	lender := uploadWorkspaceFile(t, s, owner, src.ID)
 	content := indexFile(t, s, moved.ID, src.ID, owner, src.ID, "h-moved")
+	twin := uploadWorkspaceFile(t, s, owner, src.ID)
+	shared := indexFile(t, s, twin.ID, src.ID, owner, src.ID, "h-shared")
+	duplicate := uploadWorkspaceFile(t, s, owner, src.ID)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO rag_file_contents (file_id, workspace_id, content_id) VALUES ($1,$2,$3)`,
+		duplicate.ID, src.ID, shared); err != nil {
+		t.Fatal(err)
+	}
 	// moved borrows lender's key; sibling borrows moved's own key.
 	for _, row := range []struct{ id, key string }{
 		{moved.ID, "thumbs/" + lender.ID + "/a.webp"},
@@ -366,18 +372,27 @@ func TestIndexedWorkspaceFileMovesWithItsIndexAndOwnThumbnailsOnly(t *testing.T)
 		}
 	}
 
-	if _, err := s.MoveFiles(ctx, owner, []string{moved.ID}, MoveTarget{WorkspaceID: dst.ID}, false); err != nil {
+	if _, err := s.MoveFiles(ctx, owner, []string{moved.ID, twin.ID}, MoveTarget{WorkspaceID: dst.ID}, false); err != nil {
 		t.Fatal(err)
 	}
-	var aliasWS string
-	if err := s.pool.QueryRow(ctx, `SELECT fc.workspace_id FROM rag_file_contents fc
-		JOIN rag_contents rc ON rc.id=fc.content_id AND rc.workspace_id=$2 AND rc.status='ready'
-		WHERE fc.file_id=$1`, moved.ID, dst.ID).Scan(&aliasWS); err != nil {
-		t.Fatalf("index not carried into the target: %v", err)
+	contentOf := func(fileID, wsID string) string {
+		t.Helper()
+		var id string
+		if err := s.pool.QueryRow(ctx, `SELECT fc.content_id FROM rag_file_contents fc
+			JOIN rag_contents rc ON rc.id=fc.content_id AND rc.workspace_id=$2 AND rc.status='ready'
+			WHERE fc.file_id=$1 AND fc.workspace_id=$2`, fileID, wsID).Scan(&id); err != nil {
+			t.Fatalf("%s has no index in %s: %v", fileID, wsID, err)
+		}
+		return id
 	}
-	var oldLeft bool
-	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM rag_contents WHERE id=$1)`, content).Scan(&oldLeft); err != nil || oldLeft {
-		t.Fatalf("source content kept after the move: %v, %v", oldLeft, err)
+	if got := contentOf(moved.ID, dst.ID); got != content {
+		t.Fatalf("moved file's content = %s, want its own row %s re-tagged", got, content)
+	}
+	if got := contentOf(twin.ID, dst.ID); got == shared {
+		t.Fatal("shared content re-tagged away from the file that stayed")
+	}
+	if got := contentOf(duplicate.ID, src.ID); got != shared {
+		t.Fatalf("the file that stayed reads %s, want %s", got, shared)
 	}
 	var movedKey, siblingKey *string
 	if err := s.pool.QueryRow(ctx, `SELECT (SELECT thumbnail_key FROM files WHERE id=$1), (SELECT thumbnail_key FROM files WHERE id=$2)`,

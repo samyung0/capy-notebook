@@ -1,8 +1,16 @@
 # Background clone index copy, and Download
 
-Status 2026-10-27: planned, nothing built. Starts on a branch from main once
-the release train (with standalone files, `wip/mac-ui-2026-10-27`) has
-landed. Measurements: `bench/clone/reports/2026-10-27-clone-cost.md`.
+Status 2026-10-28: on `wip/mac-clone-download`. Built: passages, vectors and
+summaries scoped through their content row (migration 0126), so a Move re-tags
+the content row instead of copying the index. Next: the background index copy
+for clones (single file and workspace), then Download. Measurements:
+`bench/clone/reports/2026-10-27-clone-cost.md`,
+`bench/clone/reports/2026-10-28-index-copy-parts.md`.
+
+Landing notes: 0126 is also `wip/mac-account-chat`'s number; whichever lands
+second renumbers. Account chat's search (`search_account`, the
+`_STANDALONE_OWNER` vector leg) drops its owner leg when it meets this: every
+file in scope is a content id.
 
 ## Why
 
@@ -18,7 +26,11 @@ landed. Measurements: `bench/clone/reports/2026-10-27-clone-cost.md`.
 
 ## A. The index copy runs in the background
 
-Request (clone and move): the file row, its saved edits and its thumbnail as
+Move re-tags instead (Epo 2026-10-28, built): content only the moved file
+holds keeps its row, which names the target; content another file or note
+shares is copied in the request as before, the rare case.
+
+Request (clone, single file or workspace): the file row, its saved edits and its thumbnail as
 today, so the copy opens at once; the file is `status='processing'`,
 `indexed=false`, and one `index_copy` job is queued. Chat and search see it
 once the job finishes.

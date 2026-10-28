@@ -340,7 +340,7 @@ func TestRetryFileProcessingRoutesPartialFiles(t *testing.T) {
 			exec(`INSERT INTO rag_contents(id,workspace_id,content_hash,status,pipeline_identity) VALUES($1,$2,$1,'ready',NULLIF($3,''))`, content, ws.ID, c.identity)
 			exec(`INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3)`, file.ID, ws.ID, content)
 			if c.summarized {
-				exec(`INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor) VALUES($1,$2,'A lesson.')`, content, ws.ID)
+				exec(`INSERT INTO rag_content_summaries(content_id,descriptor) VALUES($1,'A lesson.')`, content)
 			}
 			exec(`UPDATE files SET status='failed',indexed=true,parse_mode='fast',ever_parsed_successfully=$2,content_hash=$3 WHERE id=$1`, file.ID, c.ever, content)
 			if c.setup != "" {
@@ -1586,7 +1586,7 @@ func TestSourceRefreshPublicationDerivesThePartialStatus(t *testing.T) {
 			content := uid("rc")
 			exec(`INSERT INTO rag_contents(id,workspace_id,content_hash,status,pipeline_identity) VALUES($1,$2,$1,'ready',NULLIF($3,''))`, content, ws.ID, c.identity)
 			if c.summarized {
-				exec(`INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor) VALUES($1,$2,'A lesson.')`, content, ws.ID)
+				exec(`INSERT INTO rag_content_summaries(content_id,descriptor) VALUES($1,'A lesson.')`, content)
 			}
 			exec(`UPDATE source_refresh_candidates SET content_id=$2,content_hash=$2 WHERE file_id=$1`, file.ID, content)
 			if _, err = s.PublishSourceRefresh(ctx, file.ID, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-text", ContentID: content, ContentHash: content, PendingEffects: json.RawMessage(`[]`), ExpectedLatestCheckpoint: doc.Checkpoint}); err != nil {
@@ -1621,7 +1621,7 @@ func TestSourceCloneCopiesSavedEditsAndCaptionReferences(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3)`, file.ID, ws.ID, contentID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor,change_share) VALUES($1,$2,'Photosynthesis.',0.0125)`, contentID, ws.ID); err != nil {
+	if _, err := s.pool.Exec(ctx, `INSERT INTO rag_content_summaries(content_id,descriptor,change_share) VALUES($1,'Photosynthesis.',0.0125)`, contentID); err != nil {
 		t.Fatal(err)
 	}
 	clone, err := s.CloneWorkspace(ctx, owner, ws.ID, WorkspaceCreate{Name: "Clone"})

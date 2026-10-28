@@ -119,7 +119,6 @@ async def index_file(
         )
         if allow_empty:
             await store.upsert_content_summary(
-                workspace_id=workspace_id,
                 content_id=content_id,
                 fingerprint=content_hash([]),
                 descriptor="",
@@ -190,7 +189,6 @@ async def index_file(
     )
     if descriptor is not None:
         await store.upsert_content_summary(
-            workspace_id=workspace_id,
             content_id=content_id,
             fingerprint=fingerprint,
             descriptor=descriptor,
@@ -489,7 +487,6 @@ async def _note_summary(
         # Blank under the minimum tokens: a note stores no row.
         return
     await store.upsert_content_summary(
-        workspace_id=workspace_id,
         content_id=content_id,
         fingerprint="note:" + content_hash(chunks),
         descriptor=descriptor,

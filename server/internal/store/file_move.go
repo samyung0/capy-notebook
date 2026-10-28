@@ -224,7 +224,7 @@ func (s *Store) moveFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID, work
 		return err
 	}
 
-	held, reingest := "", false
+	held, reingest, retag := "", false, false
 	var snapshot []workspaceCloneFile
 	if served {
 		var dst models.Pin
@@ -240,9 +240,21 @@ func (s *Store) moveFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID, work
 		case src != dst || srcDim == nil || *srcDim != dstDim || (err == nil && status != "ready"):
 			held, reingest = "", true
 		case isNoRows(err):
-			held = uid("rgc")
-			if err := copyRetrievalContents(ctx, tx, workspaceID, dst, map[string]string{contentID: held}); err != nil {
+			// Content no other file, note or refresh candidate holds changes
+			// scope in place: passages and vectors name only their content
+			// row (migration 0126), so the move re-tags that row and the
+			// alias. Shared content is copied.
+			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM rag_file_contents WHERE content_id=$1 AND file_id<>$2)
+				AND NOT EXISTS (SELECT 1 FROM rag_material_contents WHERE content_id=$1)
+				AND NOT EXISTS (SELECT 1 FROM source_refresh_candidates WHERE content_id=$1)`,
+				contentID, fileID).Scan(&retag); err != nil {
 				return err
+			}
+			if !retag {
+				held = uid("rgc")
+				if err := copyRetrievalContents(ctx, tx, workspaceID, dst, map[string]string{contentID: held}); err != nil {
+					return err
+				}
 			}
 		case err != nil:
 			return err
@@ -255,8 +267,21 @@ func (s *Store) moveFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID, work
 		}
 	}
 
-	// The orphan trigger drops the old content once nothing holds it.
-	if _, err := tx.Exec(ctx, `DELETE FROM rag_file_contents WHERE file_id=$1`, fileID); err != nil {
+	if retag {
+		// The alias keys (file, workspace) and (content, workspace) hold
+		// again once the file row moves below; they are checked at commit.
+		if _, err := tx.Exec(ctx, `SET CONSTRAINTS rag_file_contents_file_id_workspace_id_fkey,
+			rag_file_contents_content_id_workspace_id_fkey DEFERRED`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE rag_contents SET workspace_id=$2, user_id=NULL WHERE id=$1`, contentID, workspaceID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE rag_file_contents SET workspace_id=$2 WHERE file_id=$1`, fileID, workspaceID); err != nil {
+			return err
+		}
+	} else if _, err := tx.Exec(ctx, `DELETE FROM rag_file_contents WHERE file_id=$1`, fileID); err != nil {
+		// The orphan trigger drops the old content once nothing holds it.
 		return err
 	}
 	position, err := nextContentPosition(ctx, tx, workspaceID, chapterID)
@@ -276,6 +301,8 @@ func (s *Store) moveFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID, work
 		return err
 	}
 	switch {
+	case retag:
+		return nil
 	case held != "":
 		_, err = tx.Exec(ctx, `INSERT INTO rag_file_contents (file_id, workspace_id, content_id) VALUES ($1,$2,$3)`,
 			fileID, workspaceID, held)

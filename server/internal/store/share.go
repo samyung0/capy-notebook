@@ -1728,34 +1728,34 @@ func copyRetrievalContents(ctx context.Context, tx pgx.Tx, dstID string, pin mod
 	if _, err := tx.Exec(ctx, `
 	WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 	INSERT INTO rag_chunks
-		(id, workspace_id, content_id, chunk_idx, section_path, text, indexed_text,
+		(id, content_id, chunk_idx, section_path, text, indexed_text,
 		 token_count, page_start, page_end, regions, lang, search,
 		 confidence, confidence_reasons)
 	SELECT `+newChunkID+`,
-	       $3, m.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
+	       m.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
 	       c.token_count, c.page_start, c.page_end, c.regions, c.lang, c.search,
 	       c.confidence, c.confidence_reasons
 	FROM rag_chunks c JOIN cmap m ON m.old_id = c.content_id`,
-		oldContents, newContents, dstID); err != nil {
+		oldContents, newContents); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
 	WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
-	INSERT INTO `+vectors+` (chunk_id, workspace_id, embedding)
-	SELECT `+newChunkID+`, $3, v.embedding
+	INSERT INTO `+vectors+` (chunk_id, content_id, embedding)
+	SELECT `+newChunkID+`, m.new_id, v.embedding
 	FROM rag_chunks c
 	JOIN cmap m ON m.old_id = c.content_id
 	JOIN `+vectors+` v ON v.chunk_id = c.id`,
-		oldContents, newContents, dstID); err != nil {
+		oldContents, newContents); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `
 	WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 	INSERT INTO rag_content_summaries
-		(content_id, workspace_id, fingerprint, descriptor, change_share, updated_at)
-	SELECT c.new_id, $3, s.fingerprint, s.descriptor, s.change_share, s.updated_at
+		(content_id, fingerprint, descriptor, change_share, updated_at)
+	SELECT c.new_id, s.fingerprint, s.descriptor, s.change_share, s.updated_at
 	FROM rag_content_summaries s JOIN cmap c ON c.old_id = s.content_id`,
-		oldContents, newContents, dstID)
+		oldContents, newContents)
 	return err
 }
 
