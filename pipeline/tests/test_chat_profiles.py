@@ -213,6 +213,16 @@ def test_the_account_profile_offers_the_account_tools():
             "workspace_id"
             not in contract.DEFINITIONS[name]["inputSchema"]["properties"]
         )
+    # Go's workspace wording in account words (Epo 2026-10-28, T3).
+    sources = by_name["create_material"]["parameters"]["properties"]["sources"]
+    assert "the user's files" in sources["description"]
+    assert (
+        "(ids from search_files_summary, list_files or a read)"
+        in (sources["description"])
+    )
+    assert (
+        "when the learner's files, the library" in by_name["search_web"]["description"]
+    )
 
 
 def test_the_account_prompt_turn_context_and_skills_name_the_users_files():
@@ -672,6 +682,7 @@ async def test_create_workspace_cuts_what_is_over_its_limit(monkeypatch):
     assert sent["description"] == ""
     text = result.text()
     assert "workspace_id=ws_new" in text and not result.refused
+    assert "Every tool that creates can create in it" in text
     assert tools.CUT_NOTE.format(what="name", limit=tools.WORKSPACE_NAME_MAX) in text
     assert tools.TAGS_CUT_NOTE.format(limit=tools.WORKSPACE_TAGS_MAX, left=2) in text
 
@@ -696,6 +707,7 @@ async def test_an_account_create_lands_where_the_user_named(monkeypatch, named, 
                         "id": "mat_1",
                         "title": "Cards",
                         "materialKind": "flashcards",
+                        **({"workspaceId": named} if named else {}),
                     },
                 },
             }
@@ -728,6 +740,42 @@ async def test_an_account_create_lands_where_the_user_named(monkeypatch, named, 
     assert sent["scope"] == "account"
     assert sent.get("workspaceId") == named
     assert "workspaceId" in sent if named else "workspaceId" not in sent
+    if tool == "create_material":
+        where = (
+            "the workspace 'Biology' (workspace_id=ws_2)" if named else "No workspace"
+        )
+        assert f"It is now in {where}." in result.text()
+
+
+async def test_an_account_chapter_names_its_workspace(monkeypatch):
+    class _Resp:
+        status_code = 400
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {}
+
+        def json(self):
+            return {"code": "unknown_chapter", "message": "not there"}
+
+    monkeypatch.setattr(tools.requests, "post", lambda *_a, **_k: _Resp())
+    ctx = _account(skills_read={skills.EDITING, skills.NOTE_BUILDING})
+    note = {
+        "kind": "note",
+        "title": "N",
+        "content": "body",
+        "chapter_id": "ch_1",
+        "_tool_call_id": "c",
+    }
+
+    alone = await tools.run("create_material", note, ctx)
+    elsewhere = await tools.run(
+        "create_material", {**note, "workspace_id": "ws_1"}, ctx
+    )
+
+    assert alone.refused and tools.CHAPTER_NEEDS_WORKSPACE in alone.text()
+    assert elsewhere.refused
+    assert tools.CHAPTERS_LISTED[True] in elsewhere.detail
 
 
 async def test_search_account_ranks_each_pins_files_together_and_merges_pins(

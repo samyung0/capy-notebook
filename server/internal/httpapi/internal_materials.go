@@ -355,7 +355,7 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		}
 		if !ok {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"code": "invalid_input", "message": "chapter_id is not a chapter of this workspace; the turn context lists them",
+				"code": "unknown_chapter", "message": "chapter_id is not a chapter of the workspace the item is created in",
 			})
 			return
 		}

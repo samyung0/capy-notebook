@@ -219,7 +219,7 @@ listing stay workspace-only.
 - Done: E1 (a view-only refusal stops only that edit), M1 (citations and
   created items open where they live now), T2 (every create takes
   workspace_id), E2 (kept), Q489 (moved_out for a file its account chat
-  edited, now out of reach). Still open: T3.
+  edited, now out of reach); T3 account wording done.
 
 ## After the first version
 
@@ -235,5 +235,3 @@ listing stay workspace-only.
   user's standalone vectors share, so the vector index may return few of the
   caller's rows at scale.
 - **Planned tools:** more account-level tools (create_workspace is built).
-- **Open gaps:** some shared Go tool texts still say `list_sources` and
-  "workspace", and the `write_sources` refusal says "Workspace only is on".

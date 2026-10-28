@@ -6,12 +6,13 @@ that create (tools.DESTINATION_TOOLS) take an optional ``workspace_id`` here
 only: this profile adds it to its copy of their schema,
 and tools.run moves it out before checking the call against Go's definition,
 which stays byte for byte. Omitted, the item lands in No workspace.
-Skills replace their workspace wording (skills.text).
+Skills (skills.text) and this profile's copies of the tool descriptions
+replace their workspace wording.
 """
 
 from __future__ import annotations
 
-import copy
+import json
 from typing import Any
 
 from ...prompts import account_chat
@@ -28,16 +29,42 @@ WORKSPACE_ID = {
     "create it in No workspace. An edit of an existing item ignores it.",
 }
 
+# Go's descriptions written for workspace chat, in account words (Epo
+# 2026-10-28, T3): the made-from line of the creates and search_web.
+WORDING = (
+    (
+        "named in words or by id: workspace files,",
+        "named in words or by id: the user's files,",
+    ),
+    (
+        "(ids from list_sources)",
+        "(ids from search_files_summary, list_files or a read)",
+    ),
+    (
+        "An id or exact name of a workspace item",
+        "An id or exact name of one of the user's items",
+    ),
+    (
+        "call it only when the workspace, the library",
+        "call it only when the learner's files, the library",
+    ),
+)
+
+
+def _reworded(schema: dict[str, Any]) -> dict[str, Any]:
+    text = json.dumps(schema)
+    for old, new in WORDING:
+        text = text.replace(old, new)
+    return json.loads(text)
+
 
 def schemas(ctx: ToolContext) -> list[dict[str, Any]]:
-    out = tools.schemas_for(ctx)
-    for i, schema in enumerate(out):
+    out = [_reworded(schema) for schema in tools.schemas_for(ctx)]
+    for schema in out:
         if schema["function"]["name"] in tools.DESTINATION_TOOLS:
-            schema = copy.deepcopy(schema)
             schema["function"]["parameters"]["properties"]["workspace_id"] = (
                 WORKSPACE_ID
             )
-            out[i] = schema
     return out
 
 

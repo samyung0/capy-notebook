@@ -1844,14 +1844,15 @@ def _is_transient(exc: BaseException | None, status: int) -> bool:
     return status in (429, 500, 502, 503, 504) or status >= 500
 
 
-def _receipt_result(body: dict[str, Any]) -> ToolResult:
-    """Turn a recorded agent operation (Go receipt) into the tool result."""
+def _receipt_result(body: dict[str, Any], ctx: ToolContext | None = None) -> ToolResult:
+    """Turn a recorded agent operation (Go receipt) into the tool result;
+    without ``ctx`` (the playground's local writes) it reads as workspace chat."""
     if body.get("kind") == "create_workspace" and body.get("outcome") == "succeeded":
         # No effect, so no Undo (Epo 2026-10-28); a recovered receipt has no name.
         name = f" '{body['name']}'" if body.get("name") else ""
         return _result(
             f"Created the workspace{name} (workspace_id={body.get('workspaceId')}). "
-            "create_material and create_deck can create in it with this workspace_id."
+            "Every tool that creates can create in it with this workspace_id."
         )
     effect = body.get("effect")
     if not isinstance(effect, dict) or body.get("outcome") != "succeeded":
@@ -1889,7 +1890,7 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
     else:
         text = (
             f"Created {resource.get('materialKind') or 'file'} '{title}' (id {rid}).{notice} "
-            f"It is now in the workspace.{_block_ids(effect)}"
+            f"It is now in {_created_in(resource, ctx)}.{_block_ids(effect)}"
         )
     payload = body.get("undoPayload")
     return ToolResult(
@@ -1897,6 +1898,18 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
         effects=[effect],
         undo_payloads=[payload] if isinstance(payload, dict) else [],
     )
+
+
+def _created_in(resource: dict[str, Any], ctx: ToolContext | None) -> str:
+    """Where a create landed; account chat names it (Epo 2026-10-28, T3)."""
+    if ctx is None or not ctx.account:
+        return "the workspace"
+    workspace_id = resource.get("workspaceId")
+    if not workspace_id:
+        return "No workspace"
+    known = ctx.scope.workspace(workspace_id)
+    name = f"'{known.name}' " if known else ""
+    return f"the workspace {name}(workspace_id={workspace_id})"
 
 
 def _undo_note(effect: dict[str, Any]) -> str:
@@ -1941,13 +1954,28 @@ def _relocations(effect: dict[str, Any]) -> str:
     return out
 
 
+# Account chat's chapter refusals (Epo 2026-10-28, T3).
+CHAPTER_NEEDS_WORKSPACE = (
+    "chapter_id needs the workspace_id of its workspace: without one the item "
+    "is created in No workspace, which has no chapters. list_files with that "
+    "workspace_id lists its chapters."
+)
+CHAPTERS_LISTED = {
+    False: "list_sources lists this workspace's chapters.",
+    True: "list_files with that workspace_id lists its chapters.",
+}
+
+
 def unknown_chapter(ctx: ToolContext, args: dict[str, Any]) -> ToolResult | None:
     """A chapter_id that names no chapter of the workspace, refused before
     anything is sent (Go refuses it too, after the write is built). Shared
     with the playground's local writes."""
     chapter = str(args.get("chapter_id") or "")
     if ctx.account:
-        return None  # Go checks it against where the item lands
+        # Go checks it against where the item lands (unknown_chapter).
+        if chapter and not args.get("_workspace_id"):
+            return _refused(CHAPTER_NEEDS_WORKSPACE)
+        return None
     if chapter and chapter not in {c["id"] for c in ctx.chapters}:
         return _refused(
             "chapter_id is not a chapter of this workspace; list_sources lists them."
@@ -2202,6 +2230,11 @@ async def note_figures(
     )
 
 
+def _switch(ctx: ToolContext) -> str:
+    """The sources switch as each chat labels it (Epo 2026-10-27, D4)."""
+    return "Your files only" if ctx.account else "Workspace only"
+
+
 async def library_figures(
     ctx: ToolContext, refs: list[str]
 ) -> tuple[dict[str, library.Figure], list[str]] | ToolResult:
@@ -2216,7 +2249,7 @@ async def library_figures(
     """
     if ctx.workspace_only:
         return _refused(
-            f"figure:{refs[0]} names a library figure, and Workspace only is on "
+            f"figure:{refs[0]} names a library figure, and {_switch(ctx)} is on "
             "this turn."
         )
     found = await library.figures(refs)
@@ -2293,9 +2326,10 @@ async def write_sources(
             )
         return [], []
     if excerpt_ids and ctx.workspace_only:
+        own = "the learner's passages" if ctx.account else "workspace passages"
         return _refused(
-            "excerpt_ids name library excerpts, and Workspace only is on this "
-            "turn; workspace passages need none. Call it again without excerpt_ids."
+            f"excerpt_ids name library excerpts, and {_switch(ctx)} is on this "
+            f"turn; {own} need none. Call it again without excerpt_ids."
         )
     candidates = [] if excerpt_ids else ctx.library_reads.uncredited()
     wanted = list(dict.fromkeys([*(excerpt_ids or candidates), *(figures or [])]))
@@ -2457,7 +2491,7 @@ async def _post_operation(
             resp = await asyncio.to_thread(_post)
             last_status = resp.status_code
             if resp.status_code < 300:
-                return _receipt_result(resp.json())
+                return _receipt_result(resp.json(), ctx)
             last_event_id = resp.headers.get(obs.ERROR_EVENT_HEADER)
             last_detail = _response_detail(resp)
             last_answer = f"the service answered {resp.status_code}" + (
@@ -2505,7 +2539,7 @@ async def _post_operation(
             f"Could not {failure}: {last_answer}. This might have been saved, "
             "Re-read before further editing"
         )
-    return _receipt_result(recovered)
+    return _receipt_result(recovered, ctx)
 
 
 async def _recover_operation(
@@ -2646,6 +2680,10 @@ def _gateway_refused(
         detail = "\n\n".join(part for part in (detail, SAVES_FAILING) if part)
     if code == "workspace_limit_exceeded":
         detail = "\n\n".join(part for part in (detail, WORKSPACE_LIMIT) if part)
+    if code == "unknown_chapter":
+        detail = "\n\n".join(
+            part for part in (detail, CHAPTERS_LISTED[account]) if part
+        )
     return _refused(text, code=_gateway_error_code(resp), detail=detail)
 
 
@@ -3957,11 +3995,13 @@ async def write_questions(
         "add_questions", {k: v for k, v in args.items() if not k.startswith("_")}
     )
     found = questions.check(clean)
-    if clean.get("title") and unknown_chapter(ctx, clean) is not None:
-        found.call.append(
-            "chapter_id: not a chapter of this workspace; list_sources lists them; "
-            f"sent {json.dumps(clean.get('chapter_id'))}"
+    if clean.get("title") and unknown_chapter(ctx, {**args, **clean}) is not None:
+        why = (
+            CHAPTER_NEEDS_WORKSPACE.rstrip(".")
+            if ctx.account
+            else "chapter_id: not a chapter of this workspace; list_sources lists them"
         )
+        found.call.append(f"{why}; sent {json.dumps(clean.get('chapter_id'))}")
     quiz_id = clean.get("quiz_id")
     quiz: list[dict[str, Any]] | None = None
     if isinstance(quiz_id, str) and quiz_id and not clean.get("title"):

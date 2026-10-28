@@ -180,7 +180,7 @@ func (a *api) agentChapter(w http.ResponseWriter, ctx context.Context, chapterID
 	}
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code": "invalid_input", "message": "chapterId is not a chapter of this workspace",
+			"code": "unknown_chapter", "message": "chapter_id is not a chapter of the workspace the item is created in",
 		})
 		return nil, false
 	}
