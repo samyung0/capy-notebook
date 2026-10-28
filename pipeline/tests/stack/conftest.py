@@ -69,9 +69,10 @@ ACCOUNT = frozenset(
 
 
 def _port() -> str:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return str(sock.getsockname()[1])
+    """A host port as playwright.config.ts picks one: below the dynamic range
+    (49152 up), parts of which Windows reserves and Docker Desktop then
+    cannot publish."""
+    return str(secrets.choice(range(20_000, 45_000)))
 
 
 def vector(text: str) -> list[float]:
