@@ -16,7 +16,7 @@ import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { trackQuotaBlocked } from '@/lib/analytics';
 import { CopyError } from '@/lib/copyError';
-import { deferStorageRefusal, describeError } from '@/lib/errors';
+import { deferStorageRefusal, describeError, errorCopy } from '@/lib/errors';
 import { compressSource } from './sourceCompress';
 import {
   parseSourceImportAcceptedResponse,
@@ -48,11 +48,15 @@ export type TransferStage =
   | 'importing'
   | 'added'
   | 'background'
+  /** A download being built (Download from an item menu). */
+  | 'preparing'
   | 'failed';
 
 export interface SourceTransfer {
   /** A clone's copy, whose index copies in the background. */
   copy?: boolean;
+  /** A download, not a source being added. */
+  download?: boolean;
   error?: string;
   fileId?: string;
   key: string;
@@ -153,6 +157,30 @@ export function trackCopiedFile(file: SourceFile) {
       },
     ],
   }));
+}
+
+/** Runs a download as a Preparing download row (Epo 2026-10-27): the row
+ * goes once the file is saved and shows the failure otherwise. */
+export async function trackDownload(
+  row: Pick<SourceTransfer, 'kind' | 'name' | 'workspaceId'>,
+  task: () => Promise<void>
+) {
+  const key = `download-${crypto.randomUUID()}`;
+  useSourceTransfers.setState((state) => ({
+    transfers: [
+      ...state.transfers,
+      { ...row, download: true, key, stage: 'preparing', uploadPct: 0 },
+    ],
+  }));
+  try {
+    await task();
+    removeSourceTransfer(key);
+  } catch (cause) {
+    patchTransfer(key, {
+      error: errorCopy(cause, m.source_try_again()),
+      stage: 'failed',
+    });
+  }
 }
 
 /** Hides the panel. Running transfers keep going; their rows are gone. */
