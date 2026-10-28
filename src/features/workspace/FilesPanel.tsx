@@ -73,7 +73,6 @@ export function FilesPanel({
   onOpenItem,
   onNavigate,
   generating,
-  beforeReplace,
   onRenameChapter,
   onAddSource,
   onAddChapter,
@@ -90,8 +89,6 @@ export function FilesPanel({
   onOpenItem: (item: OpenItem | null) => void;
   onNavigate: () => void;
   generating: GenerateMode | null;
-  /** Office edit guard: returning false keeps the current viewer. */
-  beforeReplace: () => boolean;
   onRenameChapter: (chapter: Chapter) => void;
   /** The New file or chapter row under the search; left out where adding is
    * not allowed. */
@@ -343,8 +340,7 @@ export function FilesPanel({
       event.altKey
     )
       return;
-    if (beforeReplace()) onNavigate();
-    else event.preventDefault();
+    onNavigate();
   }
   function onFileDeleted(id: string) {
     if (isFileActive(id)) onOpenItem(null);
@@ -418,7 +414,6 @@ export function FilesPanel({
         {item.type === 'file' ? (
           <FileListItem
             active={isFileActive(item.id)}
-            beforeDelete={isFileActive(item.id) ? beforeReplace : undefined}
             canClone={!!workspace?.canClone}
             canMoveTo={fileCanMoveTo(item.data, workspace)}
             chapters={chapters}

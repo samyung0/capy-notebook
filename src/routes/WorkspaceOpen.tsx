@@ -112,10 +112,6 @@ const isLeftView = (value: unknown): value is LeftView =>
 /** The header's panel toggles while their panel is open: the icon's strip
  * fills in the accent. */
 const PANEL_TOGGLE_OPEN = 'text-action-accent hover:text-action-accent';
-// The Files panel's replacement check: the in-app unsaved-changes guard is
-// gone (Q465), so opening another item always goes ahead.
-const keepNothing = () => true;
-
 const LEFT_SIZE = 340;
 const LEFT_MIN = 300;
 const VIEWER_MIN = 400;
@@ -734,7 +730,6 @@ export default function WorkspaceOpen() {
     );
   const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
     <FilesPanel
-      beforeReplace={keepNothing}
       generating={generating}
       header={picker}
       onAddChapter={
@@ -761,7 +756,6 @@ export default function WorkspaceOpen() {
   // and Study pinned under it; Add chapter stays in the header's ⋮.
   const filesDropdown = (
     <FilesPanel
-      beforeReplace={keepNothing}
       className="h-auto flex-1"
       footer={
         <div className="flex shrink-0 flex-col gap-1 border-divider border-t px-2.5 pt-1.5 pb-2">

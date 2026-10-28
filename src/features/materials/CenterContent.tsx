@@ -167,13 +167,11 @@ type PreviewComponent =
  * flashcards materials get view actions in the header; mindmaps/diagrams render inline.
  * User-authored notes take over the whole pane with the editable Plate editor. */
 export function CenterContent({
-  beforeFileDelete,
   chapters,
   item,
   readOnly = false,
   color,
   onDeleted,
-  onFileViewerDirtyChange,
   onAddFile,
   onModeChange,
   onOpenSettings,
@@ -199,7 +197,6 @@ export function CenterContent({
   /** Below lg: the title opens Files and ⋮ carries the workspace actions. */
   oneColumn?: OneColumnChrome;
   standalone?: boolean;
-  beforeFileDelete?: () => boolean;
   /** Workspace chrome drawn before the file name in the header. */
   leading?: ReactNode;
   /** Workspace chrome at the header's right end. */
@@ -209,7 +206,6 @@ export function CenterContent({
   readOnly?: boolean;
   color?: UserColor;
   onDeleted: () => void;
-  onFileViewerDirtyChange?: (dirty: boolean) => void;
   requestedMode?: MaterialMode | null;
   onModeChange: (mode: MaterialMode) => void;
   /** Opens the add file dialog; an empty workspace shows it as a card. */
@@ -345,7 +341,6 @@ export function CenterContent({
                        * into the header's slots. */}
                       <div className={isFullscreen ? 'hidden' : 'contents'}>
                         <Header
-                          beforeFileDelete={beforeFileDelete}
                           chapters={chapters}
                           color={color}
                           editorStatus={editorStatus}
@@ -419,7 +414,6 @@ export function CenterContent({
                               imageZoom={imageZoom}
                               key={item.id}
                               onImageZoomChange={setImageZoom}
-                              onViewerDirtyChange={onFileViewerDirtyChange}
                               page={item.page}
                               regions={item.regions}
                             />
@@ -1227,7 +1221,6 @@ function FileBody({
   color,
   imageZoom,
   onImageZoomChange,
-  onViewerDirtyChange,
   page,
   regions,
   citation,
@@ -1236,7 +1229,6 @@ function FileBody({
   color?: UserColor;
   imageZoom: number;
   onImageZoomChange: (next: number) => void;
-  onViewerDirtyChange?: (dirty: boolean) => void;
   page?: number;
   regions?: Region[];
   citation?: OfficeCitation;
@@ -1288,7 +1280,6 @@ function FileBody({
           citation={citation}
           file={file ?? null}
           imageZoom={imageZoom}
-          onDirtyChange={onViewerDirtyChange}
           onImageZoomChange={onImageZoomChange}
           page={page}
           regions={regions}
