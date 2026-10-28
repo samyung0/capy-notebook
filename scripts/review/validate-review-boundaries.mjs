@@ -26,13 +26,14 @@ function events(source, label) {
   return Object.keys(map);
 }
 
-/** The one scheduled workflow: daily dependency and image vulnerability scans. */
-const SCHEDULED_WORKFLOW = 'audit.yml';
+/** The scheduled workflows: daily dependency and image vulnerability scans,
+ * and the Agent visibility lane, nightly when its read path changed (Q530). */
+const SCHEDULED_WORKFLOWS = ['audit.yml', 'agent-visibility.yml'];
 
 export function validateWorkflowIsDeterministic(source, label) {
   if (
     events(source, label).includes('schedule') &&
-    label !== SCHEDULED_WORKFLOW
+    !SCHEDULED_WORKFLOWS.includes(label)
   ) {
     throw new Error(`${label}: workflows must not be scheduled`);
   }
@@ -76,6 +77,7 @@ export function validateDeploymentWorkflows(
   for (const gate of [
     './.github/workflows/uat-quality.yml',
     './.github/workflows/perf.yml',
+    './.github/workflows/agent-visibility.yml',
     'environment_name: production',
   ]) {
     if (!productionSource.includes(gate)) {
@@ -106,6 +108,10 @@ export function validateRepositoryBoundaries() {
     'uat-quality.yml'
   );
   validateCallableGate(read('.github/workflows/perf.yml'), 'perf.yml');
+  validateCallableGate(
+    read('.github/workflows/agent-visibility.yml'),
+    'agent-visibility.yml'
+  );
   validateDeploymentWorkflows(
     read('.github/workflows/deploy-uat.yml'),
     read('.github/workflows/promote-production.yml'),
