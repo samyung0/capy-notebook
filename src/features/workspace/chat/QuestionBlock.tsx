@@ -139,8 +139,8 @@ export function QuestionBlock({
               />
               <span
                 className={cn(
-                  'grid size-4.5 shrink-0 place-items-center rounded-[5px] bg-page font-semibold text-[10px] text-fg-muted',
-                  selected && 'bg-action-accent text-action-accent-fg'
+                  'w-4.5 shrink-0 text-center',
+                  !selected && 'text-fg-muted'
                 )}
               >
                 {i + 1}
@@ -156,8 +156,10 @@ export function QuestionBlock({
             ? m.chat_question_other()
             : m.chat_question_type()
         }
+        // Inputs take t-body from the base layer; text-sm matches the choices.
+        className="py-1.5 text-sm"
         leftIcon="pencil"
-        leftIconClassName="-translate-y-px"
+        leftIconClassName="mx-0.5 size-3.5"
         onChange={(event) => {
           update({ other: event.target.value });
           if (event.target.value.trim()) {
@@ -180,7 +182,7 @@ export function QuestionBlock({
         size="sm"
         value={answers[index]?.other ?? ''}
         variant="transparent"
-        wrapperClassName="rounded-none border-divider border-y px-1 pb-1.5 text-sm"
+        wrapperClassName="gap-2.5 rounded-none border-divider border-y px-1"
       />
       <div className="mt-2 flex items-center gap-2">
         <Button onClick={skip} size="sm" variant="ghost-hover">

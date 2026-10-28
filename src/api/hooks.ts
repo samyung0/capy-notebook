@@ -261,7 +261,7 @@ export function useSetModelPrefs() {
       return request;
     },
     mutationKey: modelPrefsKey,
-    onMutate: async ({ chatModel, chatThinking, editorModel }) => {
+    onMutate: async ({ chatModel, chatThinking, noteAiEnabled }) => {
       await Promise.all([
         qc.cancelQueries({ queryKey: modelPrefsKey }),
         qc.cancelQueries({ queryKey: qk.me }),
@@ -275,16 +275,12 @@ export function useSetModelPrefs() {
             }
           : models
       );
-      if (editorModel)
-        qc.setQueryData<ModelsResponse>(qk.models('editor'), (models) =>
-          models ? { ...models, selectedModel: editorModel } : models
-        );
       qc.setQueryData<User>(qk.me, (me) =>
         me
           ? {
               ...me,
               chatModel: chatModel ?? me.chatModel,
-              editorModel: editorModel ?? me.editorModel,
+              noteAiEnabled: noteAiEnabled ?? me.noteAiEnabled,
             }
           : me
       );
@@ -1924,15 +1920,22 @@ function applyIngestEvent(
 
 /* ---------------- chat & generate ---------------- */
 
-export const conversationsQuery = (wsId: string) =>
+/** A chat's conversations route: one workspace's, or with null the account
+ * chat's (chat across all the user's files). */
+export const conversationsPath = (wsId: string | null) =>
+  wsId ? `/workspaces/${wsId}/conversations` : '/conversations';
+
+export const conversationsQuery = (wsId: string | null) =>
   queryOptions({
     ...persisted,
-    enabled: !!wsId,
-    queryFn: () => api.get<Conversation[]>(`/workspaces/${wsId}/conversations`),
+    enabled: wsId !== '',
+    queryFn: () => api.get<Conversation[]>(conversationsPath(wsId)),
     queryKey: qk.conversations(wsId),
   });
-export const useConversations = (wsId: string, options?: QueryUiOptions) =>
-  useQuery({ ...conversationsQuery(wsId), meta: queryMeta(options) });
+export const useConversations = (
+  wsId: string | null,
+  options?: QueryUiOptions
+) => useQuery({ ...conversationsQuery(wsId), meta: queryMeta(options) });
 
 export const messagesQuery = (convId: string | null) =>
   queryOptions({
@@ -1945,35 +1948,35 @@ export const useMessages = (convId: string | null, options?: QueryUiOptions) =>
 
 /** Transcribes a chat voice recording for the composer; it shows failures
  * inline, and the user records again (nothing retries). */
-export function useTranscribeVoice(wsId: string) {
+export function useTranscribeVoice(wsId: string | null) {
   return useMutation({
     meta: { errorToast: false },
     mutationFn: (clip: Blob) =>
       api.postBlob<VoiceTranscription>(
-        `/workspaces/${wsId}/voice-transcriptions`,
+        wsId
+          ? `/workspaces/${wsId}/voice-transcriptions`
+          : '/voice-transcriptions',
         clip
       ),
   });
 }
 
 export const useArchivedConversations = (
-  wsId: string,
+  wsId: string | null,
   enabled: boolean,
   options?: QueryUiOptions
 ) =>
   useQuery({
-    enabled: enabled && !!wsId,
+    enabled: enabled && wsId !== '',
     meta: queryMeta(options),
     queryFn: () =>
-      api.get<Conversation[]>(
-        `/workspaces/${wsId}/conversations?archived=true`
-      ),
+      api.get<Conversation[]>(`${conversationsPath(wsId)}?archived=true`),
     queryKey: qk.archivedConversations(wsId),
   });
 
 /** Rename, pin or archive one thread; the live and archived lists refetch. */
 export function useUpdateConversation(
-  wsId: string,
+  wsId: string | null,
   options?: MutationUiOptions
 ) {
   const qc = useQueryClient();
@@ -2004,7 +2007,7 @@ export function useStopChatTurn(options?: MutationUiOptions) {
 }
 
 export function useDeleteConversation(
-  wsId: string,
+  wsId: string | null,
   options?: MutationUiOptions
 ) {
   const qc = useQueryClient();
@@ -2015,18 +2018,23 @@ export function useDeleteConversation(
   });
 }
 
-/** Unarchive all or delete all of the archived threads. */
+/** Unarchive all or delete all of a workspace's archived threads, or with
+ * null the account chat's. */
 export function useArchivedConversationsAction(
-  wsId: string,
+  wsId: string | null,
   options?: MutationUiOptions
 ) {
   const qc = useQueryClient();
   return useMutation({
     meta: mutationMeta(options),
-    mutationFn: (action: 'unarchive' | 'delete') =>
-      action === 'unarchive'
-        ? api.post<void>(`/workspaces/${wsId}/conversations/unarchive`)
-        : api.del<void>(`/workspaces/${wsId}/conversations/archived`),
+    mutationFn: (action: 'unarchive' | 'delete') => {
+      const base = wsId
+        ? `/workspaces/${wsId}/conversations`
+        : '/conversations';
+      return action === 'unarchive'
+        ? api.post<void>(`${base}/unarchive`)
+        : api.del<void>(`${base}/archived`);
+    },
     onSettled: () => qc.invalidateQueries({ queryKey: qk.conversations(wsId) }),
   });
 }

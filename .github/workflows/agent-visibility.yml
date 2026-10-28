@@ -1,0 +1,102 @@
+# The Agent visibility lane (pipeline/tests/stack, Q529-Q534): what a person
+# or the agent creates or edits reaches what the chat model receives. The e2e
+# stack's Go server, collaboration server and Postgres, the real pipeline in
+# process, a scripted model and stub embeddings: no provider is called.
+# Nightly unless only paths the lane never reads changed since the last green
+# run (scripts/ci/visibility-unchanged.sh), by hand, and as a production
+# promotion gate (promote-production.yml, Q544).
+name: Agent visibility
+
+on:
+  schedule:
+    - cron: "37 18 * * *"
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      revision:
+        description: Full Git SHA to test
+        required: true
+        type: string
+
+permissions:
+  # actions: the nightly run reads the last green run.
+  actions: read
+  contents: read
+
+concurrency:
+  # A promotion's call runs in a group of its own, so no nightly or manual run
+  # cancels it.
+  group: ${{ github.workflow == 'Agent visibility' && format('agent-visibility-{0}', github.ref) || format('agent-visibility-{0}-{1}', github.workflow, github.run_id) }}
+  cancel-in-progress: true
+
+jobs:
+  visibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      # The collaboration image builds the fork from vendor/betteroffice.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.revision || github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+      # The lane gates production (Q544): a revision from before it cannot
+      # pass, and says why instead of failing to find its tests.
+      - name: Check the revision has the lane
+        run: |
+          test -d pipeline/tests/stack || {
+            echo "::error::This revision predates the Agent visibility lane (pipeline/tests/stack), which gates production (Q544): promote a revision that has it."
+            exit 1
+          }
+      - name: Skip a nightly run when only paths the lane never reads changed
+        id: changed
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          last=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow=agent-visibility.yml \
+            --branch main --status=success --limit 1 --json headSha --jq '.[0].headSha // ""')
+          if [ -n "$last" ] && bash scripts/ci/visibility-unchanged.sh "$last"; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Only paths the lane never reads changed since the last green run ($last)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      # The e2e_stack job's images and layer cache (ci.yml), read only.
+      - if: steps.changed.outputs.run != 'false'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - if: steps.changed.outputs.run != 'false'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: collaboration-rs/Dockerfile
+          tags: capy-e2e-collaboration:local
+          load: true
+          cache-from: type=gha,scope=e2e-collaboration
+      - if: steps.changed.outputs.run != 'false'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: server
+          tags: capy-e2e-server:local
+          load: true
+          cache-from: type=gha,scope=e2e-server
+      - if: steps.changed.outputs.run != 'false'
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+      - if: steps.changed.outputs.run != 'false'
+        run: uv sync --frozen --extra test
+      # The lane starts the stack from the loaded images, seeds it and stops
+      # it; when a test failed it first writes the stack's logs.
+      - if: steps.changed.outputs.run != 'false'
+        name: Run the Agent visibility lane
+        run: uv run --extra test pytest -m stack pipeline/tests/stack
+        env:
+          E2E_PREBUILT_IMAGES: "true"
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          if-no-files-found: ignore
+          name: agent-visibility-compose-logs
+          path: test-results/agent-visibility-compose.log
+          retention-days: 7

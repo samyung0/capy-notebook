@@ -328,6 +328,13 @@ container that `hints_eval_db.py` migrates and loads with real embeddings;
 `hints_eval_cjk.py` needs only an empty Postgres 16. Keys are read in memory
 from the repository's `.env.local`.
 
+`rag/scripts/summary_search_scale.py` compares four ways to match account
+chat's summary search against 1.2 million synthetic summaries (a vector built
+per call, a stored column searched within the user's reach, a global GIN
+index, a per-workspace copy); it needs an empty, throwaway
+`pgvector/pgvector:pg16` with `--shm-size=1g`. Findings and the pick in
+[`rag/reports/2026-10-28-summary-search-scale.md`](rag/reports/2026-10-28-summary-search-scale.md).
+
 `rag/scripts/rag_eval.py` is a live retrieval diagnostic that
 runs the production `search()` against a real workspace inside the pipeline
 image. Its question sets in `rag/fixtures/` are keyed to `CHUNKER_VERSION` and to

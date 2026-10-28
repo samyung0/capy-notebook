@@ -62,6 +62,7 @@ import {
 } from '@/features/settings/llmOptions';
 import { getFileKind } from '@/features/workspace/sourceUpload';
 import { DEV_SHARE_LINK_SECRET, sharePath } from '@/lib/shareLink';
+import { accountChatHandlers } from './accountChat';
 import { gradeQuestions, learnerView } from './answerKeys';
 import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
@@ -376,13 +377,6 @@ async function hydrateEditorState(materialId: string) {
   const discussions = structuredClone(state.discussions);
   mockDiscussions.push(...discussions);
 }
-
-const mockNodeText = (node: unknown): string => {
-  if (!node || typeof node !== 'object') return '';
-  const value = node as { text?: unknown; children?: unknown[] };
-  if (typeof value.text === 'string') return value.text;
-  return (value.children ?? []).map(mockNodeText).join('');
-};
 
 const materialCards = (material: Material) =>
   typeof material.content === 'string'
@@ -949,11 +943,7 @@ export const handlers = [
         selectedThinking: '',
       });
     }
-    const prefs: Record<string, ModelRef | undefined> = {
-      chat: db.user.chatModel,
-      editor: db.user.editorModel,
-    };
-    const selected = prefs[slot] ?? fallback;
+    const selected = slot === 'chat' ? db.user.chatModel : fallback;
     const models = mockCatalogModels();
     const stored = db.userThinking[modelRefValue(selected)]?.[slot] ?? '';
     const selectedOption = models.find((item) =>
@@ -980,19 +970,18 @@ export const handlers = [
     const body = (await request.json()) as {
       chatModel?: ModelRef;
       chatThinking?: string;
-      editorModel?: ModelRef;
+      noteAiEnabled?: boolean;
     };
-    const fields = ['chatModel', 'editorModel'] as const;
-    for (const field of fields) {
-      const value = body[field];
-      if (value === undefined) continue;
-      if (!value?.providerSlug || !value.modelSlug)
+    if (body.chatModel !== undefined) {
+      if (!body.chatModel?.providerSlug || !body.chatModel.modelSlug)
         return HttpResponse.json(
           { message: 'a model preference is required' },
           { status: 400 }
         );
-      db.user[field] = value;
+      db.user.chatModel = body.chatModel;
     }
+    if (body.noteAiEnabled !== undefined)
+      db.user.noteAiEnabled = body.noteAiEnabled;
     const value = body.chatThinking;
     if (value !== undefined) {
       const model = db.user.chatModel;
@@ -2693,24 +2682,32 @@ export const handlers = [
     }
     return HttpResponse.json(conv);
   }),
-  http.post('/api/workspaces/:id/conversations/unarchive', ({ params }) => {
-    for (const c of db.conversations)
-      if (c.workspaceId === params.id) c.archivedAt = undefined;
-    return new HttpResponse(null, { status: 204 });
-  }),
-  http.delete('/api/workspaces/:id/conversations/archived', ({ params }) => {
-    const gone = new Set(
-      db.conversations
-        .filter((c) => c.workspaceId === params.id && c.archivedAt)
-        .map((c) => c.id)
-    );
-    for (let i = db.conversations.length - 1; i >= 0; i--)
-      if (gone.has(db.conversations[i].id)) db.conversations.splice(i, 1);
-    for (let i = db.chatMessages.length - 1; i >= 0; i--)
-      if (gone.has(db.chatMessages[i].conversationId))
-        db.chatMessages.splice(i, 1);
-    return new HttpResponse(null, { status: 204 });
-  }),
+  ...[
+    [
+      '/api/workspaces/:id/conversations/unarchive',
+      '/api/workspaces/:id/conversations/archived',
+    ],
+    ['/api/conversations/unarchive', '/api/conversations/archived'],
+  ].flatMap(([unarchive, archived]) => [
+    http.post(unarchive, ({ params }) => {
+      for (const c of db.conversations)
+        if (c.workspaceId === (params.id ?? '')) c.archivedAt = undefined;
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.delete(archived, ({ params }) => {
+      const gone = new Set(
+        db.conversations
+          .filter((c) => c.workspaceId === (params.id ?? '') && c.archivedAt)
+          .map((c) => c.id)
+      );
+      for (let i = db.conversations.length - 1; i >= 0; i--)
+        if (gone.has(db.conversations[i].id)) db.conversations.splice(i, 1);
+      for (let i = db.chatMessages.length - 1; i >= 0; i--)
+        if (gone.has(db.chatMessages[i].conversationId))
+          db.chatMessages.splice(i, 1);
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ]),
   http.post(
     '/api/workspaces/:id/conversations',
     async ({ params, request }) => {
@@ -2750,115 +2747,19 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   mockChatStream(),
+  ...accountChatHandlers,
   mockUndo,
-  /* Plate/@ai-sdk UI-message stream. This mirrors the production protocol so
-     editor integration can be developed under MSW without provider calls. */
-  http.post('/api/workspaces/:id/ai/command', async ({ request }) => {
-    const body = (await request.json()) as {
-      messages?: Array<{
-        role: string;
-        parts?: Array<{ type: string; text?: string }>;
-      }>;
-      ctx?: {
-        children?: Array<{ id?: string; children?: unknown[] }>;
-        toolName?: 'generate' | 'edit' | 'comment';
-      };
-    };
-    const instruction =
-      [...(body.messages ?? [])]
-        .reverse()
-        .find((message) => message.role === 'user')
-        ?.parts?.filter((part) => part.type === 'text')
-        .map((part) => part.text ?? '')
-        .join('') ?? '';
-    const toolName = body.ctx?.toolName;
-    if (!toolName) {
-      return HttpResponse.json(
-        {
-          error: {
-            code: 'invalid_request',
-            message: 'ctx.toolName is required',
-            retryable: false,
-          },
-        },
-        { status: 400 }
-      );
-    }
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const send = (event: unknown) =>
-          controller.enqueue(
-            encoder.encode(
-              `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`
-            )
-          );
-        send({ type: 'start' });
-        send({ type: 'start-step' });
-        send({ data: toolName, type: 'data-toolName' });
-
-        if (toolName === 'comment') {
-          const block = body.ctx?.children?.[0];
-          const content = mockNodeText(block).trim();
-          if (block?.id && content) {
-            await delay(40);
-            send({
-              data: {
-                comment: {
-                  blockId: block.id,
-                  comment: 'Consider making this point more specific.',
-                  content,
-                },
-                status: 'streaming',
-              },
-              id: uid('ai'),
-              type: 'data-comment',
-            });
-          }
-          send({
-            data: { comment: null, status: 'finished' },
-            id: uid('ai'),
-            type: 'data-comment',
-          });
-        } else {
-          const text =
-            toolName === 'edit'
-              ? 'This revised passage is clearer and more concise.'
-              : `A concise response to: ${instruction || 'your request'}.`;
-          const textId = uid('ai');
-          send({ id: textId, type: 'text-start' });
-          for (const word of text.split(' ')) {
-            if (request.signal.aborted) {
-              controller.close();
-              return;
-            }
-            await delay(25);
-            send({ delta: `${word} `, id: textId, type: 'text-delta' });
-          }
-          send({ id: textId, type: 'text-end' });
-        }
-        send({ type: 'finish-step' });
-        send({ finishReason: 'stop', type: 'finish' });
-        send('[DONE]');
-        controller.close();
-      },
-    });
-    return new HttpResponse(stream, {
-      headers: {
-        'Cache-Control': 'no-cache',
-        'Content-Type': 'text/event-stream',
-        'x-vercel-ai-ui-message-stream': 'v1',
-      },
-    });
-  }),
   http.post('/api/workspaces/:id/ai/copilot', async ({ request }) => {
-    const body = (await request.json()) as { prompt?: string };
+    const body = (await request.json()) as { before?: string };
+    if (!db.user.noteAiEnabled)
+      return HttpResponse.json(
+        { code: 'note_ai_disabled', message: 'note AI is turned off' },
+        { status: 403 }
+      );
     if (request.signal.aborted) return HttpResponse.json(null, { status: 408 });
     await delay(80);
     return HttpResponse.json({
-      finishReason: 'stop',
-      text: body.prompt?.trim() ? ' with a natural continuation.' : '0',
-      usage: { completionTokens: 5, promptTokens: 8 },
+      text: body.before?.trim() ? 'with a natural continuation.' : '',
     });
   }),
   http.post('/api/workspaces/:id/generate', async ({ params, request }) => {

@@ -25,6 +25,8 @@ class Skill:
     text: Callable[[], str]
     # The output-files preference (mainFormat) whose chapter explainers it writes.
     builds: str | None = None
+    # Account chat's wording, where the text names the workspace.
+    account: Callable[[], str] | None = None
 
 
 EDITING = "editing"
@@ -32,11 +34,14 @@ NOTE_BUILDING = "note_building"
 DECK_BUILDING = "deck_building"
 OFFICE_BUILDING = "office_building"
 SKILLS: dict[str, Skill] = {
-    EDITING: Skill(prompts.EDITING_WHEN, prompts.editing),
+    EDITING: Skill(
+        prompts.EDITING_WHEN, prompts.editing, account=prompts.account_editing
+    ),
     NOTE_BUILDING: Skill(
         prompts.NOTE_BUILDING_WHEN,
         lambda: prompts.note_building(contract.FORMATS),
         builds="note",
+        account=lambda: prompts.account_note_building(contract.FORMATS),
     ),
     DECK_BUILDING: Skill(
         prompts.DECK_BUILDING_WHEN,
@@ -46,6 +51,11 @@ SKILLS: dict[str, Skill] = {
             deck.style_text(deck.DEFAULT_STYLE),
         ),
         builds="deck",
+        account=lambda: prompts.account_deck_building(
+            prompts.deck_rules(deck.VIEWBOX),
+            deck.DEFAULT_STYLE,
+            deck.style_text(deck.DEFAULT_STYLE),
+        ),
     ),
     # Reading it offers the Office tools for the rest of the conversation
     # (tools._read_skill, Epo 2026-10-20).
@@ -69,6 +79,13 @@ FORMAT_COMMANDS = frozenset({"insert_markdown", "replace_block"})
 
 _HEADER = "# Skill: "
 _HEADER_LINE = re.compile(r"^# Skill: (\S+)$", re.MULTILINE)
+
+
+def text(name: str, *, account: bool = False) -> str:
+    """A skill's text in the chat's scope (the account profile's wording where
+    the workspace one names the workspace)."""
+    skill = SKILLS[name]
+    return (skill.account or skill.text)() if account else skill.text()
 
 
 def catalog(main_format: str, names: Iterable[str] = SKILLS) -> str:

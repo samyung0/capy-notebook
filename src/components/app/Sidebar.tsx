@@ -4,6 +4,7 @@ import { useMediaQuery } from 'usehooks-ts';
 import { useUnreadNotificationCount } from '@/api/hooks';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { GettingStartedRow } from '@/features/guide/GettingStartedRow';
+import { VoiceCard } from '@/features/voice/VoiceCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
@@ -50,6 +51,8 @@ function items(): {
 function general(): NavItem[] {
   return [
     { exact: true, icon: 'dashboard', label: m.nav_dashboard(), to: '/' },
+    // Chat across all the user's files (Epo 2026-10-27).
+    { icon: 'message', label: m.nav_chat(), to: '/chat' },
     { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
     { icon: 'knowledge', label: m.nav_learning(), to: '/learning' },
     ...(features.schedule
@@ -281,6 +284,7 @@ export function Sidebar({
       )}
 
       <div className="mt-auto" />
+      {withAccount && <VoiceCard onOpen={onNavigate} />}
       <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2">
         {withAccount && (
           <GettingStartedRow

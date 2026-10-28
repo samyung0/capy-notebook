@@ -1,12 +1,12 @@
 /* biome-ignore-all lint/suspicious/noMisplacedAssertion: The helpers execute only inside the journey. */
 // Shared steps of the credits journeys (credits.spec.ts in the billing lane,
 // creditsManual.spec.ts by hand): the ledger reads, the Subscription tab's
-// dialogs, Stripe's hosted Checkout, Stripe events and the editor AI command
+// dialogs, Stripe's hosted Checkout, Stripe events and the ghost-text call
 // that spends credits.
-import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
 import { m } from '../../i18n';
+import { verify } from './evidence';
 import {
   arrayField,
   claimStripeCustomer,
@@ -258,7 +258,10 @@ export const notice = (page: Page, title: string) =>
 
 /** The Invoices row of a Stripe invoice. Its hosted-page link is signed anew
  * on every read, so it cannot name the row: the tab lists invoices in the
- * order the app's API returns them, under one header row. */
+ * order the app's API returns them, under one header row. Stripe's invoice
+ * list can trail a change its single-invoice read already shows (a void
+ * still listed as retrying, UAT run 40718675712), so a row that does not
+ * match yet is read again after a reload. */
 export async function expectInvoice(
   actor: Actor,
   invoice: Record<string, unknown>,
@@ -266,16 +269,21 @@ export async function expectInvoice(
   status: string,
   link: string
 ) {
-  const listed = await actor.request('/api/billing/invoices');
-  expect(listed.status).toBe(200);
-  const index = arrayField(listed.body, 'items')
-    .map(object)
-    .findIndex((item) => item.id === invoice.id);
-  expect(index, 'the invoice is listed').toBeGreaterThanOrEqual(0);
-  const row = actor.page.getByRole('row').nth(index + 1);
-  await expect(row).toContainText(type);
-  await expect(row).toContainText(status);
-  await expect(row.getByRole('link')).toHaveText(link);
+  let reload = false;
+  await expect(async () => {
+    if (reload) await actor.page.reload();
+    reload = true;
+    const listed = await actor.request('/api/billing/invoices');
+    expect(listed.status).toBe(200);
+    const index = arrayField(listed.body, 'items')
+      .map(object)
+      .findIndex((item) => item.id === invoice.id);
+    expect(index, 'the invoice is listed').toBeGreaterThanOrEqual(0);
+    const row = actor.page.getByRole('row').nth(index + 1);
+    await expect(row).toContainText(type, { timeout: 10_000 });
+    await expect(row).toContainText(status, { timeout: 10_000 });
+    await expect(row.getByRole('link')).toHaveText(link, { timeout: 10_000 });
+  }).toPass({ timeout: 60_000 });
 }
 
 /** Clicks the dialog's Save and returns the answer to its PUT. */
@@ -577,119 +585,74 @@ export async function expectVoided(
   );
 }
 
-/** At most this many big AI commands spend a new account's credits: past
- * the 15-request burst the AI rate limit admits one every 18 s, so these fit
- * in about ten minutes. */
-export const MAX_SPEND_CALLS = 45;
-
-/** About 180,000 characters of random words: a fresh, uncached prompt within
- * the editor's 200,000-character context (pipeline ai_adapter.py). */
-export const bigContext = () =>
-  Array.from({ length: 20 }, () =>
-    randomBytes(6000)
-      .toString('base64url')
-      .replace(/(.{7})/g, '$1 ')
-  );
-
-export type AIAnswer = {
-  status: number;
-  body: unknown;
-  events: Record<string, unknown>[];
-};
-
 /**
- * One editor AI command (Generate over `paragraphs`), as the note editor
- * sends it. A 429 or a busy provider is waited out as it asks and sent again,
- * which only paces the spend.
+ * One ghost-text completion, as the note editor asks for it. A 429 is waited
+ * out as it asks. A busy provider (503 provider_busy) names its wait only in a
+ * Retry-After header, which actor.request does not return, so it is sent
+ * again every 5 s for up to a minute. Neither spends.
  */
-export async function aiCommand(
-  actor: Actor,
-  workspaceId: string,
-  paragraphs: string[]
-): Promise<AIAnswer> {
+export async function ghostText(actor: Actor, workspaceId: string) {
+  let busyTries = 0;
   for (;;) {
     const response = await actor.request(
-      `/api/workspaces/${workspaceId}/ai/command`,
+      `/api/workspaces/${workspaceId}/ai/copilot`,
       'POST',
-      {
-        ctx: {
-          children: paragraphs.map((text) => ({
-            children: [{ text }],
-            type: 'p',
-          })),
-          toolName: 'generate',
-        },
-        messages: [
-          {
-            parts: [{ text: 'Reply with the single word OK.', type: 'text' }],
-            role: 'user',
-          },
-        ],
-      },
-      120_000
+      { before: 'Spend check.' }
     );
+    const code = nested(response.body, 'code');
     const limited =
       response.status === 429 &&
+      code === 'ai_rate_limited' &&
       Number(nested(response.body, 'retryAfterSeconds'));
     if (limited) {
       await sleep(limited * 1000);
       continue;
     }
-    if (response.status !== 200) return { ...response, events: [] };
-    const events = String(response.body)
-      .split('\n')
-      .filter((line) => line.startsWith('data: {'))
-      .map((line) => object(JSON.parse(line.slice('data: '.length))));
-    const busy = events.find(
-      (event) =>
-        event.type === 'error' &&
-        nested(event.data, 'retryAfterSeconds') !== undefined
-    );
-    if (!busy) return { ...response, events };
-    await sleep(
-      Math.max(1, Number(nested(busy.data, 'retryAfterSeconds'))) * 1000
-    );
+    if (response.status === 503 && code === 'provider_busy' && busyTries < 12) {
+      busyTries += 1;
+      await sleep(5000);
+      continue;
+    }
+    return response;
   }
 }
 
-export function expectAnswered(answer: AIAnswer) {
+/** Any 200 is an answer; its text may be empty. */
+export function expectAnswered(answer: { status: number }) {
   expect(answer.status).toBe(200);
-  expect(answer.events.filter((event) => event.type === 'error')).toEqual([]);
-  expect(answer.events.some((event) => event.type === 'finish')).toBe(true);
 }
 
-export function expectRefusedAtZero(answer: AIAnswer) {
+export function expectRefusedAtZero(answer: { status: number; body: unknown }) {
   expect(answer.status).toBe(403);
   expect(object(answer.body).code).toBe('llm_credits_exhausted');
 }
 
-export type EditorModel = {
-  provider_slug: string;
-  model_slug: string;
-  micros_per_input_token: number;
-  micros_per_output_token: number;
-};
-
-/** The editor model the account may use with the highest input rate in the
- * catalog: the fewest calls spend a balance. */
-export async function costliestEditorModel(run: UatRun, actor: Actor) {
-  const listed = await actor.request('/api/models?slot=editor');
-  expect(listed.status).toBe(200);
-  const offered = arrayField(listed.body, 'models').map(object);
-  const rows = (
-    await run.query<EditorModel>(
-      "SELECT DISTINCT ON (provider_slug,model_slug) provider_slug,model_slug,micros_per_input_token,micros_per_output_token FROM model_configs WHERE enabled AND 'editor'=ANY(slots) ORDER BY provider_slug,model_slug,version DESC"
-    )
-  ).filter((row) =>
-    offered.some(
-      (model) =>
-        model.providerSlug === row.provider_slug &&
-        model.modelSlug === row.model_slug
-    )
-  );
-  const [costliest] = rows.sort(
-    (a, b) => b.micros_per_input_token - a.micros_per_input_token
-  );
-  if (!costliest) throw new Error('No editor model is offered');
-  return costliest;
+/** Ghost text answers 403 note_ai_disabled until the account turns note AI on. */
+export async function enableNoteAi(actor: Actor) {
+  expect(
+    (await actor.request('/api/me/models', 'PATCH', { noteAiEnabled: true }))
+      .status
+  ).toBe(204);
 }
+
+/** Fails before any Stripe work unless the operator step is done: the raise
+ * function exists and the verifier may execute it. */
+export async function expectRaiseFunction(run: UatRun) {
+  const rows = await run.query<{ allowed: boolean }>(
+    "SELECT has_function_privilege('capy_uat_verifier',p.oid,'EXECUTE') AS allowed FROM pg_proc p WHERE p.oid=to_regprocedure('public.uat_journey_raise_credits_used(text,bigint)')"
+  );
+  expect(
+    rows.map((row) => row.allowed),
+    'operator step missing: apply scripts/uat/journey-credits.sql to the UAT database as its administrator (e2e/uat/journeys/README.md, UAT_DATABASE_NAME)'
+  ).toEqual([true]);
+}
+
+/** Raises the account's used credits to `micros` through the UAT-only function
+ * of scripts/uat/journey-credits.sql (Q496), the verifier's one write. It
+ * refuses any value that does not raise them. */
+export const raiseCreditsUsed = (actor: Actor, micros: number) =>
+  verify<null>({
+    operation: 'raise-credits-used',
+    usedMicros: micros,
+    userId: actor.id,
+  });

@@ -50,6 +50,7 @@ import {
   CreditCardIcon,
   Crown03Icon,
   Cursor01Icon,
+  Cursor02Icon,
   DashboardSquare01Icon,
   DatabaseIcon,
   Delete02Icon,
@@ -405,6 +406,8 @@ const HugeIcons = {
   plot: ChartScatterIcon,
   plus: PlusSignIcon,
   plusCircle: PlusSignCircleIcon,
+  /** A co-editor's pointer (RemoteCursors.tsx, Epo 2026-10-28). */
+  pointer: Cursor02Icon,
   preferences: Settings02Icon,
   premium: Crown03Icon,
   presentation: Presentation01Icon,

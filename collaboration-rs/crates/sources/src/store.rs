@@ -1453,11 +1453,13 @@ impl Sources {
             .0)
     }
 
+    /// The workspace owner, or for a file with no workspace its payer, the
+    /// only one who may open it (Epo 2026-10-27).
     async fn owner(&self, file_id: &str) -> Result<String, SourceError> {
         let client = self.db.get().await.map_err(db_error)?;
         let row = client
             .query_opt(
-                "SELECT w.user_id FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE f.id=$1 AND f.trashed_at IS NULL",
+                "SELECT COALESCE(w.user_id,f.user_id) FROM files f LEFT JOIN workspaces w ON w.id=f.workspace_id WHERE f.id=$1 AND f.trashed_at IS NULL",
                 &[&file_id],
             )
             .await

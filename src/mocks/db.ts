@@ -88,7 +88,10 @@ import { bioNearLimitNotes } from './noteContent/bio';
 import { buildCommonSubsetValue } from './noteContent/commonSubset';
 import { embeddedSeeds, equation } from './noteContent/helpers';
 import { buildBiologyLoadTestValue } from './noteContent/loadTest';
-import { biologyOfficeFixtures } from './officeFixtures';
+import {
+  biologyOfficeFixtures,
+  standaloneOfficeFixtures,
+} from './officeFixtures';
 import {
   buildSmallPerfDocument,
   PERF_COMMON_NOTE,
@@ -186,14 +189,11 @@ export const user: Omit<User, 'account'> = {
   chatSendKey: 'enter',
   chatSteps: 'normal',
   classLabel: 'Grade 11 · Science',
-  editorModel: {
-    modelSlug: 'deepseek-flash',
-    providerSlug: 'deepseek',
-  },
   email: 'kate@capynotebook.app',
   id: 'u_1',
   locale: 'en',
   name: 'Kate Malone',
+  noteAiEnabled: false,
   planTier: 'pro',
   streak: 0,
   studyPreferences: {},
@@ -937,6 +937,85 @@ files.push({
 });
 for (const status of ['ready', 'failed'])
   fileLinks[`f_standalone_${status}`] = { ...fileLinks.f_6 };
+
+// More standalone files, one of each kind that opens outside a workspace:
+// the Office one read-only (its edit session waits for the sources work).
+const standaloneSeeds: {
+  body?: string;
+  hoursAgo: number;
+  id: string;
+  kind: SourceFile['kind'];
+  name: string;
+  url?: string;
+}[] = [
+  {
+    body: '# Reading list\n\n- *The Selfish Gene*, Richard Dawkins\n- *Sapiens*, Yuval Noah Harari\n- *Thinking, Fast and Slow*, Daniel Kahneman\n\nFinish one a month; notes go in the study group folder.',
+    hoursAgo: 5,
+    id: 'f_standalone_md',
+    kind: 'md',
+    name: 'Reading list.md',
+  },
+  {
+    body: 'week,topic,hours\n1,Cell structure,4\n2,Genetics,5\n3,Calculus limits,6\n4,Revision,3\n',
+    hoursAgo: 8,
+    id: 'f_standalone_csv',
+    kind: 'sheet',
+    name: 'Study hours.csv',
+  },
+  {
+    hoursAgo: 26,
+    id: 'f_standalone_image',
+    kind: 'image',
+    name: 'Whiteboard photo.jpg',
+    url: 'https://picsum.photos/1600/1200',
+  },
+  {
+    hoursAgo: 50,
+    id: 'f_standalone_audio',
+    kind: 'audio',
+    name: 'Lecture recording.wav',
+    url: fileLinks.f_8.url,
+  },
+];
+standaloneSeeds.forEach((seed, index) => {
+  fileLinks[seed.id] = { url: seed.url ?? textUrl(seed.body ?? '') };
+  files.push({
+    addedAt: hours(seed.hoursAgo),
+    chapterId: null,
+    hasBytes: true,
+    id: seed.id,
+    indexed: seed.kind !== 'audio',
+    isPayer: true,
+    kind: seed.kind,
+    name: seed.name,
+    position: 2 + index,
+    ...(seed.body ? { preview: { text: seed.body.slice(0, 600) } } : {}),
+    revision: 1,
+    sizeBytes: seed.body
+      ? new TextEncoder().encode(seed.body).byteLength
+      : 640 * 1024,
+    status: 'ready',
+    workspaceId: '',
+  });
+});
+for (const fixture of standaloneOfficeFixtures) {
+  fileLinks[fixture.id] = { url: fixture.sourceURL };
+  files.push({
+    addedAt: hours(2),
+    chapterId: null,
+    hasBytes: true,
+    id: fixture.id,
+    indexed: false,
+    isPayer: true,
+    kind: fixture.kind,
+    name: fixture.name,
+    position: 2 + standaloneSeeds.length,
+    revision: 1,
+    sizeBytes: fixture.sizeBytes,
+    status: 'ready',
+    workspaceId: '',
+  });
+}
 
 // A populated shared workspace for local summary and sharing previews.
 for (const [index, chapter] of [
@@ -2277,6 +2356,30 @@ export const conversations: Conversation[] = [
     updatedAt: days(30),
     workspaceId: workspaces[0].id,
   },
+  // Account chats (workspaceId ""): across all the user's files.
+  {
+    createdAt: days(2),
+    id: 'conv_account_pinned',
+    pinnedAt: hours(1),
+    title: 'What should I read this month?',
+    updatedAt: hours(4),
+    workspaceId: '',
+  },
+  {
+    createdAt: days(5),
+    id: 'conv_account_older',
+    title: 'Plan my week across all subjects',
+    updatedAt: days(4),
+    workspaceId: '',
+  },
+  {
+    archivedAt: days(6),
+    createdAt: days(12),
+    id: 'conv_account_archived',
+    title: 'Old revision timetable',
+    updatedAt: days(11),
+    workspaceId: '',
+  },
 ];
 
 /** Owner-only trash bin: metadata rows plus the original record so restore can
@@ -2410,6 +2513,45 @@ export const chatMessages: WireMessage[] = [
     conversationId: 'conv_seed1',
     createdAt: days(1),
     id: 'm_seed2',
+    modelDisplayName: 'DeepSeek Flash',
+    modelSlug: 'deepseek-flash',
+    modelVersion: 1,
+    providerSlug: 'deepseek',
+    role: 'assistant',
+    status: 'complete',
+  },
+  {
+    citations: null,
+    content: 'What should I read this month?',
+    conversationId: 'conv_account_pinned',
+    createdAt: hours(4),
+    id: 'm_account1',
+    role: 'user',
+    status: 'complete',
+  },
+  {
+    // Account citations name where each source lives ("" is No workspace).
+    citations: [
+      {
+        fileId: 'f_2',
+        fileName: 'Organelles cheatsheet.md',
+        snippet: 'Mitochondria transfer energy from food into ATP.',
+        workspaceId: 'ws_bio',
+        workspaceName: 'Biology 101',
+      },
+      {
+        fileId: 'f_standalone_md',
+        fileName: 'Reading list.md',
+        snippet: 'Finish one a month; notes go in the study group folder.',
+        workspaceId: '',
+        workspaceName: '',
+      },
+    ],
+    content:
+      'Start with *The Selfish Gene* from your reading list: it fits the genetics unit after the organelles in your Biology 101 cheatsheet.',
+    conversationId: 'conv_account_pinned',
+    createdAt: hours(4),
+    id: 'm_account2',
     modelDisplayName: 'DeepSeek Flash',
     modelSlug: 'deepseek-flash',
     modelVersion: 1,

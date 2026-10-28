@@ -105,6 +105,16 @@ on `stablestudio.org`.
    so the role also needs, as its owner,
    `GRANT SELECT ON source_document_updates TO capy_uat_verifier;`
    (`scripts/uat/verifier-role.sql` lists it for a new role).
+   Pending (2026-10-28): the credits journey raises used credits through a
+   UAT-only function (Q496). Apply it once as the database administrator
+   (`capy` in the UAT db container, as `scripts/uat/apply-ops-roles.sh`
+   does), after the verifier role exists, and again only if the database is
+   recreated:
+   `psql -X -U capy -d capy -v uat_database=capy -v operatorapply=true -f scripts/uat/journey-credits.sql`.
+   Pending (2026-10-29): the same file now also defines the account chat
+   journey's read of its kept tool results (Q537); the verifier was refused
+   on messages, and gets no read on them. Apply the file again with the same
+   command (the deployment runbook §12 has it over SSH).
 5. Dispatch Deterministic UAT quality from `main`, with the deployed full SHA
    and `critical_paths=true`.
 6. Review the uploaded journey evidence and cleanup report. Retry cleanup from

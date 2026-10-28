@@ -402,19 +402,22 @@ func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 	empty := models.Ref{}
-	for _, slot := range []string{"chat", "editor"} {
-		var chat, editor *models.Ref
-		switch slot {
-		case "chat":
-			chat = &empty
-		case "editor":
-			editor = &empty
-		}
-		if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
-			ChatModel: chat, EditorModel: editor,
-		}); !errors.Is(err, ErrModelRefRequired) {
-			t.Fatalf("%s: got %v", slot, err)
-		}
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModel: &empty}); !errors.Is(err, ErrModelRefRequired) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestSetModelPrefsTurnsNoteAIOn(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	on := true
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{NoteAIEnabled: &on}); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := s.NoteAIEnabled(ctx, userID)
+	if err != nil || !enabled {
+		t.Fatalf("note AI = %v, %v", enabled, err)
 	}
 }
 
@@ -512,14 +515,15 @@ func TestUpsertUserPopulatesRegistryDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if me.ChatModel.Zero() || me.EditorModel.Zero() {
-		t.Fatalf("prefs empty: %#v", me)
+	// A new account has the chat default and note AI off.
+	if me.ChatModel.Zero() || me.NoteAIEnabled {
+		t.Fatalf("new account prefs: %#v", me)
 	}
 }
 
 func TestAccountModelPrefsRequiresRegistry(t *testing.T) {
 	s := openAccessTestStore(t)
-	_, _, err := s.accountModelPrefs(context.Background())
+	_, err := s.accountChatModel()
 	if !errors.Is(err, ErrModelUnavailable) {
 		t.Fatalf("account prefs without registry: got %v", err)
 	}

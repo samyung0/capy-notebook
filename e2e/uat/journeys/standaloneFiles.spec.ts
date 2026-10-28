@@ -1,7 +1,7 @@
 // Standalone files (todo-standalone-files.md,
 // openwiki/authorization-permissions-lifecycles.md): an upload with no
-// workspace is its uploader's alone, listed under Files › Location ›
-// Standalone and opened at /files/{id}. Move puts it into a workspace, never
+// workspace is its uploader's alone, listed under Files (My files, All
+// locations, left out by Workspace only) and opened at /files/{id}. Move puts it into a workspace, never
 // out; a workspace file moves on to another workspace, and the open one
 // follows itself there. A store-only `.bin` and no parsing anywhere: no
 // provider session or model usage.
@@ -11,7 +11,7 @@ import { api, fileRow, noProviderCalls, object, workspace } from './files';
 import { expect, test } from './runtime';
 import {
   fileCard,
-  filterStandalone,
+  filterWorkspaceOnly,
   moveTo,
   noActorProviderCalls,
   openWorkspaceFiles,
@@ -36,13 +36,16 @@ test('standalone files: an owner uploads a file to No workspace, finds it under 
     workspaceId: '',
   });
 
-  // 1. Files › Location › Standalone lists it with no workspace; it opens at
-  // /files/{id}.
+  // 1. Files lists it with no workspace (My files, All locations), and
+  // Workspace only leaves it out; it opens at /files/{id}.
   await page.goto(`${run.env.appUrl}/files`);
-  await filterStandalone(page);
   const card = fileCard(page, name);
   await expect(card).toHaveCount(1);
   await expect(card).not.toHaveAttribute('data-item-workspace');
+  await filterWorkspaceOnly(page);
+  await expect(card).toHaveCount(0);
+  await page.goto(`${run.env.appUrl}/files`);
+  await expect(card).toHaveCount(1);
   await card
     .getByRole('button', { exact: true, name: m.files_select_item({ name }) })
     .dblclick();

@@ -19,7 +19,8 @@ export function ChatHistoryDialog({
   onNew,
   onRemoved,
 }: {
-  workspaceId: string;
+  /** Null: the account chat. */
+  workspaceId: string | null;
   open: boolean;
   onClose: () => void;
   activeId: string | null;
@@ -52,7 +53,7 @@ export function ChatHistoryDialog({
         onClose={onClose}
         open={open}
         title={m.chat_history()}
-        width={500}
+        width={560}
       >
         <div className="-mx-2.5 flex min-h-0 flex-col">
           <ConversationList
@@ -68,8 +69,12 @@ export function ChatHistoryDialog({
           />
         </div>
         <div className="-ml-2 flex">
+          {/* Smaller than the 18px button icon floor by choice (Epo 2026-10-28):
+              a quiet footer link under the list. */}
           <Button
+            className="text-[0.8125rem]"
             iconLeft="archive"
+            iconLeftClassName="size-3.75"
             onClick={() => setArchivedOpen(true)}
             size="sm"
             type="button"

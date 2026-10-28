@@ -122,7 +122,7 @@ The retrieval index is application schema, not pipeline-owned:
 | `rag_contents` | Canonical parsed content per workspace, unique by parsed-text hash |
 | `rag_file_contents` | Logical file → canonical content aliases |
 | `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
-| `rag_content_summaries` | The ~50-word `descriptor`, its running `change_share` and when it was written (`updated_at`, kept when a refresh reuses it); shared by files with identical content, carried forward across a note's reindexes |
+| `rag_content_summaries` | The ~50-word `descriptor`, its running `change_share` and when it was written (`updated_at`, kept when a refresh reuses it); its `lang` and `search` vector, written with it by the passages' tokenizer for account chat's summary search (Epo 2026-10-28, `bench/rag/reports/2026-10-28-summary-search-scale.md`; none on a row written before); shared by files with identical content, carried forward across a note's reindexes |
 
 Only `rag_contents` and the aliases name a workspace (or, on `rag_contents`,
 the owner of a file with no workspace). Passages, vectors and summaries belong
@@ -2026,11 +2026,13 @@ exists; the local bundle is gone once the first ingest finished.
   and the share resets to 0. Files edited as plain text (txt, code files
   included, md, json, csv and tsv) take a note's rule instead (Epo
   2026-10-27, Q457, Q458; see the text refresh below). The call reads `descriptor_excerpt`: the whole
-  content up to `DESCRIPTOR_INPUT_TOKENS` (8,000 estimated tokens), else the
+  content up to `DESCRIPTOR_INPUT_TOKENS` (4,000 estimated tokens; Epo
+  2026-10-28, down from 8,000 after a blind-graded bench showed equal
+  faithfulness and coverage), else the
   heading outline (halved until it fits 1,200), the opening chunks up to half
   the budget, then the first ~130 tokens of evenly spaced later chunks. A
-  book therefore costs the same as a long chapter (about $0.15 per 1,000
-  files on 2026-10-15 list prices); the change share still measures the whole
+  book therefore costs the same as a long chapter (about $0.19 per 1,000
+  capped files on Reka's 2026-10-28 price); the change share still measures the whole
   document. The estimator counts Latin script with diacritics (Vietnamese)
   at about 1.6× under, so those excerpts run a little over. A regeneration
   that fails keeps the published descriptor with its accumulated share, so the
@@ -2253,7 +2255,11 @@ always point at document passages.
    current ids."), outside the chat's narrowed scope ("… is outside the
    sources chosen for this chat, and the chat cannot widen that choice."),
    or a chat scope whose source is gone ("A source chosen for this chat is
-   no longer in the workspace: it was deleted or moved to trash.").
+   no longer in the workspace: it was deleted or moved to trash."). The
+   outline is read once per turn and dropped when the turn changes the
+   workspace: an edit, a trash or restore, and a create (`create_material`,
+   `add_questions` starting a quiz, `write_slide` storing a deck; Q536), so a
+   same-turn read or search naming the new id finds it.
 4. `search.rerank` reorders the first 20 fused candidates
    (`RERANK_CANDIDATES`) with the `rerank` slot's default, DeepInfra
    `Qwen/Qwen3-Reranker-4B` (decision 2026-09-25). It scores each row's
@@ -2666,7 +2672,8 @@ answer is finished, every result stays whole. Between user messages each tool
 keeps what its `retention` contract field says
 (`agenttools_test.TestRetentionBetweenMessages` pins the list):
 
-- `full`: `list_sources` and the mutation tools (`create_material`, the
+- `full`: `list_sources`, `search_knowledge` (its hits, so a later "make it a
+  note" needs no new search; Epo 2026-10-28) and the mutation tools (`create_material`, the
   question tools, `create_deck`, `write_slide`, `edit_document`,
   `edit_office_document`, `trash_file`, `restore_file`) retain the full text
   result already limited to 8,192 tool-output tokens.
@@ -2679,7 +2686,7 @@ keeps what its `retention` contract field says
   read-only library queries. Full text remaining after compaction counts as read;
   changed/missing text or a compacted summary does not.
 - `none`: `inspect_document`, `inspect_office_document`, `read_study_progress`,
-  `list_trashed_files`, `search_knowledge`, both captures and
+  `list_trashed_files`, both captures and
   `resolve_source_change` (no image bytes), and `read_skill` (the skill itself
   replays by name, below).
 
@@ -3100,9 +3107,8 @@ AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
   client that hangs up while waiting leaves the queue, and past the 60 s the
   stream ends with the in-stream `provider_busy` error. A stream holds its
   turn slot until its response ends however it ends (`service._SlotStream`).
-  The editor AI routes are not turns (Q338) but check the ceiling: at it, or
-  with every call slot taken, `/plate-ai/command` and `/plate-ai/copilot`
-  answer the 503 `provider_busy` before starting a response
+  Ghost text is not a turn (Q338) but checks the ceiling: at it, or
+  with every call slot taken, `/plate-ai/copilot` answers the 503 `provider_busy` before starting a response
   (`ai_adapter._refuse_past_capacity`, Q339, Q359). The Go limits come first:
   5 open chat sessions per user and the AI route class.
 - **Render pool.** Deck scripts (the checker and exporter), page renders,
@@ -3379,6 +3385,31 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
   recording started on the chat page opens it), the transcript lands at the
   dock field's caret, and the elapsed time or an error shows inside the dock
   above the field, which grows to fit it.
+- **From the sidebar** (`features/voice/`). A "Use your mic" card above
+  Settings in the app sidebar (its mic alone in its turning rainbow ring on
+  the 70px rail, in the phone drawer too) and a mic in the workspace left
+  panel's foot, in Search's old place, open a page-wide voice dialog
+  (`VoiceOverlay`): the page dims and blurs behind one box titled New chat.
+  Opening starts a recording (the same `useVoiceInput`, the stop button a
+  flowing gradient that does not follow the voice; if a clip from an earlier
+  opening is still transcribing, once it finishes, and its text is dropped).
+  The transcript goes in as in the composer (`insertTranscript`: at the
+  caret, spaced except beside Chinese or Japanese), all at once, and stays
+  editable; the box
+  grows to half the screen, then scrolls without a scrollbar, under the
+  composer's `CHAT_CHARACTER_LIMIT` with its count. Touch screens do not
+  focus the box on open, so no keyboard covers the dialog, which also sits
+  above `--keyboard-inset`. Enter adds a line; only Send sends, never while
+  recording, and it always starts a new chat: from the sidebar an account
+  chat, handed through `askByVoice` to Chat's page (`useVoiceAsk` in
+  `AccountChat`) once that page is reached; from a workspace that
+  workspace's chat, opened in its right panel. Either way the question
+  rides on `ChatRequest.prompt`, which `ChatPanel` sends once per request,
+  never again when the panel mounts anew. The account dialog lives once in
+  `AppShell`, so the phone drawer can close under it; a press outside the
+  box closes it and drops the text. The card's ring turns by transform
+  under a mask, so it never repaints the page; its title's light sweeps
+  only on hover.
 
 The gateway (`server/internal/httpapi/voice.go`) lets anyone who may chat in
 the workspace transcribe (the chat stream's `WorkspaceEffectiveRole` check;
@@ -3947,7 +3978,7 @@ materials are sources.
 | `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; `file_ids` take any workspace item id, and any invalid supplied id rejects the call, naming it |
 | `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are indexed); sources retain passage counts, status and short descriptors; notes show their summaries the same way. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading; a material other than a note is refused ("… is a quiz, which has no passages to read; inspect_document reads it.") |
-| `search_knowledge` | none | Offered when the library answered its subject list; answers as not available while Workspace only is on. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
+| `search_knowledge` | full | Offered when the library answered its subject list; answers as not available while Workspace only is on. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Its hits are kept between messages (Epo 2026-10-28) |
 | `read_knowledge` | none | As `search_knowledge`. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
 | `search_web` | none | DeepSeek's web search (`retrieval/websearch.py`, `POST https://api.deepseek.com/v1/tools/search` on the platform `DEEPSEEK_API_KEY`): one focused query of at most 128 characters, 5 results, no retry; only the query is sent (never the learner's question or IP), and the description asks for it in the model's own words rather than copied from the learner's files (Epo 2026-10-24, Q289). Each result is a `Passage(kind="web")` (`chunk_id` `web:<url>`, the link in `file_id`, title, site, the date parsed from DeepSeek's RFC 3339 value to YYYY-MM-DD and left out when it does not parse, DeepSeek's summary as the text and its snippet for display) in one source block, numbered like passages, with a data-not-instructions note and the searches left. A user message gets 3 searches: an empty one counts and is free, a failed one (an error, a timeout, a non-2xx answer or a body without a results list) is free and the first 2 failures do not count, so at most 5 calls run (Epo 2026-10-24); results that miss the point are an ordinary search the model judges, since DeepSeek answers even a nonsense query with 5 results (2026-10-24 probe); the parser keeps only title, url, snippet, summary, site_name and date; calls of one response hold their places while they run. The same query again in one message (compared without case or extra spaces) reuses that message's answer, neither charged nor counted; a search whose settlement fails keeps its results and is neither charged nor counted, its call row left to the receipt sweep (Editor 2026-10-24). A search with results costs 1.8 credits ([observability-metering.md](observability-metering.md)). Answers as not available while Workspace only is on. Retains cited results, which replay from their saved copy |
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
@@ -3959,7 +3990,7 @@ materials are sources.
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref and payload when its Undo fits (see Undo chain). A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
-| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, its head saying a command copies an `[id]` whole (UAT 2026-10-22), a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block and marks the file read for its pending changes. Reads also list pictures, charts, equations and drawn shapes, and `ids` (any format, at most 4) returns each picture as an image and each chart with every point (Pictures and charts, below) |
+| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, its head saying a command copies an `[id]` whole (UAT 2026-10-22), a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block; the turn's first read of the file appends its unindexed changes, as the other reads do (Q526): edits outside the page, slide or range read and the cells outside the range, account chat loading them first. Reads also list pictures, charts, equations and drawn shapes, and `ids` (any format, at most 4) returns each picture as an image and each chart with every point (Pictures and charts, below) |
 | `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX and PPTX: `format_text` and `set_alignment`; DOCX: `set_list`, `insert_table`, `delete_table`; PPTX: `set_shape_text`, `add_slide`, `delete_slide`, `move_slide`, `add_text_box` (Epo 2026-10-20). Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (the engine's table, below; the description lists them) the engine applies the commands before the first that would pass one, and the receipt's notice, in the result text, ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call.`; the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref and payload when its Undo fits, and its result offers Undo only then |
 
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
@@ -4488,7 +4519,12 @@ so a later turn, whose outline no longer lists the moved file, gets
 the chat never widens that choice. Go's plain not found for a source file
 carries the outline check's earlier hint ("No workspace item has the id …:
 it may have been deleted or moved to trash. list_sources shows the current
-ids.", `NO_WORKSPACE_ITEM`) after the error (Q482). A request holds
+ids.", `NO_WORKSPACE_ITEM`) after the error (Q482). Account chat checks the
+item with Go first and refuses one it cannot read with `NO_ACCOUNT_ITEM`,
+which names `list_sources` (its listing tool too, Q523) and
+`search_files_summary` (Q525); Go's not found after that check (the item
+trashed meanwhile) and for a quiz the user names carries the same text, never
+`NO_WORKSPACE_ITEM` (`tools._not_found`, review W1). A request holds
 a pooled connection and its operation's advisory lock only for its receipt
 checks (the stored receipt, then the room's: `known`) and for its
 admission, never through the compute or an Office engine call (Q432): the
@@ -5359,6 +5395,96 @@ useful source facts and file/chunk identifiers but omit old citation numbers.
 Uncompacted evidence can be reused with new answer-local numbers; missing facts
 or evidence known only through a summary require retrieval for a new citation.
 
+### Account chat
+
+The chat at `/chat` works across the user's files instead of one workspace
+(`todo-account-chat.md`; decisions in `human/agentic-retrieval.md`,
+2026-10-27 and 2026-10-28). A conversation with no `workspace_id` is the
+user's account chat, owned by its user alone; its scope and profile stay fixed
+for life so the provider prompt cache holds.
+
+- **Scope (D2).** The user's owned workspaces, member workspaces whose owner is
+  live (not suspended, deletion-pending or deleted), and their own items with
+  no workspace. Link- or visit-only workspaces are out. Go sends the scope's
+  workspaces with each turn as `{id, name, canEdit}` (`AccountScope`,
+  `store/account_scope.go`); the conversation's first message lists them once
+  (saved in `toolEvidence.workspaces` and replayed unchanged), and
+  `list_workspaces` gives the list as it stands. A workspace `create_workspace`
+  made this turn joins the turn's list at once (`tools._add_to_scope`).
+- **Profile.** `profiles/account.py` offers the contract's `account` scope
+  tools: `search_files_summary`, `search_files_content`, `list_workspaces`,
+  `create_workspace`, `resolve_source_change`, `list_sources` and the shared
+  read, write, skill, library and web tools; trash, restore, the trash list,
+  study progress and `search_workspace` are workspace only. `list_sources` is
+  one definition in both scopes (Q523): the profile's copy takes its account
+  description (`LIST_SOURCES`) and an optional `workspace_id`, and its handler
+  lists by workspace there (`tools._list_account`). The tools that create
+  (`create_material`, `create_deck`, `add_questions` for a new quiz,
+  `edit_office_document` for a new file) also take an optional `workspace_id`
+  in the profile's copy of their schema only; `tools.run` moves it to
+  `_workspace_id`, and without one the item lands in No workspace (or
+  `list_sources` lists the files with no workspace). Go's definitions stay
+  byte for byte, and the profile swaps their workspace wording (the made-from
+  line, `search_web`) on its copies (`WORDING`).
+- **`_` arguments.** Keys starting with `_` are the pipeline's own; the agent
+  loop drops any the model sends before adding `_tool_call_id` (review r1 S2).
+- **Search.** `search_files_summary` is one scoped Postgres query over names
+  and the summaries' `search` column (option B); `search_files_content` runs
+  one hybrid search per embedding space over the scope's workspace files and
+  the caller's no-workspace files, labelling each passage with its workspace,
+  chapter and whether the user can edit it (a PDF passage reads view only),
+  and a passage of an item with unindexed edits carries workspace chat's
+  "N edits not indexed yet" line (Q527): each passage's item is loaded
+  through `POST /api/internal/changes`, one call per item at once, as its
+  read would load it, so the read later in the turn appends those same
+  changes once. A load that fails (Go, the collaboration service or the
+  database) leaves that item's passages without the line and its read with
+  the outdated-source notice; the search still answers. One call per item,
+  not one for all: Go refuses a whole `/changes` call when any one item is
+  unreadable. The hints stay off.
+  `list_sources` lists one workspace by chapter, or the newest 100 items with
+  no workspace. Both search tools keep their full result between messages.
+- **Per-call checks.** Every read, inspect, capture, change read and resolve
+  asks Go first: `POST /api/internal/documents/access` (`AccountDocumentAccess`,
+  one query for the items and one for the unreadable files' edit receipts),
+  `POST /api/internal/changes` (an item's unindexed changes with its access
+  checked per item; Office files go to the collaboration service per
+  access-checked workspace, files with no workspace under `""`) and
+  `POST /api/internal/changes/resolve`. Writes go through Go with
+  `scope: "account"`, bound to the actor's own account conversation; a
+  destination must be No workspace or a scope workspace the actor edits.
+  `POST /api/internal/workspaces` is `create_workspace` (a receipt, no Undo,
+  under the combined workspace cap).
+- **Chapters.** `create_chapter` (both scopes, operation `material.create`)
+  appends a chapter named as asked or `Chapter (n)` with the lowest free n, an
+  over-limit name cut and said; `POST /api/internal/chapters` records a
+  receipt and no Undo, and the chapter's id is its operation id under `ch_`
+  (`store.ChatChapterID`, `tools.chapter_id`) so a recovered receipt names it.
+  Account chat's copy takes a required `workspace_id` of a workspace the user
+  edits; workspace chat's adds the chapter to the turn's chapters at once.
+  The editing skill shows, with scope and level, the outline of what it will
+  create: each new file and its chapter (account chat's: its workspace, or No
+  workspace, first). `list_sources` names empty chapters too, so a build
+  reuses them, and the playground creates chapters locally (Epo 2026-10-29).
+- **Refusals in account words.** An unreadable item:
+  "No file you can read has the id …: it may have been deleted, moved to trash
+  or be outside your workspaces. list_sources shows a workspace's current ids;
+  search_files_summary finds a file by name across your workspaces."
+  (`NO_ACCOUNT_ITEM`, one generic not found, E2, naming both ways back, Q525;
+  also added to Go's own not found, review W1). A file this user's
+  account chat edited that now lies out of reach: `ACCOUNT_MOVED_OUT` ("This
+  file was moved where the user can no longer open it …", Q489). A view-only
+  edit: `ACCOUNT_NO_EDIT`, which stops only that edit (E1). Gateway reads pass
+  `account=` so inspect refusals use the same words. Library and web tools
+  while Your files only is on: `ACCOUNT_NOT_AVAILABLE`. A full workspace cap:
+  `WORKSPACE_LIMIT`. A text or Office file with no workspace is inspected and
+  edited like any other (its source session is its payer's alone).
+- **Sources switch.** Account chat's switch reads "Your files only"; off is All
+  sources mode, as in workspace chat.
+- **Voice.** `/api/voice-transcriptions` takes the voice rate class; its
+  vocabulary is the caller's newest files with no workspace or in a workspace
+  they still reach.
+
 ## Generate workflow
 
 `/generate` is **not** an agent loop. Scope is already known, the output shape
@@ -5836,7 +5962,10 @@ parser page fee applies to a file's first parse (the job payload's `parseFee`;
 see observability-metering). One workspace switch, `auto_process` (default true, "Auto process edits"),
 gates every automatic Office reparse, text reindex and note index; off, file
 edits wait for the owner's Process, and notes wait for the owner's Process in
-the Indexing tab (Epo 2026-10-21) or until the switch is on again.
+the Indexing tab (Epo 2026-10-21) or until the switch is on again. A file
+with no workspace has no switch: its owner funds its automatic refresh and it
+always auto-processes (Epo 2026-10-27); its publication re-ingests in the
+owner's scope and checks the candidate's content is the owner's.
 Office effects keep only the changed span plus 40 characters on each side
 (`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair). A
 text file's net tokens count its effects (`effectTokens`): the context (what an
@@ -5948,8 +6077,10 @@ including sources with no index or search hit. Text changes come from
 `source_documents.pending_effects`. Office changes are computed when read (Q405):
 for every scoped Office file with unprocessed edits the load calls
 `POST /api/internal/source-changes` (`{workspaceId, fileIds}`, pipeline
-secret), which Go forwards to the collaboration service. There
-`Sources::office_changes` compares the stored document, with this instance's
+secret), which Go forwards to the collaboration service. An empty
+`workspaceId` reads only the named files with no workspace (account chat, Go
+having checked the actor's access to each), and a workspace's id never reads
+one of those. There `Sources::office_changes` compares the stored document, with this instance's
 live room merged in, against the published baseline (`office_effects`, the
 engine's baseline diff, or XLSX overrides through the room's replica) and
 keeps the result on the file's row (Q423, Epo 2026-10-27):
@@ -5977,7 +6108,8 @@ publication a room's first unsaved edits are read from its first save, 5 to
 same read effects and resolves the image from the same document, unsaved
 edits included. Chat passes a document's
 changes on only once the agent reads that document this turn
-(`inspect_document`, `capture_page`, `read_document`; `PendingSources.read`),
+(`inspect_document`, `inspect_office_document`, `capture_page`,
+`read_document`; `PendingSources.for_read`),
 never every turn or with search results (Epo 2026-10-20). Generation reads
 its whole scope, so it passes on every scoped change, in one message right
 after its system instructions. In chat, a read appends its document's exact
@@ -5987,7 +6119,10 @@ earlier requests stay a cached prefix (providers reuse any shared prefix; a
 message near the top that grew with each read re-billed the whole history).
 An `inspect_document` result is kept in full (`retention: full`), so its
 appended changes stay in the conversation history with it; `read_document`
-and `capture_page` keep none. When the turn changes a source (an edit, a
+and `capture_page` keep none. A read marks its document read only as it
+appends the changes, so a document's search line and hints stop only for
+changes the model was handed (Q526; `inspect_office_document` once only
+marked the file, which hid them). When the turn changes a source (an edit, a
 trash or restore), the pending changes are re-read and the turn keeps what it
 already read, passed on and omitted (`PendingSources.carry`); only the changed
 document passes its new changes on at its next read. `resolve_source_change` stays offered when any captured change has a

@@ -361,43 +361,50 @@ func (s *Store) newWorkspaceEmbedding(ctx context.Context) (workspaceEmbedding, 
 }
 
 func (s *Store) CreateWorkspace(ctx context.Context, userID string, input WorkspaceCreate) (Workspace, error) {
-	if input.IconID != nil && !ValidIconID(*input.IconID) {
-		return Workspace{}, ErrNotFound
-	}
-	id := uid("ws")
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Workspace{}, err
 	}
 	defer tx.Rollback(ctx)
-
-	// Workspaces themselves do not consume storage bytes, so they miss the
-	// gateStorageTx path used by files and materials. Still enforce lifecycle.
-	status, err := s.accountAccess(ctx, tx, userID)
+	id, err := s.createWorkspaceTx(ctx, tx, userID, input)
 	if err != nil {
-		return Workspace{}, err
-	}
-	if err := status.Err(); err != nil {
-		return Workspace{}, err
-	}
-	if _, err := s.gateWorkspacesTx(ctx, tx, userID); err != nil {
-		return Workspace{}, err
-	}
-
-	embed, err := s.newWorkspaceEmbedding(ctx)
-	if err != nil {
-		return Workspace{}, err
-	}
-	if err := s.insertWorkspaceTx(ctx, tx, id, userID, input.Name, input.Tags, embed); err != nil {
-		return Workspace{}, err
-	}
-	if err := setWorkspaceAppearanceTx(ctx, tx, id, input); err != nil {
 		return Workspace{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Workspace{}, err
 	}
 	return s.GetWorkspace(ctx, userID, id)
+}
+
+// createWorkspaceTx inserts one workspace of userID and returns its id.
+func (s *Store) createWorkspaceTx(ctx context.Context, tx pgx.Tx, userID string, input WorkspaceCreate) (string, error) {
+	if input.IconID != nil && !ValidIconID(*input.IconID) {
+		return "", ErrNotFound
+	}
+	// Workspaces themselves do not consume storage bytes, so they miss the
+	// gateStorageTx path used by files and materials. Still enforce lifecycle.
+	status, err := s.accountAccess(ctx, tx, userID)
+	if err != nil {
+		return "", err
+	}
+	if err := status.Err(); err != nil {
+		return "", err
+	}
+	if _, err := s.gateWorkspacesTx(ctx, tx, userID); err != nil {
+		return "", err
+	}
+	embed, err := s.newWorkspaceEmbedding(ctx)
+	if err != nil {
+		return "", err
+	}
+	id := uid("ws")
+	if err := s.insertWorkspaceTx(ctx, tx, id, userID, input.Name, input.Tags, embed); err != nil {
+		return "", err
+	}
+	if err := setWorkspaceAppearanceTx(ctx, tx, id, input); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 // setWorkspaceAppearanceTx applies a new workspace's optional icon,
@@ -802,6 +809,18 @@ func (s *Store) AddChapter(ctx context.Context, wsID, actorID, name string) (Cha
 	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID); err != nil {
 		return Chapter{}, err
 	}
+	ch, err := addChapterTx(ctx, tx, wsID, id, name)
+	if err != nil {
+		return Chapter{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Chapter{}, err
+	}
+	return ch, nil
+}
+
+// addChapterTx appends a chapter; the caller holds the workspace's editor lock.
+func addChapterTx(ctx context.Context, tx pgx.Tx, wsID, id, name string) (Chapter, error) {
 	var pos int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM chapters WHERE workspace_id=$1`, wsID).Scan(&pos); err != nil {
 		return Chapter{}, err
@@ -810,9 +829,6 @@ func (s *Store) AddChapter(ctx context.Context, wsID, actorID, name string) (Cha
 		return Chapter{}, ErrTooManyChapters
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO chapters (id, workspace_id, name, position) VALUES ($1,$2,$3,$4)`, id, wsID, name, pos); err != nil {
-		return Chapter{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return Chapter{}, err
 	}
 	return Chapter{ID: id, WorkspaceID: wsID, Name: name, Order: pos, FileIDs: []string{}}, nil
@@ -1549,10 +1565,11 @@ func (s *Store) ReplayAgentOperation(ctx context.Context, id, requestHash string
 }
 
 // AssistantMessageContext resolves the trusted identity behind a chat tool
-// callback: who owns the conversation and which workspace it belongs to. A
-// missing message (deleted turn or conversation) is ErrNotFound.
+// callback: who owns the conversation and which workspace it belongs to (""
+// for an account conversation). A missing message (deleted turn or
+// conversation) is ErrNotFound.
 func (s *Store) AssistantMessageContext(ctx context.Context, messageID string) (userID, workspaceID, conversationID string, err error) {
-	err = s.pool.QueryRow(ctx, `SELECT c.user_id, c.workspace_id, c.id
+	err = s.pool.QueryRow(ctx, `SELECT c.user_id, COALESCE(c.workspace_id, ''), c.id
 		FROM messages m JOIN conversations c ON c.id=m.conversation_id
 		WHERE m.id=$1 AND m.role='assistant'`, messageID).Scan(&userID, &workspaceID, &conversationID)
 	if isNoRows(err) {

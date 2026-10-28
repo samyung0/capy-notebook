@@ -86,6 +86,16 @@ jobs:
     with:
       revision: ${{ needs.validate_candidate.outputs.revision }}
 
+  # Created and edited items reach the agents' read paths (Q531).
+  agent_visibility:
+    needs: validate_candidate
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/agent-visibility.yml
+    with:
+      revision: ${{ needs.validate_candidate.outputs.revision }}
+
   # Code review and agent scans run locally and are not a promotion gate.
   # Production runs the image digests UAT ran, not whatever the tags name now.
   deploy_production:
@@ -94,6 +104,7 @@ jobs:
       - restage_uat
       - uat_quality_gate
       - editor_perf
+      - agent_visibility
     permissions:
       contents: read
       packages: write

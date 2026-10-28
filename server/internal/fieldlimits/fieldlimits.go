@@ -17,10 +17,13 @@ import (
 const (
 	WorkspaceName        = 80
 	WorkspaceDescription = 500
-	ChapterName          = 60
-	StudyPlanName        = 60
-	FileName             = 120
-	MaterialTitle        = FileName
+	// WorkspaceTags is a workspace's tag count (CreateWorkspaceReq's
+	// maxItems), a count rather than characters.
+	WorkspaceTags = 5
+	ChapterName   = 60
+	StudyPlanName = 60
+	FileName      = 120
+	MaterialTitle = FileName
 	// An agent-made material's or file's made-from line: at most
 	// MaterialSources entries of at most MaterialSource characters.
 	MaterialSources   = 20

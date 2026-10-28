@@ -11,11 +11,12 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
-// Conversation is a workspace-scoped chat thread. Grounding for its messages
-// runs against WorkspaceID's chunks in the retrieval store.
+// Conversation is a chat thread: a workspace's, grounded in WorkspaceID's
+// chunks, or with WorkspaceID "" its user's account chat across their own
+// files (Epo 2026-10-27). It keeps its scope for life.
 type Conversation struct {
 	ID          string    `json:"id"`
-	WorkspaceID string    `json:"workspaceId"`
+	WorkspaceID string    `json:"workspaceId" doc:"Empty for an account conversation"`
 	Title       string    `json:"title"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
@@ -25,7 +26,7 @@ type Conversation struct {
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 }
 
-const conversationCols = `id, workspace_id, COALESCE(title,''), created_at, updated_at, pinned_at, archived_at`
+const conversationCols = `id, COALESCE(workspace_id,''), COALESCE(title,''), created_at, updated_at, pinned_at, archived_at`
 
 func scanConversation(row pgx.Row) (Conversation, error) {
 	var c Conversation
@@ -83,6 +84,11 @@ type Citation struct {
 	URL       string   `json:"url,omitempty"`
 	SiteName  string   `json:"siteName,omitempty"`
 	Published string   `json:"published,omitempty"`
+	// WorkspaceID and WorkspaceName say where an account chat's source lives
+	// (Epo 2026-10-27). WorkspaceID is absent in workspace chat and "" for a
+	// file with no workspace, so it is a pointer to keep that "".
+	WorkspaceID   *string `json:"workspaceId,omitempty"`
+	WorkspaceName string  `json:"workspaceName,omitempty"`
 }
 
 // ActivityBlock is one completed narration or tool-display item persisted on
@@ -198,24 +204,32 @@ type msgMetadata struct {
 
 /* --------------------------------------------------------- conversations */
 
-// ListConversations returns a workspace's conversations for a user: the live
-// list (pinned first, then newest activity) or, with archived, the archived
-// ones, most recently archived first. Ownership is enforced via the user_id +
-// workspace_id pair. Chat is open to any effective role (membership raised by
-// link/public privacy), so shared viewers get their own private threads.
+// ListConversations returns a user's conversations in a workspace, or with
+// wsID "" their account conversations: the live list (pinned first, then
+// newest activity) or, with archived, the archived ones, most recently
+// archived first. Ownership is enforced via user_id. Workspace chat is open to
+// any effective role (membership raised by link/public privacy), so shared
+// viewers get their own private threads.
 func (s *Store) ListConversations(ctx context.Context, userID, wsID string, archived bool) ([]Conversation, error) {
-	if _, err := s.WorkspaceEffectiveRole(ctx, userID, wsID); err != nil {
-		return nil, err
+	if userID == "" {
+		return nil, ErrNotFound
+	}
+	where, args := `user_id=$1 AND workspace_id IS NULL`, []any{userID}
+	if wsID != "" {
+		if _, err := s.WorkspaceEffectiveRole(ctx, userID, wsID); err != nil {
+			return nil, err
+		}
+		where, args = `user_id=$1 AND workspace_id=$2`, []any{userID, wsID}
 	}
 	query := `SELECT ` + conversationCols + ` FROM conversations
-		WHERE user_id=$1 AND workspace_id=$2 AND archived_at IS NULL
+		WHERE ` + where + ` AND archived_at IS NULL
 		ORDER BY pinned_at DESC NULLS LAST, updated_at DESC`
 	if archived {
 		query = `SELECT ` + conversationCols + ` FROM conversations
-			WHERE user_id=$1 AND workspace_id=$2 AND archived_at IS NOT NULL
+			WHERE ` + where + ` AND archived_at IS NOT NULL
 			ORDER BY archived_at DESC`
 	}
-	rows, err := s.pool.Query(ctx, query, userID, wsID)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +246,7 @@ func (s *Store) ListConversations(ctx context.Context, userID, wsID string, arch
 }
 
 // CreateConversation opens a new thread in a workspace where the user holds
-// any effective role.
+// any effective role, or with wsID "" an account conversation of theirs.
 // The model is resolved per assistant turn, not snapshotted here: Settings
 // changes apply to the next message in an existing thread.
 func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title string) (Conversation, error) {
@@ -241,13 +255,18 @@ func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title stri
 		return Conversation{}, err
 	}
 	defer tx.Rollback(ctx)
-	if err := s.lockWorkspaceChatTx(ctx, tx, wsID, userID); err != nil {
-		return Conversation{}, err
+	if userID == "" {
+		return Conversation{}, ErrNotFound
+	}
+	if wsID != "" {
+		if err := s.lockWorkspaceChatTx(ctx, tx, wsID, userID); err != nil {
+			return Conversation{}, err
+		}
 	}
 	id := uid("conv")
 	c, err := scanConversation(tx.QueryRow(ctx,
 		`INSERT INTO conversations (id, user_id, workspace_id, title)
-		   VALUES ($1,$2,$3,NULLIF($4,''))
+		   VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''))
 		   RETURNING `+conversationCols,
 		id, userID, wsID, title))
 	if err != nil {
@@ -261,7 +280,8 @@ func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title stri
 
 // GetConversation loads one conversation the user owns (used to authorize
 // streaming/history requests). Returns ErrNotFound when absent, not owned, or
-// when the user no longer holds any effective role in the workspace.
+// when the user no longer holds any effective role in its workspace; an
+// account conversation is its owner's alone.
 func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Conversation, error) {
 	c, err := scanConversation(s.pool.QueryRow(ctx,
 		`SELECT `+conversationCols+` FROM conversations WHERE id=$1 AND user_id=$2`, convID, userID))
@@ -271,10 +291,31 @@ func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Con
 	if err != nil {
 		return Conversation{}, err
 	}
+	if c.WorkspaceID == "" {
+		return c, nil
+	}
 	if _, err := s.WorkspaceEffectiveRole(ctx, userID, c.WorkspaceID); err != nil {
 		return Conversation{}, err
 	}
 	return c, nil
+}
+
+// lockConversationTx admits a write to one of the user's conversations: a
+// workspace one through lockWorkspaceChatTx, an account one by ownership
+// alone.
+func (s *Store) lockConversationTx(ctx context.Context, tx pgx.Tx, userID, convID string) error {
+	var workspaceID *string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM conversations
+		WHERE id=$1 AND user_id=$2`, convID, userID).Scan(&workspaceID); err != nil {
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if workspaceID == nil {
+		return nil
+	}
+	return s.lockWorkspaceChatTx(ctx, tx, *workspaceID, userID)
 }
 
 // lockWorkspaceChatTx is the chat counterpart of lockWorkspaceEditorMutationTx:
@@ -309,15 +350,7 @@ func (s *Store) DeleteConversation(ctx context.Context, userID, convID string) e
 		return err
 	}
 	defer tx.Rollback(ctx)
-	var workspaceID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM conversations
-		WHERE id=$1 AND user_id=$2`, convID, userID).Scan(&workspaceID); err != nil {
-		if isNoRows(err) {
-			return ErrNotFound
-		}
-		return err
-	}
-	if err := s.lockWorkspaceChatTx(ctx, tx, workspaceID, userID); err != nil {
+	if err := s.lockConversationTx(ctx, tx, userID, convID); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx,
@@ -339,15 +372,7 @@ func (s *Store) RenameConversation(ctx context.Context, userID, convID, title st
 		return err
 	}
 	defer tx.Rollback(ctx)
-	var workspaceID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM conversations
-		WHERE id=$1 AND user_id=$2`, convID, userID).Scan(&workspaceID); err != nil {
-		if isNoRows(err) {
-			return ErrNotFound
-		}
-		return err
-	}
-	if err := s.lockWorkspaceChatTx(ctx, tx, workspaceID, userID); err != nil {
+	if err := s.lockConversationTx(ctx, tx, userID, convID); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx,
@@ -378,15 +403,7 @@ func (s *Store) UpdateConversation(ctx context.Context, userID, convID string, u
 		return Conversation{}, err
 	}
 	defer tx.Rollback(ctx)
-	var workspaceID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM conversations
-		WHERE id=$1 AND user_id=$2`, convID, userID).Scan(&workspaceID); err != nil {
-		if isNoRows(err) {
-			return Conversation{}, ErrNotFound
-		}
-		return Conversation{}, err
-	}
-	if err := s.lockWorkspaceChatTx(ctx, tx, workspaceID, userID); err != nil {
+	if err := s.lockConversationTx(ctx, tx, userID, convID); err != nil {
 		return Conversation{}, err
 	}
 	c, err := scanConversation(tx.QueryRow(ctx,
@@ -414,7 +431,7 @@ func (s *Store) UpdateConversation(ctx context.Context, userID, convID string, u
 func (s *Store) UnarchiveConversations(ctx context.Context, userID, wsID string) error {
 	return s.archivedConversationsTx(ctx, userID, wsID,
 		`UPDATE conversations SET archived_at=NULL
-		  WHERE user_id=$1 AND workspace_id=$2 AND archived_at IS NOT NULL`)
+		  WHERE user_id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($2,'') AND archived_at IS NOT NULL`)
 }
 
 // DeleteArchivedConversations deletes every archived thread of the user's in a
@@ -422,7 +439,7 @@ func (s *Store) UnarchiveConversations(ctx context.Context, userID, wsID string)
 func (s *Store) DeleteArchivedConversations(ctx context.Context, userID, wsID string) error {
 	return s.archivedConversationsTx(ctx, userID, wsID,
 		`DELETE FROM conversations
-		  WHERE user_id=$1 AND workspace_id=$2 AND archived_at IS NOT NULL`)
+		  WHERE user_id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($2,'') AND archived_at IS NOT NULL`)
 }
 
 func (s *Store) archivedConversationsTx(ctx context.Context, userID, wsID, stmt string) error {
@@ -431,8 +448,11 @@ func (s *Store) archivedConversationsTx(ctx context.Context, userID, wsID, stmt 
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if err := s.lockWorkspaceChatTx(ctx, tx, wsID, userID); err != nil {
-		return err
+	// No workspace: the caller's own account chat, which needs no lock.
+	if wsID != "" {
+		if err := s.lockWorkspaceChatTx(ctx, tx, wsID, userID); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(ctx, stmt, userID, wsID); err != nil {
 		return err
@@ -496,15 +516,7 @@ func (s *Store) AddUserMessage(ctx context.Context, userID, convID, content stri
 		return Message{}, err
 	}
 	defer tx.Rollback(ctx)
-	var workspaceID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM conversations
-		WHERE id=$1 AND user_id=$2`, convID, userID).Scan(&workspaceID); err != nil {
-		if isNoRows(err) {
-			return Message{}, ErrNotFound
-		}
-		return Message{}, err
-	}
-	if err := s.lockWorkspaceChatTx(ctx, tx, workspaceID, userID); err != nil {
+	if err := s.lockConversationTx(ctx, tx, userID, convID); err != nil {
 		return Message{}, err
 	}
 	id := uid("m")
@@ -538,15 +550,7 @@ func (s *Store) StartAssistantMessage(ctx context.Context, userID, convID string
 		return Message{}, err
 	}
 	defer tx.Rollback(ctx)
-	var workspaceID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM conversations
-		WHERE id=$1 AND user_id=$2`, convID, userID).Scan(&workspaceID); err != nil {
-		if isNoRows(err) {
-			return Message{}, ErrNotFound
-		}
-		return Message{}, err
-	}
-	if err := s.lockWorkspaceChatTx(ctx, tx, workspaceID, userID); err != nil {
+	if err := s.lockConversationTx(ctx, tx, userID, convID); err != nil {
 		return Message{}, err
 	}
 	id := uid("m")
@@ -768,7 +772,17 @@ func (s *Store) ChatOpenResource(ctx context.Context, wsID, kind, id string) (ti
 // VoiceContext is what voice input sends ahead of a recording so course
 // vocabulary comes out right: the workspace's title and its newest sources'
 // names, at most limit of them.
-func (s *Store) VoiceContext(ctx context.Context, wsID string, limit int) (title string, sources []string, err error) {
+func (s *Store) VoiceContext(ctx context.Context, userID, wsID string, limit int) (title string, sources []string, err error) {
+	// Account chat has no workspace to name: its context is the caller's own
+	// newest files with no workspace or in a workspace they still reach (a
+	// workspace they left keeps their uploads, review r1 F4).
+	if wsID == "" {
+		err = s.pool.QueryRow(ctx, `SELECT ARRAY(
+			SELECT f.name FROM files f WHERE f.user_id = $1 AND f.trashed_at IS NULL
+			  AND (f.workspace_id IS NULL OR f.workspace_id IN (`+memberWorkspacesSQL("$1")+`))
+			ORDER BY f.added_at DESC LIMIT $2)`, userID, limit).Scan(&sources)
+		return "", sources, err
+	}
 	err = s.pool.QueryRow(ctx, `
 		SELECT w.name, ARRAY(
 		  SELECT f.name FROM files f

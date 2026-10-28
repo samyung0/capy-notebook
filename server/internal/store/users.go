@@ -59,14 +59,12 @@ func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	row := s.pool.QueryRow(ctx, `SELECT id, name, COALESCE(email,''), COALESCE('/icons/' || NULLIF(avatar_icon_id,'') || '.svg', avatar_url,''), COALESCE(avatar_icon_id,''),
 		COALESCE(class_label,''), streak, locale, study_preferences, chat_steps, chat_send_key,
 		customization, chat_model_provider_slug, chat_model_slug,
-		editor_model_provider_slug, editor_model_slug,
-		plan_tier, subscription_status
+		note_ai_enabled, plan_tier, subscription_status
 		FROM users WHERE id=$1`, userID)
 	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.AvatarIconID, &u.ClassLabel, &u.Streak,
 		&u.Locale, &u.StudyPreferences, &u.ChatSteps, &u.ChatSendKey,
 		&u.Customization, &u.ChatModel.ProviderSlug, &u.ChatModel.ModelSlug,
-		&u.EditorModel.ProviderSlug, &u.EditorModel.ModelSlug,
-		&u.PlanTier, &u.SubscriptionStatus)
+		&u.NoteAIEnabled, &u.PlanTier, &u.SubscriptionStatus)
 	if isNoRows(err) {
 		return u, ErrNotFound
 	}
@@ -136,35 +134,23 @@ func (s *Store) SetLocale(ctx context.Context, userID, locale string) error {
 	return tx.Commit(ctx)
 }
 
-// ModelPrefsPatch updates one or more slot preferences. Nil fields stay.
+// ModelPrefsPatch updates one or more Settings → LLM preferences. Nil fields stay.
 type ModelPrefsPatch struct {
-	ChatModel    *models.Ref
-	EditorModel  *models.Ref
-	ChatThinking *string
+	ChatModel     *models.Ref
+	ChatThinking  *string
+	NoteAIEnabled *bool
 }
 
-// SetModelPrefs stores the user's chat/editor preference. Omitted
-// fields are left unchanged so a picker on one slot cannot wipe another.
+// SetModelPrefs stores the user's chat model and note AI switch. Omitted
+// fields are left unchanged so one control cannot wipe another.
 // Thinking is stored per (user, model, slot): switching models must
 // not reuse another model's level. Empty model refs are rejected: every
 // account always has a concrete provider/model pair, populated from the registry
 // default at insert. Model refs are validated against enabled configs that
 // advertise the slot.
 func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPrefsPatch) error {
-	prefs := []struct {
-		ref  *models.Ref
-		slot string
-	}{
-		{patch.ChatModel, models.SlotChat},
-		{patch.EditorModel, models.SlotEditor},
-	}
-	for _, pref := range prefs {
-		if pref.ref == nil {
-			continue
-		}
-		if pref.ref.Zero() {
-			return ErrModelRefRequired
-		}
+	if patch.ChatModel != nil && patch.ChatModel.Zero() {
+		return ErrModelRefRequired
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -175,47 +161,32 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		return err
 	}
 
-	var current UserLLMPrefs
+	var chatModel models.Ref
 	if err := tx.QueryRow(ctx, `
-		SELECT chat_model_provider_slug, chat_model_slug,
-		       editor_model_provider_slug, editor_model_slug
+		SELECT chat_model_provider_slug, chat_model_slug
 		  FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(
-		&current.ChatModel.ProviderSlug, &current.ChatModel.ModelSlug,
-		&current.EditorModel.ProviderSlug, &current.EditorModel.ModelSlug,
+		&chatModel.ProviderSlug, &chatModel.ModelSlug,
 	); err != nil {
 		if isNoRows(err) {
 			return ErrNotFound
 		}
 		return err
 	}
-	for _, pref := range prefs {
-		if pref.ref == nil {
-			continue
-		}
-		if err := assertModelRef(ctx, tx, *pref.ref, pref.slot); err != nil {
+	if patch.ChatModel != nil {
+		if err := assertModelRef(ctx, tx, *patch.ChatModel, models.SlotChat); err != nil {
 			return err
 		}
-	}
-	deref := func(p *models.Ref) models.Ref {
-		if p == nil {
-			return models.Ref{}
-		}
-		return *p
+		chatModel = *patch.ChatModel
 	}
 	if _, err := tx.Exec(ctx, `UPDATE users SET
 		chat_model_provider_slug = CASE WHEN $2 THEN $3 ELSE chat_model_provider_slug END,
 		chat_model_slug = CASE WHEN $2 THEN $4 ELSE chat_model_slug END,
-		editor_model_provider_slug = CASE WHEN $5 THEN $6 ELSE editor_model_provider_slug END,
-		editor_model_slug = CASE WHEN $5 THEN $7 ELSE editor_model_slug END,
+		note_ai_enabled = COALESCE($5, note_ai_enabled),
 		updated_at = now()
 		WHERE id=$1`, userID,
-		patch.ChatModel != nil, deref(patch.ChatModel).ProviderSlug, deref(patch.ChatModel).ModelSlug,
-		patch.EditorModel != nil, deref(patch.EditorModel).ProviderSlug, deref(patch.EditorModel).ModelSlug); err != nil {
+		patch.ChatModel != nil, chatModel.ProviderSlug, chatModel.ModelSlug,
+		patch.NoteAIEnabled); err != nil {
 		return err
-	}
-	chatModel := current.ChatModel
-	if patch.ChatModel != nil {
-		chatModel = *patch.ChatModel
 	}
 	if err := upsertModelThinking(ctx, tx, userID, chatModel, models.SlotChat, patch.ChatThinking); err != nil {
 		return err
@@ -287,9 +258,8 @@ func assertModelRef(ctx context.Context, q rowQueryer, ref models.Ref, slot stri
 }
 
 type UserLLMPrefs struct {
-	ChatModel   models.Ref
-	EditorModel models.Ref
-	thinking    map[modelThinkingRef]string
+	ChatModel models.Ref
+	thinking  map[modelThinkingRef]string
 }
 
 type modelThinkingRef struct {
@@ -300,11 +270,9 @@ type modelThinkingRef struct {
 func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, error) {
 	var p UserLLMPrefs
 	err := s.pool.QueryRow(ctx, `
-		SELECT chat_model_provider_slug, chat_model_slug,
-		       editor_model_provider_slug, editor_model_slug
+		SELECT chat_model_provider_slug, chat_model_slug
 		  FROM users WHERE id=$1`, userID).Scan(
 		&p.ChatModel.ProviderSlug, &p.ChatModel.ModelSlug,
-		&p.EditorModel.ProviderSlug, &p.EditorModel.ModelSlug,
 	)
 	if isNoRows(err) {
 		return p, ErrNotFound
@@ -331,12 +299,19 @@ func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, 
 	return p, rows.Err()
 }
 
+// NoteAIEnabled reports the user's note AI (ghost text) switch.
+func (s *Store) NoteAIEnabled(ctx context.Context, userID string) (bool, error) {
+	var enabled bool
+	err := s.pool.QueryRow(ctx, `SELECT note_ai_enabled FROM users WHERE id=$1`, userID).Scan(&enabled)
+	if isNoRows(err) {
+		return false, ErrNotFound
+	}
+	return enabled, err
+}
+
 func (p UserLLMPrefs) Model(slot string) models.Ref {
-	switch slot {
-	case models.SlotChat:
+	if slot == models.SlotChat {
 		return p.ChatModel
-	case models.SlotEditor:
-		return p.EditorModel
 	}
 	return models.Ref{}
 }
@@ -349,24 +324,20 @@ func (p UserLLMPrefs) Thinking(slot string) string {
 	return p.thinking[modelThinkingRef{Ref: ref, Slot: slot}]
 }
 
-// accountModelPrefs is the set written onto a brand-new user row. The registry
-// slot default is the only source of truth.
-func (s *Store) accountModelPrefs(ctx context.Context) (chat, editor models.Ref, err error) {
+// accountChatModel is the chat model written onto a brand-new user row. The
+// registry slot default is the only source of truth.
+func (s *Store) accountChatModel() (models.Ref, error) {
 	if s.registry == nil {
-		return models.Ref{}, models.Ref{}, ErrModelUnavailable
+		return models.Ref{}, ErrModelUnavailable
 	}
-	refs := make([]models.Ref, 0, 2)
-	for _, slot := range []string{models.SlotChat, models.SlotEditor} {
-		pin, err := s.registry.DefaultPin(slot)
-		if err != nil {
-			return models.Ref{}, models.Ref{}, err
-		}
-		if pin.Ref.Zero() {
-			return models.Ref{}, models.Ref{}, ErrModelUnavailable
-		}
-		refs = append(refs, pin.Ref)
+	pin, err := s.registry.DefaultPin(models.SlotChat)
+	if err != nil {
+		return models.Ref{}, err
 	}
-	return refs[0], refs[1], nil
+	if pin.Ref.Zero() {
+		return models.Ref{}, ErrModelUnavailable
+	}
+	return pin.Ref, nil
 }
 
 // UpsertUserFromClerk inserts or refreshes a user. The Clerk name seeds the
@@ -461,20 +432,18 @@ func (s *Store) upsertUserFromClerk(ctx context.Context, id, name, email, avatar
 			return false, errClerkEmailHeld
 		}
 
-		chatModel, editorModel, err := s.accountModelPrefs(ctx)
+		chatModel, err := s.accountChatModel()
 		if err != nil {
 			return false, err
 		}
 		err = s.pool.QueryRow(ctx, `INSERT INTO users
 			(id, name, email, avatar_url, avatar_icon_id,
-			 chat_model_provider_slug, chat_model_slug,
-			 editor_model_provider_slug, editor_model_slug)
-			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$9,$5,$6,$7,$8)
+			 chat_model_provider_slug, chat_model_slug)
+			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$7,$5,$6)
 		ON CONFLICT DO NOTHING
 		RETURNING starter_workspace_provisioned_at IS NULL`,
 			id, name, email, avatarURL,
-			chatModel.ProviderSlug, chatModel.ModelSlug,
-			editorModel.ProviderSlug, editorModel.ModelSlug, defaultIcon).Scan(&needsDefaultWorkspace)
+			chatModel.ProviderSlug, chatModel.ModelSlug, defaultIcon).Scan(&needsDefaultWorkspace)
 		if !isNoRows(err) {
 			return needsDefaultWorkspace, err
 		}

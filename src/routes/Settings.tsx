@@ -1,6 +1,11 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useNotificationPrefs, useSetNotificationPrefs } from '@/api/hooks';
+import {
+  useMe,
+  useNotificationPrefs,
+  useSetModelPrefs,
+  useSetNotificationPrefs,
+} from '@/api/hooks';
 import { PageHeader, PagePanel } from '@/components/app/layout';
 import { STYLE_LABELS, StyleIcon } from '@/components/app/ThemeDrawer';
 import {
@@ -22,11 +27,11 @@ import { Tabs } from '@/components/ui/Tabs';
 import { AccountTab } from '@/features/settings/AccountTab';
 import { ChatSection } from '@/features/settings/ChatSection';
 import { DeleteAccountDialog } from '@/features/settings/DeleteAccountDialog';
+import { EditorSection } from '@/features/settings/EditorSection';
 import { LanguageRow } from '@/features/settings/LanguageRow';
 import { ModelPicker } from '@/features/settings/ModelPicker';
 import { StudyPreferencesSection } from '@/features/settings/StudyPreferencesSection';
 import { m } from '@/i18n';
-import { features } from '@/lib/features';
 import type { SettingsTab } from '@/lib/tabSearch';
 import { STYLES, THEMES, themeSwatch, useTheme } from '@/theme/theme';
 
@@ -89,6 +94,7 @@ function CustomizationsTab() {
           </Select>
         </SettingRow>
         <ChatSection />
+        <EditorSection />
       </div>
     </>
   );
@@ -137,6 +143,8 @@ function NotificationsTab() {
 }
 
 function LlmTab() {
+  const { data: me } = useMe();
+  const { mutate: setPrefs } = useSetModelPrefs();
   return (
     <>
       <TabHeader title={m.settings_tab_llm()} />
@@ -147,14 +155,17 @@ function LlmTab() {
         >
           <ModelPicker slot="chat" />
         </SettingRow>
-        {features.editorAi && (
-          <SettingRow
-            hint={m.settings_llm_editor_hint()}
-            title={m.settings_llm_editor()}
-          >
-            <ModelPicker slot="editor" />
-          </SettingRow>
-        )}
+        <SettingRow
+          hint={m.settings_llm_note_ai_hint()}
+          title={m.settings_llm_note_ai()}
+        >
+          <Switch
+            aria-label={m.settings_llm_note_ai()}
+            checked={me?.noteAiEnabled ?? false}
+            disabled={!me}
+            onCheckedChange={(noteAiEnabled) => setPrefs({ noteAiEnabled })}
+          />
+        </SettingRow>
       </div>
     </>
   );

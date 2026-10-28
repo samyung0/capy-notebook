@@ -247,8 +247,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			ON workspaces TO %s;
 		GRANT SELECT (
 			id, email, locale,
-			chat_model_provider_slug, chat_model_slug,
-			editor_model_provider_slug, editor_model_slug
+			chat_model_provider_slug, chat_model_slug
 		) ON users TO %s;
 		GRANT SELECT (
 			user_id, email_workspace_invite, email_billing
@@ -269,7 +268,6 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			ON model_registry_state TO %s;
 		GRANT UPDATE (
 			chat_model_provider_slug, chat_model_slug,
-			editor_model_provider_slug, editor_model_slug,
 			updated_at
 		) ON users TO %s;
 		GRANT INSERT (

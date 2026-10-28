@@ -374,7 +374,7 @@ async def embed_copied_chunks(
 # A descriptor reads at most this many estimated tokens of the content (see
 # ``descriptor_excerpt``): the outline, about half the budget of opening
 # chunks, and openings of evenly spaced later chunks.
-DESCRIPTOR_INPUT_TOKENS = 8000
+DESCRIPTOR_INPUT_TOKENS = 4000
 _OUTLINE_TOKENS = 1200
 _OPENING_TOKENS = 150
 

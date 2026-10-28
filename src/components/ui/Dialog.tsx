@@ -449,7 +449,8 @@ function SimpleDialog({
         onOpenAutoFocus={onOpenAutoFocus}
         onPointerDownOutside={onPointerDownOutside}
         showCloseButton={showCloseButton && !pending}
-        style={width ? { maxWidth: width } : undefined}
+        // Phones open full screen: a width would pin the page to the left.
+        style={width && !phone ? { maxWidth: width } : undefined}
       >
         {onSubmit ? (
           <form

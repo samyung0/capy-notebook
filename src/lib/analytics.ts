@@ -213,18 +213,18 @@ export type AnalyticsEvent =
     }
   | {
       name: 'chat_turn_sent';
-      props: { workspaceId: string; hasScope: boolean };
+      /** `workspaceId` null: the account chat. */
+      props: { workspaceId: string | null; hasScope: boolean };
     }
   | {
       name: 'chat_turn_completed';
-      props: { workspaceId: string; status: string; citations: number };
+      props: { workspaceId: string | null; status: string; citations: number };
     }
   | { name: 'material_generated'; props: { kind: string; workspaceId: string } }
   | {
       name: 'material_generate_failed';
       props: { kind: string; reason: string };
     }
-  | { name: 'editor_ai_used'; props: { mode: 'command' | 'continue' } }
   | { name: 'quiz_attempt_finished'; props: { scoreBucket: string } }
   | { name: 'share_link_created'; props: { visibility: string } }
   | { name: 'collaborator_invited'; props: { role: string } }
@@ -252,7 +252,6 @@ const _analyticsEventNames: Record<AnalyticsEvent['name'], true> = {
   chat_turn_completed: true,
   chat_turn_sent: true,
   collaborator_invited: true,
-  editor_ai_used: true,
   flashcards_study_finished: true,
   invite_accepted: true,
   item_cloned: true,

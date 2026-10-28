@@ -35,7 +35,7 @@ export interface VoiceInput {
  * hidden (`shown` false) or goes; a transcription under way still lands.
  */
 export function useVoiceInput(
-  workspaceId: string,
+  workspaceId: string | null,
   onText: (text: string) => void,
   shown: boolean
 ): VoiceInput {

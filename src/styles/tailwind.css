@@ -593,7 +593,7 @@ math-field {
 
   /* Co-editors' selections and carets (RemoteCursors.tsx). A caret is an
      empty, zero-width leaf: its bar is a pseudo-element, so it adds no DOM to
-     the text. */
+     the text. Its colour is --peer-<n> (:root below). */
   .note-editor [data-remote-cursor] {
     background-color: color-mix(
       in srgb,
@@ -770,6 +770,32 @@ math-field {
   syntax: "<color>";
   inherits: true;
   initial-value: transparent;
+}
+:root {
+  /* Co-editors' colours: --peer-<n>, n the room presence's person number
+     modulo 8 (Epo 2026-10-28), for carets, pointers and block selections
+     (RemoteCursors.tsx); the cursors design's palette, a shade per theme,
+     and the text on it (capy-harness 2026-10-19-security-split/cursors-design/SPEC.md). */
+  --peer-0: #6e56cf;
+  --peer-1: #1f7a4d;
+  --peer-2: #2563c4;
+  --peer-3: #c2364a;
+  --peer-4: #b5541b;
+  --peer-5: #0e7470;
+  --peer-6: #b0357d;
+  --peer-7: #8f6400;
+  --peer-fg: #ffffff;
+}
+.dark {
+  --peer-0: #a594f0;
+  --peer-1: #5fcf8f;
+  --peer-2: #7aa8f5;
+  --peer-3: #f2848f;
+  --peer-4: #f39a63;
+  --peer-5: #4fc6bd;
+  --peer-6: #ee8ac4;
+  --peer-7: #e0b34a;
+  --peer-fg: #11111b;
 }
 :root {
   --page-frame-wash: transparent;

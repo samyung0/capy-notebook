@@ -61,9 +61,14 @@ export async function send(page: Page, text: string) {
   return frames;
 }
 
-/** Sends a scripted turn; every call must succeed. Returns each call's
- * tool_end frame in script order, and the frames. */
-export async function scripted(page: Page, steps: (Call[] | string)[]) {
+/** Sends a scripted turn; every call must succeed, or end as `outcomes`
+ * names by its index among the calls. Returns each call's tool_end frame in
+ * script order, and the frames. */
+export async function scripted(
+  page: Page,
+  steps: (Call[] | string)[],
+  outcomes: Record<number, string> = {}
+) {
   const frames = await send(
     page,
     `[uat-scripted-tools]${JSON.stringify({ steps })}`
@@ -83,7 +88,7 @@ export async function scripted(page: Page, steps: (Call[] | string)[]) {
   for (const [i, end] of ends.entries())
     assert.equal(
       end?.outcome,
-      'succeeded',
+      outcomes[i] ?? 'succeeded',
       `${calls[i].name}: ${JSON.stringify(end?.error)}`
     );
   return { ends, frames };

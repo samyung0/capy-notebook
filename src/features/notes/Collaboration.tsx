@@ -43,6 +43,7 @@ import { Textarea } from '@/components/ui/TextArea';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { getLocale, m } from '@/i18n';
+import { base64ToBytes, bytesToBase64 } from '@/lib/base64';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { textLength } from '@/lib/textLength';
@@ -102,17 +103,6 @@ function discussionsByBlock(discussions: MaterialDiscussion[]) {
     else index.set(discussion.blockId, [discussion]);
   }
   return index;
-}
-
-function bytesToBase64(value: Uint8Array): string {
-  let binary = '';
-  for (const byte of value) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 export function resolveCommentDecorations(

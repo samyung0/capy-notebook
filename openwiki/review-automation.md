@@ -9,7 +9,9 @@ tags: [security, review, uat, strix, codex, playwright, ci]
 
 Deterministic checks run in GitHub Actions. Code review and agent-driven scans
 run on the developer's machine and are never a promotion gate. Only
-`audit.yml` has a schedule (daily), and nothing deploys on push.
+`audit.yml` (daily) and `agent-visibility.yml` (nightly, unless only paths
+the lane never reads changed since its last green run) have a schedule, and
+nothing deploys on push.
 
 | Runs in Actions                                                                              | Runs locally                                                                                              |
 | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -17,7 +19,8 @@ run on the developer's machine and are never a promotion gate. Only
 | `audit.yml`: dependency advisories per ecosystem on push and daily, daily image scan (Trivy) |                                                                                                           |
 | `uat-quality.yml`: smoke, release SHA, authorization and lifecycle checks                    | Codex Security source scan, `scripts/review/codex-security-scan.sh`, posts `source/codex-security`        |
 | `perf.yml`: editor budgets plus warn-only delta table                                        | Strix dynamic UAT scan, `scripts/review/strix-scan.sh`, posts `uat/strix`                                 |
-| `promote-production.yml`: reruns both gates, then deploys                                    | Ingest capacity benchmarks in `bench/parsers` against the ingest host (UAT is capped at one slice/worker) |
+| `agent-visibility.yml`: the Agent visibility lane on the e2e stack (no provider call)        |                                                                                                           |
+| `promote-production.yml`: reruns the three gates, then deploys                               | Ingest capacity benchmarks in `bench/parsers` against the ingest host (UAT is capped at one slice/worker) |
 
 GitHub holds no LLM key and no scanner instructions. Strix is
 `uv tool install strix-agent==1.5.3` plus Docker on the developer machine;
@@ -35,8 +38,12 @@ that exact SHA:
 1. `uat-quality.yml` is green after re-staging UAT to the SHA.
 2. `perf.yml` is green (absolute `BUDGET` ceilings; deltas are warn-only, see
    [editor-perf.md](editor-perf.md)).
-   Local scans post `source/codex-security` and `uat/strix` commit statuses as
-   evidence, but promotion does not read them.
+3. `agent-visibility.yml` is green: created and edited items reach the chat
+   agents' read paths (Q531; the lane in
+   [test-catalog.md](test-catalog.md#agent-visibility-lane-pipelineteststack)).
+
+Local scans post `source/codex-security` and `uat/strix` commit statuses as
+evidence, but promotion does not read them.
 
 Then the protected `production` environment approval is the release action.
 `deploy-uat.yml` is manual dispatch only: every UAT staging plus its gate is a
@@ -102,13 +109,15 @@ when it was unavailable or not run, and a clean report without a scan is
 ## Boundary contract
 
 `scripts/review/validate-review-boundaries.mjs` runs in `ci.yml` and fails
-when any workflow other than `audit.yml` declares `schedule`, when any
+when any workflow other than `audit.yml` and `agent-visibility.yml`
+declares `schedule`, when any
 workflow contains a scanner invocation
 (`strix-scan.sh`, `strix-agent`, `codex-security-scan.sh`, `codex exec`), when
-`uat-quality.yml` or `perf.yml` stops being both dispatchable and callable,
+`uat-quality.yml`, `perf.yml` or `agent-visibility.yml` stops being both
+dispatchable and callable,
 when `deploy-uat.yml` has any trigger besides `workflow_dispatch`, or when
-`promote-production.yml` drops the UAT gate, the perf call, or the
-`production` environment.
+`promote-production.yml` drops the UAT gate, the perf call, the Agent
+visibility lane, or the `production` environment.
 
 `scripts/ci/hardening.test.mjs` (in `pnpm test:deployment`) fails when a
 third-party action is not pinned to a commit, a job has no declared token

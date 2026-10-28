@@ -303,6 +303,19 @@ const appRoutes = [
     staticData: { hideSidebar: true },
     validateSearch: parseWorkspaceOpenSearch,
   }),
+  // Chat across all the user's files; the optional id keeps the page mounted
+  // (and its streams running) while the shown conversation changes.
+  createRoute({
+    component: lazyPage(() => import('@/routes/AccountChat')),
+    getParentRoute: () => authShellRoute,
+    loader: ({ context: { queryClient: qc } }) => {
+      qc.prefetchQuery(conversationsQuery(null));
+      // Citations show their workspace's icon.
+      qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
+    },
+    path: '/chat/{-$conversationId}',
+    staticData: { hideSidebar: true },
+  }),
   createRoute({
     component: lazyPage(() => import('@/routes/OpenShareLink')),
     getParentRoute: () => authShellRoute,
@@ -513,7 +526,6 @@ const appRoutes = [
         qc.prefetchQuery(notificationPrefsQuery());
       } else if (deps.tab === 'llm') {
         qc.prefetchQuery(modelsQuery('chat'));
-        if (features.editorAi) qc.prefetchQuery(modelsQuery('editor'));
       }
     },
     path: '/settings',

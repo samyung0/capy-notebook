@@ -86,8 +86,11 @@ known-first-party = ["pipeline"]
 [tool.pytest.ini_options]
 testpaths = ["pipeline/tests"]
 asyncio_mode = "auto"
+# The Agent visibility lane needs the e2e compose stack: `pnpm test:visibility`.
+addopts = "-m 'not stack'"
 markers = [
   "integration: needs Docker (fresh Postgres+Redis), but makes no model calls",
+  "stack: the Agent visibility lane on the e2e compose stack (pipeline/tests/stack)",
 ]
 
 [tool.ty.environment]

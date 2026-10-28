@@ -65,19 +65,24 @@ const ICONS: Record<string, ActivityIconKind> = {
   add_questions: 'edit',
   capture_knowledge_page: 'look',
   capture_page: 'look',
+  create_chapter: 'edit',
   create_deck: 'edit',
   create_material: 'edit',
+  create_workspace: 'edit',
   edit_document: 'edit',
   edit_office_document: 'edit',
   inspect_document: 'read',
   inspect_office_document: 'read',
   list_sources: 'list',
   list_trashed_files: 'list',
+  list_workspaces: 'list',
   read_document: 'read',
   read_knowledge: 'read',
   read_skill: 'read',
   resolve_source_change: 'edit',
   restore_file: 'restore',
+  search_files_content: 'search',
+  search_files_summary: 'search',
   search_knowledge: 'search',
   search_web: 'search',
   search_workspace: 'search',
@@ -151,8 +156,10 @@ const COPY: Record<string, Copy> = {
   },
   capture_knowledge_page: look,
   capture_page: look,
+  create_chapter: create,
   create_deck: create,
   create_material: create,
+  create_workspace: create,
   edit_document: edit,
   // The Office tools read and write as the document tools do (Epo 2026-10-20).
   edit_office_document: edit,
@@ -169,6 +176,13 @@ const COPY: Record<string, Copy> = {
     fail: () => m.chat_step_list_trash_fail(),
     group: (count) => m.chat_step_list_trash_group({ count }),
     run: () => m.chat_step_list_trash_run(),
+  },
+  // Account chat's workspace list reads as list_sources does.
+  list_workspaces: {
+    done: () => m.chat_step_list_sources_done(),
+    fail: () => m.chat_step_list_sources_fail(),
+    group: (count) => m.chat_step_list_sources_group({ count }),
+    run: () => m.chat_step_list_sources_run(),
   },
   read_document: read(
     (count) => m.chat_step_read_files_group({ count }),
@@ -201,6 +215,18 @@ const COPY: Record<string, Copy> = {
     fallback: m.chat_step_fallback_file,
     group: (count) => m.chat_step_restore_group({ count }),
     run: (label) => m.chat_step_restore_run({ label }),
+  },
+  search_files_content: {
+    done: (label) => m.chat_step_search_sources_done({ label }),
+    fail: () => m.chat_step_search_sources_fail(),
+    group: (count) => m.chat_step_search_sources_group({ count }),
+    run: (label) => m.chat_step_search_sources_run({ label }),
+  },
+  search_files_summary: {
+    done: (label) => m.chat_step_search_sources_done({ label }),
+    fail: () => m.chat_step_search_sources_fail(),
+    group: (count) => m.chat_step_search_sources_group({ count }),
+    run: (label) => m.chat_step_search_sources_run({ label }),
   },
   search_knowledge: {
     done: (label) => m.chat_step_search_library_done({ label }),
@@ -245,6 +271,8 @@ const OTHER: Copy = {
 };
 
 const SEARCHES = new Set([
+  'search_files_content',
+  'search_files_summary',
   'search_workspace',
   'search_knowledge',
   'search_web',

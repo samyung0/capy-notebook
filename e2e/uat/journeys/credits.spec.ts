@@ -15,24 +15,23 @@
 import { setAutoReloadBodyThresholdCreditsMax } from '../../../src/api/gen/validators';
 import { m } from '../../i18n';
 import {
-  aiCommand,
   availableOf,
-  bigContext,
   billing,
   completeCheckout,
-  costliestEditorModel,
   credits,
   creditsRow,
   DECLINES,
   declinedReload,
   dollars,
+  enableNoteAi,
   expectAnswered,
   expectInvoice,
   expectPurchasedOnUsage,
+  expectRaiseFunction,
   expectRefusedAtZero,
   expectVoided,
+  ghostText,
   invoiceId,
-  MAX_SPEND_CALLS,
   MICROS,
   money,
   nested,
@@ -42,6 +41,7 @@ import {
   purchases,
   purchaseWhere,
   RELOAD_CENTS,
+  raiseCreditsUsed,
   reloadCount,
   saveAutoReload,
   setAutoReload,
@@ -60,6 +60,7 @@ import {
   zh,
 } from './credits';
 import { workspace } from './files';
+import { slotDefault } from './models';
 import {
   advanceStripeClock,
   arrayField,
@@ -715,6 +716,7 @@ test('spent to zero through the app: work at zero is refused, the request that f
   run,
 }) => {
   test.setTimeout(1_200_000);
+  await expectRaiseFunction(run);
   await verifyStripeSandbox(run.env);
   const since = Math.floor(Date.now() / 1000) - 300;
   const owner = run.owner;
@@ -738,85 +740,60 @@ test('spent to zero through the app: work at zero is refused, the request that f
     .getByRole('button', { exact: true, name: m.action_cancel() })
     .click();
 
-  // Spend the allowance (and the starter credits, if the declining card was
-  // the first save of that test card in UAT) through the editor's AI command
-  // on the editor model with the highest input rate: big, uncached contexts,
-  // four at a time, until the gate's balance is at or below zero.
-  const model = await costliestEditorModel(run, owner);
-  expect(
-    (
-      await owner.request('/api/me/models', 'PATCH', {
-        editorModel: {
-          modelSlug: model.model_slug,
-          providerSlug: model.provider_slug,
-        },
-      })
-    ).status
-  ).toBe(204);
-  // Each command is one usage row; waiting for the rows (the provider call
-  // receipts) means the counter is settled before it is read.
-  const ledger = (calls: number) =>
-    run.poll(
-      `${calls} AI commands in the ledger`,
-      () =>
-        run.query<{ calls: number; spent: number }>(
-          "SELECT count(*)::int AS calls,COALESCE(sum(credit_micros),0)::bigint AS spent FROM usage_events WHERE actor_user_id=%s AND surface='editor'",
-          [owner.id]
-        ),
-      (rows) => rows[0].calls >= calls,
-      120_000
-    );
+  // The spend (Q496): the verifier's one write raises used credits to 1 micro
+  // under the limit, so one priced ghost-text call through the app (note AI
+  // on) crosses it. It is the journeys' only editor-slot call, so it must
+  // reach the slot's default (Epo 2026-10-14).
+  await enableNoteAi(owner);
   const start = await billing(owner);
-  const spendStarted = Date.now();
-  expectAnswered(await aiCommand(owner, workspaceId, bigContext()));
-  await ledger(1);
-  const [firstCall] = await run.query<{
-    input_tokens: number;
-    output_tokens: number;
-    credit_micros: number;
-    catalog_provider_slug: string;
-    catalog_model_slug: string;
-  }>(
-    'SELECT input_tokens,output_tokens,credit_micros,catalog_provider_slug,catalog_model_slug FROM usage_events WHERE actor_user_id=%s ORDER BY id DESC LIMIT 1',
-    [owner.id]
-  );
-  const perCall = Number(firstCall.credit_micros);
-  const planned = Math.ceil(availableOf(start) / perCall);
-  await run.attach('spend-plan', {
-    creditsPerCall: perCall / MICROS,
-    firstCall,
-    microsPerInputToken: model.micros_per_input_token,
-    microsPerOutputToken: model.micros_per_output_token,
-    plannedCalls: planned,
-    startCredits: availableOf(start) / MICROS,
-  });
-  expect(firstCall).toMatchObject({
-    catalog_model_slug: model.model_slug,
-    catalog_provider_slug: model.provider_slug,
-  });
   expect(
-    planned,
-    'AI commands needed to spend the balance under the AI rate limit'
-  ).toBeLessThanOrEqual(MAX_SPEND_CALLS);
-  let calls = 1;
-  for (
-    let available = availableOf(await billing(owner));
-    available > 0;
-    available = availableOf(await billing(owner))
-  ) {
-    expect(calls).toBeLessThan(MAX_SPEND_CALLS + 8);
-    const batch = Math.min(4, Math.ceil(available / perCall));
-    for (const answer of await Promise.all(
-      Array.from({ length: batch }, () =>
-        aiCommand(owner, workspaceId, bigContext())
-      )
-    ))
-      expectAnswered(answer);
-    calls += batch;
-    await ledger(calls);
-  }
-  // The app wrote all of it: the counter holds the whole allowance, any
-  // purchased credits are gone (the overrun owed), and the ledger adds up.
+    Number(start.creditsPurchasedMicros),
+    'purchased credits before the spend must be 0: a starter grant from saving the declining card (starterGrantFor) would leave credits after the crossing call'
+  ).toBe(0);
+  const limit = Number(start.creditsLimitMicros);
+  await raiseCreditsUsed(owner, limit - 1);
+  expect(
+    availableOf(await billing(owner)),
+    'the balance the app reports after the raise'
+  ).toBe(1);
+  const editor = await slotDefault(run, 'editor');
+  expectAnswered(await ghostText(owner, workspaceId));
+  // Its usage row (the provider call's receipt) is written with the spend, so
+  // the counter is settled once the row is there.
+  const rows = await run.poll(
+    'the ghost-text call in the ledger',
+    () =>
+      run.query<{
+        credit_micros: number;
+        input_tokens: number;
+        output_tokens: number;
+        catalog_provider_slug: string;
+        catalog_model_slug: string;
+        model_version: number;
+      }>(
+        "SELECT credit_micros,input_tokens,output_tokens,catalog_provider_slug,catalog_model_slug,model_version FROM usage_events WHERE actor_user_id=%s AND surface='editor'",
+        [owner.id]
+      ),
+    (found) => found.length > 0,
+    120_000
+  );
+  expect(rows).toHaveLength(1);
+  const [call] = rows;
+  expect(call.credit_micros).toBeGreaterThan(0);
+  expect(
+    [
+      call.catalog_provider_slug,
+      call.catalog_model_slug,
+      Number(call.model_version),
+    ],
+    'the ghost-text call settled on the editor slot default'
+  ).toEqual([
+    editor?.provider_slug,
+    editor?.model_slug,
+    Number(editor?.version),
+  ]);
+  // spend_user_credits takes the micro left in the allowance and the rest from
+  // purchased credits, which go negative: the overrun owed.
   const [counter] = await run.query<{
     used_micros: number;
     purchased_micros: number;
@@ -825,25 +802,21 @@ test('spent to zero through the app: work at zero is refused, the request that f
     'SELECT used_micros,purchased_micros,reserved_micros FROM user_credits WHERE user_id=%s',
     [owner.id]
   );
-  expect(counter.used_micros).toBe(Number(start.creditsLimitMicros));
-  expect(counter.reserved_micros).toBe(0);
-  expect(counter.purchased_micros).toBeLessThanOrEqual(0);
-  const [spent] = await ledger(calls);
-  expect(spent.calls).toBe(calls);
-  expect(spent.spent).toBe(
-    counter.used_micros +
-      Number(start.creditsPurchasedMicros) -
-      counter.purchased_micros
-  );
-  await run.attach('spend-down', {
-    calls,
-    creditsSpent: spent.spent / MICROS,
+  expect(counter).toEqual({
+    purchased_micros: 1 - call.credit_micros,
+    reserved_micros: 0,
+    used_micros: limit,
+  });
+  await run.attach('spend-crossing', {
+    call,
+    editorDefault: editor,
+    limitCredits: limit / MICROS,
     owedCredits: -counter.purchased_micros / MICROS,
-    seconds: Math.round((Date.now() - spendStarted) / 1000),
+    raisedToMicros: limit - 1,
   });
 
   // At zero with auto-reload off, work is refused.
-  expectRefusedAtZero(await aiCommand(owner, workspaceId, ['Spend check.']));
+  expectRefusedAtZero(await ghostText(owner, workspaceId));
 
   // Auto-reload turned on at threshold 0 (still armed: no reload has started)
   // and at once a request: it finds credits at zero and is admitted, inside
@@ -851,7 +824,7 @@ test('spent to zero through the app: work at zero is refused, the request that f
   // moment before). The reload declines and the tab shows it by itself.
   await toggle.click();
   expect(await saveAutoReload(page, 0)).toBe(true);
-  const atZero = await aiCommand(owner, workspaceId, ['Spend check.']);
+  const atZero = await ghostText(owner, workspaceId);
   const atZeroAnswered = new Date().toISOString();
   expectAnswered(atZero);
   const { reload: declined } = await declinedReload(run, owner, 0, since);
@@ -867,7 +840,7 @@ test('spent to zero through the app: work at zero is refused, the request that f
   // Past the window (60 s from the reload's start) work at zero is refused,
   // and no second reload starts while Stripe retries.
   await sleep(Date.parse(declined.created_at) + 65_000 - Date.now());
-  expectRefusedAtZero(await aiCommand(owner, workspaceId, ['Spend check.']));
+  expectRefusedAtZero(await ghostText(owner, workspaceId));
   expect(await reloadCount(run, owner)).toBe(1);
 
   // Switching auto-reload off voids the declined reload; switching it on
@@ -877,7 +850,7 @@ test('spent to zero through the app: work at zero is refused, the request that f
   await expectVoided(run, owner, declined);
   expect(await setAutoReload(page, 0)).toBe(false);
   await expect(page.getByText(m.billing_reload_disarmed_title())).toBeVisible();
-  expectRefusedAtZero(await aiCommand(owner, workspaceId, ['Spend check.']));
+  expectRefusedAtZero(await ghostText(owner, workspaceId));
   await sleep(15_000);
   expect(await reloadCount(run, owner)).toBe(1);
 
@@ -905,7 +878,7 @@ test('spent to zero through the app: work at zero is refused, the request that f
     status: 'paid',
   });
   expect(availableOf(await billing(owner))).toBeGreaterThan(0);
-  expectAnswered(await aiCommand(owner, workspaceId, ['Spend check.']));
+  expectAnswered(await ghostText(owner, workspaceId));
 });
 
 test('saving auto-reload again during a charge arms nothing, and a paid Pro renewal re-arms it', async ({

@@ -14,5 +14,6 @@ export interface Conversation {
   pinnedAt?: string;
   title: string;
   updatedAt: string;
+  /** Empty for an account conversation */
   workspaceId: string;
 }

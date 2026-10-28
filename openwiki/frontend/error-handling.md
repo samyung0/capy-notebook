@@ -546,6 +546,14 @@ out sends nothing. The stored payloads are the signed-in account's alone: a
 sign-out or another account deletes them (review r1 M1, see [agentic
 retrieval](../agentic-retrieval.md)).
 
+In account chat (`/chat`), a cited or created item is read fresh on click and
+opened where it lives now: in its workspace, or on its own page when it has no
+workspace or the read answers 404 (gone or out of reach). Any other failure,
+offline included, shows the error toast and the chat stays (review r1 F1,
+`openItem` in `src/routes/AccountChat.tsx`). A `/chat/<id>` link whose thread
+answers missing shows the not-found title and body in the empty thread instead
+of a new chat's prompt (review r1 F2).
+
 ## Development scenario panel
 
 Run Vite with MSW enabled. Each **User scenarios** button prepares dedicated

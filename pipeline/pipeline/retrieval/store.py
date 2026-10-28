@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 import time
 from datetime import datetime
@@ -22,8 +23,8 @@ from ..config import cfg
 from ..jobs import RetryableError, TerminalError
 from ..store import db as jobdb
 from ..store.db import SourceSupersededError
-from .chunking import Chunk, QueryTerms
-from .lang import TS_CONFIG
+from .chunking import Chunk, QueryTerms, search_query_terms, tokenize_for_search
+from .lang import TS_CONFIG, detect_lang
 
 log = logging.getLogger("capy.retrieval.store")
 
@@ -310,20 +311,25 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
     stay pending against it (deferred publication), so a newer checkpoint
     passes, as in the heartbeat's boundary fence."""
     file_id = refresh["fileId"]
+    # None for a standalone file, its payer's alone (Epo 2026-10-27).
+    workspace_id = refresh.get("workspaceId") or None
     await conn.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (file_id,)
     )
-    cur = await conn.execute(
-        "SELECT user_id FROM workspaces WHERE id=%s FOR SHARE",
-        (refresh["workspaceId"],),
-    )
-    workspace = await cur.fetchone()
-    if workspace is None:
-        raise SourceSupersededError("source workspace was deleted")
-    owner = str(workspace["user_id"])
+    workspace = None
+    if workspace_id:
+        cur = await conn.execute(
+            "SELECT user_id FROM workspaces WHERE id=%s FOR SHARE", (workspace_id,)
+        )
+        workspace = await cur.fetchone()
+        if workspace is None:
+            raise SourceSupersededError("source workspace was deleted")
     # The file's payer (uploader pays) is set once at insert; fence it too.
     cur = await conn.execute("SELECT user_id FROM files WHERE id=%s", (file_id,))
     payer = await cur.fetchone()
+    if workspace is None and payer is None:
+        raise SourceSupersededError("source was deleted")
+    owner = str((workspace or payer)["user_id"])
     actors = sorted(
         {owner, str(refresh["actorUserId"])}
         | ({str(payer["user_id"])} if payer else set())
@@ -338,21 +344,21 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
         for row in accounts
     ):
         raise TerminalError("source account is unavailable")
-    cur = await conn.execute(
-        """SELECT 1 FROM workspaces w WHERE w.id=%s AND (w.user_id=%s OR
-        EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=%s AND m.role='editor')
-        OR(w.privacy IN ('link','public') AND w.share_role='editor' AND (w.privacy='public'
-          OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=%s)
-          OR EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=%s))))""",
-        (
-            refresh["workspaceId"],
-            refresh["actorUserId"],
-            refresh["actorUserId"],
-            refresh["actorUserId"],
-            refresh["actorUserId"],
-        ),
-    )
-    if await cur.fetchone() is None:
+    actor = str(refresh["actorUserId"])
+    if workspace_id is None:
+        # Only the payer edits a standalone file.
+        editor = actor == owner
+    else:
+        cur = await conn.execute(
+            """SELECT 1 FROM workspaces w WHERE w.id=%s AND (w.user_id=%s OR
+            EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=%s AND m.role='editor')
+            OR(w.privacy IN ('link','public') AND w.share_role='editor' AND (w.privacy='public'
+              OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=%s)
+              OR EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=%s))))""",
+            (workspace_id, actor, actor, actor, actor),
+        )
+        editor = await cur.fetchone() is not None
+    if not editor:
         raise TerminalError("source editing access was revoked")
     cur = await conn.execute(
         """SELECT c.file_id FROM source_refresh_candidates c
@@ -360,7 +366,7 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
         JOIN jobs j ON j.id=c.job_id
         WHERE c.file_id=%s AND c.job_id=%s AND c.epoch=%s AND c.checkpoint=%s AND c.lease_token=%s
           AND d.epoch=c.epoch AND d.running_job_id=c.job_id AND d.base_revision=f.revision AND f.revision=%s
-          AND f.workspace_id=%s AND f.trashed_at IS NULL AND j.payload->>'sourceETag'=%s
+          AND f.workspace_id IS NOT DISTINCT FROM %s AND f.trashed_at IS NULL AND j.payload->>'sourceETag'=%s
           AND d.checkpoint>=c.checkpoint
           AND j.status='running' AND j.attempts=%s AND j.lease_expires_at>now()
         FOR UPDATE OF f,c,d,j""",
@@ -371,7 +377,7 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
             refresh["sourceCheckpoint"],
             refresh["sourceLeaseToken"],
             refresh["sourceRevision"],
-            refresh["workspaceId"],
+            workspace_id,
             refresh["sourceETag"],
             refresh["_attempt"],
         ),
@@ -876,16 +882,19 @@ async def copy_content_from_donor(
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, fingerprint, descriptor, change_share, updated_at)
+                (content_id, fingerprint, descriptor, change_share, updated_at,
+                 lang, search)
             SELECT %s, s.fingerprint, s.descriptor, s.change_share,
-                   s.updated_at
+                   s.updated_at, s.lang, s.search
             FROM rag_content_summaries s
             WHERE s.content_id = %s
             ON CONFLICT (content_id) DO UPDATE SET
                 fingerprint = EXCLUDED.fingerprint,
                 descriptor = EXCLUDED.descriptor,
                 change_share = EXCLUDED.change_share,
-                updated_at = EXCLUDED.updated_at
+                updated_at = EXCLUDED.updated_at,
+                lang = EXCLUDED.lang,
+                search = EXCLUDED.search
             """,
             (dest_content_id, donor_id),
         )
@@ -1038,6 +1047,13 @@ async def replace_content_chunks(
         )
 
 
+def summary_search_text(descriptor: str) -> tuple[str, str, str]:
+    """A summary's language, its text-search configuration and its tokenized
+    text, as a passage's (account chat's summary search, Epo 2026-10-28)."""
+    lang = detect_lang(descriptor)
+    return lang, TS_CONFIG[lang], tokenize_for_search(descriptor)
+
+
 async def upsert_content_summary(
     *,
     content_id: str,
@@ -1048,18 +1064,23 @@ async def upsert_content_summary(
 ) -> None:
     """``updated_at`` is when the descriptor was written: ``written_at`` for a
     reused one, else now."""
+    lang, config, text = summary_search_text(descriptor)
     db = await pool()
     async with db.connection() as conn:
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, fingerprint, descriptor, change_share, updated_at)
-            VALUES (%s, %s, %s, %s, coalesce(%s, now()))
+                (content_id, fingerprint, descriptor, change_share, updated_at,
+                 lang, search)
+            VALUES (%s, %s, %s, %s, coalesce(%s, now()), %s,
+                    to_tsvector(%s::regconfig, %s))
             ON CONFLICT (content_id) DO UPDATE SET
                 fingerprint     = EXCLUDED.fingerprint,
                 descriptor      = EXCLUDED.descriptor,
                 change_share    = EXCLUDED.change_share,
-                updated_at      = EXCLUDED.updated_at
+                updated_at      = EXCLUDED.updated_at,
+                lang            = EXCLUDED.lang,
+                search          = EXCLUDED.search
             """,
             (
                 content_id,
@@ -1067,6 +1088,9 @@ async def upsert_content_summary(
                 descriptor,
                 change_share,
                 written_at,
+                lang,
+                config,
+                text,
             ),
         )
 
@@ -1142,17 +1166,19 @@ async def fill_content_summary(
     """Insert a pending descriptor, never overwriting one another job or a
     refresh wrote meanwhile. The fingerprint is the content hash, which is
     ``indexing.content_hash`` of the stored chunks."""
+    lang, config, text = summary_search_text(descriptor)
     db = await pool()
     async with db.connection() as conn:
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, fingerprint, descriptor, change_share, updated_at)
-            SELECT id, content_hash, %s, 0, now()
+                (content_id, fingerprint, descriptor, change_share, updated_at,
+                 lang, search)
+            SELECT id, content_hash, %s, 0, now(), %s, to_tsvector(%s::regconfig, %s)
             FROM rag_contents WHERE id = %s AND workspace_id IS NOT DISTINCT FROM %s
             ON CONFLICT (content_id) DO NOTHING
             """,
-            (descriptor, content_id, workspace_id),
+            (descriptor, lang, config, text, content_id, workspace_id),
         )
 
 
@@ -1237,7 +1263,7 @@ _MATERIAL_SCOPE_SQL = """
             FROM rag_material_contents mc
             JOIN rag_contents rc ON rc.id = mc.content_id AND rc.status = 'ready'
             JOIN materials m ON m.id = mc.material_id
-            WHERE mc.workspace_id = %(ws)s AND m.trashed_at IS NULL
+            WHERE mc.workspace_id {in_ws} AND m.trashed_at IS NULL
                 AND (%(no_filter)s OR m.id = ANY(%(file_ids)s))"""
 
 _SEARCH_SQL_TEMPLATE = """
@@ -1249,7 +1275,7 @@ WITH scoped_files AS (
             FROM rag_file_contents fc
             JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
             JOIN files f ON f.id = fc.file_id
-            WHERE fc.workspace_id = %(ws)s AND f.trashed_at IS NULL
+            WHERE {file_scope} AND f.trashed_at IS NULL
                 AND (%(no_filter)s OR f.id = ANY(%(file_ids)s)){material_scope}
         ) resources
         ORDER BY content_id, ordered_at, file_id
@@ -1316,10 +1342,29 @@ ORDER BY fused.score DESC, c.id
 LIMIT %(candidates)s
 """
 
+# The file aliases a search reaches: those in its workspaces and, for account
+# chat, the caller's own files with no workspace, owned through rag_contents
+# and kept to the search's embedding space. Both rank in one pool (Epo
+# 2026-10-27); standalone notes are never indexed, so there is no note leg
+# for them. Passages and vectors follow through scoped_files' content ids.
+_STANDALONE_OWNER = (
+    "(fc.workspace_id IS NULL AND rc.user_id = %(owner)s"
+    " AND rc.embedding_provider_slug = %(pin_provider)s"
+    " AND rc.embedding_model_slug = %(pin_model)s"
+    " AND rc.embedding_model_version = %(pin_version)s)"
+)
+
+
+def _file_scope(in_ws: str | None, *, owned: bool) -> str:
+    legs = [f"fc.workspace_id {in_ws}"] if in_ws else []
+    if owned:
+        legs.append(_STANDALONE_OWNER)
+    return legs[0] if len(legs) == 1 else "(" + " OR ".join(legs) + ")"
+
 
 async def hybrid_search(
     *,
-    workspace_id: str,
+    workspace_id: str = "",
     vector: list[float],
     terms: QueryTerms,
     file_ids: list[str] | None,
@@ -1328,8 +1373,14 @@ async def hybrid_search(
     conn: Any | None = None,
     chunk_filter: str = "",
     chunk_filter_params: dict[str, Any] | None = None,
+    workspace_ids: list[str] | None = None,
+    owner_user_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Vector + lexical search fused with reciprocal rank fusion.
+
+    Account chat searches ``workspace_ids`` (one pin's workspaces) and, with
+    ``owner_user_id``, that user's standalone content in ``pin``'s space, in
+    one statement so both rank in one pool; it needs ``pin``.
 
     ``pin``, ``conn`` and ``chunk_filter`` exist for the knowledge library,
     which runs this same statement against its own database with a
@@ -1360,18 +1411,34 @@ async def hybrid_search(
     ``indexed_text`` (heading context and text), which the reranker scores.
     """
     pin = pin or await workspace_embedding_pin(workspace_id)
+    if workspace_ids is None:
+        in_ws: str | None = "= %(ws)s"
+    else:
+        in_ws = "= ANY(%(ws)s)" if workspace_ids else None
     scope = _LIBRARY_SCOPE if conn is not None else _CONTENT_SCOPE
     sql = _SEARCH_SQL_TEMPLATE.format(
         vector_table=vector_table_for_pin(pin),
         chunk_filter=chunk_filter,
-        material_scope="" if conn is not None else _MATERIAL_SCOPE_SQL,
+        material_scope=""
+        if conn is not None or in_ws is None
+        else _MATERIAL_SCOPE_SQL.format(in_ws=in_ws),
+        file_scope=_file_scope(in_ws, owned=bool(owner_user_id)),
         vec_scope=scope.format(alias="v"),
         lex_scope=scope.format(alias="c"),
     )
     params = dict(chunk_filter_params or {})
+    if owner_user_id:
+        params.update(
+            {
+                "owner": owner_user_id,
+                "pin_provider": pin["embedding_provider_slug"],
+                "pin_model": pin["embedding_model_slug"],
+                "pin_version": pin["embedding_model_version"],
+            }
+        )
     params.update(
         {
-            "ws": workspace_id,
+            "ws": workspace_id if workspace_ids is None else list(workspace_ids),
             "vector": vector_literal(vector),
             "any_of": terms.any_of,
             "all_of": terms.all_of,
@@ -1394,6 +1461,194 @@ async def hybrid_search(
     db = await pool()
     async with db.connection() as pooled:
         cur = await pooled.execute(sql, params)
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def account_search_spaces(
+    user_id: str, workspace_ids: list[str]
+) -> list[dict[str, Any]]:
+    """An account search's targets by embedding space: each pin with its
+    workspaces among ``workspace_ids`` and whether the user's standalone
+    content holds ready passages in it (its recorded pin)."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT embedding_provider_slug, embedding_model_slug,
+                   embedding_model_version, embedding_dim,
+                   array_agg(id ORDER BY id) AS workspace_ids, false AS standalone
+            FROM workspaces WHERE id = ANY(%s)
+            GROUP BY 1, 2, 3, 4
+            UNION ALL
+            SELECT DISTINCT embedding_provider_slug, embedding_model_slug,
+                   embedding_model_version, embedding_dim, NULL::text[], true
+            FROM rag_contents
+            WHERE workspace_id IS NULL AND user_id = %s AND status = 'ready'
+              AND embedding_provider_slug IS NOT NULL
+            """,
+            (list(workspace_ids), user_id),
+        )
+        rows = [dict(row) for row in await cur.fetchall()]
+    spaces: dict[tuple, dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            row["embedding_provider_slug"],
+            row["embedding_model_slug"],
+            int(row["embedding_model_version"]),
+            int(row["embedding_dim"]),
+        )
+        space = spaces.setdefault(
+            key,
+            {
+                "pin": dict(zip(_PIN_COLUMNS, key, strict=True)),
+                "workspace_ids": [],
+                "standalone": False,
+            },
+        )
+        space["workspace_ids"].extend(row["workspace_ids"] or [])
+        space["standalone"] = space["standalone"] or row["standalone"]
+    return list(spaces.values())
+
+
+_PIN_COLUMNS = (
+    "embedding_provider_slug",
+    "embedding_model_slug",
+    "embedding_model_version",
+    "embedding_dim",
+)
+
+
+# Account chat's summary search (Epo 2026-10-28, option B of
+# bench/rag/reports/2026-10-28-summary-search-scale.md): the caller's items
+# first (their workspaces', then their own with no workspace), then each
+# item's name and its summary's stored search vector. A name match ranks
+# first; no index covers the summaries, as the scope is small.
+_SUMMARY_SEARCH_SQL = """
+WITH scoped AS (
+    SELECT f.id, 'file' AS kind, f.name AS title, f.workspace_id, f.chapter_id,
+           fc.content_id
+    FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
+    WHERE f.workspace_id = ANY(%(ws)s) AND f.trashed_at IS NULL
+    UNION ALL
+    SELECT f.id, 'file', f.name, NULL, NULL, fc.content_id
+    FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
+    WHERE f.workspace_id IS NULL AND f.user_id = %(me)s AND f.trashed_at IS NULL
+    UNION ALL
+    SELECT m.id, 'material', m.title, m.workspace_id, m.chapter_id, mc.content_id
+    FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
+    WHERE m.workspace_id = ANY(%(ws)s) AND m.trashed_at IS NULL
+      AND m.parent_material_id IS NULL
+    UNION ALL
+    SELECT m.id, 'material', m.title, NULL, NULL, mc.content_id
+    FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
+    WHERE m.workspace_id IS NULL AND m.owner_user_id = %(me)s
+      AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+),
+q AS (
+    SELECT m.lang, websearch_to_tsquery(m.cfg::regconfig, %(any_of)s) AS q
+    FROM unnest(%(langs)s::text[], %(cfgs)s::text[]) AS m(lang, cfg)
+),
+ranked AS (
+    SELECT sc.*, coalesce(s.descriptor, '') AS descriptor,
+           (SELECT count(*) FROM unnest(%(names)s::text[]) n
+            WHERE sc.title ILIKE '%%' || n || '%%') AS name_hits,
+           coalesce((SELECT ts_rank_cd(s.search, q.q) FROM q
+                     WHERE q.lang = s.lang AND s.search @@ q.q), 0) AS summary_rank
+    FROM scoped sc LEFT JOIN rag_content_summaries s ON s.content_id = sc.content_id
+)
+SELECT r.id, r.kind, r.title, r.workspace_id, r.chapter_id, ch.name AS chapter_name,
+       r.descriptor
+FROM ranked r LEFT JOIN chapters ch ON ch.id = r.chapter_id
+WHERE r.name_hits > 0 OR r.summary_rank > 0
+ORDER BY r.name_hits DESC, r.summary_rank DESC, r.id
+LIMIT %(limit)s
+"""
+
+# A name term: a word of three or more letters, or a CJK run (one or two
+# letters there are whole words); shorter Latin words match too many names.
+_NAME_TERM = re.compile(r"\w{3,}|[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]+")
+
+
+async def summary_search(
+    *, user_id: str, workspace_ids: list[str], query: str, limit: int
+) -> list[dict[str, Any]]:
+    """The caller's files and top-level materials whose name or summary
+    matches ``query``, best first."""
+    terms = search_query_terms(query)
+    names = list(dict.fromkeys(t.lower() for t in _NAME_TERM.findall(query)))[:20]
+    if not terms.any_of and not names:
+        return []
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            _SUMMARY_SEARCH_SQL,
+            {
+                "ws": list(workspace_ids),
+                "me": user_id,
+                "any_of": terms.any_of,
+                "langs": list(TS_CONFIG),
+                "cfgs": list(TS_CONFIG.values()),
+                "names": names,
+                "limit": limit,
+            },
+        )
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def item_places(
+    file_ids: list[str], material_ids: list[str]
+) -> dict[str, dict[str, Any]]:
+    """Where each untrashed file and material lives now: its workspace (None
+    for none), owner, chapter and a file's kind, for labelling account chat's
+    passages."""
+    if not file_ids and not material_ids:
+        return {}
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT f.id, f.workspace_id, f.user_id AS owner_id, f.chapter_id,
+                   ch.name AS chapter_name, f.kind AS file_kind
+            FROM files f LEFT JOIN chapters ch ON ch.id = f.chapter_id
+            WHERE f.id = ANY(%s) AND f.trashed_at IS NULL
+            UNION ALL
+            SELECT m.id, m.workspace_id, m.owner_user_id, m.chapter_id, ch.name, NULL
+            FROM materials m LEFT JOIN chapters ch ON ch.id = m.chapter_id
+            WHERE m.id = ANY(%s) AND m.trashed_at IS NULL
+            """,
+            (list(file_ids), list(material_ids)),
+        )
+        return {row["id"]: dict(row) for row in await cur.fetchall()}
+
+
+async def account_history_passages(
+    user_id: str, workspace_ids: list[str], chunk_ids: list[str]
+) -> list[dict[str, Any]]:
+    """history_passages across an account chat's scope: its workspaces' files
+    and notes and the user's standalone files."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT c.id, fc.file_id, 'file' AS kind, c.chunk_idx, c.section_path, c.text,
+                   c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,
+                   f.name AS file_name
+            FROM rag_file_contents fc
+            JOIN files f ON f.id = fc.file_id
+            JOIN rag_chunks c ON c.content_id = fc.content_id
+            WHERE (f.workspace_id = ANY(%s) OR (f.workspace_id IS NULL AND f.user_id = %s))
+              AND f.trashed_at IS NULL AND c.id = ANY(%s)
+            UNION ALL
+            SELECT c.id, mc.material_id, 'material', c.chunk_idx, c.section_path, c.text,
+                   c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,
+                   m.title
+            FROM rag_material_contents mc
+            JOIN materials m ON m.id = mc.material_id
+            JOIN rag_chunks c ON c.content_id = mc.content_id
+            WHERE m.workspace_id = ANY(%s) AND m.trashed_at IS NULL AND c.id = ANY(%s)
+            """,
+            (workspace_ids, user_id, chunk_ids, workspace_ids, chunk_ids),
+        )
         return [dict(row) for row in await cur.fetchall()]
 
 
@@ -1557,15 +1812,20 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
     return {"chapters": chapters, "files": files}
 
 
-async def file_page_source(workspace_id: str, file_id: str) -> dict[str, Any] | None:
-    """Published source identity for page capture; names may change independently."""
+async def file_page_source(
+    workspace_id: str | None, file_id: str
+) -> dict[str, Any] | None:
+    """Published source identity for page capture; names may change
+    independently. None is a standalone file, which account chat reads only
+    after Go's access check (tools.document_access)."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
             """
             SELECT f.kind, f.name, f.parse_mode, f.ever_parsed_successfully, f.blob_path, f.source_sha256, f.size_bytes
             FROM files f
-            WHERE f.workspace_id = %s AND f.id = %s AND f.trashed_at IS NULL
+            WHERE f.workspace_id IS NOT DISTINCT FROM %s AND f.id = %s
+              AND f.trashed_at IS NULL
             """,
             (workspace_id, file_id),
         )
@@ -1615,8 +1875,10 @@ async def history_passages(
 
 
 async def read_file_range(
-    *, workspace_id: str, file_id: str, start: int, count: int
+    *, workspace_id: str | None, file_id: str, start: int, count: int
 ) -> list[dict[str, Any]]:
+    """A file's or note's passages from ``start``; workspace_id None is a
+    standalone file, read only after Go's access check (account chat)."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
@@ -1628,7 +1890,8 @@ async def read_file_range(
                 FROM rag_file_contents fc
                 JOIN files f ON f.id = fc.file_id
                 JOIN rag_chunks c ON c.content_id = fc.content_id
-                WHERE f.workspace_id = %s AND fc.file_id = %s AND f.trashed_at IS NULL
+                WHERE f.workspace_id IS NOT DISTINCT FROM %s AND fc.file_id = %s
+                  AND f.trashed_at IS NULL
                 UNION ALL
                 SELECT c.id, mc.material_id, 'material', c.chunk_idx, c.section_path, c.text,
                        c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,

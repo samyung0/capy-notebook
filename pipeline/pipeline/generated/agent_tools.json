@@ -1,5 +1,5 @@
 {
-  "version": 42,
+  "version": 46,
   "operations": [
     "source.read",
     "material.read",
@@ -8,6 +8,7 @@
     "resource.trash",
     "trash.read",
     "trash.restore",
+    "workspace.create",
     "library.read"
   ],
   "outcomes": [
@@ -68,6 +69,9 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace"
+      ],
       "requiredOperations": [
         "source.read"
       ],
@@ -88,9 +92,176 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "source.read",
         "material.read"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "list_workspaces",
+      "version": 1,
+      "description": "List the user's workspaces as they stand now, with ids and whether the user can edit in each. The chat's first message lists them as they were then.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "scopes": [
+        "account"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "search_files_summary",
+      "version": 1,
+      "description": "Find the user's files and materials by their names and summaries, in their workspaces and with no workspace. Each hit gives its id, workspace and chapter (or no workspace), whether the user can edit it, and its summary when it has one. Use it before search_files_content.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "scopes": [
+        "account"
+      ],
+      "requiredOperations": [
+        "source.read",
+        "material.read"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "search_files_content",
+      "version": 1,
+      "description": "Search the content of the user's files, in their workspaces and with no workspace, for passages matching one focused query. Each passage names its file's workspace and chapter and whether the user can edit it.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file_ids": {
+            "description": "Restrict to these items (ids from search_files_summary or list_sources); only files and notes hold text to search. Omit to search all of them.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "query": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": true,
+      "concurrency": "search",
+      "allowedSlots": [
+        "chat"
+      ],
+      "scopes": [
+        "account"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ],
+      "retention": "cited_passages"
+    },
+    {
+      "name": "create_workspace",
+      "version": 1,
+      "description": "Create a workspace of the user's own, only when they asked for one. Every field is optional: without a name it is New Workspace (n). A name, description or tag over its limit is cut to it and saved.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "tags": {
+            "description": "Short labels, at most 5.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "scopes": [
+        "account"
+      ],
+      "requiredOperations": [
+        "workspace.create"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "create_chapter",
+      "version": 1,
+      "description": "Add a chapter at the end of the workspace's chapters, for files to be filed in by the chapter_id it returns. Without a name it is Chapter (n). A name over its limit is cut to it and saved.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
+      "requiredOperations": [
+        "material.create"
       ],
       "retention": "full"
     },
@@ -127,6 +298,10 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "source.read"
@@ -172,6 +347,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "source.read"
       ],
@@ -191,6 +370,9 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace"
       ],
       "requiredOperations": [
         "source.read"
@@ -241,10 +423,14 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "library.read"
       ],
-      "retention": "none"
+      "retention": "full"
     },
     {
       "name": "read_knowledge",
@@ -280,6 +466,10 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "library.read"
@@ -325,6 +515,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "library.read"
       ],
@@ -355,6 +549,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "source.read"
       ],
@@ -383,6 +581,10 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "source.read"
@@ -467,6 +669,10 @@
       "concurrency": "mutate",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "material.create"
@@ -623,6 +829,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "material.create"
       ],
@@ -670,6 +880,10 @@
       "concurrency": "mutate",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "document.edit"
@@ -749,6 +963,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "material.create"
       ],
@@ -797,6 +1015,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "material.create"
       ],
@@ -837,6 +1059,10 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "source.read",
@@ -896,6 +1122,10 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "source.read",
@@ -1167,6 +1397,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "document.edit"
       ],
@@ -1213,6 +1447,9 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace"
+      ],
       "requiredOperations": [
         "resource.trash"
       ],
@@ -1232,6 +1469,9 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace"
       ],
       "requiredOperations": [
         "trash.read"
@@ -1278,6 +1518,9 @@
       "concurrency": "mutate",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace"
       ],
       "requiredOperations": [
         "trash.restore"
@@ -1341,6 +1584,10 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "source.read"
@@ -2223,6 +2470,10 @@
       "concurrency": "mutate",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "document.edit"

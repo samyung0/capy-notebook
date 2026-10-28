@@ -125,6 +125,23 @@ async function inspect<T>(
   return (await response.json()) as T;
 }
 
+/** A document's unindexed changes as the chat's turn reads them: a file's
+ * from the collaboration service's effects reader, a note's (with `live`)
+ * from its open room or its stored content. The Agent visibility lane checks what the model then
+ * receives (pipeline/tests/stack); these two seams need a real editor. */
+async function changes(
+  api: APIRequestContext,
+  path: '/api/internal/note-changes' | '/api/internal/source-changes',
+  body: object
+) {
+  const response = await api.post(path, {
+    data: { workspaceId, ...body },
+    headers: { 'X-Pipeline-Secret': pipelineSecret },
+  });
+  expect(response.status(), await response.text()).toBe(200);
+  return response.text();
+}
+
 type Block = {
   id: string;
   properties?: Record<string, string>;
@@ -994,6 +1011,18 @@ test.describe('agent writes to notes', () => {
     // stores 2 s after the last one): the agent's read merges the room as
     // its edit does, so it reads what the editors see (Epo 2026-10-13).
     await typeAtEnd(ownerPage, 'Owner types here.', ' Typed live.');
+    // A live read of the note's changes holds the typing: from the room while
+    // it is unsaved (Q417), from the stored note once the room saved it, 2 s
+    // after the last keystroke. Either way it is there, so the check never
+    // races that save; Go's and Rust's own tests pin which side answered.
+    await expect
+      .poll(() =>
+        changes(anonymousApi, '/api/internal/note-changes', {
+          live: true,
+          materialIds: [id],
+        })
+      )
+      .toContain('Typed live.');
     await shows('Owner types here. Typed live.');
     expect((await blocks(anonymousApi, id)).map((block) => block.text)).toEqual(
       [
@@ -1414,15 +1443,26 @@ test.describe('agent writes to Office sources', () => {
           await expect(shownText(frame, format, typed).first()).toBeAttached();
       // XLSX and PPTX: the second editor's typing, under the client id its
       // join token assigned, reaches the first editor and the agent's read.
-      if (format === 'docx') return;
-      const line = 'Collaborator typed live.';
-      await typeLine(frames[1], format, line);
-      if (format === 'xlsx')
-        await expect(shownText(frames[0], format, line).first()).toBeAttached({
-          timeout: 30_000,
-        });
-      else await showsSlide(0).toBe(false);
-      await readShows(anonymousApi, fileId, format, line);
+      const line = format === 'docx' ? typed : 'Collaborator typed live.';
+      if (format !== 'docx') {
+        await typeLine(frames[1], format, line);
+        const shown = shownText(frames[0], format, line).first();
+        if (format === 'xlsx')
+          await expect(shown).toBeAttached({ timeout: 30_000 });
+        else await showsSlide(0).toBe(false);
+        await readShows(anonymousApi, fileId, format, line);
+      }
+      // The typed line is one of the file's unindexed changes: a real
+      // editor's writes through the effects reader.
+      await expect
+        .poll(
+          () =>
+            changes(anonymousApi, '/api/internal/source-changes', {
+              fileIds: [fileId],
+            }),
+          { timeout: 30_000 }
+        )
+        .toContain(line);
     });
   }
 

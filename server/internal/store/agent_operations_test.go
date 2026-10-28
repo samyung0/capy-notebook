@@ -16,6 +16,9 @@ func TestChatOperationIDMatchesPythonFixture(t *testing.T) {
 	if got := ChatMaterialID("m_1", "call_1"); got != "mat_4bf000a1f98d2dcd" {
 		t.Fatalf("ChatMaterialID = %s", got)
 	}
+	if got := ChatChapterID("m_1", "call_1"); got != "ch_4bf000a1f98d2dcd046acbf1" {
+		t.Fatalf("ChatChapterID = %s", got)
+	}
 }
 
 func TestRequestHashIgnoresKeyOrder(t *testing.T) {

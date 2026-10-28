@@ -323,8 +323,10 @@ export const api = {
 /** Central query-key registry for TanStack Query. */
 export const qk = {
   /** Under conversations, so invalidating the list refreshes it too. */
-  archivedConversations: (wsId: string) =>
-    ['workspace', wsId, 'conversations', 'archived'] as const,
+  archivedConversations: (wsId: string | null) =>
+    wsId
+      ? (['workspace', wsId, 'conversations', 'archived'] as const)
+      : (['account-chat', 'conversations', 'archived'] as const),
   attempt: (id: string) => ['attempt', id] as const,
   attempts: (params?: unknown) => ['attempts', params ?? null] as const,
   attemptsRoot: ['attempts'] as const,
@@ -332,8 +334,11 @@ export const qk = {
   cards: (flashcardSetId: string) =>
     ['flashcardSet', flashcardSetId, 'cards'] as const,
   chapters: (wsId: string) => ['workspace', wsId, 'chapters'] as const,
-  conversations: (wsId: string) =>
-    ['workspace', wsId, 'conversations'] as const,
+  /** One workspace's chats, or with null the account chat's. */
+  conversations: (wsId: string | null) =>
+    wsId
+      ? (['workspace', wsId, 'conversations'] as const)
+      : (['account-chat', 'conversations'] as const),
   deletionPreflight: ['account', 'deletion'] as const,
   /** The images and audio the caller pays for (the Embeds tab), all or one
    * access filter. */

@@ -21,6 +21,12 @@ type listConversationsInput struct {
 	ID       string `path:"id" doc:"Workspace id"`
 	Archived bool   `query:"archived" doc:"true lists the archived threads instead of the live list"`
 }
+type listAccountConversationsInput struct {
+	Archived bool `query:"archived" doc:"true lists the archived threads instead of the live list"`
+}
+type createAccountConversationInput struct {
+	Body apimodel.CreateConversationReq
+}
 type updateConversationInput struct {
 	ID   string `path:"id" doc:"Conversation id"`
 	Body apimodel.UpdateConversationReq
@@ -47,12 +53,24 @@ func (a *api) registerChat(api huma.API) {
 	const tag = "Chat"
 	reg(api, http.MethodGet, "/api/workspaces/{id}/conversations", "listConversations", tag, "List a workspace's chat conversations", http.StatusOK, a.listConversations)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/conversations", "createConversation", tag, "Start a new chat conversation", http.StatusCreated, a.createConversation)
+	// Account chat (Epo 2026-10-27): the caller's conversations outside any
+	// workspace; the per-conversation routes below serve them to their owner.
+	reg(api, http.MethodGet, "/api/conversations", "listAccountConversations", tag, "List the caller's account chat conversations", http.StatusOK, a.listAccountConversations)
+	reg(api, http.MethodPost, "/api/conversations", "createAccountConversation", tag, "Start a new account chat conversation", http.StatusCreated, a.createAccountConversation)
 	reg(api, http.MethodGet, "/api/conversations/{id}/messages", "listMessages", tag, "Load a conversation's message history", http.StatusOK, a.listMessages)
 	reg(api, http.MethodPost, "/api/conversations/{id}/messages/{messageId}/stop", "stopChatTurn", tag, "Stop a conversation's running turn", http.StatusNoContent, a.stopTurn)
 	reg(api, http.MethodPatch, "/api/conversations/{id}", "updateConversation", tag, "Rename, pin or archive a conversation", http.StatusOK, a.updateConversation)
 	reg(api, http.MethodDelete, "/api/conversations/{id}", "deleteConversation", tag, "Delete a conversation", http.StatusNoContent, a.deleteConversation)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/conversations/unarchive", "unarchiveConversations", tag, "Put every archived conversation back in the list", http.StatusNoContent, a.unarchiveConversations)
 	reg(api, http.MethodDelete, "/api/workspaces/{id}/conversations/archived", "deleteArchivedConversations", tag, "Delete every archived conversation", http.StatusNoContent, a.deleteArchivedConversations)
+	reg(api, http.MethodPost, "/api/conversations/unarchive", "unarchiveAccountConversations", tag, "Put every archived account conversation back in the list", http.StatusNoContent,
+		func(ctx context.Context, _ *struct{}) (*Empty, error) {
+			return a.unarchiveConversations(ctx, &wsConversationsInput{})
+		})
+	reg(api, http.MethodDelete, "/api/conversations/archived", "deleteArchivedAccountConversations", tag, "Delete every archived account conversation", http.StatusNoContent,
+		func(ctx context.Context, _ *struct{}) (*Empty, error) {
+			return a.deleteArchivedConversations(ctx, &wsConversationsInput{})
+		})
 }
 
 func (a *api) listConversations(ctx context.Context, in *listConversationsInput) (*conversationsOutput, error) {
@@ -65,6 +83,22 @@ func (a *api) listConversations(ctx context.Context, in *listConversationsInput)
 
 func (a *api) createConversation(ctx context.Context, in *createConversationInput) (*conversationOutput, error) {
 	res, err := a.s.CreateConversation(ctx, userID(ctx), in.ID, string(in.Body.Title))
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &conversationOutput{Body: res}, nil
+}
+
+func (a *api) listAccountConversations(ctx context.Context, in *listAccountConversationsInput) (*conversationsOutput, error) {
+	res, err := a.s.ListConversations(ctx, userID(ctx), "", in.Archived)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &conversationsOutput{Body: res}, nil
+}
+
+func (a *api) createAccountConversation(ctx context.Context, in *createAccountConversationInput) (*conversationOutput, error) {
+	res, err := a.s.CreateConversation(ctx, userID(ctx), "", string(in.Body.Title))
 	if err != nil {
 		return nil, hErr(err)
 	}

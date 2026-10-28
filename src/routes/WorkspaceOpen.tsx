@@ -360,8 +360,10 @@ function FollowOpenFile() {
 export default function WorkspaceOpenPage() {
   return (
     <>
-      <FollowOpenFile />
       <WorkspaceOpen />
+      {/* After the page, so the follow's normal open (Q462) runs after the
+          file view's effects and its URL wins. */}
+      <FollowOpenFile />
     </>
   );
 }
@@ -983,6 +985,15 @@ function WorkspaceOpen() {
           items={footerItems}
           member={!!ws.role}
           onOpenSettings={rowProps.onOpenSettings}
+          onVoiceSend={(prompt) => {
+            setTab('chat');
+            setRightOpen(true);
+            setChatRequest((previous) => ({
+              id: null,
+              prompt,
+              seq: (previous?.seq ?? 0) + 1,
+            }));
+          }}
           workspaceId={workspaceId}
           workspaceName={ws.name}
         />

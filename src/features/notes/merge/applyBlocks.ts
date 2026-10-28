@@ -18,8 +18,9 @@ import { piecesFromCopy } from './pieces';
 
 /**
  * Runs `edit` on the bound note editor as one local Yjs transaction under
- * the session's id and one Undo step, as an accepted AI preview does
- * (aiPreviewState.ts): what came before is flushed and closed first.
+ * the session's id and one Undo step: pending local changes are flushed and
+ * the undo capture closed before and after, and the edit runs without
+ * normalizing in between.
  */
 export function asOneStep(editor: PlateEditor, edit: () => void) {
   const yjs = editor as unknown as YHistoryEditor;

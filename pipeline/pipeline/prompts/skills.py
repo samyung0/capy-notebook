@@ -31,6 +31,7 @@ _EDITING = f"""How to write to the workspace: build study materials, add to them
 
 Plan:
 - You MUST ALWAYS identify the requirement first before building: the learning scope and learner's level, as "I want to learn physics" lacks both: ask for what is missing, reuse what the learner already said, and offer a default they can accept rather than an open question.
+- In the same message, show the outline of what you will create: each new file and the chapter it goes in, reusing the workspace's chapters (list_sources) and marking the new ones; once the learner agrees, create_chapter adds them.
 
 What to build:
 - Each chapter gets one main explainer, a note or a deck as the output-files preference says; note_building or deck_building says how to write it.
@@ -156,4 +157,89 @@ def deck_building(rules: str, style: str, style_text: str) -> str:
         "and a deck with slides left unwritten is not saved.\n\n"
         f"Slides:\n{rules}\n\n"
         f"Write every slide in the {style} style:\n\n{style_text}"
+    )
+
+
+# Account chat's variants (todo-account-chat.md): the workspace wording of
+# editing, note_building and deck_building said for the user's files across
+# workspaces; the workspace text above is unchanged.
+def swapped(text: str, *pairs: tuple[str, str]) -> str:
+    """``text`` with each old phrase replaced, failing loudly when one is
+    gone, so an edit of the workspace text cannot leave a stale variant."""
+    for old, new in pairs:
+        if old not in text:
+            raise RuntimeError(f"account variant lost its anchor: {old!r}")
+        text = text.replace(old, new)
+    return text
+
+
+ACCOUNT_LANDING = (
+    "What you create lands in No workspace unless the learner names a workspace "
+    "they can edit; create_material, create_deck, add_questions (a new quiz) "
+    "and edit_office_document (a new file) then take its workspace_id from a "
+    "search, a listing or a read."
+)
+
+
+def account_editing() -> str:
+    return swapped(
+        editing(),
+        ("How to write to the workspace:", "How to write to the learner's files:"),
+        (
+            (
+                "- In the same message, show the outline of what you will create: "
+                "each new file and the chapter it goes in, reusing the workspace's "
+                "chapters (list_sources) and marking the new ones; once the learner "
+                "agrees, create_chapter adds them."
+            ),
+            (
+                "- In the same message, show the outline of what you will create: "
+                "where the new files go and, in a workspace, the chapter each goes "
+                "in, reusing the chapters a listing of that workspace shows and "
+                "marking the new ones; once the learner agrees, create_chapter adds "
+                "them. Unless the learner already said where, offer a workspace they "
+                "can edit, a new workspace (a name from the topic; create_workspace "
+                "makes it) or No workspace, which has no chapters."
+            ),
+        ),
+        (
+            (
+                "- Quizzes and flashcards are standalone materials filed in the "
+                "chapter they practise, by its chapter_id from list_sources."
+            ),
+            (
+                "- Quizzes and flashcards are standalone materials, filed in the "
+                f"chapter they practise when they land in a workspace. {ACCOUNT_LANDING}"
+            ),
+        ),
+        (
+            "- Inspect a document before editing it;",
+            (
+                "- Inspect a document before editing it, and edit it only when its "
+                "Access line says canEdit is true;"
+            ),
+        ),
+    )
+
+
+def account_note_building(formats: dict[str, str]) -> str:
+    return swapped(
+        note_building(formats),
+        (
+            "Practice from the library (Workspace only off):",
+            "Practice from the library (Your files only off):",
+        ),
+    )
+
+
+def account_deck_building(rules: str, style: str, style_text: str) -> str:
+    return swapped(
+        deck_building(rules, style, style_text),
+        (
+            "stored in the workspace as a PPTX file.",
+            (
+                "stored as a PPTX file in the workspace create_deck named, or in No "
+                "workspace."
+            ),
+        ),
     )

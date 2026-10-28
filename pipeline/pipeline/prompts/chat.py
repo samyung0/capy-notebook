@@ -72,17 +72,26 @@ MODE_LINES = {
 }
 
 
-def with_mode_line(text: str, workspace_only: bool) -> str:
-    return MODE_LINES[workspace_only] + "\n\n" + text
+def with_mode_line(
+    text: str, workspace_only: bool, lines: dict[bool, str] = MODE_LINES
+) -> str:
+    return lines[workspace_only] + "\n\n" + text
 
 
 def with_mode_note(message: dict[str, Any]) -> dict[str, Any]:
     """The current query with its mode line, for live compaction that folded
-    the history holding the last note."""
+    the history holding the last note. An account query names its own lines
+    (``_mode_lines``)."""
     content = str(message.get("content") or "")
-    if "_workspace_only" not in message or content.startswith("[Workspace only:"):
+    lines = message.get("_mode_lines", MODE_LINES)
+    if "_workspace_only" not in message or content.startswith(
+        lines[True].split(":", 1)[0] + ":"
+    ):
         return message
-    return {**message, "content": with_mode_line(content, message["_workspace_only"])}
+    return {
+        **message,
+        "content": with_mode_line(content, message["_workspace_only"], lines),
+    }
 
 
 # Q221: a first-turn reply that is only an AskUser question goes back once.
@@ -215,14 +224,18 @@ def chat_messages(
     workspace_only: bool,
     mode_shown: bool | None = None,
     writes: bool = True,
+    head: str | None = None,
+    mode_lines: dict[bool, str] | None = None,
 ) -> list[dict[str, Any]]:
     """The whole chat request: system, folded memory, prior turns, this query.
 
     ``history`` is already filtered to persisted user/assistant turns, with
     mode notes where they were sent; ``mode_shown`` is the last of them, and
-    the query carries a note only when its switch differs.
+    the query carries a note only when its switch differs. Account chat
+    passes its own system prompt (``head``) and ``mode_lines``.
     """
-    head = system_prompt(locale, writes=writes)
+    if head is None:
+        head = system_prompt(locale, writes=writes)
     messages: list[dict[str, Any]] = [{"role": "system", "content": head}]
     summary = str((checkpoint or {}).get("summary") or "")
     if summary:
@@ -240,9 +253,10 @@ def chat_messages(
             "role": "user",
             "content": query
             if mode_shown is workspace_only
-            else with_mode_line(query, workspace_only),
+            else with_mode_line(query, workspace_only, mode_lines or MODE_LINES),
             "_kind": "query",
             "_workspace_only": workspace_only,
+            **({"_mode_lines": mode_lines} if mode_lines else {}),
         }
     )
     return messages

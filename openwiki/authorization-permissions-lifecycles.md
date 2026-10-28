@@ -542,10 +542,24 @@ the caller can edit) and then opens the same Add file dialog for it.
 - Account deletion cancels its pending upload (0125 made
   `cancel_user_async_work` find uploads without a workspace), and an owner
   lock evicts its source rooms.
-- Not yet: editing its Office and text files through the source room waits
-  for the 2026-10-27 release train; until then they open read-only (the view
-  session reads a NULL workspace). A standalone import's status
-  (`/api/sources/imports/{jobId}`) answers its owner alone.
+- Its Office and text files view and edit like a workspace file's, through
+  the same source room (Epo 2026-10-27). The room is owner-only: the source
+  session, room admission (`CheckSourceAccess`) and every save
+  (`sourceLockTx`) admit the payer alone (`sourceActorsAllowed`'s no-workspace
+  branch), never through a share link or anonymously; a deletion-pending or
+  deleted owner reads not found and a suspended one is refused as a locked
+  account. A save names the workspace its room opened the file in (Q459), ""
+  for none, so a Move's drain stores only the payer's edits. The browser opens
+  Edit for the owner unless the account is frozen; the edit session still
+  narrows to view at the storage limit. PDF marks are the owner's too.
+- Its saved edits always auto-publish (the Auto process schedule, Epo
+  2026-10-27): the refresh scheduler lists it as its payer's
+  (`REFRESH_CANDIDATES_SQL`), admission reads no workspace as auto process,
+  the payer pays, and the publication re-ingests in the owner's scope (no
+  workspace on the job, the content row the payer's, an alias with no
+  workspace). The maintenance window publishes it as any other Office file.
+- A standalone import's status (`/api/sources/imports/{jobId}`) answers its
+  owner alone.
 
 Move puts files into a workspace, never out (Epo 2026-10-27):
 `POST /api/files/move` `{fileIds (1-20), workspaceId, chapterId?,
@@ -1022,9 +1036,10 @@ Sources: [study routes](../server/internal/httpapi/huma_study.go) and
   (`POST …/conversations/unarchive`, `DELETE …/conversations/archived`); none
   of these count as activity, so `updated_at` keeps the list order. Chat and generate
   model choice is an account preference (**Settings → LLM**), snapshotted onto
-  new conversations; the browser cannot pick a model per request. Editor AI
-  uses the `users.editor_model_provider_slug` / `users.editor_model_slug` pair
-  the same way and is gated by `VITE_FEATURE_EDITOR_AI`.
+  new conversations; the browser cannot pick a model per request. Note ghost
+  text runs on the editor slot's default pin while the user's note AI switch
+  is on (`users.note_ai_enabled`; off answers 403 `note_ai_disabled` before
+  any spend) and needs workspace editor access.
 - Generation, the chat `generate_material` tool, and the internal material
   callback follow the effective role: owner, member editor, or share-role
   editor. The gateway sends `canGenerate` to the pipeline, which omits the tool
@@ -1057,6 +1072,50 @@ Sources: [study routes](../server/internal/httpapi/huma_study.go) and
 Sources: [chat effective-role guard](../server/internal/store/chat.go#L191),
 [chat stream admission](../server/internal/httpapi/server.go#L487), and
 [generation credit policy](../server/internal/httpapi/generation_credits.go#L3).
+
+### Account chat
+
+- Account chat (`/chat`, `POST /api/chat/stream`) is a conversation with no
+  workspace, readable and writable by its user alone (`GetConversation` on
+  owner); it is never shared or cloned. Its reach is the user's owned
+  workspaces, member workspaces under a live owner (not suspended,
+  deletion-pending or deleted) and their own items with no workspace (D2,
+  `accountScopeSQL`); link- and visit-only workspaces are out.
+- Every account-scope tool call checks its target through
+  `AccountDocumentAccess`: a file or top-level material (an embedded one as its
+  note) is readable with any role in a scope workspace and editable with the
+  workspace's effective editor role; an item with no workspace only by its
+  owner. Trashed items, items under a trashed note and missing items answer one
+  generic not found, except `moved_out` for a file this user's account chat
+  edited that now lies out of reach (Q489). The internal routes
+  (`/api/internal/documents/access`, `/changes`, `/changes/resolve`,
+  `/workspaces`, and the account scope of documents, materials, files and
+  receipts) need the pipeline secret and refuse a suspended, deletion-pending
+  or deleted actor.
+- A thread stays its owner's to open after they lose a workspace it drew on
+  (removed, left, or its owner no longer live; Q522): every message with its
+  citations' stored snippets and names, and its kept results. The thread opens
+  no files: a citation click reads the item again (`routes/AccountChat.tsx`),
+  and one now out of reach answers 404 and opens on its own page with the
+  usual file error. Workspace chat threads keep their own rule (above).
+- Writes are bound to the actor's own account conversation, and a workspace
+  conversation cannot stand in for one (or the reverse). A create lands in No
+  workspace, or in a scope workspace the actor can edit when the call names
+  it. Trash and restore stay workspace chat tools.
+- Operations: read, create, edit and `workspace.create`. A frozen actor keeps
+  read only; a full one (storage) loses create and edit. `create_workspace`
+  goes through `createWorkspaceTx`, which refuses a frozen account and counts
+  against the combined owned and joined workspace cap (`gateWorkspacesTx`).
+- Inference is billed to the actor. Voice input in account chat takes the
+  voice rate class and names only the caller's files with no workspace or in a
+  workspace they still reach.
+- A text or Office file with no workspace is inspected and edited like any
+  other: Go checks the actor per call, and its source session admits only the
+  file's payer.
+
+Sources: [account scope](../server/internal/store/account_scope.go),
+[account routes](../server/internal/httpapi/internal_account.go) and
+[changes routes](../server/internal/httpapi/internal_changes.go).
 
 ### Personal account features
 

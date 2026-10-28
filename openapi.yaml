@@ -1178,6 +1178,10 @@ components:
           type: string
         url:
           type: string
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
       required:
         - fileId
         - fileName
@@ -1411,6 +1415,7 @@ components:
           format: date-time
           type: string
         workspaceId:
+          description: Empty for an account conversation
           type: string
       required:
         - id
@@ -5384,8 +5389,8 @@ components:
           $ref: "#/components/schemas/Ref"
         chatThinking:
           type: string
-        editorModel:
-          $ref: "#/components/schemas/Ref"
+        noteAiEnabled:
+          type: boolean
       type: object
     SetStudyEnabledReq:
       additionalProperties: false
@@ -5609,7 +5614,6 @@ components:
           format: base64
           type: string
         workspaceId:
-          minLength: 1
           type: string
       required:
         - actorIds
@@ -7343,8 +7347,6 @@ components:
           type: string
         customization:
           $ref: "#/components/schemas/Customization"
-        editorModel:
-          $ref: "#/components/schemas/Ref"
         email:
           type: string
         id:
@@ -7353,6 +7355,8 @@ components:
           type: string
         name:
           type: string
+        noteAiEnabled:
+          type: boolean
         planTier:
           $ref: "#/components/schemas/PlanTier"
         streak:
@@ -7373,7 +7377,7 @@ components:
         - chatSteps
         - chatSendKey
         - chatModel
-        - editorModel
+        - noteAiEnabled
         - planTier
         - subscriptionStatus
       type: object
@@ -7390,7 +7394,6 @@ components:
     UserModelSlot:
       enum:
         - chat
-        - editor
       type: string
     VoiceTranscription:
       additionalProperties: false
@@ -8601,6 +8604,89 @@ paths:
       summary: Edit an authored comment
       tags:
         - Material collaboration
+  /api/conversations:
+    get:
+      operationId: listAccountConversations
+      parameters:
+        - description: true lists the archived threads instead of the live list
+          explode: false
+          in: query
+          name: archived
+          schema:
+            description: true lists the archived threads instead of the live list
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Conversation"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List the caller's account chat conversations
+      tags:
+        - Chat
+    post:
+      operationId: createAccountConversation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConversationReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Start a new account chat conversation
+      tags:
+        - Chat
+  /api/conversations/archived:
+    delete:
+      operationId: deleteArchivedAccountConversations
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete every archived account conversation
+      tags:
+        - Chat
+  /api/conversations/unarchive:
+    post:
+      operationId: unarchiveAccountConversations
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Put every archived account conversation back in the list
+      tags:
+        - Chat
   /api/conversations/{id}:
     delete:
       operationId: deleteConversation
@@ -10503,7 +10589,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Set chat, generate and editor model preferences
+      summary: Set the chat model and the note AI switch
       tags:
         - Account
   /api/me/study-preferences:
@@ -12023,6 +12109,43 @@ paths:
       summary: Usage events, sorted, newest first by default
       tags:
         - Billing & integrations
+  /api/voice-transcriptions:
+    post:
+      operationId: transcribeAccountVoice
+      requestBody:
+        content:
+          audio/mp4:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+          audio/ogg:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+          audio/webm:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceTranscription"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Transcribe an account chat voice recording for the composer
+      tags:
+        - Chat
   /api/workspace-invites/{token}/accept:
     post:
       operationId: acceptWorkspaceInvite

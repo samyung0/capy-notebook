@@ -24,6 +24,7 @@ use crate::incidents::{self, Cause, Incident, Kind as IncidentKind};
 use crate::markers::{self, Contributor, Markers};
 use crate::note_store::{self, StoreError};
 use crate::observe::{self, Level, log};
+use crate::presence::Fields;
 use crate::projection;
 use crate::protocol::{self, Kind, awareness, sync};
 use crate::sessions::Sessions;
@@ -39,8 +40,11 @@ pub const MAX_UNPLACED_STEPS: u32 = 2;
 /// edits an offline editor may hold, so its reconnect always fits (Epo,
 /// 2026-10-08). Source rooms take whole states up to the frame cap.
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
-/// The largest awareness entry a room keeps and relays.
-pub const MAX_AWARENESS_ENTRY: usize = 64 * 1024;
+/// The largest awareness state a room keeps and relays (Epo 2026-10-28): a
+/// note's caret is ~24 B, its largest state with the app's ids (100 uploads,
+/// 16 block runs of UUIDs) 3.8 KB, and its sender leaves the block runs out
+/// past this (Q524).
+pub const MAX_AWARENESS_ENTRY: usize = 4 * 1024;
 /// Awareness client ids a room keeps (Epo 2026-10-19); a channel writes only
 /// its session's (Q213). A new id past the cap is not kept.
 pub const MAX_CLIENTS_PER_ROOM: usize = 256;
@@ -3821,14 +3825,6 @@ impl Room {
             self.refuse(key, &[], "malformed awareness update");
             return;
         };
-        // A cursor is ~200 B; an entry past this is refused (Epo 2026-10-08).
-        if entries
-            .iter()
-            .any(|entry| entry.state.len() > MAX_AWARENESS_ENTRY)
-        {
-            self.refuse(key, &[], "awareness entry too large");
-            return;
-        }
         let Some(member) = self.members.get_mut(&key) else {
             return;
         };
@@ -3836,12 +3832,17 @@ impl Room {
         if member.viewer {
             return;
         }
-        let mut entries = entries;
-        if member.read_only {
-            for entry in &mut entries {
-                without_uploads(entry);
+        // A read-only channel names no uploads (REVIEW5 E2): only a writer
+        // uploads, and a listed id shows that block as uploading to everyone.
+        let fields = match &self.kind {
+            Kindly::Note(note) if note.doc == note_store::Doc::Content && note.kind == "note" => {
+                Fields::Note {
+                    uploads: !member.read_only,
+                }
             }
-        }
+            Kindly::Note(_) => Fields::Nothing,
+            Kindly::Source(_) => Fields::Source,
+        };
         // Ids another channel of the same user held until now.
         let mut taken_over = Vec::new();
         // A channel's ids name its cursors in the room's presence.
@@ -3850,6 +3851,15 @@ impl Room {
             // A channel writes and removes only its session's client id
             // (Q213), which no other user's channel can hold.
             if entry.client != member.client {
+                continue;
+            }
+            // A state its room kind does not list, or past the cap, is
+            // neither kept nor relayed, and the sender hears nothing
+            // (presence is best effort, Epo 2026-10-28); the relayed bytes
+            // stay the sender's. A removal is always taken.
+            if !entry.removed()
+                && (entry.state.len() > MAX_AWARENESS_ENTRY || !fields.admit(&entry.state))
+            {
                 continue;
             }
             let current = self.awareness.get(&entry.client);
@@ -5532,25 +5542,4 @@ fn presence_entry(member: &Member, person: u64) -> Value {
         "avatar": identity.avatar_url,
         "clients": clients,
     })
-}
-
-/// A read-only channel names no uploads in presence (REVIEW5 E2): only a
-/// writer uploads, and a listed id shows that block as uploading to every
-/// editor. Every entry is parsed (a key may be escaped, REVIEW5 R1), within
-/// the 64 KiB entry cap and serde_json's nesting limit, and loses the field.
-/// An entry serde_json refuses (an unpaired surrogate escape, which a
-/// browser's `JSON.parse` takes) becomes a removal (REVIEW5 R1b).
-fn without_uploads(entry: &mut awareness::Entry) {
-    if entry.removed() {
-        return;
-    }
-    match serde_json::from_str(&entry.state) {
-        Ok(serde_json::Value::Object(mut state)) => {
-            if state.remove("uploads").is_some() {
-                entry.state = serde_json::Value::Object(state).to_string();
-            }
-        }
-        Ok(_) => {}
-        Err(_) => entry.state = "null".into(),
-    }
 }

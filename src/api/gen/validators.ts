@@ -1210,6 +1210,61 @@ export const UpdateMaterialCommentResponse = zod.object({
 
 
 /**
+ * @summary List the caller's account chat conversations
+ */
+export const ListAccountConversationsQueryParams = zod.object({
+  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list')
+})
+
+export const ListAccountConversationsResponseItem = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string().describe('Empty for an account conversation')
+})
+export const ListAccountConversationsResponse = zod.array(ListAccountConversationsResponseItem)
+
+
+/**
+ * @summary Start a new account chat conversation
+ */
+export const createAccountConversationBodyTitleMax = 60;
+
+
+
+export const CreateAccountConversationBody = zod.object({
+  "title": zod.string().max(createAccountConversationBodyTitleMax).optional().describe('Optional thread title')
+})
+
+export const CreateAccountConversationResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string().describe('Empty for an account conversation')
+})
+
+
+/**
+ * @summary Delete every archived account conversation
+ */
+export const DeleteArchivedAccountConversationsResponse = zod.void()
+
+
+/**
+ * @summary Put every archived account conversation back in the list
+ */
+export const UnarchiveAccountConversationsResponse = zod.void()
+
+
+/**
  * @summary Delete a conversation
  */
 export const DeleteConversationParams = zod.object({
@@ -1244,7 +1299,7 @@ export const UpdateConversationResponse = zod.object({
   "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
-  "workspaceId": zod.string()
+  "workspaceId": zod.string().describe('Empty for an account conversation')
 })
 
 
@@ -1323,7 +1378,9 @@ export const ListMessagesResponseItem = zod.object({
 })).nullish(),
   "siteName": zod.string().optional(),
   "snippet": zod.string(),
-  "url": zod.string().optional()
+  "url": zod.string().optional(),
+  "workspaceId": zod.string().optional(),
+  "workspaceName": zod.string().optional()
 })).nullish(),
   "content": zod.string(),
   "conversationId": zod.string(),
@@ -4160,14 +4217,11 @@ export const GetMeResponse = zod.object({
   "style": zod.enum(['capy', 'fisheye', 'notion']),
   "theme": zod.enum(['latte', 'frappe', 'mocha'])
 }).optional(),
-  "editorModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}),
   "email": zod.string(),
   "id": zod.string(),
   "locale": zod.string(),
   "name": zod.string(),
+  "noteAiEnabled": zod.boolean(),
   "planTier": zod.enum(['free', 'pro']),
   "streak": zod.int(),
   "studyPreferences": zod.object({
@@ -4253,14 +4307,11 @@ export const UpdateMeResponse = zod.object({
   "style": zod.enum(['capy', 'fisheye', 'notion']),
   "theme": zod.enum(['latte', 'frappe', 'mocha'])
 }).optional(),
-  "editorModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}),
   "email": zod.string(),
   "id": zod.string(),
   "locale": zod.string(),
   "name": zod.string(),
+  "noteAiEnabled": zod.boolean(),
   "planTier": zod.enum(['free', 'pro']),
   "streak": zod.int(),
   "studyPreferences": zod.object({
@@ -4348,7 +4399,7 @@ export const SetLocaleResponse = zod.void()
 
 
 /**
- * @summary Set chat, generate and editor model preferences
+ * @summary Set the chat model and the note AI switch
  */
 export const SetModelPrefsBody = zod.object({
   "chatModel": zod.object({
@@ -4356,10 +4407,7 @@ export const SetModelPrefsBody = zod.object({
   "providerSlug": zod.string()
 }).optional(),
   "chatThinking": zod.string().optional(),
-  "editorModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}).optional()
+  "noteAiEnabled": zod.boolean().optional()
 })
 
 export const SetModelPrefsResponse = zod.void()
@@ -4396,7 +4444,7 @@ export const ListModelSlotsResponse = zod.object({
  * @summary Enabled models for a slot
  */
 export const ListModelsQueryParams = zod.object({
-  "slot": zod.enum(['chat', 'editor']).optional()
+  "slot": zod.enum(['chat']).optional()
 })
 
 export const ListModelsResponse = zod.object({
@@ -6399,6 +6447,15 @@ export const ListUsageEventsResponse = zod.object({
 
 
 /**
+ * @summary Transcribe an account chat voice recording for the composer
+ */
+export const TranscribeAccountVoiceResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "text": zod.string()
+})
+
+
+/**
  * @summary Accept a workspace invite
  */
 export const AcceptWorkspaceInviteParams = zod.object({
@@ -6943,7 +7000,7 @@ export const ListConversationsResponseItem = zod.object({
   "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
-  "workspaceId": zod.string()
+  "workspaceId": zod.string().describe('Empty for an account conversation')
 })
 export const ListConversationsResponse = zod.array(ListConversationsResponseItem)
 
@@ -6971,7 +7028,7 @@ export const CreateConversationResponse = zod.object({
   "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
-  "workspaceId": zod.string()
+  "workspaceId": zod.string().describe('Empty for an account conversation')
 })
 
 
@@ -8315,7 +8372,6 @@ export const checkpointSourceDocumentBodySeedBytesMin = 0;
 
 
 
-
 export const CheckpointSourceDocumentBody = zod.object({
   "actorIds": zod.array(zod.string()).min(1).nullable(),
   "baseRevision": zod.int().min(1),
@@ -8362,7 +8418,7 @@ export const CheckpointSourceDocumentBody = zod.object({
   "seedBytes": zod.int().min(checkpointSourceDocumentBodySeedBytesMin).optional(),
   "stateSeedSHA256": zod.string().optional(),
   "update": zod.string(),
-  "workspaceId": zod.string().min(1)
+  "workspaceId": zod.string()
 })
 
 export const checkpointSourceDocumentResponseOperationUndoPayloadActorUserIdMax = 64;

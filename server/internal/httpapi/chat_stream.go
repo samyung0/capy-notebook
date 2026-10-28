@@ -22,7 +22,8 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// chatStreamReq is the browser's request to POST /api/workspaces/{id}/chat/stream.
+// chatStreamReq is the browser's request to POST /api/workspaces/{id}/chat/stream
+// and to the account route, POST /api/chat/stream, which takes no OpenResource.
 // There is deliberately no Model field: the pin lives on the conversation row
 // and a client-supplied model would override both the user preference and its
 // price multiplier.
@@ -121,15 +122,61 @@ type pipeChatEvent struct {
 	EstimatedTokens   int                   `json:"estimatedTokens,omitempty"`
 }
 
-// chatStream persists the user turn, reserves an assistant row, relays the
-// Python activity stream, and finalizes one assistant row. messages.content
-// is the final answer only.
+// chatScope is what one turn reaches, resolved before anything else: a
+// workspace (the workspace route), or with workspaceID "" the caller's account
+// chat across their own files (Epo 2026-10-27).
+type chatScope struct {
+	workspaceID string
+	access      chatAccess
+}
+
+// chatStream is a workspace chat turn.
 func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	wsID := id(r)
 	access, ok := a.assertWSChat(w, r, wsID)
 	if !ok {
 		return
 	}
+	a.streamChat(w, r, chatScope{workspaceID: wsID, access: access})
+}
+
+// accountChatStream is an account chat turn.
+func (a *api) accountChatStream(w http.ResponseWriter, r *http.Request) {
+	access, ok := a.assertAccountChat(w, r)
+	if !ok {
+		return
+	}
+	a.streamChat(w, r, chatScope{access: access})
+}
+
+// turnOperations are the agent-tool operations a turn is granted.
+func (sc chatScope) turnOperations() []agenttools.Operation {
+	// library.read is granted to any role that can chat, whatever the
+	// Workspace only switch says: the pipeline answers the library tools as
+	// unavailable while it is on, so the offered tools never change with it.
+	// Writing from the library still needs the role's write operations.
+	operations := agenttools.OperationsForRole(string(sc.access.role))
+	if sc.workspaceID == "" {
+		operations = agenttools.AccountOperations()
+	}
+	if sc.access.readOnly || sc.access.full {
+		// A frozen actor or owner keeps reading and deleting, not creating,
+		// editing, restoring or making a workspace. An owner at its storage
+		// limit loses creating and editing; restoring and a workspace grow
+		// nothing.
+		operations = slices.DeleteFunc(operations, func(op agenttools.Operation) bool {
+			return op == agenttools.OpMaterialCreate || op == agenttools.OpDocumentEdit ||
+				(sc.access.readOnly && (op == agenttools.OpTrashRestore || op == agenttools.OpWorkspaceCreate))
+		})
+	}
+	return append(operations, agenttools.OpLibraryRead)
+}
+
+// streamChat persists the user turn, reserves an assistant row, relays the
+// Python activity stream, and finalizes one assistant row. messages.content
+// is the final answer only.
+func (a *api) streamChat(w http.ResponseWriter, r *http.Request, scope chatScope) {
+	wsID, access := scope.workspaceID, scope.access
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeUnexpected(w, http.StatusInternalServerError)
@@ -185,10 +232,17 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	embed, err := a.resolveEmbedding(ctx, conv.WorkspaceID)
-	if err != nil {
-		a.fail(w, err)
-		return
+	// An account turn's session has no embedding pin: it searches workspaces
+	// of different pins, and each query embedding names its own (Epo
+	// 2026-10-27).
+	var embedRates store.TokenRates
+	if wsID != "" {
+		embed, err := a.resolveEmbedding(ctx, wsID)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		embedRates = embed.Rates
 	}
 
 	charge, err := a.beginProviderSession(
@@ -197,7 +251,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		wsID,
 		store.SurfaceChat,
 		llm.Rates,
-		embed.Rates,
+		embedRates,
 		llm.Thinking,
 	)
 	if err != nil {
@@ -259,22 +313,8 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		"modelDisplayName": cfg.DisplayName(),
 	})
 
-	// library.read is granted to any role that can chat, whatever the
-	// Workspace only switch says: the pipeline answers the library tools as
-	// unavailable while it is on, so the offered tools never change with it.
-	// Writing from the library still needs the role's write operations.
-	operations := agenttools.OperationsForRole(string(access.role))
+	operations := scope.turnOperations()
 	turn.role = string(access.role)
-	if access.readOnly || access.full {
-		// A frozen actor or owner keeps reading and deleting, not creating,
-		// editing or restoring. An owner at its storage limit loses creating
-		// and editing; restoring grows nothing.
-		operations = slices.DeleteFunc(operations, func(op agenttools.Operation) bool {
-			return op == agenttools.OpMaterialCreate || op == agenttools.OpDocumentEdit ||
-				(access.readOnly && op == agenttools.OpTrashRestore)
-		})
-	}
-	operations = append(operations, agenttools.OpLibraryRead)
 
 	// A send its AI buckets admit within ratelimit.MaxWait waits here, shown
 	// to the browser as the waiting_limit phase (a stop ends the wait); past
@@ -321,9 +361,10 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				}
 				cpCancel()
 			case "pending_sources":
-				// Viewers never learn that sources have pending edits.
-				forward = access.canEdit
-				if ev.Omitted != nil && *ev.Omitted {
+				// Viewers never learn that sources have pending edits; an
+				// account turn has no workspace to hear of them.
+				forward = access.canEdit && wsID != ""
+				if wsID != "" && ev.Omitted != nil && *ev.Omitted {
 					a.notifyPendingOverflow(ctx, wsID, ev.FileIDs)
 				}
 			}
@@ -401,7 +442,8 @@ func withinUndoLimit(ev pipeChatEvent) pipeChatEvent {
 // chatTurn is the trusted per-turn context the pipeline receives beside the
 // query: the Workspace only switch, the open item as stored (never the browser's
 // title), whether study progress is on for the requester here, and their
-// study preferences.
+// study preferences. An account turn has no open item, role or study
+// progress, and carries the workspaces it searches instead.
 type chatTurn struct {
 	workspaceOnly bool
 	// The requester's workspace role, said on the turn context's open line.
@@ -409,10 +451,22 @@ type chatTurn struct {
 	openResource     map[string]string
 	studyProgress    bool
 	studyPreferences store.StudyPreferences
+	// scopeWorkspaces is an account turn's workspace set (D2) with names and
+	// edit rights, fixed for the turn: search labels its hits from it, and Go
+	// checks every write again (Epo 2026-10-28).
+	scopeWorkspaces []store.ScopeWorkspace
 }
 
 func (a *api) chatTurnContext(ctx context.Context, userID, wsID string, req chatStreamReq) (chatTurn, error) {
 	turn := chatTurn{workspaceOnly: req.WorkspaceOnly}
+	if wsID == "" {
+		var err error
+		if turn.scopeWorkspaces, err = a.s.AccountScope(ctx, userID); err != nil {
+			return turn, err
+		}
+		turn.studyPreferences, err = a.s.StudyPreferencesOf(ctx, userID)
+		return turn, err
+	}
 	if o := req.OpenResource; o != nil && o.ID != "" {
 		title, found, err := a.s.ChatOpenResource(ctx, wsID, o.Kind, o.ID)
 		if err != nil {
@@ -431,6 +485,9 @@ func (a *api) chatTurnContext(ctx context.Context, userID, wsID string, req chat
 	return turn, err
 }
 
+// resolveConversation opens a new conversation in the turn's scope or loads
+// the user's own, which must be of that scope (an account conversation has
+// workspace "").
 func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID string) (store.Conversation, error) {
 	if convID == "" {
 		return a.s.CreateConversation(ctx, userID, wsID, "")
@@ -487,7 +544,6 @@ func (a *api) relayChat(
 	}
 	body := map[string]any{
 		"query":              query,
-		"workspaceId":        conv.WorkspaceID,
 		"userId":             userID,
 		"contractVersion":    agenttools.ContractVersion,
 		"operations":         operations,
@@ -496,11 +552,21 @@ func (a *api) relayChat(
 		"spendSessionId":     spendSessionID,
 		"locale":             a.userLocale(ctx, userID),
 		"workspaceOnly":      turn.workspaceOnly,
-		"openResource":       turn.openResource,
-		"role":               turn.role,
-		"studyProgress":      turn.studyProgress,
 		"studyPreferences":   turn.studyPreferences,
 		"officeTools":        prompt.OfficeTools,
+	}
+	// One field says the turn's scope (Epo 2026-10-27); a workspace turn keeps
+	// its own fields beside it.
+	if conv.WorkspaceID == "" {
+		body["scope"] = map[string]any{
+			"kind": agenttools.ScopeAccount, "workspaces": turn.scopeWorkspaces, "userId": userID,
+		}
+	} else {
+		body["scope"] = map[string]any{"kind": agenttools.ScopeWorkspace, "workspaceId": conv.WorkspaceID}
+		body["workspaceId"] = conv.WorkspaceID
+		body["openResource"] = turn.openResource
+		body["role"] = turn.role
+		body["studyProgress"] = turn.studyProgress
 	}
 	if prompt.Checkpoint != nil {
 		body["checkpoint"] = prompt.Checkpoint

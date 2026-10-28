@@ -1,4 +1,4 @@
-import { CursorEditor, withCursors, withYjs, YjsEditor } from '@slate-yjs/core';
+import { withYjs, YjsEditor } from '@slate-yjs/core';
 import {
   createSlateEditor,
   type NodeEntry,
@@ -11,6 +11,7 @@ import * as Y from 'yjs';
 import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import type { WorkspaceMember } from '@/api/types';
+import { sendCaret } from '@/features/notes/notePresence';
 import { MaterialKit } from '@/features/notes/plugins';
 import {
   checkpointRoom,
@@ -56,17 +57,7 @@ function sample<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)];
 }
 
-function cursorColor(seed: string) {
-  let hash = 0;
-  for (const character of seed) {
-    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  }
-  return `hsl(${hash % 360} 72% 48%)`;
-}
-
-type PeerEditor = ReturnType<typeof createSlateEditor> &
-  YjsEditor &
-  CursorEditor<{ color: string; name: string }>;
+type PeerEditor = ReturnType<typeof createSlateEditor> & YjsEditor;
 
 /** Text leaves outside void blocks, the only places a person could type. */
 function textEntries(editor: PeerEditor): NodeEntry[] {
@@ -100,16 +91,17 @@ function randomEdit(editor: PeerEditor, name: string) {
   YjsEditor.flushLocalChanges(editor);
 }
 
-function moveCursor(editor: PeerEditor) {
+/** Its caret, in the compact presence the app sends (notePresence.ts). */
+function moveCursor(editor: PeerEditor, awareness: Awareness) {
   const entries = textEntries(editor);
   if (entries.length === 0) {
-    CursorEditor.sendCursorPosition(editor, null);
+    sendCaret(editor, awareness, null);
     return;
   }
   const [node, path] = sample(entries);
   const length = TextApi.isText(node) ? node.text.length : 0;
   const point = { offset: Math.floor(Math.random() * (length + 1)), path };
-  CursorEditor.sendCursorPosition(editor, { anchor: point, focus: point });
+  sendCaret(editor, awareness, { anchor: point, focus: point });
 }
 
 function randomSourceEdit(text: Y.Text, name: string) {
@@ -167,27 +159,21 @@ class ChaosPeer {
     const { document, awareness } = this.participant;
     this.leaveRoom = join(this.room, this.participant);
     if (awareness) {
-      const data = { color: cursorColor(this.name), name: this.name };
       // The app's plugin set, so normalization keeps inline and void nodes.
-      // Cursor positions are sent by hand: autoSend would re-send the
-      // headless editor's null selection after every change.
-      // Plate's editor type is not structurally a Slate BaseEditor, so the
-      // slate-yjs wrappers take the same cast as Collaboration.test.ts.
-      const editor = withCursors(
-        withYjs(
-          createSlateEditor({ plugins: MaterialKit }) as never,
-          document.get('content', Y.XmlText),
-          { autoConnect: false }
-        ),
-        awareness,
-        { autoSend: false, data }
+      // Cursor positions are sent by hand, labelled and coloured by the
+      // room's presence like any peer's. Plate's editor type is not
+      // structurally a Slate BaseEditor, so the slate-yjs wrapper takes the
+      // same cast as Collaboration.test.ts.
+      const editor = withYjs(
+        createSlateEditor({ plugins: MaterialKit }) as never,
+        document.get('content', Y.XmlText),
+        { autoConnect: false }
       ) as unknown as PeerEditor;
       YjsEditor.connect(editor);
-      CursorEditor.sendCursorData(editor, data);
       this.editor = editor;
       const cursors = () => {
         if (!this.editor) return;
-        moveCursor(this.editor);
+        moveCursor(this.editor, awareness);
         this.schedule(cursors, pick(CURSOR_MS));
       };
       this.schedule(cursors, pick(CURSOR_MS));
@@ -211,7 +197,8 @@ class ChaosPeer {
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();
     if (this.editor) {
-      CursorEditor.sendCursorPosition(this.editor, null);
+      const { awareness } = this.participant;
+      if (awareness) sendCaret(this.editor, awareness, null);
       YjsEditor.disconnect(this.editor);
       this.editor = null;
     }

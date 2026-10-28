@@ -192,6 +192,11 @@ interface NoteEditorPrefsState {
   setDisplayWidth: (displayWidth: NoteDisplayWidth) => void;
   setEnabled: (enabled: EnabledMap) => void;
   setMermaidTheme: (theme: MermaidTheme) => void;
+  setShowOthers: (showOthers: boolean) => void;
+  /** Whether this device draws co-editors' carets, selections, pointers and
+   * block selections, in notes and Office files; the header's avatar group
+   * stays either way, and nobody stops sending their own (Epo 2026-10-28). */
+  showOthers: boolean;
   toggle: (id: WidgetGroupId) => void;
 }
 
@@ -211,6 +216,8 @@ export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
       setDisplayWidth: (displayWidth) => set({ displayWidth }),
       setEnabled: (enabled) => set({ enabled: { ...enabled } }),
       setMermaidTheme: (mermaidTheme) => set({ mermaidTheme }),
+      setShowOthers: (showOthers) => set({ showOthers }),
+      showOthers: true,
       toggle: (id) =>
         set((s) => ({ enabled: { ...s.enabled, [id]: !s.enabled[id] } })),
     }),
@@ -224,6 +231,7 @@ export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
           displayWidth: p.displayWidth === 'full' ? 'full' : 'half',
           enabled: mergeEnabledGroups(p.enabled),
           mermaidTheme: mermaidTheme(p.mermaidTheme),
+          showOthers: p.showOthers !== false,
         };
       },
       name: 'capy-note-editor-prefs',

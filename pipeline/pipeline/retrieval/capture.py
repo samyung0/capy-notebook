@@ -121,7 +121,7 @@ def cache_name(blob_path: str) -> str:
     return hashlib.sha256(blob_path.encode("utf-8")).hexdigest() + ".pdf"
 
 
-async def pdf_path(workspace_id: str, file_id: str) -> Path:
+async def pdf_path(workspace_id: str | None, file_id: str) -> Path:
     """The local PDF for ``file_id``, downloaded once per stored object."""
     row = await store.file_page_source(workspace_id, file_id)
     if row is None:
@@ -320,14 +320,18 @@ def picture_jpeg(
     return image_jpeg(io.BytesIO(data), crop_box(crop), max_edge, IMAGE_MAX_SIDE)
 
 
-async def office_file(workspace_id: str, file_id: str) -> bool:
+async def office_file(workspace_id: str | None, file_id: str) -> bool:
     """Whether the file is a Word, Excel or PowerPoint file (no page view)."""
     row = await store.file_page_source(workspace_id, file_id)
     return row is not None and is_office(row)
 
 
 async def render_file(
-    workspace_id: str, file_id: str, page: int, bbox: list[float] | None, max_edge: int
+    workspace_id: str | None,
+    file_id: str,
+    page: int,
+    bbox: list[float] | None,
+    max_edge: int,
 ) -> tuple[bytes, list[float], tuple[int, int]]:
     row = await store.file_page_source(workspace_id, file_id)
     if row is None:

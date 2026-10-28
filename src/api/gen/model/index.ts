@@ -172,6 +172,7 @@ export * from './invoiceStatus.ts';
 export * from './itemAttempts.ts';
 export * from './label.ts';
 export * from './learningProgress.ts';
+export * from './listAccountConversationsParams.ts';
 export * from './listAttemptsDir.ts';
 export * from './listAttemptsParams.ts';
 export * from './listAttemptsSort.ts';

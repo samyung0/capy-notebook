@@ -28,6 +28,7 @@ use sources::edit::{EditInput, SentBack};
 use sources::engine::PoolConfig;
 use sources::handoff::{Handoff, PUBLICATION_HOLD_MARKER, SourcePublish};
 use sources::pending::OFFICE_CHANGES_BUDGET;
+use sources::store::ResolveInput;
 use sources::text::{TEXT_ROOT, text_doc};
 use sources::{
     BoxFuture, Channel, ChannelId, Rooms, Save, SourceError, SourceRoom, Sources, SourcesConfig,
@@ -45,6 +46,8 @@ struct Fake {
     published: Arc<Mutex<Vec<Value>>>,
     /// Files whose checkpoint always moved: the refused CAS POSTs per file.
     moved: Arc<Mutex<HashMap<String, usize>>>,
+    /// The workspace each checkpoint named (Q459), in order.
+    saved_in: Arc<Mutex<Vec<Option<String>>>>,
 }
 
 fn refuse(status: u16, code: &str) -> Response {
@@ -59,7 +62,7 @@ async fn bootstrap(State(fake): State<Fake>, Path((id, _)): Path<(String, String
     let client = fake.db.get().await.unwrap();
     let Some(row) = client
         .query_opt(
-            "SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_source_sha256,d.state,d.state_seed_sha256,d.pending_effects,d.net_tokens,d.rebuild_pending,f.workspace_id FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL",
+            "SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_source_sha256,d.state,d.state_seed_sha256,d.pending_effects,d.net_tokens,d.rebuild_pending,COALESCE(f.workspace_id,'') FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL",
             &[&id],
         )
         .await
@@ -177,6 +180,10 @@ async fn route_post(
 
 /// The delta-save checkpoint (Go SaveSourceCheckpoint with `update`).
 async fn checkpoint(fake: Fake, id: String, body: Value) -> Response {
+    fake.saved_in
+        .lock()
+        .unwrap()
+        .push(body["workspaceId"].as_str().map(str::to_owned));
     if let Some(refused) = fake.moved.lock().unwrap().get_mut(&id) {
         *refused += 1;
         return refuse(409, "checkpoint_moved");
@@ -315,6 +322,7 @@ async fn harness() -> Harness {
         failures: Arc::default(),
         published: Arc::default(),
         moved: Arc::default(),
+        saved_in: Arc::default(),
     };
     let app = Router::new()
         .route(
@@ -1485,6 +1493,156 @@ async fn office_changes_read_only_the_named_workspaces_files() {
     let foreign = read(h.workspace.clone()).await;
     assert!(foreign.files.is_empty(), "read under another workspace");
     assert!(foreign.failed.is_empty(), "{:?}", foreign.failed);
+}
+
+/// A DOCX file with one saved edit, and its room's document.
+async fn saved_docx(h: &Harness) -> (SourceRoom, Doc) {
+    let (room, bytes, doc, id, text) = docx_room(h).await;
+    let mut durable = doc.transact().state_vector();
+    engine_edit(
+        &doc,
+        &bytes,
+        json!({ "type": "replace_text", "targetId": id, "expectedText": text, "text": format!("{text} saved") }),
+    );
+    save_office(h, &room, &doc, &mut durable).await.unwrap();
+    (room, doc)
+}
+
+/// Takes a file out of its workspace, as an upload with none.
+async fn no_workspace(h: &Harness, room: &SourceRoom) {
+    h.fake
+        .db
+        .get()
+        .await
+        .unwrap()
+        .execute(
+            "UPDATE files SET workspace_id=NULL WHERE id=$1",
+            &[&room.file_id],
+        )
+        .await
+        .unwrap();
+}
+
+/// Security regression (account chat): an empty workspace id reads only the
+/// named files with no workspace, and a workspace id leaves those out. Fails
+/// without the read's `NULLIF` filter, or while a file's owner is found only
+/// through its workspace.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn an_empty_workspace_reads_only_files_with_no_workspace() {
+    let h = harness().await;
+    let (standalone, doc) = saved_docx(&h).await;
+    no_workspace(&h, &standalone).await;
+    let (filed, _) = saved_docx(&h).await;
+    let files = [standalone.file_id.clone(), filed.file_id.clone()];
+    let live = live_of(&doc);
+    for (workspace, expected) in [("", &standalone), (h.workspace.as_str(), &filed)] {
+        let read = h
+            .sources
+            .office_changes(workspace, &files, &live, OFFICE_CHANGES_BUDGET)
+            .await
+            .unwrap();
+        assert!(read.failed.is_empty(), "{workspace:?}: {:?}", read.failed);
+        let [file] = <[_; 1]>::try_from(read.files).unwrap();
+        assert_eq!(file.file_id, expected.file_id, "{workspace:?}");
+        assert!(!file.changes.is_empty(), "{workspace:?}");
+    }
+}
+
+/// Account chat: a no-workspace file's image change resolves for an empty
+/// workspace id, as Go sends it, and is refused under a workspace's id.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_no_workspace_files_image_change_resolves() {
+    let h = harness().await;
+    let (room, _, doc, _, _) = docx_room(&h).await;
+    let mut durable = doc.transact().state_vector();
+    // An image pasted in the editor.
+    let image = b"\x89PNG pasted".to_vec();
+    let editor = docx_edit::EditingDoc::new(7);
+    editor
+        .apply_update_v1(&encode(&doc, &StateVector::default()))
+        .unwrap();
+    let src = format!("data:image/png;base64,{}", STANDARD.encode(&image));
+    editor
+        .insert_embed(
+            &docx_edit::EditCtx::local("test", "2026-10-28T00:00:00.000Z"),
+            docx_edit::Position::new("body", 0),
+            "image",
+            vec![("src".into(), src.into())],
+        )
+        .unwrap();
+    apply(&doc, &editor.encode_state_as_update_v1());
+    save_office(&h, &room, &doc, &mut durable).await.unwrap();
+    no_workspace(&h, &room).await;
+    let read = h
+        .sources
+        .office_changes(
+            "",
+            std::slice::from_ref(&room.file_id),
+            &live_of(&doc),
+            OFFICE_CHANGES_BUDGET,
+        )
+        .await
+        .unwrap();
+    let [file] = <[_; 1]>::try_from(read.files).unwrap();
+    let change = file
+        .changes
+        .iter()
+        .find(|change| change.asset_ref.is_some())
+        .expect("the image's change");
+    let input = |workspace: &str| ResolveInput {
+        file_id: room.file_id.clone(),
+        workspace_id: workspace.into(),
+        user_id: h.user.clone(),
+        epoch: file.epoch,
+        checkpoint: file.checkpoint,
+        change_id: change.id.clone(),
+    };
+    let resolved = h.sources.resolve(&input(""), live_of(&doc)).await.unwrap();
+    assert_eq!(STANDARD.decode(resolved.bytes).unwrap(), image);
+    let refused = h
+        .sources
+        .resolve(&input(&h.workspace), live_of(&doc))
+        .await
+        .unwrap_err();
+    assert_eq!(refused.status(), Some(409));
+}
+
+/// Standalone files (Epo 2026-10-27): the agent inspects and edits a file
+/// with no workspace through its owner's session, which Go's bootstrap
+/// answers with no workspace (""), and the save names none, so Go checks the
+/// actor as the file's payer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_file_with_no_workspace_is_inspected_and_edited() {
+    let h = harness().await;
+    let room = h.file("text", "notes.md", b"abc").await;
+    no_workspace(&h, &room).await;
+    let inspect = || async {
+        h.sources
+            .inspect(
+                &room.file_id,
+                &h.user,
+                None,
+                |_: String| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) },
+            )
+            .await
+            .unwrap()
+            .text
+    };
+    assert_eq!(inspect().await.as_deref(), Some("abc"));
+    let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
+    let input = EditInput {
+        actor_user_id: h.user.clone(),
+        commands: vec![json!({ "type": "replace_text", "expectedText": "abc", "text": "abd" })],
+        file_id: room.file_id.clone(),
+        operation: json!({ "id": unique("op"), "requestHash": "h1" }),
+        undo: None,
+    };
+    h.sources.apply_edit(input, live).await.unwrap();
+    assert_eq!(*h.fake.saved_in.lock().unwrap(), [Some(String::new())]);
+    assert_eq!(inspect().await.as_deref(), Some("abd"));
 }
 
 /// Q435: a cache write that fails is logged, and the read still answers

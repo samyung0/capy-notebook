@@ -183,16 +183,43 @@ func TestEveryOfficeCommandHasALimit(t *testing.T) {
 	}
 }
 
+// Account chat's first version (Epo 2026-10-27) reads, searches, creates and
+// edits, and resolves its reads' source changes (Epo 2026-10-28); trash,
+// restore and study progress stay in workspace chat, and each scope searches
+// with its own tools; both list with list_sources (Q523).
+func TestToolScopes(t *testing.T) {
+	want := map[string][]Scope{
+		"search_workspace":     {ScopeWorkspace},
+		"search_files_summary": {ScopeAccount}, "create_workspace": {ScopeAccount}, "list_workspaces": {ScopeAccount}, "search_files_content": {ScopeAccount},
+		"read_study_progress": {ScopeWorkspace},
+		"trash_file":          {ScopeWorkspace}, "list_trashed_files": {ScopeWorkspace}, "restore_file": {ScopeWorkspace},
+	}
+	for _, def := range Definitions() {
+		scopes, ok := want[def.Name]
+		if !ok {
+			scopes = []Scope{ScopeWorkspace, ScopeAccount}
+		}
+		if !slices.Equal(def.Scopes, scopes) {
+			t.Errorf("%s scopes = %v, want %v", def.Name, def.Scopes, scopes)
+		}
+	}
+	for _, op := range AccountOperations() {
+		if op == OpResourceTrash || op == OpTrashRead || op == OpTrashRestore {
+			t.Fatalf("account chat was granted %s", op)
+		}
+	}
+}
+
 func TestRetentionBetweenMessages(t *testing.T) {
 	want := map[ResultRetention][]string{
 		RetainFull: {
 			"list_sources", "create_material", "add_questions", "add_question_media", "create_deck",
-			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document",
+			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document", "search_files_summary", "create_workspace", "create_chapter", "search_knowledge", "list_workspaces",
 		},
-		RetainCitedPassages: {"search_workspace", "read_document", "search_web"},
+		RetainCitedPassages: {"search_workspace", "read_document", "search_web", "search_files_content"},
 		RetainUsedExcerpts:  {"read_knowledge"},
 		RetainNone: {
-			"capture_page", "read_study_progress", "search_knowledge", "capture_knowledge_page", "read_skill",
+			"capture_page", "read_study_progress", "capture_knowledge_page", "read_skill",
 			"resolve_source_change", "inspect_document", "list_trashed_files", "inspect_office_document",
 		},
 	}

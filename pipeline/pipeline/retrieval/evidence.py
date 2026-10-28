@@ -12,7 +12,8 @@ from dataclasses import asdict, fields
 from typing import Any
 
 from ..prompts import chat as chat_prompts
-from . import pending_hints, skills, store, tools
+from . import pending_hints, profiles, skills, store, tools
+from .scope import AccountScope
 from .search import Passage
 
 
@@ -54,6 +55,9 @@ def pack(ctx: tools.ToolContext, cited_order: list[int]) -> dict[str, Any]:
         payload["libraryExcerpts"] = excerpts
     if ctx.pending_hints:
         payload["pendingHints"] = pending_hints.pack(ctx.pending_hints)
+    if ctx.workspaces_shown:
+        # Replayed with this turn's message, as it was sent.
+        payload["workspaces"] = ctx.workspaces_shown
     return payload
 
 
@@ -90,12 +94,11 @@ async def history_turns(
             if p.get("kind") != "web"
         }
     )
-    current = await store.history_passages(ctx.workspace_id, chunks) if chunks else []
+    current = await _history_passages(ctx, chunks) if chunks else []
     available = {
         (p.file_id, p.chunk_id): p
-        for row in current
-        if ctx.file_ids is None or row["file_id"] in ctx.file_ids
-        for p in [Passage.from_row(row)]
+        for p in current
+        if ctx.file_ids is None or p.file_id in ctx.file_ids
     }
     library_parts = (
         await ctx.library_evidence.history_parts(history or [], ctx)
@@ -114,12 +117,20 @@ async def history_turns(
         unfinished = UNFINISHED.get(turn.get("status") or "")
         if role == "assistant" and unfinished:
             content = f"{content}\n\n{unfinished}" if content else unfinished
+        if role == "user" and content:
+            # Account chat's workspace list, where its first message carried it.
+            answer = turns[i + 1] if i + 1 < len(turns) else {}
+            listed = (answer.get("toolEvidence") or {}).get("workspaces")
+            if answer.get("role") == "assistant" and listed:
+                content = f"{listed}\n\n{content}"
         if role == "user" and content and "workspaceOnly" in turn:
             # A mode note where the switch is first known or changes, as it was
             # sent, so the request prefix stays cached.
             mode = bool(turn["workspaceOnly"])
             if mode is not shown:
-                content = chat_prompts.with_mode_line(content, mode)
+                content = chat_prompts.with_mode_line(
+                    content, mode, profiles.of(ctx).mode_lines
+                )
             shown = mode
         if content:
             out.append({"id": turn.get("id") or "", "role": role, "content": content})
@@ -189,7 +200,9 @@ async def history_turns(
                 {
                     "id": turn.get("id") or "",
                     "role": "user",
-                    "content": skills.render(name, skills.SKILLS[name].text()),
+                    "content": skills.render(
+                        name, skills.text(name, account=ctx.account)
+                    ),
                     "_kind": "skill",
                 }
             )
@@ -197,6 +210,19 @@ async def history_turns(
 
 
 _PASSAGE_FIELDS = {f.name for f in fields(Passage)}
+
+
+async def _history_passages(ctx: tools.ToolContext, chunks: list[str]) -> list[Passage]:
+    """Saved passages still in the current index of the chat's scope; an
+    account chat's are those still in its scope, labelled as search labels
+    them."""
+    if not isinstance(ctx.scope, AccountScope):
+        rows = await store.history_passages(ctx.workspace_id, chunks)
+        return [Passage.from_row(row) for row in rows]
+    rows = await store.account_history_passages(
+        ctx.scope.user_id, list(ctx.scope.workspace_ids), chunks
+    )
+    return await tools.label_passages(ctx, [Passage.from_row(r) for r in rows])
 
 
 def _web_part(ctx: tools.ToolContext, snapshot: dict[str, Any]) -> str:

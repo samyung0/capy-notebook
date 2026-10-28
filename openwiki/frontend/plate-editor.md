@@ -147,7 +147,7 @@ CenterContent
                         │       ├── PlateContent + link actions
                         │       └── FloatingToolbar (edit only)
                         ├── EditorCommandPalette
-                        └── AiMenu (edit only)
+                        └── GhostTextSync (edit only)
 ```
 
 `FloatingToolbar` shares the editor's positioned `PlateContainer`, following
@@ -200,13 +200,16 @@ padding to 6px and buttons/icons to 40px/20px through className; other floating
 actions use 32px/16px.
 
 `NoteEditor` requests the room token only for Edit mode.
-`NoteEditorCore` owns one garbage-collected `Y.Doc`, configures remote cursor
-identity, and calls Yjs `init` with the canonical room and `value: null`.
+`NoteEditorCore` owns one garbage-collected `Y.Doc`, sends its caret in the
+compact [presence](#presence-payloads) shape, and calls Yjs `init` with the
+canonical room and `value: null`.
 Cleanup destroys providers and disconnects the Yjs editor.
 
-Co-editors' selections arrive through awareness as Yjs relative positions
-(`RemoteCursors.tsx`). `useRemotePeers` puts them in React state only when a
-peer's selection or label changes, so heartbeats re-render nothing, and
+Co-editors' selections arrive through awareness as base64 Yjs relative
+positions, the caret's anchor `s` and focus `f` ([presence
+payloads](#presence-payloads), `RemoteCursors.tsx`). `useRemotePeers` puts
+them in React state only when a peer's selection or label changes, so
+heartbeats, pointers and block selections re-render nothing, and
 `decorate` resolves them against the document once per document version (or
 peer change), so an edit before an idle peer's caret moves it, as comment
 anchors do. They are returned for the root entry only: slate-react hands the
@@ -214,17 +217,26 @@ root's decorations down to every node they cover, and returning them per block
 and text drew each caret three times. A selection is a tinted range
 (`data-remote-cursor`); every peer also gets a caret at its focus, a collapsed
 decoration that renders as an empty, zero-width leaf with `data-remote-caret`.
-Both carry the peer's colour as `--remote-cursor` and its label, the verified
-name the [room presence](#room-presence) gives its awareness client id (never
-a name its awareness claims; notes send none, and a client the presence does
-not name reads "Collaborator"), and the `.note-editor` stylesheet paints them: the tint through `color-mix` (peers send `hsl()`
-colours, which a hex alpha suffix made invalid) and the caret's 2 px bar as a
+Both carry the peer's colour and its label from the [room
+presence](#room-presence), never from its awareness: the colour is
+`--remote-cursor: var(--peer-<n>)`, n the connection's person number modulo 8,
+so every co-editor sees a person in the same colour (Epo 2026-10-28; the
+cursors design's eight colours, a light and a dark shade, set on `:root`
+and `.dark` in `tailwind.css`), and the label is the verified name
+it gives the client id (a listed connection without a name reads
+"Collaborator"); a client the presence does not list yet is not drawn. The
+`.note-editor` stylesheet paints them: the tint through `color-mix` and the
+caret's 2 px bar as a
 `::before`, so the caret adds no DOM node to the text and leaves Slate's
 DOM-to-point mapping and native caret movement alone. slate-react renders no
 decorations inside a void, so a caret on an inline equation is drawn right
 after it; a caret on a block void (a block equation, an image, an embed) is not
 drawn. Positions beside an inline element resolve through the slate-yjs patch
-(Mermaid source below).
+(Mermaid source below). A peer's `s` or `f` that decodes to a position on a
+root type (`tname`) instead of an item is skipped (`decodePosition`; Epo
+2026-10-29, Q546): resolving it would make this tab's note `Y.Doc` create
+that root type and keep it, one per name a peer sends. Carets always name
+items.
 
 The Plate editor initially has a query-cache value so the React tree has a valid
 shape before connection, but that value is never supplied as Yjs initialization
@@ -304,6 +316,88 @@ and grows 5 %, neighbours lift 0.45 as much per step, 320 ms in on the
 smooth-out curve and back on the strong bounce; reduced motion keeps them
 still).
 
+### Presence payloads
+
+Developer Epo decided on 2026-10-28 that presence payloads are compact,
+listed per room kind and checked on both ends (todo-presence.md, measured in
+bench/collaboration/reports/2026-10-28-presence-load.md: compact JSON, no
+binary format). A note room's awareness state (`notePresence.ts`) holds only:
+
+| field | value | bounds |
+| --- | --- | --- |
+| `s` | caret anchor: base64 of `Y.encodeRelativePosition` | ≤ 64 base64 characters |
+| `f` | focus, the same; absent when the selection is collapsed | ≤ 64 |
+| `p` | pointer `[blockId, x, y]` or `null` | id ≤ 64 characters; x, y integers 0–1000 |
+| `b` | block selection runs `[[firstId, lastId], ...]` | ≤ 16 runs, ids ≤ 64 |
+| `uploads` | upload placeholder ids ([uploads](#stable-ids-and-persisted-node-data)), writers only | ≤ 100 ids ≤ 32 characters |
+
+A source room's holds only `cursor` ([Office cursors](#office-cursors)); an
+item room (quiz, set, mindmap, diagram) and a quiz's keys room hold none.
+The collaboration server (`presence.rs`, called from `on_awareness` in
+`room.rs`) keeps and relays a state only when every field is one its room
+kind lists, within bounds, and the state is at most 4 KiB
+(`MAX_AWARENESS_ENTRY`); it drops any other silently (presence is best
+effort, the channel stays joined) and relays the bytes the sender wrote. A
+removal is always taken; a malformed frame is still refused. A read-only
+channel's `uploads` is a field it may not send, so its state goes whole. The
+browser reads peers' states through the same list (`readNotePresence`, cached
+per state object; `officeCursors.ts` for sources) and skips any other.
+
+The tab writes its presence through `setNotePresence`, which sends only when
+a field changed and, when the state would pass 4 KiB, leaves out `b` and
+sends the rest (Epo 2026-10-28, Q524; the runs go again once they fit). With
+real ids it never needs to: 100 upload nanoids, 16 runs of UUIDs, a selection
+and a pointer make 3,800 bytes; only ids near their bounds pass the cap (at
+most 5,920 bytes, 3,738 without `b`). A caret alone is about 24 bytes. The
+caret replaces slate-yjs's `sendCursorPosition`,
+inside the 50 ms throttle (`sendCaret`, `cursorThrottle.ts`). The pointer
+(`sendPointer`, mouse and pen only) names the innermost block under it by its
+stable `data-block-id` and x and y as 0–1000 of its box, at most every 50 ms,
+read in an animation frame with that frame's layout, not in the timer (Q547),
+and `p: null` when it leaves the editor, the page scrolls (a still pointer
+fires no pointermove, so it would name a block it left) or the tab is hidden
+or the window blurred, until it moves again; an id the room would refuse goes
+as null. `BlockSelectionPresence` folds `BlockSelectionPlugin`'s selected ids
+into runs of adjacent siblings in document order (`blockRuns`), at most 16,
+none past that. It visits only the selected blocks (Q547): each id resolves
+through `blockIndex` over the rendered note and slate's element map, and the
+paths order them, an ancestor before its descendants. On the 2 MB load-test
+note at CPU x4 a selection change cost the old walk of the whole note about
+58 ms, and costs well under 1 ms this way.
+
+`RemotePresenceMarks` draws co-editors' pointers and block selections as Epo
+picked from the mocks (2026-10-28, capy-harness
+2026-10-28-followups/presence-mocks, P1 and B3): a pointer is hugeicons
+Cursor02Icon (`pointer` in `Icon.tsx`) filled with the peer's colour, its
+tip at x and y of the block's box, with the name in a pill below and right
+of it (left of it within 142 px of the editor's right edge, the widest pill
+and its gap); a block
+selection is a 2 px outline 4 px outside each run, from its first block's
+top to its last block's bottom, its corners half the theme's
+`--radius-button` (capy 4 px, fisheye 6 px, notion 3 px), with the name in a
+flag at its top right. A name past 128 px is cut with an ellipsis, in the pill
+and the flag. Both use `--peer-<n>` and `--peer-fg` (white on the
+light shades, #11111b on the dark), and a block the note does not render
+draws nothing. They sit in an overlay in the editor's container, so they
+scroll with the note; it lays out at most once a frame and never re-renders
+the editor. A peer's marks are placed again (`placeMarks`) only when its
+pointer, runs, name or colour change, not on its caret moves; every peer's
+when the room's presence, the note's size or the document changes (an edit
+can move a block without resizing the note). Marks find their blocks through
+`blockIndex`, a map of the note's `data-block-id` elements filled in one pass
+and filled again only when an id has no live element, at most once a layout,
+instead of a search of the note per mark (review P1, 2026-10-28: on the 2 MB
+load-test note at CPU x4 a co-editor's caret move cost the marks about 46 ms
+and a pointer move about 70 ms before, nothing and about 38 ms after).
+
+One switch, "Show others' cursors" in Settings › Customizations › Editor
+(`EditorSection`, below Chat; `showOthers` in `noteEditorPrefs.ts`, a device
+setting, on by default; Epo 2026-10-28, Q542), decides only what this device
+draws, in every document type: off, notes draw no co-editor carets,
+selections, pointers or block selections and Office files no cursors
+(`createOfficeCursors` sends the frame no peers); the header's avatar group
+stays, and every tab keeps sending its own presence.
+
 ### Office cursors
 
 Developer Epo decided on 2026-10-20 that Office files draw co-editors'
@@ -318,9 +412,17 @@ source room's awareness (`officeCursors.ts`, `useSourceSession`). Capy sends
 the frame the co-editors' cursors as `peers`: each client id with a cursor in
 the room's awareness and a name in the room's presence, under that name,
 never one from awareness; an id the presence does not list (a reader, or a
-peer not listed yet) is not drawn. A cursor is a DOCX story and its encoded
-positions, an XLSX sheet and cell range, or a PPTX slide and shape, each
-bounded (`isOfficeCursor`). The flags look as the fork draws them.
+peer not listed yet) is not drawn, and neither is a state the source room's
+field list drops. A cursor is a DOCX story and its encoded positions, an XLSX
+sheet and cell range, or a PPTX slide and shape, each bounded
+(`isOfficeCursor` for the frame's messages). In awareness the adapter writes
+DOCX positions as base64 (at most 1,368 characters, 1,024 bytes) and the
+frame gets its byte arrays back (Epo 2026-10-28); it writes each field by
+name, and a state holding anything beside `cursor`, or a cursor with any
+other field, is dropped by the server and by `officePeers`. The show-others
+switch ([presence payloads](#presence-payloads)) hides them. PPTX `shapeIds`
+and Office pointers wait on a BetterOffice change. The flags look as the fork
+draws them.
 
 ### Idle close
 
@@ -384,7 +486,7 @@ Text leaves do not need IDs. Runtime values must never be written onto nodes:
 - upload progress and errors;
 - selection, hover, dialog, or plugin state;
 - collaboration presence;
-- local AI preview data.
+- the ghost-text suggestion.
 
 Media nodes persist `assetId` and stable metadata. A note's media are images
 and audio only (Epo 2026-10-15): there is no PDF or file block, and the editor
@@ -499,15 +601,14 @@ each placeholder subscribes to awareness on its own
 a presence change re-renders only the placeholders whose answer changed, not
 the editor. When the uploader disconnects (the room nulls its presence) or
 its awareness times out, the block is the empty placeholder again; nothing
-about an upload is stored in the note. A tab names at most 100 uploads (an id
-is at most 21 characters, so under 3 KiB of the server's 64 KiB awareness
-entry, past which the room closes the channel), and a received list counts
-only its first 100 ids of up to 32 characters (REVIEW5 E1, E3). The room drops
-the list from a read-only channel's presence (`without_uploads` in
-`room.rs`), so a viewer cannot show blocks as uploading (REVIEW5 E2; it parses every
-such entry, so an escaped key cannot slip past, R1, and relays one it cannot
-parse as a removal, since a browser's `JSON.parse` takes some JSON serde_json
-refuses, R1b). Viewers
+about an upload is stored in the note. A tab names at most 100 uploads of at
+most 32 characters (an id is a 21-character nanoid), the note's field list
+([presence payloads](#presence-payloads)): a state with a longer list or id is
+dropped whole, by the room and by every receiver (REVIEW5 E1, E3). A read-only
+channel's state naming uploads is dropped whole, so a reader cannot show
+blocks as uploading (REVIEW5 E2; the room parses every state, so an escaped
+key cannot slip past, R1, and drops one serde_json cannot parse, though a
+browser's `JSON.parse` takes some of it, R1b). Viewers
 that do not join the room (the static projection) do not see it.
 
 Each asset belongs to one note, and the server keeps it that way; the browser
@@ -1378,8 +1479,7 @@ popovers, dropdown and context menus, selects, floating toolbars and popups
 (`useEditorHeld` in `src/components/ui`) turn inert, an open one included
 (it stays open and takes input again once sent; its overlay and Escape still
 close it, dropping only the dialog's own form state, never document edits); the Ctrl+K palette neither
-opens nor runs a command (its listener is on `window`); the AI menu is a
-popup; the quiz and flashcard Undo and Redo buttons in the page header are
+opens nor runs a command (its listener is on `window`); the quiz and flashcard Undo and Redo buttons in the page header are
 disabled. A DOCX or PPTX editor pauses as for any other pause
 (`set-capabilities` with `canEdit: false`: read-only, selectable), and the
 XLSX editor takes the runtime's `sending` message instead: the runtime keeps
@@ -1486,7 +1586,8 @@ close; they join again once the note has joined. Each embed keeps its own
 document, storage, history, keys room and id; its own token refreshes and
 expiry apply as for any channel, and a JOIN costs one message of the
 allowance. With no note channel (an embedded set opened on its own study
-page, or under MSW) an item room joins as any document does. A room keeps at most 256 awareness
+page, or under MSW) an item room joins as any document does; it keeps no
+awareness state ([presence payloads](#presence-payloads)). A room keeps at most 256 awareness
 client ids (`MAX_CLIENTS_PER_ROOM`); a new id past it is not kept. The room's
 cap counts removed ids until their removal went out (the next flush forgets
 them), so adding and removing ids in a loop stays capped and needs no scan.
@@ -1955,7 +2056,7 @@ design, option d), and the nudge's release file on 2026-10-17.
     remain after a deploy.
 - **A refused editor** stops for the page load and turns read-only:
   - notes reuse the `offline-limit` machinery (content `readOnly`, toolbar
-    inert, no palette or AI menu, `canEdit` off);
+    inert, no palette or ghost text, `canEdit` off);
   - item editors show their list or diagram read-only;
   - a source keeps its view, with Office `set-capabilities` turning editing
     off.
@@ -2237,8 +2338,8 @@ with "Some unsaved edits from your last session couldn't be restored."
 While offline a session may hold up to `maxContentBytes` (2 MiB) of unsaved
 local updates; past that the editor turns read-only under the `offline-limit`
 banner until it reconnects: the content is `readOnly` (block actions follow
-Plate's read-only state), the toolbar is inert, the command palette, AI menu
-and floating toolbar are not mounted, `canEdit` is off for the rest, and the
+Plate's read-only state), the toolbar is inert, the command palette, ghost
+text and floating toolbar are not mounted, `canEdit` is off for the rest, and the
 recorder stores nothing more. What was stored stays; nothing reaches the
 editor through REST-backed dialogs offline anyway. When storage fails
 (private mode, a full disk) editing continues in memory under the
@@ -2845,7 +2946,7 @@ by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
   composition the pause ends changes nothing), and `pauseEdits` turns the
   editable root `contenteditable=false` and stops typing, paste, drops,
   drags, right clicks and clicks on controls in the capture phase. Its
-  toolbar is inert, the palette and AI menu unmount, it leaves its room
+  toolbar is inert, the palette and ghost text unmount, it leaves its room
   (no reconnect), writes its unsaved edits as one whole document (its child
   effect runs before `useNoteDrafts` reads the next room's drafts, so another
   lineage's edits still become pieces) and reports nothing
@@ -3709,82 +3810,63 @@ A removed flashcard's review state stays in `review_states`, ignored until an
 Undo brings the card back. The chat result card shows the effect with an Undo
 button (`available`, `unavailable`) fed by the receipt's `undo` ref.
 
-## AI previews
+## Ghost text
 
-AI output is local until accepted:
+Editor AI is ghost text only (Epo 2026-10-28; the AI menu, its previews and
+`/ai/command` are gone). It is the one suggestion Plate's `CopilotPlugin`
+draws after the caret's block (`ghostTextPlugin.ts`, `GhostTextView.tsx`),
+shown from `sm` up. The request, the context window, the trigger rule and the
+credits pause live in `ghostText.ts`, which has no Plate code so the coming
+BlockSuite note can reuse them.
 
-- streamed edits retain a Yjs relative target range;
-- generated inserts retain a stable block ID;
-- table updates retain stable cell IDs;
-- proposed text/nodes live in a local weak store, not Slate or Yjs.
+- **On.** Each user turns it on in Settings → LLM ("Note AI suggestions",
+  `users.note_ai_enabled`, off by default; there is no build flag). The plugin
+  is registered wherever the editor may call the server
+  (`allowExternalAssets`); `GhostTextSync` hands it the switch and the note
+  title at runtime, so flipping the switch never rebuilds the editor, and
+  turning it off drops a suggestion on screen. While off nothing triggers and
+  every key handler returns false, so Tab and the rest reach the editor.
+- **Where.** Top-level text blocks only (paragraphs, headings and the flat
+  indent lists), never a table cell, callout, column or code line, and only
+  from 640px up: below `sm` the suggestion is hidden and phone keyboards have
+  no Tab (Epo 2026-10-28).
+- **Trigger.** With the caret collapsed at the end of its block, a 500 ms
+  pause after a space, a CJK character or a CJK punctuation mark (Chinese has
+  no spaces), never during IME composition or while a suggestion shows. Any
+  local edit or caret move restarts the pause. ⌥Space (Ctrl+Space off Apple)
+  asks at once.
+- **Keys** (MI:225). Tab accepts, Esc rejects, ⌥→ (Ctrl+→) takes one word;
+  typing what the suggestion starts with consumes it, anything else drops it.
+- **Request.** `POST /api/workspaces/{id}/ai/copilot` with `{title, before,
+  after}`. `before` is Markdown of whole top-level blocks back from the caret's
+  block within 1,500 UTF-8 bytes (a longer caret block keeps its end), its
+  trailing space kept; `after` is empty in Plate, since the caret is at the end
+  of its block. Plate posts a string prompt, so `ghostTextPlugin` passes the
+  context through as JSON and sends it with the API client, which turns a
+  refusal into an `ApiError`.
+- **Stale requests.** A local operation, typing or a caret move, cancels the
+  pending trigger and aborts a running request (Plate itself would let both
+  run on), and an answer is shown only while the caret's block and its text
+  are what it was asked about. A collaborator's edit elsewhere leaves the
+  suggestion and the request alone; one in the caret's block drops them.
+- **Rendering.** Plate renders the ghost-text component under every block;
+  it subscribes only to whether its block holds the suggestion, and only that
+  block reads the text, so a changing suggestion re-renders one block.
+- **Errors.** Failures, an empty answer and `provider_busy` stay silent.
+  `llm_credits_exhausted` shows one toast (the shared credits copy) and stops
+  auto-trigger until the page reloads; `note_ai_disabled` (turned off on
+  another device) turns it off in this tab.
 
-`AiMenu` displays removed and proposed text. Reject clears local state without a
-Yjs transaction. Accept (`applyAiPreview`) writes the suggestion over its
-target as the target reads now, whatever someone changed there since the
-preview (Epo 2026-10-21, no stale check):
-
-- the proposed Markdown, and each table cell's, goes through the editor's
-  markdown import (`importMarkdownDocument`, as a pasted file: URL images
-  upload, quiz and flashcards fences become rows first), so it lands as
-  formatted nodes;
-- an edit whose answer keeps the range's block count in plain paragraphs
-  (Improve, Grammar and the like) replaces each covered block's text in
-  place, so every block keeps its type, list, alignment, id and Yjs text (a
-  peer's concurrent typing elsewhere in the block and comment highlights in
-  it survive; the adapter sends no marker for indent lists or h4-h6, so the
-  model answers those in plain text);
-- any other edit deletes the range, its void blocks (images, embeds,
-  dividers) whole, and inserts the nodes there as a paste (Plate's table and
-  code-block `insertFragment` ignore `at`); when the range covered a whole
-  block, a plain first paragraph takes that block's type, properties and id,
-  and any other first block keeps the model's shape with the block's id;
-- an insert goes after its block; a table update replaces the cell's
-  children, keeping the cell, and a cell the model emptied is written empty;
-- the operations are local, and slate-yjs sends them in one transaction with
-  its local origin, so they apply once and `Y.UndoManager` records one step
-  (capture stopped before and after). The old code wrapped the flush in a
-  transaction of its own origin, which slate-yjs read as remote and applied a
-  second time, and Undo never saw.
-
-When the text a suggestion was for was removed entirely (the edit range's
-block left the document or all of its text is gone, the insert's block is
-gone, every updated table cell is gone), Accept drops the suggestion and
-closes the menu with no message, since the removal is already visible (Epo
-2026-10-21); a table cell removed alone is skipped and the others are written.
-The targets are checked before the conversion as well as after it, so a
-dropped Accept creates no fence rows. An answer that converts to no nodes (a
-lone fence whose row could not be created) writes nothing and shows "The
-suggestion could not be added to the note". Reject is disabled while Accept converts, and a preview
-replaced meanwhile (a new command) is not written. The command's range is
-unhung first (`commandRange` in `aiMenuState.ts`), so a Shift+Down selection
-neither inserts below nor edits the next block.
-
-Copilot ghost text remains plugin-local and continues in the note's language.
-Generate/comment replies follow the account locale injected by the gateway; edits
-keep the selection's language unless the instruction asks to translate. AI
-comments use the same relative-anchor REST path as user comments.
-
-Editor AI is two public routes: `POST /api/workspaces/{id}/ai/command`
-(Python `/plate-ai/command`) and `POST /api/workspaces/{id}/ai/copilot`
-(Python `/plate-ai/copilot`). Both resolve the
-`users.editor_model_provider_slug` / `users.editor_model_slug` pair the same
-way chat does. Chrome is gated by `VITE_FEATURE_EDITOR_AI`
-(off by default).
-
-The command menu always sends `ctx.toolName`. Missing or unknown values are
-`400`. There is no server classify step. Free-form text in the menu input
-sends `generate`, so a rewrite-style sentence still inserts new Markdown
-below the selection's last block instead of replacing the selection (a
-generate previews as an insert whatever Plate's mode, `aiPlugins.ts`). Canned Improve / Grammar / Shorter /
-Longer / Simplify send `edit`. `comment` is implemented and kept for a future
-Comment action; the current menu never sends it. Retry resends the last
-`toolName`.
-
-Thinking is forced to Instant on every editor provider call so typing stays
-fast. Settings → LLM shows a disabled Instant control for editor assistance.
-That settings lock is UI-only: the prefs schema has no `editorThinking`.
-See [observability-metering.md](../observability-metering.md) for pinning,
-leases, and credit rates.
+The gateway refuses with 403 `note_ai_disabled` while the switch is off,
+before any spend; otherwise it bills the editor surface on the editor slot's
+default pin with reasoning off (`resolveLLM`). Python owns the prompt
+(`prompts/editor.py`): a short system prompt, then the title and the text
+around a `<CARET>` marker; 40 output tokens at temperature 0.2. The answer
+keeps its first line only and loses its leading whitespace when `before`
+ends in whitespace (`ghost_suggestion`). The pin's cost, latency and capacity
+are measured in `todo-ghost-text.md`; see
+[observability-metering.md](../observability-metering.md) for pinning, leases
+and credit rates.
 
 ## Static rendering
 

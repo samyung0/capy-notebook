@@ -268,8 +268,11 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 }
 
 type internalOfficeCreateReq struct {
+	// WorkspaceID is the turn's workspace, or with Scope "account" where the
+	// file lands ("" for No workspace), as for a material.
 	WorkspaceID        string `json:"workspaceId"`
 	UserID             string `json:"userId"`
+	Scope              string `json:"scope"`
 	AssistantMessageID string `json:"assistantMessageId"`
 	ToolCallID         string `json:"toolCallId"`
 	Format             string `json:"format"`
@@ -324,7 +327,7 @@ func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	defer unlock()
-	op, ok := a.agentFileOperation(w, r, req.UserID, req.WorkspaceID, req.AssistantMessageID, req.ToolCallID, map[string]any{
+	op, ok := a.agentFileOperation(w, r, req.Scope, req.UserID, req.WorkspaceID, req.AssistantMessageID, req.ToolCallID, map[string]any{
 		"format": req.Format, "title": req.Title, "chapterId": req.ChapterID, "commands": req.Commands,
 	})
 	if !ok {

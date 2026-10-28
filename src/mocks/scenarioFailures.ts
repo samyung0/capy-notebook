@@ -358,7 +358,6 @@ export const failureScenarios = [
     paths: [
       '/api/workspaces/:id/chat/stream',
       '/api/workspaces/:id/generate',
-      '/api/workspaces/:id/ai/command',
       '/api/workspaces/:id/ai/copilot',
     ],
     status: 402,

@@ -110,7 +110,8 @@ def resolve(pdf: Path, passages: list[Passage]) -> list[list[dict[str, Any]]]:
 
 
 async def refine(workspace_id: str, passages: list[Passage]) -> list[dict[str, Any]]:
-    """Read each cited PDF once; inaccessible/non-native sources keep their boxes."""
+    """Read each cited PDF once; inaccessible/non-native sources keep their boxes.
+    An account chat's passage names its own workspace (None for No workspace)."""
     citations = [p.as_citation() for p in passages]
     files: dict[str, list[int]] = defaultdict(list)
     for index, passage in enumerate(passages):
@@ -124,7 +125,10 @@ async def refine(workspace_id: str, passages: list[Passage]) -> list[dict[str, A
             files[passage.file_id].append(index)
     for file_id, indices in files.items():
         try:
-            path = await capture.pdf_path(workspace_id, file_id)
+            own = passages[indices[0]].workspace_id
+            path = await capture.pdf_path(
+                workspace_id if own is None else own or None, file_id
+            )
             boxes = await asyncio.to_thread(
                 resolve, path, [passages[i] for i in indices]
             )

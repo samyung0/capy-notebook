@@ -13,6 +13,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/internal/materials":                           classExempt,
 		"/webhooks/stripe":                                  classExempt,
 		"/api/workspaces/ws_1/chat/stream":                  classAI,
+		"/api/chat/stream":                                  classAI,
 		"/api/workspaces/ws_1/generate":                     classAI,
 		"/api/quizzes/mat_1/check":                          classAI,
 		"/api/attempts":                                     classDefault,
@@ -20,7 +21,6 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/bank/questions/q_1/check":                     classAI,
 		"/api/public/quizzes/mat_1.sig/grade":               classDefault,
 		"/api/questions/computation-check":                  classAI,
-		"/api/workspaces/ws_1/ai/command":                   classAI,
 		"/api/workspaces/ws_1/ai/copilot":                   classEditor,
 		"/api/workspaces/ws_1/sources/uploads/tickets":      classDefault,
 		"/api/workspaces/ws_1/sources/uploads":              classDefault,
@@ -38,6 +38,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/edit-incidents":                               classIncident,
 		"/api/files/f_1/thumbnail":                          classThumbnail,
 		"/api/workspaces/ws_1/voice-transcriptions":         classVoice,
+		"/api/voice-transcriptions":                         classVoice,
 		"/api/workspaces/ws_1/review":                       classReview,
 		"/api/review/sessions/rs_1":                         classDefault,
 	}

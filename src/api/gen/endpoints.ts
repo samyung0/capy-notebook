@@ -96,6 +96,7 @@ import type {
   InvoiceList,
   Label,
   LearningProgress,
+  ListAccountConversationsParams,
   ListAttemptsParams,
   ListConversationsParams,
   ListEditorAssetsParams,
@@ -2114,6 +2115,227 @@ const res = await fetch(getUpdateMaterialCommentUrl(id),
 
   const data: updateMaterialCommentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateMaterialCommentResponse
+}
+
+
+
+export type listAccountConversationsResponse200 = {
+  data: Conversation[]
+  status: 200
+}
+
+export type listAccountConversationsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listAccountConversationsResponseSuccess = (listAccountConversationsResponse200) & {
+  headers: Headers;
+};
+export type listAccountConversationsResponseError = (listAccountConversationsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listAccountConversationsResponse = (listAccountConversationsResponseSuccess | listAccountConversationsResponseError)
+
+export const getListAccountConversationsUrl = (params?: ListAccountConversationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/conversations?${stringifiedParams}` : `/api/conversations`
+}
+
+/**
+ * @summary List the caller's account chat conversations
+ */
+export const listAccountConversations = async (params?: ListAccountConversationsParams, options?: RequestInit): Promise<listAccountConversationsResponse> => {
+
+  const res = await fetch(getListAccountConversationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listAccountConversationsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listAccountConversationsResponse
+}
+
+
+
+export type createAccountConversationResponse201 = {
+  data: Conversation
+  status: 201
+}
+
+export type createAccountConversationResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createAccountConversationResponseSuccess = (createAccountConversationResponse201) & {
+  headers: Headers;
+};
+export type createAccountConversationResponseError = (createAccountConversationResponseDefault) & {
+  headers: Headers;
+};
+
+export type createAccountConversationResponse = (createAccountConversationResponseSuccess | createAccountConversationResponseError)
+
+export const getCreateAccountConversationUrl = () => {
+
+
+
+
+  return `/api/conversations`
+}
+
+/**
+ * @summary Start a new account chat conversation
+ */
+export const createAccountConversation = async (createConversationReq: NonReadonly<CreateConversationReq>, options?: RequestInit): Promise<createAccountConversationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateAccountConversationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createConversationReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createAccountConversationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createAccountConversationResponse
+}
+
+
+
+export type deleteArchivedAccountConversationsResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteArchivedAccountConversationsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deleteArchivedAccountConversationsResponseSuccess = (deleteArchivedAccountConversationsResponse204) & {
+  headers: Headers;
+};
+export type deleteArchivedAccountConversationsResponseError = (deleteArchivedAccountConversationsResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteArchivedAccountConversationsResponse = (deleteArchivedAccountConversationsResponseSuccess | deleteArchivedAccountConversationsResponseError)
+
+export const getDeleteArchivedAccountConversationsUrl = () => {
+
+
+
+
+  return `/api/conversations/archived`
+}
+
+/**
+ * @summary Delete every archived account conversation
+ */
+export const deleteArchivedAccountConversations = async ( options?: RequestInit): Promise<deleteArchivedAccountConversationsResponse> => {
+
+  const res = await fetch(getDeleteArchivedAccountConversationsUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteArchivedAccountConversationsResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteArchivedAccountConversationsResponse
+}
+
+
+
+export type unarchiveAccountConversationsResponse204 = {
+  data: void
+  status: 204
+}
+
+export type unarchiveAccountConversationsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type unarchiveAccountConversationsResponseSuccess = (unarchiveAccountConversationsResponse204) & {
+  headers: Headers;
+};
+export type unarchiveAccountConversationsResponseError = (unarchiveAccountConversationsResponseDefault) & {
+  headers: Headers;
+};
+
+export type unarchiveAccountConversationsResponse = (unarchiveAccountConversationsResponseSuccess | unarchiveAccountConversationsResponseError)
+
+export const getUnarchiveAccountConversationsUrl = () => {
+
+
+
+
+  return `/api/conversations/unarchive`
+}
+
+/**
+ * @summary Put every archived account conversation back in the list
+ */
+export const unarchiveAccountConversations = async ( options?: RequestInit): Promise<unarchiveAccountConversationsResponse> => {
+
+  const res = await fetch(getUnarchiveAccountConversationsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: unarchiveAccountConversationsResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as unarchiveAccountConversationsResponse
 }
 
 
@@ -5989,7 +6211,7 @@ export const getSetModelPrefsUrl = () => {
 }
 
 /**
- * @summary Set chat, generate and editor model preferences
+ * @summary Set the chat model and the note AI switch
  */
 export const setModelPrefs = async (setModelPrefsReq: NonReadonly<SetModelPrefsReq>, options?: RequestInit): Promise<setModelPrefsResponse> => {
 
@@ -9027,6 +9249,70 @@ export const listUsageEvents = async (params?: ListUsageEventsParams, options?: 
 
   const data: listUsageEventsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listUsageEventsResponse
+}
+
+
+
+export type transcribeAccountVoiceResponse200 = {
+  data: VoiceTranscription
+  status: 200
+}
+
+export type transcribeAccountVoiceResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type transcribeAccountVoiceResponseSuccess = (transcribeAccountVoiceResponse200) & {
+  headers: Headers;
+};
+export type transcribeAccountVoiceResponseError = (transcribeAccountVoiceResponseDefault) & {
+  headers: Headers;
+};
+
+export type transcribeAccountVoiceResponse = (transcribeAccountVoiceResponseSuccess | transcribeAccountVoiceResponseError)
+
+export const getTranscribeAccountVoiceUrl = () => {
+
+
+
+
+  return `/api/voice-transcriptions`
+}
+
+/**
+ * @summary Transcribe an account chat voice recording for the composer
+ */
+export const transcribeAccountVoice = async (transcribeAccountVoiceBody: Blob, options?: RequestInit): Promise<transcribeAccountVoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getTranscribeAccountVoiceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'audio/mp4', ...getHeaders(options?.headers) },
+    body: transcribeAccountVoiceBody
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: transcribeAccountVoiceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as transcribeAccountVoiceResponse
 }
 
 

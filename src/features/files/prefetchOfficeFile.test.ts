@@ -11,6 +11,10 @@ vi.mock('@/api/hooks', () => ({
     queryFn: () => rows.get(`file:${id}`)!(),
     queryKey: ['file', id],
   }),
+  meQuery: () => ({
+    queryFn: () => rows.get('me')!(),
+    queryKey: ['me'],
+  }),
   workspaceQuery: (id: string) => ({
     queryFn: () => rows.get(`workspace:${id}`)!(),
     queryKey: ['workspace', id],
@@ -87,11 +91,17 @@ describe("an Office file's open from its route", () => {
     );
   });
 
-  it('opens a standalone file in View, its editing not yet landed (R4)', async () => {
+  it('opens a standalone file in Edit for its owner, in View while frozen', async () => {
     rows.set('file:f_own', async () => ({ ...DECK, workspaceId: '' }));
+    rows.set('me', async () => ({ account: { state: 'active' } }));
     load('f_own', { mode: 'edit' });
     await vi.waitFor(() =>
-      expect(prefetchSourceOpen).toHaveBeenCalledWith('f_own', 'view')
+      expect(prefetchSourceOpen).toHaveBeenCalledWith('f_own', 'edit')
+    );
+    rows.set('me', async () => ({ account: { state: 'over_quota_frozen' } }));
+    load('f_own', { mode: 'edit' });
+    await vi.waitFor(() =>
+      expect(prefetchSourceOpen).toHaveBeenLastCalledWith('f_own', 'view')
     );
   });
 

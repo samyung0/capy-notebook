@@ -252,26 +252,6 @@ test('All blocks toggles closed with a second click and keyboard activation', as
   await expect(trigger).toHaveAttribute('data-state', 'closed');
 });
 
-test('AI input regains focus on a rapid reopen', async ({ page }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: The menu only exists in builds with this feature enabled.
-  test.skip(
-    process.env.VITE_FEATURE_EDITOR_AI !== 'true',
-    'Enable the editor AI feature for this focus check.'
-  );
-  const editor = await openEditorNote(
-    page,
-    EDITOR_NOTE.id,
-    EDITOR_NOTE.firstParagraph
-  );
-  await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
-  await page.keyboard.press('ControlOrMeta+j');
-  const input = page.getByPlaceholder(m.editor_ai_placeholder());
-  await expect(input).toBeFocused();
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('ControlOrMeta+j');
-  await expect(input).toBeFocused();
-});
-
 test('command palette rapid reopen keeps typing in its search field', async ({
   page,
 }) => {

@@ -34,16 +34,21 @@ class DatabaseVerificationTests(unittest.TestCase):
             "environment": "uat",
         }
 
-    def test_connection_is_read_only_and_checks_identity_before_bound_query(self):
+    def identity_then(self, *cursors):
         identity_cursor = Mock()
         identity_cursor.fetchone.return_value = self.identity
+        self.connection.execute.side_effect = [identity_cursor, *cursors]
+
+    def test_connection_is_read_only_and_checks_identity_before_bound_query(self):
         rows = [{"id": "user_fixture"}]
         query_cursor = Mock()
         query_cursor.fetchall.return_value = rows
-        self.connection.execute.side_effect = [identity_cursor, query_cursor]
+        self.identity_then(query_cursor)
         sql, params = "SELECT id FROM users WHERE id=%s", ["user_fixture"]
 
-        self.assertEqual(verify.database_query(sql, params), rows)
+        self.assertEqual(
+            verify.main({"operation": "query", "sql": sql, "params": params}), rows
+        )
 
         self.connect.assert_called_once_with(
             os.environ["UAT_DATABASE_URL"],
@@ -61,28 +66,62 @@ class DatabaseVerificationTests(unittest.TestCase):
                 call(sql, params),
             ],
         )
+        # The query stays in the session's read-only transaction.
+        self.connection.commit.assert_not_called()
+
+    def test_raise_alone_runs_read_write_after_identity_with_bound_params(self):
+        self.identity_then(Mock(), Mock())
+
+        verify.main(
+            {
+                "operation": "raise-credits-used",
+                "userId": "user_fixture",
+                "usedMicros": 999_990_000,
+            }
+        )
+
+        self.assertEqual(
+            [c for c in self.connection.mock_calls if c[0] in ("execute", "commit")],
+            [
+                call.execute(
+                    "SELECT current_database() AS name, current_user AS role, "
+                    "current_setting('capy.environment',true) AS environment"
+                ),
+                call.commit(),
+                call.execute("SET TRANSACTION READ WRITE"),
+                call.execute(
+                    "SELECT public.uat_journey_raise_credits_used(%s::text, %s::bigint)",
+                    ["user_fixture", 999_990_000],
+                ),
+            ],
+        )
 
     def test_identity_mismatch_never_executes_requested_query(self):
-        for field, value in (
-            ("name", "capy_prod"),
-            ("role", "capy"),
-            ("environment", "production"),
-            ("environment", None),
+        for request in (
+            {"operation": "query", "sql": "SELECT id FROM users", "params": []},
+            {"operation": "raise-credits-used", "userId": "user_1", "usedMicros": 1},
         ):
-            with self.subTest(field=field, value=value):
-                self.connection.execute.reset_mock()
-                self.connection.execute.return_value.fetchone.return_value = {
-                    **self.identity,
-                    field: value,
-                }
+            for field, value in (
+                ("name", "capy_prod"),
+                ("role", "capy"),
+                ("environment", "production"),
+                ("environment", None),
+            ):
+                with self.subTest(op=request["operation"], field=field, value=value):
+                    self.connection.reset_mock()
+                    self.connection.execute.return_value.fetchone.return_value = {
+                        **self.identity,
+                        field: value,
+                    }
 
-                with self.assertRaisesRegex(ValueError, "Database identity"):
-                    verify.database_query("SELECT id FROM users", [])
+                    with self.assertRaisesRegex(ValueError, "Database identity"):
+                        verify.main(request)
 
-                self.connection.execute.assert_called_once()
-                self.assertIn(
-                    "current_database()", self.connection.execute.call_args.args[0]
-                )
+                    self.connection.execute.assert_called_once()
+                    self.assertIn(
+                        "current_database()", self.connection.execute.call_args.args[0]
+                    )
+                    self.connection.commit.assert_not_called()
 
 
 class StorageEndpointTests(unittest.TestCase):

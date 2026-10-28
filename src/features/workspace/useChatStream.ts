@@ -49,12 +49,16 @@ export function toChatMessage(row: WireMessage): ChatMessage {
  * refetch or replace a mounted editor. */
 export function invalidateForEffects(
   qc: QueryClient,
-  workspaceId: string,
+  chatWorkspaceId: string | null,
   effects: ResourceEffect[] | undefined
 ) {
   for (const effect of effects ?? []) {
+    // The account chat's effects name their workspace ("" or none: No
+    // workspace, whose lists are the owned roots below).
+    const workspaceId = chatWorkspaceId ?? effect.resource.workspaceId ?? '';
     if (effect.resource.kind === 'material') {
-      void qc.invalidateQueries({ queryKey: qk.materials(workspaceId) });
+      if (workspaceId)
+        void qc.invalidateQueries({ queryKey: qk.materials(workspaceId) });
       void qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
       void qc.invalidateQueries({ queryKey: qk.recent });
       if (effect.operation !== 'created') {
@@ -63,14 +67,18 @@ export function invalidateForEffects(
         });
       }
     } else {
-      void qc.invalidateQueries({ queryKey: qk.files(workspaceId) });
+      if (workspaceId)
+        void qc.invalidateQueries({ queryKey: qk.files(workspaceId) });
       void qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       void qc.invalidateQueries({ queryKey: qk.recent });
       if (effect.operation !== 'created') {
         void qc.invalidateQueries({ queryKey: qk.file(effect.resource.id) });
       }
     }
-    if (effect.operation === 'trashed' || effect.operation === 'restored') {
+    if (
+      workspaceId &&
+      (effect.operation === 'trashed' || effect.operation === 'restored')
+    ) {
       void qc.invalidateQueries({ queryKey: qk.chapters(workspaceId) });
       void qc.invalidateQueries({ queryKey: qk.workspaceStats(workspaceId) });
     }
@@ -155,8 +163,9 @@ const emptyThread = (): Thread => ({
  * drives the SSE streams, and tracks each in-flight assistant turn so blocks
  * land on the right bubble. Stop asks the server to end the turn, then stops
  * reading; leaving a conversation, or the page, does not end its turn.
+ * A null `workspaceId` is the account chat.
  */
-export function useChatStream(workspaceId: string) {
+export function useChatStream(workspaceId: string | null) {
   const qc = useQueryClient();
   const [initialKey] = useState(tempId);
   const [threads, setThreads] = useState<Record<string, Thread>>(() => ({
@@ -366,6 +375,8 @@ export function useChatStream(workspaceId: string) {
         );
       };
 
+      // Each call's tool, for what its end refreshes.
+      const toolNames = new Map<string, string>();
       try {
         await streamChat(
           workspaceId,
@@ -471,6 +482,27 @@ export function useChatStream(workspaceId: string) {
             onToolEnd: (callId, result) => {
               const endedAt = result.endedAt ?? new Date().toISOString();
               invalidateForEffects(qc, workspaceId, result.effects);
+              // A workspace account chat made has no effect (no Undo, Epo
+              // 2026-10-28): its lists refetch as after the New workspace
+              // dialog.
+              if (
+                toolNames.get(callId) === 'create_workspace' &&
+                result.outcome === 'succeeded'
+              ) {
+                void qc.invalidateQueries({ queryKey: ['workspaces'] });
+                void qc.invalidateQueries({ queryKey: ['tags'] });
+              }
+              // A chapter chat made has no effect either (Epo 2026-10-29); the
+              // account chat's names no workspace, so every chapter list refetches.
+              if (
+                toolNames.get(callId) === 'create_chapter' &&
+                result.outcome === 'succeeded'
+              ) {
+                void qc.invalidateQueries({
+                  predicate: ({ queryKey }) =>
+                    queryKey[0] === 'workspace' && queryKey[2] === 'chapters',
+                });
+              }
               setMessages((prev) =>
                 prev.map((msg) => {
                   if (msg.id !== currentId) return msg;
@@ -509,6 +541,7 @@ export function useChatStream(workspaceId: string) {
                 )
               ),
             onToolStart: (callId, name, detail, startedAt) => {
+              toolNames.set(callId, name);
               const tool: ToolBlock = {
                 callId,
                 detail,

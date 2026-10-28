@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..prompts import preferences
+from .scope import AccountScope
 from .tools import ToolContext
 
 HEADER = "Turn context (current at this step; a later one replaces it):"
@@ -89,7 +90,13 @@ def message(
 ) -> dict[str, Any]:
     lines = [
         HEADER,
-        _open_line(ctx.open_resource, ctx.chapters, ctx.role),
+        # Account chat has no open item and no workspace role; its first
+        # message names its workspaces once (Epo 2026-10-28).
+        *(
+            ()
+            if isinstance(ctx.scope, AccountScope)
+            else (_open_line(ctx.open_resource, ctx.chapters, ctx.role),)
+        ),
         "\nStudy preferences (a request that names one material gets only that material):",
     ]
     lines.extend(f"- {line}" for line in preferences.lines(ctx.study_preferences))

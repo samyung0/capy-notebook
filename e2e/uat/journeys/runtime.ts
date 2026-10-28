@@ -26,12 +26,10 @@ export type Actor = {
   label: string;
   page: Page;
   context: BrowserContext;
-  /** An event stream's body is its text. `timeout` overrides the 30 s default. */
   request(
     path: string,
     method?: string,
-    body?: unknown,
-    timeout?: number
+    body?: unknown
   ): Promise<{ status: number; body: unknown }>;
 };
 

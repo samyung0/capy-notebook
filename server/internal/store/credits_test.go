@@ -315,6 +315,51 @@ func TestRerankSettlesAtZeroCreditsUnderTheRerankerRow(t *testing.T) {
 	}
 }
 
+// An account chat's session has no embedding pin: each query embedding names
+// its own and is labeled with it, at zero credits (Epo 2026-10-27).
+func TestPinlessSessionLabelsEachEmbeddingWithItsPin(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	userID := newCreditsTestUser(t, s)
+	llm, _ := platformSessionRates()
+	sessionID, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, llm, TokenRates{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := ProviderCallUsage{
+		CallID: "pc_account_embed", Kind: KindEmbedding, Purpose: KindEmbedding,
+		Provider: "deepinfra", Model: "Qwen/Qwen3-Embedding-4B", InputTokens: 20, ModelVersion: 1,
+	}
+	mustInsertProviderCall(t, s, sessionID, call)
+	if _, err := s.SettleProviderCall(ctx, sessionID, call); err != nil {
+		t.Fatal(err)
+	}
+	if replay, err := s.SettleProviderCall(ctx, sessionID, call); err != nil || !replay.Duplicate {
+		t.Fatalf("replay = %#v, %v", replay, err)
+	}
+	unnamed := call
+	unnamed.CallID, unnamed.ModelVersion = "pc_account_embed_unnamed", 0
+	mustInsertProviderCall(t, s, sessionID, unnamed)
+	if _, err := s.SettleProviderCall(ctx, sessionID, unnamed); err == nil || !strings.Contains(err.Error(), "catalog version") {
+		t.Fatalf("an unnamed embedding on a pinless session settled with %v", err)
+	}
+	var model string
+	var version int
+	var credits int64
+	if err := s.pool.QueryRow(ctx, `SELECT catalog_model_slug, model_version, credit_micros FROM usage_events
+		WHERE provider_call_id=$1`, call.CallID).Scan(&model, &version, &credits); err != nil {
+		t.Fatal(err)
+	}
+	if model != "Qwen/Qwen3-Embedding-4B" || version != 1 || credits != 0 {
+		t.Fatalf("embedding usage = %s v%d %d credits", model, version, credits)
+	}
+}
+
 // A search_web call is priced by the web_search rate (1.8 credits): a search
 // with results is one unit, an empty one is free, and only a search settles
 // units (decision 2026-10-24).

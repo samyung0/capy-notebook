@@ -214,8 +214,4 @@ func TestListModelsResolvesEmptyReasoningPrefs(t *testing.T) {
 			}
 		}
 	}
-	rec = doReq(t, h, http.MethodGet, "/api/models?slot=editor", "u_owner", nil)
-	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.SelectedThinking != "instant" {
-		t.Fatalf("editor fixed reasoning changed: %d %s", rec.Code, rec.Body.String())
-	}
 }

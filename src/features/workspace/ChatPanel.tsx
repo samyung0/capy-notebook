@@ -9,8 +9,14 @@ import {
 } from 'react';
 import { flushSync } from 'react-dom';
 import { chatTurn, WORKSPACE_ONLY_DEFAULT } from '@/api/chatStream';
-import { useConversations, useMe, useMessages } from '@/api/hooks';
+import {
+  useConversations,
+  useMe,
+  useMessages,
+  useWorkspaces,
+} from '@/api/hooks';
 import { CHAT_CHARACTER_LIMIT } from '@/api/limits.generated';
+import { isMissing } from '@/api/queryClient';
 import type {
   ChatMessage,
   ChatSteps,
@@ -34,6 +40,7 @@ import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { audioStartMs, formatClock } from '@/features/files/citationRegions';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { iconUrl } from '@/lib/icon-catalog';
 import { textLength } from '@/lib/textLength';
 import { userColorPairDark } from '@/lib/userColor';
 import {
@@ -65,7 +72,41 @@ function pageLabel(c: Citation): string | null {
     : `p. ${c.pageStart}`;
 }
 
-function Citations({
+/** Where an account chat's cited source lives, before its name: its
+ * workspace's icon and name, or No workspace. Workspace chats' citations
+ * carry no place. */
+function CitationPlace({ citation }: { citation: Citation }) {
+  const { data: workspaces } = useWorkspaces(
+    { sort: 'accessed' },
+    { errorBoundary: false }
+  );
+  const iconId =
+    citation.workspaceName &&
+    workspaces?.find((workspace) => workspace.id === citation.workspaceId)
+      ?.iconId;
+  return (
+    <>
+      {iconId && (
+        <img
+          alt=""
+          className="size-3.5 shrink-0 -translate-y-px rounded-[4px]"
+          height={14}
+          src={iconUrl(iconId)}
+          width={14}
+        />
+      )}
+      <span className="min-w-0 max-w-[45%] shrink-0 truncate text-fg-muted">
+        {citation.workspaceName || m.files_no_workspace()}
+      </span>
+      <span aria-hidden className="text-fg-muted">
+        ·
+      </span>
+    </>
+  );
+}
+
+/** A reply's sources under it (exported for tests). */
+export function Citations({
   msg,
   onOpen,
 }: {
@@ -105,7 +146,7 @@ function Citations({
             >
               <Badge
                 asChild
-                className="max-w-full self-start font-medium hover:bg-page-hover"
+                className="max-w-full self-start frosted:not-hover:bg-(--frost-fill) font-medium hover:bg-page-hover"
                 size="sm"
               >
                 {href ? (
@@ -133,12 +174,13 @@ function Citations({
         return (
           <Badge
             asChild
-            className="max-w-full font-medium hover:bg-page-hover"
+            className="max-w-full frosted:not-hover:bg-(--frost-fill) font-medium hover:bg-page-hover"
             key={`${c.materialId || c.fileId}:${i}`}
             size="sm"
           >
             <button onClick={() => onOpen?.(c)} title={c.snippet} type="button">
               <span className="text-fg-muted">{i + 1}</span>
+              {c.workspaceId !== undefined && <CitationPlace citation={c} />}
               <span className="truncate">{c.fileName}</span>
               {page ? <span className="text-fg-muted">{page}</span> : null}
             </button>
@@ -241,7 +283,34 @@ export interface ChatDockOptions {
 
 export interface ChatRequest {
   id: string | null;
+  /** With a null id: the new chat's first question, sent once. */
+  prompt?: string;
   seq: number;
+}
+
+/** Requests whose prompt went out, so a remounted panel never resends it. */
+const sentPrompts = new WeakSet<ChatRequest>();
+
+/** The pending-sources notice's button: process the omitted files' changes. */
+function ProcessChangesButton({
+  workspaceId,
+  fileIds,
+}: {
+  workspaceId: string;
+  fileIds: string[];
+}) {
+  const { mutate: processChanges, isPending: processingChanges } =
+    useProcessFileChanges(workspaceId);
+  return (
+    <Button
+      disabled={processingChanges}
+      onClick={() => processChanges({ fileIds })}
+      size="sm"
+      variant="ghost-hover"
+    >
+      {m.source_process_changes()}
+    </Button>
+  );
 }
 
 export function ChatPanel({
@@ -255,14 +324,24 @@ export function ChatPanel({
   dock,
   historyButton = true,
   request,
+  focusOnOpen = false,
   onActiveChange,
+  fill = false,
 }: {
-  workspaceId: string;
+  /** The workspace whose chat this is; null is the account chat, across all
+   * the user's files (no open item, Your files only). */
+  workspaceId: string | null;
+  /** The panel fills the page (the account chat): the thread and composer
+   * keep a readable centred column. */
+  fill?: boolean;
   /** The history clock; off where the left panel lists the chats. */
   historyButton?: boolean;
   /** Opens a thread (or, with a null id, a new chat) whenever `seq` changes:
    * the left panel's list drives the rail's chat through it. */
   request?: ChatRequest;
+  /** Each opened chat (a request, new or restored) puts the caret in the
+   * composer: the account chat page. */
+  focusOnOpen?: boolean;
   /** The shown thread, for the left panel to highlight. */
   onActiveChange?: (id: string | null) => void;
   color?: UserColor;
@@ -319,8 +398,6 @@ export function ChatPanel({
     onUndoApplied: applyUndo,
     onUndoRefused: refuseUndo,
   };
-  const { mutate: processChanges, isPending: processingChanges } =
-    useProcessFileChanges(workspaceId);
   const { data: conversations } = useConversations(workspaceId, {
     errorBoundary: false,
   });
@@ -331,7 +408,11 @@ export function ChatPanel({
   const [selectId, setSelectId] = useState<string | null>(null);
   // Workspace only applies per message; it stays where the learner left it.
   const [workspaceOnly, setWorkspaceOnly] = useState(WORKSPACE_ONLY_DEFAULT);
-  const { data: history } = useMessages(selectId, { errorBoundary: false });
+  const { data: history, error: historyError } = useMessages(selectId, {
+    errorBoundary: false,
+  });
+  // A thread the link names that is gone or not the caller's (review r1 F2).
+  const missingThread = !!selectId && isMissing(historyError);
   const hydratedRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
@@ -425,7 +506,14 @@ export function ChatPanel({
 
   const followRequest = useEffectEvent((next: ChatRequest) => {
     if (next.id) openThread(next.id);
-    else openNew();
+    else {
+      openNew();
+      if (next.prompt && !sentPrompts.has(next)) {
+        sentPrompts.add(next);
+        void send(next.prompt, chatTurn(workspaceOnly, openResource));
+      }
+    }
+    if (focusOnOpen) fieldRef.current?.focus({ preventScroll: true });
   });
   useEffect(() => {
     if (request) followRequest(request);
@@ -468,6 +556,14 @@ export function ChatPanel({
   const title =
     conversations?.find((c) => c.id === conversationId)?.title ||
     m.chat_untitled();
+  // The sources switch's narrow side: the workspace's files, or in the
+  // account chat the user's own (Epo D4).
+  const onlyLabel = workspaceId
+    ? m.chat_workspace_only()
+    : m.chat_your_files_only();
+  const onlyHint = workspaceId
+    ? m.chat_workspace_only_hint()
+    : m.chat_your_files_only_hint();
 
   const thread = (
     <>
@@ -482,7 +578,11 @@ export function ChatPanel({
       />
 
       <div
-        className="scroll-fade-y flex flex-1 flex-col gap-4 self-stretch overflow-auto px-4 py-4 [--scroll-fade-bottom-padding:--spacing(4)]"
+        className={cn(
+          'scroll-fade-y flex flex-1 flex-col gap-4 self-stretch overflow-auto py-4 [--scroll-fade-bottom-padding:--spacing(4)]',
+          // Filling the page, the column stays 48rem wide in the middle.
+          fill ? 'px-[max(--spacing(4),calc(50%_-_24rem))]' : 'px-4'
+        )}
         ref={scrollRef}
       >
         {!messages.length && (
@@ -491,7 +591,14 @@ export function ChatPanel({
               className="non-scaling-svg mx-auto mb-2 size-6.5"
               name="message"
             />
-            <p>{m.chat_empty()}</p>
+            {missingThread ? (
+              <>
+                <p className="font-medium">{m.error_not_found_title()}</p>
+                <p>{m.error_not_found_body()}</p>
+              </>
+            ) : (
+              <p>{m.chat_empty()}</p>
+            )}
           </div>
         )}
         {pendingSources?.omitted && (
@@ -500,24 +607,18 @@ export function ChatPanel({
             role="status"
           >
             <p>{m.source_pending_context()}</p>
-            {canReprocess && (
-              <Button
-                disabled={processingChanges}
-                onClick={() =>
-                  processChanges({ fileIds: pendingSources.fileIds })
-                }
-                size="sm"
-                variant="ghost-hover"
-              >
-                {m.source_process_changes()}
-              </Button>
+            {canReprocess && workspaceId && (
+              <ProcessChangesButton
+                fileIds={pendingSources.fileIds}
+                workspaceId={workspaceId}
+              />
             )}
           </div>
         )}
         {messages.map((msg, index) =>
           msg.role === 'user' ? (
             <div
-              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-tile rounded-tr-sm bg-page px-3.5 py-2.5"
+              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-tile rounded-tr-sm bg-page frosted:bg-(--frost-fill) px-3.5 py-2.5"
               key={msg.id}
             >
               {msg.content}
@@ -541,7 +642,13 @@ export function ChatPanel({
         )}
       </div>
 
-      <div className="grow-0 p-3">
+      <div
+        className={cn(
+          'grow-0 p-3',
+          // In line with the thread's 48rem column, past the 12px padding.
+          fill && 'mx-auto w-full max-w-[49.5rem]'
+        )}
+      >
         {questions.length > 0 && last ? (
           <QuestionBlock
             disabled={streaming}
@@ -660,8 +767,8 @@ export function ChatPanel({
               },
               {
                 checked: workspaceOnly,
-                description: m.chat_workspace_only_hint(),
-                label: m.chat_workspace_only(),
+                description: onlyHint,
+                label: onlyLabel,
                 onClick: () => setWorkspaceOnly(true),
               },
             ]}
@@ -672,7 +779,7 @@ export function ChatPanel({
                 size="sm"
                 variant="ghost-hover"
               >
-                {workspaceOnly ? m.chat_workspace_only() : m.chat_all_sources()}
+                {workspaceOnly ? onlyLabel : m.chat_all_sources()}
                 <Icon
                   className="size-3.5 -translate-y-px text-fg-muted"
                   name="chevronDown"
@@ -695,9 +802,7 @@ export function ChatPanel({
               className="t-meta text-fg-secondary"
               side="top"
             >
-              {workspaceOnly
-                ? m.chat_workspace_only_hint()
-                : m.chat_grounded_outside()}
+              {workspaceOnly ? onlyHint : m.chat_grounded_outside()}
             </PopoverContent>
           </Popover>
         </div>

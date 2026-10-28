@@ -195,8 +195,10 @@ type ProviderCallUsage struct {
 	CacheWriteTokens int64
 	ReasoningTokens  int64
 	CacheAnomaly     string
-	// ModelVersion is the catalog version a rerank called; zero for every
-	// other kind, which is labeled from the session's pins.
+	// ModelVersion is the catalog version a rerank called, or an embedding
+	// on a session with no embedding pin (an account chat searching
+	// workspaces of different pins, Epo 2026-10-27); zero for every other
+	// call, which is labeled from the session's pins.
 	ModelVersion int
 	// ServedBy is the provider OpenRouter routed the call to, kept in the
 	// usage event's metadata only.
@@ -613,8 +615,9 @@ func (s *Store) SettleProviderCall(
 		call.CacheWriteTokens < 0 || call.ReasoningTokens < 0 {
 		return out, fmt.Errorf("%w: usage cannot be negative", ErrInvalidProviderCall)
 	}
-	if (call.Kind == KindRerank) != (call.ModelVersion > 0) || call.ModelVersion < 0 {
-		return out, fmt.Errorf("%w: rerank calls, and only they, name their catalog version", ErrInvalidProviderCall)
+	if call.ModelVersion < 0 || (call.Kind == KindRerank && call.ModelVersion == 0) ||
+		(call.Kind != KindRerank && call.Kind != KindEmbedding && call.ModelVersion > 0) {
+		return out, fmt.Errorf("%w: rerank calls name their catalog version, and only embeddings may too", ErrInvalidProviderCall)
 	}
 	return s.settleProviderCallAtomic(ctx, sessionID, call)
 }
@@ -705,13 +708,13 @@ func (s *Store) settleProviderCallAtomic(
 			       COALESCE((metadata->>'cacheWriteTokens')::bigint, 0),
 			       COALESCE((metadata->>'reasoningTokens')::bigint, 0),
 			       COALESCE(metadata->>'cacheAnomaly', ''),
-			       CASE WHEN kind = 'rerank' THEN model_version ELSE 0 END,
+			       CASE WHEN kind = 'rerank' OR (kind = 'embedding' AND $3::int = 0) THEN model_version ELSE 0 END,
 			       COALESCE(metadata->>'servedBy', ''),
 			       CASE WHEN kind IN ('audio', 'web_search') THEN units ELSE 0 END,
 			       CASE WHEN kind IN ('audio', 'web_search') THEN unit ELSE '' END
 			FROM usage_events
 			WHERE reservation_id = $1 AND provider_call_id = $2`,
-			sessionID, call.CallID,
+			sessionID, call.CallID, embeddingVersion,
 		).Scan(
 			&recorded.Kind, &recorded.Purpose, &recorded.Thinking, &recorded.Provider, &recorded.Model,
 			&recorded.InputTokens, &recorded.OutputTokens,
@@ -778,6 +781,16 @@ func (s *Store) settleProviderCallAtomic(
 		}
 	} else if call.Kind == KindEmbedding || call.Kind == KindRerank {
 		catalogModel, modelVersion = embeddingRef, embeddingVersion
+		// An embedding names its pin only on a session that has none: the
+		// account chat embeds the query once per searched pin, each labeled
+		// with its own (Epo 2026-10-27).
+		if call.Kind == KindEmbedding && (call.ModelVersion > 0) != (embeddingVersion == 0) {
+			return settlement, fmt.Errorf("%w: an embedding names its catalog version exactly when its session has no embedding pin", ErrInvalidProviderCall)
+		}
+		if call.Kind == KindEmbedding && call.ModelVersion > 0 {
+			catalogModel = models.Ref{ProviderSlug: call.Provider, ModelSlug: call.Model}
+			modelVersion = call.ModelVersion
+		}
 		if call.Kind == KindRerank {
 			// DeepInfra's transport identity is the catalog identity.
 			catalogModel = models.Ref{ProviderSlug: call.Provider, ModelSlug: call.Model}
@@ -792,6 +805,9 @@ func (s *Store) settleProviderCallAtomic(
 		}
 		if call.Kind == KindRerank && !cfg.Allows(models.SlotRerank) {
 			return settlement, fmt.Errorf("%w: %s v%d is not a reranker", ErrModelUnavailable, catalogModel, modelVersion)
+		}
+		if call.Kind == KindEmbedding && !cfg.Allows(models.SlotRetrieval) {
+			return settlement, fmt.Errorf("%w: %s v%d is not an embedding model", ErrModelUnavailable, catalogModel, modelVersion)
 		}
 		rates = RatesFromConfig(cfg)
 	} else if out.paidBy == models.PaidByPlatform {
@@ -1068,13 +1084,14 @@ func (s *Store) beginIngestSpendTx(
 
 // beginSystemIngestSessionTx opens the ingest session of a maintenance
 // republish (paid_by 'system'): no credit check and no lease on the actor's
-// ingest slots, and the pipeline settles its usage at zero credits.
+// ingest slots, and the pipeline settles its usage at zero credits. A file
+// with no workspace passes "".
 func beginSystemIngestSessionTx(ctx context.Context, tx pgx.Tx, actorUserID, workspaceID string) (string, error) {
 	id := uid("cr")
 	_, err := tx.Exec(ctx, `
 		INSERT INTO provider_sessions
 			(id, actor_user_id, workspace_id, trace_id, surface, reserved_micros, paid_by, expires_at)
-		VALUES ($1, $2, $3, $4, $5, 0, $6, now() + ($7 * interval '1 millisecond'))`,
+		VALUES ($1, $2, NULLIF($3, ''), $4, $5, 0, $6, now() + ($7 * interval '1 millisecond'))`,
 		id, actorUserID, workspaceID, nullString(obs.TraceID(ctx)), SurfaceIngest,
 		models.PaidBySystem, ingestReservationHold.Milliseconds(),
 	)
