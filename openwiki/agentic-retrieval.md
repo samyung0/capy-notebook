@@ -5516,12 +5516,17 @@ guard, the tool cap, the credit guard's terminal call): GLM writes its own
 at its cap (`planning_cap`, `stall` or `tool_cap`) with no answer, prose sent
 before the marker kept as narration and the materials already made in place.
 
-Chat citation chips retain parser page references. Native PDFs open, scroll
-the cited box to the middle once its page has painted, and flash the box for
-1.6 s after the scroll settles (no scroll event for 120 ms); under reduced
-motion it holds instead of pulsing. Each click flashes again: `openCitation`
-hands the viewer a fresh regions array and skips the router's scroll reset,
-which would abort Chrome's smooth scroll. Office citations send the quoted passage to the current
+Chat citation chips retain parser page references. Native PDFs open and
+scroll the cited box to the middle on the app's own 300 ms ease-out animation
+(`scrollToCenter.ts`, Q490), each frame aiming at the box's current place, so
+a page above it that paints mid-scroll still ends centred; a trip over two
+viewports first jumps to one viewport short, so the frames do not render every
+lazy page in between. The box flashes for 1.6 s when the scroll lands, once its
+page has painted; under reduced motion the scroll jumps straight there and the
+box holds instead of pulsing. A wheel, a pointer on the viewer (a touch, its
+scrollbar) or a scroll key stops the scroll, and that citation then does not
+flash. Each click scrolls and flashes again: `openCitation` hands the viewer a
+fresh regions array and skips the router's scroll reset. Office citations send the quoted passage to the current
 saved native viewer, match a complete unique text anchor and highlight current
 paragraph/line/cell geometry. Ambiguous, short or unsupported matches open without
 a highlight. Editing hides the overlay. See
