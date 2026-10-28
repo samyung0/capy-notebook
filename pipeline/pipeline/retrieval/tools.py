@@ -33,7 +33,14 @@ import requests
 from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
-from ..generated.limits import QUESTION_DESCRIPTION_MAX, QUESTION_METADATA_MAX
+from ..generated.limits import (
+    QUESTION_DESCRIPTION_MAX,
+    QUESTION_METADATA_MAX,
+    TAG_VALUE_MAX,
+    WORKSPACE_DESCRIPTION_MAX,
+    WORKSPACE_NAME_MAX,
+    WORKSPACE_TAGS_MAX,
+)
 from ..prompts import preferences
 from ..prompts.sources import source_block
 from . import (
@@ -53,7 +60,7 @@ from . import (
 from .chunking import clip_to_tokens, estimate_tokens, strip_carried
 from .library_evidence import LibraryEvidence
 from .limits import TurnBudget
-from .scope import AccountScope, Scope, WorkspaceScope
+from .scope import AccountScope, Scope, ScopeWorkspace, WorkspaceScope
 from .search import Passage, SearchStats, search, search_account
 
 log = logging.getLogger("capy.retrieval.tools")
@@ -695,7 +702,8 @@ DESTINATION_TOOLS = ("create_material", "create_deck")
 ACCESS_BATCH = 200
 NO_ACCOUNT_ITEM = (
     'No file you can read has the id "{id}": it may have been deleted, moved to '
-    "trash or be outside your workspaces. list_files shows the current ids."
+    "trash or be outside your workspaces. search_files_summary finds the current "
+    "ids."
 )
 OUTSIDE_CHOSEN = (
     '"{id}" is outside the sources chosen for this chat, and the chat cannot '
@@ -756,17 +764,28 @@ async def _account_item(
     return found if isinstance(found, ToolResult) else found[rid]
 
 
-def access_line(row: dict[str, Any]) -> str:
+def access_line(row: dict[str, Any], *, typed: bool = False) -> str:
     """The access block an account read returns with its content: where the
-    item lives ("" for No workspace) and whether the user may edit it."""
-    return "Access: " + json.dumps(
-        {
-            "workspaceId": row.get("workspaceId") or "",
-            "workspaceName": row.get("workspaceName") or "",
-            "canEdit": bool(row.get("canEdit")),
-        },
-        ensure_ascii=False,
-    )
+    item lives ("" for No workspace) and whether the user may edit it; with
+    ``typed`` (read_document, Epo 2026-10-28) also what the item is."""
+    block: dict[str, Any] = {
+        "workspaceId": row.get("workspaceId") or "",
+        "workspaceName": row.get("workspaceName") or "",
+        "canEdit": bool(row.get("canEdit")),
+    }
+    if typed:
+        block["kind"] = row.get("kind") or ""
+        if row.get("kind") == "material":
+            block["materialKind"] = row.get("materialKind") or ""
+        else:
+            block["format"] = row.get("format") or ""
+    return "Access: " + json.dumps(block, ensure_ascii=False)
+
+
+def _has_changes(row: dict[str, Any]) -> bool:
+    """Whether an account item can carry unindexed changes: a file or a note
+    (a quiz, flashcard set or deck has no index to differ from)."""
+    return row.get("kind") == "source_file" or row.get("materialKind") == "note"
 
 
 def _item_workspace(row: dict[str, Any]) -> str | None:
@@ -774,38 +793,48 @@ def _item_workspace(row: dict[str, Any]) -> str | None:
     return str(row.get("workspaceId") or "") or None
 
 
-async def label_passages(
-    ctx: ToolContext, passages: list[Passage]
-) -> list[Passage] | ToolResult:
-    """The passages the caller may still read, each naming its workspace."""
-    keys = list(
-        dict.fromkeys(
-            ("material" if p.kind == "material" else "source_file", p.file_id)
-            for p in passages
-        )
+def can_edit(ctx: ToolContext, workspace: ScopeWorkspace | None) -> bool:
+    """Whether the user may edit an item there: its workspace's right from the
+    turn's scope, or their own item with no workspace, while the turn may
+    edit at all (a frozen or full account may not)."""
+    if "document.edit" not in ctx.operations:
+        return False
+    return workspace.can_edit if workspace is not None else True
+
+
+async def label_passages(ctx: ToolContext, passages: list[Passage]) -> list[Passage]:
+    """The passages whose item is still in the turn's scope, each naming its
+    workspace, chapter and whether the user may edit it. The workspaces and
+    their rights are the turn's (Go sends them, Epo 2026-10-28); only where
+    each item lives now is read here, so an item moved out of the scope
+    drops out."""
+    assert isinstance(ctx.scope, AccountScope)
+    places = await store.item_places(
+        [p.file_id for p in passages if p.kind != "material"],
+        [p.file_id for p in passages if p.kind == "material"],
     )
-    if not keys:
-        return []
-    rows = await document_access(ctx, keys)
-    if isinstance(rows, ToolResult):
-        return rows
-    access = {(row["kind"], row["id"]): row for row in rows if row.get("canRead")}
     labelled: list[Passage] = []
     for passage in passages:
-        row = access.get(
-            (
-                "material" if passage.kind == "material" else "source_file",
-                passage.file_id,
+        place = places.get(passage.file_id)
+        if place is None:
+            continue
+        workspace = None
+        if place["workspace_id"]:
+            workspace = ctx.scope.workspace(place["workspace_id"])
+            if workspace is None:
+                continue
+        elif place["owner_id"] != ctx.scope.user_id:
+            continue
+        labelled.append(
+            replace(
+                passage,
+                workspace_id=workspace.id if workspace else "",
+                workspace_name=workspace.name if workspace else "",
+                chapter_id=place["chapter_id"] or "",
+                chapter_name=place["chapter_name"] or "",
+                can_edit=can_edit(ctx, workspace),
             )
         )
-        if row is not None:
-            labelled.append(
-                replace(
-                    passage,
-                    workspace_id=str(row.get("workspaceId") or ""),
-                    workspace_name=str(row.get("workspaceName") or ""),
-                )
-            )
     return labelled
 
 
@@ -817,13 +846,15 @@ ACCOUNT_OVERLAP = (
 )
 
 
-async def _search_files(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+async def _search_files_content(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     query = str(args.get("query") or "").strip()
     if not query:
-        return _refused("search_files needs a query.")
+        return _refused("search_files_content needs a query.")
     ids = _scope_ids(args.get("file_ids", _MISSING))
     if ids is None:
-        return _refused("file_ids takes a list of ids from list_files.")
+        return _refused(
+            "file_ids takes a list of ids from search_files_summary or list_files."
+        )
     if ids:
         found = await _account_items(ctx, ids)
         if isinstance(found, ToolResult):
@@ -843,8 +874,6 @@ async def _search_files(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if ctx.budget is not None:
         ctx.budget.embedding_calls += stats.embeddings
     labelled = await label_passages(ctx, passages)
-    if isinstance(labelled, ToolResult):
-        return labelled
     shown = {p.chunk_id for p in ctx.citations}
     overlap = sum(1 for p in labelled if p.chunk_id in shown)
     ctx.search_events.append(
@@ -858,7 +887,8 @@ async def _search_files(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     )
     if not labelled:
         return _result(
-            "No passages matched. Try different wording, or list_files first."
+            "No passages matched. Try different wording, or search_files_summary "
+            "to find the file first."
         )
     footer = (
         ACCOUNT_OVERLAP.format(overlap=overlap, hits=len(labelled))
@@ -868,41 +898,66 @@ async def _search_files(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return ToolResult(passages=labelled, text_parts=[footer])
 
 
-async def _list_files(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+async def _account_list(
+    ctx: ToolContext, fields: dict[str, Any]
+) -> dict[str, Any] | ToolResult:
     if not _gateway_ready() or not ctx.user_id:
         return _refused(
             "File listing is unavailable for this user.", code="lifecycle_rejected"
         )
-    body = await _gateway_read(
+    return await _gateway_read(
         "/api/internal/documents/list",
-        {"scope": "account", "userId": ctx.user_id},
+        {"scope": "account", "userId": ctx.user_id, **fields},
         "list the files",
     )
+
+
+NOT_A_SCOPE_WORKSPACE = (
+    'workspace_id "{id}" is not one of the user\'s workspaces. search_files_summary, '
+    "search_files_content and reads name each item's workspace."
+)
+NO_WORKSPACE_LISTED = (
+    "You did not name a workspace_id, so these are the user's files and "
+    "materials outside their workspaces, newest first."
+)
+MORE_UNLISTED = (
+    "Only the newest {count} are listed; search_files_summary finds the others by name."
+)
+
+
+async def _list_files(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """One scope workspace by chapter, as list_sources lists a workspace, or
+    without workspace_id the newest items with no workspace (Epo 2026-10-28);
+    the first line says which."""
+    assert isinstance(ctx.scope, AccountScope)
+    workspace_id = str(args.get("workspace_id") or "").strip()
+    if workspace_id:
+        workspace = ctx.scope.workspace(workspace_id)
+        if workspace is None:
+            return _refused(NOT_A_SCOPE_WORKSPACE.format(id=workspace_id))
+        body = await _account_list(ctx, {"workspaceId": workspace_id})
+        if isinstance(body, ToolResult):
+            return body
+        outline = await store.workspace_outline(workspace_id)
+        ctx.labels.update((item["id"], item["title"]) for item in body["items"])
+        listing = _source_listing(outline, body["items"], ctx.file_ids)
+        head = f"The {workspace.name} workspace (workspace_id={workspace_id}):"
+        return _result(f"{head}\n{listing.text()}")
+    body = await _account_list(ctx, {})
     if isinstance(body, ToolResult):
         return body
     allowed = None if ctx.file_ids is None else set(ctx.file_ids)
-    places: dict[tuple[str, str], list[str]] = {}
+    lines = [NO_WORKSPACE_LISTED]
     for item in body["items"]:
         if allowed is not None and item["id"] not in allowed:
             continue
         ctx.labels[item["id"]] = item["title"]
-        place = (
-            str(item.get("workspaceId") or ""),
-            str(item.get("workspaceName") or ""),
-        )
-        places.setdefault(place, []).append(_account_file_line(item))
-    lines: list[str] = []
-    # Workspaces by name, then the files with no workspace.
-    for (workspace_id, name), items in sorted(
-        places.items(), key=lambda entry: (not entry[0][0], entry[0][1].lower())
-    ):
-        lines.append(
-            f"\n## {name} (workspace_id={workspace_id})"
-            if workspace_id
-            else "\n## No workspace"
-        )
-        lines.extend(items)
-    return _result("\n".join(lines) if lines else "The user has no files in scope.")
+        lines.append(_account_file_line(item))
+    if len(lines) == 1:
+        lines.append("The user has no files or materials outside their workspaces.")
+    if body.get("more"):
+        lines.append(MORE_UNLISTED.format(count=len(body["items"])))
+    return _result("\n".join(lines))
 
 
 def _account_file_line(item: dict[str, Any]) -> str:
@@ -919,7 +974,141 @@ def _account_file_line(item: dict[str, Any]) -> str:
         )
     if item.get("reason"):
         line += f" {item['reason']}"
+    if item.get("descriptor"):
+        line += f"\n  {item['descriptor']}"
     return line
+
+
+CUT_NOTE = (
+    "The {what} was longer than {limit} characters; its first {limit} were saved."
+)
+TAGS_CUT_NOTE = "Only the first {limit} tags were saved; {left} more were left out."
+
+
+def _cut(value: Any, limit: int, what: str, notes: list[str]) -> str:
+    """``value`` within ``limit`` characters, noting a cut (Epo 2026-10-28:
+    an over-limit field is cut and saved, never a failed call)."""
+    text = str(value or "").strip()
+    if len(text) > limit:
+        notes.append(CUT_NOTE.format(what=what, limit=limit))
+        text = text[:limit].rstrip()
+    return text
+
+
+async def _create_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """A workspace of the user's own (Epo 2026-10-28): every field optional,
+    over-limit ones cut and said, the default name Go's New Workspace (n)."""
+    if not _gateway_ready() or not ctx.user_id or not ctx.assistant_message_id:
+        return _refused(
+            "Workspace creation is unavailable for this user.",
+            code="lifecycle_rejected",
+        )
+    call_id = str(args.get("_tool_call_id") or "")
+    if not call_id:
+        return _refused("create_workspace is missing its tool-call id.")
+    notes: list[str] = []
+    tags: list[str] = []
+    for tag in args.get("tags") or []:
+        value = _cut(tag, TAG_VALUE_MAX, "tag", notes)
+        if value and value.casefold() not in {t.casefold() for t in tags}:
+            tags.append(value)
+    if len(tags) > WORKSPACE_TAGS_MAX:
+        notes.append(
+            TAGS_CUT_NOTE.format(
+                limit=WORKSPACE_TAGS_MAX, left=len(tags) - WORKSPACE_TAGS_MAX
+            )
+        )
+        tags = tags[:WORKSPACE_TAGS_MAX]
+    payload = {
+        "scope": "account",
+        "userId": ctx.user_id,
+        "assistantMessageId": ctx.assistant_message_id,
+        "toolCallId": call_id,
+        "name": _cut(args.get("name"), WORKSPACE_NAME_MAX, "name", notes),
+        "description": _cut(
+            args.get("description"), WORKSPACE_DESCRIPTION_MAX, "description", notes
+        ),
+        "tags": tags,
+    }
+    result = await _post_operation(
+        "/api/internal/workspaces",
+        payload,
+        operation_id(ctx.assistant_message_id, call_id),
+        ctx,
+        failure="create the workspace",
+    )
+    if not (result.refused or result.failed):
+        result.text_parts.extend(notes)
+    return result
+
+
+# Summary search (Epo 2026-10-28, option B of
+# bench/rag/reports/2026-10-28-summary-search-scale.md): one scoped query over
+# names and the summaries' stored search vectors, then Go's access check on
+# the hits alone.
+SUMMARY_HITS = 10
+
+
+def _summary_line(hit: dict[str, Any], row: dict[str, Any], ctx: ToolContext) -> str:
+    """A summary hit: its id, place and edit right, and its summary when it
+    has one (a quiz, flashcard set or deck has none). No type (Epo
+    2026-10-28): a read says it."""
+    key = "id" if hit["kind"] == "material" else "file_id"
+    parts = [json.dumps(hit["title"], ensure_ascii=False), f"{key}={hit['id']}"]
+    if row.get("workspaceId"):
+        parts.append(
+            f"workspace {json.dumps(row['workspaceName'], ensure_ascii=False)} "
+            f"workspace_id={row['workspaceId']}"
+        )
+        if hit.get("chapter_id"):
+            parts.append(
+                f"chapter {json.dumps(hit.get('chapter_name') or '', ensure_ascii=False)} "
+                f"chapter_id={hit['chapter_id']}"
+            )
+    else:
+        parts.append("no workspace")
+    # The item's own editability (a PDF is not), while the turn may edit.
+    editable = bool(row.get("editable")) and "document.edit" in ctx.operations
+    parts.append("view and edit" if editable else "view only")
+    line = f"- {', '.join(parts)}"
+    if hit.get("descriptor"):
+        line += f"\n  {hit['descriptor']}"
+    return line
+
+
+async def _search_files_summary(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return _refused("search_files_summary needs a query.")
+    assert isinstance(ctx.scope, AccountScope)
+    hits = await store.summary_search(
+        user_id=ctx.scope.user_id,
+        workspace_ids=list(ctx.scope.workspace_ids),
+        query=query,
+        limit=SUMMARY_HITS,
+    )
+    if ctx.file_ids is not None:
+        hits = [hit for hit in hits if hit["id"] in ctx.file_ids]
+    rows = await document_access(
+        ctx,
+        [
+            ("material" if h["kind"] == "material" else "source_file", h["id"])
+            for h in hits
+        ],
+    )
+    if isinstance(rows, ToolResult):
+        return rows
+    lines = []
+    for hit, row in zip(hits, rows, strict=True):
+        if row.get("canRead"):
+            ctx.labels[hit["id"]] = hit["title"]
+            lines.append(_summary_line(hit, row, ctx))
+    if not lines:
+        return _result(
+            "No file or material matched by name or summary. Try other words, or "
+            "search_files_content to search inside the files."
+        )
+    return _result("\n".join(lines))
 
 
 async def _read_account_document(
@@ -928,16 +1117,24 @@ async def _read_account_document(
     row = await _account_item(ctx, rid)
     if isinstance(row, ToolResult):
         return row
-    access = access_line(row)
+    access = access_line(row, typed=True)
+    # The read carries the item's unindexed changes, as a workspace read does;
+    # loaded before the passages, as a workspace turn loads them first.
+    if _has_changes(row):
+        await ctx.pending_sources.load_item(row["kind"], rid)
     rows = await store.read_file_range(
         workspace_id=_item_workspace(row), file_id=rid, start=start, count=count
     )
+    changes = ctx.pending_sources.for_read(rid)
     if not rows:
         if row["kind"] == "material" and start == 0:
-            return _result(
+            result = _result(
                 f"{rid} has no passages to read; inspect_document reads it.\n{access}"
             )
-        return _result(f"No passages at that position.\n{access}")
+        else:
+            result = _result(f"No passages at that position.\n{access}")
+        result.pending = changes
+        return result
     passages = [
         replace(
             Passage.from_row(r),
@@ -946,11 +1143,13 @@ async def _read_account_document(
         )
         for r in rows
     ]
-    return ToolResult(
+    result = ToolResult(
         text_parts=[f"(next start = {rows[-1]['chunk_idx'] + 1})\n{access}"],
         passages=passages,
         paged=True,
     )
+    result.pending = changes
+    return result
 
 
 async def _read_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -1129,6 +1328,7 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(f"capture_page: {exc}")
     if (limit := _image_limit(ctx)) is not None:
         return limit
+    await ctx.pending_sources.load_item("source_file", file_id)
     changes = ctx.pending_sources.for_read(file_id)
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
@@ -1612,6 +1812,13 @@ def _is_transient(exc: BaseException | None, status: int) -> bool:
 
 def _receipt_result(body: dict[str, Any]) -> ToolResult:
     """Turn a recorded agent operation (Go receipt) into the tool result."""
+    if body.get("kind") == "create_workspace" and body.get("outcome") == "succeeded":
+        # No effect, so no Undo (Epo 2026-10-28); a recovered receipt has no name.
+        name = f" '{body['name']}'" if body.get("name") else ""
+        return _result(
+            f"Created the workspace{name} (workspace_id={body.get('workspaceId')}). "
+            "create_material and create_deck can create in it with this workspace_id."
+        )
     effect = body.get("effect")
     if not isinstance(effect, dict) or body.get("outcome") != "succeeded":
         error = body.get("error") if isinstance(body.get("error"), dict) else {}
@@ -2311,10 +2518,16 @@ def _response_details(resp: requests.Response) -> dict[str, Any]:
 
 _GATEWAY_CODES = {
     "storage_quota_exceeded": "quota_rejected",
+    "workspace_limit_exceeded": "quota_rejected",
     "account_over_quota": "lifecycle_rejected",
     "permission_denied": "lifecycle_rejected",
     "saves_failing": "unavailable_target",
 }
+
+WORKSPACE_LIMIT = (
+    "The user already has as many workspaces as their plan allows, so none was "
+    "created. Tell the user."
+)
 
 # A room whose saves are failing refuses agent edits before anything applies
 # (Q456): another try this turn meets the same failing server.
@@ -2370,6 +2583,8 @@ def _gateway_refused(
         detail = "\n\n".join(part for part in (detail, NO_PERMISSION) if part)
     if code == "saves_failing":
         detail = "\n\n".join(part for part in (detail, SAVES_FAILING) if part)
+    if code == "workspace_limit_exceeded":
+        detail = "\n\n".join(part for part in (detail, WORKSPACE_LIMIT) if part)
     return _refused(text, code=_gateway_error_code(resp), detail=detail)
 
 
@@ -2487,8 +2702,9 @@ async def _after_lifecycle_change(
 async def _reload_pending(ctx: ToolContext, changed: str) -> None:
     """Re-read the turn's pending changes after it changed a document,
     keeping what it read, passed on and omitted (PendingSources.carry).
-    Pending sources are workspace-only."""
+    Account chat reads the item again at its next read."""
     if ctx.account:
+        ctx.pending_sources.forget(changed)
         return
     previous = ctx.pending_sources
     ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
@@ -2717,13 +2933,14 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         )
     kind, rid = _target(args)
     access = ""
+    account_row: dict[str, Any] = {}
     if ctx.account:
         # Inspect precedes every edit, so it says where the item lives and
         # whether the user may edit it (D3).
         row = await _account_item(ctx, rid, (kind,))
         if isinstance(row, ToolResult):
             return row
-        access = access_line(row)
+        access, account_row = access_line(row), row
     elif kind == "source_file":
         refused = await _check_source_target(ctx, rid)
         if refused is not None:
@@ -2742,11 +2959,14 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     )
     if isinstance(body, ToolResult):
         return body
-    changes = (
-        await ctx.pending_sources.read_note(rid)
-        if kind == "material"
-        else ctx.pending_sources.for_read(rid)
-    )
+    if kind == "source_file":
+        await ctx.pending_sources.load_item(kind, rid)
+    if ctx.account and not _has_changes(account_row):
+        changes = ""
+    elif kind == "material":
+        changes = await ctx.pending_sources.read_note(rid)
+    else:
+        changes = ctx.pending_sources.for_read(rid)
     shown = None
     if kind == "material":
         seen = ctx.seen_blocks.setdefault(rid, {})
@@ -4000,8 +4220,10 @@ _register("read_skill", _read_skill)
 _register("read_study_progress", _read_study_progress)
 _register("capture_knowledge_page", _capture_knowledge_page)
 _register("list_sources", _list_sources)
-_register("search_files", _search_files)
+_register("search_files_summary", _search_files_summary)
+_register("search_files_content", _search_files_content)
 _register("list_files", _list_files)
+_register("create_workspace", _create_workspace)
 _register("read_document", _read_document)
 _register("capture_page", _capture_page)
 _register("create_material", _create_material)
@@ -4049,12 +4271,14 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
     if spec.name != "resolve_source_change":
         return True
     # Offered from every captured change: the tools stay fixed for the turn
-    # (provider cache), and resolving refuses a document not read yet.
+    # (provider cache), and resolving refuses a document not read yet. Account
+    # chat reads changes only as it reads items, so it is always offered there.
     return bool(
         ctx.user_id
         and _gateway_ready()
         and (
-            any(
+            ctx.account
+            or any(
                 change.get("assetRef")
                 for file in ctx.pending_sources.files
                 for change in file["changes"]
@@ -4207,6 +4431,19 @@ def assign_citations(
     return numbered
 
 
+def _read_location(number: int, passage: Passage) -> str:
+    """Where read_document continues a passage; an account passage also names
+    its workspace, chapter and whether the user may edit it."""
+    line = f"[{number}] file_id={passage.file_id}, start={passage.chunk_idx}"
+    if passage.can_edit is None:
+        return line
+    if passage.workspace_id:
+        line += f", workspace_id={passage.workspace_id}"
+    if passage.chapter_id:
+        line += f", chapter_id={passage.chapter_id}"
+    return line + (", view and edit" if passage.can_edit else ", view only")
+
+
 def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> str:
     if result.refused and not numbered:
         return result.text()
@@ -4231,7 +4468,7 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
     text = "\n\n".join(parts) if parts else result.text()
     if numbered:
         locations = "\n".join(
-            f"[{number}] file_id={passage.file_id}, start={passage.chunk_idx}"
+            _read_location(number, passage)
             for number, passage in numbered
             if passage.kind != "web"
         )

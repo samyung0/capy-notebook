@@ -375,6 +375,8 @@ export function useChatStream(workspaceId: string | null) {
         );
       };
 
+      // Each call's tool, for what its end refreshes.
+      const toolNames = new Map<string, string>();
       try {
         await streamChat(
           workspaceId,
@@ -480,6 +482,16 @@ export function useChatStream(workspaceId: string | null) {
             onToolEnd: (callId, result) => {
               const endedAt = result.endedAt ?? new Date().toISOString();
               invalidateForEffects(qc, workspaceId, result.effects);
+              // A workspace account chat made has no effect (no Undo, Epo
+              // 2026-10-28): its lists refetch as after the New workspace
+              // dialog.
+              if (
+                toolNames.get(callId) === 'create_workspace' &&
+                result.outcome === 'succeeded'
+              ) {
+                void qc.invalidateQueries({ queryKey: ['workspaces'] });
+                void qc.invalidateQueries({ queryKey: ['tags'] });
+              }
               setMessages((prev) =>
                 prev.map((msg) => {
                   if (msg.id !== currentId) return msg;
@@ -518,6 +530,7 @@ export function useChatStream(workspaceId: string | null) {
                 )
               ),
             onToolStart: (callId, name, detail, startedAt) => {
+              toolNames.set(callId, name);
               const tool: ToolBlock = {
                 callId,
                 detail,

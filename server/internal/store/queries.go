@@ -361,43 +361,50 @@ func (s *Store) newWorkspaceEmbedding(ctx context.Context) (workspaceEmbedding, 
 }
 
 func (s *Store) CreateWorkspace(ctx context.Context, userID string, input WorkspaceCreate) (Workspace, error) {
-	if input.IconID != nil && !ValidIconID(*input.IconID) {
-		return Workspace{}, ErrNotFound
-	}
-	id := uid("ws")
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Workspace{}, err
 	}
 	defer tx.Rollback(ctx)
-
-	// Workspaces themselves do not consume storage bytes, so they miss the
-	// gateStorageTx path used by files and materials. Still enforce lifecycle.
-	status, err := s.accountAccess(ctx, tx, userID)
+	id, err := s.createWorkspaceTx(ctx, tx, userID, input)
 	if err != nil {
-		return Workspace{}, err
-	}
-	if err := status.Err(); err != nil {
-		return Workspace{}, err
-	}
-	if _, err := s.gateWorkspacesTx(ctx, tx, userID); err != nil {
-		return Workspace{}, err
-	}
-
-	embed, err := s.newWorkspaceEmbedding(ctx)
-	if err != nil {
-		return Workspace{}, err
-	}
-	if err := s.insertWorkspaceTx(ctx, tx, id, userID, input.Name, input.Tags, embed); err != nil {
-		return Workspace{}, err
-	}
-	if err := setWorkspaceAppearanceTx(ctx, tx, id, input); err != nil {
 		return Workspace{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Workspace{}, err
 	}
 	return s.GetWorkspace(ctx, userID, id)
+}
+
+// createWorkspaceTx inserts one workspace of userID and returns its id.
+func (s *Store) createWorkspaceTx(ctx context.Context, tx pgx.Tx, userID string, input WorkspaceCreate) (string, error) {
+	if input.IconID != nil && !ValidIconID(*input.IconID) {
+		return "", ErrNotFound
+	}
+	// Workspaces themselves do not consume storage bytes, so they miss the
+	// gateStorageTx path used by files and materials. Still enforce lifecycle.
+	status, err := s.accountAccess(ctx, tx, userID)
+	if err != nil {
+		return "", err
+	}
+	if err := status.Err(); err != nil {
+		return "", err
+	}
+	if _, err := s.gateWorkspacesTx(ctx, tx, userID); err != nil {
+		return "", err
+	}
+	embed, err := s.newWorkspaceEmbedding(ctx)
+	if err != nil {
+		return "", err
+	}
+	id := uid("ws")
+	if err := s.insertWorkspaceTx(ctx, tx, id, userID, input.Name, input.Tags, embed); err != nil {
+		return "", err
+	}
+	if err := setWorkspaceAppearanceTx(ctx, tx, id, input); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 // setWorkspaceAppearanceTx applies a new workspace's optional icon,

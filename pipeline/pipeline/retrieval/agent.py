@@ -73,6 +73,7 @@ from .limits import (
 WRITE_TOOLS = frozenset(
     {
         "create_material",
+        "create_workspace",
         "add_questions",
         "add_question_media",
         "edit_document",
@@ -163,7 +164,13 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
     def named(found: str) -> str:
         return labels.get(found, found)
 
-    if name in ("search_workspace", "search_files", "search_knowledge", "search_web"):
+    if name in (
+        "search_workspace",
+        "search_files_summary",
+        "search_files_content",
+        "search_knowledge",
+        "search_web",
+    ):
         detail = str(args.get("query") or "")
     elif name == "read_knowledge":
         detail = named(_excerpt_id(name, args))
@@ -176,6 +183,8 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
         detail = "listing sources"
     elif name == "list_files":
         detail = "listing files"
+    elif name == "create_workspace":
+        detail = str(args.get("name") or "") or "New Workspace"
     elif name in ("create_material", "create_deck"):
         detail = str(args.get("title") or "")
     elif name in ("add_questions", "add_question_media"):
@@ -481,7 +490,10 @@ async def _run_turn(
             yield _with_usage(events.error(active_scope.text(), "invalid_scope"))
             return
 
-    if not ctx.account:
+    # Account chat loads each item's changes when it reads it (Epo 2026-10-28).
+    if ctx.account:
+        ctx.pending_sources = pending.PendingSources.for_account(ctx.user_id)
+    else:
         ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
     # Changes reach the agent only for the documents it reads (Epo 2026-10-20).
     ctx.pending_sources.read_ids = set()
@@ -1743,7 +1755,7 @@ def _result_text(result: ToolResult, numbered: list[tuple[int, Passage]]) -> str
 
 
 # One search of the user's files per response, in either scope.
-_SEARCH_TOOLS = ("search_workspace", "search_files")
+_SEARCH_TOOLS = ("search_workspace", "search_files_content")
 
 
 def _limit_for(

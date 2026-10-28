@@ -31,26 +31,35 @@ func liveCallerSQL(user string) string {
 		AND lc.deleted_at IS NULL AND lc.deletion_requested_at IS NULL)`
 }
 
-// AccountScopeWorkspaces lists the ids of the workspaces an account chat of
-// userID searches.
-func (s *Store) AccountScopeWorkspaces(ctx context.Context, userID string) ([]string, error) {
+// ScopeWorkspace is one workspace of an account chat's scope: its name and
+// whether the caller may edit its content.
+type ScopeWorkspace struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	CanEdit bool   `json:"canEdit"`
+}
+
+// AccountScope lists the workspaces an account chat of userID reaches, sent
+// with each turn so search labels its hits without asking again (Epo
+// 2026-10-28); the workspace cap keeps it to at most 50.
+func (s *Store) AccountScope(ctx context.Context, userID string) ([]ScopeWorkspace, error) {
 	if userID == "" {
 		return nil, ErrNotFound
 	}
-	rows, err := s.pool.Query(ctx, `SELECT DISTINCT id FROM (`+memberWorkspacesSQL("$1")+`) s(id) ORDER BY id`, userID)
+	rows, err := s.pool.Query(ctx, `SELECT id, name, can_edit FROM (`+accountScopeSQL("$1")+`) s ORDER BY id`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	ids := []string{}
+	out := []ScopeWorkspace{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var w ScopeWorkspace
+		if err := rows.Scan(&w.ID, &w.Name, &w.CanEdit); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		out = append(out, w)
 	}
-	return ids, rows.Err()
+	return out, rows.Err()
 }
 
 // AccountScopeEditable says whether wsID is in userID's account scope with an
@@ -74,6 +83,15 @@ type DocumentAccess struct {
 	// Title is the item's name, for the made-from line of what is created
 	// from it.
 	Title string `json:"-"`
+	// What the item is, for an account read's Access line (Epo 2026-10-28):
+	// a file's format (the handler maps FileKind as documents/list does) or a
+	// material's kind.
+	FileKind     string `json:"-"`
+	Format       string `json:"format,omitempty"`
+	MaterialKind string `json:"materialKind,omitempty"`
+	// Editable is CanEdit for an item whose format can be edited (a PDF
+	// cannot), which the handler fills as documents/list does.
+	Editable bool `json:"editable"`
 }
 
 // AccountDocumentAccess answers each item in order, in one query: a file or
@@ -97,14 +115,15 @@ func (s *Store) AccountDocumentAccess(ctx context.Context, userID string, items 
 			SELECT req.ord,
 				CASE WHEN req.kind='source_file' THEN f.workspace_id ELSE COALESCE(p.workspace_id, m.workspace_id) END AS ws,
 				CASE WHEN req.kind='source_file' THEN f.user_id ELSE COALESCE(p.owner_user_id, m.owner_user_id) END AS owner,
-				COALESCE(f.name, m.title, '') AS title
+				COALESCE(f.name, m.title, '') AS title, COALESCE(f.kind, '') AS file_kind,
+				COALESCE(m.kind, '') AS material_kind
 			FROM req
 			LEFT JOIN files f ON req.kind='source_file' AND f.id=req.id AND f.trashed_at IS NULL
 			LEFT JOIN materials m ON req.kind='material' AND m.id=req.id AND m.trashed_at IS NULL
 			LEFT JOIN materials p ON p.id=m.parent_material_id AND p.trashed_at IS NULL
 			WHERE f.id IS NOT NULL OR (m.id IS NOT NULL AND (m.parent_material_id IS NULL OR p.id IS NOT NULL))
 		)
-		SELECT i.ord, COALESCE(sc.id, ''), COALESCE(sc.name, ''), i.title,
+		SELECT i.ord, COALESCE(sc.id, ''), COALESCE(sc.name, ''), i.title, i.file_kind, i.material_kind,
 			COALESCE(sc.can_edit, i.ws IS NULL AND i.owner=$1)
 		FROM item i LEFT JOIN scope sc ON sc.id=i.ws
 		WHERE `+liveCallerSQL("$1")+` AND (sc.id IS NOT NULL OR (i.ws IS NULL AND i.owner=$1))`,
@@ -118,54 +137,82 @@ func (s *Store) AccountDocumentAccess(ctx context.Context, userID string, items 
 			ord  int64
 			read DocumentAccess
 		)
-		if err := rows.Scan(&ord, &read.WorkspaceID, &read.WorkspaceName, &read.Title, &read.CanEdit); err != nil {
+		if err := rows.Scan(&ord, &read.WorkspaceID, &read.WorkspaceName, &read.Title, &read.FileKind,
+			&read.MaterialKind, &read.CanEdit); err != nil {
 			return nil, err
 		}
-		row := &out[ord-1]
-		row.WorkspaceID, row.WorkspaceName, row.Title, row.CanEdit = read.WorkspaceID, read.WorkspaceName, read.Title, read.CanEdit
-		row.CanRead = true
+		read.Kind, read.ID, read.CanRead = out[ord-1].Kind, out[ord-1].ID, true
+		out[ord-1] = read
 	}
 	return out, rows.Err()
 }
 
 // AccountDocument is one row of an account chat's file listing: a file or
-// top-level material of the scope, with its workspace ("" for No workspace)
-// and whether the caller may edit it there.
+// top-level material of the scope, with its workspace and chapter ("" and nil
+// for No workspace), its descriptor (empty when it has none) and whether the
+// caller may edit it there.
 type AccountDocument struct {
 	Kind          agenttools.ResourceKind
 	ID, Title     string
 	FileKind      string // a file's kind
 	MaterialKind  string // a material's kind
 	ChapterID     *string
+	ChapterName   string
 	WorkspaceID   string
 	WorkspaceName string
 	CanEdit       bool
+	Descriptor    string
+}
+
+// AccountDocumentPlace is which of an account chat's items a listing reads
+// (Epo 2026-10-28): one scope workspace's (WorkspaceID), or else the caller's
+// items with no workspace, newest first and at most Limit.
+type AccountDocumentPlace struct {
+	WorkspaceID string
+	Limit       int
 }
 
 // AccountDocuments lists the untrashed files, then the top-level materials, of
-// userID's account scope and their standalone ones, each by workspace name
-// (No workspace first) and then in workspace order.
-func (s *Store) AccountDocuments(ctx context.Context, userID string) ([]AccountDocument, error) {
+// place: a workspace's in its order, or with no workspace newest first. A
+// workspace outside the scope lists nothing.
+func (s *Store) AccountDocuments(ctx context.Context, userID string, place AccountDocumentPlace) ([]AccountDocument, error) {
 	if userID == "" {
 		return nil, ErrNotFound
 	}
+	where, order, limit := `d.ws_id = $2`, `d.part, d.position, d.at DESC`, ""
+	args := []any{userID, place.WorkspaceID}
+	if place.WorkspaceID == "" {
+		where, order, args = `d.ws_id IS NULL`, `d.at DESC, d.id`, args[:1]
+		if place.Limit > 0 {
+			limit = ` LIMIT $2`
+			args = append(args, place.Limit)
+		}
+	}
+	// An item with no workspace is the caller's own, so they edit it.
 	rows, err := s.pool.Query(ctx, `
 		WITH scope AS (`+accountScopeSQL("$1")+`)
-		SELECT kind, id, title, file_kind, material_kind, chapter_id, ws, ws_name, can_edit FROM (
+		SELECT d.kind, d.id, d.title, d.file_kind, d.material_kind, d.chapter_id, COALESCE(ch.name, ''),
+			COALESCE(sc.id, '') AS ws, COALESCE(sc.name, '') AS ws_name, COALESCE(sc.can_edit, true),
+			COALESCE(rs.descriptor, '')
+		FROM (
 			SELECT 0 AS part, 'source_file' AS kind, f.id, f.name AS title, f.kind AS file_kind,
-				'' AS material_kind, f.chapter_id, COALESCE(sc.id, '') AS ws, COALESCE(sc.name, '') AS ws_name,
-				COALESCE(sc.can_edit, true) AS can_edit, f.position, f.added_at AS at
-			FROM files f LEFT JOIN scope sc ON sc.id=f.workspace_id
-			WHERE f.trashed_at IS NULL AND (sc.id IS NOT NULL OR (f.workspace_id IS NULL AND f.user_id=$1))
+				'' AS material_kind, f.chapter_id, f.workspace_id AS ws_id, f.position, f.added_at AS at,
+				fc.content_id
+			FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id=f.id
+			WHERE f.trashed_at IS NULL
+				AND (f.workspace_id IN (SELECT id FROM scope) OR (f.workspace_id IS NULL AND f.user_id=$1))
 			UNION ALL
-			SELECT 1, 'material', m.id, m.title, '', m.kind, m.chapter_id, COALESCE(sc.id, ''),
-				COALESCE(sc.name, ''), COALESCE(sc.can_edit, true), m.position, m.created_at
-			FROM materials m LEFT JOIN scope sc ON sc.id=m.workspace_id
+			SELECT 1, 'material', m.id, m.title, '', m.kind, m.chapter_id, m.workspace_id, m.position,
+				m.created_at, mc.content_id
+			FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id=m.id
 			WHERE m.trashed_at IS NULL AND m.parent_material_id IS NULL
-				AND (sc.id IS NOT NULL OR (m.workspace_id IS NULL AND m.owner_user_id=$1))
+				AND (m.workspace_id IN (SELECT id FROM scope) OR (m.workspace_id IS NULL AND m.owner_user_id=$1))
 		) d
-		WHERE `+liveCallerSQL("$1")+`
-		ORDER BY part, ws_name, ws, position, at DESC`, userID)
+		LEFT JOIN scope sc ON sc.id=d.ws_id
+		LEFT JOIN chapters ch ON ch.id=d.chapter_id
+		LEFT JOIN rag_content_summaries rs ON rs.content_id=d.content_id
+		WHERE `+liveCallerSQL("$1")+` AND `+where+`
+		ORDER BY `+order+limit, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -176,8 +223,8 @@ func (s *Store) AccountDocuments(ctx context.Context, userID string) ([]AccountD
 			d    AccountDocument
 			kind string
 		)
-		if err := rows.Scan(&kind, &d.ID, &d.Title, &d.FileKind, &d.MaterialKind, &d.ChapterID,
-			&d.WorkspaceID, &d.WorkspaceName, &d.CanEdit); err != nil {
+		if err := rows.Scan(&kind, &d.ID, &d.Title, &d.FileKind, &d.MaterialKind, &d.ChapterID, &d.ChapterName,
+			&d.WorkspaceID, &d.WorkspaceName, &d.CanEdit, &d.Descriptor); err != nil {
 			return nil, err
 		}
 		d.Kind = agenttools.ResourceKind(kind)

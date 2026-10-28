@@ -2,11 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -200,28 +203,51 @@ func (a *api) internalDocumentAccess(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	for i, row := range rows {
+		rows[i].Editable = row.CanEdit
+		if row.CanRead && row.Kind == agenttools.KindSourceFile {
+			item := fileListItem(documentListItem{}, row.Title, row.FileKind)
+			rows[i].Format, rows[i].Editable = item.Format, item.Editable && row.CanEdit
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": rows})
 }
 
 // accountDocumentItem is a documents/list row of an account chat: the
-// workspace row plus where the item lives ("" for No workspace).
+// workspace row plus where the item lives ("" for No workspace), its chapter's
+// name and its descriptor.
 type accountDocumentItem struct {
 	documentListItem
 	WorkspaceID   string `json:"workspaceId"`
 	WorkspaceName string `json:"workspaceName"`
+	ChapterName   string `json:"chapterName,omitempty"`
+	Descriptor    string `json:"descriptor,omitempty"`
 }
 
 // viewOnlyReason is why an account listing's item the actor only views is
 // not editable.
 const viewOnlyReason = "You can view this but not edit it."
 
-// listAccountDocuments is documents/list for an account chat: the files and
-// materials of the actor's workspaces and their own with no workspace.
-func (a *api) listAccountDocuments(w http.ResponseWriter, r *http.Request, userID string) {
-	docs, err := a.s.AccountDocuments(r.Context(), userID)
+// accountListMax bounds the listing of the items with no workspace, newest
+// first (Epo 2026-10-28); a workspace holds at most 100 files by its plan.
+const accountListMax = 100
+
+// listAccountDocuments is documents/list for an account chat: one scope
+// workspace's files and materials, or the actor's newest with no workspace,
+// saying whether more exist.
+func (a *api) listAccountDocuments(w http.ResponseWriter, r *http.Request, req internalDocumentsListReq) {
+	place := store.AccountDocumentPlace{WorkspaceID: req.WorkspaceID}
+	if req.WorkspaceID == "" {
+		place.Limit = accountListMax + 1
+	}
+	docs, err := a.s.AccountDocuments(r.Context(), req.UserID, place)
 	if err != nil {
 		a.fail(w, err)
 		return
+	}
+	more := place.Limit > 0 && len(docs) > accountListMax
+	if more {
+		docs = docs[:accountListMax]
 	}
 	items := make([]accountDocumentItem, 0, len(docs))
 	for _, d := range docs {
@@ -234,13 +260,113 @@ func (a *api) listAccountDocuments(w http.ResponseWriter, r *http.Request, userI
 		if item.Editable && !d.CanEdit {
 			item.Editable, item.Reason = false, viewOnlyReason
 		}
-		items = append(items, accountDocumentItem{documentListItem: item, WorkspaceID: d.WorkspaceID, WorkspaceName: d.WorkspaceName})
+		items = append(items, accountDocumentItem{
+			documentListItem: item, WorkspaceID: d.WorkspaceID, WorkspaceName: d.WorkspaceName,
+			ChapterName: d.ChapterName, Descriptor: d.Descriptor,
+		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "more": more})
 }
 
 // refuseAccountWorkspace answers a workspace id on an account call that
 // reads or edits: its target names its own place.
 func refuseAccountWorkspace(w http.ResponseWriter) {
 	writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "an account call names no workspaceId"})
+}
+
+// internalWorkspaceReq is account chat's create_workspace call (Epo
+// 2026-10-28). The pipeline cuts an over-limit name, description or tag to its
+// limit and says so; here the limits are only checked.
+type internalWorkspaceReq struct {
+	Scope              string   `json:"scope"`
+	UserID             string   `json:"userId"`
+	AssistantMessageID string   `json:"assistantMessageId"`
+	ToolCallID         string   `json:"toolCallId"`
+	Name               string   `json:"name"`
+	Description        string   `json:"description"`
+	Tags               []string `json:"tags"`
+}
+
+func (req internalWorkspaceReq) valid() bool {
+	if utf8.RuneCountInString(req.Name) > fieldlimits.WorkspaceName ||
+		utf8.RuneCountInString(req.Description) > fieldlimits.WorkspaceDescription ||
+		len(req.Tags) > fieldlimits.WorkspaceTags {
+		return false
+	}
+	for _, tag := range req.Tags {
+		if utf8.RuneCountInString(tag) > fieldlimits.TagValue {
+			return false
+		}
+	}
+	return true
+}
+
+// internalCreateWorkspace creates a workspace for an account chat: owned by
+// the actor, named as asked or "New Workspace (n)", with its receipt so a
+// replayed call creates nothing twice. It answers the receipt with the
+// workspace's name.
+func (a *api) internalCreateWorkspace(w http.ResponseWriter, r *http.Request) {
+	var req internalWorkspaceReq
+	if err := decode(r, &req); err != nil {
+		a.fail(w, err)
+		return
+	}
+	account, ok := a.internalScope(w, r, req.Scope)
+	if !ok {
+		return
+	}
+	if !account || req.AssistantMessageID == "" || req.ToolCallID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code": "invalid_input", "message": "an account call with assistantMessageId and toolCallId",
+		})
+		return
+	}
+	req.Name, req.Description = strings.TrimSpace(req.Name), strings.TrimSpace(req.Description)
+	if !req.valid() {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "name, description or tags over their limits"})
+		return
+	}
+	if !a.internalAccountActor(w, r, req.UserID) {
+		return
+	}
+	convID, ok := a.accountConversation(w, r, req.UserID, req.AssistantMessageID)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	opID := store.ChatOperationID(req.AssistantMessageID, req.ToolCallID)
+	hash, err := store.RequestHash(map[string]any{"name": req.Name, "description": req.Description, "tags": req.Tags})
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	op, err := a.s.ReplayAgentOperation(ctx, opID, hash)
+	if errors.Is(err, store.ErrNotFound) {
+		input := store.WorkspaceCreate{Name: req.Name}
+		if req.Description != "" {
+			input.Description = &req.Description
+		}
+		for _, tag := range req.Tags {
+			input.Tags = append(input.Tags, store.TagRef{Value: tag})
+		}
+		var created store.AgentOperation
+		created, _, err = a.s.CreateWorkspaceOperation(ctx, req.UserID, input, store.AgentOperation{
+			ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: req.UserID,
+			ConversationID: convID, MessageID: req.AssistantMessageID, CallID: req.ToolCallID,
+		})
+		op = &created
+	}
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	ws, err := a.s.GetWorkspace(ctx, req.UserID, op.WorkspaceID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"operationId": op.ID, "kind": op.Kind, "outcome": op.Outcome,
+		"workspaceId": ws.ID, "name": ws.Name,
+	})
 }

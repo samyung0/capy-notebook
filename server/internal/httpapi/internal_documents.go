@@ -25,7 +25,8 @@ import (
 type internalDocumentsListReq struct {
 	WorkspaceID string `json:"workspaceId"`
 	UserID      string `json:"userId"`
-	// Scope "account" lists the actor's account scope instead of a workspace.
+	// Scope "account" lists the actor's account scope instead of a workspace:
+	// WorkspaceID's items, or else the items with no workspace.
 	Scope string `json:"scope"`
 }
 
@@ -97,12 +98,8 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if account {
-		if req.WorkspaceID != "" {
-			refuseAccountWorkspace(w)
-			return
-		}
 		if a.internalAccountActor(w, r, req.UserID) {
-			a.listAccountDocuments(w, r, req.UserID)
+			a.listAccountDocuments(w, r, req)
 		}
 		return
 	}

@@ -161,11 +161,12 @@ func (sc chatScope) turnOperations() []agenttools.Operation {
 	}
 	if sc.access.readOnly || sc.access.full {
 		// A frozen actor or owner keeps reading and deleting, not creating,
-		// editing or restoring. An owner at its storage limit loses creating
-		// and editing; restoring grows nothing.
+		// editing, restoring or making a workspace. An owner at its storage
+		// limit loses creating and editing; restoring and a workspace grow
+		// nothing.
 		operations = slices.DeleteFunc(operations, func(op agenttools.Operation) bool {
 			return op == agenttools.OpMaterialCreate || op == agenttools.OpDocumentEdit ||
-				(sc.access.readOnly && op == agenttools.OpTrashRestore)
+				(sc.access.readOnly && (op == agenttools.OpTrashRestore || op == agenttools.OpWorkspaceCreate))
 		})
 	}
 	return append(operations, agenttools.OpLibraryRead)
@@ -450,16 +451,17 @@ type chatTurn struct {
 	openResource     map[string]string
 	studyProgress    bool
 	studyPreferences store.StudyPreferences
-	// scopeWorkspaces is an account turn's workspace set (D2), fixed for the
-	// turn; each tool call checks its target again.
-	scopeWorkspaces []string
+	// scopeWorkspaces is an account turn's workspace set (D2) with names and
+	// edit rights, fixed for the turn: search labels its hits from it, and Go
+	// checks every write again (Epo 2026-10-28).
+	scopeWorkspaces []store.ScopeWorkspace
 }
 
 func (a *api) chatTurnContext(ctx context.Context, userID, wsID string, req chatStreamReq) (chatTurn, error) {
 	turn := chatTurn{workspaceOnly: req.WorkspaceOnly}
 	if wsID == "" {
 		var err error
-		if turn.scopeWorkspaces, err = a.s.AccountScopeWorkspaces(ctx, userID); err != nil {
+		if turn.scopeWorkspaces, err = a.s.AccountScope(ctx, userID); err != nil {
 			return turn, err
 		}
 		turn.studyPreferences, err = a.s.StudyPreferencesOf(ctx, userID)
@@ -557,7 +559,7 @@ func (a *api) relayChat(
 	// its own fields beside it.
 	if conv.WorkspaceID == "" {
 		body["scope"] = map[string]any{
-			"kind": agenttools.ScopeAccount, "workspaceIds": turn.scopeWorkspaces, "userId": userID,
+			"kind": agenttools.ScopeAccount, "workspaces": turn.scopeWorkspaces, "userId": userID,
 		}
 	} else {
 		body["scope"] = map[string]any{"kind": agenttools.ScopeWorkspace, "workspaceId": conv.WorkspaceID}

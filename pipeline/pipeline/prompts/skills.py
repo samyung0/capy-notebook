@@ -175,7 +175,7 @@ def swapped(text: str, *pairs: tuple[str, str]) -> str:
 ACCOUNT_LANDING = (
     "What you create lands in No workspace unless the learner names a workspace "
     "they can edit; create_material and create_deck then take its workspace_id "
-    "from list_files."
+    "from a search, a listing or a read."
 )
 
 

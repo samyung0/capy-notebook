@@ -119,7 +119,7 @@ export const accountChatHandlers = [
           await delay(600);
           send({ phase: 'running_tools', type: 'phase' });
           for (const [name, detail] of [
-            ['search_files', body.text.slice(0, 40)],
+            ['search_files_content', body.text.slice(0, 40)],
             ['read_document', 'Reading list.md'],
           ]) {
             const callId = uid('call');

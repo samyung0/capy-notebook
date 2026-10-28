@@ -67,9 +67,16 @@ func newAccountScopeFixture(t *testing.T, s *Store) accountScopeFixture {
 func TestAccountScopeIsOwnedAndMemberWorkspacesOfLiveOwners(t *testing.T) {
 	s := openMaterialTestStore(t)
 	f := newAccountScopeFixture(t, s)
-	ids, err := s.AccountScopeWorkspaces(context.Background(), f.me)
+	scope, err := s.AccountScope(context.Background(), f.me)
 	if err != nil {
 		t.Fatal(err)
+	}
+	ids, editable := []string{}, map[string]bool{}
+	for _, ws := range scope {
+		ids, editable[ws.ID] = append(ids, ws.ID), ws.CanEdit
+	}
+	if !editable[f.owned] || !editable[f.edited] || editable[f.viewed] {
+		t.Fatalf("scope edit rights = %v, want owned and edited only", editable)
 	}
 	want := []string{f.owned, f.edited, f.viewed}
 	slices.Sort(want)
@@ -124,22 +131,26 @@ func TestAccountDocumentAccess(t *testing.T) {
 		t.Fatalf("owned file access = %+v, want its workspace", rows[0])
 	}
 
-	docs, err := s.AccountDocuments(ctx, f.me)
-	if err != nil {
-		t.Fatal(err)
+	if rows[0].FileKind != "md" || rows[0].MaterialKind != "" {
+		t.Fatalf("owned file access type = %+v", rows[0])
 	}
+	if rows, err := s.AccountDocumentAccess(ctx, f.me, items[4:5]); err != nil || rows[0].MaterialKind != "note" {
+		t.Fatalf("standalone note access type = %+v, %v", rows, err)
+	}
+
 	listed := map[string]AccountDocument{}
-	for _, d := range docs {
-		listed[d.ID] = d
+	for _, place := range []AccountDocumentPlace{{WorkspaceID: f.owned}, {WorkspaceID: f.edited}, {WorkspaceID: f.viewed}, {}} {
+		docs, err := s.AccountDocuments(ctx, f.me, place)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range docs {
+			listed[d.ID] = d
+		}
 	}
 	for _, ws := range []string{f.owned, f.edited, f.viewed, "standalone"} {
 		if _, ok := listed[f.files[ws]]; !ok {
 			t.Errorf("account listing misses the file of %s", ws)
-		}
-	}
-	for _, ws := range []string{f.linkReached, f.deadOwner} {
-		if _, ok := listed[f.files[ws]]; ok {
-			t.Errorf("account listing shows the file of %s", ws)
 		}
 	}
 	if d := listed[f.files[f.viewed]]; d.CanEdit || d.WorkspaceName != "Viewed" {
@@ -147,6 +158,33 @@ func TestAccountDocumentAccess(t *testing.T) {
 	}
 	if d := listed[standalone.ID]; d.Kind != agenttools.KindMaterial || d.WorkspaceID != "" || !d.CanEdit {
 		t.Errorf("standalone note row = %+v", d)
+	}
+
+	// One workspace's items, or the newest with no workspace up to a limit.
+	place := func(p AccountDocumentPlace) []string {
+		t.Helper()
+		docs, err := s.AccountDocuments(ctx, f.me, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := []string{}
+		for _, d := range docs {
+			ids = append(ids, d.ID)
+		}
+		return ids
+	}
+	if got := place(AccountDocumentPlace{WorkspaceID: f.viewed}); !slices.Equal(got, []string{f.files[f.viewed]}) {
+		t.Errorf("viewed workspace listing = %v", got)
+	}
+	if got := place(AccountDocumentPlace{WorkspaceID: f.linkReached}); len(got) != 0 {
+		t.Errorf("link-reached workspace listing = %v, want none", got)
+	}
+	if got := place(AccountDocumentPlace{}); !slices.Contains(got, f.files["standalone"]) ||
+		!slices.Contains(got, standalone.ID) || slices.Contains(got, f.files[f.owned]) {
+		t.Errorf("no-workspace listing = %v", got)
+	}
+	if got := place(AccountDocumentPlace{Limit: 1}); len(got) != 1 {
+		t.Errorf("limited no-workspace listing = %v, want 1", got)
 	}
 }
 

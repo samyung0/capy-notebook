@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -62,18 +63,24 @@ func TestAccountChatStreamSendsItsScope(t *testing.T) {
 	}
 	account := (*bodies)[0]
 	var scope struct {
-		Kind         string   `json:"kind"`
-		WorkspaceIDs []string `json:"workspaceIds"`
-		WorkspaceID  string   `json:"workspaceId"`
-		UserID       string   `json:"userId"`
+		Kind        string                 `json:"kind"`
+		Workspaces  []store.ScopeWorkspace `json:"workspaces"`
+		WorkspaceID string                 `json:"workspaceId"`
+		UserID      string                 `json:"userId"`
 	}
 	if err := json.Unmarshal(account["scope"], &scope); err != nil {
 		t.Fatal(err)
 	}
+	named := map[string]store.ScopeWorkspace{}
+	for _, ws := range scope.Workspaces {
+		named[ws.ID] = ws
+	}
 	if scope.Kind != "account" || scope.UserID != "u_editor" ||
-		!slices.Contains(scope.WorkspaceIDs, "ws_e2e_private") || !slices.Contains(scope.WorkspaceIDs, "ws_e2e_agent") ||
-		slices.Contains(scope.WorkspaceIDs, "ws_e2e_edit") {
+		named["ws_e2e_private"].Name == "" || named["ws_e2e_agent"].Name == "" {
 		t.Fatalf("account scope = %+v", scope)
+	}
+	if _, ok := named["ws_e2e_edit"]; ok {
+		t.Fatalf("account scope holds a link-reached workspace: %+v", scope)
 	}
 	for _, key := range []string{"workspaceId", "role", "openResource", "studyProgress"} {
 		if _, ok := account[key]; ok {
@@ -235,26 +242,193 @@ func TestAccountScopeCallsCheckTheirTarget(t *testing.T) {
 	}
 	cleanupMaterial(t, st, store.ChatMaterialID(editorMsg, "call_member"))
 
-	code, body = call("/api/internal/documents/list", map[string]any{"userId": "u_editor"})
-	var listed struct {
-		Items []struct {
-			ID, WorkspaceID, WorkspaceName string
+	// One workspace, or else no workspace.
+	list := func(fields map[string]any) map[string]string {
+		t.Helper()
+		req := map[string]any{"userId": "u_editor"}
+		for k, v := range fields {
+			req[k] = v
+		}
+		code, body := call("/api/internal/documents/list", req)
+		var listed struct {
+			Items []struct {
+				ID, WorkspaceID, WorkspaceName string
+			}
+		}
+		if err := json.Unmarshal([]byte(body), &listed); err != nil || code != http.StatusOK {
+			t.Fatalf("account list %v: %d %s", fields, code, body)
+		}
+		ids := map[string]string{}
+		for _, item := range listed.Items {
+			ids[item.ID] = item.WorkspaceName
+		}
+		return ids
+	}
+	if ids := list(map[string]any{"workspaceId": "ws_e2e_private"}); ids["f_e2e_private"] != "E2E Private Workspace" {
+		t.Fatalf("workspace list = %+v", ids)
+	} else if _, ok := ids[created]; ok {
+		t.Fatal("workspace list shows the standalone note")
+	}
+	if ids := list(nil); len(ids) == 0 || ids["f_e2e_private"] != "" {
+		t.Fatalf("no-workspace list = %+v", ids)
+	} else if _, ok := ids[created]; !ok {
+		t.Fatal("no-workspace list misses the standalone note")
+	}
+	if ids := list(map[string]any{"workspaceId": "ws_e2e_edit"}); len(ids) != 0 {
+		t.Fatalf("a link-reached workspace listed %+v", ids)
+	}
+}
+
+// Account chat's create_workspace (Epo 2026-10-28) makes a workspace of the
+// actor's own, named "New Workspace (n)" with the lowest free n when unnamed,
+// with a Waves icon; a replayed call creates nothing twice.
+func TestAccountChatCreatesAWorkspace(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	ctx := context.Background()
+	msg := seedAccountMessage(t, st, "u_editor")
+	create := func(callID string, fields map[string]any) map[string]any {
+		t.Helper()
+		body := map[string]any{"scope": "account", "userId": "u_editor", "assistantMessageId": msg, "toolCallId": callID}
+		for k, v := range fields {
+			body[k] = v
+		}
+		rec := doInternal(t, h, http.MethodPost, "/api/internal/workspaces", pipeSecret, body)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("create %s: %d %s", callID, rec.Code, rec.Body.String())
+		}
+		var out map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = st.DeleteWorkspace(ctx, "u_editor", out["workspaceId"].(string)) })
+		return out
+	}
+	first := create("call_ws_1", nil)
+	second := create("call_ws_2", nil)
+	named := create("call_ws_3", map[string]any{"name": "Organic chemistry", "description": "Year 2", "tags": []string{"chem"}})
+	again := create("call_ws_1", nil)
+
+	if first["name"] != "New Workspace (1)" || second["name"] != "New Workspace (2)" || named["name"] != "Organic chemistry" {
+		t.Fatalf("names = %v, %v, %v", first["name"], second["name"], named["name"])
+	}
+	if again["workspaceId"] != first["workspaceId"] {
+		t.Fatalf("replay made %v, want %v", again["workspaceId"], first["workspaceId"])
+	}
+	// The same call with other fields is a conflict, not a second workspace.
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/workspaces", pipeSecret, map[string]any{
+		"scope": "account", "userId": "u_editor", "assistantMessageId": msg, "toolCallId": "call_ws_1", "name": "Other",
+	})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("replay with other fields: %d %s", rec.Code, rec.Body.String())
+	}
+	ws, err := st.GetWorkspace(ctx, "u_editor", named["workspaceId"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws.Description != "Year 2" || len(ws.Tags) != 1 || !strings.HasPrefix(ws.IconID, "waves-") {
+		t.Fatalf("created workspace = %+v", ws)
+	}
+}
+
+// An item's unindexed changes are read by id with the actor's access checked
+// per item (Epo 2026-10-28): a member workspace's text file answers its stored
+// changes, a standalone Office file with unprocessed edits answers unread (the
+// collaboration service reads only a workspace's files), and a file the actor
+// only reached by link is not found.
+func TestAccountChatReadsAnItemsChanges(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	ctx := context.Background()
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := st.Pool().Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if err := json.Unmarshal([]byte(body), &listed); err != nil || code != http.StatusOK {
-		t.Fatalf("account list: %d %s", code, body)
+	textID, officeID := fmt.Sprintf("f_chg_%d", time.Now().UnixNano()), fmt.Sprintf("f_chg_o_%d", time.Now().UnixNano())
+	exec(`INSERT INTO files (id, workspace_id, user_id, created_by, name, kind, size_bytes, status)
+		SELECT $1, w.id, w.user_id, w.user_id, 'notes.md', 'md', 10, 'ready' FROM workspaces w WHERE w.id='ws_e2e_private'`, textID)
+	exec(`INSERT INTO files (id, workspace_id, user_id, created_by, name, kind, size_bytes, status)
+		VALUES ($1, NULL, 'u_editor', 'u_editor', 'plan.docx', 'docx', 10, 'ready')`, officeID)
+	t.Cleanup(func() { exec(`DELETE FROM files WHERE id = ANY($1)`, []string{textID, officeID}) })
+	exec(`INSERT INTO source_documents (user_id, file_id, format, checkpoint, indexed_checkpoint, base_revision, base_blob_path, pending_effects)
+		SELECT f.user_id, f.id, 'text', 1, 0, 1, 'x', '[{"id":"e1","operation":"add","after":"new line"}]' FROM files f WHERE f.id=$1`, textID)
+	exec(`INSERT INTO source_documents (user_id, file_id, format, checkpoint, indexed_checkpoint, base_revision, base_blob_path)
+		VALUES ('u_editor', $1, 'docx', 2, 1, 1, 'x')`, officeID)
+
+	changes := func(id string) (int, map[string]json.RawMessage) {
+		t.Helper()
+		rec := doInternal(t, h, http.MethodPost, "/api/internal/changes", pipeSecret, map[string]any{
+			"actorUserId": "u_editor", "items": []map[string]any{{"kind": "source_file", "id": id}},
+		})
+		var out map[string]json.RawMessage
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
 	}
-	ids := map[string]string{}
-	for _, item := range listed.Items {
-		ids[item.ID] = item.WorkspaceName
+	code, text := changes(textID)
+	if code != http.StatusOK || !strings.Contains(string(text["files"]), "new line") ||
+		!strings.Contains(string(text["files"]), `"workspaceId":"ws_e2e_private"`) {
+		t.Fatalf("text file changes: %d %s", code, text["files"])
 	}
-	if ids["f_e2e_private"] != "E2E Private Workspace" || ids[created] != "" {
-		t.Fatalf("account list = %+v", listed.Items)
+	code, office := changes(officeID)
+	if code != http.StatusOK || !strings.Contains(string(office["unread"]), officeID) {
+		t.Fatalf("standalone Office changes: %d %s", code, office["unread"])
 	}
-	if _, ok := ids[created]; !ok {
-		t.Fatal("account list misses the standalone note")
+	if code, _ := changes("f_e2e_edit"); code != http.StatusNotFound {
+		t.Fatalf("a link-reached file's changes: %d", code)
 	}
-	if _, ok := ids["f_e2e_edit"]; ok {
-		t.Fatal("account list shows a link-reached workspace's file")
+	// Another user's file with no workspace is not found, to read or resolve.
+	theirs := fmt.Sprintf("f_chg_t_%d", time.Now().UnixNano())
+	exec(`INSERT INTO files (id, workspace_id, user_id, created_by, name, kind, size_bytes, status)
+		VALUES ($1, NULL, 'u_viewer', 'u_viewer', 'theirs.md', 'md', 10, 'ready')`, theirs)
+	t.Cleanup(func() { exec(`DELETE FROM files WHERE id=$1`, theirs) })
+	if code, _ := changes(theirs); code != http.StatusNotFound {
+		t.Fatalf("another user's standalone file's changes: %d", code)
+	}
+	resolve := func(item map[string]any) int {
+		t.Helper()
+		return doInternal(t, h, http.MethodPost, "/api/internal/changes/resolve", pipeSecret, map[string]any{
+			"actorUserId": "u_editor", "item": item, "blockId": "b1",
+		}).Code
+	}
+	if code := resolve(map[string]any{"kind": "source_file", "id": theirs}); code != http.StatusNotFound {
+		t.Fatalf("resolving another user's file: %d", code)
+	}
+	note, err := st.CreateMaterial(ctx, store.Material{
+		CreatedBy: "u_editor", Kind: "note", Title: "Mine", Content: noteTestContent(t, "# Mine\n\nbody"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupMaterial(t, st, note.ID) })
+	if code := resolve(map[string]any{"kind": "material", "id": note.ID}); code != http.StatusNotFound {
+		t.Fatalf("resolving a note with no workspace (never indexed): %d", code)
+	}
+}
+
+// create_workspace past the plan's workspace cap is refused as the New
+// workspace dialog's create is (workspace_limit_exceeded).
+func TestAccountChatCreateWorkspaceHonoursTheCap(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	ctx := context.Background()
+	user := fmt.Sprintf("u_cap_%d", time.Now().UnixNano())
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id, name, email) VALUES ($1, 'Cap', $1 || '@capynotebook.test')`, user); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = st.Pool().Exec(ctx, `DELETE FROM users WHERE id=$1`, user) })
+	for i := 0; ; i++ {
+		_, err := st.CreateWorkspace(ctx, user, store.WorkspaceCreate{Name: fmt.Sprintf("W%d", i)})
+		if errors.Is(err, store.ErrWorkspaceLimitExceeded) {
+			break
+		}
+		if err != nil || i > 100 {
+			t.Fatalf("filling the cap: %v", err)
+		}
+	}
+	msg := seedAccountMessage(t, st, user)
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/workspaces", pipeSecret, map[string]any{
+		"scope": "account", "userId": user, "assistantMessageId": msg, "toolCallId": "call_cap",
+	})
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "workspace_limit_exceeded") {
+		t.Fatalf("create past the cap: %d %s", rec.Code, rec.Body.String())
 	}
 }

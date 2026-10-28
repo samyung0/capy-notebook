@@ -205,17 +205,15 @@ _PASSAGE_FIELDS = {f.name for f in fields(Passage)}
 
 async def _history_passages(ctx: tools.ToolContext, chunks: list[str]) -> list[Passage]:
     """Saved passages still in the current index of the chat's scope; an
-    account chat's are those the user may still read, labelled with their
-    workspace as search labels them."""
+    account chat's are those still in its scope, labelled as search labels
+    them."""
     if not isinstance(ctx.scope, AccountScope):
         rows = await store.history_passages(ctx.workspace_id, chunks)
         return [Passage.from_row(row) for row in rows]
     rows = await store.account_history_passages(
         ctx.scope.user_id, list(ctx.scope.workspace_ids), chunks
     )
-    labelled = await tools.label_passages(ctx, [Passage.from_row(r) for r in rows])
-    # An access check that failed replays none of them; the turn retrieves again.
-    return [] if isinstance(labelled, tools.ToolResult) else labelled
+    return await tools.label_passages(ctx, [Passage.from_row(r) for r in rows])
 
 
 def _web_part(ctx: tools.ToolContext, snapshot: dict[str, Any]) -> str:

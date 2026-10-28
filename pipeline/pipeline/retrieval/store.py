@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 import time
 from datetime import datetime
@@ -22,8 +23,8 @@ from ..config import cfg
 from ..jobs import RetryableError, TerminalError
 from ..store import db as jobdb
 from ..store.db import SourceSupersededError
-from .chunking import Chunk, QueryTerms
-from .lang import TS_CONFIG
+from .chunking import Chunk, QueryTerms, search_query_terms, tokenize_for_search
+from .lang import TS_CONFIG, detect_lang
 
 log = logging.getLogger("capy.retrieval.store")
 
@@ -876,16 +877,19 @@ async def copy_content_from_donor(
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, fingerprint, descriptor, change_share, updated_at)
+                (content_id, fingerprint, descriptor, change_share, updated_at,
+                 lang, search)
             SELECT %s, s.fingerprint, s.descriptor, s.change_share,
-                   s.updated_at
+                   s.updated_at, s.lang, s.search
             FROM rag_content_summaries s
             WHERE s.content_id = %s
             ON CONFLICT (content_id) DO UPDATE SET
                 fingerprint = EXCLUDED.fingerprint,
                 descriptor = EXCLUDED.descriptor,
                 change_share = EXCLUDED.change_share,
-                updated_at = EXCLUDED.updated_at
+                updated_at = EXCLUDED.updated_at,
+                lang = EXCLUDED.lang,
+                search = EXCLUDED.search
             """,
             (dest_content_id, donor_id),
         )
@@ -1038,6 +1042,13 @@ async def replace_content_chunks(
         )
 
 
+def summary_search_text(descriptor: str) -> tuple[str, str, str]:
+    """A summary's language, its text-search configuration and its tokenized
+    text, as a passage's (account chat's summary search, Epo 2026-10-28)."""
+    lang = detect_lang(descriptor)
+    return lang, TS_CONFIG[lang], tokenize_for_search(descriptor)
+
+
 async def upsert_content_summary(
     *,
     content_id: str,
@@ -1048,18 +1059,23 @@ async def upsert_content_summary(
 ) -> None:
     """``updated_at`` is when the descriptor was written: ``written_at`` for a
     reused one, else now."""
+    lang, config, text = summary_search_text(descriptor)
     db = await pool()
     async with db.connection() as conn:
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, fingerprint, descriptor, change_share, updated_at)
-            VALUES (%s, %s, %s, %s, coalesce(%s, now()))
+                (content_id, fingerprint, descriptor, change_share, updated_at,
+                 lang, search)
+            VALUES (%s, %s, %s, %s, coalesce(%s, now()), %s,
+                    to_tsvector(%s::regconfig, %s))
             ON CONFLICT (content_id) DO UPDATE SET
                 fingerprint     = EXCLUDED.fingerprint,
                 descriptor      = EXCLUDED.descriptor,
                 change_share    = EXCLUDED.change_share,
-                updated_at      = EXCLUDED.updated_at
+                updated_at      = EXCLUDED.updated_at,
+                lang            = EXCLUDED.lang,
+                search          = EXCLUDED.search
             """,
             (
                 content_id,
@@ -1067,6 +1083,9 @@ async def upsert_content_summary(
                 descriptor,
                 change_share,
                 written_at,
+                lang,
+                config,
+                text,
             ),
         )
 
@@ -1142,17 +1161,19 @@ async def fill_content_summary(
     """Insert a pending descriptor, never overwriting one another job or a
     refresh wrote meanwhile. The fingerprint is the content hash, which is
     ``indexing.content_hash`` of the stored chunks."""
+    lang, config, text = summary_search_text(descriptor)
     db = await pool()
     async with db.connection() as conn:
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, fingerprint, descriptor, change_share, updated_at)
-            SELECT id, content_hash, %s, 0, now()
+                (content_id, fingerprint, descriptor, change_share, updated_at,
+                 lang, search)
+            SELECT id, content_hash, %s, 0, now(), %s, to_tsvector(%s::regconfig, %s)
             FROM rag_contents WHERE id = %s AND workspace_id IS NOT DISTINCT FROM %s
             ON CONFLICT (content_id) DO NOTHING
             """,
-            (descriptor, content_id, workspace_id),
+            (descriptor, lang, config, text, content_id, workspace_id),
         )
 
 
@@ -1490,6 +1511,108 @@ _PIN_COLUMNS = (
     "embedding_model_version",
     "embedding_dim",
 )
+
+
+# Account chat's summary search (Epo 2026-10-28, option B of
+# bench/rag/reports/2026-10-28-summary-search-scale.md): the caller's items
+# first (their workspaces', then their own with no workspace), then each
+# item's name and its summary's stored search vector. A name match ranks
+# first; no index covers the summaries, as the scope is small.
+_SUMMARY_SEARCH_SQL = """
+WITH scoped AS (
+    SELECT f.id, 'file' AS kind, f.name AS title, f.workspace_id, f.chapter_id,
+           fc.content_id
+    FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
+    WHERE f.workspace_id = ANY(%(ws)s) AND f.trashed_at IS NULL
+    UNION ALL
+    SELECT f.id, 'file', f.name, NULL, NULL, fc.content_id
+    FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
+    WHERE f.workspace_id IS NULL AND f.user_id = %(me)s AND f.trashed_at IS NULL
+    UNION ALL
+    SELECT m.id, 'material', m.title, m.workspace_id, m.chapter_id, mc.content_id
+    FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
+    WHERE m.workspace_id = ANY(%(ws)s) AND m.trashed_at IS NULL
+      AND m.parent_material_id IS NULL
+    UNION ALL
+    SELECT m.id, 'material', m.title, NULL, NULL, mc.content_id
+    FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
+    WHERE m.workspace_id IS NULL AND m.owner_user_id = %(me)s
+      AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+),
+q AS (
+    SELECT m.lang, websearch_to_tsquery(m.cfg::regconfig, %(any_of)s) AS q
+    FROM unnest(%(langs)s::text[], %(cfgs)s::text[]) AS m(lang, cfg)
+),
+ranked AS (
+    SELECT sc.*, coalesce(s.descriptor, '') AS descriptor,
+           (SELECT count(*) FROM unnest(%(names)s::text[]) n
+            WHERE sc.title ILIKE '%%' || n || '%%') AS name_hits,
+           coalesce((SELECT ts_rank_cd(s.search, q.q) FROM q
+                     WHERE q.lang = s.lang AND s.search @@ q.q), 0) AS summary_rank
+    FROM scoped sc LEFT JOIN rag_content_summaries s ON s.content_id = sc.content_id
+)
+SELECT r.id, r.kind, r.title, r.workspace_id, r.chapter_id, ch.name AS chapter_name,
+       r.descriptor
+FROM ranked r LEFT JOIN chapters ch ON ch.id = r.chapter_id
+WHERE r.name_hits > 0 OR r.summary_rank > 0
+ORDER BY r.name_hits DESC, r.summary_rank DESC, r.id
+LIMIT %(limit)s
+"""
+
+# A name term: a word of three or more letters, or a CJK run (one or two
+# letters there are whole words); shorter Latin words match too many names.
+_NAME_TERM = re.compile(r"\w{3,}|[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]+")
+
+
+async def summary_search(
+    *, user_id: str, workspace_ids: list[str], query: str, limit: int
+) -> list[dict[str, Any]]:
+    """The caller's files and top-level materials whose name or summary
+    matches ``query``, best first."""
+    terms = search_query_terms(query)
+    names = list(dict.fromkeys(t.lower() for t in _NAME_TERM.findall(query)))[:20]
+    if not terms.any_of and not names:
+        return []
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            _SUMMARY_SEARCH_SQL,
+            {
+                "ws": list(workspace_ids),
+                "me": user_id,
+                "any_of": terms.any_of,
+                "langs": list(TS_CONFIG),
+                "cfgs": list(TS_CONFIG.values()),
+                "names": names,
+                "limit": limit,
+            },
+        )
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def item_places(
+    file_ids: list[str], material_ids: list[str]
+) -> dict[str, dict[str, Any]]:
+    """Where each untrashed file and material lives now: its workspace (None
+    for none), owner and chapter, for labelling account chat's passages."""
+    if not file_ids and not material_ids:
+        return {}
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT f.id, f.workspace_id, f.user_id AS owner_id, f.chapter_id,
+                   ch.name AS chapter_name
+            FROM files f LEFT JOIN chapters ch ON ch.id = f.chapter_id
+            WHERE f.id = ANY(%s) AND f.trashed_at IS NULL
+            UNION ALL
+            SELECT m.id, m.workspace_id, m.owner_user_id, m.chapter_id, ch.name
+            FROM materials m LEFT JOIN chapters ch ON ch.id = m.chapter_id
+            WHERE m.id = ANY(%s) AND m.trashed_at IS NULL
+            """,
+            (list(file_ids), list(material_ids)),
+        )
+        return {row["id"]: dict(row) for row in await cur.fetchall()}
 
 
 async def account_history_passages(

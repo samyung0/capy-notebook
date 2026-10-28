@@ -23,7 +23,8 @@ from . import Profile
 WORKSPACE_ID = {
     "type": "string",
     "minLength": 1,
-    "description": "The workspace to create it in (workspace_id from list_files), "
+    "description": "The workspace to create it in (a workspace_id a search, listing "
+    "or read named), "
     "only when the user names one they can edit; omit it to create it in No "
     "workspace.",
 }

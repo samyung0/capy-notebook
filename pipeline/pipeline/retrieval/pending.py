@@ -48,8 +48,9 @@ class PendingSources:
     # {materialId, title, revision, changes}. notes_unread: that read failed.
     notes: list[dict[str, Any]] = field(default_factory=list)
     notes_unread: bool = False
-    # Office files whose changes could not be read (Q405): a read of one says
-    # sources may be outdated.
+    # Office files whose changes could not be read (Q405), and in account
+    # chat any item whose load failed: a read of one says sources may be
+    # outdated.
     unread_files: set[str] = field(default_factory=set)
     # Which documents' changes are passed on (Epo 2026-10-20): None, every
     # scoped one (generation reads its whole scope); a set, only the files
@@ -72,6 +73,73 @@ class PendingSources:
     # The published index of each note with changes: their evidence holds
     # only against it.
     _note_baseline: list[tuple] = field(default_factory=list, repr=False)
+    # Account chat (Epo 2026-10-28): no load at turn start; each item's changes
+    # come from Go's per-item check when it is read. None in workspace chat.
+    _account_user: str | None = field(default=None, repr=False)
+    _loaded: set[str] = field(default_factory=set, repr=False)
+
+    @classmethod
+    def for_account(cls, user_id: str) -> PendingSources:
+        return cls(read_ids=set(), _account_user=user_id)
+
+    async def load_item(self, kind: str, item_id: str, *, live: bool = False) -> None:
+        """An account read's item: its changes and the index they pair with,
+        once per turn (a live read of a note again, from its open room). A
+        failed read says sources may be outdated."""
+        if self._account_user is None or item_id in self._delivered:
+            return
+        if item_id in self._loaded and not live:
+            return
+        self.forget(item_id)
+        self._loaded.add(item_id)
+        if not (cfg.gateway_url and cfg.pipeline_secret):
+            return
+        # The index identity first, as load() does: an index published after
+        # it fails the next validate instead of pairing new passages with
+        # changes measured before it.
+        if kind == "material":
+            identities = await _note_identities(None, [item_id])
+            self._note_index |= dict(identities)
+        else:
+            rows = await _snapshot(None, [item_id], evidence=False)
+        try:
+            body = await asyncio.to_thread(
+                _item_changes, self._account_user, kind, item_id, live
+            )
+        except (requests.RequestException, ValueError, KeyError) as exc:
+            # Only this item's read says sources may be outdated.
+            obs.capture_error(exc, surface="pending_item")
+            self.unread_files.add(item_id)
+            return
+        fields = (
+            "fileId",
+            "name",
+            "epoch",
+            "checkpoint",
+            "indexedCheckpoint",
+            "changes",
+        )
+        self.files += [{key: f[key] for key in fields} for f in body["files"]]
+        self.unread_files |= {str(f) for f in body["unread"]}
+        self.notes += [
+            {key: n[key] for key in ("materialId", "title", "revision", "changes")}
+            for n in body["notes"]
+        ]
+        if kind == "material" and body["notes"]:
+            self._note_baseline = sorted(self._note_baseline + identities)
+        elif kind != "material" and body["files"]:
+            self._baseline = sorted(self._baseline + _identities(rows))
+
+    def forget(self, item_id: str) -> None:
+        """An account item's changes are read again at its next read: this
+        turn edited it, or a live read replaces them."""
+        self._loaded.discard(item_id)
+        self._delivered.discard(item_id)
+        self.files = [f for f in self.files if str(f["fileId"]) != item_id]
+        self.notes = [n for n in self.notes if str(n["materialId"]) != item_id]
+        self.unread_files.discard(item_id)
+        self._baseline = [row for row in self._baseline if row[0] != item_id]
+        self._note_baseline = [row for row in self._note_baseline if row[0] != item_id]
 
     def read(self, document_id: str) -> None:
         """The agent read this file or note: its changes are passed on."""
@@ -108,14 +176,14 @@ class PendingSources:
     async def validate(self) -> None:
         """Passed-on changes must still pair with the published index they
         were measured against; changes not passed on are not checked."""
-        if self._workspace_id is None:
+        if self._workspace_id is None and self._account_user is None:
             return
         file_ids, baseline = self._file_ids, self._baseline
         if self.read_ids is not None:
             shown = {str(f["fileId"]) for f in self.shown_files}
             file_ids = sorted(shown)
             baseline = [row for row in baseline if row[0] in shown]
-        if self.read_ids is None or file_ids:
+        if (self.read_ids is None and self._account_user is None) or file_ids:
             rows = await _snapshot(self._workspace_id, file_ids, evidence=False)
             if _identities(rows) != baseline:
                 raise SourceChanged()
@@ -188,7 +256,11 @@ class PendingSources:
         """for_read of a note the agent reads in detail (inspect_document):
         its changes from its open room when that room holds edits not stored,
         else the turn's stored read (Q417, Epo 2026-10-27). One note per
-        request; a failed read says sources may be outdated."""
+        request; a failed read says sources may be outdated. Account chat
+        asks Go for the note, live, as it reads it."""
+        if self._account_user is not None:
+            await self.load_item("material", material_id, live=True)
+            return self.for_read(material_id)
         if (
             material_id in self._note_ids
             and material_id not in self._delivered
@@ -244,19 +316,21 @@ class PendingSources:
 
 
 async def _note_identities(
-    workspace_id: str, material_ids: list[str] | None
+    workspace_id: str | None, material_ids: list[str] | None
 ) -> list[tuple]:
     """Each note's published index content (None: not indexed), in id order;
-    material_ids None reads every note of the workspace."""
+    material_ids None reads every note of the workspace, and workspace_id None
+    the named notes wherever they live."""
     db = await store.pool()
     async with db.connection() as conn:
         cur = await conn.execute(
             """SELECT m.id, mc.content_id FROM materials m
             LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
-            WHERE m.workspace_id = %s AND m.kind = 'note' AND m.trashed_at IS NULL
+            WHERE (%s::text IS NULL OR m.workspace_id = %s) AND m.kind = 'note'
+              AND m.trashed_at IS NULL
               AND (%s::text[] IS NULL OR m.id = ANY(%s::text[]))
             ORDER BY m.id""",
-            (workspace_id, material_ids, material_ids),
+            (workspace_id, workspace_id, material_ids, material_ids),
         )
         return [(row["id"], row["content_id"]) for row in await cur.fetchall()]
 
@@ -280,6 +354,34 @@ def _office_changes(workspace_id: str, ids: list[str]) -> dict[str, Any]:
         cfg.gateway_url.rstrip("/") + "/api/internal/source-changes",
         headers={"X-Pipeline-Secret": cfg.pipeline_secret},
         json={"workspaceId": workspace_id, "fileIds": ids},
+        timeout=60,
+    )
+    obs.raise_internal_response(response)
+    return response.json()
+
+
+def _item_changes(user_id: str, kind: str, item_id: str, live: bool) -> dict[str, Any]:
+    """One item's changes through Go's per-item access check (Epo
+    2026-10-28): {files, notes, unread}."""
+    response = requests.post(
+        cfg.gateway_url.rstrip("/") + "/api/internal/changes",
+        headers={"X-Pipeline-Secret": cfg.pipeline_secret},
+        json={
+            "actorUserId": user_id,
+            "items": [{"kind": kind, "id": item_id}],
+            "live": live,
+        },
+        timeout=60,
+    )
+    obs.raise_internal_response(response)
+    return response.json()
+
+
+def _resolve_item(user_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    response = requests.post(
+        cfg.gateway_url.rstrip("/") + "/api/internal/changes/resolve",
+        headers={"X-Pipeline-Secret": cfg.pipeline_secret},
+        json={"actorUserId": user_id, **body},
         timeout=60,
     )
     obs.raise_internal_response(response)
@@ -318,8 +420,10 @@ def _identities(rows: list[dict[str, Any]]) -> list[tuple]:
 
 
 async def _snapshot(
-    workspace_id: str, file_ids: list[str] | None, *, evidence: bool = True
+    workspace_id: str | None, file_ids: list[str] | None, *, evidence: bool = True
 ) -> list[dict[str, Any]]:
+    """The files' unindexed state: a workspace's, or with workspace_id None
+    the named files wherever they live (account chat's, checked by Go)."""
     db = await store.pool()
     async with db.connection() as conn:
         cur = await conn.execute(
@@ -335,11 +439,11 @@ async def _snapshot(
             + """
             FROM files f LEFT JOIN source_documents d ON d.file_id=f.id
             LEFT JOIN rag_file_contents fc ON fc.file_id=f.id
-            WHERE f.workspace_id = %s AND f.trashed_at IS NULL
+            WHERE (%s::text IS NULL OR f.workspace_id = %s) AND f.trashed_at IS NULL
               AND (%s::text[] IS NULL OR f.id = ANY(%s::text[]))
             ORDER BY f.id
             """,
-            (workspace_id, file_ids or None, file_ids or None),
+            (workspace_id, workspace_id, file_ids or None, file_ids or None),
         )
         return [dict(row) for row in await cur.fetchall()]
 
@@ -449,22 +553,34 @@ async def resolve(
         raise ValueError("The source change is unavailable in this turn's scope.")
     if not cfg.gateway_url or not cfg.pipeline_secret or not user_id:
         raise ValueError("Source image resolution is unavailable.")
-    response = await asyncio.to_thread(
-        requests.post,
-        cfg.gateway_url.rstrip("/") + "/api/internal/source-changes/resolve",
-        headers={"X-Pipeline-Secret": cfg.pipeline_secret},
-        json={
-            "workspaceId": workspace_id,
-            "userId": user_id,
-            "fileId": file_id,
-            "epoch": file["epoch"],
-            "checkpoint": checkpoint,
-            "changeId": change_id,
-        },
-        timeout=60,
-    )
-    obs.raise_internal_response(response)
-    asset = response.json()
+    if sources._account_user is not None:
+        asset = await asyncio.to_thread(
+            _resolve_item,
+            user_id,
+            {
+                "item": {"kind": "source_file", "id": file_id},
+                "epoch": file["epoch"],
+                "checkpoint": checkpoint,
+                "changeId": change_id,
+            },
+        )
+    else:
+        response = await asyncio.to_thread(
+            requests.post,
+            cfg.gateway_url.rstrip("/") + "/api/internal/source-changes/resolve",
+            headers={"X-Pipeline-Secret": cfg.pipeline_secret},
+            json={
+                "workspaceId": workspace_id,
+                "userId": user_id,
+                "fileId": file_id,
+                "epoch": file["epoch"],
+                "checkpoint": checkpoint,
+                "changeId": change_id,
+            },
+            timeout=60,
+        )
+        obs.raise_internal_response(response)
+        asset = response.json()
     raw = base64.b64decode(asset["bytes"], validate=True)
     if hashlib.sha256(raw).hexdigest() != asset["sha256"]:
         raise ValueError("Source image identity changed during resolution.")
@@ -501,19 +617,26 @@ async def resolve_note(
         raise ValueError("The note change is unavailable in this turn's scope.")
     if not cfg.gateway_url or not cfg.pipeline_secret or not user_id:
         raise ValueError("Note change resolution is unavailable.")
-    response = await asyncio.to_thread(
-        requests.post,
-        cfg.gateway_url.rstrip("/") + "/api/internal/note-changes/resolve",
-        headers={"X-Pipeline-Secret": cfg.pipeline_secret},
-        json={
-            "workspaceId": workspace_id,
-            "userId": user_id,
-            "materialId": material_id,
-            "blockId": block_id,
-        },
-        timeout=60,
-    )
-    obs.raise_internal_response(response)
-    body = response.json()
+    if sources._account_user is not None:
+        body = await asyncio.to_thread(
+            _resolve_item,
+            user_id,
+            {"item": {"kind": "material", "id": material_id}, "blockId": block_id},
+        )
+    else:
+        response = await asyncio.to_thread(
+            requests.post,
+            cfg.gateway_url.rstrip("/") + "/api/internal/note-changes/resolve",
+            headers={"X-Pipeline-Secret": cfg.pipeline_secret},
+            json={
+                "workspaceId": workspace_id,
+                "userId": user_id,
+                "materialId": material_id,
+                "blockId": block_id,
+            },
+            timeout=60,
+        )
+        obs.raise_internal_response(response)
+        body = response.json()
     await sources.validate()
     return {"before": str(body["before"]), "after": str(body["after"])}

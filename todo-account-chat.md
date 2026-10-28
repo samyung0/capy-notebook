@@ -81,7 +81,7 @@ Chat is bound to one workspace at every layer:
 ## Build contract (2026-10-27, branch `wip/mac-account-chat`)
 
 Worktree `.claude/worktrees/account-chat`, stacked on `ae9edff0e` (the
-standalone branch the train merged). Migration **0127** (0126 is the index content scope). Local DB tests use
+standalone branch the train merged). Migration **0127** (0126 is the index content scope); becomes **0128** at the rebase onto wip/mac-clone-download 62bdff8a8, which adds 0127_index_copy_job. Local DB tests use
 untracked copies of the train's migrations as 0122-0124 (excluded in
 `.git/info/exclude`; never commit them). Rebased onto main after the train;
 overlaps with the train in `tools.py`, `pending.py`, `agent.py`, `store.py`
@@ -171,25 +171,51 @@ listing stay workspace-only.
 - **Copy:** the sources switch says "Your files only". Citations show their
   workspace, or No workspace.
 
-## Tuning round (Epo 2026-10-28, on hold until the workspace_id-off-index branch lands)
+## Tuning round (Epo 2026-10-28, built on wip/mac-clone-download)
 
 - Search splits: `search_files_summary` (name + descriptor, run first) and
   `search_files_content` (passages, replaces `search_files`). Hits give file
   id, workspace and chapter or no workspace, view-only or view-and-edit.
   Summary search covers files and materials (blank summary where there is no
   descriptor); content search covers everything indexed, notes included.
-  Open: how descriptors are matched (plain SQL over the scope proposed).
+  One scoped Postgres query (option B, bench/rag/reports/
+  2026-10-28-summary-search-scale.md): names within reach and each summary's
+  stored `search` vector (written with it); Go checks the hits alone.
 - `list_files(workspace_id?)`: one workspace, or without an id the caller's
   newest 100 no-workspace items; first line names what
   was listed.
 - Type: search hits show none; read_document's Access line adds the kind
   and format or material kind (documents/access returns them);
   capture_page's Access line unchanged.
-- Access once per turn: Go sends each scope workspace's name and canEdit;
-  search labels hits from it (no `documents/access` call for search).
+- Access: search labels its hits from the turn's workspace list (Go sends
+  each scope workspace's name and canEdit); every read, inspect, capture,
+  change read and resolve asks Go about its item.
 - Member workspaces count against the 10/50 cap: built on
   wip/mac-workspace-cap (4df9b1b78, not pushed), one count of the user's
   workspace_members rows, so a turn's scope list is at most 50.
+- `create_workspace` (operation `workspace.create`, off for a frozen
+  account): optional name (default New Workspace (n), lowest free n),
+  description and tags; over-limit fields cut to the limit and said in the
+  result; random Waves icon, no cover, no Undo; receipt kind
+  `create_workspace` (0127 widens the CHECK).
+- Retention: search_knowledge (both chats) and search_files_summary keep
+  their whole result between messages.
+- Account turn context: one line naming the scope workspaces with
+  workspace_id and edit right (in place of the open item and role).
+- No unindexed-edit hints. A read (read_document, inspect_document,
+  capture_page) carries its item's unindexed changes, loaded per item through
+  `POST /api/internal/changes` (actor's access checked per item, no workspace
+  filter) and again after this turn edits it; `resolve_source_change` is
+  offered in account chat through `/api/internal/changes/resolve`.
+  Gap: an Office file with no workspace answers unread (the collaboration
+  service reads only a workspace's files, Rust side).
+- Review round 2026-10-28 (fixes in): rebase onto main 1ac19d4e3 renames
+  0127_account_chat to 0128; a DB that already ran 0127_account_chat needs
+  its agent_operations_kind_check statement run by hand. Accepted: a
+  create_workspace replay after the user deleted the new workspace creates
+  another (its receipt cascades away). Hits' "view and edit" in
+  search_files_content is the workspace right only (a PDF passage can say
+  it); summary hits use the item's own editability.
 - Earlier review items still open: E1 (permission_denied stops every edit),
   E2, M1 (citations open the old workspace after a Move), T2, T3, P1, Q489.
 
@@ -206,7 +232,7 @@ listing stay workspace-only.
   no-workspace vector leg. It filters on `workspace_id IS NULL`, which every
   user's standalone vectors share, so the vector index may return few of the
   caller's rows at scale.
-- **Planned tools:** account-level tools such as creating a workspace.
+- **Planned tools:** more account-level tools (create_workspace is built).
 - **Open gaps:** some shared Go tool texts still say `list_sources` and
   "workspace", and the `write_sources` refusal says "Workspace only is on".
   `add_questions` starting a quiz and a new Office file take no

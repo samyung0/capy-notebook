@@ -49,7 +49,7 @@ from ..retrieval.agent import (
 from ..retrieval.chunking import estimate_tokens
 from ..retrieval.events import error as client_error
 from ..retrieval.events import phase
-from ..retrieval.scope import AccountScope
+from ..retrieval.scope import AccountScope, ScopeWorkspace
 from ..retrieval.tools import ToolContext
 from .ai_adapter import router as plate_ai_router
 
@@ -235,6 +235,12 @@ def _bind_llm(req: LLMPin) -> None:
     registry.bind_request_llm(req.thinking)
 
 
+class ChatScopeWorkspace(BaseModel):
+    id: str = Field(min_length=1)
+    name: str
+    canEdit: bool
+
+
 class ChatScope(BaseModel):
     """What the turn reaches (todo-account-chat.md): one workspace, or the
     caller's account (owned and member workspaces plus their standalone
@@ -242,7 +248,8 @@ class ChatScope(BaseModel):
 
     kind: Literal["workspace", "account"]
     workspaceId: str | None = None
-    workspaceIds: list[str] = Field(default_factory=list)
+    # An account turn's workspaces, with names and edit rights.
+    workspaces: list[ChatScopeWorkspace] = Field(default_factory=list)
     userId: str | None = None
 
 
@@ -459,7 +466,12 @@ async def _chat_events(req: ChatStreamReq):
     client = ClientDrop()
     ctx = ToolContext(
         workspace_id=req.workspaceId or "",
-        scope=AccountScope(req.userId or "", tuple(req.scope.workspaceIds))
+        scope=AccountScope(
+            req.userId or "",
+            tuple(
+                ScopeWorkspace(w.id, w.name, w.canEdit) for w in req.scope.workspaces
+            ),
+        )
         if req.account
         else None,
         user_id=req.userId or "",

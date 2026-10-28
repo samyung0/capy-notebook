@@ -184,14 +184,15 @@ func TestEveryOfficeCommandHasALimit(t *testing.T) {
 }
 
 // Account chat's first version (Epo 2026-10-27) reads, searches, creates and
-// edits; trash, restore, study progress and source changes stay in workspace
-// chat, and each scope searches and lists with its own tools.
+// edits, and resolves its reads' source changes (Epo 2026-10-28); trash,
+// restore and study progress stay in workspace chat, and each scope searches
+// and lists with its own tools.
 func TestToolScopes(t *testing.T) {
 	want := map[string][]Scope{
 		"search_workspace": {ScopeWorkspace}, "list_sources": {ScopeWorkspace},
-		"search_files": {ScopeAccount}, "list_files": {ScopeAccount},
-		"read_study_progress": {ScopeWorkspace}, "resolve_source_change": {ScopeWorkspace},
-		"trash_file": {ScopeWorkspace}, "list_trashed_files": {ScopeWorkspace}, "restore_file": {ScopeWorkspace},
+		"search_files_summary": {ScopeAccount}, "create_workspace": {ScopeAccount}, "search_files_content": {ScopeAccount}, "list_files": {ScopeAccount},
+		"read_study_progress": {ScopeWorkspace},
+		"trash_file":          {ScopeWorkspace}, "list_trashed_files": {ScopeWorkspace}, "restore_file": {ScopeWorkspace},
 	}
 	for _, def := range Definitions() {
 		scopes, ok := want[def.Name]
@@ -213,12 +214,12 @@ func TestRetentionBetweenMessages(t *testing.T) {
 	want := map[ResultRetention][]string{
 		RetainFull: {
 			"list_sources", "create_material", "add_questions", "add_question_media", "create_deck",
-			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document", "list_files",
+			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document", "list_files", "search_files_summary", "create_workspace", "search_knowledge",
 		},
-		RetainCitedPassages: {"search_workspace", "read_document", "search_web", "search_files"},
+		RetainCitedPassages: {"search_workspace", "read_document", "search_web", "search_files_content"},
 		RetainUsedExcerpts:  {"read_knowledge"},
 		RetainNone: {
-			"capture_page", "read_study_progress", "search_knowledge", "capture_knowledge_page", "read_skill",
+			"capture_page", "read_study_progress", "capture_knowledge_page", "read_skill",
 			"resolve_source_change", "inspect_document", "list_trashed_files", "inspect_office_document",
 		},
 	}

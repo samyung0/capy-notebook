@@ -147,7 +147,15 @@ import (
 // it is offered in, workspace or account; search_files and list_files search
 // and list the user's workspaces and files with no workspace, and the stream
 // request carries scope.
-const ContractVersion = 43
+// v44: account chat's tuning round (Epo 2026-10-28): search_files becomes
+// search_files_content beside search_files_summary (names and descriptors),
+// list_files takes a workspace_id, the account stream request's scope
+// carries its workspaces with names and edit rights, create_workspace
+// (operation workspace.create) makes a workspace, search_knowledge's hits
+// are kept between messages (a later "make it a note" needs no new search),
+// and resolve_source_change is offered in account chat, whose reads now carry
+// their items' unindexed changes.
+const ContractVersion = 44
 
 // Scope is the kind of chat a tool is offered in: a workspace's, or the
 // account's across the user's own files (Epo 2026-10-27). A conversation keeps
@@ -176,6 +184,8 @@ const (
 	OpResourceTrash  Operation = "resource.trash"
 	OpTrashRead      Operation = "trash.read"
 	OpTrashRestore   Operation = "trash.restore"
+	// OpWorkspaceCreate is account chat's: a workspace of the actor's own.
+	OpWorkspaceCreate Operation = "workspace.create"
 	// OpLibraryRead is not derived from a role: the shared knowledge library is
 	// not a workspace resource. The chat's Library switch grants it per turn.
 	OpLibraryRead Operation = "library.read"
@@ -184,7 +194,7 @@ const (
 // AllOperations is the closed policy table, in stable order.
 var AllOperations = []Operation{
 	OpSourceRead, OpMaterialRead, OpMaterialCreate, OpDocumentEdit,
-	OpResourceTrash, OpTrashRead, OpTrashRestore, OpLibraryRead,
+	OpResourceTrash, OpTrashRead, OpTrashRestore, OpWorkspaceCreate, OpLibraryRead,
 }
 
 // OperationsForRole maps a workspace effective role onto the operations the
@@ -211,7 +221,7 @@ func OperationsForRole(role string) []Operation {
 // listing stay in workspace chat. Every target is still checked per item, and
 // library.read is added like a workspace turn's.
 func AccountOperations() []Operation {
-	return []Operation{OpSourceRead, OpMaterialRead, OpMaterialCreate, OpDocumentEdit}
+	return []Operation{OpSourceRead, OpMaterialRead, OpMaterialCreate, OpDocumentEdit, OpWorkspaceCreate}
 }
 
 // Definition is one model-callable tool. InputSchema is JSON Schema
@@ -906,15 +916,28 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
 		}),
 		chatTool(Definition{
-			Name:      "search_files",
+			Name:      "search_files_summary",
+			Scopes:    accountOnly,
+			Retention: RetainFull,
+			Description: "Find the user's files and materials by their names and summaries, in their " +
+				"workspaces and with no workspace. Each hit gives its id, workspace and chapter (or no " +
+				"workspace), whether the user can edit it, and its summary when it has one. Use it " +
+				"before search_files_content.",
+			InputSchema:        obj(map[string]any{"query": str("")}, "query"),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
+		}),
+		chatTool(Definition{
+			Name:      "search_files_content",
 			Scopes:    accountOnly,
 			Retention: RetainCitedPassages,
-			Description: "Search the user's files, in their workspaces and with no workspace, for " +
-				"passages matching one focused query. Each passage names its workspace.",
+			Description: "Search the content of the user's files, in their workspaces and with no " +
+				"workspace, for passages matching one focused query. Each passage names its file's " +
+				"workspace and chapter and whether the user can edit it.",
 			InputSchema: obj(map[string]any{
 				"query": str(""),
-				"file_ids": idList("Restrict to these items (ids from list_files); only source "+
-					"files and notes hold text to search. Omit to search all of them.", 0, 0),
+				"file_ids": idList("Restrict to these items (ids from search_files_summary or "+
+					"list_files); only files and notes hold text to search. Omit to search all of them.", 0, 0),
 			}, "query"),
 			UsesEmbedding:      true,
 			Concurrency:        "search",
@@ -924,11 +947,34 @@ func Definitions() []Definition {
 			Name:      "list_files",
 			Scopes:    accountOnly,
 			Retention: RetainFull,
-			Description: "List the user's source files and study materials, in their workspaces " +
-				"and with no workspace, with ids, kinds, editability and each one's workspace.",
-			InputSchema:        obj(map[string]any{}),
+			Description: "List one of the user's workspaces by chapter (workspace_id), or without it " +
+				"their newest files and materials with no workspace, with ids, kinds and whether the " +
+				"user can edit each.",
+			InputSchema: obj(map[string]any{
+				"workspace_id": str("A workspace id from search_files_summary, search_files_content or a read; " +
+					"omit it to list the files with no workspace."),
+			}),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
+		}),
+		chatTool(Definition{
+			Name:      "create_workspace",
+			Scopes:    accountOnly,
+			Retention: RetainFull,
+			Description: "Create a workspace of the user's own, only when they asked for one. Every " +
+				"field is optional: without a name it is New Workspace (n). A name, description or tag " +
+				"over its limit is cut to it and saved.",
+			InputSchema: obj(map[string]any{
+				"name":        str(""),
+				"description": str(""),
+				"tags": map[string]any{
+					"type": "array", "items": map[string]any{"type": "string", "minLength": 1},
+					"description": "Short labels, at most 5.",
+				},
+			}),
+			Mutates:            true,
+			Concurrency:        "mutate",
+			RequiredOperations: []Operation{OpWorkspaceCreate},
 		}),
 		chatTool(Definition{
 			Name:      "read_document",
@@ -972,7 +1018,7 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "search_knowledge",
 			Scopes:    both,
-			Retention: RetainNone,
+			Retention: RetainFull,
 			Description: "Search the shared library of verified textbook excerpts, one section " +
 				"of one book each. A hit is a selection aid; read_knowledge reads the excerpt.",
 			InputSchema: obj(map[string]any{
@@ -1184,7 +1230,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "resolve_source_change",
-			Scopes:    workspaceOnly,
+			Scopes:    both,
 			Retention: RetainNone,
 			Description: "Resolve an exact pending-change placeholder. For a file's image " +
 				"change give file_id, change_id and checkpoint: the image is attached to " +

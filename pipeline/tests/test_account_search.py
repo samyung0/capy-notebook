@@ -1,7 +1,8 @@
-"""Account chat's search_files against the real schema (todo-account-chat.md):
-two workspaces and the caller's standalone files in one search, and nothing
-outside the scope Go resolved (another user's standalone file, a workspace
-the caller only reached by link)."""
+"""Account chat's searches against the real schema (todo-account-chat.md):
+search_files_content takes two workspaces and the caller's standalone files
+in one search, and nothing outside the scope Go resolved (another user's
+standalone file, a workspace the caller only reached by link);
+search_files_summary matches names and descriptors as the hints do."""
 
 from __future__ import annotations
 
@@ -13,8 +14,9 @@ import pytest
 
 from pipeline import registry
 from pipeline.config import cfg
-from pipeline.retrieval import search, store
+from pipeline.retrieval import search, store, tools
 from pipeline.retrieval.chunking import tokenize_for_search
+from pipeline.retrieval.scope import AccountScope, ScopeWorkspace
 
 pytestmark = pytest.mark.integration
 
@@ -153,6 +155,11 @@ async def test_search_files_merges_the_scope_and_keeps_out_the_rest(
     )
     assert [p.file_id for p in restricted] == [mine]
 
+    # Labels read where each item lives now.
+    places = await store.item_places([own, mine], [])
+    assert places[own]["workspace_id"] == spaces["own"]
+    assert (places[mine]["workspace_id"], places[mine]["owner_id"]) == (None, me)
+
 
 async def test_an_account_read_takes_a_standalone_file(accounts):
     me = accounts["me"]
@@ -165,3 +172,66 @@ async def test_an_account_read_takes_a_standalone_file(accounts):
     assert [row["text"] for row in rows] == ["Krebs cycle"]
     history = await store.account_history_passages(me, [], [f"{mine}_c0"])
     assert [row["file_id"] for row in history] == [mine]
+
+
+async def test_search_files_summary_matches_names_and_summaries_in_scope(
+    accounts, monkeypatch
+):
+    """Option B (Epo 2026-10-28): one scoped query over names and each
+    summary's stored search vector, then Go's check on the hits."""
+    me, other, spaces = accounts["me"], accounts["other"], accounts["spaces"]
+    dsn = accounts["dsn"]
+    summary = "Mitochondria produce ATP through oxidative phosphorylation."
+    own = await _index(dsn, workspace=spaces["own"], owner=me, text="cells")
+    named = await _index(dsn, workspace=None, owner=me, text="leaves")
+    theirs = await _index(dsn, workspace=None, owner=other, text="cells")
+    linked = await _index(dsn, workspace=spaces["link"], owner=other, text="cells")
+    for file_id in (own, theirs, linked):
+        content = (await store.file_content(file_id))["id"]
+        await store.upsert_content_summary(
+            content_id=content, fingerprint="f", descriptor=summary, change_share=0
+        )
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE files SET name = 'Photosynthesis notes.md' WHERE id = %s", (named,)
+        )
+    asked = []
+
+    async def read(path, payload, _failure):
+        asked.append(payload)
+        return {
+            "items": [
+                {
+                    **item,
+                    "canRead": True,
+                    "canEdit": True,
+                    "editable": item["id"] != own,
+                    "workspaceId": spaces["own"] if item["id"] == own else "",
+                    "workspaceName": "Biology" if item["id"] == own else "",
+                }
+                for item in payload["items"]
+            ]
+        }
+
+    monkeypatch.setattr(tools, "_gateway_read", read)
+    monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
+    ctx = tools.ToolContext(
+        workspace_id="",
+        scope=AccountScope(me, (ScopeWorkspace(spaces["own"], "Biology", True),)),
+        user_id=me,
+        operations=frozenset({"source.read", "material.read", "document.edit"}),
+    )
+
+    cells = (
+        await tools._search_files_summary({"query": "mitochondria ATP"}, ctx)
+    ).text()
+    leaves = (
+        await tools._search_files_summary({"query": "photosynthesis"}, ctx)
+    ).text()
+
+    assert f"file_id={own}" in cells and theirs not in cells and linked not in cells
+    assert f'workspace "Biology" workspace_id={spaces["own"]}, view only' in cells
+    assert summary in cells
+    assert f"file_id={named}, no workspace, view and edit" in leaves
+    # Go is asked about the hits alone, never the whole scope.
+    assert [item["id"] for item in asked[0]["items"]] == [own]

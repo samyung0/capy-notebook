@@ -5,6 +5,7 @@ creates into No workspace unless a workspace is named."""
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -17,13 +18,14 @@ from pipeline.registry import ModelConfig
 from pipeline.retrieval import (
     accounting,
     contract,
+    pending,
     profiles,
     search,
     skills,
     tools,
     turn_context,
 )
-from pipeline.retrieval.scope import AccountScope
+from pipeline.retrieval.scope import AccountScope, ScopeWorkspace
 from pipeline.retrieval.search import Passage
 from pipeline.retrieval.tools import ToolContext
 from pipeline.retrieval.usage_extract import NormalizedUsage
@@ -48,7 +50,14 @@ OWNER = frozenset(
 )
 VIEWER = frozenset({"source.read", "material.read", "library.read"})
 ACCOUNT = frozenset(
-    {"source.read", "material.read", "material.create", "document.edit", "library.read"}
+    {
+        "source.read",
+        "material.read",
+        "material.create",
+        "document.edit",
+        "workspace.create",
+        "library.read",
+    }
 )
 CATALOG = [{"id": "biology", "name": "Biology", "excerpts": 12}]
 
@@ -71,7 +80,13 @@ def _account(**kw: Any) -> ToolContext:
     return ToolContext(
         **{
             "workspace_id": "",
-            "scope": AccountScope("u_1", ("ws_1", "ws_2")),
+            "scope": AccountScope(
+                "u_1",
+                (
+                    ScopeWorkspace("ws_1", "Chemistry", True),
+                    ScopeWorkspace("ws_2", "Biology", False),
+                ),
+            ),
             "user_id": "u_1",
             "operations": ACCOUNT,
             "assistant_message_id": "m_1",
@@ -159,8 +174,11 @@ def test_the_account_profile_offers_the_account_tools():
     by_name = {s["function"]["name"]: s["function"] for s in schemas}
 
     assert set(by_name) == {
-        "search_files",
+        "search_files_summary",
+        "search_files_content",
         "list_files",
+        "create_workspace",
+        "resolve_source_change",
         "read_document",
         "capture_page",
         "search_knowledge",
@@ -204,7 +222,12 @@ def test_the_account_prompt_turn_context_and_skills_name_the_users_files():
     folded = chat_prompts.with_mode_note({**messages[-1], "content": "q"})
     assert folded["content"].startswith("[Your files only: on.")
     context = turn_context.message(ctx)["content"]
-    assert "Open:" not in context and "workspace" not in context
+    # The workspaces it reaches stand in for the open item (Epo 2026-10-28).
+    assert "Open:" not in context
+    assert (
+        "The learner's workspaces: Biology (workspace_id=ws_2, view only); "
+        "Chemistry (workspace_id=ws_1, view and edit)."
+    ) in context
     editing = skills.text(skills.EDITING, account=True)
     assert "list_sources" not in editing and "No workspace" in editing
     assert "No workspace" in skills.text(skills.DECK_BUILDING, account=True)
@@ -249,6 +272,7 @@ def _row(
         "workspaceName": name,
         "canRead": True,
         "canEdit": edit,
+        **({"format": "pdf"} if kind == "source_file" else {"materialKind": "note"}),
     }
 
 
@@ -286,15 +310,14 @@ async def test_read_document_checks_access_and_returns_where_the_file_lives(
     ] == "ws_2"
     assert read.passages[0].as_citation()["workspaceName"] == "Biology"
     assert read.passages[0].location().startswith("Biology › cells.pdf")
+    # A read also says what the item is (Epo 2026-10-28).
     assert (
-        'Access: {"workspaceId": "ws_2", "workspaceName": "Biology", "canEdit": false}'
-        in read.text()
+        'Access: {"workspaceId": "ws_2", "workspaceName": "Biology", "canEdit": false, '
+        '"kind": "source_file", "format": "pdf"}' in read.text()
     )
 
 
-async def test_search_files_labels_passages_and_drops_unreadable_ones(monkeypatch):
-    gateway = _Gateway([_row("source_file", "f_1", ws="", name="")])
-    monkeypatch.setattr(tools, "_gateway_read", gateway.read)
+async def test_search_files_content_labels_hits_from_the_turns_scope(monkeypatch):
     found = [
         Passage(
             chunk_id=f"c_{f}",
@@ -304,7 +327,7 @@ async def test_search_files_labels_passages_and_drops_unreadable_ones(monkeypatc
             section_path="",
             text="t",
         )
-        for f in ("f_1", "f_gone")
+        for f in ("f_mine", "f_chem", "f_gone", "f_out", "f_theirs")
     ]
     seen = {}
 
@@ -312,15 +335,272 @@ async def test_search_files_labels_passages_and_drops_unreadable_ones(monkeypatc
         seen.update(kwargs)
         return found
 
-    monkeypatch.setattr(tools, "search_account", search_account)
+    async def item_places(file_ids, material_ids):
+        place = {"chapter_id": None, "chapter_name": None, "owner_id": "u_other"}
+        return {
+            "f_mine": {**place, "workspace_id": None, "owner_id": "u_1"},
+            "f_chem": {
+                **place,
+                "workspace_id": "ws_1",
+                "chapter_id": "ch_1",
+                "chapter_name": "Acids",
+            },
+            "f_out": {**place, "workspace_id": "ws_9"},
+            "f_theirs": {**place, "workspace_id": None},
+        }
 
-    result = await tools._search_files({"query": "atp"}, _account())
+    monkeypatch.setattr(tools, "search_account", search_account)
+    monkeypatch.setattr(tools.store, "item_places", item_places)
+
+    result = await tools._search_files_content({"query": "atp"}, _account())
 
     assert (seen["user_id"], seen["workspace_ids"]) == ("u_1", ["ws_1", "ws_2"])
-    assert [p.file_id for p in result.passages] == ["f_1"]
-    citation = result.passages[0].as_citation()
-    assert (citation["workspaceId"], citation["workspaceName"]) == ("", "")
-    assert result.passages[0].location().startswith("No workspace › f_1.pdf")
+    assert [p.file_id for p in result.passages] == ["f_mine", "f_chem"]
+    mine, chem = result.passages
+    assert mine.location().startswith("No workspace › f_mine.pdf")
+    assert chem.location().startswith("Chemistry › Acids › f_chem.pdf")
+    assert (mine.can_edit, chem.can_edit) == (True, True)
+    text = tools.render_result(result, list(enumerate(result.passages, 1)))
+    assert "[1] file_id=f_mine, start=0, view and edit" in text
+    assert (
+        "[2] file_id=f_chem, start=0, workspace_id=ws_1, chapter_id=ch_1, "
+        "view and edit" in text
+    )
+
+
+async def test_list_files_lists_one_workspace_or_the_files_with_none(monkeypatch):
+    posts = []
+
+    async def read(path, payload, _failure):
+        posts.append(payload)
+        if payload.get("workspaceId"):
+            return {
+                "items": [
+                    {
+                        "kind": "source_file",
+                        "id": "f_2",
+                        "title": "cells.pdf",
+                        "editable": False,
+                    }
+                ]
+            }
+        return {
+            "items": [
+                {
+                    "kind": "material",
+                    "id": "mat_1",
+                    "title": "My note",
+                    "materialKind": "note",
+                    "editable": True,
+                }
+            ],
+            "more": True,
+        }
+
+    async def workspace_outline(workspace_id):
+        return {
+            "chapters": [{"id": "ch_1", "name": "Cells"}],
+            "files": [
+                {
+                    "id": "f_2",
+                    "name": "cells.pdf",
+                    "kind": "file",
+                    "chapter_id": "ch_1",
+                    "chunks": 3,
+                    "status": "ready",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(tools, "_gateway_read", read)
+    monkeypatch.setattr(tools.store, "workspace_outline", workspace_outline)
+    ctx = _account()
+
+    loose = (await tools._list_files({}, ctx)).text()
+    biology = (await tools._list_files({"workspace_id": "ws_2"}, ctx)).text()
+    outside = await tools._list_files({"workspace_id": "ws_9"}, ctx)
+
+    assert loose.startswith(tools.NO_WORKSPACE_LISTED)
+    assert "- My note (id=mat_1, kind=material" in loose
+    assert tools.MORE_UNLISTED.format(count=1) in loose
+    assert biology.startswith("The Biology workspace (workspace_id=ws_2):")
+    assert "## Cells (chapter_id=ch_1)" in biology
+    assert "cells.pdf (file_id=f_2" in biology
+    assert outside.refused and len(posts) == 2
+
+
+async def test_an_account_read_carries_its_items_changes(monkeypatch):
+    """Epo 2026-10-28: loaded per item through Go's check when read, once
+    per turn, and read again after this turn edits the item."""
+    gateway = _Gateway([_row("source_file", "f_1")])
+    monkeypatch.setattr(tools, "_gateway_read", gateway.read)
+    asked = []
+
+    def item_changes(user_id, kind, item_id, live):
+        asked.append((user_id, kind, item_id, live))
+        return {
+            "files": [
+                {
+                    "fileId": item_id,
+                    "name": "cells.md",
+                    "workspaceId": "ws_2",
+                    "epoch": 1,
+                    "checkpoint": 2,
+                    "indexedCheckpoint": 1,
+                    "changes": [
+                        {"id": "e1", "operation": "add", "after": "ATP synthase"}
+                    ],
+                }
+            ],
+            "notes": [],
+            "unread": [],
+        }
+
+    async def snapshot(workspace_id, file_ids, *, evidence=True):
+        return [
+            {
+                "fileId": "f_1",
+                "revision": 1,
+                "content_id": "rc_1",
+                "epoch": 1,
+                "indexedCheckpoint": 1,
+            }
+        ]
+
+    async def read_file_range(**kwargs):
+        return [
+            {
+                "id": "c_1",
+                "file_id": "f_1",
+                "file_name": "cells.md",
+                "chunk_idx": 0,
+                "text": "ATP",
+            }
+        ]
+
+    monkeypatch.setattr(pending, "_item_changes", item_changes)
+    monkeypatch.setattr(pending, "_snapshot", snapshot)
+    monkeypatch.setattr(tools.store, "read_file_range", read_file_range)
+    ctx = _account(pending_sources=pending.PendingSources.for_account("u_1"))
+
+    first = await tools._read_document({"file_id": "f_1"}, ctx)
+    again = await tools._read_document({"file_id": "f_1", "start": 1}, ctx)
+    ctx.pending_sources.forget("f_1")
+    after_edit = await tools._read_document({"file_id": "f_1"}, ctx)
+
+    assert "ATP synthase" in first.pending and not again.pending
+    assert "ATP synthase" in after_edit.pending
+    assert asked == [("u_1", "source_file", "f_1", False)] * 2
+    await ctx.pending_sources.validate()
+    # An index published after the load no longer pairs with its changes.
+    published = {
+        "revision": 2,
+        "content_id": "rc_2",
+        "epoch": 1,
+        "indexedCheckpoint": 2,
+    }
+
+    async def republished(workspace_id, file_ids, *, evidence=True):
+        return [{"fileId": "f_1", **published}]
+
+    monkeypatch.setattr(pending, "_snapshot", republished)
+    with pytest.raises(pending.SourceChanged):
+        await ctx.pending_sources.validate()
+
+
+async def test_account_resolves_go_through_the_items_check(monkeypatch):
+    raw = b"png bytes"
+    posted = []
+
+    def resolve_item(user_id, body):
+        posted.append((user_id, body))
+        if body["item"]["kind"] == "material":
+            return {"before": "old chart", "after": "new chart"}
+        return {
+            "bytes": base64.b64encode(raw).decode(),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        }
+
+    async def validate(self):
+        return None
+
+    monkeypatch.setattr(pending, "_resolve_item", resolve_item)
+    monkeypatch.setattr(pending.PendingSources, "validate", validate)
+    sources = pending.PendingSources.for_account("u_1")
+    sources.files = [
+        {
+            "fileId": "f_1",
+            "epoch": 3,
+            "checkpoint": 5,
+            "changes": [{"id": "e1", "assetRef": "a"}],
+        }
+    ]
+    sources.notes = [
+        {"materialId": "mat_1", "changes": [{"blockId": "b1", "kind": "data"}]}
+    ]
+    sources.read_ids = {"f_1", "mat_1"}
+
+    image = await pending.resolve(
+        sources=sources,
+        workspace_id="",
+        user_id="u_1",
+        file_id="f_1",
+        change_id="e1",
+        checkpoint=5,
+    )
+    block = await pending.resolve_note(
+        sources=sources,
+        workspace_id="",
+        user_id="u_1",
+        material_id="mat_1",
+        block_id="b1",
+    )
+
+    assert image == raw and block == {"before": "old chart", "after": "new chart"}
+    assert posted == [
+        (
+            "u_1",
+            {
+                "item": {"kind": "source_file", "id": "f_1"},
+                "epoch": 3,
+                "checkpoint": 5,
+                "changeId": "e1",
+            },
+        ),
+        ("u_1", {"item": {"kind": "material", "id": "mat_1"}, "blockId": "b1"}),
+    ]
+
+
+async def test_create_workspace_cuts_what_is_over_its_limit(monkeypatch):
+    sent = {}
+
+    async def post(path, payload, op_id, ctx, **_kwargs):
+        sent.update(payload, path=path)
+        return tools._receipt_result(
+            {
+                "kind": "create_workspace",
+                "outcome": "succeeded",
+                "workspaceId": "ws_new",
+                "name": payload["name"],
+            }
+        )
+
+    monkeypatch.setattr(tools, "_post_operation", post)
+    name = "N" * (tools.WORKSPACE_NAME_MAX + 5)
+    tags = [f"tag {i}" for i in range(tools.WORKSPACE_TAGS_MAX + 2)]
+
+    result = await tools._create_workspace(
+        {"name": name, "tags": tags, "_tool_call_id": "call_ws"}, _account()
+    )
+
+    assert sent["path"] == "/api/internal/workspaces"
+    assert sent["name"] == name[: tools.WORKSPACE_NAME_MAX]
+    assert sent["tags"] == tags[: tools.WORKSPACE_TAGS_MAX]
+    assert sent["description"] == ""
+    text = result.text()
+    assert "workspace_id=ws_new" in text and not result.refused
+    assert tools.CUT_NOTE.format(what="name", limit=tools.WORKSPACE_NAME_MAX) in text
+    assert tools.TAGS_CUT_NOTE.format(limit=tools.WORKSPACE_TAGS_MAX, left=2) in text
 
 
 @pytest.mark.parametrize("named", ["ws_2", None])

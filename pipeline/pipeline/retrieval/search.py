@@ -70,6 +70,11 @@ class Passage:
     # workspace; None in workspace chat, whose passages all live in its one.
     workspace_id: str | None = None
     workspace_name: str = ""
+    # Account chat's chapter and edit right of the source (Epo 2026-10-28);
+    # can_edit is None in workspace chat.
+    chapter_id: str = ""
+    chapter_name: str = ""
+    can_edit: bool | None = None
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Passage:
@@ -104,7 +109,9 @@ class Passage:
             return f"Web: {self.file_name}" + (f" ({meta})" if meta else "")
         parts = [self.file_name]
         if self.workspace_id is not None:
-            parts.insert(0, self.workspace_name or "No workspace")
+            parts[:0] = [self.workspace_name or "No workspace"] + (
+                [self.chapter_name] if self.chapter_name else []
+            )
         if self.section_path:
             parts.append(self.section_path)
         if self.page_start:
@@ -312,8 +319,8 @@ async def search_account(
     grouped by the pin it was indexed in. The query is embedded once per pin,
     each pin's workspace and standalone files rank together in one hybrid
     statement, the pins' fused lists merge by reciprocal rank, and one rerank
-    orders the union. Passages carry no
-    workspace yet; the caller labels them through Go (tools.label_passages)."""
+    orders the union. Passages carry no workspace yet; the caller labels them
+    from the turn's scope (tools.label_passages)."""
     top_k = top_k or cfg.search_top_k
     spaces = await store.account_search_spaces(user_id, workspace_ids)
     if not spaces:
