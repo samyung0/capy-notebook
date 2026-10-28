@@ -258,7 +258,10 @@ export const notice = (page: Page, title: string) =>
 
 /** The Invoices row of a Stripe invoice. Its hosted-page link is signed anew
  * on every read, so it cannot name the row: the tab lists invoices in the
- * order the app's API returns them, under one header row. */
+ * order the app's API returns them, under one header row. Stripe's invoice
+ * list can trail a change its single-invoice read already shows (a void
+ * still listed as retrying, UAT run 40718675712), so a row that does not
+ * match yet is read again after a reload. */
 export async function expectInvoice(
   actor: Actor,
   invoice: Record<string, unknown>,
@@ -266,16 +269,21 @@ export async function expectInvoice(
   status: string,
   link: string
 ) {
-  const listed = await actor.request('/api/billing/invoices');
-  expect(listed.status).toBe(200);
-  const index = arrayField(listed.body, 'items')
-    .map(object)
-    .findIndex((item) => item.id === invoice.id);
-  expect(index, 'the invoice is listed').toBeGreaterThanOrEqual(0);
-  const row = actor.page.getByRole('row').nth(index + 1);
-  await expect(row).toContainText(type);
-  await expect(row).toContainText(status);
-  await expect(row.getByRole('link')).toHaveText(link);
+  let reload = false;
+  await expect(async () => {
+    if (reload) await actor.page.reload();
+    reload = true;
+    const listed = await actor.request('/api/billing/invoices');
+    expect(listed.status).toBe(200);
+    const index = arrayField(listed.body, 'items')
+      .map(object)
+      .findIndex((item) => item.id === invoice.id);
+    expect(index, 'the invoice is listed').toBeGreaterThanOrEqual(0);
+    const row = actor.page.getByRole('row').nth(index + 1);
+    await expect(row).toContainText(type, { timeout: 10_000 });
+    await expect(row).toContainText(status, { timeout: 10_000 });
+    await expect(row.getByRole('link')).toHaveText(link, { timeout: 10_000 });
+  }).toPass({ timeout: 60_000 });
 }
 
 /** Clicks the dialog's Save and returns the answer to its PUT. */
