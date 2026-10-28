@@ -5614,7 +5614,6 @@ components:
           format: base64
           type: string
         workspaceId:
-          minLength: 1
           type: string
       required:
         - actorIds
