@@ -75,8 +75,11 @@ the open file's header. Lost-access items wait on the copy-out decision.
 
 ## Decisions (Epo 2026-10-27, recorded in human/)
 
-- D1: Office/text with unpublished saved edits download through a server
-  export-only publication, tracked as Preparing download. After the train.
+- D1 (revised 2026-10-28): Office/text with unpublished saved edits download
+  by merging base and editing state in the browser, with view mode's export
+  worker (`exportCheckpoint`), tracked as Preparing download. No server
+  export. Measured in `bench/editor/reports/2026-10-28-office-browser-export.md`
+  (0.3–6.4 s on an M1 up to 30 MiB, up to about 1 GiB added; phones slower).
 - D2: notes as Markdown and DOCX; quizzes and flashcards later (their embed
   has a primitive export to start from).
 - D3: payers may Clone to… and Download lost-access items (latest version).
