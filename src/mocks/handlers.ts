@@ -283,9 +283,10 @@ const SOURCE_EPOCH = 1;
 /** Fixture Office sources use native checkpoint seeds; text sources seed from
  * their mock byte link. Intentionally broken preview files still answer 503. */
 async function mockSourceSession(
-  fileId: string
+  fileId: string,
+  view = false
 ): Promise<SourceSession | null> {
-  const scenario = await scenarioSourceSession(fileId);
+  const scenario = await scenarioSourceSession(fileId, view);
   if (scenario) return scenario;
   const file = db.files.find((row) => row.id === fileId);
   const link = db.fileLinks[fileId];
@@ -770,13 +771,10 @@ export const handlers = [
   ),
   http.get('/api/files/:id/source-session', async ({ params, request }) => {
     const file = db.files.find((row) => row.id === params.id);
+    const view = new URL(request.url).searchParams.get('view') === 'true';
     // The viewer's read of a text source is lock-free on the server: only the
     // last saved state, while one is ahead of the published bytes.
-    if (
-      new URL(request.url).searchParams.get('view') === 'true' &&
-      file &&
-      !/\.(docx|xlsx|pptx)$/i.test(file.name)
-    )
+    if (view && file && !/\.(docx|xlsx|pptx)$/i.test(file.name))
       return HttpResponse.json({
         access: 'read',
         atSizeLimit: mockAtSizeLimit(file.id),
@@ -791,12 +789,8 @@ export const handlers = [
       );
     }
     // A hung edit open (`holdSourceSessions`): never answered.
-    if (
-      sourceSessionHeld() &&
-      new URL(request.url).searchParams.get('view') !== 'true'
-    )
-      await new Promise(() => {});
-    const session = await mockSourceSession(String(params.id));
+    if (sourceSessionHeld() && !view) await new Promise(() => {});
+    const session = await mockSourceSession(String(params.id), view);
     return session
       ? HttpResponse.json(session)
       : HttpResponse.json(
