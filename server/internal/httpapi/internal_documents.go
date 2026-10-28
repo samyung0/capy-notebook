@@ -361,10 +361,14 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_operation", "message": message})
 			return
 		}
-		ids, message := officeIDs(req.Office.IDs)
-		if message != "" {
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "invalid_input", "message": message})
-			return
+		// A text file's inspect carries no office object.
+		var ids []string
+		if req.Office != nil {
+			var message string
+			if ids, message = officeIDs(req.Office.IDs); message != "" {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "invalid_input", "message": message})
+				return
+			}
 		}
 		var query *store.OfficeQuery
 		switch {
