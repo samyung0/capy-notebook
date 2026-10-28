@@ -1268,7 +1268,6 @@ export function useSourceSession(
     atSizeLimit,
     banner,
     cursors,
-    dirty: dirty || bufferDirty,
     discardDraft,
     discarding,
     draftsSending,
