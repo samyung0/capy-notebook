@@ -582,6 +582,11 @@ binding rules that never touch the note layout.
    a. (recommended) Keep our converter (`markdownConvert.ts`, MDX for paste
       and import, plain for the agent, one fence parser) emitting block JSON,
       in the browser and in the server's V8. The budgets and prescan stay.
+   Both paths convert pasted markdown to blocks: BlockSuite's plain-text paste
+   (`MixTextAdapter`, priority 70 in `affine/foundation/src/clipboard.ts`) runs
+   its `MarkdownAdapter`. Option a registers ours as that clipboard adapter, so
+   paste keeps today's results (MDX callouts and columns, our chart, plot,
+   graph, Mermaid and quiz/flashcards fences, footnotes as text).
    b. BlockSuite's `MarkdownAdapter`. It has no MDX, footnotes become an
       inline, and whether it runs in V8 without a DOM is unverified.
    c. A Rust converter, dropping V8.
