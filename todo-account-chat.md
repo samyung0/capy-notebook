@@ -212,7 +212,8 @@ listing stay workspace-only.
   lands in the same train, before or with account chat.
 - Review round 2026-10-28 (fixes in): rebased onto main 6f2967c7a and
   renamed to 0128_account_chat; a local DB that ran the old 0127_account_chat
-  needs a fresh migration run. Accepted: a
+  needs a fresh migration run. Rebased onto main 01ccd1e0f (ghost text's
+  0128_note_ai_toggle) and renamed to 0129_account_chat. Accepted: a
   create_workspace replay after the user deleted the new workspace creates
   another (its receipt cascades away). Hits' "view and edit" in
   search_files_content is the workspace right only (a PDF passage can say
