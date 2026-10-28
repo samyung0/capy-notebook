@@ -380,6 +380,33 @@ The remaining per-key cost is BlockSuite waiting on every block's
 `selected$` re-running (about 20%). DOM weight is about 39 nodes per block
 against Plate's 5.
 
+**Second tuning round, 2026-10-29** (laptop, `editor.perf.ts`, uncommitted;
+vendor README local change 7). BlockSuite before → after on the near-limit
+note: open 25.3 → 7.4 s, first key 580 → 147 ms, DOM 288k → 182k nodes
+(75 → 46 a paragraph), typing 297 → 79 ms blocking a key (p95 416 → 176),
+scroll 38.5 → 41.9 FPS. Range syncs wait only for the blocks they read,
+`selected$`/`focused$` read a per-block selection index, the selection
+overlay and placeholder render only when shown, and the editor chunk loads
+while the room fetches its token. The open's wall time was mostly the
+harness: Playwright locators walk every shadow root; BlockSuite now waits
+natively. Same run, Plate → BlockSuite:
+
+| Case | Plate | BlockSuite |
+| --- | --- | --- |
+| Open, near-limit / common | 8.4 / 7.6 s | 7.4 / 7.2 s |
+| First key after open | 110 ms | 147 ms |
+| Typing, near-limit: blocking / p95 | 16 / 80 ms | 79 / 176 ms |
+| Typing, common: blocking / p95 | 0.7 / 56 ms | 90 / 176 ms |
+| Scroll, near-limit / common | 48.9 / 54.6 FPS | 41.9 / 37.2 FPS |
+| Peer burst, 180 s box | 408 keys, 2.3/s | 2,000 keys in 65 s, 30.6/s |
+
+Still worse than Plate: typing, scroll, first key, DOM. Left in a key: the
+native `addRange`/`removeAllRanges` over the large editable tree (about a
+third), GC, and every block's inline range provider hearing each selection
+change. Left per paragraph: Lit's part markers (about 30 comments) and the
+inline editor's nesting. Open in dev still waits on ~2,300 BlockSuite modules
+and two 1.1 s MSW fetches; GHA numbers pending.
+
 - **Server (load-test note, Plate vs blocks):** room load 71 vs 560 ms
   (replay 15 vs 291 ms), memory kept 7 vs 16 MB, `value()` 13 vs 20 ms, a
   joiner's step-1 answer 5 vs 9 ms. A keystroke's admission went from about
