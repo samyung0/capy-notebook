@@ -3,9 +3,9 @@ owned and member workspaces and their files with no workspace.
 
 Its tools are the contract's ``account`` scope (tools._offered). The tools
 that create (tools.DESTINATION_TOOLS) and list_sources take an optional
-``workspace_id`` here only: this profile adds it to its copy of their schema,
-and tools.run moves it out before checking the call against Go's definition,
-which stays byte for byte. Omitted, the item lands in No workspace.
+``workspace_id`` here only (create_chapter a required one): this profile adds
+it to its copy of their schema, and tools.run moves it out before checking
+the call against Go's definition, which stays byte for byte. Omitted, the item lands in No workspace.
 Skills (skills.text) and this profile's copies of the tool descriptions
 replace their workspace wording.
 """
@@ -44,6 +44,14 @@ LISTED_WORKSPACE = {
     "type": "string",
 }
 
+# create_chapter adds to a workspace the user can edit; No workspace has none.
+CHAPTER_WORKSPACE = {
+    "type": "string",
+    "minLength": 1,
+    "description": "The workspace to add it to: a workspace_id from list_workspaces, "
+    "a search, a listing or a read, of one the user can edit.",
+}
+
 # Go's descriptions written for workspace chat, in account words (Epo
 # 2026-10-28, T3): the made-from line of the creates and search_web.
 WORDING = (
@@ -80,6 +88,10 @@ def schemas(ctx: ToolContext) -> list[dict[str, Any]]:
         if function["name"] == "list_sources":
             function["description"] = LIST_SOURCES
             function["parameters"]["properties"]["workspace_id"] = LISTED_WORKSPACE
+        elif function["name"] == "create_chapter":
+            parameters = function["parameters"]
+            parameters["properties"]["workspace_id"] = CHAPTER_WORKSPACE
+            parameters["required"] = [*parameters.get("required", []), "workspace_id"]
         elif function["name"] in tools.DESTINATION_TOOLS:
             function["parameters"]["properties"]["workspace_id"] = WORKSPACE_ID
     return out

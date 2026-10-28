@@ -1,5 +1,5 @@
 {
-  "version": 45,
+  "version": 46,
   "operations": [
     "source.read",
     "material.read",
@@ -233,6 +233,35 @@
       ],
       "requiredOperations": [
         "workspace.create"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "create_chapter",
+      "version": 1,
+      "description": "Add a chapter at the end of the workspace's chapters, for files to be filed in by the chapter_id it returns. Without a name it is Chapter (n). A name over its limit is cut to it and saved.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
+      "requiredOperations": [
+        "material.create"
       ],
       "retention": "full"
     },

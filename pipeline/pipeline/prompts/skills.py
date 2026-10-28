@@ -31,6 +31,7 @@ _EDITING = f"""How to write to the workspace: build study materials, add to them
 
 Plan:
 - You MUST ALWAYS identify the requirement first before building: the learning scope and learner's level, as "I want to learn physics" lacks both: ask for what is missing, reuse what the learner already said, and offer a default they can accept rather than an open question.
+- In the same message, show the outline of what you will create: each new file and the chapter it goes in, reusing the workspace's chapters (list_sources) and marking the new ones; once the learner agrees, create_chapter adds them.
 
 What to build:
 - Each chapter gets one main explainer, a note or a deck as the output-files preference says; note_building or deck_building says how to write it.
@@ -185,13 +186,20 @@ def account_editing() -> str:
         editing(),
         ("How to write to the workspace:", "How to write to the learner's files:"),
         (
-            "\n\nWhat to build:",
             (
-                "\n- Before creating new files, also ask where they go unless the "
-                "learner already said: a workspace they can edit, a new workspace "
-                "(offer a name from the topic; create_workspace makes it) or No "
-                "workspace. Ask it in the same message as scope and level."
-                "\n\nWhat to build:"
+                "- In the same message, show the outline of what you will create: "
+                "each new file and the chapter it goes in, reusing the workspace's "
+                "chapters (list_sources) and marking the new ones; once the learner "
+                "agrees, create_chapter adds them."
+            ),
+            (
+                "- In the same message, show the outline of what you will create: "
+                "where the new files go and, in a workspace, the chapter each goes "
+                "in, reusing the chapters a listing of that workspace shows and "
+                "marking the new ones; once the learner agrees, create_chapter adds "
+                "them. Unless the learner already said where, offer a workspace they "
+                "can edit, a new workspace (a name from the topic; create_workspace "
+                "makes it) or No workspace, which has no chapters."
             ),
         ),
         (
@@ -199,7 +207,10 @@ def account_editing() -> str:
                 "- Quizzes and flashcards are standalone materials filed in the "
                 "chapter they practise, by its chapter_id from list_sources."
             ),
-            f"- Quizzes and flashcards are standalone materials. {ACCOUNT_LANDING}",
+            (
+                "- Quizzes and flashcards are standalone materials, filed in the "
+                f"chapter they practise when they land in a workspace. {ACCOUNT_LANDING}"
+            ),
         ),
         (
             "- Inspect a document before editing it;",

@@ -418,6 +418,7 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
     from pipeline.retrieval import store, tools
 
     outline = await store.workspace_outline(ctx.workspace_id)
+    outline = {**outline, "chapters": [*outline["chapters"], *state.get("chapters", [])]}
     # Office files are edited in the run (office.py); other sources are not.
     documents = [
         {
@@ -449,6 +450,33 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
             for m in items
         )
     return tools._source_listing(outline, documents, ctx.file_ids)
+
+
+async def create_chapter_locally(
+    args: dict[str, Any], ctx, state: dict[str, Any], message_id: str
+):
+    """create_chapter without a gateway: the chapter lives in the run's state,
+    named and given its id as Go would, and joins the turn's chapters."""
+    from pipeline.retrieval import store, tools
+
+    outline = await store.workspace_outline(ctx.workspace_id)
+    chapters = state.setdefault("chapters", [])
+    notes: list[str] = []
+    name = tools._cut(args.get("name"), tools.CHAPTER_NAME_MAX, "name", notes)
+    if not name:
+        taken = {c["name"] for c in [*outline["chapters"], *chapters]}
+        n = 1
+        while f"Chapter ({n})" in taken:
+            n += 1
+        name = f"Chapter ({n})"
+    op = tools.operation_id(message_id, str(args.get("_tool_call_id") or ""))
+    chapters.append({"id": tools.chapter_id(op), "name": name})
+    result = tools._receipt_result(
+        {"operationId": op, "kind": "create_chapter", "outcome": "succeeded", "name": name},
+        ctx,
+    )
+    result.text_parts.extend(notes)
+    return result
 
 
 async def create_material_locally(
@@ -1497,6 +1525,8 @@ class Turn:
                 result = local
             elif name == "create_material":
                 result = await create_material_locally(args, ctx_, state, self.id)
+            elif name == "create_chapter":
+                result = await create_chapter_locally(args, ctx_, state, self.id)
             elif name == "edit_document":
                 result = await edit_material_locally(args, ctx_, state)
             else:
