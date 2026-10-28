@@ -1,7 +1,9 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -408,5 +410,75 @@ func TestAccountVoiceContextSkipsWorkspacesTheUserLeft(t *testing.T) {
 	}
 	if !slices.Contains(names, "mine.md") || slices.Contains(names, "left behind.md") {
 		t.Fatalf("voice context = %v", names)
+	}
+}
+
+// Q522: an account chat thread stays its owner's to open after they lose a
+// workspace it drew on, every message with its citations and kept results;
+// the cited file itself answers not found, so the chat opens no files. Nobody
+// else reads the thread.
+func TestAccountThreadStaysReadableAfterLosingAWorkspace(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	f := newAccountScopeFixture(t, s)
+	conv, err := s.CreateConversation(ctx, f.me, "", "Across my files")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddUserMessage(ctx, f.me, conv.ID, "What do my notes say?", false); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := reg.ResolveUser(ctx, flashModelRef, models.SlotChat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistant, err := s.StartAssistantMessage(ctx, f.me, conv.ID, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, place := f.files[f.edited], f.edited
+	cited := []Citation{{FileID: file, FileName: "notes.md", Snippet: "ATP", WorkspaceID: &place, WorkspaceName: "Edited"}}
+	evidence := json.RawMessage(`{"tools":[{"name":"search_files_summary","text":"kept hits"}],"passages":[]}`)
+	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "Your notes say ATP [1].", "complete", 1, cited, "", nil, evidence, ""); err != nil {
+		t.Fatal(err)
+	}
+	var owner string
+	if err := s.pool.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id=$1`, f.edited).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveWorkspaceMember(ctx, owner, f.edited, f.me); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.FileEffectiveRole(ctx, f.me, file); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cited file after removal = %v, want not found", err)
+	}
+	if _, err := s.GetConversation(ctx, f.me, conv.ID); err != nil {
+		t.Fatalf("owner get = %v", err)
+	}
+	if listed, err := s.ListConversations(ctx, f.me, "", false); err != nil || len(listed) != 1 || listed[0].ID != conv.ID {
+		t.Fatalf("owner list = %+v, %v", listed, err)
+	}
+	msgs, err := s.ListMessages(ctx, f.me, conv.ID)
+	if err != nil || len(msgs) != 2 || len(msgs[1].Citations) != 1 {
+		t.Fatalf("owner messages = %+v, %v", msgs, err)
+	}
+	if c := msgs[1].Citations[0]; c.FileID != file || c.Snippet != "ATP" || c.WorkspaceName != "Edited" {
+		t.Fatalf("citation = %+v", c)
+	}
+	prompt, err := s.ConversationPrompt(ctx, conv.ID)
+	if err != nil || len(prompt.History) != 2 || !bytes.Contains(prompt.History[1].ToolEvidence, []byte("kept hits")) {
+		t.Fatalf("kept results = %+v, %v", prompt, err)
+	}
+	if _, err := s.GetConversation(ctx, f.stranger, conv.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stranger get = %v, want not found", err)
+	}
+	if _, err := s.ListMessages(ctx, f.stranger, conv.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stranger messages = %v, want not found", err)
 	}
 }

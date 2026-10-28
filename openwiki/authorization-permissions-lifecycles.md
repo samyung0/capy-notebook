@@ -1078,6 +1078,12 @@ Sources: [chat effective-role guard](../server/internal/store/chat.go#L191),
   `/workspaces`, and the account scope of documents, materials, files and
   receipts) need the pipeline secret and refuse a suspended, deletion-pending
   or deleted actor.
+- A thread stays its owner's to open after they lose a workspace it drew on
+  (removed, left, or its owner no longer live; Q522): every message with its
+  citations' stored snippets and names, and its kept results. The thread opens
+  no files: a citation click reads the item again (`routes/AccountChat.tsx`),
+  and one now out of reach answers 404 and opens on its own page with the
+  usual file error. Workspace chat threads keep their own rule (above).
 - Writes are bound to the actor's own account conversation, and a workspace
   conversation cannot stand in for one (or the reverse). A create lands in No
   workspace, or in a scope workspace the actor can edit when the call names
