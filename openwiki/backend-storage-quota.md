@@ -447,7 +447,9 @@ editor or dialog, or a refusal), it gives the ticket back with
 ticket's place, or its turn's bytes, to the line at once. The browser never
 retries an upload itself (Q282), so a refused source ticket or upload counts
 once, at once, as a failed file of its batch: the gateway counts a refusal
-before the upload's session exists, and the session's expiry
+in the ticket's batch from the moment the upload spends its ticket until its
+session exists (an editor removed while the file waited, a refused metadata
+part; Q481), and the session's expiry
 (`upload_sessions_settle_source_batch`) counts one after it, a 429
 `too_many_ingest_leases` (the parsed file's job past the uploader's 20 ingest
 leases) among them. A source ticket given back counts at once
