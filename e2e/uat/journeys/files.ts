@@ -412,11 +412,13 @@ export async function upload(
   const [uploaded] = await Promise.all([upload, clicked]);
   // The body is read only on a failure: after a large request body Chromium
   // evicts the response from its inspector cache, so the file comes from its
-  // upload session instead.
-  if (uploaded.status() !== 201)
-    assert.fail(
-      `upload answered ${uploaded.status()}: ${await uploaded.text()}`
-    );
+  // upload session instead. A failure's body can be gone too (the page
+  // navigated away first: "Protocol error (Network.getResponseBody)"), and
+  // then the status stands alone.
+  if (uploaded.status() !== 201) {
+    const body = await uploaded.text().catch(() => '');
+    assert.fail(`upload answered ${uploaded.status()}${body && `: ${body}`}`);
+  }
   const uploadRows = await run.query(
     'SELECT id,file_id FROM upload_sessions WHERE workspace_id=%s AND name=%s AND file_id IS NOT NULL ORDER BY created_at DESC LIMIT 1',
     [workspaceId, name]

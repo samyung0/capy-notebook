@@ -22,6 +22,8 @@ export type { UatEnvironment } from './environment';
 export type Actor = {
   id: string;
   email: string;
+  /** `owner` or the label createActor was given. */
+  label: string;
   page: Page;
   context: BrowserContext;
   /** An event stream's body is its text. `timeout` overrides the 30 s default. */
@@ -33,9 +35,25 @@ export type Actor = {
   ): Promise<{ status: number; body: unknown }>;
 };
 
+/** A WebSocket an actor's page opened, as the browser saw it: matched later
+ * against the collaboration server's `silent socket closed` log. Host and
+ * path only, since a collaboration URL may carry a token. */
+export type SocketRecord = {
+  /** The actor whose page opened it (Actor.label). */
+  actor: string;
+  host: string;
+  path: string;
+  openedAt: string;
+  /** Absent while the socket was still open when the test ended. */
+  closedAt?: string;
+  errors: string[];
+};
+
 export class UatRun {
   readonly env: UatEnvironment;
   readonly id: string;
+  /** Every actor page's sockets (accounts.ts actorContext). */
+  readonly sockets: SocketRecord[] = [];
   owner!: Actor;
   private readonly actors: Actor[] = [];
   private readonly browser: Browser;
@@ -121,9 +139,13 @@ export class UatRun {
   }
 
   async close() {
-    await Promise.all(
-      this.actors.map((actor) => closeActorContext(actor.context))
-    );
+    try {
+      if (this.sockets.length) await this.attach('websockets', this.sockets);
+    } finally {
+      await Promise.all(
+        this.actors.map((actor) => closeActorContext(actor.context))
+      );
+    }
   }
 }
 

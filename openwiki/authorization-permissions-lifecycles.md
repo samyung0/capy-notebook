@@ -1222,8 +1222,15 @@ upsert fails while the identity is still unknown locally, the request fails
 retryably with `503 account_state_unavailable`. An address another live local
 account still holds (`users_email_active_uidx`, for example a row that has not
 yet seen its owner's address change) is reported to Sentry
-(`clerk_email_collision`) and the account is written without an email, instead
-of failing provisioning on every request. Starter-workspace completion is
+(`clerk_email_collision`, with the account as the event's user, so the UAT
+cleanup ties it to its run) and the account is written without an email,
+instead of failing provisioning on every request. Only a different account
+counts: a new account's first page sends several requests at once, and they
+and the Clerk webhook may all create its row. The insert does nothing on any
+conflict and the normal refresh follows, so a parallel creator's stored email
+is kept (Developer Epo, 2026-10-28, Q473). An insert that did nothing while no
+row of this id exists, or a refresh that meets the email index, is the
+different account's hold. Starter-workspace completion is
 stored separately on the user row. A failed workspace insert also returns the
 retryable 503, and the next authenticated request retries it, without a
 profile read. Once marked complete, deleting every workspace does not recreate

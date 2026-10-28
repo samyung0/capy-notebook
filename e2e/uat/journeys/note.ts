@@ -251,9 +251,20 @@ export async function openNote(
   return editor;
 }
 
+/** Matches the line `text` with any U+FEFF in it, for getByText and
+ * toHaveText (both test a RegExp against the raw text). A collaborator's
+ * caret inside a line is a zero-width leaf holding U+FEFF
+ * (RemoteCursors.tsx), which an exact string match reads as a space. */
+export function lineMatch(text: string) {
+  const chars = [...text].map((char) =>
+    char.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
+  );
+  return new RegExp(`^\\uFEFF*${chars.join('\\uFEFF*')}\\uFEFF*$`);
+}
+
 /** Leaves the caret on a new empty line under the paragraph `text`. */
 export async function lineAfter(page: Page, editor: Locator, text: string) {
-  const line = editor.getByText(text, { exact: true });
+  const line = editor.getByText(lineMatch(text));
   await expect(line).toBeVisible({ timeout: 60_000 });
   // The start of the text's last visual line, then End, is the paragraph's
   // end. Clicking the end itself misses when the narrow viewer (both panels

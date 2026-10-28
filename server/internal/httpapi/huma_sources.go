@@ -173,7 +173,9 @@ func (a *api) sourceUploadTicket(w http.ResponseWriter, r *http.Request) {
 	var batch string
 	turn, err := a.takeSourceTicket(w, r, &batch)
 	if err != nil {
-		if status := answerError(w, r, err); batch != "" && status != http.StatusTooManyRequests {
+		// A refused ticket is a failed file of its batch.
+		answerError(w, r, err)
+		if batch != "" {
 			a.failSourceBatchFile(r.Context(), batch)
 		}
 		return
@@ -238,9 +240,12 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 	var batch string
 	file, err := a.receiveSource(w, r, &batch)
 	if err != nil {
-		// A refused upload is a failed file of its batch, except a 429 the
-		// browser retries (withUploadRetry).
-		if status := a.failUpload(w, r, err); batch != "" && status != http.StatusTooManyRequests {
+		// A refused upload is a failed file of its batch at once, counted
+		// here before its session exists and by the session's expiry after
+		// (a 429 too_many_ingest_leases among them): the browser never
+		// retries an upload (Q282, src/api/uploadTurn.ts).
+		a.failUpload(w, r, err)
+		if batch != "" {
 			a.failSourceBatchFile(r.Context(), batch)
 		}
 		return
@@ -316,8 +321,11 @@ func errorStatus(err error) int {
 var batchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // receiveSource stores one streamed source upload; batch names the upload's
-// batch once it is open. An upload refused for its ticket, before its body
-// is read, is settled by its batch's idle sweep (store.SourceBatchIdle).
+// batch once it is open, for the caller to count a refusal in, until the
+// upload's session exists: from then on the session's expiry counts it
+// (upload_sessions_settle_source_batch), so batch is cleared. An upload
+// refused for its ticket, before its body is read, is settled by its batch's
+// idle sweep (store.SourceBatchIdle).
 func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *string) (store.File, error) {
 	ctx := r.Context()
 	wsID := id(r)
@@ -366,6 +374,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	}); err != nil {
 		return store.File{}, err
 	}
+	*batch = ""
 	check := func(spool io.ReaderAt, size int64) error {
 		return checkSourceImages(name, body.Kind, limits.ImageBytes, spool, size)
 	}
