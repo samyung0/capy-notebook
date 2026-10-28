@@ -183,7 +183,9 @@ impl Model {
                 blank_card(txn)
             }
             Model::Item(_) => Vec::new(),
-            // O(document) per update, as the admission's exact check is.
+            // O(document): the room skips it after an update admitted on
+            // the growth bound, which leaves the tree as it was
+            // ([RoomValidator::admitted_on_bound]).
             Model::Blocks => block_tree(txn),
         }
     }
@@ -216,10 +218,13 @@ impl Model {
                 ..notes::limits::Validator::new(kind)
             }),
             Model::Item(kind) => RoomValidator::Item(items::Validator::new(kind, Some(metrics))),
+            // No bound until an exact check: the room may load unrepaired.
             Model::Blocks => RoomValidator::Blocks(BlocksValidator {
                 material: kind.to_owned(),
                 metrics: Some(metrics),
+                bound: None,
                 exact_checks: 0,
+                on_bound: false,
             }),
         }
     }
@@ -263,6 +268,7 @@ fn block_tree(txn: &mut yrs::TransactionMut) -> Vec<&'static str> {
             blocks::Repair::RootListed { .. } => "the root listed as a child",
             blocks::Repair::Cycle { .. } => "a cycle of blocks",
             blocks::Repair::Orphan { .. } => "a block no parent lists",
+            blocks::Repair::TooDeep { .. } => "a block nested too deep",
         })
         .collect();
     repaired.dedup();
@@ -295,20 +301,33 @@ pub enum RoomValidator {
     Blocks(BlocksValidator),
 }
 
-/// A blocks room's admission (`items::Validator`'s pattern, without its
-/// growth bound): the new structs must sit under the room's roots, then every
-/// update is applied to a copy, repaired as the room will repair it (D3),
-/// checked structurally and measured on its projection. So every update
-/// copies and projects the room: server numbers for blocks rooms are
-/// pessimistic until a bound like `notes::bound` is ported.
+/// A blocks room's admission (`notes::limits::Validator`'s pattern): the new
+/// structs must sit under the room's roots; then typing whose growth bound
+/// (`blocks::bound`) keeps the room within every limit is admitted on the
+/// bound, and anything else is applied to a copy, repaired as the room will
+/// repair it (D3), checked structurally and measured on its projection.
+///
+/// The bound is set by an exact check alone and dropped by every write the
+/// validator did not admit (`invalidate`), so while it holds, the room's tree
+/// is one that passed the structural check: the repair on entry after that
+/// check's update left the tree as the check's copy had it, or wrote and
+/// dropped the bound. Typing leaves that tree as it is, so the exact check
+/// would take the same tree, and of the texts only strings it already holds
+/// and attribute values it already took (see `blocks::bound`).
 #[derive(Debug)]
 pub struct BlocksValidator {
     /// The room's material kind (`note`).
     pub material: String,
-    /// The last exact metrics (the shrink baseline).
+    /// The last exact metrics (the shrink baseline and the depth of the tree
+    /// the bound stands on).
     pub metrics: Option<Metrics>,
+    /// An upper bound of the metrics now: the last exact ones plus each later
+    /// update's growth bound.
+    pub bound: Option<Metrics>,
     /// Exact checks taken (a copy of the room each).
     pub exact_checks: u64,
+    /// The last admitted update was admitted on the bound.
+    pub on_bound: bool,
 }
 
 impl BlocksValidator {
@@ -324,6 +343,7 @@ impl BlocksValidator {
         update: &yrs::Update,
         draft: bool,
     ) -> Result<Admitted, Admitted> {
+        self.on_bound = false;
         let refused = |error: String| Admitted::Refused(error);
         let txn = doc.transact();
         blocks_roots(&txn).map_err(refused)?;
@@ -346,6 +366,11 @@ impl BlocksValidator {
             return Err(refused(
                 "an update outside the blocks document's roots".into(),
             ));
+        }
+        if let Some(next) = self.next_bound(&txn, &incoming) {
+            self.bound = Some(next);
+            self.on_bound = true;
+            return Ok(Admitted::Accepted);
         }
         self.exact_checks += 1;
         let candidate = match inspection.trial {
@@ -380,7 +405,27 @@ impl BlocksValidator {
             return Err(Admitted::Limit(code, metrics));
         }
         self.metrics = Some(metrics);
+        self.bound = Some(metrics);
         Ok(Admitted::Accepted)
+    }
+
+    /// The bound after `incoming` when it is typing that keeps the room
+    /// within every limit: the bytes and nodes it adds at most, and a depth
+    /// one level below the deepest leaf the tree's last exact projection had
+    /// (an inline element's leaf). `None`: check it exactly.
+    fn next_bound<T: ReadTxn>(&self, txn: &T, incoming: &ydoc::Incoming) -> Option<Metrics> {
+        let (bound, exact) = (self.bound?, self.metrics?);
+        let growth = blocks::bound::growth(txn, incoming)?;
+        let next = Metrics {
+            content_bytes: bound.content_bytes + growth.bytes,
+            node_count: bound.node_count + growth.nodes,
+            max_depth: if growth.typed {
+                bound.max_depth.max(exact.max_depth + 1)
+            } else {
+                bound.max_depth
+            },
+        };
+        notes::limits::limit_code(&next).is_none().then_some(next)
     }
 }
 
@@ -416,8 +461,27 @@ impl RoomValidator {
         match self {
             RoomValidator::Note(validator) => validator.invalidate(),
             RoomValidator::Item(validator) => validator.invalidate(),
-            RoomValidator::Blocks(validator) => validator.metrics = None,
+            RoomValidator::Blocks(validator) => {
+                validator.bound = None;
+                validator.metrics = None;
+            }
         }
+    }
+
+    /// Whether a blocks room admits `update` on its growth bound, without a
+    /// copy of the room: the room then admits it on its async worker when it
+    /// is small too.
+    pub fn bounds<T: ReadTxn>(&self, txn: &T, incoming: &ydoc::Incoming) -> bool {
+        match self {
+            RoomValidator::Blocks(validator) => validator.next_bound(txn, incoming).is_some(),
+            RoomValidator::Note(_) | RoomValidator::Item(_) => false,
+        }
+    }
+
+    /// Whether the last admitted update was admitted on a blocks room's growth
+    /// bound: it left the tree as it was, so the repair on entry is skipped.
+    pub fn admitted_on_bound(&self) -> bool {
+        matches!(self, RoomValidator::Blocks(validator) if validator.on_bound)
     }
 
     /// A quiz document: the other document's metrics (see `items::combine`).
@@ -440,7 +504,7 @@ impl RoomValidator {
         match self {
             RoomValidator::Item(validator) => validator.bound,
             RoomValidator::Note(validator) => validator.bound,
-            RoomValidator::Blocks(validator) => validator.metrics,
+            RoomValidator::Blocks(validator) => validator.bound,
         }
     }
 }
@@ -667,6 +731,66 @@ mod tests {
         ));
     }
 
+    /// The growth bound admits typing without a copy only once an exact
+    /// check set it (a room may load unrepaired) and only while the bound
+    /// plus the keystroke stays within the limits; a format change and a
+    /// keystroke near the limit take the exact check, which resets the bound
+    /// to the exact metrics. Fails if a keystroke near the limit is admitted
+    /// on the bound, or typing after an exact check is not.
+    #[test]
+    fn typing_is_admitted_on_the_bound_until_a_limit_is_near() {
+        let state = Model::Blocks.state_from_value(&blocks_value()).unwrap();
+        let room = blocks_doc(&state, 1);
+        let writer = blocks_doc(&state, 50);
+        let metrics = Model::Blocks.measure(&room.transact()).unwrap();
+        let mut validator = Model::Blocks.validator("note", metrics);
+        let admit = |validator: &mut super::RoomValidator, bytes: &[u8]| {
+            let admitted = validator.admit(&room, &ydoc::decode(bytes).unwrap(), false);
+            assert!(matches!(admitted, super::Admitted::Accepted));
+            let mut txn = room.transact_mut();
+            txn.apply_update(ydoc::decode(bytes).unwrap()).unwrap();
+            let super::RoomValidator::Blocks(blocks) = validator else {
+                panic!("not a blocks validator")
+            };
+            (blocks.exact_checks, blocks.on_bound)
+        };
+        assert_eq!(admit(&mut validator, &keystroke(&writer, "a")), (1, false));
+        assert_eq!(admit(&mut validator, &keystroke(&writer, "a")), (1, true));
+        let bold = {
+            use yrs::Map as _;
+            let before = writer.transact().state_vector();
+            let mut txn = writer.transact_mut();
+            let blocks = txn.get_map(blocks::BLOCKS_ROOT).unwrap();
+            let Some(yrs::Out::YMap(block)) = blocks.get(&txn, "b") else {
+                panic!("no block b")
+            };
+            let Some(yrs::Out::YText(text)) = block.get(&txn, "prop:text") else {
+                panic!("no text on b")
+            };
+            text.format(
+                &mut txn,
+                0,
+                1,
+                [("bold".into(), yrs::Any::Bool(true))].into(),
+            );
+            drop(txn);
+            writer.transact().encode_state_as_update_v1(&before)
+        };
+        assert_eq!(admit(&mut validator, &bold), (2, false));
+        assert_eq!(admit(&mut validator, &keystroke(&writer, "b")), (2, true));
+        if let super::RoomValidator::Blocks(blocks) = &mut validator {
+            blocks.bound = blocks.bound.map(|bound| notes::limits::Metrics {
+                content_bytes: notes::limits::MAX_CONTENT_BYTES - 10,
+                ..bound
+            });
+        }
+        assert_eq!(admit(&mut validator, &keystroke(&writer, "c")), (3, false));
+        assert_eq!(
+            validator.bound(),
+            Some(Model::Blocks.measure(&room.transact()).unwrap())
+        );
+    }
+
     /// A stored quiz holding a block kind its rooms do not admit loads its
     /// room read-only instead of a save dropping the block; the room of the
     /// other document learns it from that document at load (`room::load`,
@@ -702,6 +826,116 @@ mod tests {
         assert_eq!(
             stored(json!([{ "type": "text", "text": "Stem" }])),
             Ok(None)
+        );
+    }
+
+    /// The corpus's near-limit note (`load-note`, about 2 MB of Plate JSON).
+    fn load_note() -> Vec<serde_json::Value> {
+        use std::io::Read as _;
+        let mut text = String::new();
+        flate2::read::GzDecoder::new(
+            std::fs::File::open(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../notes/tests/corpus/bootstrap.json.gz"
+            ))
+            .unwrap(),
+        )
+        .read_to_string(&mut text)
+        .unwrap();
+        let corpus: serde_json::Value = serde_json::from_str(&text).unwrap();
+        corpus
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == "load-note")
+            .unwrap()["value"]
+            .as_array()
+            .unwrap()
+            .clone()
+    }
+
+    /// The paragraph in the middle of the note's top level.
+    fn middle_paragraph(txn: &impl yrs::ReadTxn) -> String {
+        use yrs::Map as _;
+        let blocks = txn.get_map(blocks::BLOCKS_ROOT).unwrap();
+        let ids: Vec<String> = child_array(txn, blocks::NOTE_ID)
+            .iter(txn)
+            .map(|id| id.to_string(txn))
+            .collect();
+        ids[ids.len() / 2..]
+            .iter()
+            .find(|id| {
+                let Some(yrs::Out::YMap(block)) = blocks.get(txn, id) else {
+                    return false;
+                };
+                block.get(txn, "sys:flavour").map(|f| f.to_string(txn))
+                    == Some(blocks::schema::PARAGRAPH.to_owned())
+            })
+            .unwrap()
+            .clone()
+    }
+
+    /// One keystroke at the end of `id`'s text, as an update.
+    fn keystroke(doc: &yrs::Doc, id: &str) -> Vec<u8> {
+        use yrs::Map as _;
+        let before = doc.transact().state_vector();
+        {
+            let mut txn = doc.transact_mut();
+            let blocks = txn.get_map(blocks::BLOCKS_ROOT).unwrap();
+            let Some(yrs::Out::YMap(block)) = blocks.get(&txn, id) else {
+                panic!("no block {id}")
+            };
+            let Some(yrs::Out::YText(text)) = block.get(&txn, "prop:text") else {
+                panic!("no text on {id}")
+            };
+            let at = text.len(&txn);
+            text.insert(&mut txn, at, "x");
+        }
+        doc.transact().encode_state_as_update_v1(&before)
+    }
+
+    /// A blocks room's admission of typing on the near-limit note: one
+    /// keystroke at a time into a paragraph, each admitted, applied and
+    /// repaired on entry as the room does. After the first (no bound at
+    /// load) every keystroke is admitted on the growth bound: no copy of the
+    /// room, no projection, no repair (counted). Prints the time per update;
+    /// run it with `--release --nocapture` for the numbers.
+    #[test]
+    fn keystrokes_on_the_near_limit_note_take_no_copy() {
+        const KEYS: u32 = 20;
+        let state = Model::Blocks.state_from_value(&load_note()).unwrap();
+        let room = blocks_doc(&state, 1);
+        let writer = blocks_doc(&state, 50);
+        let target = middle_paragraph(&room.transact());
+        let metrics = Model::Blocks.measure(&room.transact()).unwrap();
+        let mut validator = Model::Blocks.validator("note", metrics);
+        let (mut admit, mut repair) = (std::time::Duration::ZERO, std::time::Duration::ZERO);
+        for key in 0..=KEYS {
+            let bytes = keystroke(&writer, &target);
+            let started = std::time::Instant::now();
+            let admitted = validator.admit(&room, &ydoc::decode(&bytes).unwrap(), false);
+            let admitted_in = started.elapsed();
+            assert!(matches!(admitted, super::Admitted::Accepted));
+            let started = std::time::Instant::now();
+            let mut txn = room.transact_mut();
+            txn.apply_update(ydoc::decode(&bytes).unwrap()).unwrap();
+            if !validator.admitted_on_bound() {
+                Model::Blocks.repair_on_entry(&mut txn, &ydoc::decode(&bytes).unwrap(), "note");
+            }
+            drop(txn);
+            if key > 0 {
+                admit += admitted_in;
+                repair += started.elapsed();
+            }
+        }
+        let super::RoomValidator::Blocks(blocks) = &validator else {
+            panic!("not a blocks validator")
+        };
+        assert_eq!(blocks.exact_checks, 1);
+        eprintln!(
+            "blocks keystroke on the near-limit note: admit {:.3} ms, apply + repair {:.3} ms per update",
+            admit.as_secs_f64() * 1e3 / f64::from(KEYS),
+            repair.as_secs_f64() * 1e3 / f64::from(KEYS),
         );
     }
 }

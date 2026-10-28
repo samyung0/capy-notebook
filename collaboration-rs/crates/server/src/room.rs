@@ -3336,9 +3336,14 @@ impl Room {
             Kindly::Note(note) if note.model == crate::model::Model::Note => {
                 notes::limits::heavy(&self.doc.transact(), &update, bytes.len(), &note.kind)
             }
-            // A blocks room's admission copies and projects the room on
-            // every update (`BlocksValidator`).
-            Kindly::Note(note) if note.model == crate::model::Model::Blocks => true,
+            // A blocks room's admission copies and projects the room unless
+            // the update is typing its growth bound admits (`BlocksValidator`).
+            Kindly::Note(note) if note.model == crate::model::Model::Blocks => {
+                let txn = self.doc.transact();
+                let incoming = ydoc::Incoming::new(&update);
+                !(ydoc::applies_inline(&txn, &incoming, bytes.len())
+                    && note.validator.bounds(&txn, &incoming))
+            }
             Kindly::Note(_) => !ydoc::applies_inline(
                 &self.doc.transact(),
                 &ydoc::Incoming::new(&update),
@@ -3574,7 +3579,9 @@ impl Room {
             return;
         };
         let (model, kind) = (note.model, note.kind.clone());
-        if !model.repairs() {
+        // Typing a blocks room admitted on its growth bound left the tree as
+        // the last exact check passed it: nothing to repair.
+        if !model.repairs() || note.validator.admitted_on_bound() {
             return;
         }
         let repair = || {

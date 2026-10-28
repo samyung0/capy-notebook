@@ -17,6 +17,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 use yrs::{ReadTxn, Transact};
 
+pub mod bound;
 mod check;
 pub mod children;
 mod plate_in;

@@ -232,6 +232,8 @@ pub enum Repair {
     Cycle { parent: String, child: String },
     /// A block no parent lists, appended to the note (the note to the root).
     Orphan { id: String },
+    /// A block nested past [MAX_NESTING], appended to `parent` higher up.
+    TooDeep { id: String, parent: String },
 }
 
 /// One listing of a child: its parent and the array item that wrote it.
@@ -245,7 +247,8 @@ struct Listing {
 /// Puts the tree back in shape after concurrent moves and deletes (D3): a
 /// block listed by two parents keeps the listing the higher client id wrote
 /// (as a map key would), dangling ids are dropped, cycles are broken at the
-/// listing the lowest client id wrote, and orphans go back under the note.
+/// listing the lowest client id wrote, orphans go back under the note, and
+/// blocks two moves nested past [MAX_NESTING] move up ([too_deep]).
 /// Deterministic in the room's state, so every replica writes the same repair.
 pub fn repair(txn: &mut TransactionMut) -> Vec<Repair> {
     let Some(blocks) = txn.get_map(BLOCKS_ROOT) else {
@@ -338,7 +341,36 @@ pub fn repair(txn: &mut TransactionMut) -> Vec<Repair> {
         .cloned()
         .collect();
 
-    // Writes: drops per parent from the back, then the orphans.
+    // The tree once the drops and orphans are written: each parent's
+    // children in array order. Then the blocks nested too deep move up.
+    let mut children: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for listing in &listings {
+        if parent_of
+            .get(&listing.child)
+            .is_some_and(|kept| kept.item == listing.item)
+        {
+            children
+                .entry(listing.parent.clone())
+                .or_default()
+                .push(listing.child.clone());
+        }
+    }
+    for orphan in &orphans {
+        let target = if orphan == NOTE_ID { ROOT_ID } else { NOTE_ID };
+        children
+            .entry(target.into())
+            .or_default()
+            .push(orphan.clone());
+    }
+    let moves = too_deep(&*txn, &blocks, &mut children);
+    for (id, _) in &moves {
+        if let Some(listing) = parent_of.get(id) {
+            drop.push(listing.clone());
+        }
+    }
+
+    // Writes: drops per parent from the back, then the orphans, then the
+    // blocks moved up.
     let mut per_parent: BTreeMap<&str, Vec<ID>> = BTreeMap::new();
     for listing in &drop {
         per_parent
@@ -371,7 +403,80 @@ pub fn repair(txn: &mut TransactionMut) -> Vec<Repair> {
         array.push_back(txn, Any::from(orphan.as_str()));
         repairs.push(Repair::Orphan { id: orphan });
     }
+    for (id, parent) in moves {
+        let Some(array) = yblock(txn, &blocks, &parent).and_then(|m| child_array(txn, &m)) else {
+            continue;
+        };
+        array.push_back(txn, Any::from(id.as_str()));
+        repairs.push(Repair::TooDeep { id, parent });
+    }
     repairs
+}
+
+/// The blocks nested more than [MAX_NESTING] levels below the note (D18),
+/// each with the parent it moves up to, in document order. A block one level
+/// too deep moves, with its subtree flattened after it, to the deepest
+/// ancestor at most one level above the cap that its flavour may sit under
+/// (the ancestor at level 7 but for a callout, which holds text alone),
+/// appended after that ancestor's children. Updates `children` to match.
+fn too_deep<T: ReadTxn>(
+    txn: &T,
+    blocks: &MapRef,
+    children: &mut BTreeMap<String, Vec<String>>,
+) -> Vec<(String, String)> {
+    let flavour = |id: &str| {
+        yblock(txn, blocks, id)
+            .and_then(|map| string(txn, &map, "sys:flavour"))
+            .unwrap_or_default()
+    };
+    let mut moves = Vec::new();
+    // The note (level 0) down to the block whose children are visited.
+    let mut path = vec![(NOTE_ID.to_string(), NOTE.to_string())];
+    visit(&mut path, children, &mut moves, &flavour);
+    return moves;
+
+    fn visit(
+        path: &mut Vec<(String, String)>,
+        children: &mut BTreeMap<String, Vec<String>>,
+        moves: &mut Vec<(String, String)>,
+        flavour: &dyn Fn(&str) -> String,
+    ) {
+        let id = path.last().map(|(id, _)| id.clone()).unwrap_or_default();
+        let mut index = 0;
+        while let Some(child) = children.get(&id).and_then(|c| c.get(index)).cloned() {
+            // The child sits at level path.len().
+            if path.len() <= MAX_NESTING {
+                path.push((child.clone(), flavour(&child)));
+                visit(path, children, moves, flavour);
+                path.pop();
+                index += 1;
+                continue;
+            }
+            if let Some(list) = children.get_mut(&id) {
+                list.remove(index);
+            }
+            let mut stack = vec![child];
+            while let Some(block) = stack.pop() {
+                let below = children.remove(&block).unwrap_or_default();
+                stack.extend(below.into_iter().rev());
+                let own = flavour(&block);
+                let allowed = schema::flavour(&own).map_or(&[][..], |f| f.parents);
+                let above = &path[..MAX_NESTING];
+                let parent = above
+                    .iter()
+                    .rev()
+                    .find(|(_, f)| allowed.contains(&f.as_str()))
+                    .unwrap_or(&above[MAX_NESTING - 1])
+                    .0
+                    .clone();
+                children
+                    .entry(parent.clone())
+                    .or_default()
+                    .push(block.clone());
+                moves.push((block, parent));
+            }
+        }
+    }
 }
 
 /// Blocks reachable from the root through `parent_of`.
