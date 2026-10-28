@@ -3387,16 +3387,25 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
   panel's foot, in Search's old place, open a page-wide voice dialog
   (`VoiceOverlay`): the page dims and blurs behind one box titled New chat.
   Opening starts a recording (the same `useVoiceInput`, the stop button a
-  flowing gradient that does not follow the voice); the transcript fades in
-  word by word and stays editable, and the box grows to half the screen,
-  then scrolls without a scrollbar. Enter adds a line; only Send sends, and
-  it always starts a new chat: from the sidebar an account chat, through
-  `askByVoice` to Chat's page (`useVoiceAsk` in `AccountChat`); from a
-  workspace that workspace's chat, opened in its right panel. Either way the
-  question rides on `ChatRequest.prompt`, which `ChatPanel` sends once per
-  request, never again when the panel mounts anew. The account dialog lives
-  once in `AppShell`, so the phone drawer can close under it; a press
-  outside the box closes it and drops the text.
+  flowing gradient that does not follow the voice; if a clip from an earlier
+  opening is still transcribing, once it finishes, and its text is dropped).
+  The transcript goes in as in the composer (`insertTranscript`: at the
+  caret, spaced except beside Chinese or Japanese), fades in word by word
+  within 600 ms when the box shows it whole, and stays editable; the box
+  grows to half the screen, then scrolls without a scrollbar, under the
+  composer's `CHAT_CHARACTER_LIMIT` with its count. Touch screens do not
+  focus the box on open, so no keyboard covers the dialog, which also sits
+  above `--keyboard-inset`. Enter adds a line; only Send sends, never while
+  recording, and it always starts a new chat: from the sidebar an account
+  chat, handed through `askByVoice` to Chat's page (`useVoiceAsk` in
+  `AccountChat`) once that page is reached; from a workspace that
+  workspace's chat, opened in its right panel. Either way the question
+  rides on `ChatRequest.prompt`, which `ChatPanel` sends once per request,
+  never again when the panel mounts anew. The account dialog lives once in
+  `AppShell`, so the phone drawer can close under it; a press outside the
+  box closes it and drops the text. The card's ring turns by transform
+  under a mask, so it never repaints the page; its title's light sweeps
+  only on hover.
 
 The gateway (`server/internal/httpapi/voice.go`) lets anyone who may chat in
 the workspace transcribe (the chat stream's `WorkspaceEffectiveRole` check;

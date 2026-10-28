@@ -15,8 +15,8 @@ import { ProfileMenu } from './ProfileMenu';
 
 /** The foot of the workspace's left panel, which replaces the top inset bar
  * there: the members, you first with the unread dot, your avatar opening the
- * menu of workspace and account items; Search and, for managers, Workspace
- * settings beside. A manager alone in the workspace sees Invite members in
+ * menu of workspace and account items; the voice mic (a new chat by voice)
+ * and, for managers, Workspace settings beside. A manager alone in the workspace sees Invite members in
  * the row's empty space. */
 export function AccountFooter({
   canInvite,

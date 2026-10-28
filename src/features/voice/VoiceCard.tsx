@@ -1,4 +1,4 @@
-import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
@@ -14,7 +14,7 @@ import './voice.css';
 
 /**
  * The sidebar's voice card, above Settings, inside a slowly turning rainbow
- * ring: it opens the account voice overlay (`onOpen` closes the phone
+ * ring and lightening on hover: it opens the account voice overlay (`onOpen` closes the phone
  * drawer). The mic sits where the rows' icons do, so the 70px rail shows only
  * the mic in its ring. Hidden where the browser cannot record.
  */
@@ -30,7 +30,7 @@ export function VoiceCard({ onOpen }: { onOpen?: () => void }) {
       }}
       type="button"
     >
-      <span aria-hidden className="voice-ring voice-edge" />
+      <span aria-hidden className="voice-edge" />
       {/* As tall as the two lines beside it, so the ring keeps its height
           on the rail. */}
       <span className="flex size-7 shrink-0 items-center justify-center">
@@ -41,6 +41,7 @@ export function VoiceCard({ onOpen }: { onOpen?: () => void }) {
         className="flex min-w-0 flex-col text-left leading-tight"
         data-label
       >
+        {/* A light sweeps across it on hover. */}
         <span className="voice-shimmer-text truncate font-semibold">
           {m.voice_card_title()}
         </span>
@@ -53,21 +54,28 @@ export function VoiceCard({ onOpen }: { onOpen?: () => void }) {
 }
 
 /** The account voice overlay, once in the app shell: its question starts a
- * new account chat, shown on Chat's page. */
+ * new account chat, shown on Chat's page. The question is handed over only
+ * once that page is reached, so a move elsewhere meanwhile drops it rather
+ * than sending it whenever Chat next opens. */
 export function AccountVoiceOverlay() {
   const open = useAccountVoiceOpen();
   const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const router = useRouter();
+  const onChat = () => router.state.location.pathname.startsWith('/chat');
   return (
     <VoiceOverlay
       onOpenChange={setAccountVoiceOpen}
       onSend={(text) => {
-        askByVoice(text);
-        if (!pathname.startsWith('/chat'))
-          void navigate({
-            params: { conversationId: undefined },
-            to: '/chat/{-$conversationId}',
-          });
+        if (onChat()) {
+          askByVoice(text);
+          return;
+        }
+        void navigate({
+          params: { conversationId: undefined },
+          to: '/chat/{-$conversationId}',
+        }).then(() => {
+          if (onChat()) askByVoice(text);
+        });
       }}
       open={open}
       workspaceId={null}

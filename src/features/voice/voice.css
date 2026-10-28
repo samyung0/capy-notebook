@@ -1,17 +1,15 @@
 /* Voice input from the sidebar: the card's ring and title shimmer, and the
    overlay's motion, in one set of four colours. */
-@property --voice-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
 :root {
   --voice-gradient: #8c7bd9, #e88fb8, #f2b880, #6fc7c0, #7aa7f0, #8c7bd9;
 }
 
-@keyframes voice-spin {
+@keyframes voice-turn {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
   to {
-    --voice-angle: 360deg;
+    transform: translate(-50%, -50%) rotate(360deg);
   }
 }
 @keyframes voice-sweep {
@@ -65,11 +63,6 @@
   }
 }
 
-/* A rotating rainbow edge: the shimmer card. */
-.voice-ring {
-  background: conic-gradient(from var(--voice-angle), var(--voice-gradient));
-  animation: voice-spin 5s linear infinite;
-}
 /* The recording button: colours flowing into each other, not driven by the
    voice. */
 .voice-flow {
@@ -80,21 +73,24 @@
   background-size: 220% 220%;
   animation: voice-flow 5s ease-in-out infinite alternate;
 }
-/* A light sweeping across text. */
+/* The voice card's title: a light sweeps across it while the card is
+   hovered; at rest the highlight sits off the text and nothing repaints. */
 .voice-shimmer-text {
   color: transparent;
   background:
     linear-gradient(
       90deg,
-      var(--color-fg) 0 38%,
-      #8c7bd9 46%,
-      #e88fb8 52%,
-      var(--color-fg) 62% 100%
+      var(--color-fg) 0 58%,
+      #8c7bd9 66%,
+      #e88fb8 72%,
+      var(--color-fg) 80% 100%
     )
     0 0 / 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
-  animation: voice-sweep 3.6s linear infinite;
+}
+:hover > * > .voice-shimmer-text {
+  animation: voice-sweep 2.4s linear infinite;
 }
 .voice-word {
   display: inline-block;
@@ -108,24 +104,41 @@
   animation: voice-card-in 0.42s var(--motion-ease-smooth-out);
 }
 
-/* The sidebar card only moves while it can be seen and motion is welcome. */
-@media (prefers-reduced-motion: reduce) {
-  .voice-ring,
-  .voice-flow,
-  .voice-shimmer-text,
-  .voice-word {
-    animation: none;
-  }
-}
-
-/* The shimmer card's edge: the ring painted only on the 1.5px border. */
+/* The voice card's rainbow edge, on its 1.5px border only. An oversized
+   square turns under the mask: a transform, so the compositor runs it and
+   the page never repaints for it. */
 .voice-edge {
   position: absolute;
   inset: 0;
   padding: 1.5px;
+  overflow: hidden;
   pointer-events: none;
   border-radius: inherit;
   mask:
     linear-gradient(#000 0 0) content-box exclude,
     linear-gradient(#000 0 0);
+}
+.voice-edge::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 160%;
+  aspect-ratio: 1;
+  content: "";
+  background: conic-gradient(var(--voice-gradient));
+  transform: translate(-50%, -50%);
+  animation: voice-turn 5s linear infinite;
+}
+
+/* Last, to win over the rules above: nothing turns, flows, sweeps or moves
+   in for people who prefer less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .voice-edge::before,
+  .voice-flow,
+  :hover > * > .voice-shimmer-text,
+  .voice-word,
+  .voice-scrim[data-state="open"],
+  .voice-card[data-state="open"] {
+    animation: none;
+  }
 }
