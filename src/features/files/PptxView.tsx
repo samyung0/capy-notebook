@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import type { SourceFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
@@ -14,14 +13,12 @@ export default function PptxView({
   canEdit,
   citation,
   file,
-  onDirtyChange,
   startEditing = false,
   swap,
 }: {
   canEdit: boolean;
   citation?: OfficeCitation;
   file: SourceFile;
-  onDirtyChange?: (dirty: boolean) => void;
   startEditing?: boolean;
   swap?: OfficeSwap;
 }) {
@@ -34,17 +31,6 @@ export default function PptxView({
     revision: file.revision,
     swap,
   });
-
-  useEffect(() => {
-    onDirtyChange?.(runtime.dirty);
-  }, [onDirtyChange, runtime.dirty]);
-
-  useEffect(
-    () => () => {
-      onDirtyChange?.(false);
-    },
-    [onDirtyChange]
-  );
 
   useReportEditorStatus(
     sourceHeaderStatus(runtime.status, {

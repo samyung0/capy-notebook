@@ -37,7 +37,6 @@ export function trashErrorMessage(error: unknown): string {
 
 export function ContentActions({
   showMove = true,
-  beforeDelete,
   canClone = false,
   canMoveTo = false,
   chapters,
@@ -66,7 +65,6 @@ export function ContentActions({
 }: {
   /** Offers the chapter-only Move (a file with `canMoveTo` gets Move to…). */
   showMove?: boolean;
-  beforeDelete?: () => boolean;
   /** Offers Clone, also to a read-only viewer who may copy (workspace.canClone). */
   canClone?: boolean;
   /** Offers Move to… for a file: into another workspace or chapter. The
@@ -222,7 +220,7 @@ export function ContentActions({
   };
 
   const deleteContent = async () => {
-    if (!content || (beforeDelete && !beforeDelete())) {
+    if (!content) {
       setConfirmOpen(false);
       return;
     }
