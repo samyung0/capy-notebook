@@ -18,26 +18,6 @@ import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import './voice.css';
 
-/** The longest a transcript takes to fade in, and the most any one word
- * waits after the one before, in ms. */
-const REVEAL_MS = 600;
-const WORD_STAGGER_MAX_MS = 40;
-/** Words and the spaces between them, the spaces kept. */
-const WORDS = /(\s+)/;
-
-/** The box's text while a transcript fades in: the inserted words between
- * the text around them. */
-interface Reveal {
-  after: string;
-  before: string;
-  words: string[];
-}
-
-/** Each word's wait after the one before: long transcripts fade in no
- * slower than short ones. */
-const staggerOf = (words: string[]) =>
-  Math.min(WORD_STAGGER_MAX_MS, REVEAL_MS / words.length);
-
 /** Phones and tablets: focusing the box would raise the keyboard over the
  * dialog, although the user came to speak. */
 const touch = () => !matchMedia('(pointer: fine)').matches;
@@ -62,16 +42,13 @@ export function VoiceOverlay({
   onSend: (text: string) => void;
 }) {
   const [text, setText] = useState('');
-  const [reveal, setReveal] = useState<Reveal | null>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
-  const revealTimer = useRef(0);
   // Counts closings: a transcript from an earlier opening, still under way
   // when the dialog closed, never lands in a later one.
   const opening = useRef(0);
   const mine = opening.current;
   // Like the composer: at the caret, over a selection, spaced except beside
-  // Chinese or Japanese; it fades in word by word when the box can show it
-  // whole.
+  // Chinese or Japanese.
   const onText = (heard: string) => {
     const field = fieldRef.current;
     if (opening.current !== mine || !field) return;
@@ -80,21 +57,6 @@ export function VoiceOverlay({
     flushSync(() => setText(inserted.value));
     if (!touch()) field.focus({ preventScroll: true });
     field.setSelectionRange(inserted.caret, inserted.caret);
-    if (field.scrollHeight > field.clientHeight) return;
-    const tail = value.length - end;
-    const words = inserted.value
-      .slice(start, inserted.value.length - tail)
-      .split(WORDS);
-    clearTimeout(revealTimer.current);
-    setReveal({
-      after: value.slice(end),
-      before: value.slice(0, start),
-      words,
-    });
-    revealTimer.current = window.setTimeout(
-      () => setReveal(null),
-      words.length * staggerOf(words) + 420
-    );
   };
   const { phase, toggle, elapsedMs, error } = useVoiceInput(
     workspaceId,
@@ -104,17 +66,15 @@ export function VoiceOverlay({
 
   // Opening clears the box and starts a recording, once a clip from an
   // earlier opening has finished transcribing; closing drops the recording
-  // (useVoiceInput) and the reveal.
+  // (useVoiceInput).
   const wantsRecording = useRef(false);
   useEffect(() => {
     if (!open) return;
     setText('');
-    setReveal(null);
     wantsRecording.current = true;
     return () => {
       opening.current += 1;
       wantsRecording.current = false;
-      clearTimeout(revealTimer.current);
     };
   }, [open]);
   useEffect(() => {
@@ -174,8 +134,7 @@ export function VoiceOverlay({
               aria-invalid={length > CHAT_CHARACTER_LIMIT || undefined}
               aria-label={m.voice_overlay_field()}
               className={cn(
-                'max-h-[min(50dvh,calc(14lh+--spacing(4)))] min-h-36 resize-none rounded-none border-0 bg-transparent px-1.5 py-2 text-[1.05rem] text-fg leading-relaxed [scrollbar-width:none] focus:border-0 [&::-webkit-scrollbar]:hidden',
-                reveal && 'text-transparent'
+                'max-h-[min(50dvh,calc(14lh+--spacing(4)))] min-h-36 resize-none rounded-none border-0 bg-transparent px-1.5 py-2 text-[1.05rem] text-fg leading-relaxed [scrollbar-width:none] focus:border-0 [&::-webkit-scrollbar]:hidden'
               )}
               onChange={(event) => setText(event.target.value)}
               placeholder={
@@ -186,26 +145,6 @@ export function VoiceOverlay({
               ref={fieldRef}
               value={text}
             />
-            {reveal && (
-              <p
-                aria-hidden
-                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-1.5 py-2 text-[1.05rem] text-fg leading-relaxed"
-              >
-                {reveal.before}
-                {reveal.words.map((word, index) => (
-                  <span
-                    className="voice-word"
-                    key={index}
-                    style={{
-                      animationDelay: `${index * staggerOf(reveal.words)}ms`,
-                    }}
-                  >
-                    {word}
-                  </span>
-                ))}
-                {reveal.after}
-              </p>
-            )}
           </div>
           {error && (
             <p className="t-meta px-1.5 text-tint-error-fg" role="alert">

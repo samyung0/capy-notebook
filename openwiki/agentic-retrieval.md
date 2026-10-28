@@ -3390,8 +3390,8 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
   flowing gradient that does not follow the voice; if a clip from an earlier
   opening is still transcribing, once it finishes, and its text is dropped).
   The transcript goes in as in the composer (`insertTranscript`: at the
-  caret, spaced except beside Chinese or Japanese), fades in word by word
-  within 600 ms when the box shows it whole, and stays editable; the box
+  caret, spaced except beside Chinese or Japanese), all at once, and stays
+  editable; the box
   grows to half the screen, then scrolls without a scrollbar, under the
   composer's `CHAT_CHARACTER_LIMIT` with its count. Touch screens do not
   focus the box on open, so no keyboard covers the dialog, which also sits

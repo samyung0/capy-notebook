@@ -44,13 +44,6 @@
       0% 30%;
   }
 }
-@keyframes voice-rise {
-  from {
-    opacity: 0;
-    filter: blur(4px);
-    transform: translateY(4px);
-  }
-}
 @keyframes voice-fade-in {
   from {
     opacity: 0;
@@ -92,11 +85,6 @@
 :hover > * > .voice-shimmer-text {
   animation: voice-sweep 2.4s linear infinite;
 }
-.voice-word {
-  display: inline-block;
-  white-space: pre;
-  animation: voice-rise 0.36s var(--motion-ease-smooth-out) both;
-}
 .voice-scrim[data-state="open"] {
   animation: voice-fade-in 0.3s var(--motion-ease-smooth-out);
 }
@@ -136,7 +124,6 @@
   .voice-edge::before,
   .voice-flow,
   :hover > * > .voice-shimmer-text,
-  .voice-word,
   .voice-scrim[data-state="open"],
   .voice-card[data-state="open"] {
     animation: none;
