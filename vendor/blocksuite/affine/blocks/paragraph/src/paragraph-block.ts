@@ -36,10 +36,10 @@ import { paragraphBlockStyles } from './styles.js';
 export class ParagraphBlockComponent extends CaptionedBlockComponent<ParagraphBlockModel> {
   static override styles = paragraphBlockStyles;
 
+  // Capy (vendor/blocksuite/README.md, local change 7): this block's
+  // selection only, not every selection change of the doc.
   focused$ = computed(() => {
-    const selection = this.std.selection.value.find(
-      selection => selection.blockId === this.model?.id
-    );
+    const selection = this.std.selection.block$(this.model?.id).value;
     if (!selection) return false;
     return selection.is(TextSelection);
   });
@@ -158,9 +158,15 @@ export class ParagraphBlockComponent extends CaptionedBlockComponent<ParagraphBl
           this._displayPlaceholder.value = false;
           return;
         }
+        // Capy (local change 7): focus first, so an unfocused paragraph does
+        // not depend on (and rerun for) every selection change.
+        if (!this.focused$.value) {
+          this._displayPlaceholder.value = false;
+          return;
+        }
         const textSelection = this.host.selection.find(TextSelection);
         const isCollapsed = textSelection?.isCollapsed() ?? false;
-        if (!this.focused$.value || !isCollapsed) {
+        if (!isCollapsed) {
           this._displayPlaceholder.value = false;
           return;
         }
@@ -298,65 +304,56 @@ export class ParagraphBlockComponent extends CaptionedBlockComponent<ParagraphBl
         paddingLeft: `${BLOCK_CHILDREN_CONTAINER_PADDING_LEFT}px`,
         display: collapsed ? 'none' : undefined,
       })}
-    >
-      ${this.renderChildren(this.model)}
-    </div>`;
+    >${this.renderChildren(this.model)}</div>`;
 
-    return html`
-      ${style}
-      <div
+    // Capy (vendor/blocksuite/README.md, local change 7): no whitespace
+    // between the tags (a text node each, in every paragraph), and the
+    // placeholder only while it shows.
+    return html`${style}<div
         class=${classMap({
           'affine-paragraph-block-container': true,
           'highlight-comment': this.isCommentHighlighted,
         })}
         style="${textAlignStyle}"
         data-has-collapsed-siblings="${collapsedSiblings.length > 0}"
-      >
-        <div
+      ><div
           class=${classMap({
             'affine-paragraph-rich-text-wrapper': true,
             [type$.value]: true,
             [TOGGLE_BUTTON_PARENT_CLASS]: true,
           })}
-        >
-          ${
-            this.model.props.type$.value.startsWith('h')
-              ? html`
-                  <affine-paragraph-heading-icon
-                    .model=${this.model}
-                  ></affine-paragraph-heading-icon>
-                `
-              : nothing
-          }
-          ${
-            this.model.props.type$.value.startsWith('h') &&
-            collapsedSiblings.length > 0
-              ? html`
-                  <blocksuite-toggle-button
-                    .collapsed=${collapsed}
-                    .controls=${childrenId}
-                    .updateCollapsed=${(value: boolean) => {
-                      if (this.store.readonly) {
-                        this._setReadonlyCollapsed(value);
-                      } else {
-                        this.store.captureSync();
-                        this.store.updateBlock(this.model, {
-                          collapsed: value,
-                        });
-                      }
+        >${
+          this.model.props.type$.value.startsWith('h')
+            ? html`<affine-paragraph-heading-icon
+                .model=${this.model}
+              ></affine-paragraph-heading-icon>`
+            : nothing
+        }${
+          this.model.props.type$.value.startsWith('h') &&
+          collapsedSiblings.length > 0
+            ? html`<blocksuite-toggle-button
+                .collapsed=${collapsed}
+                .controls=${childrenId}
+                .updateCollapsed=${(value: boolean) => {
+                  if (this.store.readonly) {
+                    this._setReadonlyCollapsed(value);
+                  } else {
+                    this.store.captureSync();
+                    this.store.updateBlock(this.model, {
+                      collapsed: value,
+                    });
+                  }
 
-                      if (this.hasCitationSiblings) {
-                        this.citationService.trackEvent('Expand', {
-                          control: 'Source Button',
-                          type: value ? 'Hide' : 'Show',
-                        });
-                      }
-                    }}
-                  ></blocksuite-toggle-button>
-                `
-              : nothing
-          }
-          <rich-text
+                  if (this.hasCitationSiblings) {
+                    this.citationService.trackEvent('Expand', {
+                      control: 'Source Button',
+                      type: value ? 'Hide' : 'Show',
+                    });
+                  }
+                }}
+              ></blocksuite-toggle-button>`
+            : nothing
+        }<rich-text
             .yText=${this.model.props.text.yText}
             .inlineEventSource=${this.topContenteditableElement ?? nothing}
             .undoManager=${this.store.history.undoManager}
@@ -370,27 +367,14 @@ export class ParagraphBlockComponent extends CaptionedBlockComponent<ParagraphBl
             .enableUndoRedo=${false}
             .verticalScrollContainerGetter=${() =>
               getViewportElement(this.host)}
-          ></rich-text>
-          ${
-            this.inEdgelessText
+          ></rich-text>${
+            this.inEdgelessText || !this._displayPlaceholder.value
               ? nothing
-              : html`
-                  <div
-                    contenteditable="false"
-                    class=${classMap({
-                      'affine-paragraph-placeholder': true,
-                      visible: this._displayPlaceholder.value,
-                    })}
-                  >
-                    ${this._placeholder}
-                  </div>
-                `
-          }
-        </div>
-
-        ${children} ${widgets}
-      </div>
-    `;
+              : html`<div
+                  contenteditable="false"
+                  class="affine-paragraph-placeholder visible"
+                >${this._placeholder}</div>`
+          }</div>${children}${widgets}</div>`;
   }
 
   @query('rich-text')

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { Material } from '@/api/types';
-import { mountNoteEditor } from '@/features/blocksuite/pageEditor';
 import { NoteSeatContext } from '@/features/collaboration/noteSeat';
 import { FileError, FileLoading } from '@/features/files/FileStates';
 import {
@@ -17,6 +16,16 @@ import { BlocksRoom } from './blocksRoom';
 import { BlockIslands } from './islands';
 
 const EMPTY: MaterialValue = [{ children: [{ text: '' }], type: 'p' }];
+
+/** BlockSuite's editor, its own chunk: it loads while the room fetches its
+ * token and syncs, instead of before (in dev, ~2,300 modules). */
+let pageEditor:
+  | Promise<typeof import('@/features/blocksuite/pageEditor')>
+  | undefined;
+function loadPageEditor() {
+  pageEditor ??= import('@/features/blocksuite/pageEditor');
+  return pageEditor;
+}
 
 /**
  * A note in the blocks layout (dev stacks, `VITE_DOCUMENT_LAYOUT=blocks`):
@@ -35,6 +44,7 @@ export default function BlockSuiteNote({ material }: { material: Material }) {
     const next = new BlocksRoom(material.id, initialValue);
     setRoom(next);
     void next.start();
+    void loadPageEditor();
     return () => next.destroy();
   }, [material.id, initialValue]);
   if (!room) return <FileLoading />;
@@ -47,18 +57,33 @@ function RoomEditor({ room }: { room: BlocksRoom }) {
   const readonly = state.status === 'ready' && state.readonly;
   const ready = state.status === 'ready';
   const [islands] = useState(() => new BlockIslands());
+  // A chunk that fails to load goes to the error boundary, as a lazy one.
+  const [failed, setFailed] = useState<unknown>(null);
+  if (failed) throw failed;
   useEffect(() => {
-    if (!(ready && container.current)) return;
-    return mountNoteEditor(
-      container.current,
-      {
-        awareness: room.awareness,
-        doc: room.doc,
-        id: room.materialId,
-        readonly,
-      },
-      islands
-    );
+    const element = container.current;
+    if (!(ready && element)) return;
+    // Not `use()`: suspending would hide and show this tree again, and in
+    // dev StrictMode that runs the room's effect again (a second room).
+    let live = true;
+    let unmount: (() => void) | undefined;
+    loadPageEditor().then(({ mountNoteEditor }) => {
+      if (!live) return;
+      unmount = mountNoteEditor(
+        element,
+        {
+          awareness: room.awareness,
+          doc: room.doc,
+          id: room.materialId,
+          readonly,
+        },
+        islands
+      );
+    }, setFailed);
+    return () => {
+      live = false;
+      unmount?.();
+    };
   }, [islands, ready, readonly, room]);
 
   if (state.status === 'unavailable') return <FileError />;

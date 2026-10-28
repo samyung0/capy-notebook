@@ -37,10 +37,10 @@ export class BlockComponent<
   @consume({ context: stdContext })
   accessor std!: BlockStdScope;
 
+  // Capy (vendor/blocksuite/README.md, local change 7): this block's
+  // selection only, not every selection change of the doc.
   selected$ = computed(() => {
-    const selection = this.std.selection.value.find(
-      selection => selection.blockId === this.model?.id
-    );
+    const selection = this.std.selection.block$(this.model?.id).value;
     if (!selection) return false;
     return selection.is(BlockSelection);
   });
@@ -237,6 +237,12 @@ export class BlockComponent<
     const result = await super.getUpdateComplete();
     await Promise.all(this.childBlocks.map(el => el.updateComplete));
     return result;
+  }
+
+  /** Capy (local change 7): this block's own render, without its children's
+   * (`updateComplete` awaits every block below it). */
+  get ownUpdateComplete(): Promise<boolean> {
+    return super.getUpdateComplete();
   }
 
   override render() {

@@ -1,5 +1,11 @@
 import { BlockSuiteError, ErrorCode } from '@blocksuite/global/exceptions';
-import { computed, signal } from '@preact/signals-core';
+import {
+  batch,
+  computed,
+  type ReadonlySignal,
+  type Signal,
+  signal,
+} from '@preact/signals-core';
 import { Subject } from 'rxjs';
 
 import { nanoid } from '../../utils/id-generator';
@@ -18,6 +24,14 @@ export class StoreSelectionExtension extends StoreExtension {
   private readonly _remoteSelections = signal<Map<number, BaseSelection[]>>(
     new Map()
   );
+  // Capy (vendor/blocksuite/README.md, local change 7): each block's first
+  // selection, so a block's selected state re-evaluates only when its own
+  // selection changes, not on every selection change of the doc.
+  private _blockSelections = new Map<string, BaseSelection>();
+  private readonly _blockSignals = new Map<
+    string,
+    Signal<BaseSelection | undefined>
+  >();
 
   private readonly _itemAdded = (event: { stackItem: StackItem }) => {
     event.stackItem.meta.set('selection-state', this._selections.value);
@@ -108,6 +122,17 @@ export class StoreSelectionExtension extends StoreExtension {
     return this._selections.value;
   }
 
+  /** `value.find(s => s.blockId === blockId)`, as a signal that changes only
+   * when that block's selection does. */
+  block$(blockId: string): ReadonlySignal<BaseSelection | undefined> {
+    let block = this._blockSignals.get(blockId);
+    if (!block) {
+      block = signal(this._blockSelections.get(blockId));
+      this._blockSignals.set(blockId, block);
+    }
+    return block;
+  }
+
   get remoteSelections() {
     return this._remoteSelections.value;
   }
@@ -159,7 +184,18 @@ export class StoreSelectionExtension extends StoreExtension {
       this._id,
       selections.map(s => s.toJSON())
     );
-    this._selections.value = selections;
+    const previous = this._blockSelections;
+    const next = new Map<string, BaseSelection>();
+    for (const selection of selections)
+      if (!next.has(selection.blockId)) next.set(selection.blockId, selection);
+    this._blockSelections = next;
+    batch(() => {
+      this._selections.value = selections;
+      for (const id of new Set([...previous.keys(), ...next.keys()])) {
+        const block = this._blockSignals.get(id);
+        if (block) block.value = next.get(id);
+      }
+    });
     this.slots.changed.next(selections);
   }
 

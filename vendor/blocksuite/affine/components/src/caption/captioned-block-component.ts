@@ -1,5 +1,4 @@
 import { ThemeProvider } from '@blocksuite/affine-shared/services';
-import { watch } from '@blocksuite/global/lit';
 import { BlockComponent, type BlockService } from '@blocksuite/std';
 import type { BlockModel } from '@blocksuite/store';
 import { html, nothing } from 'lit';
@@ -44,6 +43,10 @@ export class CaptionedBlockComponent<
     const theme = this.std.get(ThemeProvider).theme;
     const isBorder = this.selectedStyle === SelectedStyle.Border;
 
+    // Capy (vendor/blocksuite/README.md, local change 7): the selection
+    // overlay (a Lit element with a shadow root, display: none while
+    // unselected) only while the block is selected, and no whitespace
+    // between the tags (a text node each, in every block).
     return html`<div
       style=${style}
       class=${classMap({
@@ -51,28 +54,23 @@ export class CaptionedBlockComponent<
         [theme]: true,
         border: isBorder,
       })}
-    >
-      ${content}
-      ${
-        this.useCaptionEditor
-          ? html`<block-caption-editor
-              ${ref(this._captionEditorRef)}
-            ></block-caption-editor>`
-          : nothing
-      }
-      ${
-        this.selectedStyle === SelectedStyle.Background
-          ? html`<affine-block-selection
-              .selected=${watch(this.selected$)}
-            ></affine-block-selection>`
-          : null
-      }
-      ${
-        this.useZeroWidth && !this.store.readonly
-          ? html`<block-zero-width .block=${this}></block-zero-width>`
-          : nothing
-      }
-    </div>`;
+    >${content}${
+      this.useCaptionEditor
+        ? html`<block-caption-editor
+            ${ref(this._captionEditorRef)}
+          ></block-caption-editor>`
+        : nothing
+    }${
+      this.selectedStyle === SelectedStyle.Background && this.selected$.value
+        ? html`<affine-block-selection
+            .selected=${true}
+          ></affine-block-selection>`
+        : null
+    }${
+      this.useZeroWidth && !this.store.readonly
+        ? html`<block-zero-width .block=${this}></block-zero-width>`
+        : nothing
+    }</div>`;
   }
 
   // There may be multiple block-caption-editors in a nested structure.

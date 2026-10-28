@@ -154,6 +154,28 @@ test.describe('BlockSuite note', () => {
     await expect(note.getByText('Peer: First paragraph alpha')).toBeVisible();
   });
 
+  test('the caret follows its own blocks while another block renders', async ({
+    page,
+  }) => {
+    const note = await openNote(page);
+    // Another block whose render never settles: the range sync waits only
+    // for the blocks it reads (vendor/blocksuite/README.md, local change 7).
+    await page.evaluate((block) => {
+      const element = document.querySelector(`[data-block-id="${block}"]`)!;
+      Object.defineProperty(element, 'updateComplete', {
+        get: () => new Promise(() => {}),
+      });
+    }, `${EDITOR_NOTE.id}:first`);
+    await caretAtEnd(page, note.getByText(EDITOR_NOTE.thirdParagraph));
+    await page.keyboard.type(' delta');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('next line');
+    await expect(note.getByText('Third paragraph gamma delta')).toBeVisible();
+    await expect(
+      note.locator('affine-paragraph', { hasText: /^next line$/ })
+    ).toHaveCount(1);
+  });
+
   test('pasted Markdown becomes blocks', async ({ page }) => {
     const note = await openNote(page);
     await joinPeer(page);

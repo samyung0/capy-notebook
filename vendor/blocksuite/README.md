@@ -128,6 +128,49 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
      null, for a selection that cannot reach it, returns before reading the
      DOM (`isActiveInEditor`), since it would set null again.
 
+7. Per-key and per-block cost, second round (2026-10-29, same section). Each
+   change is marked `Capy (... local change 7)` in the source; on a sync,
+   reapply them by that marker.
+   - `framework/std` `inline/range/range-binding.ts`: both range syncs (after
+     a native `selectionchange`, and after a selection change in the store)
+     awaited `host.updateComplete`, which awaits every block, rich text,
+     v-line and v-element of the doc, each with a `querySelectorAll`. They
+     now await `_settled(ids)`: the host's own render, each ancestor's own
+     render (which renders the next block on the path), then the blocks the
+     sync reads in full (their rich text and inline elements). The ids are
+     the native range's endpoint blocks, or the text selection's `from` and
+     `to`. What the syncs read after the wait is in those blocks only
+     (`rangeToTextSelection`, `textSelectionToRange`, `_computePath`, from
+     the store). The composition paths (`:130`, `:153`) re-render the whole
+     host and keep `host.updateComplete`, as do the 23 other callers (block
+     commands that focus a block after a structural change).
+     `ownUpdateComplete` is new on `EditorHost` (`view/element/lit-host.ts`)
+     and `BlockComponent` (`view/element/block-component.ts`): Lit's own
+     `getUpdateComplete`, without the overrides that await the children.
+     Pinned by `e2e/editor/blocksuite-note.spec.ts` (a block whose render
+     never settles does not hold the caret).
+   - `framework/store` `extension/selection/selection-extension.ts`: `set`
+     indexes the selections by block id (the first per block, as
+     `value.find(s => s.blockId === id)`) and `block$(id)` returns a signal
+     set only when that block's selection changes (lazily created, kept per
+     id). `BlockComponent.selected$` and the paragraph's `focused$` read it,
+     so a selection change re-evaluates the blocks it touches, not all of
+     them. The paragraph's placeholder effect reads `focused$` first, so an
+     unfocused paragraph does not depend on the selection.
+   - `framework/std` `inline/range/inline-range-provider.ts`: the early
+     return of local change 6 caches the element's `blockId` (a dataset
+     read per block per selection change).
+   - DOM per paragraph, 75 → 46 nodes (elements, text, comments):
+     `affine/components` `caption/captioned-block-component.ts` renders the
+     `affine-block-selection` overlay (a Lit element with a shadow root and
+     a `watch(selected$)` effect, `display: none` while unselected) only
+     while the block is selected; `blocks/paragraph` renders its placeholder
+     only while it shows (`visible`, same classes). Both templates, and the
+     paragraph's children container, lost the whitespace between tags (a
+     text node each). The rest is Lit's part markers (about 30 comments) and
+     the inline editor's nesting (`rich-text` > `v-line` > `v-element` >
+     `v-text`).
+
 Outside this directory, for BlockSuite:
 
 - `patches/@atlaskit__pragmatic-drag-and-drop@1.4.0.patch`: upstream's yarn

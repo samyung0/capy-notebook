@@ -173,7 +173,16 @@ export class RangeBinding {
       return;
     }
 
-    await this.host.updateComplete;
+    const pending = document.getSelection();
+    const pendingRange =
+      pending && pending.rangeCount > 0 ? pending.getRangeAt(0) : null;
+    await this._settled(
+      pendingRange
+        ? [pendingRange.startContainer, pendingRange.endContainer].map(
+            node => this.rangeManager?.getClosestBlock(node)?.blockId
+          )
+        : []
+    );
 
     const selection = document.getSelection();
     if (!selection) {
@@ -300,7 +309,7 @@ export class RangeBinding {
       return;
     }
     // wait for lit updated
-    this.host.updateComplete
+    this._settled([text?.from.blockId, text?.to?.blockId])
       .then(() => {
         const id = text?.blockId;
         const path = id && this._computePath(id);
@@ -330,6 +339,29 @@ export class RangeBinding {
       })
       .catch(console.error);
   };
+
+  /**
+   * Capy (vendor/blocksuite/README.md, local change 7): what a range sync
+   * reads, rendered. `host.updateComplete` awaits every block, rich text and
+   * inline element of the doc (a `querySelectorAll` each); a sync only maps
+   * between the native range and the inline editors of the blocks `ids`. So:
+   * the host's own render, each ancestor's own render (which renders the
+   * next block on the path), then each block with its rich text.
+   */
+  private async _settled(ids: (string | undefined)[]) {
+    await this.host.ownUpdateComplete;
+    for (const id of new Set(ids)) {
+      if (!id) continue;
+      const path = this._computePath(id);
+      for (const [index, blockId] of path.entries()) {
+        const block = this.host.view.getBlock(blockId);
+        if (!block) break;
+        await (index === path.length - 1
+          ? block.updateComplete
+          : block.ownUpdateComplete);
+      }
+    }
+  }
 
   private _prevTextSelection: {
     selection: TextSelection;

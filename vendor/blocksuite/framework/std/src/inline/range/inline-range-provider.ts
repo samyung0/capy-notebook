@@ -92,6 +92,9 @@ export const getInlineRangeProvider: (
     }
   };
   const inlineRange$: InlineRangeProvider['inlineRange$'] = signal(null);
+  // Capy (local change 7): `blockId` reads the element's dataset, once per
+  // block per selection change below; a block keeps its id.
+  let blockId: string | undefined;
 
   element.disposables.add(
     selectionManager.slots.changed.subscribe(selections => {
@@ -106,7 +109,7 @@ export const getInlineRangeProvider: (
         inlineRange$.peek() === null &&
         (!textSelection ||
           (textSelection.isInSameBlock() &&
-            textSelection.from.blockId !== element.blockId))
+            textSelection.from.blockId !== (blockId ??= element.blockId)))
       )
         return;
       if (!isActiveInEditor(editorHost)) return;

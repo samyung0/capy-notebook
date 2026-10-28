@@ -143,6 +143,12 @@ export class EditorHost extends SignalWatcher(
     this.std.unmount();
   }
 
+  /** Capy (vendor/blocksuite/README.md, local change 7): the host's own
+   * render, without its blocks' and widgets' (`updateComplete`). */
+  get ownUpdateComplete(): Promise<boolean> {
+    return super.getUpdateComplete();
+  }
+
   override async getUpdateComplete(): Promise<boolean> {
     try {
       const result = await super.getUpdateComplete();
