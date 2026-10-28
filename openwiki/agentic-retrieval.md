@@ -2026,11 +2026,13 @@ exists; the local bundle is gone once the first ingest finished.
   and the share resets to 0. Files edited as plain text (txt, code files
   included, md, json, csv and tsv) take a note's rule instead (Epo
   2026-10-27, Q457, Q458; see the text refresh below). The call reads `descriptor_excerpt`: the whole
-  content up to `DESCRIPTOR_INPUT_TOKENS` (8,000 estimated tokens), else the
+  content up to `DESCRIPTOR_INPUT_TOKENS` (4,000 estimated tokens; Epo
+  2026-10-28, down from 8,000 after a blind-graded bench showed equal
+  faithfulness and coverage), else the
   heading outline (halved until it fits 1,200), the opening chunks up to half
   the budget, then the first ~130 tokens of evenly spaced later chunks. A
-  book therefore costs the same as a long chapter (about $0.15 per 1,000
-  files on 2026-10-15 list prices); the change share still measures the whole
+  book therefore costs the same as a long chapter (about $0.19 per 1,000
+  capped files on Reka's 2026-10-28 price); the change share still measures the whole
   document. The estimator counts Latin script with diacritics (Vietnamese)
   at about 1.6× under, so those excerpts run a little over. A regeneration
   that fails keeps the published descriptor with its accumulated share, so the
