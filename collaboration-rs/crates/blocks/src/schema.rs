@@ -185,7 +185,6 @@ pub const FLAVOURS: &[Flavour] = &[
             ("size", Num),
             ("comments", Map),
             ("textAlign", Str),
-            ("widthPercent", Str),
             ("name", Str),
             ("contentType", Str),
         ],
@@ -292,6 +291,31 @@ pub const FLAVOURS: &[Flavour] = &[
         flat: false,
     },
 ];
+
+/// The note column width an image's stored percentage is measured against
+/// while the Plate bridge stands (D21, N8).
+pub const IMAGE_REFERENCE_PX: f64 = 768.0;
+
+/// `"<n>%"` → n, for a plain decimal n.
+pub fn percent(width: &str) -> Option<f64> {
+    let n = width.strip_suffix('%')?;
+    let (int, frac) = n.split_once('.').unwrap_or((n, "0"));
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    (digits(int) && digits(frac))
+        .then(|| n.parse().ok())
+        .flatten()
+}
+
+/// A stored image percentage → pixels against the reference column.
+pub fn percent_to_px(percent: f64) -> i64 {
+    (percent * IMAGE_REFERENCE_PX / 100.0).round() as i64
+}
+
+/// Image pixels → the stored `"<n>%"`, clamped to 20–100.
+pub fn px_to_percent(px: f64) -> String {
+    let percent = (px / IMAGE_REFERENCE_PX * 100.0).round().clamp(20.0, 100.0);
+    format!("{percent}%")
+}
 
 pub fn flavour(name: &str) -> Option<&'static Flavour> {
     FLAVOURS.iter().find(|f| f.name == name)

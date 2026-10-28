@@ -342,8 +342,7 @@ it('stores figures as deep Y types and media with schema defaults', () => {
     rotate: 0,
     size: 1024,
     sourceId: 'asset_every_block_image',
-    width: 0,
-    widthPercent: '60%',
+    width: 461,
     xywh: '[0,0,0,0]',
   });
   expect(json.fx_html.flavour).toBe('capy:html-embed');
@@ -381,6 +380,19 @@ it('seeds an empty value with root, note and one paragraph', () => {
     props: { collapsed: false, text: [], type: 'text' },
     version: 1,
   });
+});
+
+it('keeps image widths in pixels against a 768 px column (D21)', () => {
+  const img = (width: string): MaterialValue => [
+    { children: [{ text: '' }], id: 'im', type: 'img', width },
+  ];
+  expect(valueToBlocks(img('33.3%')).im.props).toMatchObject({
+    height: 0,
+    width: 256,
+  });
+  expect(
+    ['33.3%', '10%', '150%'].map((width) => canonical(img(width))[0])
+  ).toMatchObject([{ width: '33%' }, { width: '20%' }, { width: '100%' }]);
 });
 
 it('orders like fractional-indexing', () => {

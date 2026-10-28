@@ -93,3 +93,20 @@ fn pending_import_is_refused() {
     }]);
     assert!(blocks::state_from_value(value.as_array().unwrap(), 7).is_err());
 }
+
+#[test]
+fn image_widths_are_pixels_against_768() {
+    let img = |width: &str| {
+        vec![json!({"id": "im", "type": "img", "width": width, "children": [{"text": ""}]})]
+    };
+    let state = blocks::state_from_value(&img("33.3%"), 7).unwrap();
+    let doc = common::doc(&state, 99);
+    let blocks = blocks::blocks_json(&doc.transact());
+    assert_eq!(blocks["im"]["props"]["width"], json!(256));
+    assert_eq!(blocks["im"]["props"]["height"], json!(0));
+    let widths: Vec<Value> = ["33.3%", "10%", "150%"]
+        .iter()
+        .map(|w| blocks::canonical(&img(w)).unwrap()[0]["width"].clone())
+        .collect();
+    assert_eq!(widths, [json!("33%"), json!("20%"), json!("100%")]);
+}

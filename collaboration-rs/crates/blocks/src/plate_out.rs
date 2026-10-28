@@ -181,7 +181,12 @@ fn element(block: &Block, depth: usize) -> Result<Value, ProjectionError> {
             if let Some(size) = block.native("size").filter(|s| s.as_f64() >= Some(0.0)) {
                 node.insert("sizeBytes".into(), size.clone());
             }
-            copy(&mut node, block, "widthPercent", "width");
+            if let Some(width) = block.native("width") {
+                let px = width.as_f64().ok_or_else(|| bad(block, "width"))?;
+                if px != 0.0 {
+                    node.insert("width".into(), json!(schema::px_to_percent(px)));
+                }
+            }
             align(&mut node, block);
             caption(&mut node, block);
             indent(&mut node, depth);

@@ -253,6 +253,17 @@ export function orderKey(index: number) {
 // ---------------------------------------------------------------------------
 // Plate value → BlocksJson
 
+/** The note column width an image's stored percentage is measured against
+ * while the Plate bridge stands (D21, N8). */
+const IMAGE_REFERENCE_PX = 768;
+const PERCENT = /^\d+(\.\d+)?%$/;
+
+/** `"<n>%"` → n, for a plain decimal n. */
+function percentOf(width: unknown) {
+  if (typeof width !== 'string' || !PERCENT.test(width)) return;
+  return Number(width.slice(0, -1));
+}
+
 function refuse(type: string, reason: string): never {
   throw new Error(`Cannot convert ${type}: ${reason}`);
 }
@@ -602,7 +613,11 @@ class Writer {
         copy(props, 'sizeBytes', 'size');
         caption(props);
         align(props);
-        copy(props, 'width', 'widthPercent');
+        if (node.width !== undefined) {
+          const percent = percentOf(node.width);
+          if (percent === undefined) refuse(type, 'width is not a percentage');
+          props.width = Math.round((percent * IMAGE_REFERENCE_PX) / 100);
+        }
         copy(props, 'name');
         copy(props, 'contentType');
         break;
@@ -1039,7 +1054,16 @@ class Reader {
         copy('contentType');
         if (typeof props.size === 'number' && props.size >= 0)
           node.sizeBytes = props.size;
-        copy('widthPercent', 'width');
+        if (props.width !== undefined) {
+          if (typeof props.width !== 'number')
+            refuse(block.flavour, `block ${id} has a bad width`);
+          if (props.width !== 0) {
+            const percent = Math.round(
+              (props.width / IMAGE_REFERENCE_PX) * 100
+            );
+            node.width = `${Math.min(100, Math.max(20, percent))}%`;
+          }
+        }
         align();
         caption();
         indent(depth);

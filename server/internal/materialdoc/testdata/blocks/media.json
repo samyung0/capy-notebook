@@ -151,8 +151,7 @@
         "size": 1024,
         "sourceId": "figure:fig_1",
         "textAlign": "center",
-        "width": 0,
-        "widthPercent": "60%",
+        "width": 461,
         "xywh": "[0,0,0,0]"
       }
     },

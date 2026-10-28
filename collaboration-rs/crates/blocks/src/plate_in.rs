@@ -366,7 +366,13 @@ fn block(
             if let Some(align) = text_align(node, ty)? {
                 block.set("textAlign", Prop::Native(json!(align)));
             }
-            copy(&mut block, node, "width", "widthPercent");
+            if let Some(width) = node.get("width") {
+                let px = width
+                    .as_str()
+                    .and_then(schema::percent)
+                    .ok_or_else(|| shape(ty, "width is not a percentage"))?;
+                block.set("width", Prop::Native(json!(schema::percent_to_px(px))));
+            }
             copy(&mut block, node, "name", "name");
             copy(&mut block, node, "contentType", "contentType");
             block
