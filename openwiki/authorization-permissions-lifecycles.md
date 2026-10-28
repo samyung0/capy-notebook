@@ -1489,8 +1489,8 @@ request may have written either one.
 
 Queued upload paths are delayed by a further 24-hour grace, so a late write
 (an import worker's, or a PUT that answered after its 60 s bound) is collected
-rather than appearing after cleanup has already run. Independently, bucket lifecycle rules
-expire `incoming/` and `editor-assets/incoming/` objects after one day. The
+rather than appearing after cleanup has already run. Independently, a bucket lifecycle rule
+expires `incoming/` objects after one day. The
 database sweep repairs quota/accounting state; the bucket rule is the final
 backstop for temporary objects that never obtained a database session.
 
@@ -1511,7 +1511,7 @@ asset row.
 
 Sources: [upload expiry and pruning](../server/internal/store/uploads.go#L202),
 [abandoned-upload test](../server/internal/store/blobs_test.go#L230), and
-[required bucket lifecycle rules](../server/README.md#L30).
+[required bucket lifecycle rules](../server/README.md#bucket-configuration).
 
 ### Logical deletion and the blob reaper
 
@@ -1540,15 +1540,13 @@ failure reason. Claiming advances a five-minute-per-attempt backoff. After eight
 attempts a path is no longer claimed automatically; the monthly report includes
 the count of these undeletable queue entries for operational follow-up.
 
-Backblaze B2 hides overwritten/deleted versions by default, so deployment must
-also apply the configured `daysFromHidingToDeleting` lifecycle rule. Without
-that rule, a successful reaper deletion can leave hidden versions consuming
-bucket storage.
+The user-file bucket is on Cloudflare R2, which keeps no object versions, so a
+successful reaper deletion frees the bytes at once.
 
 Sources: [deletion outbox and reference re-check](../server/internal/store/blobs.go#L9),
 [reaper loop and retry behavior](../server/cmd/api/blob_workers.go#L26),
 [reference-count lifecycle test](../server/internal/store/blobs_test.go#L51), and
-[bucket version requirement](../server/README.md#L30).
+[bucket configuration](../server/README.md#bucket-configuration).
 
 ### Trash
 
@@ -1699,7 +1697,7 @@ The sweep:
 This sweep is intentionally **report-only** today. It does not enqueue or delete
 unrecorded stable objects because a false negative in the database view would
 make an automatic bucket deletion unrecoverable. Temporary incoming prefixes
-are excluded because their one-day bucket lifecycle rule already deletes them.
+(`incoming/`) are excluded because their one-day bucket lifecycle rule already deletes them.
 
 Sources: [orphan sweep policy and schedule](../server/cmd/api/blob_workers.go#L98)
 and [known-path calculation](../server/internal/store/blobs.go#L105).

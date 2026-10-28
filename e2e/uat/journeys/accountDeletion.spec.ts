@@ -69,8 +69,8 @@ async function storage(run: UatRun, userId: string) {
 /**
  * Where each object stands: its database references (`refs`, null once none
  * is left), a queued deletion not yet due (`delayed`: upload paths wait a day
- * so a late PUT is collected, the documented `not_before`) and whether B2
- * still holds a current version (`live`).
+ * so a late PUT is collected, the documented `not_before`) and whether the
+ * bucket still holds the object (`live`).
  */
 async function objects(run: UatRun, keys: string[]) {
   const rows = await run.query<{
@@ -88,11 +88,8 @@ async function objects(run: UatRun, keys: string[]) {
     rows.map(async (row) => ({
       ...row,
       live: (
-        await verify<{ latest: boolean; deleteMarker: boolean }[]>({
-          key: row.key,
-          operation: 'versions',
-        })
-      ).some((version) => version.latest && !version.deleteMarker),
+        await verify<{ live: boolean }>({ key: row.key, operation: 'exists' })
+      ).live,
     }))
   );
 }

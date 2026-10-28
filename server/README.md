@@ -59,7 +59,8 @@ Orval TypeScript bindings. Frontend code imports generated contracts through
 `src/api/types.ts`; the Ops API module is its equivalent boundary for the
 separate dashboard bundle.
 
-Backblaze B2 is required. Set every `B2_*` variable in `deploy/.env`; startup
+A user-file bucket is required: Cloudflare R2, named by the `B2_*` variables
+(the names stay, Q487). Set every `B2_*` variable in `deploy/.env`; startup
 verifies bucket access and exits if those credentials are invalid.
 
 With `MIGRATE=true` (local default), the server applies the migration plan once
@@ -73,16 +74,13 @@ image, then start the API with `MIGRATE=false`.
 
 ### Bucket configuration
 
-Apply `../deploy/b2-lifecycle.prod.json` (or `b2-lifecycle.uat.json` for the
-UAT bucket, which local development shares) to the bucket. Two things depend on
-it:
-
-- The `incoming/` and `editor-assets/incoming/` prefixes expire after a day. A
-  presigned PUT that is never completed is then free, with no code involved, and
-  the orphan sweep can skip those prefixes entirely.
-- Keeping only the last file version stops hidden objects billing forever. B2
-  hides rather than deletes by default, so without a `daysFromHidingToDeleting`
-  rule every object the reaper "deletes" is still charged for.
+Give the bucket the two lifecycle rules in
+[deployment runbook §4](../openwiki/deployment-runbook.md#4-user-file-bucket-cloudflare-r2)
+(local development shares the UAT bucket). The `incoming/`
+prefix expires after a day, so a drive import that is never promoted is then
+free, with no code involved, and the orphan sweep can skip that prefix. R2
+keeps no object versions, so every object the reaper deletes stops billing at
+once.
 
 ### Object lifecycle
 

@@ -77,7 +77,7 @@ class Config:
     )
     redis_url: str = _env("REDIS_URL", "redis://localhost:6379/0")
 
-    # ---- Backblaze B2 blob storage ---------------------------------------
+    # ---- user-file bucket (Cloudflare R2; the B2_* names stay) ------------
     # The Go gateway stores the object key in the job payload. The worker
     # downloads that key to temporary local storage before parsing.
     b2_endpoint: str = _env("B2_ENDPOINT", "")

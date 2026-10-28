@@ -652,6 +652,22 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
       assert.throws(() => loadEnvironment(), /UAT_APP_URL must select/);
     }
     process.env.UAT_APP_URL = environment.UAT_APP_URL;
+    for (const endpoint of [
+      'https://0123456789abcdef.r2.cloudflarestorage.com',
+      'https://0123456789abcdef.eu.r2.cloudflarestorage.com',
+    ]) {
+      process.env.B2_ENDPOINT = endpoint;
+      assert.equal(loadEnvironment().appUrl, environment.UAT_APP_URL);
+    }
+    for (const endpoint of [
+      'http://0123456789abcdef.eu.r2.cloudflarestorage.com',
+      'https://evil-r2.cloudflarestorage.com',
+      'https://s3.amazonaws.com',
+    ]) {
+      process.env.B2_ENDPOINT = endpoint;
+      assert.throws(() => loadEnvironment(), /B2_ENDPOINT must be/);
+    }
+    process.env.B2_ENDPOINT = environment.B2_ENDPOINT;
     writeManifest({
       appUrl: environment.UAT_APP_URL,
       bucket: environment.B2_BUCKET,

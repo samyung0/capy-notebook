@@ -16,16 +16,30 @@ func TestNewB2RequiresB2Configuration(t *testing.T) {
 	}
 }
 
-func TestNewB2RejectsNonB2Endpoint(t *testing.T) {
-	_, err := NewB2(B2Config{
-		Endpoint: "https://s3.amazonaws.com",
-		Region:   "us-east-1",
-		Bucket:   "capy-notebook",
-		KeyID:    "test-key-id",
-		AppKey:   "test-app-key",
-	})
-	if err == nil {
-		t.Fatal("NewB2 accepted a non-B2 endpoint")
+// The user-file bucket moves to R2 (Q474) while the bank buckets stay on B2,
+// so both providers' HTTPS S3 endpoints pass and nothing else does.
+func TestNewB2AcceptsOnlyB2AndR2Endpoints(t *testing.T) {
+	for endpoint, want := range map[string]bool{
+		"https://s3.eu-central-003.backblazeb2.com":            true,
+		"https://0123456789abcdef.r2.cloudflarestorage.com":    true,
+		"https://0123456789abcdef.eu.r2.cloudflarestorage.com": true,
+		"https://s3.amazonaws.com":                             false,
+		"http://0123456789abcdef.eu.r2.cloudflarestorage.com":  false,
+		"https://0123456789abcdef.cloudflarestorage.com":       false,
+		"https://evil-r2.cloudflarestorage.com":                false,
+		"https://r2.cloudflarestorage.com.example.com":         false,
+		"https://example.com/x.r2.cloudflarestorage.com":       false,
+	} {
+		_, err := NewB2(B2Config{
+			Endpoint: endpoint,
+			Region:   "auto",
+			Bucket:   "capy-notebook",
+			KeyID:    "test-key-id",
+			AppKey:   "test-app-key",
+		})
+		if got := err == nil; got != want {
+			t.Errorf("NewB2(%s) accepted = %v, want %v (err %v)", endpoint, got, want, err)
+		}
 	}
 }
 

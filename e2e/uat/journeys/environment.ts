@@ -71,14 +71,19 @@ export function loadEnvironment() {
   if (!/(^|[-_])uat($|[-_])/.test(b2Bucket)) {
     throw new Error('B2_BUCKET must identify a dedicated UAT bucket');
   }
+  // The B2_* settings name the R2 bucket after the move (Q474, Q487); B2 stays
+  // accepted until the B2 UAT bucket is gone.
   const b2Endpoint = configuredURL('B2_ENDPOINT');
   if (
     b2Endpoint.protocol !== 'https:' ||
-    !b2Endpoint.hostname.endsWith('.backblazeb2.com') ||
+    !(
+      b2Endpoint.hostname.endsWith('.backblazeb2.com') ||
+      b2Endpoint.hostname.endsWith('.r2.cloudflarestorage.com')
+    ) ||
     b2Endpoint.username ||
     b2Endpoint.password
   ) {
-    throw new Error('B2_ENDPOINT must be an HTTPS Backblaze endpoint');
+    throw new Error('B2_ENDPOINT must be an HTTPS B2 or R2 endpoint');
   }
   const sentryBaseUrl = configuredURL('UAT_SENTRY_URL');
   if (

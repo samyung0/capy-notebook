@@ -9,8 +9,8 @@
 #               schema the Go migrations own, so the stock pgvector image is
 #               enough — no custom build, no Apache AGE.
 # - redis     : pub/sub bus for live ingest progress (worker -> server -> SSE).
-# - server    : Go gateway (the frontend's /api). Writes uploads to Backblaze
-#               B2, subscribes to Redis and fans progress out over SSE.
+# - server    : Go gateway (the frontend's /api). Writes uploads to the R2
+#               bucket, subscribes to Redis and fans progress out over SSE.
 # - worker    : Legacy opt-in app-host worker for direct-route debugging only.
 #               Normal local ingest runs on the Netcup non-production stack so
 #               document parsing shares a real local volume with the parser.
@@ -138,7 +138,7 @@ services:
       # Production serving API should be false; run /migrate from this image first.
       MIGRATE: "true"
       SENTRY_DSN: ${SENTRY_DSN_GATEWAY:-}
-      # Backblaze B2 source-object storage.
+      # The user-file bucket (Cloudflare R2; the B2_* names stay).
       B2_ENDPOINT: ${B2_ENDPOINT:-}
       B2_REGION: ${B2_REGION:-}
       B2_BUCKET: ${B2_BUCKET:-}
@@ -267,7 +267,7 @@ services:
       <<: *observability
       DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable
       SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
-      # Backblaze B2 source-object storage.
+      # The user-file bucket (Cloudflare R2; the B2_* names stay).
       B2_ENDPOINT: ${B2_ENDPOINT:-}
       B2_REGION: ${B2_REGION:-}
       B2_BUCKET: ${B2_BUCKET:-}
