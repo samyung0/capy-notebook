@@ -8157,7 +8157,7 @@ async fn gateway_post(
     }
     if gateway
         .conflicts
-        .fetch_update(
+        .try_update(
             std::sync::atomic::Ordering::Relaxed,
             std::sync::atomic::Ordering::Relaxed,
             |left| left.checked_sub(1),

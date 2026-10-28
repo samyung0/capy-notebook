@@ -126,7 +126,7 @@ def _source_ctx(monkeypatch) -> ToolContext:
 async def test_an_inspected_source_holds_its_lines_in_a_block(monkeypatch):
     ctx = _source_ctx(monkeypatch)
 
-    async def _read(_path, _payload, _failure):
+    async def _read(_path, _payload, _failure, _not_found=""):
         return {
             "format": "text",
             "title": "a.md",
