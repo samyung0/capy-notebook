@@ -221,8 +221,8 @@ Both carry the peer's colour and its label from the [room
 presence](#room-presence), never from its awareness: the colour is
 `--remote-cursor: var(--peer-<n>)`, n the connection's person number modulo 8,
 so every co-editor sees a person in the same colour (Epo 2026-10-28; the
-cursors design's eight colours, a light and a dark shade, set on
-`.note-editor` and `.dark .note-editor`), and the label is the verified name
+cursors design's eight colours, a light and a dark shade, set on `:root`
+and `.dark` in `tailwind.css`), and the label is the verified name
 it gives the client id (a listed connection without a name reads
 "Collaborator"); a client the presence does not list yet is not drawn. The
 `.note-editor` stylesheet paints them: the tint through `color-mix` and the
@@ -349,8 +349,10 @@ caret replaces slate-yjs's `sendCursorPosition`,
 inside the 50 ms throttle (`sendCaret`, `cursorThrottle.ts`). The pointer
 (`sendPointer`, mouse and pen only) names the innermost block under it by its
 stable `data-block-id` and x and y as 0–1000 of its box, at most every 50 ms,
-and `p: null` when it leaves the editor; an id the room would refuse goes as
-null. `BlockSelectionPresence` folds `BlockSelectionPlugin`'s selected ids
+and `p: null` when it leaves the editor, the page scrolls (a still pointer
+fires no pointermove, so it would name a block it left) or the tab is hidden
+or the window blurred, until it moves again; an id the room would refuse goes
+as null. `BlockSelectionPresence` folds `BlockSelectionPlugin`'s selected ids
 into runs of adjacent siblings in document order (`blockRuns`), at most 16,
 none past that.
 
@@ -359,27 +361,33 @@ picked from the mocks (2026-10-28, capy-harness
 2026-10-28-followups/presence-mocks, P1 and B3): a pointer is hugeicons
 Cursor02Icon (`pointer` in `Icon.tsx`) filled with the peer's colour, its
 tip at x and y of the block's box, with the name in a pill below and right
-of it (left of it within 96 px of the editor's right edge); a block
+of it (left of it within 142 px of the editor's right edge, the widest pill
+and its gap); a block
 selection is a 2 px outline 4 px outside each run, from its first block's
 top to its last block's bottom, its corners half the theme's
 `--radius-button` (capy 4 px, fisheye 6 px, notion 3 px), with the name in a
-flag at its top right. Both use `--peer-<n>` and `--peer-fg` (white on the
+flag at its top right. A name past 128 px is cut with an ellipsis, in the pill
+and the flag. Both use `--peer-<n>` and `--peer-fg` (white on the
 light shades, #11111b on the dark), and a block the note does not render
 draws nothing. They sit in an overlay in the editor's container, so they
-scroll with the note; it lays out (`placeMarks`) at most once a frame when a
-peer's presence (not this tab's), the room's presence or the note's size
-changes, and never re-renders the editor.
+scroll with the note; it lays out at most once a frame and never re-renders
+the editor. A peer's marks are placed again (`placeMarks`) only when its
+pointer, runs, name or colour change, not on its caret moves; every peer's
+when the room's presence, the note's size or the document changes (an edit
+can move a block without resizing the note). Marks find their blocks through
+`blockIndex`, a map of the note's `data-block-id` elements filled in one pass
+and filled again only when an id has no live element, at most once a layout,
+instead of a search of the note per mark (review P1, 2026-10-28: on the 2 MB
+load-test note at CPU x4 a co-editor's caret move cost the marks about 46 ms
+and a pointer move about 70 ms before, nothing and about 38 ms after).
 
-The editor settings dialog's switch "Show others' pointers and presence"
-(`showOthers` in `noteEditorPrefs.ts`, a device setting, on by default; Epo
-2026-10-28) decides only what this device draws: off, notes draw no
-co-editor carets, selections, pointers or block selections and Office
-files no cursors (`createOfficeCursors` sends the frame no peers); the
-header's avatar group stays, and every tab keeps sending its own presence.
-Office files have the same setting as "Show others' cursors" in the file
-header's ⋮ menu (mock O1): a `Menu` item with `switched`, a switch at the
-row's end, `menuitemcheckbox` with `aria-checked`, that keeps the menu
-open.
+One switch, "Show others' cursors" in Settings › Customizations › Editor
+(`EditorSection`, below Chat; `showOthers` in `noteEditorPrefs.ts`, a device
+setting, on by default; Epo 2026-10-28, Q542), decides only what this device
+draws, in every document type: off, notes draw no co-editor carets,
+selections, pointers or block selections and Office files no cursors
+(`createOfficeCursors` sends the frame no peers); the header's avatar group
+stays, and every tab keeps sending its own presence.
 
 ### Office cursors
 

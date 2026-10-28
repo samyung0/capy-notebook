@@ -236,7 +236,8 @@ export function pointerOn(
 /**
  * Sends this tab's pointer over the note (Epo 2026-10-28): the innermost
  * block under it, x and y as 0–1000 of that block's box, at most every
- * 50 ms; null once it leaves. A mouse or pen only: a touch is no pointer
+ * 50 ms; null once it leaves, the page scrolls or the tab or window loses
+ * focus. A mouse or pen only: a touch is no pointer
  * (co-editors' mouse pointers, Epo 2026-10-20). Returns the undo.
  */
 export function sendPointer(
@@ -262,12 +263,26 @@ export function sendPointer(
     pointer.cancel();
     setNotePresence(awareness, { p: null });
   };
+  // A scroll moves the blocks under a still pointer and fires no pointermove,
+  // and a tab or window switch leaves it where it was: the pointer is dropped
+  // until it moves again (review E3).
+  const page = root.ownerDocument;
+  const view = page.defaultView;
+  const hidden = () => {
+    if (page.hidden) leave();
+  };
   root.addEventListener('pointermove', move, { passive: true });
   root.addEventListener('pointerleave', leave);
+  page.addEventListener('scroll', leave, { capture: true, passive: true });
+  page.addEventListener('visibilitychange', hidden);
+  view?.addEventListener('blur', leave);
   return () => {
     pointer.cancel();
     root.removeEventListener('pointermove', move);
     root.removeEventListener('pointerleave', leave);
+    page.removeEventListener('scroll', leave, { capture: true });
+    page.removeEventListener('visibilitychange', hidden);
+    view?.removeEventListener('blur', leave);
   };
 }
 

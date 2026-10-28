@@ -145,9 +145,16 @@ describe('block selection runs', () => {
   });
 });
 
+/** A page: a document that can be hidden, and its window. */
+class Page extends EventTarget {
+  defaultView = new EventTarget();
+  hidden = false;
+}
+
 /** A block under the pointer: 200 × 100 at (100, 50). */
 class Block extends EventTarget {
   dataset = { blockId: 'b1' };
+  ownerDocument = new Page();
   closest() {
     return this;
   }
@@ -188,4 +195,39 @@ it('sends the pointer as 0–1000 of its block, at most every 50 ms, and null on
   stop();
   root.dispatchEvent(pointerEvent('pointermove', 150, 75));
   expect(pointer()).toBeNull();
+});
+
+/** Review E3: a scroll, a hidden tab or a blurred window drops the pointer
+ * until it moves again, so co-editors never see it on a block it left. */
+it('drops the pointer on a scroll, a hidden tab or a blurred window', () => {
+  vi.useFakeTimers();
+  const awareness = new Awareness(new Y.Doc());
+  const root = new Block();
+  const page = root.ownerDocument;
+  const stop = sendPointer(root as unknown as HTMLElement, awareness);
+  const pointer = () => awareness.getLocalState()?.p;
+  const moveThen = (drop: () => void) => {
+    vi.advanceTimersByTime(50);
+    root.dispatchEvent(pointerEvent('pointermove', 150, 75));
+    expect(pointer()).toEqual(['b1', 250, 250]);
+    drop();
+    expect(pointer()).toBeNull();
+  };
+  moveThen(() => page.dispatchEvent(new Event('scroll')));
+  moveThen(() => page.defaultView.dispatchEvent(new Event('blur')));
+  vi.advanceTimersByTime(50);
+  root.dispatchEvent(pointerEvent('pointermove', 150, 75));
+  // A tab shown again is no reason to drop it.
+  page.dispatchEvent(new Event('visibilitychange'));
+  expect(pointer()).toEqual(['b1', 250, 250]);
+  page.hidden = true;
+  page.dispatchEvent(new Event('visibilitychange'));
+  expect(pointer()).toBeNull();
+  page.hidden = false;
+  stop();
+  vi.advanceTimersByTime(50);
+  awareness.setLocalStateField('p', ['b1', 1, 1]);
+  page.dispatchEvent(new Event('scroll'));
+  page.defaultView.dispatchEvent(new Event('blur'));
+  expect(pointer()).toEqual(['b1', 1, 1]);
 });

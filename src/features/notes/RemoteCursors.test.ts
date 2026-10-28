@@ -16,6 +16,7 @@ import {
 import { InlineEquationPlugin } from './equationPlugins';
 import { sendCaret } from './notePresence';
 import {
+  blockIndex,
   placeMarks,
   readPeerMarks,
   readRemotePeers,
@@ -230,22 +231,39 @@ const box = (left: number, top: number, width: number, height: number) => ({
   }),
 });
 
+/** A rendered block `id` with its box. */
+const block = (id: string, ...at: Parameters<typeof box>) => ({
+  ...box(...at),
+  getAttribute: () => id,
+  isConnected: true,
+});
+
+/** A note root holding `blocks`, counting its passes over them. */
+const noteRoot = (blocks: ReturnType<typeof block>[]) => {
+  const root = {
+    blocks,
+    passes: 0,
+    querySelectorAll: () => {
+      root.passes += 1;
+      return root.blocks;
+    },
+  };
+  return root;
+};
+
 /** Epo 2026-10-28 (mocks P1, B3): a peer's pointer lands at its 0–1000 share
  * of its block's box, a run spans its first block's top to its last's bottom,
  * both in the overlay's coordinates, coloured and named from the presence;
  * a block that is not rendered draws nothing, and a state outside the field
- * list draws nothing either. */
+ * list or a client the presence does not list draws nothing either. */
 it("places peers' pointers and block runs in their blocks", () => {
-  Object.assign(globalThis, { CSS: { escape: (id: string) => id } });
-  const blocks = new Map([
-    ['a', box(110, 70, 400, 30)],
-    ['b', box(110, 100, 400, 60)],
-  ]);
-  const root = {
-    querySelector: (selector: string) =>
-      blocks.get(selector.slice('[data-block-id="'.length, -2)) ?? null,
-  };
-  const overlay = box(100, 50, 450, 900);
+  const blocks = blockIndex(
+    noteRoot([
+      block('a', 110, 70, 400, 30),
+      block('b', 110, 100, 400, 60),
+    ]) as never
+  );
+  const origin = box(100, 50, 450, 900).getBoundingClientRect();
   const awareness = new Awareness(new Y.Doc());
   const peer = new Awareness(new Y.Doc());
   const relay = (state: Record<string, unknown>) => {
@@ -259,12 +277,12 @@ it("places peers' pointers and block runs in their blocks", () => {
   const clients = presenceClients([
     { avatar: null, clients: [peer.clientID], name: 'Ann', person: 9 },
   ]);
-  const marks = () =>
-    placeMarks(
-      overlay as never,
-      root as never,
-      readPeerMarks(awareness, clients)
-    );
+  const marks = () => {
+    const marked = readPeerMarks(awareness, clients, peer.clientID);
+    return marked
+      ? placeMarks(origin as never, blocks.find, peer.clientID, marked)
+      : [];
+  };
 
   relay({
     b: [
@@ -277,6 +295,7 @@ it("places peers' pointers and block runs in their blocks", () => {
     expect.objectContaining({
       color: 1,
       flip: false,
+      key: `${peer.clientID}:p`,
       kind: 'pointer',
       left: 210,
       name: 'Ann',
@@ -291,12 +310,38 @@ it("places peers' pointers and block runs in their blocks", () => {
       width: 400,
     }),
   ]);
-  // Near the overlay's right edge the name goes on the pointer's left.
+  // Near the overlay's right edge, where its longest name would not fit, the
+  // name goes on the pointer's left.
   relay({ p: ['b', 1000, 0] });
   expect(marks()).toEqual([expect.objectContaining({ flip: true })]);
   relay({ p: ['gone', 500, 500] });
   expect(marks()).toEqual([]);
   relay({ data: { color: 'red' }, p: ['b', 500, 500] });
   expect(marks()).toEqual([]);
-  expect(readPeerMarks(awareness, new Map())).toEqual([]);
+  relay({ p: ['b', 500, 500] });
+  expect(readPeerMarks(awareness, clients, peer.clientID)).toBeDefined();
+  expect(readPeerMarks(awareness, new Map(), peer.clientID)).toBeUndefined();
+});
+
+/** A mark finds its block without searching the note (review P1): one pass
+ * fills the index, and an id it holds no live element for runs it again at
+ * most once per layout. */
+it('finds blocks through an index filled once per layout at most', () => {
+  const root = noteRoot([block('a', 0, 0, 10, 10)]);
+  const blocks = blockIndex(root as never);
+  expect(blocks.find('a')).toBe(root.blocks[0]);
+  expect(blocks.find('a')).toBe(root.blocks[0]);
+  expect(blocks.find('gone')).toBeUndefined();
+  expect(blocks.find('gone')).toBeUndefined();
+  expect(root.passes).toBe(1);
+  blocks.next();
+  expect(blocks.find('a')).toBe(root.blocks[0]);
+  expect(root.passes).toBe(1);
+  // A block rendered again: the old element left the note.
+  root.blocks[0].isConnected = false;
+  const again = block('a', 0, 20, 10, 10);
+  root.blocks = [again];
+  blocks.next();
+  expect(blocks.find('a')).toBe(again);
+  expect(root.passes).toBe(2);
 });

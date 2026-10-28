@@ -187,8 +187,9 @@ mod tests {
             r#"{"data":{"color":"url(https://x)"},"selection":null}"#
         ));
         // An escaped key is the key a browser reads (REVIEW5 R1).
-        assert!(!ok(r#"{"data":1}"#));
-        assert!(ok(r#"{"s":"AA=="}"#));
+        assert!(!ok(r#"{"d\u0061ta":1}"#));
+        assert!(ok(r#"{"\u0073":"AA=="}"#));
+        assert!(!Fields::Note { uploads: false }.admit(r#"{"upl\u006fads":[]}"#));
         // An unpaired surrogate serde_json refuses (REVIEW5 R1b), and JSON
         // that is not an object.
         assert!(!ok(r#"{"s":"AA","x":"\ud800"}"#));

@@ -13,7 +13,6 @@ import {
 } from './DropdownMenu';
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './IconButton';
-import { Switch } from './Switch';
 
 const menuItemVariants = cva(
   cn(
@@ -61,9 +60,6 @@ export interface MenuItem {
   onClick?: () => void;
   /** A line above the item, between two groups. */
   separated?: boolean;
-  /** A setting the item turns on and off: a switch at the row's end, and
-   * the menu stays open (the Office ⋮ menu's show-others, Epo 2026-10-28). */
-  switched?: boolean;
   /** Something needs the user's attention, short of danger. */
   warning?: boolean;
 }
@@ -157,13 +153,9 @@ export function Menu({
                     setArmed(it.label);
                     return;
                   }
-                  if (it.closeOnSelect === false || it.switched !== undefined)
-                    event.preventDefault();
+                  if (it.closeOnSelect === false) event.preventDefault();
                   it.onClick?.();
                 }}
-                {...(it.switched === undefined
-                  ? {}
-                  : { 'aria-checked': it.switched, role: 'menuitemcheckbox' })}
               >
                 {it.icon && (
                   <span className="relative inline-flex shrink-0 -translate-y-px">
@@ -204,15 +196,6 @@ export function Menu({
                 </span>
                 {it.checked && (
                   <Icon className="ml-auto -translate-y-px" name="check" />
-                )}
-                {it.switched !== undefined && (
-                  <Switch
-                    aria-hidden="true"
-                    checked={it.switched}
-                    className="pointer-events-none ml-auto"
-                    size="sm"
-                    tabIndex={-1}
-                  />
                 )}
               </DropdownMenuItem>
             </Fragment>

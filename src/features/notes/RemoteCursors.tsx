@@ -299,80 +299,110 @@ const NO_MARKS: Mark[] = [];
 /** The pointer's tip sits 3.2 units into Cursor02Icon's 24-unit box. */
 const POINTER_SIZE = 18;
 const POINTER_TIP = (3.2 / 24) * POINTER_SIZE;
-/** A pointer this close to the overlay's right edge puts its name on its
- * left, as a caret's flag flips (cursors design SPEC.md). */
-const FLIP_WITHIN = 96;
+/** A name pill is at most 128 px wide (`max-w-32`, then truncated) and starts
+ * 14 px from the tip, so a pointer this close to the overlay's right edge puts
+ * it on its left, as a caret's flag flips (cursors design SPEC.md). */
+const FLIP_WITHIN = 14 + 128;
 /** The outline stands this far outside its blocks. */
 const RUN_OUTSET = 4;
 
+/** `client`'s pointer and block runs, from a state the note's field list
+ * admits, when the room's presence lists it; none when it shows neither. */
 export function readPeerMarks(
   awareness: Awareness,
-  clients: ReadonlyMap<number, PresenceConnection>
-): PeerMarks[] {
-  const peers: PeerMarks[] = [];
-  for (const [client, state] of awareness.getStates()) {
-    const connection = clients.get(client);
-    if (client === awareness.clientID || !connection) continue;
-    const presence = readNotePresence(state);
-    if (presence?.p || presence?.b)
-      peers.push({
-        b: presence.b,
-        color: connection.person % PEER_COLORS,
-        name: connection.name ?? m.editor_collaborator(),
-        p: presence.p,
-      });
-  }
-  return peers;
+  clients: ReadonlyMap<number, PresenceConnection>,
+  client: number
+): PeerMarks | undefined {
+  const connection = clients.get(client);
+  if (client === awareness.clientID || !connection) return;
+  const presence = readNotePresence(awareness.getStates().get(client));
+  if (!(presence?.p || presence?.b)) return;
+  return {
+    b: presence.b,
+    color: connection.person % PEER_COLORS,
+    name: connection.name ?? m.editor_collaborator(),
+    p: presence.p,
+  };
 }
 
 /**
- * Where each peer's pointer and block runs go, relative to `overlay`: a
- * pointer at its x and y (0–1000) of its block's box, a run from its first
- * block's top to its last block's bottom. A block `root` does not render
- * draws nothing.
+ * The note's rendered blocks by `data-block-id`, so a mark finds its block
+ * without searching the note. One pass over the note fills it; an id with no
+ * live element there (a block rendered since) runs the pass again, at most
+ * once between two `next()` calls (one per layout).
+ */
+export function blockIndex(root: ParentNode) {
+  const blocks = new Map<string, Element>();
+  let filled = false;
+  const fill = () => {
+    filled = true;
+    blocks.clear();
+    for (const block of root.querySelectorAll('[data-block-id]')) {
+      const id = block.getAttribute('data-block-id');
+      // The first in document order, as `querySelector` finds it.
+      if (id && !blocks.has(id)) blocks.set(id, block);
+    }
+  };
+  const live = (id: string) => {
+    const block = blocks.get(id);
+    return block?.isConnected && block.getAttribute('data-block-id') === id
+      ? block
+      : undefined;
+  };
+  return {
+    find(id: string) {
+      const block = live(id);
+      if (block || filled) return block;
+      fill();
+      return live(id);
+    },
+    next() {
+      filled = false;
+    },
+  };
+}
+
+/**
+ * Where a peer's pointer and block runs go, relative to the overlay's box
+ * `origin`: a pointer at its x and y (0–1000) of its block's box, a run from
+ * its first block's top to its last block's bottom. A block the note does not
+ * render draws nothing.
  */
 export function placeMarks(
-  overlay: Element,
-  root: ParentNode,
-  peers: PeerMarks[]
+  origin: DOMRect,
+  find: (id: string) => Element | undefined,
+  client: number,
+  { b, color, name, p }: PeerMarks
 ): Mark[] {
-  if (peers.length === 0) return NO_MARKS;
-  const origin = overlay.getBoundingClientRect();
-  const box = (id: string) =>
-    root
-      .querySelector(`[data-block-id="${CSS.escape(id)}"]`)
-      ?.getBoundingClientRect();
   const marks: Mark[] = [];
-  peers.forEach(({ b, color, name, p }, peer) => {
-    const block = p && box(p[0]);
-    if (p && block) {
-      const left = block.left - origin.left + (p[1] / 1000) * block.width;
-      marks.push({
-        color,
-        flip: left > origin.width - FLIP_WITHIN,
-        key: `${peer}:p`,
-        kind: 'pointer',
-        left,
-        name,
-        top: block.top - origin.top + (p[2] / 1000) * block.height,
-      });
-    }
-    b?.forEach(([firstId, lastId], run) => {
-      const first = box(firstId);
-      const last = box(lastId);
-      if (!(first && last)) return;
-      const left = Math.min(first.left, last.left) - origin.left;
-      const top = Math.min(first.top, last.top) - origin.top;
-      marks.push({
-        color,
-        height: Math.max(first.bottom, last.bottom) - origin.top - top,
-        key: `${peer}:b${run}`,
-        kind: 'run',
-        left,
-        name,
-        top,
-        width: Math.max(first.right, last.right) - origin.left - left,
-      });
+  const block = p && find(p[0])?.getBoundingClientRect();
+  if (p && block) {
+    const left = block.left - origin.left + (p[1] / 1000) * block.width;
+    marks.push({
+      color,
+      flip: left > origin.width - FLIP_WITHIN,
+      key: `${client}:p`,
+      kind: 'pointer',
+      left,
+      name,
+      top: block.top - origin.top + (p[2] / 1000) * block.height,
+    });
+  }
+  b?.forEach(([firstId, lastId], run) => {
+    const first = find(firstId)?.getBoundingClientRect();
+    const last = find(lastId)?.getBoundingClientRect();
+    if (!(first && last)) return;
+    const left = Math.min(first.left, last.left) - origin.left;
+    const top = Math.min(first.top, last.top) - origin.top;
+    marks.push({
+      color,
+      height: Math.max(first.bottom, last.bottom) - origin.top - top,
+      key: `${client}:b${run}`,
+      kind: 'run',
+      left,
+      name,
+      top,
+      width: Math.max(first.right, last.right) - origin.left - left,
     });
   });
   return marks;
@@ -388,9 +418,10 @@ const sameMarks = (left: Mark[], right: Mark[]) =>
  * a pill beside it; a block selection is an outline around each run, its
  * corners the theme's (half its button radius), with the name at its top
  * right. An overlay in the editor's container, so it scrolls with the note;
- * it lays out once per frame when a peer's presence, the room's presence or
- * the note's size changes, and never re-renders the editor. Nothing with
- * the show-others switch off.
+ * it lays out at most once per frame and never re-renders the editor: a peer
+ * again when its pointer or runs change (not on a caret move), every peer
+ * when the room's presence, the note's size or the document changes. Nothing
+ * with the show-others switch off.
  */
 export function RemotePresenceMarks({ presence }: { presence: PresenceStore }) {
   const editor = useEditorRef();
@@ -406,39 +437,74 @@ export function RemotePresenceMarks({ presence }: { presence: PresenceStore }) {
       return;
     }
     let clients = presenceClients(presence.getState().connections);
+    const blocks = blockIndex(root);
+    // Each peer's marks and the presence they were placed from: a peer whose
+    // pointer, runs, name and colour are unchanged (a caret move) keeps them.
+    const placed = new Map<number, { from: string; marks: Mark[] }>();
+    const changed = new Set<number>();
+    let every = true;
     let frame = 0;
     const layout = () => {
       frame = 0;
-      const next = placeMarks(box, root, readPeerMarks(awareness, clients));
+      blocks.next();
+      const peers = every
+        ? new Set([...placed.keys(), ...awareness.getStates().keys()])
+        : changed;
+      let origin: DOMRect | undefined;
+      let moved = false;
+      for (const client of peers) {
+        const peer = readPeerMarks(awareness, clients, client);
+        if (!peer) {
+          moved = placed.delete(client) || moved;
+          continue;
+        }
+        const from = JSON.stringify(peer);
+        if (!every && placed.get(client)?.from === from) continue;
+        origin ??= box.getBoundingClientRect();
+        placed.set(client, {
+          from,
+          marks: placeMarks(origin, blocks.find, client, peer),
+        });
+        moved = true;
+      }
+      every = false;
+      changed.clear();
+      if (!moved) return;
+      const next = [...placed.values()].flatMap((peer) => peer.marks);
       setMarks((previous) => (sameMarks(previous, next) ? previous : next));
     };
     const schedule = () => {
       frame ||= requestAnimationFrame(layout);
     };
+    // Every mark moves with the note's layout and the room's names.
+    const relayout = () => {
+      every = true;
+      schedule();
+    };
     // This tab's own pointer moves change nothing here.
-    const changed = ({
+    const update = ({
       added,
       removed,
       updated,
     }: Record<'added' | 'removed' | 'updated', number[]>) => {
-      if (
-        [...added, ...updated, ...removed].some(
-          (id) => id !== awareness.clientID
-        )
-      )
-        schedule();
+      for (const client of [...added, ...updated, ...removed])
+        if (client !== awareness.clientID) changed.add(client);
+      if (changed.size > 0) schedule();
     };
-    schedule();
-    awareness.on('change', changed);
+    relayout();
+    awareness.on('change', update);
+    // An edit can move blocks without resizing the note (a dragged block).
+    awareness.doc.on('update', relayout);
     const unsubscribe = presence.subscribe(({ connections }) => {
       clients = presenceClients(connections);
-      schedule();
+      relayout();
     });
-    const resized = new ResizeObserver(schedule);
+    const resized = new ResizeObserver(relayout);
     resized.observe(root);
     return () => {
       cancelAnimationFrame(frame);
-      awareness.off('change', changed);
+      awareness.off('change', update);
+      awareness.doc.off('update', relayout);
       unsubscribe();
       resized.disconnect();
     };
@@ -472,7 +538,7 @@ export function RemotePresenceMarks({ presence }: { presence: PresenceStore }) {
             />
             <span
               className={cn(
-                'absolute top-3.5 whitespace-nowrap rounded-[6px] bg-(--peer) px-[7px] font-bold text-(--peer-fg) text-[12.5px] leading-[21px]',
+                'absolute top-3.5 max-w-32 truncate rounded-[6px] bg-(--peer) px-[7px] font-bold text-(--peer-fg) text-[12.5px] leading-[21px]',
                 mark.flip ? 'right-3.5' : 'left-3.5'
               )}
             >
@@ -494,7 +560,7 @@ export function RemotePresenceMarks({ presence }: { presence: PresenceStore }) {
               } as CSSProperties
             }
           >
-            <span className="absolute -top-[11px] right-1.5 whitespace-nowrap rounded-[6px] bg-(--peer) px-[7px] font-bold text-(--peer-fg) text-[12.5px] leading-[21px]">
+            <span className="absolute -top-[11px] right-1.5 max-w-32 truncate rounded-[6px] bg-(--peer) px-[7px] font-bold text-(--peer-fg) text-[12.5px] leading-[21px]">
               {mark.name}
             </span>
           </span>

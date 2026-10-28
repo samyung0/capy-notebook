@@ -41,8 +41,6 @@ export function EditorSettingsDialog() {
   const setDisplayWidth = useNoteEditorPrefs((state) => state.setDisplayWidth);
   const mermaidTheme = useNoteEditorPrefs((state) => state.mermaidTheme);
   const setMermaidTheme = useNoteEditorPrefs((state) => state.setMermaidTheme);
-  const showOthers = useNoteEditorPrefs((state) => state.showOthers);
-  const setShowOthers = useNoteEditorPrefs((state) => state.setShowOthers);
   const { style } = useTheme();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('general');
@@ -54,7 +52,6 @@ export function EditorSettingsDialog() {
       enabled,
       mermaidTheme,
       noteFont: currentNoteFont(style),
-      showOthers,
     },
   });
 
@@ -65,7 +62,6 @@ export function EditorSettingsDialog() {
         enabled,
         mermaidTheme,
         noteFont: currentNoteFont(style),
-        showOthers,
       });
       setTab('general');
     }
@@ -102,7 +98,6 @@ export function EditorSettingsDialog() {
             setEnabled(draft.enabled);
             setDisplayWidth(draft.displayWidth);
             setMermaidTheme(draft.mermaidTheme);
-            setShowOthers(draft.showOthers);
             // An unchanged font stays unpicked, so it keeps following the style.
             if (draft.noteFont !== currentNoteFont(style))
               setNoteFont(draft.noteFont);
@@ -227,27 +222,6 @@ export function EditorSettingsDialog() {
                           ))}
                         </SelectContent>
                       </Select>
-                    )}
-                  />
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <label
-                    className="min-w-0 font-semibold"
-                    htmlFor="note-show-others"
-                  >
-                    {m.editor_prefs_show_others()}
-                  </label>
-                  <Controller
-                    control={control}
-                    name="showOthers"
-                    render={({ field }) => (
-                      <Switch
-                        checked={field.value}
-                        id="note-show-others"
-                        onBlur={field.onBlur}
-                        onCheckedChange={field.onChange}
-                        ref={field.ref}
-                      />
                     )}
                   />
                 </div>

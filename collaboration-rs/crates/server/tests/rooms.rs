@@ -10165,7 +10165,7 @@ async fn a_read_channel_receives_no_user_id() {
 /// Security regression (REVIEW5 E2, R1, R1b; Epo 2026-10-28): a read-only
 /// channel cannot show blocks as uploading to editors: `uploads` is not a
 /// field its presence may hold, so a state naming it is dropped whole, even
-/// under an escaped key (`uploads`, which a peer's JSON.parse reads as
+/// under an escaped key (`upl\u006fads`, which a peer's JSON.parse reads as
 /// `uploads`) or holding an unpaired surrogate escape, which serde_json
 /// refuses and JSON.parse takes (R1b); its caret alone goes through, and a
 /// writer's list does. Fails if a read-only channel's uploads reach a peer.
@@ -10190,7 +10190,7 @@ async fn a_read_only_channel_names_no_uploads_in_presence() {
     // Each one checked on its own (a flush sends a client's latest state).
     let dropped = [
         uploading,
-        r#"{"s":"AA==","uploads":["block-b"]}"#,
+        r#"{"s":"AA==","upl\u006fads":["block-b"]}"#,
         r#"{"s":"AA==","uploads":["\ud800"]}"#,
     ];
     for (clock, state) in (1..).zip(dropped) {
