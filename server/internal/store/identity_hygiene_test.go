@@ -176,6 +176,32 @@ func TestMemberMutationsRefuseAnEmptyActor(t *testing.T) {
 	}
 }
 
+// Security regression: a member leaves by removing its own row (Epo
+// 2026-10-28), but its own role stays the owner's to change.
+func TestAMemberLeavesButCannotChangeItsOwnRole(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_own_role_owner")
+	member := newBlobTestUser(t, s, "u_own_role_member")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Own role", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role)
+		VALUES ($1,$2,'viewer')`, ws.ID, member); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetWorkspaceMemberRole(ctx, member, ws.ID, member, RoleEditor); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("own role change=%v, want forbidden", err)
+	}
+	if role, err := s.WorkspaceRole(ctx, member, ws.ID); err != nil || role != RoleViewer {
+		t.Fatalf("member role=%q, %v; want viewer", role, err)
+	}
+	if err := s.RemoveWorkspaceMember(ctx, member, ws.ID, member); err != nil {
+		t.Fatalf("leave: %v", err)
+	}
+}
+
 // Security regression: the raw invite token is never stored in
 // email_outbox.payload; the dispatcher mints it when it sends.
 func TestInviteEmailTokenIsMintedAtSend(t *testing.T) {
