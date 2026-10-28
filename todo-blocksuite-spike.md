@@ -670,13 +670,16 @@ Legend:
 ## Held (not scheduled)
 
 - **Copy a chat answer into a note** (Epo, 2026-10-28). Built for Plate by the
-  "Copy-paste chat answer to note" session (`0ecbade1b` on
-  `wip/mac-ui-2026-10-28`, not on main yet). Copying inside one chat answer
+  "Copy-paste chat answer to note" session (`293738a21` once on main,
+  waiting on Epo's push sign-off). Copying inside one chat answer
   writes `application/x-capy-answer` (`answerClipboard.ts`): JSON
   `[{md, callout?}]` of plain note Markdown with our chart, plot and
   html-embed fences. Plate's `ChatAnswerPastePlugin` (`pastePlugins.ts`)
   converts each `md` without MDX and wraps callouts.
-  **BlockSuite parity:** the D17 clipboard adapter reads the same type.
+  **BlockSuite parity:** the D17 clipboard adapter reads the same type,
+  importing its type from `answerClipboard.ts` so the compiler flags drift.
+  There's no version field: the producer and both readers ship together, and a
+  shape change updates every reader in the same commit.
   - Each `md` goes through our converter (plain) and then
     `layout.ts`'s Plate-to-blocks step while the bridge stands, and directly
     to block JSON after D11.
