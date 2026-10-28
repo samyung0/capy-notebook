@@ -77,7 +77,7 @@ function uniqueEmail(run: UatRun, label: string) {
   return `${local}@${run.env.actorEmailDomain}`;
 }
 
-async function actorContext(run: UatRun, browser: Browser) {
+async function actorContext(run: UatRun, browser: Browser, label: string) {
   const { env } = run;
   const client = createClerkClient({ secretKey: env.clerkSecretKey });
   const encodedHost = env.clerkPublishableKey.replace(/^pk_(test|live)_/, '');
@@ -95,6 +95,7 @@ async function actorContext(run: UatRun, browser: Browser) {
     page.on('websocket', (socket) => {
       const url = new URL(socket.url());
       const record: SocketRecord = {
+        actor: label,
         errors: [],
         host: url.host,
         openedAt: new Date().toISOString(),
@@ -163,12 +164,14 @@ function actorFor(
   context: BrowserContext,
   page: Page,
   id: string,
-  email: string
+  email: string,
+  label: string
 ): Actor {
   return {
     context,
     email,
     id,
+    label,
     page,
     async request(path, method = 'GET', body?: unknown, timeout?: number) {
       if (!path.startsWith('/api/'))
@@ -237,9 +240,11 @@ export async function createPrimaryActor(
 ): Promise<Actor> {
   const email = uniqueEmail(run, 'owner');
   await run.record('actor-email', email, { label: 'owner' });
-  const context = await actorContext(run, browser).catch((error: unknown) => {
-    throw setupFailure(error, 'Clerk browser setup');
-  });
+  const context = await actorContext(run, browser, 'owner').catch(
+    (error: unknown) => {
+      throw setupFailure(error, 'Clerk browser setup');
+    }
+  );
   const page = await context.newPage();
   let stage = 'Primary actor signup page';
   try {
@@ -288,7 +293,7 @@ export async function createPrimaryActor(
     await client.users.updateUserMetadata(id, {
       privateMetadata: { capyUatRunId: run.id },
     });
-    const actor = actorFor(run, context, page, id, email);
+    const actor = actorFor(run, context, page, id, email, 'owner');
     stage = 'Primary actor application profile';
     await waitForApplicationUser(run, actor);
     return actor;
@@ -323,9 +328,9 @@ export async function createSecondaryActor(
     label,
     registration: 'backend-ticket',
   });
-  const { context, page } = await ticketContext(run, browser, user.id);
+  const { context, page } = await ticketContext(run, browser, user.id, label);
   try {
-    const actor = actorFor(run, context, page, user.id, email);
+    const actor = actorFor(run, context, page, user.id, email, label);
     await waitForApplicationUser(run, actor);
     return actor;
   } catch (error) {
@@ -336,15 +341,27 @@ export async function createSecondaryActor(
 
 /** `actor` signed in again in a new browser context: empty HTTP cache and storage. */
 export async function signInAgain(run: UatRun, browser: Browser, actor: Actor) {
-  const { context, page } = await ticketContext(run, browser, actor.id);
-  return actorFor(run, context, page, actor.id, actor.email);
+  const { context, page } = await ticketContext(
+    run,
+    browser,
+    actor.id,
+    actor.label
+  );
+  return actorFor(run, context, page, actor.id, actor.email, actor.label);
 }
 
 /** A new browser context signed in as `userId` with a short-lived Clerk sign-in ticket. */
-async function ticketContext(run: UatRun, browser: Browser, userId: string) {
-  const context = await actorContext(run, browser).catch((error: unknown) => {
-    throw setupFailure(error, 'Clerk browser setup');
-  });
+async function ticketContext(
+  run: UatRun,
+  browser: Browser,
+  userId: string,
+  label: string
+) {
+  const context = await actorContext(run, browser, label).catch(
+    (error: unknown) => {
+      throw setupFailure(error, 'Clerk browser setup');
+    }
+  );
   const page = await context.newPage();
   try {
     await page.goto('/sign-in');

@@ -925,9 +925,9 @@ use backend/storage/provider outcomes, with browser controls used for actions.
 Only the Office load measurement records traces (with screenshots); no journey
 records video. Sanitized manifests and cleanup reports are retained for 30 days.
 Each test's evidence holds a `websockets` record of every actor page's
-WebSockets (host and path, open and close times, `socketerror` messages
-without query strings), for matching browser-side drops against the
-collaboration server's `silent socket closed` log.
+WebSockets (the actor's label, host and path, open and close times,
+`socketerror` messages without query strings), for matching browser-side
+drops against the collaboration server's `silent socket closed` log.
 
 | File | About |
 | --- | --- |
