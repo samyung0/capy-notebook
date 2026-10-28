@@ -712,11 +712,14 @@ DESTINATION_TOOLS = (
     "edit_office_document",
 )
 ACCESS_BATCH = 200
-# Account chat's one not found (E2), with the hint workspace chat's document
-# tools give (NO_WORKSPACE_ITEM, Q523).
+# Account chat's one not found (E2), naming both ways back (Q525):
+# list_sources as workspace chat's document tools do (NO_WORKSPACE_ITEM) and
+# search_files_summary across workspaces.
 NO_ACCOUNT_ITEM = (
     'No file you can read has the id "{id}": it may have been deleted, moved to '
-    "trash or be outside your workspaces. list_sources shows the current ids."
+    "trash or be outside your workspaces. list_sources shows a workspace's "
+    "current ids; search_files_summary finds a file by name across your "
+    "workspaces."
 )
 OUTSIDE_CHOSEN = (
     '"{id}" is outside the sources chosen for this chat, and the chat cannot '

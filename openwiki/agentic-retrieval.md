@@ -4492,8 +4492,8 @@ carries the outline check's earlier hint ("No workspace item has the id …:
 it may have been deleted or moved to trash. list_sources shows the current
 ids.", `NO_WORKSPACE_ITEM`) after the error (Q482). Account chat checks the
 item with Go first and refuses one it cannot read with `NO_ACCOUNT_ITEM`,
-which ends in the same hint, `list_sources` being its listing tool too
-(Q523). A request holds
+which names `list_sources` (its listing tool too, Q523) and
+`search_files_summary` (Q525). A request holds
 a pooled connection and its operation's advisory lock only for its receipt
 checks (the stored receipt, then the room's: `known`) and for its
 admission, never through the compute or an Office engine call (Q432): the
@@ -5417,9 +5417,9 @@ for life so the provider prompt cache holds.
   under the combined workspace cap).
 - **Refusals in account words.** An unreadable item:
   "No file you can read has the id …: it may have been deleted, moved to trash
-  or be outside your workspaces. list_sources shows the current ids."
-  (`NO_ACCOUNT_ITEM`, one generic not found, E2, ending in the hint the four
-  document tools give in workspace chat, Q523). A file this user's
+  or be outside your workspaces. list_sources shows a workspace's current ids;
+  search_files_summary finds a file by name across your workspaces."
+  (`NO_ACCOUNT_ITEM`, one generic not found, E2, naming both ways back, Q525). A file this user's
   account chat edited that now lies out of reach: `ACCOUNT_MOVED_OUT` ("This
   file was moved where the user can no longer open it …", Q489). A view-only
   edit: `ACCOUNT_NO_EDIT`, which stops only that edit (E1). Gateway reads pass

@@ -319,8 +319,8 @@ async def test_a_file_with_no_workspace_is_read_not_inspected_or_edited(
 
 
 async def test_the_document_tools_point_a_missing_id_to_list_sources(monkeypatch):
-    # Q523: account chat's not found gives workspace chat's hint, now that
-    # list_sources is a tool there too; Go is not asked to inspect or edit.
+    # Q523, Q525: account chat's not found names list_sources, now a tool
+    # there too, and search_files_summary; Go is not asked to inspect or edit.
     gateway = _Gateway()
     monkeypatch.setattr(tools, "_gateway_read", gateway.read)
     ctx = _account()
@@ -343,7 +343,10 @@ async def test_the_document_tools_point_a_missing_id_to_list_sources(monkeypatch
     ]:
         assert result.refused
         assert tools.NO_ACCOUNT_ITEM.format(id="f_gone") in result.text()
-        assert "list_sources shows the current ids." in result.text()
+        assert (
+            "list_sources shows a workspace's current ids; search_files_summary "
+            "finds a file by name across your workspaces." in result.text()
+        )
     assert {path for path, _ in gateway.posts} == {"/api/internal/documents/access"}
 
 
