@@ -273,8 +273,9 @@ type fileLinksOutput struct {
 // link/public viewers, like every other file read. Bytes never proxy through
 // the gateway.
 func (a *api) getFileLinks(ctx context.Context, in *fileIDInput) (*fileLinksOutput, error) {
-	// The read check (fileRead) and the role the strip needs, in one lookup.
-	role, err := a.s.FileEffectiveRole(ctx, userID(ctx), in.ID)
+	// The read check (fileRead, or the payer's Download) and the role the
+	// strip needs, in one lookup.
+	role, err := a.fileReadOrPayer(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}

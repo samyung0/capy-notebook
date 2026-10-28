@@ -1925,7 +1925,12 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 			return "", nil, ErrNotFound
 		}
 	} else if err := assertCloneSourceTx(ctx, tx, userID, sourceWorkspaceID); err != nil {
-		return "", nil, err
+		// Its payer copies what it pays for after losing access (Epo
+		// 2026-10-27, D3).
+		var payer string
+		if scanErr := tx.QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, fileID).Scan(&payer); scanErr != nil || payer != userID {
+			return "", nil, err
+		}
 	}
 	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)
 	if err != nil {

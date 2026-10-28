@@ -505,8 +505,10 @@ const FileItem = memo(function FileItem({
       <ItemCard
         actions={
           file.lostAccess ? (
-            <Menu
-              items={[
+            // Lost access: its payer may still copy, download and delete it
+            // (Epo 2026-10-27, D3), never open or restore it in place.
+            <ContentActions
+              beforeDeleteItems={[
                 {
                   danger: true,
                   disabled: busy,
@@ -515,7 +517,15 @@ const FileItem = memo(function FileItem({
                   onClick: () => onDelete([file]),
                 },
               ]}
-              triggerIcon={itemMenuIcon(view)}
+              canClone
+              chapters={[]}
+              content={toFileActionTarget(file)}
+              display="menu"
+              menuAlign="end"
+              menuTriggerIcon={itemMenuIcon(view)}
+              readOnly
+              workspaceId={file.workspaceId}
+              workspaceName={file.workspaceName}
             />
           ) : (
             // The server reads what the caller may do with each row.
