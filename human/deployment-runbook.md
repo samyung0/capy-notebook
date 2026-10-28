@@ -130,3 +130,4 @@
 - Developer Epo decided (2026-10-28, Q486) the B2 UAT user-file bucket stays after the move; Epo deletes it by hand later.
 - Developer Epo decided (2026-10-28, Q487) the user-file bucket keeps its `B2_*` setting names after the move to R2, and the docs say that those settings name the R2 bucket.
 - Developer Epo decided (2026-10-28, Q488) each environment's R2 runtime token is Object Read & Write on that environment's bucket only, with no admin permissions; the check's broader account token is rotated out.
+- Developer Epo decided (2026-10-28, Q494) the UAT B2-to-R2 object copy runs as a one-off workflow on its own `r2-copy` branch (push-triggered there only, never in CI or deploys), on a GitHub runner without the `uat` environment, from a read-only B2 key and the R2 key held as repository secrets, with the non-secret B2 bucket and endpoint in the workflow; the branch is deleted right after the cutover.
