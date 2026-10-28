@@ -171,6 +171,28 @@ listing stay workspace-only.
 - **Copy:** the sources switch says "Your files only". Citations show their
   workspace, or No workspace.
 
+## Tuning round (Epo 2026-10-28, on hold until the workspace_id-off-index branch lands)
+
+- Search splits: `search_files_summary` (name + descriptor, run first) and
+  `search_files_content` (passages, replaces `search_files`). Hits give file
+  id, workspace and chapter or no workspace, view-only or view-and-edit.
+  Summary search covers files and materials (blank summary where there is no
+  descriptor); content search covers everything indexed, notes included.
+  Open: how descriptors are matched (plain SQL over the scope proposed).
+- `list_files(workspace_id?)`: one workspace, or without an id the caller's
+  newest 100 no-workspace items; first line names what
+  was listed.
+- Type: search hits show none; read_document's Access line adds the kind
+  and format or material kind (documents/access returns them);
+  capture_page's Access line unchanged.
+- Access once per turn: Go sends each scope workspace's name and canEdit;
+  search labels hits from it (no `documents/access` call for search).
+- Member workspaces count against the 10/50 cap: built on
+  wip/mac-workspace-cap (4df9b1b78, not pushed), one count of the user's
+  workspace_members rows, so a turn's scope list is at most 50.
+- Earlier review items still open: E1 (permission_denied stops every edit),
+  E2, M1 (citations open the old workspace after a Move), T2, T3, P1, Q489.
+
 ## After the first version
 
 - **Search ranking (decided 2026-10-27):** each embedding space runs one
