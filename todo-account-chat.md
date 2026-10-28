@@ -81,7 +81,7 @@ Chat is bound to one workspace at every layer:
 ## Build contract (2026-10-27, branch `wip/mac-account-chat`)
 
 Worktree `.claude/worktrees/account-chat`, stacked on `ae9edff0e` (the
-standalone branch the train merged). Migration **0127** (0126 is the index content scope); becomes **0128** at the rebase onto wip/mac-clone-download 62bdff8a8, which adds 0127_index_copy_job. Local DB tests use
+standalone branch the train merged). Migration **0128** (main holds 0126_index_content_scope and 0127_index_copy_job). Local DB tests use
 untracked copies of the train's migrations as 0122-0124 (excluded in
 `.git/info/exclude`; never commit them). Rebased onto main after the train;
 overlaps with the train in `tools.py`, `pending.py`, `agent.py`, `store.py`
@@ -93,7 +93,7 @@ listing stay workspace-only.
 
 ### Go
 
-- **0127:** `conversations.workspace_id` nullable (NULL = account chat, owned
+- **0128:** `conversations.workspace_id` nullable (NULL = account chat, owned
   by `user_id`), an index for the account list;
   `rag_search_events.workspace_id` nullable.
 - **Routes:** `POST /api/chat/stream` (account turn, same body as the
@@ -197,7 +197,7 @@ listing stay workspace-only.
   account): optional name (default New Workspace (n), lowest free n),
   description and tags; over-limit fields cut to the limit and said in the
   result; random Waves icon, no cover, no Undo; receipt kind
-  `create_workspace` (0127 widens the CHECK).
+  `create_workspace` (0128 widens the CHECK).
 - Retention: search_knowledge (both chats) and search_files_summary keep
   their whole result between messages.
 - Account turn context: one line naming the scope workspaces with
@@ -209,9 +209,9 @@ listing stay workspace-only.
   offered in account chat through `/api/internal/changes/resolve`.
   Gap: an Office file with no workspace answers unread (the collaboration
   service reads only a workspace's files, Rust side).
-- Review round 2026-10-28 (fixes in): rebase onto main 1ac19d4e3 renames
-  0127_account_chat to 0128; a DB that already ran 0127_account_chat needs
-  its agent_operations_kind_check statement run by hand. Accepted: a
+- Review round 2026-10-28 (fixes in): rebased onto main 6f2967c7a and
+  renamed to 0128_account_chat; a local DB that ran the old 0127_account_chat
+  needs a fresh migration run. Accepted: a
   create_workspace replay after the user deleted the new workspace creates
   another (its receipt cascades away). Hits' "view and edit" in
   search_files_content is the workspace right only (a PDF passage can say
