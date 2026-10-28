@@ -66,6 +66,8 @@ const EDITOR_CASES: Record<string, [string, string][]> = {
     ['interactive.firstKey.toNextFrameMs', 'first key to frame (ms)'],
   ],
   'peer-burst': [
+    ['keysApplied', 'keys applied in the time box'],
+    ['keysPerSecond', 'keys applied a second (higher is better)'],
     ['settledMs', 'burst until shown (ms)'],
     ['applyTotalMs', 'synchronous apply, total (ms)'],
     ['loafTotalBlockingMs', 'blocking (ms)'],

@@ -55,6 +55,14 @@ otherwise each parse cookies per module (about 11 s of main thread for
 BlockSuite's ~3,400 modules, less for Plate's). Opens measured before
 2026-10-28 include that cost.
 
+BlockSuite's open waits for its note natively in the page (`blocksReady`):
+a Playwright locator walks the whole DOM, shadow roots included, in JS on the
+page's main thread at every poll (0.6 s a check on the laptop on BlockSuite's
+note, more before its per-block selection shadow roots went), which slowed the
+open it measured. Plate's wait is unchanged. The peer burst is time-boxed (`PERF_BURST_MS`, 180 s) and
+reports `keysApplied` and `keysPerSecond`, since Plate never applied 2,000
+keys within the test's 10 minutes.
+
 A run with `blocks-*` cases adds a Plate/BlockSuite table to the job summary.
 The Performance workflow's `blocks` input (on by default on dispatch) runs
 both, plus the bundle sizes from a `vite build --manifest`. The server side of

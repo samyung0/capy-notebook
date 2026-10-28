@@ -185,6 +185,29 @@ async function expectLive(page: Page): Promise<void> {
   );
 }
 
+/**
+ * BlockSuite's note has no save state: it is live once its blocks are
+ * editable (after its room synced) and show `readyText`. Checked in the page
+ * with native DOM calls that stop at the first match: a Playwright locator
+ * walks the whole DOM, shadow roots included, in JS on the page's main thread
+ * at every poll, and BlockSuite renders every block (about 0.7 s a check on
+ * the laptop, unthrottled), so its polls slowed the open they measured.
+ */
+async function blocksReady(page: Page, readyText: string) {
+  await page.waitForFunction(
+    (text) => {
+      const note = document.querySelector('[data-blocksuite-note]');
+      if (!note?.querySelector('[contenteditable="true"]')) return false;
+      const walker = document.createTreeWalker(note, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode())
+        if (node.textContent?.includes(text)) return true;
+      return false;
+    },
+    readyText,
+    { polling: 100, timeout: 120_000 }
+  );
+}
+
 interface OpenResult {
   editor: Locator;
   openMs: number;
@@ -248,17 +271,14 @@ async function openNote(
       'read-only never mounts an editable surface'
     ).toHaveCount(0);
   } else {
-    await expect(editor).toBeVisible({ timeout: 120_000 });
-    await expect(editor.getByText(note.readyText).first()).toBeVisible({
-      timeout: 120_000,
-    });
-    // BlockSuite's note has no save state: it is live once its blocks are
-    // editable, which is after its room synced.
-    if (BLOCKS)
-      await expect(
-        editor.locator('[contenteditable="true"]').first()
-      ).toBeVisible({ timeout: 120_000 });
-    else await expectLive(page);
+    if (BLOCKS) await blocksReady(page, note.readyText);
+    else {
+      await expect(editor).toBeVisible({ timeout: 120_000 });
+      await expect(editor.getByText(note.readyText).first()).toBeVisible({
+        timeout: 120_000,
+      });
+      await expectLive(page);
+    }
     if (!gated) {
       await expect(openAnyway, 'small note must not be gated').toHaveCount(0);
     }
@@ -492,17 +512,24 @@ async function scrollNearLimit(page: Page, note: PerfNote) {
 }
 
 const BURST_KEYS = Number(process.env.PERF_BURST_KEYS ?? 2000);
+/** The burst's time box: Plate never applied all 2,000 keys within the
+ * test's 10 minutes on GHA, so the case reports how far an editor got
+ * (`keysApplied`, `keysPerSecond`) instead of failing. */
+const BURST_MS = Number(process.env.PERF_BURST_MS ?? 180_000);
+/** How long the editor may take to show the last applied key. */
+const BURST_SETTLE_MS = 120_000;
 const BURST_TEXT = 'peer burst words ';
 
 /**
- * A peer's burst of `BURST_KEYS` keystrokes at the end of the note's title,
- * at CPU x`CPU_RATE`: one Yjs transaction per key on the mock room's own
- * client (`window.__capyMockRooms`, as runtime.office.ts's co-editor case),
- * each delivered in its own task as fast as the main thread takes them. The
- * room applies each to the editor's document synchronously, so `apply*` is
- * the editor's synchronous handling of one remote update (its Yjs observers
- * and model updates); rendering follows in later tasks. `settledMs` runs to
- * the first frame whose title text shows the burst's last characters.
+ * A peer's burst of up to `BURST_KEYS` keystrokes at the end of the note's
+ * title, at CPU x`CPU_RATE`, for at most `BURST_MS`: one Yjs transaction per
+ * key on the mock room's own client (`window.__capyMockRooms`, as
+ * runtime.office.ts's co-editor case), each delivered in its own task as fast
+ * as the main thread takes them. The room applies each to the editor's
+ * document synchronously, so `apply*` is the editor's synchronous handling of
+ * one remote update (its Yjs observers and model updates); rendering follows
+ * in later tasks. `settledMs` runs to the first frame whose title text shows
+ * the last applied key (null if it did not within `BURST_SETTLE_MS`).
  */
 async function peerBurst(page: Page, note: PerfNote) {
   await installPerfInstrumentation(page);
@@ -511,7 +538,7 @@ async function peerBurst(page: Page, note: PerfNote) {
   await throttleCpu(page);
   await resetMetrics(page);
   const burst = await editor.evaluate(
-    async (root, { blocks, id, keys, readyText, text }) => {
+    async (root, { blocks, budgetMs, id, keys, readyText, settleMs, text }) => {
       interface YText {
         insert(index: number, text: string): void;
         length: number;
@@ -552,9 +579,8 @@ async function peerBurst(page: Page, note: PerfNote) {
       if (!title) throw new Error('No title block in the room');
 
       const typed = text.repeat(Math.ceil(keys / text.length)).slice(0, keys);
-      const tail = typed.slice(-24);
       // The title's text node: one run, as nothing in it is formatted.
-      const shows = () => {
+      const shows = (tail: string) => {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
         for (let node = walker.nextNode(); node; node = walker.nextNode())
           if (node.textContent?.includes(readyText))
@@ -571,25 +597,32 @@ async function peerBurst(page: Page, note: PerfNote) {
       const apply: number[] = [];
       const started = performance.now();
       for (const key of typed) {
+        if (performance.now() - started > budgetMs) break;
         const at = performance.now();
         doc.transact(() => title.insert(title.length, key), 'perf-peer');
         apply.push(performance.now() - at);
         await nextTask();
       }
       const appliedMs = performance.now() - started;
-      const deadline = performance.now() + 120_000;
-      while (!shows()) {
-        if (performance.now() > deadline)
-          throw new Error('The burst never showed in the editor');
+      const tail = typed.slice(0, apply.length).slice(-24);
+      const deadline = performance.now() + settleMs;
+      let settledMs: number | null = null;
+      while (performance.now() < deadline) {
+        if (shows(tail)) {
+          settledMs = performance.now() - started;
+          break;
+        }
         await new Promise(requestAnimationFrame);
       }
-      return { apply, appliedMs, settledMs: performance.now() - started };
+      return { apply, appliedMs, settledMs };
     },
     {
       blocks: BLOCKS,
+      budgetMs: BURST_MS,
       id: note.id,
       keys: BURST_KEYS,
       readyText: note.readyText,
+      settleMs: BURST_SETTLE_MS,
       text: BURST_TEXT,
     }
   );
@@ -601,9 +634,13 @@ async function peerBurst(page: Page, note: PerfNote) {
     applyP95Ms: round1(percentile(burst.apply, 95)),
     applyTotalMs: Math.round(burst.apply.reduce((sum, ms) => sum + ms, 0)),
     appliedMs: Math.round(burst.appliedMs),
+    budgetMs: BURST_MS,
     document: await documentWeight(page, note.id),
     keys: BURST_KEYS,
-    settledMs: Math.round(burst.settledMs),
+    keysApplied: burst.apply.length,
+    keysPerSecond: round1((burst.apply.length * 1000) / burst.appliedMs),
+    settledMs:
+      burst.settledMs === null ? null : Math.round(burst.settledMs),
     ...metrics,
   };
 }
