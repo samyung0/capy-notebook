@@ -621,6 +621,16 @@ Legend:
   before it (the anchor) before the block goes, so it stays as it does
   today. A table's cells go with the table.
 
+- **D17: our markdown converter stays** (Epo, 2026-10-28). It outputs block
+  JSON instead of Plate nodes and is registered as BlockSuite's plain-text
+  clipboard adapter in place of `MixTextAdapter`, so paste and import keep
+  today's results: MDX callouts and columns, our figure, Mermaid and
+  quiz/flashcards fences, and footnotes as superscript text (PE:186). The
+  agent's markdown keeps running it without MDX in the server's V8, with its
+  limits. BlockSuite's footnote inline is a citation chip (a URL, doc or
+  attachment) rather than a text footnote, so it isn't used now; it is the
+  ready-made piece if notes ever cite sources the way chat does.
+
 The other questions from the decision walk-through are in
 `todo-blocksuite-decisions.md` ("Questions for Epo"); they matter at the cut,
 not for step 1.

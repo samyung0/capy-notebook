@@ -577,7 +577,7 @@ binding rules that never touch the note layout.
       our gap spec. Notes and questions then share one inline engine and
       `limitUndo`.
    b. A plain text field with `$…$` and a MathLive preview, no rich inline.
-8. **Markdown conversion after D11 (AR:394, PE:116, PE:136-139, PE:179).**
+8. **Markdown conversion after D11 (AR:394, PE:116, PE:136-139, PE:179).** Answered 2026-10-28: a, ours (D17).
    Options:
    a. (recommended) Keep our converter (`markdownConvert.ts`, MDX for paste
       and import, plain for the agent, one fence parser) emitting block JSON,
@@ -602,7 +602,7 @@ binding rules that never touch the note layout.
     a. (recommended) Hide remote block selections, as decided for carets on
        block voids.
     b. Show BlockSuite's tint.
-11. **Markdown footnotes (PE:186).** BlockSuite has a footnote inline that
+11. **Markdown footnotes (PE:186).** Answered 2026-10-28: a, footnotes stay text; BlockSuite's footnote is a citation chip, kept for source citations later (D17). BlockSuite has a footnote inline that
     draws them. Options:
     a. (recommended) Keep "footnotes become text" until a footnote design is
        asked for.
