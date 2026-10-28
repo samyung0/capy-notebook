@@ -641,8 +641,10 @@ Legend:
   already refuses nesting deeper than 8.
 
 - **D19: editor AI is ghost text only** (Epo, 2026-10-28), in the Plate note
-  now and the BlockSuite note later, likely on the older DeepSeek OpenRouter
-  pin with no reasoning. The AI menu goes. The cost, endpoint and prompt are
+  now and the BlockSuite note later, on DeepSeek pin 1017 with no reasoning
+  (Epo, 2026-10-28). The AI menu goes. Each user turns note AI on in
+  Settings → LLM; it is off by default and stored server-side, so the
+  BlockSuite ghost-text overlay checks the same setting. The cost, endpoint and prompt are
   being worked out in the `ghost-text` session (`todo-ghost-text.md` on its
   branch).
 
