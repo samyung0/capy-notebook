@@ -360,6 +360,26 @@ input, CPU x4 except open; BlockSuite as integrated, before any tuning):
   was 35.6 FPS against 38, where main had 45.5; the measurement code is
   unchanged, so it comes from the merged main commits or noise.
 
+**After the first tuning round** (run 40706193353, `08379c98b`; O(n) open,
+`content-visibility`, MSW module passthrough):
+
+| Case | Plate | BlockSuite |
+| --- | --- | --- |
+| Open, near-limit / common | 12.4 / 12.3 s | 41.6 / 39.1 s |
+| Open blocking | 6.0 s | 4.0 s |
+| First key after open, to frame | 189 ms | 821 ms |
+| DOM nodes after open | 36.3k | 287.7k |
+| Typing, near-limit: blocking per key / p95 | 73.5 / 144 ms | 292 / 392 ms |
+| Typing, common: blocking per key / p95 | 30.6 / 104 ms | 307 / 616 ms |
+| Typing, small: p95 | 48 ms | 16 ms |
+| Scroll, near-limit / common | 43.2 / 47.5 FPS | 27 / 23.6 FPS |
+| Peer burst, 2,000 keys | over 10 min (timed out) | 114 s |
+
+The remaining per-key cost is BlockSuite waiting on every block's
+`updateComplete` after a selection change (about 40%) and every block's
+`selected$` re-running (about 20%). DOM weight is about 39 nodes per block
+against Plate's 5.
+
 - **Server (load-test note, Plate vs blocks):** room load 71 vs 560 ms
   (replay 15 vs 291 ms), memory kept 7 vs 16 MB, `value()` 13 vs 20 ms, a
   joiner's step-1 answer 5 vs 9 ms. A keystroke's admission went from about
