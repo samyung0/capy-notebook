@@ -1649,7 +1649,13 @@ async def _run_tools(
             ctx.evidence_notes.append(notes[call.id])
 
     for call in calls:
-        args = _parse_args(call.arguments)
+        # A `_` key is the pipeline's own (a call id, an account destination):
+        # one the model sends is dropped (review r1 S2).
+        args = {
+            k: v
+            for k, v in _parse_args(call.arguments).items()
+            if not k.startswith("_")
+        }
         args["_tool_call_id"] = call.id
         limit_text = _limit_for(
             call,

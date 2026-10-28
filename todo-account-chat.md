@@ -213,6 +213,9 @@ listing stay workspace-only.
   Inspect and edit of a text or Office file with no workspace are refused
   (`NO_SESSION` in tools.py) until Go's source sessions take one; the Rust
   session does that after the 2026-10-28 deployment. Remove the refusal then.
+- Review round 1 (Rust session, 2026-10-28; reports in capy-harness
+  2026-10-28-followups): all fixes in; S1, F3 and L1 wait on Epo, and the
+  Rust session takes them and later follow-ups from the pushed branch.
 - Review round 2026-10-28 (fixes in): rebased onto main 6f2967c7a and
   renamed to 0128_account_chat; a local DB that ran the old 0127_account_chat
   needs a fresh migration run. Rebased onto main 01ccd1e0f (ghost text's

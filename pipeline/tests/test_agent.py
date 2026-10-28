@@ -499,6 +499,48 @@ async def test_create_material_sends_its_sources_as_written(monkeypatch):
     assert seen["toolCallId"] == "call_1"
 
 
+async def test_the_loop_drops_underscore_args_the_model_sends(monkeypatch):
+    """Review r1 S2: `_` keys are the pipeline's own, so a model-sent
+    `_workspace_id` cannot move a workspace chat's create elsewhere."""
+    ctx = ToolContext(
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
+    )
+    ctx._scope_outline = {"chapters": [], "files": []}
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+    sent: list[dict] = []
+
+    def _post(url, **kwargs):
+        sent.append({**json.loads(kwargs["data"]), "url": url})
+        return _JsonResp(_receipt("created", "material", "mat_1"))
+
+    monkeypatch.setattr(tools.requests, "post", _post)
+    arguments = json.dumps(
+        {
+            "kind": "flashcards",
+            "title": "Cards",
+            "cards": [{"front": "a", "back": "b"}],
+            "_workspace_id": "ws_OTHER",
+        }
+    )
+    stream, _seen = _script_stream(
+        [
+            _assembled("", [_call("read_skill", '{"name": "editing"}', "c0")]),
+            _assembled("", [_call("create_material", arguments, "c1")]),
+            _assembled(_answer(("Made the cards.", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    await _collect("Make cards", ctx)
+
+    created = [s for s in sent if s["url"].endswith("/api/internal/materials")]
+    assert [(s["workspaceId"], s["toolCallId"]) for s in created] == [("ws_1", "c1")]
+
+
 @pytest.mark.parametrize(
     "status, code, told",
     [

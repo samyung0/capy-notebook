@@ -774,10 +774,12 @@ func (s *Store) ChatOpenResource(ctx context.Context, wsID, kind, id string) (ti
 // names, at most limit of them.
 func (s *Store) VoiceContext(ctx context.Context, userID, wsID string, limit int) (title string, sources []string, err error) {
 	// Account chat has no workspace to name: its context is the caller's own
-	// newest files, wherever they sit.
+	// newest files with no workspace or in a workspace they still reach (a
+	// workspace they left keeps their uploads, review r1 F4).
 	if wsID == "" {
 		err = s.pool.QueryRow(ctx, `SELECT ARRAY(
 			SELECT f.name FROM files f WHERE f.user_id = $1 AND f.trashed_at IS NULL
+			  AND (f.workspace_id IS NULL OR f.workspace_id IN (`+memberWorkspacesSQL("$1")+`))
 			ORDER BY f.added_at DESC LIMIT $2)`, userID, limit).Scan(&sources)
 		return "", sources, err
 	}

@@ -939,3 +939,157 @@ def test_a_chat_request_reads_its_scope():
         service.ChatStreamReq(
             **base, scope={"kind": "account", "workspaceIds": [], "userId": "u_2"}
         )
+
+
+class _Resp:
+    def __init__(self, body: dict[str, Any], status: int = 200) -> None:
+        self._body = body
+        self.status_code = status
+        self.headers: dict[str, str] = {}
+
+    def json(self) -> dict[str, Any]:
+        return self._body
+
+
+async def test_a_workspace_the_turn_creates_joins_its_list(monkeypatch):
+    # Review r1 M-2: list_workspaces and list_files reach it at once.
+    def post(url, **kwargs):
+        return _Resp(
+            {
+                "kind": "create_workspace",
+                "outcome": "succeeded",
+                "workspaceId": "ws_new",
+                "name": json.loads(kwargs["data"])["name"],
+            }
+        )
+
+    async def read(path, payload, _failure):
+        return {"items": []}
+
+    async def workspace_outline(workspace_id):
+        return {"chapters": [], "files": []}
+
+    monkeypatch.setattr(tools.requests, "post", post)
+    monkeypatch.setattr(tools, "_gateway_read", read)
+    monkeypatch.setattr(tools.store, "workspace_outline", workspace_outline)
+    ctx = _account()
+
+    created = await tools._create_workspace(
+        {"name": "Physics", "_tool_call_id": "call_ws"}, ctx
+    )
+    listed = (await tools._list_workspaces({}, ctx)).text()
+    files = await tools._list_files({"workspace_id": "ws_new"}, ctx)
+
+    assert not created.refused, created.text()
+    assert "- Physics (workspace_id=ws_new, view and edit)" in listed
+    assert not files.refused
+    assert files.text().startswith("The Physics workspace (workspace_id=ws_new):")
+    assert (
+        tools._created_in({"workspaceId": "ws_new"}, ctx)
+        == "the workspace 'Physics' (workspace_id=ws_new)"
+    )
+
+
+async def test_an_account_read_of_a_file_moved_away_says_so(monkeypatch):
+    # Q489: Go marks a file this account chat edited, moved where the user
+    # cannot open it.
+    moved = {**_row("source_file", "f_moved", ws="", name=""), "canRead": False}
+    gateway = _Gateway([{**moved, "movedOut": True}])
+    monkeypatch.setattr(tools, "_gateway_read", gateway.read)
+
+    result = await tools._read_document({"file_id": "f_moved"}, _account())
+
+    assert result.refused and tools.ACCOUNT_MOVED_OUT in result.text()
+
+
+@pytest.mark.parametrize(
+    ("account", "told"), [(True, tools.ACCOUNT_MOVED_OUT), (False, tools.MOVED_OUT)]
+)
+def test_a_moved_out_write_is_told_in_its_chats_words(account, told):
+    resp = _Resp({"code": "moved_out", "message": "gone"}, 404)
+
+    result = tools._gateway_refused(resp, "Could not edit", account=account)
+
+    assert result.refused and told in result.text()
+
+
+def test_an_account_permission_denied_refuses_only_that_edit():
+    # E1: in account chat a view-only item stops that edit, not the turn.
+    resp = _Resp({"code": "permission_denied", "message": "view only"}, 403)
+
+    result = tools._gateway_refused(resp, "Could not edit", account=True)
+
+    assert tools.ACCOUNT_NO_EDIT in result.detail
+
+
+@pytest.mark.parametrize(
+    "code", sorted(tools._NO_PERMISSION_CODES - {"permission_denied"})
+)
+def test_an_account_frozen_or_locked_still_stops_the_turn(code):
+    resp = _Resp({"code": code, "message": "no"}, 403)
+
+    result = tools._gateway_refused(resp, "Could not edit", account=True)
+
+    assert tools.NO_PERMISSION in result.detail
+
+
+async def test_an_account_inspect_of_a_file_moved_away_says_so(monkeypatch):
+    posts = []
+
+    def post_json(path, payload):
+        posts.append(path)
+        if path.endswith("/documents/access"):
+            return _Resp({"items": [_row("source_file", "f_1")]})
+        return _Resp({"code": "moved_out", "message": "gone"}, 404)
+
+    monkeypatch.setattr(tools, "_post_json", post_json)
+    target = {"kind": "source_file", "id": "f_1"}
+
+    result = await tools._inspect_document({"target": target}, _account())
+
+    assert posts[-1] == "/api/internal/documents/inspect"
+    assert result.refused and tools.ACCOUNT_MOVED_OUT in result.text()
+
+
+async def test_an_account_edit_names_the_account_scope_not_a_workspace(monkeypatch):
+    gateway = _Gateway(
+        [_row("source_file", "f_1", ws="ws_1", name="Chemistry", edit=True)]
+    )
+    sent = {}
+
+    def post(url, **kwargs):
+        sent.update(json.loads(kwargs["data"]), url=url)
+        return _Resp(
+            {
+                "operationId": "op_1",
+                "outcome": "succeeded",
+                "effect": {
+                    "operation": "edited",
+                    "operationId": "op_1",
+                    "resource": {"kind": "source_file", "id": "f_1", "title": "a.pdf"},
+                },
+            }
+        )
+
+    async def load(*_args, **_kwargs):
+        return pending.PendingSources()
+
+    monkeypatch.setattr(tools, "_gateway_read", gateway.read)
+    monkeypatch.setattr(tools.requests, "post", post)
+    monkeypatch.setattr(tools.pending, "load", load)
+    ctx = _account(skills_read={skills.EDITING})
+    commands = [{"type": "replace_text", "expected_text": "old", "text": "new"}]
+
+    result = await tools.run(
+        "edit_document",
+        {
+            "target": {"kind": "source_file", "id": "f_1"},
+            "commands": commands,
+            "_tool_call_id": "c1",
+        },
+        ctx,
+    )
+
+    assert not result.refused, result.text()
+    assert sent["url"].endswith("/api/internal/documents/edit")
+    assert sent["scope"] == "account" and "workspaceId" not in sent

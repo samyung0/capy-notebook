@@ -311,3 +311,102 @@ func TestAccountAccessSaysMovedOutOnlyForAFileItsChatEdited(t *testing.T) {
 		t.Fatalf("untouched file = %+v, want a plain not found", rows[1])
 	}
 }
+
+// Review r1 T1: a trashed file, a trashed note and an item embedded in a
+// trashed note are unreadable, though their owner could read them before.
+func TestAccountAccessRefusesTrashedItems(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	f := newAccountScopeFixture(t, s)
+	note := func(title string) string {
+		m, err := s.CreateMaterial(ctx, Material{
+			CreatedBy: f.me, WorkspaceID: f.owned, Kind: "note", Title: title, Content: materialTestContent(t, "# "+title+"\n\nbody"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m.ID
+	}
+	trashed, parent, child := note("Trashed"), note("Parent"), note("Child")
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET kind='quiz', privacy='private', chapter_id=NULL, parent_material_id=$1 WHERE id=$2`, parent, child); err != nil {
+		t.Fatal(err)
+	}
+	items := []agenttools.ResourceRef{
+		{Kind: agenttools.KindSourceFile, ID: f.files[f.owned]},
+		{Kind: agenttools.KindMaterial, ID: trashed},
+		{Kind: agenttools.KindMaterial, ID: child},
+	}
+	readable := func() []bool {
+		t.Helper()
+		rows, err := s.AccountDocumentAccess(ctx, f.me, items)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := []bool{}
+		for _, row := range rows {
+			out = append(out, row.CanRead)
+		}
+		return out
+	}
+	if got := readable(); !slices.Equal(got, []bool{true, true, true}) {
+		t.Fatalf("before the trash = %v", got)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET trashed_at=now(), trash_episode_id='ep_acct', purge_after=now()+interval '30 days' WHERE id=$1`, f.files[f.owned]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id='ep_acct', purge_after=now()+interval '30 days' WHERE id = ANY($1)`, []string{trashed, parent}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readable(); !slices.Equal(got, []bool{false, false, false}) {
+		t.Fatalf("after the trash = %v", got)
+	}
+}
+
+// Review r1 T5: a member workspace whose owner is deletion-pending or deleted
+// leaves the scope, as a suspended owner's does.
+func TestAccountScopeDropsWorkspacesOfOwnersBeingDeleted(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	f := newAccountScopeFixture(t, s)
+	scoped := func() bool {
+		t.Helper()
+		scope, err := s.AccountScope(ctx, f.me)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.ContainsFunc(scope, func(ws ScopeWorkspace) bool { return ws.ID == f.edited })
+	}
+	if !scoped() {
+		t.Fatal("the edited workspace is not in scope")
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET deletion_requested_at=now()
+		WHERE id=(SELECT user_id FROM workspaces WHERE id=$1)`, f.edited); err != nil {
+		t.Fatal(err)
+	}
+	if scoped() {
+		t.Fatal("a deletion-pending owner's workspace stays in scope")
+	}
+}
+
+// Review r1 F4: account voice input names the caller's files with no
+// workspace and in workspaces they still reach, not uploads in one they left.
+func TestAccountVoiceContextSkipsWorkspacesTheUserLeft(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	f := newAccountScopeFixture(t, s)
+	left := uid("f_acct")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO files (id, workspace_id, user_id, created_by, name, kind, size_bytes, status)
+		VALUES ($1,$2,$3,$3,'left behind.md','md',10,'ready')`, left, f.edited, f.me); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, f.edited, f.me); err != nil {
+		t.Fatal(err)
+	}
+	_, names, err := s.VoiceContext(ctx, f.me, "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(names, "mine.md") || slices.Contains(names, "left behind.md") {
+		t.Fatalf("voice context = %v", names)
+	}
+}

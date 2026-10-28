@@ -115,7 +115,9 @@ func classify(method, path string) class {
 		(method == http.MethodPatch && path == "/api/me") {
 		return classIntegration
 	}
-	if strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/voice-transcriptions") {
+	// A workspace chat's recordings and the account chat's (review r1 F1).
+	if path == "/api/voice-transcriptions" ||
+		(strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/voice-transcriptions")) {
 		return classVoice
 	}
 	// A new review session reads the whole review pool, every quiz and set

@@ -6,11 +6,13 @@ import {
   useRouter,
 } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isApiError } from '@/api/client';
 import {
   fileQuery,
   materialQuery,
   useUnreadNotificationCount,
 } from '@/api/hooks';
+import { showErrorToast } from '@/api/queryClient';
 import type { Citation, ResourceRef } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Panel } from '@/components/app/layout';
@@ -93,17 +95,26 @@ export default function AccountChat() {
   // review M1), read again on click so a Move after the answer does not
   // strand the link: a workspace item in its workspace (a citation at its
   // page), a standalone one on its own page, which also shows an item gone
-  // or out of reach.
+  // or out of reach (a 404). Any other failure, offline included, is the
+  // error toast and the chat stays (review r1 F1).
   async function openItem(
     kind: 'file' | 'material',
     id: string,
     search: Record<string, unknown>
   ) {
     // Fresh, not the cache: the item may have moved since it was read.
-    const item = await (kind === 'file'
-      ? queryClient.fetchQuery({ ...fileQuery(id), staleTime: 0 })
-      : queryClient.fetchQuery({ ...materialQuery(id), staleTime: 0 })
-    ).catch(() => null);
+    let item: { workspaceId?: string | null } | null;
+    try {
+      item = await (kind === 'file'
+        ? queryClient.fetchQuery({ ...fileQuery(id), staleTime: 0 })
+        : queryClient.fetchQuery({ ...materialQuery(id), staleTime: 0 }));
+    } catch (error) {
+      if (!(isApiError(error) && error.status === 404)) {
+        showErrorToast(error);
+        return;
+      }
+      item = null;
+    }
     const workspaceId = item?.workspaceId;
     if (workspaceId)
       void navigate({

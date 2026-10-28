@@ -1059,6 +1059,43 @@ Sources: [chat effective-role guard](../server/internal/store/chat.go#L191),
 [chat stream admission](../server/internal/httpapi/server.go#L487), and
 [generation credit policy](../server/internal/httpapi/generation_credits.go#L3).
 
+### Account chat
+
+- Account chat (`/chat`, `POST /api/chat/stream`) is a conversation with no
+  workspace, readable and writable by its user alone (`GetConversation` on
+  owner); it is never shared or cloned. Its reach is the user's owned
+  workspaces, member workspaces under a live owner (not suspended,
+  deletion-pending or deleted) and their own items with no workspace (D2,
+  `accountScopeSQL`); link- and visit-only workspaces are out.
+- Every account-scope tool call checks its target through
+  `AccountDocumentAccess`: a file or top-level material (an embedded one as its
+  note) is readable with any role in a scope workspace and editable with the
+  workspace's effective editor role; an item with no workspace only by its
+  owner. Trashed items, items under a trashed note and missing items answer one
+  generic not found, except `moved_out` for a file this user's account chat
+  edited that now lies out of reach (Q489). The internal routes
+  (`/api/internal/documents/access`, `/changes`, `/changes/resolve`,
+  `/workspaces`, and the account scope of documents, materials, files and
+  receipts) need the pipeline secret and refuse a suspended, deletion-pending
+  or deleted actor.
+- Writes are bound to the actor's own account conversation, and a workspace
+  conversation cannot stand in for one (or the reverse). A create lands in No
+  workspace, or in a scope workspace the actor can edit when the call names
+  it. Trash and restore stay workspace chat tools.
+- Operations: read, create, edit and `workspace.create`. A frozen actor keeps
+  read only; a full one (storage) loses create and edit. `create_workspace`
+  goes through `createWorkspaceTx`, which refuses a frozen account and counts
+  against the combined owned and joined workspace cap (`gateWorkspacesTx`).
+- Inference is billed to the actor. Voice input in account chat takes the
+  voice rate class and names only the caller's files with no workspace or in a
+  workspace they still reach.
+- A text or Office file with no workspace is read through its index passages
+  only until its source session takes no workspace; inspect and edit refuse it.
+
+Sources: [account scope](../server/internal/store/account_scope.go),
+[account routes](../server/internal/httpapi/internal_account.go) and
+[changes routes](../server/internal/httpapi/internal_changes.go).
+
 ### Personal account features
 
 Events, tasks, labels, notifications, integrations, billing, search, quiz

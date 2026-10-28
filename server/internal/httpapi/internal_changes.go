@@ -105,6 +105,10 @@ func (a *api) internalChanges(w http.ResponseWriter, r *http.Request) {
 			if string(row.Changes) != "[]" {
 				files = append(files, row)
 			}
+		case row.OfficePending && row.WorkspaceID != places[row.FileID]:
+			// Moved since the access check: asked under the checked workspace
+			// only, so "" carries only the actor's own files (review r1 F8).
+			unread = append(unread, row.FileID)
 		case row.OfficePending:
 			office[row.WorkspaceID] = append(office[row.WorkspaceID], row.FileID)
 			byID[row.FileID] = row

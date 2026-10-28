@@ -373,9 +373,10 @@ func TestAccountChatReadsAnItemsChanges(t *testing.T) {
 	var asked map[string]any
 	authority := httptest.NewServer(withConverter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&asked)
+		ids, _ := asked["fileIds"].([]any)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"files": []any{map[string]any{
-			"fileId": officeID, "epoch": 0, "checkpoint": 2,
+			"fileId": ids[0], "epoch": 0, "checkpoint": 2,
 			"changes": []any{map[string]any{"id": "c1", "kind": "image", "operation": "add", "label": "body, image"}},
 		}}, "failed": []any{}})
 	})))
@@ -387,6 +388,20 @@ func TestAccountChatReadsAnItemsChanges(t *testing.T) {
 	}
 	if asked["workspaceId"] != "" {
 		t.Fatalf("standalone Office files are asked under workspace %q", asked["workspaceId"])
+	}
+	// A member workspace's Office file is asked under its own workspace, never
+	// "" (review r1 T6).
+	memberOffice := fmt.Sprintf("f_chg_m_%d", time.Now().UnixNano())
+	exec(`INSERT INTO files (id, workspace_id, user_id, created_by, name, kind, size_bytes, status)
+		SELECT $1, w.id, w.user_id, w.user_id, 'slides.docx', 'docx', 10, 'ready' FROM workspaces w WHERE w.id='ws_e2e_private'`, memberOffice)
+	t.Cleanup(func() { exec(`DELETE FROM files WHERE id=$1`, memberOffice) })
+	exec(`INSERT INTO source_documents (user_id, file_id, format, checkpoint, indexed_checkpoint, base_revision, base_blob_path)
+		SELECT f.user_id, f.id, 'docx', 2, 1, 1, 'x' FROM files f WHERE f.id=$1`, memberOffice)
+	if code, member := changes(memberOffice); code != http.StatusOK || !strings.Contains(string(member["files"]), memberOffice) {
+		t.Fatalf("member Office changes: %d %s", code, member["files"])
+	}
+	if asked["workspaceId"] != "ws_e2e_private" {
+		t.Fatalf("a member workspace's Office file is asked under %q", asked["workspaceId"])
 	}
 	if code, _ := changes("f_e2e_edit"); code != http.StatusNotFound {
 		t.Fatalf("a link-reached file's changes: %d", code)
@@ -445,5 +460,147 @@ func TestAccountChatCreateWorkspaceHonoursTheCap(t *testing.T) {
 	})
 	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "workspace_limit_exceeded") {
 		t.Fatalf("create past the cap: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Review r1 T2: a suspended or deletion-pending actor is refused by every
+// account route before anything is read or made.
+func TestAccountRoutesRefuseALockedActor(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	ctx := context.Background()
+	user := fmt.Sprintf("u_acct_locked_%d", time.Now().UnixNano())
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id,name,email) VALUES ($1,'Locked',$2)`,
+		user, user+"@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, user) })
+	mine := fmt.Sprintf("f_acct_locked_%d", time.Now().UnixNano())
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO files (id, user_id, created_by, name, kind, size_bytes, status)
+		VALUES ($1,$2,$2,'mine.md','md',10,'ready')`, mine, user); err != nil {
+		t.Fatal(err)
+	}
+	msg := seedAccountMessage(t, st, user)
+	item := map[string]any{"kind": "source_file", "id": mine}
+	calls := map[string]map[string]any{
+		"/api/internal/documents/access": {"actorUserId": user, "items": []any{item}},
+		"/api/internal/changes":          {"actorUserId": user, "items": []any{item}},
+		"/api/internal/changes/resolve":  {"actorUserId": user, "item": item, "blockId": "b1"},
+		"/api/internal/workspaces": {
+			"scope": "account", "userId": user, "assistantMessageId": msg, "toolCallId": "call_locked",
+		},
+	}
+	for _, state := range []string{
+		`suspended_at=now(), suspended_reason='test', deletion_requested_at=NULL`,
+		`suspended_at=NULL, suspended_reason=NULL, deletion_requested_at=now()`,
+	} {
+		if _, err := st.Pool().Exec(ctx, `UPDATE users SET `+state+` WHERE id=$1`, user); err != nil {
+			t.Fatal(err)
+		}
+		for path, body := range calls {
+			if rec := doInternal(t, h, http.MethodPost, path, pipeSecret, body); rec.Code < 400 {
+				t.Errorf("%s with %s: %d %s", path, state, rec.Code, rec.Body.String())
+			}
+		}
+	}
+	var made int
+	if err := st.Pool().QueryRow(ctx, `SELECT count(*) FROM workspaces WHERE user_id=$1`, user).Scan(&made); err != nil || made != 0 {
+		t.Fatalf("a locked actor's create_workspace made %d (%v)", made, err)
+	}
+}
+
+// Review r1 T10: an over-quota frozen account's create_workspace is refused.
+func TestAccountChatCreateWorkspaceRefusesAFrozenAccount(t *testing.T) {
+	f := overQuotaFixture(t, 20)
+	h, st := openInternalHTTP(t)
+	user := f.material.CreatedBy
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/workspaces", pipeSecret, map[string]any{
+		"scope": "account", "userId": user, "assistantMessageId": seedAccountMessage(t, st, user), "toolCallId": "call_frozen",
+	})
+	if rec.Code < 400 {
+		t.Fatalf("frozen create_workspace: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Review r1 T4: a receipt is read under account scope only by its actor and
+// only when it was made in their account conversation.
+func TestAccountScopeReceiptReadsAreTheirConversationsAlone(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	read := func(opID, user string) int {
+		t.Helper()
+		return doInternal(t, h, http.MethodGet, "/api/internal/agent-operations/"+opID+"?scope=account&userId="+user, pipeSecret, nil).Code
+	}
+	accountMsg := seedAccountMessage(t, st, "u_editor")
+	body := noteBody(accountMsg, "call_acct_receipt", "Account receipt "+accountMsg, "# Mine\n\nbody")
+	body["scope"], body["workspaceId"] = "account", ""
+	made := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if made.Code != http.StatusOK {
+		t.Fatalf("account create: %d %s", made.Code, made.Body.String())
+	}
+	cleanupMaterial(t, st, store.ChatMaterialID(accountMsg, "call_acct_receipt"))
+	accountOp := decodeReceipt(t, made).OperationID
+
+	workspaceMsg := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	made = doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret,
+		noteBody(workspaceMsg, "call_ws_receipt", "Workspace receipt "+workspaceMsg, "# Theirs\n\nbody"))
+	if made.Code != http.StatusOK {
+		t.Fatalf("workspace create: %d %s", made.Code, made.Body.String())
+	}
+	cleanupMaterial(t, st, store.ChatMaterialID(workspaceMsg, "call_ws_receipt"))
+	workspaceOp := decodeReceipt(t, made).OperationID
+
+	if code := read(accountOp, "u_editor"); code != http.StatusOK {
+		t.Fatalf("own account receipt: %d", code)
+	}
+	if code := read(accountOp, "u_viewer"); code != http.StatusNotFound {
+		t.Fatalf("another user's account receipt: %d", code)
+	}
+	if code := read(workspaceOp, "u_editor"); code != http.StatusNotFound {
+		t.Fatalf("a workspace chat's receipt under account scope: %d", code)
+	}
+}
+
+// Review r1 T7: an account inspect of a file this user's account chat edited,
+// now out of their reach, answers moved_out; one the chat only read answers a
+// plain not found.
+func TestAccountTargetSaysMovedOutForAFileItsChatEdited(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	ctx := context.Background()
+	ws, err := st.CreateWorkspace(ctx, "u_editor", store.WorkspaceCreate{Name: "Moved out", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_editor", ws.ID) })
+	edited, read := fmt.Sprintf("f_mo_e_%d", time.Now().UnixNano()), fmt.Sprintf("f_mo_r_%d", time.Now().UnixNano())
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := st.Pool().Exec(ctx, q, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,'u_viewer','editor')`, ws.ID)
+	exec(`INSERT INTO files (id, workspace_id, user_id, created_by, name, kind, size_bytes, status)
+		VALUES ($1,$3,'u_editor','u_editor','a.md','md',10,'ready'), ($2,$3,'u_editor','u_editor','b.md','md',10,'ready')`, edited, read, ws.ID)
+	conv, err := st.CreateConversation(ctx, "u_viewer", "", "Across my files")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM conversations WHERE id=$1`, conv.ID) })
+	exec(`INSERT INTO agent_operations (id, kind, request_hash, actor_user_id, conversation_id, outcome, effect)
+		VALUES ($1,'edit_document','h','u_viewer',$2,'succeeded',
+		        jsonb_build_object('resource', jsonb_build_object('kind','source_file','id',$3::text)))`,
+		fmt.Sprintf("op_mo_%d", time.Now().UnixNano()), conv.ID, edited)
+	exec(`DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id='u_viewer'`, ws.ID)
+
+	inspect := func(id string) (int, string) {
+		rec := doInternal(t, h, http.MethodPost, "/api/internal/documents/inspect", pipeSecret, map[string]any{
+			"scope": "account", "userId": "u_viewer", "target": map[string]any{"kind": "source_file", "id": id},
+		})
+		return rec.Code, rec.Body.String()
+	}
+	if code, body := inspect(edited); code != http.StatusNotFound || !strings.Contains(body, `"moved_out"`) {
+		t.Fatalf("edited file: %d %s", code, body)
+	}
+	if code, body := inspect(read); code != http.StatusNotFound || strings.Contains(body, "moved_out") {
+		t.Fatalf("read-only file: %d %s", code, body)
 	}
 }

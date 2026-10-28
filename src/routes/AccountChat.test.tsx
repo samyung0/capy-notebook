@@ -2,11 +2,15 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
 import { streamChat } from '@/api/chatStream';
+import { ApiError } from '@/api/client';
 
 const page = vi.hoisted(() => ({
   chat: {} as Record<string, unknown>,
+  // What the fresh item read throws, if anything.
+  fail: null as unknown,
   lists: [] as Record<string, unknown>[],
   navigate: vi.fn(),
+  toast: vi.fn(),
   // Where the server says an item lives now ('' for no workspace).
   where: '',
 }));
@@ -22,9 +26,13 @@ vi.mock('@/api/auth', () => ({
 }));
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
-    fetchQuery: async () => ({ workspaceId: page.where || undefined }),
+    fetchQuery: async () => {
+      if (page.fail) throw page.fail;
+      return { workspaceId: page.where || undefined };
+    },
   }),
 }));
+vi.mock('@/api/queryClient', () => ({ showErrorToast: page.toast }));
 vi.mock('@/api/hooks', () => ({
   fileQuery: (id: string) => ({ queryKey: ['file', id] }),
   materialQuery: (id: string) => ({ queryKey: ['material', id] }),
@@ -63,6 +71,9 @@ const { default: AccountChat } = await import('./AccountChat');
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  page.fail = null;
+  page.navigate.mockClear();
+  page.toast.mockClear();
 });
 
 it('shows the Chats panel beside a Chat panel filling the rest, with no centre pane', () => {
@@ -112,3 +123,34 @@ it('opens a citation where its file lives now, not where the answer found it', a
     })
   );
 });
+
+it('opens a citation whose file answers 404 on its own page', async () => {
+  renderToStaticMarkup(<AccountChat />);
+  const open = page.chat.onOpenCitation as (citation: object) => void;
+
+  page.fail = new ApiError(404, 'Not Found');
+  open({ fileId: 'f_gone', workspaceId: 'ws_old' });
+  await vi.waitFor(() =>
+    expect(page.navigate).toHaveBeenLastCalledWith({
+      params: { fileId: 'f_gone' },
+      to: '/files/$fileId',
+    })
+  );
+  expect(page.toast).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['a server error', new ApiError(500, 'Internal Server Error')],
+  ['a network error', new TypeError('Failed to fetch')],
+])(
+  'toasts and stays on the chat when the cited file read fails with %s',
+  async (_, error) => {
+    renderToStaticMarkup(<AccountChat />);
+    const open = page.chat.onOpenCitation as (citation: object) => void;
+
+    page.fail = error;
+    open({ fileId: 'f_1', workspaceId: 'ws_old' });
+    await vi.waitFor(() => expect(page.toast).toHaveBeenCalledWith(error));
+    expect(page.navigate).not.toHaveBeenCalled();
+  }
+);

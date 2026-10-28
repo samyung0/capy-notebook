@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 )
 
@@ -151,27 +153,47 @@ func (s *Store) AccountDocumentAccess(ctx context.Context, userID string, items 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	// The unreadable files this user's account chat edited, in one more query
+	// for all of them (review r1 E2).
+	unread := map[string][]int{}
+	var unreadIDs []string
 	for i, row := range out {
-		if row.CanRead || row.Kind != agenttools.KindSourceFile {
-			continue
+		if !row.CanRead && row.Kind == agenttools.KindSourceFile {
+			if _, seen := unread[row.ID]; !seen {
+				unreadIDs = append(unreadIDs, row.ID)
+			}
+			unread[row.ID] = append(unread[row.ID], i)
 		}
-		if out[i].MovedOut, err = s.accountChatEditedElsewhere(ctx, userID, row.ID); err != nil {
-			return nil, err
+	}
+	if len(unreadIDs) == 0 {
+		return out, nil
+	}
+	moved, err := s.accountChatEditedElsewhere(ctx, userID, unreadIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range moved {
+		for _, i := range unread[id] {
+			out[i].MovedOut = true
 		}
 	}
 	return out, nil
 }
 
-// accountChatEditedElsewhere says whether the user's account chat edited this
-// file, which still exists (untrashed) where they can no longer read it.
-func (s *Store) accountChatEditedElsewhere(ctx context.Context, userID, fileID string) (bool, error) {
-	var edited bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM agent_operations ao
-		JOIN conversations c ON c.id=ao.conversation_id
-		WHERE c.user_id=$1 AND c.workspace_id IS NULL AND ao.kind='edit_document'
-		  AND ao.effect->'resource'->>'kind'='source_file' AND ao.effect->'resource'->>'id'=$2)
-		AND EXISTS (SELECT 1 FROM files WHERE id=$2 AND trashed_at IS NULL)`, userID, fileID).Scan(&edited)
-	return edited, err
+// accountChatEditedElsewhere lists which of these files the user's account
+// chat edited and that still exist (untrashed) where they can no longer read
+// them.
+func (s *Store) accountChatEditedElsewhere(ctx context.Context, userID string, fileIDs []string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT f.id FROM files f
+		WHERE f.id = ANY($2::text[]) AND f.trashed_at IS NULL AND EXISTS (
+			SELECT 1 FROM agent_operations ao JOIN conversations c ON c.id=ao.conversation_id
+			WHERE c.user_id=$1 AND c.workspace_id IS NULL AND ao.kind='edit_document'
+			  AND ao.effect->'resource'->>'kind'='source_file' AND ao.effect->'resource'->>'id'=f.id)`,
+		userID, fileIDs)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 // AccountDocument is one row of an account chat's file listing: a file or

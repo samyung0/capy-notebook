@@ -16,6 +16,7 @@ import {
   useWorkspaces,
 } from '@/api/hooks';
 import { CHAT_CHARACTER_LIMIT } from '@/api/limits.generated';
+import { isMissing } from '@/api/queryClient';
 import type {
   ChatMessage,
   ChatSteps,
@@ -322,7 +323,7 @@ export function ChatPanel({
   fill = false,
 }: {
   /** The workspace whose chat this is; null is the account chat, across all
-   * the user's files (no open item, no voice input, Your files only). */
+   * the user's files (no open item, Your files only). */
   workspaceId: string | null;
   /** The panel fills the page (the account chat): the thread and composer
    * keep a readable centred column. */
@@ -398,7 +399,11 @@ export function ChatPanel({
   const [selectId, setSelectId] = useState<string | null>(null);
   // Workspace only applies per message; it stays where the learner left it.
   const [workspaceOnly, setWorkspaceOnly] = useState(WORKSPACE_ONLY_DEFAULT);
-  const { data: history } = useMessages(selectId, { errorBoundary: false });
+  const { data: history, error: historyError } = useMessages(selectId, {
+    errorBoundary: false,
+  });
+  // A thread the link names that is gone or not the caller's (review r1 F2).
+  const missingThread = !!selectId && isMissing(historyError);
   const hydratedRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
@@ -570,7 +575,14 @@ export function ChatPanel({
               className="non-scaling-svg mx-auto mb-2 size-6.5"
               name="message"
             />
-            <p>{m.chat_empty()}</p>
+            {missingThread ? (
+              <>
+                <p className="font-medium">{m.error_not_found_title()}</p>
+                <p>{m.error_not_found_body()}</p>
+              </>
+            ) : (
+              <p>{m.chat_empty()}</p>
+            )}
           </div>
         )}
         {pendingSources?.omitted && (

@@ -5361,6 +5361,70 @@ useful source facts and file/chunk identifiers but omit old citation numbers.
 Uncompacted evidence can be reused with new answer-local numbers; missing facts
 or evidence known only through a summary require retrieval for a new citation.
 
+### Account chat
+
+The chat at `/chat` works across the user's files instead of one workspace
+(`todo-account-chat.md`; decisions in `human/agentic-retrieval.md`,
+2026-10-27 and 2026-10-28). A conversation with no `workspace_id` is the
+user's account chat, owned by its user alone; its scope and profile stay fixed
+for life so the provider prompt cache holds.
+
+- **Scope (D2).** The user's owned workspaces, member workspaces whose owner is
+  live (not suspended, deletion-pending or deleted), and their own items with
+  no workspace. Link- or visit-only workspaces are out. Go sends the scope's
+  workspaces with each turn as `{id, name, canEdit}` (`AccountScope`,
+  `store/account_scope.go`); the conversation's first message lists them once
+  (saved in `toolEvidence.workspaces` and replayed unchanged), and
+  `list_workspaces` gives the list as it stands. A workspace `create_workspace`
+  made this turn joins the turn's list at once (`tools._add_to_scope`).
+- **Profile.** `profiles/account.py` offers the contract's `account` scope
+  tools: `search_files_summary`, `search_files_content`, `list_files`,
+  `list_workspaces`, `create_workspace`, `resolve_source_change` and the shared
+  read, write, skill, library and web tools; trash, restore, the trash list,
+  study progress, `list_sources` and `search_workspace` are workspace only. The
+  tools that create (`create_material`, `create_deck`, `add_questions` for a new
+  quiz, `edit_office_document` for a new file) take an optional `workspace_id`
+  in the profile's copy of their schema only; `tools.run` moves it to
+  `_workspace_id`, and without one the item lands in No workspace. Go's
+  definitions stay byte for byte, and the profile swaps their workspace wording
+  (the made-from line, `search_web`) on its copies (`WORDING`).
+- **`_` arguments.** Keys starting with `_` are the pipeline's own; the agent
+  loop drops any the model sends before adding `_tool_call_id` (review r1 S2).
+- **Search.** `search_files_summary` is one scoped Postgres query over names
+  and the summaries' `search` column (option B); `search_files_content` runs
+  one hybrid search per embedding space over the scope's workspace files and
+  the caller's no-workspace files, labelling each passage with its workspace,
+  chapter and whether the user can edit it (a PDF passage reads view only).
+  `list_files` lists one workspace by chapter, or the newest 100 items with no
+  workspace. Both search tools keep their full result between messages.
+- **Per-call checks.** Every read, inspect, capture, change read and resolve
+  asks Go first: `POST /api/internal/documents/access` (`AccountDocumentAccess`,
+  one query for the items and one for the unreadable files' edit receipts),
+  `POST /api/internal/changes` (an item's unindexed changes with its access
+  checked per item; Office files go to the collaboration service per
+  access-checked workspace, files with no workspace under `""`) and
+  `POST /api/internal/changes/resolve`. Writes go through Go with
+  `scope: "account"`, bound to the actor's own account conversation; a
+  destination must be No workspace or a scope workspace the actor edits.
+  `POST /api/internal/workspaces` is `create_workspace` (a receipt, no Undo,
+  under the combined workspace cap).
+- **Refusals in account words.** An unreadable item:
+  "No file you can read has the id … search_files_summary finds the current
+  ids." (`NO_ACCOUNT_ITEM`, one generic not found, E2). A file this user's
+  account chat edited that now lies out of reach: `ACCOUNT_MOVED_OUT` ("This
+  file was moved where the user can no longer open it …", Q489). A view-only
+  edit: `ACCOUNT_NO_EDIT`, which stops only that edit (E1). Gateway reads pass
+  `account=` so inspect refusals use the same words. Library and web tools
+  while Your files only is on: `ACCOUNT_NOT_AVAILABLE`. A text or Office file
+  with no workspace cannot be inspected or edited until Go's source sessions
+  take one (`NO_SESSION`, pointing to `read_document`). A full workspace cap:
+  `WORKSPACE_LIMIT`.
+- **Sources switch.** Account chat's switch reads "Your files only"; off is All
+  sources mode, as in workspace chat.
+- **Voice.** `/api/voice-transcriptions` takes the voice rate class; its
+  vocabulary is the caller's newest files with no workspace or in a workspace
+  they still reach.
+
 ## Generate workflow
 
 `/generate` is **not** an agent loop. Scope is already known, the output shape

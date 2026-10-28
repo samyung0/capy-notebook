@@ -38,6 +38,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/edit-incidents":                               classIncident,
 		"/api/files/f_1/thumbnail":                          classThumbnail,
 		"/api/workspaces/ws_1/voice-transcriptions":         classVoice,
+		"/api/voice-transcriptions":                         classVoice,
 		"/api/workspaces/ws_1/review":                       classReview,
 		"/api/review/sessions/rs_1":                         classDefault,
 	}

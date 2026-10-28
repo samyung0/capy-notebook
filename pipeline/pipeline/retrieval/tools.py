@@ -367,8 +367,9 @@ async def _refuse_material_as_file(
 
 async def _check_source_target(ctx: ToolContext, rid: str) -> ToolResult | None:
     """A source file target of the document tools inside the chat's scope, or
-    the refusal. In account scope Go checks the target itself and never
-    answers `moved_out`. An id the turn's workspace list lacks goes on to Go,
+    the refusal. In account scope Go checks the target itself and answers
+    `moved_out` only for a file this user's account chat edited (Q489). An id
+    the turn's workspace list lacks goes on to Go,
     which answers `moved_out` for a file this workspace's chat edited before it
     moved and not found for anything else (Q469); with chosen sources only a
     chosen id goes on, so the chat never widens that choice."""
@@ -1867,6 +1868,9 @@ def _receipt_result(body: dict[str, Any], ctx: ToolContext | None = None) -> Too
     if body.get("kind") == "create_workspace" and body.get("outcome") == "succeeded":
         # No effect, so no Undo (Epo 2026-10-28); a recovered receipt has no name.
         name = f" '{body['name']}'" if body.get("name") else ""
+        _add_to_scope(
+            ctx, str(body.get("workspaceId") or ""), str(body.get("name") or "")
+        )
         return _result(
             f"Created the workspace{name} (workspace_id={body.get('workspaceId')}). "
             "Every tool that creates can create in it with this workspace_id."
@@ -1915,6 +1919,19 @@ def _receipt_result(body: dict[str, Any], ctx: ToolContext | None = None) -> Too
         effects=[effect],
         undo_payloads=[payload] if isinstance(payload, dict) else [],
     )
+
+
+def _add_to_scope(ctx: ToolContext | None, workspace_id: str, name: str) -> None:
+    """A workspace this turn created joins the turn's list, the user its owner,
+    so list_workspaces and list_files reach it at once (review r1 M-2)."""
+    scope = ctx.scope if ctx is not None else None
+    if not isinstance(scope, AccountScope) or not workspace_id:
+        return
+    if scope.workspace(workspace_id) is None:
+        ctx.scope = replace(
+            scope,
+            workspaces=(*scope.workspaces, ScopeWorkspace(workspace_id, name, True)),
+        )
 
 
 def _created_in(resource: dict[str, Any], ctx: ToolContext | None) -> str:
@@ -2933,10 +2950,16 @@ def _post_json(path: str, payload: dict[str, Any]) -> requests.Response:
 
 
 async def _gateway_read(
-    path: str, payload: dict[str, Any], failure: str, not_found: str = ""
+    path: str,
+    payload: dict[str, Any],
+    failure: str,
+    not_found: str = "",
+    *,
+    account: bool = False,
 ) -> dict[str, Any] | ToolResult:
-    """One gateway read for a tool; refusals map to typed tool errors, and a
-    plain not found adds ``not_found``."""
+    """One gateway read for a tool; refusals map to typed tool errors (in
+    account chat's words with ``account``), and a plain not found adds
+    ``not_found``."""
     try:
         resp = await asyncio.to_thread(_post_json, path, payload)
     except requests.RequestException as exc:
@@ -2946,6 +2969,7 @@ async def _gateway_read(
             resp,
             f"Could not {failure}: {_response_detail(resp) or resp.status_code}",
             not_found=not_found,
+            account=account,
         )
     body = resp.json()
     return body if isinstance(body, dict) else {}
@@ -3074,6 +3098,7 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         },
         "inspect the document",
         NO_WORKSPACE_ITEM.format(id=rid) if kind == "source_file" else "",
+        account=ctx.account,
     )
     if isinstance(body, ToolResult):
         return body
@@ -3822,6 +3847,7 @@ async def _inspect_office_document(
         },
         "inspect the file",
         NO_WORKSPACE_ITEM.format(id=rid),
+        account=ctx.account,
     )
     if isinstance(body, ToolResult):
         return body
@@ -3972,6 +3998,7 @@ def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
                 "count": 200,
             },
             f"read quiz {quiz_id}",
+            account=ctx.account,
         )
         return body if isinstance(body, ToolResult) else quiz_questions(quiz_id, body)
 
