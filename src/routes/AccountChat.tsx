@@ -226,6 +226,7 @@ export default function AccountChat() {
             <ChatPanel
               color="purple"
               fill
+              focusOnOpen
               historyButton={false}
               onActiveChange={onActiveChange}
               onOpenCitation={openCitation}

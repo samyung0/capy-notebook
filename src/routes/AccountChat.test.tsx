@@ -154,3 +154,8 @@ it.each([
     expect(page.navigate).not.toHaveBeenCalled();
   }
 );
+
+it('asks its chat to put the caret in the composer for each chat it opens', () => {
+  renderToStaticMarkup(<AccountChat />);
+  expect(page.chat.focusOnOpen).toBe(true);
+});

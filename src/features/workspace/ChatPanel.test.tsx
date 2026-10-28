@@ -6,6 +6,7 @@ import { expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import type { ChatMessage } from '@/api/types';
 import { getLocale, m } from '@/i18n';
+import type { ChatRequest } from './ChatPanel';
 
 // The locale resolves before a window exists (see EmbedsTab.test.tsx), then
 // linkedom's document goes in before react-dom/client loads.
@@ -117,4 +118,38 @@ it('says a linked thread that answers 404 is not found, not an empty chat', asyn
   expect(text).toContain(m.error_not_found_body());
   expect(text).not.toContain(m.chat_empty());
   act(() => root.unmount());
+});
+
+it('puts the caret in the composer for each chat it opens only when asked (the account chat page)', async () => {
+  thread.error = null;
+  const textarea = (
+    window as unknown as {
+      HTMLTextAreaElement: { prototype: { focus: () => void } };
+    }
+  ).HTMLTextAreaElement.prototype;
+  const original = textarea.focus;
+  const focus = vi.fn();
+  textarea.focus = focus;
+  const panel = (request: ChatRequest, focusOnOpen?: boolean) => (
+    <QueryClientProvider client={new QueryClient()}>
+      <ChatPanel
+        focusOnOpen={focusOnOpen}
+        request={request}
+        workspaceId={null}
+      />
+    </QueryClientProvider>
+  );
+  const root = createRoot(document.getElementById('root') as never);
+  // A new chat, then the thread left off last time.
+  await act(async () => root.render(panel({ id: null, seq: 1 }, true)));
+  expect(focus).toHaveBeenCalledTimes(1);
+  await act(async () => root.render(panel({ id: 'c_last', seq: 2 }, true)));
+  expect(focus).toHaveBeenCalledTimes(2);
+  act(() => root.unmount());
+  // A workspace's rail chat keeps the caret where the learner left it.
+  const rail = createRoot(document.getElementById('root') as never);
+  await act(async () => rail.render(panel({ id: null, seq: 1 })));
+  expect(focus).toHaveBeenCalledTimes(2);
+  act(() => rail.unmount());
+  textarea.focus = original;
 });

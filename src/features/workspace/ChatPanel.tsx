@@ -319,6 +319,7 @@ export function ChatPanel({
   dock,
   historyButton = true,
   request,
+  focusOnOpen = false,
   onActiveChange,
   fill = false,
 }: {
@@ -333,6 +334,9 @@ export function ChatPanel({
   /** Opens a thread (or, with a null id, a new chat) whenever `seq` changes:
    * the left panel's list drives the rail's chat through it. */
   request?: ChatRequest;
+  /** Each opened chat (a request, new or restored) puts the caret in the
+   * composer: the account chat page. */
+  focusOnOpen?: boolean;
   /** The shown thread, for the left panel to highlight. */
   onActiveChange?: (id: string | null) => void;
   color?: UserColor;
@@ -498,6 +502,7 @@ export function ChatPanel({
   const followRequest = useEffectEvent((next: ChatRequest) => {
     if (next.id) openThread(next.id);
     else openNew();
+    if (focusOnOpen) fieldRef.current?.focus({ preventScroll: true });
   });
   useEffect(() => {
     if (request) followRequest(request);
