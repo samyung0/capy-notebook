@@ -49,6 +49,12 @@ document layout:
   (D8: no worse than Plate). On the load-test note the `capy:*` blocks render
   as placeholders, so that case is lighter.
 
+Every navigation re-imports the dev server's modules through MSW's worker;
+`src/mocks/browser.ts` passes them through before the handlers, which would
+otherwise each parse cookies per module (about 11 s of main thread for
+BlockSuite's ~3,400 modules, less for Plate's). Opens measured before
+2026-10-28 include that cost.
+
 A run with `blocks-*` cases adds a Plate/BlockSuite table to the job summary.
 The Performance workflow's `blocks` input (on by default on dispatch) runs
 both, plus the bundle sizes from a `vite build --manifest`. The server side of

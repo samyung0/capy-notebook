@@ -340,7 +340,21 @@ input, CPU x4 except open; BlockSuite as integrated, before any tuning):
   `AFFINE-PAGE-ROOT.onbeforeinput` taking 0.7–1.1 s a key. On a small note
   BlockSuite is at least as fast as Plate.
 - **Floor:** this is far below D8's "no worse than Plate" for large notes.
-  Profiling these two paths is next.
+- **Profiled and tuned, 2026-10-28** (laptop, `editor.perf.ts --grep
+  near-limit`, before → after; uncommitted): open 44.9 → 24.7 s with its
+  blocking 12.6 → 1.8 s, first key 970 → 653 ms to a frame, typing 505 →
+  276 ms blocking a key (p95 768 → 448), scroll 20.8 → 39.9 FPS. Causes and
+  fixes: O(n) `root`/`getParent` per block rendered and per key, an O(n²)
+  store load, `collapsedSiblings` per paragraph and every block's
+  selection subscriber (vendor README local change 6); Chrome walking the
+  whole editable page root on each `Selection.addRange`, cut by
+  `content-visibility: auto` on top-level blocks (`pageEditor.css`); and in
+  the harness, MSW matching each of ~3,400 dev modules against every
+  handler (`src/mocks/browser.ts` passes them through). Left in a key:
+  `EditorHost.updateComplete` awaits every block, rich text and inline
+  element (`range-binding.ts:176`, `:303`; about 40%), and each block's
+  `selected$` and placeholder effect rerun on every selection change
+  (`block-component.ts:40`, `paragraph-block.ts:155`; about 20%).
 - **Same run, Plate's budgets:** read-only open was 4,747 ms against its
   4,050 budget, already over on main's last run (4,286 ms, Oct 23). Scroll
   was 35.6 FPS against 38, where main had 45.5; the measurement code is
