@@ -1,8 +1,8 @@
 # BlockSuite notes: built beside Plate, then a clean cut
 
-Status: plan only (2026-10-27), revised after an adversarial review the same day.
-Nothing is built. The direction below is Epo's (2026-10-27). The decisions at the
-end need answers before step 1 starts.
+Status: step 1 started 2026-10-28 on branch `blocksuite-notes` (worktree
+`.claude/worktrees/blocksuite-notes`, from main `872c5ba6b`). Piece 1's layout
+spec is `todo-blocksuite-layout.md`. The direction below is Epo's (2026-10-27).
 
 ## What we are building
 
@@ -244,7 +244,7 @@ in-memory doc.
   - BlockSuite writes with the doc's current client id (`store.ts:384`), but
     its undo captures the id once, at construction
     (`history-extension.ts:22-23`).
-  - `roomProvider.ts:729-739` changes the client id when the token arrives,
+  - `roomProvider.ts:733-743` changes the client id when the token arrives,
     and the room refuses edits made before that as `unassigned`.
   - So build the store only after the id is adopted, and make no edits at init.
 - **Awareness:** their `AwarenessStore` writes `selectionV2` and `user`, while
@@ -271,12 +271,20 @@ in-memory doc.
 `assert_roots`, `value`, `document_value`, `stored`, `measure`,
 `repair_on_entry`, `repairs`, `repair`, `validator` (`model.rs:43-149`).
 
-`room.rs` also reads `CONTENT_ROOT` directly in three places, each needing a
-blocks path:
+`room.rs` also reads `CONTENT_ROOT` directly, each needing a blocks path
+(lines on main `872c5ba6b`):
 - the child pass, which repoints pasted images and material refs and is skipped
-  for non-Note models (`:1547-1561`);
-- applying the child pass's answer (`:1645`);
-- the repair after an Undo (`:2011`).
+  for non-Note models (`:1946-1997`, the read at `:1969`);
+- applying the child pass's answer (`:2053`);
+- the heavy-update scan (`:3299`, `limits::heavy` is XmlText only);
+- `sessioned()` (`:555-559`) decides sessions, the late path and
+  `stored_version`; blocks rooms are sessioned.
+
+The repair after an Undo is in `edits.rs:1056`, which the blocks layout refuses
+anyway (boundary 3). `Model::of(kind)` (`model.rs:23`) has eight callers; a
+process-wide layout read in `of()` returns `Model::Blocks` for `kind == "note"`
+only, so none of them change and mindmaps and diagrams stay Plate in step 1
+(`liveMermaid.ts:39` reads the XmlText).
 
 The rest of the room work:
 - **Structural check:**
@@ -352,6 +360,63 @@ that the BlockSuite note is no worse than Plate on any bench spec.
 - the bench is no worse than Plate on the full load-test note;
 - the editor e2e specs have passing BlockSuite counterparts;
 - the bundle without Plate's note chunks is no larger than today's.
+
+## Work split (2026-10-28)
+
+Four packages with disjoint files, all on `blocksuite-notes`. Each runs in its
+own worktree branched from it and merges back. The layout spec is their shared
+input.
+
+| Package | Files | Waits on | Done when |
+| --- | --- | --- | --- |
+| **A. Rust blocks crate** (pieces 2 and 5's core) | new `collaboration-rs/crates/blocks`, workspace `Cargo.toml` | the spec | value → blocks → value is equal for the corpus and `every-block-note.json`; an empty value seeds `root`, `note` and one paragraph; the structural check catches two parents and a dangling id, and repair fixes both |
+| **B. Server wiring** (piece 5) | `server/src/{model,room,edits,config,main,children}.rs`, deploy env files, Go's handling of a refused `replace-block` | A's signatures (stubbed first) | with the layout set to `blocks`, a `rooms.rs` test seeds a note whose projection equals `materials.content`; `replace-block` and agent edits are refused; mindmaps still load as Plate; with it unset, the existing suite passes |
+| **C. TS converter and MSW** (pieces 2 and 3) | new `src/features/notes/blocksuite/layout.ts`, `src/mocks/collaboration.ts`, `src/mocks/chaosPeers.ts` | the spec, D's provider factory signature | round trip on the shared goldens; under the switch MSW seeds a blocks room and `persistMaterial` writes the same JSON as the Plate path |
+| **D. Browser editor** (pieces 1's build and 3) | `vendor/blocksuite/`, `package.json`, `pnpm-workspace.yaml`, Vite config, new `src/features/notes/blocksuite/*` (besides `layout.ts`), `NoteEditor.tsx`, the flag module | the spec | the vendored build passes with BlockSuite in a lazy chunk; with the flag on under MSW a note opens, two tabs sync, nothing is written before the client id is adopted; the Plate path is unchanged with it off |
+
+Then piece 4 (`capy:material-ref`, after D) and piece 6 (measure, after all
+four). The vendoring part of D started first (2026-10-28).
+
+- Rust worktrees need `vendor/betteroffice` linked for `yrs` and can share
+  `collaboration-rs/target` through `CARGO_TARGET_DIR`. TS worktrees get their
+  own `node_modules` (never a symlink to the main tree's).
+- The flag's name is `COLLABORATION_DOCUMENT_LAYOUT` (`plate` | `blocks`) on
+  the server, `VITE_DOCUMENT_LAYOUT` in the browser, and MSW reads the
+  browser's.
+
+## Tests
+
+The laptop is busy, so CI is the check: `ci.yml` runs on every push of the
+branch, and `perf.yml` is dispatched on it
+(`gh workflow run perf.yml --ref blocksuite-notes -f office=false -f stress=false -f share_pages=false`).
+
+- **Shared goldens.** `server/internal/materialdoc/testdata/blocks/*.json`, each
+  `{value, canonical, blocks}`: a Plate value, its value after the spec's
+  normalizations and derived ids, and the expected `blocks` map as JSON.
+  Package A writes them; Rust and vitest (the TS converter and MSW's `value()`)
+  each assert against them, as `figures.json` does for three languages today.
+- **A:** `crates/blocks/tests/roundtrip.rs` over `notes/tests/corpus/bootstrap.json.gz`
+  (the near-limit note, seed notes, small notes) and `every-block-note.json`,
+  modelled on `notes/tests/projection.rs:59-85`; hand cases for the structural
+  check and repair; a seeded concurrent fuzz (moves, deletes, typing from
+  several yrs docs) on the `gc_views.rs` / `flashcards_parity.rs` pattern with
+  `BLOCKS_CASES`/`BLOCKS_SEED`. CI job `collaboration`.
+- **B:** unit tests beside `model.rs:235`; integration tests in
+  `server/tests/rooms.rs` copying `two_clients_converge…` (`:872`), `tab()` and
+  `returning()`. These need the docker stack, so CI job `collaboration`
+  (`CAPY_IT_REQUIRED=1`), plus `backend_check` for Go.
+- **C:** vitest beside the converter on the goldens; a two-participant blocks
+  relay copying `src/mocks/collaboration.test.ts:28-75`. CI `frontend_check`.
+- **D:** vitest on the store and workspace adapter (no DOM); Playwright
+  `e2e/editor/blocksuite-*.spec.ts` under `e2e:msw:editor` with the flag on,
+  including a blocks-layout `mockNotePeer` for move-while-typing. CI
+  `e2e_editor`.
+- **Piece 6:** `editor.perf.ts`'s four specs parametrised over both editors
+  (`openNote` already takes a `PerfNote`), a blocks copy of the load note in
+  `perfSeed.ts`/`db.ts`, the common-subset note for both, and the peer burst
+  through `window.__capyMockRooms`. Server numbers in the
+  `admit_cost.rs`/`bound_cost.rs` style, reported in
+  `bench/collaboration/reports/`.
 
 ## What would need porting
 
@@ -523,6 +588,27 @@ Legend:
   (`value()` to Plate JSON, and the Plate JSON seed) are deleted. They exist only
   while both editors do. Production is not published before the cut, so only
   UAT data exists, and UAT is reset at the cut.
+- **D12: editor chrome is BlockSuite's own widgets, restyled** (Epo,
+  2026-10-28). The toolbar, slash menu and block menu stay BlockSuite's,
+  restyled to our looks. The icon and paraglide patches live in the vendored
+  code and are carried across upstream syncs (listed in
+  `vendor/blocksuite/README.md`).
+- **D13: an uploading image is an `affine:image` with an empty `sourceId`**
+  (Epo, 2026-10-28). Peers draw it as the skeleton while the uploader's
+  presence names it, and as "Add an image" otherwise. The room allows it; the
+  store still refuses an empty source at save.
+- **D14: BlockSuite features with no decision of ours stay on when they work
+  without porting** (Epo, 2026-10-28): heading and list folding, code wrap and
+  line numbers. Ones that need a service we don't have (the `@` linked-doc menu
+  needs a docs collection) stay off until one exists. Image pixel resize waits
+  on T2 in `todo-blocksuite-layout.md`.
+- **D15: table merging is dropped** (Epo, 2026-10-28). The BlockSuite table
+  has no merged cells; seeding splits them into a full grid, and Merge cells /
+  Split cells (`ToolbarTableMenu.tsx:99-105`) leave with Plate at the cut.
+
+The other questions from the decision walk-through are in
+`todo-blocksuite-decisions.md` ("Questions for Epo"); they matter at the cut,
+not for step 1.
 
 ## Decisions for Epo
 
