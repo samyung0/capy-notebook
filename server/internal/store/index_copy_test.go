@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 // runIndexCopies runs the copy worker until no index_copy job is due.
@@ -88,8 +91,9 @@ func TestCloneIndexCopiesInTheBackgroundInBatches(t *testing.T) {
 	}
 }
 
-// A copy whose source index is gone before it runs is ingested instead, and
-// one whose workspace is deleted ends with nothing left behind.
+// A copy whose source index is gone before it runs is ingested instead, one
+// whose claim a finished same-content upload took is served by that upload's
+// content, and one whose workspace is deleted ends with nothing left behind.
 func TestCloneIndexCopyFallsBackOrEnds(t *testing.T) {
 	// The fallback ingest pins its models from the registry.
 	s := maintenanceTestStore(t)
@@ -122,6 +126,12 @@ func TestCloneIndexCopyFallsBackOrEnds(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `DELETE FROM rag_file_contents WHERE file_id=$1`, gone.ID); err != nil {
 		t.Fatal(err)
 	}
+	// A same-content upload into the target took the claim and finished.
+	_, taken := clone("h-claim-taken")
+	if _, err := s.pool.Exec(ctx, `UPDATE rag_contents SET claim_job_id=NULL, status='ready'
+		WHERE workspace_id=$1 AND status='processing'`, taken.WorkspaceID); err != nil {
+		t.Fatal(err)
+	}
 	_, ended := clone("h-target-gone")
 	if _, err := s.pool.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, ended.WorkspaceID); err != nil {
 		t.Fatal(err)
@@ -132,8 +142,40 @@ func TestCloneIndexCopyFallsBackOrEnds(t *testing.T) {
 	if err := s.pool.QueryRow(ctx, `SELECT type FROM jobs WHERE payload->>'fileId'=$1 AND status='pending'`, ingested.ID).Scan(&jobType); err != nil {
 		t.Fatalf("no ingest queued for the copy whose source went: %v", err)
 	}
+	if got, err := s.GetFile(ctx, taken.ID); err != nil || got.Status != FileReady || !got.Indexed {
+		t.Fatalf("copy whose claim was taken = %+v (%v), want served by the ready content", got, err)
+	}
 	var leftover int
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM rag_contents WHERE status='processing'`).Scan(&leftover); err != nil || leftover != 0 {
 		t.Fatalf("claimed copies left = %d (%v), want none", leftover, err)
+	}
+}
+
+// A clone's edits publish once its index has copied (Epo 2026-10-28, D4):
+// a refresh request waits while the copy job is queued, then goes through.
+func TestCloneEditsPublishOnceItsIndexCopied(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_copy_publish")
+	_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "edited")
+	job := uid("job")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO jobs (id, type, payload) VALUES ($1, 'index_copy', jsonb_build_object('fileId', $2::text, 'fileIds', jsonb_build_array($2::text)))`,
+		job, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestSourceRefresh(ctx, owner, file.ID, false); !errors.Is(err, ErrConflict) {
+		t.Fatalf("refresh while copying = %v, want a conflict", err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE jobs SET status='done' WHERE id=$1`, job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestSourceRefresh(ctx, owner, file.ID, false); err != nil {
+		t.Fatalf("refresh after the copy: %v", err)
 	}
 }

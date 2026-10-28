@@ -600,12 +600,14 @@ Download (Epo 2026-10-27/28, `src/features/files/downloadItem.ts`). Every
 item menu that has Clone to… (the Files page's Files and Blocks tabs, the
 workspace file tree, the open item's header) offers Download after it, to
 anyone who can read the item. A file downloads its latest saved state under
-its own name: an Office or text file reads view mode's source session, which
-is the published file when nothing saved is past it, else its saved edits
-merged over the base in the browser (text from its saved state, Office
-through view mode's export worker, `exportCheckpoint`; measured in
-`bench/editor/reports/2026-10-28-office-browser-export.md`); any other file
-is its stored bytes from its read link. A note downloads as Markdown or Word
+its own name: an Office or text file reads view mode's source session and
+merges the saved edits it carries over its base in the browser (text from its
+saved state, Office through view mode's export worker, `exportCheckpoint`;
+measured in `bench/editor/reports/2026-10-28-office-browser-export.md`). The
+session carries them while they are ahead of the published file and while a
+publication waits to become the editing base, when every saved edit is still
+stored against the old base (review r1); with none, its base is the published
+file. Any other file is its stored bytes from its read link. A note downloads as Markdown or Word
 from its stored document with the editor's export (`exportNoteValue`), no
 editor open; quizzes and flashcard sets offer none. Each download shows as a
 Preparing row in the transfer panel until it saves, or says it failed. A

@@ -417,3 +417,51 @@ func TestDocxSourceTokenOffersAWorkerClientID(t *testing.T) {
 		t.Fatalf("regranted claims = %v, previous = %v", again, docx)
 	}
 }
+
+// A member removed from a workspace still downloads what it pays for (Epo
+// 2026-10-27, D3): its file's read link and view session admit it.
+func TestRemovedPayerReadsItsFileForDownload(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	registry, err := models.New(ctx, st.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetModelRegistry(registry)
+	memory := blob.NewMemory()
+	handler := httpapi.New(st, memory, nil, nil, "opendataloader", httpapi.Config{
+		AuthDisabled:  true,
+		E2EAuth:       true,
+		E2ESecret:     "e2e-test-secret",
+		E2EUserIDs:    []string{"u_owner", "u_other"},
+		ModelRegistry: registry,
+	})
+	workspace, err := st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "Left", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,'u_other','editor')`, workspace.ID); err != nil {
+		t.Fatal(err)
+	}
+	file, err := uploadSource(ctx, st, workspace.ID, "u_other", "deck.pptx", 100, "sources/deck.pptx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := memory.Put("sources/deck.pptx", bytes.NewReader([]byte("PK-deck"))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Pool().Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id='u_other'`, workspace.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{"/api/files/" + file.ID + "/links", "/api/files/" + file.ID + "/source-session?view=true"} {
+		if rec := doReq(t, handler, http.MethodGet, path, "u_other", nil); rec.Code != http.StatusOK {
+			t.Fatalf("payer %s = %d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+}

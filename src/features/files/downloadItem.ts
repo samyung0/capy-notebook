@@ -15,10 +15,10 @@ import { applySavedSource, savedSourceUpdate } from './sourceState';
 
 /** Download from an item menu (Epo 2026-10-27/28): a file's latest saved
  * state under its own name, shown as Preparing download until it saves. An
- * Office or text file reads view mode's source session: the published file
- * when nothing saved is past it, else its saved edits merged over the base
- * in the browser, with view mode's export worker for Office. Any other file
- * is its stored bytes. */
+ * Office or text file reads view mode's source session: its saved edits
+ * merged over the session's base in the browser (view mode's export worker
+ * for Office), or the base alone when it carries none. Any other file is its
+ * stored bytes. */
 export function downloadFile(
   file: Pick<SourceFile, 'id' | 'kind' | 'name' | 'workspaceId'>,
   queryClient: QueryClient
@@ -40,10 +40,14 @@ async function fileBlob(
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.blob();
   }
+  // The session carries saved edits while they are ahead of the published
+  // file, or while a publication waits to become the editing base: every
+  // saved edit is stored against the session's base, so they merge over it
+  // whenever present. With none, the base is the published file.
   const { base, session } = await takeSourceOpen(file.id, 'view');
   const bytes = await base;
-  if (session.checkpoint === session.indexedCheckpoint)
-    return new Blob([bytes]);
+  const saved = savedSourceUpdate(session);
+  if (!saved) return new Blob([bytes]);
   if (!office) {
     const doc = new Y.Doc();
     applySavedSource(doc, session);
@@ -51,8 +55,6 @@ async function fileBlob(
     doc.destroy();
     return new Blob([text], { type: 'text/plain;charset=utf-8' });
   }
-  const saved = savedSourceUpdate(session);
-  if (!saved) return new Blob([bytes]);
   const { exportCheckpoint } = await import(
     '@/office-runtime/exportCheckpoint'
   );

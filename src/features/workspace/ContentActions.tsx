@@ -186,8 +186,7 @@ export function ContentActions({
     ...(onShare
       ? [{ icon: 'link' as const, label: m.action_share(), onClick: onShare }]
       : []),
-    // Move to… follows its own right: a payer moves what it cannot edit.
-    ...(content && (moveTo || (!readOnly && showMove))
+    ...(!readOnly && content && (moveTo || showMove)
       ? [
           moveTo
             ? {
