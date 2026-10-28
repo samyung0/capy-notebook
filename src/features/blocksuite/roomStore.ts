@@ -1,3 +1,13 @@
+import { AttachmentStoreExtension } from '@blocksuite/affine/blocks/attachment/store';
+import { BookmarkStoreExtension } from '@blocksuite/affine/blocks/bookmark/store';
+import { DataViewStoreExtension } from '@blocksuite/affine/blocks/data-view/store';
+import { DatabaseStoreExtension } from '@blocksuite/affine/blocks/database/store';
+import { EdgelessTextStoreExtension } from '@blocksuite/affine/blocks/edgeless-text/store';
+import { EmbedStoreExtension } from '@blocksuite/affine/blocks/embed/store';
+import { EmbedDocStoreExtension } from '@blocksuite/affine/blocks/embed-doc/store';
+import { FrameStoreExtension } from '@blocksuite/affine/blocks/frame/store';
+import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
+import { SurfaceRefStoreExtension } from '@blocksuite/affine/blocks/surface-ref/store';
 import { StoreExtensionManager } from '@blocksuite/affine/ext-loader';
 import { getInternalStoreExtensions } from '@blocksuite/affine/extensions/store';
 import { NoopLogger } from '@blocksuite/affine/global/utils';
@@ -23,8 +33,26 @@ import { CapyStoreExtension } from './capyBlocks';
  * both the root and the space doc and its `blocks` map is the store's, so
  * nothing but block edits reaches the room. */
 
+/** BlockSuite's blocks the layout spec has no row for, and the room's
+ * structural check refuses (todo-blocksuite-layout.md, "Block flavours").
+ * Without their schemas no slash item, drop or paste can make one: a paste
+ * holding one fails validation and takes the next adapter. Their views go
+ * too (pageEditor.ts). */
+const REFUSED = new Set([
+  AttachmentStoreExtension,
+  BookmarkStoreExtension,
+  DataViewStoreExtension,
+  DatabaseStoreExtension,
+  EdgelessTextStoreExtension,
+  EmbedDocStoreExtension,
+  EmbedStoreExtension,
+  FrameStoreExtension,
+  SurfaceRefStoreExtension,
+  SurfaceStoreExtension,
+]);
+
 const storeManager = new StoreExtensionManager([
-  ...getInternalStoreExtensions(),
+  ...getInternalStoreExtensions().filter((provider) => !REFUSED.has(provider)),
   CapyStoreExtension,
 ]);
 

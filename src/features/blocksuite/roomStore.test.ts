@@ -11,6 +11,7 @@ import type {
 import {
   applyValue,
   BLOCKS_ROOT,
+  FLAVOURS,
   NOTE_ID,
 } from '@/features/notes/blocksuite/layout';
 import { keepIdMiddleware } from './clipboard';
@@ -70,6 +71,14 @@ describe('the room store', () => {
       dispose();
     }
   );
+
+  it("knows only the layout spec's flavours", () => {
+    const { dispose, store } = open(seeded([]));
+    expect([...store.schema.flavourSchemaMap.keys()].sort()).toEqual(
+      [...FLAVOURS].sort()
+    );
+    dispose();
+  });
 
   it('undoes its own edits after the client id changes', () => {
     const doc = seeded([

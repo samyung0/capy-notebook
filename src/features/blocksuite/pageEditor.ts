@@ -1,5 +1,15 @@
 import '@toeverything/theme/style.css';
+import { AttachmentViewExtension } from '@blocksuite/affine/blocks/attachment/view';
+import { BookmarkViewExtension } from '@blocksuite/affine/blocks/bookmark/view';
+import { DataViewViewExtension } from '@blocksuite/affine/blocks/data-view/view';
+import { DatabaseViewExtension } from '@blocksuite/affine/blocks/database/view';
+import { EdgelessTextViewExtension } from '@blocksuite/affine/blocks/edgeless-text/view';
+import { EmbedViewExtension } from '@blocksuite/affine/blocks/embed/view';
+import { EmbedDocViewExtension } from '@blocksuite/affine/blocks/embed-doc/view';
+import { FrameViewExtension } from '@blocksuite/affine/blocks/frame/view';
 import { PageClipboard } from '@blocksuite/affine/blocks/root';
+import { SurfaceViewExtension } from '@blocksuite/affine/blocks/surface/view';
+import { SurfaceRefViewExtension } from '@blocksuite/affine/blocks/surface-ref/view';
 import { ViewExtensionManager } from '@blocksuite/affine/ext-loader';
 import { getInternalViewExtensions } from '@blocksuite/affine/extensions/view';
 import { PlainTextClipboardConfig } from '@blocksuite/affine/foundation/clipboard';
@@ -11,7 +21,8 @@ import { RemoteSelectionViewExtension } from '@blocksuite/affine/widgets/remote-
 import { html, render } from 'lit';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
-import { CapyViewExtension } from './capyViews';
+import type { BlockIslands } from '@/features/notes/blocksuite/islands';
+import { blockIslandsExtension, CapyViewExtension } from './capyViews';
 import {
   CapyPageClipboard,
   ChatAnswerClipboardConfig,
@@ -19,18 +30,30 @@ import {
 } from './clipboard';
 import { noteStoreExtensions, openRoomStore } from './roomStore';
 
+const OFF = new Set([
+  // The views of the blocks the store refuses (roomStore.ts `REFUSED`),
+  // with their slash items and toolbar entries.
+  AttachmentViewExtension,
+  BookmarkViewExtension,
+  DataViewViewExtension,
+  DatabaseViewExtension,
+  EdgelessTextViewExtension,
+  EmbedDocViewExtension,
+  EmbedViewExtension,
+  FrameViewExtension,
+  SurfaceRefViewExtension,
+  SurfaceViewExtension,
+  // The `@` linked-doc menu needs a docs collection (D14). The remote
+  // selection widget writes a random awareness `color`; cursors come from
+  // room presence instead (todo-blocksuite-layout.md, Awareness).
+  LinkedDocViewExtension,
+  RemoteSelectionViewExtension,
+]);
 // Each view provider registers its custom elements once per class
 // (ext-loader's `effectRan`), and vendor/ is outside Vite's watch list, so an
 // HMR update of this module never defines an element twice.
 const viewManager = new ViewExtensionManager([
-  ...getInternalViewExtensions().filter(
-    (provider) =>
-      // The `@` linked-doc menu needs a docs collection (D14). The remote
-      // selection widget writes a random awareness `color`; cursors come
-      // from room presence instead (todo-blocksuite-layout.md, Awareness).
-      provider !== LinkedDocViewExtension &&
-      provider !== RemoteSelectionViewExtension
-  ),
+  ...getInternalViewExtensions().filter((provider) => !OFF.has(provider)),
   CapyViewExtension,
 ]);
 
@@ -55,16 +78,18 @@ function pageExtensions() {
 /**
  * Renders a note room's editor into `container`: BlockSuite's page editor
  * over the room's synced document, with its client id adopted (see
- * `openRoomStore`). Returns its unmount. The page specs look up their scroll
- * container as `.affine-page-viewport`.
+ * `openRoomStore`). Material refs publish their elements to `islands`.
+ * Returns its unmount. The page specs look up their scroll container as
+ * `.affine-page-viewport`.
  */
 export function mountNoteEditor(
   container: HTMLElement,
-  room: { awareness: Awareness; doc: Y.Doc; id: string; readonly: boolean }
+  room: { awareness: Awareness; doc: Y.Doc; id: string; readonly: boolean },
+  islands: BlockIslands
 ) {
   const opened = openRoomStore(room);
   const std = new BlockStdScope({
-    extensions: pageExtensions(),
+    extensions: [...pageExtensions(), blockIslandsExtension(islands)],
     store: opened.store,
   });
   render(

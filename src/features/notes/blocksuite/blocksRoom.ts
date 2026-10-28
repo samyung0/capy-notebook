@@ -2,6 +2,7 @@ import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { getMaterialCollaborationToken } from '@/api/hooks';
+import { NoteSeat } from '@/features/collaboration/noteSeat';
 import {
   RoomProvider,
   type RoomProviderConfig,
@@ -50,6 +51,9 @@ export class BlocksRoom {
   /** The editor's selections (`selectionV2`) ride on the room's awareness
    * beside its other fields; a read channel shares none (AU:10). */
   readonly awareness = new Awareness(this.doc);
+  /** The channel the note's embedded quizzes and sets join inside, as on
+   * Plate (NoteEditorCore). MSW's rooms have none. */
+  readonly seat = new NoteSeat();
   private provider: BlocksProvider | null = null;
   private state: BlocksRoomState = { status: 'connecting' };
   private destroyed = false;
@@ -115,12 +119,16 @@ export class BlocksRoom {
       },
       url: first.url,
     });
+    this.seat.attach(
+      this.provider instanceof RoomProvider ? this.provider : null
+    );
     this.provider.connect();
   }
 
   destroy() {
     this.destroyed = true;
     this.listeners.clear();
+    this.seat.attach(null);
     this.provider?.destroy();
     this.awareness.destroy();
     this.doc.destroy();

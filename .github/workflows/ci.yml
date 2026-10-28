@@ -330,6 +330,13 @@ jobs:
       - run: pnpm run e2e:msw:editor --shard="$SHARD/4"
         env:
           SHARD: ${{ matrix.shard }}
+      # The BlockSuite note specs skip without the blocks layout: shard 1
+      # runs only them again with it on (todo-blocksuite-spike.md), on a
+      # Vite server of their own and into a results folder of their own.
+      - if: ${{ !cancelled() && matrix.shard == 1 }}
+        run: pnpm run e2e:msw:editor --workers=1 --reporter=list --output=e2e/editor/test-results/blocks e2e/editor/blocksuite-
+        env:
+          VITE_DOCUMENT_LAYOUT: blocks
       # Retain failed-attempt traces even when a retry makes the job succeed.
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
