@@ -320,12 +320,12 @@ func errorStatus(err error) int {
 
 var batchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// receiveSource stores one streamed source upload; batch names the upload's
-// batch once it is open, for the caller to count a refusal in, until the
-// upload's session exists: from then on the session's expiry counts it
-// (upload_sessions_settle_source_batch), so batch is cleared. An upload
-// refused for its ticket, before its body is read, is settled by its batch's
-// idle sweep (store.SourceBatchIdle).
+// receiveSource stores one streamed source upload; batch names the batch the
+// caller counts a refusal in: the ticket's, which its ticket request opened,
+// once the ticket is spent (Q481), until the upload's session exists. From
+// then on the session's expiry counts it (upload_sessions_settle_source_batch),
+// so batch is cleared. An upload refused for its ticket counts nothing here:
+// a ticket given back or passed was counted then.
 func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *string) (store.File, error) {
 	ctx := r.Context()
 	wsID := id(r)
@@ -334,6 +334,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 		return store.File{}, err
 	}
 	defer release()
+	*batch = claim.batch
 	limits, err := a.s.PayerPlanLimits(ctx, uid(r))
 	if err != nil {
 		return store.File{}, err
@@ -351,10 +352,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	if err != nil {
 		return store.File{}, err
 	}
-	// The ticket's batch counts a mismatch, which the upload's own does not
-	// reach.
 	if err := claim.matches(sourceClaim(&body)); err != nil {
-		*batch = claim.batch
 		return store.File{}, err
 	}
 	name, chapterName, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch)

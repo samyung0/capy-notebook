@@ -344,6 +344,42 @@ func TestRefusedUploadCountsOnceInItsBatch(t *testing.T) {
 	}
 }
 
+// An editor removed while their upload waits for its turn is refused at the
+// upload, after its ticket is spent and before its metadata names the batch:
+// the file counts at once as failed in the ticket's batch, not at the idle
+// sweep (Q481). A batch of two holds its notification for the other file.
+func TestUploadRefusedAfterItsTicketCountsInItsBatchAtOnce(t *testing.T) {
+	fx := openBilling(t)
+	path := "/api/workspaces/" + fx.workspaceID + "/sources/uploads"
+	batch := fmt.Sprintf("sb_removed_%d", time.Now().UnixNano())
+	meta := map[string]any{
+		"name": "notes.pdf", "parseMode": "none", "sizeBytes": 8, "contentType": "application/pdf",
+		"batchId": batch, "batchTotal": 2,
+	}
+	rec, turn := takeTicket(t, fx.handler, path, fx.actorID, meta)
+	if rec.Code != http.StatusCreated || turn.Position != 0 {
+		t.Fatalf("ticket: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := fx.pool.Exec(context.Background(),
+		`DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, fx.workspaceID, fx.actorID); err != nil {
+		t.Fatal(err)
+	}
+	rec, _ = postForm(t, fx.handler, path+"?ticket="+turn.TicketID, fx.actorID,
+		metadataPart(t, meta), formPart{name: "file", contentType: "application/pdf", body: []byte("%PDF-1.7")})
+	if rec.Code != http.StatusNotFound && rec.Code != http.StatusForbidden {
+		t.Fatalf("upload by a removed editor: %d %s", rec.Code, rec.Body.String())
+	}
+	var failed int
+	var notified bool
+	if err := fx.pool.QueryRow(context.Background(),
+		`SELECT failed, notified_at IS NOT NULL FROM source_batches WHERE id=$1`, batch).Scan(&failed, &notified); err != nil {
+		t.Fatal(err)
+	}
+	if failed != 1 || notified {
+		t.Fatalf("batch after the refusal: failed=%d notified=%v, want 1 and waiting", failed, notified)
+	}
+}
+
 func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T) {
 	fx := openBilling(t)
 	rec := doReq(t, fx.handler, http.MethodGet, "/api/source-upload-policy", fx.actorID, nil)
