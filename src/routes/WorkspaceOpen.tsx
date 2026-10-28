@@ -345,13 +345,33 @@ function useFollowOpenFile(workspaceId: string, fileId: string | null) {
   }, [elsewhere, follow, target, targetError]);
 }
 
-export default function WorkspaceOpen() {
+/** The follow re-renders whenever the open file's row fetches, as it does on
+ * any navigation once the row is 5 s stale (the route's loader prefetches
+ * it), a citation click included. Beside the page it re-renders alone, not
+ * the whole workspace in the middle of the citation's scroll. */
+function FollowOpenFile() {
+  const params = useParams({ strict: false });
+  const workspaceId = (params as { workspaceId: string }).workspaceId;
+  const search = useSearch({ strict: false }) as WorkspaceOpenSearch;
+  useFollowOpenFile(workspaceId, search.file ?? null);
+  return null;
+}
+
+export default function WorkspaceOpenPage() {
+  return (
+    <>
+      <FollowOpenFile />
+      <WorkspaceOpen />
+    </>
+  );
+}
+
+function WorkspaceOpen() {
   const params = useParams({ strict: false });
   const workspaceId = (params as { workspaceId: string }).workspaceId;
   const navigate = useNavigate();
   const router = useRouter();
   const search = useSearch({ strict: false }) as WorkspaceOpenSearch;
-  useFollowOpenFile(workspaceId, search.file ?? null);
 
   // Other failures without data go to the error boundary.
   const {
