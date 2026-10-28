@@ -640,8 +640,18 @@ Legend:
   the same content fits. While the bridge stands, the structural check
   already refuses nesting deeper than 8.
 
+- **D19: editor AI is ghost text only** (Epo, 2026-10-28), in the Plate note
+  now and the BlockSuite note later, likely on the older DeepSeek OpenRouter
+  pin with no reasoning. The AI menu goes. The cost, endpoint and prompt are
+  being worked out in the `ghost-text` session (`todo-ghost-text.md` on its
+  branch).
+
 ## Held (not scheduled)
 
+- **Co-editors' live pointer and caret movement** (Epo, 2026-10-28). Presence
+  on embeds is fine, details later. The open part is relaying movement
+  cheaply; see the analysis in the 2026-10-28 conversation summarised under
+  Q10 in `todo-blocksuite-decisions.md`.
 - **Copy a chat answer into a note** (Epo, 2026-10-28). Not an insert button:
   we convert a chat answer (OpenUI Lang rich content and its citations) into
   note blocks when it is copied and pasted into a note. Its citations could

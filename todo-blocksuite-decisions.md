@@ -557,7 +557,7 @@ binding rules that never touch the note layout.
       widgets are not registered; `drag-handle` stays, restyled.
    b. Keep BlockSuite's widgets and restyle them to the decided looks. This
       needs icons and paraglide patches in vendored code we carry across syncs.
-5. **Is editor AI (AI menu and Copilot) a cut gate? (MI:225, W:3646).** It is
+5. **Is editor AI (AI menu and Copilot) a cut gate? (MI:225, W:3646).** Answered 2026-10-28 (D19): ghost text only, built for both editors; the AI menu goes. It is
    behind `VITE_FEATURE_EDITOR_AI`, which is off.
    a. (recommended) No. Mark both rows "dropped until the flag is turned on"
       in the porting inventory, so the cut does not wait on the rewrite the
@@ -597,7 +597,7 @@ binding rules that never touch the note layout.
       the same content fits.
    b. Keep measuring on a Plate-shaped projection forever. That contradicts
       D11, which deletes the converter.
-10. **Remote block selections (PE:247).** BlockSuite tints the whole block a
+10. **Remote block selections (PE:247).** 2026-10-28: presence on embeds is fine, details later. The real question is relaying movement cheaply. Today's relay: awareness is y-protocols (the whole local state as JSON per change, `roomProvider.ts:3-6`), and the room coalesces it per client over the 30 ms flush window and sends one frame per channel with no echo (`room.rs:1-7`, `:2927-2945`). Every message is charged to the user's 200/s allowance (`config.rs:163`). The cost per move is the JSON re-encode and re-parse plus the shared allowance, not the relay. The plan: a small binary pointer field outside the JSON state, sent at most about 20 times a second, coalesced by the room as today, interpolated on the receiving side, kept off read channels, and charged separately. BlockSuite tints the whole block a
     peer has selected. Options:
     a. (recommended) Hide remote block selections, as decided for carets on
        block voids.
@@ -626,7 +626,7 @@ binding rules that never touch the note layout.
     (recommended) over pixel widths. T1: no decision defends merged cells or
     block content in cells, and export already falls back to HTML for rich
     tables. Dropping merges (recommended) is consistent with them.
-15. **Ghost text, if Q5 says port.** Options:
+15. **Ghost text, if Q5 says port.** Being worked out in the `ghost-text` session (D19). Options:
     a. (recommended) An overlay widget reading the inline editor's range.
     b. Drop Copilot and keep only the AI menu.
 
