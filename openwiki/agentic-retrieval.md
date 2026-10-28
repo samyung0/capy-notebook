@@ -6014,8 +6014,10 @@ including sources with no index or search hit. Text changes come from
 `source_documents.pending_effects`. Office changes are computed when read (Q405):
 for every scoped Office file with unprocessed edits the load calls
 `POST /api/internal/source-changes` (`{workspaceId, fileIds}`, pipeline
-secret), which Go forwards to the collaboration service. There
-`Sources::office_changes` compares the stored document, with this instance's
+secret), which Go forwards to the collaboration service. An empty
+`workspaceId` reads only the named files with no workspace (account chat, Go
+having checked the actor's access to each), and a workspace's id never reads
+one of those. There `Sources::office_changes` compares the stored document, with this instance's
 live room merged in, against the published baseline (`office_effects`, the
 engine's baseline diff, or XLSX overrides through the room's replica) and
 keeps the result on the file's row (Q423, Epo 2026-10-27):
