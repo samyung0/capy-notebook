@@ -135,7 +135,7 @@ to the vendored schema (each one is listed in `vendor/blocksuite/README.md`).
 
 | Plate | Flavour | Props |
 | --- | --- | --- |
-| `img` | `affine:image` | `sourceId` (= `assetId`, figure ids `figure:<id>` included), `size` (= `sizeBytes`), `caption` (plain text of the Plate caption), `textAlign` (= `align`), `widthPercent` (ours, the `NN%` string), `name`, `contentType` (ours) |
+| `img` | `affine:image` | `sourceId` (= `assetId`, figure ids `figure:<id>` included), `size` (= `sizeBytes`), `caption` (plain text of the Plate caption), `textAlign` (= `align`), `width`/`height` in pixels (D21, N8), `name`, `contentType` (ours) |
 | `material_ref` | `capy:material-ref` | `materialId`, `refKind` (`quiz\|flashcards`); void, top level only (piece 4) |
 | `audio` | `capy:audio` | `assetId`, `name`, `contentType`, `sizeBytes`, `caption` |
 | `video` | `capy:video` | `provider`, `videoId`, `width`, `caption` |
@@ -149,9 +149,10 @@ to the vendored schema (each one is listed in `vendor/blocksuite/README.md`).
   In step 1 only `capy:material-ref` gets a real view; the rest render through
   the existing read-only React renderer as an island (enough for the bench's
   full load-test note).
-- `affine:image` sizes in pixels; ours in percent. We keep ours
-  (`widthPercent`) and leave `width`/`height` at 0. Its resize handle is
-  ported in piece 3 or later.
+- Image widths are pixels (D21). The seed turns a stored `"<n>%"` into
+  `round(n × 768 / 100)` px and leaves `height` at 0 (drawn from the image's
+  aspect ratio); `value()` turns pixels back into `"<n>%"` against 768 px,
+  clamped to 20–100 (N8).
 
 ### Tables (`affine:table`, flat data)
 
@@ -231,6 +232,7 @@ import write blocks directly, so they stop mattering.
 - **N5** `textIndent` (DOCX paste only) is dropped.
 - **N6** a cell or caption's marks inside multi-paragraph text are kept, its
   paragraph breaks become `\n`.
+- **N8** a media width in percent becomes pixels against a 768 px reference and back (D21).
 - **N7** a paragraph ending on an inline void (an inline equation) gets the
   trailing empty text leaf Slate's normalization adds.
 
@@ -283,5 +285,4 @@ are repaired on entry (D3).
 ## Open for Epo
 
 - **T1, tables:** settled 2026-10-28 (D15), merging is dropped.
-- **T2, image width.** Keep percent widths (`widthPercent`, ours) or switch to
-  BlockSuite's pixel widths.
+- **T2, image width:** settled 2026-10-28 (D21), pixels.

@@ -597,18 +597,14 @@ binding rules that never touch the note layout.
       the same content fits.
    b. Keep measuring on a Plate-shaped projection forever. That contradicts
       D11, which deletes the converter.
-10. **Remote block selections (PE:247).** 2026-10-28: presence on embeds is fine, details later. The real question is relaying movement cheaply. Today's relay: awareness is y-protocols (the whole local state as JSON per change, `roomProvider.ts:3-6`), and the room coalesces it per client over the 30 ms flush window and sends one frame per channel with no echo (`room.rs:1-7`, `:2927-2945`). Every message is charged to the user's 200/s allowance (`config.rs:163`). The cost per move is the JSON re-encode and re-parse plus the shared allowance, not the relay. The plan: a small binary pointer field outside the JSON state, sent at most about 20 times a second, coalesced by the room as today, interpolated on the receiving side, kept off read channels, and charged separately. BlockSuite tints the whole block a
-    peer has selected. Options:
-    a. (recommended) Hide remote block selections, as decided for carets on
-       block voids.
-    b. Show BlockSuite's tint.
+10. **Remote block selections (PE:247).** Out of this plan (2026-10-28): presence, including cursors and pointer movement, is Epo's own session.
 11. **Markdown footnotes (PE:186).** Answered 2026-10-28: a, footnotes stay text; BlockSuite's footnote is a citation chip, kept for source citations later (D17). BlockSuite has a footnote inline that
     draws them. Options:
     a. (recommended) Keep "footnotes become text" until a footnote design is
        asked for.
     b. Adopt AFFiNE's footnote inline, a new block-JSON attribute and export
        rules.
-12. **Block ids on paste (W:358-361).** BlockSuite gives every pasted block a
+12. **Block ids on paste (W:358-361).** Answered 2026-10-28: a, keep today's behaviour (D20). BlockSuite gives every pasted block a
     new id. Options:
     a. (recommended) A paste middleware keeps a pasted block's id when no live
        block holds it, as `stableElementIds` does today, so a cut-and-paste
@@ -621,7 +617,7 @@ binding rules that never touch the note layout.
     a. (recommended) Switch each one off until parity, recording each switch
        in the parity list.
     b. Keep whichever ones are free.
-14. **Spec T1 and T2, as the decisions bear on them.** T1 answered 2026-10-28: drop merging (D15). T2 still open. T2: PE:141's single
+14. **Spec T1 and T2, as the decisions bear on them.** T1 answered 2026-10-28: drop merging (D15). T2 answered 2026-10-28: pixels (D21). T2: PE:141's single
     "<n>%" check across five resizable blocks favours keeping `widthPercent`
     (recommended) over pixel widths. T1: no decision defends merged cells or
     block content in cells, and export already falls back to HTML for rich

@@ -646,12 +646,27 @@ Legend:
   being worked out in the `ghost-text` session (`todo-ghost-text.md` on its
   branch).
 
+- **D20: a pasted block keeps its id when no live block holds it** (Epo,
+  2026-10-28), as `stableElementIds` does today. Comments anchor to block ids,
+  and the server must not misread an offline user's typing into a block
+  someone else moved or cut and pasted. Our own clipboard middleware replaces
+  BlockSuite's `replaceIdMiddleware`, which mints a new id for every pasted
+  block.
+- **D21: image widths are pixels, not percent** (Epo, 2026-10-28), so an image
+  keeps its size when the note switches to the canvas or the block is dragged
+  out onto it, where a percentage has nothing to measure against. The note
+  column has no fixed width even today (768 px half width, 1280 px full,
+  `NoteEditorCore.tsx:263`, `:2311`). Images use `affine:image`'s
+  `width`/`height` and its own resize handles; `widthPercent` (ours) is gone.
+  Narrow screens clamp a wide image to the column. While the bridge stands,
+  `value()` converts to the stored `"<n>%"` against a 768 px reference
+  (clamped to 20–100) and the seed converts back (N8). Open: whether the
+  other resizable blocks (YouTube, Mermaid, chart, plot, graph) share the
+  rule, since they share one frame and would move to the canvas too. Presence
+  is out of this plan: Epo works on it in another session.
+
 ## Held (not scheduled)
 
-- **Co-editors' live pointer and caret movement** (Epo, 2026-10-28). Presence
-  on embeds is fine, details later. The open part is relaying movement
-  cheaply; see the analysis in the 2026-10-28 conversation summarised under
-  Q10 in `todo-blocksuite-decisions.md`.
 - **Copy a chat answer into a note** (Epo, 2026-10-28). Not an insert button:
   we convert a chat answer (OpenUI Lang rich content and its citations) into
   note blocks when it is copied and pasted into a note. Its citations could
