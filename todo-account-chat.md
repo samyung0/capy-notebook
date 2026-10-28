@@ -81,7 +81,7 @@ Chat is bound to one workspace at every layer:
 ## Build contract (2026-10-27, branch `wip/mac-account-chat`)
 
 Worktree `.claude/worktrees/account-chat`, stacked on `ae9edff0e` (the
-standalone branch the train merged). Migration **0128** (main holds 0126_index_content_scope and 0127_index_copy_job). Local DB tests use
+standalone branch the train merged). Migration **0128** today (main holds 0126 and 0127); becomes **0129** at landing, since ghost text (claude/ghost-text-18f936, landing first) takes 0128_note_ai_toggle. Local DB tests use
 untracked copies of the train's migrations as 0122-0124 (excluded in
 `.git/info/exclude`; never commit them). Rebased onto main after the train;
 overlaps with the train in `tools.py`, `pending.py`, `agent.py`, `store.py`
@@ -200,8 +200,8 @@ listing stay workspace-only.
   `create_workspace` (0128 widens the CHECK).
 - Retention: search_knowledge (both chats) and search_files_summary keep
   their whole result between messages.
-- Account turn context: one line naming the scope workspaces with
-  workspace_id and edit right (in place of the open item and role).
+- Workspaces: listed once with the conversation's first message (replayed
+  from its answer's toolEvidence); `list_workspaces` gives the current list.
 - No unindexed-edit hints. A read (read_document, inspect_document,
   capture_page) carries its item's unindexed changes, loaded per item through
   `POST /api/internal/changes` (actor's access checked per item, no workspace
@@ -215,9 +215,11 @@ listing stay workspace-only.
   create_workspace replay after the user deleted the new workspace creates
   another (its receipt cascades away). Hits' "view and edit" in
   search_files_content is the workspace right only (a PDF passage can say
-  it); summary hits use the item's own editability.
+  it, a PDF passage says view only); summary hits use the item's own editability.
 - Done: E1 (a view-only refusal stops only that edit), M1 (citations and
-  created items open where they live now). Still open: E2, T2, T3, Q489.
+  created items open where they live now), T2 (every create takes
+  workspace_id), E2 (kept), Q489 (moved_out for a file its account chat
+  edited, now out of reach). Still open: T3.
 
 ## After the first version
 
@@ -235,5 +237,3 @@ listing stay workspace-only.
 - **Planned tools:** more account-level tools (create_workspace is built).
 - **Open gaps:** some shared Go tool texts still say `list_sources` and
   "workspace", and the `write_sources` refusal says "Workspace only is on".
-  `add_questions` starting a quiz and a new Office file take no
-  `workspace_id`, so they always land in No workspace.

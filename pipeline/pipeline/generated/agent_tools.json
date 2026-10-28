@@ -102,6 +102,29 @@
       "retention": "full"
     },
     {
+      "name": "list_workspaces",
+      "version": 1,
+      "description": "List the user's workspaces as they stand now, with ids and whether the user can edit in each. The chat's first message lists them as they were then.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "scopes": [
+        "account"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ],
+      "retention": "full"
+    },
+    {
       "name": "search_files_summary",
       "version": 1,
       "description": "Find the user's files and materials by their names and summaries, in their workspaces and with no workspace. Each hit gives its id, workspace and chapter (or no workspace), whether the user can edit it, and its summary when it has one. Use it before search_files_content.",

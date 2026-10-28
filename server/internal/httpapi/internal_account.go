@@ -85,6 +85,9 @@ func (a *api) accountTarget(w http.ResponseWriter, r *http.Request, userID strin
 		return "", false
 	}
 	switch {
+	case rows[0].MovedOut:
+		writeJSON(w, http.StatusNotFound, map[string]string{"code": "moved_out", "message": "this file was moved where the user can no longer open it"})
+		return "", false
 	case !rows[0].CanRead:
 		a.fail(w, store.ErrNotFound)
 		return "", false

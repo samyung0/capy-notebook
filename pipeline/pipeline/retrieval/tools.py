@@ -290,6 +290,9 @@ class ToolContext:
     # is that workspace's. An account turn's workspace_id is "".
     scope: Scope | None = None
     _scope_outline: dict[str, Any] | None = field(default=None, repr=False)
+    # Account chat's workspace list as its first message showed it (Epo
+    # 2026-10-28): saved with that turn's answer and replayed with the message.
+    workspaces_shown: str = ""
 
     def __post_init__(self) -> None:
         if self.scope is None:
@@ -697,8 +700,14 @@ def _destination(args: dict[str, Any]) -> dict[str, Any]:
 
 
 # Account create tools whose schema copy takes an optional workspace_id (the
-# account profile adds it; Go's definitions stay as they are).
-DESTINATION_TOOLS = ("create_material", "create_deck")
+# account profile adds it; Go's definitions stay as they are): add_questions
+# and edit_office_document use it when they create (Epo 2026-10-28, T2).
+DESTINATION_TOOLS = (
+    "create_material",
+    "create_deck",
+    "add_questions",
+    "edit_office_document",
+)
 ACCESS_BATCH = 200
 NO_ACCOUNT_ITEM = (
     'No file you can read has the id "{id}": it may have been deleted, moved to '
@@ -748,12 +757,16 @@ async def _account_items(
     if isinstance(rows, ToolResult):
         return rows
     readable: dict[str, dict[str, Any]] = {}
+    moved = {row["id"] for row in rows if row.get("movedOut")}
     for row in rows:
         if row.get("canRead"):
             readable.setdefault(row["id"], row)
     for rid in ids:
-        if rid not in readable:
-            return _refused(NO_ACCOUNT_ITEM.format(id=rid), code="unavailable_target")
+        if rid in readable:
+            continue
+        if rid in moved:
+            return _refused(ACCOUNT_MOVED_OUT, code="unavailable_target")
+        return _refused(NO_ACCOUNT_ITEM.format(id=rid), code="unavailable_target")
     return readable
 
 
@@ -832,7 +845,8 @@ async def label_passages(ctx: ToolContext, passages: list[Passage]) -> list[Pass
                 workspace_name=workspace.name if workspace else "",
                 chapter_id=place["chapter_id"] or "",
                 chapter_name=place["chapter_name"] or "",
-                can_edit=can_edit(ctx, workspace),
+                # A PDF cannot be edited, whatever the workspace allows.
+                can_edit=can_edit(ctx, workspace) and place.get("file_kind") != "pdf",
             )
         )
     return labelled
@@ -896,6 +910,26 @@ async def _search_files_content(args: dict[str, Any], ctx: ToolContext) -> ToolR
         else ""
     )
     return ToolResult(passages=labelled, text_parts=[footer])
+
+
+def workspaces_text(ctx: ToolContext) -> str:
+    """The turn's workspaces with what the user may do in each, from Go's list
+    at the turn's start (at most 50, the workspace cap)."""
+    assert isinstance(ctx.scope, AccountScope)
+    if not ctx.scope.workspaces:
+        return "The user has no workspaces; their files are in No workspace."
+    lines = [
+        f"- {w.name} (workspace_id={w.id}, "
+        f"{'view and edit' if can_edit(ctx, w) else 'view only'})"
+        for w in sorted(ctx.scope.workspaces, key=lambda w: w.name.lower())
+    ]
+    return "\n".join(
+        ["The user's workspaces:", *lines, "Their other files are in No workspace."]
+    )
+
+
+async def _list_workspaces(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    return _result(workspaces_text(ctx))
 
 
 async def _account_list(
@@ -2544,6 +2578,12 @@ MOVED_OUT = (
     "This file was moved out of this workspace, so this chat can no longer "
     "read or edit it. Tell the user."
 )
+# Account chat's (Q468's rule there, Epo 2026-10-28): a file its chat edited,
+# now where the user cannot open it; the destination is never named.
+ACCOUNT_MOVED_OUT = (
+    "This file was moved where the user can no longer open it, so this chat "
+    "can no longer read or edit it. Tell the user."
+)
 
 # Gateway codes for an actor who may no longer act in the workspace: a role
 # change, a removed membership, a frozen or locked account. Chat turns run no
@@ -2590,7 +2630,9 @@ def _gateway_refused(
     except ValueError:
         code = ""
     if code == "moved_out":
-        return _refused(MOVED_OUT, code="unavailable_target")
+        return _refused(
+            ACCOUNT_MOVED_OUT if account else MOVED_OUT, code="unavailable_target"
+        )
     if resp.status_code == 404 and not_found:
         detail = "\n\n".join(part for part in (detail, not_found) if part)
     if code in _NO_PERMISSION_CODES:
@@ -3776,6 +3818,7 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             "/api/internal/documents/office/create",
             {
                 **_chat_context(ctx, call_id),
+                **_destination(args),
                 "format": create["format"],
                 "title": create["title"],
                 "chapterId": str(create.get("chapter_id") or ""),
@@ -3938,7 +3981,13 @@ async def write_questions(
         found, quiz, clean.get("after_question_id"), _new_ids(ctx, call_id)
     )
     if quiz is None:
-        result = await quizzes.create(clean, built.questions, books)
+        # An account quiz lands where the user named (_destination).
+        where = (
+            {"_workspace_id": args["_workspace_id"]}
+            if args.get("_workspace_id")
+            else {}
+        )
+        result = await quizzes.create({**clean, **where}, built.questions, books)
     else:
         result = await quizzes.edit(str(quiz_id), built.commands, books, {})
     if not result.effects:
@@ -4242,6 +4291,7 @@ _register("list_sources", _list_sources)
 _register("search_files_summary", _search_files_summary)
 _register("search_files_content", _search_files_content)
 _register("list_files", _list_files)
+_register("list_workspaces", _list_workspaces)
 _register("create_workspace", _create_workspace)
 _register("read_document", _read_document)
 _register("capture_page", _capture_page)

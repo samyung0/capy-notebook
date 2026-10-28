@@ -92,6 +92,10 @@ type DocumentAccess struct {
 	// Editable is CanEdit for an item whose format can be edited (a PDF
 	// cannot), which the handler fills as documents/list does.
 	Editable bool `json:"editable"`
+	// MovedOut marks an unreadable file the user's account chat edited, which
+	// still exists out of their reach (Q468's rule, Epo 2026-10-28): the chat
+	// may say it was moved; anything else stays a plain not found.
+	MovedOut bool `json:"movedOut,omitempty"`
 }
 
 // AccountDocumentAccess answers each item in order, in one query: a file or
@@ -144,7 +148,30 @@ func (s *Store) AccountDocumentAccess(ctx context.Context, userID string, items 
 		read.Kind, read.ID, read.CanRead = out[ord-1].Kind, out[ord-1].ID, true
 		out[ord-1] = read
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i, row := range out {
+		if row.CanRead || row.Kind != agenttools.KindSourceFile {
+			continue
+		}
+		if out[i].MovedOut, err = s.accountChatEditedElsewhere(ctx, userID, row.ID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// accountChatEditedElsewhere says whether the user's account chat edited this
+// file, which still exists (untrashed) where they can no longer read it.
+func (s *Store) accountChatEditedElsewhere(ctx context.Context, userID, fileID string) (bool, error) {
+	var edited bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM agent_operations ao
+		JOIN conversations c ON c.id=ao.conversation_id
+		WHERE c.user_id=$1 AND c.workspace_id IS NULL AND ao.kind='edit_document'
+		  AND ao.effect->'resource'->>'kind'='source_file' AND ao.effect->'resource'->>'id'=$2)
+		AND EXISTS (SELECT 1 FROM files WHERE id=$2 AND trashed_at IS NULL)`, userID, fileID).Scan(&edited)
+	return edited, err
 }
 
 // AccountDocument is one row of an account chat's file listing: a file or

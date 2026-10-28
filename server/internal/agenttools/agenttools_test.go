@@ -190,7 +190,7 @@ func TestEveryOfficeCommandHasALimit(t *testing.T) {
 func TestToolScopes(t *testing.T) {
 	want := map[string][]Scope{
 		"search_workspace": {ScopeWorkspace}, "list_sources": {ScopeWorkspace},
-		"search_files_summary": {ScopeAccount}, "create_workspace": {ScopeAccount}, "search_files_content": {ScopeAccount}, "list_files": {ScopeAccount},
+		"search_files_summary": {ScopeAccount}, "create_workspace": {ScopeAccount}, "list_workspaces": {ScopeAccount}, "search_files_content": {ScopeAccount}, "list_files": {ScopeAccount},
 		"read_study_progress": {ScopeWorkspace},
 		"trash_file":          {ScopeWorkspace}, "list_trashed_files": {ScopeWorkspace}, "restore_file": {ScopeWorkspace},
 	}
@@ -214,7 +214,7 @@ func TestRetentionBetweenMessages(t *testing.T) {
 	want := map[ResultRetention][]string{
 		RetainFull: {
 			"list_sources", "create_material", "add_questions", "add_question_media", "create_deck",
-			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document", "list_files", "search_files_summary", "create_workspace", "search_knowledge",
+			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document", "list_files", "search_files_summary", "create_workspace", "search_knowledge", "list_workspaces",
 		},
 		RetainCitedPassages: {"search_workspace", "read_document", "search_web", "search_files_content"},
 		RetainUsedExcerpts:  {"read_knowledge"},

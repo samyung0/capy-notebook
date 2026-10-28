@@ -183,6 +183,8 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
         detail = "listing sources"
     elif name == "list_files":
         detail = "listing files"
+    elif name == "list_workspaces":
+        detail = "listing workspaces"
     elif name == "create_workspace":
         detail = str(args.get("name") or "") or "New Workspace"
     elif name in ("create_material", "create_deck"):
@@ -503,11 +505,17 @@ async def _run_turn(
         schemas = [*schemas, ASK_USER_SCHEMA]
     # A viewer is offered no write tool, and told so.
     can_write = any(s["function"]["name"] in WRITE_TOOLS for s in schemas)
+    # Account chat lists its workspaces once, with the conversation's first
+    # message; list_workspaces gives the current list (Epo 2026-10-28).
+    sent_query = query
+    if ctx.account and not history and not checkpoint:
+        ctx.workspaces_shown = tools.workspaces_text(ctx)
+        sent_query = f"{ctx.workspaces_shown}\n\n{query}"
     messages = profile.messages(
         locale=locale,
         checkpoint=checkpoint,
         history=prior,
-        query=query,
+        query=sent_query,
         workspace_only=ctx.workspace_only,
         mode_shown=evidence.mode_shown(history),
         writes=can_write,

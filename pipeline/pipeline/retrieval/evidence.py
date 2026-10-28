@@ -55,6 +55,9 @@ def pack(ctx: tools.ToolContext, cited_order: list[int]) -> dict[str, Any]:
         payload["libraryExcerpts"] = excerpts
     if ctx.pending_hints:
         payload["pendingHints"] = pending_hints.pack(ctx.pending_hints)
+    if ctx.workspaces_shown:
+        # Replayed with this turn's message, as it was sent.
+        payload["workspaces"] = ctx.workspaces_shown
     return payload
 
 
@@ -114,6 +117,12 @@ async def history_turns(
         unfinished = UNFINISHED.get(turn.get("status") or "")
         if role == "assistant" and unfinished:
             content = f"{content}\n\n{unfinished}" if content else unfinished
+        if role == "user" and content:
+            # Account chat's workspace list, where its first message carried it.
+            answer = turns[i + 1] if i + 1 < len(turns) else {}
+            listed = (answer.get("toolEvidence") or {}).get("workspaces")
+            if answer.get("role") == "assistant" and listed:
+                content = f"{listed}\n\n{content}"
         if role == "user" and content and "workspaceOnly" in turn:
             # A mode note where the switch is first known or changes, as it was
             # sent, so the request prefix stays cached.

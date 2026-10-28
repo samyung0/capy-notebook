@@ -153,8 +153,9 @@ import (
 // carries its workspaces with names and edit rights, create_workspace
 // (operation workspace.create) makes a workspace, search_knowledge's hits
 // are kept between messages (a later "make it a note" needs no new search),
-// and resolve_source_change is offered in account chat, whose reads now carry
-// their items' unindexed changes.
+// resolve_source_change is offered in account chat, whose reads now carry
+// their items' unindexed changes, and list_workspaces lists the user's
+// workspaces as they stand.
 const ContractVersion = 44
 
 // Scope is the kind of chat a tool is offered in: a workspace's, or the
@@ -914,6 +915,16 @@ func Definitions() []Definition {
 			InputSchema:        obj(map[string]any{}),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
+		}),
+		chatTool(Definition{
+			Name:      "list_workspaces",
+			Scopes:    accountOnly,
+			Retention: RetainFull,
+			Description: "List the user's workspaces as they stand now, with ids and whether the " +
+				"user can edit in each. The chat's first message lists them as they were then.",
+			InputSchema:        obj(map[string]any{}),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
 			Name:      "search_files_summary",

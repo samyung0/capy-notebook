@@ -1594,7 +1594,8 @@ async def item_places(
     file_ids: list[str], material_ids: list[str]
 ) -> dict[str, dict[str, Any]]:
     """Where each untrashed file and material lives now: its workspace (None
-    for none), owner and chapter, for labelling account chat's passages."""
+    for none), owner, chapter and a file's kind, for labelling account chat's
+    passages."""
     if not file_ids and not material_ids:
         return {}
     db = await pool()
@@ -1602,11 +1603,11 @@ async def item_places(
         cur = await conn.execute(
             """
             SELECT f.id, f.workspace_id, f.user_id AS owner_id, f.chapter_id,
-                   ch.name AS chapter_name
+                   ch.name AS chapter_name, f.kind AS file_kind
             FROM files f LEFT JOIN chapters ch ON ch.id = f.chapter_id
             WHERE f.id = ANY(%s) AND f.trashed_at IS NULL
             UNION ALL
-            SELECT m.id, m.workspace_id, m.owner_user_id, m.chapter_id, ch.name
+            SELECT m.id, m.workspace_id, m.owner_user_id, m.chapter_id, ch.name, NULL
             FROM materials m LEFT JOIN chapters ch ON ch.id = m.chapter_id
             WHERE m.id = ANY(%s) AND m.trashed_at IS NULL
             """,

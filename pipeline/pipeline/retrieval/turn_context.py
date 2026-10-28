@@ -1,8 +1,7 @@
 """The turn context: one always-current message at the end of each request.
 
 It carries what the model must see on every call but must not compact away:
-the file the learner has open (account chat: the workspaces it reaches), their
-study preferences, the library excerpts
+the file the learner has open, their study preferences, the library excerpts
 read this message and the budget left. Chapters come from list_sources
 (Epo 2026-10-25).
 The loop rebuilds it before each request and sends it last, leaving earlier
@@ -16,7 +15,7 @@ from typing import Any
 
 from ..prompts import preferences
 from .scope import AccountScope
-from .tools import ToolContext, can_edit
+from .tools import ToolContext
 
 HEADER = "Turn context (current at this step; a later one replaces it):"
 
@@ -86,30 +85,18 @@ def _open_item(resource: dict[str, Any], chapters: list[dict[str, Any]]) -> str:
     return f"Open: {title} ({resource.get('kind') or 'file'} {resource['id']}){where}."
 
 
-def _workspaces_line(ctx: ToolContext) -> str:
-    """An account turn's workspaces with what the learner may do in each, on
-    one line to keep the per-step cost low (at most 50, the workspace cap)."""
-    assert isinstance(ctx.scope, AccountScope)
-    if not ctx.scope.workspaces:
-        return "The learner's workspaces: none. Their files are in No workspace."
-    listed = "; ".join(
-        f"{w.name} (workspace_id={w.id}, "
-        f"{'view and edit' if can_edit(ctx, w) else 'view only'})"
-        for w in sorted(ctx.scope.workspaces, key=lambda w: w.name.lower())
-    )
-    return f"The learner's workspaces: {listed}. Their other files are in No workspace."
-
-
 def message(
     ctx: ToolContext, *, final: bool = False, allowance: str = "", writing: bool = True
 ) -> dict[str, Any]:
     lines = [
         HEADER,
-        # Account chat has no open item and no workspace role; it names the
-        # workspaces it reaches instead (Epo 2026-10-28).
-        _workspaces_line(ctx)
-        if isinstance(ctx.scope, AccountScope)
-        else _open_line(ctx.open_resource, ctx.chapters, ctx.role),
+        # Account chat has no open item and no workspace role; its first
+        # message names its workspaces once (Epo 2026-10-28).
+        *(
+            ()
+            if isinstance(ctx.scope, AccountScope)
+            else (_open_line(ctx.open_resource, ctx.chapters, ctx.role),)
+        ),
         "\nStudy preferences (a request that names one material gets only that material):",
     ]
     lines.extend(f"- {line}" for line in preferences.lines(ctx.study_preferences))

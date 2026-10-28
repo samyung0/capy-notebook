@@ -75,6 +75,7 @@ const ICONS: Record<string, ActivityIconKind> = {
   list_files: 'list',
   list_sources: 'list',
   list_trashed_files: 'list',
+  list_workspaces: 'list',
   read_document: 'read',
   read_knowledge: 'read',
   read_skill: 'read',
@@ -181,6 +182,12 @@ const COPY: Record<string, Copy> = {
     fail: () => m.chat_step_list_trash_fail(),
     group: (count) => m.chat_step_list_trash_group({ count }),
     run: () => m.chat_step_list_trash_run(),
+  },
+  list_workspaces: {
+    done: () => m.chat_step_list_sources_done(),
+    fail: () => m.chat_step_list_sources_fail(),
+    group: (count) => m.chat_step_list_sources_group({ count }),
+    run: () => m.chat_step_list_sources_run(),
   },
   read_document: read(
     (count) => m.chat_step_read_files_group({ count }),

@@ -1,9 +1,9 @@
 """Account chat's profile (todo-account-chat.md): the chat across the user's
 owned and member workspaces and their files with no workspace.
 
-Its tools are the contract's ``account`` scope (tools._offered). The two
-create tools, create_material and create_deck, take an optional
-``workspace_id`` here only: this profile adds it to its copy of their schema,
+Its tools are the contract's ``account`` scope (tools._offered). The tools
+that create (tools.DESTINATION_TOOLS) take an optional ``workspace_id`` here
+only: this profile adds it to its copy of their schema,
 and tools.run moves it out before checking the call against Go's definition,
 which stays byte for byte. Omitted, the item lands in No workspace.
 Skills replace their workspace wording (skills.text).
@@ -23,10 +23,9 @@ from . import Profile
 WORKSPACE_ID = {
     "type": "string",
     "minLength": 1,
-    "description": "The workspace to create it in (a workspace_id a search, listing "
-    "or read named), "
-    "only when the user names one they can edit; omit it to create it in No "
-    "workspace.",
+    "description": "Where a new item is created (a workspace_id a search, listing "
+    "or read named), only when the user names one they can edit; omit it to "
+    "create it in No workspace. An edit of an existing item ignores it.",
 }
 
 

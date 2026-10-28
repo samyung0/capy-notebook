@@ -273,3 +273,41 @@ func TestAgentFileWithNoWorkspaceIsStandalone(t *testing.T) {
 		t.Fatalf("maker role = %q, %v", role, err)
 	}
 }
+
+// A file the user's account chat edited, now out of their reach, reads as
+// moved out (Q468's rule in account chat, Epo 2026-10-28); one it never
+// edited stays a plain not found, so nothing confirms it exists elsewhere.
+func TestAccountAccessSaysMovedOutOnlyForAFileItsChatEdited(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	f := newAccountScopeFixture(t, s)
+	conv, err := s.CreateConversation(ctx, f.me, "", "Across my files")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited, untouched := f.files[f.edited], f.files[f.viewed]
+	if _, err := s.pool.Exec(ctx, `INSERT INTO agent_operations
+		(id, kind, request_hash, actor_user_id, conversation_id, outcome, effect)
+		VALUES ($1, 'edit_document', 'h', $2, $3, 'succeeded',
+		        jsonb_build_object('resource', jsonb_build_object('kind', 'source_file', 'id', $4::text)))`,
+		uid("op"), f.me, conv.ID, edited); err != nil {
+		t.Fatal(err)
+	}
+	// Both workspaces leave the user's reach.
+	if _, err := s.pool.Exec(ctx, `DELETE FROM workspace_members WHERE user_id=$1 AND workspace_id = ANY($2)`,
+		f.me, []string{f.edited, f.viewed}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.AccountDocumentAccess(ctx, f.me, []agenttools.ResourceRef{
+		{Kind: agenttools.KindSourceFile, ID: edited}, {Kind: agenttools.KindSourceFile, ID: untouched},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows[0].CanRead || !rows[0].MovedOut {
+		t.Fatalf("edited file = %+v, want moved out", rows[0])
+	}
+	if rows[1].CanRead || rows[1].MovedOut {
+		t.Fatalf("untouched file = %+v, want a plain not found", rows[1])
+	}
+}

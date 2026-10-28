@@ -18,6 +18,7 @@ from pipeline.registry import ModelConfig
 from pipeline.retrieval import (
     accounting,
     contract,
+    evidence,
     pending,
     profiles,
     search,
@@ -177,6 +178,7 @@ def test_the_account_profile_offers_the_account_tools():
         "search_files_summary",
         "search_files_content",
         "list_files",
+        "list_workspaces",
         "create_workspace",
         "resolve_source_change",
         "read_document",
@@ -194,14 +196,23 @@ def test_the_account_profile_offers_the_account_tools():
         "inspect_document",
         "edit_document",
     }
-    for name in ("create_material", "create_deck"):
-        assert "workspace_id" in by_name[name]["parameters"]["properties"]
+    office = {
+        s["function"]["name"]: s["function"]
+        for s in profiles.account.PROFILE.schemas(
+            _account(library_catalog=CATALOG, office_tools=True)
+        )
+    }
+    # Every tool that creates takes where it lands (Epo 2026-10-28, T2).
+    for name, schema in [
+        *((n, by_name[n]) for n in ("create_material", "create_deck", "add_questions")),
+        ("edit_office_document", office["edit_office_document"]),
+    ]:
+        assert "workspace_id" in schema["parameters"]["properties"]
         # Go's definition stays as it is.
         assert (
             "workspace_id"
             not in contract.DEFINITIONS[name]["inputSchema"]["properties"]
         )
-    assert "workspace_id" not in by_name["add_questions"]["parameters"]["properties"]
 
 
 def test_the_account_prompt_turn_context_and_skills_name_the_users_files():
@@ -222,12 +233,8 @@ def test_the_account_prompt_turn_context_and_skills_name_the_users_files():
     folded = chat_prompts.with_mode_note({**messages[-1], "content": "q"})
     assert folded["content"].startswith("[Your files only: on.")
     context = turn_context.message(ctx)["content"]
-    # The workspaces it reaches stand in for the open item (Epo 2026-10-28).
-    assert "Open:" not in context
-    assert (
-        "The learner's workspaces: Biology (workspace_id=ws_2, view only); "
-        "Chemistry (workspace_id=ws_1, view and edit)."
-    ) in context
+    # No open item, and the workspaces ride with the first message instead.
+    assert "Open:" not in context and "workspace_id=" not in context
     editing = skills.text(skills.EDITING, account=True)
     assert "list_sources" not in editing and "No workspace" in editing
     assert "No workspace" in skills.text(skills.DECK_BUILDING, account=True)
@@ -327,7 +334,7 @@ async def test_search_files_content_labels_hits_from_the_turns_scope(monkeypatch
             section_path="",
             text="t",
         )
-        for f in ("f_mine", "f_chem", "f_gone", "f_out", "f_theirs")
+        for f in ("f_mine", "f_chem", "f_gone", "f_out", "f_theirs", "f_pdf")
     ]
     seen = {}
 
@@ -347,6 +354,7 @@ async def test_search_files_content_labels_hits_from_the_turns_scope(monkeypatch
             },
             "f_out": {**place, "workspace_id": "ws_9"},
             "f_theirs": {**place, "workspace_id": None},
+            "f_pdf": {**place, "workspace_id": "ws_1", "file_kind": "pdf"},
         }
 
     monkeypatch.setattr(tools, "search_account", search_account)
@@ -355,8 +363,9 @@ async def test_search_files_content_labels_hits_from_the_turns_scope(monkeypatch
     result = await tools._search_files_content({"query": "atp"}, _account())
 
     assert (seen["user_id"], seen["workspace_ids"]) == ("u_1", ["ws_1", "ws_2"])
-    assert [p.file_id for p in result.passages] == ["f_mine", "f_chem"]
-    mine, chem = result.passages
+    assert [p.file_id for p in result.passages] == ["f_mine", "f_chem", "f_pdf"]
+    mine, chem, pdf = result.passages
+    assert pdf.can_edit is False  # a PDF reads view only
     assert mine.location().startswith("No workspace › f_mine.pdf")
     assert chem.location().startswith("Chemistry › Acids › f_chem.pdf")
     assert (mine.can_edit, chem.can_edit) == (True, True)
@@ -571,6 +580,70 @@ async def test_account_resolves_go_through_the_items_check(monkeypatch):
     ]
 
 
+async def test_an_account_office_create_lands_where_the_user_named(monkeypatch):
+    sent = {}
+
+    async def post(path, payload, op_id, ctx, **_kwargs):
+        sent.update(payload, path=path)
+        return tools._result("Created.")
+
+    async def validate(self):
+        return None
+
+    monkeypatch.setattr(tools, "_post_operation", post)
+    monkeypatch.setattr(pending.PendingSources, "validate", validate)
+    ctx = _account(
+        office_tools=True,
+        skills_read={skills.EDITING, "office_building"},
+        pending_sources=pending.PendingSources.for_account("u_1"),
+    )
+
+    await tools.run(
+        "edit_office_document",
+        {
+            "commands": [{"type": "create", "format": "docx", "title": "Plan"}],
+            "workspace_id": "ws_1",
+            "_tool_call_id": "call_doc",
+        },
+        ctx,
+    )
+
+    assert sent["path"] == "/api/internal/documents/office/create"
+    assert (sent["scope"], sent["workspaceId"]) == ("account", "ws_1")
+
+
+async def test_the_workspace_list_rides_once_and_list_workspaces_is_current():
+    """Epo 2026-10-28: the first message lists the workspaces, its answer
+    keeps that text and later turns replay it unchanged; list_workspaces
+    gives the turn's own list."""
+    ctx = _account()
+    listed = (await tools._list_workspaces({}, ctx)).text()
+    assert listed == (
+        "The user's workspaces:\n"
+        "- Biology (workspace_id=ws_2, view only)\n"
+        "- Chemistry (workspace_id=ws_1, view and edit)\n"
+        "Their other files are in No workspace."
+    )
+    ctx.workspaces_shown = listed
+    packed = evidence.pack(ctx, [])
+    assert packed["workspaces"] == listed
+
+    later = _account()
+    replayed = await evidence.history_turns(
+        [
+            {"id": "u1", "role": "user", "content": "hi"},
+            {
+                "id": "a1",
+                "role": "assistant",
+                "content": "hello",
+                "toolEvidence": packed,
+            },
+        ],
+        later,
+    )
+    assert replayed[0]["content"] == f"{listed}\n\nhi"
+
+
 async def test_create_workspace_cuts_what_is_over_its_limit(monkeypatch):
     sent = {}
 
@@ -604,7 +677,8 @@ async def test_create_workspace_cuts_what_is_over_its_limit(monkeypatch):
 
 
 @pytest.mark.parametrize("named", ["ws_2", None])
-async def test_an_account_create_lands_where_the_user_named(monkeypatch, named):
+@pytest.mark.parametrize("tool", ["create_material", "add_questions"])
+async def test_an_account_create_lands_where_the_user_named(monkeypatch, named, tool):
     sent = {}
 
     class _Resp:
@@ -632,14 +706,22 @@ async def test_an_account_create_lands_where_the_user_named(monkeypatch, named):
 
     monkeypatch.setattr(tools.requests, "post", post)
     ctx = _account(skills_read={skills.EDITING})
-    args = {
-        "kind": "flashcards",
-        "title": "Cards",
-        "cards": [{"front": "a", "back": "b"}],
-        "_tool_call_id": "call_1",
-    }
+    args = (
+        {
+            "kind": "flashcards",
+            "title": "Cards",
+            "cards": [{"front": "a", "back": "b"}],
+            "_tool_call_id": "call_1",
+        }
+        if tool == "create_material"
+        else {
+            "title": "Quiz",
+            "questions": [{"question": "Q?", "options": ["a", "b"], "correct": "a"}],
+            "_tool_call_id": "call_1",
+        }
+    )
 
-    result = await tools.run("create_material", {**args, "workspace_id": named}, ctx)
+    result = await tools.run(tool, {**args, "workspace_id": named}, ctx)
 
     assert not result.refused, result.text()
     assert sent["url"].endswith("/api/internal/materials")
