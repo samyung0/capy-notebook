@@ -631,6 +631,23 @@ Legend:
   attachment) rather than a text footnote, so it isn't used now; it is the
   ready-made piece if notes ever cite sources the way chat does.
 
+- **D18: limits in block terms, with all nesting capped at 8** (Epo,
+  2026-10-28). After D11 a node is a block, an inline embed (mention, inline
+  equation) or a table cell. Depth is block nesting depth below the note,
+  capped at 8 for every kind of nesting (lists, quotes, callouts, columns),
+  down from today's material depth of 16, with list indent included in it.
+  The 2 MiB cap applies to block JSON, re-measured on the near-limit note so
+  the same content fits. While the bridge stands, the structural check
+  already refuses nesting deeper than 8.
+
+## Held (not scheduled)
+
+- **Copy a chat answer into a note** (Epo, 2026-10-28). Not an insert button:
+  we convert a chat answer (OpenUI Lang rich content and its citations) into
+  note blocks when it is copied and pasted into a note. Its citations could
+  become BlockSuite footnote chips, which point to a URL, doc or attachment
+  (see D17). It needs the BlockSuite note first.
+
 The other questions from the decision walk-through are in
 `todo-blocksuite-decisions.md` ("Questions for Epo"); they matter at the cut,
 not for step 1.

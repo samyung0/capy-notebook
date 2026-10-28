@@ -590,7 +590,7 @@ binding rules that never touch the note layout.
    b. BlockSuite's `MarkdownAdapter`. It has no MDX, footnotes become an
       inline, and whether it runs in V8 without a DOM is unverified.
    c. A Rust converter, dropping V8.
-9. **Limits in block terms after D11 (SQ:6, PE:223).** Options:
+9. **Limits in block terms after D11 (SQ:6, PE:223).** Answered 2026-10-28: a, with every kind of nesting capped at 8 instead of depth 16 (D18). Options:
    a. (recommended) Nodes count blocks plus inline embeds (mentions, inline
       equations) plus table cells. Depth is nesting depth with lists capped
       at 8. 2 MiB applies to block JSON, re-measured on the near-limit note so
