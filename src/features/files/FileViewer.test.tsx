@@ -16,6 +16,7 @@ Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 const views = vi.hoisted(() => ({
   edits: [] as [string, boolean][],
   frozen: false,
+  mePending: false,
 }));
 vi.mock('@/api/hooks', () => ({
   fileLinksQuery: () => ({ queryKey: ['file-links'] }),
@@ -24,6 +25,7 @@ vi.mock('@/api/hooks', () => ({
     isError: false,
     isPending: false,
   }),
+  useMe: () => ({ isPending: views.mePending }),
   useWorkspace: (id: string) => ({
     data: id ? { capabilities: { canEditContent: true } } : undefined,
     isPending: false,
@@ -52,6 +54,7 @@ const { FileViewer } = await import('./FileViewer');
 afterEach(() => {
   views.edits.length = 0;
   views.frozen = false;
+  views.mePending = false;
 });
 
 async function open(name: string, workspaceId: string) {
@@ -85,6 +88,14 @@ it("opens a standalone Office or text file's editor for its owner, read-only whi
   expect(await open('notes.md', '')).toEqual(['text', true]);
   views.frozen = true;
   expect(await open('notes.docx', '')).toEqual(['docx', false]);
+  expect(await open('notes.md', '')).toEqual(['text', false]);
+});
+
+it("opens no standalone editor before the owner's account loads (E1)", async () => {
+  // A frozen account reads as not frozen until it loads, and an Office view
+  // picks its mode once: it waits, and text stays read-only meanwhile.
+  views.mePending = true;
+  expect(await open('notes.docx', '')).toBeUndefined();
   expect(await open('notes.md', '')).toEqual(['text', false]);
 });
 

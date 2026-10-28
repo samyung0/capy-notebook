@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -285,4 +286,85 @@ func TestStandalonePDFAnnotationsAreItsOwners(t *testing.T) {
 	if _, err := s.SavePDFAnnotation(ctx, other, file.ID, "", body); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("other user's mark = %v, want not found", err)
 	}
+}
+
+// Review T1/T2: the maintenance window and the reprocess path take an Office
+// file with no workspace. The window republishes its saved edits at platform
+// cost, and a file an export-only publication left unindexed is reprocessed,
+// each through a system session that names no workspace.
+func TestStandaloneOfficeMaintenanceAndReprocess(t *testing.T) {
+	s := maintenanceTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_loose_maintenance_owner")
+	parsed := func(name string) string {
+		t.Helper()
+		file := standaloneSourceFile(t, s, owner, name, "doc")
+		if _, err := s.pool.Exec(ctx, `UPDATE files SET ever_parsed_successfully=true,parse_mode='fast' WHERE id=$1`, file.ID); err != nil {
+			t.Fatal(err)
+		}
+		return file.ID
+	}
+	// sessionOf is the system job's provider session: paid by the system,
+	// with no workspace.
+	sessionOf := func(job string) {
+		t.Helper()
+		var paidBy, sessionPaidBy string
+		var named bool
+		var ws *string
+		if err := s.pool.QueryRow(ctx, `SELECT j.payload->>'paidBy',j.payload ? 'workspaceId',ps.paid_by,ps.workspace_id FROM jobs j JOIN provider_sessions ps ON ps.id=j.payload->>'reservationId' WHERE j.id=$1`, job).Scan(&paidBy, &named, &sessionPaidBy, &ws); err != nil {
+			t.Fatal(err)
+		}
+		if paidBy != models.PaidBySystem || sessionPaidBy != models.PaidBySystem || named || ws != nil {
+			t.Fatalf("system job: paidBy=%s session=%s names a workspace=%v session workspace=%v", paidBy, sessionPaidBy, named, ws)
+		}
+	}
+
+	// Reprocess: the scheduler's reprocess branch lists it for its payer, and
+	// the automatic request queues a system-paid parse. Older than any other
+	// test's mark, so the branch's 8 list it.
+	reprocess := parsed("unindexed.docx")
+	sourceTestSeed(t, s, owner, reprocess)
+	if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET reprocess_at=now()-interval '400 days' WHERE file_id=$1`, reprocess); err != nil {
+		t.Fatal(err)
+	}
+	candidatesSQL := schedulerSource(t, `(?s)const REFRESH_CANDIDATES_SQL: &str = "(.*?)";`)
+	rows, err := s.pool.Query(ctx, candidatesSQL, officeRefreshTokens, "60 seconds", "7 days")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listedFor, listedReprocess := "", false
+	for rows.Next() {
+		var id, user string
+		var checkpoint int64
+		var marked bool
+		if err := rows.Scan(&id, &user, &checkpoint, &marked); err != nil {
+			t.Fatal(err)
+		}
+		if id == reprocess {
+			listedFor, listedReprocess = user, marked
+		}
+	}
+	rows.Close()
+	if listedFor != owner || !listedReprocess {
+		t.Fatalf("scheduler listed the reprocess for %q (reprocess %v), want its payer", listedFor, listedReprocess)
+	}
+	job, err := s.RequestSourceRefresh(ctx, owner, reprocess, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionOf(job.JobID)
+
+	// The window: its saved edits republish at platform cost.
+	edited := parsed("edited.docx")
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, edited), "edited-state")
+	maintenanceTestPause(t, s)
+	published, err := s.PublishAllOfficeSources(ctx, OfficePublishOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(published, func(p OfficePublication) bool { return p.FileID == edited })
+	if i < 0 || published[i].Err != nil || published[i].ExportOnly || published[i].JobID == "" {
+		t.Fatalf("publish-all for the file with no workspace: listed %v, %+v", i >= 0, published)
+	}
+	sessionOf(published[i].JobID)
 }
