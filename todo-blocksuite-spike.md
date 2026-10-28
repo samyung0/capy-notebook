@@ -667,11 +667,23 @@ Legend:
 
 ## Held (not scheduled)
 
-- **Copy a chat answer into a note** (Epo, 2026-10-28). Not an insert button:
-  we convert a chat answer (OpenUI Lang rich content and its citations) into
-  note blocks when it is copied and pasted into a note. Its citations could
-  become BlockSuite footnote chips, which point to a URL, doc or attachment
-  (see D17). It needs the BlockSuite note first.
+- **Copy a chat answer into a note** (Epo, 2026-10-28). Built for Plate by the
+  "Copy-paste chat answer to note" session (`0ecbade1b` on
+  `wip/mac-ui-2026-10-28`, not on main yet). Copying inside one chat answer
+  writes `application/x-capy-answer` (`answerClipboard.ts`): JSON
+  `[{md, callout?}]` of plain note Markdown with our chart, plot and
+  html-embed fences. Plate's `ChatAnswerPastePlugin` (`pastePlugins.ts`)
+  converts each `md` without MDX and wraps callouts.
+  **BlockSuite parity:** the D17 clipboard adapter reads the same type.
+  - Each `md` goes through our converter (plain) and then
+    `layout.ts`'s Plate-to-blocks step while the bridge stands, and directly
+    to block JSON after D11.
+  - Callouts become `affine:callout` with the variant; the fences become
+    `capy:chart`/`plot`/`html-embed`.
+  - Inside a code block, or when parsing throws, it falls back to the normal
+    paste.
+  - Pinned by a BlockSuite counterpart of `e2e/editor/chat-answer-paste.spec.ts`.
+  - Citations as footnote chips (D17) stay a later option.
 
 The other questions from the decision walk-through are in
 `todo-blocksuite-decisions.md` ("Questions for Epo"); they matter at the cut,
