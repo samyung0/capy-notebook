@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { getProviderClass } from '@platejs/yjs';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { Awareness } from 'y-protocols/awareness';
@@ -5,12 +6,22 @@ import * as Y from 'yjs';
 import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import { createSourceProvider } from '@/features/files/sourceProvider';
-import { parseMaterialDocument } from '@/features/materials/document';
+import {
+  type MaterialValue,
+  normalizeMaterialValue,
+  parseMaterialDocument,
+} from '@/features/materials/document';
+import {
+  BLOCKS_ROOT,
+  blocksValue,
+  canonical,
+} from '@/features/notes/blocksuite/layout';
 import { deleteDrafts, putDrafts, readDrafts } from '@/lib/editDrafts';
 import { setChaosPeers } from './chaosPeers';
 import {
   checkpointRoom,
   join,
+  mockBlocksRoom,
   registerMockCollaborationProvider,
   rooms,
   savedSourceState,
@@ -51,6 +62,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 it('relays updates with the receiving origin and clears presence on leave', () => {
@@ -72,6 +84,88 @@ it('relays updates with the receiving origin and clears presence on leave', () =
   expect(b.awareness!.getLocalState()).toEqual({ name: 'Peer' });
   a.leave();
   expect(rooms.has(room.name)).toBe(false);
+});
+
+function testNote(id: string) {
+  const material = { ...db.materials[0], id, kind: 'note' as const };
+  db.materials.push(material);
+  cleanups.push(() => db.materials.splice(db.materials.indexOf(material), 1));
+  return material;
+}
+
+it('relays a blocks room until both participants hold the same value', () => {
+  vi.stubEnv('VITE_DOCUMENT_LAYOUT', 'blocks');
+  const material = testNote('test-blocks-relay');
+  const room = mockBlocksRoom(material.id, [
+    { children: [{ text: 'Title' }], id: 'title', type: 'h1' },
+    { children: [{ text: 'base' }], id: 'body', type: 'p' },
+  ]);
+  const a = connect(room, true);
+  const b = connect(room, true);
+  const text = (document: Y.Doc) =>
+    document
+      .getMap<Y.Map<unknown>>(BLOCKS_ROOT)
+      .get('body')
+      ?.get('prop:text') as Y.Text;
+  text(a.document).insert(0, '> ');
+  text(b.document).insert(6, '!');
+  expect(blocksValue(a.document)).toEqual(blocksValue(b.document));
+  expect(blocksValue(b.document)[1]).toEqual({
+    children: [{ text: '> base!' }],
+    id: 'body',
+    type: 'p',
+  });
+  a.leave();
+  b.leave();
+  expect(parseMaterialDocument(material.content)?.value[1].children).toEqual([
+    { text: '> base!' },
+  ]);
+});
+
+/** The value a note's room checkpoint writes, the room seeded with `value`. */
+function persisted(id: string, value: MaterialValue) {
+  testNote(id);
+  const name = `material:${id}:schema:1`;
+  const client = participant(true);
+  const provider = new (getProviderClass('mock')!)({
+    awareness: client.awareness,
+    doc: client.document,
+    options: { initialValue: value, materialId: id, name },
+  });
+  cleanups.push(() => provider.destroy());
+  provider.connect();
+  const room = rooms.get(name)!;
+  room.dirty = true;
+  checkpointRoom(room);
+  provider.disconnect();
+  const material = db.materials.find((row) => row.id === id);
+  return {
+    layout: room.layout,
+    value: parseMaterialDocument(material?.content),
+  };
+}
+
+it('persists a blocks room as the Plate room writes it', () => {
+  const every: MaterialValue = JSON.parse(
+    readFileSync(
+      new URL(
+        '../../server/internal/materialdoc/testdata/every-block-note.json',
+        import.meta.url
+      ),
+      'utf8'
+    )
+  ).value;
+  // The fixture's unsaved refs (materialId "" with `pending`) are no stored
+  // note's, and the layout refuses them.
+  const saved = canonical(
+    normalizeMaterialValue(every.filter((block) => block.materialId !== ''))
+  );
+  const plate = persisted('test-plate-persist', saved);
+  vi.stubEnv('VITE_DOCUMENT_LAYOUT', 'blocks');
+  const blocks = persisted('test-blocks-persist', saved);
+  expect([plate.layout, blocks.layout]).toEqual([undefined, 'blocks']);
+  expect(blocks.value).toEqual(plate.value);
+  expect(blocks.value?.value).toEqual(saved);
 });
 
 it('persists a note when leaving before the editor checkpoint debounce fires', () => {

@@ -35,6 +35,14 @@ import {
   type MaterialValue,
   quizNode,
 } from '@/features/materials/document';
+import { blocksLayout } from '@/features/notes/blocksuite/flag';
+import {
+  applyValue,
+  BLOCKS_ROOT,
+  blocksValue,
+  FLAVOURS,
+  NOTE_ID,
+} from '@/features/notes/blocksuite/layout';
 import {
   COLLABORATION_LATE_REASON,
   COLLABORATION_OUTDATED_REASON,
@@ -91,6 +99,9 @@ export interface Room {
   dirty: boolean;
   document: Y.Doc;
   format?: 'text' | 'docx' | 'xlsx' | 'pptx';
+  /** A note room in the blocks layout (`VITE_DOCUMENT_LAYOUT=blocks`): its
+   * doc holds the `blocks` map, not Plate's `content` text. */
+  layout?: 'blocks';
   name: string;
   participants: Set<Participant>;
   /** Updates since the last checkpoint, which appends them. */
@@ -123,9 +134,15 @@ function checkpointState(checkpoint: Checkpoint): Uint8Array {
 const REMOTE = 'mock-room';
 
 /** The quiz and flashcard blocks whose materialId an update wrote, as the
- * service reads them (`child_writes` in collaboration-rs/crates/notes/src/children.rs). */
-function writtenBlocks(document: Y.Doc, update: Uint8Array) {
-  const blocks = new Set<Y.XmlText>();
+ * service reads them (`child_writes` in collaboration-rs/crates/notes/src/children.rs):
+ * the `materialId` attribute of a Plate block, a blocks-layout block's
+ * `prop:materialId`. */
+function writtenBlocks(
+  document: Y.Doc,
+  update: Uint8Array,
+  blocksLayout: boolean
+) {
+  const blocks = new Set<unknown>();
   for (const struct of Y.decodeUpdate(update).structs) {
     if (!(struct instanceof Y.Item && struct.content instanceof Y.ContentAny))
       continue;
@@ -138,24 +155,26 @@ function writtenBlocks(document: Y.Doc, update: Uint8Array) {
     if (
       item instanceof Y.Item &&
       !item.deleted &&
-      item.parentSub === 'materialId' &&
-      item.parent instanceof Y.XmlText
+      (blocksLayout
+        ? item.parentSub === 'prop:materialId' && item.parent instanceof Y.Map
+        : item.parentSub === 'materialId' && item.parent instanceof Y.XmlText)
     )
       blocks.add(item.parent);
   }
   return blocks;
 }
 
-/** The collaboration service's children pass (collaboration-rs/crates/server/src/children.rs)
- * for quiz and flashcard blocks a writer's update wrote: a block naming
- * another note's set gets the note's copy, a set already in another block gets
- * its own copy, an unknown one goes. Mock assets all belong to every note, so
- * images need nothing. */
-function mockChildrenPass(room: Room, update: Uint8Array) {
-  const note = db.materials.find((x) => x.id === room.target.id);
-  const written = writtenBlocks(room.document, update);
-  if (!(note && written.size)) return;
-  const root = room.document.get('content', Y.XmlText);
+/** A note's top-level block, as the children pass reads and changes it. */
+interface RefBlock {
+  block: unknown;
+  /** The quiz or flashcard set it names; empty for any other block. */
+  materialId: string;
+  remove: () => void;
+  setMaterialId: (materialId: string) => void;
+}
+
+function plateRefBlocks(document: Y.Doc): RefBlock[] {
+  const root = document.get('content', Y.XmlText);
   const ops = root.toDelta() as Array<{ insert: unknown }>;
   const refOf = (block: unknown) => {
     if (!(block instanceof Y.XmlText)) return '';
@@ -167,20 +186,66 @@ function mockChildrenPass(room: Room, update: Uint8Array) {
       ? materialId
       : '';
   };
-  // Sets the blocks the update did not write already hold.
-  const kept = new Set(
-    ops
-      .filter((op) => !written.has(op.insert as Y.XmlText))
-      .map((op) => refOf(op.insert))
-  );
-  const changes: Array<() => void> = [];
   let index = 0;
-  for (const op of ops) {
-    const block = op.insert;
+  return ops.map(({ insert: block }) => {
     const at = index;
     index += typeof block === 'string' ? block.length : 1;
-    const materialId = refOf(block);
-    if (!(materialId && written.has(block as Y.XmlText))) continue;
+    return {
+      block,
+      materialId: refOf(block),
+      remove: () => root.delete(at, 1),
+      setMaterialId: (materialId) =>
+        (block as Y.XmlText).setAttribute('materialId', materialId),
+    };
+  });
+}
+
+/** `capy:material-ref` sits directly under the note (layout spec). */
+function blocksRefBlocks(document: Y.Doc): RefBlock[] {
+  const blocks = document.getMap<Y.Map<unknown>>(BLOCKS_ROOT);
+  const children = blocks.get(NOTE_ID)?.get('sys:children') as
+    | Y.Array<string>
+    | undefined;
+  return (children?.toArray() ?? []).map((id) => {
+    const block = blocks.get(id);
+    const materialId = block?.get('prop:materialId');
+    return {
+      block,
+      materialId:
+        block?.get('sys:flavour') === 'capy:material-ref' &&
+        typeof materialId === 'string'
+          ? materialId
+          : '',
+      remove: () => {
+        const at = children?.toArray().indexOf(id) ?? -1;
+        if (at >= 0) children?.delete(at, 1);
+        blocks.delete(id);
+      },
+      setMaterialId: (next) => block?.set('prop:materialId', next),
+    };
+  });
+}
+
+/** The collaboration service's children pass (collaboration-rs/crates/server/src/children.rs)
+ * for quiz and flashcard blocks a writer's update wrote: a block naming
+ * another note's set gets the note's copy, a set already in another block gets
+ * its own copy, an unknown one goes. Mock assets all belong to every note, so
+ * images need nothing. */
+function mockChildrenPass(room: Room, update: Uint8Array) {
+  const note = db.materials.find((x) => x.id === room.target.id);
+  const blocksRoom = room.layout === 'blocks';
+  const written = writtenBlocks(room.document, update, blocksRoom);
+  if (!(note && written.size)) return;
+  const refs = blocksRoom
+    ? blocksRefBlocks(room.document)
+    : plateRefBlocks(room.document);
+  // Sets the blocks the update did not write already hold.
+  const kept = new Set(
+    refs.filter((ref) => !written.has(ref.block)).map((ref) => ref.materialId)
+  );
+  const changes: Array<() => void> = [];
+  for (const { block, materialId, remove, setMaterialId } of refs) {
+    if (!(materialId && written.has(block))) continue;
     const own =
       db.materials.find((x) => x.id === materialId)?.parentMaterialId ===
       note.id;
@@ -190,11 +255,7 @@ function mockChildrenPass(room: Room, update: Uint8Array) {
     }
     const copy = db.copyEmbeddedInto(note, materialId);
     if (copy) kept.add(copy);
-    changes.push(() =>
-      copy
-        ? (block as Y.XmlText).setAttribute('materialId', copy)
-        : root.delete(at, 1)
-    );
+    changes.push(() => (copy ? setMaterialId(copy) : remove()));
   }
   if (!changes.length) return;
   room.document.transact(() => {
@@ -256,13 +317,45 @@ function materialRoom(name: string, initialValue: MaterialValue): Room {
   if (existing) return existing;
   const materialId = name.split(':')[1] ?? '';
   const room = createRoom(name, { id: materialId, kind: 'material' });
+  // Only notes move to the blocks layout; mindmaps and diagrams stay Plate.
+  if (
+    blocksLayout() &&
+    db.materials.find((row) => row.id === materialId)?.kind === 'note'
+  )
+    room.layout = 'blocks';
   if (!checkpoints.has(name)) {
-    room.document
-      .get('content', Y.XmlText)
-      .applyDelta(slateNodesToInsertDelta(initialValue));
+    if (room.layout === 'blocks') applyValue(room.document, initialValue);
+    else
+      room.document
+        .get('content', Y.XmlText)
+        .applyDelta(slateNodesToInsertDelta(initialValue));
     room.dirty = false;
   }
   return room;
+}
+
+/** The room of a note in the blocks layout, seeded from `initialValue` on
+ * first open, for the BlockSuite provider to `join`. */
+export function mockBlocksRoom(
+  materialId: string,
+  initialValue: MaterialValue
+): Room {
+  const room = materialRoom(mockMaterialRoom(materialId), initialValue);
+  if (room.layout !== 'blocks')
+    throw new Error(`Mock room for ${materialId} is not in the blocks layout`);
+  return room;
+}
+
+/** Whether a room holds a block its layout does not list: an unlisted
+ * element type, or a flavour the blocks layout does not write. */
+function holdsUnlisted(room: Room): boolean {
+  if (room.layout !== 'blocks')
+    return holdsUnlistedType(room.document.get('content', Y.XmlText));
+  for (const block of room.document
+    .getMap<Y.Map<unknown>>(BLOCKS_ROOT)
+    .values())
+    if (!FLAVOURS.has(block.get('sys:flavour') as string)) return true;
+  return false;
 }
 
 /** Whether a room's text holds an element of a type the embed catalog does
@@ -310,10 +403,12 @@ export function sourceRoom(
 }
 
 function persistMaterial(room: Room) {
-  const root = yTextToSlateElement(room.document.get('content', Y.XmlText));
-  const { document, metrics } = createMaterialDocumentWithMetrics(
-    root.children as MaterialValue
-  );
+  const value =
+    room.layout === 'blocks'
+      ? blocksValue(room.document)
+      : (yTextToSlateElement(room.document.get('content', Y.XmlText))
+          .children as MaterialValue);
+  const { document, metrics } = createMaterialDocumentWithMetrics(value);
   const contentBytes = new TextEncoder().encode(
     JSON.stringify(document)
   ).byteLength;
@@ -534,6 +629,9 @@ function reachable() {
 export function mockNotePeer(materialId: string) {
   const room = rooms.get(mockMaterialRoom(materialId));
   if (!room) throw new Error(`Mock room for ${materialId} is not open`);
+  // Its edits are Plate's `content` text; a blocks peer is the editor's.
+  if (room.layout === 'blocks')
+    throw new Error(`Mock room for ${materialId} is in the blocks layout`);
   const document = new Y.Doc();
   const awareness = new Awareness(document);
   const leave = join(room, { awareness, document, origin: {} });
@@ -871,7 +969,7 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.onSyncChange?.(true);
     // As the collaboration server joins a writer of a document holding a
     // block this version cannot edit: read-only, saying why (decision 5).
-    if (holdsUnlistedType(room.document.get('content', Y.XmlText)))
+    if (holdsUnlisted(room))
       this.options.onStateless?.({
         payload: JSON.stringify({
           code: 'unsupported_block',
@@ -1193,10 +1291,14 @@ export function discardMockMaterialRoom(materialId: string) {
   for (const provider of providers) provider.evicted(materialId);
 }
 /** The text the open room of a note holds now (null when none is open),
- * for e2e checks of what reached the room. */
+ * for e2e checks of what reached the room; a blocks room's projected value
+ * as JSON. */
 export function mockNoteRoomText(materialId: string): string | null {
   const room = rooms.get(mockMaterialRoom(materialId));
-  return room ? room.document.get('content', Y.XmlText).toString() : null;
+  if (!room) return null;
+  return room.layout === 'blocks'
+    ? JSON.stringify(blocksValue(room.document))
+    : room.document.get('content', Y.XmlText).toString();
 }
 /** A collection left this tab's sessions of a note behind (in-place GC):
  * from now on each answers its next join `collaboration-late`, and a new

@@ -285,6 +285,9 @@ function tick() {
   }
   for (const [name, room] of rooms) {
     const peers = peersByRoom.get(name);
+    // Peers type through a Plate editor on `content`; a blocks-layout note
+    // room has none, so it gets no peers.
+    if (room.layout === 'blocks') continue;
     if (isOpen(room) && !peers) {
       const pool = Array.from(
         { length: PEERS_PER_ROOM },
