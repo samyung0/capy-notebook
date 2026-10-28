@@ -187,9 +187,13 @@ impl Refusal {
 }
 
 /// An authentication answered: channel, attempt, and the room, the
-/// context and the session's client id and stored version from the JOIN,
-/// or the refusal.
-type AuthResult = (u64, u64, Result<(RoomName, Context, Session), Refusal>);
+/// context and the session from the JOIN, or the refusal with the JOIN's
+/// room and its token's user (for the log).
+type AuthResult = (
+    u64,
+    u64,
+    Result<(RoomName, Context, Session), (Refusal, String, String)>,
+);
 
 /// The session a JOIN names: its client id (Q213), the stored version it
 /// holds (in-place collection) and its editing session's random id (Q472).
@@ -627,7 +631,10 @@ impl Connection {
         self.outbox.frame(protocol::message(channel, kind, payload));
     }
 
-    fn refuse(&mut self, channel: u64, refusal: &Refusal) {
+    /// Refuses a JOIN on `channel`: `room` is the JOIN's (logged only when
+    /// it names a room, so junk stays out of the log) and `user` its token's
+    /// once verified. Tokens are never logged.
+    fn refuse(&mut self, channel: u64, refusal: &Refusal, room: &str, user: Option<&str>) {
         if refusal.authentication {
             self.app
                 .stats
@@ -637,7 +644,12 @@ impl Connection {
             log(
                 Level::Warn,
                 "authentication rejected",
-                json!({ "error": refusal.message }),
+                json!({
+                    "error": refusal.message,
+                    "room": RoomName::parse(room).is_some().then_some(room),
+                    "socket_id": self.socket_id,
+                    "user_id": user,
+                }),
             );
         }
         self.send(channel, Kind::Refused, &protocol::text(&refusal.reason));
@@ -752,12 +764,14 @@ impl Connection {
             self.forget(channel);
             // A bad token is refused here, before any lookup, so it never
             // holds the join deadline open.
-            if let Err(error) =
-                auth::verify(&token, &self.app.config.secret, &room, auth::now_seconds())
-            {
-                self.refuse(channel, &Refusal::token(&error));
-                return true;
-            }
+            let user =
+                match auth::verify(&token, &self.app.config.secret, &room, auth::now_seconds()) {
+                    Ok(claims) => claims.sub,
+                    Err(error) => {
+                        self.refuse(channel, &Refusal::token(&error), &room, None);
+                        return true;
+                    }
+                };
             let pending = self
                 .channels
                 .values()
@@ -783,7 +797,7 @@ impl Connection {
                         ..
                     }) if note != channel => Some((note, *attempt)),
                     _ => {
-                        self.refuse(channel, &Refusal::note_closed());
+                        self.refuse(channel, &Refusal::note_closed(), &room, Some(user.as_str()));
                         return true;
                     }
                 },
@@ -800,7 +814,7 @@ impl Connection {
             }
             let (app, tx) = (self.app.clone(), self.auth_tx.clone());
             tokio::spawn(async move {
-                let result = authenticate(app, room, token, client)
+                let result = authenticate(app, room.clone(), token, client)
                     .await
                     .map(|(name, context)| {
                         let session = Session {
@@ -809,7 +823,8 @@ impl Connection {
                             id: session_id,
                         };
                         (name, context, session)
-                    });
+                    })
+                    .map_err(|refusal| (refusal, room, user));
                 let _ = tx.send((channel, attempt, result));
             });
             return true;
@@ -1114,23 +1129,26 @@ impl Connection {
         &mut self,
         channel: u64,
         attempt: u64,
-        result: Result<(RoomName, Context, Session), Refusal>,
+        result: Result<(RoomName, Context, Session), (Refusal, String, String)>,
     ) {
         if !self.authenticating(channel, attempt) {
             return;
         }
         let (name, context, session) = match result {
             Ok(joined) => joined,
-            Err(Refusal {
-                remaining: Some(remaining),
-                ..
-            }) => {
+            Err((
+                Refusal {
+                    remaining: Some(remaining),
+                    ..
+                },
+                ..,
+            )) => {
                 self.send_timeout(channel, remaining);
                 self.forget(channel);
                 return;
             }
-            Err(refusal) => {
-                self.refuse(channel, &refusal);
+            Err((refusal, room, user)) => {
+                self.refuse(channel, &refusal, &room, Some(user.as_str()));
                 return;
             }
         };
@@ -1157,7 +1175,12 @@ impl Connection {
                 _ => Some(Refusal::note_closed()),
             };
             if let Some(refusal) = refusal {
-                self.refuse(channel, &refusal);
+                self.refuse(
+                    channel,
+                    &refusal,
+                    &name.to_string(),
+                    Some(context.user_id.as_str()),
+                );
                 return;
             }
         }
@@ -1217,7 +1240,12 @@ impl Connection {
             Ok(joined) => joined,
             Err(refusal) => {
                 if current {
-                    self.refuse(channel, &refusal);
+                    self.refuse(
+                        channel,
+                        &refusal,
+                        &name.to_string(),
+                        Some(context.user_id.as_str()),
+                    );
                 }
                 return;
             }
@@ -1241,7 +1269,13 @@ impl Connection {
                 .tx
                 .send(RoomCmd::Leave((self.id, channel), false, None))
                 .await;
-            self.refuse(channel, &Refusal::note_closed());
+            let room = name.to_string();
+            self.refuse(
+                channel,
+                &Refusal::note_closed(),
+                &room,
+                Some(context.user_id.as_str()),
+            );
             return;
         }
         crate::source_rooms::end_join(&self.app, (self.id, channel));
