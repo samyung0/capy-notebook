@@ -196,8 +196,11 @@ async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks
     )
     assert not exports and not posts
 
+    ctx._scope_outline = {"chapters": [], "files": []}
     last = await _write(ctx, rid, 2, _slide())
     assert not last.refused, last.text()
+    # A same-turn read finds the stored deck (Q536).
+    assert ctx._scope_outline is None
     assert exports == [["01_slide_1.svg", "02_slide_2.svg"]], (
         "no Sources slide without books"
     )
