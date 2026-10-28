@@ -5314,6 +5314,21 @@ async fn a_sessions_rejoin_takes_over_its_stale_channel_at_once() {
     assert_eq!(new.until(1).await.expect("bindable once it left"), [1]);
 }
 
+/// A client `id` of a new session joined to `room` with `token` and its
+/// editing session id, synced to the note's "base".
+async fn session_on(port: u16, room: &str, token: &str, id: u64, session: [u8; 16]) -> Client {
+    let mut client = Client::open(port).await;
+    client.doc = Doc::with_options(ydoc::doc_options(id));
+    client
+        .send(0, &join_payload_in(room, token, id, session))
+        .await;
+    assert_eq!(client.until(1).await.expect("the session joins"), [1]);
+    let sv = client.doc.transact().state_vector().encode_v1();
+    client.send(5, &sync(0, &sv)).await;
+    assert!(client.settle(|c| c.block_text() == "base").await);
+    client
+}
+
 /// Security regression (Q472): the editing session id is the client's own
 /// word, so another user's JOIN naming a session's id, with a token offering
 /// that session's live id, never takes its channel over: it is refused as
@@ -5326,16 +5341,8 @@ async fn another_users_join_naming_a_session_id_never_takes_it_over() {
     let (owner, editor, room) = shared_note(&env, "base").await;
     let id = fresh_client_id();
     let session = session_id();
-    let mut victim = Client::open(server.port).await;
-    victim.doc = Doc::with_options(ydoc::doc_options(id));
     let own = token_offering(&room, &owner, "write", id);
-    victim
-        .send(0, &join_payload_in(&room, &own, id, session))
-        .await;
-    assert_eq!(victim.until(1).await.expect("the session joins"), [1]);
-    let sv = victim.doc.transact().state_vector().encode_v1();
-    victim.send(5, &sync(0, &sv)).await;
-    assert!(victim.settle(|c| c.block_text() == "base").await);
+    let mut victim = session_on(server.port, &room, &own, id, session).await;
     let mut other = Client::open(server.port).await;
     let taken = token_offering(&room, &editor, "write", id);
     other
@@ -5345,6 +5352,71 @@ async fn another_users_join_naming_a_session_id_never_takes_it_over() {
     assert_eq!(reason, "collaboration-client-id");
     victim.type_text("-a").await;
     victim.until(6).await.expect("the session's edit lands");
+}
+
+/// Security regression (Q472): a takeover reaches only channels that joined
+/// before the JOIN. A late JOIN from the session's older socket (its dead
+/// socket's JOIN finishing after the session rejoined) is refused while the
+/// newer channel is live, and the newer channel stays open and its edit
+/// lands. Fails if a JOIN may take over a channel that joined after it.
+#[tokio::test]
+async fn a_late_join_from_an_older_socket_never_takes_over_the_newer_channel() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let id = fresh_client_id();
+    let grant = token_offering(&room, &user, "write", id);
+    let session = session_id();
+    // The older socket is served first: it joins another note.
+    let mut older = Client::open(server.port).await;
+    let elsewhere = format!("material:{}:schema:1", note_for(&env, &user, "other").await);
+    older
+        .joined(&elsewhere, &token(&elsewhere, &user, "write"))
+        .await;
+    let mut newer = session_on(server.port, &room, &grant, id, session).await;
+    older.channel = 2;
+    older
+        .send(0, &join_payload_in(&room, &grant, id, session))
+        .await;
+    let reason = text_payload(&older.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-client-id");
+    newer.type_text("-a").await;
+    newer
+        .until(6)
+        .await
+        .expect("the newer channel's edit lands");
+}
+
+/// Security regression (Q472): a takeover binds a recorded id too. A
+/// session whose editor id is recorded (it wrote) and whose DOCX layout
+/// worker id is not rejoins at once after an unseen drop, and its stale
+/// channel closes; before Q472 the stale channel's live worker id held the
+/// rejoin until the silent close. Fails if the stale channel's ids still
+/// count as live or the stale channel stays open.
+#[tokio::test]
+async fn a_takeover_binds_a_recorded_id_with_an_unrecorded_worker_id() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let (id, worker) = (fresh_client_id(), fresh_client_id());
+    let grant = token_with_worker(&room, &user, id, worker);
+    let session = session_id();
+    let mut old = session_on(server.port, &room, &grant, id, session).await;
+    old.type_text("-a").await;
+    old.until(6).await.expect("the editor's write is accepted");
+    assert!(
+        id_rows_reach(&env, &room, id, 1).await,
+        "the editor id recorded"
+    );
+    assert_eq!(id_rows(&env, &room, worker).await, 0);
+    let mut new = Client::open(server.port).await;
+    new.send(0, &join_payload_in(&room, &grant, id, session))
+        .await;
+    assert_eq!(new.until(1).await.expect("the rejoin binds at once"), [1]);
+    let closed = old.until(4).await.expect("the stale channel closes");
+    assert!(String::from_utf8_lossy(&closed).contains("collaboration-rejoined"));
 }
 
 /// Security regression (Q236): a clean Leave (the tab holds no unsent edits)
