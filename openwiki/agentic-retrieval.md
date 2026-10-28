@@ -5415,10 +5415,9 @@ for life so the provider prompt cache holds.
   file was moved where the user can no longer open it …", Q489). A view-only
   edit: `ACCOUNT_NO_EDIT`, which stops only that edit (E1). Gateway reads pass
   `account=` so inspect refusals use the same words. Library and web tools
-  while Your files only is on: `ACCOUNT_NOT_AVAILABLE`. A text or Office file
-  with no workspace cannot be inspected or edited until Go's source sessions
-  take one (`NO_SESSION`, pointing to `read_document`). A full workspace cap:
-  `WORKSPACE_LIMIT`.
+  while Your files only is on: `ACCOUNT_NOT_AVAILABLE`. A full workspace cap:
+  `WORKSPACE_LIMIT`. A text or Office file with no workspace is inspected and
+  edited like any other (its source session is its payer's alone).
 - **Sources switch.** Account chat's switch reads "Your files only"; off is All
   sources mode, as in workspace chat.
 - **Voice.** `/api/voice-transcriptions` takes the voice rate class; its
@@ -5902,7 +5901,10 @@ parser page fee applies to a file's first parse (the job payload's `parseFee`;
 see observability-metering). One workspace switch, `auto_process` (default true, "Auto process edits"),
 gates every automatic Office reparse, text reindex and note index; off, file
 edits wait for the owner's Process, and notes wait for the owner's Process in
-the Indexing tab (Epo 2026-10-21) or until the switch is on again.
+the Indexing tab (Epo 2026-10-21) or until the switch is on again. A file
+with no workspace has no switch: its owner funds its automatic refresh and it
+always auto-processes (Epo 2026-10-27); its publication re-ingests in the
+owner's scope and checks the candidate's content is the owner's.
 Office effects keep only the changed span plus 40 characters on each side
 (`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair). A
 text file's net tokens count its effects (`effectTokens`): the context (what an

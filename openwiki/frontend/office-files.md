@@ -2682,7 +2682,9 @@ trigger, whatever the workspace's auto-process setting: the saved state
 becomes the file's bytes with no parser or provider call and no charge (see
 Maintenance window below). The owner's Process stays the opt-in first parse;
 pressed while such an export runs, it turns that job into the owner-paid parse
-of the same capture. Editing continues during processing.
+of the same capture. Editing continues during processing. A file with no
+workspace edits through the same room, owner-only, and always auto-processes
+(Epo 2026-10-27; authorization-permissions-lifecycles.md, Standalone files).
 
 **Deferred publication.** An Office publication of the owner's, automatic or
 drain work (every one but a system publication while editing is paused) never

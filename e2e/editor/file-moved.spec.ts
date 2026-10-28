@@ -176,7 +176,7 @@ test('a bookmark naming the old workspace opens the file in its own, replacing h
   await expect(page).toHaveURL(/\/workspaces\/ws_scenarios$/);
 });
 
-test('a bookmark to a file that is standalone now opens its own page', async ({
+test('a bookmark to a file that is standalone now opens its own page, where its owner edits it', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -187,6 +187,11 @@ test('a bookmark to a file that is standalone now opens its own page', async ({
   await moveRow(page, '');
   await visit(page, `/workspaces/ws_scenarios?file=${FILE}&page=2&mode=edit`);
   await expect(page).toHaveURL(new RegExp(`/files/${FILE}$`));
+  // A file with no workspace edits like a workspace file (Epo 2026-10-27).
+  await visit(page, `/files/${FILE}?mode=edit`);
+  await expect(
+    page.getByRole('textbox', { name: m.source_edit_raw() })
+  ).not.toHaveValue('', { timeout: 30_000 });
 });
 
 test('a Move heard into a workspace this user cannot read closes the file where it is', async ({

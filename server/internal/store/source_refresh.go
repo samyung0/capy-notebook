@@ -293,7 +293,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	}
 	if published {
 		var ws string
-		if err = tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&ws); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT COALESCE(workspace_id,'') FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&ws); err != nil {
 			return SourceSession{}, err
 		}
 		doc, err := readSourceSession(ctx, tx, fileID, ws)
@@ -306,7 +306,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if err != nil {
 		return SourceSession{}, err
 	}
-	ws, _, err := s.refreshLockTx(ctx, tx, fileID, job)
+	ws, owner, err := s.refreshLockTx(ctx, tx, fileID, job)
 	if err != nil {
 		return SourceSession{}, err
 	}
@@ -363,7 +363,8 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	}
 	if !job.exportOnly {
 		var contentHash string
-		err = tx.QueryRow(ctx, `SELECT content_hash FROM rag_contents WHERE id=$1 AND workspace_id=$2 AND status='ready'`, in.ContentID, ws).Scan(&contentHash)
+		// A file with no workspace has its owner's content (Epo 2026-10-27).
+		err = tx.QueryRow(ctx, `SELECT content_hash FROM rag_contents WHERE id=$1 AND (workspace_id=$2 OR ($2='' AND workspace_id IS NULL AND user_id=$3)) AND status='ready'`, in.ContentID, ws, owner).Scan(&contentHash)
 		if err != nil {
 			if isNoRows(err) {
 				err = ErrConflict
@@ -415,7 +416,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		}
 		return out, tx.Commit(ctx)
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3) ON CONFLICT(file_id) DO UPDATE SET content_id=EXCLUDED.content_id`, fileID, ws, in.ContentID); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,NULLIF($2,''),$3) ON CONFLICT(file_id) DO UPDATE SET content_id=EXCLUDED.content_id`, fileID, ws, in.ContentID); err != nil {
 		return doc, err
 	}
 	// The pipeline writes no status for a refresh: the published result is
@@ -522,14 +523,10 @@ func (s *Store) FailSourceRefresh(ctx context.Context, fileID, jobID, lease, det
 	actor := job.actor
 	// Trashed files too: the maintenance window exports them (a trash
 	// transition already cancelled every other refresh).
-	var workspaceID string
-	if err = tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, fileID).Scan(&workspaceID); err != nil {
-		if isNoRows(err) {
-			return ErrConflict
-		}
-		return err
+	_, owner, _, err := s.sourceOwnerTx(ctx, tx, fileID, true)
+	if errors.Is(err, ErrNotFound) {
+		return ErrConflict
 	}
-	owner, err := s.storageOwnerTx(ctx, tx, workspaceID)
 	if err != nil {
 		return err
 	}

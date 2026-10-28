@@ -13,7 +13,10 @@ const { document, window } = parseHTML(
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 // What each editor view was told about editing.
-const views = vi.hoisted(() => ({ edits: [] as [string, boolean][] }));
+const views = vi.hoisted(() => ({
+  edits: [] as [string, boolean][],
+  frozen: false,
+}));
 vi.mock('@/api/hooks', () => ({
   fileLinksQuery: () => ({ queryKey: ['file-links'] }),
   useFileLinks: () => ({
@@ -27,7 +30,7 @@ vi.mock('@/api/hooks', () => ({
   }),
 }));
 vi.mock('@/features/workspace/WorkspaceHealth', () => ({
-  useAccountFrozen: () => false,
+  useAccountFrozen: () => views.frozen,
 }));
 vi.mock('./DocxView', () => ({
   default: ({ canEdit }: { canEdit: boolean }) => {
@@ -48,6 +51,7 @@ const { FileViewer } = await import('./FileViewer');
 
 afterEach(() => {
   views.edits.length = 0;
+  views.frozen = false;
 });
 
 async function open(name: string, workspaceId: string) {
@@ -76,7 +80,10 @@ async function open(name: string, workspaceId: string) {
   return views.edits.at(-1);
 }
 
-it('opens a standalone Office or text file read-only (R4)', async () => {
+it("opens a standalone Office or text file's editor for its owner, read-only while frozen", async () => {
+  expect(await open('notes.docx', '')).toEqual(['docx', true]);
+  expect(await open('notes.md', '')).toEqual(['text', true]);
+  views.frozen = true;
   expect(await open('notes.docx', '')).toEqual(['docx', false]);
   expect(await open('notes.md', '')).toEqual(['text', false]);
 });

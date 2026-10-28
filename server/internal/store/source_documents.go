@@ -126,8 +126,9 @@ type SourceCheckpoint struct {
 	ActorIDs []string `json:"actorIds" minItems:"1"`
 	// The workspace the saving room opened the file in: every actor is
 	// checked there, so a Move's drain stores the edits made before it
-	// (Q459). Removing someone's access there still refuses their edits.
-	WorkspaceID        string `json:"workspaceId" minLength:"1"`
+	// (Q459). Removing someone's access there still refuses their edits. ""
+	// when the room opened a file with no workspace: only its payer saves.
+	WorkspaceID        string `json:"workspaceId"`
 	Epoch              int64  `json:"epoch" minimum:"1"`
 	ExpectedCheckpoint int64  `json:"expectedCheckpoint" minimum:"0"`
 	// The base revision the effects were measured under: a publication in
@@ -217,32 +218,27 @@ func editableSourceFormat(name, kind string) string {
 }
 
 // sourceLockTx uses the same lock order as material rooms and workspace writes.
-// The actors are checked against `actorWS` when given (a room's save, Q459),
-// else against the file's workspace.
-func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, actors []string, edit bool, actorWS string) (string, string, error) {
+// The actors are checked against `actorWS` when given (a room's save, Q459;
+// "" when the room opened the file with no workspace), else against the
+// file's workspace. ws is "" for a file with no workspace, whose owner is its
+// payer.
+func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, actors []string, edit bool, actorWS *string) (string, string, error) {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fileID); err != nil {
 		return "", "", err
 	}
-	var ws string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&ws); err != nil {
-		if isNoRows(err) {
-			err = ErrNotFound
-		}
-		return "", "", err
-	}
-	owner, err := s.storageOwnerTx(ctx, tx, ws)
+	ws, owner, payer, err := s.sourceOwnerTx(ctx, tx, fileID, false)
 	if err != nil {
 		return "", "", err
 	}
 	if len(actors) == 0 {
 		return "", "", ErrForbidden
 	}
-	if actorWS == "" {
-		actorWS = ws
+	if actorWS == nil {
+		actorWS = &ws
 	}
 	// Access first, so a caller who cannot reach the file learns nothing about
 	// the owner's account; checked again under the account locks below.
-	if err = sourceActorsAllowed(ctx, tx, actorWS, actors, edit); err != nil {
+	if err = sourceActorsAllowed(ctx, tx, *actorWS, payer, actors, edit); err != nil {
 		return "", "", err
 	}
 	accounts := append([]string{owner}, actors...)
@@ -250,16 +246,29 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 		// An edit charges the file's payer (its update log), so its row joins
 		// the batch, as material writes lock theirs. The payer is set
 		// once at insert, so the unlocked read is stable.
-		payer, err := filePayer(ctx, tx, fileID)
-		if err != nil {
-			return "", "", err
-		}
 		accounts = append(accounts, payer)
 	}
 	if err = s.lockAccountSessionsTx(ctx, tx, accounts...); err != nil {
 		return "", "", err
 	}
-	return ws, owner, sourceActorsAllowed(ctx, tx, actorWS, actors, edit)
+	return ws, owner, sourceActorsAllowed(ctx, tx, *actorWS, payer, actors, edit)
+}
+
+// sourceOwnerTx reads a file's workspace ("" for none), its owner and its
+// payer (files.user_id). The owner is the workspace's, its row locked as
+// storageOwnerTx locks it, or for a file with no workspace its payer, the
+// only one who may open it (Epo 2026-10-27). withTrashed reads a trashed file
+// too.
+func (s *Store) sourceOwnerTx(ctx context.Context, tx pgx.Tx, fileID string, withTrashed bool) (ws, owner, payer string, err error) {
+	err = tx.QueryRow(ctx, `SELECT COALESCE(workspace_id,''),user_id FROM files WHERE id=$1 AND (trashed_at IS NULL OR $2)`, fileID, withTrashed).Scan(&ws, &payer)
+	if isNoRows(err) {
+		return "", "", "", ErrNotFound
+	}
+	if err != nil || ws == "" {
+		return ws, payer, payer, err
+	}
+	owner, err = s.storageOwnerTx(ctx, tx, ws)
+	return ws, owner, payer, err
 }
 
 // filePayer is the account a file is charged to, its uploader (Sam
@@ -276,11 +285,24 @@ func filePayer(ctx context.Context, q rowQueryer, fileID string) (string, error)
 // sourceActorsAllowed refuses an actor without read (edit: write) access to
 // the workspace, and every actor while the workspace owner is deleted or
 // pending deletion, every actor but the owner while the owner is suspended:
-// that content is gone for members too, as on every other path.
-func sourceActorsAllowed(ctx context.Context, q rowQueryer, ws string, actors []string, edit bool) error {
+// that content is gone for members too, as on every other path. With no
+// workspace (ws "") only the file's payer is allowed, never through a share
+// link (Epo 2026-10-27), and not while its account is deleted or pending
+// deletion; its own suspension is refused by the account check that follows.
+func sourceActorsAllowed(ctx context.Context, q rowQueryer, ws, payer string, actors []string, edit bool) error {
 	for _, actor := range actors {
 		if actor == "" {
 			return ErrForbidden
+		}
+		if ws == "" {
+			var gone bool
+			if err := q.QueryRow(ctx, `SELECT deleted_at IS NOT NULL OR deletion_requested_at IS NOT NULL FROM users WHERE id=$1`, payer).Scan(&gone); err != nil {
+				return err
+			}
+			if actor != payer || gone {
+				return ErrNotFound
+			}
+			continue
 		}
 		var allowed bool
 		err := q.QueryRow(ctx, `SELECT (w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND (NOT $3 OR m.role IN ('owner','editor'))) OR (w.privacy IN ('link','public') AND (NOT $3 OR w.share_role='editor') AND `+linkReachSQL("w", "$2")+`)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND (owner.suspended_at IS NULL OR owner.id=$2) FROM workspaces w JOIN users owner ON owner.id=w.user_id WHERE w.id=$1`, ws, actor, edit).Scan(&allowed)
@@ -301,7 +323,7 @@ func sourceActorsAllowed(ctx context.Context, q rowQueryer, ws string, actors []
 // checkpoint saves edits the room already admitted, so it takes sourceLockTx
 // alone (frozen and the limit are enforced at admission only).
 func (s *Store) sourceEditLockTx(ctx context.Context, tx pgx.Tx, fileID string, actor string) (string, string, error) {
-	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, true, "")
+	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, true, nil)
 	if err != nil {
 		return "", "", HideOtherAccountLock(err, actor)
 	}
@@ -322,7 +344,7 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 		return SourceSession{}, err
 	}
 	defer tx.Rollback(ctx)
-	ws, _, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, false, "")
+	ws, _, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, false, nil)
 	if err != nil {
 		return SourceSession{}, err
 	}
@@ -351,10 +373,14 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 		return out, err
 	}
 	out.OwnerID = payer
-	var canEdit bool
-	err = tx.QueryRow(ctx, `SELECT w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND m.role IN ('owner','editor')) OR(w.privacy IN ('link','public') AND w.share_role='editor' AND `+linkReachSQL("w", "$2")+`) FROM workspaces w WHERE id=$1`, ws, actor).Scan(&canEdit)
-	if err != nil {
-		return out, err
+	// sourceLockTx admits only the payer of a file with no workspace, who
+	// edits it.
+	canEdit := ws == ""
+	if !canEdit {
+		err = tx.QueryRow(ctx, `SELECT w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND m.role IN ('owner','editor')) OR(w.privacy IN ('link','public') AND w.share_role='editor' AND `+linkReachSQL("w", "$2")+`) FROM workspaces w WHERE id=$1`, ws, actor).Scan(&canEdit)
+		if err != nil {
+			return out, err
+		}
 	}
 	out.Access = "read"
 	if canEdit {
@@ -424,14 +450,15 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 	var ws, owner string
 	var current bool
 	var payer string
-	err = tx.QueryRow(ctx, `SELECT f.workspace_id,w.user_id,f.user_id,EXISTS(SELECT 1 FROM source_documents d WHERE d.file_id=f.id AND d.epoch=$2 AND d.base_revision=f.revision) FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID, epoch).Scan(&ws, &owner, &payer, &current)
+	// A file with no workspace is its payer's (sourceOwnerTx).
+	err = tx.QueryRow(ctx, `SELECT COALESCE(f.workspace_id,''),COALESCE(w.user_id,f.user_id),f.user_id,EXISTS(SELECT 1 FROM source_documents d WHERE d.file_id=f.id AND d.epoch=$2 AND d.base_revision=f.revision) FROM files f LEFT JOIN workspaces w ON w.id=f.workspace_id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID, epoch).Scan(&ws, &owner, &payer, &current)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if err = sourceActorsAllowed(ctx, tx, ws, []string{actor}, edit); err != nil {
+	if err = sourceActorsAllowed(ctx, tx, ws, payer, []string{actor}, edit); err != nil {
 		return err
 	}
 	if err = checkAccountSessions(ctx, tx, false, owner, actor); err != nil {
@@ -495,10 +522,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		return out, err
 	}
 	defer tx.Rollback(ctx)
-	if in.WorkspaceID == "" {
-		return out, ErrForbidden
-	}
-	ws, _, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, true, in.WorkspaceID)
+	ws, _, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, true, &in.WorkspaceID)
 	if err != nil {
 		return out, err
 	}
@@ -775,7 +799,8 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 	var ever, indexed, reprocess, autoProcess, manual bool
 	var edited time.Time
 	var running, refreshError, rebuildRefusal *string
-	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.status,f.ever_parsed_successfully,f.indexed,COALESCE(d.reprocess_at<=now(),false),w.auto_process,d.last_edited_at,d.running_job_id,d.desired_manual,d.refresh_error,d.rebuild_refusal FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND (f.trashed_at IS NULL OR $2) FOR UPDATE OF f,d`, fileID, system).Scan(&name, &kind, &mode, &status, &ever, &indexed, &reprocess, &autoProcess, &edited, &running, &manual, &refreshError, &rebuildRefusal)
+	// A file with no workspace always auto-processes (Epo 2026-10-27).
+	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.status,f.ever_parsed_successfully,f.indexed,COALESCE(d.reprocess_at<=now(),false),COALESCE(w.auto_process,true),d.last_edited_at,d.running_job_id,d.desired_manual,d.refresh_error,d.rebuild_refusal FROM files f LEFT JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND (f.trashed_at IS NULL OR $2) FOR UPDATE OF f,d`, fileID, system).Scan(&name, &kind, &mode, &status, &ever, &indexed, &reprocess, &autoProcess, &edited, &running, &manual, &refreshError, &rebuildRefusal)
 	if isNoRows(err) {
 		return SourceProcessResult{}, ErrNothingToProcess
 	}

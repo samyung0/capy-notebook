@@ -6,15 +6,17 @@ access, listing, Recent, search, trash, clone; pipeline scope, fence,
 progress, thumbnails, owner-scoped rag SQL in `retrieval/store.py` (cleared
 by the Rust harness session); frontend Add file, chooser, dialog, filters, events.
 Left:
-- Sources crate and Go source-session/publication (Office/text view and edit
-  of standalone files): base on `train/2026-10-27-release` or wait for main.
+- Done 2026-10-28 (branch `editor/standalone-sources`): sources crate and Go
+  source-session/publication, Office/text view and edit of standalone files
+  through the owner-only room with auto-publication; R4's read-only open and
+  account chat's `NO_SESSION` refusal removed.
 - Landing: folded into the release train as its last branch (the train takes
   0122-0124, Epo Q438), so the migration is 0125.
 - Deviation: a clone into or out of standalone re-ingests in its own scope
   instead of copying the index (same-owner donors spare the parse).
 - Move built 2026-10-27 (dialog B, Clone to…, Your files, isPayer) and the
   review's R1-R12 fixed with tests (report in the session scratchpad).
-  Standalone Office/text open read-only until the train. The UAT journey
+  The UAT journey
   `e2e/uat/journeys/standaloneFiles.spec.ts` has not run (needs a UAT deploy).
 - Open: may a payer who lost access move the file, and may a source owner
   move a member's file where that payer cannot open it.
@@ -164,7 +166,7 @@ Approved 2026-10-27:
   lock instead of the workspace editor lock, inserts with no chapter, and
   queues the normal ingest job without a workspace. The upload policy
   answers for the caller's plan. `RetryFileProcessing` (`jobs.go:261`) gets the same branch.
-- Source sessions (`source_documents.go`): `sourceLockTx` (211, 217 payer from
+- Done 2026-10-28: source sessions (`source_documents.go`): `sourceLockTx` (211, 217 payer from
   `files.user_id`), `sourceActorsAllowed` (261, owner branch), `canEdit` (336),
   `CheckSourceAccess` (408, `LEFT JOIN` + `COALESCE(w.user_id, f.user_id)`),
   `readSourceSession` (436), `commitSourceOperationTx` (592), publication (670
@@ -172,6 +174,10 @@ Approved 2026-10-27:
   `office_maintenance.go:73` and `source_refresh.go:296, 366, 418, 526`
   (publication writes the owner-scoped index). The pattern is
   standalone notes in `collaboration-rs/crates/server/src/access.rs:192`.
+  Built as `sourceOwnerTx` plus a no-workspace branch in
+  `sourceActorsAllowed`; a save's workspace `""` means its room opened a file
+  with none (payer only). Publish-all (`office_maintenance.go`) lists these
+  files too.
 - Trash: `trashFileTx` gets the standalone branch from `trashMaterialTx`.
   `ListTrash`'s file branch becomes `LEFT JOIN` + `COALESCE`. Restore, purge
   and sweep are already NULL-ready.
@@ -188,7 +194,10 @@ Approved 2026-10-27:
 
 ### collaboration-rs (`crates/sources`)
 
-- `gateway.rs:80` `SourceSession.workspace_id` becomes `Option<String>`.
+- Done 2026-10-28. `SourceSession.workspace_id` stays a `String`, `""` for no
+  workspace, the form Go, `office_changes` and `resolve` already use
+  (da5a123bb), so `ResolveInput` needed no change; only `refresh.rs` changed.
+- (plan) `gateway.rs:80` `SourceSession.workspace_id` becomes `Option<String>`.
   `store.rs:245, 1510` (`ResolveInput` and its comparison), `store.rs:1390`
   `owner()` (`LEFT JOIN` + `COALESCE`), `refresh.rs:29, 36` refresh candidates
   (no workspace means auto process). Room auth already goes through Go's
@@ -258,11 +267,16 @@ Approved 2026-10-27:
 - Pipeline tests: a standalone ingest writes owner-scoped rows in the
   default space with a thumbnail and summary; donor reuse never crosses
   owners or reaches into a workspace.
-- Rust: a standalone source room opens for its owner only.
+- Rust: a standalone source room opens for its owner only. Done 2026-10-28:
+  owner-only sessions, saves and refusals are Go's (`standalone_sources_test.go`,
+  the room authorizes through Go's bootstrap and access calls); `store_db.rs`
+  `a_file_with_no_workspace_is_inspected_and_edited` covers the Rust side.
 - Vitest: the destination dialog passes its pick to `AddSourceDialog`; no
   workspace hides chapters, room and Create.
 - e2e (MSW): Files → Add file → No workspace → upload → the file opens at
-  `/files/$id` and edits. Then `test-catalog.md`.
+  `/files/$id` and edits. Then `test-catalog.md`. The edit half done
+  2026-10-28 (`file-moved.spec.ts`, a standalone text file opens in Edit at
+  `/files/$id`).
 
 ## Move into a workspace (decided 2026-10-27, mocks first)
 

@@ -239,11 +239,12 @@ function FileViewerContent({
   }
 
   if (!file.hasBytes) return <FileEmpty />;
-  // A standalone file (no workspace) opens only for its owner. Its Office
-  // and text editing waits for the sources work, so it opens read-only (R4,
-  // Epo 2026-10-27); canEdit reaches no other kind.
+  // A standalone file (no workspace) opens only for its owner, who edits it
+  // unless their account is frozen (Epo 2026-10-27).
   const standalone = !file.workspaceId;
-  const canEdit = !standalone && !!workspace?.capabilities.canEditContent;
+  const canEdit = standalone
+    ? !frozen
+    : !!workspace?.capabilities.canEditContent;
   if (office) {
     // The capability picks View or Edit once, when the view mounts.
     if (workspacePending && !standalone) return <FileLoading />;

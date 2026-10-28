@@ -21,26 +21,27 @@ pub const OFFICE_REFRESH_STALE: &str = "7 days";
 /// Store-only Office files take the same trigger whatever auto-process says;
 /// Go publishes them export-only. A failed file is never picked automatically
 /// unless it is partial (still indexed, a part missing: parts design Q1).
-/// A `reprocess` row is a file an export-only publication left unindexed,
+/// A file with no workspace is its payer's and always auto-processes (Epo
+/// 2026-10-27). A `reprocess` row is a file an export-only publication left unindexed,
 /// due once its owner is active and it is out of the trash; a refusal moves
 /// it an hour ahead ([`REPROCESS_DEFER_SQL`]). Each branch takes its 8
 /// oldest before the merge.
 pub const REFRESH_CANDIDATES_SQL: &str = "
   SELECT file_id,user_id,checkpoint,reprocess FROM (
-    (SELECT d.file_id,w.user_id,d.checkpoint,true AS reprocess,GREATEST(d.last_edited_at,d.last_refresh_requested_at) AS due
-      FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id JOIN users u ON u.id=w.user_id
+    (SELECT d.file_id,u.id AS user_id,d.checkpoint,true AS reprocess,GREATEST(d.last_edited_at,d.last_refresh_requested_at) AS due
+      FROM source_documents d JOIN files f ON f.id=d.file_id LEFT JOIN workspaces w ON w.id=f.workspace_id JOIN users u ON u.id=COALESCE(w.user_id,f.user_id)
       WHERE d.reprocess_at<=now() AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND NOT f.indexed
         AND d.format<>'text' AND f.ever_parsed_successfully
         AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL
       ORDER BY d.reprocess_at LIMIT 8)
     UNION ALL
-    (SELECT d.file_id,w.user_id,d.checkpoint,false,GREATEST(d.last_edited_at,d.last_refresh_requested_at)
-      FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id
+    (SELECT d.file_id,COALESCE(w.user_id,f.user_id),d.checkpoint,false,GREATEST(d.last_edited_at,d.last_refresh_requested_at)
+      FROM source_documents d JOIN files f ON f.id=d.file_id LEFT JOIN workspaces w ON w.id=f.workspace_id
       WHERE d.checkpoint>d.indexed_checkpoint AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND d.refresh_error IS NULL
         AND (d.net_tokens>0 OR d.format<>'text' OR d.rebuild_refusal IS NOT NULL)
-        AND ((d.format='text' AND ((w.auto_process AND (f.status<>'failed' OR f.indexed)) OR d.desired_manual) AND d.last_edited_at < now()-interval '30 seconds')
+        AND ((d.format='text' AND ((COALESCE(w.auto_process,true) AND (f.status<>'failed' OR f.indexed)) OR d.desired_manual) AND d.last_edited_at < now()-interval '30 seconds')
           OR(d.format<>'text' AND d.last_edited_at < now()-$2::text::interval AND (d.desired_manual
-            OR ((f.status<>'failed' OR f.indexed) AND (d.net_tokens>=$1 OR d.last_edited_at < now()-$3::text::interval OR d.rebuild_refusal IS NOT NULL) AND ((w.auto_process AND f.ever_parsed_successfully)
+            OR ((f.status<>'failed' OR f.indexed) AND (d.net_tokens>=$1 OR d.last_edited_at < now()-$3::text::interval OR d.rebuild_refusal IS NOT NULL) AND ((COALESCE(w.auto_process,true) AND f.ever_parsed_successfully)
               OR (f.parse_mode='none' AND NOT f.ever_parsed_successfully))))))
       ORDER BY GREATEST(d.last_edited_at,d.last_refresh_requested_at) LIMIT 8)
   ) picked ORDER BY due LIMIT 8";
