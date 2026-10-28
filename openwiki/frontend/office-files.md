@@ -359,17 +359,20 @@ mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read
 (read authorization only, no `source_documents` row is created, no account
 lock; a deleted, deletion-pending or suspended owner's files are not found)
 that returns the
-presigned base URL and checkpoint numbers and carries `state` only when the
-saved checkpoint is ahead of the indexed one, with its `stateSeedSHA256`.
+presigned base URL and checkpoint numbers and carries `state` when the saved
+checkpoint is ahead of the indexed one or a publication waits to become the
+editing base (`rebuild_pending`, checkpoints equal, every edit still stored
+against the old base), with its `stateSeedSHA256`.
 Browser reads are `BrowserSourceSession`, which has no `pendingEffects`: only
 the collaboration service's bootstrap and publish answers (`SourceSession`)
-carry them. The host passes that state as `checkpoint` and the
+carry them. Whenever the read carries state, the host passes it as
+`checkpoint` (`viewCheckpoint`, whatever the checkpoint numbers say) and the
 hash as `checkpointSeedSHA256` on the `load` message (protocol version 7); the
 runtime applies it over the base with the editor engines in a disposable
 `exportCheckpoint` worker, which for a change seeds the base first and refuses
 a seed whose hash differs (the same composition as the
 collaboration service's headless export), terminates it, and opens the viewer
-on the exported bytes. With no unpublished edits the base opens directly and
+on the exported bytes. With no state in the read the base opens directly and
 no editor engine loads. The view is not live: it reflects the state at open,
 and a reopen or revision change reads again.
 

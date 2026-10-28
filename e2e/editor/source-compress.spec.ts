@@ -185,6 +185,11 @@ test('a DOCX upload stores its large picture compressed and its WMF equation rem
     timeout: 60_000,
   });
   await expect(page.getByText(m.error_file_body())).toHaveCount(0);
+  // The file's own text, not a blank document: an upload has no saved edits,
+  // so the view read carries no state and the base opens as is.
+  await expect(
+    frame.locator('.layout-run-text').filter({ hasText: '書' }).first()
+  ).toBeAttached();
 });
 
 test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 through their decoders and saved as JPEG even when small, an SVG as PNG, and a corrupt HEIC is refused', async ({
