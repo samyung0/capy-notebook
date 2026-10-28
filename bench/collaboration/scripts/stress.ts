@@ -1,7 +1,9 @@
 /**
  * Collaboration stress test: STRESS_PEERS peers type into one Office room
  * (exchange-plan.docx) and one Plate room for STRESS_MINUTES, some of them
- * dropping offline and rejoining while they keep typing, against the e2e
+ * dropping offline (their socket closes with no Leave, as a lost network
+ * does) and rejoining under their kept client id while they keep typing,
+ * against the e2e
  * Docker stack (deploy/docker-compose.e2e.yml plus docker-compose.stress.yml
  * and docker-compose.stress-run.yml, started and torn down through
  * e2e/global-setup.ts). A second phase then does
@@ -125,11 +127,13 @@ const DROP_PER_SECOND = Number(process.env.STRESS_DROP_PER_SECOND ?? 0.02);
 const IDLE = process.env.STRESS_IDLE === 'true';
 // Presence load (reports/2026-10-28-presence-load.md): every typing peer of a
 // note room publishes its caret STRESS_CURSOR_HZ times a second (0: none) in
-// the STRESS_CURSOR_PAYLOAD shape: `today` is slate-yjs's (a colour and JSON
-// relative positions), `compact` the 2026-10-28 decision's (base64 positions,
-// no colour). Every peer, the watcher included, times the carets it hears.
+// the STRESS_CURSOR_PAYLOAD shape: `compact` the 2026-10-28 decision's (base64
+// positions, no colour), `today` slate-yjs's former one (a colour and JSON
+// relative positions), which a server with the note field list drops (only
+// an older server image relays it). Every peer, the watcher included, times
+// the carets it hears.
 const CURSOR_HZ = Number(process.env.STRESS_CURSOR_HZ ?? 0);
-const CURSOR_PAYLOAD = process.env.STRESS_CURSOR_PAYLOAD ?? 'today';
+const CURSOR_PAYLOAD = process.env.STRESS_CURSOR_PAYLOAD ?? 'compact';
 if (CURSOR_PAYLOAD !== 'today' && CURSOR_PAYLOAD !== 'compact')
   throw new Error('STRESS_CURSOR_PAYLOAD must be today or compact');
 /**
@@ -872,6 +876,8 @@ globalThis.WebSocket = OriginWebSocket;
 interface Peer {
   doc: Y.Doc;
   provider: RoomProvider;
+  /** Its own socket: a drop closes it (`sleep`) and a reconnect opens it. */
+  socket: CollabSocket;
   /** Listeners of the room's stateless messages (checkpoint receipts). */
   stateless: Set<(payload: string) => void>;
 }
@@ -905,6 +911,8 @@ async function join(room: Room, name: string): Promise<Peer> {
   let synced: () => void = () => undefined;
   let failed: (error: Error) => void = () => undefined;
   const stateless = new Set<(payload: string) => void>();
+  // Each peer is a browser of its own: its own socket.
+  const socket = CollabSocket.create(first.url);
   const provider = new RoomProvider({
     document: doc,
     name: first.room,
@@ -916,8 +924,7 @@ async function join(room: Room, name: string): Promise<Peer> {
     onSynced: ({ state }) => {
       if (state) synced();
     },
-    // Each peer is a browser of its own: its own socket.
-    socket: CollabSocket.create(first.url),
+    socket,
     // A reconnect asks the API for a fresh token, as the app does.
     token: async () => {
       try {
@@ -940,7 +947,7 @@ async function join(room: Room, name: string): Promise<Peer> {
     failed = reject;
     provider.connect();
   });
-  return { doc, provider, stateless };
+  return { doc, provider, socket, stateless };
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1447,12 +1454,16 @@ async function stressRoom(room: Room, peerCount: number) {
         const now = Date.now();
         if (offlineUntil && now >= offlineUntil) {
           offlineUntil = 0;
-          void peer.provider.connect();
+          peer.socket.wake();
         } else if (!offlineUntil && Math.random() < (DROP_PER_SECOND * EDIT_MS) / 1000) {
-          // Keeps typing offline; the edits go out on reconnect.
+          // A lost network (Epo 2026-10-28): the socket closes with no Leave,
+          // so the session keeps its client id, and the edits it keeps typing
+          // offline go out under it when it joins again (Q236, Q472). The
+          // provider's disconnect() would send a clean Leave, which expires
+          // the id, and the room would refuse those edits as unassigned.
           drops += 1;
           offlineUntil = now + randomInt(1000, 5000);
-          peer.provider.disconnect();
+          peer.socket.sleep();
         }
         const marker = `[${room.kind[0]}${String(index).padStart(2, '0')}-${String(sequence).padStart(4, '0')}]`;
         // Timed only when the peer is connected and synced: one typed while
@@ -1467,14 +1478,9 @@ async function stressRoom(room: Room, peerCount: number) {
   );
   await Promise.all(publishing);
   const everyone = [watcher, ...peers];
-  // Brings back peers that ended offline. A close still in flight leaves the
-  // status connected for a moment, so this retries until the socket is up;
-  // only a disconnected one, since connect() restarts a connection still
-  // opening, which over a real network takes longer than this poll.
-  const settled = await until(() => {
-    for (const peer of peers) if (status(peer) === 'disconnected') void peer.provider.connect();
-    return everyone.every(settledPeer);
-  }, 120_000);
+  // Brings back peers that ended offline (a socket not dropped ignores it).
+  for (const peer of peers) peer.socket.wake();
+  const settled = await until(() => everyone.every(settledPeer), 120_000);
   const unsettled = everyone.filter((peer) => !settledPeer(peer)).length;
   const texts = () => everyone.map(({ doc }) => roomText(room, doc));
   const converged = await until(() => new Set(texts()).size === 1, 60_000);
