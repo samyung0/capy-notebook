@@ -1,7 +1,7 @@
 # Presence load on the production box, 2026-10-28
 
 Note rooms with carets at 20 Hz, in today's awareness shape and in the
-compact shape decided on 2026-10-28 (capy-harness `2026-10-28-presence/PLAN.md`), against main's Rust
+compact shape decided on 2026-10-28 (`todo-presence.md`), against main's Rust
 collaboration server on the production box. The question: does compact JSON
 suffice, or does presence need a binary format? Epo allows bench runs on the
 box; the run started after Coolify was removed from it (Q498), and everything
@@ -114,7 +114,7 @@ bound.
 
 ## The planned field check
 
-The server will parse each entry and check its fields (capy-harness `2026-10-28-presence/PLAN.md`,
+The server will parse each entry and check its fields (`todo-presence.md`,
 section A). A serde_json parse and check (with `preserve_order`, as the
 server builds it), measured on an Apple M-series Mac:
 
