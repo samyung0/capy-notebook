@@ -143,7 +143,7 @@ const TEXT_PROPS: Record<string, readonly string[]> = {
   'capy:mermaid': ['source', 'caption'],
 };
 
-function isTextProp(flavour: string, key: string) {
+export function isTextProp(flavour: string, key: string) {
   if (flavour === 'affine:table')
     return key.startsWith('cells.') && key.endsWith('.text');
   return TEXT_PROPS[flavour]?.includes(key) ?? false;

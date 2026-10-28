@@ -35,6 +35,7 @@ import {
   type MaterialValue,
   quizNode,
 } from '@/features/materials/document';
+import { registerMockBlocksProvider } from '@/features/notes/blocksuite/blocksRoom';
 import { blocksLayout } from '@/features/notes/blocksuite/flag';
 import {
   applyValue,
@@ -1682,4 +1683,15 @@ export function registerMockCollaborationProvider() {
   registerProviderType('mock', MockCollaborationProvider);
   registerMockSourceProvider((config) => new MockSourceProvider(config));
   registerMockItemProvider((config) => new MockItemProvider(config));
+  // The BlockSuite note's room: joined at once, synced on the next tick.
+  registerMockBlocksProvider((config) => {
+    const leave = join(mockBlocksRoom(config.materialId, config.initialValue), {
+      awareness: config.awareness ?? undefined,
+      document: config.document,
+      onPresence: config.onPresence,
+      origin: {},
+    });
+    queueMicrotask(() => config.onSynced?.({ state: true }));
+    return { connect: () => {}, destroy: leave };
+  });
 }

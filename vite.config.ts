@@ -473,7 +473,15 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
       // import waterfall. Transforming it up front costs a few seconds of
       // start-up and saves ~10s on the first note opened — which under
       // Playwright is the difference between passing and timing out.
-      warmup: { clientFiles: ['./src/features/notes/NoteEditor.tsx'] },
+      // A blocks-layout stack opens notes in BlockSuite (lazy too).
+      warmup: {
+        clientFiles: [
+          './src/features/notes/NoteEditor.tsx',
+          ...(env.VITE_DOCUMENT_LAYOUT === 'blocks'
+            ? ['./src/features/notes/blocksuite/BlockSuiteNote.tsx']
+            : []),
+        ],
+      },
       watch: {
         // chokidar hands the predicate a second `stats` argument that its
         // anymatch type does not declare, so it stays optional here.

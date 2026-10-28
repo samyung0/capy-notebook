@@ -44,6 +44,7 @@ import { cn } from '@/lib/cn';
 import { draftKey, dropLostDrafts } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { unexpectedErrorId } from '@/lib/errors';
+import { blocksLayout } from './blocksuite/flag';
 import {
   type MaterialLimitCode,
   materialLimitMessage,
@@ -76,6 +77,8 @@ import { toastSaveUndone } from './saveFailure';
 
 // The merge view's sheet loads only once there are pieces to review.
 const NoteMergeView = lazy(() => import('./merge/NoteMergeView'));
+// Dev stacks with the blocks layout only (boundary 1, todo-blocksuite-spike.md).
+const BlockSuiteNote = lazy(() => import('./blocksuite/BlockSuiteNote'));
 const noSubscription = () => () => {};
 const NO_PIECES: MergeSnapshot = {
   canApply: false,
@@ -169,6 +172,13 @@ export function NoteEditor({
       />
     );
   }
+
+  if (material.kind === 'note' && blocksLayout())
+    return (
+      <Suspense fallback={<FileLoading />}>
+        <BlockSuiteNote key={material.id} material={material} />
+      </Suspense>
+    );
 
   return (
     <CollaborativeNoteEditor
