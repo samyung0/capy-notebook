@@ -6,7 +6,7 @@ import type {
   BrowserContext,
   Page,
 } from '@playwright/test';
-import type { Actor, UatEnvironment, UatRun } from './runtime';
+import type { Actor, SocketRecord, UatEnvironment, UatRun } from './runtime';
 
 function setupFailure(error: unknown, stage: string) {
   const status =
@@ -77,7 +77,8 @@ function uniqueEmail(run: UatRun, label: string) {
   return `${local}@${run.env.actorEmailDomain}`;
 }
 
-async function actorContext(env: UatEnvironment, browser: Browser) {
+async function actorContext(run: UatRun, browser: Browser) {
+  const { env } = run;
   const client = createClerkClient({ secretKey: env.clerkSecretKey });
   const encodedHost = env.clerkPublishableKey.replace(/^pk_(test|live)_/, '');
   const host = Buffer.from(encodedHost, 'base64').toString().replace(/\$$/, '');
@@ -88,6 +89,26 @@ async function actorContext(env: UatEnvironment, browser: Browser) {
     baseURL: env.appUrl,
     locale: 'en-US',
   });
+  // Every page's sockets go to the run's evidence (UatRun.close). An error
+  // message loses any query string, where a token could ride.
+  context.on('page', (page) =>
+    page.on('websocket', (socket) => {
+      const url = new URL(socket.url());
+      const record: SocketRecord = {
+        errors: [],
+        host: url.host,
+        openedAt: new Date().toISOString(),
+        path: url.pathname,
+      };
+      run.sockets.push(record);
+      socket.on('socketerror', (error) =>
+        record.errors.push(error.replace(/\?\S*/g, ''))
+      );
+      socket.on('close', () => {
+        record.closedAt = new Date().toISOString();
+      });
+    })
+  );
   // Official Clerk bot-protection token, not a mocked identity or application response.
   await context.route(`https://${host}/v1/**`, async (route) => {
     try {
@@ -216,11 +237,9 @@ export async function createPrimaryActor(
 ): Promise<Actor> {
   const email = uniqueEmail(run, 'owner');
   await run.record('actor-email', email, { label: 'owner' });
-  const context = await actorContext(run.env, browser).catch(
-    (error: unknown) => {
-      throw setupFailure(error, 'Clerk browser setup');
-    }
-  );
+  const context = await actorContext(run, browser).catch((error: unknown) => {
+    throw setupFailure(error, 'Clerk browser setup');
+  });
   const page = await context.newPage();
   let stage = 'Primary actor signup page';
   try {
@@ -323,11 +342,9 @@ export async function signInAgain(run: UatRun, browser: Browser, actor: Actor) {
 
 /** A new browser context signed in as `userId` with a short-lived Clerk sign-in ticket. */
 async function ticketContext(run: UatRun, browser: Browser, userId: string) {
-  const context = await actorContext(run.env, browser).catch(
-    (error: unknown) => {
-      throw setupFailure(error, 'Clerk browser setup');
-    }
-  );
+  const context = await actorContext(run, browser).catch((error: unknown) => {
+    throw setupFailure(error, 'Clerk browser setup');
+  });
   const page = await context.newPage();
   try {
     await page.goto('/sign-in');
