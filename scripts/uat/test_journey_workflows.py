@@ -268,45 +268,80 @@ try {
             self.assertFalse((Path(temporary) / "uat-journey-db").exists())
             self.assertNotIn("synthetic-key", result.stderr)
 
-    def test_journey_credits_function_is_verifier_only_and_raise_only(self):
+    def test_journey_functions_are_verifier_only_and_refuse_outside_their_scope(self):
         sql = (ROOT / "scripts/uat/journey-credits.sql").read_text()
-        signature = "public.uat_journey_raise_credits_used(text, bigint)"
-        self.assertIn("SECURITY DEFINER\nSET search_path = pg_catalog, public", sql)
-        self.assertIn(f"REVOKE ALL ON FUNCTION {signature} FROM PUBLIC;", sql)
+        # Each refusal and each body limit whole, so deleting any line fails.
+        guards = [
+            (
+                "SET search_path = pg_catalog, public, pg_temp\n"
+                "-- The database this was applied to, baked in by psql at apply time.\n"
+                "SET capy.journey_database = :'uat_database'\n"
+                "AS $$\n"
+                "BEGIN\n"
+                "    -- The marker is read from the database's own setting (verifier-role.sql's\n"
+                "    -- ALTER DATABASE), never the session's, which the caller can SET.\n"
+                "    IF current_database() IS DISTINCT FROM current_setting('capy.journey_database')\n"
+                "       OR NOT EXISTS (\n"
+                "           SELECT 1 FROM pg_db_role_setting s\n"
+                "           JOIN pg_database d ON d.oid = s.setdatabase\n"
+                "           WHERE d.datname = current_database() AND s.setrole = 0\n"
+                "             AND 'capy.environment=uat' = ANY (s.setconfig)\n"
+                "       ) THEN\n"
+                "        RAISE EXCEPTION"
+            ),
+            (
+                "    IF NOT EXISTS (\n"
+                "        SELECT 1 FROM public.users\n"
+                "        WHERE id = p_user_id\n"
+                r"          AND email ~ '^journeys\+uat-[0-9a-f]{12}-[^@]+\+clerk_test@inbox\.uat\.capynotebook\.com$'"
+                "\n"
+                "    ) THEN\n"
+                "        RAISE EXCEPTION"
+            ),
+        ]
+        functions = {
+            "public.uat_journey_raise_credits_used(text, bigint)": [
+                "SECURITY DEFINER\nSET search_path",
+                (
+                    "       SET used_micros = p_used_micros\n"
+                    "     WHERE user_id = p_user_id AND used_micros < p_used_micros;\n"
+                    "    IF NOT FOUND THEN\n"
+                    "        RAISE EXCEPTION"
+                ),
+            ],
+            "public.uat_journey_kept_results(text)": [
+                # STABLE: the function cannot write.
+                "LANGUAGE plpgsql\nSTABLE\nSECURITY DEFINER\nSET search_path",
+                (
+                    "    RETURN (\n"
+                    "        SELECT m.metadata->'toolEvidence'->'tools'\n"
+                    "          FROM public.messages m\n"
+                    "          JOIN public.conversations c ON c.id = m.conversation_id\n"
+                    "         WHERE c.user_id = p_user_id AND c.workspace_id IS NULL\n"
+                    "           AND m.role = 'assistant'\n"
+                    "         ORDER BY m.created_at DESC\n"
+                    "         LIMIT 1\n"
+                    "    );"
+                ),
+            ],
+        }
         self.assertEqual(
             [line for line in sql.splitlines() if line.startswith("GRANT")],
-            [f"GRANT EXECUTE ON FUNCTION {signature} TO capy_uat_verifier;"],
+            [
+                f"GRANT EXECUTE ON FUNCTION {signature} TO capy_uat_verifier;"
+                for signature in functions
+            ],
         )
-        # Each in-function refusal, whole, so deleting any line of one fails.
-        refusals = {
-            "database and its UAT marker": "SET capy.journey_database = :'uat_database'\n"
-            "AS $$\n"
-            "BEGIN\n"
-            "    -- The marker is read from the database's own setting (verifier-role.sql's\n"
-            "    -- ALTER DATABASE), never the session's, which the caller can SET.\n"
-            "    IF current_database() IS DISTINCT FROM current_setting('capy.journey_database')\n"
-            "       OR NOT EXISTS (\n"
-            "           SELECT 1 FROM pg_db_role_setting s\n"
-            "           JOIN pg_database d ON d.oid = s.setdatabase\n"
-            "           WHERE d.datname = current_database() AND s.setrole = 0\n"
-            "             AND 'capy.environment=uat' = ANY (s.setconfig)\n"
-            "       ) THEN\n"
-            "        RAISE EXCEPTION",
-            "generated journey account": "    IF NOT EXISTS (\n"
-            "        SELECT 1 FROM public.users\n"
-            "        WHERE id = p_user_id\n"
-            r"          AND email ~ '^journeys\+uat-[0-9a-f]{12}-[^@]+\+clerk_test@inbox\.uat\.capynotebook\.com$'"
-            "\n"
-            "    ) THEN\n"
-            "        RAISE EXCEPTION",
-            "raise only, existing row": "       SET used_micros = p_used_micros\n"
-            "     WHERE user_id = p_user_id AND used_micros < p_used_micros;\n"
-            "    IF NOT FOUND THEN\n"
-            "        RAISE EXCEPTION",
+        bodies = {
+            chunk.split("(", 1)[0]: chunk
+            for chunk in sql.split("CREATE OR REPLACE FUNCTION ")[1:]
         }
-        for name, refusal in refusals.items():
-            with self.subTest(refusal=name):
-                self.assertIn(refusal, sql)
+        for signature, limits in functions.items():
+            body = bodies[signature.split("(", 1)[0]]
+            self.assertIn(f"REVOKE ALL ON FUNCTION {signature} FROM PUBLIC;", sql)
+            for index, part in enumerate(guards + limits):
+                with self.subTest(function=signature, part=index):
+                    self.assertIn(part, body)
 
     def test_image_revision_must_match_even_if_container_label_matches(self):
         script = (ROOT / "scripts/uat/verify-journey-releases.sh").read_text()

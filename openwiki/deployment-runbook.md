@@ -3118,7 +3118,13 @@ for OneDrive, optional `driveIds` of the same length. Download uses
 
 ## 12. UAT review environment and external-service sandboxes
 
-The manual heavy lifecycle gate is configured in the [UAT journey guide](../e2e/uat/journeys/README.md). It documents verifier-role setup, provider read credentials, fixed-code Clerk signup, same-revision ingest checks, committed fixtures and resumable cleanup. Apply the dedicated verifier SQL, and then the credits journey's raise function (`scripts/uat/journey-credits.sql`), only to UAT after migrations.
+The manual heavy lifecycle gate is configured in the [UAT journey guide](../e2e/uat/journeys/README.md). It documents verifier-role setup, provider read credentials, fixed-code Clerk signup, same-revision ingest checks, committed fixtures and resumable cleanup. Apply the dedicated verifier SQL, and then the journeys' functions (`scripts/uat/journey-credits.sql`: the credits journey's raise, Q496, and the account chat journey's kept-results read, Q537), only to UAT after migrations. Apply the functions file again whenever it changes; reapplying replaces them in place. From the developer PC, as the database administrator in the UAT db container (the host, key and container lookup of `scripts/uat/apply-ops-roles.sh`):
+
+```bash
+ssh -i ~/.ssh/id_ed25519_capy_uat root@159.195.250.206 \
+  'docker exec -i "$(docker ps -q --filter label=com.docker.compose.project=capy --filter label=com.docker.compose.service=db)" psql -X -U capy -d capy -v uat_database=capy -v operatorapply=true' \
+  < scripts/uat/journey-credits.sql
+```
 
 This section is the manual counterpart to the repository's review automation.
 There is no deployed UAT system yet, so complete it only when rapid local
