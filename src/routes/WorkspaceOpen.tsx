@@ -985,6 +985,15 @@ function WorkspaceOpen() {
           items={footerItems}
           member={!!ws.role}
           onOpenSettings={rowProps.onOpenSettings}
+          onVoiceSend={(prompt) => {
+            setTab('chat');
+            setRightOpen(true);
+            setChatRequest((previous) => ({
+              id: null,
+              prompt,
+              seq: (previous?.seq ?? 0) + 1,
+            }));
+          }}
           workspaceId={workspaceId}
           workspaceName={ws.name}
         />

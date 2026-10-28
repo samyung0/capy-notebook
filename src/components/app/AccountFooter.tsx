@@ -1,5 +1,4 @@
 import { Link } from '@tanstack/react-router';
-import { useState } from 'react';
 import {
   useMe,
   useUnreadNotificationCount,
@@ -8,11 +7,11 @@ import {
 import { Icon } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { VoiceFooterButton } from '@/features/voice/VoiceCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { MemberAvatars } from './MemberAvatars';
 import { ProfileMenu } from './ProfileMenu';
-import { SearchDialog } from './SearchDialog';
 
 /** The foot of the workspace's left panel, which replaces the top inset bar
  * there: the members, you first with the unread dot, your avatar opening the
@@ -25,6 +24,7 @@ export function AccountFooter({
   items,
   member,
   onOpenSettings,
+  onVoiceSend,
   workspaceId,
   workspaceName,
 }: {
@@ -37,6 +37,8 @@ export function AccountFooter({
   member: boolean;
   /** Omitted for roles without workspace settings. */
   onOpenSettings?: () => void;
+  /** Starts a new workspace chat with a spoken question. */
+  onVoiceSend: (text: string) => void;
   workspaceId: string;
   workspaceName: string;
 }) {
@@ -45,7 +47,6 @@ export function AccountFooter({
   const { data: roster } = useWorkspaceMembers(workspaceId, member, {
     errorBoundary: false,
   });
-  const [searchOpen, setSearchOpen] = useState(false);
   const members = (roster ?? [])
     .filter((row) => row.userId !== me?.id)
     .map((row) => ({
@@ -83,15 +84,12 @@ export function AccountFooter({
           </Link>
         )}
       </MemberAvatars>
-      <ToolbarButton label={m.nav_search()} onClick={() => setSearchOpen(true)}>
-        <Icon name="search" />
-      </ToolbarButton>
+      <VoiceFooterButton onSend={onVoiceSend} workspaceId={workspaceId} />
       {onOpenSettings && (
         <ToolbarButton label={m.workspace_settings()} onClick={onOpenSettings}>
           <Icon name="settings" />
         </ToolbarButton>
       )}
-      <SearchDialog open={searchOpen} setOpen={setSearchOpen} />
     </div>
   );
 }

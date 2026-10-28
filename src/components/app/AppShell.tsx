@@ -6,6 +6,7 @@ import { Tour } from '@/features/guide/Tour';
 import { useRunningTour } from '@/features/guide/tourStore';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { useFinishToasts } from '@/features/study/finishToasts';
+import { AccountVoiceOverlay } from '@/features/voice/VoiceCard';
 import { startDraftSweeps } from '@/lib/editDrafts';
 import { useKeyboardHeight } from '@/lib/useKeyboardHeight';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
@@ -66,6 +67,7 @@ export function AppShell() {
         </InShellMain.Provider>
       </main>
       <ThemeDrawer onOpenChange={themeDrawer.setOpen} open={themeDrawer.open} />
+      <AccountVoiceOverlay />
       {tour && <Tour key={tour.workspaceId} workspaceId={tour.workspaceId} />}
     </div>
   );

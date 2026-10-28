@@ -20,6 +20,7 @@ import { ProfileMenu } from '@/components/app/ProfileMenu';
 import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { searchFromOpenItem } from '@/features/materials/openItem';
+import { useVoiceAsk } from '@/features/voice/voiceAsk';
 import { ChatPanel, type ChatRequest } from '@/features/workspace/ChatPanel';
 import { ArchivedChatsDialog } from '@/features/workspace/chat/ArchivedChatsDialog';
 import { ChatHistoryDialog } from '@/features/workspace/chat/ChatHistoryDialog';
@@ -70,6 +71,18 @@ export default function AccountChat() {
     if (id === activeRef.current) return;
     setRequest((previous) => ({ id, seq: (previous?.seq ?? 0) + 1 }));
   }, [conversationId]);
+
+  // A spoken question (the sidebar's voice card) always starts a new chat;
+  // the URL drops any open thread without opening another new one.
+  useVoiceAsk((prompt) => {
+    activeRef.current = null;
+    setRequest((previous) => ({
+      id: null,
+      prompt,
+      seq: (previous?.seq ?? 0) + 1,
+    }));
+    if (urlRef.current) void show(null);
+  });
 
   // A new chat's first turn names its conversation: the URL follows. The
   // panel reports no thread while one opens, so only named threads count;

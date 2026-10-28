@@ -3381,6 +3381,22 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
   recording started on the chat page opens it), the transcript lands at the
   dock field's caret, and the elapsed time or an error shows inside the dock
   above the field, which grows to fit it.
+- **From the sidebar** (`features/voice/`). A "Use your mic" card above
+  Settings in the app sidebar (its mic alone in its turning rainbow ring on
+  the 70px rail, in the phone drawer too) and a mic in the workspace left
+  panel's foot, in Search's old place, open a page-wide voice dialog
+  (`VoiceOverlay`): the page dims and blurs behind one box titled New chat.
+  Opening starts a recording (the same `useVoiceInput`, the stop button a
+  flowing gradient that does not follow the voice); the transcript fades in
+  word by word and stays editable, and the box grows to half the screen,
+  then scrolls without a scrollbar. Enter adds a line; only Send sends, and
+  it always starts a new chat: from the sidebar an account chat, through
+  `askByVoice` to Chat's page (`useVoiceAsk` in `AccountChat`); from a
+  workspace that workspace's chat, opened in its right panel. Either way the
+  question rides on `ChatRequest.prompt`, which `ChatPanel` sends once per
+  request, never again when the panel mounts anew. The account dialog lives
+  once in `AppShell`, so the phone drawer can close under it; a press
+  outside the box closes it and drops the text.
 
 The gateway (`server/internal/httpapi/voice.go`) lets anyone who may chat in
 the workspace transcribe (the chat stream's `WorkspaceEffectiveRole` check;

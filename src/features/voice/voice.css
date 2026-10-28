@@ -1,0 +1,131 @@
+/* Voice input from the sidebar: the card's ring and title shimmer, and the
+   overlay's motion, in one set of four colours. */
+@property --voice-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+:root {
+  --voice-gradient: #8c7bd9, #e88fb8, #f2b880, #6fc7c0, #7aa7f0, #8c7bd9;
+}
+
+@keyframes voice-spin {
+  to {
+    --voice-angle: 360deg;
+  }
+}
+@keyframes voice-sweep {
+  to {
+    background-position: -200% 0;
+  }
+}
+/* Three colour pools wandering over the accent, each at its own pace. */
+@keyframes voice-flow {
+  0% {
+    background-position:
+      0% 0%,
+      100% 50%,
+      50% 100%;
+  }
+  33% {
+    background-position:
+      100% 30%,
+      0% 100%,
+      20% 0%;
+  }
+  66% {
+    background-position:
+      40% 100%,
+      60% 0%,
+      100% 60%;
+  }
+  100% {
+    background-position:
+      80% 20%,
+      20% 80%,
+      0% 30%;
+  }
+}
+@keyframes voice-rise {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(4px);
+  }
+}
+@keyframes voice-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes voice-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+
+/* A rotating rainbow edge: the shimmer card. */
+.voice-ring {
+  background: conic-gradient(from var(--voice-angle), var(--voice-gradient));
+  animation: voice-spin 5s linear infinite;
+}
+/* The recording button: colours flowing into each other, not driven by the
+   voice. */
+.voice-flow {
+  background:
+    radial-gradient(circle at 30% 30%, #e88fb8 0, transparent 50%),
+    radial-gradient(circle at 70% 60%, #6fc7c0 0, transparent 50%),
+    radial-gradient(circle at 50% 80%, #f2b880 0, transparent 45%), #8c7bd9;
+  background-size: 220% 220%;
+  animation: voice-flow 5s ease-in-out infinite alternate;
+}
+/* A light sweeping across text. */
+.voice-shimmer-text {
+  color: transparent;
+  background:
+    linear-gradient(
+      90deg,
+      var(--color-fg) 0 38%,
+      #8c7bd9 46%,
+      #e88fb8 52%,
+      var(--color-fg) 62% 100%
+    )
+    0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: voice-sweep 3.6s linear infinite;
+}
+.voice-word {
+  display: inline-block;
+  white-space: pre;
+  animation: voice-rise 0.36s var(--motion-ease-smooth-out) both;
+}
+.voice-scrim[data-state="open"] {
+  animation: voice-fade-in 0.3s var(--motion-ease-smooth-out);
+}
+.voice-card[data-state="open"] {
+  animation: voice-card-in 0.42s var(--motion-ease-smooth-out);
+}
+
+/* The sidebar card only moves while it can be seen and motion is welcome. */
+@media (prefers-reduced-motion: reduce) {
+  .voice-ring,
+  .voice-flow,
+  .voice-shimmer-text,
+  .voice-word {
+    animation: none;
+  }
+}
+
+/* The shimmer card's edge: the ring painted only on the 1.5px border. */
+.voice-edge {
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  pointer-events: none;
+  border-radius: inherit;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
