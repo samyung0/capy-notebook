@@ -2026,7 +2026,6 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
         "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (filed,)
     )
     await store.upsert_content_summary(
-        workspace_id=workspace.id,
         content_id=content_id,
         fingerprint="fp",
         descriptor="A short descriptor.",
@@ -2855,7 +2854,6 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         (mismatched_file, workspace.id, donor_id),
     )
     await store.upsert_content_summary(
-        workspace_id=workspace.id,
         content_id=donor_id,
         fingerprint="fp",
         descriptor="Osmosis in brief.",

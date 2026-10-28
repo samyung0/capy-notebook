@@ -37,8 +37,8 @@ def _publish(workspace, file_id, text, checkpoint=None):
             (content_id, workspace.id, content_id),
         )
         conn.execute(
-            "INSERT INTO rag_chunks(id,workspace_id,content_id,chunk_idx,text,indexed_text,lang) VALUES(%s,%s,%s,0,%s,%s,'en')",
-            (content_id + "chunk", workspace.id, content_id, text, text),
+            "INSERT INTO rag_chunks(id,content_id,chunk_idx,text,indexed_text,lang) VALUES(%s,%s,0,%s,%s,'en')",
+            (content_id + "chunk", content_id, text, text),
         )
         conn.execute(
             "INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES(%s,%s,%s) ON CONFLICT(file_id) DO UPDATE SET content_id=EXCLUDED.content_id",

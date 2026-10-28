@@ -380,18 +380,19 @@ async def test_a_standalone_index_is_owner_scoped_in_its_jobs_space(
             _PIN["embedding_model_slug"],
             _PIN["embedding_dim"],
         )
-        chunks, vectors, rows = conn.execute(
-            f"""SELECT count(*) FILTER (WHERE c.workspace_id IS NULL),
-                       count(*) FILTER (WHERE v.workspace_id IS NULL), count(*)
+        # Passages and vectors are scoped through the content row
+        # (migration 0126).
+        vectors, rows = conn.execute(
+            f"""SELECT count(*) FILTER (WHERE v.content_id = c.content_id), count(*)
                 FROM rag_chunks c JOIN {table} v ON v.chunk_id = c.id
                 WHERE c.content_id = %s""",
             (content_id,),
         ).fetchone()
-        assert rows > 0 and chunks == vectors == rows
+        assert rows > 0 and vectors == rows
         assert conn.execute(
-            "SELECT workspace_id, descriptor FROM rag_content_summaries WHERE content_id = %s",
+            "SELECT descriptor FROM rag_content_summaries WHERE content_id = %s",
             (content_id,),
-        ).fetchone() == (None, "Notes on photosynthesis.")
+        ).fetchone() == ("Notes on photosynthesis.",)
         # A re-ingest of this file keeps the space its content was indexed in.
         assert db.file_embedding_pin(cur, file_id) == _PIN
 

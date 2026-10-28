@@ -551,10 +551,13 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
 - Thumbnail keys stay inside their workspace: a moved file drops a key
   borrowed from another file, and files that borrowed the moved file's key
   drop theirs (the next capture redraws them).
-- Its served index follows: onto the target's copy of the same content, or a
-  copy made in the target, when the target embeds in the same space; else
-  the file is ingested there, paid by the mover as a cross-space clone is;
-  so is a target still building the same content.
+- Its served index follows when the target embeds in the same space: content
+  only this file holds is re-tagged in place (its content row and alias name
+  the target, about 1 ms whatever its size, migration 0126); otherwise it
+  joins the target's copy of the same content, or content another file or
+  note shares is copied into the target. Across spaces the file is ingested
+  there, paid by the mover as a cross-space clone is; so is a target still
+  building the same content.
   Each open source room drains (Q447): it stores what it admitted, people's
   typing and agent edits, before it closes, and its tabs reconnect through
   the access check of the new place. Every source save names the workspace

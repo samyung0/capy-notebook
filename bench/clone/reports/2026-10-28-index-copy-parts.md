@@ -35,3 +35,18 @@ database side?
    content row (as `scoped_files` already does), a move would change one
    content row and its alias: about a millisecond whatever the file's size.
    A clone still copies, unless content were shared across workspaces.
+
+## After migration 0126
+
+Epo chose the third option. The same run on the new schema, where
+`moveFileTx` re-tags the content row and its alias:
+
+| Part | 2,000 chunks | 5,000 chunks |
+| --- | ---: | ---: |
+| Passages copied | 0.39 s | 0.86 s |
+| Passages and vectors copied | 5.22 s | 14.96 s |
+| Whole copy (`copyRetrievalContents`) | 6.16 s | 13.84 s |
+| Move (`moveFileTx`, whole transaction body) | 4.3 ms | 3.5 ms |
+
+A move no longer depends on the file's size. A clone still copies its
+vectors, so it moves to the background job.

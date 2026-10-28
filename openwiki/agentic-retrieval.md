@@ -124,10 +124,16 @@ The retrieval index is application schema, not pipeline-owned:
 | `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
 | `rag_content_summaries` | The ~50-word `descriptor`, its running `change_share` and when it was written (`updated_at`, kept when a refresh reuses it); shared by files with identical content, carried forward across a note's reindexes |
 
-All of these FK-cascade from `workspaces` / `files` / `chapters`. Deleting a
-logical file removes its alias; a trigger removes canonical content only after
-its last alias disappears. Deleting a workspace deletes its index; there is no
-`rag_teardown` job.
+Only `rag_contents` and the aliases name a workspace (or, on `rag_contents`,
+the owner of a file with no workspace). Passages, vectors and summaries belong
+to their content row alone, and vector rows carry their passage's
+`content_id` (migration 0126), so search reaches both by the scope's content
+ids and a Move re-tags one content row (see
+[authorization](authorization-permissions-lifecycles.md)). Content rows
+FK-cascade from `workspaces` and `users`, and their passages and vectors from
+them. Deleting a logical file removes its alias; a trigger removes canonical
+content only after its last alias disappears. Deleting a workspace deletes
+its index; there is no `rag_teardown` job.
 
 `files.content_hash` is the sha256 of parsed chunk text plus page and bounding-box
 geometry when the parser supplies it. Two uploads of the same document in one
@@ -193,7 +199,10 @@ The lexical half of hybrid search (`text`, `indexed_text`, `search`,
 `regions`, pages) does not depend on the model and stays in `rag_chunks`.
 `store.vector_table` in Python and `vectorTable` in Go map
 `(provider_slug, model_slug, version)` to a table name from a fixed allowlist, because
-that name is interpolated into SQL.
+that name is interpolated into SQL. Both legs of a workspace search filter
+on `content_id = ANY(ARRAY(SELECT content_id FROM scoped_files))`, so each
+reads its content index; the knowledge library, whose mirror still tags
+passages and vectors with its workspace, filters on that instead.
 
 Adding a model means a new vector table (in `0001_init.sql` until the first
 kept database exists, then a new numbered migration), a new allowlist

@@ -331,9 +331,9 @@ def _index_as(workspace, doc_id: str, lang: str) -> None:
             (content_id, workspace.id, content_id),
         )
         conn.execute(
-            "INSERT INTO rag_chunks(id,workspace_id,content_id,chunk_idx,text,indexed_text,lang) "
-            "VALUES(%s,%s,%s,0,'indexed','indexed',%s)",
-            (content_id + "c", workspace.id, content_id, lang),
+            "INSERT INTO rag_chunks(id,content_id,chunk_idx,text,indexed_text,lang) "
+            "VALUES(%s,%s,0,'indexed','indexed',%s)",
+            (content_id + "c", content_id, lang),
         )
         conn.execute(
             "INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES(%s,%s,%s)",

@@ -32,8 +32,8 @@ func itemCloneIndex(t *testing.T, s *Store, workspaceID, fileID, hash string) st
 	}{
 		{`INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,$3,'ready')`, []any{contentID, workspaceID, hash}},
 		{`INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3)`, []any{fileID, workspaceID, contentID}},
-		{`INSERT INTO rag_chunks(id,workspace_id,content_id,chunk_idx,text,indexed_text,lang) VALUES($1,$2,$3,0,'passage','passage','en')`, []any{chunkID, workspaceID, contentID}},
-		{`INSERT INTO rag_chunk_vectors_2560(chunk_id,workspace_id,embedding) VALUES($1,$2,array_fill(0.5::real, ARRAY[2560])::halfvec)`, []any{chunkID, workspaceID}},
+		{`INSERT INTO rag_chunks(id,content_id,chunk_idx,text,indexed_text,lang) VALUES($1,$2,0,'passage','passage','en')`, []any{chunkID, contentID}},
+		{`INSERT INTO rag_chunk_vectors_2560(chunk_id,content_id,embedding) VALUES($1,$2,array_fill(0.5::real, ARRAY[2560])::halfvec)`, []any{chunkID, contentID}},
 		{`UPDATE files SET indexed=true WHERE id=$1`, []any{fileID}},
 	} {
 		if _, err := s.pool.Exec(ctx, statement.sql, statement.args...); err != nil {
@@ -570,7 +570,7 @@ func TestClonesCopyPartialFiles(t *testing.T) {
 		content := itemCloneIndex(t, s, source.ID, file.ID, name)
 		exec(`UPDATE rag_contents SET pipeline_identity=NULLIF($2,'') WHERE id=$1`, content, identity)
 		if summarized {
-			exec(`INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor) VALUES($1,$2,'A lesson.')`, content, source.ID)
+			exec(`INSERT INTO rag_content_summaries(content_id,descriptor) VALUES($1,'A lesson.')`, content)
 		}
 		exec(`UPDATE files SET status='failed',parse_mode='fast',ever_parsed_successfully=true,content_hash=$2 WHERE id=$1`, file.ID, name)
 		return file

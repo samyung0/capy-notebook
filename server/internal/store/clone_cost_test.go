@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -64,13 +63,13 @@ func TestCloneCost(t *testing.T) {
 	for _, chunks := range []int{500, 2000, 5000} {
 		file := uploadWorkspaceFile(t, s, owner, src.ID)
 		content := indexFile(t, s, file.ID, src.ID, owner, src.ID, fmt.Sprintf("h-cost-%d", chunks))
-		if _, err := s.pool.Exec(ctx, `INSERT INTO rag_chunks (id, workspace_id, content_id, chunk_idx, text, indexed_text, lang, token_count)
-			SELECT $1 || '_' || g, $2, $1, g, repeat('word ', 120), repeat('word ', 120), 'en', 160
-			FROM generate_series(0, $3 - 1) g`, content, src.ID, chunks); err != nil {
+		if _, err := s.pool.Exec(ctx, `INSERT INTO rag_chunks (id, content_id, chunk_idx, text, indexed_text, lang, token_count)
+			SELECT $1 || '_' || g, $1, g, repeat('word ', 120), repeat('word ', 120), 'en', 160
+			FROM generate_series(0, $2 - 1) g`, content, chunks); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.pool.Exec(ctx, `INSERT INTO rag_chunk_vectors_2560 (chunk_id, workspace_id, embedding)
-			SELECT c.id, c.workspace_id,
+		if _, err := s.pool.Exec(ctx, `INSERT INTO rag_chunk_vectors_2560 (chunk_id, content_id, embedding)
+			SELECT c.id, c.content_id,
 				(SELECT array_agg(random()::real) FROM generate_series(1, 2560) WHERE c.id IS NOT NULL)::vector::halfvec
 			FROM rag_chunks c WHERE c.content_id=$1`, content); err != nil {
 			t.Fatal(err)
@@ -140,14 +139,12 @@ func TestCloneCost(t *testing.T) {
 	}
 }
 
-// TestCloneCostParts splits the index copy into its parts and times the
-// in-place alternatives a move could take (Epo 2026-10-28): passages alone
-// (their full-text index included), vectors alone (the HNSW index), the whole
-// copy, re-tagging the rows' workspace in place, re-tagging passages only (as
-// if vectors carried no workspace) and re-tagging the content row only (as if
-// passages and vectors were scoped through it). A background of other
-// workspaces' vectors gives the HNSW index a realistic size. Off unless
-// CAPY_CLONE_BENCH=1.
+// TestCloneCostParts splits the index copy into its parts and times a move
+// (Epo 2026-10-28): passages alone (their full-text index included), passages
+// with their vectors (the HNSW index), the whole copy, and moveFileTx, which
+// re-tags the content row since passages and vectors carry no workspace
+// (migration 0126). A background of other workspaces' vectors gives the HNSW
+// index a realistic size. Off unless CAPY_CLONE_BENCH=1.
 func TestCloneCostParts(t *testing.T) {
 	if os.Getenv("CAPY_CLONE_BENCH") != "1" {
 		t.Skip("set CAPY_CLONE_BENCH=1 (bench/clone/scripts/run.sh)")
@@ -167,27 +164,27 @@ func TestCloneCostParts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fill := func(wsID, hash string, chunks int) string {
+	fill := func(wsID, hash string, chunks int) (string, string) {
 		file := uploadWorkspaceFile(t, s, owner, wsID)
 		content := indexFile(t, s, file.ID, wsID, owner, wsID, hash)
-		if _, err := s.pool.Exec(ctx, `INSERT INTO rag_chunks (id, workspace_id, content_id, chunk_idx, text, indexed_text, lang, token_count, search)
-			SELECT $1 || '_' || g, $2, $1, g, t, t, 'en', 160, to_tsvector('simple', t)
-			FROM generate_series(0, $3 - 1) g,
+		if _, err := s.pool.Exec(ctx, `INSERT INTO rag_chunks (id, content_id, chunk_idx, text, indexed_text, lang, token_count, search)
+			SELECT $1 || '_' || g, $1, g, t, t, 'en', 160, to_tsvector('simple', t)
+			FROM generate_series(0, $2 - 1) g,
 			LATERAL (SELECT string_agg(md5(g::text || i::text), ' ') AS t FROM generate_series(1, 40) i) w`,
-			content, wsID, chunks); err != nil {
+			content, chunks); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.pool.Exec(ctx, `INSERT INTO rag_chunk_vectors_2560 (chunk_id, workspace_id, embedding)
-			SELECT c.id, c.workspace_id,
+		if _, err := s.pool.Exec(ctx, `INSERT INTO rag_chunk_vectors_2560 (chunk_id, content_id, embedding)
+			SELECT c.id, c.content_id,
 				(SELECT array_agg(random()::real) FROM generate_series(1, 2560) WHERE c.id IS NOT NULL)::vector::halfvec
 			FROM rag_chunks c WHERE c.content_id=$1`, content); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.pool.Exec(ctx, `INSERT INTO rag_content_summaries (content_id, workspace_id, descriptor)
-			VALUES ($1, $2, 'd')`, content, wsID); err != nil {
+		if _, err := s.pool.Exec(ctx, `INSERT INTO rag_content_summaries (content_id, descriptor)
+			VALUES ($1, 'd')`, content); err != nil {
 			t.Fatal(err)
 		}
-		return content
+		return file.ID, content
 	}
 	start := time.Now()
 	fill(other.ID, "h-parts-bg", 20000)
@@ -217,18 +214,8 @@ func TestCloneCostParts(t *testing.T) {
 		return times[len(times)/2]
 	}
 	const newChunkID = `'rc_' || substr(md5($2 || c.id), 1, 12)`
-	// Each statement takes the parameters it names.
-	args := func(q string, all ...any) []any {
-		n := 0
-		for i := range all {
-			if strings.Contains(q, fmt.Sprintf("$%d", i+1)) {
-				n = i + 1
-			}
-		}
-		return all[:n]
-	}
 	for _, chunks := range []int{2000, 5000} {
-		content := fill(src.ID, fmt.Sprintf("h-parts-%d", chunks), chunks)
+		fileID, content := fill(src.ID, fmt.Sprintf("h-parts-%d", chunks), chunks)
 		insertContent := func(ctx context.Context, tx pgx.Tx, fresh string) error {
 			_, err := tx.Exec(ctx, `INSERT INTO rag_contents (id, workspace_id, content_hash, status,
 				embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim)
@@ -238,9 +225,9 @@ func TestCloneCostParts(t *testing.T) {
 		}
 		copyChunks := func(ctx context.Context, tx pgx.Tx, fresh string) error {
 			_, err := tx.Exec(ctx, `INSERT INTO rag_chunks
-				(id, workspace_id, content_id, chunk_idx, section_path, text, indexed_text, token_count, lang, search)
-				SELECT `+newChunkID+`, $3, $2, c.chunk_idx, c.section_path, c.text, c.indexed_text, c.token_count, c.lang, c.search
-				FROM rag_chunks c WHERE c.content_id=$1`, content, fresh, dst.ID)
+				(id, content_id, chunk_idx, section_path, text, indexed_text, token_count, lang, search)
+				SELECT `+newChunkID+`, $2, c.chunk_idx, c.section_path, c.text, c.indexed_text, c.token_count, c.lang, c.search
+				FROM rag_chunks c WHERE c.content_id=$1`, content, fresh)
 			return err
 		}
 		parts := []struct {
@@ -264,51 +251,26 @@ func TestCloneCostParts(t *testing.T) {
 				if err := copyChunks(ctx, tx, fresh); err != nil {
 					return err
 				}
-				_, err := tx.Exec(ctx, `INSERT INTO rag_chunk_vectors_2560 (chunk_id, workspace_id, embedding)
-					SELECT `+newChunkID+`, $3, v.embedding FROM rag_chunks c
-					JOIN rag_chunk_vectors_2560 v ON v.chunk_id=c.id WHERE c.content_id=$1`, content, fresh, dst.ID)
+				_, err := tx.Exec(ctx, `INSERT INTO rag_chunk_vectors_2560 (chunk_id, content_id, embedding)
+					SELECT `+newChunkID+`, $2, v.embedding FROM rag_chunks c
+					JOIN rag_chunk_vectors_2560 v ON v.chunk_id=c.id WHERE c.content_id=$1`, content, fresh)
 				return err
 			}},
 			{"full_copy", func(ctx context.Context, tx pgx.Tx) error {
 				return copyRetrievalContents(ctx, tx, dst.ID, pin.Pin, map[string]string{content: uid("rgc")})
 			}},
-			{"retag_all", func(ctx context.Context, tx pgx.Tx) error {
-				for _, q := range []string{
-					// Off in this rolled-back transaction: the alias goes first, and
-					// the orphan trigger would delete the content it held.
-					`ALTER TABLE rag_file_contents DISABLE TRIGGER rag_file_contents_delete_orphan`,
-					`DELETE FROM rag_file_contents WHERE content_id=$1`,
-					`UPDATE rag_contents SET workspace_id=$2 WHERE id=$1`,
-					`UPDATE rag_chunks SET workspace_id=$2 WHERE content_id=$1`,
-					`UPDATE rag_chunk_vectors_2560 v SET workspace_id=$2 FROM rag_chunks c WHERE c.id=v.chunk_id AND c.content_id=$1`,
-					`UPDATE rag_content_summaries SET workspace_id=$2 WHERE content_id=$1`,
-				} {
-					tag, err := tx.Exec(ctx, q, args(q, content, dst.ID)...)
-					if err != nil {
-						return err
-					}
-					if strings.HasPrefix(q, "UPDATE rag_chunks ") && tag.RowsAffected() != int64(chunks) {
-						return fmt.Errorf("re-tagged %d passages, want %d", tag.RowsAffected(), chunks)
-					}
+			{"move", func(ctx context.Context, tx pgx.Tx) error {
+				if err := s.moveFileTx(ctx, tx, owner, fileID, dst.ID, nil); err != nil {
+					return err
+				}
+				var moved string
+				if err := tx.QueryRow(ctx, `SELECT workspace_id FROM rag_contents WHERE id=$1`, content).Scan(&moved); err != nil {
+					return err
+				}
+				if moved != dst.ID {
+					return fmt.Errorf("content stayed in %s", moved)
 				}
 				return nil
-			}},
-			{"retag_passages", func(ctx context.Context, tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, `UPDATE rag_chunks SET workspace_id=$2 WHERE content_id=$1`, content, dst.ID)
-				return err
-			}},
-			{"retag_content_row", func(ctx context.Context, tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `ALTER TABLE rag_file_contents DISABLE TRIGGER rag_file_contents_delete_orphan`); err != nil {
-					return err
-				}
-				if _, err := tx.Exec(ctx, `DELETE FROM rag_file_contents WHERE content_id=$1`, content); err != nil {
-					return err
-				}
-				tag, err := tx.Exec(ctx, `UPDATE rag_contents SET workspace_id=$2 WHERE id=$1`, content, dst.ID)
-				if err == nil && tag.RowsAffected() != 1 {
-					err = fmt.Errorf("re-tagged %d content rows", tag.RowsAffected())
-				}
-				return err
 			}},
 		}
 		for _, p := range parts {
