@@ -317,14 +317,35 @@ The rest of the room work:
 
 ### 6. Measure
 
-**First numbers, 2026-10-28, local and noisy** (laptop load about 25; real
-numbers come from the Performance workflow's `blocks` input):
-- **Browser:** opening the near-limit note in BlockSuite took 74 s and built
-  about 299k DOM nodes (about 40 per block), with scrolling at 8 FPS. On a 5%
-  common-subset note, opening took 34 s against Plate's 14 s, blocking per
-  keystroke was about equal (40 vs 39 ms), and a 200-key peer burst showed in
-  0.65 s against Plate's 19 s. Open cost and DOM size are where BlockSuite
-  falls short of D8's floor.
+**First GHA numbers, 2026-10-28** (Performance run 40686635416, `blocks`
+input, CPU x4 except open; BlockSuite as integrated, before any tuning):
+
+| Case | Plate | BlockSuite |
+| --- | --- | --- |
+| Open, near-limit | 14.1 s | 77.5 s |
+| Open, common subset | 14.3 s | 75.0 s |
+| First key after open, to frame | 195 ms | 1,532 ms |
+| DOM nodes after open | 35.6k | 298.6k |
+| JS heap after open | 336 MB | 282 MB |
+| Typing, near-limit: blocking per key / p95 | 63 / 144 ms | 777 / 1,128 ms |
+| Typing, common: blocking per key / p95 | 24 / 88 ms | 757 / 1,088 ms |
+| Typing, small: blocking per key / p95 | 0 / 40 ms | 0 / 24 ms |
+| Scroll, near-limit / common | 35.6 / 52.5 FPS | 11.5 / 11.2 FPS |
+| Peer burst, 2,000 keys | over 10 min (timed out) | 220 s, apply p95 9 ms |
+
+- **Open:** one task of about 19.6 s runs after the material fetch
+  (`Response.text.then`), then BlockSuite renders every block at about 40 DOM
+  nodes each.
+- **Typing:** the cost per key grows with the document size, with
+  `AFFINE-PAGE-ROOT.onbeforeinput` taking 0.7–1.1 s a key. On a small note
+  BlockSuite is at least as fast as Plate.
+- **Floor:** this is far below D8's "no worse than Plate" for large notes.
+  Profiling these two paths is next.
+- **Same run, Plate's budgets:** read-only open was 4,747 ms against its
+  4,050 budget, already over on main's last run (4,286 ms, Oct 23). Scroll
+  was 35.6 FPS against 38, where main had 45.5; the measurement code is
+  unchanged, so it comes from the merged main commits or noise.
+
 - **Server (load-test note, Plate vs blocks):** room load 71 vs 560 ms
   (replay 15 vs 291 ms), memory kept 7 vs 16 MB, `value()` 13 vs 20 ms, a
   joiner's step-1 answer 5 vs 9 ms. A keystroke's admission went from about
