@@ -1,0 +1,43 @@
+{
+  // Capy: upstream's blocksuite/tsconfig.json extends the AFFiNE root
+  // tsconfig.web.json, which is not vendored. This file inlines the options
+  // of both that matter here. Vite's esbuild transform reads it for every
+  // vendored file: `useDefineForClassFields: false` and no
+  // `experimentalDecorators` (Lit's standard decorators with `accessor`) must
+  // match upstream. The AFFiNE-only ambient types (assets, build-config,
+  // affine__env) are dropped; nothing vendored reads them.
+  "compilerOptions": {
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "exactOptionalPropertyTypes": false,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noPropertyAccessFromIndexSignature": false,
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true,
+
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "target": "ES2024",
+    "useDefineForClassFields": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "jsx": "react-jsx",
+
+    "forceConsistentCasingInFileNames": true,
+    "allowSyntheticDefaultImports": true,
+    "isolatedModules": true,
+
+    "composite": true,
+    "types": ["node"]
+  },
+  "include": [],
+  "files": []
+}

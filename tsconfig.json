@@ -17,6 +17,11 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "paths": {
+      // The app sees BlockSuite through this typed boundary only, so this
+      // project never type-checks the vendored sources (vendor/blocksuite).
+      "@/features/blocksuite/pageEditor": [
+        "./src/features/blocksuite/pageEditor.boundary.d.ts"
+      ],
       "@/*": ["./src/*"],
       "@paraglide/*": ["./src/i18n/paraglide/*"],
       "@betteroffice/docx": ["./vendor/betteroffice/packages/docx/src/core.ts"],
@@ -72,5 +77,6 @@
     },
     "types": ["vite/client"]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts"],
+  "exclude": ["src/features/blocksuite"]
 }

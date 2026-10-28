@@ -4,6 +4,7 @@ import path from 'node:path';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
+import { vanillaExtractPlugin } from '@vanilla-extract/vite-plugin';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 import { DEV_SHARE_LINK_SECRET } from './src/lib/shareLink';
@@ -135,11 +136,19 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
         ? 'node_modules/.vite-editor-e2e'
         : undefined,
     envDir: ENV_DIR,
+    // BlockSuite uses standard decorators with `accessor` fields, which
+    // Rollup cannot parse: esbuild must lower them while transforming.
+    esbuild: { target: 'es2022' },
     optimizeDeps: {
       // '@betteroffice/docx-react' stays scanned: it imports
       // @radix-ui/react-select, which only the fork installs, and finding that
       // on the first DOCX edit re-optimizes and reloads every open page.
       exclude: [
+        // BlockSuite (vendor/blocksuite) imports zod 3 and the app zod 4. The
+        // optimizer keys a dependency by its bare name, so a pre-bundled
+        // `zod` would hand both the same copy; unbundled, each importer
+        // resolves its own.
+        'zod',
         '@betteroffice/docx',
         '@betteroffice/docx/viewer',
         '@betteroffice/pptx',
@@ -219,6 +228,8 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
             : [],
       },
       react(),
+      // BlockSuite's few `.css.ts` styles (vendor/blocksuite/README.md).
+      vanillaExtractPlugin(),
       mathliveFonts(),
       embedFrame(env.VITE_EMBED_ORIGIN),
       policyHeaders(env),

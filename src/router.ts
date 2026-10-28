@@ -151,6 +151,17 @@ const page = <const T extends string>(
   });
 
 const publicRoutes = [
+  // BlockSuite spike (todo-blocksuite-spike.md): dev builds only, so
+  // production builds drop the chunk.
+  ...(import.meta.env.DEV
+    ? [
+        createRoute({
+          component: lazyPage(() => import('@/routes/DevBlockSuite')),
+          getParentRoute: () => rootRoute,
+          path: '/dev/blocksuite',
+        }),
+      ]
+    : []),
   createRoute({
     component: lazyPage(() => import('@/routes/WorkspaceInviteAccept')),
     getParentRoute: () => rootRoute,

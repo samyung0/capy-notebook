@@ -2,8 +2,12 @@ packages:
   - .
   - collaboration-rs/crates/notes/markdown
   - ops
-
-injectWorkspacePackages: true
+  # BlockSuite, copied in as plain files (vendor/blocksuite/README.md). Linked,
+  # not injected: Vite then treats it as source (no dep pre-bundling, so its
+  # .css.ts files reach the vanilla-extract plugin) and edits apply directly.
+  - vendor/blocksuite/framework/*
+  - vendor/blocksuite/affine/*
+  - vendor/blocksuite/affine/*/*
 
 allowBuilds:
   # Its postinstall only sends install telemetry; nothing to build.
@@ -44,6 +48,9 @@ patchedDependencies:
   # else takes the item after the left, within a bounded walk, as the fork's
   # yrs does (openwiki plate-editor, Epo 2026-10-24).
   "yjs@13.6.31": patches/yjs@13.6.31.patch
+  # BlockSuite's (AFFiNE yarn patch, vendor/blocksuite/README.md): an external
+  # drag adapter that also handles drags started inside the page.
+  "@atlaskit/pragmatic-drag-and-drop@1.4.0": patches/@atlaskit__pragmatic-drag-and-drop@1.4.0.patch
 
 # Security overrides, only where no parent release carries the fix:
 # - geopattern 1.2.3 (its last release) pins extend ~1.2.1, which allows
@@ -64,6 +71,9 @@ patchedDependencies:
 #   micromark-extension-math 3.1.0 (^0.16.0, its last release) via remark-math.
 #   Both call only katex.renderToString, which 0.19 keeps (Epo 2026-10-22).
 overrides:
+  # One Yjs instance (our patched one) for the app and BlockSuite, whose
+  # packages ask for ^13.6.27.
+  yjs: 13.6.31
   "geopattern>extend": 3.0.2
   "xmlbuilder2>js-yaml": 3.15.2
   "argparse@<2": 2.0.1

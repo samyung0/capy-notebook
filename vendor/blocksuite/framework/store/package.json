@@ -1,0 +1,39 @@
+{
+  "name": "@blocksuite/store",
+  "description": "BlockSuite data store built for general purpose state management.",
+  "type": "module",
+  "scripts": {
+    "build": "yarn run -T tsc"
+  },
+  "sideEffects": false,
+  "keywords": [],
+  "author": "toeverything",
+  "license": "MIT",
+  "dependencies": {
+    "@blocksuite/global": "workspace:*",
+    "@blocksuite/sync": "workspace:*",
+    "@preact/signals-core": "1.8.0",
+    "@types/lodash.ismatch": "4.4.9",
+    "file-type": "21.3.4",
+    "lib0": "0.2.114",
+    "lodash.ismatch": "4.4.0",
+    "minimatch": "10.2.5",
+    "nanoid": "5.1.16",
+    "rxjs": "7.8.2",
+    "y-protocols": "1.0.7",
+    "yjs": "^13.6.27",
+    "zod": "3.25.76"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./test": "./src/test/index.ts"
+  },
+  "files": [
+    "src",
+    "dist",
+    "!src/__tests__",
+    "!dist/__tests__",
+    "shim.d.ts"
+  ],
+  "version": "0.27.5"
+}
