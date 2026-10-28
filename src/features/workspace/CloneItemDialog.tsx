@@ -26,6 +26,7 @@ import { trackQuotaBlocked } from '@/lib/analytics';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { textLength } from '@/lib/textLength';
 import { DestinationFields, useItemDestination } from './ItemDestination';
+import { trackCopiedFile } from './sourceTransfers';
 
 /** What a clone copies: a file or a material; an empty workspaceId is a
  * standalone one. */
@@ -163,6 +164,7 @@ export function CloneItemDialog({
           id: item.id,
         });
         onCloned?.();
+        trackCopiedFile(file);
         await (file.workspaceId
           ? navigate({
               params: { workspaceId: file.workspaceId },

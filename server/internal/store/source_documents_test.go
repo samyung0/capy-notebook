@@ -1649,6 +1649,7 @@ func TestSourceCloneCopiesSavedEditsAndCaptionReferences(t *testing.T) {
 	if state != "unpublished-state" || epoch != 1 || captions != 1 || refs != 2 {
 		t.Fatalf("clone lost saved edits or captions: state=%q epoch=%d captions=%d refs=%d", state, epoch, captions, refs)
 	}
+	runIndexCopies(t, s)
 	var descriptor string
 	var share float64
 	if err = s.pool.QueryRow(ctx, `SELECT cs.descriptor,cs.change_share FROM rag_content_summaries cs JOIN rag_file_contents fc ON fc.content_id=cs.content_id WHERE fc.file_id=$1`, clonedFile).Scan(&descriptor, &share); err != nil || descriptor != "Photosynthesis." || share != 0.0125 {

@@ -94,6 +94,11 @@ func TestFileCloneCarriesSavedEditsIndexAndThumbnail(t *testing.T) {
 	if len(copies) != 1 || copies[0].FileID != clone.ID || copies[0].To != "thumbs/"+clone.ID+"/abc.webp" {
 		t.Fatalf("thumbnail copies = %+v", copies)
 	}
+	// The index arrives from the copy worker.
+	runIndexCopies(t, s)
+	if clone, err = s.GetFile(ctx, clone.ID); err != nil {
+		t.Fatal(err)
+	}
 	var contentID, chunkID string
 	var vectors int
 	if err := s.pool.QueryRow(ctx, `SELECT fc.content_id, c.id,
@@ -597,6 +602,7 @@ func TestClonesCopyPartialFiles(t *testing.T) {
 		var status string
 		var indexed bool
 		var identity *string
+		runIndexCopies(t, s)
 		var vectors, summaries int
 		if err := s.pool.QueryRow(ctx, `SELECT f.status, f.indexed, rc.pipeline_identity,
 				(SELECT count(*) FROM rag_chunks c JOIN rag_chunk_vectors_2560 v ON v.chunk_id=c.id WHERE c.content_id=rc.id),
@@ -621,7 +627,7 @@ func TestClonesCopyPartialFiles(t *testing.T) {
 		}
 		var jobType, partsOnly, parseFee string
 		if err := s.pool.QueryRow(ctx, `SELECT type,COALESCE(payload->>'partsOnly',''),COALESCE(payload->>'parseFee','')
-			FROM jobs WHERE payload->>'fileId'=$1`, copyID).Scan(&jobType, &partsOnly, &parseFee); err != nil {
+			FROM jobs WHERE payload->>'fileId'=$1 AND type<>'index_copy'`, copyID).Scan(&jobType, &partsOnly, &parseFee); err != nil {
 			t.Fatal(err)
 		}
 		if jobType != w.jobType || partsOnly != w.partsOnly || parseFee != w.parseFee {

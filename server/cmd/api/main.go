@@ -541,6 +541,7 @@ func main() {
 	go runOverQuotaNoticeWorker(ctx, st)
 	go runCollaborationEvictionWorker(ctx, st, rdb)
 	go runSourceBatchWorker(ctx, st, rdb)
+	go runIndexCopyWorker(ctx, st, rdb)
 	go runBankCommentDigestWorker(ctx, st, emailSender, appURL)
 
 	bankStore := bank.New(env("BANK_DATABASE_URL", ""), env("BANK_EDITOR_DATABASE_URL", ""), env("BANK_ASSETS_URL", ""), env("LIBRARY_DATABASE_URL", ""))

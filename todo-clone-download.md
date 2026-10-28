@@ -2,8 +2,9 @@
 
 Status 2026-10-28: on `wip/mac-clone-download`. Built: passages, vectors and
 summaries scoped through their content row (migration 0126), so a Move re-tags
-the content row instead of copying the index. Next: the background index copy
-for clones (single file and workspace), then Download. Measurements:
+the content row instead of copying the index. The background index copy for clones
+(single file and workspace) is built (migration 0127, store/index_copy.go).
+Next: Download. Measurements:
 `bench/clone/reports/2026-10-27-clone-cost.md`,
 `bench/clone/reports/2026-10-28-index-copy-parts.md`.
 

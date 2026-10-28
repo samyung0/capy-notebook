@@ -2621,5 +2621,6 @@
   "files_owner_mine": "My files",
   "files_owner_all": "All files",
   "files_location_all": "All locations",
-  "files_location_workspace": "Workspace only"
+  "files_location_workspace": "Workspace only",
+  "source_transfer_copying_index": "Copying index"
 }
