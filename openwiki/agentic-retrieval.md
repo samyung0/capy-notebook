@@ -3100,9 +3100,8 @@ AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
   client that hangs up while waiting leaves the queue, and past the 60 s the
   stream ends with the in-stream `provider_busy` error. A stream holds its
   turn slot until its response ends however it ends (`service._SlotStream`).
-  The editor AI routes are not turns (Q338) but check the ceiling: at it, or
-  with every call slot taken, `/plate-ai/command` and `/plate-ai/copilot`
-  answer the 503 `provider_busy` before starting a response
+  Ghost text is not a turn (Q338) but checks the ceiling: at it, or
+  with every call slot taken, `/plate-ai/copilot` answers the 503 `provider_busy` before starting a response
   (`ai_adapter._refuse_past_capacity`, Q339, Q359). The Go limits come first:
   5 open chat sessions per user and the AI route class.
 - **Render pool.** Deck scripts (the checker and exporter), page renders,

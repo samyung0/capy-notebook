@@ -20,7 +20,6 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/bank/questions/q_1/check":                     classAI,
 		"/api/public/quizzes/mat_1.sig/grade":               classDefault,
 		"/api/questions/computation-check":                  classAI,
-		"/api/workspaces/ws_1/ai/command":                   classAI,
 		"/api/workspaces/ws_1/ai/copilot":                   classEditor,
 		"/api/workspaces/ws_1/sources/uploads/tickets":      classDefault,
 		"/api/workspaces/ws_1/sources/uploads":              classDefault,

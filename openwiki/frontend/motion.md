@@ -92,8 +92,7 @@ Sonner still owns its wrapper exit and 200ms removal lifetime. Changing its CSS
 alone to a 350ms exit would truncate the animation; that lifecycle change remains
 separate. Toast copy updates use the same compact swap as other changing text.
 
-Browser checks: `VITE_FEATURE_EDITOR_AI=true pnpm run e2e:msw:editor --workers=1 ui-motion.spec.ts`.
-The feature flag includes the AI input's rapid-reopen focus check.
+Browser checks: `pnpm run e2e:msw:editor --workers=1 ui-motion.spec.ts`.
 
 Manual dialog rendering check: at 10% animation speed in Chromium DevTools,
 compare the final moving frame with the settled frame for the icon picker,

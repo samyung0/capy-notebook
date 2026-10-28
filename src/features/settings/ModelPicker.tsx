@@ -30,12 +30,10 @@ export function ModelOptionLabel({ option }: { option: ModelOption }) {
 
 const SLOT_LABEL: Record<ModelSlot, () => string> = {
   chat: () => m.settings_llm_chat(),
-  editor: () => m.settings_llm_editor(),
 };
 
 const PREF_FIELD: Record<ModelSlot, keyof SetModelPrefsReq> = {
   chat: 'chatModel',
-  editor: 'editorModel',
 };
 
 /** Preference picker for one slot. Changing it applies to the next request;
@@ -95,22 +93,7 @@ export function ModelPicker({
             ))}
           </SelectContent>
         </Select>
-        {slot === 'editor' ? (
-          <Select disabled value="instant">
-            <SelectTrigger
-              aria-label={m.settings_llm_thinking()}
-              className="w-auto shrink-0 sm:w-30"
-              size="md"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="instant">
-                {m.settings_llm_thinking_instant()}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        ) : slot === 'chat' && loading ? (
+        {slot === 'chat' && loading ? (
           <Select disabled>
             <SelectTrigger
               aria-label={m.settings_llm_thinking()}

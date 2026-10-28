@@ -147,7 +147,7 @@ CenterContent
                         │       ├── PlateContent + link actions
                         │       └── FloatingToolbar (edit only)
                         ├── EditorCommandPalette
-                        └── AiMenu (edit only)
+                        └── GhostTextSync (edit only)
 ```
 
 `FloatingToolbar` shares the editor's positioned `PlateContainer`, following
@@ -1353,8 +1353,7 @@ popovers, dropdown and context menus, selects, floating toolbars and popups
 (`useEditorHeld` in `src/components/ui`) turn inert, an open one included
 (it stays open and takes input again once sent; its overlay and Escape still
 close it, dropping only the dialog's own form state, never document edits); the Ctrl+K palette neither
-opens nor runs a command (its listener is on `window`); the AI menu is a
-popup; the quiz and flashcard Undo and Redo buttons in the page header are
+opens nor runs a command (its listener is on `window`); the quiz and flashcard Undo and Redo buttons in the page header are
 disabled. A DOCX or PPTX editor pauses as for any other pause
 (`set-capabilities` with `canEdit: false`: read-only, selectable), and the
 XLSX editor takes the runtime's `sending` message instead: the runtime keeps
@@ -1930,7 +1929,7 @@ design, option d), and the nudge's release file on 2026-10-17.
     remain after a deploy.
 - **A refused editor** stops for the page load and turns read-only:
   - notes reuse the `offline-limit` machinery (content `readOnly`, toolbar
-    inert, no palette or AI menu, `canEdit` off);
+    inert, no palette or ghost text, `canEdit` off);
   - item editors show their list or diagram read-only;
   - a source keeps its view, with Office `set-capabilities` turning editing
     off.
@@ -2212,8 +2211,8 @@ with "Some unsaved edits from your last session couldn't be restored."
 While offline a session may hold up to `maxContentBytes` (2 MiB) of unsaved
 local updates; past that the editor turns read-only under the `offline-limit`
 banner until it reconnects: the content is `readOnly` (block actions follow
-Plate's read-only state), the toolbar is inert, the command palette, AI menu
-and floating toolbar are not mounted, `canEdit` is off for the rest, and the
+Plate's read-only state), the toolbar is inert, the command palette, ghost
+text and floating toolbar are not mounted, `canEdit` is off for the rest, and the
 recorder stores nothing more. What was stored stays; nothing reaches the
 editor through REST-backed dialogs offline anyway. When storage fails
 (private mode, a full disk) editing continues in memory under the
@@ -2820,7 +2819,7 @@ by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
   composition the pause ends changes nothing), and `pauseEdits` turns the
   editable root `contenteditable=false` and stops typing, paste, drops,
   drags, right clicks and clicks on controls in the capture phase. Its
-  toolbar is inert, the palette and AI menu unmount, it leaves its room
+  toolbar is inert, the palette and ghost text unmount, it leaves its room
   (no reconnect), writes its unsaved edits as one whole document (its child
   effect runs before `useNoteDrafts` reads the next room's drafts, so another
   lineage's edits still become pieces) and reports nothing
@@ -3684,82 +3683,52 @@ A removed flashcard's review state stays in `review_states`, ignored until an
 Undo brings the card back. The chat result card shows the effect with an Undo
 button (`available`, `unavailable`) fed by the receipt's `undo` ref.
 
-## AI previews
+## Ghost text
 
-AI output is local until accepted:
+Editor AI is ghost text only (Epo 2026-10-28; the AI menu, its previews and
+`/ai/command` are gone). It is the one suggestion Plate's `CopilotPlugin`
+draws after the caret's block (`ghostTextPlugin.ts`, `GhostTextView.tsx`),
+shown from `sm` up. The request, the context window, the trigger rule and the
+credits pause live in `ghostText.ts`, which has no Plate code so the coming
+BlockSuite note can reuse them.
 
-- streamed edits retain a Yjs relative target range;
-- generated inserts retain a stable block ID;
-- table updates retain stable cell IDs;
-- proposed text/nodes live in a local weak store, not Slate or Yjs.
+- **On.** Each user turns it on in Settings → LLM ("Note AI suggestions",
+  `users.note_ai_enabled`, off by default; there is no build flag). The plugin
+  is registered wherever the editor may call the server
+  (`allowExternalAssets`); `GhostTextSync` hands it the switch and the note
+  title at runtime, so flipping the switch never rebuilds the editor, and
+  turning it off drops a suggestion on screen. While off nothing triggers and
+  every key handler returns false, so Tab and the rest reach the editor.
+- **Trigger.** With the caret collapsed at the end of its block, a 500 ms
+  pause after a space, a CJK character or a CJK punctuation mark (Chinese has
+  no spaces), never during IME composition or while a suggestion shows.
+  ⌥Space (Ctrl+Space off Apple) asks at once.
+- **Keys** (MI:225). Tab accepts, Esc rejects, ⌥→ (Ctrl+→) takes one word;
+  typing what the suggestion starts with consumes it, anything else drops it.
+- **Request.** `POST /api/workspaces/{id}/ai/copilot` with `{title, before,
+  after}`. `before` is Markdown of whole top-level blocks back from the caret's
+  block within 1,500 UTF-8 bytes (a longer caret block keeps its end), its
+  trailing space kept; `after` is empty in Plate, since the caret is at the end
+  of its block. Plate posts a string prompt, so `ghostTextPlugin` passes the
+  context through as JSON and sends it with the API client, which turns a
+  refusal into an `ApiError`.
+- **Stale requests.** Any operation while a request runs, typing or a caret
+  move, aborts it (Plate itself would let it finish), and an answer whose
+  context no longer matches the caret is dropped.
+- **Errors.** Failures, an empty answer and `provider_busy` stay silent.
+  `llm_credits_exhausted` shows one toast (the shared credits copy) and stops
+  auto-trigger until the page reloads.
 
-`AiMenu` displays removed and proposed text. Reject clears local state without a
-Yjs transaction. Accept (`applyAiPreview`) writes the suggestion over its
-target as the target reads now, whatever someone changed there since the
-preview (Epo 2026-10-21, no stale check):
-
-- the proposed Markdown, and each table cell's, goes through the editor's
-  markdown import (`importMarkdownDocument`, as a pasted file: URL images
-  upload, quiz and flashcards fences become rows first), so it lands as
-  formatted nodes;
-- an edit whose answer keeps the range's block count in plain paragraphs
-  (Improve, Grammar and the like) replaces each covered block's text in
-  place, so every block keeps its type, list, alignment, id and Yjs text (a
-  peer's concurrent typing elsewhere in the block and comment highlights in
-  it survive; the adapter sends no marker for indent lists or h4-h6, so the
-  model answers those in plain text);
-- any other edit deletes the range, its void blocks (images, embeds,
-  dividers) whole, and inserts the nodes there as a paste (Plate's table and
-  code-block `insertFragment` ignore `at`); when the range covered a whole
-  block, a plain first paragraph takes that block's type, properties and id,
-  and any other first block keeps the model's shape with the block's id;
-- an insert goes after its block; a table update replaces the cell's
-  children, keeping the cell, and a cell the model emptied is written empty;
-- the operations are local, and slate-yjs sends them in one transaction with
-  its local origin, so they apply once and `Y.UndoManager` records one step
-  (capture stopped before and after). The old code wrapped the flush in a
-  transaction of its own origin, which slate-yjs read as remote and applied a
-  second time, and Undo never saw.
-
-When the text a suggestion was for was removed entirely (the edit range's
-block left the document or all of its text is gone, the insert's block is
-gone, every updated table cell is gone), Accept drops the suggestion and
-closes the menu with no message, since the removal is already visible (Epo
-2026-10-21); a table cell removed alone is skipped and the others are written.
-The targets are checked before the conversion as well as after it, so a
-dropped Accept creates no fence rows. An answer that converts to no nodes (a
-lone fence whose row could not be created) writes nothing and shows "The
-suggestion could not be added to the note". Reject is disabled while Accept converts, and a preview
-replaced meanwhile (a new command) is not written. The command's range is
-unhung first (`commandRange` in `aiMenuState.ts`), so a Shift+Down selection
-neither inserts below nor edits the next block.
-
-Copilot ghost text remains plugin-local and continues in the note's language.
-Generate/comment replies follow the account locale injected by the gateway; edits
-keep the selection's language unless the instruction asks to translate. AI
-comments use the same relative-anchor REST path as user comments.
-
-Editor AI is two public routes: `POST /api/workspaces/{id}/ai/command`
-(Python `/plate-ai/command`) and `POST /api/workspaces/{id}/ai/copilot`
-(Python `/plate-ai/copilot`). Both resolve the
-`users.editor_model_provider_slug` / `users.editor_model_slug` pair the same
-way chat does. Chrome is gated by `VITE_FEATURE_EDITOR_AI`
-(off by default).
-
-The command menu always sends `ctx.toolName`. Missing or unknown values are
-`400`. There is no server classify step. Free-form text in the menu input
-sends `generate`, so a rewrite-style sentence still inserts new Markdown
-below the selection's last block instead of replacing the selection (a
-generate previews as an insert whatever Plate's mode, `aiPlugins.ts`). Canned Improve / Grammar / Shorter /
-Longer / Simplify send `edit`. `comment` is implemented and kept for a future
-Comment action; the current menu never sends it. Retry resends the last
-`toolName`.
-
-Thinking is forced to Instant on every editor provider call so typing stays
-fast. Settings → LLM shows a disabled Instant control for editor assistance.
-That settings lock is UI-only: the prefs schema has no `editorThinking`.
-See [observability-metering.md](../observability-metering.md) for pinning,
-leases, and credit rates.
+The gateway refuses with 403 `note_ai_disabled` while the switch is off,
+before any spend; otherwise it bills the editor surface on the editor slot's
+default pin with reasoning off (`resolveLLM`). Python owns the prompt
+(`prompts/editor.py`): a short system prompt, then the title and the text
+around a `<CARET>` marker; 40 output tokens at temperature 0.2. The answer
+keeps its first line only and loses its leading whitespace when `before`
+ends in whitespace (`ghost_suggestion`). The pin's cost, latency and capacity
+are measured in `todo-ghost-text.md`; see
+[observability-metering.md](../observability-metering.md) for pinning, leases
+and credit rates.
 
 ## Static rendering
 

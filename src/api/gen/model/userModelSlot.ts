@@ -10,5 +10,4 @@ export type UserModelSlot = typeof UserModelSlot[keyof typeof UserModelSlot];
 
 export const UserModelSlot = {
   chat: 'chat',
-  editor: 'editor',
 } as const;

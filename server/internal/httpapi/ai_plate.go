@@ -1,43 +1,31 @@
 package httpapi
 
 import (
-	"bufio"
-	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
+const maxAIRequestBytes = 16 << 10
+
+// Ghost text sends at most this much text on each side of the caret; the
+// editor cuts the text before at a block start below it (Epo 2026-10-28).
 const (
-	maxAIRequestBytes = 1 << 20
-	maxAIContextBytes = 256 << 10
-	maxAIMessageText  = 16 << 10
-	maxAIStreamEvent  = 256 << 10
+	maxGhostContextBytes = 1500
+	maxGhostTitleBytes   = 1 << 10
 )
 
-type aiError struct {
-	Error struct {
-		Code      string `json:"code"`
-		Message   string `json:"message"`
-		Retryable bool   `json:"retryable"`
-	} `json:"error"`
-}
-
+// writeAIError answers in the API's error shape, so the browser's ApiError
+// reads the code.
 func writeAIError(w http.ResponseWriter, status int, code, message string, retryable bool) {
-	var payload aiError
-	payload.Error.Code = code
-	payload.Error.Message = message
-	payload.Error.Retryable = retryable
-	writeJSON(w, status, payload)
+	writeJSON(w, status, map[string]any{"code": code, "message": message, "retryable": retryable})
 }
 
 func (a *api) assertPlateEditor(w http.ResponseWriter, r *http.Request, workspaceID string) bool {
@@ -53,76 +41,6 @@ func (a *api) assertPlateEditor(w http.ResponseWriter, r *http.Request, workspac
 		writeAIError(w, http.StatusInternalServerError, "internal_error", "failed to authorize workspace", true)
 	}
 	return false
-}
-
-type platePart struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-}
-
-type plateMessage struct {
-	Role  string      `json:"role"`
-	Parts []platePart `json:"parts"`
-}
-
-type plateContext struct {
-	Children  json.RawMessage `json:"children"`
-	Selection json.RawMessage `json:"selection,omitempty"`
-	// Required. The menu always sends one. comment is implemented and kept
-	// for a future Comment action; the current UI never sends it. Free-form
-	// Enter sends generate, so a rewrite instruction still inserts new
-	// Markdown instead of editing the selection.
-	ToolName string `json:"toolName,omitempty"`
-}
-
-type plateCommandReq struct {
-	Messages []plateMessage `json:"messages"`
-	Context  plateContext   `json:"ctx"`
-}
-
-func (req plateCommandReq) validate() error {
-	if len(req.Messages) == 0 {
-		return errors.New("messages are required")
-	}
-	if len(req.Messages) > 20 {
-		return errors.New("at most 20 messages are allowed")
-	}
-	if len(req.Context.Children)+len(req.Context.Selection) > maxAIContextBytes {
-		return errors.New("editor context is too large")
-	}
-	if len(req.Context.Children) == 0 || !json.Valid(req.Context.Children) {
-		return errors.New("ctx.children must be valid JSON")
-	}
-	switch req.Context.ToolName {
-	case "generate", "edit", "comment":
-	case "":
-		return errors.New("ctx.toolName is required")
-	default:
-		return errors.New("ctx.toolName is invalid")
-	}
-	hasUserText := false
-	for _, message := range req.Messages {
-		switch message.Role {
-		case "user", "assistant", "system":
-		default:
-			return errors.New("message role is invalid")
-		}
-		if len(message.Parts) > 32 {
-			return errors.New("message has too many parts")
-		}
-		for _, part := range message.Parts {
-			if len(part.Text) > maxAIMessageText {
-				return errors.New("message text is too large")
-			}
-			if message.Role == "user" && part.Type == "text" && strings.TrimSpace(part.Text) != "" {
-				hasUserText = true
-			}
-		}
-	}
-	if !hasUserText {
-		return errors.New("a user text instruction is required")
-	}
-	return nil
 }
 
 func decodeBoundedJSON(w http.ResponseWriter, r *http.Request, dst any, limit int64) error {
@@ -141,191 +59,35 @@ func decodeBoundedJSON(w http.ResponseWriter, r *http.Request, dst any, limit in
 	return nil
 }
 
-// aiCommand is the Plate/@ai-sdk UI-message stream endpoint. The gateway
-// authenticates and scopes the workspace, requires ctx.toolName, strips all
-// provider/model choices, then relays the internal Python adapter's protocol
-// without buffering.
-func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
-	wsID := id(r)
-	if !a.assertPlateEditor(w, r, wsID) {
-		return
-	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeAIError(w, http.StatusInternalServerError, "streaming_unsupported", "streaming is unsupported", false)
-		return
-	}
-
-	var req plateCommandReq
-	if err := decodeBoundedJSON(w, r, &req, maxAIRequestBytes); err != nil {
-		writeAIError(w, http.StatusBadRequest, "invalid_request", "invalid AI request", false)
-		return
-	}
-	if err := req.validate(); err != nil {
-		writeAIError(w, http.StatusBadRequest, "invalid_request", err.Error(), false)
-		return
-	}
-	extendDeadlines(w, chatStreamDeadline)
-
-	ctx := r.Context()
-	userID := uid(r)
-	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, userID, wsID)
-	defer cancelLiveAuthorization()
-	llm, err := a.resolveLLM(ctx, userID, models.SlotEditor)
-	if err != nil {
-		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
-		return
-	}
-	charge, err := a.beginProviderSession(ctx, userID, wsID, store.SurfaceEditor, llm.Rates, store.TokenRates{}, llm.Thinking)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	defer charge.release(ctx)
-
-	if a.pipe == nil {
-		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
-		return
-	}
-	// apiKey/model/provider fields are never accepted across this trust boundary.
-	body := map[string]any{
-		"workspaceId":    wsID,
-		"messages":       req.Messages,
-		"ctx":            req.Context,
-		"locale":         a.userLocale(ctx, userID),
-		"spendSessionId": charge.id,
-	}
-	llm.attach(body)
-	rc, err := a.pipe.PostStream(ctx, "/plate-ai/command", body)
-	if err != nil {
-		obs.RecordHTTPError(ctx, err)
-		var busy *providerBusyError
-		if errors.As(pipelineLLMError(err), &busy) {
-			obs.RecordHTTPError(ctx, obs.ExpectedError(err))
-		}
-		writeAIError(w, http.StatusBadGateway, "ai_unavailable", "AI service is unavailable", true)
-		return
-	}
-	defer rc.Close()
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.Header().Set("x-vercel-ai-ui-message-stream", "v1")
-
-	send := func(payload []byte) {
-		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
-		flusher.Flush()
-	}
-	_, copyErr := copyAIDataStream(ctx, rc, send)
-	if copyErr != nil && ctx.Err() == nil {
-		obs.CaptureErr(ctx, copyErr, map[string]string{"stage": "editor_stream"})
-		event, _ := json.Marshal(map[string]any{
-			"type":      "error",
-			"errorText": "AI stream failed",
-			"data": map[string]any{
-				"code":      "upstream_stream_error",
-				"retryable": true,
-			},
-		})
-		send(event)
-		send([]byte("[DONE]"))
-		return
-	}
-	charge.settle(ctx)
+// ghostTextReq is the text around the caret. The server owns the prompt.
+type ghostTextReq struct {
+	Title  string `json:"title"`
+	Before string `json:"before"`
+	After  string `json:"after"`
 }
 
-// copyAIDataStream copies only valid data-stream payloads. It drops comments
-// and unknown SSE fields, and rejects oversized/malformed events so an internal
-// upstream cannot inject arbitrary response framing.
-func copyAIDataStream(ctx context.Context, src io.Reader, send func([]byte)) (pipeUsage, error) {
-	var usage pipeUsage
-	var reportedID string
-	scanner := bufio.NewScanner(src)
-	scanner.Buffer(make([]byte, 16<<10), maxAIStreamEvent)
-	sawDone := false
-	for scanner.Scan() {
-		if ctx.Err() != nil {
-			return usage, ctx.Err()
-		}
-		line := bytes.TrimSpace(scanner.Bytes())
-		if len(line) == 0 || line[0] == ':' || !bytes.HasPrefix(line, []byte("data:")) {
-			continue
-		}
-		payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
-		if bytes.Equal(payload, []byte("[DONE]")) {
-			send([]byte("[DONE]"))
-			sawDone = true
-			continue
-		}
-		if len(payload) == 0 || !json.Valid(payload) {
-			return usage, errors.New("invalid AI stream event")
-		}
-		var ev struct {
-			Type  string    `json:"type"`
-			Usage pipeUsage `json:"usage"`
-			Data  pipeUsage `json:"data"`
-		}
-		if json.Unmarshal(payload, &ev) == nil && (ev.Type == "data-usage" || ev.Type == "usage") {
-			if !ev.Usage.empty() {
-				usage = ev.Usage
-			} else if !ev.Data.empty() {
-				usage = ev.Data
-			}
-			continue
-		}
-		var failure struct {
-			Type    string `json:"type"`
-			EventID string `json:"sentryEventId"`
-			Data    struct {
-				Code string `json:"code"`
-			} `json:"data"`
-		}
-		if json.Unmarshal(payload, &failure) == nil && failure.Type == "error" {
-			reportedID = obs.ValidEventID(failure.EventID)
-			if reportedID == "" && (failure.Data.Code == "provider_error" || failure.Data.Code == "upstream_stream_error") {
-				reportedID = obs.CaptureErr(ctx, errors.New("editor provider stream failed"), map[string]string{"stage": "editor_stream"})
-			}
-		}
-		send(bytes.Clone(payload))
+func (req ghostTextReq) validate() error {
+	if strings.TrimSpace(req.Before) == "" {
+		return errors.New("before is required")
 	}
-	if err := scanner.Err(); err != nil {
-		return usage, obs.WithEventID(err, reportedID)
+	if len(req.Before) > maxGhostContextBytes || len(req.After) > maxGhostContextBytes {
+		return errors.New("context is too large")
 	}
-	if ctx.Err() == nil && !sawDone {
-		return usage, obs.WithEventID(io.ErrUnexpectedEOF, reportedID)
-	}
-	return usage, ctx.Err()
-}
-
-type plateCopilotReq struct {
-	Prompt       string `json:"prompt"`
-	Instructions string `json:"instructions,omitempty"`
-	System       string `json:"system,omitempty"`
-}
-
-func (req plateCopilotReq) validate() error {
-	if strings.TrimSpace(req.Prompt) == "" {
-		return errors.New("prompt is required")
-	}
-	if len(req.Prompt) > maxAIMessageText {
-		return errors.New("prompt is too large")
-	}
-	if len(req.Instructions) > 8<<10 || len(req.System) > 8<<10 {
-		return errors.New("instructions are too large")
+	if len(req.Title) > maxGhostTitleBytes {
+		return errors.New("title is too large")
 	}
 	return nil
 }
 
-// aiCopilot implements Plate's short inline completion contract. Cancellation
-// propagates through the pipeline client's request context to the provider call.
+// aiCopilot returns one ghost-text suggestion. It refuses before any spend
+// while the user's note AI switch is off. Cancellation propagates through the
+// pipeline client's request context to the provider call.
 func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 	wsID := id(r)
 	if !a.assertPlateEditor(w, r, wsID) {
 		return
 	}
-	var req plateCopilotReq
+	var req ghostTextReq
 	if err := decodeBoundedJSON(w, r, &req, maxAIRequestBytes); err != nil {
 		writeAIError(w, http.StatusBadRequest, "invalid_request", "invalid AI request", false)
 		return
@@ -336,6 +98,15 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	userID := uid(r)
+	enabled, err := a.s.NoteAIEnabled(ctx, userID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if !enabled {
+		writeAIError(w, http.StatusForbidden, "note_ai_disabled", "note AI is turned off", false)
+		return
+	}
 	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, userID, wsID)
 	defer cancelLiveAuthorization()
 	llm, err := a.resolveLLM(ctx, userID, models.SlotEditor)
@@ -356,9 +127,9 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 	}
 	body := map[string]any{
 		"workspaceId":    wsID,
-		"prompt":         req.Prompt,
-		"instructions":   req.Instructions,
-		"system":         req.System,
+		"title":          req.Title,
+		"before":         req.Before,
+		"after":          req.After,
 		"spendSessionId": charge.id,
 	}
 	llm.attach(body)

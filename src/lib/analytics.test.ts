@@ -22,7 +22,6 @@ const ANALYTICS_EVENT_NAMES = {
   chat_turn_completed: true,
   chat_turn_sent: true,
   collaborator_invited: true,
-  editor_ai_used: true,
   flashcards_study_finished: true,
   invite_accepted: true,
   item_cloned: true,
@@ -42,7 +41,7 @@ const ANALYTICS_EVENT_NAMES = {
 
 describe('analytics helpers', () => {
   it('keeps the closed event union exhaustive', () => {
-    expect(Object.keys(ANALYTICS_EVENT_NAMES)).toHaveLength(19);
+    expect(Object.keys(ANALYTICS_EVENT_NAMES)).toHaveLength(18);
   });
 
   it.each([

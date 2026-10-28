@@ -5384,8 +5384,8 @@ components:
           $ref: "#/components/schemas/Ref"
         chatThinking:
           type: string
-        editorModel:
-          $ref: "#/components/schemas/Ref"
+        noteAiEnabled:
+          type: boolean
       type: object
     SetStudyEnabledReq:
       additionalProperties: false
@@ -7343,8 +7343,6 @@ components:
           type: string
         customization:
           $ref: "#/components/schemas/Customization"
-        editorModel:
-          $ref: "#/components/schemas/Ref"
         email:
           type: string
         id:
@@ -7353,6 +7351,8 @@ components:
           type: string
         name:
           type: string
+        noteAiEnabled:
+          type: boolean
         planTier:
           $ref: "#/components/schemas/PlanTier"
         streak:
@@ -7373,7 +7373,7 @@ components:
         - chatSteps
         - chatSendKey
         - chatModel
-        - editorModel
+        - noteAiEnabled
         - planTier
         - subscriptionStatus
       type: object
@@ -7390,7 +7390,6 @@ components:
     UserModelSlot:
       enum:
         - chat
-        - editor
       type: string
     VoiceTranscription:
       additionalProperties: false
@@ -10503,7 +10502,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Set chat, generate and editor model preferences
+      summary: Set the chat model and the note AI switch
       tags:
         - Account
   /api/me/study-preferences:

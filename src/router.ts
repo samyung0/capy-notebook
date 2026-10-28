@@ -502,7 +502,6 @@ const appRoutes = [
         qc.prefetchQuery(notificationPrefsQuery());
       } else if (deps.tab === 'llm') {
         qc.prefetchQuery(modelsQuery('chat'));
-        if (features.editorAi) qc.prefetchQuery(modelsQuery('editor'));
       }
     },
     path: '/settings',

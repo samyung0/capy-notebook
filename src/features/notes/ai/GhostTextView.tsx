@@ -1,0 +1,37 @@
+import { CopilotPlugin } from '@platejs/ai/react';
+import { useEditorRef, useElement, usePluginOption } from 'platejs/react';
+import { useEffect } from 'react';
+import { useMe } from '@/api/hooks';
+import { setGhostTextState } from './ghostText';
+
+export function GhostText() {
+  const element = useElement();
+  const isSuggested = usePluginOption(
+    CopilotPlugin,
+    'isSuggested',
+    element.id as string
+  );
+  const suggestionText = usePluginOption(CopilotPlugin, 'suggestionText');
+  if (!isSuggested || !suggestionText) return null;
+  return (
+    <span
+      className="pointer-events-auto hidden text-fg-muted/70 sm:inline"
+      contentEditable={false}
+    >
+      {suggestionText}
+    </span>
+  );
+}
+
+/** Hands the user's note AI switch and the note title to the ghost text
+ * plugin; turning the switch off also drops a suggestion on screen. */
+export function GhostTextSync({ title }: { title: string }) {
+  const editor = useEditorRef();
+  const { data: me } = useMe();
+  const enabled = me?.noteAiEnabled === true;
+  useEffect(() => {
+    setGhostTextState(editor, { enabled, title });
+    if (!enabled) editor.getApi(CopilotPlugin).copilot.reject();
+  }, [editor, enabled, title]);
+  return null;
+}

@@ -11,7 +11,6 @@
  *   get their own drag handles.
  */
 
-import { AIChatPlugin } from '@platejs/ai/react';
 import {
   DndPlugin,
   DRAG_ITEM_BLOCK,
@@ -54,9 +53,6 @@ import { MATERIAL_REF_TYPE } from '@/features/materials/document';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { editorAiEnabled } from '@/lib/features';
-import { openAiMenu } from './ai/aiMenuState';
-import { useEditorRuntime } from './EditorRuntime';
 import { useEditorScrollArea } from './editorScrollArea';
 import { toggleEditorBlock } from './editorTransforms';
 
@@ -688,9 +684,7 @@ function BlockMenuItem({
 export function BlockContextMenu({ children }: { children: React.ReactNode }) {
   const { api, editor } = useEditorPlugin(BlockMenuPlugin);
   const readOnly = useReadOnly();
-  const { allowExternalAssets } = useEditorRuntime();
   const isTouch = useIsTouchDevice();
-  const [askAiPending, setAskAiPending] = React.useState(false);
   // The click point within the content, so the menu scrolls with its block.
   const [point, setPoint] = React.useState({ x: 0, y: 0 });
   const openId = usePluginOption(BlockMenuPlugin, 'openId');
@@ -742,9 +736,6 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
 
           const box = event.currentTarget.getBoundingClientRect();
           setPoint({ x: event.clientX - box.left, y: event.clientY - box.top });
-          if (editorAiEnabled(allowExternalAssets)) {
-            editor.getApi(AIChatPlugin).aiChat.hide({ focus: false });
-          }
           setTimeout(() => {
             api.blockMenu.show(BLOCK_CONTEXT_MENU_ID, {
               x: event.clientX,
@@ -772,24 +763,12 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
           hideWhenDetached
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            if (askAiPending) {
-              setAskAiPending(false);
-              openAiMenu(editor, { selectCurrentBlock: true });
-              return;
-            }
             editor.getApi(BlockSelectionPlugin).blockSelection.focus();
           }}
           side="right"
           sideOffset={2}
         >
           <DropdownMenuGroup>
-            {editorAiEnabled(allowExternalAssets) && (
-              <BlockMenuItem
-                icon="sparkles"
-                label={m.editor_ask_ai()}
-                onSelect={() => setAskAiPending(true)}
-              />
-            )}
             <BlockMenuItem
               icon="trash"
               label={m.action_delete()}

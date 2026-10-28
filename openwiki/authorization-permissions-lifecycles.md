@@ -1007,9 +1007,10 @@ Sources: [study routes](../server/internal/httpapi/huma_study.go) and
   (`POST …/conversations/unarchive`, `DELETE …/conversations/archived`); none
   of these count as activity, so `updated_at` keeps the list order. Chat and generate
   model choice is an account preference (**Settings → LLM**), snapshotted onto
-  new conversations; the browser cannot pick a model per request. Editor AI
-  uses the `users.editor_model_provider_slug` / `users.editor_model_slug` pair
-  the same way and is gated by `VITE_FEATURE_EDITOR_AI`.
+  new conversations; the browser cannot pick a model per request. Note ghost
+  text runs on the editor slot's default pin while the user's note AI switch
+  is on (`users.note_ai_enabled`; off answers 403 `note_ai_disabled` before
+  any spend) and needs workspace editor access.
 - Generation, the chat `generate_material` tool, and the internal material
   callback follow the effective role: owner, member editor, or share-role
   editor. The gateway sends `canGenerate` to the pipeline, which omits the tool

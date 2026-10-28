@@ -33,13 +33,3 @@ def response_language_rule(locale: str | None) -> str:
         "in their original language. Do not switch languages unless the user "
         "explicitly asks."
     )
-
-
-def rewrite_language_rule(locale: str | None) -> str:
-    lang = language_name(locale)
-    return (
-        f"The user's UI language is {lang}. Write comments, explanations, and "
-        f"newly generated standalone text in {lang}. When rewriting existing "
-        "note content, keep the selection's language unless the instruction "
-        "asks to translate."
-    )

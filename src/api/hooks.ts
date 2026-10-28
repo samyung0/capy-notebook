@@ -261,7 +261,7 @@ export function useSetModelPrefs() {
       return request;
     },
     mutationKey: modelPrefsKey,
-    onMutate: async ({ chatModel, chatThinking, editorModel }) => {
+    onMutate: async ({ chatModel, chatThinking, noteAiEnabled }) => {
       await Promise.all([
         qc.cancelQueries({ queryKey: modelPrefsKey }),
         qc.cancelQueries({ queryKey: qk.me }),
@@ -275,16 +275,12 @@ export function useSetModelPrefs() {
             }
           : models
       );
-      if (editorModel)
-        qc.setQueryData<ModelsResponse>(qk.models('editor'), (models) =>
-          models ? { ...models, selectedModel: editorModel } : models
-        );
       qc.setQueryData<User>(qk.me, (me) =>
         me
           ? {
               ...me,
               chatModel: chatModel ?? me.chatModel,
-              editorModel: editorModel ?? me.editorModel,
+              noteAiEnabled: noteAiEnabled ?? me.noteAiEnabled,
             }
           : me
       );

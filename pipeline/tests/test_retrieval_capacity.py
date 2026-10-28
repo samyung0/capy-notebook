@@ -696,31 +696,14 @@ async def test_a_turns_cleanup_runs_every_step_when_one_fails(
     assert limits.call_slot_policy() is None
 
 
-def _editor_request(route: str) -> dict:
-    if route == "copilot":
-        return {"workspaceId": "ws_1", "thinking": "low", "prompt": "Hello"}
-    return {
-        "workspaceId": "ws_1",
-        "thinking": "low",
-        "messages": [
-            {"role": "user", "parts": [{"type": "text", "text": "Review this"}]}
-        ],
-        "ctx": {
-            "children": [{"id": "b1", "type": "p", "children": [{"text": "Hi"}]}],
-            "toolName": "comment",
-        },
-    }
+_GHOST_TEXT_REQUEST = {"workspaceId": "ws_1", "thinking": "low", "before": "Hello "}
 
 
-@pytest.mark.parametrize("route", ["copilot", "command"])
-def test_editor_ai_calls_take_a_call_slot_and_answer_busy_past_capacity(
-    monkeypatch, route
-):
-    """(security regression: rate-limit audit M13, Q339, Q359) An editor AI
+def test_ghost_text_takes_a_call_slot_and_answers_busy_past_capacity(monkeypatch):
+    """(security regression: rate-limit audit M13, Q339, Q359) A ghost text
     call holds a call slot for its model call; with every call slot taken, or
-    at the turns-in-progress ceiling, /plate-ai/copilot and /plate-ai/command
-    answer the existing 503 provider_busy with Retry-After before starting a
-    response, never reaching the provider."""
+    at the turns-in-progress ceiling, /plate-ai/copilot answers the existing
+    503 provider_busy with Retry-After before reaching the provider."""
     monkeypatch.setattr(service.cfg, "pipeline_secret", SECRET)
     monkeypatch.setattr(limits, "CALL_SLOTS", limits.Slots(1))
     monkeypatch.setattr(limits, "TURN_SLOTS", limits.Slots(1))
@@ -735,7 +718,7 @@ def test_editor_ai_calls_take_a_call_slot_and_answer_busy_past_capacity(
     monkeypatch.setattr(ai_adapter, "_ensure_provider", lambda _spec: None)
     http = TestClient(service.app)  # no lifespan: no database
     headers = {"X-Pipeline-Secret": SECRET}
-    path, body = f"/plate-ai/{route}", _editor_request(route)
+    path, body = "/plate-ai/copilot", _GHOST_TEXT_REQUEST
 
     assert http.post(path, json=body, headers=headers).status_code == 200
     assert slots_used == [1]

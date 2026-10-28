@@ -90,7 +90,6 @@ import {
   createTextSubstitutionInputRule,
   ElementApi,
   ExitBreakPlugin,
-  isHotkey,
   KEYS,
   PathApi,
   type SlateEditor,
@@ -105,9 +104,7 @@ import {
 import { createElement } from 'react';
 import { isStyleValue, LIST_INDENT_MAX } from '@/features/materials/document';
 import { m } from '@/i18n';
-import { editorAiEnabled } from '@/lib/features';
-import { openAiMenu } from './ai/aiMenuState';
-import { buildAiPlugins } from './ai/aiPlugins';
+import { ghostTextPlugin } from './ai/ghostTextPlugin';
 import { BlockContextMenu, BlockDraggable } from './BlockInteractions';
 import {
   BlockSelectionBelowRootNodes,
@@ -501,14 +498,6 @@ function buildBlockInteractionKit(allowExternalAssets: boolean) {
             path[0] === editor.children.length - 1 &&
             editor.api.isEmpty(element)
           ),
-        ...(editorAiEnabled(allowExternalAssets) && {
-          onKeyDownSelecting: (
-            keyEditor: SlateEditor,
-            event: KeyboardEvent
-          ) => {
-            if (isHotkey('mod+j')(event)) openAiMenu(keyEditor);
-          },
-        }),
       },
       render: { belowRootNodes: BlockSelectionBelowRootNodes as AnyPlugin },
     })),
@@ -655,15 +644,14 @@ export interface BuildPluginsOptions extends EditorCollaborationOptions {
  * parser or renderer plugin is ever unloaded. */
 export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
   return [
-    ...(editorAiEnabled(options.allowExternalAssets)
-      ? buildAiPlugins(options.workspaceId)
-      : // The AI plugin set registers its own CursorOverlay variant; non-AI
-        // editors still need the overlay for selection feedback in dialogs.
-        [
-          CursorOverlayPlugin.configure({
-            render: { afterEditable: EditorCursorOverlay },
-          }),
-        ]),
+    CursorOverlayPlugin.configure({
+      render: { afterEditable: EditorCursorOverlay },
+    }),
+    // Ghost text calls the server, so it rides the external-assets gate; the
+    // user's note AI switch turns it on at runtime (GhostTextSync).
+    ...(options.allowExternalAssets
+      ? [ghostTextPlugin(options.workspaceId)]
+      : []),
     navigationFeedbackPlugin,
     stableElementIdsPlugin,
     remoteNormalizationPlugin,

@@ -11,5 +11,5 @@ export interface SetModelPrefsReq {
   readonly $schema?: string;
   chatModel?: Ref;
   chatThinking?: string;
-  editorModel?: Ref;
+  noteAiEnabled?: boolean;
 }
