@@ -463,6 +463,31 @@ video) gets an image placeholder that refuses it with the type message
 (`editor_choose_purpose`, or the YouTube hint for a video) and offers its
 picker again.
 
+A chat answer copied into a note keeps its blocks. The browser's copy of an
+answer holds only its rendered DOM, so `copyAnswer` (`chat/answerCopy.ts`, the
+answer's `onCopy`) also writes `application/x-capy-answer` when the selection
+lies inside one answer: a list of plain-Markdown blocks in the note format,
+a callout carried as its variant plus its body (`chat/answerClipboard.ts`).
+Each OpenUI block renders inside a `display: contents` element (`data-ui`)
+that knows its node (`library.tsx`). Only the blocks holding the selection's
+two ends can be partly selected: every block between them is rebuilt from its
+props (every tab, a closed reveal or accordion item's body, a chart, plot or
+html-embed as its fence), and a partly selected one is read from its DOM up
+to the selection's end, keeping its shape (a callout stays a callout with the
+selected text, a step a list item). Charts, plots, embeds and formulas
+(`data-tex`) copy whole once touched; citations, buttons and asked questions
+are left out; tabs, reveals and accordion items become a bold title over
+their content. `ChatAnswerPastePlugin` (`pastePlugins.ts`) reads each block
+like agent Markdown (plain, no MDX) and wraps callout blocks. A selection
+that runs past the answer into its own message's model label or sources (a
+triple-click on the last line, `data-chat-message`) stops at the answer's
+end; one reaching anywhere else, a paste inside a code block or blocks that do
+not convert take the ordinary path. For other apps the copy carries the
+selection's text and its HTML without the stylesheet: bold spans become
+`<strong>`, a formula its `$TeX$`, and buttons, icons and skipped parts
+(citations, the incomplete-answer notice) go; some formatting loss there is
+accepted.
+
 Other clients see the same skeleton through the uploader's presence
 (`uploadPresence.ts`, Epo 2026-10-10): while an image uploads, the uploading
 tab's awareness names its placeholder by node id (`uploads: [id, ...]`), and

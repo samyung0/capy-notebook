@@ -164,7 +164,9 @@ export function Callout({ props }: { props: CalloutProps }) {
     >
       <Icon className="mt-px" name={CALLOUT_ICON[variant]} size={16} />
       <div className="min-w-0 flex-1">
-        <p className="mb-0.5 font-semibold text-[13.5px]">{props.title}</p>
+        <p className="mb-0.5 font-semibold text-[13.5px]" data-copy="strong">
+          {props.title}
+        </p>
         <Prose
           className="text-fg text-sm"
           passages={props.passages}
@@ -180,10 +182,15 @@ export function Steps({ props }: { props: { items: unknown[] } }) {
     <ol className="flex flex-col gap-3">
       {elements<StepProps>(props.items).map((step, index) => (
         <li className="relative pl-6" key={index}>
-          <span className="absolute top-px left-0 w-4 text-right font-semibold text-fg-muted text-xs">
+          <span
+            className="absolute top-px left-0 w-4 text-right font-semibold text-fg-muted text-xs"
+            data-copy-skip
+          >
             {index + 1}
           </span>
-          <p className="font-semibold text-sm">{step.props.title}</p>
+          <p className="font-semibold text-sm" data-copy="strong">
+            {step.props.title}
+          </p>
           <Prose
             className="mt-0.5 text-sm"
             muted
@@ -199,7 +206,10 @@ export function Steps({ props }: { props: { items: unknown[] } }) {
 export function Reveal({ props }: { props: RevealProps }) {
   return (
     <details className="group">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 font-semibold text-link text-sm hover:text-link-hover [&::-webkit-details-marker]:hidden">
+      <summary
+        className="flex w-fit cursor-pointer list-none items-center gap-1.5 font-semibold text-link text-sm hover:text-link-hover [&::-webkit-details-marker]:hidden"
+        data-copy="strong"
+      >
         <Icon
           className="transition-transform group-open:rotate-90"
           name="chevronRight"
