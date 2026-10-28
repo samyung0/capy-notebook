@@ -574,7 +574,9 @@ async def steal_stale_content(
 
     ``updated_at`` is only the floor so a heartbeat that just started is not
     stolen on a race. The death signal is the owner's job lease: a running job
-    with ``lease_expires_at > now()`` still owns the row.
+    with ``lease_expires_at > now()`` still owns the row, and so does a clone's
+    index_copy job waiting in its queue or for a retry, which claimed the row
+    when the clone was made (Epo 2026-10-28).
     """
     scope_sql, scope_arg = _content_scope(workspace_id, owner_user_id, "rc.")
     db = await pool()
@@ -588,9 +590,10 @@ async def steal_stale_content(
               AND NOT EXISTS (
                   SELECT 1 FROM jobs j
                   WHERE j.id = rc.claim_job_id
-                    AND j.status = 'running'
-                    AND j.lease_expires_at IS NOT NULL
-                    AND j.lease_expires_at > now()
+                    AND ((j.status = 'running'
+                          AND j.lease_expires_at IS NOT NULL
+                          AND j.lease_expires_at > now())
+                      OR (j.type = 'index_copy' AND j.status = 'pending'))
               )
             """,
             (scope_arg, content_hash, stale_s),
@@ -701,12 +704,11 @@ async def abandon_content(content_id: str) -> None:
         )
 
 
-# Dest chunk ids are `'rc_' || substr(md5(dest_workspace_id || donor_chunk_id), 1, 12)`
+# Dest chunk ids are `'rc_' || substr(md5(dest_content_id || donor_chunk_id), 1, 12)`
 # so the vector copy can recompute them and pair each embedding with its
-# passage. A workspace holds one content row per content hash, so the pair is
-# unique. Standalone content (no workspace) and Go's clones
-# (copyRetrievalContents in server/internal/store/share.go) salt with the new
-# content id, unique on its own.
+# passage. The new content id is unique on its own, so the ids stay unique
+# after a Move re-tags content into another workspace (Epo 2026-10-28), as in
+# Go's clones (copyRetrievalContents in server/internal/store/share.go).
 _NEW_CHUNK_ID_SQL = "'rc_' || substr(md5(%s || c.id), 1, 12)"
 
 
@@ -836,7 +838,7 @@ async def copy_content_from_donor(
         table = None
         if copy_vectors:
             table = vector_table_for_pin(pin)
-        salt = dest_workspace_id or dest_content_id
+        salt = dest_content_id
 
         # INSERT..SELECT keeps tsvector/jsonb typed and derives dest chunk ids
         # in SQL, the same shape as cloneRetrievalIndex.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -36,6 +37,7 @@ type indexCopyJob struct {
 	WorkspaceID     string   `json:"workspaceId"`
 	SourceContentID string   `json:"sourceContentId"`
 	ContentID       string   `json:"contentId"`
+	ContentHash     string   `json:"contentHash"`
 	ActorUserID     string   `json:"actorUserId"`
 }
 
@@ -56,7 +58,8 @@ var (
 	errIndexCopyClaimLost = errors.New("index copy claim lost")
 	// The source content was deleted or replaced: the copy is ingested.
 	errIndexCopySourceGone = errors.New("index copy source gone")
-	// The copy's content row is gone with its workspace: nothing to serve.
+	// The copy's content row is gone: its workspace was deleted, or its claim
+	// was taken; files still there are served or ingested another way.
 	errIndexCopyTargetGone = errors.New("index copy target gone")
 )
 
@@ -79,11 +82,12 @@ func queueIndexCopiesTx(ctx context.Context, tx pgx.Tx, actorID, srcID, dstID st
 		return nil, nil, err
 	}
 	type content struct {
+		hash             string
 		held, heldStatus *string
 		files            []string
 	}
 	contents := map[string]*content{}
-	rows, err := tx.Query(ctx, `SELECT fc.file_id, rc.id, dst.id, dst.status
+	rows, err := tx.Query(ctx, `SELECT fc.file_id, rc.id, rc.content_hash, dst.id, dst.status
 		FROM rag_file_contents fc
 		JOIN rag_contents rc ON rc.id=fc.content_id AND rc.status='ready' AND rc.workspace_id=$2
 		LEFT JOIN rag_contents dst ON dst.workspace_id=$3 AND dst.content_hash=rc.content_hash
@@ -92,15 +96,15 @@ func queueIndexCopiesTx(ctx context.Context, tx pgx.Tx, actorID, srcID, dstID st
 		return nil, nil, err
 	}
 	for rows.Next() {
-		var fileID, sourceID string
+		var fileID, sourceID, hash string
 		var held, heldStatus *string
-		if err := rows.Scan(&fileID, &sourceID, &held, &heldStatus); err != nil {
+		if err := rows.Scan(&fileID, &sourceID, &hash, &held, &heldStatus); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
 		c := contents[sourceID]
 		if c == nil {
-			c = &content{held: held, heldStatus: heldStatus}
+			c = &content{hash: hash, held: held, heldStatus: heldStatus}
 			contents[sourceID] = c
 		}
 		c.files = append(c.files, fileMap[fileID])
@@ -138,7 +142,7 @@ func queueIndexCopiesTx(ctx context.Context, tx pgx.Tx, actorID, srcID, dstID st
 			}
 			payload, err := json.Marshal(indexCopyJob{
 				FileID: c.files[0], FileIDs: c.files, WorkspaceID: dstID,
-				SourceContentID: sourceID, ContentID: contentID, ActorUserID: actorID,
+				SourceContentID: sourceID, ContentID: contentID, ContentHash: c.hash, ActorUserID: actorID,
 			})
 			if err != nil {
 				return nil, nil, err
@@ -389,7 +393,17 @@ func (s *Store) failIndexCopy(ctx context.Context, jobID string, attempt int, jo
 		return err
 	}
 	if errors.Is(cause, errIndexCopyTargetGone) {
-		return nil
+		// A same-content ingest took the claim: its ready content serves the
+		// files at once; else they are ingested and wait on it.
+		served, err := s.aliasCopiedFiles(ctx, job)
+		if err != nil {
+			return err
+		}
+		ready := true
+		for _, fileID := range served {
+			publish(IndexCopyEvent{FileID: fileID, WorkspaceID: job.WorkspaceID, Stage: "copy_index", Pct: 100, Status: "ready", Indexed: &ready})
+		}
+		job.FileIDs = slices.DeleteFunc(job.FileIDs, func(id string) bool { return slices.Contains(served, id) })
 	}
 	for _, fileID := range job.FileIDs {
 		status, err := s.ingestCopiedFile(ctx, job.ActorUserID, job.WorkspaceID, fileID)
@@ -401,6 +415,34 @@ func (s *Store) failIndexCopy(ctx context.Context, jobID string, attempt int, jo
 		}
 	}
 	return nil
+}
+
+// aliasCopiedFiles serves a copy's files still in its workspace from the
+// workspace's ready content with the same hash, when there is one.
+func (s *Store) aliasCopiedFiles(ctx context.Context, job indexCopyJob) ([]string, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, `INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
+		SELECT f.id, f.workspace_id, rc.id FROM files f
+		JOIN rag_contents rc ON rc.workspace_id=f.workspace_id AND rc.content_hash=$3 AND rc.status='ready'
+		WHERE f.id = ANY($1::text[]) AND f.workspace_id=$2 AND f.status IN ('processing','failed')
+		ON CONFLICT (file_id) DO NOTHING RETURNING file_id`, job.FileIDs, job.WorkspaceID, job.ContentHash)
+	if err != nil {
+		return nil, err
+	}
+	served, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE files SET indexed=true,
+		status=CASE WHEN status='processing' THEN 'ready' ELSE status END
+		WHERE id = ANY($1::text[])`, served); err != nil {
+		return nil, err
+	}
+	return served, tx.Commit(ctx)
 }
 
 // ingestCopiedFile queues the ingest of a copy whose index could not be

@@ -5719,7 +5719,12 @@ expired leases and copies 250 passages with their vectors per transaction
 no-op), publishing `stage: "copy_index"` progress on `ingest:{workspace}`;
 its last transaction copies the summary, aliases the files still in the
 workspace (none left drops the copy), marks the content ready and the files
-indexed. A failed attempt retries after 30 s per attempt, three in all;
+indexed. The claim stays the copy's while its job waits in the queue or for
+a retry: a same-content upload into the target waits for it
+(`steal_stale_content` counts a pending `index_copy` job as alive) and
+attaches to the copy; a copy that still finds its claim gone serves its files
+from the target's ready content with the same hash, or ingests them. A failed
+attempt retries after 30 s per attempt, three in all;
 after that, or once the source content is gone, the copy is dropped and its
 files are ingested as a cross-space clone is (refused, the file fails and its
 owner can retry). A copy whose workspace is deleted just ends. Account

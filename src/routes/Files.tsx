@@ -47,7 +47,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { AddFileDestinationDialog } from '@/features/files/AddFileDestinationDialog';
 import { EmbedsTab } from '@/features/files/EmbedsTab';
 import { fileKindLabel } from '@/features/files/fileKindLabel';
-import { formatFileSize } from '@/features/files/fileUtils';
+import { fileCanClone, formatFileSize } from '@/features/files/fileUtils';
 import { toastLostAccess } from '@/features/files/lostAccess';
 import {
   clearOnBlank,
@@ -471,6 +471,17 @@ function ActiveFiles({
   );
 }
 
+/** A Files tab row's menu, from the rights the server read with the page
+ * (Epo 2026-10-28). */
+export function fileRowActions(file: SourceFile) {
+  return {
+    canClone: fileCanClone(file) && !!file.rights?.clone,
+    canMoveTo: !!file.rights?.move,
+    canRename: !!file.rights?.rename,
+    readOnly: !file.rights?.trash,
+  };
+}
+
 /** A file the caller may delete from the Files tab: one it pays for after
  * losing access, or one its rights let it trash. */
 const canDelete = (file: SourceFile) => file.lostAccess || !!file.rights?.trash;
@@ -530,9 +541,7 @@ const FileItem = memo(function FileItem({
           ) : (
             // The server reads what the caller may do with each row.
             <ContentActions
-              canClone={file.status === 'ready' && !!file.rights?.clone}
-              canMoveTo={!!file.rights?.move}
-              canRename={!!file.rights?.rename}
+              {...fileRowActions(file)}
               chapters={[]}
               content={toFileActionTarget(file)}
               display="menu"
@@ -552,7 +561,6 @@ const FileItem = memo(function FileItem({
               }
               menuAlign="end"
               menuTriggerIcon={itemMenuIcon(view)}
-              readOnly={!file.rights?.trash}
               renameFieldLabel={m.files_file_name()}
               renameTitle={m.files_rename()}
               showMove={false}

@@ -31,6 +31,23 @@ afterEach(() => {
 });
 
 describe('Download', () => {
+  it('merges saved edits while a publication waits to become the base', async () => {
+    // Checkpoints equal (just published) yet the session carries the edits,
+    // all stored against the base it still opens on.
+    open.value = session({
+      checkpoint: 3,
+      indexedCheckpoint: 3,
+      state: toBase64(new Uint8Array([1, 2, 3])),
+      stateSeedSHA256: 'seed',
+    });
+    exported.mockResolvedValue(new TextEncoder().encode('latest'));
+    await downloadFile(
+      { id: 'f_4', kind: 'doc', name: 'plan.docx', workspaceId: 'ws_1' },
+      new QueryClient()
+    );
+    expect(await saved[0]?.blob.text()).toBe('latest');
+  });
+
   it('saves the published file when nothing saved is past it', async () => {
     open.value = session({});
     await downloadFile(
