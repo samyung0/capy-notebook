@@ -542,10 +542,24 @@ the caller can edit) and then opens the same Add file dialog for it.
 - Account deletion cancels its pending upload (0125 made
   `cancel_user_async_work` find uploads without a workspace), and an owner
   lock evicts its source rooms.
-- Not yet: editing its Office and text files through the source room waits
-  for the 2026-10-27 release train; until then they open read-only (the view
-  session reads a NULL workspace). A standalone import's status
-  (`/api/sources/imports/{jobId}`) answers its owner alone.
+- Its Office and text files view and edit like a workspace file's, through
+  the same source room (Epo 2026-10-27). The room is owner-only: the source
+  session, room admission (`CheckSourceAccess`) and every save
+  (`sourceLockTx`) admit the payer alone (`sourceActorsAllowed`'s no-workspace
+  branch), never through a share link or anonymously; a deletion-pending or
+  deleted owner reads not found and a suspended one is refused as a locked
+  account. A save names the workspace its room opened the file in (Q459), ""
+  for none, so a Move's drain stores only the payer's edits. The browser opens
+  Edit for the owner unless the account is frozen; the edit session still
+  narrows to view at the storage limit. PDF marks are the owner's too.
+- Its saved edits always auto-publish (the Auto process schedule, Epo
+  2026-10-27): the refresh scheduler lists it as its payer's
+  (`REFRESH_CANDIDATES_SQL`), admission reads no workspace as auto process,
+  the payer pays, and the publication re-ingests in the owner's scope (no
+  workspace on the job, the content row the payer's, an alias with no
+  workspace). The maintenance window publishes it as any other Office file.
+- A standalone import's status (`/api/sources/imports/{jobId}`) answers its
+  owner alone.
 
 Move puts files into a workspace, never out (Epo 2026-10-27):
 `POST /api/files/move` `{fileIds (1-20), workspaceId, chapterId?,
@@ -1089,8 +1103,9 @@ Sources: [chat effective-role guard](../server/internal/store/chat.go#L191),
 - Inference is billed to the actor. Voice input in account chat takes the
   voice rate class and names only the caller's files with no workspace or in a
   workspace they still reach.
-- A text or Office file with no workspace is read through its index passages
-  only until its source session takes no workspace; inspect and edit refuse it.
+- A text or Office file with no workspace is inspected and edited like any
+  other: Go checks the actor per call, and its source session admits only the
+  file's payer.
 
 Sources: [account scope](../server/internal/store/account_scope.go),
 [account routes](../server/internal/httpapi/internal_account.go) and

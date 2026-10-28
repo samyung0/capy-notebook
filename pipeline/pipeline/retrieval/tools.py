@@ -375,7 +375,7 @@ async def _check_source_target(ctx: ToolContext, rid: str) -> ToolResult | None:
     chosen id goes on, so the chat never widens that choice."""
     if ctx.account:
         found = await _account_item(ctx, rid, ("source_file",))
-        return found if isinstance(found, ToolResult) else _no_session(found)
+        return found if isinstance(found, ToolResult) else None
     refused = await _refuse_material_as_file(ctx, rid)
     if refused is not None:
         return refused
@@ -794,23 +794,6 @@ def access_line(row: dict[str, Any], *, typed: bool = False) -> str:
         else:
             block["format"] = row.get("format") or ""
     return "Access: " + json.dumps(block, ensure_ascii=False)
-
-
-# Until Go's source sessions take a file with no workspace (the Rust session,
-# after the 2026-10-28 deployment; todo-standalone-files.md "Source
-# sessions"), account chat refuses inspecting and editing one (Epo
-# 2026-10-28). Remove with that work.
-NO_SESSION = (
-    "{id} has no workspace, and a file with no workspace cannot be inspected "
-    "or edited yet. read_document reads its passages."
-)
-
-
-def _no_session(row: dict[str, Any]) -> ToolResult | None:
-    """The refusal for a source file with no workspace (NO_SESSION)."""
-    if row.get("kind") == "source_file" and not row.get("workspaceId"):
-        return _refused(NO_SESSION.format(id=row["id"]), code="unsupported_operation")
-    return None
 
 
 def _has_changes(row: dict[str, Any]) -> bool:
@@ -3080,8 +3063,6 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         row = await _account_item(ctx, rid, (kind,))
         if isinstance(row, ToolResult):
             return row
-        if (refused := _no_session(row)) is not None:
-            return refused
         access, account_row = access_line(row), row
     elif kind == "source_file":
         refused = await _check_source_target(ctx, rid)
@@ -3826,8 +3807,6 @@ async def _inspect_office_document(
         row = await _account_item(ctx, rid, ("source_file",))
         if isinstance(row, ToolResult):
             return row
-        if (refused := _no_session(row)) is not None:
-            return refused
         access = access_line(row)
     else:
         refused = await _check_source_target(ctx, rid)

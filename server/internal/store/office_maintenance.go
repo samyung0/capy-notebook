@@ -69,14 +69,7 @@ func (s *Store) maintenanceLockTx(ctx context.Context, tx pgx.Tx, fileID string)
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fileID); err != nil {
 		return "", "", err
 	}
-	var ws string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, fileID).Scan(&ws); err != nil {
-		if isNoRows(err) {
-			err = ErrNotFound
-		}
-		return "", "", err
-	}
-	owner, err := s.storageOwnerTx(ctx, tx, ws)
+	ws, owner, _, err := s.sourceOwnerTx(ctx, tx, fileID, true)
 	if err != nil {
 		return "", "", err
 	}
@@ -137,14 +130,15 @@ func (s *Store) PublishAllOfficeSources(ctx context.Context, opts OfficePublishO
 	}
 	// ponytail: the failed-republish lookup scans failed jobs per file; index
 	// jobs by payload fileId if a window ever holds thousands of files.
-	rows, err := s.pool.Query(ctx, `SELECT d.file_id,w.user_id,
+	// A file with no workspace is its payer's (sourceOwnerTx).
+	rows, err := s.pool.Query(ctx, `SELECT d.file_id,u.id,
 		NOT f.ever_parsed_successfully OR f.trashed_at IS NOT NULL
 		OR u.suspended_at IS NOT NULL OR u.deletion_requested_at IS NOT NULL OR u.deleted_at IS NOT NULL
 		OR EXISTS(SELECT 1 FROM jobs j WHERE j.status='failed' AND j.payload->>'fileId'=d.file_id
 			AND j.payload->>'sourceRefresh'='true' AND j.payload->>'paidBy'='system'
 			AND NOT COALESCE((j.payload->>'exportOnly')::boolean,false)
 			AND j.payload->>'sourceCheckpoint'=d.checkpoint::text)
-		FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id JOIN users u ON u.id=w.user_id
+		FROM source_documents d JOIN files f ON f.id=d.file_id LEFT JOIN workspaces w ON w.id=f.workspace_id JOIN users u ON u.id=COALESCE(w.user_id,f.user_id)
 		WHERE d.format<>'text' AND (d.checkpoint>d.indexed_checkpoint OR d.net_tokens>0) AND d.running_job_id IS NULL
 		ORDER BY d.updated_at,d.file_id`)
 	if err != nil {

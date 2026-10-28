@@ -97,7 +97,7 @@ func validatePDFAnnotation(in PDFAnnotationBody) error {
 // (write) is a content edit, refused when the actor or the file's payer is
 // frozen or the payer is at its storage limit.
 func (s *Store) annotationLock(ctx context.Context, tx pgx.Tx, actor, file string, write bool) (string, error) {
-	if _, _, err := s.sourceLockTx(ctx, tx, file, []string{actor}, false, ""); err != nil {
+	if _, _, err := s.sourceLockTx(ctx, tx, file, []string{actor}, false, nil); err != nil {
 		return "", err
 	}
 	if write {

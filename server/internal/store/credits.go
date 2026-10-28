@@ -1084,13 +1084,14 @@ func (s *Store) beginIngestSpendTx(
 
 // beginSystemIngestSessionTx opens the ingest session of a maintenance
 // republish (paid_by 'system'): no credit check and no lease on the actor's
-// ingest slots, and the pipeline settles its usage at zero credits.
+// ingest slots, and the pipeline settles its usage at zero credits. A file
+// with no workspace passes "".
 func beginSystemIngestSessionTx(ctx context.Context, tx pgx.Tx, actorUserID, workspaceID string) (string, error) {
 	id := uid("cr")
 	_, err := tx.Exec(ctx, `
 		INSERT INTO provider_sessions
 			(id, actor_user_id, workspace_id, trace_id, surface, reserved_micros, paid_by, expires_at)
-		VALUES ($1, $2, $3, $4, $5, 0, $6, now() + ($7 * interval '1 millisecond'))`,
+		VALUES ($1, $2, NULLIF($3, ''), $4, $5, 0, $6, now() + ($7 * interval '1 millisecond'))`,
 		id, actorUserID, workspaceID, nullString(obs.TraceID(ctx)), SurfaceIngest,
 		models.PaidBySystem, ingestReservationHold.Milliseconds(),
 	)

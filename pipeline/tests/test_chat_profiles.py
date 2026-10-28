@@ -293,12 +293,30 @@ def _row(
     }
 
 
-async def test_a_file_with_no_workspace_is_read_not_inspected_or_edited(
+async def test_a_file_with_no_workspace_is_inspected_and_edited_through_go(
     monkeypatch,
 ):
-    # Until Go's source sessions take one (Epo 2026-10-28, NO_SESSION).
-    gateway = _Gateway([_row("source_file", "f_loose", ws="", name="", edit=True)])
-    monkeypatch.setattr(tools, "_gateway_read", gateway.read)
+    # Go's source sessions take a file with no workspace, its owner's alone
+    # (Epo 2026-10-27): account chat asks Go instead of refusing.
+    row = {**_row("source_file", "f_loose", ws="", name="", edit=True), "format": "md"}
+    posts: list[tuple[str, dict[str, Any]]] = []
+
+    async def read(path: str, payload: dict[str, Any], _failure: str, *_a, **_k):
+        posts.append((path, payload))
+        if path.endswith("/documents/access"):
+            return {"items": [row]}
+        return {
+            "format": "text",
+            "title": "notes.md",
+            "incarnation": 1,
+            "access": "write",
+            "lines": [{"start": 0, "text": "Loose notes"}],
+            "total": 1,
+            "nextStart": None,
+            "supportedOperations": ["replace_text"],
+        }
+
+    monkeypatch.setattr(tools, "_gateway_read", read)
     monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
     ctx = _account()
     target = {"kind": "source_file", "id": "f_loose"}
@@ -306,11 +324,12 @@ async def test_a_file_with_no_workspace_is_read_not_inspected_or_edited(
     for result in [
         await tools._inspect_document({"target": target}, ctx),
         await tools._inspect_office_document({"file_id": "f_loose"}, ctx),
-        await tools._check_source_target(ctx, "f_loose"),
     ]:
-        assert result is not None and result.refused
-        assert tools.NO_SESSION.format(id="f_loose") in result.text()
-    assert {path for path, _ in gateway.posts} == {"/api/internal/documents/access"}
+        assert not result.refused and "Loose notes" in result.text()
+    assert await tools._check_source_target(ctx, "f_loose") is None
+    inspected = [p for path, p in posts if path == "/api/internal/documents/inspect"]
+    assert len(inspected) == 2
+    assert all(p["target"] == target and not p.get("workspaceId") for p in inspected)
 
 
 async def test_read_document_checks_access_and_returns_where_the_file_lives(

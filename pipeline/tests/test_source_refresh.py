@@ -13,13 +13,14 @@ from pipeline.store import db
 pytestmark = pytest.mark.integration
 
 
-def candidate(workspace, *, format="docx"):
+def candidate(workspace, *, format="docx", standalone=False):
+    """A running refresh of a new file; standalone: one with no workspace,
+    whose job names none (Go's ingestJobPayload)."""
     file_id = workspace.add_file("source." + ("txt" if format == "text" else format))
     job_id = "job_" + secrets.token_hex(6)
     payload = {
         "sourceRefresh": True,
         "fileId": file_id,
-        "workspaceId": workspace.id,
         "actorUserId": workspace.user_id,
         "sourceRevision": 1,
         "sourceETag": "etag-b",
@@ -27,11 +28,18 @@ def candidate(workspace, *, format="docx"):
         "sourceCheckpoint": 1,
         "sourceLeaseToken": "lease-b",
     }
+    if not standalone:
+        payload["workspaceId"] = workspace.id
     with workspace._connect() as conn:
         conn.execute(
             "UPDATE files SET source_etag='etag-a',indexed=true,content_hash='hash-a' WHERE id=%s",
             (file_id,),
         )
+        if standalone:
+            conn.execute(
+                "UPDATE files SET workspace_id=NULL,chapter_id=NULL WHERE id=%s",
+                (file_id,),
+            )
         conn.execute(
             "INSERT INTO jobs(id,type,payload,status,attempts,lease_expires_at) VALUES(%s,'ingest',%s::jsonb,'running',1,now()+interval '5 minutes')",
             (job_id, json.dumps(payload)),
@@ -148,6 +156,54 @@ async def test_candidate_attach_stops_for_a_deleting_payer(workspace):
                 source_revision=1,
                 source_etag="etag-b",
             )
+    finally:
+        db.reset_source_refresh(token)
+
+
+@pytest.mark.asyncio
+async def test_a_standalone_candidate_attaches_as_its_payers_alone(workspace):
+    """A file with no workspace (Epo 2026-10-27) refreshes in its payer's
+    scope, and only its payer's refresh attaches."""
+    from pipeline.jobs import TerminalError
+
+    job = candidate(workspace, standalone=True)
+    file_id = job["payload"]["fileId"]
+    attach = {
+        "workspace_id": None,
+        "owner_user_id": workspace.user_id,
+        "file_id": file_id,
+        "content_hash": "hash-b",
+        "claim_job_id": job["id"],
+        "source_revision": 1,
+        "source_etag": "etag-b",
+    }
+    token = db.bind_source_refresh(job)
+    try:
+        new = await store.attach_file_content(**attach)
+    finally:
+        db.reset_source_refresh(token)
+    with workspace._connect() as conn:
+        assert conn.execute(
+            "SELECT workspace_id,user_id FROM rag_contents WHERE id=%s",
+            (new["content_id"],),
+        ).fetchone() == (None, workspace.user_id)
+        assert (
+            conn.execute(
+                "SELECT content_id FROM source_refresh_candidates WHERE file_id=%s",
+                (file_id,),
+            ).fetchone()[0]
+            == new["content_id"]
+        )
+        other = "u_" + secrets.token_hex(6)
+        conn.execute(
+            "INSERT INTO users (id,name,email) VALUES (%s,'Other',%s)",
+            (other, other + "@example.com"),
+        )
+    stranger = {**job, "payload": {**job["payload"], "actorUserId": other}}
+    token = db.bind_source_refresh(stranger)
+    try:
+        with pytest.raises(TerminalError, match="source editing access was revoked"):
+            await store.attach_file_content(**{**attach, "content_hash": "hash-c"})
     finally:
         db.reset_source_refresh(token)
 

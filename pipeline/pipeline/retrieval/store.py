@@ -311,20 +311,25 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
     stay pending against it (deferred publication), so a newer checkpoint
     passes, as in the heartbeat's boundary fence."""
     file_id = refresh["fileId"]
+    # None for a standalone file, its payer's alone (Epo 2026-10-27).
+    workspace_id = refresh.get("workspaceId") or None
     await conn.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (file_id,)
     )
-    cur = await conn.execute(
-        "SELECT user_id FROM workspaces WHERE id=%s FOR SHARE",
-        (refresh["workspaceId"],),
-    )
-    workspace = await cur.fetchone()
-    if workspace is None:
-        raise SourceSupersededError("source workspace was deleted")
-    owner = str(workspace["user_id"])
+    workspace = None
+    if workspace_id:
+        cur = await conn.execute(
+            "SELECT user_id FROM workspaces WHERE id=%s FOR SHARE", (workspace_id,)
+        )
+        workspace = await cur.fetchone()
+        if workspace is None:
+            raise SourceSupersededError("source workspace was deleted")
     # The file's payer (uploader pays) is set once at insert; fence it too.
     cur = await conn.execute("SELECT user_id FROM files WHERE id=%s", (file_id,))
     payer = await cur.fetchone()
+    if workspace is None and payer is None:
+        raise SourceSupersededError("source was deleted")
+    owner = str((workspace or payer)["user_id"])
     actors = sorted(
         {owner, str(refresh["actorUserId"])}
         | ({str(payer["user_id"])} if payer else set())
@@ -339,21 +344,21 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
         for row in accounts
     ):
         raise TerminalError("source account is unavailable")
-    cur = await conn.execute(
-        """SELECT 1 FROM workspaces w WHERE w.id=%s AND (w.user_id=%s OR
-        EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=%s AND m.role='editor')
-        OR(w.privacy IN ('link','public') AND w.share_role='editor' AND (w.privacy='public'
-          OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=%s)
-          OR EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=%s))))""",
-        (
-            refresh["workspaceId"],
-            refresh["actorUserId"],
-            refresh["actorUserId"],
-            refresh["actorUserId"],
-            refresh["actorUserId"],
-        ),
-    )
-    if await cur.fetchone() is None:
+    actor = str(refresh["actorUserId"])
+    if workspace_id is None:
+        # Only the payer edits a standalone file.
+        editor = actor == owner
+    else:
+        cur = await conn.execute(
+            """SELECT 1 FROM workspaces w WHERE w.id=%s AND (w.user_id=%s OR
+            EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=%s AND m.role='editor')
+            OR(w.privacy IN ('link','public') AND w.share_role='editor' AND (w.privacy='public'
+              OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=%s)
+              OR EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=%s))))""",
+            (workspace_id, actor, actor, actor, actor),
+        )
+        editor = await cur.fetchone() is not None
+    if not editor:
         raise TerminalError("source editing access was revoked")
     cur = await conn.execute(
         """SELECT c.file_id FROM source_refresh_candidates c
@@ -361,7 +366,7 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
         JOIN jobs j ON j.id=c.job_id
         WHERE c.file_id=%s AND c.job_id=%s AND c.epoch=%s AND c.checkpoint=%s AND c.lease_token=%s
           AND d.epoch=c.epoch AND d.running_job_id=c.job_id AND d.base_revision=f.revision AND f.revision=%s
-          AND f.workspace_id=%s AND f.trashed_at IS NULL AND j.payload->>'sourceETag'=%s
+          AND f.workspace_id IS NOT DISTINCT FROM %s AND f.trashed_at IS NULL AND j.payload->>'sourceETag'=%s
           AND d.checkpoint>=c.checkpoint
           AND j.status='running' AND j.attempts=%s AND j.lease_expires_at>now()
         FOR UPDATE OF f,c,d,j""",
@@ -372,7 +377,7 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
             refresh["sourceCheckpoint"],
             refresh["sourceLeaseToken"],
             refresh["sourceRevision"],
-            refresh["workspaceId"],
+            workspace_id,
             refresh["sourceETag"],
             refresh["_attempt"],
         ),
