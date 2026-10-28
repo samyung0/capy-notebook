@@ -36,6 +36,40 @@ async function workerLoaded(page: Page) {
   expect(await storedRows(page, 'worker-loaded')).toBe(0);
 }
 
+/** The drafts locks `page` holds or waits for. */
+const draftLocks = (page: Page) =>
+  page.evaluate(async () => {
+    const { held = [], pending = [] } = await navigator.locks.query();
+    return [...held, ...pending]
+      .filter((lock) => lock.name?.startsWith('capy-drafts'))
+      .map((lock) => lock.name);
+  });
+
+/** Waits until `page` holds no drafts lock. Going online sweeps once, and a
+ * sweep that meets a busy lock skips it silently (sweepDrafts), so the test
+ * comes online on a quiet device. */
+async function quietDrafts(page: Page) {
+  await expect.poll(() => draftLocks(page)).toEqual([]);
+}
+
+/** Runs `check`; on failure attaches `page`'s lock state, so a skipped sweep
+ * names the lock it met. */
+async function withLockSnapshot(page: Page, check: () => Promise<void>) {
+  try {
+    await check();
+  } catch (error) {
+    await test.info().attach('locks', {
+      body: JSON.stringify(
+        await page.evaluate(() => navigator.locks.query()),
+        null,
+        2
+      ),
+      contentType: 'application/json',
+    });
+    throw error;
+  }
+}
+
 /** A text source uploaded to `workspaceId` through the API (the e2e
  * stack's memory store serves its bytes under /api/e2e/blobs/). */
 async function uploadText(
@@ -118,10 +152,13 @@ test('a note edited offline in a closed tab reaches a co-editor from another pag
   // on the other page: the co-editor receives the edit, and the owner's
   // drafts go once the service stored it.
   await ownerPage.close();
+  await quietDrafts(other);
   await link.up(other);
-  await expect(editorPage.getByText(edited, { exact: true })).toBeVisible({
-    timeout: 20_000,
-  });
+  await withLockSnapshot(other, () =>
+    expect(editorPage.getByText(edited, { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+  );
   await expect.poll(() => storedRows(other, material.id)).toBe(0);
 });
 
@@ -229,9 +266,12 @@ test('a text source edited offline in a closed tab reaches a co-editor from anot
   await expect(source(editorPage)).toHaveValue(body);
 
   await ownerPage.close();
+  await quietDrafts(other);
   await link.up(other);
-  await expect(source(editorPage)).toHaveValue(`${body} written offline`, {
-    timeout: 20_000,
-  });
+  await withLockSnapshot(other, () =>
+    expect(source(editorPage)).toHaveValue(`${body} written offline`, {
+      timeout: 20_000,
+    })
+  );
   await expect.poll(() => storedRows(other, fileId, 'file')).toBe(0);
 });
