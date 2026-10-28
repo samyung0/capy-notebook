@@ -561,7 +561,10 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
   its room opened the file in (`workspaceId`, kept across the room's saves),
   and Go checks each actor there (Q459), so the drain's final save stores
   the edits of people who are not in the target; someone removed from that
-  workspace still has their unsaved edits refused. Right before the drain the room tells
+  workspace still has their unsaved edits refused. A save that meets a moved
+  checkpoint reads the file's session again as its owner's (`current`'s
+  read: the checkpoint is what checks the writers), so its retry stores in
+  the drain too. Right before the drain the room tells
   every tab of the move (Q454): the outbox row is
   `enqueue_source_collaboration_eviction`'s shape with type `file-moved`,
   mode `drain` and the target `workspaceId` (written directly in

@@ -20,7 +20,6 @@ import { fileCanClone, fileIsIngesting } from './fileUtils';
  * ingest progress, and exposes a hover action menu (rename / properties /
  * delete) mirroring the chapter row pattern. */
 export function FileListItem({
-  beforeDelete,
   file,
   active,
   onOpen,
@@ -36,7 +35,6 @@ export function FileListItem({
   study,
   menu = true,
 }: {
-  beforeDelete?: () => boolean;
   file: SourceFile;
   active: boolean;
   onOpen: MouseEventHandler<HTMLAnchorElement>;
@@ -106,7 +104,6 @@ export function FileListItem({
         </Link>
         {hoverMenu && (
           <ContentActions
-            beforeDelete={beforeDelete}
             canClone={canClone && fileCanClone(file)}
             canMoveTo={canMoveTo}
             chapters={chapters}

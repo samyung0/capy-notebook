@@ -4472,9 +4472,11 @@ into an `unavailable_target` result saying the file was moved out of this
 workspace, so this chat can no longer read or edit it, and to tell the user
 (`tools.py` `MOVED_OUT`); it never names the destination, and the plain not
 found never confirms a file exists elsewhere. A Move is not recorded. The
-tools' scope check reads the workspace outline once per turn, so a later
-turn, whose outline no longer lists the file, refuses it before Go with the
-usual missing-item message. A request holds
+document tools' scope check (`_check_source_target`) passes a source file id
+the turn's workspace outline does not list on to Go instead of refusing it,
+so a later turn, whose outline no longer lists the moved file, gets
+`moved_out` too (Q469); with chosen sources only a chosen id goes on, so
+the chat never widens that choice. A request holds
 a pooled connection and its operation's advisory lock only for its receipt
 checks (the stored receipt, then the room's: `known`) and for its
 admission, never through the compute or an Office engine call (Q432): the

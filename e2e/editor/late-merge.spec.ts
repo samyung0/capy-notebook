@@ -194,14 +194,16 @@ function storedRows(page: Page) {
       kind: string;
       late?: true;
       refused?: true;
+      savedAt: number;
       session: string;
     }[] = await readDrafts(draftKey(user.id, 'material', id));
     return rows
-      .map(({ id: row, kind, late, refused, session }) => ({
+      .map(({ id: row, kind, late, refused, savedAt, session }) => ({
         id: row,
         kind,
         late: !!late,
         refused: !!refused,
+        savedAt,
         session,
       }))
       .sort((left, right) => left.id.localeCompare(right.id));
@@ -1400,4 +1402,176 @@ test('a reconnect during the clean try waits for its answer instead of merging',
   expect((await editor.innerText()).split(OFFLINE.trim()).length - 1).toBe(1);
   expect(await draftSends(page)).toBe(1);
   expect(workers.some((url) => url.includes('lateMerge.worker'))).toBe(false);
+});
+
+// Q451 (review M1): a late mount set aside while its merged document is
+// being written (answered late again, so stale and then paused for the next
+// mount; or its note refused) never merges the saved copy it adopted: the
+// copy's row stays while the next mount cannot bind (its clean try waits,
+// or the service is down), and the note opened again merges it once. Fails
+// if the set-aside editor merges the copy (its row goes, and the text with
+// it).
+for (const how of ['answered late again', 'refused'] as const) {
+  test(`a saved copy outlives a late mount ${how} while its merge is stored`, async ({
+    page,
+  }) => {
+    test.setTimeout(150_000);
+    await holdStateWrites(page);
+    await serveDrafts(page);
+    await goLateWithOfflineWords(page);
+    await seedCopy(page);
+    await page.evaluate(() =>
+      Object.assign(window, { holdingStateWrites: true })
+    );
+    await setReachable(page, true);
+    // The merged document's write waits.
+    await page.waitForFunction(() => 'releaseStateWrite' in window, undefined, {
+      timeout: 30_000,
+    });
+    if (how === 'refused') {
+      // The refusal's remount never joins, so it never binds.
+      await page.evaluate(
+        async ({ path, id }) => {
+          const collaboration = await import(path);
+          collaboration.rejectMockNoteUpdate(id, 'document_size_exceeded');
+          collaboration.setCollaborationReachable(false);
+        },
+        { id: MATERIAL, path: MOCK }
+      );
+      await expect(page.getByText(m.editor_too_large_title())).toBeVisible({
+        timeout: 30_000,
+      });
+    } else {
+      // The next mount's clean try waits, so it never binds.
+      const sends = await draftSends(page);
+      await holdDrafts(page);
+      await setReachable(page, false);
+      await setReachable(page, true);
+      await expect
+        .poll(() => draftSends(page), { timeout: 30_000 })
+        .toBeGreaterThan(sends);
+    }
+    await page.evaluate(() => {
+      const held = window as unknown as {
+        holdingStateWrites: boolean;
+        releaseStateWrite: () => void;
+      };
+      held.holdingStateWrites = false;
+      held.releaseStateWrite();
+    });
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => {
+      history.pushState({}, '', '/workspaces/ws_scenarios');
+      dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(page.locator('[data-note-mount]')).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    expect(await storedKinds(page)).toContain('copy');
+    await lateSessions(page, null);
+    await setReachable(page, true);
+    await page.evaluate(
+      ({ key, url }) => {
+        sessionStorage.removeItem(key);
+        history.pushState({}, '', url);
+        dispatchEvent(new PopStateEvent('popstate'));
+      },
+      { key: DRAFTS_ANSWER, url: note }
+    );
+    const editor = page.locator(
+      '[data-note-mount="live"] [contenteditable="true"]'
+    );
+    await expect(editor).toContainText(COPY, { timeout: 60_000 });
+    expect((await editor.innerText()).split(COPY).length - 1).toBe(1);
+    await expect.poll(() => roomText(page)).toContain(COPY);
+  });
+}
+
+/** A drafts worker's deletes wait in the page while `holdingDeletes` is set,
+ * until `releaseDeletes`. */
+async function holdDeletes(page: Page) {
+  await page.addInitScript(() => {
+    const Native = window.Worker;
+    const held: (() => void)[] = [];
+    Object.assign(window, {
+      releaseDeletes: () => {
+        Object.assign(window, { holdingDeletes: false });
+        for (const post of held.splice(0)) post();
+      },
+    });
+    window.Worker = class extends Native {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (!String(url).includes('draftStore.worker')) return;
+        const post = this.postMessage.bind(this);
+        this.postMessage = (...args: Parameters<Worker['postMessage']>) => {
+          const [message] = args as [{ op?: string }];
+          if (
+            (window as { holdingDeletes?: boolean }).holdingDeletes &&
+            message.op === 'delete'
+          )
+            held.push(() => post(...args));
+          else post(...args);
+        };
+      }
+    };
+  });
+}
+
+// Q451 (review L1, L2) through NoteEditorCore: a re-authored late row keeps
+// its drafts' date (the mount's `adoptedSavedAt`, from before the merge),
+// and the mount's own edit after its merge applied (`mergedSequence`) stays
+// beside it as a refused row under another session. The refusal comes for
+// an edit typed after the merge (the mock refuses on entry, so a refused
+// merge leaves no edit after it); the next mount's deletes wait so the rows
+// can be read. Fails if NoteEditorCore hands `recorder.late` neither.
+test("a re-authored late row keeps its drafts' date and the edit since the merge", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await holdDeletes(page);
+  await goLateWithOfflineWords(page);
+  await page.waitForTimeout(1500);
+  const before = await page.evaluate(() => Date.now());
+  await setReachable(page, true);
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
+  await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 30_000 }
+  );
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.evaluate(
+    async ({ path, id }) => {
+      const { refuseNextMockNoteUpdate } = await import(path);
+      Object.assign(window, { holdingDeletes: true });
+      refuseNextMockNoteUpdate(id, 'unassigned');
+    },
+    { id: MATERIAL, path: MOCK }
+  );
+  // One edit, so one update: the refused one.
+  await page.keyboard.insertText(AGAIN);
+  await expect
+    .poll(async () => (await storedRows(page)).some((row) => row.late), {
+      timeout: 30_000,
+    })
+    .toBe(true);
+  const rows = await storedRows(page);
+  const late = rows.filter((row) => row.late);
+  expect(late).toHaveLength(1);
+  expect(late[0].savedAt).toBeLessThanOrEqual(before);
+  expect(
+    rows.some((row) => row.refused && row.session !== late[0].session)
+  ).toBe(true);
+  await page.evaluate(() =>
+    (window as unknown as { releaseDeletes: () => void }).releaseDeletes()
+  );
+  await lateSessions(page, null);
 });

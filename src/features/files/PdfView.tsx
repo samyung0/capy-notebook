@@ -208,14 +208,12 @@ export default function PdfView({
   regions,
   annotationFile,
   annotationsReadOnly = false,
-  onDirtyChange,
   onRetry,
 }: {
   annotationFile?: { id: string; revision: number };
   /** A frozen account (the reader's or the owner's), or an owner at its
    * storage limit, keeps the marks visible but draws no new ones. */
   annotationsReadOnly?: boolean;
-  onDirtyChange?: (dirty: boolean) => void;
   onRetry?: () => void;
   url: string;
   /** 1-based page to scroll to once rendered, from a chat citation. */
@@ -236,10 +234,6 @@ export default function PdfView({
   const [annotationBusy, setAnnotationBusy] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
-  useEffect(() => {
-    onDirtyChange?.(annotationBusy);
-    return () => onDirtyChange?.(false);
-  }, [annotationBusy, onDirtyChange]);
   const [numPages, setNumPages] = useState(0);
   const [retryVersion, setRetryVersion] = useState(0);
   const retry = () => {
