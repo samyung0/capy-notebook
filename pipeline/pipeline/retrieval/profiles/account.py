@@ -2,8 +2,8 @@
 owned and member workspaces and their files with no workspace.
 
 Its tools are the contract's ``account`` scope (tools._offered). The tools
-that create (tools.DESTINATION_TOOLS) take an optional ``workspace_id`` here
-only: this profile adds it to its copy of their schema,
+that create (tools.DESTINATION_TOOLS) and list_sources take an optional
+``workspace_id`` here only: this profile adds it to its copy of their schema,
 and tools.run moves it out before checking the call against Go's definition,
 which stays byte for byte. Omitted, the item lands in No workspace.
 Skills (skills.text) and this profile's copies of the tool descriptions
@@ -29,6 +29,21 @@ WORKSPACE_ID = {
     "create it in No workspace. An edit of an existing item ignores it.",
 }
 
+# list_sources lists one workspace or the files with no workspace here, under
+# workspace chat's name (Q523): this copy's description and workspace_id,
+# which tools.run moves out as it does a create's.
+LIST_SOURCES = (
+    "List one of the user's workspaces by chapter (workspace_id), or without it "
+    "their newest files and materials with no workspace, with ids, kinds and "
+    "whether the user can edit each."
+)
+LISTED_WORKSPACE = {
+    "description": "A workspace id from search_files_summary, search_files_content "
+    "or a read; omit it to list the files with no workspace.",
+    "minLength": 1,
+    "type": "string",
+}
+
 # Go's descriptions written for workspace chat, in account words (Epo
 # 2026-10-28, T3): the made-from line of the creates and search_web.
 WORDING = (
@@ -38,7 +53,7 @@ WORDING = (
     ),
     (
         "(ids from list_sources)",
-        "(ids from search_files_summary, list_files or a read)",
+        "(ids from search_files_summary, list_sources or a read)",
     ),
     (
         "An id or exact name of a workspace item",
@@ -61,10 +76,12 @@ def _reworded(schema: dict[str, Any]) -> dict[str, Any]:
 def schemas(ctx: ToolContext) -> list[dict[str, Any]]:
     out = [_reworded(schema) for schema in tools.schemas_for(ctx)]
     for schema in out:
-        if schema["function"]["name"] in tools.DESTINATION_TOOLS:
-            schema["function"]["parameters"]["properties"]["workspace_id"] = (
-                WORKSPACE_ID
-            )
+        function = schema["function"]
+        if function["name"] == "list_sources":
+            function["description"] = LIST_SOURCES
+            function["parameters"]["properties"]["workspace_id"] = LISTED_WORKSPACE
+        elif function["name"] in tools.DESTINATION_TOOLS:
+            function["parameters"]["properties"]["workspace_id"] = WORKSPACE_ID
     return out
 
 

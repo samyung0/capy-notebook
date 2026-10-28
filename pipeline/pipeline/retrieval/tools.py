@@ -580,7 +580,9 @@ def _overlap_footer(overlap: int, hits: int) -> str:
     )
 
 
-async def _list_sources(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+async def _list_sources(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    if ctx.account:
+        return await _list_account(args, ctx)
     if not _gateway_ready() or not ctx.user_id:
         return _refused(
             "Source listing is unavailable for this user.", code="lifecycle_rejected"
@@ -710,11 +712,25 @@ DESTINATION_TOOLS = (
     "edit_office_document",
 )
 ACCESS_BATCH = 200
+# Account chat's one not found (E2), naming both ways back (Q525):
+# list_sources as workspace chat's document tools do (NO_WORKSPACE_ITEM) and
+# search_files_summary across workspaces.
 NO_ACCOUNT_ITEM = (
     'No file you can read has the id "{id}": it may have been deleted, moved to '
-    "trash or be outside your workspaces. search_files_summary finds the current "
-    "ids."
+    "trash or be outside your workspaces. list_sources shows a workspace's "
+    "current ids; search_files_summary finds a file by name across your "
+    "workspaces."
 )
+
+
+def _not_found(ctx: ToolContext, kind: str, rid: str) -> str:
+    """What an item's tool adds to Go's plain not found: account chat's one
+    text (Q525, review W1), or workspace chat's hint for a source file (Q482)."""
+    if ctx.account:
+        return NO_ACCOUNT_ITEM.format(id=rid)
+    return NO_WORKSPACE_ITEM.format(id=rid) if kind == "source_file" else ""
+
+
 OUTSIDE_CHOSEN = (
     '"{id}" is outside the sources chosen for this chat, and the chat cannot '
     "widen that choice."
@@ -868,7 +884,7 @@ async def _search_files_content(args: dict[str, Any], ctx: ToolContext) -> ToolR
     ids = _scope_ids(args.get("file_ids", _MISSING))
     if ids is None:
         return _refused(
-            "file_ids takes a list of ids from search_files_summary or list_files."
+            "file_ids takes a list of ids from search_files_summary or list_sources."
         )
     if ids:
         found = await _account_items(ctx, ids)
@@ -960,12 +976,12 @@ MORE_UNLISTED = (
 )
 
 
-async def _list_files(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """One scope workspace by chapter, as list_sources lists a workspace, or
-    without workspace_id the newest items with no workspace (Epo 2026-10-28);
-    the first line says which."""
+async def _list_account(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """Account chat's list_sources (Q523): one scope workspace by chapter, as
+    workspace chat lists its own, or without workspace_id the newest items
+    with no workspace (Epo 2026-10-28); the first line says which."""
     assert isinstance(ctx.scope, AccountScope)
-    workspace_id = str(args.get("workspace_id") or "").strip()
+    workspace_id = str(args.get("_workspace_id") or "")
     if workspace_id:
         workspace = ctx.scope.workspace(workspace_id)
         if workspace is None:
@@ -1906,7 +1922,7 @@ def _receipt_result(body: dict[str, Any], ctx: ToolContext | None = None) -> Too
 
 def _add_to_scope(ctx: ToolContext | None, workspace_id: str, name: str) -> None:
     """A workspace this turn created joins the turn's list, the user its owner,
-    so list_workspaces and list_files reach it at once (review r1 M-2)."""
+    so list_workspaces and list_sources reach it at once (review r1 M-2)."""
     scope = ctx.scope if ctx is not None else None
     if not isinstance(scope, AccountScope) or not workspace_id:
         return
@@ -1974,12 +1990,12 @@ def _relocations(effect: dict[str, Any]) -> str:
 # Account chat's chapter refusals (Epo 2026-10-28, T3).
 CHAPTER_NEEDS_WORKSPACE = (
     "chapter_id needs the workspace_id of its workspace: without one the item "
-    "is created in No workspace, which has no chapters. list_files with that "
+    "is created in No workspace, which has no chapters. list_sources with that "
     "workspace_id lists its chapters."
 )
 CHAPTERS_LISTED = {
     False: "list_sources lists this workspace's chapters.",
-    True: "list_files with that workspace_id lists its chapters.",
+    True: "list_sources with that workspace_id lists its chapters.",
 }
 
 
@@ -3078,7 +3094,7 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
             "count": int(args.get("count") or 60),
         },
         "inspect the document",
-        NO_WORKSPACE_ITEM.format(id=rid) if kind == "source_file" else "",
+        _not_found(ctx, kind, rid),
         account=ctx.account,
     )
     if isinstance(body, ToolResult):
@@ -3289,7 +3305,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         failure="edit the document",
         timeout=60 if images else 10,
         explain=explain,
-        not_found=NO_WORKSPACE_ITEM.format(id=rid) if kind == "source_file" else "",
+        not_found=_not_found(ctx, kind, rid),
     )
     if result.effects:
         # This turn's own view: drop cached outlines and re-read the exact
@@ -3825,7 +3841,7 @@ async def _inspect_office_document(
             },
         },
         "inspect the file",
-        NO_WORKSPACE_ITEM.format(id=rid),
+        _not_found(ctx, "source_file", rid),
         account=ctx.account,
     )
     if isinstance(body, ToolResult):
@@ -3913,7 +3929,7 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             ctx,
             failure="edit the file",
             explain=explain,
-            not_found=NO_WORKSPACE_ITEM.format(id=rid),
+            not_found=_not_found(ctx, "source_file", rid),
         )
     if result.effects and (cut := _NOT_APPLIED.search(result.text())):
         result.progress = (int(cut[1]), len(commands))
@@ -3977,6 +3993,7 @@ def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
                 "count": 200,
             },
             f"read quiz {quiz_id}",
+            _not_found(ctx, "material", quiz_id),
             account=ctx.account,
         )
         return body if isinstance(body, ToolResult) else quiz_questions(quiz_id, body)
@@ -4004,6 +4021,7 @@ def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
             failure="edit the quiz",
             # Go stores each figure in the bucket before the edit.
             timeout=60 if images else 10,
+            not_found=_not_found(ctx, "material", quiz_id),
         )
 
     return QuizStore(load, create, edit)
@@ -4357,7 +4375,6 @@ _register("capture_knowledge_page", _capture_knowledge_page)
 _register("list_sources", _list_sources)
 _register("search_files_summary", _search_files_summary)
 _register("search_files_content", _search_files_content)
-_register("list_files", _list_files)
 _register("list_workspaces", _list_workspaces)
 _register("create_workspace", _create_workspace)
 _register("read_document", _read_document)
@@ -4508,14 +4525,20 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(
             f"{name} is unavailable for this user.", code="lifecycle_rejected"
         )
-    if ctx.account and name in DESTINATION_TOOLS and "workspace_id" in args:
+    if (
+        ctx.account
+        and (name in DESTINATION_TOOLS or name == "list_sources")
+        and "workspace_id" in args
+    ):
         # The account schema copy's own argument (profiles/account.py); Go's
         # schema, validated below, does not have it.
         args = dict(args)
         destination = args.pop("workspace_id")
         if not contract.blank(destination):
             if not isinstance(destination, str):
-                return _refused("workspace_id takes a workspace id from list_files.")
+                return _refused(
+                    "workspace_id takes a workspace id from list_workspaces."
+                )
             args["_workspace_id"] = destination.strip()
     args = without_blanks(name, args)
     problem = contract.validate_args(

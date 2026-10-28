@@ -4490,7 +4490,12 @@ so a later turn, whose outline no longer lists the moved file, gets
 the chat never widens that choice. Go's plain not found for a source file
 carries the outline check's earlier hint ("No workspace item has the id …:
 it may have been deleted or moved to trash. list_sources shows the current
-ids.", `NO_WORKSPACE_ITEM`) after the error (Q482). A request holds
+ids.", `NO_WORKSPACE_ITEM`) after the error (Q482). Account chat checks the
+item with Go first and refuses one it cannot read with `NO_ACCOUNT_ITEM`,
+which names `list_sources` (its listing tool too, Q523) and
+`search_files_summary` (Q525); Go's not found after that check (the item
+trashed meanwhile) and for a quiz the user names carries the same text, never
+`NO_WORKSPACE_ITEM` (`tools._not_found`, review W1). A request holds
 a pooled connection and its operation's advisory lock only for its receipt
 checks (the stored receipt, then the room's: `known`) and for its
 admission, never through the compute or an Office engine call (Q432): the
@@ -5378,16 +5383,20 @@ for life so the provider prompt cache holds.
   `list_workspaces` gives the list as it stands. A workspace `create_workspace`
   made this turn joins the turn's list at once (`tools._add_to_scope`).
 - **Profile.** `profiles/account.py` offers the contract's `account` scope
-  tools: `search_files_summary`, `search_files_content`, `list_files`,
-  `list_workspaces`, `create_workspace`, `resolve_source_change` and the shared
+  tools: `search_files_summary`, `search_files_content`, `list_workspaces`,
+  `create_workspace`, `resolve_source_change`, `list_sources` and the shared
   read, write, skill, library and web tools; trash, restore, the trash list,
-  study progress, `list_sources` and `search_workspace` are workspace only. The
-  tools that create (`create_material`, `create_deck`, `add_questions` for a new
-  quiz, `edit_office_document` for a new file) take an optional `workspace_id`
+  study progress and `search_workspace` are workspace only. `list_sources` is
+  one definition in both scopes (Q523): the profile's copy takes its account
+  description (`LIST_SOURCES`) and an optional `workspace_id`, and its handler
+  lists by workspace there (`tools._list_account`). The tools that create
+  (`create_material`, `create_deck`, `add_questions` for a new quiz,
+  `edit_office_document` for a new file) also take an optional `workspace_id`
   in the profile's copy of their schema only; `tools.run` moves it to
-  `_workspace_id`, and without one the item lands in No workspace. Go's
-  definitions stay byte for byte, and the profile swaps their workspace wording
-  (the made-from line, `search_web`) on its copies (`WORDING`).
+  `_workspace_id`, and without one the item lands in No workspace (or
+  `list_sources` lists the files with no workspace). Go's definitions stay
+  byte for byte, and the profile swaps their workspace wording (the made-from
+  line, `search_web`) on its copies (`WORDING`).
 - **`_` arguments.** Keys starting with `_` are the pipeline's own; the agent
   loop drops any the model sends before adding `_tool_call_id` (review r1 S2).
 - **Search.** `search_files_summary` is one scoped Postgres query over names
@@ -5395,8 +5404,8 @@ for life so the provider prompt cache holds.
   one hybrid search per embedding space over the scope's workspace files and
   the caller's no-workspace files, labelling each passage with its workspace,
   chapter and whether the user can edit it (a PDF passage reads view only).
-  `list_files` lists one workspace by chapter, or the newest 100 items with no
-  workspace. Both search tools keep their full result between messages.
+  `list_sources` lists one workspace by chapter, or the newest 100 items with
+  no workspace. Both search tools keep their full result between messages.
 - **Per-call checks.** Every read, inspect, capture, change read and resolve
   asks Go first: `POST /api/internal/documents/access` (`AccountDocumentAccess`,
   one query for the items and one for the unreadable files' edit receipts),
@@ -5409,8 +5418,11 @@ for life so the provider prompt cache holds.
   `POST /api/internal/workspaces` is `create_workspace` (a receipt, no Undo,
   under the combined workspace cap).
 - **Refusals in account words.** An unreadable item:
-  "No file you can read has the id … search_files_summary finds the current
-  ids." (`NO_ACCOUNT_ITEM`, one generic not found, E2). A file this user's
+  "No file you can read has the id …: it may have been deleted, moved to trash
+  or be outside your workspaces. list_sources shows a workspace's current ids;
+  search_files_summary finds a file by name across your workspaces."
+  (`NO_ACCOUNT_ITEM`, one generic not found, E2, naming both ways back, Q525;
+  also added to Go's own not found, review W1). A file this user's
   account chat edited that now lies out of reach: `ACCOUNT_MOVED_OUT` ("This
   file was moved where the user can no longer open it …", Q489). A view-only
   edit: `ACCOUNT_NO_EDIT`, which stops only that edit (E1). Gateway reads pass
