@@ -7849,6 +7849,14 @@ struct Gateway {
     checkpoints: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// The workspace each checkpoint named (Q459).
     saved_in: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// Checkpoints answer 503 while set (a busy Go, Q456).
+    fail_checkpoints: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The next checkpoints answer 409 `checkpoint_moved` (a save that met
+    /// another writer's), one each.
+    conflicts: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// Actors the session refuses, as Go refuses one outside the file's
+    /// current workspace.
+    refused: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 async fn gateway_db(gateway: &Gateway) -> tokio_postgres::Client {
@@ -7862,6 +7870,7 @@ async fn gateway_db(gateway: &Gateway) -> tokio_postgres::Client {
 async fn gateway_get(
     axum::extract::State(gateway): axum::extract::State<Gateway>,
     axum::extract::Path((id, endpoint)): axum::extract::Path<(String, String)>,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
     use base64::Engine;
@@ -7869,6 +7878,16 @@ async fn gateway_get(
         return axum::http::StatusCode::NO_CONTENT.into_response();
     }
     if endpoint != "bootstrap" {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    }
+    let actor = query.get("actorId").map(String::as_str).unwrap_or_default();
+    if gateway
+        .refused
+        .lock()
+        .expect("refused")
+        .iter()
+        .any(|refused| refused == actor)
+    {
         return axum::http::StatusCode::NOT_FOUND.into_response();
     }
     let row = gateway_db(&gateway)
@@ -7921,6 +7940,24 @@ async fn gateway_post(
         .lock()
         .expect("saved in")
         .push(body["workspaceId"].as_str().unwrap_or("<none>").to_owned());
+    if gateway
+        .fail_checkpoints
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    if gateway
+        .conflicts
+        .fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |left| left.checked_sub(1),
+        )
+        .is_ok()
+    {
+        let refusal = serde_json::json!({ "errors": [{ "message": "checkpoint_moved" }] });
+        return (axum::http::StatusCode::CONFLICT, axum::Json(refusal)).into_response();
+    }
     let delay = gateway
         .checkpoint_delay
         .load(std::sync::atomic::Ordering::Relaxed);
@@ -8096,6 +8133,9 @@ async fn gateway(env: &Env) -> Gateway {
         checkpoint_delay: Default::default(),
         checkpoints: Default::default(),
         saved_in: Default::default(),
+        fail_checkpoints: Default::default(),
+        conflicts: Default::default(),
+        refused: Default::default(),
     };
     let app = axum::Router::new()
         .route(
@@ -8124,8 +8164,8 @@ async fn a_moved_files_drain_save_names_the_workspace_its_room_opened() {
         &env,
         Some(&gateway.url),
         &[
-            ("COLLABORATION_DEBOUNCE_MS", "60000"),
-            ("COLLABORATION_MAX_DEBOUNCE_MS", "60000"),
+            ("COLLABORATION_SOURCE_DEBOUNCE_MS", "60000"),
+            ("COLLABORATION_SOURCE_MAX_DEBOUNCE_MS", "60000"),
         ],
     )
     .await;
@@ -8204,6 +8244,145 @@ async fn a_moved_files_drain_save_names_the_workspace_its_room_opened() {
     assert_eq!(reader.joined(&room, &token(&room, &user, "write")).await, 1);
     assert!(
         reader.settle(|c| source_text(c) == "moved-base").await,
+        "{}",
+        source_text(&reader)
+    );
+}
+
+/// Q459 on a retried save: after a Move, a save that meets a moved
+/// checkpoint (409) reads the file again and retries, still naming the
+/// workspace its room opened the file in. The writer is not in the target,
+/// so Go refuses the writer's own session there; the retry reads the file's
+/// session as its owner's, and the checkpoint checks the writer. The room's
+/// first save (the one with the seed) lands before the Move; the moved edit
+/// stores on the debounce or in the drain, whichever comes first. Fails if a
+/// retry asks the writer's session in the file's current workspace.
+#[tokio::test]
+async fn a_moved_files_drain_save_retried_after_a_conflict_still_stores() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_configured(
+        &env,
+        Some(&gateway.url),
+        &[
+            ("COLLABORATION_SOURCE_DEBOUNCE_MS", "200"),
+            ("COLLABORATION_SOURCE_MAX_DEBOUNCE_MS", "400"),
+        ],
+    )
+    .await;
+    let (writer_id, file) = text_file(&env, &gateway, "base").await;
+    let client_db = db(&env).await;
+    let opened: String = client_db
+        .query_one("SELECT workspace_id FROM files WHERE id=$1", &[&file])
+        .await
+        .expect("file")
+        .get(0);
+    let room = format!("source:{file}:epoch:1");
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(
+        writer
+            .joined(&room, &token(&room, &writer_id, "write"))
+            .await,
+        1
+    );
+    assert!(writer.settle(|c| source_text(c) == "base").await);
+    let first = typed_as(&writer, writer.id(), "first-");
+    writer
+        .doc
+        .transact_mut()
+        .apply_update(Update::decode_v1(&first).expect("first"))
+        .expect("apply");
+    writer.send(5, &sync(2, &first)).await;
+    writer
+        .until(6)
+        .await
+        .expect("the first edit is acknowledged");
+    let mut stored = false;
+    for _ in 0..100 {
+        if stored_checkpoint(&env, &file).await >= 1 {
+            stored = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(stored, "the first save never landed");
+    let owner = user(&env).await;
+    let target = format!("ws_it_moved_{}", uuid_like());
+    client_db
+        .execute(
+            "INSERT INTO workspaces (id,user_id,name,privacy) VALUES ($1,$2,'IT','private')",
+            &[&target, &owner],
+        )
+        .await
+        .expect("target");
+    client_db
+        .execute(
+            "UPDATE files SET workspace_id=$2 WHERE id=$1",
+            &[&file, &target],
+        )
+        .await
+        .expect("moved");
+    gateway
+        .refused
+        .lock()
+        .expect("refused")
+        .push(writer_id.clone());
+    gateway
+        .conflicts
+        .store(1, std::sync::atomic::Ordering::Relaxed);
+    let edit = typed_as(&writer, writer.id(), "moved-");
+    writer
+        .doc
+        .transact_mut()
+        .apply_update(Update::decode_v1(&edit).expect("edit"))
+        .expect("apply");
+    writer.send(5, &sync(2, &edit)).await;
+    writer
+        .until(6)
+        .await
+        .expect("the moved edit is acknowledged");
+    let redis = redis::Client::open(env.redis.as_str()).expect("redis");
+    let mut connection = redis
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis connection");
+    let event = serde_json::json!({
+        "evictionId": format!("cev_{}", uuid_like()),
+        "fileId": file,
+        "room": room,
+        "type": "file-moved",
+        "mode": "drain",
+        "workspaceId": target,
+    });
+    let _: i64 = redis::cmd("PUBLISH")
+        .arg("capy:collaboration:evict")
+        .arg(event.to_string())
+        .query_async(&mut connection)
+        .await
+        .expect("publish");
+    // The first save, then the moved edit's refused save and its retry.
+    let mut saved = Vec::new();
+    for _ in 0..100 {
+        saved = gateway.saved_in.lock().expect("saved in").clone();
+        if saved.len() >= 3 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        saved.len() >= 3 && saved.iter().all(|named| named == &opened),
+        "{saved:?}"
+    );
+    wait_unloaded(server.port).await;
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(
+        reader.joined(&room, &token(&room, &owner, "write")).await,
+        1
+    );
+    assert!(
+        reader
+            .settle(|c| source_text(c) == "moved-first-base")
+            .await,
         "{}",
         source_text(&reader)
     );
@@ -15041,6 +15220,93 @@ async fn a_room_whose_saves_fail_refuses_agent_edits() {
     let (status, answer) = internal(port, "/internal/documents/edit", &body).await;
     assert_eq!(status, 200, "{answer}");
     assert!(person.settle(|c| c.block_text() == "hi there!").await);
+}
+
+/// Q456 for an Office room (a text room takes the same source branch):
+/// while its saves fail (Go answers 503 and the store retries) it refuses an
+/// agent edit `saves_failing` (409), applying nothing, while the person's
+/// typing stays in the room; once a store succeeds, the same edit is
+/// admitted. Source rooms debounce on their own clock
+/// (`COLLABORATION_SOURCE_DEBOUNCE_MS`, 5 s by default). Fails if a source
+/// room admits agent edits while its saves fail.
+#[tokio::test]
+async fn a_source_room_whose_saves_fail_refuses_agent_edits() {
+    use std::sync::atomic::Ordering::Relaxed;
+    use yrs::{Map, Out};
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_configured(
+        &env,
+        Some(&gateway.url),
+        &[
+            ("COLLABORATION_SOURCE_DEBOUNCE_MS", "200"),
+            ("COLLABORATION_SOURCE_MAX_DEBOUNCE_MS", "400"),
+        ],
+    )
+    .await;
+    let (user, file, _) = office_file(&env, &gateway, "docx").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut person = Client::open(server.port).await;
+    assert_eq!(person.joined(&room, &token(&room, &user, "write")).await, 1);
+    let body = |c: &Client| {
+        let txn = c.doc.transact();
+        match txn.get_map("stories")?.get(&txn, "body") {
+            Some(Out::YText(text)) => Some(text),
+            _ => None,
+        }
+    };
+    assert!(person.settle(|c| body(c).is_some()).await, "the body story");
+    let inspect = serde_json::json!({
+        "actorUserId": user,
+        "office": { "start": 0, "count": 200 },
+        "target": { "id": file, "kind": "source_file" },
+    });
+    let (_, entries) = office_entries(server.port, &inspect).await;
+    let (anchor, _) = entries
+        .iter()
+        .find(|(_, text)| text.starts_with("Owner sentence"))
+        .cloned()
+        .expect("the owner sentence");
+    let before = stored_checkpoint(&env, &file).await;
+    gateway.fail_checkpoints.store(true, Relaxed);
+    let seen = person.doc.transact().state_vector();
+    let story = body(&person).expect("the body story");
+    story.insert(&mut person.doc.transact_mut(), 0, "Typed ");
+    let typing = person.doc.transact().encode_state_as_update_v1(&seen);
+    person.send(5, &sync(2, &typing)).await;
+    let (failed, _) = person.stateless("source-checkpoint-failed").await;
+    assert_eq!(failed["recoverable"], true, "{failed}");
+    let edit = source_edit(
+        &user,
+        &file,
+        &format!("e_{file}"),
+        serde_json::json!([{ "type": "insert_paragraph", "afterId": anchor, "text": "Inserted" }]),
+    );
+    let (status, refusal) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("saves_failing")),
+        "{refusal}"
+    );
+    let _ = person.hears(5, 300).await;
+    assert!(!String::from_utf8_lossy(&person.received).contains("Inserted"));
+    gateway.fail_checkpoints.store(false, Relaxed);
+    // The retry (5 s after the failure) stores the typing.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while stored_checkpoint(&env, &file).await <= before {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the retry never stored"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let (status, answer) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(
+        person
+            .settle(|c| String::from_utf8_lossy(&c.received).contains("Inserted"))
+            .await
+    );
 }
 
 /// Q456 for a quiz's keys room (`RoomCmd::AgentKeys`): while the keys
