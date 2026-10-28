@@ -1,7 +1,7 @@
 # Presence load on the production box, 2026-10-28
 
 Note rooms with carets at 20 Hz, in today's awareness shape and in the
-compact shape decided on 2026-10-28 (`todo-presence.md`), against main's Rust
+compact shape decided on 2026-10-28 (capy-harness `2026-10-28-presence/PLAN.md`), against main's Rust
 collaboration server on the production box. The question: does compact JSON
 suffice, or does presence need a binary format? Epo allows bench runs on the
 box; the run started after Coolify was removed from it (Q498), and everything
@@ -39,9 +39,11 @@ it created was removed afterwards.
   refuses the edits a peer typed offline once it reconnects
   (`collaboration-unassigned-id`, Q213 / Epo 2026-10-24): 433 of the smoke
   step's markers were lost and every room failed to converge. Runs here use
-  no drops. `stress.ts` needs a decision on how a reconnecting peer's offline
-  edits should go (the app holds them as a draft); the `Performance`
-  workflow's runs have failed since 2026-10-22.
+  no drops. The script's drop sends the provider's clean Leave, which
+  expires the session's id; a real network loss does not, and the app keeps
+  such edits as drafts anyway. Epo decided (2026-10-28) the script drops the
+  socket instead. The `Performance` workflow's runs have failed since
+  2026-10-22.
 
 ## Setup
 
@@ -112,7 +114,7 @@ bound.
 
 ## The planned field check
 
-The server will parse each entry and check its fields (`todo-presence.md`,
+The server will parse each entry and check its fields (capy-harness `2026-10-28-presence/PLAN.md`,
 section A). A serde_json parse and check (with `preserve_order`, as the
 server builds it), measured on an Apple M-series Mac:
 
