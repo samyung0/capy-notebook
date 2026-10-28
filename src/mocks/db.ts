@@ -85,11 +85,14 @@ import {
 } from './nearLimits';
 import { seedNotes } from './noteContent';
 import { bioNearLimitNotes } from './noteContent/bio';
+import { buildCommonSubsetValue } from './noteContent/commonSubset';
 import { embeddedSeeds, equation } from './noteContent/helpers';
 import { buildBiologyLoadTestValue } from './noteContent/loadTest';
 import { biologyOfficeFixtures } from './officeFixtures';
 import {
   buildSmallPerfDocument,
+  PERF_COMMON_NOTE,
+  PERF_COMMON_SEED_KEY,
   PERF_LARGE_NOTE,
   PERF_SMALL_NOTE,
   PERF_WORKSPACE_ID,
@@ -2787,6 +2790,42 @@ if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
       workspaceName: 'Biology 101',
     })
   );
+  // The bench's Plate/BlockSuite comparison note, at the load-test note's
+  // size times the session's scale (1 in CI); only when the page asks, as
+  // building it costs the boot ~1 s.
+  const loadTest = materials.find((row) => row.id === PERF_LARGE_NOTE.id);
+  const commonScale = Number(
+    typeof sessionStorage === 'undefined'
+      ? 0
+      : sessionStorage.getItem(PERF_COMMON_SEED_KEY)
+  );
+  if (loadTest && commonScale > 0)
+    materials.push(
+      makeMaterial({
+        capabilities: ownerCapabilities,
+        chapterId: null,
+        content: createMaterialDocument(
+          buildCommonSubsetValue(
+            PERF_COMMON_NOTE.id,
+            PERF_COMMON_NOTE.readyText,
+            {
+              bytes: Math.floor(loadTest.contentBytes * commonScale),
+              nodes: Math.floor(loadTest.nodeCount * commonScale),
+            }
+          )
+        ),
+        createdAt: days(0),
+        id: PERF_COMMON_NOTE.id,
+        kind: 'note',
+        privacy: 'private',
+        role: 'owner',
+        scopeChapters: [],
+        scopeFileNames: [],
+        title: PERF_COMMON_NOTE.title,
+        workspaceId: PERF_WORKSPACE_ID,
+        workspaceName: 'Biology 101',
+      })
+    );
 }
 
 /* ---------------- near-limit fixtures ---------------- */

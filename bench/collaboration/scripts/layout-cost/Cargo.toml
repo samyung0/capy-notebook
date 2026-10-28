@@ -1,0 +1,21 @@
+# Server cost of a note in the Plate and the blocks layout, same content
+# (todo-blocksuite-spike.md, "6. Measure"). Its own workspace, built on the
+# collaboration server's crates; run.sh copies the server's Cargo.lock in so
+# both resolve the same versions.
+[package]
+name = "layout-cost"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+blocks = { path = "../../../../collaboration-rs/crates/blocks" }
+notes = { path = "../../../../collaboration-rs/crates/notes" }
+ydoc = { path = "../../../../collaboration-rs/crates/ydoc" }
+yrs = { path = "../../../../vendor/betteroffice/third_party/yrs" }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[workspace]
+
+[profile.release]
+debug = "line-tables-only"

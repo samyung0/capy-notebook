@@ -55,6 +55,77 @@ export const RELATIVE_METRICS: RelativeMetric[] = [
   },
 ];
 
+/** Plate against BlockSuite in one run (`PERF_EDITOR`, editor.perf.ts):
+ * each BlockSuite case is Plate's name with a `blocks-` prefix. Report-only,
+ * for D8's "no worse than Plate" (todo-blocksuite-spike.md). */
+const EDITOR_CASES: Record<string, [string, string][]> = {
+  open: [
+    ['interactive.openMs', 'open (ms)'],
+    ['interactive.heapAfterOpen.jsMB', 'JS heap after open (MB)'],
+    ['interactive.heapAfterOpen.domNodes', 'DOM nodes after open'],
+    ['interactive.firstKey.toNextFrameMs', 'first key to frame (ms)'],
+  ],
+  'peer-burst': [
+    ['settledMs', 'burst until shown (ms)'],
+    ['applyTotalMs', 'synchronous apply, total (ms)'],
+    ['loafTotalBlockingMs', 'blocking (ms)'],
+  ],
+  scroll: [
+    ['avgFps', 'average FPS (higher is better)'],
+    ['longestFrameMs', 'longest frame (ms)'],
+  ],
+  typing: [
+    ['typing.p95SlowKeyEventMs', 'p95 key event (ms)'],
+    ['typing.blockingPerKeystrokeMs', 'blocking per keystroke (ms)'],
+    ['saveCycle.loafTotalBlockingMs', 'save cycle blocking (ms)'],
+    ['p95SlowKeyEventMs', 'p95 key event (ms)'],
+    ['blockingPerKeystrokeMs', 'blocking per keystroke (ms)'],
+  ],
+};
+
+function readPath(value: unknown, path: string): number | null {
+  for (const segment of path.split('.')) {
+    if (!isRecord(value)) return null;
+    value = value[segment];
+  }
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** The Plate/BlockSuite table, or nothing for a run without BlockSuite. */
+export function compareEditors(cases: Record<string, unknown>): string[] {
+  const rows: string[] = [];
+  for (const blocksCase of Object.keys(cases).sort()) {
+    if (!blocksCase.startsWith('blocks-')) continue;
+    const plateCase = blocksCase.slice('blocks-'.length);
+    const kind = Object.keys(EDITOR_CASES).find((prefix) =>
+      plateCase.startsWith(`${prefix}-`)
+    );
+    for (const [path, label] of kind ? EDITOR_CASES[kind] : []) {
+      const blocks = readPath(cases[blocksCase], path);
+      if (blocks === null) continue;
+      const plate = readPath(cases[plateCase], path);
+      rows.push(
+        `| ${plateCase} | ${label} | ${formatNumber(plate)} | ${formatNumber(blocks)} | ${formatDelta(delta(blocks, plate)).replace(' ms', '')} |`
+      );
+    }
+  }
+  if (!rows.length) return [];
+  const placeholders = readPath(
+    cases['blocks-open-large-document'],
+    'document.placeholderBlocks'
+  );
+  return [
+    '### Plate and BlockSuite, report-only',
+    '',
+    `The load-test note's \`capy:*\` blocks are placeholders in BlockSuite${placeholders === null ? '' : ` (${placeholders} of them)`}, so its \`*-large-document\` rows are lighter; the \`*-common-document\` rows hold only blocks both render. BlockSuite rooms take no checkpoint under MSW.`,
+    '',
+    '| Case | Metric | Plate | BlockSuite | BlockSuite - Plate |',
+    '| --- | --- | ---: | ---: | ---: |',
+    ...rows,
+    '',
+  ];
+}
+
 type SnapshotMetadata = Omit<PerfSnapshot, 'cases' | 'createdAt'> & {
   createdAt?: string;
 };
@@ -242,6 +313,7 @@ export function compareSnapshots(
         `| ${row.label} | ${formatNumber(row.current)} | ${formatNumber(row.median)} | ${formatDelta(row.vsMedian)} | ${formatNumber(row.best)} | ${formatDelta(row.vsBest)} |`
     ),
     '',
+    ...compareEditors(current.cases),
     '### Current case payloads, context only',
     '',
     'Small-document typing, INP estimates, scroll FPS, and longest-frame values appear here but are not compared.',

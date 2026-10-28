@@ -34,6 +34,26 @@ deltas.
 
 `.github/workflows/ci.yml` does not run `pnpm bench:editor`.
 
+### BlockSuite against Plate (`PERF_EDITOR`)
+
+While the BlockSuite note is built beside Plate (`todo-blocksuite-spike.md`
+piece 6), `PERF_EDITOR` picks what one run measures. One Vite process serves one
+document layout:
+- **Unset:** Plate's four budgeted cases only, as before.
+- **`plate`:** those cases, plus Plate's comparison cases on the common-subset
+  note (`noteContent/commonSubset.ts`, the load-test note's bytes and nodes in
+  block types both editors share): open, typing, scroll and a peer burst,
+  with heap and the first key after open.
+- **`blocks`:** BlockSuite (`VITE_DOCUMENT_LAYOUT=blocks`, dev server on port
+  4527). Every case is prefixed `blocks-` and is report-only, with no budget
+  (D8: no worse than Plate). On the load-test note the `capy:*` blocks render
+  as placeholders, so that case is lighter.
+
+A run with `blocks-*` cases adds a Plate/BlockSuite table to the job summary.
+The Performance workflow's `blocks` input (on by default on dispatch) runs
+both, plus the bundle sizes from a `vite build --manifest`. The server side of
+the comparison is `bench/collaboration/scripts/run-layout-cost.sh`.
+
 ## Office runtime (`pnpm bench:office`)
 
 [`bench/editor/scripts/runtime.office.ts`](../bench/editor/scripts/runtime.office.ts)

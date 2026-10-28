@@ -19,6 +19,10 @@ on:
         description: Also measure the shared pages deployed on UAT
         default: true
         type: boolean
+      blocks:
+        description: Also measure the BlockSuite note against Plate (report-only)
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       revision:
@@ -37,11 +41,15 @@ on:
         description: Also measure the shared pages deployed on UAT
         default: false
         type: boolean
+      blocks:
+        description: Also measure the BlockSuite note against Plate (report-only)
+        default: false
+        type: boolean
 
 jobs:
   perf:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 90
     permissions:
       actions: read
       contents: read
@@ -87,6 +95,25 @@ jobs:
         run: pnpm bench:editor
         env:
           PERF_CPU: 4
+          PERF_EDITOR: ${{ inputs.blocks && 'plate' || '' }}
+          PERF_SNAPSHOT_DIR: bench/editor/.results
+      # BlockSuite's note beside Plate's (todo-blocksuite-spike.md piece 6):
+      # report-only, no budget (D8).
+      - name: Run BlockSuite comparison (report-only)
+        if: inputs.blocks
+        continue-on-error: true
+        run: pnpm bench:editor
+        env:
+          PERF_CPU: 4
+          PERF_EDITOR: blocks
+          PERF_SNAPSHOT_DIR: bench/editor/.results
+      - name: Measure note editor bundles
+        if: inputs.blocks
+        continue-on-error: true
+        run: |
+          node --max-old-space-size=8192 node_modules/vite/bin/vite.js build --manifest --outDir dist-bundle
+          pnpm exec tsx bench/editor/scripts/bundle-size.ts dist-bundle
+        env:
           PERF_SNAPSHOT_DIR: bench/editor/.results
       - name: Assemble performance snapshot
         if: always()
@@ -103,6 +130,7 @@ jobs:
           name: playwright-perf-artifacts
           path: |
             playwright-report-perf/
+            playwright-report-perf-blocks/
             test-results/
           retention-days: 7
       # Green snapshots come from manual dispatches and from promotions, which

@@ -21,6 +21,20 @@ export const PERF_LARGE_NOTE = {
   title: 'Load test — near 2MB feature soup',
 } as const;
 
+/** The common-subset note (`noteContent/commonSubset.ts`), at the load-test
+ * note's size. Seeded with it, and only for a page whose session holds
+ * `PERF_COMMON_SEED_KEY` (the bench's comparison cases set it before the app
+ * loads, to the size as a fraction of the load-test note's: 1 but in a local
+ * smoke run), so the budgeted cases boot exactly as before. */
+export const PERF_COMMON_NOTE = {
+  id: 'mat_note_perf_common',
+  // Short: a title that wraps sends End to its first line's end.
+  readyText: 'Common subset note',
+  title: 'Common subset note',
+} as const;
+
+export const PERF_COMMON_SEED_KEY = 'capy.perf.commonSubset';
+
 export const PERF_SMALL_NOTE = {
   id: 'mat_perf_small',
   readyText: 'Baseline note for typing latency.',

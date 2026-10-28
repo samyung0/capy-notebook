@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  compareEditors,
   compareSnapshots,
   MEDIAN_WINDOW,
   type PerfSnapshot,
@@ -122,6 +123,26 @@ describe('performance snapshot comparison', () => {
     );
     expect(comparedPaths.some((path) => path.startsWith('scroll-'))).toBe(
       false
+    );
+  });
+
+  it('puts BlockSuite cases beside Plate when the run has them', () => {
+    const current = snapshot({ commit: 'current' });
+    expect(compareEditors(current.cases)).toEqual([]);
+
+    current.cases['blocks-typing-large-document'] = {
+      saveCycle: { loafTotalBlockingMs: 150 },
+      typing: { blockingPerKeystrokeMs: 40 },
+    };
+    const table = compareEditors(current.cases).join('\n');
+    expect(table).toContain(
+      '| typing-large-document | blocking per keystroke (ms) | 100 | 40 | -60 (-60.0%) |'
+    );
+    expect(table).toContain(
+      '| typing-large-document | save cycle blocking (ms) | 200 | 150 | -50 (-25.0%) |'
+    );
+    expect(compareSnapshots(current, []).markdown).toContain(
+      'Plate and BlockSuite'
     );
   });
 });
