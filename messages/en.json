@@ -1583,7 +1583,7 @@
   "error_revision_conflict_title": "Someone else changed this",
   "error_revision_conflict_body": "Someone else edited this before you saved. Reload to see the latest version.",
   "error_workspace_limit_title": "Workspace limit reached",
-  "error_workspace_limit_body": "You already own as many workspaces as your plan allows. Delete one or upgrade your plan to create more.",
+  "error_workspace_limit_body": "Your plan counts the workspaces you own and the ones you've joined, and you're at its limit. Leave or delete one, or upgrade your plan.",
   "error_too_many_streams_title": "Too many AI requests",
   "error_too_many_streams_body": "Wait for your other AI requests to finish, then try again.",
   "error_context_too_large_title": "Too much content for this model",

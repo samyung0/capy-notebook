@@ -10,42 +10,29 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
-var ErrWorkspaceLimitExceeded = errors.New("owned workspace limit exceeded")
+var ErrWorkspaceLimitExceeded = errors.New("workspace limit exceeded")
 
 type WorkspaceLimitExceededError struct {
-	UserID    string
-	Used      int
-	Requested int
-	Limit     int
-	PlanTier  PlanTier
+	UserID   string
+	Used     int
+	Limit    int
+	PlanTier PlanTier
 }
 
 func (e *WorkspaceLimitExceededError) Error() string {
-	return fmt.Sprintf(
-		"%s: used=%d requested=%d limit=%d",
-		ErrWorkspaceLimitExceeded,
-		e.Used,
-		e.Requested,
-		e.Limit,
-	)
+	return fmt.Sprintf("%s: used=%d limit=%d", ErrWorkspaceLimitExceeded, e.Used, e.Limit)
 }
 
 func (e *WorkspaceLimitExceededError) Unwrap() error {
 	return ErrWorkspaceLimitExceeded
 }
 
-// gateOwnedWorkspacesTx serializes finite ownership limits on the recipient's
-// user row. OwnedWorkspaces == 0 is the in-memory representation of SQL NULL
-// (unlimited), which passes without a count query.
-func (s *Store) gateOwnedWorkspacesTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	userID string,
-	requested int,
-) (planlimits.Limits, error) {
-	if requested < 0 {
-		return planlimits.Limits{}, fmt.Errorf("negative workspace request: %d", requested)
-	}
+// gateWorkspacesTx admits one more workspace for userID, owned or joined: the
+// plan's cap counts both together (Epo 2026-10-28), as one count of its
+// workspace_members rows, since every owner holds one with role owner. It
+// serializes on the user's row. OwnedWorkspaces == 0 is the in-memory
+// representation of SQL NULL (unlimited), which passes without a count.
+func (s *Store) gateWorkspacesTx(ctx context.Context, tx pgx.Tx, userID string) (planlimits.Limits, error) {
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return planlimits.Limits{}, err
 	}
@@ -68,14 +55,13 @@ func (s *Store) gateOwnedWorkspacesTx(
 		return limits, nil
 	}
 	var used int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workspaces WHERE user_id=$1`, userID).
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workspace_members WHERE user_id=$1`, userID).
 		Scan(&used); err != nil {
 		return planlimits.Limits{}, err
 	}
-	if used+requested > limits.OwnedWorkspaces {
+	if used >= limits.OwnedWorkspaces {
 		return planlimits.Limits{}, &WorkspaceLimitExceededError{
-			UserID: userID, Used: used, Requested: requested,
-			Limit: limits.OwnedWorkspaces, PlanTier: tier,
+			UserID: userID, Used: used, Limit: limits.OwnedWorkspaces, PlanTier: tier,
 		}
 	}
 	return limits, nil

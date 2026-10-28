@@ -725,6 +725,18 @@ func (s *Store) acceptWorkspaceInvite(ctx context.Context, reference, userID str
 	if err := recipientStatus.Err(); err != nil {
 		return WorkspaceMember{}, nil, nil, err
 	}
+	// Joining counts against the workspace cap with what it owns (Epo
+	// 2026-10-28); a member already here only changes role.
+	var member bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_members WHERE workspace_id=$1 AND user_id=$2)`,
+		invite.WorkspaceID, userID).Scan(&member); err != nil {
+		return WorkspaceMember{}, nil, nil, err
+	}
+	if !member {
+		if _, err := s.gateWorkspacesTx(ctx, tx, userID); err != nil {
+			return WorkspaceMember{}, nil, nil, err
+		}
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
 		VALUES ($1,$2,$3) ON CONFLICT (workspace_id,user_id)
 		DO UPDATE SET role=CASE

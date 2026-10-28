@@ -1583,7 +1583,7 @@
   "error_revision_conflict_title": "其他人已修改此内容",
   "error_revision_conflict_body": "在你保存之前，其他人已编辑过此内容。请重新加载以查看最新版本。",
   "error_workspace_limit_title": "已达到工作区数量上限",
-  "error_workspace_limit_body": "你拥有的工作区数量已达到方案上限。请删除一个工作区或升级方案后再创建。",
+  "error_workspace_limit_body": "你拥有和加入的工作区合计已达到方案上限。请退出或删除一个工作区，或升级方案。",
   "error_too_many_streams_title": "AI 请求过多",
   "error_too_many_streams_body": "请等待其他 AI 请求完成后再试。",
   "error_context_too_large_title": "内容超出此模型的处理范围",

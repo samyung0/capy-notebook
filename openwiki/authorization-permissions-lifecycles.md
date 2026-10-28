@@ -382,11 +382,16 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
 - On transfer, the recipient becomes owner and assumes the complete storage
   bill. The old owner remains as an editor. Transfer is refused if the recipient
   cannot fit the workspace's used and reserved bytes or file count.
-- Workspace creation, clone, and transfer-to-recipient all run the owned-workspace
-  plan gate: Free owns at most 10 workspaces and Pro 50 (migration
-  `0070_owned_workspace_cap.sql`); past it the request fails with
-  `workspace_limit_exceeded` and the browser toasts "Workspace limit reached".
-  Workspaces already over the cap (after a downgrade) are kept.
+- The workspace cap counts owned and joined workspaces together (Epo
+  2026-10-28): Free 10, Pro 50 (migration `0070_owned_workspace_cap.sql`), one
+  count of the user's `workspace_members` rows, since every owner holds one with
+  role `owner` (link or public visits are not members). Creating, cloning or
+  receiving a workspace and accepting an invitation are refused at the limit
+  with `workspace_limit_exceeded` (`gateWorkspacesTx`); the browser toasts
+  "Workspace limit reached", and the invitation page keeps the invite open to
+  accept after leaving or deleting one. A transfer is not gated: the recipient
+  is already a member and the old owner stays one. Workspaces over the cap
+  after a downgrade are kept.
 - An over-quota owner (grace or frozen) may still transfer because giving away
   bytes is a recovery action; the recipient must be able to edit. A transfer
   cancels every pending invite (`revoked_at`), so the new owner starts with

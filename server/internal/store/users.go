@@ -542,7 +542,7 @@ func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error
 		return err
 	}
 	if n == 0 {
-		if _, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1); err != nil {
+		if _, err := s.gateWorkspacesTx(ctx, tx, userID); err != nil {
 			return err
 		}
 		embed, err := s.newWorkspaceEmbedding(ctx)
