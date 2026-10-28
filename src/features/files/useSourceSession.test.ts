@@ -400,7 +400,6 @@ describe("an edit session's leave prompt", () => {
     const { edit, onStorage } = await opened();
     edit();
     render();
-    expect(render().dirty).toBe(true);
     expect(armings()).toBe(0);
     onStorage(false);
     render();

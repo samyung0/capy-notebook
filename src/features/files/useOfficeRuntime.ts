@@ -1092,7 +1092,6 @@ export function useOfficeRuntime({
   return {
     analysis,
     banner: source.banner,
-    dirty: source.dirty,
     discardDraft: source.discardDraft,
     discarding: source.discarding,
     downloadDraft,
