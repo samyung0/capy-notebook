@@ -283,8 +283,13 @@ export interface ChatDockOptions {
 
 export interface ChatRequest {
   id: string | null;
+  /** With a null id: the new chat's first question, sent once. */
+  prompt?: string;
   seq: number;
 }
+
+/** Requests whose prompt went out, so a remounted panel never resends it. */
+const sentPrompts = new WeakSet<ChatRequest>();
 
 /** The pending-sources notice's button: process the omitted files' changes. */
 function ProcessChangesButton({
@@ -501,7 +506,13 @@ export function ChatPanel({
 
   const followRequest = useEffectEvent((next: ChatRequest) => {
     if (next.id) openThread(next.id);
-    else openNew();
+    else {
+      openNew();
+      if (next.prompt && !sentPrompts.has(next)) {
+        sentPrompts.add(next);
+        void send(next.prompt, chatTurn(workspaceOnly, openResource));
+      }
+    }
     if (focusOnOpen) fieldRef.current?.focus({ preventScroll: true });
   });
   useEffect(() => {

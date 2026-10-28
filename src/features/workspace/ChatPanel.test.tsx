@@ -29,6 +29,18 @@ vi.mock('@/api/hooks', async (original) => ({
   useWorkspaces: () => ({ data: [{ iconId: 'flask', id: 'ws_bio' }] }),
 }));
 vi.mock('@/lib/useMediaQuery', () => ({ useMediaQuery: () => true }));
+// The real stream, but turns only reach this spy.
+const stream = vi.hoisted(() => ({ send: vi.fn() }));
+vi.mock('./useChatStream', async (original) => {
+  const actual = await original<typeof import('./useChatStream')>();
+  return {
+    ...actual,
+    useChatStream: (workspaceId: string | null) => ({
+      ...actual.useChatStream(workspaceId),
+      send: stream.send,
+    }),
+  };
+});
 // The scope menu's items render in place.
 vi.mock('@/components/ui/Menu', () => ({
   Menu: ({
@@ -152,4 +164,27 @@ it('puts the caret in the composer for each chat it opens only when asked (the a
   expect(focus).toHaveBeenCalledTimes(2);
   act(() => rail.unmount());
   textarea.focus = original;
+});
+
+it('sends a spoken question once as a new chat, not again when the panel mounts anew', async () => {
+  const request = {
+    id: null,
+    prompt: 'What does the Krebs cycle make?',
+    seq: 1,
+  };
+  const mount = async () => {
+    const root = createRoot(document.getElementById('root') as never);
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ChatPanel request={request} workspaceId="ws_bio" />
+        </QueryClientProvider>
+      )
+    );
+    act(() => root.unmount());
+  };
+  await mount();
+  await mount();
+  expect(stream.send).toHaveBeenCalledTimes(1);
+  expect(stream.send.mock.calls[0][0]).toBe(request.prompt);
 });

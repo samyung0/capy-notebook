@@ -281,7 +281,7 @@ export function ThemeDrawer({
               </div>
             )}
             <div className="mt-8 flex flex-col gap-6 px-4 max-sm:mt-2">
-              <div className="flex flex-col gap-8">
+              <div className="flex flex-col gap-6">
                 {/* Notion stays out of the drawer until it is finished;
                     Settings still lists it. */}
                 <div className="flex flex-col gap-3">
