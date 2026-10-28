@@ -256,6 +256,15 @@ in-memory doc.
 
 ### 4. One custom block: `capy:material-ref`
 
+**Built 2026-10-28** (`blocksuite-notes`). The block's Lit view owns one
+`div`. `BlockSuiteNote` renders the existing `AppEmbedEdit`/`AppEmbedView` into
+it through a React portal (one root for the note), and the embedded rooms join
+through the note's seat, as on Plate. Island cost (dev build): about 50 ms to
+mount, about 6 MB per loaded quiz ref (the quiz editor and its room docs, the
+same as on Plate), and about 80 KB for a ref still off screen. BlockSuite
+blocks the layout refuses (database, attachment, bookmark, embeds, frame,
+surface …) are not registered.
+
 - The quiz and flashcards embed: a custom schema, a void block, a React island
   inside Lit, and another room read through `itemRoom`.
 - AFFiNE's `blocks/embed` is link embeds (Figma, GitHub, Loom, YouTube, iframe,
@@ -307,6 +316,20 @@ The rest of the room work:
 - **Comments:** stay relational, with anchors as relative positions in a block's `Y.Text` (D5).
 
 ### 6. Measure
+
+**First numbers, 2026-10-28, local and noisy** (laptop load about 25; real
+numbers come from the Performance workflow's `blocks` input):
+- **Browser:** opening the near-limit note in BlockSuite took 74 s and built
+  about 299k DOM nodes (about 40 per block), with scrolling at 8 FPS. On a 5%
+  common-subset note, opening took 34 s against Plate's 14 s, blocking per
+  keystroke was about equal (40 vs 39 ms), and a 200-key peer burst showed in
+  0.65 s against Plate's 19 s. Open cost and DOM size are where BlockSuite
+  falls short of D8's floor.
+- **Server (load-test note, Plate vs blocks):** room load 71 vs 560 ms
+  (replay 15 vs 291 ms), memory kept 7 vs 16 MB, `value()` 13 vs 20 ms, a
+  joiner's step-1 answer 5 vs 9 ms. A keystroke's admission went from about
+  85 ms to 0.03–0.08 ms with the growth bound (`blocks/src/bound.rs`).
+  Formatting, Enter, paste and moves still take the exact check.
 
 **Browser:** a BlockSuite variant of the `bench/editor` specs. **Plate is
 measured on the common-subset document too**, because no baseline exists for
@@ -557,6 +580,9 @@ Legend:
 - **D3: repair on entry** (Epo, 2026-10-27). Keep the occurrence the higher
   client id wrote, as a map key would; drop dangling ids; put orphans back under
   the note; break cycles. The server writes the repair as an ordinary update.
+  Extended 2026-10-28 to D18's depth cap: a block nested past level 8 moves,
+  with its subtree flattened after it, under its deepest ancestor at level 7
+  or above that may hold it, so a concurrent move is repaired, not refused.
   Background:
     dangling child id).
     - (a) Repair on entry: dedupe, drop dangling ids.
