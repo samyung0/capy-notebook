@@ -670,8 +670,8 @@ Legend:
 ## Held (not scheduled)
 
 - **Copy a chat answer into a note** (Epo, 2026-10-28). Built for Plate by the
-  "Copy-paste chat answer to note" session (`293738a21` once on main,
-  waiting on Epo's push sign-off). Copying inside one chat answer
+  "Copy-paste chat answer to note" session (`6f2967c7a`, on main
+  since 2026-10-28). Copying inside one chat answer
   writes `application/x-capy-answer` (`answerClipboard.ts`): JSON
   `[{md, callout?}]` of plain note Markdown with our chart, plot and
   html-embed fences. Plate's `ChatAnswerPastePlugin` (`pastePlugins.ts`)
