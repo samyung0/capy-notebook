@@ -1380,12 +1380,10 @@ impl Room {
                         if self.late(&[bound.client], version) {
                             return Err(crate::socket::LATE_REASON.into());
                         }
-                        // The session's own channel goes first, as a Leave
-                        // would, and its socket hears that it closed.
-                        for old in stale {
-                            self.close_channel(old, None, 0, client_ids::REJOINED_REASON);
-                        }
-                        self.join(key, context, bound, session_id, out, socket, inside)
+                        let bound_client = bound.client;
+                        self.join(key, context, bound, session_id, out, socket, inside)?;
+                        self.take_over(key, bound_client, stale);
+                        Ok(())
                     });
                 if answer.is_ok() {
                     self.session_joined(key, version);
@@ -4297,6 +4295,25 @@ impl Room {
             })
             .map(|(old, _)| *old)
             .collect()
+    }
+
+    /// A same-session JOIN on `key`, bound to `client`, takes over `stale`
+    /// (Q472): each stale channel's awareness entry under the session's id
+    /// passes to `key`, so collaborators keep the user's cursor instead of
+    /// hearing it removed (Q477), then the stale channel closes as a Leave
+    /// would and its socket hears that it closed.
+    fn take_over(&mut self, key: MemberKey, client: u64, stale: Vec<MemberKey>) {
+        for old in stale {
+            if let Some(state) = self.awareness.get_mut(&client)
+                && state.owner == Some(old)
+            {
+                state.owner = Some(key);
+                if let Some(member) = self.members.get_mut(&key) {
+                    member.clients.insert(client);
+                }
+            }
+            self.close_channel(old, None, 0, client_ids::REJOINED_REASON);
+        }
     }
 
     /// A channel joined a note's room: its session counts at the version

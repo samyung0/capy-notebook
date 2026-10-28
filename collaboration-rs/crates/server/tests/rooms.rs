@@ -5419,6 +5419,42 @@ async fn a_takeover_binds_a_recorded_id_with_an_unrecorded_worker_id() {
     assert!(String::from_utf8_lossy(&closed).contains("collaboration-rejoined"));
 }
 
+/// Q477: a same-session takeover hands the stale channel's cursor to the new
+/// channel. A collaborator keeps the user's last cursor, hears no removal
+/// across the takeover, and sees the rejoined session's next change, one
+/// clock past the state it resent unchanged. Fails if the takeover removes
+/// the stale channel's awareness entry.
+#[tokio::test]
+async fn a_takeover_keeps_the_sessions_cursor_for_collaborators() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "base").await;
+    let id = fresh_client_id();
+    let session = session_id();
+    let grant = token_offering(&room, &owner, "write", id);
+    let mut old = session_on(server.port, &room, &grant, id, session).await;
+    let mut peer = Client::open(server.port).await;
+    peer.joined(&room, &token(&room, &editor, "write")).await;
+    old.send(7, &awareness_update(id, 1, r#"{"cursor":1}"#))
+        .await;
+    peer.states_of(id, |state| state.contains("\"cursor\":1"))
+        .await;
+    // The socket drops unseen; the session rejoins, resends its state at the
+    // same clock (as `joined()` does), then moves its cursor.
+    let mut new = Client::open(server.port).await;
+    new.send(0, &join_payload_in(&room, &grant, id, session))
+        .await;
+    assert_eq!(new.until(1).await.expect("the rejoin binds"), [1]);
+    new.send(7, &awareness_update(id, 1, r#"{"cursor":1}"#))
+        .await;
+    new.send(7, &awareness_update(id, 2, r#"{"cursor":2}"#))
+        .await;
+    let seen = peer
+        .states_of(id, |state| state.contains("\"cursor\":2"))
+        .await;
+    assert!(!seen.iter().any(|state| state == "null"), "{seen:?}");
+}
+
 /// Security regression (Q236): a clean Leave (the tab holds no unsent edits)
 /// expires the session's row, so its id never binds again and the next room
 /// load clears the row; a Leave with unsent edits keeps it. Fails if a clean

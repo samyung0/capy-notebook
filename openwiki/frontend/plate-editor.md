@@ -1548,8 +1548,8 @@ session takes over its own channel a dropped socket left behind.
   Office editor, whose replica and layout worker took their ids at the edit
   `load`, needs no reload. A new id comes with a new Y.Doc (a new editor or
   item room, a room swap's renderer), or when a document that never wrote
-  gets a fresh token (its previous one too old, or dropped after 70 s of
-  `collaboration-client-id` refusals). Edits a document made before its first
+  gets a fresh token (its previous one too old, or dropped at a
+  `collaboration-client-id` refusal). Edits a document made before its first
   JOIN stay under the id Yjs drew, and the room refuses them as they are (Epo
   2026-10-24, see Refusal); a document whose `clientID` no longer matches the
   id it took stops its channel with an error instead of sending (Q226 L3).
@@ -1572,9 +1572,13 @@ session takes over its own channel a dropped socket left behind.
   refused as `collaboration-client-id`: two sessions presenting one
   previous token, or a client too old to send a session id whose dropped
   socket's channel the server has not closed yet (at most 60 s,
-  `SILENT_CLOSE`). The provider keeps presenting its previous token for 70 s
-  from the first such refusal (`CLIENT_ID_HELD_MS`), then drops it and
-  retries with a fresh id.
+  `SILENT_CLOSE`). At the first such refusal the provider drops its previous
+  token (Q475, Epo 2026-10-28): its next JOIN takes a fresh id, or, when its
+  document already wrote, names its own and hears
+  `collaboration-unassigned-id`. A channel whose token
+  turns writable writes under the id it bound (Q226 M1); a token refresh
+  naming another user than the channel's is refused (the channel closes at
+  its token's expiry), so a bound id stays its user's.
 - **A reconnect after an unseen drop** (Q472, Epo 2026-10-28). A socket can
   drop without the server seeing a close (through the Cloudflare tunnel, for
   one), and its channel then looks live until its silent close. A JOIN
@@ -1582,18 +1586,20 @@ session takes over its own channel a dropped socket left behind.
   with the same session id that joined before it (an earlier socket, or an
   earlier channel of the same socket) and hold its client id or its DOCX
   worker id (`Room::stale_channels`): they do not count as live for the
-  binding, and once the JOIN binds (recorded id or not) each closes as a
-  Leave would, its socket hearing CLOSED `collaboration-rejoined`, before
-  the new channel joins. The browser already left that channel, so the
-  reconnect rejoins in one round trip instead of waiting up to 60 s. A JOIN
-  whose session id differs or is missing (an older client) takes over
-  nothing and is refused as before, so two documents never write under one
-  id; the session id is the client's word, so another user's JOIN naming it
-  takes over nothing either. A draft send (`grantable`) carries no session
-  id and keeps the rule above. A channel whose token
-  turns writable writes under the id it bound (Q226 M1); a token refresh
-  naming another user than the channel's is refused (the channel closes at
-  its token's expiry), so a bound id stays its user's.
+  binding. Once the JOIN binds (recorded id or not) the new channel joins
+  and takes each stale channel's awareness entry under the session's id, so
+  collaborators keep seeing the user's cursor instead of hearing it removed
+  (Q477, `Room::take_over`); then each stale channel closes as a Leave
+  would, its socket hearing CLOSED `collaboration-rejoined`. The browser
+  already left that channel, so the reconnect rejoins in one round trip
+  instead of waiting up to 60 s. A JOIN whose session id differs or is
+  missing (an older client) takes over nothing and is refused as before, so
+  two documents never write under one id; the session id is the client's
+  word, so another user's JOIN naming it takes over nothing either. A draft
+  send (`grantable`) carries no session id and keeps the rule above. A
+  rejoin after the old channel already closed is unchanged: that close
+  removed the cursor one clock past the state the tab resends, so
+  collaborators see it again from the tab's second awareness change.
 - **A DOCX session's worker id** (Q219, Epo 2026-10-23). The DOCX editor
   lays out and applies typing in a resident worker, a yrs document of its
   own, so a DOCX write token also offers `workerClientId` (Go mints it only
@@ -1749,8 +1755,8 @@ session takes over its own channel a dropped socket left behind.
   JOIN of a document that wrote under such an id `collaboration-unassigned-id`
   (`collaboration-client-id` means only that a live channel of another
   session holds the id, a reconnect of the same session taking over its own;
-  the browser retries with its previous token for 70 s, then with fresh ids,
-  and a document that wrote then hears `collaboration-unassigned-id`).
+  the browser retries at once with a fresh token, and a document that wrote
+  then hears `collaboration-unassigned-id`).
 - **Awareness.** A channel's awareness entries are kept only under its bound
   id; entries under any other id are ignored.
 - **Browser writers.** Notes, items and text sources write under their
@@ -2083,9 +2089,13 @@ design, option d), and the nudge's release file on 2026-10-17.
   its own channel; Epo 2026-10-28, Q472) raised `CLIENT_PROTOCOL` to 23 and
   neither minimum: an older tab sends no session id and is answered as
   before. A JOIN outside a note now names note channel 0, which a server
-  before it would look up as a note channel, so the raised number keeps a
-  newer tab off an older server after a rollback (outdated). Its deploy
-  request names "client protocol 22 -> 23".
+  before it looks up as a note channel ahead of its version gate: after a
+  backend rollback below 23, such a server refuses a newer tab's JOINs as
+  `collaboration-note-closed`, not outdated, so the tab shows no outdated
+  prompt and its rooms stay unjoined, drafts kept, until a reload (Epo
+  2026-10-28, Q476: accepted with no client handling; the normal deploy
+  order, backend before site, avoids it). Its deploy request names "client
+  protocol 22 -> 23".
 
 #### When to bump
 

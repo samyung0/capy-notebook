@@ -443,36 +443,37 @@ it('presents its previous token and keeps the ids it offers again, written or no
   expect(provider.workerClientId).toBe(11);
 });
 
-it('presents its previous token for 70 s of client id refusals, then asks for fresh ids', async () => {
-  // r2 S2: a live channel holds the ids, as a dropped socket's does until
-  // the server closes it (60 s); past that, two sessions presented one token.
-  vi.useFakeTimers({ toFake: ['Date'] });
-  try {
-    const asked: (string | undefined)[] = [];
-    const { join, provider, socket } = await joined({
-      token: async (previous) => {
-        asked.push(previous);
-        return token('t1');
-      },
-    });
-    const refuse = async (channel: number, after: number) => {
-      vi.setSystemTime(Date.now() + after);
-      socket.deliver(
-        message(channel, MessageKind.Refused, text('collaboration-client-id'))
-      );
-      provider.disconnect();
-      provider.connect();
-      await flush();
-      return socket.take(MessageKind.Join)[0];
-    };
-    const second = await refuse(join.channel, 0);
-    const third = await refuse(second.channel, 69_000);
-    expect(asked).toEqual([undefined, token('t1'), token('t1')]);
-    await refuse(third.channel, 1000);
-    expect(asked.at(-1)).toBeUndefined();
-  } finally {
-    vi.useRealTimers();
-  }
+it('drops its previous token at the first client id refusal and takes the fresh id', async () => {
+  // Q475: under Q472 a reconnect of this session takes over its own channel,
+  // so a `collaboration-client-id` refusal means another session holds the
+  // ids. A document that never wrote takes the fresh token's id.
+  const asked: (string | undefined)[] = [];
+  const tokens = ['t1', 't1', 't2'];
+  const { document, provider, socket } = await joined({
+    token: async (previous) => {
+      asked.push(previous);
+      return token(tokens[asked.length - 1]);
+    },
+  });
+  // A reconnect presents the previous token.
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  const [second] = socket.take(MessageKind.Join);
+  expect(asked).toEqual([undefined, token('t1')]);
+  socket.deliver(
+    message(
+      second.channel,
+      MessageKind.Refused,
+      text('collaboration-client-id')
+    )
+  );
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  expect(socket.take(MessageKind.Join)).toHaveLength(1);
+  expect(asked).toEqual([undefined, token('t1'), undefined]);
+  expect(document.clientID).toBe(clientIdOf('t2'));
 });
 
 it('says on Leave whether the tab still holds unsent edits, naming its session', async () => {
