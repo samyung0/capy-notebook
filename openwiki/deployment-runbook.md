@@ -1781,12 +1781,14 @@ playbook revision.
 ## 4. User-file bucket (Cloudflare R2)
 
 Each environment keeps its uploads, sources, thumbnails and caches in its own
-private R2 bucket (Q474). The settings keep their `B2_*` names, and those names
-point at the R2 bucket (Q487). The knowledge-base and question-bank buckets
-stay on Backblaze B2 (§4.1, §7.3). UAT's earlier B2 bucket `capy-notebook-uat`
-stays until Epo deletes it by hand (Q486), and until then the gateway, the
-pipeline and the UAT journeys accept a `*.backblazeb2.com` endpoint as well.
-Production has no user-file bucket yet: create it from these steps when
+private R2 bucket (Q474). The settings keep their `B2_*` names, and after the
+cutover those names point at the R2 bucket (Q487). The knowledge-base and
+question-bank buckets stay on Backblaze B2 (§4.1, §7.3). UAT reads its B2
+bucket `capy-notebook-uat` until the cutover, and that bucket stays afterwards
+until Epo deletes it by hand (Q486). Until then the UAT journeys and verifier
+accept a `*.backblazeb2.com` endpoint as well. The gateway always accepts one,
+because the bank buckets use the same constructor, and the pipeline has no host
+check. Production has no user-file bucket yet: create it from these steps when
 production is set up (Q485).
 
 1. Create the bucket in the R2 dashboard: jurisdiction EU, Standard storage
@@ -1967,9 +1969,9 @@ provider keys and accept only exact-vector donor reuse, so a donor requiring
 re-embedding stays on the parse path and is handled later by ingest.
 
 > Bucket reads are **not** in `usage_events` — the browser fetches presigned
-> URLs directly and the gateway never sees the transfer. R2 charges no egress;
-> its own operation counts in the Cloudflare dashboard are the only source. Set
-> a billing notification.
+> URLs directly and the gateway never sees the transfer. After the cutover R2
+> charges no egress; its own operation counts in the Cloudflare dashboard are the
+> only source. Set a billing notification.
 
 ---
 

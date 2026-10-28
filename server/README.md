@@ -59,8 +59,9 @@ Orval TypeScript bindings. Frontend code imports generated contracts through
 `src/api/types.ts`; the Ops API module is its equivalent boundary for the
 separate dashboard bundle.
 
-A user-file bucket is required: Cloudflare R2, named by the `B2_*` variables
-(the names stay, Q487). Set every `B2_*` variable in `deploy/.env`; startup
+A user-file bucket is required, named by the `B2_*` variables: Cloudflare R2
+after the cutover (the names stay, Q487), UAT's B2 bucket until then. Set every
+`B2_*` variable in `deploy/.env`; startup
 verifies bucket access and exits if those credentials are invalid.
 
 With `MIGRATE=true` (local default), the server applies the migration plan once
@@ -78,9 +79,10 @@ Give the bucket the two lifecycle rules in
 [deployment runbook §4](../openwiki/deployment-runbook.md#4-user-file-bucket-cloudflare-r2)
 (local development shares the UAT bucket). The `incoming/`
 prefix expires after a day, so a drive import that is never promoted is then
-free, with no code involved, and the orphan sweep can skip that prefix. R2
-keeps no object versions, so every object the reaper deletes stops billing at
-once.
+free, with no code involved, and the orphan sweep can skip that prefix. After
+the cutover the bucket is on R2, which keeps no object versions, so every object
+the reaper deletes stops billing at once. UAT's B2 bucket keeps its rule that
+deletes hidden versions after a day until then.
 
 ### Object lifecycle
 

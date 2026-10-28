@@ -29,6 +29,12 @@ func TestNewB2AcceptsOnlyB2AndR2Endpoints(t *testing.T) {
 		"https://evil-r2.cloudflarestorage.com":                false,
 		"https://r2.cloudflarestorage.com.example.com":         false,
 		"https://example.com/x.r2.cloudflarestorage.com":       false,
+		// Only the bare endpoint: the R2 dashboard's URL carries the bucket.
+		"https://0123456789abcdef.eu.r2.cloudflarestorage.com/":                  true,
+		"https://0123456789abcdef.eu.r2.cloudflarestorage.com/capy-notebook-uat": false,
+		"https://key:secret@0123456789abcdef.eu.r2.cloudflarestorage.com":        false,
+		"https://0123456789abcdef.eu.r2.cloudflarestorage.com?x-id=1":            false,
+		"https://0123456789abcdef.eu.r2.cloudflarestorage.com#bucket":            false,
 	} {
 		_, err := NewB2(B2Config{
 			Endpoint: endpoint,

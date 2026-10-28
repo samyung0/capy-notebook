@@ -1540,8 +1540,10 @@ failure reason. Claiming advances a five-minute-per-attempt backoff. After eight
 attempts a path is no longer claimed automatically; the monthly report includes
 the count of these undeletable queue entries for operational follow-up.
 
-The user-file bucket is on Cloudflare R2, which keeps no object versions, so a
-successful reaper deletion frees the bytes at once.
+After the cutover the user-file bucket is on Cloudflare R2, which keeps no
+object versions, so a successful reaper deletion frees the bytes at once. Until
+then UAT's B2 bucket hides deleted objects, and its lifecycle rule deletes them
+a day later.
 
 Sources: [deletion outbox and reference re-check](../server/internal/store/blobs.go#L9),
 [reaper loop and retry behavior](../server/cmd/api/blob_workers.go#L26),

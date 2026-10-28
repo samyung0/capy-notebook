@@ -75,6 +75,13 @@ func NewB2(cfg B2Config) (*B2, error) {
 		!strings.HasSuffix(endpoint.Hostname(), ".backblazeb2.com") && !strings.HasSuffix(endpoint.Hostname(), ".r2.cloudflarestorage.com") {
 		return nil, errors.New("blob: B2_ENDPOINT must be an https://*.backblazeb2.com or https://*.r2.cloudflarestorage.com S3 endpoint")
 	}
+	// The R2 dashboard shows the S3 API URL with the bucket as its path. Pasted
+	// into B2_ENDPOINT, the SDK would prefix every key with it, so only the bare
+	// endpoint passes. The error never repeats the value, which may hold a key.
+	if endpoint.User != nil || endpoint.RawQuery != "" || endpoint.ForceQuery || endpoint.Fragment != "" ||
+		endpoint.Path != "" && endpoint.Path != "/" {
+		return nil, errors.New("blob: B2_ENDPOINT must be the bare S3 endpoint, with no bucket path, query, fragment or credentials (the bucket goes in B2_BUCKET)")
+	}
 	// R2 takes the region auto.
 	if cfg.Region == "" {
 		return nil, errors.New("blob: B2 needs B2_REGION")
