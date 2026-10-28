@@ -190,7 +190,7 @@ in `COLLABORATION_ALLOWED_ORIGINS` and `OFFICE_ALLOWED_PARENT_ORIGINS` in GitHub
 UAT and the deployed services. Clerk shares subdomain sessions by default; add
 this origin only if the optional Clerk subdomain allowlist is enabled.
 
-`deploy/b2-cors.uat.json` already covers it with `https://*.uat.capynotebook.com`.
+`deploy/r2-cors.uat.json` lists it exactly.
 On a developer machine, complete [local HTTPS and hosts setup](../scripts/dev/README.md),
 then run Caddy and `pnpm dev:uat`:
 
@@ -209,8 +209,8 @@ a different Clerk instance than the gateway's secret key.
 
 - Uploads land in the UAT bucket, not production. Check the bucket name in the
   GitHub `uat` variables against `deploy/.env.uat`.
-- B2 honours a read link's response overrides
-  ([deployment runbook §4](deployment-runbook.md#4-backblaze-b2) step 7). Upload
+- The bucket honours a read link's response overrides
+  ([deployment runbook §4](deployment-runbook.md#4-user-file-bucket-cloudflare-r2) step 6). Upload
   a `.html` file, a `.svg` and a PDF, and read the headers of the `url` that
   `/api/files/{id}/links` returns for each with a GET,
   `curl -s -o /dev/null -D - "$url"` (the link is signed for GET, so
@@ -220,7 +220,7 @@ a different Clerk instance than the gateway's secret key.
   the PDF `application/pdf` and `inline`. The PDF, image and audio viewers
   still open their files, and the SVG still shows in the image viewer.
   Download original on the HTML file saves it instead of opening it. Any other
-  type or a missing disposition means B2 ignored the overrides: stop and tell
+  type or a missing disposition means the bucket ignored the overrides: stop and tell
   the Editor session.
 - `user_storage` moves after an upload and after a delete. Quota accounting is
   described in [`backend-storage-quota.md`](backend-storage-quota.md).

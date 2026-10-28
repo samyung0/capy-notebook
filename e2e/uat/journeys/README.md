@@ -12,8 +12,8 @@ See [setup status](setup-status.md) for the applied UAT configuration and the
 verification results and remaining deployment steps.
 
 The browser performs registration, direct uploads, Office/text edits and
-collaboration. Assertions read application APIs, PostgreSQL, exact B2 object
-bytes/versions, Clerk, Stripe, the UAT inbox and Sentry. Selecting an editor input or
+collaboration. Assertions read application APIs, PostgreSQL, exact bucket object
+bytes and existence, Clerk, Stripe, the UAT inbox and Sentry. Selecting an editor input or
 button is allowed; layout, nesting, toolbar order and screenshots are not
 asserted. The existing authorization suite remains separate.
 
@@ -213,7 +213,7 @@ Office uses native state and parser bundle v5; no retained PDF preview is
 expected. Parse identity comes from the completed ingest job's receipt for the
 current source hash, since files keep no parse reference (migration 0041) and
 successful ingestion deletes the local bundle. The journey also asserts that no
-retired B2 parse bundle exists for that fingerprint.
+retired parse bundle exists in the bucket for that fingerprint.
 
 Configure these GitHub **uat environment** values. Full mappings are in
 `deploy/env-manifest.json`; never paste secret values into run artifacts.
@@ -228,7 +228,7 @@ Configure these GitHub **uat environment** values. Full mappings are in
 | `UAT_CLERK_TEST_MODE` | Exactly `true`, after enabling Clerk test emails/fixed code `424242` on the isolated UAT instance. Keys must resolve to its primary domain and `clerk.uat.capynotebook.com`. |
 | `CLERK_PUBLISHABLE_KEY`, `UAT_ACTOR_EMAIL_DOMAIN` | UAT frontend key and `inbox.uat.capynotebook.com`, whose Email Routing rule hands every generated `journeys+uat-…+clerk_test` address to the UAT inbox Worker. Clerk auth uses fixed codes; app mail must actually arrive there (deployment runbook §12.5). |
 | `UAT_DATABASE_NAME` | Actual dedicated UAT database. Apply `scripts/uat/verifier-role.sql` manually as its owner, with the explicit psql variables described in that file; then set the role password interactively. This is operational setup, not an app migration. A role created before the study journey also needs `GRANT SELECT ON attempts, study_progress, review_states TO capy_uat_verifier;`, and one created before delta saves (migration 0075) `GRANT SELECT ON source_document_updates TO capy_uat_verifier;`: the Office and text journeys read saved edits as the state plus its current epoch's rows. One created before the model slot checks also needs `GRANT SELECT ON model_configs TO capy_uat_verifier;`: the image and chat checks compare calls with each slot's default row. The reprocessing journeys need `GRANT SELECT ON rag_material_contents, edit_incidents, user_credits TO capy_uat_verifier;` on a role created before them, and the credits journeys `GRANT SELECT ON credit_purchases TO capy_uat_verifier;`. |
-| `B2_BUCKET`, `B2_ENDPOINT`, `B2_REGION` | Dedicated bucket whose name contains a separated `uat` component, Backblaze HTTPS endpoint and region. Existing browser CORS and hidden-version lifecycle must be configured. |
+| `B2_BUCKET`, `B2_ENDPOINT`, `B2_REGION` | Dedicated bucket whose name contains a separated `uat` component, its HTTPS endpoint (`*.r2.cloudflarestorage.com`, or `*.backblazeb2.com` until the B2 UAT bucket is gone) and region (`auto` on R2). The `B2_*` names stay for the R2 bucket. Browser CORS and the lifecycle rules must be configured ([deployment runbook §4](../../../openwiki/deployment-runbook.md#4-user-file-bucket-cloudflare-r2)). |
 | `UAT_STRIPE_ACCOUNT_ID`, `STRIPE_PRICE_PRO` | Exact sandbox account and active recurring Pro price. Existing UAT Stripe webhook subscription must deliver the ten events of deployment runbook §12.4 (subscription, invoice, Checkout, refund and dispute), with Card and Link enabled for the credits journeys. |
 | `UAT_SENTRY_URL`, `UAT_SENTRY_ORG`, `UAT_SENTRY_PROJECTS` | Sentry API origin, organization, comma-separated project slugs covering every UAT service. Services must report environment `uat` and trace/user tags. |
 | `INGEST_HOST`, `INGEST_HOST_USER`, `INGEST_HOST_SSH_PORT` | Existing ingest host, explicit SSH user/port. Read-only inspection checks `/opt/capy-ingest/releases/nonprod` and actual running Docker image labels before/after. |
@@ -245,8 +245,8 @@ The database URL must use `capy_uat_verifier`. Remote connections require
 The tunneled URL must use `127.0.0.1:UAT_DB_LOCAL_PORT`. Obtain the SSH host key
 out of band and pin it; the script never accepts an unknown host key.
 
-B2 credentials need bucket/object reads and version listing. The verifier
-has no storage-write operation. `UAT_INBOX_TOKEN` equals the inbox Worker's
+Bucket credentials need bucket and object reads (`exists` heads one key; R2
+keeps no object versions). The verifier has no storage-write operation. `UAT_INBOX_TOKEN` equals the inbox Worker's
 `READ_TOKEN` secret and only reads messages. Sentry
 needs `org:read` for the organization events query, scoped to the listed
 projects. Stripe accepts only `sk_test_` keys and checks the
@@ -327,7 +327,7 @@ cancels/deletes sandbox customers (first expiring their open Checkout sessions,
 voiding their open and uncollectible invoices and deleting drafts, all listed
 by that exact customer) and removes test clocks. Real signed Clerk
 webhooks purge content. Read-only checks verify content removal, released
-reservations, due deletion jobs and exact B2 versions. Recovery inventory must be saved before Clerk deletion; failed reads preserve
+reservations, due deletion jobs and whether each exact key is still in the bucket. Recovery inventory must be saved before Clerk deletion; failed reads preserve
 the accounts for a retry. Missing evidence, unreferenced live objects and
 failed provider actions fail cleanup. It never
 deletes by a broad prefix or directly mutates SQL/B2.
@@ -338,7 +338,6 @@ IDs and follow-up actions. Expected retention includes:
 - Late-upload deletion jobs until their recorded `not_before` deadline.
 - Shared cache objects until configured unused TTL expiry; another live
   reference can retain an object. Inspect references before manual removal.
-- Hidden B2 versions/delete markers under the bucket lifecycle policy.
 - Parser spool and temporary native conversion files under existing host
   cleanup policies. The suite does not remove or inventory the shared host
   filesystem; use recorded job IDs for operator investigation.

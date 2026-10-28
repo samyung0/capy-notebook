@@ -100,26 +100,14 @@ for (const [set, name] of [
         keys.add(row.key as string);
         await run.record('blob', row.key as string, { cache: true, fileId });
       }
+      // R2 keeps no hidden versions, so only current bytes are measured.
       const objects = [];
       for (const key of keys) {
-        const versions = await verify<
-          Array<{ latest: boolean; deleteMarker: boolean; size: number }>
-        >({ key, operation: 'versions' });
-        objects.push({
+        const head = await verify<{ live: boolean; size?: number }>({
           key,
-          current_bytes: versions.reduce(
-            (sum, version) =>
-              sum +
-              (version.latest && !version.deleteMarker ? version.size : 0),
-            0
-          ),
-          hidden_bytes: versions.reduce(
-            (sum, version) =>
-              sum +
-              (!version.latest && !version.deleteMarker ? version.size : 0),
-            0
-          ),
+          operation: 'exists',
         });
+        objects.push({ key, current_bytes: head.size ?? 0 });
       }
       await run.attach(`storage-${set}-${name}-${phase}`, {
         set,
@@ -130,10 +118,6 @@ for (const [set, name] of [
         objects,
         object_current_bytes: objects.reduce(
           (sum, value) => sum + value.current_bytes,
-          0
-        ),
-        object_hidden_bytes: objects.reduce(
-          (sum, value) => sum + value.hidden_bytes,
           0
         ),
       });

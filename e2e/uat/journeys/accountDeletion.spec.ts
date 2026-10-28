@@ -69,8 +69,8 @@ async function storage(run: UatRun, userId: string) {
 /**
  * Where each object stands: its database references (`refs`, null once none
  * is left), a queued deletion not yet due (`delayed`: upload paths wait a day
- * so a late PUT is collected, the documented `not_before`) and whether B2
- * still holds a current version (`live`).
+ * so a late PUT is collected, the documented `not_before`) and whether the
+ * bucket still holds the object (`live`).
  */
 async function objects(run: UatRun, keys: string[]) {
   const rows = await run.query<{
@@ -88,11 +88,8 @@ async function objects(run: UatRun, keys: string[]) {
     rows.map(async (row) => ({
       ...row,
       live: (
-        await verify<{ latest: boolean; deleteMarker: boolean }[]>({
-          key: row.key,
-          operation: 'versions',
-        })
-      ).some((version) => version.latest && !version.deleteMarker),
+        await verify<{ live: boolean }>({ key: row.key, operation: 'exists' })
+      ).live,
     }))
   );
 }
@@ -201,13 +198,11 @@ test('account deletion: an owner with an Office file, a note image, a member and
     .filter((key): key is string => Boolean(key));
   for (const key of keys)
     await run.record('blob', key, { ownerId: owner.id, workspaceId });
-  expect(keys).toEqual(
-    expect.arrayContaining([
-      string((await fileRow(run, fileId)).blob_path),
-      image.object_path,
-    ])
-  );
+  const fileBlob = string((await fileRow(run, fileId)).blob_path);
+  expect(keys).toEqual(expect.arrayContaining([fileBlob, image.object_path]));
   const ownerOnly = keys.filter((key) => key !== image.object_path);
+  // Step 6 reads gone as `live` false, so the file's object must read live now.
+  expect(await objects(run, [fileBlob])).toMatchObject([{ live: true }]);
 
   // 3. Deletion requested: the owner's content stays, dormant, for the grace.
   await owner.page.goto(run.env.appUrl);
