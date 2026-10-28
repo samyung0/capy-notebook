@@ -596,6 +596,22 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
   dialog's Your files tab (`GET /api/files?q=`). Clone to… opens the same
   dialog with its name field and No workspace.
 
+Download (Epo 2026-10-27/28, `src/features/files/downloadItem.ts`). Every
+item menu that has Clone to… (the Files page's Files and Blocks tabs, the
+workspace file tree, the open item's header) offers Download after it, to
+anyone who can read the item. A file downloads its latest saved state under
+its own name: an Office or text file reads view mode's source session, which
+is the published file when nothing saved is past it, else its saved edits
+merged over the base in the browser (text from its saved state, Office
+through view mode's export worker, `exportCheckpoint`; measured in
+`bench/editor/reports/2026-10-28-office-browser-export.md`); any other file
+is its stored bytes from its read link. A note downloads as Markdown or Word
+from its stored document with the editor's export (`exportNoteValue`), no
+editor open; quizzes and flashcard sets offer none. Each download shows as a
+Preparing row in the transfer panel until it saves, or says it failed. A
+payer's lost-access rows offer no Download yet (D3 in
+`todo-clone-download.md`).
+
 Sources: [read link headers](../server/internal/blob/s3.go#L165),
 [chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),
 [source upload guard](../server/internal/httpapi/uploads.go#L40),

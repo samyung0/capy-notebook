@@ -101,16 +101,36 @@ async function resolveMaterialRefs(
   );
 }
 
-export async function exportNoteDocument(
+export function exportNoteDocument(
   editor: PlateEditor,
   queryClient: QueryClient,
   format: ExportFormat,
   signal?: AbortSignal
 ) {
-  const value = await resolveMaterialRefs(
-    structuredClone(editor.children) as MaterialValue,
-    queryClient
+  const current = new URL(location.href);
+  const noteUrl = new URL(current.pathname, current.origin);
+  if (current.searchParams.has('material'))
+    noteUrl.searchParams.set('material', current.searchParams.get('material')!);
+  return exportNoteValue(
+    editor.children as MaterialValue,
+    noteUrl,
+    queryClient,
+    format,
+    signal
   );
+}
+
+/** A note's value as Markdown or DOCX, with no editor open: the editor's
+ * export and Download from an item menu alike. noteUrl is where the note's
+ * links back to itself point (opened in view mode). */
+export async function exportNoteValue(
+  stored: MaterialValue,
+  noteUrl: URL,
+  queryClient: QueryClient,
+  format: ExportFormat,
+  signal?: AbortSignal
+) {
+  const value = await resolveMaterialRefs(structuredClone(stored), queryClient);
   const ids = new Set<string>();
   const visit = (nodes: MaterialNode[]) =>
     nodes.forEach((node) => {
@@ -128,10 +148,6 @@ export async function exportNoteDocument(
   for (const id of ids)
     assetUrls[id] = (await resolveEditorAsset(id, signal)).url;
   const { runExportWorker } = await import('./export/client');
-  const current = new URL(location.href);
-  const noteUrl = new URL(current.pathname, current.origin);
-  if (current.searchParams.has('material'))
-    noteUrl.searchParams.set('material', current.searchParams.get('material')!);
   noteUrl.searchParams.set('mode', 'view');
   return runExportWorker(
     {

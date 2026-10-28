@@ -2622,5 +2622,10 @@
   "files_owner_all": "所有文件",
   "files_location_all": "所有位置",
   "files_location_workspace": "仅工作区",
-  "source_transfer_copying_index": "正在复制索引"
+  "source_transfer_copying_index": "正在复制索引",
+  "source_transfer_preparing_download": "正在准备",
+  "source_transfer_download_failed": "未能下载",
+  "action_download": "下载",
+  "action_download_markdown": "下载 Markdown",
+  "action_download_docx": "下载 Word"
 }

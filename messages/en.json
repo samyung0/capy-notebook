@@ -2622,5 +2622,10 @@
   "files_owner_all": "All files",
   "files_location_all": "All locations",
   "files_location_workspace": "Workspace only",
-  "source_transfer_copying_index": "Copying index"
+  "source_transfer_copying_index": "Copying index",
+  "source_transfer_preparing_download": "Preparing",
+  "source_transfer_download_failed": "Not downloaded",
+  "action_download": "Download",
+  "action_download_markdown": "Download Markdown",
+  "action_download_docx": "Download Word"
 }

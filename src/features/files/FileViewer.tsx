@@ -47,6 +47,8 @@ import {
   IMAGE_MIN_ZOOM,
   isImageFile,
   officeFormatOf,
+  SHEET_EXTS,
+  TEXT_EXTS,
 } from './fileUtils';
 import type { OfficeCitation, OfficeFormat } from './officeProtocol';
 import { officeSwapPlaces } from './officeSwapPlaces';
@@ -74,8 +76,6 @@ const AUDIO_EXTS = new Set([
   'mpga',
   'opus',
 ]);
-const SHEET_EXTS = new Set(['csv', 'tsv']);
-const TEXT_EXTS = new Set(['txt', 'md', 'markdown', 'mdx', 'mdc', 'json']);
 function lazyView(node: ReactNode) {
   return <Suspense fallback={<FileLoading />}>{node}</Suspense>;
 }

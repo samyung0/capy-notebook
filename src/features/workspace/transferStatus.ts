@@ -45,6 +45,11 @@ export function transferStatus(
       };
     case 'importing':
       return { kind: 'indeterminate', label: m.source_transfer_importing() };
+    case 'preparing':
+      return {
+        kind: 'indeterminate',
+        label: m.source_transfer_preparing_download(),
+      };
     case 'background':
       return {
         detail: m.source_transfer_background_detail(),
@@ -55,7 +60,9 @@ export function transferStatus(
       return {
         detail: transfer.error,
         kind: 'error',
-        label: m.source_transfer_not_added(),
+        label: transfer.download
+          ? m.source_transfer_download_failed()
+          : m.source_transfer_not_added(),
       };
     case 'added':
       break;

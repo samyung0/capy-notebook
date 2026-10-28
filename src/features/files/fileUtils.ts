@@ -41,6 +41,30 @@ export function formatFileSize(bytes: number): string {
 }
 
 /** DOCX, XLSX and PPTX open in the Office runtime under the two-row header. */
+export const SHEET_EXTS = new Set(['csv', 'tsv']);
+export const TEXT_EXTS = new Set([
+  'txt',
+  'md',
+  'markdown',
+  'mdx',
+  'mdc',
+  'json',
+]);
+
+/** A file edited as text (SourceTextView): CSV and TSV, Markdown, plain
+ * text and JSON. Its saved edits are its text. */
+export function isSourceText(file: Pick<SourceFile, 'kind' | 'name'>) {
+  const ext = fileExt(file.name);
+  return (
+    ext === 'csv' ||
+    ext === 'tsv' ||
+    file.kind === 'md' ||
+    file.kind === 'txt' ||
+    file.kind === 'json' ||
+    TEXT_EXTS.has(ext)
+  );
+}
+
 export function officeFormatOf(
   file: Pick<SourceFile, 'name'>
 ): 'docx' | 'xlsx' | 'pptx' | null {
