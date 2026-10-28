@@ -407,6 +407,24 @@ change. Left per paragraph: Lit's part markers (about 30 comments) and the
 inline editor's nesting. Open in dev still waits on ~2,300 BlockSuite modules
 and two 1.1 s MSW fetches; GHA numbers pending.
 
+**After the second tuning round** (run 40721065477, `88a167676`; every
+Plate budget green). Compare within the run; GHA varies between runs.
+
+| Case | Plate | BlockSuite |
+| --- | --- | --- |
+| Open, near-limit / common | 9.2 / 9.9 s | 9.4 / 9.5 s |
+| Open blocking | 3.4 s | 2.2 s |
+| First key after open, to frame | 120 ms | 138 ms |
+| JS heap after open | 337 MB | 273 MB |
+| DOM nodes after open | 35k | 181k |
+| Typing, near-limit: blocking per key / p95 | 21 / 88 ms | 27.7 / 112 ms |
+| Typing, common: blocking per key / p95 | 2.1 / 72 ms | 36.4 / 128 ms |
+| Typing, small: p95 | 40 ms | 24 ms |
+| Scroll, near-limit / common | 55.9 / 58.9 FPS | 27.4 / 32.4 FPS |
+| Peer burst (180 s box) | 1.2 keys/s, 225 applied | 16.3 keys/s, all 2,000 |
+
+Still below D8's floor on common-note typing, scroll and DOM weight.
+
 - **Server (load-test note, Plate vs blocks):** room load 71 vs 560 ms
   (replay 15 vs 291 ms), memory kept 7 vs 16 MB, `value()` 13 vs 20 ms, a
   joiner's step-1 answer 5 vs 9 ms. A keystroke's admission went from about
