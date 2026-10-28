@@ -154,7 +154,7 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
 /// every JOIN and draft send. A change an older client would break (openwiki
 /// plate-editor "Client protocol") raises it to N+1 and sets the broken
 /// family's minimum to N+1; the other family keeps its minimum.
-pub const CLIENT_PROTOCOL: u32 = 22;
+pub const CLIENT_PROTOCOL: u32 = 23;
 /// The oldest client material rooms accept (`material:`, `keys:`: notes,
 /// mindmaps, diagrams, quizzes, quiz keys, flashcard sets).
 pub const MIN_MATERIAL: u32 = 22;
@@ -189,11 +189,16 @@ pub struct Join {
     /// An embedded quiz's or set's note channel on the same socket, inside
     /// which it joins (Epo 2026-10-20).
     pub parent: Option<u64>,
+    /// The editing session's random id (Q472): 16 bytes its RoomProvider
+    /// draws at its start and sends with every JOIN, so a reconnect of the
+    /// same session takes over its own channel. None from an older client.
+    pub session_id: Option<u128>,
 }
 
 /// JOIN's payload: the room name, the token, then optionally the client
-/// protocol, the session's client id, the stored version it holds and an
-/// embed's note channel.
+/// protocol, the session's client id, the stored version it holds, an
+/// embed's note channel (0 for none: channels count from 1) and the editing
+/// session's id (a varbytes of 16).
 pub fn decode_join(payload: &[u8]) -> Result<Join, FrameError> {
     let mut at = 0;
     let room = read_string(payload, &mut at)?.to_owned();
@@ -212,7 +217,17 @@ pub fn decode_join(payload: &[u8]) -> Result<Join, FrameError> {
     };
     let client = next()?;
     let version = next()?;
-    let parent = next()?;
+    let parent = next()?.filter(|&note| note != 0);
+    let session_id = if at < payload.len() {
+        let len = read_var(payload, &mut at)?;
+        let bytes = payload.get(at..at + 16).filter(|_| len == 16);
+        let bytes: [u8; 16] = bytes
+            .and_then(|bytes| bytes.try_into().ok())
+            .ok_or(FrameError::Payload)?;
+        Some(u128::from_be_bytes(bytes))
+    } else {
+        None
+    };
     Ok(Join {
         room,
         token,
@@ -220,6 +235,7 @@ pub fn decode_join(payload: &[u8]) -> Result<Join, FrameError> {
         client,
         version,
         parent,
+        session_id,
     })
 }
 
@@ -399,37 +415,62 @@ mod tests {
     }
 
     #[test]
-    fn join_carries_the_protocol_client_id_version_and_an_embeds_note_channel_after_the_token() {
+    fn join_carries_the_protocol_client_id_version_note_channel_and_session_id_after_the_token() {
         let mut payload = Vec::new();
         write_string(&mut payload, "material:abc:schema:1");
         write_string(&mut payload, "token");
-        let join = |protocol, client, version, parent| Join {
+        let join = |protocol, client, version, parent, session_id| Join {
             room: "material:abc:schema:1".into(),
             token: "token".into(),
             protocol,
             client,
             version,
             parent,
+            session_id,
         };
         // A client from before the gate sends two fields.
-        assert_eq!(decode_join(&payload).unwrap(), join(None, None, None, None));
+        assert_eq!(
+            decode_join(&payload).unwrap(),
+            join(None, None, None, None, None)
+        );
         write_var(&mut payload, 300);
         write_var(&mut payload, 4_000_000_000);
         // A source tab of an older build sends no version.
         assert_eq!(
             decode_join(&payload).unwrap(),
-            join(Some(300), Some(4_000_000_000), None, None)
+            join(Some(300), Some(4_000_000_000), None, None, None)
         );
         write_var(&mut payload, 12);
         assert_eq!(
             decode_join(&payload).unwrap(),
-            join(Some(300), Some(4_000_000_000), Some(12), None)
+            join(Some(300), Some(4_000_000_000), Some(12), None, None)
         );
+        let outside = payload.clone();
         write_var(&mut payload, 7);
         assert_eq!(
             decode_join(&payload).unwrap(),
-            join(Some(300), Some(4_000_000_000), Some(12), Some(7))
+            join(Some(300), Some(4_000_000_000), Some(12), Some(7), None)
         );
+        // Q472: the session id follows the note channel, 0 outside a note.
+        let session = |mut payload: Vec<u8>, note| {
+            write_var(&mut payload, note);
+            write_var(&mut payload, 16);
+            payload.extend_from_slice(&[0xab; 16]);
+            decode_join(&payload)
+        };
+        let id = Some(u128::from_be_bytes([0xab; 16]));
+        assert_eq!(
+            session(outside.clone(), 0).unwrap(),
+            join(Some(300), Some(4_000_000_000), Some(12), None, id)
+        );
+        assert_eq!(
+            session(outside, 7).unwrap(),
+            join(Some(300), Some(4_000_000_000), Some(12), Some(7), id)
+        );
+        // Any other length is malformed.
+        write_var(&mut payload, 15);
+        payload.extend_from_slice(&[0xab; 15]);
+        assert_eq!(decode_join(&payload), Err(FrameError::Payload));
     }
 
     #[test]

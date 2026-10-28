@@ -534,6 +534,20 @@ fn join_payload_at(
     payload
 }
 
+/// A JOIN's payload outside a note naming the session's client id and its
+/// editing session's id (Q472), as an up-to-date browser sends it.
+fn join_payload_in(room: &str, token: &str, client: u64, session: [u8; 16]) -> Vec<u8> {
+    let mut payload = join_payload_as(room, token, Some(client_protocol()), client);
+    var(&mut payload, 0);
+    varbytes(&mut payload, &session);
+    payload
+}
+
+/// A random editing session id, as a RoomProvider draws one (Q472).
+fn session_id() -> [u8; 16] {
+    uuid::Uuid::new_v4().into_bytes()
+}
+
 fn frame(channel: u64, kind: u8, payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     var(&mut out, channel);
@@ -5215,10 +5229,12 @@ async fn a_typed_but_unaccepted_session_gets_its_id_back_only_with_a_regrant() {
     );
 }
 
-/// Security regression (Q236): two sessions presenting the same previous
-/// token are offered the same unrecorded id; the first JOIN binds it and the
-/// second is refused as `collaboration-client-id` while the first is live,
-/// so two documents never write under one id. Fails if both bind.
+/// Security regression (Q236, Q472): two sessions presenting the same
+/// previous token are offered the same unrecorded id; the first JOIN binds
+/// it and the second is refused as `collaboration-client-id` while the first
+/// is live, so two documents never write under one id: whether neither
+/// names an editing session id (older clients), only the second does, or
+/// they name different ones. Fails if both bind.
 #[tokio::test]
 async fn one_regranted_id_binds_one_live_session() {
     let Some(env) = env() else { return };
@@ -5235,15 +5251,100 @@ async fn one_regranted_id_binds_one_live_session() {
         )
         .await;
     assert_eq!(first.until(1).await.expect("the first joins"), [1]);
-    let mut second = Client::open(server.port).await;
-    second
-        .send(
-            0,
-            &join_payload_as(&room, &grant, Some(client_protocol()), id),
-        )
+    let port = server.port;
+    let refused = move |payload: Vec<u8>| async move {
+        let mut second = Client::open(port).await;
+        second.send(0, &payload).await;
+        text_payload(&second.until(2).await.expect("refused"))
+    };
+    let older = join_payload_as(&room, &grant, Some(client_protocol()), id);
+    assert_eq!(refused(older).await, "collaboration-client-id");
+    let named = join_payload_in(&room, &grant, id, session_id());
+    assert_eq!(refused(named).await, "collaboration-client-id");
+    // Two sessions naming different ids.
+    let id = fresh_client_id();
+    let grant = token_offering(&room, &user, "write", id);
+    first.channel += 1;
+    first
+        .send(0, &join_payload_in(&room, &grant, id, session_id()))
         .await;
-    let reason = text_payload(&second.until(2).await.expect("refused"));
+    assert_eq!(first.until(1).await.expect("the first joins"), [1]);
+    let other = join_payload_in(&room, &grant, id, session_id());
+    assert_eq!(refused(other).await, "collaboration-client-id");
+}
+
+/// Security regression (Q472): a session whose socket dropped without the
+/// server seeing it close rejoins at once: its JOIN, naming the same
+/// editing session id, binds its ids (its DOCX worker's too) while the old
+/// channel is still open, the old channel hears CLOSED and leaves the room,
+/// and the ids are the new channel's alone: another session's JOIN is
+/// refused while the new channel holds them and binds once it left. Fails if
+/// the rejoin waits for the old channel's close or the old channel keeps
+/// its ids.
+#[tokio::test]
+async fn a_sessions_rejoin_takes_over_its_stale_channel_at_once() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let (id, worker) = (fresh_client_id(), fresh_client_id());
+    let grant = token_with_worker(&room, &user, id, worker);
+    let session = session_id();
+    let mut old = Client::open(server.port).await;
+    old.send(0, &join_payload_in(&room, &grant, id, session))
+        .await;
+    assert_eq!(old.until(1).await.expect("the session joins"), [1]);
+    // Its socket drops unseen: the old one stays open, and the session
+    // joins again on a new one.
+    let mut new = Client::open(server.port).await;
+    new.send(0, &join_payload_in(&room, &grant, id, session))
+        .await;
+    assert_eq!(new.until(1).await.expect("the rejoin binds at once"), [1]);
+    let closed = old.until(4).await.expect("the stale channel closes");
+    assert!(String::from_utf8_lossy(&closed).contains("collaboration-rejoined"));
+    // Another session, on the new socket's next channel.
+    let other = join_payload_in(&room, &grant, id, session_id());
+    new.channel = 2;
+    new.send(0, &other).await;
+    let reason = text_payload(&new.until(2).await.expect("refused"));
     assert_eq!(reason, "collaboration-client-id");
+    new.channel = 1;
+    new.leave(true).await;
+    new.send(0, &other).await;
+    assert_eq!(new.until(1).await.expect("bindable once it left"), [1]);
+}
+
+/// Security regression (Q472): the editing session id is the client's own
+/// word, so another user's JOIN naming a session's id, with a token offering
+/// that session's live id, never takes its channel over: it is refused as
+/// `collaboration-client-id`, and the session's channel stays and its edit
+/// lands. Fails if the session id alone lets a JOIN take a channel over.
+#[tokio::test]
+async fn another_users_join_naming_a_session_id_never_takes_it_over() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "base").await;
+    let id = fresh_client_id();
+    let session = session_id();
+    let mut victim = Client::open(server.port).await;
+    victim.doc = Doc::with_options(ydoc::doc_options(id));
+    let own = token_offering(&room, &owner, "write", id);
+    victim
+        .send(0, &join_payload_in(&room, &own, id, session))
+        .await;
+    assert_eq!(victim.until(1).await.expect("the session joins"), [1]);
+    let sv = victim.doc.transact().state_vector().encode_v1();
+    victim.send(5, &sync(0, &sv)).await;
+    assert!(victim.settle(|c| c.block_text() == "base").await);
+    let mut other = Client::open(server.port).await;
+    let taken = token_offering(&room, &editor, "write", id);
+    other
+        .send(0, &join_payload_in(&room, &taken, id, session))
+        .await;
+    let reason = text_payload(&other.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-client-id");
+    victim.type_text("-a").await;
+    victim.until(6).await.expect("the session's edit lands");
 }
 
 /// Security regression (Q236): a clean Leave (the tab holds no unsent edits)

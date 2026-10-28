@@ -191,12 +191,13 @@ impl Refusal {
 /// or the refusal.
 type AuthResult = (u64, u64, Result<(RoomName, Context, Session), Refusal>);
 
-/// The session a JOIN names: its client id (Q213) and the stored version it
-/// holds (in-place collection).
+/// The session a JOIN names: its client id (Q213), the stored version it
+/// holds (in-place collection) and its editing session's random id (Q472).
 #[derive(Clone, Copy)]
 struct Session {
     client: Option<u64>,
     version: Option<u64>,
+    id: Option<u128>,
 }
 
 /// A join's answer: channel, attempt, and the joined room or the refusal.
@@ -226,6 +227,7 @@ async fn join_room(
             context: context.clone(),
             client: session.client,
             version: session.version,
+            session_id: session.id,
             out: out.clone(),
             socket: socket.clone(),
             inside,
@@ -736,6 +738,7 @@ impl Connection {
                 client: session,
                 version,
                 parent,
+                session_id,
             }) = protocol::decode_join(&message.payload)
             else {
                 return false;
@@ -803,6 +806,7 @@ impl Connection {
                         let session = Session {
                             client: session,
                             version,
+                            id: session_id,
                         };
                         (name, context, session)
                     });

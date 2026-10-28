@@ -1526,7 +1526,8 @@ Office and text files); on 2026-10-24 (Q226 M3, Q236) that an id is
 recorded at the first accepted write under it, and that a reconnect keeps
 its id by presenting its previous token; on 2026-10-24 (Q288) that stored
 drafts keep their tab's last token, which re-grants their id to a draft send
-from any page.
+from any page; on 2026-10-28 (Q472) that a reconnect of the same editing
+session takes over its own channel a dropped socket left behind.
 
 - **Assignment** (`newClientID` and `regrantedClientIDs` in
   `server/internal/httpapi/collaboration_tokens.go`). Every collaboration
@@ -1552,6 +1553,10 @@ from any page.
   JOIN stay under the id Yjs drew, and the room refuses them as they are (Epo
   2026-10-24, see Refusal); a document whose `clientID` no longer matches the
   id it took stops its channel with an error instead of sending (Q226 L3).
+  Each provider (one editing session and its Y.Doc) also draws a random
+  128-bit session id when it is made (`sessionId`, Q472) and sends it with
+  every JOIN, its embeds' and item rooms' providers their own. It lives only
+  in the provider's memory, never in drafts, storage or tokens.
 - **Binding** (`ClientIds::bind` in
   `collaboration-rs/crates/server/src/client_ids.rs`). A JOIN binds its
   channel to the id its Y.Doc names, in memory. An id recorded to the
@@ -1564,12 +1569,28 @@ from any page.
   does not retry (`roomRefusal` reads it as `unassigned`; until the catch-up merge
   re-applies its edits, a note or item keeps its unsent edits as refused and
   remounts, a source session goes to recovery). One a live channel holds is
-  refused as `collaboration-client-id`: a dropped socket's channel the
-  server has not closed yet (at most 60 s, `SILENT_CLOSE`), or two sessions
-  presenting one previous token. The provider keeps presenting its previous
-  token for 70 s from the first such refusal (`CLIENT_ID_HELD_MS`), so a
-  reconnect after a network drop gets its ids back once the old channel
-  closed, then drops it and retries with a fresh id. A channel whose token
+  refused as `collaboration-client-id`: two sessions presenting one
+  previous token, or a client too old to send a session id whose dropped
+  socket's channel the server has not closed yet (at most 60 s,
+  `SILENT_CLOSE`). The provider keeps presenting its previous token for 70 s
+  from the first such refusal (`CLIENT_ID_HELD_MS`), then drops it and
+  retries with a fresh id.
+- **A reconnect after an unseen drop** (Q472, Epo 2026-10-28). A socket can
+  drop without the server seeing a close (through the Cloudflare tunnel, for
+  one), and its channel then looks live until its silent close. A JOIN
+  naming a session id takes over the channels of the same user and room
+  with the same session id that joined before it (an earlier socket, or an
+  earlier channel of the same socket) and hold its client id or its DOCX
+  worker id (`Room::stale_channels`): they do not count as live for the
+  binding, and once the JOIN binds (recorded id or not) each closes as a
+  Leave would, its socket hearing CLOSED `collaboration-rejoined`, before
+  the new channel joins. The browser already left that channel, so the
+  reconnect rejoins in one round trip instead of waiting up to 60 s. A JOIN
+  whose session id differs or is missing (an older client) takes over
+  nothing and is refused as before, so two documents never write under one
+  id; the session id is the client's word, so another user's JOIN naming it
+  takes over nothing either. A draft send (`grantable`) carries no session
+  id and keeps the rule above. A channel whose token
   turns writable writes under the id it bound (Q226 M1); a token refresh
   naming another user than the channel's is refused (the channel closes at
   its token's expiry), so a bound id stays its user's.
@@ -1726,9 +1747,10 @@ from any page.
   `unassigned` (material rooms) or `source-checkpoint-failed` code
   `unassigned` (source rooms), a draft send class `unassigned` (409), and the
   JOIN of a document that wrote under such an id `collaboration-unassigned-id`
-  (`collaboration-client-id` means only that a live channel holds the id; the
-  browser retries with its previous token for 70 s, then with fresh ids, and
-  a document that wrote then hears `collaboration-unassigned-id`).
+  (`collaboration-client-id` means only that a live channel of another
+  session holds the id, a reconnect of the same session taking over its own;
+  the browser retries with its previous token for 70 s, then with fresh ids,
+  and a document that wrote then hears `collaboration-unassigned-id`).
 - **Awareness.** A channel's awareness entries are kept only under its bound
   id; entries under any other id are ignored.
 - **Browser writers.** Notes, items and text sources write under their
@@ -1877,8 +1899,10 @@ Developer Epo decided the gate and the nudge on 2026-10-16 (the version-gate
 design, option d), and the nudge's release file on 2026-10-17.
 
 - **The gate.** Every JOIN carries the build's client protocol after the
-  token (`room, token, varuint protocol, varuint clientId, varuint version`,
-  then an embed's note channel; the client id is the Y.Doc's, see [client
+  token (`room, token, varuint protocol, varuint clientId, varuint version,
+  varuint note, varbytes sessionId`: the note is an embed's note channel, 0
+  outside a note, and the session id 16 random bytes from protocol 23; the
+  client id is the Y.Doc's and the session id its provider's, see [client
   ids](#client-ids), and the version the stored one it holds, see [editing
   sessions](#editing-sessions)),
   and every draft send carries it as
@@ -2055,6 +2079,13 @@ design, option d), and the nudge's release file on 2026-10-17.
   an older source tab reads no new answer, and Q402's room-admitted agent
   edits reach it as ordinary updates. Its deploy request names "client
   protocol 21 -> 22, material 20 -> 22".
+  The session id on every JOIN (a reconnect of the same session takes over
+  its own channel; Epo 2026-10-28, Q472) raised `CLIENT_PROTOCOL` to 23 and
+  neither minimum: an older tab sends no session id and is answered as
+  before. A JOIN outside a note now names note channel 0, which a server
+  before it would look up as a note channel, so the raised number keeps a
+  newer tab off an older server after a rollback (outdated). Its deploy
+  request names "client protocol 22 -> 23".
 
 #### When to bump
 

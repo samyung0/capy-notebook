@@ -95,6 +95,8 @@ pub enum RoomCmd {
         client: Option<u64>,
         /// The stored version the session holds (`sessions.rs`).
         version: Option<u64>,
+        /// The editing session's random id (Q472).
+        session_id: Option<u128>,
         out: Outbox,
         socket: String,
         /// An embed's channel inside its note's (Epo 2026-10-20).
@@ -449,6 +451,9 @@ struct Member {
     client: u64,
     /// Its DOCX layout worker's client id, bound at join (Q219).
     worker: Option<u64>,
+    /// Its editing session's random id from the JOIN (Q472; none from an
+    /// older client).
+    session_id: Option<u128>,
     /// Awareness client ids this channel holds (its session's, or none).
     clients: HashSet<u64>,
     /// Consecutive unplaceable step 2 replies.
@@ -1357,12 +1362,14 @@ impl Room {
                 context,
                 client,
                 version,
+                session_id,
                 out,
                 socket,
                 inside,
                 reply,
             } => {
-                let (history, live) = (self.in_history(), self.live_ids());
+                let stale = self.stale_channels(key, &context, client, session_id);
+                let (history, live) = (self.in_history(), self.live_ids(&stale));
                 let answer = self
                     .client_ids
                     .bind(&context, client, history, live)
@@ -1373,7 +1380,12 @@ impl Room {
                         if self.late(&[bound.client], version) {
                             return Err(crate::socket::LATE_REASON.into());
                         }
-                        self.join(key, context, bound, out, socket, inside)
+                        // The session's own channel goes first, as a Leave
+                        // would, and its socket hears that it closed.
+                        for old in stale {
+                            self.close_channel(old, None, 0, client_ids::REJOINED_REASON);
+                        }
+                        self.join(key, context, bound, session_id, out, socket, inside)
                     });
                 if answer.is_ok() {
                     self.session_joined(key, version);
@@ -1647,7 +1659,7 @@ impl Room {
             version,
             reply,
         } = draft;
-        let (history, live) = (self.in_history(), self.live_ids());
+        let (history, live) = (self.in_history(), self.live_ids(&[]));
         let granted: Vec<u64> = granted
             .into_iter()
             .filter(|&id| {
@@ -2769,11 +2781,13 @@ impl Room {
         self.look_again(wait);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn join(
         &mut self,
         key: MemberKey,
         context: Context,
         bound: client_ids::Bound,
+        session_id: Option<u128>,
         out: Outbox,
         socket: String,
         inside: bool,
@@ -2812,6 +2826,7 @@ impl Room {
                 inside,
                 client: bound.client,
                 worker: bound.worker,
+                session_id,
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
@@ -4241,15 +4256,47 @@ impl Room {
     }
 
     /// Whether an id is bound to a live channel (a session's or its DOCX
-    /// worker's) or is the room's own (Q213, Q226).
-    fn live_ids(&self) -> impl Fn(u64) -> bool + use<> {
+    /// worker's) other than `except`, or is the room's own (Q213, Q226).
+    fn live_ids(&self, except: &[MemberKey]) -> impl Fn(u64) -> bool + use<> {
         let own = self.doc.client_id().get();
         let bound: HashSet<u64> = self
             .members
-            .values()
-            .flat_map(|member| std::iter::once(member.client).chain(member.worker))
+            .iter()
+            .filter(|(key, _)| !except.contains(key))
+            .flat_map(|(_, member)| std::iter::once(member.client).chain(member.worker))
             .collect();
         move |id| id == own || bound.contains(&id)
+    }
+
+    /// The channels a JOIN on `key` takes over (Q472): ones that joined
+    /// before it (an earlier socket, or an earlier channel of the same one)
+    /// for the same user and editing session id, holding the session's
+    /// client id or the token's DOCX worker id. A session holds one channel
+    /// at a time, so such a channel's socket dropped without the server
+    /// seeing it close. A JOIN without a session id takes over nothing.
+    fn stale_channels(
+        &self,
+        key: MemberKey,
+        context: &Context,
+        client: Option<u64>,
+        session_id: Option<u128>,
+    ) -> Vec<MemberKey> {
+        let Some(session_id) = session_id else {
+            return Vec::new();
+        };
+        let ids = [client, context.worker_client_id.map(u64::from)];
+        self.members
+            .iter()
+            .filter(|(old, member)| {
+                **old < key
+                    && member.session_id == Some(session_id)
+                    && member.context.user_id == context.user_id
+                    && std::iter::once(member.client)
+                        .chain(member.worker)
+                        .any(|id| ids.contains(&Some(id)))
+            })
+            .map(|(old, _)| *old)
+            .collect()
     }
 
     /// A channel joined a note's room: its session counts at the version

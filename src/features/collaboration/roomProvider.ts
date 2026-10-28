@@ -96,7 +96,9 @@ const CLIENT_ID_REFUSED_REASON = 'collaboration-client-id';
  * previous token (r2 S2): a dropped socket's channel holds the ids until the
  * server closes it, at most 60 s later (`SILENT_CLOSE`,
  * collaboration-rs/crates/server/src/socket.rs), and the reconnect then gets
- * them again. Past it the token's ids are another session's. */
+ * them again. Past it the token's ids are another session's. Since Q472 the
+ * server hands a reconnect its own session's channel at once (the JOIN's
+ * `sessionId`), so this covers only a holder of another session. */
 const CLIENT_ID_HELD_MS = 70_000;
 /** Why the server closed or refused an embed's channel: its note's channel
  * is not joined (`NOTE_CLOSED_REASON`, same file). */
@@ -191,6 +193,11 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   /** The last token this provider used: the next token request presents it
    * so the room keeps the session's ids (Q236). */
   private previousToken: string | undefined;
+  /** This editing session's random id (Q472), sent with every JOIN so a
+   * reconnect takes over the session's own channel that a dropped socket
+   * left on the server. Only ever in memory: never in drafts, storage or
+   * tokens. */
+  private readonly sessionId = crypto.getRandomValues(new Uint8Array(16));
   /** When JOINs were first refused for a live channel holding the ids. */
   private heldSince: number | undefined;
   /** A DOCX session's second id, for its editor's resident layout worker
@@ -714,6 +721,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
           token,
           this.awareness.clientID,
           this.joinVersion(),
+          this.sessionId,
           note
         )
       )

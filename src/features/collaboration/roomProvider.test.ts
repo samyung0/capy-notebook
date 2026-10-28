@@ -247,10 +247,13 @@ it('joins with its token, syncs both ways and counts unacknowledged updates', as
   expect(reader.varString()).toBe(token('token-1'));
   // The version gate: the build's client protocol follows the token, then
   // the client id the document took from it (Q213) and the stored version
-  // it holds (none: a new document).
+  // it holds (none: a new document), no note channel (0) and the editing
+  // session's id (Q472).
   expect(reader.varUint()).toBe(CLIENT_PROTOCOL);
   expect(reader.varUint()).toBe(clientIdOf('token-1'));
   expect(reader.varUint()).toBe(0);
+  expect(reader.varUint()).toBe(0);
+  expect(reader.varBytes()).toHaveLength(16);
   expect(reader.done).toBe(true);
   expect(document.clientID).toBe(clientIdOf('token-1'));
   const channel = join.channel;
@@ -506,6 +509,50 @@ function joinVersion(join: Message) {
   reader.varUint();
   return reader.varUint();
 }
+
+/** The JOIN's note channel (0: none) and editing session id (Q472), after
+ * its room, token, protocol, id and version. */
+function joinTail(join: Message) {
+  const reader = new Reader(join.payload);
+  reader.varString();
+  reader.varString();
+  for (let field = 0; field < 3; field++) reader.varUint();
+  return { note: reader.varUint(), session: [...reader.varBytes()] };
+}
+
+// Q472: one editing session names one random id on every JOIN, its rejoin
+// after a socket drop too, so the server hands the rejoin its own stale
+// channel; another provider (another session) names its own.
+it('names one editing session id on every JOIN, and another provider its own', async () => {
+  vi.useFakeTimers();
+  const options = {
+    name: 'material:m1:schema:1',
+    token: async () => token('t'),
+    url: `wss://collab.test/${url++}`,
+  };
+  const provider = new RoomProvider({ ...options, document: new Y.Doc() });
+  provider.connect();
+  const first = FakeSocket.instances.at(-1) as FakeSocket;
+  first.open();
+  await vi.advanceTimersByTimeAsync(0);
+  const [join] = first.take(MessageKind.Join);
+  first.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
+  first.close();
+  await vi.advanceTimersByTimeAsync(2000);
+  const second = FakeSocket.instances.at(-1) as FakeSocket;
+  second.open();
+  await vi.advanceTimersByTimeAsync(0);
+  const [rejoin] = second.take(MessageKind.Join);
+  expect(joinTail(join).session).toHaveLength(16);
+  expect(joinTail(rejoin).session).toEqual(joinTail(join).session);
+  const other = new RoomProvider({ ...options, document: new Y.Doc() });
+  other.connect();
+  await vi.advanceTimersByTimeAsync(0);
+  const [another] = second.take(MessageKind.Join);
+  expect(joinTail(another).session).not.toEqual(joinTail(join).session);
+  provider.destroy();
+  other.destroy();
+});
 
 /** The `ack` versions the provider sent since the last call. */
 function acks(socket: FakeSocket) {
@@ -858,9 +905,12 @@ it('joins an embed inside its note, ending and joining again with it', async () 
     CLIENT_PROTOCOL,
   ]);
   expect(reader.varUint()).toBe(clientIdOf('embed-token'));
-  // Its stored version (none: new), then its note's channel.
+  // Its stored version (none: new), its note's channel, then its own
+  // editing session's id, not its note's (Q472).
   expect(reader.varUint()).toBe(0);
   expect(reader.varUint()).toBe(noteJoin.channel);
+  expect(reader.varBytes()).toHaveLength(16);
+  expect(joinTail(first).session).not.toEqual(joinTail(noteJoin).session);
   socket.deliver(message(first.channel, MessageKind.Joined, Uint8Array.of(1)));
   expect(embed.isAuthenticated).toBe(true);
 
@@ -877,7 +927,7 @@ it('joins an embed inside its note, ending and joining again with it', async () 
   );
   await flush();
   const [second] = socket.take(MessageKind.Join);
-  expect(second.payload.at(-1)).toBe(noteAgain.channel);
+  expect(joinTail(second).note).toBe(noteAgain.channel);
   socket.deliver(
     message(second.channel, MessageKind.Joined, Uint8Array.of(1)),
     message(
