@@ -183,7 +183,9 @@ function AssistantBubble({
     entry?.focus();
   };
   return (
-    <div className="py-2.5">
+    // An answer's copy stops at the answer when it runs into this message's
+    // label or sources (answerCopy.ts).
+    <div className="py-2.5" data-chat-message>
       <ChatTrace handlers={handlers} live={live} mode={mode} msg={msg} />
       {msg.currentBlockText && msg.phase !== 'answering' && !msg.content ? (
         <div className="mt-6 mb-4">

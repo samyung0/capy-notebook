@@ -1,4 +1,4 @@
-// Package blob stores uploaded source bytes in Backblaze B2.
+// Package blob stores uploaded source bytes in an S3-compatible bucket.
 package blob
 
 import (

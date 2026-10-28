@@ -283,7 +283,9 @@ func openBlobStore(appEnv string) (blob.Store, error) {
 		if err := b2.HealthCheck(hctx); err != nil {
 			return nil, err
 		}
-		log.Printf("blob store: Backblaze B2 bucket=%s (presigned URLs)", env("B2_BUCKET", ""))
+		// NewB2 parsed and checked the endpoint; only its scheme and host are logged.
+		endpoint, _ := url.Parse(env("B2_ENDPOINT", ""))
+		log.Printf("blob store: S3 bucket=%s endpoint=%s://%s (presigned URLs)", env("B2_BUCKET", ""), endpoint.Scheme, endpoint.Host)
 		return b2, nil
 	}
 }

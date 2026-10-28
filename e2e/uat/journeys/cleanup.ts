@@ -405,39 +405,29 @@ export async function cleanupRun(id: string) {
             'SELECT b.ref_count,a.kind,a.last_used_at,p.not_before FROM (SELECT %s::text AS key) k LEFT JOIN blobs b ON b.object_path=k.key LEFT JOIN artifact_cache a ON a.object_path=k.key LEFT JOIN pending_blob_deletions p ON p.object_path=k.key',
             [key]
           );
-          const versions = await verify<
-            Array<{
-              id: string;
-              latest: boolean;
-              deleteMarker: boolean;
-              modified: string;
-            }>
-          >({ key, operation: 'versions' });
-          const current = versions.find(
-            (version) => version.latest && !version.deleteMarker
-          );
+          const { live } = await verify<{ live: boolean }>({
+            key,
+            operation: 'exists',
+          });
           const ref = refs[0];
           if (
-            current &&
+            live &&
             !(ref.ref_count > 0) &&
             !(ref.not_before && Date.parse(ref.not_before) > Date.now())
           )
             throw new Error('Unreferenced live B2 object remains');
-          if (versions.length)
+          if (live)
             retained.push({
               action:
-                'Re-run cleanup after not_before for delayed uploads. Inspect cache/refcounts before any manual deletion; hidden versions expire under the bucket lifecycle policy.',
+                'Re-run cleanup after not_before for delayed uploads. Inspect cache/refcounts before any manual deletion.',
               key,
               kind: 'b2',
-              reason: current
-                ? ref.kind
-                  ? 'Platform cache retains this object until its configured unused TTL expires.'
-                  : ref.ref_count > 0
-                    ? 'A live shared reference still owns this object.'
-                    : 'Deletion is scheduled after the recorded late-upload deadline.'
-                : 'Only hidden versions/delete markers remain under the B2 lifecycle policy.',
+              reason: ref.kind
+                ? 'Platform cache retains this object until its configured unused TTL expires.'
+                : ref.ref_count > 0
+                  ? 'A live shared reference still owns this object.'
+                  : 'Deletion is scheduled after the recorded late-upload deadline.',
               references: ref,
-              versions,
             });
         });
     }

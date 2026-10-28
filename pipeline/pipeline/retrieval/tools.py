@@ -3799,7 +3799,11 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         raise
     except Exception as exc:
         log.exception("tool %s failed", name)
-        return _failed(f"The {name} tool failed: {exc}")
+        # A bare exception (an embedding call timing out) has no text.
+        why = str(exc) or (
+            "timed out" if isinstance(exc, TimeoutError) else type(exc).__name__
+        )
+        return _failed(f"The {name} tool failed: {why}")
     _learn_labels(ctx, result)
     return result
 

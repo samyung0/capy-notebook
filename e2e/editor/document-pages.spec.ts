@@ -429,7 +429,7 @@ test('a chat citation opens the PDF, scrolls its box to the middle, then flashes
   await source.click();
   await expect(page).toHaveURL(/file=mock-scenario-pdf&page=2/);
 
-  // The flash starts once the page has painted and the scroll has settled
+  // The flash starts once the page has painted and the scroll has landed
   // with the box in the middle, and ends after its 1.6 s.
   await expect
     .poll(() => endedFlashes(page), { timeout: 30_000 })

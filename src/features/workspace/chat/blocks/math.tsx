@@ -156,9 +156,14 @@ function Formula({ display, tex }: { display: boolean; tex: string }) {
       return null;
     }
   }, [display, ready, tex]);
+  // data-tex: a copy takes the formula whole as its TeX (answerCopy.ts).
   if (html === null)
     return (
-      <code className="text-fg-muted">
+      <code
+        className="text-fg-muted"
+        data-display={display || undefined}
+        data-tex={tex}
+      >
         {display ? `$$${tex}$$` : `$${tex}$`}
       </code>
     );
@@ -166,9 +171,11 @@ function Formula({ display, tex }: { display: boolean; tex: string }) {
     <span
       className="scroll-fade-x relative block overflow-x-auto overflow-y-hidden"
       dangerouslySetInnerHTML={{ __html: html }}
+      data-display
+      data-tex={tex}
     />
   ) : (
-    <span dangerouslySetInnerHTML={{ __html: html }} />
+    <span dangerouslySetInnerHTML={{ __html: html }} data-tex={tex} />
   );
 }
 

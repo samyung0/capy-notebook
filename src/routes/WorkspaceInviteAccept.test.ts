@@ -29,4 +29,12 @@ describe('workspace invite acceptance errors', () => {
     expect(isUnavailableWorkspaceInviteError(frozen)).toBe(false);
     expect(describeError(frozen).title).toBe(m.account_banner_frozen_title());
   });
+
+  it('tells a recipient at the workspace cap about the limit instead of hiding the workspace', () => {
+    const capped = new ApiError(403, 'Forbidden', undefined, {
+      code: 'workspace_limit_exceeded',
+    });
+    expect(isUnavailableWorkspaceInviteError(capped)).toBe(false);
+    expect(describeError(capped).title).toBe(m.error_workspace_limit_title());
+  });
 });

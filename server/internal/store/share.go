@@ -1340,7 +1340,7 @@ func (s *Store) cloneWorkspaceOnce(
 	if err := assertCloneSourceTx(ctx, tx, userID, srcID); err != nil {
 		return "", nil, 0, err
 	}
-	limits, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1)
+	limits, err := s.gateWorkspacesTx(ctx, tx, userID)
 	if err != nil {
 		return "", nil, 0, err
 	}

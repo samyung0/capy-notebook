@@ -77,8 +77,11 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, actorID, w
 	if err != nil {
 		return nil, false, err
 	}
-	// An empty actor is refused, never read as the owner.
-	if ownerID != actorID {
+	// The owner removes any member and a member leaves by removing itself
+	// (Epo 2026-10-28); the owner's own row never matches the delete. An empty
+	// actor is refused, never read as the owner.
+	leaving := actorID != "" && memberID == actorID
+	if ownerID != actorID && !leaving {
 		return nil, false, ErrForbidden
 	}
 
@@ -169,8 +172,11 @@ func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, actorID, ws
 	if err != nil {
 		return nil, false, err
 	}
-	// An empty actor is refused, never read as the owner.
-	if ownerID != actorID {
+	// The owner removes any member and a member leaves by removing itself
+	// (Epo 2026-10-28); the owner's own row never matches the delete. An empty
+	// actor is refused, never read as the owner.
+	leaving := actorID != "" && memberID == actorID
+	if ownerID != actorID && !leaving {
 		return nil, false, ErrForbidden
 	}
 
@@ -186,6 +192,9 @@ func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, actorID, ws
 	}
 	if err != nil {
 		return nil, false, err
+	}
+	if leaving {
+		return nil, false, tx.Commit(ctx)
 	}
 
 	now := time.Now().UTC()
@@ -724,6 +733,18 @@ func (s *Store) acceptWorkspaceInvite(ctx context.Context, reference, userID str
 	}
 	if err := recipientStatus.Err(); err != nil {
 		return WorkspaceMember{}, nil, nil, err
+	}
+	// Joining counts against the workspace cap with what it owns (Epo
+	// 2026-10-28); a member already here only changes role.
+	var member bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_members WHERE workspace_id=$1 AND user_id=$2)`,
+		invite.WorkspaceID, userID).Scan(&member); err != nil {
+		return WorkspaceMember{}, nil, nil, err
+	}
+	if !member {
+		if _, err := s.gateWorkspacesTx(ctx, tx, userID); err != nil {
+			return WorkspaceMember{}, nil, nil, err
+		}
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
 		VALUES ($1,$2,$3) ON CONFLICT (workspace_id,user_id)

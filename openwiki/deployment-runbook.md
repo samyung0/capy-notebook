@@ -1778,14 +1778,33 @@ playbook revision.
 
 ---
 
-## 4. Backblaze B2
+## 4. User-file bucket (Cloudflare R2)
 
-1. Create the bucket **private**. Public buckets make every presigned URL
-   pointless.
-2. Create an application key **scoped to that bucket only**, with
-   `listBuckets`, `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`.
-   Record `B2_KEY_ID` / `B2_APP_KEY` — the secret is shown once.
-3. Set `B2_ENDPOINT`, `B2_REGION`, `B2_BUCKET`, `B2_PRESIGN_TTL` (default
+Each environment keeps its uploads, sources, thumbnails and caches in its own
+private R2 bucket (Q474). The settings keep their `B2_*` names, and after the
+cutover those names point at the R2 bucket (Q487). The knowledge-base and
+question-bank buckets stay on Backblaze B2 (§4.1, §7.3). UAT reads its B2
+bucket `capy-notebook-uat` until the cutover, and that bucket stays afterwards
+until Epo deletes it by hand (Q486). Until then the UAT journeys and verifier
+accept a `*.backblazeb2.com` endpoint as well. The gateway always accepts one,
+because the bank buckets use the same constructor, and the pipeline has no host
+check. Production has no user-file bucket yet: create it from these steps when
+production is set up (Q485).
+
+1. Create the bucket in the R2 dashboard: jurisdiction EU, Standard storage
+   class. Keep its public access off, with no r2.dev URL and no custom domain.
+   A public bucket makes every presigned URL pointless.
+2. Create an account API token (R2 → Manage API tokens) with **Object Read &
+   Write** on that bucket only, and no admin permissions (Q488). Its S3 access
+   key ID and secret access key become `B2_KEY_ID` / `B2_APP_KEY`. The secret
+   is shown once. The app, the ingest queue and the UAT verifier share the
+   environment's pair. A token that can read or change bucket settings is never
+   a runtime key.
+3. Set `B2_ENDPOINT` to the S3 API URL without the bucket
+   (`https://<account>.eu.r2.cloudflarestorage.com` for an EU bucket),
+   `B2_REGION` to `auto`, and `B2_BUCKET`. R2 takes virtual-hosted and
+   path-style addressing, so `B2_FORCE_PATH_STYLE` can stay unset. Set
+   `B2_PRESIGN_TTL` (default
    900 s: the lifetime of the PUT the collaboration service writes a source
    refresh candidate with) and `B2_LINK_TTL` (default 300 s: read links, which
    the browser fetches as soon as they land). Browser uploads no longer use a
@@ -1804,31 +1823,34 @@ playbook revision.
    A deploy whose old and new containers overlap briefly is the same as a
    restart: a ticket one container issued is a 410 on the other, which the
    browser shows as the turn passed, and the user adds the file again.
-4. **CORS rules on the bucket.** The browser reads B2 through presigned GETs,
-   so B2 itself must allow the SPA origin. Apply the file for the bucket's
-   environment rather than hand-writing rules:
+4. **CORS policy on the bucket.** The browser reads the bucket through
+   presigned GETs, so the bucket itself must allow the SPA origin. Paste the
+   file for the bucket's environment into its CORS policy (Settings → CORS
+   Policy) rather than hand-writing rules. It lists each origin exactly (Q484)
+   and allows GET and HEAD only, since uploads go through the API host:
 
-   | Bucket             | File                       | Origins                                            |
-   | ------------------ | -------------------------- | -------------------------------------------------- |
-   | production         | `deploy/b2-cors.prod.json` | the production SPA                                  |
-   | UAT (local shares it) | `deploy/b2-cors.uat.json` | UAT SPA, the tunnelled dev origin, `localhost:5173` |
+   | Bucket                | File                      | Origins                                                                            |
+   | --------------------- | ------------------------- | ---------------------------------------------------------------------------------- |
+   | UAT (local shares it) | `deploy/r2-cors.uat.json` | UAT SPA, `https://local.uat.capynotebook.com`, `localhost:5173`, `127.0.0.1:5173` |
+   | production            | written with the bucket   | the same rule with only `https://app.capynotebook.com`                             |
 
-   The files still allow `s3_put`, which only the removed browser upload
-   used; dropping it is a separate bucket change, applied after a release
-   without the presigned upload is live everywhere.
+   An expired or refused read link answers 403 without CORS headers, so the
+   browser sees a failed fetch instead of a readable 403. The viewers already
+   treat any failed fetch of a link as the retryable file error.
 
-5. **Lifecycle rule:** delete unfinished large-file uploads after 1 day. An
-   aborted multipart upload is billed indefinitely and is invisible in the
-   bucket listing. `deploy/b2-lifecycle.prod.json` and
-   `deploy/b2-lifecycle.uat.json` hold the same rules — the split exists so
-   each bucket is applied from its own file, not because the policies differ.
-6. Leave file versioning off, or set versions to expire after 1 day. With
-   versioning on, the blob reaper's deletes only hide objects and storage grows
-   without bound.
-7. **Read links set the response headers.** A short-lived read link asks the
+5. **Two lifecycle rules** (Settings → Object lifecycle rules):
+   - prefix `incoming/`: delete objects 1 day after upload. These are drive
+     imports that were never promoted.
+   - the whole bucket: abort incomplete multipart uploads after 1 day. Edit
+     R2's default rule down from 7 days. An aborted multipart upload is billed
+     and never shows in the bucket listing.
+
+   R2 keeps no object versions, so a reaper delete frees the bytes at once and
+   no version rule is needed.
+6. **Read links set the response headers.** A short-lived read link asks the
    bucket for `response-content-type` and `response-content-disposition`
    (`blob.ReadHeaders`): the type from the key's extension, `inline` for PDF,
-   raster images and audio, `attachment` for everything else. B2 has to
+   raster images and audio, `attachment` for everything else. The bucket has to
    honour both overrides, or a file comes back with the type its uploader
    declared. Check it after each deploy that changes `server/internal/blob`
    ([UAT checklist §5](uat-activation-checklist.md#5-data-and-money)) with a
@@ -1837,12 +1859,12 @@ playbook revision.
    bucket also appears in the app's image policy (§2.4), so `B2_BUCKET`,
    `B2_ENDPOINT` and `B2_FORCE_PATH_STYLE` reach the SPA build too.
 
-Do **not** put a current-object B2 lifecycle rule on `captions/` or
+Do **not** put a current-object lifecycle rule on `captions/` or
 `derived-text/`. Their database references and the blob reaper own cleanup;
 unused reuse caches default to 90 days. The retired `previews/` and
 `parse-bundles/` prefixes remain covered by the report-only orphan sweep.
 Migration `0038` releases registered parse bundles through the deletion outbox
-with a 15-minute reader grace; hidden versions follow the bucket lifecycle.
+with a 15-minute reader grace.
 For this migration, finish the measurement baseline and its cleanup, verify the
 target environment has no pending/running parse, ingest or source-refresh jobs,
 then stop its old parse coordinator and ingest worker before deploying the app.
@@ -1890,7 +1912,7 @@ developer PC holds a key that can write.
    new key, push it, redeploy retrieval in UAT and production, confirm a
    library page capture works, then delete the old key in B2.
 3. Endpoint `https://s3.eu-central-003.backblazeb2.com`, region
-   `eu-central-003` — the same B2 region as the app bucket.
+   `eu-central-003`.
 4. No CORS rules and no lifecycle rule. The browser never touches this bucket:
    `capture_knowledge_page` renders a page server-side and the books are
    permanent.
@@ -1946,9 +1968,10 @@ Provider rate limits scale only with ingest workers. Parse coordinators have no
 provider keys and accept only exact-vector donor reuse, so a donor requiring
 re-embedding stays on the parse path and is handled later by ingest.
 
-> B2 egress is **not** in `usage_events` — the browser fetches presigned URLs
-> directly and the gateway never sees the transfer. B2's own reporting is the
-> only source. Set a spend alert.
+> Bucket reads are **not** in `usage_events` — the browser fetches presigned
+> URLs directly and the gateway never sees the transfer. After the cutover R2
+> charges no egress; its own operation counts in the Cloudflare dashboard are the
+> only source. Set a billing notification.
 
 ---
 
@@ -3148,9 +3171,9 @@ authentication strategy.
 2. Provision separate Postgres and Redis state. A separate database on the same
    managed cluster is acceptable only if it has a distinct owner, database
    name, credentials, backup policy, and no cross-database application grants.
-3. Create a separate private B2 bucket and bucket-scoped key. Apply
-   `deploy/b2-cors.uat.json` and `deploy/b2-lifecycle.uat.json` (§4). Do not
-   point UAT at the production bucket.
+3. Create a separate private R2 bucket and its Object Read & Write token, with
+   the `deploy/r2-cors.uat.json` CORS policy and the two lifecycle rules (§4).
+   Do not point UAT at the production bucket.
 4. Use `uat.capynotebook.com`, the Clerk primary domain, for the app, next to
    `uat-api`, `uat-collab`, `uat-office` and `uat-ops`. Every proxied UAT host is
    one level under the zone, so Universal SSL's `*.capynotebook.com` covers it; a
@@ -3270,8 +3293,8 @@ Add `https://local.uat.capynotebook.com` to both
 `COLLABORATION_ALLOWED_ORIGINS` and `OFFICE_ALLOWED_PARENT_ORIGINS` in GitHub UAT
 and the ignored UAT file. Deploy the gateway, the collaboration service and the
 Office Worker to apply those settings: the gateway accepts Clerk session tokens
-only from `COLLABORATION_ALLOWED_ORIGINS` (their `azp`). `deploy/b2-cors.uat.json` already covers this origin with
-`https://*.uat.capynotebook.com`. Clerk needs an additional allowlist entry only
+only from `COLLABORATION_ALLOWED_ORIGINS` (their `azp`). `deploy/r2-cors.uat.json` lists this origin
+exactly. Clerk needs an additional allowlist entry only
 if its optional subdomain allowlist is enabled.
 
 For full-local development, the gateway, database and UI run locally using the

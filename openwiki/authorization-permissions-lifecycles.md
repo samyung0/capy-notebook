@@ -43,6 +43,7 @@ validation instead of being remapped.
 | Chapters, upload/rename/move/delete files, material metadata and delete, generate materials | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Workspace name, description, tags, privacy, `shareRole`, statistics                  | Yes   | Yes           | No                 | No            | No                 | No           |
 | Invite/remove members, change roles, delete or transfer the workspace                       | Yes   | No            | No                 | No            | No                 | No           |
+| Leave the workspace (remove its own member row)                                             | No    | Yes           | No                 | Yes           | No                 | No           |
 | Member roster (`userId`, `name`, `avatarUrl`, `role`; never email)                          | Yes   | Yes           | No                 | Yes           | No                 | No           |
 | Mention directory (`userId`, `name`, `avatarUrl`)                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Clone the workspace                                                                         | Yes   | Yes           | Yes                | Yes           | No                 | No           |
@@ -369,6 +370,11 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   Widening sharing is an edit, refused when the actor or the owner is
   frozen; narrowing (privacy toward private, share role toward viewer) stays
   open to both.
+- **Any editor or viewer member** may leave the workspace (Epo 2026-10-28):
+  the settings Danger tab shows it Leave, which is the remove call on its own
+  row (`DELETE /api/workspaces/{id}/members/{memberId}` with its own id) and
+  sends no removal notification. The owner's Danger tab shows only Delete; an
+  owner hands the workspace over with a transfer instead.
 - **Owner only** can invite a member, change a member's role, remove a member,
   delete the workspace, and switch Auto process edits (Epo 2026-10-21): a
   workspace update carrying `autoProcess` from anyone else is refused whole
@@ -382,11 +388,20 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
 - On transfer, the recipient becomes owner and assumes the complete storage
   bill. The old owner remains as an editor. Transfer is refused if the recipient
   cannot fit the workspace's used and reserved bytes or file count.
-- Workspace creation, clone, and transfer-to-recipient all run the owned-workspace
-  plan gate: Free owns at most 10 workspaces and Pro 50 (migration
-  `0070_owned_workspace_cap.sql`); past it the request fails with
-  `workspace_limit_exceeded` and the browser toasts "Workspace limit reached".
-  Workspaces already over the cap (after a downgrade) are kept.
+- The workspace cap counts owned and joined workspaces together (Epo
+  2026-10-28): Free 10, Pro 50 (migration `0070_owned_workspace_cap.sql`), one
+  count of the user's `workspace_members` rows, since every owner holds one with
+  role `owner` (link or public visits are not members). Creating or cloning a
+  workspace and accepting an invitation are refused at the limit with
+  `workspace_limit_exceeded` (`gateWorkspacesTx`, which writes the user's row
+  so a repeatable-read clone retries instead of counting past a concurrent
+  create or accept); the browser toasts "Workspace limit reached", and the
+  invitation page keeps the invite open, across Back and a refresh too, to
+  accept after leaving or deleting one. A transfer is not gated: the recipient
+  is already a member and the old owner stays one. After a downgrade nothing
+  is removed; creating, cloning and accepting stay refused until the count is
+  under the new cap. A suspended or deletion-pending owner's workspaces still
+  use their members' slots.
 - An over-quota owner (grace or frozen) may still transfer because giving away
   bytes is a recovery action; the recipient must be able to edit. A transfer
   cancels every pending invite (`revoked_at`), so the new owner starts with
@@ -1515,8 +1530,8 @@ request may have written either one.
 
 Queued upload paths are delayed by a further 24-hour grace, so a late write
 (an import worker's, or a PUT that answered after its 60 s bound) is collected
-rather than appearing after cleanup has already run. Independently, bucket lifecycle rules
-expire `incoming/` and `editor-assets/incoming/` objects after one day. The
+rather than appearing after cleanup has already run. Independently, a bucket lifecycle rule
+expires `incoming/` objects after one day. The
 database sweep repairs quota/accounting state; the bucket rule is the final
 backstop for temporary objects that never obtained a database session.
 
@@ -1537,7 +1552,7 @@ asset row.
 
 Sources: [upload expiry and pruning](../server/internal/store/uploads.go#L202),
 [abandoned-upload test](../server/internal/store/blobs_test.go#L230), and
-[required bucket lifecycle rules](../server/README.md#L30).
+[required bucket lifecycle rules](../server/README.md#bucket-configuration).
 
 ### Logical deletion and the blob reaper
 
@@ -1566,15 +1581,15 @@ failure reason. Claiming advances a five-minute-per-attempt backoff. After eight
 attempts a path is no longer claimed automatically; the monthly report includes
 the count of these undeletable queue entries for operational follow-up.
 
-Backblaze B2 hides overwritten/deleted versions by default, so deployment must
-also apply the configured `daysFromHidingToDeleting` lifecycle rule. Without
-that rule, a successful reaper deletion can leave hidden versions consuming
-bucket storage.
+After the cutover the user-file bucket is on Cloudflare R2, which keeps no
+object versions, so a successful reaper deletion frees the bytes at once. Until
+then UAT's B2 bucket hides deleted objects, and its lifecycle rule deletes them
+a day later.
 
 Sources: [deletion outbox and reference re-check](../server/internal/store/blobs.go#L9),
 [reaper loop and retry behavior](../server/cmd/api/blob_workers.go#L26),
 [reference-count lifecycle test](../server/internal/store/blobs_test.go#L51), and
-[bucket version requirement](../server/README.md#L30).
+[bucket configuration](../server/README.md#bucket-configuration).
 
 ### Trash
 
@@ -1735,7 +1750,7 @@ The sweep:
 This sweep is intentionally **report-only** today. It does not enqueue or delete
 unrecorded stable objects because a false negative in the database view would
 make an automatic bucket deletion unrecoverable. Temporary incoming prefixes
-are excluded because their one-day bucket lifecycle rule already deletes them.
+(`incoming/`) are excluded because their one-day bucket lifecycle rule already deletes them.
 
 Sources: [orphan sweep policy and schedule](../server/cmd/api/blob_workers.go#L98)
 and [known-path calculation](../server/internal/store/blobs.go#L105).

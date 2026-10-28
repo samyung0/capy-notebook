@@ -16,7 +16,8 @@ const (
 var ErrCatalogNotLoaded = errors.New("plan limits catalog not loaded")
 
 // Limits is the complete set of user-facing numeric limits for one plan.
-// OwnedWorkspaces is zero when ownership is unlimited.
+// OwnedWorkspaces caps the workspaces a user owns and has joined together
+// (named for its older owned-only meaning); zero is unlimited.
 type Limits struct {
 	StorageBytes      int64
 	CreditMicros      int64

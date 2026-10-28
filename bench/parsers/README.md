@@ -174,7 +174,10 @@ normal cleanup to measure real upload, editing and reparse/index storage.
 For paired releases, set `OFFICE_STORAGE_INPUT_DIR` to frozen marked copies in
 `basic/` and `rich-content/` subdirectories so both runs upload identical bytes.
 Current Office receipt checks verify real parsing and the absence of both cache
-rows and any exact-key B2 parse-bundle versions.
+rows and a parse-bundle object at the exact key. Object bytes are the current
+objects' sizes only: runs since the R2 change record no `hidden_bytes` (R2 keeps
+no hidden versions; on B2 before the cutover they go unmeasured), and the
+comparison counts them as zero.
 
 The [September 28 paired rerun](reports/2026-09-28-office-storage-no-parse-cache.md)
 measures the durable parse-cache removal with identical uploads before and after

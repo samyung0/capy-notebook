@@ -3672,6 +3672,31 @@ async def test_blank_optional_arguments_are_left_out_before_checking(monkeypatch
     assert not result.refused and seen == {"query": "q", "_tool_call_id": "c1"}
 
 
+@pytest.mark.parametrize(
+    ("exc", "why"),
+    [
+        (TimeoutError(), "timed out"),
+        (ConnectionResetError(), "ConnectionResetError"),
+        (RuntimeError("provider disconnected"), "provider disconnected"),
+    ],
+)
+async def test_a_tool_failure_without_text_says_what_happened(monkeypatch, exc, why):
+    """A bare exception (an embedding call timing out, UAT run 40634953310)
+    has no text; the model reads what happened instead of nothing."""
+
+    async def handler(_args, _ctx):
+        raise exc
+
+    monkeypatch.setitem(
+        tools.REGISTRY, "search_workspace", tools.ToolSpec("search_workspace", handler)
+    )
+    result = await tools.run(
+        "search_workspace", {"query": "q", "_tool_call_id": "c1"}, _owner_ctx()
+    )
+    assert result.failed
+    assert result.error == f"The search_workspace tool failed: {why}"
+
+
 # ------------------------------------------------------------ program answers
 
 

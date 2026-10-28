@@ -724,11 +724,11 @@ export async function officeParseReceipt(run: UatRun, fileId: string) {
     0,
     'Office parsing must not create a durable cache'
   );
-  const versions = await verify<unknown[]>({
+  const bundle = await verify<{ live: boolean }>({
     key: `parse-bundles/${fingerprint}.zip`,
-    operation: 'versions',
+    operation: 'exists',
   });
-  assert.deepEqual(versions, [], 'Office parsing wrote a retired B2 bundle');
+  assert.equal(bundle.live, false, 'Office parsing wrote a retired bundle');
   await run.attach(`${fileId}-parse-receipt`, { attempts, receipt });
 }
 

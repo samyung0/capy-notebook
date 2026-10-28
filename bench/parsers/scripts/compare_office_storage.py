@@ -62,7 +62,8 @@ def read_run(run_id):
             prefix = obj["key"].split("/")[0]
             group = groups.setdefault(prefix, {"current_bytes": 0, "hidden_bytes": 0})
             for field in group:
-                group[field] += obj[field]
+                # Runs since the move to R2 record no hidden bytes.
+                group[field] += obj.get(field, 0)
         row["object_prefixes"] = groups
         assert sum(total(g, g.keys()) for g in groups.values()) == total(
             row, ("object_current_bytes", "object_hidden_bytes")

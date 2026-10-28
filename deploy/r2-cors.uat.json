@@ -1,0 +1,19 @@
+[
+  {
+    "AllowedOrigins": [
+      "https://uat.capynotebook.com",
+      "https://local.uat.capynotebook.com",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173"
+    ],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["range", "content-type"],
+    "ExposeHeaders": [
+      "etag",
+      "content-length",
+      "content-range",
+      "accept-ranges"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
