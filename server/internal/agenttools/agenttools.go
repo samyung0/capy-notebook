@@ -156,7 +156,10 @@ import (
 // resolve_source_change is offered in account chat, whose reads now carry
 // their items' unindexed changes, and list_workspaces lists the user's
 // workspaces as they stand.
-const ContractVersion = 44
+// v45: account chat's list_files is list_sources, one definition offered in
+// both scopes (Epo 2026-10-28, Q523); the account profile's copy takes
+// workspace_id and says what it lists there.
+const ContractVersion = 45
 
 // Scope is the kind of chat a tool is offered in: a workspace's, or the
 // account's across the user's own files (Epo 2026-10-27). A conversation keeps
@@ -906,9 +909,11 @@ func Definitions() []Definition {
 			Concurrency:        "search",
 			RequiredOperations: []Operation{OpSourceRead},
 		}),
+		// Account chat's copy (profiles/account.py) takes workspace_id and
+		// lists one workspace or the files with no workspace (Q523).
 		chatTool(Definition{
 			Name:      "list_sources",
-			Scopes:    workspaceOnly,
+			Scopes:    both,
 			Retention: RetainFull,
 			Description: "List the workspace's source files and study materials by chapter, " +
 				"with ids, kinds, editability and passage counts.",
@@ -948,25 +953,11 @@ func Definitions() []Definition {
 			InputSchema: obj(map[string]any{
 				"query": str(""),
 				"file_ids": idList("Restrict to these items (ids from search_files_summary or "+
-					"list_files); only files and notes hold text to search. Omit to search all of them.", 0, 0),
+					"list_sources); only files and notes hold text to search. Omit to search all of them.", 0, 0),
 			}, "query"),
 			UsesEmbedding:      true,
 			Concurrency:        "search",
 			RequiredOperations: []Operation{OpSourceRead},
-		}),
-		chatTool(Definition{
-			Name:      "list_files",
-			Scopes:    accountOnly,
-			Retention: RetainFull,
-			Description: "List one of the user's workspaces by chapter (workspace_id), or without it " +
-				"their newest files and materials with no workspace, with ids, kinds and whether the " +
-				"user can edit each.",
-			InputSchema: obj(map[string]any{
-				"workspace_id": str("A workspace id from search_files_summary, search_files_content or a read; " +
-					"omit it to list the files with no workspace."),
-			}),
-			Concurrency:        "read",
-			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
 		}),
 		chatTool(Definition{
 			Name:      "create_workspace",

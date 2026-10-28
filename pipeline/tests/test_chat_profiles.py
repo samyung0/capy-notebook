@@ -177,7 +177,7 @@ def test_the_account_profile_offers_the_account_tools():
     assert set(by_name) == {
         "search_files_summary",
         "search_files_content",
-        "list_files",
+        "list_sources",
         "list_workspaces",
         "create_workspace",
         "resolve_source_change",
@@ -213,11 +213,16 @@ def test_the_account_profile_offers_the_account_tools():
             "workspace_id"
             not in contract.DEFINITIONS[name]["inputSchema"]["properties"]
         )
+    # Workspace chat's list_sources, listing by workspace here (Q523).
+    listing = by_name["list_sources"]
+    assert listing["description"] == profiles.account.LIST_SOURCES
+    assert "workspace_id" in listing["parameters"]["properties"]
+    assert contract.DEFINITIONS["list_sources"]["inputSchema"]["properties"] == {}
     # Go's workspace wording in account words (Epo 2026-10-28, T3).
     sources = by_name["create_material"]["parameters"]["properties"]["sources"]
     assert "the user's files" in sources["description"]
     assert (
-        "(ids from search_files_summary, list_files or a read)"
+        "(ids from search_files_summary, list_sources or a read)"
         in (sources["description"])
     )
     assert (
@@ -310,6 +315,35 @@ async def test_a_file_with_no_workspace_is_read_not_inspected_or_edited(
     ]:
         assert result is not None and result.refused
         assert tools.NO_SESSION.format(id="f_loose") in result.text()
+    assert {path for path, _ in gateway.posts} == {"/api/internal/documents/access"}
+
+
+async def test_the_document_tools_point_a_missing_id_to_list_sources(monkeypatch):
+    # Q523: account chat's not found gives workspace chat's hint, now that
+    # list_sources is a tool there too; Go is not asked to inspect or edit.
+    gateway = _Gateway()
+    monkeypatch.setattr(tools, "_gateway_read", gateway.read)
+    ctx = _account()
+    target = {"kind": "source_file", "id": "f_gone"}
+
+    for result in [
+        await tools._inspect_document({"target": target}, ctx),
+        await tools._edit_document(
+            {"target": target, "commands": [], "_tool_call_id": "c_1"}, ctx
+        ),
+        await tools._inspect_office_document({"file_id": "f_gone"}, ctx),
+        await tools._edit_office_document(
+            {
+                "file_id": "f_gone",
+                "commands": [{"type": "set_cell"}],
+                "_tool_call_id": "c_2",
+            },
+            ctx,
+        ),
+    ]:
+        assert result.refused
+        assert tools.NO_ACCOUNT_ITEM.format(id="f_gone") in result.text()
+        assert "list_sources shows the current ids." in result.text()
     assert {path for path, _ in gateway.posts} == {"/api/internal/documents/access"}
 
 
@@ -407,7 +441,9 @@ async def test_search_files_content_labels_hits_from_the_turns_scope(monkeypatch
     )
 
 
-async def test_list_files_lists_one_workspace_or_the_files_with_none(monkeypatch):
+async def test_list_sources_lists_one_workspace_or_the_files_with_none(monkeypatch):
+    # Account chat's list_sources (Q523), through dispatch: its workspace_id
+    # is the profile's argument, not Go's.
     posts = []
 
     async def read(path, payload, _failure):
@@ -455,9 +491,9 @@ async def test_list_files_lists_one_workspace_or_the_files_with_none(monkeypatch
     monkeypatch.setattr(tools.store, "workspace_outline", workspace_outline)
     ctx = _account()
 
-    loose = (await tools._list_files({}, ctx)).text()
-    biology = (await tools._list_files({"workspace_id": "ws_2"}, ctx)).text()
-    outside = await tools._list_files({"workspace_id": "ws_9"}, ctx)
+    loose = (await tools.run("list_sources", {}, ctx)).text()
+    biology = (await tools.run("list_sources", {"workspace_id": "ws_2"}, ctx)).text()
+    outside = await tools.run("list_sources", {"workspace_id": "ws_9"}, ctx)
 
     assert loose.startswith(tools.NO_WORKSPACE_LISTED)
     assert "- My note (id=mat_1, kind=material" in loose
@@ -952,7 +988,7 @@ class _Resp:
 
 
 async def test_a_workspace_the_turn_creates_joins_its_list(monkeypatch):
-    # Review r1 M-2: list_workspaces and list_files reach it at once.
+    # Review r1 M-2: list_workspaces and list_sources reach it at once.
     def post(url, **kwargs):
         return _Resp(
             {
@@ -978,7 +1014,7 @@ async def test_a_workspace_the_turn_creates_joins_its_list(monkeypatch):
         {"name": "Physics", "_tool_call_id": "call_ws"}, ctx
     )
     listed = (await tools._list_workspaces({}, ctx)).text()
-    files = await tools._list_files({"workspace_id": "ws_new"}, ctx)
+    files = await tools.run("list_sources", {"workspace_id": "ws_new"}, ctx)
 
     assert not created.refused, created.text()
     assert "- Physics (workspace_id=ws_new, view and edit)" in listed

@@ -1,5 +1,5 @@
 {
-  "version": 44,
+  "version": 45,
   "operations": [
     "source.read",
     "material.read",
@@ -93,7 +93,8 @@
         "chat"
       ],
       "scopes": [
-        "workspace"
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "source.read",
@@ -164,7 +165,7 @@
         "additionalProperties": false,
         "properties": {
           "file_ids": {
-            "description": "Restrict to these items (ids from search_files_summary or list_files); only files and notes hold text to search. Omit to search all of them.",
+            "description": "Restrict to these items (ids from search_files_summary or list_sources); only files and notes hold text to search. Omit to search all of them.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -194,36 +195,6 @@
         "source.read"
       ],
       "retention": "cited_passages"
-    },
-    {
-      "name": "list_files",
-      "version": 1,
-      "description": "List one of the user's workspaces by chapter (workspace_id), or without it their newest files and materials with no workspace, with ids, kinds and whether the user can edit each.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "workspace_id": {
-            "description": "A workspace id from search_files_summary, search_files_content or a read; omit it to list the files with no workspace.",
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "mutates": false,
-      "usesEmbedding": false,
-      "concurrency": "read",
-      "allowedSlots": [
-        "chat"
-      ],
-      "scopes": [
-        "account"
-      ],
-      "requiredOperations": [
-        "source.read",
-        "material.read"
-      ],
-      "retention": "full"
     },
     {
       "name": "create_workspace",

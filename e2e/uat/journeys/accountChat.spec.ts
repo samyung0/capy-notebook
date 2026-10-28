@@ -7,7 +7,7 @@
 // contract, against the real index and gateway; no model is called.
 //
 // A tool's result text reaches the browser only for the tools that keep it
-// whole (search_files_summary, list_files, the creates), through the turn's
+// whole (search_files_summary, list_sources, the creates), through the turn's
 // saved toolEvidence, so those are asserted from the message row; a read's
 // unindexed changes are not visible here (pipeline and Go tests cover them),
 // only that the read of an edited, unindexed file succeeds.
@@ -110,8 +110,8 @@ test('account chat: search, list, read and write across workspaces and no worksp
   const first = await scripted(page, [
     [
       { arguments: { query: marker }, name: 'search_files_summary' },
-      { arguments: {}, name: 'list_files' },
-      { arguments: { workspace_id: shared }, name: 'list_files' },
+      { arguments: {}, name: 'list_sources' },
+      { arguments: { workspace_id: shared }, name: 'list_sources' },
       { arguments: { file_id: memberText }, name: 'read_document' },
     ],
     [
@@ -134,7 +134,7 @@ test('account chat: search, list, read and write across workspaces and no worksp
   );
   const reads = await keptResults(run);
   const [summary] = kept(reads, 'search_files_summary');
-  const [loosely, inShared] = kept(reads, 'list_files');
+  const [loosely, inShared] = kept(reads, 'list_sources');
   assert(summary?.includes(`file_id=${ownText}`), summary);
   assert(summary.includes(`file_id=${memberText}`), summary);
   assert(summary.includes(`file_id=${loose}, no workspace`), summary);
