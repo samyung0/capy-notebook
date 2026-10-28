@@ -522,7 +522,7 @@ binding rules that never touch the note layout.
 
 ## Questions for Epo
 
-1. **Agent Undo over someone's typing (AR:723).** Today an agent's Undo leaves
+1. **Agent Undo over someone's typing (AR:723).** Answered 2026-10-28 (D16): today's behaviour stays; text typed into an agent-inserted block moves into the anchor block before Undo removes it. Today an agent's Undo leaves
    text a person typed into an agent-inserted paragraph, joined to the anchor
    paragraph. On blocks that text is inside the agent's yBlock, so deleting
    the block deletes it. Options:
@@ -533,7 +533,7 @@ binding rules that never touch the note layout.
       cell's typing does today.
    c. Undo moves the other person's text into the previous block, then deletes.
    BlockSuite default: none. Its own undo is per client.
-2. **`replace_block` on blocks (AR:703, PE:248).** Options:
+2. **`replace_block` on blocks (AR:703, PE:248).** Answered 2026-10-28 (D16): the tools stay as today, so `replace_block` keeps minting new ids; in-paragraph edits are `replace_text`. Options:
    a. (recommended) Replacing a block of the same flavour diffs its `Y.Text`
       in place and keeps its id, so comments, effects and peers' carets stay.
       A flavour change gets a new block.

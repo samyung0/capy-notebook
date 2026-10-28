@@ -606,6 +606,21 @@ Legend:
   has no merged cells; seeding splits them into a full grid, and Merge cells /
   Split cells (`ToolbarTableMenu.tsx:99-105`) leave with Plate at the cut.
 
+- **D16: the agent's edit tools and their Undo stay exactly as today** (Epo,
+  2026-10-28). `edit_document`'s commands (`replace_text`, `insert_markdown`,
+  `replace_block`, `replace_card`) keep their behaviour and payloads; an
+  agent edit may or may not create paragraphs. On blocks:
+  - `replace_text` diffs the block's `Y.Text` in place;
+  - `insert_markdown` adds blocks to `sys:children`;
+  - `replace_block` deletes the block and inserts one with a new id, as today
+    (AR:703).
+
+  Undo removes only the agent's own items (AR:723). Undoing a `replace_text`
+  is the same item-level undo inside the block's `Y.Text`. For a block the
+  agent inserted, any text someone else typed into it is moved into the block
+  before it (the anchor) before the block goes, so it stays as it does
+  today. A table's cells go with the table.
+
 The other questions from the decision walk-through are in
 `todo-blocksuite-decisions.md` ("Questions for Epo"); they matter at the cut,
 not for step 1.
