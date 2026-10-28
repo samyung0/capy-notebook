@@ -42,6 +42,54 @@ function Hourglass() {
   );
 }
 
+const CARD = { height: 12, rx: 1.6, width: 9 };
+const CARD_AT = [
+  { className: 'ls1', x: 3, y: 8.5 },
+  { className: undefined, x: 7.5, y: 6 },
+  { className: 'ls3', x: 12, y: 3.5 },
+];
+
+/** Stacked cards: each one is masked by the cards in front of it instead of
+ * painting over the one behind, so the icon stays see-through on frost. The
+ * masks sit on still groups and hold copies of the moving cards, which share
+ * their animation classes. */
+function Cards() {
+  const id = useId();
+  return (
+    <>
+      <defs>
+        {CARD_AT.slice(0, 2).map((_, i) => (
+          <mask
+            height="28"
+            id={`${id}${i}`}
+            key={i}
+            maskUnits="userSpaceOnUse"
+            width="28"
+            x="-2"
+            y="-2"
+          >
+            <rect fill="white" height="28" width="28" x="-2" y="-2" />
+            {CARD_AT.slice(i + 1).map((card) => (
+              <rect
+                {...CARD}
+                {...card}
+                fill="black"
+                key={card.x}
+                stroke="black"
+              />
+            ))}
+          </mask>
+        ))}
+      </defs>
+      {CARD_AT.map((card, i) => (
+        <g key={card.x} mask={i < 2 ? `url(#${id}${i})` : undefined}>
+          <rect {...CARD} {...card} />
+        </g>
+      ))}
+    </>
+  );
+}
+
 const pacman = (
   <g fill="currentColor" stroke="none">
     <circle className="pm-d pm-d1" cx="21" cy="12" r="1.4" />
@@ -103,27 +151,7 @@ const DRAWINGS: Record<
       </g>
     </>
   ),
-  list: (
-    <>
-      <rect
-        className="ls1 ai-card"
-        height="12"
-        rx="1.6"
-        width="9"
-        x="3"
-        y="8.5"
-      />
-      <rect className="ai-card" height="12" rx="1.6" width="9" x="7.5" y="6" />
-      <rect
-        className="ls3 ai-card"
-        height="12"
-        rx="1.6"
-        width="9"
-        x="12"
-        y="3.5"
-      />
-    </>
-  ),
+  list: <Cards />,
   look: (
     <>
       <path

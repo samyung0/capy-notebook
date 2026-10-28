@@ -10,10 +10,6 @@
     overflow: visible;
   }
 
-  .activity-icon .ai-card {
-    fill: var(--color-surface);
-  }
-
   /* think: ldrs hourglass, 2 x 1.75s. Drain (linear) 0-30%, flip (ease-in-out)
      30-50%, drain 50-80%, flip 80-100%. */
   .activity-icon .hg {
@@ -47,12 +43,14 @@
     animation: ai-lb-x 1.75s infinite;
   }
 
-  /* read: hold, turn the page, hold */
+  /* read: hold, turn the page, hold. The turning page covers the one under
+     it (the frost's own fill on a frosted panel); at rest it lies on the
+     right page and needs no fill. */
   .activity-icon .bk-flip {
-    fill: var(--color-surface);
     transform-origin: 12px 0;
   }
   .activity-icon.run .bk-flip {
+    fill: var(--frost-fill, var(--color-surface));
     animation: ai-bk 1.75s ease-in-out infinite;
   }
 

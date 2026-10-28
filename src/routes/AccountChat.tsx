@@ -130,8 +130,8 @@ export default function AccountChat() {
     else void navigate({ params: { fileId: ref.id }, to: '/files/$fileId' });
   }
 
-  // The Chat panel's row: Back, the Chats menu below lg, the title with its
-  // scope where a workspace chat names its views, and New chat.
+  // The Chat panel's row: Back, the Chats menu below lg, the title and New
+  // chat.
   const header = (
     <div className="flex h-12.25 shrink-0 items-center gap-1 pt-2.5 pr-2 pl-1.5">
       <ToolbarButton label={m.action_back()} onClick={back}>
@@ -145,12 +145,9 @@ export default function AccountChat() {
           <Icon name="menu" />
         </ToolbarButton>
       )}
-      <div className="ml-1 flex min-w-0 flex-1 items-baseline gap-2">
-        <h1 className="t-subtitle shrink-0">{m.workspace_tab_chat()}</h1>
-        <span className="t-meta min-w-0 truncate text-fg-muted">
-          {m.chat_all_your_files()}
-        </span>
-      </div>
+      <h1 className="t-subtitle ml-1 min-w-0 flex-1 truncate">
+        {m.workspace_tab_chat()}
+      </h1>
       <ToolbarButton
         disabled={!active}
         label={m.chat_new()}

@@ -145,7 +145,7 @@ export function Citations({
             >
               <Badge
                 asChild
-                className="max-w-full self-start font-medium hover:bg-page-hover"
+                className="max-w-full self-start frosted:not-hover:bg-(--frost-fill) font-medium hover:bg-page-hover"
                 size="sm"
               >
                 {href ? (
@@ -173,7 +173,7 @@ export function Citations({
         return (
           <Badge
             asChild
-            className="max-w-full font-medium hover:bg-page-hover"
+            className="max-w-full frosted:not-hover:bg-(--frost-fill) font-medium hover:bg-page-hover"
             key={`${c.materialId || c.fileId}:${i}`}
             size="sm"
           >
@@ -590,7 +590,7 @@ export function ChatPanel({
         {messages.map((msg, index) =>
           msg.role === 'user' ? (
             <div
-              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-tile rounded-tr-sm bg-page px-3.5 py-2.5"
+              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-tile rounded-tr-sm bg-page frosted:bg-(--frost-fill) px-3.5 py-2.5"
               key={msg.id}
             >
               {msg.content}

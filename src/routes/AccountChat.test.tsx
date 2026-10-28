@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
 import { streamChat } from '@/api/chatStream';
-import { m } from '@/i18n';
 
 const page = vi.hoisted(() => ({
   chat: {} as Record<string, unknown>,
@@ -62,7 +61,6 @@ it('shows the Chats panel beside a Chat panel filling the rest, with no centre p
   const [chats, chat] = html.split('<section>').slice(1);
   expect(chats).toContain('data-chat-list');
   expect(chat).toContain('data-chat-panel');
-  expect(chat).toContain(m.chat_all_your_files());
   expect(page.lists[0]).toMatchObject({ workspaceId: null });
   expect(page.chat).toMatchObject({ fill: true, workspaceId: null });
 });

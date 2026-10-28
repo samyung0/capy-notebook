@@ -2304,7 +2304,6 @@
   "chat_all_sources": "全部来源",
   "chat_your_files_only": "仅限你的文件",
   "chat_your_files_only_hint": "本条消息只使用你自己的文件和资料。",
-  "chat_all_your_files": "你的全部文件",
   "chat_scope_info_label": "关于回答的来源",
   "chat_grounded_outside": "优先使用你的来源，其次是教科书资料库和网络",
   "study_continue_plan_review": "继续计划复习",
