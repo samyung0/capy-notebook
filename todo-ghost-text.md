@@ -42,6 +42,31 @@ Built on branch `claude/ghost-text-18f936`:
 
   Go DB tests and the full suites are left to CI.
 
+Review of 350900237 (one read-only reviewer, 2026-10-28), now fixed:
+
+- The ops admin role check still listed the dropped columns.
+- A pending trigger survived further typing, so a request fired mid-word.
+- A container's text after the caret leaked into the prompt. By Epo's
+  decision, ghost text now runs in top-level text blocks only.
+- A collaborator's edits wiped suggestions. They are now ignored unless they
+  touch the caret's block.
+- Phones paid for hidden suggestions. Nothing triggers under 640px.
+- Every block re-rendered on every suggestion change.
+- ⌥Space waited for the debounce.
+- A switch turned off on another device went unnoticed.
+- The 0010 replay test and two docs had leftovers.
+
+Found while checking the fixes in the browser: the Markdown serializer writes
+a trailing space as `&#x20;`, which leaked into `before`. Fixed.
+
+The subscription cost, measured on a 3,000-block note in node:
+
+- Rendering takes 172 ms without the plugin and 190 ms with it, about 6 µs per
+  block.
+- A store write runs 3,000 boolean selectors in about 0.45 ms and re-renders
+  only the one or two blocks whose answer changed. Before the fix, every write
+  re-rendered every block.
+
 Stop sequence: `elitellm` has no `stop` parameter, so the server keeps the
 answer's first line instead. It looks the same to the user and costs the same,
 since the model rarely writes a newline.

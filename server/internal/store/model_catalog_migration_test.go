@@ -17,6 +17,8 @@ const pre0010Schema = `ALTER TABLE users
 		ADD COLUMN quiz_model_slug text NOT NULL DEFAULT 'deepseek-flash',
 		ADD COLUMN generate_model_provider_slug text NOT NULL DEFAULT 'deepseek',
 		ADD COLUMN generate_model_slug text NOT NULL DEFAULT 'deepseek-flash',
+		ADD COLUMN editor_model_provider_slug text NOT NULL DEFAULT 'deepseek',
+		ADD COLUMN editor_model_slug text NOT NULL DEFAULT 'deepseek-flash',
 		ALTER COLUMN chat_model_provider_slug SET DEFAULT 'zai',
 		ALTER COLUMN chat_model_slug SET DEFAULT 'glm-5.3-flash';
 	ALTER TABLE model_configs DROP CONSTRAINT model_configs_slots_check,

@@ -384,7 +384,7 @@ Text leaves do not need IDs. Runtime values must never be written onto nodes:
 - upload progress and errors;
 - selection, hover, dialog, or plugin state;
 - collaboration presence;
-- local AI preview data.
+- the ghost-text suggestion.
 
 Media nodes persist `assetId` and stable metadata. A note's media are images
 and audio only (Epo 2026-10-15): there is no PDF or file block, and the editor
@@ -3699,10 +3699,15 @@ BlockSuite note can reuse them.
   title at runtime, so flipping the switch never rebuilds the editor, and
   turning it off drops a suggestion on screen. While off nothing triggers and
   every key handler returns false, so Tab and the rest reach the editor.
+- **Where.** Top-level text blocks only (paragraphs, headings and the flat
+  indent lists), never a table cell, callout, column or code line, and only
+  from 640px up: below `sm` the suggestion is hidden and phone keyboards have
+  no Tab (Epo 2026-10-28).
 - **Trigger.** With the caret collapsed at the end of its block, a 500 ms
   pause after a space, a CJK character or a CJK punctuation mark (Chinese has
-  no spaces), never during IME composition or while a suggestion shows.
-  ⌥Space (Ctrl+Space off Apple) asks at once.
+  no spaces), never during IME composition or while a suggestion shows. Any
+  local edit or caret move restarts the pause. ⌥Space (Ctrl+Space off Apple)
+  asks at once.
 - **Keys** (MI:225). Tab accepts, Esc rejects, ⌥→ (Ctrl+→) takes one word;
   typing what the suggestion starts with consumes it, anything else drops it.
 - **Request.** `POST /api/workspaces/{id}/ai/copilot` with `{title, before,
@@ -3712,12 +3717,18 @@ BlockSuite note can reuse them.
   of its block. Plate posts a string prompt, so `ghostTextPlugin` passes the
   context through as JSON and sends it with the API client, which turns a
   refusal into an `ApiError`.
-- **Stale requests.** Any operation while a request runs, typing or a caret
-  move, aborts it (Plate itself would let it finish), and an answer whose
-  context no longer matches the caret is dropped.
+- **Stale requests.** A local operation, typing or a caret move, cancels the
+  pending trigger and aborts a running request (Plate itself would let both
+  run on), and an answer is shown only while the caret's block and its text
+  are what it was asked about. A collaborator's edit elsewhere leaves the
+  suggestion and the request alone; one in the caret's block drops them.
+- **Rendering.** Plate renders the ghost-text component under every block;
+  it subscribes only to whether its block holds the suggestion, and only that
+  block reads the text, so a changing suggestion re-renders one block.
 - **Errors.** Failures, an empty answer and `provider_busy` stay silent.
   `llm_credits_exhausted` shows one toast (the shared credits copy) and stops
-  auto-trigger until the page reloads.
+  auto-trigger until the page reloads; `note_ai_disabled` (turned off on
+  another device) turns it off in this tab.
 
 The gateway refuses with 403 `note_ai_disabled` while the switch is off,
 before any spend; otherwise it bills the editor surface on the editor slot's

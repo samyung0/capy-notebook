@@ -1,6 +1,17 @@
-import { CopilotPlugin } from '@platejs/ai/react';
+import {
+  CopilotPlugin,
+  triggerCopilotSuggestion,
+  withoutAbort,
+} from '@platejs/ai/react';
 import { serializeMd } from '@platejs/markdown';
-import { NodeApi, type SlateEditor, type TElement } from 'platejs';
+import { YjsEditor } from '@slate-yjs/core';
+import {
+  NodeApi,
+  type Operation,
+  type SlateEditor,
+  type TElement,
+} from 'platejs';
+import { isApiError } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
 import { describeError } from '@/lib/errors';
 import { GhostText } from './GhostTextView';
@@ -12,9 +23,38 @@ import {
   ghostTextPaused,
   ghostTextState,
   requestGhostText,
+  setGhostTextState,
 } from './ghostText';
 
 const isOn = (editor: SlateEditor) => ghostTextState(editor)?.enabled === true;
+
+/** Below `sm` the suggestion is hidden and phone keyboards have no Tab, so
+ * nothing triggers there (Epo 2026-10-28). */
+const WIDE_ENOUGH = '(min-width: 640px)';
+
+/** The caret's block when ghost text may run in it: a top-level text block,
+ * never a cell, callout, column or code line (Epo 2026-10-28). */
+function caretBlock(editor: SlateEditor) {
+  const entry = editor.api.block();
+  return entry && entry[1].length === 1 ? entry : undefined;
+}
+
+/** The caret's block and its text: an answer is shown only while these are
+ * what the request was asked about. */
+function caretKey(editor: SlateEditor): string {
+  const entry = caretBlock(editor);
+  return entry ? `${String(entry[0].id)}\n${NodeApi.string(entry[0])}` : '';
+}
+
+const askedFor = new WeakMap<object, string>();
+
+const isRemote = (editor: SlateEditor) =>
+  YjsEditor.isYjsEditor(editor) && !YjsEditor.isLocal(editor);
+
+/** A collaborator's edit matters only in the caret's block (Epo 2026-10-28). */
+const touchesCaretBlock = (editor: SlateEditor, operation: Operation) =>
+  'path' in operation &&
+  (operation.path as number[])[0] === editor.selection?.anchor.path[0];
 
 /** Keys decided in MI:225: ⌥Space asks and ⌥→ takes one word on Apple. */
 const IS_APPLE =
@@ -22,26 +62,29 @@ const IS_APPLE =
   /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 
 const TRAILING_SPACE = /\s*$/;
+// The serializer writes a block's trailing spaces as `&#x20;`.
+const TRAILING_MARKDOWN_SPACE = /(?:\s|&#x20;)+$/;
 
 /** Markdown of each top-level block from the caret's backwards. The caret
  * sits at the end of its block (triggerQuery), so that block is whole; its
- * trailing space survives serialization so the server can join at the caret. */
+ * trailing space goes back as plain text so the server can join at the caret. */
 function* blocksBackwards(editor: SlateEditor, index: number) {
   for (let i = index; i >= 0; i--) {
     const block = editor.children[i] as TElement;
-    const markdown = serializeMd(editor, { value: [block] });
+    const markdown = serializeMd(editor, { value: [block] })
+      .replace(TRAILING_MARKDOWN_SPACE, '')
+      .trimStart();
     if (i === index) {
-      const space = TRAILING_SPACE.exec(NodeApi.string(block))?.[0] ?? '';
-      yield markdown.trimEnd() + space;
+      yield markdown + (TRAILING_SPACE.exec(NodeApi.string(block))?.[0] ?? '');
     } else {
-      yield markdown.trim();
+      yield markdown;
     }
   }
 }
 
 /** Plate posts this string as the prompt; ghostTextFetch sends it on. */
 function ghostPrompt(editor: SlateEditor): string {
-  const entry = editor.api.block({ highest: true });
+  const entry = caretBlock(editor);
   if (!entry) return '';
   const before = contextBefore(blocksBackwards(editor, entry[1][0] ?? 0));
   if (!before.trim()) return '';
@@ -79,6 +122,14 @@ export function ghostTextPlugin(workspaceId: string) {
       completeOptions: {
         fetch: ghostTextFetch(workspaceId),
         onError: (error) => {
+          // Turned off on another device: stop asking until this tab learns it.
+          if (isApiError(error) && error.code === 'note_ai_disabled') {
+            setGhostTextState(editor, {
+              enabled: false,
+              title: ghostTextState(editor)?.title ?? '',
+            });
+            return;
+          }
           if (!creditsRanOut(error)) return;
           const { description, title } = describeError(error);
           userToast({
@@ -88,19 +139,28 @@ export function ghostTextPlugin(workspaceId: string) {
             variant: 'error',
           });
         },
-        onFinish: (prompt, completion) => {
+        onFinish: (_prompt, completion) => {
           // An answer for text the caret has since left is dropped.
-          if (completion && prompt === ghostPrompt(editor)) {
+          if (
+            completion &&
+            isOn(editor) &&
+            caretKey(editor) === askedFor.get(editor)
+          ) {
             api.copilot.setBlockSuggestion({ text: completion });
           }
         },
       },
       debounceDelay: GHOST_DEBOUNCE_MS,
-      getPrompt: () => ghostPrompt(editor),
+      getPrompt: () => {
+        askedFor.set(editor, caretKey(editor));
+        return ghostPrompt(editor);
+      },
       renderGhostText: GhostText,
       triggerQuery: () =>
         isOn(editor) &&
+        window.matchMedia(WIDE_ENOUGH).matches &&
         editor.api.isCollapsed() &&
+        !!caretBlock(editor) &&
         editor.api.isAt({ end: true }),
     },
     // Unhandled keys return false, so Plate leaves them to the editor.
@@ -121,18 +181,24 @@ export function ghostTextPlugin(workspaceId: string) {
       triggerSuggestion: {
         handler: () => {
           if (!isOn(editor)) return false;
-          void api.copilot.triggerSuggestion();
+          // Asked for, so no pause first.
+          void triggerCopilotSuggestion(editor);
         },
         keys: IS_APPLE ? 'alt+space' : 'ctrl+space',
       },
     },
-  })).overrideEditor(({ api, getOptions, tf: { apply } }) => ({
+  })).overrideEditor(({ api, editor, getOptions, tf: { apply } }) => ({
     transforms: {
-      // Plate keeps a request running through edits; any change to the text
-      // or the caret cancels it instead.
+      // Any local change to the text or the caret cancels the pending trigger
+      // and a running request (Plate lets both run on); a collaborator's edit
+      // elsewhere leaves the suggestion and the request alone.
       apply(operation) {
-        const { isLoading, shouldAbort } = getOptions();
-        if (isLoading && shouldAbort) api.copilot.stop();
+        if (!getOptions().shouldAbort) return apply(operation);
+        if (isRemote(editor) && !touchesCaretBlock(editor, operation)) {
+          withoutAbort(editor, () => apply(operation));
+          return;
+        }
+        api.copilot.stop();
         apply(operation);
       },
     },

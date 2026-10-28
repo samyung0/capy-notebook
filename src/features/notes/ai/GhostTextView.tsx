@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { useMe } from '@/api/hooks';
 import { setGhostTextState } from './ghostText';
 
+/** Under every block; subscribes only to whether this block holds the
+ * suggestion, so a changing suggestion re-renders one block, not the note. */
 export function GhostText() {
   const element = useElement();
   const isSuggested = usePluginOption(
@@ -11,8 +13,12 @@ export function GhostText() {
     'isSuggested',
     element.id as string
   );
+  return isSuggested ? <SuggestionText /> : null;
+}
+
+function SuggestionText() {
   const suggestionText = usePluginOption(CopilotPlugin, 'suggestionText');
-  if (!isSuggested || !suggestionText) return null;
+  if (!suggestionText) return null;
   return (
     <span
       className="pointer-events-auto hidden text-fg-muted/70 sm:inline"
@@ -30,8 +36,16 @@ export function GhostTextSync({ title }: { title: string }) {
   const { data: me } = useMe();
   const enabled = me?.noteAiEnabled === true;
   useEffect(() => {
+    const copilot = editor.getApi(CopilotPlugin).copilot;
     setGhostTextState(editor, { enabled, title });
-    if (!enabled) editor.getApi(CopilotPlugin).copilot.reject();
+    if (!enabled) {
+      copilot.stop();
+      copilot.reject();
+    }
+    return () => {
+      setGhostTextState(editor, { enabled: false, title });
+      copilot.stop();
+    };
   }, [editor, enabled, title]);
   return null;
 }

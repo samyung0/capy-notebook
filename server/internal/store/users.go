@@ -258,9 +258,8 @@ func assertModelRef(ctx context.Context, q rowQueryer, ref models.Ref, slot stri
 }
 
 type UserLLMPrefs struct {
-	ChatModel     models.Ref
-	NoteAIEnabled bool
-	thinking      map[modelThinkingRef]string
+	ChatModel models.Ref
+	thinking  map[modelThinkingRef]string
 }
 
 type modelThinkingRef struct {
@@ -271,9 +270,9 @@ type modelThinkingRef struct {
 func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, error) {
 	var p UserLLMPrefs
 	err := s.pool.QueryRow(ctx, `
-		SELECT chat_model_provider_slug, chat_model_slug, note_ai_enabled
+		SELECT chat_model_provider_slug, chat_model_slug
 		  FROM users WHERE id=$1`, userID).Scan(
-		&p.ChatModel.ProviderSlug, &p.ChatModel.ModelSlug, &p.NoteAIEnabled,
+		&p.ChatModel.ProviderSlug, &p.ChatModel.ModelSlug,
 	)
 	if isNoRows(err) {
 		return p, ErrNotFound
