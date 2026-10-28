@@ -1,12 +1,13 @@
 import { YjsPlugin } from '@platejs/yjs/react';
 import { captureException } from '@sentry/react';
 import {
+  type CursorEditor,
   type YHistoryEditor,
   YjsEditor,
   yTextToSlateElement,
 } from '@slate-yjs/core';
 import { useQueryClient } from '@tanstack/react-query';
-import type { Path } from 'platejs';
+import type { Path, TRange } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
 import {
   Plate,
@@ -99,6 +100,7 @@ import {
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { isBoolean, PREF_KEYS, readPref, writePref } from '@/lib/localPrefs';
 import { GhostTextSync } from './ai/GhostTextView';
+import { BlockSelectionPresence } from './BlockSelection';
 import { NoteBlockDialogsProvider } from './blocks/dialogContext';
 import {
   CollaborationProvider,
@@ -148,8 +150,13 @@ import {
 import type { MergePiece } from './merge/types';
 import { noteComponents } from './nodeComponents';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
+import { sendCaret, sendPointer } from './notePresence';
 import { buildPlugins } from './plugins';
-import { remoteCursorRangesForEntry, useRemotePeers } from './RemoteCursors';
+import {
+  RemotePresenceMarks,
+  remoteCursorRangesForEntry,
+  useRemotePeers,
+} from './RemoteCursors';
 import { bindSyncedRoom, roomBindingPlugin, whenBound } from './roomBinding';
 import {
   type RoomReconnector,
@@ -169,6 +176,7 @@ import {
 } from './roomSwap';
 import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from './saveDelay';
 import { toastDraftsLost } from './saveFailure';
+import { editorAwareness } from './uploadPresence';
 
 const CHECKPOINT_DEBOUNCE_MS = 1000;
 const RESTORE_ORIGIN = Symbol('restore');
@@ -235,14 +243,6 @@ function sameStats(a: MaterialDocumentStats, b: MaterialDocumentStats) {
     a.maxDepth === b.maxDepth &&
     a.nodeCount === b.nodeCount
   );
-}
-
-function cursorColor(userId: string | null) {
-  let hash = 0;
-  for (const character of userId ?? 'anonymous') {
-    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  }
-  return `hsl(${hash % 360} 72% 48%)`;
 }
 
 function DocumentStatsFooter({
@@ -424,6 +424,12 @@ const NoteEditorContent = memo(function NoteEditorContent({
     const root = editor.api.toDOMNode(editor);
     if (root) hideSelectionFromReact(root);
   }, [editor]);
+  // This tab's pointer over the note goes to its co-editors (Epo 2026-10-28).
+  useEffect(() => {
+    const root = editor.api.toDOMNode(editor);
+    const awareness = editorAwareness(editor);
+    return root && awareness ? sendPointer(root, awareness) : undefined;
+  }, [editor]);
   const showEditorPlaceholder = useEditorSelector((current) => {
     const firstNode = current.children[0];
     return (
@@ -502,6 +508,8 @@ const NoteEditorContent = memo(function NoteEditorContent({
       />
       {/* Share the editor's containing block so scrolling moves both natively. */}
       {!readOnly && <FloatingToolbar />}
+      <BlockSelectionPresence />
+      <RemotePresenceMarks presence={presence} />
     </PlateContainer>
   );
 });
@@ -1465,12 +1473,10 @@ export function NoteEditorCore({
     return [
       YjsPlugin.configure({
         options: {
-          cursors: {
-            autoSend: true,
-            // No name: peers label a cursor with the verified name the
-            // room's presence gives its client id (Epo 2026-10-20).
-            data: { color: cursorColor(currentUserId) },
-          },
+          // The caret goes in the compact shape (sendCaret below), with no
+          // name or colour: peers label and colour it from the room's
+          // presence (Epo 2026-10-20, 2026-10-28).
+          cursors: { autoSend: true },
           onConnect: connecting,
           onDisconnect: () => {
             roomSynced.current = false;
@@ -2076,17 +2082,18 @@ export function NoteEditorCore({
   }, [editor, handshaking, lateMerging, lateUnloaded, scrollArea]);
 
   // Cursor awareness goes to every peer through the server: at most one per
-  // 50 ms (withCursors installs sendCursorPosition when the editor is made).
-  useEffect(
-    () =>
-      throttleCursorPosition(
-        editor as CursorSender,
-        CURSOR_SEND_MS,
-        Date.now,
-        () => YjsEditor.connected(editor as unknown as YjsEditor)
-      ),
-    [editor]
-  );
+  // 50 ms, in the compact shape (Epo 2026-10-28) in place of the one
+  // withCursors installs when the editor is made. The room joins only after
+  // this runs (the first sync binds it).
+  useEffect(() => {
+    const sender = editor as CursorSender;
+    const yjs = editor as unknown as YjsEditor & CursorEditor;
+    sender.sendCursorPosition = (range) =>
+      sendCaret(yjs, yjs.awareness, range as TRange | null);
+    return throttleCursorPosition(sender, CURSOR_SEND_MS, Date.now, () =>
+      YjsEditor.connected(yjs)
+    );
+  }, [editor]);
 
   useEffect(() => {
     // A blip the socket survived brings no provider event, so the status comes

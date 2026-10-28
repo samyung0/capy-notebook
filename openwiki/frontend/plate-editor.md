@@ -200,13 +200,16 @@ padding to 6px and buttons/icons to 40px/20px through className; other floating
 actions use 32px/16px.
 
 `NoteEditor` requests the room token only for Edit mode.
-`NoteEditorCore` owns one garbage-collected `Y.Doc`, configures remote cursor
-identity, and calls Yjs `init` with the canonical room and `value: null`.
+`NoteEditorCore` owns one garbage-collected `Y.Doc`, sends its caret in the
+compact [presence](#presence-payloads) shape, and calls Yjs `init` with the
+canonical room and `value: null`.
 Cleanup destroys providers and disconnects the Yjs editor.
 
-Co-editors' selections arrive through awareness as Yjs relative positions
-(`RemoteCursors.tsx`). `useRemotePeers` puts them in React state only when a
-peer's selection or label changes, so heartbeats re-render nothing, and
+Co-editors' selections arrive through awareness as base64 Yjs relative
+positions, the caret's anchor `s` and focus `f` ([presence
+payloads](#presence-payloads), `RemoteCursors.tsx`). `useRemotePeers` puts
+them in React state only when a peer's selection or label changes, so
+heartbeats, pointers and block selections re-render nothing, and
 `decorate` resolves them against the document once per document version (or
 peer change), so an edit before an idle peer's caret moves it, as comment
 anchors do. They are returned for the root entry only: slate-react hands the
@@ -214,17 +217,26 @@ root's decorations down to every node they cover, and returning them per block
 and text drew each caret three times. A selection is a tinted range
 (`data-remote-cursor`); every peer also gets a caret at its focus, a collapsed
 decoration that renders as an empty, zero-width leaf with `data-remote-caret`.
-Both carry the peer's colour as `--remote-cursor` and its label, the verified
-name the [room presence](#room-presence) gives its awareness client id (never
-a name its awareness claims; notes send none, and a client the presence does
-not name reads "Collaborator"), and the `.note-editor` stylesheet paints them: the tint through `color-mix` (peers send `hsl()`
-colours, which a hex alpha suffix made invalid) and the caret's 2 px bar as a
+Both carry the peer's colour and its label from the [room
+presence](#room-presence), never from its awareness: the colour is
+`--remote-cursor: var(--peer-<n>)`, n the connection's person number modulo 8,
+so every co-editor sees a person in the same colour (Epo 2026-10-28; the
+cursors design's eight colours, a light and a dark shade, set on `:root`
+and `.dark` in `tailwind.css`), and the label is the verified name
+it gives the client id (a listed connection without a name reads
+"Collaborator"); a client the presence does not list yet is not drawn. The
+`.note-editor` stylesheet paints them: the tint through `color-mix` and the
+caret's 2 px bar as a
 `::before`, so the caret adds no DOM node to the text and leaves Slate's
 DOM-to-point mapping and native caret movement alone. slate-react renders no
 decorations inside a void, so a caret on an inline equation is drawn right
 after it; a caret on a block void (a block equation, an image, an embed) is not
 drawn. Positions beside an inline element resolve through the slate-yjs patch
-(Mermaid source below).
+(Mermaid source below). A peer's `s` or `f` that decodes to a position on a
+root type (`tname`) instead of an item is skipped (`decodePosition`; Epo
+2026-10-29, Q546): resolving it would make this tab's note `Y.Doc` create
+that root type and keep it, one per name a peer sends. Carets always name
+items.
 
 The Plate editor initially has a query-cache value so the React tree has a valid
 shape before connection, but that value is never supplied as Yjs initialization
@@ -304,6 +316,88 @@ and grows 5 %, neighbours lift 0.45 as much per step, 320 ms in on the
 smooth-out curve and back on the strong bounce; reduced motion keeps them
 still).
 
+### Presence payloads
+
+Developer Epo decided on 2026-10-28 that presence payloads are compact,
+listed per room kind and checked on both ends (todo-presence.md, measured in
+bench/collaboration/reports/2026-10-28-presence-load.md: compact JSON, no
+binary format). A note room's awareness state (`notePresence.ts`) holds only:
+
+| field | value | bounds |
+| --- | --- | --- |
+| `s` | caret anchor: base64 of `Y.encodeRelativePosition` | ≤ 64 base64 characters |
+| `f` | focus, the same; absent when the selection is collapsed | ≤ 64 |
+| `p` | pointer `[blockId, x, y]` or `null` | id ≤ 64 characters; x, y integers 0–1000 |
+| `b` | block selection runs `[[firstId, lastId], ...]` | ≤ 16 runs, ids ≤ 64 |
+| `uploads` | upload placeholder ids ([uploads](#stable-ids-and-persisted-node-data)), writers only | ≤ 100 ids ≤ 32 characters |
+
+A source room's holds only `cursor` ([Office cursors](#office-cursors)); an
+item room (quiz, set, mindmap, diagram) and a quiz's keys room hold none.
+The collaboration server (`presence.rs`, called from `on_awareness` in
+`room.rs`) keeps and relays a state only when every field is one its room
+kind lists, within bounds, and the state is at most 4 KiB
+(`MAX_AWARENESS_ENTRY`); it drops any other silently (presence is best
+effort, the channel stays joined) and relays the bytes the sender wrote. A
+removal is always taken; a malformed frame is still refused. A read-only
+channel's `uploads` is a field it may not send, so its state goes whole. The
+browser reads peers' states through the same list (`readNotePresence`, cached
+per state object; `officeCursors.ts` for sources) and skips any other.
+
+The tab writes its presence through `setNotePresence`, which sends only when
+a field changed and, when the state would pass 4 KiB, leaves out `b` and
+sends the rest (Epo 2026-10-28, Q524; the runs go again once they fit). With
+real ids it never needs to: 100 upload nanoids, 16 runs of UUIDs, a selection
+and a pointer make 3,800 bytes; only ids near their bounds pass the cap (at
+most 5,920 bytes, 3,738 without `b`). A caret alone is about 24 bytes. The
+caret replaces slate-yjs's `sendCursorPosition`,
+inside the 50 ms throttle (`sendCaret`, `cursorThrottle.ts`). The pointer
+(`sendPointer`, mouse and pen only) names the innermost block under it by its
+stable `data-block-id` and x and y as 0–1000 of its box, at most every 50 ms,
+read in an animation frame with that frame's layout, not in the timer (Q547),
+and `p: null` when it leaves the editor, the page scrolls (a still pointer
+fires no pointermove, so it would name a block it left) or the tab is hidden
+or the window blurred, until it moves again; an id the room would refuse goes
+as null. `BlockSelectionPresence` folds `BlockSelectionPlugin`'s selected ids
+into runs of adjacent siblings in document order (`blockRuns`), at most 16,
+none past that. It visits only the selected blocks (Q547): each id resolves
+through `blockIndex` over the rendered note and slate's element map, and the
+paths order them, an ancestor before its descendants. On the 2 MB load-test
+note at CPU x4 a selection change cost the old walk of the whole note about
+58 ms, and costs well under 1 ms this way.
+
+`RemotePresenceMarks` draws co-editors' pointers and block selections as Epo
+picked from the mocks (2026-10-28, capy-harness
+2026-10-28-followups/presence-mocks, P1 and B3): a pointer is hugeicons
+Cursor02Icon (`pointer` in `Icon.tsx`) filled with the peer's colour, its
+tip at x and y of the block's box, with the name in a pill below and right
+of it (left of it within 142 px of the editor's right edge, the widest pill
+and its gap); a block
+selection is a 2 px outline 4 px outside each run, from its first block's
+top to its last block's bottom, its corners half the theme's
+`--radius-button` (capy 4 px, fisheye 6 px, notion 3 px), with the name in a
+flag at its top right. A name past 128 px is cut with an ellipsis, in the pill
+and the flag. Both use `--peer-<n>` and `--peer-fg` (white on the
+light shades, #11111b on the dark), and a block the note does not render
+draws nothing. They sit in an overlay in the editor's container, so they
+scroll with the note; it lays out at most once a frame and never re-renders
+the editor. A peer's marks are placed again (`placeMarks`) only when its
+pointer, runs, name or colour change, not on its caret moves; every peer's
+when the room's presence, the note's size or the document changes (an edit
+can move a block without resizing the note). Marks find their blocks through
+`blockIndex`, a map of the note's `data-block-id` elements filled in one pass
+and filled again only when an id has no live element, at most once a layout,
+instead of a search of the note per mark (review P1, 2026-10-28: on the 2 MB
+load-test note at CPU x4 a co-editor's caret move cost the marks about 46 ms
+and a pointer move about 70 ms before, nothing and about 38 ms after).
+
+One switch, "Show others' cursors" in Settings › Customizations › Editor
+(`EditorSection`, below Chat; `showOthers` in `noteEditorPrefs.ts`, a device
+setting, on by default; Epo 2026-10-28, Q542), decides only what this device
+draws, in every document type: off, notes draw no co-editor carets,
+selections, pointers or block selections and Office files no cursors
+(`createOfficeCursors` sends the frame no peers); the header's avatar group
+stays, and every tab keeps sending its own presence.
+
 ### Office cursors
 
 Developer Epo decided on 2026-10-20 that Office files draw co-editors'
@@ -318,9 +412,17 @@ source room's awareness (`officeCursors.ts`, `useSourceSession`). Capy sends
 the frame the co-editors' cursors as `peers`: each client id with a cursor in
 the room's awareness and a name in the room's presence, under that name,
 never one from awareness; an id the presence does not list (a reader, or a
-peer not listed yet) is not drawn. A cursor is a DOCX story and its encoded
-positions, an XLSX sheet and cell range, or a PPTX slide and shape, each
-bounded (`isOfficeCursor`). The flags look as the fork draws them.
+peer not listed yet) is not drawn, and neither is a state the source room's
+field list drops. A cursor is a DOCX story and its encoded positions, an XLSX
+sheet and cell range, or a PPTX slide and shape, each bounded
+(`isOfficeCursor` for the frame's messages). In awareness the adapter writes
+DOCX positions as base64 (at most 1,368 characters, 1,024 bytes) and the
+frame gets its byte arrays back (Epo 2026-10-28); it writes each field by
+name, and a state holding anything beside `cursor`, or a cursor with any
+other field, is dropped by the server and by `officePeers`. The show-others
+switch ([presence payloads](#presence-payloads)) hides them. PPTX `shapeIds`
+and Office pointers wait on a BetterOffice change. The flags look as the fork
+draws them.
 
 ### Idle close
 
@@ -499,15 +601,14 @@ each placeholder subscribes to awareness on its own
 a presence change re-renders only the placeholders whose answer changed, not
 the editor. When the uploader disconnects (the room nulls its presence) or
 its awareness times out, the block is the empty placeholder again; nothing
-about an upload is stored in the note. A tab names at most 100 uploads (an id
-is at most 21 characters, so under 3 KiB of the server's 64 KiB awareness
-entry, past which the room closes the channel), and a received list counts
-only its first 100 ids of up to 32 characters (REVIEW5 E1, E3). The room drops
-the list from a read-only channel's presence (`without_uploads` in
-`room.rs`), so a viewer cannot show blocks as uploading (REVIEW5 E2; it parses every
-such entry, so an escaped key cannot slip past, R1, and relays one it cannot
-parse as a removal, since a browser's `JSON.parse` takes some JSON serde_json
-refuses, R1b). Viewers
+about an upload is stored in the note. A tab names at most 100 uploads of at
+most 32 characters (an id is a 21-character nanoid), the note's field list
+([presence payloads](#presence-payloads)): a state with a longer list or id is
+dropped whole, by the room and by every receiver (REVIEW5 E1, E3). A read-only
+channel's state naming uploads is dropped whole, so a reader cannot show
+blocks as uploading (REVIEW5 E2; the room parses every state, so an escaped
+key cannot slip past, R1, and drops one serde_json cannot parse, though a
+browser's `JSON.parse` takes some of it, R1b). Viewers
 that do not join the room (the static projection) do not see it.
 
 Each asset belongs to one note, and the server keeps it that way; the browser
@@ -1485,7 +1586,8 @@ close; they join again once the note has joined. Each embed keeps its own
 document, storage, history, keys room and id; its own token refreshes and
 expiry apply as for any channel, and a JOIN costs one message of the
 allowance. With no note channel (an embedded set opened on its own study
-page, or under MSW) an item room joins as any document does. A room keeps at most 256 awareness
+page, or under MSW) an item room joins as any document does; it keeps no
+awareness state ([presence payloads](#presence-payloads)). A room keeps at most 256 awareness
 client ids (`MAX_CLIENTS_PER_ROOM`); a new id past it is not kept. The room's
 cap counts removed ids until their removal went out (the next flush forgets
 them), so adding and removing ids in a loop stays capped and needs no scan.

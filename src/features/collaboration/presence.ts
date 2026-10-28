@@ -78,6 +78,17 @@ export function presenceNames(
   return names;
 }
 
+/** Each awareness client id's connection: its verified name labels a note
+ * cursor and its person's number colours it. */
+export function presenceClients(
+  connections: readonly PresenceConnection[]
+): Map<number, PresenceConnection> {
+  const clients = new Map<number, PresenceConnection>();
+  for (const connection of connections)
+    for (const client of connection.clients) clients.set(client, connection);
+  return clients;
+}
+
 export const NO_PRESENCE: PresenceConnection[] = [];
 
 /** A pane's room presence, as a store so a change re-renders only what

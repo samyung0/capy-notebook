@@ -1,9 +1,5 @@
 import { BaseYjsPlugin } from '@platejs/yjs';
-import {
-  slateNodesToInsertDelta,
-  slatePointToRelativePosition,
-  YjsEditor,
-} from '@slate-yjs/core';
+import { slateNodesToInsertDelta, YjsEditor } from '@slate-yjs/core';
 import type { Point } from 'platejs';
 import { createPlateEditor } from 'platejs/react';
 import { afterEach, expect, it } from 'vitest';
@@ -13,8 +9,18 @@ import {
   encodeAwarenessUpdate,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
+import {
+  type PresenceConnection,
+  presenceClients,
+} from '@/features/collaboration/presence';
 import { InlineEquationPlugin } from './equationPlugins';
-import { readRemotePeers, remoteCursorRangesForEntry } from './RemoteCursors';
+import { blockIndex, sendCaret } from './notePresence';
+import {
+  placeMarks,
+  readPeerMarks,
+  readRemotePeers,
+  remoteCursorRangesForEntry,
+} from './RemoteCursors';
 
 const equation = {
   children: [{ text: '' }],
@@ -39,6 +45,8 @@ const value = [
     type: 'p',
   },
 ];
+
+const BASE64 = /^[A-Za-z0-9+/=]{1,64}$/;
 
 const opened: (() => void)[] = [];
 afterEach(() => {
@@ -67,38 +75,34 @@ function room() {
   YjsEditor.flushLocalChanges(editor as never);
   opened.push(() => YjsEditor.disconnect(editor as never));
   const peer = new Awareness(new Y.Doc());
-  /** The peer's selection, relayed as the server does (JSON). */
-  const select = (anchor: Point, focus = anchor) => {
-    const relative = (point: Point) =>
-      slatePointToRelativePosition(
-        (editor as unknown as YjsEditor).sharedRoot,
-        editor as never,
-        point
-      );
-    peer.setLocalState(
-      JSON.parse(
-        JSON.stringify({
-          data: { color: '#123456', name: 'Mallory' },
-          selection: { anchor: relative(anchor), focus: relative(focus) },
-        })
-      )
-    );
+  /** The peer's state, relayed as the server does. */
+  const relay = () =>
     applyAwarenessUpdate(
       awareness,
       encodeAwarenessUpdate(peer, [peer.clientID]),
       'server'
     );
+  /** The peer's selection, as its editor sends it. */
+  const select = (anchor: Point, focus = anchor) => {
+    sendCaret(editor as never, peer, { anchor, focus });
+    relay();
   };
-  /** The verified names the room's presence gives client ids. */
-  const names = new Map([[peer.clientID, 'Peer']]);
+  /** The room's presence: the peer's verified name and person. */
+  const connection: PresenceConnection = {
+    avatar: null,
+    clients: [peer.clientID],
+    name: 'Peer',
+    person: 11,
+  };
+  const clients = presenceClients([connection]);
   /** What `decorate` returns for the root entry. */
-  const drawn = (peers = readRemotePeers(editor, names)) =>
+  const drawn = (peers = readRemotePeers(editor, clients)) =>
     remoteCursorRangesForEntry(editor, [editor, []], peers);
-  return { drawn, editor, names, peer, select };
+  return { clients, connection, doc, drawn, editor, peer, relay, select };
 }
 
 it('marks a peer caret, not only a peer selection, once', () => {
-  const { drawn, editor, select } = room();
+  const { clients, drawn, editor, select } = room();
   select({ offset: 2, path: [0, 0] });
   expect(drawn()).toEqual([
     expect.objectContaining({
@@ -110,7 +114,7 @@ it('marks a peer caret, not only a peer selection, once', () => {
   ]);
   // Only the root returns it: slate-react hands it down to the text, so a
   // block or text entry returning it too would draw it again.
-  const peers = readRemotePeers(editor, new Map());
+  const peers = readRemotePeers(editor, clients);
   expect(
     remoteCursorRangesForEntry(editor, [editor.children[0], [0]], peers)
   ).toEqual([]);
@@ -154,10 +158,10 @@ it('places a peer caret beside or on an inline equation', () => {
 });
 
 it('moves an idle peer caret when a local edit lands before it', async () => {
-  const { drawn, editor, select } = room();
+  const { clients, drawn, editor, select } = room();
   select({ offset: 5, path: [0, 2] });
   // The peer stays put: its state is the same object throughout.
-  const peers = readRemotePeers(editor, new Map());
+  const peers = readRemotePeers(editor, clients);
   const before = drawn(peers);
   expect(before.map(({ focus }) => focus)).toEqual([
     { offset: 5, path: [0, 2] },
@@ -173,20 +177,201 @@ it('moves an idle peer caret when a local edit lands before it', async () => {
   ]);
 });
 
-/** Security regression (Epo 2026-10-20): a cursor's label is the verified
- * name the room's presence gives its client id, never the name the peer's
- * awareness claims ('Mallory' here); a client the presence does not name
- * gets the generic label. Fails if labels read the awareness name. */
-it('labels a peer caret with its verified name, never its claimed one', () => {
-  const { drawn, editor, names, peer, select } = room();
+/** Epo 2026-10-28: a caret goes as `{s}`, a selection as `{s, f}`: no
+ * colour, no name, no JSON positions. */
+it('sends a caret in the compact shape', () => {
+  const { peer, select } = room();
+  select({ offset: 2, path: [0, 0] });
+  expect(Object.keys(peer.getLocalState() ?? {})).toEqual(['s']);
+  select({ offset: 0, path: [0, 0] }, { offset: 3, path: [0, 0] });
+  const state = peer.getLocalState() ?? {};
+  expect(Object.keys(state).sort()).toEqual(['f', 's']);
+  expect(state.s).toMatch(BASE64);
+});
+
+/** Security regression (Epo 2026-10-20, 2026-10-28): a cursor's label is the
+ * verified name the room's presence gives its client id and its colour the
+ * palette's for that person's number, never anything the peer's awareness
+ * says: a state claiming a name or a colour is not drawn at all, nor is a
+ * client the presence does not list yet. Fails if a caret reads its label
+ * or colour from awareness. */
+it('labels and colours a peer caret from the presence, never from its awareness', () => {
+  const { clients, connection, drawn, editor, peer, relay, select } = room();
   select({ offset: 2, path: [0, 0] });
   expect(drawn()).toEqual([
-    expect.objectContaining({ remoteCursorName: 'Peer' }),
+    expect.objectContaining({
+      remoteCursorColor: 3,
+      remoteCursorName: 'Peer',
+    }),
   ]);
-  names.delete(peer.clientID);
-  const [unnamed] = readRemotePeers(editor, names);
-  expect(unnamed?.name).toBeUndefined();
-  expect(JSON.stringify(drawn(readRemotePeers(editor, names)))).not.toContain(
-    'Mallory'
+  // A connection without a name gets the generic label.
+  const unnamed = presenceClients([{ ...connection, name: null }]);
+  expect(readRemotePeers(editor, unnamed)).toEqual([
+    expect.objectContaining({ color: 3, name: undefined }),
+  ]);
+  expect(readRemotePeers(editor, new Map())).toEqual([]);
+  peer.setLocalState({
+    ...peer.getLocalState(),
+    data: { color: 'url(https://example.com/x)', name: 'Mallory' },
+  });
+  relay();
+  expect(readRemotePeers(editor, clients)).toEqual([]);
+});
+
+/** Q546 (Epo 2026-10-29, review S1): a caret position naming a root type
+ * (`tname`) instead of an item is skipped, as `s` or as `f`, so resolving it
+ * never makes this tab's note Y.Doc create and keep that root type
+ * (security regression: fails with the `tname` check in `decodePosition`
+ * reverted, the document gaining "x1" and "x2"). */
+it('skips a peer caret naming a root type and adds no type to the note', () => {
+  const { doc, drawn, peer, relay, select } = room();
+  // 01 02 78 31 00 and 01 02 78 32 00: positions on root types "x1" and "x2".
+  const x1 = 'AQJ4MQA=';
+  const x2 = 'AQJ4MgA=';
+  select({ offset: 2, path: [0, 0] });
+  const item = peer.getLocalState()?.s as string;
+  peer.setLocalState({ s: x1 });
+  relay();
+  expect(drawn()).toEqual([]);
+  expect(doc.share.has('x1')).toBe(false);
+  // A root-type focus draws nothing; a root-type anchor leaves the caret.
+  peer.setLocalState({ f: x2, s: item });
+  relay();
+  expect(drawn()).toEqual([]);
+  peer.setLocalState({ f: item, s: x2 });
+  relay();
+  expect(drawn()).toEqual([
+    expect.objectContaining({
+      anchor: { offset: 2, path: [0, 0] },
+      remoteCursorCaret: true,
+    }),
+  ]);
+  expect(doc.share.has('x2')).toBe(false);
+});
+
+/** A block's box (left, top, width, height) in page coordinates. */
+const box = (left: number, top: number, width: number, height: number) => ({
+  getBoundingClientRect: () => ({
+    bottom: top + height,
+    height,
+    left,
+    right: left + width,
+    top,
+    width,
+  }),
+});
+
+/** A rendered block `id` with its box. */
+const block = (id: string, ...at: Parameters<typeof box>) => ({
+  ...box(...at),
+  getAttribute: () => id,
+  isConnected: true,
+});
+
+/** A note root holding `blocks`, counting its passes over them. */
+const noteRoot = (blocks: ReturnType<typeof block>[]) => {
+  const root = {
+    blocks,
+    passes: 0,
+    querySelectorAll: () => {
+      root.passes += 1;
+      return root.blocks;
+    },
+  };
+  return root;
+};
+
+/** Epo 2026-10-28 (mocks P1, B3): a peer's pointer lands at its 0–1000 share
+ * of its block's box, a run spans its first block's top to its last's bottom,
+ * both in the overlay's coordinates, coloured and named from the presence;
+ * a block that is not rendered draws nothing, and a state outside the field
+ * list or a client the presence does not list draws nothing either. */
+it("places peers' pointers and block runs in their blocks", () => {
+  const blocks = blockIndex(
+    noteRoot([
+      block('a', 110, 70, 400, 30),
+      block('b', 110, 100, 400, 60),
+    ]) as never
   );
+  const origin = box(100, 50, 450, 900).getBoundingClientRect();
+  const awareness = new Awareness(new Y.Doc());
+  const peer = new Awareness(new Y.Doc());
+  const relay = (state: Record<string, unknown>) => {
+    peer.setLocalState(state);
+    applyAwarenessUpdate(
+      awareness,
+      encodeAwarenessUpdate(peer, [peer.clientID]),
+      'server'
+    );
+  };
+  const clients = presenceClients([
+    { avatar: null, clients: [peer.clientID], name: 'Ann', person: 9 },
+  ]);
+  const marks = () => {
+    const marked = readPeerMarks(awareness, clients, peer.clientID);
+    return marked
+      ? placeMarks(origin as never, blocks.find, peer.clientID, marked)
+      : [];
+  };
+
+  relay({
+    b: [
+      ['a', 'b'],
+      ['gone', 'b'],
+    ],
+    p: ['b', 500, 250],
+  });
+  expect(marks()).toEqual([
+    expect.objectContaining({
+      color: 1,
+      flip: false,
+      key: `${peer.clientID}:p`,
+      kind: 'pointer',
+      left: 210,
+      name: 'Ann',
+      top: 65,
+    }),
+    expect.objectContaining({
+      height: 90,
+      kind: 'run',
+      left: 10,
+      name: 'Ann',
+      top: 20,
+      width: 400,
+    }),
+  ]);
+  // Near the overlay's right edge, where its longest name would not fit, the
+  // name goes on the pointer's left.
+  relay({ p: ['b', 1000, 0] });
+  expect(marks()).toEqual([expect.objectContaining({ flip: true })]);
+  relay({ p: ['gone', 500, 500] });
+  expect(marks()).toEqual([]);
+  relay({ data: { color: 'red' }, p: ['b', 500, 500] });
+  expect(marks()).toEqual([]);
+  relay({ p: ['b', 500, 500] });
+  expect(readPeerMarks(awareness, clients, peer.clientID)).toBeDefined();
+  expect(readPeerMarks(awareness, new Map(), peer.clientID)).toBeUndefined();
+});
+
+/** A mark finds its block without searching the note (review P1): one pass
+ * fills the index, and an id it holds no live element for runs it again at
+ * most once per layout. */
+it('finds blocks through an index filled once per layout at most', () => {
+  const root = noteRoot([block('a', 0, 0, 10, 10)]);
+  const blocks = blockIndex(root as never);
+  expect(blocks.find('a')).toBe(root.blocks[0]);
+  expect(blocks.find('a')).toBe(root.blocks[0]);
+  expect(blocks.find('gone')).toBeUndefined();
+  expect(blocks.find('gone')).toBeUndefined();
+  expect(root.passes).toBe(1);
+  blocks.next();
+  expect(blocks.find('a')).toBe(root.blocks[0]);
+  expect(root.passes).toBe(1);
+  // A block rendered again: the old element left the note.
+  root.blocks[0].isConnected = false;
+  const again = block('a', 0, 20, 10, 10);
+  root.blocks = [again];
+  blocks.next();
+  expect(blocks.find('a')).toBe(again);
+  expect(root.passes).toBe(2);
 });

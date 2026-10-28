@@ -27,6 +27,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { AccountTab } from '@/features/settings/AccountTab';
 import { ChatSection } from '@/features/settings/ChatSection';
 import { DeleteAccountDialog } from '@/features/settings/DeleteAccountDialog';
+import { EditorSection } from '@/features/settings/EditorSection';
 import { LanguageRow } from '@/features/settings/LanguageRow';
 import { ModelPicker } from '@/features/settings/ModelPicker';
 import { StudyPreferencesSection } from '@/features/settings/StudyPreferencesSection';
@@ -93,6 +94,7 @@ function CustomizationsTab() {
           </Select>
         </SettingRow>
         <ChatSection />
+        <EditorSection />
       </div>
     </>
   );

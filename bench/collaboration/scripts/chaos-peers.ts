@@ -14,12 +14,13 @@
  *   pnpm chaos:peers --room source:<file id>:epoch:<n> --user <user id>
  */
 import { createHmac, randomBytes } from 'node:crypto';
-import { CursorEditor, withCursors, withYjs, YjsEditor } from '@slate-yjs/core';
+import { withYjs, YjsEditor } from '@slate-yjs/core';
 import { createSlateEditor, type NodeEntry, type Path, TextApi, type TNode } from 'platejs';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { RoomProvider } from '../../../src/features/collaboration/roomProvider';
 import { CollabSocket } from '../../../src/features/collaboration/socket';
+import { sendCaret } from '../../../src/features/notes/notePresence';
 
 interface RangeMs {
   max: number;
@@ -88,12 +89,6 @@ const pick = (range: RangeMs) => range.min + Math.floor(Math.random() * (range.m
 const sample = <T>(items: T[]): T => items[Math.floor(Math.random() * items.length)];
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-function cursorColor(seed: string) {
-  let hash = 0;
-  for (const character of seed) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  return `hsl(${hash % 360} 72% 48%)`;
-}
-
 function parseOptions(argv: string[]): ChaosOptions {
   const args = argv.filter((value) => value !== '--');
   if (args.includes('--help') || args.includes('-h')) usage();
@@ -158,7 +153,7 @@ class OriginWebSocket extends WebSocket {
 // The room provider opens its sockets with the global constructor.
 globalThis.WebSocket = OriginWebSocket;
 
-type PeerEditor = ReturnType<typeof createSlateEditor> & YjsEditor & CursorEditor<{ color: string; name: string }>;
+type PeerEditor = ReturnType<typeof createSlateEditor> & YjsEditor;
 
 /** Text leaves of plain text blocks, where a person types. */
 function textEntries(editor: PeerEditor): NodeEntry[] {
@@ -186,16 +181,18 @@ function randomEdit(editor: PeerEditor, name: string) {
   YjsEditor.flushLocalChanges(editor);
 }
 
-function moveCursor(editor: PeerEditor) {
+/** Its caret in the compact presence the app sends (notePresence.ts): the
+ * room's field list drops any other shape (Epo 2026-10-28). */
+function moveCursor(editor: PeerEditor, awareness: Awareness) {
   const entries = textEntries(editor);
   if (entries.length === 0) {
-    CursorEditor.sendCursorPosition(editor, null);
+    sendCaret(editor, awareness, null);
     return;
   }
   const [node, path] = sample(entries);
   const length = TextApi.isText(node) ? node.text.length : 0;
   const point = { offset: Math.floor(Math.random() * (length + 1)), path };
-  CursorEditor.sendCursorPosition(editor, { anchor: point, focus: point });
+  sendCaret(editor, awareness, { anchor: point, focus: point });
 }
 
 function randomSourceEdit(text: Y.Text, name: string) {
@@ -270,21 +267,17 @@ class ChaosPeer {
     }
     if (this.destroyed) return;
     if (awareness) {
-      const data = { color: cursorColor(`${this.name}${this.slot}`), name: this.name };
-      // Cursors are sent by hand: autoSend would send the headless editor's
-      // null selection after every change. Plate's editor is not a Slate
-      // BaseEditor by type, so the slate-yjs wrappers take a cast.
-      const editor = withCursors(
-        withYjs(createSlateEditor() as never, document.get('content', Y.XmlText), { autoConnect: false }),
-        awareness,
-        { autoSend: false, data }
-      ) as unknown as PeerEditor;
+      // Cursors are sent by hand, labelled and coloured by the room's
+      // presence. Plate's editor is not a Slate BaseEditor by type, so the
+      // slate-yjs wrapper takes a cast.
+      const editor = withYjs(createSlateEditor() as never, document.get('content', Y.XmlText), {
+        autoConnect: false,
+      }) as unknown as PeerEditor;
       YjsEditor.connect(editor);
-      CursorEditor.sendCursorData(editor, data);
       this.editor = editor;
       const cursors = () => {
         if (!this.editor) return;
-        moveCursor(this.editor);
+        moveCursor(this.editor, awareness);
         this.schedule(cursors, pick(this.options.cursorMs));
       };
       this.schedule(cursors, pick(this.options.cursorMs));
@@ -307,7 +300,7 @@ class ChaosPeer {
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();
     if (this.editor && YjsEditor.connected(this.editor)) {
-      CursorEditor.sendCursorPosition(this.editor, null);
+      if (this.provider) sendCaret(this.editor, this.provider.awareness, null);
       YjsEditor.disconnect(this.editor);
     }
     this.editor = null;

@@ -185,3 +185,109 @@ test('the header lists co-editors as an avatar group', async ({ page }) => {
   });
   await expect(group).toHaveCount(0);
 });
+
+// Co-editors' carets, pointers and block selections come from their compact
+// presence, named from the room's presence (mocks P1 and B3). The show-others
+// switch in Settings > Customizations > Editor, a device setting, hides them
+// while the avatar group stays (Epo 2026-10-28, Q542).
+test("co-editors' carets, pointers and block selections show until the show-others switch hides them", async ({
+  page,
+}) => {
+  const editor = page.locator(
+    '[data-slate-editor="true"][contenteditable="true"]'
+  );
+  const marks = [
+    editor.locator('[data-remote-caret="Ann"]'),
+    page.locator('[data-remote-pointer="Ben"]'),
+    page.locator('[data-remote-run="Ben"]'),
+  ];
+  const openWithPeers = async () => {
+    await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
+    await expect(editor).toBeVisible({ timeout: 30_000 });
+    await page.evaluate(async () => {
+      const path = '/src/mocks/collaboration.ts';
+      const { mockPeerCaret, mockPresencePeer } = (await import(
+        path
+      )) as typeof import('../../src/mocks/collaboration');
+      mockPeerCaret(
+        'mat_e2e_editor',
+        { avatar: null, name: 'Ann', person: 3 },
+        2
+      );
+      mockPresencePeer(
+        'mat_e2e_editor',
+        { avatar: null, name: 'Ben', person: 5 },
+        {
+          b: [['mat_e2e_editor:first', 'mat_e2e_editor:second']],
+          p: ['mat_e2e_editor:third', 400, 500],
+        }
+      );
+    });
+    await expect(page.getByTestId('room-presence')).toBeVisible();
+  };
+  await openWithPeers();
+  for (const mark of marks) await expect(mark).toHaveCount(1);
+  await page.goto('/settings?tab=customizations');
+  const shown = page.getByRole('switch', { name: m.settings_show_others() });
+  await expect(shown).toBeChecked();
+  await shown.click();
+  await expect(shown).not.toBeChecked();
+  await openWithPeers();
+  for (const mark of marks) await expect(mark).toHaveCount(0);
+});
+
+// This tab's pointer and block selection reach its co-editors (review T2):
+// the pointer over a block as that block's id until it leaves the note, and
+// a block selected by right-clicking it as a one-block run.
+test("this tab's pointer and block selection reach co-editors", async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
+  await expect(
+    page.locator('[data-slate-editor="true"][contenteditable="true"]')
+  ).toBeVisible({ timeout: 30_000 });
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { mockNotePeer } = (await import(
+      path
+    )) as typeof import('../../src/mocks/collaboration');
+    const { awareness } = mockNotePeer('mat_e2e_editor');
+    Object.assign(window, {
+      seenByPeer: () => {
+        const states = [...awareness.getStates()].filter(
+          ([client]) => client !== awareness.clientID
+        );
+        return states.map(([, state]) => ({ b: state.b, p: state.p }));
+      },
+    });
+  });
+  const seen = () =>
+    page.evaluate(() =>
+      (
+        window as unknown as {
+          seenByPeer: () => { b?: string[][]; p?: [string] | null }[];
+        }
+      ).seenByPeer()
+    );
+  const second = await page
+    .locator('[data-block-id="mat_e2e_editor:second"]')
+    .boundingBox();
+  if (!second) throw new Error('The second block is not on screen');
+  await page.mouse.move(
+    second.x + second.width / 2,
+    second.y + second.height / 2
+  );
+  await expect
+    .poll(async () => (await seen()).map(({ p }) => p?.[0] ?? null))
+    .toEqual(['mat_e2e_editor:second']);
+  await page.mouse.move(1, 1);
+  await expect
+    .poll(async () => (await seen()).map(({ p }) => p ?? null))
+    .toEqual([null]);
+  await page
+    .locator('[data-block-id="mat_e2e_editor:first"]')
+    .click({ button: 'right' });
+  await expect
+    .poll(async () => (await seen()).map(({ b }) => b ?? null))
+    .toEqual([[['mat_e2e_editor:first', 'mat_e2e_editor:first']]]);
+});

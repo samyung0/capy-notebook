@@ -47,6 +47,7 @@ import {
   readQuestions,
   seedQuiz,
 } from '@/features/quizzes/liveQuiz';
+import { bytesToBase64 } from '@/lib/base64';
 import * as db from './db';
 
 /** In-page stand-in for the collaboration sidecar. A room is one Y.Doc that
@@ -596,6 +597,32 @@ export function mockPresencePeer(
   });
   // Set once joined, so the room relays it to the others.
   awareness?.setLocalState(state ?? null);
+  return leave;
+}
+
+/** Another editor of the open mock note with its caret `offset` characters
+ * into the note's first block, sent as a tab sends it (notePresence.ts), for
+ * e2e; returns its leave. */
+export function mockPeerCaret(
+  targetId: string,
+  identity: MockIdentity,
+  offset: number
+) {
+  const document = new Y.Doc();
+  const awareness = new Awareness(document);
+  const leave = join(openRoom(targetId), {
+    awareness,
+    document,
+    identity,
+    origin: {},
+  });
+  const root = document.get('content', Y.XmlText);
+  const [first] = root.toDelta() as { insert: unknown }[];
+  const block = first?.insert instanceof Y.XmlText ? first.insert : root;
+  const position = Y.createRelativePositionFromTypeIndex(block, offset);
+  awareness.setLocalState({
+    s: bytesToBase64(Y.encodeRelativePosition(position)),
+  });
   return leave;
 }
 

@@ -21,6 +21,7 @@ mod markers;
 mod model;
 mod note_store;
 mod observe;
+mod presence;
 mod projection;
 mod protocol;
 mod pubsub;
