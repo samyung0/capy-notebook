@@ -12745,7 +12745,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Remove a workspace member
+      summary: Remove a workspace member, or leave it as that member
       tags:
         - Workspace collaboration
     patch:

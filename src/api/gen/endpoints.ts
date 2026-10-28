@@ -10492,7 +10492,7 @@ export const getRemoveWorkspaceMemberUrl = (id: string,
 }
 
 /**
- * @summary Remove a workspace member
+ * @summary Remove a workspace member, or leave it as that member
  */
 export const removeWorkspaceMember = async (id: string,
     memberId: string, options?: RequestInit): Promise<removeWorkspaceMemberResponse> => {

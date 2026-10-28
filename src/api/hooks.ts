@@ -2406,6 +2406,17 @@ export function useUpdateWorkspaceMember(workspaceId: string) {
   });
 }
 
+/** A member leaving `workspaceId`: the owner's remove call on its own row.
+ * Its files drop out of the All files lists and search, as a visitor's do. */
+export function useLeaveWorkspace(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) =>
+      api.del<void>(`/workspaces/${workspaceId}/members/${userId}`),
+    onSuccess: () => invalidateVisitLists(qc, true),
+  });
+}
+
 export function useRemoveWorkspaceMember(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({

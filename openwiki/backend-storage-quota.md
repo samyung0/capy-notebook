@@ -23,7 +23,7 @@ catalog for every numeric limit that may vary by subscription plan:
 | Monthly credits                 |                        200 |                     10,000 |
 | Source file                     |                     10 MiB |                     30 MiB |
 | Material daily-history entries  |                          3 |                         30 |
-| Owned workspaces                |                         10 |                         50 |
+| Workspaces (owned + joined)     |                         10 |                         50 |
 | Files per workspace             |                        100 |                        100 |
 | Files per upload/import request |                         20 |                         20 |
 | One uploaded image              |                      2 MiB |                      2 MiB |
@@ -102,7 +102,8 @@ media to a material whose payer is frozen, or at its limit
 (`assertMaterialNotFullTx`, so nobody pays for a node the material could not
 save). A workspace
 ownership transfer moves no charges (`TransferWorkspace` only swaps roles and
-still checks the recipient's owned-workspace and file caps). A member who
+still checks the recipient's file cap; the workspace cap counts members, so a
+transfer leaves it unchanged). A member who
 leaves or is removed keeps paying for what it added; the items stay in the
 workspace, and the Files page (files, blocks, trash), which lists only what the
 caller pays for and so adds up to its storage meter (Sam 2026-10-19), still

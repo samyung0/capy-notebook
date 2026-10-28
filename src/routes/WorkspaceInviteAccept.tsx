@@ -54,13 +54,16 @@ function InviteContent() {
   // open to accept after leaving or deleting one, and the limit is toasted.
   const acceptError = isWorkspaceLimitError(error) ? null : error;
   const acceptIsError = !!acceptError;
-  // Used or refused: a retry keeps it in state, a refresh does not.
+  // Used or refused: a retry keeps it in state, a refresh does not. A limit
+  // refusal keeps the stash too, so Back or a refresh after upgrading from
+  // the toast reopens the invite (Epo 2026-10-28).
   const accept = (value: string) =>
     acceptMutation(value, {
       onError: (refusal) => {
         if (isWorkspaceLimitError(refusal)) showErrorToast(refusal);
+        else clearStashedToken('invite');
       },
-      onSettled: () => clearStashedToken('invite'),
+      onSuccess: () => clearStashedToken('invite'),
     });
 
   if (

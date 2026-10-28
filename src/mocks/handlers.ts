@@ -280,6 +280,22 @@ const mockInviteCandidates: MockInviteCandidate[] = [
 
 const SOURCE_EPOCH = 1;
 
+/** The plan's workspace cap, owned and joined together, as the gateway
+ * enforces it. */
+function atWorkspaceCap() {
+  const cap = PLAN_LIMITS[db.user.planTier].ownedWorkspaceLimit;
+  return (
+    cap !== null &&
+    db.workspaces.filter((w) => w.isOwner || w.role).length >= cap
+  );
+}
+
+const workspaceLimitResponse = () =>
+  HttpResponse.json(
+    { code: 'workspace_limit_exceeded', message: 'workspace limit reached' },
+    { status: 403 }
+  );
+
 /** Fixture Office sources use native checkpoint seeds; text sources seed from
  * their mock byte link. Intentionally broken preview files still answer 503. */
 async function mockSourceSession(
@@ -1331,20 +1347,7 @@ export const handlers = [
     const body = (await request.json()) as Partial<Workspace> & {
       tags?: TagInput[];
     };
-    // The plan's workspace cap, owned and joined together, as the gateway
-    // enforces it.
-    const cap = PLAN_LIMITS[db.user.planTier].ownedWorkspaceLimit;
-    if (
-      cap !== null &&
-      db.workspaces.filter((w) => w.isOwner || w.role).length >= cap
-    )
-      return HttpResponse.json(
-        {
-          code: 'workspace_limit_exceeded',
-          message: 'workspace limit reached',
-        },
-        { status: 403 }
-      );
+    if (atWorkspaceCap()) return workspaceLimitResponse();
     const id = uid('ws');
     const ws: Workspace = {
       autoProcess: true,
@@ -1573,24 +1576,21 @@ export const handlers = [
     }
   ),
   http.delete('/api/workspaces/:id/members/:memberId', async ({ params }) => {
+    // Removing yourself is leaving: the workspace drops out of your list and
+    // nobody is notified, as on the server. Only members are offered Leave;
+    // the member scenarios keep the fixture's owner flag, so it is not read.
+    if (params.memberId === db.user.id) {
+      const left = db.workspaces.findIndex((w) => w.id === params.id);
+      if (left < 0) return new HttpResponse(null, { status: 404 });
+      db.workspaces.splice(left, 1);
+      return new HttpResponse(null, { status: 204 });
+    }
     const index = mockWorkspaceMembers.findIndex(
       (item) =>
         item.workspaceId === params.id && item.userId === params.memberId
     );
     if (index < 0) return new HttpResponse(null, { status: 404 });
     mockWorkspaceMembers.splice(index, 1);
-    const workspaceName =
-      db.workspaces.find((workspace) => workspace.id === params.id)?.name ??
-      'this workspace';
-    if (params.memberId === db.user.id) {
-      db.notifications.unshift({
-        at: new Date().toISOString(),
-        data: { workspaceId: params.id, workspaceName },
-        href: '/workspaces',
-        id: uid('notification'),
-        kind: 'workspace_member_removed',
-      });
-    }
     return new HttpResponse(null, { status: 204 });
   }),
   http.post('/api/workspaces/:id/transfer', async ({ params, request }) => {
@@ -1644,6 +1644,11 @@ export const handlers = [
     if (invite.invitedUserId !== db.user.id) {
       return new HttpResponse(null, { status: 404 });
     }
+    // A role change adds no workspace; a new membership counts.
+    const joined = db.workspaces.some(
+      (w) => w.id === invite.workspaceId && (w.isOwner || w.role)
+    );
+    if (!joined && atWorkspaceCap()) return workspaceLimitResponse();
     invite.acceptedAt = new Date().toISOString();
     const candidate = mockInviteCandidates.find(
       (item) => item.id === invite.invitedUserId
@@ -1689,6 +1694,7 @@ export const handlers = [
       : new HttpResponse(null, { status: 404 });
   }),
   http.post('/api/workspaces/:id/clone', async ({ params, request }) => {
+    if (atWorkspaceCap()) return workspaceLimitResponse();
     const body = (await request.json()) as CreateWorkspaceReq;
     const source =
       db.workspaces.find((w) => w.id === params.id) ??

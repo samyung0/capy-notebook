@@ -43,6 +43,7 @@ validation instead of being remapped.
 | Chapters, upload/rename/move/delete files, material metadata and delete, generate materials | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Workspace name, description, tags, privacy, `shareRole`, statistics                  | Yes   | Yes           | No                 | No            | No                 | No           |
 | Invite/remove members, change roles, delete or transfer the workspace                       | Yes   | No            | No                 | No            | No                 | No           |
+| Leave the workspace (remove its own member row)                                             | No    | Yes           | No                 | Yes           | No                 | No           |
 | Member roster (`userId`, `name`, `avatarUrl`, `role`; never email)                          | Yes   | Yes           | No                 | Yes           | No                 | No           |
 | Mention directory (`userId`, `name`, `avatarUrl`)                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Clone the workspace                                                                         | Yes   | Yes           | Yes                | Yes           | No                 | No           |
@@ -369,6 +370,11 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   Widening sharing is an edit, refused when the actor or the owner is
   frozen; narrowing (privacy toward private, share role toward viewer) stays
   open to both.
+- **Any editor or viewer member** may leave the workspace (Epo 2026-10-28):
+  the settings Danger tab shows it Leave, which is the remove call on its own
+  row (`DELETE /api/workspaces/{id}/members/{memberId}` with its own id) and
+  sends no removal notification. The owner's Danger tab shows only Delete; an
+  owner hands the workspace over with a transfer instead.
 - **Owner only** can invite a member, change a member's role, remove a member,
   delete the workspace, and switch Auto process edits (Epo 2026-10-21): a
   workspace update carrying `autoProcess` from anyone else is refused whole
@@ -385,13 +391,17 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
 - The workspace cap counts owned and joined workspaces together (Epo
   2026-10-28): Free 10, Pro 50 (migration `0070_owned_workspace_cap.sql`), one
   count of the user's `workspace_members` rows, since every owner holds one with
-  role `owner` (link or public visits are not members). Creating, cloning or
-  receiving a workspace and accepting an invitation are refused at the limit
-  with `workspace_limit_exceeded` (`gateWorkspacesTx`); the browser toasts
-  "Workspace limit reached", and the invitation page keeps the invite open to
+  role `owner` (link or public visits are not members). Creating or cloning a
+  workspace and accepting an invitation are refused at the limit with
+  `workspace_limit_exceeded` (`gateWorkspacesTx`, which writes the user's row
+  so a repeatable-read clone retries instead of counting past a concurrent
+  create or accept); the browser toasts "Workspace limit reached", and the
+  invitation page keeps the invite open, across Back and a refresh too, to
   accept after leaving or deleting one. A transfer is not gated: the recipient
-  is already a member and the old owner stays one. Workspaces over the cap
-  after a downgrade are kept.
+  is already a member and the old owner stays one. After a downgrade nothing
+  is removed; creating, cloning and accepting stay refused until the count is
+  under the new cap. A suspended or deletion-pending owner's workspaces still
+  use their members' slots.
 - An over-quota owner (grace or frozen) may still transfer because giving away
   bytes is a recovery action; the recipient must be able to edit. A transfer
   cancels every pending invite (`revoked_at`), so the new owner starts with

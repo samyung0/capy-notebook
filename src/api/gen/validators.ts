@@ -7496,7 +7496,7 @@ export const ListWorkspaceMembersResponse = zod.array(ListWorkspaceMembersRespon
 
 
 /**
- * @summary Remove a workspace member
+ * @summary Remove a workspace member, or leave it as that member
  */
 export const RemoveWorkspaceMemberParams = zod.object({
   "id": zod.string(),

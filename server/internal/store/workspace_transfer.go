@@ -15,7 +15,8 @@ import (
 var ErrTransferSelf = errors.New("workspace already belongs to this user")
 
 // TransferWorkspace hands a workspace to another member. Owner-only, and
-// refused past the recipient's owned-workspace and file caps.
+// refused past the recipient's file cap; the workspace cap is not checked,
+// since the recipient already holds a member row.
 func (s *Store) TransferWorkspace(
 	ctx context.Context,
 	actorID, workspaceID, recipientID string,

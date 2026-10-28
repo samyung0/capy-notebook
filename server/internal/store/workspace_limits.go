@@ -13,10 +13,8 @@ import (
 var ErrWorkspaceLimitExceeded = errors.New("workspace limit exceeded")
 
 type WorkspaceLimitExceededError struct {
-	UserID   string
-	Used     int
-	Limit    int
-	PlanTier PlanTier
+	Used  int
+	Limit int
 }
 
 func (e *WorkspaceLimitExceededError) Error() string {
@@ -54,15 +52,19 @@ func (s *Store) gateWorkspacesTx(ctx context.Context, tx pgx.Tx, userID string) 
 	if limits.OwnedWorkspaces == 0 {
 		return limits, nil
 	}
+	// Writing the row, not only locking it, makes a repeatable-read clone
+	// whose snapshot predates a create or accept fail with 40001 and retry
+	// rather than count past the cap (Epo 2026-10-28).
+	if _, err := tx.Exec(ctx, `UPDATE users SET name=name WHERE id=$1`, userID); err != nil {
+		return planlimits.Limits{}, err
+	}
 	var used int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workspace_members WHERE user_id=$1`, userID).
 		Scan(&used); err != nil {
 		return planlimits.Limits{}, err
 	}
 	if used >= limits.OwnedWorkspaces {
-		return planlimits.Limits{}, &WorkspaceLimitExceededError{
-			UserID: userID, Used: used, Limit: limits.OwnedWorkspaces, PlanTier: tier,
-		}
+		return planlimits.Limits{}, &WorkspaceLimitExceededError{Used: used, Limit: limits.OwnedWorkspaces}
 	}
 	return limits, nil
 }

@@ -77,8 +77,11 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, actorID, w
 	if err != nil {
 		return nil, false, err
 	}
-	// An empty actor is refused, never read as the owner.
-	if ownerID != actorID {
+	// The owner removes any member and a member leaves by removing itself
+	// (Epo 2026-10-28); the owner's own row never matches the delete. An empty
+	// actor is refused, never read as the owner.
+	leaving := actorID != "" && memberID == actorID
+	if ownerID != actorID && !leaving {
 		return nil, false, ErrForbidden
 	}
 
@@ -169,8 +172,11 @@ func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, actorID, ws
 	if err != nil {
 		return nil, false, err
 	}
-	// An empty actor is refused, never read as the owner.
-	if ownerID != actorID {
+	// The owner removes any member and a member leaves by removing itself
+	// (Epo 2026-10-28); the owner's own row never matches the delete. An empty
+	// actor is refused, never read as the owner.
+	leaving := actorID != "" && memberID == actorID
+	if ownerID != actorID && !leaving {
 		return nil, false, ErrForbidden
 	}
 
@@ -186,6 +192,9 @@ func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, actorID, ws
 	}
 	if err != nil {
 		return nil, false, err
+	}
+	if leaving {
+		return nil, false, tx.Commit(ctx)
 	}
 
 	now := time.Now().UTC()
