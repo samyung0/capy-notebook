@@ -95,11 +95,22 @@ export const getInlineRangeProvider: (
 
   element.disposables.add(
     selectionManager.slots.changed.subscribe(selections => {
-      if (!isActiveInEditor(editorHost)) return;
-
       const textSelection = selections.find(s => s.type === 'text') as
         | TextSelection
         | undefined;
+      // Capy (vendor/blocksuite/README.md, local change 6): every block's
+      // editor hears every selection change. One with no range, for a
+      // selection that cannot reach it, would set null again: skip its DOM
+      // reads (`isActiveInEditor`), which made a keystroke O(n).
+      if (
+        inlineRange$.peek() === null &&
+        (!textSelection ||
+          (textSelection.isInSameBlock() &&
+            textSelection.from.blockId !== element.blockId))
+      )
+        return;
+      if (!isActiveInEditor(editorHost)) return;
+
       const range = rangeManager.value;
       if (!range || !textSelection) {
         inlineRange$.value = null;

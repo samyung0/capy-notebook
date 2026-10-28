@@ -604,6 +604,9 @@ export class Store {
       }
       this._onBlockAdded(id, false, true);
     });
+    // The initial blocks went into the map in place (`_onBlockAdded`); one
+    // new map tells the readers of `blocks` they changed.
+    this._blocks.value = { ...this._blocks.peek() };
 
     this._subscribeToSlots();
   }
@@ -676,10 +679,17 @@ export class Store {
       const block = new Block(this._schema, yBlock, this, options);
       this._runQuery(block);
 
-      this._blocks.value = {
-        ...this._blocks.value,
-        [id]: block,
-      };
+      // Capy (vendor/blocksuite/README.md, local change 6): a copy of the
+      // map per block made loading n blocks O(n²); the initial ones are
+      // added in place and published once, by the constructor.
+      if (init) {
+        this._blocks.peek()[id] = block;
+      } else {
+        this._blocks.value = {
+          ...this._blocks.value,
+          [id]: block,
+        };
+      }
       block.model.created.next();
 
       if (block.model.role === 'root') {
@@ -1246,6 +1256,7 @@ export class Store {
     if (this._doc.ready) {
       this._yBlocks.unobserveDeep(this._handleYEvents);
     }
+    this._crud.dispose();
     this.slots.ready.complete();
     this.slots.rootAdded.complete();
     this.slots.rootDeleted.complete();

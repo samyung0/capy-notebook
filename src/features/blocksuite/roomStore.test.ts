@@ -95,6 +95,37 @@ describe('the room store', () => {
     expect(text().toString()).toBe('base');
     dispose();
   });
+
+  it('answers parents as the tree changes, inside a transaction too', () => {
+    const doc = seeded([
+      { children: [{ text: 'a' }], id: 'a', type: 'p' },
+      { children: [{ text: 'b' }], id: 'b', type: 'p' },
+    ]);
+    const { dispose, store } = open(doc);
+    const parent = (id: string) => store.getParent(id)?.id ?? null;
+    expect(parent('b')).toBe(NOTE_ID);
+    // store.transact swallows a throw, so the answer is read out.
+    let inside: string | null = null;
+    store.transact(() => {
+      store.moveBlocks([store.getModelById('b')!], store.getModelById('a')!);
+      inside = parent('b');
+    });
+    expect(inside).toBe('a');
+    expect(parent('b')).toBe('a');
+    // A peer moves it back.
+    const peer = new Y.Doc();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+    const blocks = peer.getMap<Y.Map<Y.Array<string>>>(BLOCKS_ROOT);
+    peer.transact(() => {
+      blocks.get('a')?.get('sys:children')?.delete(0, 1);
+      blocks.get(NOTE_ID)?.get('sys:children')?.push(['b']);
+    });
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer, Y.encodeStateVector(doc)));
+    expect(parent('b')).toBe(NOTE_ID);
+    store.deleteBlock(store.getModelById('a')!);
+    expect(parent('a')).toBe(null);
+    dispose();
+  });
 });
 
 describe('the paste id middleware', () => {

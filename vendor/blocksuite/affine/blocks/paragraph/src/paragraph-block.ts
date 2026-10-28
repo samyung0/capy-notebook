@@ -261,7 +261,12 @@ export class ParagraphBlockComponent extends CaptionedBlockComponent<ParagraphBl
     const collapsed = this.store.readonly
       ? this._readonlyCollapsed.value
       : this.model.props.collapsed;
-    const collapsedSiblings = this.collapsedSiblings;
+    // Capy (vendor/blocksuite/README.md, local change 6): only a heading
+    // collapses, and the attribute below styles only a heading's icon; the
+    // siblings walk the parent's children, O(n) per paragraph rendered.
+    const collapsedSiblings = type$.value.startsWith('h')
+      ? this.collapsedSiblings
+      : [];
 
     let style = html``;
     if (this.model.props.type$.value.startsWith('h') && collapsed) {
@@ -299,13 +304,6 @@ export class ParagraphBlockComponent extends CaptionedBlockComponent<ParagraphBl
 
     return html`
       ${style}
-      <style>
-        .affine-paragraph-block-container[data-has-collapsed-siblings='false']
-          affine-paragraph-heading-icon
-          .heading-icon {
-          transform: translateX(-48px);
-        }
-      </style>
       <div
         class=${classMap({
           'affine-paragraph-block-container': true,

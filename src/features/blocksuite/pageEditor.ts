@@ -1,4 +1,5 @@
 import '@toeverything/theme/style.css';
+import './pageEditor.css';
 import { AttachmentViewExtension } from '@blocksuite/affine/blocks/attachment/view';
 import { BookmarkViewExtension } from '@blocksuite/affine/blocks/bookmark/view';
 import { DataViewViewExtension } from '@blocksuite/affine/blocks/data-view/view';

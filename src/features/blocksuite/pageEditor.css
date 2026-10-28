@@ -1,0 +1,15 @@
+/* A note's top-level blocks off screen are skipped (style, layout, paint),
+ * as Plate's chunks and the shared note's blocks are. BlockSuite renders
+ * every block and the page root is one editable host, so without this each
+ * caret move made Chrome walk the whole note's text (Selection.addRange,
+ * about 50 ms a key on the near-limit note) and scrolling painted all of
+ * it. The clip margin keeps heading icons, bullets and toggles that sit
+ * outside a block visible under the paint containment this implies. */
+affine-note
+  > .affine-note-block-container
+  > .affine-block-children-container
+  > [data-block-id] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 2.5rem;
+  overflow-clip-margin: 6rem;
+}

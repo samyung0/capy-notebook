@@ -7,8 +7,84 @@ import type { BlockModel } from '../block/block-model.js';
 import type { YBlock } from '../block/types.js';
 import { internalPrimitives } from '../block/zod.js';
 
+/** The root and every block's parent, from one walk of the tree. */
+type Tree = {
+  root: string | null;
+  parents: Map<string, string>;
+  schemaSize: number;
+};
+
+/** Whether a transaction may have changed the tree: a block added or
+ * removed, or a children list or flavour changed. Conservative: any array. */
+function changesTree(transaction: Y.Transaction, yBlocks: Y.Map<YBlock>) {
+  for (const [type, keys] of transaction.changed) {
+    if ((type as unknown) === yBlocks || type instanceof Y.Array) return true;
+    if (keys.has('sys:children') || keys.has('sys:flavour')) return true;
+  }
+  return false;
+}
+
 export class DocCRUD {
+  /* Capy (vendor/blocksuite/README.md, local change 6): `root` read every
+   * block and `getParent` walked the tree on each call, and both run per
+   * block rendered and per keystroke, so a large note cost O(n²) to open and
+   * O(n) a key. The tree is kept from one walk until a transaction changes
+   * it, and walked afresh while such a transaction is open or its observers
+   * run, so every answer is the walk's. */
+  private _tree: Tree | null = null;
+
+  private readonly _onTransaction = (transaction: Y.Transaction) => {
+    if (this._tree && changesTree(transaction, this._yBlocks))
+      this._tree = null;
+  };
+
   get root(): string | null {
+    return this._currentTree()?.root ?? this._findRoot();
+  }
+
+  constructor(
+    private readonly _yBlocks: Y.Map<YBlock>,
+    private readonly _schema: Schema
+  ) {
+    _yBlocks.doc?.on('beforeObserverCalls', this._onTransaction);
+  }
+
+  dispose() {
+    this._yBlocks.doc?.off('beforeObserverCalls', this._onTransaction);
+    this._tree = null;
+  }
+
+  /** The kept tree, built if missing, or null while a transaction that
+   * changes the tree is open or running its observers. */
+  private _currentTree(): Tree | null {
+    const doc = this._yBlocks.doc;
+    if (!doc) return null;
+    if (doc._transactionCleanups.some(t => changesTree(t, this._yBlocks))) {
+      this._tree = null;
+      return null;
+    }
+    const schemaSize = this._schema.flavourSchemaMap.size;
+    if (this._tree?.schemaSize !== schemaSize) {
+      const root = this._findRoot();
+      const parents = new Map<string, string>();
+      // Pre-order, first occurrence wins: the block `_findParent` meets
+      // first. A block already met is not walked again.
+      const walk = (parentId: string) => {
+        const children = this._yBlocks.get(parentId)?.get('sys:children');
+        if (!children) return;
+        for (const childId of children.toArray()) {
+          if (parents.has(childId)) continue;
+          parents.set(childId, parentId);
+          walk(childId);
+        }
+      };
+      if (root) walk(root);
+      this._tree = { parents, root, schemaSize };
+    }
+    return this._tree;
+  }
+
+  private _findRoot(): string | null {
     let rootId: string | null = null;
     this._yBlocks.forEach(yBlock => {
       const flavour = yBlock.get('sys:flavour') as string;
@@ -21,11 +97,6 @@ export class DocCRUD {
     });
     return rootId;
   }
-
-  constructor(
-    private readonly _yBlocks: Y.Map<YBlock>,
-    private readonly _schema: Schema
-  ) {}
 
   private _getSiblings<T>(
     id: string,
@@ -240,7 +311,16 @@ export class DocCRUD {
   }
 
   getParent(targetId: string): string | null {
-    const root = this.root;
+    const tree = this._currentTree();
+    if (tree) {
+      if (!tree.root || tree.root === targetId) return null;
+      return tree.parents.get(targetId) ?? null;
+    }
+    return this._findParent(targetId);
+  }
+
+  private _findParent(targetId: string): string | null {
+    const root = this._findRoot();
     if (!root || root === targetId) return null;
 
     const findParent = (parentId: string): string | null => {

@@ -155,4 +155,11 @@ export const paragraphBlockStyles = css`
       display: none;
     }
   }
+
+  /* Capy (local change 6): was a <style> in every paragraph's template. */
+  .affine-paragraph-block-container[data-has-collapsed-siblings='false']
+    affine-paragraph-heading-icon
+    .heading-icon {
+    transform: translateX(-48px);
+  }
 `;

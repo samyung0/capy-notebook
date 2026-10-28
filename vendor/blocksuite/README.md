@@ -101,6 +101,33 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
    `message`/`errorMap`, uses `.superRefine`, `.passthrough`, `.strict` or
    `.deepPartial`.
 
+6. Large-note cost (2026-10-28, `todo-blocksuite-spike.md` "6. Measure"):
+   work that ran once per block or once per keystroke over every block.
+   Each change keeps the answers it replaced.
+   - `framework/store` `model/store/crud.ts`: `root` read every block and
+     `getParent` walked the tree from the root on each call; block rendering
+     (paragraph `collapsedSiblings`, `topContenteditableElement`, the drag
+     handle's drop target) and each key (event scope, range binding) call
+     them, so opening was O(n²) and a key O(n). `DocCRUD` keeps the root and
+     a child → parent map from one pre-order walk (the first parent the walk
+     meets, as before) and drops it in `beforeObserverCalls` of any
+     transaction that adds or removes a block or changes a children list or
+     flavour. While such a transaction is open or its observers run, it
+     walks afresh. `Store.dispose` releases the listener.
+   - `framework/store` `model/store/store.ts`: the constructor copied the
+     blocks map once per block (O(n²)); the initial blocks go into it in
+     place and one new map is published at the end.
+   - `blocks/paragraph` `paragraph-block.ts`: `renderBlock` computes
+     `collapsedSiblings` (O(n) over the parent's children) for headings only;
+     a non-heading never collapses and the attribute it set styles only a
+     heading's icon. The static `<style>` each paragraph rendered (one
+     stylesheet per paragraph) is in `styles.ts` instead, with the same
+     selector.
+   - `framework/std` `inline/range/inline-range-provider.ts`: every block's
+     inline editor hears every selection change; one whose range is already
+     null, for a selection that cannot reach it, returns before reading the
+     DOM (`isActiveInEditor`), since it would set null again.
+
 Outside this directory, for BlockSuite:
 
 - `patches/@atlaskit__pragmatic-drag-and-drop@1.4.0.patch`: upstream's yarn
