@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -73,6 +74,24 @@ func (a *api) fileRead(ctx context.Context, fileID string) (bool, error) {
 		return false, err
 	}
 	return role == store.RoleOwner, nil
+}
+
+// fileReadOrPayer admits the file's readers and its payer, who may download
+// what it pays for after losing access, getting its latest saved state (Epo
+// 2026-10-27, D3); it still cannot open or restore it in place.
+func (a *api) fileReadOrPayer(ctx context.Context, fileID string) (store.WorkspaceRole, error) {
+	role, err := a.s.FileEffectiveRole(ctx, userID(ctx), fileID)
+	if !errors.Is(err, store.ErrNotFound) {
+		return role, err
+	}
+	pays, err := a.s.PaysFor(ctx, agenttools.KindSourceFile, fileID, userID(ctx))
+	if err != nil {
+		return "", err
+	}
+	if !pays {
+		return "", store.ErrNotFound
+	}
+	return "", nil
 }
 
 // Resource-editor helpers gate writes addressed by a child id.

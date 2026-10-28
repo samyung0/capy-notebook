@@ -5,8 +5,9 @@ summaries scoped through their content row (migration 0126), so a Move re-tags
 the content row instead of copying the index. The background index copy for clones
 (single file and workspace) is built (migration 0127, store/index_copy.go).
 Download is built on every item menu (files, notes as Markdown/Word,
-Preparing rows). Left: D3, Download and Clone to… for a payer's lost-access
-rows, which need the links and source-session reads to admit the payer. Measurements:
+Preparing rows). D3 is built for files (a payer's lost-access rows get
+Clone to… and Download). Left: lost-access notes, which need a payer-only
+read of the note and its embedded items for export without opening it. Measurements:
 `bench/clone/reports/2026-10-27-clone-cost.md`,
 `bench/clone/reports/2026-10-28-index-copy-parts.md`.
 

@@ -609,8 +609,12 @@ is its stored bytes from its read link. A note downloads as Markdown or Word
 from its stored document with the editor's export (`exportNoteValue`), no
 editor open; quizzes and flashcard sets offer none. Each download shows as a
 Preparing row in the transfer panel until it saves, or says it failed. A
-payer's lost-access rows offer no Download yet (D3 in
-`todo-clone-download.md`).
+file's payer who lost access to its workspace still gets Clone to…, Download
+and Delete on its Files page row (Epo 2026-10-27, D3): the read link and the
+view source session admit the payer (`fileReadOrPayer`), so its download is
+the latest saved state, others' edits included, and `CloneFile` admits it as
+a source; opening or restoring it in place stays refused. A lost-access
+note offers neither yet: reading it for export would reach it in place.
 
 Sources: [read link headers](../server/internal/blob/s3.go#L165),
 [chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),

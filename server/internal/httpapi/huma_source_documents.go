@@ -144,7 +144,7 @@ func (a *api) browserSourceSession(ctx context.Context, session store.BrowserSou
 }
 func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*browserSourceSessionOutput, error) {
 	if in.View {
-		if _, err := a.fileRead(ctx, in.ID); err != nil {
+		if _, err := a.fileReadOrPayer(ctx, in.ID); err != nil {
 			return nil, hErr(err)
 		}
 		session, err := a.s.ViewSourceSession(ctx, in.ID)

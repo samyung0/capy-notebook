@@ -1265,3 +1265,37 @@ func TestPayerPurgesUnderASuspendedOwner(t *testing.T) {
 		t.Fatalf("payer purging under a suspended owner = %v", err)
 	}
 }
+
+// A payer who lost access copies what it pays for (Epo 2026-10-27, D3); a
+// stranger cannot.
+func TestRemovedPayerClonesWhatItPaysFor(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_lost_clone_owner")
+	member := newBlobTestUser(t, s, "u_lost_clone_member")
+	stranger := newBlobTestUser(t, s, "u_lost_clone_stranger")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Shared", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addWorkspaceEditor(t, s, ws.ID, member)
+	file, err := s.createReadyFile(ctx, ws.ID, member, "slides.pdf", "pdf", nil, "", 1000, "sources/"+uid("blob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`,
+		ws.ID, member); err != nil {
+		t.Fatal(err)
+	}
+
+	copied, _, err := s.CloneFile(ctx, member, file.ID, CloneTarget{Name: "slides.pdf"})
+	if err != nil {
+		t.Fatalf("payer's clone after losing access: %v", err)
+	}
+	if copied.WorkspaceID != "" || copied.PayerID != member {
+		t.Fatalf("copy = %+v, want a standalone file the member pays for", copied)
+	}
+	if _, _, err := s.CloneFile(ctx, stranger, file.ID, CloneTarget{Name: "slides.pdf"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stranger's clone = %v, want not found", err)
+	}
+}
