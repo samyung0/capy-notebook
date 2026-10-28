@@ -360,8 +360,10 @@ function FollowOpenFile() {
 export default function WorkspaceOpenPage() {
   return (
     <>
-      <FollowOpenFile />
       <WorkspaceOpen />
+      {/* After the page, so the follow's normal open (Q462) runs after the
+          file view's effects and its URL wins. */}
+      <FollowOpenFile />
     </>
   );
 }

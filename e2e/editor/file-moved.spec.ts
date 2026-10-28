@@ -70,6 +70,24 @@ async function openFile(page: Page, url: string) {
 
 /** A client-side visit, as a bookmark opened in this tab: MSW's database
  * stays, where a page load would rebuild it. */
+/** Once armed (`window.holdArmed`), every answer to `path` reaches the page
+ * 1.5 s late. */
+async function holdAnswers(page: Page, path: string) {
+  await page.addInitScript((slowPath) => {
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const response = await original(input, init);
+      const href = input instanceof Request ? input.url : String(input);
+      if (
+        (window as { holdArmed?: boolean }).holdArmed &&
+        new URL(href, location.href).pathname === slowPath
+      )
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      return response;
+    };
+  }, path);
+}
+
 async function visit(page: Page, url: string) {
   await page.evaluate((to) => {
     history.pushState({}, '', to);
@@ -132,11 +150,17 @@ test('a bookmark naming the old workspace opens the file in its own, replacing h
   page,
 }) => {
   test.setTimeout(120_000);
+  // The new workspace's read lands after the file's links: the order in which
+  // a follow that ran before the page's effects kept the bookmark's mode.
+  await holdAnswers(page, `/api/workspaces/${MOVED_TO}`);
   await page.goto('/workspaces/ws_scenarios');
   await expect(page.getByText('User scenarios').first()).toBeVisible({
     timeout: 30_000,
   });
   await moveRow(page, MOVED_TO);
+  await page.evaluate(() => {
+    (window as { holdArmed?: boolean }).holdArmed = true;
+  });
   await visit(
     page,
     `/workspaces/ws_scenarios?file=${FILE}&page=2&mode=edit&fullscreen=true`
