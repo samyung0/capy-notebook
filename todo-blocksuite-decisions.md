@@ -380,6 +380,17 @@ BlockSuite facts checked against the source and used below:
   Header and server.
 - **Keep** W:466-486 (2026-10-10): the `uploads` awareness field, capped and dropped for read channels.
   It depends on Q3 for which block it names.
+- **Keep** Q472, Q477 (2026-10-28, `human/frontend/plate-editor.md`): a
+  reconnect from the same editing session rejoins at once with its client id,
+  and the stale channel's awareness entry passes to the new channel.
+  These live in `roomProvider.ts` and `room.rs`, not in the document layout, so the
+  blocks editor gets them for free. Its `selectionV2` rides on the same awareness
+  entry.
+- **Port (S)** Q475 (2026-10-28): after a `collaboration-client-id` refusal the
+  session drops its token and takes a fresh id at once, with no 70 s hold.
+  Fresh ids come sooner and more often, so the BlockSuite undo manager must
+  follow the doc's client id on every change, not read it once at construction
+  (`history-extension.ts:22-23`; plan change 3).
 
 ## 14. Checkpoints, history, versions, projection
 
