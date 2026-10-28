@@ -644,7 +644,12 @@ Legend:
   now and the BlockSuite note later, on DeepSeek pin 1017 with no reasoning
   (Epo, 2026-10-28). The AI menu goes. Each user turns note AI on in
   Settings → LLM; it is off by default and stored server-side, so the
-  BlockSuite ghost-text overlay checks the same setting. The cost, endpoint and prompt are
+  BlockSuite ghost-text overlay checks the same setting. Built on Plate in
+  `350900237` (`claude/ghost-text-18f936`): `users.note_ai_enabled`,
+  `/ai/copilot` taking `{title, before, after}` and refusing
+  `note_ai_disabled` when off, a server-owned prompt, `VITE_FEATURE_EDITOR_AI`
+  dropped, and the AI menu and `/ai/command` deleted. The BlockSuite overlay
+  calls the same route. The cost, endpoint and prompt are
   being worked out in the `ghost-text` session (`todo-ghost-text.md` on its
   branch).
 
