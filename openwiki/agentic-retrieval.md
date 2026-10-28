@@ -4476,7 +4476,10 @@ document tools' scope check (`_check_source_target`) passes a source file id
 the turn's workspace outline does not list on to Go instead of refusing it,
 so a later turn, whose outline no longer lists the moved file, gets
 `moved_out` too (Q469); with chosen sources only a chosen id goes on, so
-the chat never widens that choice. A request holds
+the chat never widens that choice. Go's plain not found for a source file
+carries the outline check's earlier hint ("No workspace item has the id …:
+it may have been deleted or moved to trash. list_sources shows the current
+ids.", `NO_WORKSPACE_ITEM`) after the error (Q482). A request holds
 a pooled connection and its operation's advisory lock only for its receipt
 checks (the stored receipt, then the room's: `known`) and for its
 admission, never through the compute or an Office engine call (Q432): the

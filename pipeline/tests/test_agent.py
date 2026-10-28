@@ -3259,36 +3259,35 @@ async def test_a_file_moved_out_of_the_workspace_tells_the_model(
     )
 
 
-@pytest.mark.parametrize(
-    ("tool", "args"),
-    [
-        (
-            "edit_document",
-            {
-                "target": {"kind": "source_file", "id": "f_9"},
-                "commands": [
-                    {"type": "replace_text", "expected_text": "a", "text": "b"}
-                ],
-            },
-        ),
-        ("inspect_document", {"target": {"kind": "source_file", "id": "f_9"}}),
-        (
-            "edit_office_document",
-            {
-                "file_id": "f_9",
-                "commands": [
-                    {
-                        "type": "replace_text",
-                        "target_id": "p1",
-                        "expected_text": "a",
-                        "text": "b",
-                    }
-                ],
-            },
-        ),
-        ("inspect_office_document", {"file_id": "f_9"}),
-    ],
-)
+# The four document tools on a source file the turn's outline does not list.
+_UNLISTED_FILE_CALLS = [
+    (
+        "edit_document",
+        {
+            "target": {"kind": "source_file", "id": "f_9"},
+            "commands": [{"type": "replace_text", "expected_text": "a", "text": "b"}],
+        },
+    ),
+    ("inspect_document", {"target": {"kind": "source_file", "id": "f_9"}}),
+    (
+        "edit_office_document",
+        {
+            "file_id": "f_9",
+            "commands": [
+                {
+                    "type": "replace_text",
+                    "target_id": "p1",
+                    "expected_text": "a",
+                    "text": "b",
+                }
+            ],
+        },
+    ),
+    ("inspect_office_document", {"file_id": "f_9"}),
+]
+
+
+@pytest.mark.parametrize(("tool", "args"), _UNLISTED_FILE_CALLS)
 async def test_a_file_moved_out_before_this_turn_still_tells_the_model(
     monkeypatch, tool, args
 ):
@@ -3316,6 +3315,30 @@ async def test_a_file_moved_out_before_this_turn_still_tells_the_model(
     result = await tools.run(tool, {**args, "_tool_call_id": "c3"}, ctx)
     assert len(posts) == 2
     assert result.refused and 'No workspace item has the id "f_9"' in result.text()
+
+
+@pytest.mark.parametrize(("tool", "args"), _UNLISTED_FILE_CALLS)
+async def test_a_file_go_does_not_find_keeps_the_earlier_hint(monkeypatch, tool, args):
+    """Q482: Go's plain not found for an id the outline lacks carries the
+    earlier hint, worded as before Q469; `moved_out` keeps its own text."""
+
+    def _post(url, **_k):
+        return _JsonResp({"message": "not found"}, 404)
+
+    ctx = _office_ctx(monkeypatch, post=_post)
+    result = await tools.run(tool, {**args, "_tool_call_id": "c1"}, ctx)
+    assert result.refused and result.error_code == "unavailable_target"
+    assert (
+        'No workspace item has the id "f_9": it may have been deleted or moved '
+        "to trash. list_sources shows the current ids."
+    ) in agent._result_text(result, [])
+
+    def _moved(url, **_k):
+        return _JsonResp({"code": "moved_out", "message": "moved"}, 404)
+
+    _gateway(monkeypatch, post=_moved)
+    result = await tools.run(tool, {**args, "_tool_call_id": "c2"}, ctx)
+    assert agent._result_text(result, []) == tools.MOVED_OUT
 
 
 async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_commands(
