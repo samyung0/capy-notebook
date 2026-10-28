@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { showNoteToolbar } from '../helpers/editor';
 import { m } from '../i18n';
 
 // A note that joined with nothing of this device's to store reads Saved, as
@@ -184,4 +185,40 @@ test('the header lists co-editors as an avatar group', async ({ page }) => {
     (window as unknown as { leavePeers: () => void }).leavePeers();
   });
   await expect(group).toHaveCount(0);
+});
+
+// A co-editor's caret comes from its compact presence, labelled from the
+// room's presence, and this device's editor settings switch hides it while
+// the avatar group stays (Epo 2026-10-28).
+test("a co-editor's caret shows until the show-others switch hides it", async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
+  const editor = page.locator(
+    '[data-slate-editor="true"][contenteditable="true"]'
+  );
+  await expect(editor).toBeVisible({ timeout: 30_000 });
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { mockPeerCaret } = (await import(
+      path
+    )) as typeof import('../../src/mocks/collaboration');
+    mockPeerCaret(
+      'mat_e2e_editor',
+      { avatar: null, name: 'Ann', person: 3 },
+      2
+    );
+  });
+  const caret = editor.locator('[data-remote-caret="Ann"]');
+  await expect(caret).toHaveCount(1);
+  await showNoteToolbar(page);
+  await page.getByRole('button', { name: m.editor_prefs_settings() }).click();
+  const shown = page.getByRole('switch', {
+    name: m.editor_prefs_show_others(),
+  });
+  await expect(shown).toBeChecked();
+  await shown.click();
+  await page.getByRole('button', { name: m.action_apply() }).click();
+  await expect(caret).toHaveCount(0);
+  await expect(page.getByTestId('room-presence')).toBeVisible();
 });

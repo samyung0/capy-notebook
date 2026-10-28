@@ -1,7 +1,6 @@
 import {
   CursorEditor,
   type CursorEditor as CursorEditorType,
-  type RelativeRange,
   relativePositionToSlatePoint,
   YjsEditor,
 } from '@slate-yjs/core';
@@ -18,32 +17,35 @@ import {
   type PlateLeafProps,
 } from 'platejs/react';
 import { type CSSProperties, useEffect, useState } from 'react';
-import * as Y from 'yjs';
 import {
+  type PresenceConnection,
   type PresenceStore,
-  presenceNames,
+  presenceClients,
 } from '@/features/collaboration/presence';
 import { m } from '@/i18n';
+import { useNoteEditorPrefs } from './noteEditorPrefs';
+import { decodePosition, readNotePresence } from './notePresence';
 
 const REMOTE_CURSOR_KEY = 'capy_remote_cursor';
+
+/** The co-editor palette's size (`--peer-0` to `--peer-7` in tailwind.css,
+ * the cursors design's eight colours, a shade per theme). */
+export const PEER_COLORS = 8;
 
 export const remoteCursorDecorationPlugin = createPlatePlugin({
   key: REMOTE_CURSOR_KEY,
   node: { isLeaf: true },
   render: {
     node: (props: PlateLeafProps) => {
-      const color =
-        typeof props.leaf.remoteCursorColor === 'string'
-          ? props.leaf.remoteCursorColor
-          : '#7c3aed';
+      const color = props.leaf.remoteCursorColor as number;
       const name =
         typeof props.leaf.remoteCursorName === 'string'
           ? props.leaf.remoteCursorName
           : m.editor_collaborator();
       // A caret is a collapsed decoration, an empty leaf with no width: the
       // stylesheet draws its bar (::before), so it adds no DOM to the text.
-      // The stylesheet also tints a selection, mixing the colour in CSS since
-      // peers send it in any CSS form (hsl()).
+      // The stylesheet also tints a selection. The colour is the palette's,
+      // never one a peer sends (Epo 2026-10-28).
       const caret = props.leaf.remoteCursorCaret === true;
       return (
         <PlateLeaf
@@ -55,7 +57,7 @@ export const remoteCursorDecorationPlugin = createPlatePlugin({
           style={
             {
               ...props.style,
-              '--remote-cursor': color,
+              '--remote-cursor': `var(--peer-${color})`,
               pointerEvents: 'none',
             } as CSSProperties
           }
@@ -67,14 +69,18 @@ export const remoteCursorDecorationPlugin = createPlatePlugin({
 
 type CollaborativeEditor = YjsEditor & SlateEditor & CursorEditorType;
 
-/** A peer's selection as its awareness state holds it: Yjs relative
- * positions, which follow the text and are resolved only when drawn. Its
- * label is the verified name the room's presence gives its client id, never
- * a name its awareness claims (Epo 2026-10-20). */
+/** A peer's selection as its presence holds it (`s` and `f`, Yjs relative
+ * positions in base64), which follow the text and are resolved only when
+ * drawn. It is labelled with the verified name the room's presence gives its
+ * client id, never a name its awareness claims (Epo 2026-10-20), and coloured
+ * by its person's number there, the same in every co-editor's tab (Epo
+ * 2026-10-28). */
 type RemotePeer = {
-  color: string | undefined;
+  anchor: string;
+  /** The palette's index. */
+  color: number;
+  focus: string;
   name: string | undefined;
-  selection: RelativeRange;
 };
 
 type RemoteCursorDecoration = {
@@ -82,32 +88,36 @@ type RemoteCursorDecoration = {
   focus: Point;
   [REMOTE_CURSOR_KEY]: true;
   remoteCursorCaret?: true;
-  remoteCursorColor: string | undefined;
+  remoteCursorColor: number;
   remoteCursorName: string | undefined;
 };
 
 const NO_PEERS: RemotePeer[] = [];
 const NO_REMOTE_CURSORS: RemoteCursorDecoration[] = [];
 
+/** The carets of the clients the room's presence lists (one it does not
+ * list yet is not drawn), from states the note's field list admits. */
 export function readRemotePeers(
   editor: SlateEditor,
-  names: ReadonlyMap<number, string>
+  clients: ReadonlyMap<number, PresenceConnection>
 ): RemotePeer[] {
-  if (!CursorEditor.isCursorEditor(editor)) return NO_PEERS;
-  // Keyed by client id (its states carry no `clientId`, whatever the types say).
-  return Object.entries(
-    CursorEditor.cursorStates(editor as CollaborativeEditor)
-  ).flatMap(([client, { data, relativeSelection }]) =>
-    relativeSelection
-      ? [
-          {
-            color: typeof data?.color === 'string' ? data.color : undefined,
-            name: names.get(Number(client)),
-            selection: relativeSelection,
-          },
-        ]
-      : []
-  );
+  if (!(CursorEditor.isCursorEditor(editor) && YjsEditor.connected(editor)))
+    return NO_PEERS;
+  const { awareness } = editor as CollaborativeEditor;
+  const peers: RemotePeer[] = [];
+  for (const [client, state] of awareness.getStates()) {
+    const connection = clients.get(client);
+    if (client === awareness.clientID || !connection) continue;
+    const presence = readNotePresence(state);
+    if (!presence?.s) continue;
+    peers.push({
+      anchor: presence.s,
+      color: connection.person % PEER_COLORS,
+      focus: presence.f ?? presence.s,
+      name: connection.name ?? undefined,
+    });
+  }
+  return peers;
 }
 
 function samePeers(left: RemotePeer[], right: RemotePeer[]) {
@@ -117,13 +127,10 @@ function samePeers(left: RemotePeer[], right: RemotePeer[]) {
       const other = right[index];
       return (
         !!other &&
+        peer.anchor === other.anchor &&
+        peer.focus === other.focus &&
         peer.color === other.color &&
-        peer.name === other.name &&
-        Y.compareRelativePositions(
-          peer.selection.anchor,
-          other.selection.anchor
-        ) &&
-        Y.compareRelativePositions(peer.selection.focus, other.selection.focus)
+        peer.name === other.name
       );
     })
   );
@@ -133,27 +140,32 @@ export function useRemotePeers(editor: SlateEditor, presence: PresenceStore) {
   // Every state change here re-renders the whole editable, and the render
   // also restores the DOM caret from Slate's selection, which can undo native
   // caret movement the editor has not synced yet. So only a peer whose
-  // selection or label actually changed may reach React; where its caret sits
-  // in the current document is worked out in `decorate`.
+  // selection or label actually changed may reach React (a pointer or block
+  // selection never does); where its caret sits in the current document is
+  // worked out in `decorate`. With the show-others switch off none is drawn.
+  const shown = useNoteEditorPrefs((state) => state.showOthers);
   const [peers, setPeers] = useState<RemotePeer[]>(NO_PEERS);
   useEffect(() => {
-    if (!CursorEditor.isCursorEditor(editor)) return;
-    let names = presenceNames(presence.getState().connections);
+    if (!(shown && CursorEditor.isCursorEditor(editor))) {
+      setPeers(NO_PEERS);
+      return;
+    }
+    let clients = presenceClients(presence.getState().connections);
     const update = () => {
-      const next = readRemotePeers(editor, names);
+      const next = readRemotePeers(editor, clients);
       setPeers((previous) => (samePeers(previous, next) ? previous : next));
     };
     update();
     CursorEditor.on(editor, 'change', update);
     const unsubscribe = presence.subscribe(({ connections }) => {
-      names = presenceNames(connections);
+      clients = presenceClients(connections);
       update();
     });
     return () => {
       CursorEditor.off(editor, 'change', update);
       unsubscribe();
     };
-  }, [editor, presence]);
+  }, [editor, presence, shown]);
 
   return peers;
 }
@@ -178,12 +190,10 @@ function resolvePeer(
     remoteCursorColor: peer.color,
     remoteCursorName: peer.name,
   };
-  const { anchor: relativeAnchor, focus: relativeFocus } = peer.selection;
-  const focus = relativePositionToSlatePoint(
-    editor.sharedRoot,
-    editor,
-    relativeFocus
-  );
+  const relativeFocus = decodePosition(peer.focus);
+  const focus =
+    relativeFocus &&
+    relativePositionToSlatePoint(editor.sharedRoot, editor, relativeFocus);
   if (!focus) return [];
   const caretAt = outOfInlineVoid(editor, focus);
   const caret = {
@@ -192,14 +202,11 @@ function resolvePeer(
     focus: caretAt,
     remoteCursorCaret: true as const,
   };
-  if (Y.compareRelativePositions(relativeAnchor, relativeFocus)) {
-    return [caret];
-  }
-  const anchor = relativePositionToSlatePoint(
-    editor.sharedRoot,
-    editor,
-    relativeAnchor
-  );
+  if (peer.anchor === peer.focus) return [caret];
+  const relativeAnchor = decodePosition(peer.anchor);
+  const anchor =
+    relativeAnchor &&
+    relativePositionToSlatePoint(editor.sharedRoot, editor, relativeAnchor);
   return anchor ? [{ ...label, anchor, focus }, caret] : [caret];
 }
 
@@ -245,4 +252,15 @@ export function remoteCursorRangesForEntry(
     resolved.set(editor, { peers, ranges, version: editor.children });
   }
   return ranges;
+}
+
+/**
+ * Co-editors' pointers and block selections (Epo 2026-10-28) arrive in each
+ * peer's presence (`p`, `b`, checked by notePresence.ts), but how they look
+ * waits on Epo's pick from the mocks
+ * (capy-harness/2026-10-28-followups/presence-mocks): until then nothing is
+ * drawn, and nothing here subscribes to the room's presence.
+ */
+export function RemotePresenceMarks() {
+  return null;
 }

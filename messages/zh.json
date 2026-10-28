@@ -1333,6 +1333,7 @@
   "editor_prefs_note_font": "笔记字体",
   "editor_prefs_font_fustat": "Fustat",
   "editor_prefs_font_system": "系统字体",
+  "editor_prefs_show_others": "显示他人的指针与光标",
   "editor_prefs_body": "工具栏太拥挤时，可以隐藏部分命令组。",
   "editor_prefs_settings": "编辑器设置",
   "editor_toggle_font": "切换笔记字体",

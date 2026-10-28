@@ -1,9 +1,5 @@
 import { BaseYjsPlugin } from '@platejs/yjs';
-import {
-  slateNodesToInsertDelta,
-  slatePointToRelativePosition,
-  YjsEditor,
-} from '@slate-yjs/core';
+import { slateNodesToInsertDelta, YjsEditor } from '@slate-yjs/core';
 import type { Point } from 'platejs';
 import { createPlateEditor } from 'platejs/react';
 import { afterEach, expect, it } from 'vitest';
@@ -13,7 +9,12 @@ import {
   encodeAwarenessUpdate,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
+import {
+  type PresenceConnection,
+  presenceClients,
+} from '@/features/collaboration/presence';
 import { InlineEquationPlugin } from './equationPlugins';
+import { sendCaret } from './notePresence';
 import { readRemotePeers, remoteCursorRangesForEntry } from './RemoteCursors';
 
 const equation = {
@@ -39,6 +40,8 @@ const value = [
     type: 'p',
   },
 ];
+
+const BASE64 = /^[A-Za-z0-9+/=]{1,64}$/;
 
 const opened: (() => void)[] = [];
 afterEach(() => {
@@ -67,38 +70,34 @@ function room() {
   YjsEditor.flushLocalChanges(editor as never);
   opened.push(() => YjsEditor.disconnect(editor as never));
   const peer = new Awareness(new Y.Doc());
-  /** The peer's selection, relayed as the server does (JSON). */
-  const select = (anchor: Point, focus = anchor) => {
-    const relative = (point: Point) =>
-      slatePointToRelativePosition(
-        (editor as unknown as YjsEditor).sharedRoot,
-        editor as never,
-        point
-      );
-    peer.setLocalState(
-      JSON.parse(
-        JSON.stringify({
-          data: { color: '#123456', name: 'Mallory' },
-          selection: { anchor: relative(anchor), focus: relative(focus) },
-        })
-      )
-    );
+  /** The peer's state, relayed as the server does. */
+  const relay = () =>
     applyAwarenessUpdate(
       awareness,
       encodeAwarenessUpdate(peer, [peer.clientID]),
       'server'
     );
+  /** The peer's selection, as its editor sends it. */
+  const select = (anchor: Point, focus = anchor) => {
+    sendCaret(editor as never, peer, { anchor, focus });
+    relay();
   };
-  /** The verified names the room's presence gives client ids. */
-  const names = new Map([[peer.clientID, 'Peer']]);
+  /** The room's presence: the peer's verified name and person. */
+  const connection: PresenceConnection = {
+    avatar: null,
+    clients: [peer.clientID],
+    name: 'Peer',
+    person: 11,
+  };
+  const clients = presenceClients([connection]);
   /** What `decorate` returns for the root entry. */
-  const drawn = (peers = readRemotePeers(editor, names)) =>
+  const drawn = (peers = readRemotePeers(editor, clients)) =>
     remoteCursorRangesForEntry(editor, [editor, []], peers);
-  return { drawn, editor, names, peer, select };
+  return { clients, connection, drawn, editor, peer, relay, select };
 }
 
 it('marks a peer caret, not only a peer selection, once', () => {
-  const { drawn, editor, select } = room();
+  const { clients, drawn, editor, select } = room();
   select({ offset: 2, path: [0, 0] });
   expect(drawn()).toEqual([
     expect.objectContaining({
@@ -110,7 +109,7 @@ it('marks a peer caret, not only a peer selection, once', () => {
   ]);
   // Only the root returns it: slate-react hands it down to the text, so a
   // block or text entry returning it too would draw it again.
-  const peers = readRemotePeers(editor, new Map());
+  const peers = readRemotePeers(editor, clients);
   expect(
     remoteCursorRangesForEntry(editor, [editor.children[0], [0]], peers)
   ).toEqual([]);
@@ -154,10 +153,10 @@ it('places a peer caret beside or on an inline equation', () => {
 });
 
 it('moves an idle peer caret when a local edit lands before it', async () => {
-  const { drawn, editor, select } = room();
+  const { clients, drawn, editor, select } = room();
   select({ offset: 5, path: [0, 2] });
   // The peer stays put: its state is the same object throughout.
-  const peers = readRemotePeers(editor, new Map());
+  const peers = readRemotePeers(editor, clients);
   const before = drawn(peers);
   expect(before.map(({ focus }) => focus)).toEqual([
     { offset: 5, path: [0, 2] },
@@ -173,20 +172,43 @@ it('moves an idle peer caret when a local edit lands before it', async () => {
   ]);
 });
 
-/** Security regression (Epo 2026-10-20): a cursor's label is the verified
- * name the room's presence gives its client id, never the name the peer's
- * awareness claims ('Mallory' here); a client the presence does not name
- * gets the generic label. Fails if labels read the awareness name. */
-it('labels a peer caret with its verified name, never its claimed one', () => {
-  const { drawn, editor, names, peer, select } = room();
+/** Epo 2026-10-28: a caret goes as `{s}`, a selection as `{s, f}`: no
+ * colour, no name, no JSON positions. */
+it('sends a caret in the compact shape', () => {
+  const { peer, select } = room();
+  select({ offset: 2, path: [0, 0] });
+  expect(Object.keys(peer.getLocalState() ?? {})).toEqual(['s']);
+  select({ offset: 0, path: [0, 0] }, { offset: 3, path: [0, 0] });
+  const state = peer.getLocalState() ?? {};
+  expect(Object.keys(state).sort()).toEqual(['f', 's']);
+  expect(state.s).toMatch(BASE64);
+});
+
+/** Security regression (Epo 2026-10-20, 2026-10-28): a cursor's label is the
+ * verified name the room's presence gives its client id and its colour the
+ * palette's for that person's number, never anything the peer's awareness
+ * says: a state claiming a name or a colour is not drawn at all, nor is a
+ * client the presence does not list yet. Fails if a caret reads its label
+ * or colour from awareness. */
+it('labels and colours a peer caret from the presence, never from its awareness', () => {
+  const { clients, connection, drawn, editor, peer, relay, select } = room();
   select({ offset: 2, path: [0, 0] });
   expect(drawn()).toEqual([
-    expect.objectContaining({ remoteCursorName: 'Peer' }),
+    expect.objectContaining({
+      remoteCursorColor: 3,
+      remoteCursorName: 'Peer',
+    }),
   ]);
-  names.delete(peer.clientID);
-  const [unnamed] = readRemotePeers(editor, names);
-  expect(unnamed?.name).toBeUndefined();
-  expect(JSON.stringify(drawn(readRemotePeers(editor, names)))).not.toContain(
-    'Mallory'
-  );
+  // A connection without a name gets the generic label.
+  const unnamed = presenceClients([{ ...connection, name: null }]);
+  expect(readRemotePeers(editor, unnamed)).toEqual([
+    expect.objectContaining({ color: 3, name: undefined }),
+  ]);
+  expect(readRemotePeers(editor, new Map())).toEqual([]);
+  peer.setLocalState({
+    ...peer.getLocalState(),
+    data: { color: 'url(https://example.com/x)', name: 'Mallory' },
+  });
+  relay();
+  expect(readRemotePeers(editor, clients)).toEqual([]);
 });

@@ -1,7 +1,18 @@
 import { DndPlugin } from '@platejs/dnd';
-import { useBlockSelected, useCursorOverlay } from '@platejs/selection/react';
+import {
+  BlockSelectionPlugin,
+  useBlockSelected,
+  useCursorOverlay,
+} from '@platejs/selection/react';
 import { KEYS } from 'platejs';
-import { type PlateElementProps, usePluginOption } from 'platejs/react';
+import {
+  type PlateElementProps,
+  useEditorRef,
+  usePluginOption,
+} from 'platejs/react';
+import { useEffect, useMemo } from 'react';
+import { blockRuns, setNotePresence, throttled } from './notePresence';
+import { editorAwareness } from './uploadPresence';
 
 /** Ported from plate-playground-template block-selection.tsx: only blocks the
  * BlockSelectionPlugin marked selectable get the overlay. */
@@ -71,4 +82,29 @@ export function EditorCursorOverlay() {
       )}
     </>
   );
+}
+
+/** Puts the block selection in this tab's presence as runs of adjacent
+ * blocks (Epo 2026-10-28), at most every 50 ms; renders nothing. */
+export function BlockSelectionPresence() {
+  const editor = useEditorRef();
+  const selected = usePluginOption(BlockSelectionPlugin, 'selectedIds');
+  const runs = useMemo(() => {
+    const awareness = editorAwareness(editor);
+    return awareness
+      ? throttled(() =>
+          setNotePresence(awareness, {
+            b: blockRuns(
+              editor,
+              editor.getOption(BlockSelectionPlugin, 'selectedIds') ?? new Set()
+            ),
+          })
+        )
+      : null;
+  }, [editor]);
+  useEffect(() => {
+    if (selected) runs?.schedule();
+  }, [runs, selected]);
+  useEffect(() => () => runs?.cancel(), [runs]);
+  return null;
 }

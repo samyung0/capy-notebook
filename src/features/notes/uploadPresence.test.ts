@@ -60,17 +60,16 @@ describe('uploads in presence', () => {
     expect(seenByOther(clients, 'block-a')).toBe(false);
   });
 
-  // REVIEW5 E1, E3: the room closes a channel past a 64 KiB entry.
-  it('names at most 100 uploads, and counts at most 100 short ids it receives', () => {
+  // REVIEW5 E1, E3; Epo 2026-10-28: the room keeps a state of at most 4 KiB
+  // whose uploads are at most 100 ids of at most 32 characters, and a
+  // receiver reads no other.
+  it('names at most 100 uploads, and reads no list past the bounds', () => {
     const clients = room();
     const { uploader } = clients;
-    uploader.setLocalStateField('data', {
-      color: '#7c3aed',
-      name: 'A'.repeat(80),
-    });
     // Placeholder ids are nanoids, 21 characters.
     const id = (n: number) => n.toString(36).padStart(21, '0');
     for (let n = 0; n < 150; n++) announceUpload(uploader, id(n));
+    announceUpload(uploader, 'x'.repeat(33));
     expect(uploader.getLocalState()?.uploads).toHaveLength(100);
     expect(JSON.stringify(uploader.getLocalState()).length).toBeLessThan(
       4 * 1024
@@ -79,22 +78,20 @@ describe('uploads in presence', () => {
     expect(seenByOther(clients, id(99))).toBe(true);
     expect(seenByOther(clients, id(100))).toBe(false);
 
-    // A hostile list: long ids and ids past the first 100 do not count.
+    // A hostile list, past the bounds: none of it counts.
     const { other } = clients;
     const hostile = new Awareness(new Y.Doc());
-    hostile.setLocalStateField('uploads', [
-      'x'.repeat(33),
-      ...Array.from({ length: 200 }, (_, n) => `h${n}`),
-    ]);
-    applyAwarenessUpdate(
-      other,
-      encodeAwarenessUpdate(hostile, [hostile.clientID]),
-      'remote'
-    );
-    const seen = (block: string) =>
-      uploadingElsewhere(other.getStates(), other.clientID, block);
-    expect(seen('x'.repeat(33))).toBe(false);
-    expect(seen('h98')).toBe(true);
-    expect(seen('h99')).toBe(false);
+    const seen = (lists: unknown[]) => {
+      hostile.setLocalStateField('uploads', lists);
+      applyAwarenessUpdate(
+        other,
+        encodeAwarenessUpdate(hostile, [hostile.clientID]),
+        'remote'
+      );
+      return uploadingElsewhere(other.getStates(), other.clientID, 'h0');
+    };
+    expect(seen(['h0'])).toBe(true);
+    expect(seen(['h0', 'x'.repeat(33)])).toBe(false);
+    expect(seen(Array.from({ length: 101 }, (_, n) => `h${n}`))).toBe(false);
   });
 });

@@ -66,10 +66,10 @@ export type OfficePosition =
   | { format: 'pptx'; slide: number };
 
 /**
- * An editor's cursor as the room's awareness carries it (Epo 2026-10-20): a
- * DOCX selection as the editor's encoded positions in a story, an XLSX cell
- * range on a sheet, a PPTX slide and shape. The same shape goes between Capy
- * and the frame.
+ * An editor's cursor as it goes between Capy and the frame (Epo 2026-10-20):
+ * a DOCX selection as the editor's encoded positions in a story, an XLSX cell
+ * range on a sheet, a PPTX slide and shape. The room's awareness carries the
+ * same, except DOCX positions as base64 (`officeCursors.ts`, Epo 2026-10-28).
  */
 export type OfficeCursor =
   | { story: string; anchor: number[]; head: number[] }
