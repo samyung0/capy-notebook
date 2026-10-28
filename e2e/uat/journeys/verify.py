@@ -1,4 +1,7 @@
-"""Read-only UAT PostgreSQL and bucket verification using the existing Python runtime."""
+"""UAT PostgreSQL and bucket verification using the existing Python runtime.
+
+Read-only, except the credits journey's one raise of used credits.
+"""
 
 import base64
 import hashlib
@@ -24,25 +27,47 @@ def encode(value):
     raise TypeError("Query must explicitly encode binary columns")
 
 
-def database_query(sql, params):
-    with psycopg.connect(
+def connect():
+    return psycopg.connect(
         os.environ["UAT_DATABASE_URL"],
         connect_timeout=10,
         options="-c default_transaction_read_only=on -c statement_timeout=10000",
         row_factory=dict_row,
-    ) as connection:
-        identity = connection.execute(
-            "SELECT current_database() AS name, current_user AS role, "
-            "current_setting('capy.environment',true) AS environment"
-        ).fetchone()
-        if (
-            identity["name"] != os.environ["UAT_DATABASE_NAME"]
-            or identity["role"] != "capy_uat_verifier"
-            or identity["environment"] != "uat"
-        ):
-            raise ValueError("Database identity is not the configured UAT verifier")
+    )
+
+
+def check_identity(connection):
+    identity = connection.execute(
+        "SELECT current_database() AS name, current_user AS role, "
+        "current_setting('capy.environment',true) AS environment"
+    ).fetchone()
+    if (
+        identity["name"] != os.environ["UAT_DATABASE_NAME"]
+        or identity["role"] != "capy_uat_verifier"
+        or identity["environment"] != "uat"
+    ):
+        raise ValueError("Database identity is not the configured UAT verifier")
+
+
+def database_query(sql, params):
+    with connect() as connection:
+        check_identity(connection)
         # Every invocation opens a new read-only transaction, including cleanup.
         return connection.execute(sql, params).fetchall()
+
+
+def raise_credits_used(user_id, used_micros):
+    """The verifier's one write: scripts/uat/journey-credits.sql (Q496)."""
+    with connect() as connection:
+        check_identity(connection)
+        # The identity read opened the session's read-only transaction; READ
+        # WRITE must be the first statement of the next one.
+        connection.commit()
+        connection.execute("SET TRANSACTION READ WRITE")
+        connection.execute(
+            "SELECT public.uat_journey_raise_credits_used(%s::text, %s::bigint)",
+            [user_id, used_micros],
+        )
 
 
 def storage():
@@ -74,6 +99,8 @@ def storage():
 def main(request):
     if request["operation"] == "query":
         return database_query(request["sql"], request.get("params", []))
+    if request["operation"] == "raise-credits-used":
+        return raise_credits_used(request["userId"], request["usedMicros"])
     client, bucket = storage()
     if request["operation"] == "storage-identity":
         client.head_bucket(Bucket=bucket)
