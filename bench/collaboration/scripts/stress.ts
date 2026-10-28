@@ -69,6 +69,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { createClerkClient } from '@clerk/backend';
+import { encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { RoomProvider } from '../../../src/features/collaboration/roomProvider';
 import { CollabSocket } from '../../../src/features/collaboration/socket';
@@ -122,6 +123,15 @@ const EDIT_MS = Number(process.env.STRESS_EDIT_MS ?? 1500);
 const DROP_PER_SECOND = Number(process.env.STRESS_DROP_PER_SECOND ?? 0.02);
 // Idle connections: peers stay connected with awareness renewal and never type.
 const IDLE = process.env.STRESS_IDLE === 'true';
+// Presence load (reports/2026-10-28-presence-load.md): every typing peer of a
+// note room publishes its caret STRESS_CURSOR_HZ times a second (0: none) in
+// the STRESS_CURSOR_PAYLOAD shape: `today` is slate-yjs's (a colour and JSON
+// relative positions), `compact` the 2026-10-28 decision's (base64 positions,
+// no colour). Every peer, the watcher included, times the carets it hears.
+const CURSOR_HZ = Number(process.env.STRESS_CURSOR_HZ ?? 0);
+const CURSOR_PAYLOAD = process.env.STRESS_CURSOR_PAYLOAD ?? 'today';
+if (CURSOR_PAYLOAD !== 'today' && CURSOR_PAYLOAD !== 'compact')
+  throw new Error('STRESS_CURSOR_PAYLOAD must be today or compact');
 /**
  * Local: ~1.3x the slower room's median p95 over three runs of the Performance
  * workflow (2026-10-04 runs 37200395852, 37200390235, 37200383976: Office
@@ -953,6 +963,132 @@ const online = (peer: Peer) => status(peer) === 'connected';
 const settledPeer = (peer: Peer) =>
   online(peer) && peer.provider.isSynced && !peer.provider.hasUnsyncedChanges;
 
+// Send times of each client's recent awareness clocks, for the carets'
+// latency (a room's peers all live in this process), and 1 ms bins of it,
+// the last one 10 s and over.
+const CARET_RING = 256;
+const caretSent = new Map<number, { at: Float64Array; clock: Int32Array }>();
+const caretLatency = new Uint32Array(10_001);
+const presence = { heard: 0, sampledBytes: 0, samples: 0, sent: 0, unmatched: 0 };
+
+/** The note's blocks a caret can sit in (the root when it has none). */
+function caretBlocks(doc: Y.Doc) {
+  const root = doc.get('content', Y.XmlText);
+  const blocks = (root.toDelta() as { insert: unknown }[]).flatMap(({ insert }) =>
+    insert instanceof Y.XmlText && insert.length > 0 ? [insert] : []
+  );
+  return blocks.length ? blocks : [root];
+}
+
+const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
+
+function caretState(block: Y.XmlText, index: number, extent: number, color: string) {
+  const anchor = Y.createRelativePositionFromTypeIndex(block, index);
+  const focus = extent
+    ? Y.createRelativePositionFromTypeIndex(block, Math.min(block.length, index + extent))
+    : anchor;
+  if (CURSOR_PAYLOAD === 'today') return { data: { color }, selection: { anchor, focus } };
+  const s = base64(Y.encodeRelativePosition(anchor));
+  return extent ? { f: base64(Y.encodeRelativePosition(focus)), s } : { s };
+}
+
+/** Publishes the peer's caret CURSOR_HZ times a second until `deadline`
+ * while it is joined: a character further through its block each tick, a
+ * selection one tick in four, another block now and then. */
+function publishCarets(peer: Peer, deadline: number) {
+  const { awareness } = peer.provider;
+  const color = `hsl(${randomInt(360)} 72% 48%)`;
+  let blocks = caretBlocks(peer.doc);
+  let block = blocks[randomInt(blocks.length)];
+  let index = 0;
+  return new Promise<void>((resolve) => {
+    const timer = setInterval(() => {
+      if (Date.now() >= deadline) {
+        clearInterval(timer);
+        resolve();
+        return;
+      }
+      if (!online(peer) || !peer.provider.isSynced) return;
+      if (index >= block.length || Math.random() < 0.02) {
+        blocks = caretBlocks(peer.doc);
+        block = blocks[randomInt(blocks.length)];
+        index = 0;
+      }
+      index += 1;
+      const client = awareness.clientID;
+      let ring = caretSent.get(client);
+      if (!ring) {
+        ring = { at: new Float64Array(CARET_RING), clock: new Int32Array(CARET_RING).fill(-1) };
+        caretSent.set(client, ring);
+      }
+      const clock = (awareness.meta.get(client)?.clock ?? 0) + 1;
+      ring.at[clock % CARET_RING] = Date.now();
+      ring.clock[clock % CARET_RING] = clock;
+      awareness.setLocalState(caretState(block, index, Math.random() < 0.25 ? randomInt(1, 20) : 0, color));
+      presence.sent += 1;
+      if (presence.sent % 100 === 1) {
+        presence.sampledBytes += encodeAwarenessUpdate(awareness, [client]).length;
+        presence.samples += 1;
+      }
+    }, 1000 / CURSOR_HZ);
+  });
+}
+
+/** Times every remote caret this peer hears against its send. */
+function timeCarets(peer: Peer) {
+  const { awareness } = peer.provider;
+  awareness.on(
+    'update',
+    ({ added, updated }: { added: number[]; updated: number[] }, origin: unknown) => {
+      if (origin !== peer.provider) return;
+      const now = Date.now();
+      for (const client of [...added, ...updated]) {
+        if (client === awareness.clientID) continue;
+        const clock = awareness.meta.get(client)?.clock;
+        const ring = caretSent.get(client);
+        // Renewals and join replays were never timed.
+        if (clock === undefined || ring?.clock[clock % CARET_RING] !== clock) {
+          presence.unmatched += 1;
+          continue;
+        }
+        presence.heard += 1;
+        caretLatency[Math.min(caretLatency.length - 1, Math.round(now - ring.at[clock % CARET_RING]))] += 1;
+      }
+    }
+  );
+}
+
+/** The bins' value at rank ceil(p * n), as `percentile`. */
+function binPercentile(bins: Uint32Array, p: number) {
+  const total = bins.reduce((sum, count) => sum + count, 0);
+  if (!total) return null;
+  const rank = Math.ceil((p / 100) * total);
+  let seen = 0;
+  for (let ms = 0; ms < bins.length; ms += 1) {
+    seen += bins[ms];
+    if (seen >= rank) return ms;
+  }
+  return bins.length - 1;
+}
+
+function presenceReport() {
+  if (!CURSOR_HZ) return null;
+  return {
+    heard: presence.heard,
+    hz: CURSOR_HZ,
+    latencyMs: Object.fromEntries(
+      ([50, 95, 99, 100] as const).map((p) => [p === 100 ? 'max' : `p${p}`, binPercentile(caretLatency, p)])
+    ),
+    // Merged across generators by the capacity harness.
+    latencyBins: Object.fromEntries([...caretLatency].flatMap((count, ms) => (count ? [[ms, count]] : []))),
+    payload: CURSOR_PAYLOAD,
+    // One AWARENESS payload as sent (capy-sync's 3-5 header bytes aside).
+    sentBytesMean: presence.samples ? round(presence.sampledBytes / presence.samples) : null,
+    sent: presence.sent,
+    unmatched: presence.unmatched,
+  };
+}
+
 // A Windows engine's named pipe (npipe:////./pipe/<name>) is a socket path too.
 const DOCKER_SOCKET = process.env.DOCKER_HOST?.startsWith('unix://')
   ? process.env.DOCKER_HOST.slice('unix://'.length)
@@ -1297,6 +1433,9 @@ async function stressRoom(room: Room, peerCount: number) {
     Array.from({ length: peerCount }, (_, index) => connect(room, `${room.kind} peer ${index}`))
   );
   const deadline = Date.now() + MINUTES * 60_000;
+  const carets = CURSOR_HZ > 0 && room.format === 'plate';
+  if (carets) for (const peer of [watcher, ...peers]) timeCarets(peer);
+  const publishing = carets ? peers.map((peer) => publishCarets(peer, deadline)) : [];
   let drops = 0;
   await Promise.all(
     peers.map(async (peer, index) => {
@@ -1326,6 +1465,7 @@ async function stressRoom(room: Room, peerCount: number) {
       }
     })
   );
+  await Promise.all(publishing);
   const everyone = [watcher, ...peers];
   // Brings back peers that ended offline. A close still in flight leaves the
   // status connected for a moment, so this retries until the socket is up;
@@ -1529,6 +1669,7 @@ async function writeReport(state: {
     collaborationErrorSample: errors.slice(0, 10),
     editMs: EDIT_MS,
     failures,
+    presence: presenceReport(),
     limitClientLoopDelayMs: limit?.loopDelayMs ?? null,
     limitPeers: limit ? LIMIT_PEERS : null,
     minutes: MINUTES,
