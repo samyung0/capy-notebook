@@ -180,7 +180,7 @@ listing stay workspace-only.
   Epo expects workspaces with different embedding models or dimensions only
   after the desktop app ships, which is far off, so mixed-pin ranking needs
   no tuning now.
-- **Tuning and scale (Windows PC):** account search quality, and the
+- **Tuning and scale (on the Mac, Epo 2026-10-28):** account search quality, and the
   no-workspace vector leg. It filters on `workspace_id IS NULL`, which every
   user's standalone vectors share, so the vector index may return few of the
   caller's rows at scale.
