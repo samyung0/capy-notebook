@@ -8,7 +8,8 @@
 //
 // A tool's result text reaches the browser only for the tools that keep it
 // whole (search_files_summary, list_sources, the creates), through the turn's
-// saved toolEvidence, so those are asserted from the message row; a read's
+// saved toolEvidence, so those are asserted from the message row, read through
+// the UAT-only function of scripts/uat/journey-credits.sql (Q537); a read's
 // unindexed changes are not visible here (pipeline and Go tests cover them),
 // only that the read of an edited, unindexed file succeeds.
 import assert from 'node:assert/strict';
@@ -43,13 +44,12 @@ function created(end: Record<string, unknown> | undefined) {
   return found.resource;
 }
 
-/** The kept tool results of the owner's latest account chat answer. */
+/** The kept tool results of the owner's latest account chat answer, through
+ * the UAT-only function (Q537): the verifier has no read on messages or
+ * conversations. */
 async function keptResults(run: UatRun) {
   const rows = await run.query(
-    `SELECT m.metadata->'toolEvidence'->'tools' AS tools FROM messages m
-    JOIN conversations c ON c.id=m.conversation_id
-    WHERE c.user_id=%s AND c.workspace_id IS NULL AND m.role='assistant'
-    ORDER BY m.created_at DESC LIMIT 1`,
+    'SELECT public.uat_journey_kept_results(%s) AS tools',
     [run.owner.id]
   );
   return (rows[0]?.tools ?? []) as Note[];
@@ -62,6 +62,15 @@ test('account chat: search, list, read and write across workspaces and no worksp
   run,
 }) => {
   test.setTimeout(2_400_000);
+  // Fails before any upload when the operator step is missing.
+  const [setup] = await run.query(
+    "SELECT has_function_privilege('capy_uat_verifier',p.oid,'EXECUTE') AS allowed FROM pg_proc p WHERE p.oid=to_regprocedure('public.uat_journey_kept_results(text)')"
+  );
+  assert.equal(
+    setup?.allowed,
+    true,
+    'operator step missing: apply scripts/uat/journey-credits.sql to the UAT database as its administrator (e2e/uat/journeys/README.md, UAT_DATABASE_NAME)'
+  );
   const page = run.owner.page;
   const marker = `UAT_${randomUUID().replaceAll('-', '')}`;
   const member = await run.createActor('member');

@@ -111,6 +111,10 @@ on `stablestudio.org`.
    does), after the verifier role exists, and again only if the database is
    recreated:
    `psql -X -U capy -d capy -v uat_database=capy -v operatorapply=true -f scripts/uat/journey-credits.sql`.
+   Pending (2026-10-29): the same file now also defines the account chat
+   journey's read of its kept tool results (Q537); the verifier was refused
+   on messages, and gets no read on them. Apply the file again with the same
+   command (the deployment runbook §12 has it over SSH).
 5. Dispatch Deterministic UAT quality from `main`, with the deployed full SHA
    and `critical_paths=true`.
 6. Review the uploaded journey evidence and cleanup report. Retry cleanup from
