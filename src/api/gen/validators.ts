@@ -2481,7 +2481,7 @@ export const GetSourceSessionParams = zod.object({
 })
 
 export const GetSourceSessionQueryParams = zod.object({
-  "view": zod.boolean().optional().describe('Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint')
+  "view": zod.boolean().optional().describe('Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint or a publication waits for its rebuild')
 })
 
 export const GetSourceSessionResponse = zod.object({

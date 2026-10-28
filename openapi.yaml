@@ -9526,12 +9526,12 @@ paths:
           required: true
           schema:
             type: string
-        - description: "Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint"
+        - description: "Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint or a publication waits for its rebuild"
           explode: false
           in: query
           name: view
           schema:
-            description: "Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint"
+            description: "Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint or a publication waits for its rebuild"
             type: boolean
       responses:
         "200":
