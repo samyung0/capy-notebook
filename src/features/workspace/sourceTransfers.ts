@@ -51,6 +51,8 @@ export type TransferStage =
   | 'failed';
 
 export interface SourceTransfer {
+  /** A clone's copy, whose index copies in the background. */
+  copy?: boolean;
   error?: string;
   fileId?: string;
   key: string;
@@ -129,6 +131,27 @@ function patchTransfer(key: string, patch: Partial<SourceTransfer>) {
 function releaseUnsent(count: number) {
   useSourceTransfers.setState((state) => ({
     unsent: Math.max(0, state.unsent - count),
+  }));
+}
+
+/** Shows a cloned file in the panel while its index copies (Epo
+ * 2026-10-28); the row follows the file like an added upload's. */
+export function trackCopiedFile(file: SourceFile) {
+  if (file.status !== 'processing' && file.status !== 'pending') return;
+  useSourceTransfers.setState((state) => ({
+    transfers: [
+      ...state.transfers,
+      {
+        copy: true,
+        fileId: file.id,
+        key: `copy-${file.id}`,
+        kind: file.kind,
+        name: file.name,
+        stage: 'added',
+        uploadPct: 0,
+        workspaceId: file.workspaceId || null,
+      },
+    ],
   }));
 }
 

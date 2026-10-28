@@ -67,7 +67,9 @@ export function transferStatus(
   if (file.status === 'processing') {
     return {
       kind: 'progress',
-      label: m.source_transfer_parsing(),
+      label: transfer.copy
+        ? m.source_transfer_copying_index()
+        : m.source_transfer_parsing(),
       value: file.ingestPct ?? 0,
     };
   }

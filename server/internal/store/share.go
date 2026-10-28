@@ -1530,7 +1530,11 @@ func (s *Store) cloneWorkspaceOnce(
 			indexedMaterials[materialSnapshot.material.ID] = materialSnapshot.newID
 		}
 	}
-	if _, err := cloneRetrievalIndex(ctx, tx, srcID, newID, fileMap, indexedMaterials); err != nil {
+	// Notes' indexes copy here; files' in the background (Epo 2026-10-28).
+	if _, err := cloneRetrievalIndex(ctx, tx, srcID, newID, nil, indexedMaterials); err != nil {
+		return "", nil, 0, err
+	}
+	if _, _, err := queueIndexCopiesTx(ctx, tx, userID, srcID, newID, fileMap); err != nil {
 		return "", nil, 0, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE materials m SET index_dirty_at=now()
@@ -1968,17 +1972,18 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 		return "", nil, err
 	}
 	if f.indexed {
-		// The index copies between workspaces only; a copy into or out of
-		// standalone is ingested in its own scope, where a same-owner
-		// standalone donor spares the parse.
-		indexed := map[string]bool{}
+		// The index copies between workspaces only, in the background
+		// (queueIndexCopiesTx); a copy into or out of standalone is ingested
+		// in its own scope, where a same-owner standalone donor spares the
+		// parse.
+		indexed, queued := map[string]bool{}, map[string]bool{}
 		if sourceWorkspaceID != "" && dest.workspaceID != "" {
-			indexed, err = cloneRetrievalIndex(ctx, tx, sourceWorkspaceID, dest.workspaceID, map[string]string{f.id: nid}, nil)
+			indexed, queued, err = queueIndexCopiesTx(ctx, tx, userID, sourceWorkspaceID, dest.workspaceID, map[string]string{f.id: nid})
 			if err != nil {
 				return "", nil, err
 			}
 		}
-		if !indexed[nid] {
+		if !indexed[nid] && !queued[nid] {
 			if err := s.queueCloneIngestTx(ctx, tx, userID, dest.workspaceID, nid, f); err != nil {
 				return "", nil, err
 			}

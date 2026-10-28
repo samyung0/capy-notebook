@@ -5702,19 +5702,35 @@ an embedded item whose copy reads differently), starts dirty.
 
 ## Clone and teardown
 
-`CloneWorkspace` copies the retrieval index **in the same transaction** as the
-content: canonical content, aliases, chunks, vectors, and summaries,
-remapping file, content and chapter ids. Duplicate files remain
-aliases of one content item inside the clone. There is no best-effort follow-up
-call and no `ragCloned` flag — either the clone includes the index or the
-transaction rolls back.
+A clone's files get the source's ready index in the background (Epo
+2026-10-27/28; `store/index_copy.go`, migration 0127). Per copied content, the
+clone's transaction (`queueIndexCopiesTx`) aliases content the destination
+already holds ready under that `content_hash` (always, for a copy into the
+source's own workspace; `rag_contents` is unique per workspace and hash);
+otherwise, when both workspaces embed in one space, it inserts the copy's
+content row as `processing`, claimed by one `index_copy` job naming every
+copied file that holds it, and marks those files not indexed (a ready one
+`processing`, a partial one keeps `failed`). The copy opens at once and is
+editable; a publication of its edits waits for the copy
+(`requestSourceRefresh` answers a conflict). The gateway's copy worker
+(`RunIndexCopy`, `cmd/api/index_copy_worker.go`) claims due jobs, reaps
+expired leases and copies 250 passages with their vectors per transaction
+(fresh chunk ids derived from the copy's content id, so a repeated batch is a
+no-op), publishing `stage: "copy_index"` progress on `ingest:{workspace}`;
+its last transaction copies the summary, aliases the files still in the
+workspace (none left drops the copy), marks the content ready and the files
+indexed. A failed attempt retries after 30 s per attempt, three in all;
+after that, or once the source content is gone, the copy is dropped and its
+files are ingested as a cross-space clone is (refused, the file fails and its
+owner can retry). A copy whose workspace is deleted just ends. Account
+deletion cancels the job with the account's other pipeline work; a trashed
+copy's job runs on. Notes' indexes still copy inside the clone's transaction
+(`cloneRetrievalIndex`), as does content a Move copies because another file
+shares it. The browser lists a single-file clone in the transfer panel
+("Copying index") while it copies.
 
-A single file or note clone (`CloneFile`, `CloneMaterial`) gives the copy the
-source's ready index the same way (`cloneRetrievalIndex`), per destination:
-content the destination workspace already holds under that `content_hash`
-(always, for a copy into the source's own workspace; `rag_contents` is unique
-per workspace and hash) is aliased; otherwise the content, chunks, vectors and
-summary are copied when both workspaces have the same embedding pin. When the
+A single file or note clone (`CloneFile`, `CloneMaterial`) follows the same
+rules per destination. When the
 pins differ (or the destination's row for that hash is still processing) a
 file is queued for ingest like an upload: the cloner pays and is refused
 without credits (`llm_credits_exhausted`) or past the concurrent ingest-job
