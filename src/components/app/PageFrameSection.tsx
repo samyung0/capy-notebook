@@ -139,8 +139,10 @@ export function PageFrameSection() {
   const pale = frameColors(frame, 0);
   const full = frameColors(frame, STRENGTH_MAX);
 
+  // Its blocks are sections of the Theme drawer's column, spaced as the
+  // drawer's other sections are.
   return (
-    <div className="flex flex-col gap-5">
+    <>
       <div className="flex flex-col gap-3">
         <InputTitle>{m.page_frame_title()}</InputTitle>
         <div className="grid grid-cols-4 gap-2">
@@ -288,7 +290,7 @@ export function PageFrameSection() {
           </Button>
         )}
       </div>
-    </div>
+    </>
   );
 }
 
