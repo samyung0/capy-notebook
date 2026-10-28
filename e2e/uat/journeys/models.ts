@@ -16,7 +16,7 @@ export type CatalogRow = {
  * keeps fused order). */
 export async function slotDefault(
   run: UatRun,
-  slot: 'chat' | 'captioning' | 'retrieval' | 'rerank'
+  slot: 'chat' | 'captioning' | 'retrieval' | 'rerank' | 'editor'
 ): Promise<CatalogRow | undefined> {
   const rows = await run.query<CatalogRow>(
     `SELECT provider_slug,model_slug,version FROM model_configs

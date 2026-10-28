@@ -3118,7 +3118,7 @@ for OneDrive, optional `driveIds` of the same length. Download uses
 
 ## 12. UAT review environment and external-service sandboxes
 
-The manual heavy lifecycle gate is configured in the [UAT journey guide](../e2e/uat/journeys/README.md). It documents verifier-role setup, provider read credentials, fixed-code Clerk signup, same-revision ingest checks, committed fixtures and resumable cleanup. Apply the dedicated verifier SQL only to UAT after migrations.
+The manual heavy lifecycle gate is configured in the [UAT journey guide](../e2e/uat/journeys/README.md). It documents verifier-role setup, provider read credentials, fixed-code Clerk signup, same-revision ingest checks, committed fixtures and resumable cleanup. Apply the dedicated verifier SQL, and then the credits journey's raise function (`scripts/uat/journey-credits.sql`), only to UAT after migrations.
 
 This section is the manual counterpart to the repository's review automation.
 There is no deployed UAT system yet, so complete it only when rapid local

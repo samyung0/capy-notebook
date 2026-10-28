@@ -173,7 +173,7 @@ function actorFor(
     id,
     label,
     page,
-    async request(path, method = 'GET', body?: unknown, timeout?: number) {
+    async request(path, method = 'GET', body?: unknown) {
       if (!path.startsWith('/api/'))
         throw new Error('UAT actor request must use an application API path');
       // Navigation can finish before Clerk restores this actor's session.
@@ -193,15 +193,11 @@ function actorFor(
             traceparent: `00-${trace}-${randomBytes(8).toString('hex')}-01`,
           },
           method,
-          timeout,
         })
         .catch((error: unknown) => {
           throw setupFailure(error, 'Authenticated API request');
         });
       const text = await response.text();
-      // An event stream (the editor's AI command) is returned as its text.
-      if (response.headers()['content-type']?.startsWith('text/event-stream'))
-        return { body: text, status: response.status() };
       let parsed: unknown = null;
       if (text) {
         try {
