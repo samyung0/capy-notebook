@@ -431,6 +431,31 @@ Still below D8's floor on common-note typing, scroll and DOM weight.
   85 ms to 0.03–0.08 ms with the growth bound (`blocks/src/bound.rs`).
   Formatting, Enter, paste and moves still take the exact check.
 
+**Third tuning round, 2026-10-29** (laptop, `editor.perf.ts`, uncommitted;
+vendor README local change 8). Scroll spent its frames in Chrome, not in
+JS: with `content-visibility: auto` on each of the ~3,400 top-level blocks,
+the visibility check (`IntersectionObserverController::computeIntersections`,
+1.5 s in 4 s of scrolling against Plate's 0.26 s) and hit testing (0.8 s
+against 0.08 s) walked every box each frame. The page note now renders its
+blocks in chunks of about 32 (a block whose id hashes to it starts one, so
+an edit moves no other block between chunks), and the chunk carries
+`content-visibility`, as Plate's `data-slate-chunk` does. That also cut the
+per-key cost, which was mostly the same per-frame work. Same session, Plate →
+BlockSuite before → after:
+
+| Case | Plate | BlockSuite before | BlockSuite after |
+| --- | --- | --- | --- |
+| First key, near-limit / common | 108 / 83 ms | 147 / 393 ms | 109 / 87 ms |
+| Typing, near-limit: blocking / p95 | 16 / 88 ms | 89.5 / 256 ms | 8.9 / 88 ms |
+| Typing, common: blocking / p95 | 0.7 / 56 ms | 92.5 / 176 ms | 4.8 / 72 ms |
+| Scroll, near-limit / common | 49.5 / 54.8 FPS | 38 / 38.6 FPS | 58.9 / 58.5 FPS |
+| DOM nodes, near-limit / common | 35k / 37k | 182k / 177k | 183k / 179k |
+
+DOM weight is unchanged and not chased (D8 relaxed, 2026-10-29): about 45
+nodes a paragraph, 29 of them Lit's comment markers, against Plate's 5 per
+block. The islands' React commits during typing were not traced (scope cut
+the same day). GHA numbers pending.
+
 **Browser:** a BlockSuite variant of the `bench/editor` specs. **Plate is
 measured on the common-subset document too**, because no baseline exists for
 it.
@@ -672,6 +697,9 @@ Legend:
   (Epo, 2026-10-27). No period with two editor formats.
 - **D8: no speed gate** (Epo, 2026-10-27). Optimize where we can, and no worse
   than Plate.
+  Relaxed 2026-10-29 (Epo): around Plate is enough. Gaps of a few
+  milliseconds per key are fine and aren't chased; visible gaps (scroll FPS,
+  open time) still count.
 - **D9: all development on the Mac** (Epo, 2026-10-27), including the
   `collaboration-rs` piece, in the `blocksuite-notes` worktree. The PC keeps
   its own perf queue. The Rust part merges after the release train lands.
