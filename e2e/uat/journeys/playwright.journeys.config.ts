@@ -17,6 +17,7 @@ process.env.UAT_RUN_ID ??=
 const office = [
   'files.spec.ts',
   'chat.spec.ts',
+  'accountChat.spec.ts',
   'officeRefusal.spec.ts',
   'scannedPdf.spec.ts',
   'partialIngest.spec.ts',
