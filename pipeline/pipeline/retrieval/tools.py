@@ -336,6 +336,23 @@ async def _refuse_material_as_file(
     )
 
 
+async def _check_source_target(ctx: ToolContext, rid: str) -> ToolResult | None:
+    """A source file target of the document tools inside the chat's scope, or
+    the refusal. An id the turn's workspace list lacks goes on to Go, which
+    answers `moved_out` for a file this workspace's chat edited before it moved
+    and not found for anything else (Q469); with chosen sources only a chosen
+    id goes on, so the chat never widens that choice."""
+    refused = await _refuse_material_as_file(ctx, rid)
+    if refused is not None:
+        return refused
+    outline = await _scope_outline(ctx)
+    listed = any(str(item["id"]) == rid for item in outline.get("files") or [])
+    if not listed and (ctx.file_ids is None or rid in ctx.file_ids):
+        return None
+    resolved = await _resolve_scope(ctx, [rid])
+    return resolved if isinstance(resolved, ToolResult) else None
+
+
 def _scope_ids(value: Any) -> list[str] | None:
     if value is _MISSING:
         return []
@@ -2353,12 +2370,9 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         )
     kind, rid = _target(args)
     if kind == "source_file":
-        refused = await _refuse_material_as_file(ctx, rid)
+        refused = await _check_source_target(ctx, rid)
         if refused is not None:
             return refused
-        resolved = await _resolve_scope(ctx, [rid])
-        if isinstance(resolved, ToolResult):
-            return resolved
     body = await _gateway_read(
         "/api/internal/documents/inspect",
         {
@@ -2539,12 +2553,9 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     for i, markdown in zip(placing, figures.markdown, strict=True):
         commands[i] = {**commands[i], "markdown": markdown}
     if kind == "source_file":
-        refused = await _refuse_material_as_file(ctx, rid)
+        refused = await _check_source_target(ctx, rid)
         if refused is not None:
             return refused
-        resolved = await _resolve_scope(ctx, [rid])
-        if isinstance(resolved, ToolResult):
-            return resolved
         # Detect unrelated publications first; the acknowledged edit re-baselines after.
         await ctx.pending_sources.validate()
     payload = {
@@ -3088,12 +3099,9 @@ async def _inspect_office_document(
             "Document tools are unavailable for this user.", code="lifecycle_rejected"
         )
     rid = str(args["file_id"])
-    refused = await _refuse_material_as_file(ctx, rid)
+    refused = await _check_source_target(ctx, rid)
     if refused is not None:
         return refused
-    resolved = await _resolve_scope(ctx, [rid])
-    if isinstance(resolved, ToolResult):
-        return resolved
     body = await _gateway_read(
         "/api/internal/documents/inspect",
         {
@@ -3171,12 +3179,9 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             explain=explain,
         )
     else:
-        refused = await _refuse_material_as_file(ctx, rid)
+        refused = await _check_source_target(ctx, rid)
         if refused is not None:
             return refused
-        resolved = await _resolve_scope(ctx, [rid])
-        if isinstance(resolved, ToolResult):
-            return resolved
         # Detect unrelated publications first; the acknowledged edit re-baselines after.
         await ctx.pending_sources.validate()
         result = await _post_operation(

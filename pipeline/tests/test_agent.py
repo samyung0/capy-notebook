@@ -3259,6 +3259,65 @@ async def test_a_file_moved_out_of_the_workspace_tells_the_model(
     )
 
 
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        (
+            "edit_document",
+            {
+                "target": {"kind": "source_file", "id": "f_9"},
+                "commands": [
+                    {"type": "replace_text", "expected_text": "a", "text": "b"}
+                ],
+            },
+        ),
+        ("inspect_document", {"target": {"kind": "source_file", "id": "f_9"}}),
+        (
+            "edit_office_document",
+            {
+                "file_id": "f_9",
+                "commands": [
+                    {
+                        "type": "replace_text",
+                        "target_id": "p1",
+                        "expected_text": "a",
+                        "text": "b",
+                    }
+                ],
+            },
+        ),
+        ("inspect_office_document", {"file_id": "f_9"}),
+    ],
+)
+async def test_a_file_moved_out_before_this_turn_still_tells_the_model(
+    monkeypatch, tool, args
+):
+    """Q469: a later turn's workspace list no longer holds the moved file, so
+    the document tools pass its id on to Go, which answers `moved_out`. With
+    chosen sources an id outside them never reaches Go."""
+    posts: list[str] = []
+
+    def _post(url, **_k):
+        posts.append(url)
+        return _JsonResp(
+            {"code": "moved_out", "message": "this file was moved out"}, 404
+        )
+
+    ctx = _office_ctx(monkeypatch, post=_post)
+    result = await tools.run(tool, {**args, "_tool_call_id": "c1"}, ctx)
+    assert len(posts) == 1
+    assert result.refused and result.error == tools.MOVED_OUT
+
+    ctx.file_ids = ["f_9"]
+    result = await tools.run(tool, {**args, "_tool_call_id": "c2"}, ctx)
+    assert len(posts) == 2 and result.error == tools.MOVED_OUT
+
+    ctx.file_ids = ["f_1"]
+    result = await tools.run(tool, {**args, "_tool_call_id": "c3"}, ctx)
+    assert len(posts) == 2
+    assert result.refused and 'No workspace item has the id "f_9"' in result.text()
+
+
 async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_commands(
     monkeypatch,
 ):
