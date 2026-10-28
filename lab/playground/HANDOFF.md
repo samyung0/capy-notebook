@@ -1,7 +1,7 @@
 # Prompt and tool tuning: handoff (2026-10-05)
 
 Where the chat agent's prompt and tool tuning stands, for continuing the
-acceptance test (`todo-learning.md` 1.9) in another session on the same Mac. Setup and every
+acceptance test in another session on the same Mac. Setup and every
 config field are in `README.md`; the scenarios to run are its Acceptance table.
 
 ## What a turn sends now

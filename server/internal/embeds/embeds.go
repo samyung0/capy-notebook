@@ -3,7 +3,7 @@
 // diagrams, interactive HTML, embedded quizzes and flashcard sets) with their
 // name in each layer, the material kinds, and the limits they share.
 //
-// Every layer is tested against it rather than run from it (todo-embeds.md):
+// Every layer is tested against it rather than run from it (openwiki/embeds.md):
 // Go, the browser, the collaboration server and the pipeline keep their own
 // validators and renderers, and each has a test comparing its lists with this
 // catalog. `pnpm gen:openapi` writes it as JSON for the pipeline, as

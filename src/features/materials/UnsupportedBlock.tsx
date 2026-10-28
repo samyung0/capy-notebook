@@ -4,7 +4,7 @@ import { isKnownElementType } from './document';
 
 /** Under an element the embed catalog does not list (a block from a newer
  * version): the document stays readable, with this notice where the block
- * is (Epo 2026-10-13, todo-embeds.md decision 5). */
+ * is (Epo 2026-10-13, human/frontend/plate-editor.md). */
 export function UnsupportedBlockNotice({
   element,
 }: {

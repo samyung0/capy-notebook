@@ -102,7 +102,7 @@ Deck structure owner). That is the path for a school's own template:
 `workflows/create-template.md` builds a Brand, Style, Layout or Deck template
 from reference material, an existing `.pptx` included
 (`pptx_template_import.py`). Styles stay flat; templates add structure. Both
-are in `todo-learning.md`, Later.
+are in the central todo list.
 
 ## Updating ppt-master
 

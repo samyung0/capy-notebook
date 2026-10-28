@@ -14,7 +14,7 @@ back covers it). Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,
 Comment, Edit) under each question. In View mode signed-in learners answer and
 check each question (Learner answering, below) and copy a topic summary's
-missed questions into their quizzes; production Jev grading remains in `todo-question-bank.md`.
+missed questions into their quizzes; production Jev grading remains in the central todo list.
 
 ## Exam tree and covers
 
@@ -326,7 +326,7 @@ for both axes, origins on a multiple of every tick step) and redraws in a new
 frame whenever the view jumps or the tick step changes.
 Label text holds at most 60 characters (`QUESTION_GRAPH_LABEL_MAX`) and wraps at
 200 board pixels into one SVG `tspan` per line; point names and angle labels hold
-at most 20 (`QUESTION_GRAPH_NAME_MAX`), on every server. Implicit curves and inequalities are planned (`todo-graph.md`). Question charts sit
+at most 20 (`QUESTION_GRAPH_NAME_MAX`), on every server. Implicit curves and inequalities are planned (the central todo list). Question charts sit
 at about a graph's width with a centred title and never show a values table.
 A `plot` block holds numeric series over numeric axes: optional `kind` (`line`,
 the default, or `scatter`), `title`, `xTitle`, `yTitle`, optional `unit`, 1–4
@@ -900,8 +900,8 @@ batch: 32 questions across three HKDSE units and two IELTS subject areas. Every
 published question passed blind solving from its learner render with exact
 comparison, full review-render inspection (passage fidelity and readability for
 IELTS), Go validation and the 12-word copy check; repairs were re-rendered,
-re-solved and rechecked. Current state, local run data and next steps are in
-[todo-question-bank.md](../todo-question-bank.md).
+re-solved and rechecked. Next steps are in the central todo list; the last state and local run data
+notes: `git show 4dd037d92:todo-question-bank.md`.
 
 The [test catalog](test-catalog.md#question-bank-and-shared-question-format)
 lists contract parity, revision rejection, bank grants/assets/review, exact

@@ -174,4 +174,4 @@ and `read_skill`'s catalog offers `deck_building` for the chapters and
 
 Native charts and tables, the icon libraries, AI images, speaker notes,
 animations, and structured templates (Masters and Layouts). One style,
-`editorial`; more styles and school templates are in `todo-learning.md`, Later.
+`editorial`; more styles and school templates are in the central todo list.

@@ -1756,7 +1756,7 @@ for (const fixture of FIXTURES) {
       expect(peerInsert?.toPaintMs).not.toBeNull();
     });
 
-  // The view-mode creep item (todo-office.md): heap growth over two full
+  // The view-mode creep (openwiki/editor-perf.md): heap growth over two full
   // passes, the first warming caches, the second showing what keeps growing.
   test(`${fixture.format} ${fixture.name}: view-mode heap over full passes`, async ({
     page,
@@ -1950,7 +1950,7 @@ const CYCLED = FIXTURES.filter(
   (fixture) => !fixture.id.endsWith('-long') || fixture.format === 'docx'
 );
 
-// The view-mode creep item (todo-office.md) as it was seen: open a file in
+// The view-mode creep (openwiki/editor-perf.md) as it was seen: open a file in
 // View, close it, again and again, with the heap after each close.
 for (const fixture of CYCLED)
   test(`${fixture.format} ${fixture.name}: view-mode heap over open and close`, async ({

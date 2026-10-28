@@ -2637,7 +2637,7 @@ Observed failures are included in Sol's example file. The optional Qwen packet
 review over Alibaba Batch was retired with Sol (2026-10-19), with the builder's
 Batch transport.
 Deferred agent-loop and duplicate-result work is tracked in
-[`todo-learning.md`](../todo-learning.md) under Later.
+the central todo list.
 Summaries are not compacted. Completed books progress through
 publication automatically; revised versions are verified before old versions
 are retired. The heartbeat is a
@@ -3420,7 +3420,7 @@ and the rate class are in
 
 Curate mode, a thread flag fixed at creation (`conversations.curate`), was
 replaced on 2026-10-04 by one build flow on every turn and a per-turn Library
-switch (`todo-learning.md`, Part 2); migration
+switch; migration
 `0052_drop_conversation_curate.sql` drops the column. Any turn can answer or
 build. On 2026-10-24 (Epo) the Library switch became the Workspace only switch,
 off by default: off, the workspace comes first and the library, `search_web`

@@ -136,7 +136,7 @@ Per file it reports:
 - `runner`: the CPU model and core count of the machine that ran it, in every
   Office result (the shared runner pool mixes EPYC models);
 - view-mode heap over full passes (a second case per file, for the view-mode
-  creep item in `todo-office.md`): open in View, then two full passes (every
+  creep): open in View, then two full passes (every
   page, every sheet's rows and columns, or every slide, then back to the
   start), with the heap after open and after each pass. The first pass warms
   caches; growth on the second is what keeps creeping;

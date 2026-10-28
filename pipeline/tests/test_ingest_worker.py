@@ -2828,7 +2828,7 @@ async def test_a_parts_only_document_job_skips_the_parse_handoff(monkeypatch):
     async def _spec(_ws):
         return object()
 
-    async def _parts(job, payload, file_id, ws, name):
+    async def _parts(job, payload, file_id, ws, name, route):
         reached.append((job["id"], file_id, ws, name))
 
     monkeypatch.setattr(worker, "_workspace_embedding_spec", _spec)

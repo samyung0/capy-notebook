@@ -16,7 +16,7 @@ that handles it. The **embed catalog** lists all of it in one place:
 `TestGeneratedFilesAreCurrent` fails when one is stale. Every layer keeps its
 own validators and renderers and is **tested against** the catalog: a test in
 each language compares its hand-written lists with it (the work split and the
-lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor.md`
+lists to cover are in the central todo list). Decisions: `human/frontend/plate-editor.md`
 (Epo 2026-10-13).
 
 ## What it holds
@@ -249,8 +249,8 @@ decimal, the shortest that reads back exactly, never with an exponent
   list in stored order (which holds no key). Worked solutions, ordering items
   (their stored order is the key), accepted answers and marking schemes stay
   out: workspace viewers chat over the index and never get answer keys
-  (`human/question-bank.md` 2026-10-06), which the 2026-10-17 decision's
-  "solutions" contradicts; Epo's call is pending (`todo-embeds.md`).
+  (`human/question-bank.md` 2026-10-06), as Epo decided on 2026-10-18,
+  narrowing the 2026-10-17 decision (`human/frontend/plate-editor.md`).
 - **item**: a quiz gives each question as above, a flashcard set each card,
   a blank line apart. The store reads the note's active embedded items
   (`parent_material_id` the note) in one query; a reference to any other row

@@ -27,8 +27,8 @@ Signed-in users keep server-stored attempts; their open parts move to Jev too.
   materials stay signed-in only.
 - **Local data stays local.** Nothing is imported into an account on sign-in.
 - **Anonymous flashcards keep `ts-fsrs` in the browser** with an append-only
-  local review log. `todo-learning.md` moves signed-in FSRS to Go but no
-  longer deletes `ts-fsrs`.
+  local review log. The signed-in study plan (`openwiki/study-progress.md`)
+  moves signed-in FSRS to Go but no longer deletes `ts-fsrs`.
 - **Jev usage is recorded, never charged,** for signed-in and anonymous users.
 - **Anonymous identity:** a salted hash of the client IP enforces caps; a
   random id kept in IndexedDB is recorded for reporting. No fingerprinting.
@@ -176,7 +176,7 @@ overall, 5,000-character answers, at most 20 open parts per grade request, 30
 days of anonymous usage rows. User quizzes are bounded at 100 parts, 7 parts
 per question, 5 marking items per part and 20 open parts.
 
-## 7. Interaction with `todo-learning.md`
+## 7. Interaction with the signed-in study plan
 
 Independent of it, except that plan keeps `ts-fsrs` for local study and its
 quiz attempt flow adopts by-reference Jev grading and `itemAwards`. Either plan

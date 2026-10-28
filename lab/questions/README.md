@@ -8,8 +8,8 @@ Round 2 (2026-10-02) replaces the per-topic `references` and `style` stages
 with one private writer guide per exam, built from analyses of real papers
 (`data/question-bank/style/`, `data/question-bank/analysis/`). Each topic's
 `style.md` is a copy of its exam's guide, and `references/` holds copies of the
-exam's private reference texts for the copy check. Current state and run
-helpers are in `todo-question-bank.md`.
+exam's private reference texts for the copy check. Open work is in the
+central todo list; the last state and run helper notes: `git show 4dd037d92:todo-question-bank.md`.
 
 IELTS passages are adapted to the difficulty of real Cambridge passages.
 `readability.py check <passage.txt>` (run with

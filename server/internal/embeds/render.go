@@ -57,7 +57,7 @@ var rustFloat = map[string]bool{
 // Rust is the catalog for the collaboration server (crate notes).
 func Rust() []byte {
 	var out bytes.Buffer
-	fmt.Fprintf(&out, "//! %s\n//! The embed catalog (todo-embeds.md): element types, embed kinds,\n", generatedBy)
+	fmt.Fprintf(&out, "//! %s\n//! The embed catalog (openwiki/embeds.md): element types, embed kinds,\n", generatedBy)
 	out.WriteString("//! material kinds and shared limits.\n\n")
 	fmt.Fprintf(&out, "pub const VERSION: u32 = %d;\n\n", Version)
 

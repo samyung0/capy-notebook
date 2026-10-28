@@ -60,7 +60,8 @@ jobs:
           # deploy uses; only the spool and the token are local.
           grep -E '^CAPY_PARSE(R)?_' deploy/ingest-host.env.example > "$RUNNER_TEMP/parser.env"
           echo "CAPY_PARSE_SHARED_DIR=/var/lib/capy-parse" >> "$RUNNER_TEMP/parser.env"
-          echo "PARSER_TOKEN=budget-$GITHUB_RUN_ID" >> "$RUNNER_TEMP/parser.env"
+          # The parser refuses a token under 32 characters.
+          echo "PARSER_TOKEN=parser-budget-ci-token-$GITHUB_RUN_ID" >> "$RUNNER_TEMP/parser.env"
           docker volume create capy-parser-budget-spool
           docker volume create capy-parser-budget-work
           docker run --rm -v capy-parser-budget-spool:/var/lib/capy-parse \
@@ -78,7 +79,7 @@ jobs:
       - name: Run the parser budget
         run: |
           # Root: the spool volume and the container's cgroup belong to root.
-          sudo PARSER_TOKEN="budget-$GITHUB_RUN_ID" "$RUNNER_TEMP/venv/bin/python" \
+          sudo PARSER_TOKEN="parser-budget-ci-token-$GITHUB_RUN_ID" "$RUNNER_TEMP/venv/bin/python" \
             bench/parsers/scripts/budget.py run --out "$OUT" \
             --service http://127.0.0.1:18090 --container capy-parser-budget
       - name: Check budgets
