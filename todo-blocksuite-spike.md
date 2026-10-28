@@ -595,8 +595,8 @@ Legend:
   `vendor/blocksuite/README.md`).
 - **D13: an uploading image is an `affine:image` with an empty `sourceId`**
   (Epo, 2026-10-28). Peers draw it as the skeleton while the uploader's
-  presence names it, and as "Add an image" otherwise. The room allows it; the
-  store still refuses an empty source at save.
+  presence names it, and as "Add an image" otherwise. The room allows it, and
+  `value()` leaves it out, so nothing about an upload is stored (PE:168).
 - **D14: BlockSuite features with no decision of ours stay on when they work
   without porting** (Epo, 2026-10-28): heading and list folding, code wrap and
   line numbers. Ones that need a service we don't have (the `@` linked-doc menu

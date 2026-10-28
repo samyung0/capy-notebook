@@ -276,8 +276,9 @@ A blocks room is valid when:
 - every `prop:*` key is in the flavour's prop list, with the value types above,
   and every non-`undefined` default is present;
 - no block is nested more than 8 levels below `note` (D18);
-- an `affine:image` may hold an empty `sourceId` while it uploads (D13); the
-  store still refuses one at save.
+- an `affine:image` may hold an empty `sourceId` while it uploads (D13);
+  `value()` leaves such an image out, so nothing about an upload is stored
+  (PE:168).
 
 Concurrent moves and deletes break the reachability rules in normal use; they
 are repaired on entry (D3).
