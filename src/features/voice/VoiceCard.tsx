@@ -23,7 +23,7 @@ export function VoiceCard({ onOpen }: { onOpen?: () => void }) {
   if (!supported) return null;
   return (
     <button
-      className="relative mb-2 flex w-full items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-[14px] bg-surface frosted:bg-(--frost-fill) py-[7.5px] pr-3 pl-[7px] text-fg transition-transform frosted:hover:bg-page-hover hover:bg-page-hover active:scale-[0.98]"
+      className="relative mb-2 flex w-full items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-[14px] bg-surface frosted:bg-(--frost-fill) py-[7.5px] pr-3 pl-[7px] text-fg transition-all duration-150 ease-out frosted:hover:bg-surface-hover-bg hover:bg-surface-hover-bg active:scale-[0.98]"
       onClick={() => {
         onOpen?.();
         setAccountVoiceOpen(true);
