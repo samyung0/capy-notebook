@@ -4125,7 +4125,7 @@ async fn awareness_and_its_queries_take_from_the_users_allowance() {
     let id = presence.id();
     for clock in 1..=100 {
         presence
-            .send(7, &awareness_update(id, clock, "{\"cursor\":1}"))
+            .send(7, &awareness_update(id, clock, "{\"s\":\"AA==\"}"))
             .await;
     }
     assert!(presence.timeout_notice().await > 0);
@@ -4451,9 +4451,9 @@ async fn waiting_large_answers_are_released_one_at_a_time() {
 /// Security regression (rate-limit review r3 S5): the awareness a JOIN sends
 /// draws on the joiner's open budget like an awareness query, so joining
 /// again and again does not fetch a crowded room's presence for free. Two
-/// more joins of a room holding about 240 KB of presence spend a 300 KB
-/// budget, and the user's next query waits. Fails if the join's awareness is
-/// sent uncharged (the query answers at once).
+/// more joins of a room holding about 16 KB of presence (four full states)
+/// spend a 20 KB budget, and the user's next query waits. Fails if the
+/// join's awareness is sent uncharged (the query answers at once).
 #[tokio::test]
 async fn the_awareness_sent_on_join_draws_on_the_open_budget() {
     let Some(env) = env() else { return };
@@ -4461,14 +4461,14 @@ async fn the_awareness_sent_on_join_draws_on_the_open_budget() {
         &env,
         env.api.as_deref(),
         &[
-            ("COLLABORATION_OPEN_BYTES", "300000"),
+            ("COLLABORATION_OPEN_BYTES", "20000"),
             ("COLLABORATION_OPEN_REFILL_SECONDS", "1000000"),
             ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "100"),
         ],
     )
     .await;
     let (user, room, mut client) = writer(&env, server.port, "crowd").await;
-    let state = format!("{{\"n\":\"{}\"}}", "p".repeat(60_000));
+    let state = full_presence();
     // Four sessions' presence (a channel writes only its session's id),
     // joined while the room holds none.
     let mut sessions = vec![(1, client.id())];
@@ -4521,9 +4521,9 @@ async fn the_awareness_sent_on_join_draws_on_the_open_budget() {
 /// Security regression (Epo 2026-10-20, rate-limit review r6 S-1): the
 /// awareness a JOIN sends counts against the open budget and, past the
 /// small-answer floor, waits like an awareness query. Two re-JOINs of a room
-/// holding about 480 KB of presence (eight sessions on another socket) take a 300 KB
-/// budget 360 KB past its floor (300 KB owed); the next re-JOIN joins but
-/// hears no awareness until the budget refills (100 KB a second), and its
+/// holding about 31 KB of presence (eight full states on another socket) take
+/// a 20 KB budget 23 KB past its floor (20 KB owed); the next re-JOIN joins
+/// but hears no awareness until the budget refills (6.7 KB a second), and its
 /// step 1, waiting with it, hears that the open is slowed (review r7 S-1).
 /// Fails if the JOIN's awareness never waits, or its wait keeps the notice
 /// from the step 1.
@@ -4534,7 +4534,7 @@ async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
         &env,
         env.api.as_deref(),
         &[
-            ("COLLABORATION_OPEN_BYTES", "300000"),
+            ("COLLABORATION_OPEN_BYTES", "20000"),
             ("COLLABORATION_OPEN_REFILL_SECONDS", "3"),
             ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "100"),
             ("COLLABORATION_JOINED_PER_USER", "100"),
@@ -4575,7 +4575,7 @@ async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
         assert!(other.until(1).await.is_some(), "channel {channel} joined");
         sessions.push((channel, token_client_id(&session).expect("client id")));
     }
-    let state = format!("{{\"n\":\"{}\"}}", "p".repeat(60_000));
+    let state = full_presence();
     // All eight in one frame: once the first reaches this client, the room
     // holds all of them.
     let mut batch = Vec::new();
@@ -4862,18 +4862,18 @@ async fn a_member_writes_awareness_only_under_its_own_client_id() {
     claimer.joined(&room, &token(&room, &editor, "write")).await;
     let claimer_id = claimer.doc.client_id().get();
     claimer
-        .send(7, &awareness_update(victim_id, 9, "{\"name\":\"claimer\"}"))
+        .send(7, &awareness_update(victim_id, 9, "{\"s\":\"claimer\"}"))
         .await;
     claimer
-        .send(7, &awareness_update(4242, 1, "{\"name\":\"stray\"}"))
+        .send(7, &awareness_update(4242, 1, "{\"s\":\"stray\"}"))
         .await;
     claimer
-        .send(7, &awareness_update(claimer_id, 1, "{\"name\":\"own\"}"))
+        .send(7, &awareness_update(claimer_id, 1, "{\"s\":\"own\"}"))
         .await;
     // Ordered after the claimer's messages on the room's queue.
     claimer.awareness_states(1).await;
     victim
-        .send(7, &awareness_update(victim_id, 1, "{\"name\":\"victim\"}"))
+        .send(7, &awareness_update(victim_id, 1, "{\"s\":\"victim\"}"))
         .await;
     victim.awareness_states(1).await;
     claimer
@@ -4885,8 +4885,8 @@ async fn a_member_writes_awareness_only_under_its_own_client_id() {
     let mut states = watcher.awareness_states(1).await;
     states.sort();
     let mut expected = vec![
-        (victim_id, "{\"name\":\"victim\"}".to_owned()),
-        (claimer_id, "{\"name\":\"own\"}".to_owned()),
+        (victim_id, "{\"s\":\"victim\"}".to_owned()),
+        (claimer_id, "{\"s\":\"own\"}".to_owned()),
     ];
     expected.sort();
     assert_eq!(states, expected);
@@ -5435,23 +5435,20 @@ async fn a_takeover_keeps_the_sessions_cursor_for_collaborators() {
     let mut old = session_on(server.port, &room, &grant, id, session).await;
     let mut peer = Client::open(server.port).await;
     peer.joined(&room, &token(&room, &editor, "write")).await;
-    old.send(7, &awareness_update(id, 1, r#"{"cursor":1}"#))
+    old.send(7, &awareness_update(id, 1, r#"{"s":"AQ=="}"#))
         .await;
-    peer.states_of(id, |state| state.contains("\"cursor\":1"))
-        .await;
+    peer.states_of(id, |state| state.contains("AQ==")).await;
     // The socket drops unseen; the session rejoins, resends its state at the
     // same clock (as `joined()` does), then moves its cursor.
     let mut new = Client::open(server.port).await;
     new.send(0, &join_payload_in(&room, &grant, id, session))
         .await;
     assert_eq!(new.until(1).await.expect("the rejoin binds"), [1]);
-    new.send(7, &awareness_update(id, 1, r#"{"cursor":1}"#))
+    new.send(7, &awareness_update(id, 1, r#"{"s":"AQ=="}"#))
         .await;
-    new.send(7, &awareness_update(id, 2, r#"{"cursor":2}"#))
+    new.send(7, &awareness_update(id, 2, r#"{"s":"Ag=="}"#))
         .await;
-    let seen = peer
-        .states_of(id, |state| state.contains("\"cursor\":2"))
-        .await;
+    let seen = peer.states_of(id, |state| state.contains("Ag==")).await;
     assert!(!seen.iter().any(|state| state == "null"), "{seen:?}");
 }
 
@@ -5927,17 +5924,13 @@ async fn a_room_keeps_at_most_256_awareness_client_ids() {
         sessions.push((channel, token_client_id(&session).expect("client id")));
     }
     for (channel, id) in &sessions[..257] {
-        let entry = awareness_update(*id, 1, "{\"n\":1}");
+        let entry = awareness_update(*id, 1, "{}");
         client.send_on(*channel, 7, &entry).await;
     }
     assert_eq!(client.awareness_states(1).await.len(), 256);
     let ((removed_channel, removed), (new_channel, new)) = (sessions[1], sessions[257]);
     let mut churn = frame(removed_channel, 7, &awareness_update(removed, 2, "null"));
-    churn.extend(frame(
-        new_channel,
-        7,
-        &awareness_update(new, 1, "{\"n\":1}"),
-    ));
+    churn.extend(frame(new_channel, 7, &awareness_update(new, 1, "{}")));
     client
         .ws
         .send(Ws::Binary(churn.into()))
@@ -9274,7 +9267,7 @@ async fn a_socket_keeps_serving_its_rooms_while_another_room_loads() {
     var(&mut cursor, 1);
     var(&mut cursor, session);
     var(&mut cursor, 1);
-    varbytes(&mut cursor, br#"{"cursor":"a"}"#);
+    varbytes(&mut cursor, br#"{"s":"AA=="}"#);
     ws.send(Ws::Binary(frame(1, 7, &cursor).into()))
         .await
         .expect("awareness");
@@ -9296,7 +9289,7 @@ async fn a_socket_keeps_serving_its_rooms_while_another_room_loads() {
 }
 
 #[tokio::test]
-async fn oversized_frames_before_a_join_and_oversized_awareness_are_refused() {
+async fn oversized_frames_before_a_join_are_refused() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     // Before any room joined, a socket sends only JOINs: a 20 KiB frame closes it.
@@ -9308,24 +9301,6 @@ async fn oversized_frames_before_a_join_and_oversized_awareness_are_refused() {
     assert!(
         matches!(closed, None | Some(Ok(Ws::Close(_))) | Some(Err(_))),
         "{closed:?}"
-    );
-    // A joined channel's awareness entry over 64 KiB closes that channel.
-    let (user, material) = note(&env, "aware").await;
-    let room = format!("material:{material}:schema:1");
-    let mut a = Client::open(server.port).await;
-    a.joined(&room, &token(&room, &user, "write")).await;
-    let mut update = Vec::new();
-    var(&mut update, 1);
-    var(&mut update, 42);
-    var(&mut update, 1);
-    let state = format!("{{\"cursor\":\"{}\"}}", "x".repeat(70 * 1024));
-    varbytes(&mut update, state.as_bytes());
-    a.send(7, &update).await;
-    let closed = a.until(4).await.expect("the channel closes");
-    assert!(
-        String::from_utf8_lossy(&closed).contains("awareness entry too large"),
-        "{}",
-        String::from_utf8_lossy(&closed)
     );
 }
 
@@ -10074,6 +10049,17 @@ fn awareness_update(client: u64, clock: u64, state: &str) -> Vec<u8> {
     out
 }
 
+/// A note presence state near the room's 4 KiB cap, which it keeps: 100
+/// upload ids of 32 characters and three block runs of 64-character ids
+/// (3,927 bytes).
+fn full_presence() -> String {
+    let uploads: Vec<String> = (0..100).map(|n| format!("{n:032}")).collect();
+    let id = "i".repeat(64);
+    let state = serde_json::json!({ "b": vec![[&id, &id]; 3], "uploads": uploads }).to_string();
+    assert_eq!(state.len(), 3927);
+    state
+}
+
 // ------------------------------------------------------------- live items
 
 /// A flashcard set owned by `owner` (live-items), embedded in `parent` when
@@ -10176,12 +10162,13 @@ async fn a_read_channel_receives_no_user_id() {
     }
 }
 
-/// Security regression (REVIEW5 E2, R1, R1b): a read-only channel cannot show
-/// blocks as uploading to editors. Its presence reaches the room without an
-/// `uploads` list, the rest of it (a cursor) intact, even under an escaped
-/// key (`upl\u006fads`, which a peer's JSON.parse reads as `uploads`); an
-/// entry serde_json refuses but JSON.parse takes (an unpaired surrogate
-/// escape) never reaches peers as sent (R1b); a writer's list goes through.
+/// Security regression (REVIEW5 E2, R1, R1b; Epo 2026-10-28): a read-only
+/// channel cannot show blocks as uploading to editors: `uploads` is not a
+/// field its presence may hold, so a state naming it is dropped whole, even
+/// under an escaped key (`uploads`, which a peer's JSON.parse reads as
+/// `uploads`) or holding an unpaired surrogate escape, which serde_json
+/// refuses and JSON.parse takes (R1b); its caret alone goes through, and a
+/// writer's list does. Fails if a read-only channel's uploads reach a peer.
 #[tokio::test]
 async fn a_read_only_channel_names_no_uploads_in_presence() {
     let Some(env) = env() else { return };
@@ -10189,42 +10176,125 @@ async fn a_read_only_channel_names_no_uploads_in_presence() {
     let (user, material) = note(&env, "presence").await;
     let room = format!("material:{material}:schema:1");
     let mut writer = Client::open(server.port).await;
-    let mut viewer = Client::open(server.port).await;
+    let mut reader = Client::open(server.port).await;
     let mut observer = Client::open(server.port).await;
     writer.joined(&room, &token(&room, &user, "write")).await;
-    viewer.joined(&room, &token(&room, &user, "read")).await;
+    reader.joined(&room, &token(&room, &user, "read")).await;
     observer.joined(&room, &token(&room, &user, "write")).await;
-    let (viewer_id, writer_id) = (viewer.id(), writer.id());
-    // A channel writes only its session's id: each state goes once the one
-    // before it reached the observer.
-    let state = r#"{"cursor":{"anchor":1},"uploads":["block-a"]}"#;
-    viewer.send(7, &awareness_update(viewer_id, 1, state)).await;
-    let from_viewer = observer.states_of(viewer_id, |_| true).await.remove(0);
-    let from_viewer: serde_json::Value = serde_json::from_str(&from_viewer).expect("json");
-    assert!(from_viewer.get("uploads").is_none(), "{from_viewer}");
-    assert_eq!(from_viewer["cursor"]["anchor"], 1);
-    let escaped = r#"{"cursor":null,"uploads":["block-b"]}"#;
-    viewer
-        .send(7, &awareness_update(viewer_id, 2, escaped))
+    let (reader_id, writer_id) = (reader.id(), writer.id());
+    let uploading = r#"{"s":"AA==","uploads":["block-a"]}"#;
+    writer
+        .send(7, &awareness_update(writer_id, 1, uploading))
         .await;
-    let escaped_key = observer.states_of(viewer_id, |_| true).await.remove(0);
-    let escaped_key: serde_json::Value = serde_json::from_str(&escaped_key).expect("json");
-    assert!(escaped_key.get("uploads").is_none(), "{escaped_key}");
-    // serde_json refuses an unpaired surrogate escape; JSON.parse takes it
-    // and would read the list (REVIEW5 R1b). The empty state sent after it
-    // marks that the room has handled it.
-    let unparsed = r#"{"cursor":null,"uploads":["block-c"],"x":"\ud800"}"#;
-    viewer
-        .send(7, &awareness_update(viewer_id, 3, unparsed))
-        .await;
-    viewer.send(7, &awareness_update(viewer_id, 4, "{}")).await;
-    let mut seen = observer.states_of(viewer_id, |state| state == "{}").await;
-    seen.pop();
-    assert!(seen.iter().all(|state| state == "null"), "{seen:?}");
-    writer.send(7, &awareness_update(writer_id, 1, state)).await;
-    let from_writer = observer.states_of(writer_id, |_| true).await.remove(0);
-    let from_writer: serde_json::Value = serde_json::from_str(&from_writer).expect("json");
-    assert_eq!(from_writer["uploads"][0], "block-a");
+    assert_eq!(observer.states_of(writer_id, |_| true).await, [uploading]);
+    // Each one checked on its own (a flush sends a client's latest state).
+    let dropped = [
+        uploading,
+        r#"{"s":"AA==","uploads":["block-b"]}"#,
+        r#"{"s":"AA==","uploads":["\ud800"]}"#,
+    ];
+    for (clock, state) in (1..).zip(dropped) {
+        reader
+            .send(7, &awareness_update(reader_id, clock, state))
+            .await;
+        let held = reader.awareness_states(1).await;
+        assert!(
+            held.iter().all(|(client, _)| *client != reader_id),
+            "{state}: {held:?}"
+        );
+    }
+    let caret = r#"{"s":"AQ=="}"#;
+    reader.send(7, &awareness_update(reader_id, 4, caret)).await;
+    assert_eq!(observer.states_of(reader_id, |_| true).await, [caret]);
+}
+
+/// Security regression (Epo 2026-10-28, todo-presence.md): a note room keeps
+/// and relays an awareness state only when every field is one a note lists,
+/// within its bounds, and the state is at most 4 KiB: a peer hears a caret as
+/// its sender wrote it (bytes unchanged), never a colour or any other
+/// unlisted field (which every co-editor's browser would draw), a 65-character
+/// caret, a pointer past 1000, 17 block runs or a 4,097-byte state, and the
+/// sender's channel stays joined. Fails if the room keeps or relays a state
+/// outside the list or past the cap, or closes the channel for one.
+#[tokio::test]
+async fn a_note_relays_only_presence_within_its_fields() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "presence").await;
+    let mut sender = Client::open(server.port).await;
+    sender.joined(&room, &token(&room, &owner, "write")).await;
+    let mut peer = Client::open(server.port).await;
+    peer.joined(&room, &token(&room, &editor, "write")).await;
+    let id = sender.id();
+    // A space a browser never writes: the relay keeps the sender's bytes.
+    let caret = r#"{"s":"AQKS9tMIAQA=", "f":"AQKS9tMIBwA="}"#;
+    sender.send(7, &awareness_update(id, 1, caret)).await;
+    assert_eq!(peer.states_of(id, |_| true).await, [caret]);
+    // 4,096 and 4,097 bytes: the full state with an 8- or 9-character
+    // pointer id.
+    let near_cap = |pointer: usize| {
+        let mut state: serde_json::Value = serde_json::from_str(&full_presence()).expect("json");
+        state["s"] = "A".repeat(64).into();
+        state["f"] = "B".repeat(64).into();
+        state["p"] = serde_json::json!(["p".repeat(pointer), 1000, 1000]);
+        state.to_string()
+    };
+    let (at_cap, past_cap) = (near_cap(8), near_cap(9));
+    assert_eq!((at_cap.len(), past_cap.len()), (4096, 4097));
+    let runs = |n: usize| serde_json::json!({ "s": "AA==", "b": vec![["a", "b"]; n] }).to_string();
+    let dropped = [
+        r#"{"s":"AA==","data":{"color":"url(https://example.com/x)"}}"#.to_owned(),
+        format!(r#"{{"s":"{}"}}"#, "A".repeat(65)),
+        r#"{"p":["block",1001,0]}"#.to_owned(),
+        runs(17),
+        past_cap,
+    ];
+    // Each one checked on its own (a flush sends a client's latest state):
+    // the room still holds the caret, and answers the sender's query.
+    for (clock, state) in (2..).zip(&dropped) {
+        sender.send(7, &awareness_update(id, clock, state)).await;
+        assert_eq!(
+            sender.awareness_states(1).await,
+            [(id, caret.to_owned())],
+            "{state}"
+        );
+    }
+    sender.send(7, &awareness_update(id, 7, &runs(16))).await;
+    assert_eq!(sender.awareness_states(1).await, [(id, runs(16))]);
+    sender.send(7, &awareness_update(id, 8, &at_cap)).await;
+    peer.states_of(id, |state| state == at_cap).await;
+}
+
+/// Epo 2026-10-28: a source room relays an Office cursor in the shape Capy's
+/// adapter writes (a DOCX story with base64 positions) and drops a number
+/// array position or any field beside `cursor`.
+#[tokio::test]
+async fn a_source_room_relays_an_office_cursor() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "base").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut sender = Client::open(server.port).await;
+    sender.joined(&room, &token(&room, &user, "write")).await;
+    let mut peer = Client::open(server.port).await;
+    peer.joined(&room, &token(&room, &user, "write")).await;
+    let id = sender.id();
+    let cursor = r#"{"cursor":{"story":"body","anchor":"AQI=","head":"AQI="}}"#;
+    sender.send(7, &awareness_update(id, 1, cursor)).await;
+    assert_eq!(peer.states_of(id, |_| true).await, [cursor]);
+    let dropped = [
+        r#"{"cursor":{"story":"body","anchor":[1,2],"head":[1,2]}}"#,
+        r#"{"cursor":null,"user":{"name":"Mallory"}}"#,
+    ];
+    for (clock, state) in (2..).zip(dropped) {
+        sender.send(7, &awareness_update(id, clock, state)).await;
+        assert_eq!(
+            sender.awareness_states(1).await,
+            [(id, cursor.to_owned())],
+            "{state}"
+        );
+    }
 }
 
 impl Client {
@@ -10284,13 +10354,11 @@ async fn the_rooms_presence_lists_editors_by_their_tokens_and_never_viewers() {
     let mut desk = Client::open(server.port).await;
     desk.joined(&room, &identity_token(&room, &owner, "write", "Olive"))
         .await;
-    // What its awareness claims is never its label.
+    // Its label is its token's name (a note's awareness has no field for
+    // one: a state naming itself is dropped).
     let desk_id = desk.id();
-    desk.send(
-        7,
-        &awareness_update(desk_id, 1, "{\"data\":{\"name\":\"Mallory\"}}"),
-    )
-    .await;
+    desk.send(7, &awareness_update(desk_id, 1, "{\"s\":\"AA==\"}"))
+        .await;
     let mut ed = Client::open(server.port).await;
     ed.joined(&room, &identity_token(&room, &editor, "write", "Eddie"))
         .await;
@@ -10548,7 +10616,7 @@ async fn a_released_client_id_is_never_drawn_under_its_users_name() {
         .await;
     let released = leaver.id();
     leaver
-        .send(7, &awareness_update(released, 1, "{\"by\":\"eddie\"}"))
+        .send(7, &awareness_update(released, 1, "{\"s\":\"eddie\"}"))
         .await;
     observer
         .presence(|connections| {
@@ -10562,7 +10630,7 @@ async fn a_released_client_id_is_never_drawn_under_its_users_name() {
     let claims = async {
         for clock in 10..50 {
             taker
-                .send(7, &awareness_update(released, clock, "{\"by\":\"mal\"}"))
+                .send(7, &awareness_update(released, clock, "{\"s\":\"mal\"}"))
                 .await;
             tokio::time::sleep(Duration::from_millis(40)).await;
         }
@@ -10960,7 +11028,7 @@ async fn a_viewer_reads_a_notes_set_without_writes_or_presence() {
         .await;
     let editor_id = editor.id();
     editor
-        .send(7, &awareness_update(editor_id, 1, r#"{"user":"owner"}"#))
+        .send(7, &awareness_update(editor_id, 1, r#"{"s":"owner"}"#))
         .await;
     let mut watcher = Client::open(server.port).await;
     assert_eq!(
@@ -10971,11 +11039,11 @@ async fn a_viewer_reads_a_notes_set_without_writes_or_presence() {
     );
     assert!(watcher.settle(|c| c.block_text() == "shared").await);
     editor
-        .send(7, &awareness_update(editor_id, 2, r#"{"user":"owner2"}"#))
+        .send(7, &awareness_update(editor_id, 2, r#"{"s":"owner2"}"#))
         .await;
     let watcher_id = watcher.id();
     watcher
-        .send(7, &awareness_update(watcher_id, 1, r#"{"user":"viewer"}"#))
+        .send(7, &awareness_update(watcher_id, 1, r#"{"s":"viewer"}"#))
         .await;
     watcher.send(8, &[]).await;
     assert!(!watcher.hears(7, 1500).await, "a viewer heard awareness");
