@@ -2216,6 +2216,9 @@ components:
         revision:
           format: int64
           type: integer
+        rights:
+          $ref: "#/components/schemas/FileRights"
+          description: What the caller may do with the file, read with the page (Files page rows)
         sizeBytes:
           format: int64
           type: integer
@@ -2333,6 +2336,23 @@ components:
           type: string
       required:
         - items
+      type: object
+    FileRights:
+      additionalProperties: false
+      properties:
+        clone:
+          type: boolean
+        move:
+          type: boolean
+        rename:
+          type: boolean
+        trash:
+          type: boolean
+      required:
+        - rename
+        - trash
+        - move
+        - clone
       type: object
     FileStatus:
       enum:
@@ -9045,15 +9065,16 @@ paths:
             description: Keeps files whose name holds this text, any case
             maxLength: 120
             type: string
-        - description: "owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"
+        - description: "owned: the files the caller pays for, wherever they sit (the Files page's My files); all: those plus every file in its own workspaces and those it is a member of (All files); member: the files the caller can open, in its workspaces, those it is a member of and link or public ones it opened"
           explode: false
           in: query
           name: scope
           schema:
             default: owned
-            description: "owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"
+            description: "owned: the files the caller pays for, wherever they sit (the Files page's My files); all: those plus every file in its own workspaces and those it is a member of (All files); member: the files the caller can open, in its workspaces, those it is a member of and link or public ones it opened"
             enum:
               - owned
+              - all
               - member
             type: string
         - explode: false
@@ -9526,12 +9547,12 @@ paths:
           required: true
           schema:
             type: string
-        - description: "Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint"
+        - description: "Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint or a publication waits for its rebuild"
           explode: false
           in: query
           name: view
           schema:
-            description: "Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint"
+            description: "Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint or a publication waits for its rebuild"
             type: boolean
       responses:
         "200":
@@ -12724,7 +12745,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Remove a workspace member
+      summary: Remove a workspace member, or leave it as that member
       tags:
         - Workspace collaboration
     patch:

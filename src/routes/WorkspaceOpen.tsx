@@ -112,10 +112,6 @@ const isLeftView = (value: unknown): value is LeftView =>
 /** The header's panel toggles while their panel is open: the icon's strip
  * fills in the accent. */
 const PANEL_TOGGLE_OPEN = 'text-action-accent hover:text-action-accent';
-// The Files panel's replacement check: the in-app unsaved-changes guard is
-// gone (Q465), so opening another item always goes ahead.
-const keepNothing = () => true;
-
 const LEFT_SIZE = 340;
 const LEFT_MIN = 300;
 const VIEWER_MIN = 400;
@@ -349,13 +345,33 @@ function useFollowOpenFile(workspaceId: string, fileId: string | null) {
   }, [elsewhere, follow, target, targetError]);
 }
 
-export default function WorkspaceOpen() {
+/** The follow re-renders whenever the open file's row fetches, as it does on
+ * any navigation once the row is 5 s stale (the route's loader prefetches
+ * it), a citation click included. Beside the page it re-renders alone, not
+ * the whole workspace in the middle of the citation's scroll. */
+function FollowOpenFile() {
+  const params = useParams({ strict: false });
+  const workspaceId = (params as { workspaceId: string }).workspaceId;
+  const search = useSearch({ strict: false }) as WorkspaceOpenSearch;
+  useFollowOpenFile(workspaceId, search.file ?? null);
+  return null;
+}
+
+export default function WorkspaceOpenPage() {
+  return (
+    <>
+      <FollowOpenFile />
+      <WorkspaceOpen />
+    </>
+  );
+}
+
+function WorkspaceOpen() {
   const params = useParams({ strict: false });
   const workspaceId = (params as { workspaceId: string }).workspaceId;
   const navigate = useNavigate();
   const router = useRouter();
   const search = useSearch({ strict: false }) as WorkspaceOpenSearch;
-  useFollowOpenFile(workspaceId, search.file ?? null);
 
   // Other failures without data go to the error boundary.
   const {
@@ -502,21 +518,25 @@ export default function WorkspaceOpen() {
       fileId: citation.fileId,
       regions,
     });
+    const search = {
+      ...searchFromOpenItem({
+        id: citation.fileId,
+        kind: 'file',
+        page: regionPage ?? citation.pageStart ?? undefined,
+      }),
+      mode: 'view' as const,
+    };
+    // A repeated citation leaves the URL as it is, so it doesn't navigate:
+    // the route's loader would refetch the open file and re-render the
+    // workspace as the scroll starts (Q493).
+    if (
+      router.buildLocation({ search, to: '.' }).href ===
+      router.latestLocation.href
+    )
+      return;
     // The router's scroll reset would abort the viewer's smooth scroll to
     // the cited box.
-    navigate({
-      replace: true,
-      resetScroll: false,
-      search: {
-        ...searchFromOpenItem({
-          id: citation.fileId,
-          kind: 'file',
-          page: regionPage ?? citation.pageStart ?? undefined,
-        }),
-        mode: 'view',
-      },
-      to: '.',
-    });
+    navigate({ replace: true, resetScroll: false, search, to: '.' });
   }
 
   const [generating, setGenerating] = useState<GenerateMode | null>(null);
@@ -734,7 +754,6 @@ export default function WorkspaceOpen() {
     );
   const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
     <FilesPanel
-      beforeReplace={keepNothing}
       generating={generating}
       header={picker}
       onAddChapter={
@@ -761,7 +780,6 @@ export default function WorkspaceOpen() {
   // and Study pinned under it; Add chapter stays in the header's ⋮.
   const filesDropdown = (
     <FilesPanel
-      beforeReplace={keepNothing}
       className="h-auto flex-1"
       footer={
         <div className="flex shrink-0 flex-col gap-1 border-divider border-t px-2.5 pt-1.5 pb-2">

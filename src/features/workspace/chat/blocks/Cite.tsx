@@ -43,7 +43,10 @@ export function Cites({ passages }: { passages?: number[] }) {
     .filter((mark): mark is { k: number; n: number } => mark.k !== undefined);
   if (!marks.length) return null;
   return (
-    <sup className="ml-px whitespace-nowrap text-[10px] text-fg-muted leading-none">
+    <sup
+      className="ml-px whitespace-nowrap text-[10px] text-fg-muted leading-none"
+      data-copy-skip
+    >
       {marks.map(({ k, n }, index) => (
         <Fragment key={n}>
           {index ? ',' : null}
@@ -71,7 +74,10 @@ export function CiteFooter({
 }) {
   if (!(passages?.length || note)) return null;
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-muted text-xs">
+    <div
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-muted text-xs"
+      data-copy-skip
+    >
       {note ? <span>{note}</span> : null}
       {passages?.length ? (
         <span>

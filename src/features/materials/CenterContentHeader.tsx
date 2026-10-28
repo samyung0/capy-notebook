@@ -381,7 +381,6 @@ function ReadToggle({
 }
 
 export function Header({
-  beforeFileDelete,
   chapters,
   color,
   item,
@@ -417,7 +416,6 @@ export function Header({
   menuShown: boolean;
   /** The open room's other editors, shown as the avatar group. */
   presence: PresenceStore;
-  beforeFileDelete?: () => boolean;
   /** Workspace chrome drawn before the file: layout toggle and workspace menu. */
   leading?: ReactNode;
   /** Workspace chrome at the header's right end: the right panel toggle. */
@@ -533,7 +531,6 @@ export function Header({
         <ReadToggle item={item} workspaceId={workspaceId} />
       )}
       <ContentActions
-        beforeDelete={file ? beforeFileDelete : undefined}
         beforeDeleteItems={oneColumn?.settingsItems}
         canClone={canClone}
         canMoveTo={canMoveTo}

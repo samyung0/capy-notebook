@@ -23,7 +23,7 @@ catalog for every numeric limit that may vary by subscription plan:
 | Monthly credits                 |                        200 |                     10,000 |
 | Source file                     |                     10 MiB |                     30 MiB |
 | Material daily-history entries  |                          3 |                         30 |
-| Owned workspaces                |                         10 |                         50 |
+| Workspaces (owned + joined)     |                         10 |                         50 |
 | Files per workspace             |                        100 |                        100 |
 | Files per upload/import request |                         20 |                         20 |
 | One uploaded image              |                      2 MiB |                      2 MiB |
@@ -102,7 +102,8 @@ media to a material whose payer is frozen, or at its limit
 (`assertMaterialNotFullTx`, so nobody pays for a node the material could not
 save). A workspace
 ownership transfer moves no charges (`TransferWorkspace` only swaps roles and
-still checks the recipient's owned-workspace and file caps). A member who
+still checks the recipient's file cap; the workspace cap counts members, so a
+transfer leaves it unchanged). A member who
 leaves or is removed keeps paying for what it added; the items stay in the
 workspace, and the Files page (files, blocks, trash), which lists only what the
 caller pays for and so adds up to its storage meter (Sam 2026-10-19), still
@@ -445,7 +446,14 @@ the upload fails in the browser (a cancel, the row's remove button, a closed
 editor or dialog, or a refusal), it gives the ticket back with
 `DELETE /api/uploads/tickets/{id}` (its owner only), which hands the
 ticket's place, or its turn's bytes, to the line at once. The browser never
-retries an upload itself (Q282). A source ticket given back counts at once
+retries an upload itself (Q282), so a refused source ticket or upload counts
+once, at once, as a failed file of its batch: the gateway counts a refusal
+in the ticket's batch from the moment the upload spends its ticket until its
+session exists (an editor removed while the file waited, a refused metadata
+part; Q481), and the session's expiry
+(`upload_sessions_settle_source_batch`) counts one after it, a 429
+`too_many_ingest_leases` (the parsed file's job past the uploader's 20 ingest
+leases) among them. A source ticket given back counts at once
 as a failed file of its batch, or as a removed one when the user removed its
 row (`?reason=removed`). Any other reason is a 400. Giving back a ticket the upload already spent is a
 harmless 410. An abandoned tab sends nothing, and its ticket waits for its

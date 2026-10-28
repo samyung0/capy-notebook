@@ -310,7 +310,8 @@ export function clearMockThumbnailStale(fileId: string) {
 }
 
 export async function scenarioSourceSession(
-  fileId: string
+  fileId: string,
+  view = false
 ): Promise<SourceSession | null> {
   const biologyFixture = biologyOfficeFixtures.find(
     (fixture) => fixture.id === fileId
@@ -356,7 +357,10 @@ export async function scenarioSourceSession(
     room: sourceRoomName(fileId, seed.epoch),
     sourceIdentity: fileId,
     sourceURL: seed.sourceURL,
-    state: sourceRoomState(room),
+    // Go's view read (ViewSourceSession) sends the state only while the saved
+    // checkpoint is ahead of the indexed one (0: the mock never publishes, so
+    // no rebuild waits). The room holds its whole state, which names no seed.
+    state: view && room.version === 0 ? null : sourceRoomState(room),
     stateSeedSHA256: null,
     thumbnailStale:
       seed.format !== 'text' &&

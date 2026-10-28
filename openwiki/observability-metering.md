@@ -349,7 +349,11 @@ capturing it (`DocumentError::Unavailable` in
 expected (`authorityFailure` in `server/internal/store/collaboration_documents.go`)
 and answers its own caller as for any unavailable authority (503,
 `outcome_unknown` to the pipeline), reporting nothing; any other 503 from the
-authority is still reported. A JOIN or draft send refused for its client
+authority is still reported. A JOIN refusal counted in
+`capy_collaboration_authentication_failures_total` is logged at warn as
+`authentication rejected` with the error, the room (when the JOIN names a
+valid one), the socket and, once its token verified, the user; never the
+token. A JOIN or draft send refused for its client
 protocol (`collaboration-outdated`, the version gate in
 [plate-editor.md](frontend/plate-editor.md#client-protocol-and-the-release-nudge))
 is expected after every bumping deploy: collaboration logs it at warn

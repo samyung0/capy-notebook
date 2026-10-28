@@ -306,6 +306,13 @@ class ResolvedScope:
 
 _MISSING = object()
 
+# An id no workspace item has: the outline check's refusal, and the hint the
+# document tools add to Go's plain not found for a source file (Q482).
+NO_WORKSPACE_ITEM = (
+    'No workspace item has the id "{id}": it may have been deleted or moved to '
+    "trash. list_sources shows the current ids."
+)
+
 
 async def _scope_outline(ctx: ToolContext) -> dict[str, Any]:
     if ctx._scope_outline is None:
@@ -336,6 +343,23 @@ async def _refuse_material_as_file(
     )
 
 
+async def _check_source_target(ctx: ToolContext, rid: str) -> ToolResult | None:
+    """A source file target of the document tools inside the chat's scope, or
+    the refusal. An id the turn's workspace list lacks goes on to Go, which
+    answers `moved_out` for a file this workspace's chat edited before it moved
+    and not found for anything else (Q469); with chosen sources only a chosen
+    id goes on, so the chat never widens that choice."""
+    refused = await _refuse_material_as_file(ctx, rid)
+    if refused is not None:
+        return refused
+    outline = await _scope_outline(ctx)
+    listed = any(str(item["id"]) == rid for item in outline.get("files") or [])
+    if not listed and (ctx.file_ids is None or rid in ctx.file_ids):
+        return None
+    resolved = await _resolve_scope(ctx, [rid])
+    return resolved if isinstance(resolved, ToolResult) else None
+
+
 def _scope_ids(value: Any) -> list[str] | None:
     if value is _MISSING:
         return []
@@ -363,10 +387,7 @@ async def _resolve_scope(
     allowed = set(ctx.file_ids) if ctx.file_ids is not None else set(item_by_id)
     for item_id in ids:
         if item_id not in item_by_id:
-            return _refused(
-                f'No workspace item has the id "{item_id}": it may have been deleted '
-                "or moved to trash. list_sources shows the current ids."
-            )
+            return _refused(NO_WORKSPACE_ITEM.format(id=item_id))
         if item_id not in allowed:
             return _refused(
                 f'"{item_id}" is outside the sources chosen for this chat, and the '
@@ -1833,6 +1854,7 @@ async def _post_operation(
     failure: str,
     timeout: float = 10,
     explain: Callable[[dict[str, Any]], str] | None = None,
+    not_found: str = "",
 ) -> ToolResult:
     """POST a receipt-backed mutation to the gateway.
 
@@ -1841,7 +1863,8 @@ async def _post_operation(
     that end without a receipt are a tool failure that never says nothing was
     saved (Q463, Q464): a timed-out or `outcome_unknown` try may still land.
     An unreadable receipt fails the turn. ``explain`` turns a refusal's
-    ``details`` into the result's detail.
+    ``details`` into the result's detail; ``not_found`` is added to a plain
+    not found.
     """
     last_exc: BaseException | None = None
     last_status = 0
@@ -1877,6 +1900,7 @@ async def _post_operation(
                     resp,
                     f"Could not {failure}: {detail or resp.status_code}",
                     detail=explain(details) if explain and details else "",
+                    not_found=not_found,
                 )
         except requests.Timeout as exc:
             last_exc = exc
@@ -1998,16 +2022,19 @@ NO_PERMISSION = (
 
 
 def _gateway_refused(
-    resp: requests.Response, text: str, *, detail: str = ""
+    resp: requests.Response, text: str, *, detail: str = "", not_found: str = ""
 ) -> ToolResult:
     """A gateway refusal as a tool result; one for lack of permission tells
-    the model, after the error, to stop editing."""
+    the model, after the error, to stop editing, and a plain not found adds
+    `not_found` when given."""
     try:
         code = str(resp.json().get("code") or "")
     except ValueError:
         code = ""
     if code == "moved_out":
         return _refused(MOVED_OUT, code="unavailable_target")
+    if resp.status_code == 404 and not_found:
+        detail = "\n\n".join(part for part in (detail, not_found) if part)
     if code in _NO_PERMISSION_CODES:
         detail = "\n\n".join(part for part in (detail, NO_PERMISSION) if part)
     if code == "saves_failing":
@@ -2240,16 +2267,19 @@ def _post_json(path: str, payload: dict[str, Any]) -> requests.Response:
 
 
 async def _gateway_read(
-    path: str, payload: dict[str, Any], failure: str
+    path: str, payload: dict[str, Any], failure: str, not_found: str = ""
 ) -> dict[str, Any] | ToolResult:
-    """One gateway read for a tool; refusals map to typed tool errors."""
+    """One gateway read for a tool; refusals map to typed tool errors, and a
+    plain not found adds ``not_found``."""
     try:
         resp = await asyncio.to_thread(_post_json, path, payload)
     except requests.RequestException as exc:
         return _failed(f"Could not {failure}: {exc}")
     if resp.status_code != 200:
         return _gateway_refused(
-            resp, f"Could not {failure}: {_response_detail(resp) or resp.status_code}"
+            resp,
+            f"Could not {failure}: {_response_detail(resp) or resp.status_code}",
+            not_found=not_found,
         )
     body = resp.json()
     return body if isinstance(body, dict) else {}
@@ -2353,12 +2383,9 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         )
     kind, rid = _target(args)
     if kind == "source_file":
-        refused = await _refuse_material_as_file(ctx, rid)
+        refused = await _check_source_target(ctx, rid)
         if refused is not None:
             return refused
-        resolved = await _resolve_scope(ctx, [rid])
-        if isinstance(resolved, ToolResult):
-            return resolved
     body = await _gateway_read(
         "/api/internal/documents/inspect",
         {
@@ -2369,6 +2396,7 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
             "count": int(args.get("count") or 60),
         },
         "inspect the document",
+        NO_WORKSPACE_ITEM.format(id=rid) if kind == "source_file" else "",
     )
     if isinstance(body, ToolResult):
         return body
@@ -2539,12 +2567,9 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     for i, markdown in zip(placing, figures.markdown, strict=True):
         commands[i] = {**commands[i], "markdown": markdown}
     if kind == "source_file":
-        refused = await _refuse_material_as_file(ctx, rid)
+        refused = await _check_source_target(ctx, rid)
         if refused is not None:
             return refused
-        resolved = await _resolve_scope(ctx, [rid])
-        if isinstance(resolved, ToolResult):
-            return resolved
         # Detect unrelated publications first; the acknowledged edit re-baselines after.
         await ctx.pending_sources.validate()
     payload = {
@@ -2576,6 +2601,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         failure="edit the document",
         timeout=60 if images else 10,
         explain=explain,
+        not_found=NO_WORKSPACE_ITEM.format(id=rid) if kind == "source_file" else "",
     )
     if result.effects:
         # This turn's own view: drop cached outlines and re-read the exact
@@ -3088,12 +3114,9 @@ async def _inspect_office_document(
             "Document tools are unavailable for this user.", code="lifecycle_rejected"
         )
     rid = str(args["file_id"])
-    refused = await _refuse_material_as_file(ctx, rid)
+    refused = await _check_source_target(ctx, rid)
     if refused is not None:
         return refused
-    resolved = await _resolve_scope(ctx, [rid])
-    if isinstance(resolved, ToolResult):
-        return resolved
     body = await _gateway_read(
         "/api/internal/documents/inspect",
         {
@@ -3107,6 +3130,7 @@ async def _inspect_office_document(
             },
         },
         "inspect the file",
+        NO_WORKSPACE_ITEM.format(id=rid),
     )
     if isinstance(body, ToolResult):
         return body
@@ -3171,12 +3195,9 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             explain=explain,
         )
     else:
-        refused = await _refuse_material_as_file(ctx, rid)
+        refused = await _check_source_target(ctx, rid)
         if refused is not None:
             return refused
-        resolved = await _resolve_scope(ctx, [rid])
-        if isinstance(resolved, ToolResult):
-            return resolved
         # Detect unrelated publications first; the acknowledged edit re-baselines after.
         await ctx.pending_sources.validate()
         result = await _post_operation(
@@ -3191,6 +3212,7 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             ctx,
             failure="edit the file",
             explain=explain,
+            not_found=NO_WORKSPACE_ITEM.format(id=rid),
         )
     if result.effects and (cut := _NOT_APPLIED.search(result.text())):
         result.progress = (int(cut[1]), len(commands))
@@ -3777,7 +3799,11 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         raise
     except Exception as exc:
         log.exception("tool %s failed", name)
-        return _failed(f"The {name} tool failed: {exc}")
+        # A bare exception (an embedding call timing out) has no text.
+        why = str(exc) or (
+            "timed out" if isinstance(exc, TimeoutError) else type(exc).__name__
+        )
+        return _failed(f"The {name} tool failed: {why}")
     _learn_labels(ctx, result)
     return result
 

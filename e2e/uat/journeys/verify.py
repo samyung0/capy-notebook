@@ -1,4 +1,4 @@
-"""Read-only UAT PostgreSQL/B2 verification using the existing Python runtime."""
+"""Read-only UAT PostgreSQL and bucket verification using the existing Python runtime."""
 
 import base64
 import hashlib
@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import boto3
 import psycopg
 from botocore.config import Config
+from botocore.exceptions import ClientError
 from psycopg.rows import dict_row
 
 
@@ -47,10 +48,12 @@ def database_query(sql, params):
 def storage():
     endpoint = urlparse(os.environ["B2_ENDPOINT"])
     bucket = os.environ["B2_BUCKET"]
+    # The B2_* settings name the R2 bucket after the move (Q474, Q487); B2
+    # stays accepted until the B2 UAT bucket is gone.
     if endpoint.scheme != "https" or not (endpoint.hostname or "").endswith(
-        ".backblazeb2.com"
+        (".backblazeb2.com", ".r2.cloudflarestorage.com")
     ):
-        raise ValueError("Invalid Backblaze endpoint")
+        raise ValueError("Invalid bucket endpoint")
     if "uat" not in bucket.replace("_", "-").split("-"):
         raise ValueError("A dedicated UAT bucket is required")
     return boto3.client(
@@ -88,24 +91,16 @@ def main(request):
             "contentType": response.get("ContentType", ""),
             "bodyBase64": base64.b64encode(data).decode(),
         }
-    if request["operation"] == "versions":
-        versions = []
-        for page in client.get_paginator("list_object_versions").paginate(
-            Bucket=bucket, Prefix=key
-        ):
-            for kind in ("Versions", "DeleteMarkers"):
-                versions.extend(
-                    {
-                        "id": item["VersionId"],
-                        "latest": item["IsLatest"],
-                        "deleteMarker": kind == "DeleteMarkers",
-                        "size": item.get("Size", 0),
-                        "modified": item["LastModified"].isoformat(),
-                    }
-                    for item in page.get(kind, [])
-                    if item["Key"] == key
-                )
-        return versions
+    if request["operation"] == "exists":
+        # R2 has no object versions (ListObjectVersions answers 501), so a key
+        # is live or gone; on B2 a hidden key heads as 404 too.
+        try:
+            head = client.head_object(Bucket=bucket, Key=key)
+        except ClientError as error:
+            if error.response["ResponseMetadata"]["HTTPStatusCode"] == 404:
+                return {"live": False}
+            raise
+        return {"live": True, "size": head["ContentLength"]}
     raise ValueError("Unknown verifier operation")
 
 

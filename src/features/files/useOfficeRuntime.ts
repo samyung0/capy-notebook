@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { authHeaders } from '@/api/auth';
-import type { SourceFile } from '@/api/types';
+import type { SourceFile, SourceSession } from '@/api/types';
 import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
 import { useCollaborationHeld } from '@/features/collaboration/held';
@@ -392,10 +392,12 @@ export function useOfficeRuntime({
   // The route started this file's open (sourceOpen.ts) unless a view shows it.
   useEffect(() => holdSource(file.id), [file.id]);
 
-  // View mode reads the published base plus the saved checkpoint, so a viewer
-  // sees what was last saved rather than what was last published. The
-  // checkpoint rides along only when it is ahead of the indexed one; the
-  // runtime exports it over the base before opening the viewer.
+  // View mode reads the session's base plus its saved edits, so a viewer sees
+  // what was last saved rather than what was last published. The session
+  // carries saved edits while they are ahead of the published file, or while
+  // a publication waits to become the editing base (checkpoints equal, every
+  // edit still stored against the old base); the runtime exports them over
+  // the base before opening the viewer, else the base opens as is.
   useEffect(() => {
     if (mode !== 'view' || viewBytes || config.error) return;
     const controller = new AbortController();
@@ -404,17 +406,8 @@ export function useOfficeRuntime({
         if (!controller.signal.aborted)
           setViewAtSizeLimit(!!session.atSizeLimit);
         const bytes = (await base).buffer;
-        const saved =
-          session.checkpoint === session.indexedCheckpoint
-            ? null
-            : savedSourceUpdate(session);
-        const checkpoint = saved ? saved.slice().buffer : undefined;
-        // A stored change applies over seed(base), named by its hash.
-        const checkpointSeedSHA256 = saved
-          ? (session.stateSeedSHA256 ?? undefined)
-          : undefined;
         if (!controller.signal.aborted)
-          setViewBytes({ bytes, checkpoint, checkpointSeedSHA256 });
+          setViewBytes({ bytes, ...viewCheckpoint(session) });
       })
       .catch((value: unknown) => {
         if (controller.signal.aborted) return;
@@ -1092,7 +1085,6 @@ export function useOfficeRuntime({
   return {
     analysis,
     banner: source.banner,
-    dirty: source.dirty,
     discardDraft: source.discardDraft,
     discarding: source.discarding,
     downloadDraft,
@@ -1194,6 +1186,22 @@ export function frameCanEdit({
   sending: boolean;
 }) {
   return editable && current && !(sending && format !== 'xlsx');
+}
+
+/**
+ * What view mode exports over the session's base: its saved edits whenever it
+ * carries any, whatever the checkpoints say, as a change over seed(base)
+ * named by that seed's hash; nothing when it carries none.
+ */
+export function viewCheckpoint(
+  session: Pick<SourceSession, 'state' | 'stateRows' | 'stateSeedSHA256'>
+) {
+  const saved = savedSourceUpdate(session);
+  if (!saved) return {};
+  return {
+    checkpoint: saved.slice().buffer,
+    checkpointSeedSHA256: session.stateSeedSHA256 ?? undefined,
+  };
 }
 
 /**

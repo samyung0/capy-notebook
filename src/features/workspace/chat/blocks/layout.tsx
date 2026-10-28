@@ -61,7 +61,10 @@ export function Accordion({
           className="group border-divider border-t py-2.5 last:border-b"
           key={index}
         >
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 font-semibold text-sm [&::-webkit-details-marker]:hidden">
+          <summary
+            className="flex cursor-pointer list-none items-center gap-1.5 font-semibold text-sm [&::-webkit-details-marker]:hidden"
+            data-copy="strong"
+          >
             <Icon
               className="text-fg-muted transition-transform group-open:rotate-90"
               name="chevronRight"
@@ -96,7 +99,9 @@ export function Cards({ props }: { props: { items: unknown[] } }) {
     <div className="grid grid-cols-2 gap-2">
       {elements<CardProps>(props.items).map((card, index) => (
         <div className="rounded-lg border border-line px-3 py-2.5" key={index}>
-          <p className="text-fg-muted text-xs">{card.props.title}</p>
+          <p className="text-fg-muted text-xs" data-copy="strong">
+            {card.props.title}
+          </p>
           {card.props.value ? (
             <p className="font-semibold text-xl tracking-tight">
               {card.props.value}

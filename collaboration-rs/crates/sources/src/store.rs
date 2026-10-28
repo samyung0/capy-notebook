@@ -540,20 +540,16 @@ impl Sources {
             .await
     }
 
-    /// The session for a room's writer or reader, refused when its epoch ended
-    /// (as `epoch_changed`) or a writer lost write access.
+    /// The session `actor` reads for a room, refused when its epoch ended (as
+    /// `epoch_changed`).
     async fn session_for_room(
         &self,
         room: &SourceRoom,
         actor: &str,
-        write: bool,
     ) -> Result<SourceSession, SourceError> {
         let session = self.gateway.session(&room.file_id, actor).await?;
         if session.epoch != room.epoch {
             return Err(SourceError::epoch_changed());
-        }
-        if write && session.access != "write" {
-            return Err(SourceError::request(403, "Source access changed", None));
         }
         Ok(session)
     }
@@ -675,7 +671,7 @@ impl Sources {
             *slot = lap.elapsed().as_millis() as u64;
             lap = std::time::Instant::now();
         };
-        let mut session = self.session_for_room(room, actor, false).await?;
+        let mut session = self.session_for_room(room, actor).await?;
         stage(&mut times.session);
         let (base, sha) = self.bound_base(&session, reader).await?;
         stage(&mut times.base);
@@ -1084,8 +1080,13 @@ impl Sources {
                     (session.clone(), *checkpoint, *seeded)
                 }
                 _ => {
-                    // Authorizes the writer again and reads what landed since.
-                    let session = self.session_for_room(room, &save.actors[0], true).await?;
+                    // Reads the file's session and what landed since. The
+                    // checkpoint checks every writer where the room opened the
+                    // file (Q459), so the session is its owner's, as
+                    // `current` reads it: a writer outside the file's current
+                    // workspace still saves a Move's drain on a retry.
+                    let owner = self.owner(&room.file_id).await?;
+                    let session = self.session_for_room(room, &owner).await?;
                     let after = known.as_ref().map(|(_, checkpoint, _, _)| *checkpoint);
                     let stored = self.stored(&room.file_id, after).await?;
                     if stored.epoch != room.epoch {

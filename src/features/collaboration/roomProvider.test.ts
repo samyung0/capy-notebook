@@ -247,10 +247,13 @@ it('joins with its token, syncs both ways and counts unacknowledged updates', as
   expect(reader.varString()).toBe(token('token-1'));
   // The version gate: the build's client protocol follows the token, then
   // the client id the document took from it (Q213) and the stored version
-  // it holds (none: a new document).
+  // it holds (none: a new document), no note channel (0) and the editing
+  // session's id (Q472).
   expect(reader.varUint()).toBe(CLIENT_PROTOCOL);
   expect(reader.varUint()).toBe(clientIdOf('token-1'));
   expect(reader.varUint()).toBe(0);
+  expect(reader.varUint()).toBe(0);
+  expect(reader.varBytes()).toHaveLength(16);
   expect(reader.done).toBe(true);
   expect(document.clientID).toBe(clientIdOf('token-1'));
   const channel = join.channel;
@@ -440,36 +443,37 @@ it('presents its previous token and keeps the ids it offers again, written or no
   expect(provider.workerClientId).toBe(11);
 });
 
-it('presents its previous token for 70 s of client id refusals, then asks for fresh ids', async () => {
-  // r2 S2: a live channel holds the ids, as a dropped socket's does until
-  // the server closes it (60 s); past that, two sessions presented one token.
-  vi.useFakeTimers({ toFake: ['Date'] });
-  try {
-    const asked: (string | undefined)[] = [];
-    const { join, provider, socket } = await joined({
-      token: async (previous) => {
-        asked.push(previous);
-        return token('t1');
-      },
-    });
-    const refuse = async (channel: number, after: number) => {
-      vi.setSystemTime(Date.now() + after);
-      socket.deliver(
-        message(channel, MessageKind.Refused, text('collaboration-client-id'))
-      );
-      provider.disconnect();
-      provider.connect();
-      await flush();
-      return socket.take(MessageKind.Join)[0];
-    };
-    const second = await refuse(join.channel, 0);
-    const third = await refuse(second.channel, 69_000);
-    expect(asked).toEqual([undefined, token('t1'), token('t1')]);
-    await refuse(third.channel, 1000);
-    expect(asked.at(-1)).toBeUndefined();
-  } finally {
-    vi.useRealTimers();
-  }
+it('drops its previous token at the first client id refusal and takes the fresh id', async () => {
+  // Q475: under Q472 a reconnect of this session takes over its own channel,
+  // so a `collaboration-client-id` refusal means another session holds the
+  // ids. A document that never wrote takes the fresh token's id.
+  const asked: (string | undefined)[] = [];
+  const tokens = ['t1', 't1', 't2'];
+  const { document, provider, socket } = await joined({
+    token: async (previous) => {
+      asked.push(previous);
+      return token(tokens[asked.length - 1]);
+    },
+  });
+  // A reconnect presents the previous token.
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  const [second] = socket.take(MessageKind.Join);
+  expect(asked).toEqual([undefined, token('t1')]);
+  socket.deliver(
+    message(
+      second.channel,
+      MessageKind.Refused,
+      text('collaboration-client-id')
+    )
+  );
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  expect(socket.take(MessageKind.Join)).toHaveLength(1);
+  expect(asked).toEqual([undefined, token('t1'), undefined]);
+  expect(document.clientID).toBe(clientIdOf('t2'));
 });
 
 it('says on Leave whether the tab still holds unsent edits, naming its session', async () => {
@@ -506,6 +510,50 @@ function joinVersion(join: Message) {
   reader.varUint();
   return reader.varUint();
 }
+
+/** The JOIN's note channel (0: none) and editing session id (Q472), after
+ * its room, token, protocol, id and version. */
+function joinTail(join: Message) {
+  const reader = new Reader(join.payload);
+  reader.varString();
+  reader.varString();
+  for (let field = 0; field < 3; field++) reader.varUint();
+  return { note: reader.varUint(), session: [...reader.varBytes()] };
+}
+
+// Q472: one editing session names one random id on every JOIN, its rejoin
+// after a socket drop too, so the server hands the rejoin its own stale
+// channel; another provider (another session) names its own.
+it('names one editing session id on every JOIN, and another provider its own', async () => {
+  vi.useFakeTimers();
+  const options = {
+    name: 'material:m1:schema:1',
+    token: async () => token('t'),
+    url: `wss://collab.test/${url++}`,
+  };
+  const provider = new RoomProvider({ ...options, document: new Y.Doc() });
+  provider.connect();
+  const first = FakeSocket.instances.at(-1) as FakeSocket;
+  first.open();
+  await vi.advanceTimersByTimeAsync(0);
+  const [join] = first.take(MessageKind.Join);
+  first.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
+  first.close();
+  await vi.advanceTimersByTimeAsync(2000);
+  const second = FakeSocket.instances.at(-1) as FakeSocket;
+  second.open();
+  await vi.advanceTimersByTimeAsync(0);
+  const [rejoin] = second.take(MessageKind.Join);
+  expect(joinTail(join).session).toHaveLength(16);
+  expect(joinTail(rejoin).session).toEqual(joinTail(join).session);
+  const other = new RoomProvider({ ...options, document: new Y.Doc() });
+  other.connect();
+  await vi.advanceTimersByTimeAsync(0);
+  const [another] = second.take(MessageKind.Join);
+  expect(joinTail(another).session).not.toEqual(joinTail(join).session);
+  provider.destroy();
+  other.destroy();
+});
 
 /** The `ack` versions the provider sent since the last call. */
 function acks(socket: FakeSocket) {
@@ -858,9 +906,12 @@ it('joins an embed inside its note, ending and joining again with it', async () 
     CLIENT_PROTOCOL,
   ]);
   expect(reader.varUint()).toBe(clientIdOf('embed-token'));
-  // Its stored version (none: new), then its note's channel.
+  // Its stored version (none: new), its note's channel, then its own
+  // editing session's id, not its note's (Q472).
   expect(reader.varUint()).toBe(0);
   expect(reader.varUint()).toBe(noteJoin.channel);
+  expect(reader.varBytes()).toHaveLength(16);
+  expect(joinTail(first).session).not.toEqual(joinTail(noteJoin).session);
   socket.deliver(message(first.channel, MessageKind.Joined, Uint8Array.of(1)));
   expect(embed.isAuthenticated).toBe(true);
 
@@ -877,7 +928,7 @@ it('joins an embed inside its note, ending and joining again with it', async () 
   );
   await flush();
   const [second] = socket.take(MessageKind.Join);
-  expect(second.payload.at(-1)).toBe(noteAgain.channel);
+  expect(joinTail(second).note).toBe(noteAgain.channel);
   socket.deliver(
     message(second.channel, MessageKind.Joined, Uint8Array.of(1)),
     message(

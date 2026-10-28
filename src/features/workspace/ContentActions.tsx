@@ -1,3 +1,4 @@
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 import { isApiError } from '@/api/client';
 import {
@@ -19,6 +20,7 @@ import { HoverActions } from '@/components/ui/HoverActions';
 import { Menu, type MenuItem, type MenuProps } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { userToast } from '@/components/ui/userToast';
+import { downloadFile, downloadNote } from '@/features/files/downloadItem';
 import { fileIsTranscribing, formatFileSize } from '@/features/files/fileUtils';
 import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
 import { m } from '@/i18n';
@@ -35,9 +37,48 @@ export function trashErrorMessage(error: unknown): string {
     : errorCopy(error, m.source_try_again());
 }
 
+/** Download (Epo 2026-10-27): a file's latest saved state; a note as
+ * Markdown or Word; quizzes and flashcard sets get none for now. */
+export function downloadMenuItems(
+  content: Pick<ContentActionTarget, 'id' | 'kind' | 'name' | 'type'>,
+  workspaceId: string | null,
+  queryClient: QueryClient
+): MenuItem[] {
+  if (content.type === 'file')
+    return [
+      {
+        icon: 'download',
+        label: m.action_download(),
+        onClick: () =>
+          void downloadFile(
+            {
+              id: content.id,
+              kind: content.kind as SourceFile['kind'],
+              name: content.name,
+              workspaceId: workspaceId ?? '',
+            },
+            queryClient
+          ),
+      },
+    ];
+  if (content.kind !== 'note') return [];
+  return (['markdown', 'docx'] as const).map((format) => ({
+    icon: 'download' as const,
+    label:
+      format === 'docx'
+        ? m.action_download_docx()
+        : m.action_download_markdown(),
+    onClick: () =>
+      void downloadNote(
+        { id: content.id, title: content.name, workspaceId },
+        format,
+        queryClient
+      ),
+  }));
+}
+
 export function ContentActions({
   showMove = true,
-  beforeDelete,
   canClone = false,
   canMoveTo = false,
   chapters,
@@ -61,12 +102,12 @@ export function ContentActions({
   renameFieldLabel,
   renameTitle,
   readOnly = false,
+  canRename = true,
   workspaceId,
   workspaceName,
 }: {
   /** Offers the chapter-only Move (a file with `canMoveTo` gets Move to…). */
   showMove?: boolean;
-  beforeDelete?: () => boolean;
   /** Offers Clone, also to a read-only viewer who may copy (workspace.canClone). */
   canClone?: boolean;
   /** Offers Move to… for a file: into another workspace or chapter. The
@@ -97,6 +138,9 @@ export function ContentActions({
   propertiesClassName?: string;
   propertyLabelClassName?: string;
   readOnly?: boolean;
+  /** Rename aside from readOnly: a payer who may trash a file it can no
+   * longer edit (FileRights). */
+  canRename?: boolean;
   renameFieldLabel?: string;
   renameTitle?: string;
   workspaceId: string;
@@ -121,12 +165,16 @@ export function ContentActions({
   const [cloneOpen, setCloneOpen] = useState(false);
   const [moveToOpen, setMoveToOpen] = useState(false);
   const moveTo = canMoveTo && content?.type === 'file';
+  const queryClient = useQueryClient();
+  const downloads = content
+    ? downloadMenuItems(content, workspaceId || null, queryClient)
+    : [];
 
   // One order on every item menu (cards, rows, the open item's header):
-  // open or view, Rename, Share, Move, Clone, Properties, Delete.
+  // open or view, Rename, Share, Move, Clone, Download, Properties, Delete.
   const items: MenuItem[] = [
     ...leadingItems,
-    ...(!readOnly && content
+    ...(!readOnly && canRename && content
       ? [
           {
             icon: 'pencil' as const,
@@ -162,6 +210,7 @@ export function ContentActions({
           },
         ]
       : []),
+    ...downloads,
     ...(!readOnly && content
       ? [
           {
@@ -222,7 +271,7 @@ export function ContentActions({
   };
 
   const deleteContent = async () => {
-    if (!content || (beforeDelete && !beforeDelete())) {
+    if (!content) {
       setConfirmOpen(false);
       return;
     }

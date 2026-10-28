@@ -3259,6 +3259,88 @@ async def test_a_file_moved_out_of_the_workspace_tells_the_model(
     )
 
 
+# The four document tools on a source file the turn's outline does not list.
+_UNLISTED_FILE_CALLS = [
+    (
+        "edit_document",
+        {
+            "target": {"kind": "source_file", "id": "f_9"},
+            "commands": [{"type": "replace_text", "expected_text": "a", "text": "b"}],
+        },
+    ),
+    ("inspect_document", {"target": {"kind": "source_file", "id": "f_9"}}),
+    (
+        "edit_office_document",
+        {
+            "file_id": "f_9",
+            "commands": [
+                {
+                    "type": "replace_text",
+                    "target_id": "p1",
+                    "expected_text": "a",
+                    "text": "b",
+                }
+            ],
+        },
+    ),
+    ("inspect_office_document", {"file_id": "f_9"}),
+]
+
+
+@pytest.mark.parametrize(("tool", "args"), _UNLISTED_FILE_CALLS)
+async def test_a_file_moved_out_before_this_turn_still_tells_the_model(
+    monkeypatch, tool, args
+):
+    """Q469: a later turn's workspace list no longer holds the moved file, so
+    the document tools pass its id on to Go, which answers `moved_out`. With
+    chosen sources an id outside them never reaches Go."""
+    posts: list[str] = []
+
+    def _post(url, **_k):
+        posts.append(url)
+        return _JsonResp(
+            {"code": "moved_out", "message": "this file was moved out"}, 404
+        )
+
+    ctx = _office_ctx(monkeypatch, post=_post)
+    result = await tools.run(tool, {**args, "_tool_call_id": "c1"}, ctx)
+    assert len(posts) == 1
+    assert result.refused and result.error == tools.MOVED_OUT
+
+    ctx.file_ids = ["f_9"]
+    result = await tools.run(tool, {**args, "_tool_call_id": "c2"}, ctx)
+    assert len(posts) == 2 and result.error == tools.MOVED_OUT
+
+    ctx.file_ids = ["f_1"]
+    result = await tools.run(tool, {**args, "_tool_call_id": "c3"}, ctx)
+    assert len(posts) == 2
+    assert result.refused and 'No workspace item has the id "f_9"' in result.text()
+
+
+@pytest.mark.parametrize(("tool", "args"), _UNLISTED_FILE_CALLS)
+async def test_a_file_go_does_not_find_keeps_the_earlier_hint(monkeypatch, tool, args):
+    """Q482: Go's plain not found for an id the outline lacks carries the
+    earlier hint, worded as before Q469; `moved_out` keeps its own text."""
+
+    def _post(url, **_k):
+        return _JsonResp({"message": "not found"}, 404)
+
+    ctx = _office_ctx(monkeypatch, post=_post)
+    result = await tools.run(tool, {**args, "_tool_call_id": "c1"}, ctx)
+    assert result.refused and result.error_code == "unavailable_target"
+    assert (
+        'No workspace item has the id "f_9": it may have been deleted or moved '
+        "to trash. list_sources shows the current ids."
+    ) in agent._result_text(result, [])
+
+    def _moved(url, **_k):
+        return _JsonResp({"code": "moved_out", "message": "moved"}, 404)
+
+    _gateway(monkeypatch, post=_moved)
+    result = await tools.run(tool, {**args, "_tool_call_id": "c2"}, ctx)
+    assert agent._result_text(result, []) == tools.MOVED_OUT
+
+
 async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_commands(
     monkeypatch,
 ):
@@ -3588,6 +3670,31 @@ async def test_blank_optional_arguments_are_left_out_before_checking(monkeypatch
         _owner_ctx(),
     )
     assert not result.refused and seen == {"query": "q", "_tool_call_id": "c1"}
+
+
+@pytest.mark.parametrize(
+    ("exc", "why"),
+    [
+        (TimeoutError(), "timed out"),
+        (ConnectionResetError(), "ConnectionResetError"),
+        (RuntimeError("provider disconnected"), "provider disconnected"),
+    ],
+)
+async def test_a_tool_failure_without_text_says_what_happened(monkeypatch, exc, why):
+    """A bare exception (an embedding call timing out, UAT run 40634953310)
+    has no text; the model reads what happened instead of nothing."""
+
+    async def handler(_args, _ctx):
+        raise exc
+
+    monkeypatch.setitem(
+        tools.REGISTRY, "search_workspace", tools.ToolSpec("search_workspace", handler)
+    )
+    result = await tools.run(
+        "search_workspace", {"query": "q", "_tool_call_id": "c1"}, _owner_ctx()
+    )
+    assert result.failed
+    assert result.error == f"The search_workspace tool failed: {why}"
 
 
 # ------------------------------------------------------------ program answers

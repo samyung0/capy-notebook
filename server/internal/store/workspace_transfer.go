@@ -15,7 +15,8 @@ import (
 var ErrTransferSelf = errors.New("workspace already belongs to this user")
 
 // TransferWorkspace hands a workspace to another member. Owner-only, and
-// refused past the recipient's owned-workspace and file caps.
+// refused past the recipient's file cap; the workspace cap is not checked,
+// since the recipient already holds a member row.
 func (s *Store) TransferWorkspace(
 	ctx context.Context,
 	actorID, workspaceID, recipientID string,
@@ -52,7 +53,20 @@ func (s *Store) TransferWorkspace(
 	if err := s.lockAccountSessionsTx(ctx, tx, actorID, recipientID); err != nil {
 		return Workspace{}, HideOtherAccountLock(err, actorID)
 	}
-	recipientLimits, err := s.gateOwnedWorkspacesTx(ctx, tx, recipientID, 1)
+	// The recipient is already a member, so the workspace cap's count is
+	// unchanged (Epo 2026-10-28); its plan still caps the files it receives.
+	recipientStatus, err := s.accountAccess(ctx, tx, recipientID)
+	if err != nil {
+		return Workspace{}, err
+	}
+	if err := recipientStatus.Err(); err != nil {
+		return Workspace{}, err
+	}
+	recipientTier, err := s.effectivePlanTierForUser(ctx, tx, recipientID)
+	if err != nil {
+		return Workspace{}, err
+	}
+	recipientLimits, err := s.PlanLimits(recipientTier)
 	if err != nil {
 		return Workspace{}, err
 	}

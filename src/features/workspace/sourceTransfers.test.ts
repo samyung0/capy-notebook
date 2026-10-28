@@ -522,6 +522,19 @@ describe('transfer status', () => {
   const file = (fields: Partial<SourceFile>) =>
     ({ id: 'f_1', indexed: true, ...fields }) as SourceFile;
 
+  it("labels a clone's background index copy", () => {
+    expect(
+      transferStatus(
+        { ...transfer, copy: true },
+        file({ ingestPct: 40, status: 'processing' })
+      )
+    ).toMatchObject({
+      kind: 'progress',
+      label: m.source_transfer_copying_index(),
+      value: 40,
+    });
+  });
+
   it('follows the file through parsing to its terminal state', () => {
     expect(transferStatus(transfer, undefined)).toMatchObject({
       kind: 'progress',

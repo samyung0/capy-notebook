@@ -7,6 +7,7 @@
 import type { FileIndexLimit } from './fileIndexLimit.ts';
 import type { FileKind } from './fileKind.ts';
 import type { FilePreview } from './filePreview.ts';
+import type { FileRights } from './fileRights.ts';
 import type { FileStatus } from './fileStatus.ts';
 import type { Provenance } from './provenance.ts';
 
@@ -31,6 +32,8 @@ export interface File {
   previewUrl?: string;
   provenance?: Provenance;
   revision: number;
+  /** What the caller may do with the file, read with the page (Files page rows) */
+  rights?: FileRights;
   sizeBytes: number;
   status?: FileStatus;
   /** Hour-stable presigned GET of the page-1 thumbnail; list rows only */

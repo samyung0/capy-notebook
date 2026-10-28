@@ -6,17 +6,36 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
+type sentryEvents struct{ events []*sentry.Event }
+
+func (t *sentryEvents) Configure(sentry.ClientOptions)        {}
+func (t *sentryEvents) SendEvent(event *sentry.Event)         { t.events = append(t.events, event) }
+func (t *sentryEvents) Flush(time.Duration) bool              { return true }
+func (t *sentryEvents) FlushWithContext(context.Context) bool { return true }
+func (t *sentryEvents) Close()                                {}
+
 // Security regression: a Clerk address still held by another live local
 // account must not fail provisioning (every request answered 503 and the
-// webhook retried forever). The account is stored without an email instead.
+// webhook retried forever). The account is stored without an email instead,
+// and the report names the account as its Sentry user, which the UAT
+// cleanup matches a run's events by.
 func TestClerkEmailCollisionStoresNoEmail(t *testing.T) {
 	s := openAccessTestStore(t)
-	ctx := context.Background()
+	events := &sentryEvents{}
+	client, err := sentry.NewClient(sentry.ClientOptions{Dsn: "https://test@example.invalid/1", Transport: events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sentry.SetHubOnContext(context.Background(), sentry.NewHub(client, sentry.NewScope()))
 	reg, err := models.New(ctx, s.Pool())
 	if err != nil {
 		t.Fatal(err)
@@ -39,10 +58,71 @@ func TestClerkEmailCollisionStoresNoEmail(t *testing.T) {
 	if email != nil {
 		t.Fatalf("newcomer email=%q, want none", *email)
 	}
+	if len(events.events) != 1 || events.events[0].User.ID != newcomer ||
+		events.events[0].Tags["stage"] != "clerk_email_collision" {
+		t.Fatalf("collision reports=%d, want one naming %s", len(events.events), newcomer)
+	}
 
 	existing := newBlobTestUser(t, s, "u_email_refresh")
 	if _, err := s.UpsertUserFromClerk(ctx, existing, "", taken, ""); err != nil {
 		t.Fatalf("refresh with a taken address: %v", err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT email FROM users WHERE id=$1`, existing).Scan(&email); err != nil {
+		t.Fatal(err)
+	}
+	if email != nil || len(events.events) != 2 || events.events[1].User.ID != existing {
+		t.Fatalf("refresh email=%v reports=%d, want none and a second report naming %s", email, len(events.events), existing)
+	}
+}
+
+// A new account's first page sends several requests at once, and the Clerk
+// webhook can join them: each provisions the same row, which keeps its email
+// and reports no collision (Q473; CAPY-BACKEND-1M cleared it on UAT).
+func TestConcurrentFirstUpsertsKeepTheEmail(t *testing.T) {
+	s := openAccessTestStore(t)
+	events := &sentryCount{}
+	client, err := sentry.NewClient(sentry.ClientOptions{Dsn: "https://test@example.invalid/1", Transport: events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sentry.SetHubOnContext(context.Background(), sentry.NewHub(client, sentry.NewScope()))
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+
+	for round := range 30 {
+		id := uid("u_first_upsert")
+		address := id + "@example.test"
+		t.Cleanup(func() {
+			_, _ = s.pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, id)
+		})
+		start := make(chan struct{})
+		errs := make(chan error, 3)
+		var requests sync.WaitGroup
+		for range 3 {
+			requests.Go(func() {
+				<-start
+				_, err := s.UpsertUserFromClerk(ctx, id, "First", address, "")
+				errs <- err
+			})
+		}
+		close(start)
+		requests.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Fatalf("round %d: %v", round, err)
+			}
+		}
+		var email *string
+		if err := s.pool.QueryRow(ctx, `SELECT email FROM users WHERE id=$1`, id).Scan(&email); err != nil {
+			t.Fatal(err)
+		}
+		if email == nil || *email != address || events.events.Load() != 0 {
+			t.Fatalf("round %d: email=%v reports=%d, want %s and none", round, email, events.events.Load(), address)
+		}
 	}
 }
 

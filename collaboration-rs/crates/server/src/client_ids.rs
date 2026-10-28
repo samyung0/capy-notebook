@@ -28,6 +28,11 @@ use crate::auth::{Context, RoomName};
 /// again and, the id still not its user's, hears [UNASSIGNED_REASON]).
 pub const REFUSED_REASON: &str = "collaboration-client-id";
 
+/// Why a channel closed: a later JOIN of its user's same editing session
+/// took its ids over (Q472). Its browser session already left it (its
+/// socket dropped without the server seeing it close).
+pub const REJOINED_REASON: &str = "collaboration-rejoined";
+
 /// Why a JOIN was refused: the room does not hold its id for the joiner's
 /// user: recorded to another user, or unrecorded and either not the one its
 /// token offers (never assigned, or a row that was cleared) or with structs
@@ -226,7 +231,9 @@ impl ClientIds {
     /// The ids a JOIN binds its channel to, or why it is refused. `declared`
     /// is the Y.Doc's id from the JOIN; `history` says whether the room's
     /// state already has structs under an id, `live` whether a live channel
-    /// is bound to it or it is the room's own. An id recorded to this user
+    /// is bound to it or it is the room's own; the room leaves out the
+    /// joiner's own stale channels, which close once it binds (Q472, same
+    /// user and editing session id). An id recorded to this user
     /// binds as it is (a reconnect, whichever id its token offers); one
     /// recorded to another user is not this user's (unassigned). An
     /// unrecorded id must be the one its token offers (fresh, or the previous

@@ -47,6 +47,8 @@ import {
   IMAGE_MIN_ZOOM,
   isImageFile,
   officeFormatOf,
+  SHEET_EXTS,
+  TEXT_EXTS,
 } from './fileUtils';
 import type { OfficeCitation, OfficeFormat } from './officeProtocol';
 import { officeSwapPlaces } from './officeSwapPlaces';
@@ -74,8 +76,6 @@ const AUDIO_EXTS = new Set([
   'mpga',
   'opus',
 ]);
-const SHEET_EXTS = new Set(['csv', 'tsv']);
-const TEXT_EXTS = new Set(['txt', 'md', 'markdown', 'mdx', 'mdc', 'json']);
 function lazyView(node: ReactNode) {
   return <Suspense fallback={<FileLoading />}>{node}</Suspense>;
 }
@@ -161,7 +161,6 @@ interface FileViewerProps {
   citation?: OfficeCitation;
   file: SourceFile | null;
   imageZoom?: number;
-  onDirtyChange?: (dirty: boolean) => void;
   onImageZoomChange?: (next: number) => void;
   /** 1-based page to scroll to in a paginated citation preview. */
   page?: number;
@@ -181,7 +180,6 @@ function FileViewerContent({
   file,
   imageZoom = IMAGE_MIN_ZOOM,
   onImageZoomChange,
-  onDirtyChange,
   page,
   regions,
   citation,
@@ -255,7 +253,6 @@ function FileViewerContent({
         citation={citation}
         file={file}
         format={office}
-        onDirtyChange={onDirtyChange}
       />
     );
   }
@@ -274,7 +271,6 @@ function FileViewerContent({
       canEdit={canEdit}
       file={{ ...file, url: links.url }}
       imageZoom={imageZoom}
-      onDirtyChange={onDirtyChange}
       onImageZoomChange={onImageZoomChange}
       onRetryLinks={() => refetchLinks()}
       page={page}
@@ -289,7 +285,6 @@ interface OfficeFileProps {
   citation?: OfficeCitation;
   file: SourceFile;
   format: OfficeFormat;
-  onDirtyChange?: (dirty: boolean) => void;
 }
 
 /** DOCX, XLSX and PPTX in the Office runtime, keyed by the file so a switch
@@ -311,7 +306,7 @@ function OfficeFileView(props: OfficeFileProps) {
  * it is ready. A hidden tab swaps at once, and so does a phone, which holds
  * one frame. Each view keeps its own slot: a frame moved in the DOM reloads.
  */
-function OfficeSwap({ format, onDirtyChange, ...props }: OfficeFileProps) {
+function OfficeSwap({ format, ...props }: OfficeFileProps) {
   // Views by generation: the one on screen and the one building beside it.
   const [views, setViews] = useState<{ next: number | null; shown: number }>({
     next: null,
@@ -351,7 +346,6 @@ function OfficeSwap({ format, onDirtyChange, ...props }: OfficeFileProps) {
           <OfficeSlot key={generation} role={role}>
             <View
               {...props}
-              onDirtyChange={role === 'next' ? undefined : onDirtyChange}
               startEditing={generation > 0}
               swap={{
                 building: role === 'next',
@@ -427,7 +421,6 @@ function ResolvedFileView({
   canEdit,
   file,
   imageZoom,
-  onDirtyChange,
   onImageZoomChange,
   onRetryLinks,
   page,
@@ -459,7 +452,6 @@ function ResolvedFileView({
       <PdfView
         annotationFile={file}
         annotationsReadOnly={annotationsReadOnly}
-        onDirtyChange={onDirtyChange}
         onRetry={onRetryLinks}
         page={page}
         regions={regions}
@@ -506,7 +498,6 @@ function ResolvedFileView({
           canEdit={canEdit}
           file={file}
           key={file.id}
-          onDirtyChange={onDirtyChange}
           renderPreview={(url) => (
             <CsvView
               key={`${url ?? file.url}:${previewAttempt}`}
@@ -536,7 +527,6 @@ function ResolvedFileView({
         canEdit={canEdit}
         file={file}
         key={file.id}
-        onDirtyChange={onDirtyChange}
         renderPreview={(url) => (
           <TextView
             key={previewAttempt}

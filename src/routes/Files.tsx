@@ -14,7 +14,6 @@ import {
 } from '@/api/hooks';
 import type {
   FileKind,
-  FileListLocation,
   FileListSort,
   SourceFile,
   TrashItem,
@@ -48,7 +47,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { AddFileDestinationDialog } from '@/features/files/AddFileDestinationDialog';
 import { EmbedsTab } from '@/features/files/EmbedsTab';
 import { fileKindLabel } from '@/features/files/fileKindLabel';
-import { formatFileSize } from '@/features/files/fileUtils';
+import { fileCanClone, formatFileSize } from '@/features/files/fileUtils';
 import { toastLostAccess } from '@/features/files/lostAccess';
 import {
   clearOnBlank,
@@ -64,7 +63,7 @@ import {
   questionCountLabel,
 } from '@/features/materials/countLabels';
 import { relativeTime } from '@/features/materials/MaterialListCard';
-import { locationLabel, MaterialsTab } from '@/features/materials/MaterialsTab';
+import { MaterialsTab } from '@/features/materials/MaterialsTab';
 import {
   AddSourceDialog,
   resumedConnect,
@@ -88,7 +87,6 @@ import {
   FILE_SORT_DEFAULT,
   type FilesSearch,
   fileListParams,
-  MATERIAL_LOCATIONS,
   sortSearch,
 } from '@/lib/listSearch';
 import { PREF_KEYS } from '@/lib/localPrefs';
@@ -219,7 +217,7 @@ function ActiveFiles({
     void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
   const params = useMemo(() => fileListParams(search), [search]);
   const { sort = FILE_SORT_DEFAULT, kinds = [], workspaceIds = [] } = params;
-  const location = search.location;
+  const { location, owner } = search;
   const sorting: ColumnSort<FileListSort> = {
     ascending: params.dir === 'asc',
     ascendingFirst: ['name', 'workspace', 'kind'],
@@ -287,6 +285,18 @@ function ActiveFiles({
         action={addFileInHeader ? undefined : addFile}
         filters={[
           {
+            defaultValue: 'mine',
+            key: 'owner',
+            label: m.files_filter_owner(),
+            onToggle: (value) =>
+              setSearch({ owner: value === 'all' ? 'all' : undefined }),
+            options: [
+              { label: m.files_owner_mine(), value: 'mine' },
+              { label: m.files_owner_all(), value: 'all' },
+            ],
+            selected: [owner ?? 'mine'],
+          },
+          {
             key: 'kind',
             label: m.files_filter_kind(),
             onToggle: (value) =>
@@ -298,18 +308,18 @@ function ActiveFiles({
             selected: kinds,
           },
           {
+            defaultValue: 'all',
             key: 'location',
             label: m.create_filter_location(),
             onToggle: (value) =>
               setSearch({
-                location:
-                  location === value ? undefined : (value as FileListLocation),
+                location: value === 'workspace' ? 'workspace' : undefined,
               }),
-            options: MATERIAL_LOCATIONS.map((value) => ({
-              label: locationLabel(value),
-              value,
-            })),
-            selected: location ? [location] : [],
+            options: [
+              { label: m.files_location_all(), value: 'all' },
+              { label: m.files_location_workspace(), value: 'workspace' },
+            ],
+            selected: [location ?? 'all'],
           },
           {
             emptyLabel: m.create_filter_no_workspaces(),
@@ -317,8 +327,9 @@ function ActiveFiles({
             label: m.files_filter_workspace(),
             onToggle: (value) =>
               setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
+            // All files reaches member workspaces too.
             options: workspaces
-              .filter((ws) => ws.isOwner)
+              .filter((ws) => ws.isOwner || (owner === 'all' && !!ws.role))
               .map((ws) => ({ label: ws.name, value: ws.id })),
             selected: workspaceIds,
           },
@@ -327,6 +338,7 @@ function ActiveFiles({
           setSearch({
             kind: undefined,
             location: undefined,
+            owner: undefined,
             workspace: undefined,
           })
         }
@@ -347,7 +359,10 @@ function ActiveFiles({
                 disabled={selection.busy || isFetchingNextPage}
                 icon="trash"
                 label={m.action_delete()}
-                onClick={() => setDeleteTargets([...selection.selected])}
+                // All files lists what the caller may only open or clone.
+                onClick={() =>
+                  setDeleteTargets(selection.selected.filter(canDelete))
+                }
               />
             </SelectionBar>
           )
@@ -368,7 +383,7 @@ function ActiveFiles({
           )
         ) : files.length === 0 ? (
           <p className="py-10 text-center text-fg-muted">
-            {kinds.length || workspaceIds.length || location
+            {kinds.length || workspaceIds.length || location || owner
               ? m.files_empty()
               : m.files_none()}
           </p>
@@ -456,6 +471,21 @@ function ActiveFiles({
   );
 }
 
+/** A Files tab row's menu, from the rights the server read with the page
+ * (Epo 2026-10-28). */
+export function fileRowActions(file: SourceFile) {
+  return {
+    canClone: fileCanClone(file) && !!file.rights?.clone,
+    canMoveTo: !!file.rights?.move,
+    canRename: !!file.rights?.rename,
+    readOnly: !file.rights?.trash,
+  };
+}
+
+/** A file the caller may delete from the Files tab: one it pays for after
+ * losing access, or one its rights let it trash. */
+const canDelete = (file: SourceFile) => file.lostAccess || !!file.rights?.trash;
+
 /** One file in the Files tab; memoised so a pick re-renders only the cards
  * whose selection changed. */
 const FileItem = memo(function FileItem({
@@ -486,8 +516,10 @@ const FileItem = memo(function FileItem({
       <ItemCard
         actions={
           file.lostAccess ? (
-            <Menu
-              items={[
+            // Lost access: its payer may still copy, download and delete it
+            // (Epo 2026-10-27, D3), never open or restore it in place.
+            <ContentActions
+              beforeDeleteItems={[
                 {
                   danger: true,
                   disabled: busy,
@@ -496,16 +528,20 @@ const FileItem = memo(function FileItem({
                   onClick: () => onDelete([file]),
                 },
               ]}
-              triggerIcon={itemMenuIcon(view)}
+              canClone
+              chapters={[]}
+              content={toFileActionTarget(file)}
+              display="menu"
+              menuAlign="end"
+              menuTriggerIcon={itemMenuIcon(view)}
+              readOnly
+              workspaceId={file.workspaceId}
+              workspaceName={file.workspaceName}
             />
           ) : (
+            // The server reads what the caller may do with each row.
             <ContentActions
-              canClone={
-                file.status === 'ready' && (standalone || !!workspace?.canClone)
-              }
-              // The Files page lists what the viewer pays for, which the
-              // payer may always move.
-              canMoveTo
+              {...fileRowActions(file)}
               chapters={[]}
               content={toFileActionTarget(file)}
               display="menu"

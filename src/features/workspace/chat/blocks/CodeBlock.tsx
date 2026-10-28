@@ -97,7 +97,10 @@ export function CodeBlock({
   }, [copied]);
 
   return (
-    <div className="rounded-lg bg-page px-2.5 pt-1 pb-2.5">
+    <div
+      className="rounded-lg bg-page px-2.5 pt-1 pb-2.5"
+      data-copy-code={language ?? ''}
+    >
       <div className="flex items-center gap-0.5 text-fg-muted text-xs">
         <span className="mr-auto font-mono lowercase">{language ?? ''}</span>
         <IconButton

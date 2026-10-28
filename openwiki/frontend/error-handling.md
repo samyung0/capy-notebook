@@ -332,7 +332,9 @@ interception cannot intercept the server's summary fetch.
 Workspace invitation acceptance uses the same non-disclosing surface for an
 invalid link or unavailable workspace. Network and server failures keep the
 invitation panel visible with inline error copy and a retry action. The mutation
-does not also emit a global toast. On the owner's side, sending an invite and
+does not also emit a global toast, except at the workspace cap
+(`workspace_limit_exceeded`), which toasts the limit and keeps the panel and
+its stashed invite for another try. On the owner's side, sending an invite and
 cancelling a pending one render their failures inline under the form and the
 pending list (`FormAlert`) instead of the global toast, and a pending list
 that fails to load shows an inline error with Retry in its section rather than

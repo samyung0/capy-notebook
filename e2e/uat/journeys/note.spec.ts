@@ -16,6 +16,7 @@ import {
   insertEmbedded,
   insertNoteMedia,
   lineAfter,
+  lineMatch,
   noisePng,
   notesWorkspace,
   openNote,
@@ -63,9 +64,14 @@ test('note: created in the browser, two editors converge, every block type impor
   const editorEditor = await openNote(run, editor, workspaceId, noteId);
   await lineAfter(editor.page, editorEditor, ownerLine);
   await editor.page.keyboard.type(editorLine);
+  // The editor's line comes after the owner's on both clients (`or` lists
+  // matches in document order).
   for (const client of [ownerEditor, editorEditor])
-    for (const line of [ownerLine, editorLine])
-      await expect(client.getByText(line, { exact: true })).toBeVisible();
+    await expect(
+      client
+        .getByText(lineMatch(ownerLine))
+        .or(client.getByText(lineMatch(editorLine)))
+    ).toHaveText([lineMatch(ownerLine), lineMatch(editorLine)]);
   await run.poll(
     'the saved note holds both lines',
     () => contentText(run, noteId),

@@ -65,9 +65,9 @@ type annotationUpdateInput struct {
 type sourceSessionInput struct {
 	ID string `path:"id"`
 	// View is the lock-free viewer read: read authorization only, no row
-	// insert, and state only when a saved checkpoint is ahead of the indexed
-	// one.
-	View bool `query:"view" doc:"Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint"`
+	// insert, and state only while a saved checkpoint is ahead of the indexed
+	// one or a publication waits for its rebuild.
+	View bool `query:"view" doc:"Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint or a publication waits for its rebuild"`
 }
 type annotationIDInput struct {
 	ID           string `path:"id"`
@@ -144,7 +144,7 @@ func (a *api) browserSourceSession(ctx context.Context, session store.BrowserSou
 }
 func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*browserSourceSessionOutput, error) {
 	if in.View {
-		if _, err := a.fileRead(ctx, in.ID); err != nil {
+		if _, err := a.fileReadOrPayer(ctx, in.ID); err != nil {
 			return nil, hErr(err)
 		}
 		session, err := a.s.ViewSourceSession(ctx, in.ID)

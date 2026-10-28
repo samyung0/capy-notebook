@@ -24,6 +24,7 @@ import { FileModeControl, useFileMode } from './FileModeControl';
 import { FileError } from './FileStates';
 import { FileHeaderTarget } from './fileModeContext';
 import { PdfAnnotations } from './PdfAnnotations';
+import { scrollToCenter } from './scrollToCenter';
 
 // Keep PDF rendering available under the app's CSP and while offline.
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -56,8 +57,6 @@ function autoPageWidth(page: Size, pane: Size) {
 // tools and the Edit/View switch stay hidden; saved marks still draw.
 const ANNOTATION_TOOLS = false;
 
-/** Quiet time after the last scroll event before a citation box flashes. */
-const SCROLL_SETTLE_MS = 120;
 /** How long a citation box shows; matches the overlay's animation. */
 const CITATION_FLASH_MS = 1600;
 
@@ -73,30 +72,6 @@ function citationClick(regions: Region[] | undefined) {
     citationClicks.set(regions, click);
   }
   return click;
-}
-
-/** Calls `start` once nothing has scrolled for SCROLL_SETTLE_MS, then `end`
- * after the flash. A smooth scrollIntoView moves every scrolling ancestor,
- * so scrolls are heard on the whole document. Returns a cancel. */
-function flashAfterScroll(start: () => void, end: () => void) {
-  let timer = window.setTimeout(settle, SCROLL_SETTLE_MS);
-  function onScroll() {
-    window.clearTimeout(timer);
-    timer = window.setTimeout(settle, SCROLL_SETTLE_MS);
-  }
-  function settle() {
-    document.removeEventListener('scroll', onScroll, true);
-    start();
-    timer = window.setTimeout(end, CITATION_FLASH_MS);
-  }
-  document.addEventListener('scroll', onScroll, {
-    capture: true,
-    passive: true,
-  });
-  return () => {
-    window.clearTimeout(timer);
-    document.removeEventListener('scroll', onScroll, true);
-  };
 }
 
 type ObserveVisibility = (
@@ -208,14 +183,12 @@ export default function PdfView({
   regions,
   annotationFile,
   annotationsReadOnly = false,
-  onDirtyChange,
   onRetry,
 }: {
   annotationFile?: { id: string; revision: number };
   /** A frozen account (the reader's or the owner's), or an owner at its
    * storage limit, keeps the marks visible but draws no new ones. */
   annotationsReadOnly?: boolean;
-  onDirtyChange?: (dirty: boolean) => void;
   onRetry?: () => void;
   url: string;
   /** 1-based page to scroll to once rendered, from a chat citation. */
@@ -236,10 +209,6 @@ export default function PdfView({
   const [annotationBusy, setAnnotationBusy] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
-  useEffect(() => {
-    onDirtyChange?.(annotationBusy);
-    return () => onDirtyChange?.(false);
-  }, [annotationBusy, onDirtyChange]);
   const [numPages, setNumPages] = useState(0);
   const [retryVersion, setRetryVersion] = useState(0);
   const retry = () => {
@@ -261,8 +230,15 @@ export default function PdfView({
   const [paintVersion, setPaintVersion] = useState(0);
   // The citation whose box is flashing; it shows only during the flash.
   const [flashKey, setFlashKey] = useState<string | null>(null);
-  const cancelFlashRef = useRef<() => void>(undefined);
-  useEffect(() => () => cancelFlashRef.current?.(), []);
+  // The latest citation scroll, whether its box flashes when it lands, and
+  // whether it has. One the reader stopped (wheel, key, pointer) never lands.
+  const citationScrollRef = useRef<{
+    flash: boolean;
+    key: string;
+    landed: boolean;
+    stop: () => void;
+  }>(undefined);
+  useEffect(() => () => citationScrollRef.current?.stop(), []);
   const visibilityObserverRef = useRef<IntersectionObserver | null>(null);
   const visibilityListenersRef = useRef(
     new Map<Element, (visible: boolean) => void>()
@@ -330,10 +306,12 @@ export default function PdfView({
     };
   }, []);
 
-  // Place the cited box near the middle once its wrapper exists, then once
-  // more when its page has painted with measured geometry; once that scroll
-  // settles, the box flashes. Resizing the pane does not pull a reader back
-  // after they scroll away.
+  // Scroll the cited box to the middle once its wrapper exists, and again
+  // when its page has painted with measured geometry; the box flashes when
+  // that scroll lands. A paint before the first scroll lands only adds the
+  // flash to it, since its frames already aim at the box's current place, and
+  // adds nothing to one the reader stopped. Resizing the pane does not pull a
+  // reader back after they scroll away.
   useEffect(() => {
     if (!citationKey || !numPages || !pageWidth) return;
     const painted = !!containerRef.current?.querySelector(
@@ -352,15 +330,29 @@ export default function PdfView({
       : page
         ? containerRef.current?.querySelector(`[data-page="${page}"]`)
         : null;
-    if (!target) return;
-    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const scroller = scrollRef.current;
+    if (!target || !scroller) return;
     lastCitationScrollRef.current = scrollKey;
-    if (!painted || !firstRegion) return;
-    cancelFlashRef.current?.();
-    cancelFlashRef.current = flashAfterScroll(
-      () => setFlashKey(citationKey),
-      () => setFlashKey(null)
-    );
+    const flash = painted && !!firstRegion;
+    const last = citationScrollRef.current;
+    if (last?.key === citationKey && !last.landed) {
+      last.flash ||= flash;
+      return;
+    }
+    last?.stop();
+    let timer = 0;
+    const run = { flash, key: citationKey, landed: false, stop: () => {} };
+    const stopScroll = scrollToCenter(scroller, target, () => {
+      run.landed = true;
+      if (!run.flash) return;
+      setFlashKey(citationKey);
+      timer = window.setTimeout(() => setFlashKey(null), CITATION_FLASH_MS);
+    });
+    run.stop = () => {
+      stopScroll();
+      window.clearTimeout(timer);
+    };
+    citationScrollRef.current = run;
   }, [
     citationKey,
     citationRegions,

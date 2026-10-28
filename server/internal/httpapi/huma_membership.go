@@ -52,7 +52,7 @@ func (a *api) registerMembership(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/members", "listWorkspaceMembers", tag, "List workspace members", http.StatusOK, a.listWorkspaceMembers)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/collaborators", "listWorkspaceCollaborators", tag, "List mentionable workspace collaborators", http.StatusOK, a.listWorkspaceCollaborators)
 	reg(api, http.MethodPatch, "/api/workspaces/{id}/members/{memberId}", "updateWorkspaceMember", tag, "Change a workspace member role", http.StatusNoContent, a.updateWorkspaceMember)
-	reg(api, http.MethodDelete, "/api/workspaces/{id}/members/{memberId}", "removeWorkspaceMember", tag, "Remove a workspace member", http.StatusNoContent, a.removeWorkspaceMember)
+	reg(api, http.MethodDelete, "/api/workspaces/{id}/members/{memberId}", "removeWorkspaceMember", tag, "Remove a workspace member, or leave it as that member", http.StatusNoContent, a.removeWorkspaceMember)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/transfer", "transferWorkspace", tag, "Transfer workspace ownership to another member", http.StatusOK, a.transferWorkspace)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/invites", "createWorkspaceInvite", tag, "Privately invite a workspace member", http.StatusAccepted, a.createWorkspaceInvite)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/invites", "listWorkspaceInvites", tag, "List pending workspace invites", http.StatusOK, a.listWorkspaceInvites)
@@ -215,9 +215,13 @@ func (a *api) transferWorkspace(ctx context.Context, in *transferWorkspaceInput)
 	return a.workspaceOutputFor(ctx, ws)
 }
 
+// removeWorkspaceMember is the owner removing a member, or a member leaving
+// when memberId is its own id.
 func (a *api) removeWorkspaceMember(ctx context.Context, in *workspaceMemberInput) (*Empty, error) {
-	if err := a.s.AssertWorkspaceOwner(ctx, userID(ctx), in.ID); err != nil {
-		return nil, collaborationError(err)
+	if in.MemberID != userID(ctx) {
+		if err := a.s.AssertWorkspaceOwner(ctx, userID(ctx), in.ID); err != nil {
+			return nil, collaborationError(err)
+		}
 	}
 	notification, created, err := a.s.RemoveWorkspaceMemberWithResult(
 		ctx, userID(ctx), in.ID, in.MemberID,

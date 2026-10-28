@@ -8,6 +8,7 @@ import {
   isProgramSyntax,
   splitAnswer,
 } from './answer';
+import { copyAnswer } from './answerCopy';
 import { LatestAnswerContext } from './blocks/AskUser';
 import { InvalidChartContext } from './blocks/ChatChart';
 import { CitationContext, type CitationLookup } from './blocks/Cite';
@@ -18,6 +19,7 @@ function AnswerError({ partial = false }: { partial?: boolean }) {
   return (
     <p
       className="rounded-lg bg-tint-error px-2.5 py-1.5 text-sm text-tint-error-fg"
+      data-copy-skip
       role="alert"
     >
       {partial ? m.chat_answer_incomplete() : m.chat_failed()}
@@ -66,9 +68,17 @@ function Markdown({
 /**
  * The answer body of an assistant bubble: an OpenUI Lang program rendered
  * through the chat library, or plain Markdown for answers stored before the
- * program format.
+ * program format. A copy inside it also carries the selection as note blocks.
  */
-export function LangAnswer({
+export function LangAnswer(props: Parameters<typeof AnswerBody>[0]) {
+  return (
+    <div className="contents" data-chat-answer onCopy={copyAnswer}>
+      <AnswerBody {...props} />
+    </div>
+  );
+}
+
+function AnswerBody({
   content,
   streaming,
   complete,

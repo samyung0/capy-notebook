@@ -351,13 +351,12 @@ func mapHTTPError(err error) error {
 		return &huma.ErrorModel{
 			Status: http.StatusForbidden,
 			Title:  http.StatusText(http.StatusForbidden),
-			Detail: "owned workspace limit exceeded",
+			Detail: "workspace limit exceeded",
 			Errors: []*huma.ErrorDetail{{
 				Message: "workspace_limit_exceeded",
 				Value: map[string]any{
-					"workspacesUsed":      workspaceLimit.Used,
-					"workspacesRequested": workspaceLimit.Requested,
-					"workspacesLimit":     workspaceLimit.Limit,
+					"workspacesUsed":  workspaceLimit.Used,
+					"workspacesLimit": workspaceLimit.Limit,
 				},
 			}},
 		}

@@ -87,7 +87,7 @@ test('scanned PDF: the text-less page is read by the VLM (scripted), charged as 
   );
   const chunks = await run.query(
     `SELECT c.id,c.indexed_text,c.page_start,c.page_end,c.regions FROM rag_chunks c
-    JOIN rag_file_contents f ON f.content_id=c.content_id AND f.workspace_id=c.workspace_id WHERE f.file_id=%s`,
+    JOIN rag_file_contents f ON f.content_id=c.content_id WHERE f.file_id=%s`,
     [fileId]
   );
   const pageTwo = chunks.filter((chunk) =>

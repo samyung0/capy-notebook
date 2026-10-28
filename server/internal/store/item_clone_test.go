@@ -32,8 +32,8 @@ func itemCloneIndex(t *testing.T, s *Store, workspaceID, fileID, hash string) st
 	}{
 		{`INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,$3,'ready')`, []any{contentID, workspaceID, hash}},
 		{`INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3)`, []any{fileID, workspaceID, contentID}},
-		{`INSERT INTO rag_chunks(id,workspace_id,content_id,chunk_idx,text,indexed_text,lang) VALUES($1,$2,$3,0,'passage','passage','en')`, []any{chunkID, workspaceID, contentID}},
-		{`INSERT INTO rag_chunk_vectors_2560(chunk_id,workspace_id,embedding) VALUES($1,$2,array_fill(0.5::real, ARRAY[2560])::halfvec)`, []any{chunkID, workspaceID}},
+		{`INSERT INTO rag_chunks(id,content_id,chunk_idx,text,indexed_text,lang) VALUES($1,$2,0,'passage','passage','en')`, []any{chunkID, contentID}},
+		{`INSERT INTO rag_chunk_vectors_2560(chunk_id,content_id,embedding) VALUES($1,$2,array_fill(0.5::real, ARRAY[2560])::halfvec)`, []any{chunkID, contentID}},
 		{`UPDATE files SET indexed=true WHERE id=$1`, []any{fileID}},
 	} {
 		if _, err := s.pool.Exec(ctx, statement.sql, statement.args...); err != nil {
@@ -93,6 +93,11 @@ func TestFileCloneCarriesSavedEditsIndexAndThumbnail(t *testing.T) {
 	}
 	if len(copies) != 1 || copies[0].FileID != clone.ID || copies[0].To != "thumbs/"+clone.ID+"/abc.webp" {
 		t.Fatalf("thumbnail copies = %+v", copies)
+	}
+	// The index arrives from the copy worker.
+	runIndexCopies(t, s)
+	if clone, err = s.GetFile(ctx, clone.ID); err != nil {
+		t.Fatal(err)
 	}
 	var contentID, chunkID string
 	var vectors int
@@ -570,7 +575,7 @@ func TestClonesCopyPartialFiles(t *testing.T) {
 		content := itemCloneIndex(t, s, source.ID, file.ID, name)
 		exec(`UPDATE rag_contents SET pipeline_identity=NULLIF($2,'') WHERE id=$1`, content, identity)
 		if summarized {
-			exec(`INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor) VALUES($1,$2,'A lesson.')`, content, source.ID)
+			exec(`INSERT INTO rag_content_summaries(content_id,descriptor) VALUES($1,'A lesson.')`, content)
 		}
 		exec(`UPDATE files SET status='failed',parse_mode='fast',ever_parsed_successfully=true,content_hash=$2 WHERE id=$1`, file.ID, name)
 		return file
@@ -597,6 +602,7 @@ func TestClonesCopyPartialFiles(t *testing.T) {
 		var status string
 		var indexed bool
 		var identity *string
+		runIndexCopies(t, s)
 		var vectors, summaries int
 		if err := s.pool.QueryRow(ctx, `SELECT f.status, f.indexed, rc.pipeline_identity,
 				(SELECT count(*) FROM rag_chunks c JOIN rag_chunk_vectors_2560 v ON v.chunk_id=c.id WHERE c.content_id=rc.id),
@@ -621,7 +627,7 @@ func TestClonesCopyPartialFiles(t *testing.T) {
 		}
 		var jobType, partsOnly, parseFee string
 		if err := s.pool.QueryRow(ctx, `SELECT type,COALESCE(payload->>'partsOnly',''),COALESCE(payload->>'parseFee','')
-			FROM jobs WHERE payload->>'fileId'=$1`, copyID).Scan(&jobType, &partsOnly, &parseFee); err != nil {
+			FROM jobs WHERE payload->>'fileId'=$1 AND type<>'index_copy'`, copyID).Scan(&jobType, &partsOnly, &parseFee); err != nil {
 			t.Fatal(err)
 		}
 		if jobType != w.jobType || partsOnly != w.partsOnly || parseFee != w.parseFee {

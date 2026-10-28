@@ -299,6 +299,87 @@ func TestUploadRefusesActorCreditsAndStorageSeparately(t *testing.T) {
 	}
 }
 
+// A refused upload is final, as the browser never retries an upload (Q282),
+// and counts at once as one failed file of its batch: a 429
+// too_many_ingest_leases (its parsed file's job past the uploader's 20
+// leases) as much as a refusal after its session exists, which the session's
+// expiry counts, not the handler a second time. A batch of two holds its
+// notification for the other file.
+func TestRefusedUploadCountsOnceInItsBatch(t *testing.T) {
+	fx := openBilling(t)
+	for i := range store.ConcurrentIngestLeases {
+		if _, err := fx.pool.Exec(context.Background(), `INSERT INTO provider_sessions
+			(id, actor_user_id, workspace_id, surface, reserved_micros, expires_at)
+			VALUES ($1, $2, $3, $4, 0, now() + interval '1 hour')`,
+			fmt.Sprintf("cr_%s_%d", fx.actorID, i), fx.actorID, fx.workspaceID, store.SurfaceIngest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		body   int
+		status int
+	}{
+		{"past the ingest leases", 1024, http.StatusTooManyRequests},
+		{"longer than declared", 1025, http.StatusBadRequest},
+	} {
+		batch := fmt.Sprintf("sb_refused_%d", time.Now().UnixNano())
+		rec := postUpload(t, fx.handler, "/api/workspaces/"+fx.workspaceID+"/sources/uploads", fx.actorID, map[string]any{
+			"name": "notes.pdf", "kind": "pdf", "parseMode": "fast",
+			"sizeBytes": 1024, "contentType": "application/pdf",
+			"batchId": batch, "batchTotal": 2,
+		}, "application/pdf", make([]byte, tc.body))
+		if rec.Code != tc.status {
+			t.Fatalf("%s: %d %s", tc.name, rec.Code, rec.Body.String())
+		}
+		var failed int
+		var notified bool
+		if err := fx.pool.QueryRow(context.Background(),
+			`SELECT failed, notified_at IS NOT NULL FROM source_batches WHERE id=$1`, batch).Scan(&failed, &notified); err != nil {
+			t.Fatal(err)
+		}
+		if failed != 1 || notified {
+			t.Fatalf("%s: failed=%d notified=%v, want 1 and waiting", tc.name, failed, notified)
+		}
+	}
+}
+
+// An editor removed while their upload waits for its turn is refused at the
+// upload, after its ticket is spent and before its metadata names the batch:
+// the file counts at once as failed in the ticket's batch, not at the idle
+// sweep (Q481). A batch of two holds its notification for the other file.
+func TestUploadRefusedAfterItsTicketCountsInItsBatchAtOnce(t *testing.T) {
+	fx := openBilling(t)
+	path := "/api/workspaces/" + fx.workspaceID + "/sources/uploads"
+	batch := fmt.Sprintf("sb_removed_%d", time.Now().UnixNano())
+	meta := map[string]any{
+		"name": "notes.pdf", "parseMode": "none", "sizeBytes": 8, "contentType": "application/pdf",
+		"batchId": batch, "batchTotal": 2,
+	}
+	rec, turn := takeTicket(t, fx.handler, path, fx.actorID, meta)
+	if rec.Code != http.StatusCreated || turn.Position != 0 {
+		t.Fatalf("ticket: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := fx.pool.Exec(context.Background(),
+		`DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, fx.workspaceID, fx.actorID); err != nil {
+		t.Fatal(err)
+	}
+	rec, _ = postForm(t, fx.handler, path+"?ticket="+turn.TicketID, fx.actorID,
+		metadataPart(t, meta), formPart{name: "file", contentType: "application/pdf", body: []byte("%PDF-1.7")})
+	if rec.Code != http.StatusNotFound && rec.Code != http.StatusForbidden {
+		t.Fatalf("upload by a removed editor: %d %s", rec.Code, rec.Body.String())
+	}
+	var failed int
+	var notified bool
+	if err := fx.pool.QueryRow(context.Background(),
+		`SELECT failed, notified_at IS NOT NULL FROM source_batches WHERE id=$1`, batch).Scan(&failed, &notified); err != nil {
+		t.Fatal(err)
+	}
+	if failed != 1 || notified {
+		t.Fatalf("batch after the refusal: failed=%d notified=%v, want 1 and waiting", failed, notified)
+	}
+}
+
 func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T) {
 	fx := openBilling(t)
 	rec := doReq(t, fx.handler, http.MethodGet, "/api/source-upload-policy", fx.actorID, nil)

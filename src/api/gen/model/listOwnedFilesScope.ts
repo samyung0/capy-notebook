@@ -10,5 +10,6 @@ export type ListOwnedFilesScope = typeof ListOwnedFilesScope[keyof typeof ListOw
 
 export const ListOwnedFilesScope = {
   owned: 'owned',
+  all: 'all',
   member: 'member',
 } as const;

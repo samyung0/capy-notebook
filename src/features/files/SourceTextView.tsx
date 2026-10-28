@@ -24,12 +24,10 @@ import {
 export function SourceTextView({
   file,
   canEdit,
-  onDirtyChange,
   renderPreview,
 }: {
   file: ViewableFile;
   canEdit: boolean;
-  onDirtyChange?: (dirty: boolean) => void;
   renderPreview: (url: string | undefined) => ReactNode;
 }) {
   const [mode, setMode] = useFileMode(canEdit, 'view');
@@ -58,10 +56,6 @@ export function SourceTextView({
       setJoined(false);
       setMode('view');
     }) || viewAtSizeLimit;
-  useEffect(() => {
-    onDirtyChange?.(source.dirty);
-    return () => onDirtyChange?.(false);
-  }, [source.dirty, onDirtyChange]);
   useEffect(() => {
     if (editing || !source.doc || source.status === 'recovery') return;
     const text = source.doc.getText('source');

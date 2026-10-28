@@ -1,5 +1,6 @@
 import {
   createSlatePlugin,
+  type Descendant,
   ElementApi,
   isHtmlBlockElement,
   KEYS,
@@ -7,6 +8,13 @@ import {
   RangeApi,
 } from 'platejs';
 import { ParagraphPlugin } from 'platejs/react';
+import { z } from 'zod/v4';
+import {
+  ANSWER_CLIPBOARD_TYPE,
+  type CopiedBlock,
+} from '@/features/workspace/chat/answerClipboard';
+import { importMarkdownValue } from './markdownImport';
+import { CALLOUT_VARIANTS } from './richBlockConfig';
 
 /**
  * VS Code puts its own payload on every copy, and the code-block plugin turns
@@ -29,6 +37,64 @@ export const VscodeMarkdownPastePlugin = createSlatePlugin({
         return;
       }
       insertData(data);
+    },
+  },
+}));
+
+const copiedAnswer = z.array(
+  z.object({
+    callout: z
+      .enum(CALLOUT_VARIANTS.map((variant) => variant.value))
+      .optional(),
+    md: z.string(),
+  })
+);
+
+/**
+ * A chat answer's copy (answerCopy.ts) pastes from its note blocks, read like
+ * the agent's Markdown (plain, no MDX), each callout block wrapped in a
+ * callout. Inside a code block, or when the blocks do not read, the paste
+ * takes the default path.
+ */
+export const ChatAnswerPastePlugin = createSlatePlugin({
+  key: 'capy-chat-answer-paste',
+}).overrideEditor(({ editor, tf: { insertData } }) => ({
+  transforms: {
+    insertData(data) {
+      const raw = data.getData(ANSWER_CLIPBOARD_TYPE);
+      const block = editor.api.block()?.[0];
+      if (
+        !raw ||
+        block?.type === editor.getType(KEYS.codeBlock) ||
+        block?.type === editor.getType(KEYS.codeLine)
+      ) {
+        insertData(data);
+        return;
+      }
+      // A block the note cannot hold (a code fence that does not read, a
+      // document check) leaves the paste to the default path.
+      let fragment: Descendant[];
+      try {
+        fragment = copiedAnswer
+          .parse(JSON.parse(raw))
+          .flatMap(({ callout, md }: CopiedBlock) => {
+            const value = importMarkdownValue(editor, md, { plain: true })
+              .value as Descendant[];
+            return callout
+              ? [
+                  {
+                    children: value,
+                    type: editor.getType(KEYS.callout),
+                    variant: callout,
+                  } as Descendant,
+                ]
+              : value;
+          });
+      } catch {
+        insertData(data);
+        return;
+      }
+      editor.tf.insertFragment(fragment);
     },
   },
 }));

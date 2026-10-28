@@ -80,8 +80,16 @@ test('a read-only member clones a note to No workspace from its row menu', async
 
   await viewerPage.goto(`/workspaces/${workspaceId}`);
   await openRowMenu(viewerPage, note.title);
-  // A viewer's menu offers Clone only.
-  await expect(viewerPage.getByRole('menuitem')).toHaveCount(1);
+  // A viewer's menu offers Clone and the note's two downloads.
+  await expect(viewerPage.getByRole('menuitem')).toHaveCount(3);
+  for (const name of [
+    m.action_clone_to(),
+    m.action_download_markdown(),
+    m.action_download_docx(),
+  ])
+    await expect(
+      viewerPage.getByRole('menuitem', { exact: true, name })
+    ).toBeVisible();
   await viewerPage
     .getByRole('menuitem', { exact: true, name: m.action_clone_to() })
     .click();

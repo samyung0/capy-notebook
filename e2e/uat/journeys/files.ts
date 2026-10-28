@@ -412,11 +412,13 @@ export async function upload(
   const [uploaded] = await Promise.all([upload, clicked]);
   // The body is read only on a failure: after a large request body Chromium
   // evicts the response from its inspector cache, so the file comes from its
-  // upload session instead.
-  if (uploaded.status() !== 201)
-    assert.fail(
-      `upload answered ${uploaded.status()}: ${await uploaded.text()}`
-    );
+  // upload session instead. A failure's body can be gone too (the page
+  // navigated away first: "Protocol error (Network.getResponseBody)"), and
+  // then the status stands alone.
+  if (uploaded.status() !== 201) {
+    const body = await uploaded.text().catch(() => '');
+    assert.fail(`upload answered ${uploaded.status()}${body && `: ${body}`}`);
+  }
   const uploadRows = await run.query(
     'SELECT id,file_id FROM upload_sessions WHERE workspace_id=%s AND name=%s AND file_id IS NOT NULL ORDER BY created_at DESC LIMIT 1',
     [workspaceId, name]
@@ -470,7 +472,7 @@ export async function upload(
 
 export async function indexText(run: UatRun, fileId: string) {
   const rows = await run.query(
-    `SELECT c.indexed_text AS text FROM rag_chunks c JOIN rag_file_contents f ON f.content_id=c.content_id AND f.workspace_id=c.workspace_id
+    `SELECT c.indexed_text AS text FROM rag_chunks c JOIN rag_file_contents f ON f.content_id=c.content_id
     WHERE f.file_id=%s ORDER BY c.chunk_idx`,
     [fileId]
   );
@@ -722,11 +724,11 @@ export async function officeParseReceipt(run: UatRun, fileId: string) {
     0,
     'Office parsing must not create a durable cache'
   );
-  const versions = await verify<unknown[]>({
+  const bundle = await verify<{ live: boolean }>({
     key: `parse-bundles/${fingerprint}.zip`,
-    operation: 'versions',
+    operation: 'exists',
   });
-  assert.deepEqual(versions, [], 'Office parsing wrote a retired B2 bundle');
+  assert.equal(bundle.live, false, 'Office parsing wrote a retired bundle');
   await run.attach(`${fileId}-parse-receipt`, { attempts, receipt });
 }
 

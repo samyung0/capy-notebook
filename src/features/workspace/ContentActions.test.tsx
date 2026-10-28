@@ -98,11 +98,12 @@ describe('moving a file', () => {
     return menus[0]?.map((item) => item.label);
   }
 
-  it('offers Move to… in place of the chapter move, before Clone to…', () => {
+  it('offers Move to… in place of the chapter move, before Clone to… and Download', () => {
     expect(labels({ canMoveTo: true })).toEqual([
       m.action_rename(),
       m.action_move_to(),
       m.action_clone_to(),
+      m.action_download(),
       m.content_properties(),
       m.action_delete(),
     ]);

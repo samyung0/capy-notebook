@@ -574,7 +574,9 @@ async def steal_stale_content(
 
     ``updated_at`` is only the floor so a heartbeat that just started is not
     stolen on a race. The death signal is the owner's job lease: a running job
-    with ``lease_expires_at > now()`` still owns the row.
+    with ``lease_expires_at > now()`` still owns the row, and so does a clone's
+    index_copy job waiting in its queue or for a retry, which claimed the row
+    when the clone was made (Epo 2026-10-28).
     """
     scope_sql, scope_arg = _content_scope(workspace_id, owner_user_id, "rc.")
     db = await pool()
@@ -588,9 +590,10 @@ async def steal_stale_content(
               AND NOT EXISTS (
                   SELECT 1 FROM jobs j
                   WHERE j.id = rc.claim_job_id
-                    AND j.status = 'running'
-                    AND j.lease_expires_at IS NOT NULL
-                    AND j.lease_expires_at > now()
+                    AND ((j.status = 'running'
+                          AND j.lease_expires_at IS NOT NULL
+                          AND j.lease_expires_at > now())
+                      OR (j.type = 'index_copy' AND j.status = 'pending'))
               )
             """,
             (scope_arg, content_hash, stale_s),
@@ -701,12 +704,11 @@ async def abandon_content(content_id: str) -> None:
         )
 
 
-# Dest chunk ids are `'rc_' || substr(md5(dest_workspace_id || donor_chunk_id), 1, 12)`
+# Dest chunk ids are `'rc_' || substr(md5(dest_content_id || donor_chunk_id), 1, 12)`
 # so the vector copy can recompute them and pair each embedding with its
-# passage. A workspace holds one content row per content hash, so the pair is
-# unique. Standalone content (no workspace) and Go's clones
-# (copyRetrievalContents in server/internal/store/share.go) salt with the new
-# content id, unique on its own.
+# passage. The new content id is unique on its own, so the ids stay unique
+# after a Move re-tags content into another workspace (Epo 2026-10-28), as in
+# Go's clones (copyRetrievalContents in server/internal/store/share.go).
 _NEW_CHUNK_ID_SQL = "'rc_' || substr(md5(%s || c.id), 1, 12)"
 
 
@@ -836,7 +838,7 @@ async def copy_content_from_donor(
         table = None
         if copy_vectors:
             table = vector_table_for_pin(pin)
-        salt = dest_workspace_id or dest_content_id
+        salt = dest_content_id
 
         # INSERT..SELECT keeps tsvector/jsonb typed and derives dest chunk ids
         # in SQL, the same shape as cloneRetrievalIndex.
@@ -846,37 +848,36 @@ async def copy_content_from_donor(
         await conn.execute(
             f"""
             INSERT INTO rag_chunks (
-                id, workspace_id, content_id, chunk_idx, section_path, text,
+                id, content_id, chunk_idx, section_path, text,
                 indexed_text, token_count, page_start, page_end, regions, lang,
                 search, confidence, confidence_reasons
             )
             SELECT {_NEW_CHUNK_ID_SQL},
-                   %s, %s, c.chunk_idx, c.section_path, c.text, c.indexed_text,
+                   %s, c.chunk_idx, c.section_path, c.text, c.indexed_text,
                    c.token_count, c.page_start, c.page_end, c.regions, c.lang,
                    c.search, c.confidence, c.confidence_reasons
             FROM rag_chunks c
             WHERE c.content_id = %s
             """,
-            (salt, dest_workspace_id, dest_content_id, donor_id),
+            (salt, dest_content_id, donor_id),
         )
         if copy_vectors and table:
             await conn.execute(
                 f"""
-                INSERT INTO {table} (chunk_id, workspace_id, embedding)
+                INSERT INTO {table} (chunk_id, content_id, embedding)
                 SELECT {_NEW_CHUNK_ID_SQL}, %s, v.embedding
                 FROM rag_chunks c
                 JOIN {table} v ON v.chunk_id = c.id
                 WHERE c.content_id = %s
                 """,
-                (salt, dest_workspace_id, donor_id),
+                (salt, dest_content_id, donor_id),
             )
 
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, workspace_id, fingerprint, descriptor, change_share,
-                 updated_at)
-            SELECT %s, %s, s.fingerprint, s.descriptor, s.change_share,
+                (content_id, fingerprint, descriptor, change_share, updated_at)
+            SELECT %s, s.fingerprint, s.descriptor, s.change_share,
                    s.updated_at
             FROM rag_content_summaries s
             WHERE s.content_id = %s
@@ -886,7 +887,7 @@ async def copy_content_from_donor(
                 change_share = EXCLUDED.change_share,
                 updated_at = EXCLUDED.updated_at
             """,
-            (dest_content_id, dest_workspace_id, donor_id),
+            (dest_content_id, donor_id),
         )
 
         await conn.execute(
@@ -983,11 +984,11 @@ async def replace_content_chunks(
             await conn.execute(
                 """
                     INSERT INTO rag_chunks (
-                        id, workspace_id, content_id, chunk_idx, section_path, text,
+                        id, content_id, chunk_idx, section_path, text,
                         indexed_text, token_count, page_start, page_end, regions,
                         lang, search, confidence, confidence_reasons
                     ) VALUES (
-                        %(id)s, %(workspace_id)s, %(content_id)s, %(chunk_idx)s,
+                        %(id)s, %(content_id)s, %(chunk_idx)s,
                         %(section_path)s, %(text)s, %(indexed_text)s, %(token_count)s,
                         %(page_start)s, %(page_end)s, %(regions)s, %(lang)s,
                         to_tsvector(%(ts_config)s::regconfig, %(search_text)s),
@@ -997,7 +998,6 @@ async def replace_content_chunks(
                 {
                     **row,
                     "ts_config": TS_CONFIG[row["lang"]],
-                    "workspace_id": workspace_id,
                     "content_id": content_id,
                     "regions": Jsonb(row["regions"]),
                     "confidence": row.get("confidence"),
@@ -1010,12 +1010,12 @@ async def replace_content_chunks(
             # the workspace pin being immutable.
             await conn.execute(
                 f"""
-                    INSERT INTO {table} (chunk_id, workspace_id, embedding)
-                    VALUES (%(id)s, %(workspace_id)s, %(embedding)s::halfvec)
+                    INSERT INTO {table} (chunk_id, content_id, embedding)
+                    VALUES (%(id)s, %(content_id)s, %(embedding)s::halfvec)
                     """,
                 {
                     "id": row["id"],
-                    "workspace_id": workspace_id,
+                    "content_id": content_id,
                     "embedding": row["embedding"],
                 },
             )
@@ -1040,7 +1040,6 @@ async def replace_content_chunks(
 
 async def upsert_content_summary(
     *,
-    workspace_id: str | None,
     content_id: str,
     fingerprint: str,
     descriptor: str,
@@ -1054,11 +1053,9 @@ async def upsert_content_summary(
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, workspace_id, fingerprint, descriptor, change_share,
-                 updated_at)
-            VALUES (%s, %s, %s, %s, %s, coalesce(%s, now()))
+                (content_id, fingerprint, descriptor, change_share, updated_at)
+            VALUES (%s, %s, %s, %s, coalesce(%s, now()))
             ON CONFLICT (content_id) DO UPDATE SET
-                workspace_id    = EXCLUDED.workspace_id,
                 fingerprint     = EXCLUDED.fingerprint,
                 descriptor      = EXCLUDED.descriptor,
                 change_share    = EXCLUDED.change_share,
@@ -1066,7 +1063,6 @@ async def upsert_content_summary(
             """,
             (
                 content_id,
-                workspace_id,
                 fingerprint,
                 descriptor,
                 change_share,
@@ -1151,9 +1147,8 @@ async def fill_content_summary(
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, workspace_id, fingerprint, descriptor, change_share,
-                 updated_at)
-            SELECT id, workspace_id, content_hash, %s, 0, now()
+                (content_id, fingerprint, descriptor, change_share, updated_at)
+            SELECT id, content_hash, %s, 0, now()
             FROM rag_contents WHERE id = %s AND workspace_id IS NOT DISTINCT FROM %s
             ON CONFLICT (content_id) DO NOTHING
             """,
@@ -1226,6 +1221,12 @@ _LOOKUP_TERMS = (2, 3)
 # scope and matched against the chunks of that language. A French query
 # against English chunks is parsed by the english stemmer and misses, which is
 # what should happen: the vector leg carries cross-language questions.
+# Passages and vectors are reached through their content ids (migration 0126):
+# the array is built once from scoped_files, so both legs read their content
+# index. The knowledge library's schema still tags them with its workspace.
+_CONTENT_SCOPE = "{alias}.content_id = ANY(ARRAY(SELECT content_id FROM scoped_files))"
+_LIBRARY_SCOPE = "{alias}.workspace_id = %(ws)s"
+
 # Files and notes alias the same canonical content and rank in one pool; the
 # scoped resource carries a kind so citations can open the right thing. The
 # note leg only exists in the workspace database: the knowledge library runs
@@ -1259,7 +1260,7 @@ vec AS (
         FROM {vector_table} v
         JOIN rag_chunks c ON c.id = v.chunk_id
         JOIN scoped_files sf ON sf.content_id = c.content_id
-        WHERE v.workspace_id = %(ws)s{chunk_filter}
+        WHERE {vec_scope}{chunk_filter}
     ORDER BY v.embedding <=> %(vector)s::halfvec, c.id
     LIMIT %(candidates)s
 ),
@@ -1284,7 +1285,7 @@ lex AS (
         FROM rag_chunks c
         JOIN scoped_files sf ON sf.content_id = c.content_id
         JOIN q ON q.lang = c.lang
-    WHERE c.workspace_id = %(ws)s{chunk_filter}
+    WHERE {lex_scope}{chunk_filter}
       AND c.search @@ q.any_of
     ORDER BY (c.search @@ q.all_of) DESC, ts_rank_cd(c.search, q.any_of) DESC, c.id
     LIMIT %(candidates)s
@@ -1359,10 +1360,13 @@ async def hybrid_search(
     ``indexed_text`` (heading context and text), which the reranker scores.
     """
     pin = pin or await workspace_embedding_pin(workspace_id)
+    scope = _LIBRARY_SCOPE if conn is not None else _CONTENT_SCOPE
     sql = _SEARCH_SQL_TEMPLATE.format(
         vector_table=vector_table_for_pin(pin),
         chunk_filter=chunk_filter,
         material_scope="" if conn is not None else _MATERIAL_SCOPE_SQL,
+        vec_scope=scope.format(alias="v"),
+        lex_scope=scope.format(alias="c"),
     )
     params = dict(chunk_filter_params or {})
     params.update(

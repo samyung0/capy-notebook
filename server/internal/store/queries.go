@@ -380,7 +380,7 @@ func (s *Store) CreateWorkspace(ctx context.Context, userID string, input Worksp
 	if err := status.Err(); err != nil {
 		return Workspace{}, err
 	}
-	if _, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1); err != nil {
+	if _, err := s.gateWorkspacesTx(ctx, tx, userID); err != nil {
 		return Workspace{}, err
 	}
 

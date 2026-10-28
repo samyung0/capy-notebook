@@ -211,9 +211,23 @@ type File struct {
 	// the trace of the ingest attempt that failed it (migration 0105). Only the
 	// workspace file list sends it, and only to the owner and editors.
 	ErrorID string `json:"errorId,omitempty"`
-	// WorkspaceName and LostAccess: owned-list rows only (ListOwnedFiles).
-	WorkspaceName string `json:"workspaceName,omitempty"`
-	LostAccess    bool   `json:"lostAccess,omitempty" doc:"The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it"`
+	// WorkspaceName, LostAccess and Rights: owned-list rows only
+	// (ListOwnedFiles).
+	WorkspaceName string      `json:"workspaceName,omitempty"`
+	LostAccess    bool        `json:"lostAccess,omitempty" doc:"The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it"`
+	Rights        *FileRights `json:"rights,omitempty" doc:"What the caller may do with the file, read with the page (Files page rows)"`
+}
+
+// FileRights is what the caller may do with a listed file, on the rules each
+// action checks: rename as an editor of its workspace (its payer when it has
+// none), trash as an editor or its payer, move as its payer or its
+// workspace's owner, clone as a member or an effective editor (its payer when
+// it has no workspace). A lost-access row gets none: it may only be deleted.
+type FileRights struct {
+	Rename bool `json:"rename"`
+	Trash  bool `json:"trash"`
+	Move   bool `json:"move"`
+	Clone  bool `json:"clone"`
 }
 
 // FilePreview is {"text": ...}, a text source's first ~600 characters written

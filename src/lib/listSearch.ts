@@ -1,6 +1,7 @@
 import type {
   EditorAssetAccess,
   FileKind,
+  FileListLocation,
   FileListParams,
   FileListSort,
   MaterialListKind,
@@ -130,6 +131,7 @@ export const MATERIAL_LOCATIONS: MaterialListLocation[] = [
   'workspace',
   'standalone',
 ];
+export const FILE_LOCATIONS: FileListLocation[] = ['workspace'];
 export const MATERIAL_SORTS: MaterialListSort[] = [
   'updated',
   'created',
@@ -145,6 +147,9 @@ export const EDITOR_ASSET_ACCESS: EditorAssetAccess[] = ['open', 'lost'];
  * filters; Embeds keeps only its access filter, Trash none. */
 export type FilesSearch = {
   tab?: FilesTab;
+  /** Files tab: All files adds every file of the caller's own and member
+   * workspaces to what it pays for (My files, the default). */
+  owner?: 'all';
   sort?: FileListSort | MaterialListSort;
   dir?: 'asc';
   kind?: string;
@@ -163,7 +168,11 @@ export function parseFilesSearch(search: Record<string, unknown>): FilesSearch {
     kind: csv(
       listOf<string>(blocks ? MATERIAL_KINDS : FILE_KINDS, search.kind)
     ),
-    location: one(MATERIAL_LOCATIONS, search.location),
+    // The Files tab filters to workspaces or not at all (Epo 2026-10-28).
+    location: blocks
+      ? one(MATERIAL_LOCATIONS, search.location)
+      : one(FILE_LOCATIONS, search.location),
+    owner: !blocks && search.owner === 'all' ? 'all' : undefined,
     sort: blocks
       ? one(MATERIAL_SORTS, search.sort)
       : one(FILE_SORTS, search.sort),
@@ -182,6 +191,7 @@ export function fileListParams(search: FilesSearch): FileListParams {
     sort: one(FILE_SORTS, search.sort) ?? FILE_SORT_DEFAULT,
     ...(kinds.length ? { kinds } : {}),
     ...(search.location ? { locations: [search.location] } : {}),
+    ...(search.owner ? { scope: search.owner } : {}),
     ...workspaceIds(search),
   };
 }

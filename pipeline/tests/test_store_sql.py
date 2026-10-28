@@ -2026,7 +2026,6 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
         "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (filed,)
     )
     await store.upsert_content_summary(
-        workspace_id=workspace.id,
         content_id=content_id,
         fingerprint="fp",
         descriptor="A short descriptor.",
@@ -2855,7 +2854,6 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         (mismatched_file, workspace.id, donor_id),
     )
     await store.upsert_content_summary(
-        workspace_id=workspace.id,
         content_id=donor_id,
         fingerprint="fp",
         descriptor="Osmosis in brief.",
@@ -4209,6 +4207,39 @@ async def test_steal_refuses_a_creator_whose_lease_is_still_live(workspace):
         (creator_job,),
     )
     assert await store.steal_stale_content(
+        workspace_id=workspace.id, content_hash=content_hash, stale_s=60
+    )
+
+
+async def test_steal_leaves_a_queued_clone_copy_its_claim(workspace):
+    """A clone's index_copy job claims the copy's row when the clone is made
+    and may wait in its queue (Epo 2026-10-28): a same-content upload waits
+    for it instead of taking the row."""
+    import json
+
+    creator_job, _waiter = _claim_ids(workspace)
+    file_id = workspace.add_file("cloned.txt")
+    content_hash = hashlib.sha256(b"cloned bytes").hexdigest()
+    created = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=file_id,
+        content_hash=content_hash,
+        claim_job_id=creator_job,
+    )
+    workspace.scalar(
+        """
+        INSERT INTO jobs (id, type, payload, status)
+        VALUES (%s, 'index_copy', %s::jsonb, 'pending')
+        RETURNING id
+        """,
+        (creator_job, json.dumps({"fileId": file_id, "workspaceId": workspace.id})),
+    )
+    workspace.scalar(
+        "UPDATE rag_contents SET updated_at = now() - interval '1 hour' "
+        "WHERE id = %s RETURNING id",
+        (created["content_id"],),
+    )
+    assert not await store.steal_stale_content(
         workspace_id=workspace.id, content_hash=content_hash, stale_s=60
     )
 

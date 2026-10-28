@@ -27,7 +27,7 @@ location?: string;
  */
 q?: string;
 /**
- * owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of
+ * owned: the files the caller pays for, wherever they sit (the Files page's My files); all: those plus every file in its own workspaces and those it is a member of (All files); member: the files the caller can open, in its workspaces, those it is a member of and link or public ones it opened
  */
 scope?: ListOwnedFilesScope;
 sort?: ListOwnedFilesSort;

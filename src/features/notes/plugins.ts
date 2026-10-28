@@ -137,6 +137,7 @@ import {
 } from './nodeStyles';
 import { pastedImagesPlugin } from './pastedImages';
 import {
+  ChatAnswerPastePlugin,
   NoteParagraphPlugin,
   VoidBlockPastePlugin,
   VscodeMarkdownPastePlugin,
@@ -567,6 +568,7 @@ export const MaterialKit: AnyPlugin[] = [
   CodeSyntaxPlugin,
   CodeBlockListCleanupPlugin,
   VscodeMarkdownPastePlugin,
+  ChatAnswerPastePlugin,
   VoidBlockBreakPlugin,
   VoidBlockPastePlugin,
   TablePlugin.configure({ options: { minColumnWidth: 48 } })

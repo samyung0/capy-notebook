@@ -248,7 +248,6 @@ async def index_dataset(label, dataset, state, cache):
                 workspace_id=entry["id"], content_id=doc["content_id"], rows=rows
             )
             await store.upsert_content_summary(
-                workspace_id=entry["id"],
                 content_id=doc["content_id"],
                 fingerprint=doc["hash"],
                 descriptor=doc["title"],
@@ -267,7 +266,7 @@ async def index_dataset(label, dataset, state, cache):
             (entry["id"],),
         )
         counts = conn.execute(
-            "SELECT lang,count(*) AS n FROM rag_chunks WHERE workspace_id=%s GROUP BY lang ORDER BY lang",
+            "SELECT c.lang,count(*) AS n FROM rag_chunks c JOIN rag_contents rc ON rc.id=c.content_id WHERE rc.workspace_id=%s GROUP BY c.lang ORDER BY c.lang",
             (entry["id"],),
         ).fetchall()
     entry["counts_by_detected_language"] = counts

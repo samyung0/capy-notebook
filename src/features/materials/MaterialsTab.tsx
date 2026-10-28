@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { linkOptions, useNavigate, useSearch } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -55,7 +56,10 @@ import {
 } from '@/features/materials/MaterialListCard';
 import { MaterialShareDialog } from '@/features/materials/MaterialShareDialog';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
-import { ContentPropertiesDialog } from '@/features/workspace/ContentActions';
+import {
+  ContentPropertiesDialog,
+  downloadMenuItems,
+} from '@/features/workspace/ContentActions';
 import { toMaterialActionTarget } from '@/features/workspace/contentActionTarget';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
@@ -279,6 +283,7 @@ export function MaterialsTab({
   const [cloning, setCloning] = useState<MaterialListItem | null>(null);
   const [inspecting, setInspecting] = useState<MaterialListItem | null>(null);
 
+  const queryClient = useQueryClient();
   // Stable while `frozen` holds, so the memoised cards skip a pick's render.
   const menuFor = useCallback(
     (item: MaterialListItem): MenuItem[] => {
@@ -331,6 +336,13 @@ export function MaterialsTab({
         label: m.action_clone_to(),
         onClick: () => setCloning(item),
       });
+      items.push(
+        ...downloadMenuItems(
+          { id: item.id, kind: item.kind, name: item.title, type: 'material' },
+          item.workspaceId || null,
+          queryClient
+        )
+      );
       items.push({
         icon: 'help',
         label: m.content_properties(),
@@ -339,7 +351,7 @@ export function MaterialsTab({
       items.push(remove);
       return items;
     },
-    [frozen, navigate]
+    [frozen, navigate, queryClient]
   );
 
   const newBlock = (

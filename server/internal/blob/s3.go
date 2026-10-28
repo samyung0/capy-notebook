@@ -1,5 +1,6 @@
-// B2 uses its S3-compatible API. Stored paths are object keys, never local
-// filesystem paths.
+// The bucket is reached through its S3-compatible API: the user-file bucket on
+// Cloudflare R2, the bank buckets on Backblaze B2. Stored paths are object
+// keys, never local filesystem paths.
 package blob
 
 import (
@@ -34,14 +35,15 @@ const (
 	StableLinkTTL     = 2 * time.Hour
 )
 
-// B2Config contains the B2 S3 endpoint and application-key credentials.
+// B2Config contains the bucket's S3 endpoint and key pair. The B2_* names stay
+// for the R2 user-file bucket (Q487).
 type B2Config struct {
 	Endpoint     string
 	Region       string
 	Bucket       string
 	KeyID        string
 	AppKey       string
-	UsePathStyle bool          // B2 supports virtual-hosted and path-style endpoints.
+	UsePathStyle bool          // B2 and R2 take virtual-hosted and path-style addressing.
 	PresignTTL   time.Duration // 0 → defaultPresignTTL.
 	LinkTTL      time.Duration // 0 → defaultLinkTTL.
 }
@@ -66,10 +68,21 @@ func NewB2(cfg B2Config) (*B2, error) {
 	if cfg.Bucket == "" || cfg.KeyID == "" || cfg.AppKey == "" {
 		return nil, errors.New("blob: B2 needs B2_BUCKET, B2_KEY_ID and B2_APP_KEY")
 	}
+	// The R2 endpoint is <account>.r2.cloudflarestorage.com, or
+	// <account>.eu.r2.cloudflarestorage.com for an EU bucket.
 	endpoint, err := url.Parse(cfg.Endpoint)
-	if err != nil || endpoint.Scheme != "https" || !strings.HasSuffix(endpoint.Hostname(), ".backblazeb2.com") {
-		return nil, errors.New("blob: B2_ENDPOINT must be an https://*.backblazeb2.com S3 endpoint")
+	if err != nil || endpoint.Scheme != "https" ||
+		!strings.HasSuffix(endpoint.Hostname(), ".backblazeb2.com") && !strings.HasSuffix(endpoint.Hostname(), ".r2.cloudflarestorage.com") {
+		return nil, errors.New("blob: B2_ENDPOINT must be an https://*.backblazeb2.com or https://*.r2.cloudflarestorage.com S3 endpoint")
 	}
+	// The R2 dashboard shows the S3 API URL with the bucket as its path. Pasted
+	// into B2_ENDPOINT, the SDK would prefix every key with it, so only the bare
+	// endpoint passes. The error never repeats the value, which may hold a key.
+	if endpoint.User != nil || endpoint.RawQuery != "" || endpoint.ForceQuery || endpoint.Fragment != "" ||
+		endpoint.Path != "" && endpoint.Path != "/" {
+		return nil, errors.New("blob: B2_ENDPOINT must be the bare S3 endpoint, with no bucket path, query, fragment or credentials (the bucket goes in B2_BUCKET)")
+	}
+	// R2 takes the region auto.
 	if cfg.Region == "" {
 		return nil, errors.New("blob: B2 needs B2_REGION")
 	}

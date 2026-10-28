@@ -73,17 +73,36 @@ func (w withExtra) Scan(dest ...any) error { return w.row.Scan(append(dest, w.ex
 // conditions as an OR across the joined tables read every user's rows on each
 // call (bench/gateway, 2026-10-24).
 func visibleWorkspacesSQL(user string) string {
-	return `SELECT id FROM workspaces WHERE user_id=` + user + `
-	UNION ALL
-	SELECT vm.workspace_id FROM workspace_members vm
-		JOIN workspaces vw ON vw.id=vm.workspace_id JOIN users vo ON vo.id=vw.user_id
-	WHERE vm.user_id=` + user + ` AND vo.deleted_at IS NULL AND vo.deletion_requested_at IS NULL AND vo.suspended_at IS NULL
+	return memberWorkspacesSQL(user) + `
 	UNION ALL
 	SELECT vv.workspace_id FROM workspace_visits vv
 		JOIN workspaces vvw ON vvw.id=vv.workspace_id JOIN users vvo ON vvo.id=vvw.user_id
 	WHERE vv.user_id=` + user + ` AND vvo.deleted_at IS NULL AND vvo.deletion_requested_at IS NULL AND vvo.suspended_at IS NULL
 		AND (vvw.privacy='public' OR (vvw.privacy='link' AND EXISTS (
 			SELECT 1 FROM workspace_link_grants vg WHERE vg.workspace_id=vvw.id AND vg.user_id=` + user + `)))`
+}
+
+// memberWorkspacesSQL is visibleWorkspacesSQL without the link and public
+// workspaces only opened: those user owns and those it is a member of under a
+// live owner (the Files page's All files, Epo 2026-10-28).
+func memberWorkspacesSQL(user string) string {
+	return `SELECT id FROM workspaces WHERE user_id=` + user + `
+	UNION ALL
+	SELECT vm.workspace_id FROM workspace_members vm
+		JOIN workspaces vw ON vw.id=vm.workspace_id JOIN users vo ON vo.id=vw.user_id
+	WHERE vm.user_id=` + user + ` AND vo.deleted_at IS NULL AND vo.deletion_requested_at IS NULL AND vo.suspended_at IS NULL`
+}
+
+// fileRightsCols reads FileRights for a files row f joined to its workspace
+// w, for the caller user.
+func fileRightsCols(user string) string {
+	edit := editableWorkspaceSQL("f.workspace_id", user)
+	live := liveWorkspaceSQL("f.workspace_id")
+	return `CASE WHEN f.workspace_id IS NULL THEN f.user_id=` + user + ` ELSE ` + edit + ` END,
+		f.user_id=` + user + ` OR (f.workspace_id IS NOT NULL AND ` + edit + `),
+		CASE WHEN f.workspace_id IS NULL THEN f.user_id=` + user + ` ELSE (f.user_id=` + user + ` OR w.user_id=` + user + `) AND ` + live + ` END,
+		CASE WHEN f.workspace_id IS NULL THEN f.user_id=` + user + ` ELSE ` + live + ` AND (w.user_id=` + user + `
+			OR EXISTS (SELECT 1 FROM workspace_members rm WHERE rm.workspace_id=f.workspace_id AND rm.user_id=` + user + `) OR ` + edit + `) END`
 }
 
 const listPageMax = 100
@@ -383,8 +402,12 @@ type FileListFilter struct {
 	// Locations holds fileLocations keys.
 	Locations []string
 	// Query keeps names holding it, any case.
-	Query     string
+	Query string
+	// Member lists what the caller can open (visibleWorkspacesSQL, dashboard
+	// Recent); All what it pays for plus its own and member workspaces' files
+	// (the Files page's All files).
 	Member    bool
+	All       bool
 	Sort      string
 	Ascending bool
 	Limit     int
@@ -411,9 +434,12 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	// The Files page lists what the caller pays for; Member (dashboard
 	// Recent) what it can open (Sam 2026-10-19).
 	where := ` WHERE f.user_id=$1 AND f.trashed_at IS NULL`
-	if f.Member {
+	switch {
+	case f.Member:
 		where = ` WHERE (f.workspace_id IN (` + visibleWorkspacesSQL("$1") + `)
 			OR (f.workspace_id IS NULL AND f.user_id=$1)) AND f.trashed_at IS NULL`
+	case f.All:
+		where = ` WHERE (f.user_id=$1 OR f.workspace_id IN (` + memberWorkspacesSQL("$1") + `)) AND f.trashed_at IS NULL`
 	}
 	if len(f.Kinds) > 0 {
 		args = append(args, f.Kinds)
@@ -449,7 +475,7 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	where += clause
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
-	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+`, `+fileWorkspaceNameSQL+`, `+lostAccessSQL("f.workspace_id", "$1")+
+	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+`, `+fileWorkspaceNameSQL+`, `+lostAccessSQL("f.workspace_id", "$1")+`, `+fileRightsCols("$1")+
 		` FROM files f LEFT JOIN workspaces w ON w.id=f.workspace_id`+
 		where+orderClause(sort, "f.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
@@ -460,13 +486,16 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	for rows.Next() {
 		var workspaceName string
 		var lost bool
-		file, err := scanFile(withExtra{rows, []any{&workspaceName, &lost}})
+		var rights FileRights
+		file, err := scanFile(withExtra{rows, []any{&workspaceName, &lost, &rights.Rename, &rights.Trash, &rights.Move, &rights.Clone}})
 		if err != nil {
 			return FilePage{}, err
 		}
 		file.WorkspaceName = workspaceName
 		if lost {
 			file = lostFile(file)
+		} else {
+			file.Rights = &rights
 		}
 		page.Items = append(page.Items, file)
 	}

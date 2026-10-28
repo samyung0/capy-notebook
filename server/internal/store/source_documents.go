@@ -826,6 +826,15 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 			}
 		}
 	}
+	// A clone's edits publish once its index has copied (Epo 2026-10-28, D4).
+	var copying bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM jobs WHERE type='index_copy'
+		AND status IN ('pending','running') AND payload->'fileIds' ? $1)`, fileID).Scan(&copying); err != nil {
+		return SourceProcessResult{}, err
+	}
+	if copying {
+		return result, ErrConflict
+	}
 	if running != nil {
 		result.JobID = *running
 		if system {

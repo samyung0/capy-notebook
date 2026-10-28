@@ -1,8 +1,20 @@
 # Background clone index copy, and Download
 
-Status 2026-10-27: planned, nothing built. Starts on a branch from main once
-the release train (with standalone files, `wip/mac-ui-2026-10-27`) has
-landed. Measurements: `bench/clone/reports/2026-10-27-clone-cost.md`.
+Status 2026-10-28: on `wip/mac-clone-download`. Built: passages, vectors and
+summaries scoped through their content row (migration 0126), so a Move re-tags
+the content row instead of copying the index. The background index copy for clones
+(single file and workspace) is built (migration 0127, store/index_copy.go).
+Download is built on every item menu (files, notes as Markdown/Word,
+Preparing rows). D3 is built for files (a payer's lost-access rows get
+Clone to… and Download). Left: lost-access notes, which need a payer-only
+read of the note and its embedded items for export without opening it. Measurements:
+`bench/clone/reports/2026-10-27-clone-cost.md`,
+`bench/clone/reports/2026-10-28-index-copy-parts.md`.
+
+Landing notes: 0126 is also `wip/mac-account-chat`'s number; whichever lands
+second renumbers. Account chat's search (`search_account`, the
+`_STANDALONE_OWNER` vector leg) drops its owner leg when it meets this: every
+file in scope is a content id.
 
 ## Why
 
@@ -18,7 +30,11 @@ landed. Measurements: `bench/clone/reports/2026-10-27-clone-cost.md`.
 
 ## A. The index copy runs in the background
 
-Request (clone and move): the file row, its saved edits and its thumbnail as
+Move re-tags instead (Epo 2026-10-28, built): content only the moved file
+holds keeps its row, which names the target; content another file or note
+shares is copied in the request as before, the rare case.
+
+Request (clone, single file or workspace): the file row, its saved edits and its thumbnail as
 today, so the copy opens at once; the file is `status='processing'`,
 `indexed=false`, and one `index_copy` job is queued. Chat and search see it
 once the job finishes.
@@ -63,10 +79,13 @@ the open file's header. Lost-access items wait on the copy-out decision.
 
 ## Decisions (Epo 2026-10-27, recorded in human/)
 
-- D1: Office/text with unpublished saved edits download through a server
-  export-only publication, tracked as Preparing download. After the train.
+- D1 (revised 2026-10-28): Office/text with unpublished saved edits download
+  by merging base and editing state in the browser, with view mode's export
+  worker (`exportCheckpoint`), tracked as Preparing download. No server
+  export. Measured in `bench/editor/reports/2026-10-28-office-browser-export.md`
+  (0.3–6.4 s on an M1 up to 30 MiB, up to about 1 GiB added; phones slower).
 - D2: notes as Markdown and DOCX; quizzes and flashcards later (their embed
   has a primitive export to start from).
 - D3: payers may Clone to… and Download lost-access items (latest version).
-- D4: the copy opens at once, read-only and without a room, marked
-  processing until its index is copied.
+- D4 (revised 2026-10-28): the copy opens at once and editable, with its
+  room; a publication of its edits waits until its index is copied.

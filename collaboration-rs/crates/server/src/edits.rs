@@ -1773,10 +1773,16 @@ async fn edit_in_room(
     let mut assigned = assigned_ids(&tx, material_id).await?;
     tx.commit().await?;
     drop(client);
-    if let (Some(stored), Change::Undo(updates)) = (stored, &change)
-        && stored_names_collected(stored, updates).await?
-    {
-        return Err(undo_unavailable(UNDO_GONE));
+    if let (Some(stored), Change::Undo(updates)) = (stored, &change) {
+        // Debug builds only: the integration test's slow replay, which must
+        // hold neither the pooled connection nor the operation's lock.
+        #[cfg(debug_assertions)]
+        if material_id.contains(IT_SLOW_REPLAY) {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
+        if stored_names_collected(stored, updates).await? {
+            return Err(undo_unavailable(UNDO_GONE));
+        }
     }
     let quiz = kind == "quiz";
     if quiz {
@@ -1891,6 +1897,11 @@ async fn edit_in_room(
         receipt
     }))
 }
+
+/// Debug builds only: a room-path Undo of a note whose id holds this replays
+/// its stored state three seconds late (Q478).
+#[cfg(debug_assertions)]
+const IT_SLOW_REPLAY: &str = "capy-it-slow-replay";
 
 /// A note's stored state (base and rows), read for [stored_names_collected]
 /// under the edit's first transaction: the replay runs after it commits, so

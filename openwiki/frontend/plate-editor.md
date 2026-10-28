@@ -463,6 +463,31 @@ video) gets an image placeholder that refuses it with the type message
 (`editor_choose_purpose`, or the YouTube hint for a video) and offers its
 picker again.
 
+A chat answer copied into a note keeps its blocks. The browser's copy of an
+answer holds only its rendered DOM, so `copyAnswer` (`chat/answerCopy.ts`, the
+answer's `onCopy`) also writes `application/x-capy-answer` when the selection
+lies inside one answer: a list of plain-Markdown blocks in the note format,
+a callout carried as its variant plus its body (`chat/answerClipboard.ts`).
+Each OpenUI block renders inside a `display: contents` element (`data-ui`)
+that knows its node (`library.tsx`). Only the blocks holding the selection's
+two ends can be partly selected: every block between them is rebuilt from its
+props (every tab, a closed reveal or accordion item's body, a chart, plot or
+html-embed as its fence), and a partly selected one is read from its DOM up
+to the selection's end, keeping its shape (a callout stays a callout with the
+selected text, a step a list item). Charts, plots, embeds and formulas
+(`data-tex`) copy whole once touched; citations, buttons and asked questions
+are left out; tabs, reveals and accordion items become a bold title over
+their content. `ChatAnswerPastePlugin` (`pastePlugins.ts`) reads each block
+like agent Markdown (plain, no MDX) and wraps callout blocks. A selection
+that runs past the answer into its own message's model label or sources (a
+triple-click on the last line, `data-chat-message`) stops at the answer's
+end; one reaching anywhere else, a paste inside a code block or blocks that do
+not convert take the ordinary path. For other apps the copy carries the
+selection's text and its HTML without the stylesheet: bold spans become
+`<strong>`, a formula its `$TeX$`, and buttons, icons and skipped parts
+(citations, the incomplete-answer notice) go; some formatting loss there is
+accepted.
+
 Other clients see the same skeleton through the uploader's presence
 (`uploadPresence.ts`, Epo 2026-10-10): while an image uploads, the uploading
 tab's awareness names its placeholder by node id (`uploads: [id, ...]`), and
@@ -1526,7 +1551,8 @@ Office and text files); on 2026-10-24 (Q226 M3, Q236) that an id is
 recorded at the first accepted write under it, and that a reconnect keeps
 its id by presenting its previous token; on 2026-10-24 (Q288) that stored
 drafts keep their tab's last token, which re-grants their id to a draft send
-from any page.
+from any page; on 2026-10-28 (Q472) that a reconnect of the same editing
+session takes over its own channel a dropped socket left behind.
 
 - **Assignment** (`newClientID` and `regrantedClientIDs` in
   `server/internal/httpapi/collaboration_tokens.go`). Every collaboration
@@ -1547,11 +1573,15 @@ from any page.
   Office editor, whose replica and layout worker took their ids at the edit
   `load`, needs no reload. A new id comes with a new Y.Doc (a new editor or
   item room, a room swap's renderer), or when a document that never wrote
-  gets a fresh token (its previous one too old, or dropped after 70 s of
-  `collaboration-client-id` refusals). Edits a document made before its first
+  gets a fresh token (its previous one too old, or dropped at a
+  `collaboration-client-id` refusal). Edits a document made before its first
   JOIN stay under the id Yjs drew, and the room refuses them as they are (Epo
   2026-10-24, see Refusal); a document whose `clientID` no longer matches the
   id it took stops its channel with an error instead of sending (Q226 L3).
+  Each provider (one editing session and its Y.Doc) also draws a random
+  128-bit session id when it is made (`sessionId`, Q472) and sends it with
+  every JOIN, its embeds' and item rooms' providers their own. It lives only
+  in the provider's memory, never in drafts, storage or tokens.
 - **Binding** (`ClientIds::bind` in
   `collaboration-rs/crates/server/src/client_ids.rs`). A JOIN binds its
   channel to the id its Y.Doc names, in memory. An id recorded to the
@@ -1564,15 +1594,37 @@ from any page.
   does not retry (`roomRefusal` reads it as `unassigned`; until the catch-up merge
   re-applies its edits, a note or item keeps its unsent edits as refused and
   remounts, a source session goes to recovery). One a live channel holds is
-  refused as `collaboration-client-id`: a dropped socket's channel the
-  server has not closed yet (at most 60 s, `SILENT_CLOSE`), or two sessions
-  presenting one previous token. The provider keeps presenting its previous
-  token for 70 s from the first such refusal (`CLIENT_ID_HELD_MS`), so a
-  reconnect after a network drop gets its ids back once the old channel
-  closed, then drops it and retries with a fresh id. A channel whose token
+  refused as `collaboration-client-id`: two sessions presenting one
+  previous token, or a client too old to send a session id whose dropped
+  socket's channel the server has not closed yet (at most 60 s,
+  `SILENT_CLOSE`). At the first such refusal the provider drops its previous
+  token (Q475, Epo 2026-10-28): its next JOIN takes a fresh id, or, when its
+  document already wrote, names its own and hears
+  `collaboration-unassigned-id`. A channel whose token
   turns writable writes under the id it bound (Q226 M1); a token refresh
   naming another user than the channel's is refused (the channel closes at
   its token's expiry), so a bound id stays its user's.
+- **A reconnect after an unseen drop** (Q472, Epo 2026-10-28). A socket can
+  drop without the server seeing a close (through the Cloudflare tunnel, for
+  one), and its channel then looks live until its silent close. A JOIN
+  naming a session id takes over the channels of the same user and room
+  with the same session id that joined before it (an earlier socket, or an
+  earlier channel of the same socket) and hold its client id or its DOCX
+  worker id (`Room::stale_channels`): they do not count as live for the
+  binding. Once the JOIN binds (recorded id or not) the new channel joins
+  and takes each stale channel's awareness entry under the session's id, so
+  collaborators keep seeing the user's cursor instead of hearing it removed
+  (Q477, `Room::take_over`); then each stale channel closes as a Leave
+  would, its socket hearing CLOSED `collaboration-rejoined`. The browser
+  already left that channel, so the reconnect rejoins in one round trip
+  instead of waiting up to 60 s. A JOIN whose session id differs or is
+  missing (an older client) takes over nothing and is refused as before, so
+  two documents never write under one id; the session id is the client's
+  word, so another user's JOIN naming it takes over nothing either. A draft
+  send (`grantable`) carries no session id and keeps the rule above. A
+  rejoin after the old channel already closed is unchanged: that close
+  removed the cursor one clock past the state the tab resends, so
+  collaborators see it again from the tab's second awareness change.
 - **A DOCX session's worker id** (Q219, Epo 2026-10-23). The DOCX editor
   lays out and applies typing in a resident worker, a yrs document of its
   own, so a DOCX write token also offers `workerClientId` (Go mints it only
@@ -1726,9 +1778,10 @@ from any page.
   `unassigned` (material rooms) or `source-checkpoint-failed` code
   `unassigned` (source rooms), a draft send class `unassigned` (409), and the
   JOIN of a document that wrote under such an id `collaboration-unassigned-id`
-  (`collaboration-client-id` means only that a live channel holds the id; the
-  browser retries with its previous token for 70 s, then with fresh ids, and
-  a document that wrote then hears `collaboration-unassigned-id`).
+  (`collaboration-client-id` means only that a live channel of another
+  session holds the id, a reconnect of the same session taking over its own;
+  the browser retries at once with a fresh token, and a document that wrote
+  then hears `collaboration-unassigned-id`).
 - **Awareness.** A channel's awareness entries are kept only under its bound
   id; entries under any other id are ignored.
 - **Browser writers.** Notes, items and text sources write under their
@@ -1877,8 +1930,10 @@ Developer Epo decided the gate and the nudge on 2026-10-16 (the version-gate
 design, option d), and the nudge's release file on 2026-10-17.
 
 - **The gate.** Every JOIN carries the build's client protocol after the
-  token (`room, token, varuint protocol, varuint clientId, varuint version`,
-  then an embed's note channel; the client id is the Y.Doc's, see [client
+  token (`room, token, varuint protocol, varuint clientId, varuint version,
+  varuint note, varbytes sessionId`: the note is an embed's note channel, 0
+  outside a note, and the session id 16 random bytes from protocol 23; the
+  client id is the Y.Doc's and the session id its provider's, see [client
   ids](#client-ids), and the version the stored one it holds, see [editing
   sessions](#editing-sessions)),
   and every draft send carries it as
@@ -2055,6 +2110,17 @@ design, option d), and the nudge's release file on 2026-10-17.
   an older source tab reads no new answer, and Q402's room-admitted agent
   edits reach it as ordinary updates. Its deploy request names "client
   protocol 21 -> 22, material 20 -> 22".
+  The session id on every JOIN (a reconnect of the same session takes over
+  its own channel; Epo 2026-10-28, Q472) raised `CLIENT_PROTOCOL` to 23 and
+  neither minimum: an older tab sends no session id and is answered as
+  before. A JOIN outside a note now names note channel 0, which a server
+  before it looks up as a note channel ahead of its version gate: after a
+  backend rollback below 23, such a server refuses a newer tab's JOINs as
+  `collaboration-note-closed`, not outdated, so the tab shows no outdated
+  prompt and its rooms stay unjoined, drafts kept, until a reload (Epo
+  2026-10-28, Q476: accepted with no client handling; the normal deploy
+  order, backend before site, avoids it). Its deploy request names "client
+  protocol 22 -> 23".
 
 #### When to bump
 

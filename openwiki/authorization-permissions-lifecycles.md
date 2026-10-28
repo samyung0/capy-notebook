@@ -43,6 +43,7 @@ validation instead of being remapped.
 | Chapters, upload/rename/move/delete files, material metadata and delete, generate materials | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Workspace name, description, tags, privacy, `shareRole`, statistics                  | Yes   | Yes           | No                 | No            | No                 | No           |
 | Invite/remove members, change roles, delete or transfer the workspace                       | Yes   | No            | No                 | No            | No                 | No           |
+| Leave the workspace (remove its own member row)                                             | No    | Yes           | No                 | Yes           | No                 | No           |
 | Member roster (`userId`, `name`, `avatarUrl`, `role`; never email)                          | Yes   | Yes           | No                 | Yes           | No                 | No           |
 | Mention directory (`userId`, `name`, `avatarUrl`)                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Clone the workspace                                                                         | Yes   | Yes           | Yes                | Yes           | No                 | No           |
@@ -369,6 +370,11 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   Widening sharing is an edit, refused when the actor or the owner is
   frozen; narrowing (privacy toward private, share role toward viewer) stays
   open to both.
+- **Any editor or viewer member** may leave the workspace (Epo 2026-10-28):
+  the settings Danger tab shows it Leave, which is the remove call on its own
+  row (`DELETE /api/workspaces/{id}/members/{memberId}` with its own id) and
+  sends no removal notification. The owner's Danger tab shows only Delete; an
+  owner hands the workspace over with a transfer instead.
 - **Owner only** can invite a member, change a member's role, remove a member,
   delete the workspace, and switch Auto process edits (Epo 2026-10-21): a
   workspace update carrying `autoProcess` from anyone else is refused whole
@@ -382,11 +388,20 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
 - On transfer, the recipient becomes owner and assumes the complete storage
   bill. The old owner remains as an editor. Transfer is refused if the recipient
   cannot fit the workspace's used and reserved bytes or file count.
-- Workspace creation, clone, and transfer-to-recipient all run the owned-workspace
-  plan gate: Free owns at most 10 workspaces and Pro 50 (migration
-  `0070_owned_workspace_cap.sql`); past it the request fails with
-  `workspace_limit_exceeded` and the browser toasts "Workspace limit reached".
-  Workspaces already over the cap (after a downgrade) are kept.
+- The workspace cap counts owned and joined workspaces together (Epo
+  2026-10-28): Free 10, Pro 50 (migration `0070_owned_workspace_cap.sql`), one
+  count of the user's `workspace_members` rows, since every owner holds one with
+  role `owner` (link or public visits are not members). Creating or cloning a
+  workspace and accepting an invitation are refused at the limit with
+  `workspace_limit_exceeded` (`gateWorkspacesTx`, which writes the user's row
+  so a repeatable-read clone retries instead of counting past a concurrent
+  create or accept); the browser toasts "Workspace limit reached", and the
+  invitation page keeps the invite open, across Back and a refresh too, to
+  accept after leaving or deleting one. A transfer is not gated: the recipient
+  is already a member and the old owner stays one. After a downgrade nothing
+  is removed; creating, cloning and accepting stay refused until the count is
+  under the new cap. A suspended or deletion-pending owner's workspaces still
+  use their members' slots.
 - An over-quota owner (grace or frozen) may still transfer because giving away
   bytes is a recovery action; the recipient must be able to edit. A transfer
   cancels every pending invite (`revoked_at`), so the new owner starts with
@@ -551,17 +566,23 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
 - Thumbnail keys stay inside their workspace: a moved file drops a key
   borrowed from another file, and files that borrowed the moved file's key
   drop theirs (the next capture redraws them).
-- Its served index follows: onto the target's copy of the same content, or a
-  copy made in the target, when the target embeds in the same space; else
-  the file is ingested there, paid by the mover as a cross-space clone is;
-  so is a target still building the same content.
+- Its served index follows when the target embeds in the same space: content
+  only this file holds is re-tagged in place (its content row and alias name
+  the target, about 1 ms whatever its size, migration 0126); otherwise it
+  joins the target's copy of the same content, or content another file or
+  note shares is copied into the target. Across spaces the file is ingested
+  there, paid by the mover as a cross-space clone is; so is a target still
+  building the same content.
   Each open source room drains (Q447): it stores what it admitted, people's
   typing and agent edits, before it closes, and its tabs reconnect through
   the access check of the new place. Every source save names the workspace
   its room opened the file in (`workspaceId`, kept across the room's saves),
   and Go checks each actor there (Q459), so the drain's final save stores
   the edits of people who are not in the target; someone removed from that
-  workspace still has their unsaved edits refused. Right before the drain the room tells
+  workspace still has their unsaved edits refused. A save that meets a moved
+  checkpoint reads the file's session again as its owner's (`current`'s
+  read: the checkpoint is what checks the writers), so its retry stores in
+  the drain too. Right before the drain the room tells
   every tab of the move (Q454): the outbox row is
   `enqueue_source_collaboration_eviction`'s shape with type `file-moved`,
   mode `drain` and the target `workspaceId` (written directly in
@@ -589,6 +610,28 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
   replaces the chapter-only move for files) and the workspace Add file
   dialog's Your files tab (`GET /api/files?q=`). Clone to… opens the same
   dialog with its name field and No workspace.
+
+Download (Epo 2026-10-27/28, `src/features/files/downloadItem.ts`). Every
+item menu that has Clone to… (the Files page's Files and Blocks tabs, the
+workspace file tree, the open item's header) offers Download after it, to
+anyone who can read the item. A file downloads its latest saved state under
+its own name: an Office or text file reads view mode's source session and
+merges the saved edits it carries over its base in the browser (text from its
+saved state, Office through view mode's export worker, `exportCheckpoint`;
+measured in `bench/editor/reports/2026-10-28-office-browser-export.md`). The
+session carries them while they are ahead of the published file and while a
+publication waits to become the editing base, when every saved edit is still
+stored against the old base (review r1); with none, its base is the published
+file. Any other file is its stored bytes from its read link. A note downloads as Markdown or Word
+from its stored document with the editor's export (`exportNoteValue`), no
+editor open; quizzes and flashcard sets offer none. Each download shows as a
+Preparing row in the transfer panel until it saves, or says it failed. A
+file's payer who lost access to its workspace still gets Clone to…, Download
+and Delete on its Files page row (Epo 2026-10-27, D3): the read link and the
+view source session admit the payer (`fileReadOrPayer`), so its download is
+the latest saved state, others' edits included, and `CloneFile` admits it as
+a source; opening or restoring it in place stays refused. A lost-access
+note offers neither yet: reading it for export would reach it in place.
 
 Sources: [read link headers](../server/internal/blob/s3.go#L165),
 [chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),
@@ -1222,8 +1265,15 @@ upsert fails while the identity is still unknown locally, the request fails
 retryably with `503 account_state_unavailable`. An address another live local
 account still holds (`users_email_active_uidx`, for example a row that has not
 yet seen its owner's address change) is reported to Sentry
-(`clerk_email_collision`) and the account is written without an email, instead
-of failing provisioning on every request. Starter-workspace completion is
+(`clerk_email_collision`, with the account as the event's user, so the UAT
+cleanup ties it to its run) and the account is written without an email,
+instead of failing provisioning on every request. Only a different account
+counts: a new account's first page sends several requests at once, and they
+and the Clerk webhook may all create its row. The insert does nothing on any
+conflict and the normal refresh follows, so a parallel creator's stored email
+is kept (Developer Epo, 2026-10-28, Q473). An insert that did nothing while no
+row of this id exists, or a refresh that meets the email index, is the
+different account's hold. Starter-workspace completion is
 stored separately on the user row. A failed workspace insert also returns the
 retryable 503, and the next authenticated request retries it, without a
 profile read. Once marked complete, deleting every workspace does not recreate
@@ -1479,8 +1529,8 @@ request may have written either one.
 
 Queued upload paths are delayed by a further 24-hour grace, so a late write
 (an import worker's, or a PUT that answered after its 60 s bound) is collected
-rather than appearing after cleanup has already run. Independently, bucket lifecycle rules
-expire `incoming/` and `editor-assets/incoming/` objects after one day. The
+rather than appearing after cleanup has already run. Independently, a bucket lifecycle rule
+expires `incoming/` objects after one day. The
 database sweep repairs quota/accounting state; the bucket rule is the final
 backstop for temporary objects that never obtained a database session.
 
@@ -1501,7 +1551,7 @@ asset row.
 
 Sources: [upload expiry and pruning](../server/internal/store/uploads.go#L202),
 [abandoned-upload test](../server/internal/store/blobs_test.go#L230), and
-[required bucket lifecycle rules](../server/README.md#L30).
+[required bucket lifecycle rules](../server/README.md#bucket-configuration).
 
 ### Logical deletion and the blob reaper
 
@@ -1530,15 +1580,15 @@ failure reason. Claiming advances a five-minute-per-attempt backoff. After eight
 attempts a path is no longer claimed automatically; the monthly report includes
 the count of these undeletable queue entries for operational follow-up.
 
-Backblaze B2 hides overwritten/deleted versions by default, so deployment must
-also apply the configured `daysFromHidingToDeleting` lifecycle rule. Without
-that rule, a successful reaper deletion can leave hidden versions consuming
-bucket storage.
+After the cutover the user-file bucket is on Cloudflare R2, which keeps no
+object versions, so a successful reaper deletion frees the bytes at once. Until
+then UAT's B2 bucket hides deleted objects, and its lifecycle rule deletes them
+a day later.
 
 Sources: [deletion outbox and reference re-check](../server/internal/store/blobs.go#L9),
 [reaper loop and retry behavior](../server/cmd/api/blob_workers.go#L26),
 [reference-count lifecycle test](../server/internal/store/blobs_test.go#L51), and
-[bucket version requirement](../server/README.md#L30).
+[bucket configuration](../server/README.md#bucket-configuration).
 
 ### Trash
 
@@ -1603,6 +1653,16 @@ standalone materials, never a row it only pays for; the dashboard's Recent uses
 it and offers Rename/Properties/Delete only where the workspace's
 `capabilities` allow editing. Global search (`Store.Search`) follows the same
 set for workspaces, files and flashcard sets.
+
+The Files page's Files tab filters by owner and location (Epo 2026-10-28):
+My files (the default, the paid-for list above) or All files (`scope=all`:
+that plus every file in workspaces the caller owns or is a member of,
+`memberWorkspacesSQL`, never a link or public workspace it only opened), and
+All locations (the default) or Workspace only (`location=workspace`). Every
+row of `GET /api/files` carries `rights` (`FileRights`: rename, trash, move,
+clone), read with the page from the rules each action checks, and the row's
+menu and the selection's Delete offer only those; a lost-access row has none
+and may only be deleted.
 
 Workspace visits (Epo 2026-10-26, migration `0120_workspace_visits.sql`).
 `workspace_visits (user_id, workspace_id, opened_at)` records when each
@@ -1689,7 +1749,7 @@ The sweep:
 This sweep is intentionally **report-only** today. It does not enqueue or delete
 unrecorded stable objects because a false negative in the database view would
 make an automatic bucket deletion unrecoverable. Temporary incoming prefixes
-are excluded because their one-day bucket lifecycle rule already deletes them.
+(`incoming/`) are excluded because their one-day bucket lifecycle rule already deletes them.
 
 Sources: [orphan sweep policy and schedule](../server/cmd/api/blob_workers.go#L98)
 and [known-path calculation](../server/internal/store/blobs.go#L105).

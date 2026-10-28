@@ -384,11 +384,15 @@ func (s *Store) accountModelPrefs(ctx context.Context) (chat, editor models.Ref,
 // An address another live account still holds (users_email_active_uidx, e.g.
 // a local row that has not seen its owner's address change yet) is reported
 // and the row is written without it, rather than failing provisioning on every
-// request.
+// request. Only a different account's hold counts: a parallel first request
+// or the webhook creating this same row keeps the email it stored (Q473).
 func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error) {
 	needsDefaultWorkspace, err := s.upsertUserFromClerk(ctx, id, name, email, avatarURL)
-	if email != "" && uniqueConstraintName(err) == "users_email_active_uidx" {
-		obs.CaptureErr(ctx, fmt.Errorf("clerk email held by another live account, stored without email: %w", err),
+	if email != "" && (errors.Is(err, errClerkEmailHeld) || uniqueConstraintName(err) == "users_email_active_uidx") {
+		// Named after the account, which the auth middleware has not yet put
+		// on ctx while it admits the request: the UAT cleanup finds a run's
+		// events by user.id.
+		obs.CaptureErr(obs.WithUser(ctx, id), fmt.Errorf("clerk email held by another live account, stored without email: %w", err),
 			map[string]string{"stage": "clerk_email_collision"})
 		return s.upsertUserFromClerk(ctx, id, name, "", avatarURL)
 	}
@@ -421,11 +425,15 @@ func (s *Store) upsertUserFromClerk(ctx context.Context, id, name, email, avatar
 	if avatarURL == "" {
 		defaultIcon = defaultAvatarIconID(id)
 	}
-	var needsDefaultWorkspace bool
-	// name is user-owned once the row exists (PATCH /api/me); a refresh only
-	// carries email and avatar. A refresh without a verified primary address
-	// clears the stored one (human authorization, 2026-10-21).
-	err := s.pool.QueryRow(ctx, `UPDATE users SET
+	// The refresh, then (no row) the insert, then the refresh once more when
+	// the insert did nothing: a parallel first request or the webhook created
+	// the row meanwhile, or a different account holds the address (Q473).
+	for triedInsert := false; ; triedInsert = true {
+		var needsDefaultWorkspace bool
+		// name is user-owned once the row exists (PATCH /api/me); a refresh only
+		// carries email and avatar. A refresh without a verified primary address
+		// clears the stored one (human authorization, 2026-10-21).
+		err := s.pool.QueryRow(ctx, `UPDATE users SET
 			email=NULLIF($2,''),
 			avatar_url=COALESCE(NULLIF($3,''), avatar_url),
             avatar_icon_id=COALESCE(avatar_icon_id, $4),
@@ -434,50 +442,48 @@ func (s *Store) upsertUserFromClerk(ctx context.Context, id, name, email, avatar
 			AND deletion_requested_at IS NULL
 			AND suspended_at IS NULL
 		RETURNING starter_workspace_provisioned_at IS NULL`, id, email, avatarURL, defaultIcon).
-		Scan(&needsDefaultWorkspace)
-	if err == nil {
-		return needsDefaultWorkspace, nil
-	}
-	if !isNoRows(err) {
-		return false, err
-	}
-	var exists bool
-	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)`, id).
-		Scan(&exists); err != nil {
-		return false, err
-	}
-	if exists {
-		return false, nil
-	}
+			Scan(&needsDefaultWorkspace)
+		if err == nil {
+			return needsDefaultWorkspace, nil
+		}
+		if !isNoRows(err) {
+			return false, err
+		}
+		var exists bool
+		if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)`, id).
+			Scan(&exists); err != nil {
+			return false, err
+		}
+		if exists {
+			return false, nil
+		}
+		if triedInsert {
+			return false, errClerkEmailHeld
+		}
 
-	chatModel, editorModel, err := s.accountModelPrefs(ctx)
-	if err != nil {
-		return false, err
-	}
-	err = s.pool.QueryRow(ctx, `INSERT INTO users
+		chatModel, editorModel, err := s.accountModelPrefs(ctx)
+		if err != nil {
+			return false, err
+		}
+		err = s.pool.QueryRow(ctx, `INSERT INTO users
 			(id, name, email, avatar_url, avatar_icon_id,
 			 chat_model_provider_slug, chat_model_slug,
 			 editor_model_provider_slug, editor_model_slug)
 			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$9,$5,$6,$7,$8)
-		ON CONFLICT (id) DO UPDATE SET
-			email=COALESCE(EXCLUDED.email, users.email),
-			avatar_url=COALESCE(NULLIF(EXCLUDED.avatar_url,''), users.avatar_url),
-            avatar_icon_id=COALESCE(users.avatar_icon_id, EXCLUDED.avatar_icon_id),
-			updated_at=now()
-		WHERE users.deleted_at IS NULL
-			AND users.deletion_requested_at IS NULL
-			AND users.suspended_at IS NULL
+		ON CONFLICT DO NOTHING
 		RETURNING starter_workspace_provisioned_at IS NULL`,
-		id, name, email, avatarURL,
-		chatModel.ProviderSlug, chatModel.ModelSlug,
-		editorModel.ProviderSlug, editorModel.ModelSlug, defaultIcon).Scan(&needsDefaultWorkspace)
-	// The WHERE clause suppresses the RETURNING row for a tombstone, which is
-	// not an error: the account exists and stays scrubbed.
-	if isNoRows(err) {
-		return false, nil
+			id, name, email, avatarURL,
+			chatModel.ProviderSlug, chatModel.ModelSlug,
+			editorModel.ProviderSlug, editorModel.ModelSlug, defaultIcon).Scan(&needsDefaultWorkspace)
+		if !isNoRows(err) {
+			return needsDefaultWorkspace, err
+		}
 	}
-	return needsDefaultWorkspace, err
 }
+
+// errClerkEmailHeld is an insert that did nothing while no row of its own
+// exists: a different live account holds the address.
+var errClerkEmailHeld = errors.New("the insert met the email index")
 
 func (s *Store) UpsertUserFromWebhook(ctx context.Context, id, name, email, avatarURL string) error {
 	_, err := s.UpsertUserFromClerk(ctx, id, name, email, avatarURL)
@@ -536,7 +542,7 @@ func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error
 		return err
 	}
 	if n == 0 {
-		if _, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1); err != nil {
+		if _, err := s.gateWorkspacesTx(ctx, tx, userID); err != nil {
 			return err
 		}
 		embed, err := s.newWorkspaceEmbedding(ctx)

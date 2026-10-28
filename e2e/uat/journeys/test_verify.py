@@ -3,7 +3,6 @@
 import importlib.util
 import os
 import unittest
-from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock, call, patch
 
@@ -86,60 +85,69 @@ class DatabaseVerificationTests(unittest.TestCase):
                 )
 
 
-class ObjectVersionTests(unittest.TestCase):
-    def test_all_pages_include_only_exact_object_versions_and_delete_markers(self):
-        key = "files/uat-run/source"
-        modified = datetime(2026, 9, 14, tzinfo=timezone.utc)
+class StorageEndpointTests(unittest.TestCase):
+    def test_only_b2_and_r2_https_endpoints_reach_the_client(self):
+        for endpoint, accepted in (
+            ("https://s3.eu-central-003.backblazeb2.com", True),
+            ("https://0123456789abcdef.eu.r2.cloudflarestorage.com", True),
+            ("https://0123456789abcdef.r2.cloudflarestorage.com", True),
+            ("http://0123456789abcdef.eu.r2.cloudflarestorage.com", False),
+            ("https://evil-r2.cloudflarestorage.com", False),
+            ("https://s3.amazonaws.com", False),
+        ):
+            with (
+                self.subTest(endpoint=endpoint),
+                patch.dict(
+                    os.environ,
+                    {
+                        "B2_ENDPOINT": endpoint,
+                        "B2_BUCKET": "capy-notebook-uat",
+                        "B2_REGION": "auto",
+                        "B2_KEY_ID": "fixture",
+                        "B2_APP_KEY": "fixture",
+                    },
+                ),
+                patch.object(verify.boto3, "client") as client,
+            ):
+                if accepted:
+                    self.assertEqual(verify.storage()[1], "capy-notebook-uat")
+                    client.assert_called_once()
+                else:
+                    with self.assertRaisesRegex(ValueError, "Invalid bucket endpoint"):
+                        verify.storage()
+                    client.assert_not_called()
 
-        def item(object_key, version, latest=False, size=None):
-            record = {
-                "Key": object_key,
-                "VersionId": version,
-                "IsLatest": latest,
-                "LastModified": modified,
-            }
-            if size is not None:
-                record["Size"] = size
-            return record
 
-        client = Mock(spec=["get_paginator"])
-        paginator = client.get_paginator.return_value
-        paginator.paginate.return_value = [
-            {
-                "Versions": [
-                    item(key, "current", True, 42),
-                    item(key + ".neighbor", "unrelated", True, 100),
-                ],
-                "DeleteMarkers": [item(key + "/child", "unrelated-marker", True)],
-            },
-            {
-                "Versions": [item(key, "older", size=40)],
-                "DeleteMarkers": [item(key, "deleted")],
-            },
-            {},
-        ]
+class ObjectExistsTests(unittest.TestCase):
+    def exists(self, head):
+        client = Mock(spec=["head_object"])
+        client.head_object.side_effect = head
         with patch.object(verify, "storage", return_value=(client, "capy-uat")):
-            result = verify.main({"operation": "versions", "key": key})
-
-        self.assertEqual(
-            result,
-            [
-                {
-                    "id": version,
-                    "latest": latest,
-                    "deleteMarker": marker,
-                    "size": size,
-                    "modified": modified.isoformat(),
-                }
-                for version, latest, marker, size in (
-                    ("current", True, False, 42),
-                    ("older", False, False, 40),
-                    ("deleted", False, True, 0),
-                )
-            ],
+            result = verify.main({"operation": "exists", "key": "sources/blob_1"})
+        client.head_object.assert_called_once_with(
+            Bucket="capy-uat", Key="sources/blob_1"
         )
-        client.get_paginator.assert_called_once_with("list_object_versions")
-        paginator.paginate.assert_called_once_with(Bucket="capy-uat", Prefix=key)
+        return result
+
+    @staticmethod
+    def error(status):
+        return verify.ClientError(
+            {
+                "Error": {"Code": str(status)},
+                "ResponseMetadata": {"HTTPStatusCode": status},
+            },
+            "HeadObject",
+        )
+
+    def test_a_head_answers_live_with_the_size_and_a_404_answers_gone(self):
+        self.assertEqual(
+            self.exists(lambda **_: {"ContentLength": 42}), {"live": True, "size": 42}
+        )
+        self.assertEqual(self.exists(self.error(404)), {"live": False})
+
+    def test_any_other_refusal_fails_the_check(self):
+        with self.assertRaises(verify.ClientError):
+            self.exists(self.error(403))
 
 
 if __name__ == "__main__":

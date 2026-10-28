@@ -124,10 +124,16 @@ The retrieval index is application schema, not pipeline-owned:
 | `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
 | `rag_content_summaries` | The ~50-word `descriptor`, its running `change_share` and when it was written (`updated_at`, kept when a refresh reuses it); shared by files with identical content, carried forward across a note's reindexes |
 
-All of these FK-cascade from `workspaces` / `files` / `chapters`. Deleting a
-logical file removes its alias; a trigger removes canonical content only after
-its last alias disappears. Deleting a workspace deletes its index; there is no
-`rag_teardown` job.
+Only `rag_contents` and the aliases name a workspace (or, on `rag_contents`,
+the owner of a file with no workspace). Passages, vectors and summaries belong
+to their content row alone, and vector rows carry their passage's
+`content_id` (migration 0126), so search reaches both by the scope's content
+ids and a Move re-tags one content row (see
+[authorization](authorization-permissions-lifecycles.md)). Content rows
+FK-cascade from `workspaces` and `users`, and their passages and vectors from
+them. Deleting a logical file removes its alias; a trigger removes canonical
+content only after its last alias disappears. Deleting a workspace deletes
+its index; there is no `rag_teardown` job.
 
 `files.content_hash` is the sha256 of parsed chunk text plus page and bounding-box
 geometry when the parser supplies it. Two uploads of the same document in one
@@ -193,7 +199,10 @@ The lexical half of hybrid search (`text`, `indexed_text`, `search`,
 `regions`, pages) does not depend on the model and stays in `rag_chunks`.
 `store.vector_table` in Python and `vectorTable` in Go map
 `(provider_slug, model_slug, version)` to a table name from a fixed allowlist, because
-that name is interpolated into SQL.
+that name is interpolated into SQL. Both legs of a workspace search filter
+on `content_id = ANY(ARRAY(SELECT content_id FROM scoped_files))`, so each
+reads its content index; the knowledge library, whose mirror still tags
+passages and vectors with its workspace, filters on that instead.
 
 Adding a model means a new vector table (in `0001_init.sql` until the first
 kept database exists, then a new numbered migration), a new allowlist
@@ -4472,9 +4481,14 @@ into an `unavailable_target` result saying the file was moved out of this
 workspace, so this chat can no longer read or edit it, and to tell the user
 (`tools.py` `MOVED_OUT`); it never names the destination, and the plain not
 found never confirms a file exists elsewhere. A Move is not recorded. The
-tools' scope check reads the workspace outline once per turn, so a later
-turn, whose outline no longer lists the file, refuses it before Go with the
-usual missing-item message. A request holds
+document tools' scope check (`_check_source_target`) passes a source file id
+the turn's workspace outline does not list on to Go instead of refusing it,
+so a later turn, whose outline no longer lists the moved file, gets
+`moved_out` too (Q469); with chosen sources only a chosen id goes on, so
+the chat never widens that choice. Go's plain not found for a source file
+carries the outline check's earlier hint ("No workspace item has the id …:
+it may have been deleted or moved to trash. list_sources shows the current
+ids.", `NO_WORKSPACE_ITEM`) after the error (Q482). A request holds
 a pooled connection and its operation's advisory lock only for its receipt
 checks (the stored receipt, then the room's: `known`) and for its
 admission, never through the compute or an Office engine call (Q432): the
@@ -5511,12 +5525,21 @@ guard, the tool cap, the credit guard's terminal call): GLM writes its own
 at its cap (`planning_cap`, `stall` or `tool_cap`) with no answer, prose sent
 before the marker kept as narration and the materials already made in place.
 
-Chat citation chips retain parser page references. Native PDFs open, scroll
-the cited box to the middle once its page has painted, and flash the box for
-1.6 s after the scroll settles (no scroll event for 120 ms); under reduced
-motion it holds instead of pulsing. Each click flashes again: `openCitation`
-hands the viewer a fresh regions array and skips the router's scroll reset,
-which would abort Chrome's smooth scroll. Office citations send the quoted passage to the current
+Chat citation chips retain parser page references. Native PDFs open and
+scroll the cited box to the middle on the app's own 300 ms ease-out animation
+(`scrollToCenter.ts`, Q490), each frame aiming at the box's current place, so
+a page above it that paints mid-scroll still ends centred; a trip over two
+viewports first jumps to one viewport short, so the frames do not render every
+lazy page in between. The box flashes for 1.6 s when the scroll lands, once its
+page has painted; under reduced motion the scroll jumps straight there and the
+box holds instead of pulsing. A wheel, a pointer on the viewer (a touch, its
+scrollbar) or a scroll key stops the scroll, and that citation then does not
+flash. Each click scrolls and flashes again: `openCitation` hands the viewer a
+fresh regions array and skips the router's scroll reset. A repeated citation,
+whose URL would not change, does not navigate at all (Q493): the workspace
+route's loader would refetch the open file row and re-render the page as the
+scroll starts. The moved-file follow (`FollowOpenFile`) sits beside the
+workspace page, so a fetch of that row re-renders it alone (Q492). Office citations send the quoted passage to the current
 saved native viewer, match a complete unique text anchor and highlight current
 paragraph/line/cell geometry. Ambiguous, short or unsupported matches open without
 a highlight. Editing hides the overlay. See
@@ -5688,19 +5711,40 @@ an embedded item whose copy reads differently), starts dirty.
 
 ## Clone and teardown
 
-`CloneWorkspace` copies the retrieval index **in the same transaction** as the
-content: canonical content, aliases, chunks, vectors, and summaries,
-remapping file, content and chapter ids. Duplicate files remain
-aliases of one content item inside the clone. There is no best-effort follow-up
-call and no `ragCloned` flag — either the clone includes the index or the
-transaction rolls back.
+A clone's files get the source's ready index in the background (Epo
+2026-10-27/28; `store/index_copy.go`, migration 0127). Per copied content, the
+clone's transaction (`queueIndexCopiesTx`) aliases content the destination
+already holds ready under that `content_hash` (always, for a copy into the
+source's own workspace; `rag_contents` is unique per workspace and hash);
+otherwise, when both workspaces embed in one space, it inserts the copy's
+content row as `processing`, claimed by one `index_copy` job naming every
+copied file that holds it, and marks those files not indexed (a ready one
+`processing`, a partial one keeps `failed`). The copy opens at once and is
+editable; a publication of its edits waits for the copy
+(`requestSourceRefresh` answers a conflict). The gateway's copy worker
+(`RunIndexCopy`, `cmd/api/index_copy_worker.go`) claims due jobs, reaps
+expired leases and copies 250 passages with their vectors per transaction
+(fresh chunk ids derived from the copy's content id, so a repeated batch is a
+no-op), publishing `stage: "copy_index"` progress on `ingest:{workspace}`;
+its last transaction copies the summary, aliases the files still in the
+workspace (none left drops the copy), marks the content ready and the files
+indexed. The claim stays the copy's while its job waits in the queue or for
+a retry: a same-content upload into the target waits for it
+(`steal_stale_content` counts a pending `index_copy` job as alive) and
+attaches to the copy; a copy that still finds its claim gone serves its files
+from the target's ready content with the same hash, or ingests them. A failed
+attempt retries after 30 s per attempt, three in all;
+after that, or once the source content is gone, the copy is dropped and its
+files are ingested as a cross-space clone is (refused, the file fails and its
+owner can retry). A copy whose workspace is deleted just ends. Account
+deletion cancels the job with the account's other pipeline work; a trashed
+copy's job runs on. Notes' indexes still copy inside the clone's transaction
+(`cloneRetrievalIndex`), as does content a Move copies because another file
+shares it. The browser lists a single-file clone in the transfer panel
+("Copying index") while it copies.
 
-A single file or note clone (`CloneFile`, `CloneMaterial`) gives the copy the
-source's ready index the same way (`cloneRetrievalIndex`), per destination:
-content the destination workspace already holds under that `content_hash`
-(always, for a copy into the source's own workspace; `rag_contents` is unique
-per workspace and hash) is aliased; otherwise the content, chunks, vectors and
-summary are copied when both workspaces have the same embedding pin. When the
+A single file or note clone (`CloneFile`, `CloneMaterial`) follows the same
+rules per destination. When the
 pins differ (or the destination's row for that hash is still processing) a
 file is queued for ingest like an upload: the cloner pays and is refused
 without credits (`llm_credits_exhausted`) or past the concurrent ingest-job

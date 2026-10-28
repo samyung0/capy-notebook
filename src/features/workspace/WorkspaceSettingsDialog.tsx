@@ -4,6 +4,8 @@ import { useRef, useState } from 'react';
 import { qk } from '@/api/client';
 import {
   useDeleteWorkspace,
+  useLeaveWorkspace,
+  useMe,
   useSetWorkspaceStudyEnabled,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
@@ -48,10 +50,13 @@ export function WorkspaceSettingsDialog({
 }) {
   // Everyone with access has Study; the workspace's own tabs are for owner
   // and editor members;
-  // Others and Danger show when they hold a row.
+  // Others shows when it holds a row. Danger holds Delete for the owner and
+  // Leave for any other member (Epo 2026-10-28), never both.
   const manage = canManageWorkspaceSettings(workspace);
   const others = workspace.canClone;
-  const danger = workspace.capabilities.canManageMembers;
+  const owner = workspace.capabilities.canManageMembers;
+  const member = !!workspace.role && workspace.role !== 'owner';
+  const danger = owner || member;
   const allowed = (value: SettingsTab) =>
     value === 'study' ||
     (value === 'others' ? others : value === 'danger' ? danger : manage);
@@ -67,11 +72,24 @@ export function WorkspaceSettingsDialog({
   const setTab = (value: SettingsTab) =>
     onTabChange ? onTabChange(value) : setOwnTab(value);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { mutateAsync: update } = useUpdateWorkspace();
   const [cloneOpen, setCloneOpen] = useState(false);
   const { mutate: deleteWorkspace, isPending: deleting } = useDeleteWorkspace();
+  const { data: me } = useMe();
+  const { mutate: leaveWorkspace, isPending: leaving } = useLeaveWorkspace(
+    workspace.id
+  );
+  // Leave before dropping the cache, or the open page refetches it; Back then
+  // fetches the workspace and shows its error. Closing matters on
+  // /workspaces, where the page stays.
+  const leavePage = () =>
+    navigate({ to: '/workspaces' }).then(() => {
+      onClose();
+      qc.removeQueries({ queryKey: qk.workspace(workspace.id) });
+    });
   const { mutateAsync: updateSharing, isPending: sharing } =
     useUpdateWorkspaceSharing();
   const {
@@ -225,20 +243,36 @@ export function WorkspaceSettingsDialog({
         )}
         {tab === 'danger' && (
           <DangerZone>
-            <SettingRow
-              hint={m.workspace_delete_hint()}
-              title={m.workspace_delete_action()}
-            >
-              <Button
-                disabled={deleting}
-                iconLeft="trash"
-                onClick={() => setConfirmDelete(true)}
-                rounded="large"
-                variant="danger"
+            {owner ? (
+              <SettingRow
+                hint={m.workspace_delete_hint()}
+                title={m.workspace_delete_action()}
               >
-                {m.action_delete()}
-              </Button>
-            </SettingRow>
+                <Button
+                  disabled={deleting}
+                  iconLeft="trash"
+                  onClick={() => setConfirmDelete(true)}
+                  rounded="large"
+                  variant="danger"
+                >
+                  {m.action_delete()}
+                </Button>
+              </SettingRow>
+            ) : (
+              <SettingRow
+                hint={m.workspace_leave_hint()}
+                title={m.workspace_leave_action()}
+              >
+                <Button
+                  disabled={leaving || !me}
+                  onClick={() => setConfirmLeave(true)}
+                  rounded="large"
+                  variant="danger"
+                >
+                  {m.action_leave()}
+                </Button>
+              </SettingRow>
+            )}
           </DangerZone>
         )}
       </div>
@@ -247,19 +281,20 @@ export function WorkspaceSettingsDialog({
         confirmLabel={m.trash_delete_forever()}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => {
-          deleteWorkspace(workspace.id, {
-            // Leave before dropping the cache, or the open page refetches
-            // it; Back then fetches the deleted workspace and shows its error.
-            // Closing matters on /workspaces, where the page stays.
-            onSuccess: () =>
-              navigate({ to: '/workspaces' }).then(() => {
-                onClose();
-                qc.removeQueries({ queryKey: qk.workspace(workspace.id) });
-              }),
-          });
+          deleteWorkspace(workspace.id, { onSuccess: leavePage });
         }}
         open={confirmDelete}
         title={m.workspace_delete_confirm_title({ name: workspace.name })}
+      />
+      <ConfirmDialog
+        body={m.workspace_leave_confirm_body()}
+        confirmLabel={m.action_leave()}
+        onClose={() => setConfirmLeave(false)}
+        onConfirm={() => {
+          if (me) leaveWorkspace(me.id, { onSuccess: leavePage });
+        }}
+        open={confirmLeave}
+        title={m.workspace_leave_confirm_title({ name: workspace.name })}
       />
     </SimpleDialog>
   );
