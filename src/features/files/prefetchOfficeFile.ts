@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { fileQuery, workspaceQuery } from '@/api/hooks';
+import { fileQuery, meQuery, workspaceQuery } from '@/api/hooks';
+import { AccountState } from '@/api/types';
 import {
   parseDocumentModeSearch,
   readDocumentMode,
@@ -45,16 +46,18 @@ export function prefetchOfficeFile(
     if (!format) return;
     void VIEW_CHUNKS[format]();
     // The view mounts once the capability that picks its mode is known. A
-    // standalone file (no workspace) opens in View until its editing lands
-    // (R4, Epo 2026-10-27).
+    // standalone file (no workspace) is its owner's, who edits it unless
+    // their account is frozen (Epo 2026-10-27).
     if (file.workspaceId)
       void qc.prefetchQuery(workspaceQuery(file.workspaceId));
     const mode = requested ?? readDocumentMode({ id: fileId, kind: 'file' });
     const canEdit =
       mode === 'edit' &&
-      !!file.workspaceId &&
-      (await qc.ensureQueryData(workspaceQuery(file.workspaceId))).capabilities
-        .canEditContent;
+      (file.workspaceId
+        ? (await qc.ensureQueryData(workspaceQuery(file.workspaceId)))
+            .capabilities.canEditContent
+        : (await qc.ensureQueryData(meQuery())).account?.state !==
+          AccountState.over_quota_frozen);
     if (signal.aborted) return;
     prefetchSourceOpen(fileId, canEdit ? 'edit' : 'view');
   })().catch(() => {

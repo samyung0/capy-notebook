@@ -35,6 +35,5 @@ export interface SourceCheckpoint {
   seedBytes?: number;
   stateSeedSHA256?: string;
   update: string;
-  /** @minLength 1 */
   workspaceId: string;
 }

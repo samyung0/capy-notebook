@@ -72,7 +72,6 @@ const ICONS: Record<string, ActivityIconKind> = {
   edit_office_document: 'edit',
   inspect_document: 'read',
   inspect_office_document: 'read',
-  list_files: 'list',
   list_sources: 'list',
   list_trashed_files: 'list',
   list_workspaces: 'list',
@@ -164,13 +163,6 @@ const COPY: Record<string, Copy> = {
   edit_office_document: edit,
   inspect_document: inspect,
   inspect_office_document: inspect,
-  // Account chat's tools read as the workspace ones do.
-  list_files: {
-    done: () => m.chat_step_list_sources_done(),
-    fail: () => m.chat_step_list_sources_fail(),
-    group: (count) => m.chat_step_list_sources_group({ count }),
-    run: () => m.chat_step_list_sources_run(),
-  },
   list_sources: {
     done: () => m.chat_step_list_sources_done(),
     fail: () => m.chat_step_list_sources_fail(),
@@ -183,6 +175,7 @@ const COPY: Record<string, Copy> = {
     group: (count) => m.chat_step_list_trash_group({ count }),
     run: () => m.chat_step_list_trash_run(),
   },
+  // Account chat's workspace list reads as list_sources does.
   list_workspaces: {
     done: () => m.chat_step_list_sources_done(),
     fail: () => m.chat_step_list_sources_fail(),

@@ -58,10 +58,11 @@ func TestASourceSaveIsCheckedAgainstTheWorkspaceItsRoomOpened(t *testing.T) {
 	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, late); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("a removed editor's save = %v, want not found", err)
 	}
-	// A save naming no workspace is refused.
-	none := sourceTestSave(reopened, owner, "none")
+	// A save naming no workspace is checked as a room that opened a file with
+	// none: only the payer's (TestAStandaloneRoomsDrainSavesAsItsPayer).
+	none := sourceTestSave(reopened, editor, "none")
 	none.WorkspaceID = ""
-	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, none); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("a save naming no workspace = %v, want forbidden", err)
+	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, none); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("an editor's save naming no workspace = %v, want not found", err)
 	}
 }

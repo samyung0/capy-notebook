@@ -75,6 +75,7 @@ pub struct SourceSession {
     pub state: Option<Vec<u8>>,
     #[serde(default, rename = "stateSeedSHA256")]
     pub state_seed_sha256: Option<String>,
+    /// "" for a file with no workspace, its payer's alone (Epo 2026-10-27).
     pub workspace_id: String,
 }
 
@@ -85,7 +86,8 @@ pub struct SourceSession {
 pub struct CheckpointBody {
     pub actor_ids: Vec<String>,
     /// The workspace the saving room opened the file in, where Go checks every
-    /// actor (Q459): a Move's drain stores the edits made before the Move.
+    /// actor (Q459): a Move's drain stores the edits made before the Move. ""
+    /// when it opened a file with no workspace: Go admits only its payer.
     pub workspace_id: String,
     pub epoch: u64,
     pub expected_checkpoint: u64,

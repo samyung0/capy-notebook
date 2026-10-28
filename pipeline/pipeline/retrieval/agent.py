@@ -181,8 +181,6 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
         detail = f"page {page}" if page is not None else ""
     elif name == "list_sources":
         detail = "listing sources"
-    elif name == "list_files":
-        detail = "listing files"
     elif name == "list_workspaces":
         detail = "listing workspaces"
     elif name == "create_workspace":

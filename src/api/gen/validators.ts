@@ -8372,7 +8372,6 @@ export const checkpointSourceDocumentBodySeedBytesMin = 0;
 
 
 
-
 export const CheckpointSourceDocumentBody = zod.object({
   "actorIds": zod.array(zod.string()).min(1).nullable(),
   "baseRevision": zod.int().min(1),
@@ -8419,7 +8418,7 @@ export const CheckpointSourceDocumentBody = zod.object({
   "seedBytes": zod.int().min(checkpointSourceDocumentBodySeedBytesMin).optional(),
   "stateSeedSHA256": zod.string().optional(),
   "update": zod.string(),
-  "workspaceId": zod.string().min(1)
+  "workspaceId": zod.string()
 })
 
 export const checkpointSourceDocumentResponseOperationUndoPayloadActorUserIdMax = 64;

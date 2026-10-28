@@ -46,6 +46,8 @@ struct Fake {
     published: Arc<Mutex<Vec<Value>>>,
     /// Files whose checkpoint always moved: the refused CAS POSTs per file.
     moved: Arc<Mutex<HashMap<String, usize>>>,
+    /// The workspace each checkpoint named (Q459), in order.
+    saved_in: Arc<Mutex<Vec<Option<String>>>>,
 }
 
 fn refuse(status: u16, code: &str) -> Response {
@@ -178,6 +180,10 @@ async fn route_post(
 
 /// The delta-save checkpoint (Go SaveSourceCheckpoint with `update`).
 async fn checkpoint(fake: Fake, id: String, body: Value) -> Response {
+    fake.saved_in
+        .lock()
+        .unwrap()
+        .push(body["workspaceId"].as_str().map(str::to_owned));
     if let Some(refused) = fake.moved.lock().unwrap().get_mut(&id) {
         *refused += 1;
         return refuse(409, "checkpoint_moved");
@@ -316,6 +322,7 @@ async fn harness() -> Harness {
         failures: Arc::default(),
         published: Arc::default(),
         moved: Arc::default(),
+        saved_in: Arc::default(),
     };
     let app = Router::new()
         .route(
@@ -1600,6 +1607,42 @@ async fn a_no_workspace_files_image_change_resolves() {
         .await
         .unwrap_err();
     assert_eq!(refused.status(), Some(409));
+}
+
+/// Standalone files (Epo 2026-10-27): the agent inspects and edits a file
+/// with no workspace through its owner's session, which Go's bootstrap
+/// answers with no workspace (""), and the save names none, so Go checks the
+/// actor as the file's payer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_file_with_no_workspace_is_inspected_and_edited() {
+    let h = harness().await;
+    let room = h.file("text", "notes.md", b"abc").await;
+    no_workspace(&h, &room).await;
+    let inspect = || async {
+        h.sources
+            .inspect(
+                &room.file_id,
+                &h.user,
+                None,
+                |_: String| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) },
+            )
+            .await
+            .unwrap()
+            .text
+    };
+    assert_eq!(inspect().await.as_deref(), Some("abc"));
+    let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
+    let input = EditInput {
+        actor_user_id: h.user.clone(),
+        commands: vec![json!({ "type": "replace_text", "expectedText": "abc", "text": "abd" })],
+        file_id: room.file_id.clone(),
+        operation: json!({ "id": unique("op"), "requestHash": "h1" }),
+        undo: None,
+    };
+    h.sources.apply_edit(input, live).await.unwrap();
+    assert_eq!(*h.fake.saved_in.lock().unwrap(), [Some(String::new())]);
+    assert_eq!(inspect().await.as_deref(), Some("abd"));
 }
 
 /// Q435: a cache write that fails is logged, and the read still answers

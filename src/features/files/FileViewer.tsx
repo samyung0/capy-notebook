@@ -9,7 +9,7 @@ import {
   useState,
 } from 'react';
 import { toast } from 'sonner';
-import { fileLinksQuery, useFileLinks, useWorkspace } from '@/api/hooks';
+import { fileLinksQuery, useFileLinks, useMe, useWorkspace } from '@/api/hooks';
 import type {
   Region,
   SourceFile,
@@ -189,6 +189,7 @@ function FileViewerContent({
     { errorBoundary: false }
   );
   const frozen = useAccountFrozen();
+  const { isPending: mePending } = useMe({ errorBoundary: false });
   // An Office file opens from its source session (sourceOpen.ts), never from
   // the published file's link.
   const office = file?.hasBytes ? officeFormatOf(file) : null;
@@ -239,14 +240,16 @@ function FileViewerContent({
   }
 
   if (!file.hasBytes) return <FileEmpty />;
-  // A standalone file (no workspace) opens only for its owner. Its Office
-  // and text editing waits for the sources work, so it opens read-only (R4,
-  // Epo 2026-10-27); canEdit reaches no other kind.
+  // A standalone file (no workspace) opens only for its owner, who edits it
+  // unless their account is frozen (Epo 2026-10-27): its account state stands
+  // in for a workspace's capabilities, so neither allows Edit before it loads.
   const standalone = !file.workspaceId;
-  const canEdit = !standalone && !!workspace?.capabilities.canEditContent;
+  const canEdit = standalone
+    ? !(mePending || frozen)
+    : !!workspace?.capabilities.canEditContent;
   if (office) {
     // The capability picks View or Edit once, when the view mounts.
-    if (workspacePending && !standalone) return <FileLoading />;
+    if (standalone ? mePending : workspacePending) return <FileLoading />;
     return (
       <OfficeFileView
         canEdit={canEdit}
