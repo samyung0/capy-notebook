@@ -1063,6 +1063,7 @@
   "files_rename": "重命名文件",
   "files_loading_preview": "正在加载预览",
   "files_file_name": "文件名",
+  "files_show_others_cursors": "显示他人的光标",
   "material_attribution_title": "改编自",
   "material_attribution_book": "{title}，作者：{authors}",
   "material_attribution_license": "本材料以 {license} 授权。",

@@ -15,16 +15,26 @@ import {
   createPlatePlugin,
   PlateLeaf,
   type PlateLeafProps,
+  useEditorRef,
 } from 'platejs/react';
-import { type CSSProperties, useEffect, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import type { Awareness } from 'y-protocols/awareness';
+import { Icon } from '@/components/ui/Icon';
 import {
   type PresenceConnection,
   type PresenceStore,
   presenceClients,
 } from '@/features/collaboration/presence';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
-import { decodePosition, readNotePresence } from './notePresence';
+import {
+  type BlockRun,
+  decodePosition,
+  type NotePointer,
+  readNotePresence,
+} from './notePresence';
+import { editorAwareness } from './uploadPresence';
 
 const REMOTE_CURSOR_KEY = 'capy_remote_cursor';
 
@@ -254,13 +264,242 @@ export function remoteCursorRangesForEntry(
   return ranges;
 }
 
+/** A peer's pointer and block selection, from a state the note's field list
+ * admits, for a client the room's presence lists. */
+type PeerMarks = {
+  b?: BlockRun[];
+  color: number;
+  name: string;
+  p?: NotePointer | null;
+};
+
+/** What the overlay draws, in its own coordinates. */
+type Mark =
+  | {
+      color: number;
+      flip: boolean;
+      key: string;
+      kind: 'pointer';
+      left: number;
+      name: string;
+      top: number;
+    }
+  | {
+      color: number;
+      height: number;
+      key: string;
+      kind: 'run';
+      left: number;
+      name: string;
+      top: number;
+      width: number;
+    };
+
+const NO_MARKS: Mark[] = [];
+/** The pointer's tip sits 3.2 units into Cursor02Icon's 24-unit box. */
+const POINTER_SIZE = 18;
+const POINTER_TIP = (3.2 / 24) * POINTER_SIZE;
+/** A pointer this close to the overlay's right edge puts its name on its
+ * left, as a caret's flag flips (cursors design SPEC.md). */
+const FLIP_WITHIN = 96;
+/** The outline stands this far outside its blocks. */
+const RUN_OUTSET = 4;
+
+export function readPeerMarks(
+  awareness: Awareness,
+  clients: ReadonlyMap<number, PresenceConnection>
+): PeerMarks[] {
+  const peers: PeerMarks[] = [];
+  for (const [client, state] of awareness.getStates()) {
+    const connection = clients.get(client);
+    if (client === awareness.clientID || !connection) continue;
+    const presence = readNotePresence(state);
+    if (presence?.p || presence?.b)
+      peers.push({
+        b: presence.b,
+        color: connection.person % PEER_COLORS,
+        name: connection.name ?? m.editor_collaborator(),
+        p: presence.p,
+      });
+  }
+  return peers;
+}
+
 /**
- * Co-editors' pointers and block selections (Epo 2026-10-28) arrive in each
- * peer's presence (`p`, `b`, checked by notePresence.ts), but how they look
- * waits on Epo's pick from the mocks
- * (capy-harness/2026-10-28-followups/presence-mocks): until then nothing is
- * drawn, and nothing here subscribes to the room's presence.
+ * Where each peer's pointer and block runs go, relative to `overlay`: a
+ * pointer at its x and y (0–1000) of its block's box, a run from its first
+ * block's top to its last block's bottom. A block `root` does not render
+ * draws nothing.
  */
-export function RemotePresenceMarks() {
-  return null;
+export function placeMarks(
+  overlay: Element,
+  root: ParentNode,
+  peers: PeerMarks[]
+): Mark[] {
+  if (peers.length === 0) return NO_MARKS;
+  const origin = overlay.getBoundingClientRect();
+  const box = (id: string) =>
+    root
+      .querySelector(`[data-block-id="${CSS.escape(id)}"]`)
+      ?.getBoundingClientRect();
+  const marks: Mark[] = [];
+  peers.forEach(({ b, color, name, p }, peer) => {
+    const block = p && box(p[0]);
+    if (p && block) {
+      const left = block.left - origin.left + (p[1] / 1000) * block.width;
+      marks.push({
+        color,
+        flip: left > origin.width - FLIP_WITHIN,
+        key: `${peer}:p`,
+        kind: 'pointer',
+        left,
+        name,
+        top: block.top - origin.top + (p[2] / 1000) * block.height,
+      });
+    }
+    b?.forEach(([firstId, lastId], run) => {
+      const first = box(firstId);
+      const last = box(lastId);
+      if (!(first && last)) return;
+      const left = Math.min(first.left, last.left) - origin.left;
+      const top = Math.min(first.top, last.top) - origin.top;
+      marks.push({
+        color,
+        height: Math.max(first.bottom, last.bottom) - origin.top - top,
+        key: `${peer}:b${run}`,
+        kind: 'run',
+        left,
+        name,
+        top,
+        width: Math.max(first.right, last.right) - origin.left - left,
+      });
+    });
+  });
+  return marks;
+}
+
+const sameMarks = (left: Mark[], right: Mark[]) =>
+  left.length === right.length &&
+  JSON.stringify(left) === JSON.stringify(right);
+
+/**
+ * Co-editors' pointers and block selections (Epo 2026-10-28, presence mocks
+ * P1 and B3): a pointer is Cursor02Icon in the peer's colour with its name in
+ * a pill beside it; a block selection is an outline around each run, its
+ * corners the theme's (half its button radius), with the name at its top
+ * right. An overlay in the editor's container, so it scrolls with the note;
+ * it lays out once per frame when a peer's presence, the room's presence or
+ * the note's size changes, and never re-renders the editor. Nothing with
+ * the show-others switch off.
+ */
+export function RemotePresenceMarks({ presence }: { presence: PresenceStore }) {
+  const editor = useEditorRef();
+  const shown = useNoteEditorPrefs((state) => state.showOthers);
+  const overlay = useRef<HTMLDivElement>(null);
+  const [marks, setMarks] = useState<Mark[]>(NO_MARKS);
+  useEffect(() => {
+    const awareness = editorAwareness(editor);
+    const root = editor.api.toDOMNode(editor);
+    const box = overlay.current;
+    if (!(shown && awareness && root && box)) {
+      setMarks(NO_MARKS);
+      return;
+    }
+    let clients = presenceClients(presence.getState().connections);
+    let frame = 0;
+    const layout = () => {
+      frame = 0;
+      const next = placeMarks(box, root, readPeerMarks(awareness, clients));
+      setMarks((previous) => (sameMarks(previous, next) ? previous : next));
+    };
+    const schedule = () => {
+      frame ||= requestAnimationFrame(layout);
+    };
+    // This tab's own pointer moves change nothing here.
+    const changed = ({
+      added,
+      removed,
+      updated,
+    }: Record<'added' | 'removed' | 'updated', number[]>) => {
+      if (
+        [...added, ...updated, ...removed].some(
+          (id) => id !== awareness.clientID
+        )
+      )
+        schedule();
+    };
+    schedule();
+    awareness.on('change', changed);
+    const unsubscribe = presence.subscribe(({ connections }) => {
+      clients = presenceClients(connections);
+      schedule();
+    });
+    const resized = new ResizeObserver(schedule);
+    resized.observe(root);
+    return () => {
+      cancelAnimationFrame(frame);
+      awareness.off('change', changed);
+      unsubscribe();
+      resized.disconnect();
+    };
+  }, [editor, presence, shown]);
+
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+      ref={overlay}
+    >
+      {marks.map((mark) =>
+        mark.kind === 'pointer' ? (
+          <span
+            className="absolute text-(--peer)"
+            data-remote-pointer={mark.name}
+            key={mark.key}
+            style={
+              {
+                '--peer': `var(--peer-${mark.color})`,
+                left: mark.left - POINTER_TIP,
+                top: mark.top - POINTER_TIP,
+              } as CSSProperties
+            }
+          >
+            <Icon
+              className="drop-shadow-[0_1px_1px_rgb(0_0_0/0.3)]"
+              fill="currentColor"
+              name="pointer"
+              size={POINTER_SIZE}
+            />
+            <span
+              className={cn(
+                'absolute top-3.5 whitespace-nowrap rounded-[6px] bg-(--peer) px-[7px] font-bold text-(--peer-fg) text-[12.5px] leading-[21px]',
+                mark.flip ? 'right-3.5' : 'left-3.5'
+              )}
+            >
+              {mark.name}
+            </span>
+          </span>
+        ) : (
+          <span
+            className="absolute rounded-[calc(var(--radius-button)/2)] border-(--peer) border-2"
+            data-remote-run={mark.name}
+            key={mark.key}
+            style={
+              {
+                '--peer': `var(--peer-${mark.color})`,
+                height: mark.height + RUN_OUTSET * 2,
+                left: mark.left - RUN_OUTSET,
+                top: mark.top - RUN_OUTSET,
+                width: mark.width + RUN_OUTSET * 2,
+              } as CSSProperties
+            }
+          >
+            <span className="absolute -top-[11px] right-1.5 whitespace-nowrap rounded-[6px] bg-(--peer) px-[7px] font-bold text-(--peer-fg) text-[12.5px] leading-[21px]">
+              {mark.name}
+            </span>
+          </span>
+        )
+      )}
+    </div>
+  );
 }

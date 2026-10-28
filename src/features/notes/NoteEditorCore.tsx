@@ -509,7 +509,7 @@ const NoteEditorContent = memo(function NoteEditorContent({
       {/* Share the editor's containing block so scrolling moves both natively. */}
       {!readOnly && <FloatingToolbar />}
       <BlockSelectionPresence />
-      <RemotePresenceMarks />
+      <RemotePresenceMarks presence={presence} />
     </PlateContainer>
   );
 });

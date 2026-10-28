@@ -15,7 +15,12 @@ import {
 } from '@/features/collaboration/presence';
 import { InlineEquationPlugin } from './equationPlugins';
 import { sendCaret } from './notePresence';
-import { readRemotePeers, remoteCursorRangesForEntry } from './RemoteCursors';
+import {
+  placeMarks,
+  readPeerMarks,
+  readRemotePeers,
+  remoteCursorRangesForEntry,
+} from './RemoteCursors';
 
 const equation = {
   children: [{ text: '' }],
@@ -211,4 +216,87 @@ it('labels and colours a peer caret from the presence, never from its awareness'
   });
   relay();
   expect(readRemotePeers(editor, clients)).toEqual([]);
+});
+
+/** A block's box (left, top, width, height) in page coordinates. */
+const box = (left: number, top: number, width: number, height: number) => ({
+  getBoundingClientRect: () => ({
+    bottom: top + height,
+    height,
+    left,
+    right: left + width,
+    top,
+    width,
+  }),
+});
+
+/** Epo 2026-10-28 (mocks P1, B3): a peer's pointer lands at its 0–1000 share
+ * of its block's box, a run spans its first block's top to its last's bottom,
+ * both in the overlay's coordinates, coloured and named from the presence;
+ * a block that is not rendered draws nothing, and a state outside the field
+ * list draws nothing either. */
+it("places peers' pointers and block runs in their blocks", () => {
+  Object.assign(globalThis, { CSS: { escape: (id: string) => id } });
+  const blocks = new Map([
+    ['a', box(110, 70, 400, 30)],
+    ['b', box(110, 100, 400, 60)],
+  ]);
+  const root = {
+    querySelector: (selector: string) =>
+      blocks.get(selector.slice('[data-block-id="'.length, -2)) ?? null,
+  };
+  const overlay = box(100, 50, 450, 900);
+  const awareness = new Awareness(new Y.Doc());
+  const peer = new Awareness(new Y.Doc());
+  const relay = (state: Record<string, unknown>) => {
+    peer.setLocalState(state);
+    applyAwarenessUpdate(
+      awareness,
+      encodeAwarenessUpdate(peer, [peer.clientID]),
+      'server'
+    );
+  };
+  const clients = presenceClients([
+    { avatar: null, clients: [peer.clientID], name: 'Ann', person: 9 },
+  ]);
+  const marks = () =>
+    placeMarks(
+      overlay as never,
+      root as never,
+      readPeerMarks(awareness, clients)
+    );
+
+  relay({
+    b: [
+      ['a', 'b'],
+      ['gone', 'b'],
+    ],
+    p: ['b', 500, 250],
+  });
+  expect(marks()).toEqual([
+    expect.objectContaining({
+      color: 1,
+      flip: false,
+      kind: 'pointer',
+      left: 210,
+      name: 'Ann',
+      top: 65,
+    }),
+    expect.objectContaining({
+      height: 90,
+      kind: 'run',
+      left: 10,
+      name: 'Ann',
+      top: 20,
+      width: 400,
+    }),
+  ]);
+  // Near the overlay's right edge the name goes on the pointer's left.
+  relay({ p: ['b', 1000, 0] });
+  expect(marks()).toEqual([expect.objectContaining({ flip: true })]);
+  relay({ p: ['gone', 500, 500] });
+  expect(marks()).toEqual([]);
+  relay({ data: { color: 'red' }, p: ['b', 500, 500] });
+  expect(marks()).toEqual([]);
+  expect(readPeerMarks(awareness, new Map())).toEqual([]);
 });

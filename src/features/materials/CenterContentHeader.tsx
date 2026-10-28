@@ -42,6 +42,7 @@ import {
   type NoteEditorStatus,
   noteEditorStatusLabel,
 } from '@/features/notes/editorMode';
+import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import { useStudyActions, useStudyStates } from '@/features/study/studyItems';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import {
@@ -459,6 +460,20 @@ export function Header({
   );
   const { menuItems: studyMenu } = useStudyActions(workspaceId);
   const office = !!file && !!officeFormatOf(file);
+  // One device setting with the note editor's (Epo 2026-10-28, mock O1).
+  const showOthers = useNoteEditorPrefs((state) => state.showOthers);
+  const setShowOthers = useNoteEditorPrefs((state) => state.setShowOthers);
+  const officeItems: MenuItem[] = office
+    ? [
+        {
+          icon: 'pointer',
+          label: m.files_show_others_cursors(),
+          onClick: () => setShowOthers(!showOthers),
+          separated: true,
+          switched: showOthers,
+        },
+      ]
+    : [];
   // A standalone material's owner shares it from here as from its card.
   const shareable =
     material && 'isOwner' in material && material.isOwner && !readOnly
@@ -531,7 +546,10 @@ export function Header({
         <ReadToggle item={item} workspaceId={workspaceId} />
       )}
       <ContentActions
-        beforeDeleteItems={oneColumn?.settingsItems}
+        beforeDeleteItems={[
+          ...(oneColumn?.settingsItems ?? []),
+          ...officeItems,
+        ]}
         canClone={canClone}
         canMoveTo={canMoveTo}
         chapters={chapters}

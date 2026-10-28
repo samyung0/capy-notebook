@@ -1063,6 +1063,7 @@
   "files_rename": "Rename file",
   "files_loading_preview": "Loading preview",
   "files_file_name": "File name",
+  "files_show_others_cursors": "Show others' cursors",
   "material_attribution_title": "Adapted from",
   "material_attribution_book": "{title} by {authors}",
   "material_attribution_license": "This material is licensed {license}.",

@@ -187,10 +187,11 @@ test('the header lists co-editors as an avatar group', async ({ page }) => {
   await expect(group).toHaveCount(0);
 });
 
-// A co-editor's caret comes from its compact presence, labelled from the
-// room's presence, and this device's editor settings switch hides it while
-// the avatar group stays (Epo 2026-10-28).
-test("a co-editor's caret shows until the show-others switch hides it", async ({
+// Co-editors' carets, pointers and block selections come from their compact
+// presence, named from the room's presence (mocks P1 and B3), and this
+// device's editor settings switch hides them while the avatar group stays
+// (Epo 2026-10-28).
+test("co-editors' carets, pointers and block selections show until the show-others switch hides them", async ({
   page,
 }) => {
   await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
@@ -200,7 +201,7 @@ test("a co-editor's caret shows until the show-others switch hides it", async ({
   await expect(editor).toBeVisible({ timeout: 30_000 });
   await page.evaluate(async () => {
     const path = '/src/mocks/collaboration.ts';
-    const { mockPeerCaret } = (await import(
+    const { mockPeerCaret, mockPresencePeer } = (await import(
       path
     )) as typeof import('../../src/mocks/collaboration');
     mockPeerCaret(
@@ -208,9 +209,21 @@ test("a co-editor's caret shows until the show-others switch hides it", async ({
       { avatar: null, name: 'Ann', person: 3 },
       2
     );
+    mockPresencePeer(
+      'mat_e2e_editor',
+      { avatar: null, name: 'Ben', person: 5 },
+      {
+        b: [['mat_e2e_editor:first', 'mat_e2e_editor:second']],
+        p: ['mat_e2e_editor:third', 400, 500],
+      }
+    );
   });
-  const caret = editor.locator('[data-remote-caret="Ann"]');
-  await expect(caret).toHaveCount(1);
+  const marks = [
+    editor.locator('[data-remote-caret="Ann"]'),
+    page.locator('[data-remote-pointer="Ben"]'),
+    page.locator('[data-remote-run="Ben"]'),
+  ];
+  for (const mark of marks) await expect(mark).toHaveCount(1);
   await showNoteToolbar(page);
   await page.getByRole('button', { name: m.editor_prefs_settings() }).click();
   const shown = page.getByRole('switch', {
@@ -219,6 +232,6 @@ test("a co-editor's caret shows until the show-others switch hides it", async ({
   await expect(shown).toBeChecked();
   await shown.click();
   await page.getByRole('button', { name: m.action_apply() }).click();
-  await expect(caret).toHaveCount(0);
+  for (const mark of marks) await expect(mark).toHaveCount(0);
   await expect(page.getByTestId('room-presence')).toBeVisible();
 });

@@ -352,18 +352,34 @@ stable `data-block-id` and x and y as 0–1000 of its box, at most every 50 ms,
 and `p: null` when it leaves the editor; an id the room would refuse goes as
 null. `BlockSelectionPresence` folds `BlockSelectionPlugin`'s selected ids
 into runs of adjacent siblings in document order (`blockRuns`), at most 16,
-none past that. How a co-editor's pointer and block selection look waits on
-Epo's pick from the mocks (capy-harness
-2026-10-28-followups/presence-mocks); until then `RemotePresenceMarks`
-draws nothing.
+none past that.
+
+`RemotePresenceMarks` draws co-editors' pointers and block selections as Epo
+picked from the mocks (2026-10-28, capy-harness
+2026-10-28-followups/presence-mocks, P1 and B3): a pointer is hugeicons
+Cursor02Icon (`pointer` in `Icon.tsx`) filled with the peer's colour, its
+tip at x and y of the block's box, with the name in a pill below and right
+of it (left of it within 96 px of the editor's right edge); a block
+selection is a 2 px outline 4 px outside each run, from its first block's
+top to its last block's bottom, its corners half the theme's
+`--radius-button` (capy 4 px, fisheye 6 px, notion 3 px), with the name in a
+flag at its top right. Both use `--peer-<n>` and `--peer-fg` (white on the
+light shades, #11111b on the dark), and a block the note does not render
+draws nothing. They sit in an overlay in the editor's container, so they
+scroll with the note; it lays out (`placeMarks`) at most once a frame when a
+peer's presence (not this tab's), the room's presence or the note's size
+changes, and never re-renders the editor.
 
 The editor settings dialog's switch "Show others' pointers and presence"
 (`showOthers` in `noteEditorPrefs.ts`, a device setting, on by default; Epo
 2026-10-28) decides only what this device draws: off, notes draw no
-co-editor carets or selections (`useRemotePeers` returns none) and Office
+co-editor carets, selections, pointers or block selections and Office
 files no cursors (`createOfficeCursors` sends the frame no peers); the
 header's avatar group stays, and every tab keeps sending its own presence.
-Its Office switch in the file header's ⋮ menu is a mock first.
+Office files have the same setting as "Show others' cursors" in the file
+header's ⋮ menu (mock O1): a `Menu` item with `switched`, a switch at the
+row's end, `menuitemcheckbox` with `aria-checked`, that keeps the menu
+open.
 
 ### Office cursors
 
