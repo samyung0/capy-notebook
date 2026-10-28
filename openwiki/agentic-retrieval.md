@@ -5526,7 +5526,11 @@ page has painted; under reduced motion the scroll jumps straight there and the
 box holds instead of pulsing. A wheel, a pointer on the viewer (a touch, its
 scrollbar) or a scroll key stops the scroll, and that citation then does not
 flash. Each click scrolls and flashes again: `openCitation` hands the viewer a
-fresh regions array and skips the router's scroll reset. Office citations send the quoted passage to the current
+fresh regions array and skips the router's scroll reset. A repeated citation,
+whose URL would not change, does not navigate at all (Q493): the workspace
+route's loader would refetch the open file row and re-render the page as the
+scroll starts. The moved-file follow (`FollowOpenFile`) sits beside the
+workspace page, so a fetch of that row re-renders it alone (Q492). Office citations send the quoted passage to the current
 saved native viewer, match a complete unique text anchor and highlight current
 paragraph/line/cell geometry. Ambiguous, short or unsupported matches open without
 a highlight. Editing hides the overlay. See

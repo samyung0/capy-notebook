@@ -518,21 +518,25 @@ function WorkspaceOpen() {
       fileId: citation.fileId,
       regions,
     });
+    const search = {
+      ...searchFromOpenItem({
+        id: citation.fileId,
+        kind: 'file',
+        page: regionPage ?? citation.pageStart ?? undefined,
+      }),
+      mode: 'view' as const,
+    };
+    // A repeated citation leaves the URL as it is, so it doesn't navigate:
+    // the route's loader would refetch the open file and re-render the
+    // workspace as the scroll starts (Q493).
+    if (
+      router.buildLocation({ search, to: '.' }).href ===
+      router.latestLocation.href
+    )
+      return;
     // The router's scroll reset would abort the viewer's smooth scroll to
     // the cited box.
-    navigate({
-      replace: true,
-      resetScroll: false,
-      search: {
-        ...searchFromOpenItem({
-          id: citation.fileId,
-          kind: 'file',
-          page: regionPage ?? citation.pageStart ?? undefined,
-        }),
-        mode: 'view',
-      },
-      to: '.',
-    });
+    navigate({ replace: true, resetScroll: false, search, to: '.' });
   }
 
   const [generating, setGenerating] = useState<GenerateMode | null>(null);
