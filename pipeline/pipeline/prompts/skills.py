@@ -185,6 +185,16 @@ def account_editing() -> str:
         editing(),
         ("How to write to the workspace:", "How to write to the learner's files:"),
         (
+            "\n\nWhat to build:",
+            (
+                "\n- Before creating new files, also ask where they go unless the "
+                "learner already said: a workspace they can edit, a new workspace "
+                "(offer a name from the topic; create_workspace makes it) or No "
+                "workspace. Ask it in the same message as scope and level."
+                "\n\nWhat to build:"
+            ),
+        ),
+        (
             (
                 "- Quizzes and flashcards are standalone materials filed in the "
                 "chapter they practise, by its chapter_id from list_sources."
