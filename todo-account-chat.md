@@ -81,7 +81,7 @@ Chat is bound to one workspace at every layer:
 ## Build contract (2026-10-27, branch `wip/mac-account-chat`)
 
 Worktree `.claude/worktrees/account-chat`, stacked on `ae9edff0e` (the
-standalone branch the train merged). Migration **0126**. Local DB tests use
+standalone branch the train merged). Migration **0127** (0126 is the index content scope). Local DB tests use
 untracked copies of the train's migrations as 0122-0124 (excluded in
 `.git/info/exclude`; never commit them). Rebased onto main after the train;
 overlaps with the train in `tools.py`, `pending.py`, `agent.py`, `store.py`
@@ -93,7 +93,7 @@ listing stay workspace-only.
 
 ### Go
 
-- **0126:** `conversations.workspace_id` nullable (NULL = account chat, owned
+- **0127:** `conversations.workspace_id` nullable (NULL = account chat, owned
   by `user_id`), an index for the account list;
   `rag_search_events.workspace_id` nullable.
 - **Routes:** `POST /api/chat/stream` (account turn, same body as the
