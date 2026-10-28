@@ -22,10 +22,7 @@ injected, so Vite treats them as source. The app depends on `@blocksuite/affine`
 import it.
 
 - One `yjs`: the root `overrides` pins `yjs` to the app's patched 13.6.31.
-- `zod`: the packages keep zod 3.25.76 and the app keeps zod 4; each importer
-  resolves its own. `vite.config.ts` excludes `zod` from dependency
-  pre-bundling, which keys a dependency by bare name and would hand both the
-  same copy in development.
+- One `zod`: the packages use the app's zod 4 range (local change 5).
 - `.css.ts` (vanilla-extract): `@vanilla-extract/vite-plugin` in `vite.config.ts`.
 - Decorators: Lit's standard decorators with `accessor` fields. `vite.config.ts`
   sets `esbuild.target: 'es2022'` so esbuild lowers them (Rollup cannot parse
@@ -74,6 +71,35 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
    share one instance: `katex` 0.18.10 → 0.19.0 (`blocks/latex`,
    `inlines/latex`), `y-protocols` 1.0.6 → 1.0.7 (`framework/store`,
    `framework/sync`), `idb-keyval` 6.2.2 → 6.3.0 (`framework/sync`).
+5. zod 3.25.76 → the app's range (`^4.6.6`) in all 21 packages that use it,
+   for GHSA-mrhx-c7xc-m3w5 and one zod instance. Upstream is written against
+   zod 3; on a sync, set the range again, then port what zod 4 rejects. Find
+   it by type-checking the vendored sources (a throwaway tsconfig extending
+   this directory's one, with `include` set to `framework/*/src/**/*.ts` and
+   `affine/**/src/**/*.ts`, `noEmit`, `composite: false`) and comparing the
+   error list with the same run on zod 3. This port changed:
+   - `z.function().args(a, b).returns(c)` → `z.function({ input: [a, b],
+     output: c })` (`framework/store` `model/block/zod.ts`, `blocks/database`
+     and `blocks/paragraph` `view.ts`, `widgets/linked-doc` `view.ts`). These
+     schemas only check that an option is a function: every `parse` of them
+     discards its result, so the wrapped functions never run.
+   - One-argument `z.record(v)` → `z.record(z.string(), v)`
+     (`framework/store` `transformer/type.ts`, `model/block/zod.ts`,
+     `shared` `link-preview-storage.ts`).
+   - Types only: zod 3's `AnyZodObject`, `ZodEffects`, `KeySchema` and
+     `ZodTypeDef` replaced with `ZodObject`/`ZodType` (`framework/std`
+     `inline/extensions/type.ts`, `inline/services/attribute.ts`), and casts
+     where zod 4's `ZodTypeAny`/`ZodSchema` are `unknown` rather than `any`
+     (`rich-text.ts`, `shared` `zod-schema.ts` and `edit-props-store.ts`,
+     `framework/std` `dynamic-schema.ts`).
+   - `vite.config.ts` no longer excludes `zod` from pre-bundling.
+
+   Left as written, since zod 4 keeps them with the same results:
+   `z.nativeEnum`, `.merge`, `.default` (zod 4 returns the default without
+   parsing it; every object default here is already complete), `.catch`,
+   `z.promise`, `z.string().url()`. No vendored schema passes
+   `message`/`errorMap`, uses `.superRefine`, `.passthrough`, `.strict` or
+   `.deepPartial`.
 
 Outside this directory, for BlockSuite:
 

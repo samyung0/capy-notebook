@@ -179,7 +179,9 @@ export class RichText extends WithDisposable(ShadowlessElement) {
     );
     const inlineEditor = this._inlineEditor$.value;
     if (this.attributesSchema) {
-      inlineEditor.setAttributeSchema(this.attributesSchema);
+      inlineEditor.setAttributeSchema(
+        this.attributesSchema as z.ZodType<AffineTextAttributes>
+      );
     }
     if (this.attributeRenderer) {
       inlineEditor.setAttributeRenderer(this.attributeRenderer);

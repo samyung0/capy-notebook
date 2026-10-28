@@ -14,7 +14,9 @@ import { makeDeepOptional, NodePropsSchema } from '../utils/index.js';
 import { EditorSettingProvider } from './editor-setting-service.js';
 
 const LastPropsSchema = NodePropsSchema;
-const OptionalPropsSchema = makeDeepOptional(NodePropsSchema);
+const OptionalPropsSchema = makeDeepOptional(NodePropsSchema) as z.ZodOptional<
+  z.ZodObject
+>;
 export type LastProps = z.infer<typeof NodePropsSchema>;
 export type LastPropsKey = keyof LastProps;
 
@@ -194,7 +196,9 @@ export class EditPropsStore extends LifeCycleWatcher {
       { [key]: overrideProps },
       customizer
     );
-    this.innerProps$.value = OptionalPropsSchema.parse(nextProps);
+    this.innerProps$.value = OptionalPropsSchema.parse(
+      nextProps
+    ) as DeepPartial<LastProps>;
   }
 
   setStorage<T extends StoragePropsKey>(key: T, value: StorageProps[T]) {

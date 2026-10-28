@@ -195,7 +195,7 @@ export type NodeProps = z.infer<typeof NodePropsSchema>;
 
 export function makeDeepOptional(schema: ZodTypeAny): ZodTypeAny {
   if (schema instanceof ZodDefault) {
-    return makeDeepOptional(schema._def.innerType);
+    return makeDeepOptional(schema._def.innerType as ZodTypeAny);
   }
   if (schema instanceof ZodObject) {
     const shape = schema.shape;
@@ -209,8 +209,8 @@ export function makeDeepOptional(schema: ZodTypeAny): ZodTypeAny {
     return schema.or(z.undefined());
   } else if (schema instanceof ZodIntersection) {
     return z.intersection(
-      makeDeepOptional(schema._def.left),
-      makeDeepOptional(schema._def.right)
+      makeDeepOptional(schema._def.left as ZodTypeAny),
+      makeDeepOptional(schema._def.right as ZodTypeAny)
     );
   } else {
     return schema.optional();

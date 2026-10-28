@@ -14,10 +14,10 @@ import { databaseSlashMenuConfig } from './configs/slash-menu.js';
 import { effects } from './effects';
 
 const optionsSchema = z.object({
-  configure: z
-    .function()
-    .args(z.instanceof(DatabaseBlockModel), z.custom<MenuOptions>())
-    .returns(z.custom<MenuOptions>()),
+  configure: z.function({
+    input: [z.instanceof(DatabaseBlockModel), z.custom<MenuOptions>()],
+    output: z.custom<MenuOptions>(),
+  }),
 });
 
 export type DatabaseViewExtensionOptions = z.infer<typeof optionsSchema>;

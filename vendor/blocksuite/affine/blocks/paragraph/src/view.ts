@@ -28,7 +28,10 @@ const placeholders = {
 
 const optionsSchema = z.object({
   getPlaceholder: z.optional(
-    z.function().args(z.instanceof(ParagraphBlockModel)).returns(z.string())
+    z.function({
+      input: [z.instanceof(ParagraphBlockModel)],
+      output: z.string(),
+    })
   ),
 });
 

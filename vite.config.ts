@@ -144,11 +144,6 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
       // @radix-ui/react-select, which only the fork installs, and finding that
       // on the first DOCX edit re-optimizes and reloads every open page.
       exclude: [
-        // BlockSuite (vendor/blocksuite) imports zod 3 and the app zod 4. The
-        // optimizer keys a dependency by its bare name, so a pre-bundled
-        // `zod` would hand both the same copy; unbundled, each importer
-        // resolves its own.
-        'zod',
         '@betteroffice/docx',
         '@betteroffice/docx/viewer',
         '@betteroffice/pptx',

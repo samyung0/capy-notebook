@@ -5,6 +5,7 @@ import { LinkPreviewResponseSchema } from './response';
 
 const _StorageSchema = z.object({
   data: z.record(
+    z.string(),
     LinkPreviewDataSchema.partial().extend(
       LinkPreviewResponseSchema.pick({
         siteName: true,

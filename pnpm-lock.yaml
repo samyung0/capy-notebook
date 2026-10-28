@@ -1048,8 +1048,8 @@ importers:
         specifier: 3.19.0
         version: 3.19.0
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/blocks/data-view:
     dependencies:
@@ -1165,8 +1165,8 @@ importers:
         specifier: 13.6.31
         version: 13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/blocks/divider:
     dependencies:
@@ -1612,8 +1612,8 @@ importers:
         specifier: 4.18.1
         version: 4.18.1
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/blocks/paragraph:
     dependencies:
@@ -1660,8 +1660,8 @@ importers:
         specifier: 3.3.0
         version: 3.3.0
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/blocks/root:
     dependencies:
@@ -1924,8 +1924,8 @@ importers:
         specifier: 3.3.0
         version: 3.3.0
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/components:
     dependencies:
@@ -2041,8 +2041,8 @@ importers:
         specifier: 13.6.31
         version: 13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/ext-loader:
     dependencies:
@@ -2053,8 +2053,8 @@ importers:
         specifier: workspace:*
         version: link:../../framework/store
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/foundation:
     dependencies:
@@ -2080,8 +2080,8 @@ importers:
         specifier: workspace:*
         version: link:../../framework/store
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/fragments/adapter-panel:
     dependencies:
@@ -2767,8 +2767,8 @@ importers:
         specifier: 4.18.1
         version: 4.18.1
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/inlines/footnote:
     dependencies:
@@ -2809,8 +2809,8 @@ importers:
         specifier: 3.3.0
         version: 3.3.0
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/inlines/latex:
     dependencies:
@@ -2860,8 +2860,8 @@ importers:
         specifier: 13.6.31
         version: 13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/inlines/link:
     dependencies:
@@ -2905,8 +2905,8 @@ importers:
         specifier: 3.3.0
         version: 3.3.0
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/inlines/mention:
     dependencies:
@@ -2929,8 +2929,8 @@ importers:
         specifier: 3.3.0
         version: 3.3.0
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/inlines/preset:
     dependencies:
@@ -2989,8 +2989,8 @@ importers:
         specifier: 3.3.0
         version: 3.3.0
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/inlines/reference:
     dependencies:
@@ -3034,8 +3034,8 @@ importers:
         specifier: 7.8.2
         version: 7.8.2
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/model:
     dependencies:
@@ -3064,8 +3064,8 @@ importers:
         specifier: 13.6.31
         version: 13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/rich-text:
     dependencies:
@@ -3100,8 +3100,8 @@ importers:
         specifier: 13.6.31
         version: 13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/shared:
     dependencies:
@@ -3229,8 +3229,8 @@ importers:
         specifier: 13.6.31
         version: 13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/widgets/drag-handle:
     dependencies:
@@ -3670,8 +3670,8 @@ importers:
         specifier: 1.11.0
         version: 1.11.0
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/affine/widgets/note-slicer:
     dependencies:
@@ -3967,8 +3967,8 @@ importers:
         specifier: 13.6.31
         version: 13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/framework/store:
     dependencies:
@@ -4009,8 +4009,8 @@ importers:
         specifier: 13.6.31
         version: 13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.7
 
   vendor/blocksuite/framework/sync:
     dependencies:
@@ -17716,12 +17716,6 @@ packages:
         integrity: sha512-Hh0dbQM+FVlUaYUbpYkZNUvdKxTNcSNvTGzkQKYShltnX+LRHEp2eYvC2Zm43eU8Np+CBZuoNR2i+seCYzzAyg==,
       }
 
-  zod@3.25.76:
-    resolution:
-      {
-        integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==,
-      }
-
   zod@4.6.7:
     resolution:
       {
@@ -27027,8 +27021,6 @@ snapshots:
   youtube-video-element@1.9.0:
     dependencies:
       media-played-ranges-mixin: 0.1.0
-
-  zod@3.25.76: {}
 
   zod@4.6.7: {}
 

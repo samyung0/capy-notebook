@@ -17,7 +17,7 @@ export const BlockSnapshotSchema: z.ZodType<BlockSnapshot> = z.object({
   id: z.string(),
   flavour: z.string(),
   version: z.number().optional(),
-  props: z.record(z.unknown()),
+  props: z.record(z.string(), z.unknown()),
   children: z.lazy(() => BlockSnapshotSchema.array()),
 });
 

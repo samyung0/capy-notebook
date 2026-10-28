@@ -21,6 +21,9 @@ export function dynamicSchema<Key extends string, Value extends ZodTypeAny>(
           {} as Record<Key, unknown>
         );
     },
-    z.record(z.custom<Key>(keyValidator), valueType)
+    z.record(
+      z.custom<Key>(keyValidator as (data: unknown) => boolean),
+      valueType
+    )
   );
 }

@@ -16,34 +16,32 @@ const optionsSchema = z.object({
   ignoreBlockTypes: z.array(z.string()).optional(),
   ignoreSelector: z.string().optional(),
   getMenus: z.optional(
-    z
-      .function()
-      .args(
+    z.function({
+      input: [
         z.string(),
-        z.function().returns(z.void()),
+        z.function({ output: z.void() }),
         z.custom<EditorHost>(),
         z.custom<AffineInlineEditor>(),
-        z.instanceof(AbortSignal)
-      )
-      .returns(
-        z.union([
-          z.promise(z.array(z.custom<LinkedMenuGroup>())),
-          z.array(z.custom<LinkedMenuGroup>()),
-        ])
-      )
+        z.instanceof(AbortSignal),
+      ],
+      output: z.union([
+        z.promise(z.array(z.custom<LinkedMenuGroup>())),
+        z.array(z.custom<LinkedMenuGroup>()),
+      ]),
+    })
   ),
 
   autoFocusedItemKey: z.optional(
-    z
-      .function()
-      .args(
+    z.function({
+      input: [
         z.array(z.custom<LinkedMenuGroup>()),
         z.string(),
         z.string().nullable(),
         z.custom<EditorHost>(),
-        z.custom<AffineInlineEditor>()
-      )
-      .returns(z.string().nullable())
+        z.custom<AffineInlineEditor>(),
+      ],
+      output: z.string().nullable(),
+    })
   ),
 
   mobile: z
@@ -52,7 +50,7 @@ const optionsSchema = z.object({
         z.union([z.string(), z.instanceof(HTMLElement), z.custom<Window>()])
       ),
       scrollTopOffset: z.optional(
-        z.union([z.number(), z.function().returns(z.number())])
+        z.union([z.number(), z.function({ output: z.number() })])
       ),
     })
     .optional(),
