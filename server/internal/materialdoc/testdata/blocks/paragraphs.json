@@ -1,0 +1,242 @@
+{
+  "name": "paragraphs",
+  "value": [
+    {
+      "id": "h",
+      "type": "h1",
+      "children": [
+        {
+          "text": "Title"
+        }
+      ]
+    },
+    {
+      "id": "h2",
+      "type": "h2",
+      "align": "start",
+      "children": [
+        {
+          "text": "Left by start"
+        }
+      ]
+    },
+    {
+      "id": "p1",
+      "type": "p",
+      "align": "center",
+      "children": [
+        {
+          "text": "Centred"
+        }
+      ]
+    },
+    {
+      "id": "p2",
+      "type": "p",
+      "align": "end",
+      "textIndent": 2,
+      "children": [
+        {
+          "text": "Right by end, textIndent dropped (N5)"
+        }
+      ]
+    },
+    {
+      "id": "p3",
+      "type": "p",
+      "align": "justify",
+      "children": [
+        {
+          "text": "Justified"
+        }
+      ]
+    },
+    {
+      "id": "p4",
+      "type": "p",
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    }
+  ],
+  "canonical": [
+    {
+      "id": "h",
+      "type": "h1",
+      "children": [
+        {
+          "text": "Title"
+        }
+      ]
+    },
+    {
+      "id": "h2",
+      "type": "h2",
+      "align": "left",
+      "children": [
+        {
+          "text": "Left by start"
+        }
+      ]
+    },
+    {
+      "id": "p1",
+      "type": "p",
+      "align": "center",
+      "children": [
+        {
+          "text": "Centred"
+        }
+      ]
+    },
+    {
+      "id": "p2",
+      "type": "p",
+      "align": "right",
+      "children": [
+        {
+          "text": "Right by end, textIndent dropped (N5)"
+        }
+      ]
+    },
+    {
+      "id": "p3",
+      "type": "p",
+      "align": "justify",
+      "children": [
+        {
+          "text": "Justified"
+        }
+      ]
+    },
+    {
+      "id": "p4",
+      "type": "p",
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    }
+  ],
+  "blocks": {
+    "h": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [
+          {
+            "insert": "Title"
+          }
+        ],
+        "type": "h1"
+      }
+    },
+    "h2": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [
+          {
+            "insert": "Left by start"
+          }
+        ],
+        "textAlign": "left",
+        "type": "h2"
+      }
+    },
+    "note": {
+      "flavour": "affine:note",
+      "version": 1,
+      "children": ["h", "h2", "p1", "p2", "p3", "p4"],
+      "props": {
+        "background": {
+          "dark": "#252525",
+          "light": "#ffffff"
+        },
+        "displayMode": "doc",
+        "edgeless": {
+          "style": {
+            "borderRadius": 8,
+            "borderSize": 4,
+            "borderStyle": "none",
+            "shadowType": "--affine-note-shadow-box"
+          }
+        },
+        "hidden": false,
+        "index": "a0",
+        "lockedBySelf": false,
+        "xywh": "[0,0,498,92]"
+      }
+    },
+    "p1": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [
+          {
+            "insert": "Centred"
+          }
+        ],
+        "textAlign": "center",
+        "type": "text"
+      }
+    },
+    "p2": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [
+          {
+            "insert": "Right by end, textIndent dropped (N5)"
+          }
+        ],
+        "textAlign": "right",
+        "type": "text"
+      }
+    },
+    "p3": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [
+          {
+            "insert": "Justified"
+          }
+        ],
+        "textAlign": "justify",
+        "type": "text"
+      }
+    },
+    "p4": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [],
+        "type": "text"
+      }
+    },
+    "root": {
+      "flavour": "affine:page",
+      "version": 2,
+      "children": ["note"],
+      "props": {
+        "title": []
+      }
+    }
+  }
+}

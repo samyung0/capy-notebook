@@ -1,0 +1,161 @@
+{
+  "name": "n3-blockquote",
+  "value": [
+    {
+      "id": "q",
+      "type": "blockquote",
+      "children": [
+        {
+          "type": "p",
+          "children": [
+            {
+              "text": "First "
+            },
+            {
+              "text": "line",
+              "italic": true
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "children": [
+            {
+              "text": "Second line"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n",
+      "type": "blockquote",
+      "children": [
+        {
+          "id": "inner",
+          "type": "blockquote",
+          "children": [
+            {
+              "type": "p",
+              "children": [
+                {
+                  "text": "Nested quote"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "canonical": [
+    {
+      "id": "q",
+      "type": "blockquote",
+      "children": [
+        {
+          "id": "q.p",
+          "type": "p",
+          "children": [
+            {
+              "text": "First "
+            },
+            {
+              "text": "line",
+              "italic": true
+            },
+            {
+              "text": "\nSecond line"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n",
+      "type": "blockquote",
+      "children": [
+        {
+          "id": "n.p",
+          "type": "p",
+          "children": [
+            {
+              "text": "Nested quote"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "blocks": {
+    "n": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [
+          {
+            "insert": "Nested quote"
+          }
+        ],
+        "type": "quote"
+      }
+    },
+    "note": {
+      "flavour": "affine:note",
+      "version": 1,
+      "children": ["q", "n"],
+      "props": {
+        "background": {
+          "dark": "#252525",
+          "light": "#ffffff"
+        },
+        "displayMode": "doc",
+        "edgeless": {
+          "style": {
+            "borderRadius": 8,
+            "borderSize": 4,
+            "borderStyle": "none",
+            "shadowType": "--affine-note-shadow-box"
+          }
+        },
+        "hidden": false,
+        "index": "a0",
+        "lockedBySelf": false,
+        "xywh": "[0,0,498,92]"
+      }
+    },
+    "q": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [
+          {
+            "insert": "First "
+          },
+          {
+            "insert": "line",
+            "attributes": {
+              "italic": true
+            }
+          },
+          {
+            "insert": "\nSecond line"
+          }
+        ],
+        "type": "quote"
+      }
+    },
+    "root": {
+      "flavour": "affine:page",
+      "version": 2,
+      "children": ["note"],
+      "props": {
+        "title": []
+      }
+    }
+  }
+}

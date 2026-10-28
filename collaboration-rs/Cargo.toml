@@ -11,6 +11,7 @@ license = "UNLICENSED"
 publish = false
 
 [workspace.dependencies]
+blocks = { path = "crates/blocks" }
 items = { path = "crates/items" }
 notes = { path = "crates/notes" }
 sources = { path = "crates/sources" }

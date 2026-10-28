@@ -1,0 +1,176 @@
+{
+  "name": "ids",
+  "value": [
+    {
+      "type": "p",
+      "children": [
+        {
+          "text": "No id: note-b0"
+        }
+      ]
+    },
+    {
+      "id": "dup",
+      "type": "p",
+      "children": [
+        {
+          "text": "First keeps dup"
+        }
+      ]
+    },
+    {
+      "id": "dup",
+      "type": "p",
+      "children": [
+        {
+          "text": "Second becomes note-b2"
+        }
+      ]
+    },
+    {
+      "id": "",
+      "type": "p",
+      "children": [
+        {
+          "text": "Empty id: note-b3"
+        }
+      ]
+    },
+    {
+      "type": "placeholder",
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    }
+  ],
+  "canonical": [
+    {
+      "id": "note-b0",
+      "type": "p",
+      "children": [
+        {
+          "text": "No id: note-b0"
+        }
+      ]
+    },
+    {
+      "id": "dup",
+      "type": "p",
+      "children": [
+        {
+          "text": "First keeps dup"
+        }
+      ]
+    },
+    {
+      "id": "note-b2",
+      "type": "p",
+      "children": [
+        {
+          "text": "Second becomes note-b2"
+        }
+      ]
+    },
+    {
+      "id": "note-b3",
+      "type": "p",
+      "children": [
+        {
+          "text": "Empty id: note-b3"
+        }
+      ]
+    }
+  ],
+  "blocks": {
+    "dup": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [
+          {
+            "insert": "First keeps dup"
+          }
+        ],
+        "type": "text"
+      }
+    },
+    "note": {
+      "flavour": "affine:note",
+      "version": 1,
+      "children": ["note-b0", "dup", "note-b2", "note-b3"],
+      "props": {
+        "background": {
+          "dark": "#252525",
+          "light": "#ffffff"
+        },
+        "displayMode": "doc",
+        "edgeless": {
+          "style": {
+            "borderRadius": 8,
+            "borderSize": 4,
+            "borderStyle": "none",
+            "shadowType": "--affine-note-shadow-box"
+          }
+        },
+        "hidden": false,
+        "index": "a0",
+        "lockedBySelf": false,
+        "xywh": "[0,0,498,92]"
+      }
+    },
+    "note-b0": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [
+          {
+            "insert": "No id: note-b0"
+          }
+        ],
+        "type": "text"
+      }
+    },
+    "note-b2": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [
+          {
+            "insert": "Second becomes note-b2"
+          }
+        ],
+        "type": "text"
+      }
+    },
+    "note-b3": {
+      "flavour": "affine:paragraph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "collapsed": false,
+        "text": [
+          {
+            "insert": "Empty id: note-b3"
+          }
+        ],
+        "type": "text"
+      }
+    },
+    "root": {
+      "flavour": "affine:page",
+      "version": 2,
+      "children": ["note"],
+      "props": {
+        "title": []
+      }
+    }
+  }
+}

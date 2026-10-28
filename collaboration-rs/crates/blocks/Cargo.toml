@@ -1,0 +1,19 @@
+[package]
+name = "blocks"
+description = "A note's BlockSuite blocks layout (todo-blocksuite-layout.md): Plate value to blocks and back, the structural check and the repair on entry."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+thiserror.workspace = true
+ydoc.workspace = true
+yrs.workspace = true
+
+[dev-dependencies]
+flate2 = "1"
+
+[lints]
+workspace = true

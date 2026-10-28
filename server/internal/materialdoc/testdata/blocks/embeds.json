@@ -1,0 +1,333 @@
+{
+  "name": "embeds",
+  "value": [
+    {
+      "id": "toc",
+      "type": "toc",
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "ch",
+      "type": "chart",
+      "width": "60%",
+      "block": {
+        "type": "chart",
+        "kind": "line",
+        "title": "Salinity",
+        "labels": ["a", "b"],
+        "series": [
+          {
+            "name": "S",
+            "values": [1, 2.5]
+          }
+        ]
+      },
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "gr",
+      "type": "graph",
+      "block": {
+        "type": "graph",
+        "board": {
+          "bbox": [-5, 5, 5, -5],
+          "axis": true
+        },
+        "elements": [
+          {
+            "type": "point",
+            "id": "a",
+            "coords": [0, 0]
+          }
+        ],
+        "width": 320,
+        "height": 190
+      },
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "ht",
+      "type": "html_embed",
+      "html": "<p>hi</p>",
+      "caption": "Snippet",
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "me",
+      "type": "mermaid",
+      "source": "flowchart LR\n  A --> B",
+      "theme": "linearLight",
+      "width": "70%",
+      "children": [
+        {
+          "type": "mermaid_caption",
+          "children": [
+            {
+              "text": "Flow "
+            },
+            {
+              "text": "caption",
+              "italic": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mr",
+      "type": "material_ref",
+      "materialId": "mat_q",
+      "refKind": "quiz",
+      "pending": null,
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    }
+  ],
+  "canonical": [
+    {
+      "id": "toc",
+      "type": "toc",
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "ch",
+      "type": "chart",
+      "block": {
+        "type": "chart",
+        "kind": "line",
+        "title": "Salinity",
+        "labels": ["a", "b"],
+        "series": [
+          {
+            "name": "S",
+            "values": [1, 2.5]
+          }
+        ]
+      },
+      "width": "60%",
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "gr",
+      "type": "graph",
+      "block": {
+        "type": "graph",
+        "board": {
+          "bbox": [-5, 5, 5, -5],
+          "axis": true
+        },
+        "elements": [
+          {
+            "type": "point",
+            "id": "a",
+            "coords": [0, 0]
+          }
+        ],
+        "width": 320,
+        "height": 190
+      },
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "ht",
+      "type": "html_embed",
+      "html": "<p>hi</p>",
+      "caption": "Snippet",
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "me",
+      "type": "mermaid",
+      "source": "flowchart LR\n  A --> B",
+      "theme": "linearLight",
+      "width": "70%",
+      "children": [
+        {
+          "id": "me.p",
+          "type": "mermaid_caption",
+          "children": [
+            {
+              "text": "Flow "
+            },
+            {
+              "text": "caption",
+              "italic": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mr",
+      "type": "material_ref",
+      "materialId": "mat_q",
+      "refKind": "quiz",
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    }
+  ],
+  "blocks": {
+    "ch": {
+      "flavour": "capy:chart",
+      "version": 1,
+      "children": [],
+      "props": {
+        "block": {
+          "kind": "line",
+          "labels": ["a", "b"],
+          "series": [
+            {
+              "name": "S",
+              "values": [1, 2.5]
+            }
+          ],
+          "title": "Salinity",
+          "type": "chart"
+        },
+        "width": "60%"
+      }
+    },
+    "gr": {
+      "flavour": "capy:graph",
+      "version": 1,
+      "children": [],
+      "props": {
+        "block": {
+          "board": {
+            "axis": true,
+            "bbox": [-5, 5, 5, -5]
+          },
+          "elements": [
+            {
+              "coords": [0, 0],
+              "id": "a",
+              "type": "point"
+            }
+          ],
+          "height": 190,
+          "type": "graph",
+          "width": 320
+        }
+      }
+    },
+    "ht": {
+      "flavour": "capy:html-embed",
+      "version": 1,
+      "children": [],
+      "props": {
+        "caption": "Snippet",
+        "html": "<p>hi</p>"
+      }
+    },
+    "me": {
+      "flavour": "capy:mermaid",
+      "version": 1,
+      "children": [],
+      "props": {
+        "caption": [
+          {
+            "insert": "Flow "
+          },
+          {
+            "insert": "caption",
+            "attributes": {
+              "italic": true
+            }
+          }
+        ],
+        "source": [
+          {
+            "insert": "flowchart LR\n  A --> B"
+          }
+        ],
+        "theme": "linearLight",
+        "width": "70%"
+      }
+    },
+    "mr": {
+      "flavour": "capy:material-ref",
+      "version": 1,
+      "children": [],
+      "props": {
+        "materialId": "mat_q",
+        "refKind": "quiz"
+      }
+    },
+    "note": {
+      "flavour": "affine:note",
+      "version": 1,
+      "children": ["toc", "ch", "gr", "ht", "me", "mr"],
+      "props": {
+        "background": {
+          "dark": "#252525",
+          "light": "#ffffff"
+        },
+        "displayMode": "doc",
+        "edgeless": {
+          "style": {
+            "borderRadius": 8,
+            "borderSize": 4,
+            "borderStyle": "none",
+            "shadowType": "--affine-note-shadow-box"
+          }
+        },
+        "hidden": false,
+        "index": "a0",
+        "lockedBySelf": false,
+        "xywh": "[0,0,498,92]"
+      }
+    },
+    "root": {
+      "flavour": "affine:page",
+      "version": 2,
+      "children": ["note"],
+      "props": {
+        "title": []
+      }
+    },
+    "toc": {
+      "flavour": "capy:toc",
+      "version": 1,
+      "children": [],
+      "props": {}
+    }
+  }
+}
