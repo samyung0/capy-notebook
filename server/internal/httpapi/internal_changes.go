@@ -15,8 +15,8 @@ import (
 // 2026-10-28): the actor's access is checked per item, with no workspace
 // filter, so account chat attaches them as workspace chat's reads do. A
 // text file's changes are stored with each save; an Office file's come from
-// the collaboration service, which reads only a workspace's files (a file
-// with no workspace answers unread); a note's are computed from its stored
+// the collaboration service, one call per workspace, the files with no
+// workspace under "" (Epo 2026-10-28); a note's are computed from its stored
 // content, or with live from its open room when that room holds unsaved
 // edits (one call either way). A note with no workspace is
 // never indexed, so it has none.
@@ -92,7 +92,7 @@ func (a *api) internalChanges(w http.ResponseWriter, r *http.Request) {
 
 	files := []store.SourceChangeRow{}
 	unread := []string{}
-	office := map[string][]string{} // workspace -> Office files to read
+	office := map[string][]string{} // workspace ("" for none) -> Office files to read
 	rows, err := a.s.SourceChangeRows(ctx, fileIDs)
 	if err != nil {
 		a.fail(w, err)
@@ -105,8 +105,6 @@ func (a *api) internalChanges(w http.ResponseWriter, r *http.Request) {
 			if string(row.Changes) != "[]" {
 				files = append(files, row)
 			}
-		case row.OfficePending && row.WorkspaceID == "":
-			unread = append(unread, row.FileID)
 		case row.OfficePending:
 			office[row.WorkspaceID] = append(office[row.WorkspaceID], row.FileID)
 			byID[row.FileID] = row

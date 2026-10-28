@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -332,9 +333,9 @@ func TestAccountChatCreatesAWorkspace(t *testing.T) {
 
 // An item's unindexed changes are read by id with the actor's access checked
 // per item (Epo 2026-10-28): a member workspace's text file answers its stored
-// changes, a standalone Office file with unprocessed edits answers unread (the
-// collaboration service reads only a workspace's files), and a file the actor
-// only reached by link is not found.
+// changes, a standalone Office file's come from the collaboration service
+// asked under workspace "", and a file the actor only reached by link is not
+// found.
 func TestAccountChatReadsAnItemsChanges(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	ctx := context.Background()
@@ -369,9 +370,23 @@ func TestAccountChatReadsAnItemsChanges(t *testing.T) {
 		!strings.Contains(string(text["files"]), `"workspaceId":"ws_e2e_private"`) {
 		t.Fatalf("text file changes: %d %s", code, text["files"])
 	}
+	var asked map[string]any
+	authority := httptest.NewServer(withConverter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&asked)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"files": []any{map[string]any{
+			"fileId": officeID, "epoch": 0, "checkpoint": 2,
+			"changes": []any{map[string]any{"id": "c1", "kind": "image", "operation": "add", "label": "body, image"}},
+		}}, "failed": []any{}})
+	})))
+	t.Cleanup(authority.Close)
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
 	code, office := changes(officeID)
-	if code != http.StatusOK || !strings.Contains(string(office["unread"]), officeID) {
-		t.Fatalf("standalone Office changes: %d %s", code, office["unread"])
+	if code != http.StatusOK || !strings.Contains(string(office["files"]), `"label":"body, image"`) {
+		t.Fatalf("standalone Office changes: %d %s", code, office["files"])
+	}
+	if asked["workspaceId"] != "" {
+		t.Fatalf("standalone Office files are asked under workspace %q", asked["workspaceId"])
 	}
 	if code, _ := changes("f_e2e_edit"); code != http.StatusNotFound {
 		t.Fatalf("a link-reached file's changes: %d", code)

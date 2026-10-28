@@ -207,8 +207,9 @@ listing stay workspace-only.
   `POST /api/internal/changes` (actor's access checked per item, no workspace
   filter) and again after this turn edits it; `resolve_source_change` is
   offered in account chat through `/api/internal/changes/resolve`.
-  Gap: an Office file with no workspace answers unread (the collaboration
-  service reads only a workspace's files, Rust side).
+  An Office file with no workspace is asked under workspace "" (Epo
+  2026-10-28); its Rust side is on editor/office-changes-no-workspace and
+  lands in the same train, before or with account chat.
 - Review round 2026-10-28 (fixes in): rebased onto main 6f2967c7a and
   renamed to 0128_account_chat; a local DB that ran the old 0127_account_chat
   needs a fresh migration run. Accepted: a
