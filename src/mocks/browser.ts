@@ -1,3 +1,4 @@
+import { http, passthrough } from 'msw';
 import { setupWorker } from 'msw/browser';
 import { handlers } from './handlers';
 import {
@@ -7,7 +8,16 @@ import {
   permanentScenarios,
 } from './scenarios';
 
-export const worker = setupWorker(...handlers);
+/** The dev server's modules go straight through. Every request reaches the
+ * worker's handlers, each of which parses the request's cookies before
+ * matching: on a navigation that imports BlockSuite (about 3,400 modules)
+ * that was about 11 s of main thread. */
+const devModules = http.all(
+  /^https?:\/\/[^/]+\/(?:src|node_modules|vendor|@vite|@id|@fs|@react-refresh)\//,
+  () => passthrough()
+);
+
+export const worker = setupWorker(devModules, ...handlers);
 
 export async function startMockServer() {
   const saved = sessionStorage.getItem(LAST_SCENARIO);
