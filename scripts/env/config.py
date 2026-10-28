@@ -181,7 +181,19 @@ def render_build(values, environment, output, revision):
     print(f"rendered {environment} build configuration; values redacted")
 
 
+# Dev stacks only (todo-blocksuite-spike.md boundary 1): a deployment never
+# switches its note rooms' layout.
+DEV_ONLY = ("COLLABORATION_DOCUMENT_LAYOUT",)
+
+
+def refuse_dev_only(values):
+    for key in DEV_ONLY:
+        if values.get(key):
+            fail(f"{key} is for dev stacks only")
+
+
 def render(values, environment, output, revision):
+    refuse_dev_only(values)
     output = private_output(output, revision)
     # app.env: the env file the app host's Compose stack interpolates.
     app = target_values(values, "app")
@@ -283,6 +295,7 @@ def run_gh(args, value=None):
 
 def push(values, environment, repo):
     classify(values)
+    refuse_dev_only(values)
     common = ["--env", environment, "--repo", repo]
     # Deploys read only the secrets their render steps name, so they cannot see
     # a manifest variable stored as a secret; refuse before changing anything.

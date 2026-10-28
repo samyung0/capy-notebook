@@ -162,7 +162,10 @@ pub(crate) async fn bootstrap(
         let (content, keys) = items::quiz::states_from_value(value, 0);
         (content, Some(keys))
     } else {
-        (Model::of(&kind).state_from_value(value), None)
+        let state = Model::of(&kind)
+            .state_from_value(value)
+            .map_err(StoreError::Invalid)?;
+        (state, None)
     };
     let schema = i32::try_from(schema)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
@@ -1297,7 +1300,12 @@ mod tests {
     fn note(text: &str) -> yrs::Doc {
         let doc = ydoc::scratch_doc();
         let value = [serde_json::json!({"type": "p", "id": "b1", "children": [{"text": text}]})];
-        ydoc::replay(&doc, &Model::Note.state_from_value(&value), &[] as &[&[u8]]).unwrap();
+        ydoc::replay(
+            &doc,
+            &Model::Note.state_from_value(&value).unwrap(),
+            &[] as &[&[u8]],
+        )
+        .unwrap();
         doc
     }
 

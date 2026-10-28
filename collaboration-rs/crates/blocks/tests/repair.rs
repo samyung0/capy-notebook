@@ -138,3 +138,54 @@ fn a_missing_default_is_refused() {
         })
     );
 }
+
+/// A list nested `levels` deep: one bulleted item per indent.
+fn nested_list(levels: usize) -> Vec<serde_json::Value> {
+    (1..=levels)
+        .map(|indent| {
+            json!({
+                "id": format!("l{indent}"), "type": "p", "indent": indent,
+                "listStyleType": "disc", "children": [{"text": "item"}],
+            })
+        })
+        .collect()
+}
+
+/// D18: nesting is capped at 8 levels below the note, list indent included.
+#[test]
+fn nesting_past_eight_levels_is_refused() {
+    let doc = common::doc(&blocks::state_from_value(&nested_list(8), 1).unwrap(), 2);
+    blocks::check(&doc.transact()).unwrap();
+    let doc = common::doc(&blocks::state_from_value(&nested_list(9), 1).unwrap(), 2);
+    assert_eq!(
+        blocks::check(&doc.transact()),
+        Err(Violation::TooDeep("l9".into()))
+    );
+}
+
+/// D13: an image uploading holds an empty `sourceId`; the room allows it and
+/// its projection leaves it out.
+#[test]
+fn an_uploading_image_passes_and_is_not_projected() {
+    let value = json!([
+        {"id": "a", "type": "p", "children": [{"text": "A"}]},
+        {"id": "i", "type": "img", "assetId": "asset_1", "children": [{"text": ""}]},
+    ]);
+    let doc = common::doc(
+        &blocks::state_from_value(value.as_array().unwrap(), 1).unwrap(),
+        2,
+    );
+    {
+        let mut txn = doc.transact_mut();
+        let blocks = common::blocks_map(&txn);
+        let yrs::Out::YMap(image) = yrs::Map::get(&blocks, &txn, "i").unwrap() else {
+            panic!()
+        };
+        yrs::Map::insert(&image, &mut txn, "prop:sourceId", "");
+    }
+    let txn = doc.transact();
+    blocks::check(&txn).unwrap();
+    let projected = blocks::value(&txn).unwrap();
+    assert_eq!(projected.len(), 1);
+    assert_eq!(projected[0]["id"], "a");
+}

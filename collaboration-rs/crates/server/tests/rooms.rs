@@ -16168,3 +16168,300 @@ async fn a_fold_drops_an_unreadable_agent_holds_record() {
     }
     assert_eq!(held, None);
 }
+
+// ------------------------------------------- the blocks layout (BlockSuite)
+
+/// A server whose note rooms hold the BlockSuite blocks layout
+/// (todo-blocksuite-spike.md piece 5), projecting 500 ms after an edit.
+async fn start_blocks(env: &Env) -> Server {
+    start_configured(
+        env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_DOCUMENT_LAYOUT", "blocks"),
+            ("COLLABORATION_PROJECTION_IDLE_MS", "500"),
+        ],
+    )
+    .await
+}
+
+/// A note of a fresh user holding paragraphs a, b and c.
+async fn note_abc(env: &Env) -> (String, String, serde_json::Value) {
+    let (user, material) = note(env, "unused").await;
+    let value = serde_json::json!(
+        ["a", "b", "c"]
+            .iter()
+            .map(|id| serde_json::json!({ "type": "p", "id": id, "children": [{ "text": id }] }))
+            .collect::<Vec<_>>()
+    );
+    let content = serde_json::json!({ "schemaVersion": 1, "value": value });
+    db(env)
+        .await
+        .execute(
+            "UPDATE materials SET content=$2 WHERE id=$1",
+            &[&material, &content],
+        )
+        .await
+        .expect("content");
+    (user, material, value)
+}
+
+/// A yBlock's `sys:children`.
+fn block_children(txn: &impl ReadTxn, id: &str) -> Option<yrs::ArrayRef> {
+    let blocks = txn.get_map(blocks::BLOCKS_ROOT)?;
+    let yrs::Out::YMap(block) = yrs::Map::get(&blocks, txn, id)? else {
+        return None;
+    };
+    match yrs::Map::get(&block, txn, "sys:children")? {
+        yrs::Out::YArray(children) => Some(children),
+        _ => None,
+    }
+}
+
+fn listed_in(txn: &impl ReadTxn, parent: &str, id: &str) -> bool {
+    block_children(txn, parent).is_some_and(|children| {
+        yrs::Array::iter(&children, txn).any(|child| child.to_string(txn) == id)
+    })
+}
+
+impl Client {
+    /// The blocks room's projection, once it arrived.
+    fn blocks_value(&self) -> Option<Vec<serde_json::Value>> {
+        let txn = self.doc.transact();
+        txn.get_map(blocks::BLOCKS_ROOT)?;
+        blocks::value(&txn).ok()
+    }
+
+    /// An update appending `text` to block `id`'s Y.Text, not sent.
+    fn typed_in(&mut self, id: &str, text: &str) -> Vec<u8> {
+        let before = self.doc.transact().state_vector();
+        {
+            let mut txn = self.doc.transact_mut();
+            let blocks = txn.get_map(blocks::BLOCKS_ROOT).expect("blocks");
+            let Some(yrs::Out::YMap(block)) = yrs::Map::get(&blocks, &txn, id) else {
+                panic!("no block {id}");
+            };
+            let Some(yrs::Out::YText(block_text)) = yrs::Map::get(&block, &txn, "prop:text") else {
+                panic!("no text in {id}");
+            };
+            let len = block_text.len(&txn);
+            block_text.insert(&mut txn, len, text);
+        }
+        self.doc.transact().encode_state_as_update_v1(&before)
+    }
+
+    /// An update moving block `id` from the note to the end of `to`'s
+    /// children (BlockSuite's move), not sent.
+    fn moved_under(&mut self, id: &str, to: &str) -> Vec<u8> {
+        let before = self.doc.transact().state_vector();
+        {
+            let mut txn = self.doc.transact_mut();
+            let note = block_children(&txn, blocks::NOTE_ID).expect("note");
+            let at = yrs::Array::iter(&note, &txn)
+                .position(|child| child.to_string(&txn) == id)
+                .expect("listed in the note");
+            yrs::Array::remove(&note, &mut txn, at as u32);
+            let target = block_children(&txn, to).expect("target");
+            yrs::Array::push_back(&target, &mut txn, id);
+        }
+        self.doc.transact().encode_state_as_update_v1(&before)
+    }
+}
+
+/// With the layout `blocks`, a note's room seeds from `materials.content`
+/// and projects back to it; two tabs converge on typing, the store appends
+/// a row, and the projection stored after it equals the room's. Fails if the
+/// room seeds Plate, the projection drifts from the stored content, or the
+/// tabs diverge.
+#[tokio::test]
+async fn a_blocks_note_seeds_from_its_content_and_two_tabs_converge() {
+    let Some(env) = env() else { return };
+    let server = start_blocks(&env).await;
+    let (user, material) = note(&env, "hello").await;
+    let stored =
+        serde_json::json!([{ "type": "p", "id": "b1", "children": [{ "text": "hello" }] }]);
+    let room = format!("material:{material}:schema:1");
+    let mut a = Client::open(server.port).await;
+    let mut b = Client::open(server.port).await;
+    assert_eq!(a.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert_eq!(b.joined(&room, &token(&room, &user, "write")).await, 1);
+    for client in [&mut a, &mut b] {
+        assert!(
+            client
+                .settle(|c| c.blocks_value().as_ref() == stored.as_array())
+                .await,
+            "{:?}",
+            client.blocks_value()
+        );
+        // No Plate root beside the blocks map.
+        assert!(client.doc.transact().get_text("content").is_none());
+    }
+
+    let update = a.typed_in("b1", " world");
+    a.send(5, &sync(2, &update)).await;
+    assert!(!a.until(6).await.expect("ack").is_empty());
+    let typed =
+        serde_json::json!([{ "type": "p", "id": "b1", "children": [{ "text": "hello world" }] }]);
+    assert!(
+        b.settle(|c| c.blocks_value().as_ref() == typed.as_array())
+            .await,
+        "{:?}",
+        b.blocks_value()
+    );
+
+    let request = serde_json::json!({ "id": "r1", "type": "checkpoint-request" }).to_string();
+    let mut payload = Vec::new();
+    varbytes(&mut payload, request.as_bytes());
+    a.send(9, &payload).await;
+    loop {
+        let message = text_payload(&a.until(9).await.expect("stateless"));
+        if message.contains("checkpoint-persisted") {
+            break;
+        }
+    }
+    let client = db(&env).await;
+    let rows: i64 = client
+        .query_one(
+            "SELECT count(*) FROM material_yjs_updates WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("rows")
+        .get(0);
+    assert!(rows >= 1);
+    // The projection reaches materials.content through the API.
+    if env.api.is_none() {
+        return;
+    }
+    let mut content = serde_json::Value::Null;
+    for _ in 0..100 {
+        content = client
+            .query_one("SELECT content FROM materials WHERE id=$1", &[&material])
+            .await
+            .expect("content")
+            .get(0);
+        if content["value"] == typed {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("projected {content}");
+}
+
+/// Two tabs move one block under two parents at once (D3): both moves are
+/// admitted, the room repairs the tree on entry as an ordinary update, and
+/// both tabs end with the block under exactly one parent and the same
+/// projection. Fails if a move is refused or the block stays listed twice.
+#[tokio::test]
+async fn a_concurrent_move_in_a_blocks_room_is_repaired_on_entry() {
+    let Some(env) = env() else { return };
+    let server = start_blocks(&env).await;
+    let (user, material, value) = note_abc(&env).await;
+    let room = format!("material:{material}:schema:1");
+    let mut one = tab(server.port, &room, &user).await;
+    let mut two = tab(server.port, &room, &user).await;
+    for client in [&mut one, &mut two] {
+        assert!(
+            client
+                .settle(|c| c.blocks_value().as_ref() == value.as_array())
+                .await
+        );
+    }
+    let (first, second) = (one.moved_under("c", "a"), two.moved_under("c", "b"));
+    one.send(5, &sync(2, &first)).await;
+    two.send(5, &sync(2, &second)).await;
+    assert!(!one.until(6).await.expect("ack").is_empty());
+    assert!(!two.until(6).await.expect("ack").is_empty());
+    let repaired = |c: &Client| {
+        let txn = c.doc.transact();
+        blocks::check(&txn).is_ok()
+            && listed_in(&txn, "a", "c") != listed_in(&txn, "b", "c")
+            && !listed_in(&txn, blocks::NOTE_ID, "c")
+    };
+    assert!(one.settle(repaired).await, "{:?}", one.blocks_value());
+    assert!(two.settle(repaired).await, "{:?}", two.blocks_value());
+    assert!(
+        two.settle(|c| c.blocks_value() == one.blocks_value()).await,
+        "{:?} {:?}",
+        one.blocks_value(),
+        two.blocks_value()
+    );
+}
+
+/// A blocks note takes no server edit yet (D16): replace-block answers 422
+/// `unsupported_operation` (Go's `ErrBlocksLayout`), an agent edit 409 with
+/// the same code, and the room keeps its text. Fails if either applies.
+#[tokio::test]
+async fn server_edits_are_refused_in_a_blocks_room() {
+    let Some(env) = env() else { return };
+    let server = start_blocks(&env).await;
+    let (user, material) = note(&env, "hello").await;
+    let room = format!("material:{material}:schema:1");
+    let command = serde_json::json!({
+        "actorUserId": user,
+        "expectedBlock": { "type": "p", "id": "b1", "children": [{ "text": "hello" }] },
+        "materialId": material,
+        "replacementBlock": { "type": "p", "id": "b1", "children": [{ "text": "replaced" }] },
+        "room": room,
+        "type": "replace-block",
+    });
+    let (status, answer) = internal(server.port, "/internal/commands", &command).await;
+    assert_eq!(status, 422, "{answer}");
+    assert_eq!(answer["code"], "unsupported_operation", "{answer}");
+
+    let edit = serde_json::json!({
+        "actorUserId": user,
+        "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "hello", "text": "there" }],
+        "operation": { "id": format!("op_{material}"), "requestHash": "h1", "toolVersion": 1 },
+        "room": room,
+        "target": { "id": material, "kind": "material" },
+    });
+    let (status, refusal) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 409, "{refusal}");
+    assert_eq!(refusal["code"], "unsupported_operation", "{refusal}");
+
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    let stored =
+        serde_json::json!([{ "type": "p", "id": "b1", "children": [{ "text": "hello" }] }]);
+    assert!(
+        client
+            .settle(|c| c.blocks_value().as_ref() == stored.as_array())
+            .await,
+        "{:?}",
+        client.blocks_value()
+    );
+}
+
+/// The layout covers notes alone: a mindmap's room stays Plate (its
+/// `content` XmlText, which `liveMermaid.ts` reads). Fails if a mindmap
+/// seeds a blocks map.
+#[tokio::test]
+async fn a_mindmap_loads_as_plate_in_the_blocks_layout() {
+    let Some(env) = env() else { return };
+    let server = start_blocks(&env).await;
+    let (user, note_id) = note(&env, "unused").await;
+    let material = format!("{note_id}_map");
+    let content = serde_json::json!({ "schemaVersion": 1, "value": [{
+        "type": "mermaid", "id": "m", "source": "mindmap\n  root",
+        "children": [{ "type": "mermaid_caption", "children": [{ "text": "" }] }],
+    }] });
+    db(&env)
+        .await
+        .execute(
+            "INSERT INTO materials (id, created_by, kind, title, content) VALUES ($1, $2, 'mindmap', 'IT', $3)",
+            &[&material, &user, &content],
+        )
+        .await
+        .expect("mindmap");
+    let room = format!("material:{material}:schema:1");
+    let mut client = Client::open(server.port).await;
+    assert_eq!(client.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(
+        client
+            .settle(|c| notes::plate::value(&c.doc.transact())
+                .is_ok_and(|value| value.iter().any(|block| block["id"] == "m")))
+            .await
+    );
+    assert!(client.doc.transact().get_map(blocks::BLOCKS_ROOT).is_none());
+}

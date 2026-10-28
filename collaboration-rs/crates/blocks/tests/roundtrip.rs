@@ -97,7 +97,9 @@ fn pending_import_is_refused() {
 #[test]
 fn image_widths_are_pixels_against_768() {
     let img = |width: &str| {
-        vec![json!({"id": "im", "type": "img", "width": width, "children": [{"text": ""}]})]
+        vec![
+            json!({"id": "im", "type": "img", "assetId": "a1", "width": width, "children": [{"text": ""}]}),
+        ]
     };
     let state = blocks::state_from_value(&img("33.3%"), 7).unwrap();
     let doc = common::doc(&state, 99);

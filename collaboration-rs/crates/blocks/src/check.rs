@@ -35,11 +35,18 @@ pub enum Violation {
     MissingDefault { id: String, key: String },
     #[error("block {id:?}: text {key:?} holds unsupported content")]
     Text { id: String, key: String },
+    #[error("block {0:?} is nested more than {MAX_NESTING} levels below the note")]
+    TooDeep(String),
 }
+
+/// How many levels below the note a block may sit (D18): a direct child of
+/// the note is level 1.
+pub const MAX_NESTING: usize = 8;
 
 /// Whether the room is valid: hubs in place, every block reachable from
 /// `root` and listed exactly once, each under a parent its flavour allows,
-/// and every prop known with its type.
+/// no deeper than [MAX_NESTING] below the note (D18), and every prop known
+/// with its type. An image's `sourceId` may be empty while it uploads (D13).
 pub fn check<T: ReadTxn>(txn: &T) -> Result<(), Violation> {
     let blocks = txn.get_map(BLOCKS_ROOT).ok_or(Violation::NoBlocks)?;
     let mut ids: Vec<String> = blocks.keys(txn).map(str::to_string).collect();
@@ -119,6 +126,16 @@ pub fn check<T: ReadTxn>(txn: &T) -> Result<(), Violation> {
     }
     if let Some(id) = tree.keys().find(|id| !reached.contains(*id)) {
         return Err(Violation::Unreachable(id.clone()));
+    }
+    // A tree now: every block listed once and reached.
+    let mut stack = vec![(NOTE_ID, 0usize)];
+    while let Some((id, level)) = stack.pop() {
+        for child in &tree[id].1 {
+            if level + 1 > MAX_NESTING {
+                return Err(Violation::TooDeep(child.clone()));
+            }
+            stack.push((child.as_str(), level + 1));
+        }
     }
     Ok(())
 }

@@ -288,6 +288,34 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, f"{switch} is not allowed"):
                     config.render(values, "production", temp, "a" * 40)
 
+    def test_the_document_layout_stays_on_dev_stacks(self):
+        """A deployment never switches its note rooms to the blocks layout:
+        the key is local-only, and a render or push naming it fails."""
+        self.assertEqual(
+            config.MANIFEST["COLLABORATION_DOCUMENT_LAYOUT"]["targets"], ["local"]
+        )
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://uat.example.com",
+            COLLABORATION_DOCUMENT_LAYOUT="blocks",
+        )
+        for environment in ("uat", "production"):
+            with (
+                self.subTest(environment=environment),
+                tempfile.TemporaryDirectory() as temp,
+                self.assertRaisesRegex(ValueError, "for dev stacks only"),
+            ):
+                config.render(values, environment, temp, "a" * 40)
+        with self.assertRaisesRegex(ValueError, "for dev stacks only"):
+            config.push(values, "uat", "owner/repo")
+
     def test_render_refuses_the_uat_ingest_switches_outside_uat(self):
         """Security gate: the UAT-only ingest switches reach only the UAT
         queue workers; a production render with either set fails."""

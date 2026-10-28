@@ -495,6 +495,12 @@ async fn command(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> 
             StatusCode::PAYLOAD_TOO_LARGE,
             json!({ "code": "update_too_large", "message": message }),
         ),
+        // A note in the blocks layout takes no replace-block yet (D16):
+        // refused before anything committed, not reported; Go names it.
+        Err(message) if message == crate::model::BLOCKS_LAYOUT_REFUSED => json_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({ "code": "unsupported_operation", "message": message }),
+        ),
         Err(message) if message == crate::edits::ROOM_RESET => unavailable(
             "/internal/commands",
             &message,

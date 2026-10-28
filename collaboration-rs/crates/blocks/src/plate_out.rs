@@ -21,6 +21,10 @@ pub(crate) fn value(content: &[Block]) -> Result<Vec<Value>, ProjectionError> {
 /// paragraph's and list's subtree emitted after it at one more depth.
 fn flatten(blocks: &[Block], depth: usize, out: &mut Vec<Value>) -> Result<(), ProjectionError> {
     for block in blocks {
+        // An image still uploading (D13): nothing about an upload is stored.
+        if block.flavour == IMAGE && block.str("sourceId").is_none_or(str::is_empty) {
+            continue;
+        }
         out.push(element(block, depth)?);
         if schema::holds_indented(&block.flavour) {
             flatten(&block.children, depth + 1, out)?;

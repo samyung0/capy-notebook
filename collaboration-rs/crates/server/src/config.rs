@@ -76,6 +76,10 @@ pub struct Config {
     /// before it closes (`socket.rs`); tests shorten them.
     pub ping_every: Duration,
     pub silent_close: Duration,
+    /// How a note room holds its document (todo-blocksuite-spike.md boundary
+    /// 1): Plate unless a dev stack sets `blocks`. UAT and production never
+    /// set it.
+    pub document_layout: crate::model::Layout,
 }
 
 /// Local-dev values aligned with deploy/docker-compose.yml and the Go API.
@@ -128,6 +132,17 @@ fn required(env: &HashMap<String, String>, name: &str) -> Result<u64, ConfigErro
     match env.get(name) {
         None => Err(ConfigError(format!("{name} is required"))),
         Some(_) => positive(env, name, 0),
+    }
+}
+
+fn layout(env: &HashMap<String, String>) -> Result<crate::model::Layout, ConfigError> {
+    let name = "COLLABORATION_DOCUMENT_LAYOUT";
+    match env.get(name).map(|value| value.trim()) {
+        None | Some("" | "plate") => Ok(crate::model::Layout::Plate),
+        Some("blocks") => Ok(crate::model::Layout::Blocks),
+        Some(_) => Err(ConfigError(format!(
+            "{name} must be plate, blocks or unset"
+        ))),
     }
 }
 
@@ -252,6 +267,7 @@ impl Config {
             )?,
             ping_every,
             silent_close,
+            document_layout: layout(env)?,
         })
     }
 
@@ -366,6 +382,32 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             "COLLABORATION_UAT_PUBLICATION_HOLD must be true or unset"
+        );
+    }
+
+    #[test]
+    fn the_document_layout_is_plate_unless_blocks() {
+        use crate::model::Layout;
+        let name = "COLLABORATION_DOCUMENT_LAYOUT";
+        for (raw, layout) in [
+            ("", Layout::Plate),
+            ("plate", Layout::Plate),
+            ("blocks", Layout::Blocks),
+        ] {
+            assert_eq!(
+                Config::load(&env(&[(name, raw)])).unwrap().document_layout,
+                layout
+            );
+        }
+        assert_eq!(
+            Config::load(&env(&[])).unwrap().document_layout,
+            Layout::Plate
+        );
+        assert_eq!(
+            Config::load(&env(&[(name, "Blocks")]))
+                .unwrap_err()
+                .to_string(),
+            "COLLABORATION_DOCUMENT_LAYOUT must be plate, blocks or unset"
         );
     }
 

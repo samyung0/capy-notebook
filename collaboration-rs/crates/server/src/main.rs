@@ -94,6 +94,8 @@ fn main() {
             std::process::exit(1);
         }
     };
+    // Before any room loads: `Model::of` reads it.
+    model::set_layout(config.document_layout);
     #[cfg(target_os = "linux")]
     match raise_open_files() {
         Ok(limit) => log(Level::Info, "open_files_limit", json!({ "soft": limit })),

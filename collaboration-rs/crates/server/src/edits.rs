@@ -96,6 +96,13 @@ pub(crate) fn saves_failing(undo: bool) -> DocumentError {
 /// replace-block command's 413.
 pub const UPDATE_TOO_LARGE: &str = "update_size_exceeded";
 
+/// An agent edit, Undo or Redo of a note in the blocks layout: refused
+/// before anything applied, as `unsupported_operation` (D16 moves the edit
+/// tools to block ids later).
+fn blocks_refused() -> DocumentError {
+    DocumentError::edit("unsupported_operation", crate::model::BLOCKS_LAYOUT_REFUSED)
+}
+
 /// Whether any of an edit's writes, as stored or as sent to the live room,
 /// is over the update cap.
 fn over_update_cap(writes: &[Write]) -> bool {
@@ -492,7 +499,10 @@ async fn material_blocks(
                 keys = Some((quiz_keys, Vec::new()));
                 (content, Vec::new())
             } else {
-                (Model::of(&kind).state_from_value(value), Vec::new())
+                let state = Model::of(&kind)
+                    .state_from_value(value)
+                    .map_err(DocumentError::Unknown)?;
+                (state, Vec::new())
             }
         }
     };
@@ -511,9 +521,9 @@ async fn material_blocks(
         let doc = ydoc::scratch_doc();
         ydoc::replay(&doc, &base, &rows)
             .map_err(|error| DocumentError::Unknown(error.to_string()))?;
-        // A live item reads as the Plate value it projects to; a quiz as
-        // every question with its keys (its editors' view, incomplete ones
-        // too).
+        // A live item or a blocks note reads as the Plate value it projects
+        // to; a quiz as every question with its keys (its editors' view,
+        // incomplete ones too).
         let doc = match Model::of(&kind) {
             Model::Note => doc,
             model => {
@@ -564,13 +574,13 @@ pub async fn live_note(app: &Shared, room: &str) -> Result<Value, DocumentError>
     if handle.tx.send(RoomCmd::LiveNote(reply)).await.is_err() {
         return Ok(none);
     }
-    let Ok(Ok(Some(state))) = tokio::time::timeout(SNAPSHOT_WAIT, answer).await else {
+    let Ok(Ok(Some((state, model)))) = tokio::time::timeout(SNAPSHOT_WAIT, answer).await else {
         return Ok(none);
     };
     let value = tokio::task::spawn_blocking(move || {
         let doc = ydoc::scratch_doc();
         ydoc::replay(&doc, &state, &[] as &[Vec<u8>]).map_err(|error| error.to_string())?;
-        Model::Note.value(&doc.transact())
+        model.value(&doc.transact())
     })
     .await
     .map_err(|error| DocumentError::Unknown(error.to_string()))?
@@ -1003,6 +1013,9 @@ fn compute(
     }
     let doc = &scratch.doc;
     let model = Model::of(&kind);
+    if model == Model::Blocks {
+        return Err(blocks_refused());
+    }
     let before = model.document_value(&doc.transact()).map_err(unknown)?;
     let previous = notes::limits::measure_value(&before);
     // Every edit's Undo payload is built here, from its working copy, whether
@@ -1018,6 +1031,7 @@ fn compute(
                     item.apply_commands(&mut txn, &commands)?;
                     EditOutcome::default()
                 }
+                Model::Blocks => return Err(blocks_refused()),
                 Model::Note => {
                     let root = txn.get_or_insert_text(notes::plate::CONTENT_ROOT);
                     let outcome = notes::edit::apply_material_commands(&mut txn, &root, &commands)?;
@@ -2171,6 +2185,10 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     }
     let base: Vec<u8> = current.get("state");
     let kind: String = current.get("kind");
+    // Before anything is read or written (the bootstrap rolls back).
+    if Model::of(&kind) == Model::Blocks {
+        return Err(crate::model::BLOCKS_LAYOUT_REFUSED.into());
+    }
     let rows: Vec<Vec<u8>> = note_store::rows(&tx, &material_id, None)
         .await
         .map_err(|error| error.to_string())?
@@ -2339,6 +2357,7 @@ fn replace_on(
             let mut txn = doc.transact_mut();
             item.replace_block(&mut txn, &command.replacement_block)?;
         }
+        Model::Blocks => return Err(crate::model::BLOCKS_LAYOUT_REFUSED.into()),
     }
     if !scratch.changed() {
         return Ok(None);
@@ -2657,7 +2676,7 @@ mod tests {
             blocks: vec![embed("e10")],
         };
         let refusal = compute(
-            Model::Note.state_from_value(&value),
+            Model::Note.state_from_value(&value).unwrap(),
             Vec::new(),
             None,
             "note".into(),
@@ -2688,7 +2707,7 @@ mod tests {
             // As inspect shows it: the paragraph's text, the Mermaid source.
             let expected = value["source"].as_str().unwrap_or("last").to_owned();
             compute(
-                Model::Note.state_from_value(&[value]),
+                Model::Note.state_from_value(&[value]).unwrap(),
                 Vec::new(),
                 None,
                 kind.into(),
@@ -3042,11 +3061,13 @@ mod tests {
                 "children": [{ "type": "mermaid_caption", "children": [{ "text": caption }] }],
             })
         };
-        let captioned = Model::Note.state_from_value(&[mermaid(
-            "m1",
-            "flowchart LR\n  A --> B",
-            &"A long caption. ".repeat(4000),
-        )]);
+        let captioned = Model::Note
+            .state_from_value(&[mermaid(
+                "m1",
+                "flowchart LR\n  A --> B",
+                &"A long caption. ".repeat(4000),
+            )])
+            .unwrap();
         let kept = cost_and_sent(
             "note",
             &captioned,

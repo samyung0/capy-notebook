@@ -14,6 +14,13 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
+// ErrBlocksLayout is a content command the collaboration server refused
+// because the note's room holds the BlockSuite blocks layout (a dev stack
+// with COLLABORATION_DOCUMENT_LAYOUT=blocks), which takes no replace-block
+// yet (todo-blocksuite-spike.md D16). Nothing applied: the request is
+// invalid for this note, not an unavailable authority, so it is not reported.
+var ErrBlocksLayout = fmt.Errorf("%w: a note in the blocks layout takes no content commands yet", materialdoc.ErrInvalid)
+
 type replaceBlockCommand struct {
 	ExpectedRevision *int64         `json:"expectedRevision,omitempty"`
 	Type             string         `json:"type"`
@@ -146,25 +153,33 @@ func (s *Store) applyAuthoritativeContentCommand(
 	}
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-	switch response.StatusCode {
-	case http.StatusOK:
-		return true, nil
-	case http.StatusConflict:
-		return true, ErrConflict
-	case http.StatusRequestEntityTooLarge:
+	return true, contentCommandAnswer(response, responseBody)
+}
+
+// contentCommandAnswer is the error a replace-block answer means; nil when
+// it applied.
+func contentCommandAnswer(response *http.Response, body []byte) error {
+	var refusal struct {
+		Code string `json:"code"`
+	}
+	_ = json.Unmarshal(body, &refusal)
+	switch {
+	case response.StatusCode == http.StatusOK:
+		return nil
+	case response.StatusCode == http.StatusConflict:
+		return ErrConflict
+	case response.StatusCode == http.StatusRequestEntityTooLarge:
 		// The change's update is over the collaboration server's 8 MiB cap
 		// (Epo 2026-10-18): refused before anything applied.
-		return true, fmt.Errorf("%w: the change is over the 8 MiB update cap", materialdoc.ErrLimitExceeded)
+		return fmt.Errorf("%w: the change is over the 8 MiB update cap", materialdoc.ErrLimitExceeded)
+	case response.StatusCode == http.StatusUnprocessableEntity && refusal.Code == "unsupported_operation":
+		return ErrBlocksLayout
 	default:
-		message := string(responseBody)
+		message := string(body)
 		if message == "" {
 			message = response.Status
 		}
-		var refusal struct {
-			Code string `json:"code"`
-		}
-		_ = json.Unmarshal(responseBody, &refusal)
-		return true, authorityFailure(response, refusal.Code, message)
+		return authorityFailure(response, refusal.Code, message)
 	}
 }
 

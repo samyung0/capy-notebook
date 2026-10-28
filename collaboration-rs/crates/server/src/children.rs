@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use notes::children::{ChildAnswer, ChildPlan};
+use notes::children::{BlockRequest, ChildAnswer, ChildPlan};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -46,6 +46,42 @@ pub fn queue(app: &Shared, room: &str, actor: &str, update: Vec<u8>) {
             }
         }
     });
+}
+
+/// A blocks room's pass for an update it applied (`blocks::children`), as
+/// `notes::children::plan` makes a Plate room's: every written asset id, and
+/// each written reference. A quiz now in several references stays with one,
+/// the first the update did not write or else the first in the note; every
+/// other one asks for a copy. None when the update wrote no child.
+pub fn blocks_plan<T: yrs::ReadTxn>(txn: &T, update: &yrs::Update) -> Option<ChildPlan> {
+    let writes = blocks::children::child_writes(txn, update)?;
+    let refs = blocks::children::material_refs(txn);
+    let written = |id: &String| writes.blocks.contains(id);
+    let mut kept: Vec<(&String, &String)> = Vec::new();
+    for (block, material) in refs
+        .iter()
+        .filter(|(block, _)| !written(block))
+        .chain(refs.iter())
+    {
+        if !kept.iter().any(|(m, _)| *m == material) {
+            kept.push((material, block));
+        }
+    }
+    Some(ChildPlan {
+        asset_ids: writes.asset_ids,
+        blocks: refs
+            .iter()
+            .filter(|(block, _)| written(block))
+            .map(|(block, material)| BlockRequest {
+                block_id: block.clone(),
+                copy: kept
+                    .iter()
+                    .find(|(m, _)| *m == material)
+                    .is_none_or(|(_, b)| *b != block),
+                material_id: material.clone(),
+            })
+            .collect(),
+    })
 }
 
 #[derive(Deserialize)]

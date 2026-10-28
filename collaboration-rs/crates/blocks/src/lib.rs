@@ -18,12 +18,13 @@ use serde_json::Value;
 use yrs::{ReadTxn, Transact};
 
 mod check;
+pub mod children;
 mod plate_in;
 mod plate_out;
 pub mod schema;
 mod store;
 
-pub use check::{Repair, Violation, check, repair};
+pub use check::{MAX_NESTING, Repair, Violation, check, repair};
 pub use store::blocks_json;
 
 /// The room doc's root map.

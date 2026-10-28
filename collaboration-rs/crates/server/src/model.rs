@@ -1,28 +1,64 @@
 //! What a material room's document is, by the material's kind: a Plate
-//! document (notes, mindmaps, diagrams; the notes crate) or a live item
-//! document (flashcard sets; the items crate, live-items DESIGN.md). Both
-//! project to the same Plate envelope, so storage, projection, receipts and
-//! evictions do not care which.
+//! document (notes, mindmaps, diagrams; the notes crate), a live item
+//! document (flashcard sets; the items crate, live-items DESIGN.md), or, on a
+//! dev stack whose layout is `blocks`, a note's BlockSuite blocks document
+//! (the blocks crate, todo-blocksuite-layout.md). All project to the same
+//! Plate envelope, so storage, projection, receipts and evictions do not care
+//! which.
+
+use std::sync::OnceLock;
 
 use notes::limits::Metrics;
 use serde_json::Value;
-use yrs::ReadTxn;
+use yrs::{ReadTxn, Transact};
 
 /// Why a quiz room loads read-only: one of its documents holds a question
 /// block kind the room does not admit.
 pub const UNKNOWN_QUIZ_BLOCK: &str =
     "a quiz document holds a question block kind the room does not admit";
 
+/// How note rooms hold their document, stack-wide
+/// (`COLLABORATION_DOCUMENT_LAYOUT`, todo-blocksuite-spike.md boundary 1).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Layout {
+    #[default]
+    Plate,
+    /// Notes only: mindmaps and diagrams stay Plate until the cut
+    /// (`liveMermaid.ts` reads their XmlText).
+    Blocks,
+}
+
+static LAYOUT: OnceLock<Layout> = OnceLock::new();
+
+/// Set once at startup from the config, before any room loads.
+pub fn set_layout(layout: Layout) {
+    let _ = LAYOUT.set(layout);
+}
+
+/// Why an agent edit or a replace-block is refused in a blocks room: the
+/// edit tools move to block ids later (D16); until then nothing writes a
+/// blocks room but its editors.
+pub const BLOCKS_LAYOUT_REFUSED: &str = "a note in the blocks layout takes no server edits yet";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Model {
     Note,
     Item(items::Kind),
+    /// A note's BlockSuite blocks document.
+    Blocks,
 }
 
 impl Model {
+    /// The model of material kind `kind` under the stack's layout (Plate when
+    /// none was set: the config's default).
     pub fn of(kind: &str) -> Model {
+        Model::of_in(kind, LAYOUT.get().copied().unwrap_or_default())
+    }
+
+    pub fn of_in(kind: &str, layout: Layout) -> Model {
         match items::Kind::of_material(kind) {
             Some(item) => Model::Item(item),
+            None if kind == "note" && layout == Layout::Blocks => Model::Blocks,
             None => Model::Note,
         }
     }
@@ -36,6 +72,7 @@ impl Model {
         match self {
             Model::Note => notes::validate::assert_roots(txn).map_err(|error| error.to_string()),
             Model::Item(kind) => kind.assert_roots(txn),
+            Model::Blocks => blocks_roots(txn),
         }
     }
 
@@ -44,6 +81,7 @@ impl Model {
         match self {
             Model::Note => notes::plate::value(txn).map_err(|error| error.to_string()),
             Model::Item(kind) => Ok(kind.value(txn)),
+            Model::Blocks => blocks::value(txn).map_err(|error| error.to_string()),
         }
     }
 
@@ -51,7 +89,7 @@ impl Model {
     /// the limits read it; an item's projection may leave blank cards out).
     pub fn document_value<T: ReadTxn>(self, txn: &T) -> Result<Vec<Value>, String> {
         match self {
-            Model::Note => self.value(txn),
+            Model::Note | Model::Blocks => self.value(txn),
             Model::Item(kind) => Ok(kind.document_value(txn)),
         }
     }
@@ -82,6 +120,21 @@ impl Model {
                 Ok(items::quiz::holds_unknown_block(txn).then(|| UNKNOWN_QUIZ_BLOCK.to_owned()))
             }
             Model::Item(items::Kind::Flashcards) => Ok(None),
+            // Checked as its first store will repair it (D3): a tree stored
+            // with a block under two parents loads writable.
+            Model::Blocks => {
+                let repaired = repaired_copy(txn)?;
+                let txn = repaired.transact();
+                if let Err(violation) = blocks::check(&txn) {
+                    return Ok(Some(violation.to_string()));
+                }
+                Ok(match blocks::value(&txn) {
+                    Ok(value) => notes::material::assert_canonical(&value, kind)
+                        .err()
+                        .map(|error| error.to_string()),
+                    Err(error) => Some(error.to_string()),
+                })
+            }
         }
     }
 
@@ -89,15 +142,27 @@ impl Model {
         match self {
             Model::Note => notes::limits::measure(txn).map_err(|error| error.to_string()),
             Model::Item(kind) => Ok(notes::limits::measure_value(&kind.document_value(txn))),
+            // On the projection, as an item's (the store measures the same);
+            // a tree the projection cannot walk yet is measured repaired.
+            Model::Blocks => {
+                let value = match blocks::value(txn) {
+                    Ok(value) => value,
+                    Err(_) => blocks::value(&repaired_copy(txn)?.transact())
+                        .map_err(|error| error.to_string())?,
+                };
+                Ok(notes::limits::measure_value(&value))
+            }
         }
     }
 
     /// The document seeded from `materials.content`'s value, as it is (one
-    /// a room may not serve is refused at load: [Model::stored]).
-    pub fn state_from_value(self, value: &[Value]) -> Vec<u8> {
+    /// a room may not serve is refused at load: [Model::stored]). A blocks
+    /// document refuses a value its layout cannot hold.
+    pub fn state_from_value(self, value: &[Value]) -> Result<Vec<u8>, String> {
         match self {
-            Model::Note => notes::slate_yjs::state_from_value(value, 0),
-            Model::Item(kind) => kind.state_from_value(value, 0),
+            Model::Note => Ok(notes::slate_yjs::state_from_value(value, 0)),
+            Model::Item(kind) => Ok(kind.state_from_value(value, 0)),
+            Model::Blocks => blocks::state_from_value(value, 0).map_err(|error| error.to_string()),
         }
     }
 
@@ -118,12 +183,17 @@ impl Model {
                 blank_card(txn)
             }
             Model::Item(_) => Vec::new(),
+            // O(document) per update, as the admission's exact check is.
+            Model::Blocks => block_tree(txn),
         }
     }
 
     /// Whether this document has repairs: a quiz's never does.
     pub fn repairs(self) -> bool {
-        matches!(self, Model::Note | Model::Item(items::Kind::Flashcards))
+        matches!(
+            self,
+            Model::Note | Model::Blocks | Model::Item(items::Kind::Flashcards)
+        )
     }
 
     /// The repairs a store refusal tries once before the room resets: an
@@ -133,6 +203,7 @@ impl Model {
             Model::Note => notes::repair::repair(txn, kind),
             Model::Item(items::Kind::Flashcards) => blank_card(txn),
             Model::Item(_) => Vec::new(),
+            Model::Blocks => block_tree(txn),
         }
     }
 
@@ -145,8 +216,57 @@ impl Model {
                 ..notes::limits::Validator::new(kind)
             }),
             Model::Item(kind) => RoomValidator::Item(items::Validator::new(kind, Some(metrics))),
+            Model::Blocks => RoomValidator::Blocks(BlocksValidator {
+                material: kind.to_owned(),
+                metrics: Some(metrics),
+                exact_checks: 0,
+            }),
         }
     }
+}
+
+/// A blocks document's roots: the `blocks` map and the contributor markers,
+/// neither holding sequence content.
+fn blocks_roots<T: ReadTxn>(txn: &T) -> Result<(), String> {
+    for (name, _) in txn.root_refs() {
+        if name != blocks::BLOCKS_ROOT && name != ydoc::CONTRIBUTORS_ROOT {
+            return Err(format!("unsupported collaboration document root: {name}"));
+        }
+    }
+    for name in [blocks::BLOCKS_ROOT, ydoc::CONTRIBUTORS_ROOT] {
+        if let Some(root) = yrs::branch::BranchID::get_root(txn, name)
+            && root.start().is_some()
+        {
+            return Err(format!("invalid collaboration document root: {name}"));
+        }
+    }
+    Ok(())
+}
+
+/// A copy of the document with the block tree repaired (D3), for reads that
+/// must not write the room.
+fn repaired_copy<T: ReadTxn>(txn: &T) -> Result<yrs::Doc, String> {
+    let copy = ydoc::scratch_doc();
+    let state = txn.encode_state_as_update_v1(&yrs::StateVector::default());
+    ydoc::replay(&copy, &state, &[] as &[Vec<u8>]).map_err(|error| error.to_string())?;
+    blocks::repair(&mut copy.transact_mut());
+    Ok(copy)
+}
+
+/// D3's repair of a blocks document: what it repaired, by kind.
+fn block_tree(txn: &mut yrs::TransactionMut) -> Vec<&'static str> {
+    let mut repaired: Vec<&'static str> = blocks::repair(txn)
+        .iter()
+        .map(|repair| match repair {
+            blocks::Repair::Dangling { .. } => "a dangling child id",
+            blocks::Repair::Duplicate { .. } => "a block under two parents",
+            blocks::Repair::RootListed { .. } => "the root listed as a child",
+            blocks::Repair::Cycle { .. } => "a cycle of blocks",
+            blocks::Repair::Orphan { .. } => "a block no parent lists",
+        })
+        .collect();
+    repaired.dedup();
+    repaired
 }
 
 fn blank_card(txn: &mut yrs::TransactionMut) -> Vec<&'static str> {
@@ -172,6 +292,96 @@ pub enum Admitted {
 pub enum RoomValidator {
     Note(notes::limits::Validator),
     Item(items::Validator),
+    Blocks(BlocksValidator),
+}
+
+/// A blocks room's admission (`items::Validator`'s pattern, without its
+/// growth bound): the new structs must sit under the room's roots, then every
+/// update is applied to a copy, repaired as the room will repair it (D3),
+/// checked structurally and measured on its projection. So every update
+/// copies and projects the room: server numbers for blocks rooms are
+/// pessimistic until a bound like `notes::bound` is ported.
+#[derive(Debug)]
+pub struct BlocksValidator {
+    /// The room's material kind (`note`).
+    pub material: String,
+    /// The last exact metrics (the shrink baseline).
+    pub metrics: Option<Metrics>,
+    /// Exact checks taken (a copy of the room each).
+    pub exact_checks: u64,
+}
+
+impl BlocksValidator {
+    pub fn admit(&mut self, doc: &yrs::Doc, update: &yrs::Update, draft: bool) -> Admitted {
+        match self.check(doc, update, draft) {
+            Ok(admitted) | Err(admitted) => admitted,
+        }
+    }
+
+    fn check(
+        &mut self,
+        doc: &yrs::Doc,
+        update: &yrs::Update,
+        draft: bool,
+    ) -> Result<Admitted, Admitted> {
+        let refused = |error: String| Admitted::Refused(error);
+        let txn = doc.transact();
+        blocks_roots(&txn).map_err(refused)?;
+        let incoming = ydoc::Incoming::new(update);
+        let inspection =
+            ydoc::inspect(&txn, &incoming).map_err(|error| refused(error.to_string()))?;
+        if inspection.unheld {
+            return Ok(Admitted::Unheld);
+        }
+        // Typing a draft into a block the room deleted (Q237).
+        if draft && inspection.hidden_units > 0 {
+            return Ok(Admitted::Hidden);
+        }
+        let in_roots = inspection.containers.iter().all(|container| {
+            container.key.is_some()
+                && (&*container.root == blocks::BLOCKS_ROOT
+                    || &*container.root == ydoc::CONTRIBUTORS_ROOT)
+        });
+        if !in_roots {
+            return Err(refused(
+                "an update outside the blocks document's roots".into(),
+            ));
+        }
+        self.exact_checks += 1;
+        let candidate = match inspection.trial {
+            Some(trial) => trial,
+            None => {
+                let candidate = ydoc::scratch_doc();
+                let state = txn.encode_state_as_update_v1(&yrs::StateVector::default());
+                ydoc::replay(
+                    &candidate,
+                    &state,
+                    &[yrs::updates::encoder::Encode::encode_v1(update)],
+                )
+                .map_err(|error| refused(error.to_string()))?;
+                candidate
+            }
+        };
+        if self.metrics.is_none() {
+            self.metrics = Some(Model::Blocks.measure(&txn).map_err(refused)?);
+        }
+        drop(txn);
+        blocks::repair(&mut candidate.transact_mut());
+        let candidate = candidate.transact();
+        blocks_roots(&candidate).map_err(refused)?;
+        blocks::check(&candidate).map_err(|violation| refused(violation.to_string()))?;
+        let value = blocks::value(&candidate).map_err(|error| refused(error.to_string()))?;
+        notes::material::assert_canonical(&value, &self.material)
+            .map_err(|error| refused(error.to_string()))?;
+        let metrics = notes::limits::measure_value(&value);
+        if let Some(code) = notes::limits::limit_code(&metrics)
+            && !notes::limits::recovers(&metrics, self.metrics.as_ref())
+        {
+            return Err(Admitted::Limit(code, metrics));
+        }
+        self.metrics = Some(metrics);
+        Ok(Admitted::Accepted)
+    }
 }
 
 impl RoomValidator {
@@ -198,6 +408,7 @@ impl RoomValidator {
                 Err(items::Refusal::Limit { code, metrics }) => Admitted::Limit(code, metrics),
                 Err(error) => Admitted::Refused(error.to_string()),
             },
+            RoomValidator::Blocks(validator) => validator.admit(doc, update, draft),
         }
     }
 
@@ -205,6 +416,7 @@ impl RoomValidator {
         match self {
             RoomValidator::Note(validator) => validator.invalidate(),
             RoomValidator::Item(validator) => validator.invalidate(),
+            RoomValidator::Blocks(validator) => validator.metrics = None,
         }
     }
 
@@ -218,7 +430,7 @@ impl RoomValidator {
     pub fn peer(&self) -> Option<Metrics> {
         match self {
             RoomValidator::Item(validator) => validator.peer,
-            RoomValidator::Note(_) => None,
+            RoomValidator::Note(_) | RoomValidator::Blocks(_) => None,
         }
     }
 
@@ -228,6 +440,7 @@ impl RoomValidator {
         match self {
             RoomValidator::Item(validator) => validator.bound,
             RoomValidator::Note(validator) => validator.bound,
+            RoomValidator::Blocks(validator) => validator.metrics,
         }
     }
 }
@@ -237,7 +450,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use serde_json::json;
-    use yrs::Transact;
+    use yrs::{Array as _, ReadTxn as _, Text as _, Transact};
 
     use super::Model;
 
@@ -245,7 +458,7 @@ mod tests {
         let doc = ydoc::scratch_doc();
         ydoc::replay(
             &doc,
-            &Model::Note.state_from_value(value),
+            &Model::Note.state_from_value(value).unwrap(),
             &[] as &[Vec<u8>],
         )
         .unwrap();
@@ -331,6 +544,127 @@ mod tests {
             Ok(None)
         );
         assert_eq!(note_stored("mindmap", &[map]), Ok(None));
+    }
+
+    /// The layout flag turns notes alone into blocks documents: mindmaps and
+    /// diagrams stay Plate (`liveMermaid.ts` reads their XmlText), items stay
+    /// items, and without the flag every note is Plate.
+    #[test]
+    fn only_notes_take_the_blocks_layout() {
+        use super::Layout;
+        assert_eq!(Model::of_in("note", Layout::Blocks), Model::Blocks);
+        assert_eq!(Model::of_in("note", Layout::Plate), Model::Note);
+        for kind in ["mindmap", "diagram"] {
+            assert_eq!(Model::of_in(kind, Layout::Blocks), Model::Note, "{kind}");
+        }
+        assert_eq!(
+            Model::of_in("flashcards", Layout::Blocks),
+            Model::Item(items::Kind::Flashcards)
+        );
+    }
+
+    fn blocks_value() -> Vec<serde_json::Value> {
+        ["a", "b", "c"]
+            .iter()
+            .map(|id| json!({ "type": "p", "id": id, "children": [{ "text": id.to_uppercase() }] }))
+            .collect()
+    }
+
+    /// A blocks document holding `state`, as client `client`.
+    fn blocks_doc(state: &[u8], client: u64) -> yrs::Doc {
+        let doc = yrs::Doc::with_options(ydoc::doc_options(client));
+        ydoc::replay(&doc, state, &[] as &[Vec<u8>]).unwrap();
+        doc
+    }
+
+    fn child_array(txn: &impl yrs::ReadTxn, id: &str) -> yrs::ArrayRef {
+        use yrs::Map as _;
+        let blocks = txn.get_map(blocks::BLOCKS_ROOT).unwrap();
+        let Some(yrs::Out::YMap(block)) = blocks.get(txn, id) else {
+            panic!("no block {id}")
+        };
+        let Some(yrs::Out::YArray(children)) = block.get(txn, "sys:children") else {
+            panic!("no children on {id}")
+        };
+        children
+    }
+
+    /// BlockSuite's move of `id` from the note to the end of `to`'s
+    /// children, as an update.
+    fn moved(doc: &yrs::Doc, id: &str, to: &str) -> Vec<u8> {
+        let before = doc.transact().state_vector();
+        {
+            let mut txn = doc.transact_mut();
+            let note = child_array(&txn, blocks::NOTE_ID);
+            let at = note
+                .iter(&txn)
+                .position(|child| child.to_string(&txn) == id)
+                .unwrap();
+            note.remove(&mut txn, at as u32);
+            child_array(&txn, to).push_back(&mut txn, id);
+        }
+        doc.transact().encode_state_as_update_v1(&before)
+    }
+
+    /// A seeded blocks note projects to its canonical value, loads writable
+    /// and is measured on that projection.
+    #[test]
+    fn a_blocks_note_seeds_and_projects_its_value() {
+        let value = blocks_value();
+        let state = Model::Blocks.state_from_value(&value).unwrap();
+        let doc = blocks_doc(&state, 1);
+        let txn = doc.transact();
+        Model::Blocks.assert_roots(&txn).unwrap();
+        assert_eq!(
+            Model::Blocks.value(&txn).unwrap(),
+            blocks::canonical(&value).unwrap()
+        );
+        assert_eq!(Model::Blocks.stored("note", &txn), Ok(None));
+        assert_eq!(
+            Model::Blocks.measure(&txn).unwrap(),
+            notes::limits::measure_value(&blocks::canonical(&value).unwrap())
+        );
+    }
+
+    /// Two writers moving one block under two parents are both admitted; the
+    /// repair on entry keeps the higher client id's move (D3), and the room
+    /// passes the structural check. An update outside the roots (a Plate
+    /// `content` root) is refused. Fails if the second move is refused or
+    /// the block stays under two parents.
+    #[test]
+    fn a_concurrent_move_is_admitted_and_repaired_on_entry() {
+        let state = Model::Blocks.state_from_value(&blocks_value()).unwrap();
+        let room = blocks_doc(&state, 1);
+        let (low, high) = (blocks_doc(&state, 10), blocks_doc(&state, 20));
+        let metrics = Model::Blocks.measure(&room.transact()).unwrap();
+        let mut validator = Model::Blocks.validator("note", metrics);
+        for bytes in [moved(&low, "c", "a"), moved(&high, "c", "b")] {
+            let update = ydoc::decode(&bytes).unwrap();
+            assert!(matches!(
+                validator.admit(&room, &update, false),
+                super::Admitted::Accepted
+            ));
+            let mut txn = room.transact_mut();
+            txn.apply_update(update).unwrap();
+            Model::Blocks.repair_on_entry(&mut txn, &ydoc::decode(&bytes).unwrap(), "note");
+        }
+        let txn = room.transact();
+        blocks::check(&txn).unwrap();
+        assert_eq!(child_array(&txn, "b").len(&txn), 1);
+        assert_eq!(child_array(&txn, "a").len(&txn), 0);
+        drop(txn);
+
+        let outside = {
+            let doc = blocks_doc(&state, 30);
+            let before = doc.transact().state_vector();
+            let content = doc.get_or_insert_text("content");
+            content.insert(&mut doc.transact_mut(), 0, "x");
+            doc.transact().encode_state_as_update_v1(&before)
+        };
+        assert!(matches!(
+            validator.admit(&room, &ydoc::decode(&outside).unwrap(), false),
+            super::Admitted::Refused(_)
+        ));
     }
 
     /// A stored quiz holding a block kind its rooms do not admit loads its

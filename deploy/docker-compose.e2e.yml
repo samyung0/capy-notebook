@@ -57,6 +57,9 @@ services:
       COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES: "3221225472"
       # The source rooms' disk store cap, UAT's (the folder is the image's).
       COLLABORATION_SOURCE_DISK_BYTES: "5368709120"
+      # Note rooms' layout, plate or blocks (todo-blocksuite-spike.md
+      # boundary 1); dev stacks only, UAT and production never set it.
+      COLLABORATION_DOCUMENT_LAYOUT: ${COLLABORATION_DOCUMENT_LAYOUT:-}
     ports:
       - "127.0.0.1:${E2E_COLLABORATION_PORT:-11234}:1234"
     # Every client socket, gateway call and database connection is a

@@ -161,7 +161,7 @@ pub enum RoomCmd {
     /// A note's whole state when it holds edits its projected content lacks
     /// (unsaved, being stored, or stored and not projected yet), else none:
     /// a detailed read's live note content (Q417).
-    LiveNote(oneshot::Sender<Option<Vec<u8>>>),
+    LiveNote(oneshot::Sender<Option<(Vec<u8>, crate::model::Model)>>),
     /// A server edit committed beside the room's stores.
     ServiceEdit(Box<ServiceEdit>),
     /// A children pass for an update this room holds (`children.rs`).
@@ -558,8 +558,10 @@ impl Note {
     /// A note's content room: the one whose sessions are kept and whose
     /// stored state is to be collected (Q274: notes only).
     fn sessioned(&self) -> bool {
-        self.model == crate::model::Model::Note
-            && self.kind == "note"
+        matches!(
+            self.model,
+            crate::model::Model::Note | crate::model::Model::Blocks
+        ) && self.kind == "note"
             && self.doc == note_store::Doc::Content
     }
 }
@@ -1555,12 +1557,18 @@ impl Room {
                 let _ = reply.send(state);
             }
             RoomCmd::LiveNote(reply) => {
-                let unprojected = matches!(&self.kind,
-                    Kindly::Note(note) if note.stored_version > note.projected_version);
-                let state = if self.store.dirty || self.store.running || unprojected {
-                    Some(self.encoded(StateVector::default()).await)
-                } else {
-                    None
+                // Only a material room is asked (`edits::live_note`).
+                let state = match &self.kind {
+                    Kindly::Note(note) => {
+                        let model = note.model;
+                        let unprojected = note.stored_version > note.projected_version;
+                        if self.store.dirty || self.store.running || unprojected {
+                            Some((self.encoded(StateVector::default()).await, model))
+                        } else {
+                            None
+                        }
+                    }
+                    Kindly::Source(_) => None,
                 };
                 let _ = reply.send(state);
             }
@@ -1962,7 +1970,8 @@ impl Room {
             return;
         };
         // Item documents hold no note children (their images are the set's).
-        if note.model != crate::model::Model::Note {
+        let model = note.model;
+        if matches!(model, crate::model::Model::Item(_)) {
             self.child_passes.clear();
             return;
         }
@@ -1973,13 +1982,20 @@ impl Room {
                 let Ok(update) = ydoc::decode(&pass.update) else {
                     continue;
                 };
-                let Some(writes) = notes::children::child_writes(&txn, &update) else {
-                    continue;
-                };
-                let Some(root) = txn.get_text(notes::plate::CONTENT_ROOT) else {
-                    continue;
-                };
-                notes::children::plan(root.as_ref(), &writes)
+                if model == crate::model::Model::Blocks {
+                    match crate::children::blocks_plan(&txn, &update) {
+                        Some(plan) => plan,
+                        None => continue,
+                    }
+                } else {
+                    let Some(writes) = notes::children::child_writes(&txn, &update) else {
+                        continue;
+                    };
+                    let Some(root) = txn.get_text(notes::plate::CONTENT_ROOT) else {
+                        continue;
+                    };
+                    notes::children::plan(root.as_ref(), &writes)
+                }
             };
             if plan.asset_ids.is_empty() && plan.blocks.is_empty() {
                 let kept = notes::children::kept_ids(&plan, &Default::default());
@@ -2060,10 +2076,18 @@ impl Room {
         if let Some(marker) = self.markers.write(&self.doc, &context) {
             self.broadcast_update(None, marker);
         }
-        let root = self.doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
-        let mut txn = self.doc.transact_mut();
-        let applied = notes::children::apply(&mut txn, &root, answer);
-        let update = ydoc::committed_update(txn);
+        let blocks = matches!(&self.kind,
+            Kindly::Note(note) if note.model == crate::model::Model::Blocks);
+        let (applied, update) = if blocks {
+            let mut txn = self.doc.transact_mut();
+            blocks::children::apply(&mut txn, &answer.assets, &answer.blocks);
+            (Ok(true), ydoc::committed_update(txn))
+        } else {
+            let root = self.doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
+            let mut txn = self.doc.transact_mut();
+            let applied = notes::children::apply(&mut txn, &root, answer);
+            (applied, ydoc::committed_update(txn))
+        };
         if let Err(error) = applied {
             observe::capture(
                 &error.to_string(),
@@ -3312,6 +3336,9 @@ impl Room {
             Kindly::Note(note) if note.model == crate::model::Model::Note => {
                 notes::limits::heavy(&self.doc.transact(), &update, bytes.len(), &note.kind)
             }
+            // A blocks room's admission copies and projects the room on
+            // every update (`BlocksValidator`).
+            Kindly::Note(note) if note.model == crate::model::Model::Blocks => true,
             Kindly::Note(_) => !ydoc::applies_inline(
                 &self.doc.transact(),
                 &ydoc::Incoming::new(&update),
@@ -3513,10 +3540,19 @@ impl Room {
             self.repair_on_entry(bytes, heavy);
             // A paste, undo or replayed draft that wrote child ids gets a
             // children pass; typing writes none and costs a decode.
-            if matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Note)
-                && let Ok(update) = ydoc::decode(bytes)
-                && notes::children::child_writes(&self.doc.transact(), &update).is_some()
-            {
+            let names_children = match &self.kind {
+                Kindly::Note(note) => match note.model {
+                    crate::model::Model::Note => ydoc::decode(bytes).is_ok_and(|update| {
+                        notes::children::child_writes(&self.doc.transact(), &update).is_some()
+                    }),
+                    crate::model::Model::Blocks => ydoc::decode(bytes).is_ok_and(|update| {
+                        blocks::children::child_writes(&self.doc.transact(), &update).is_some()
+                    }),
+                    crate::model::Model::Item(_) => false,
+                },
+                Kindly::Source(_) => false,
+            };
+            if names_children {
                 self.child_passes.push_back(ChildPass {
                     actor: context.user_id.clone(),
                     update: bytes.to_vec(),
