@@ -79,19 +79,19 @@ export async function uploadStandalone(
 export const fileCard = (page: Page, name: string) =>
   page.locator('[data-item]').filter({ hasText: name });
 
-/** Files page filter › Location › Standalone. */
-export async function filterStandalone(page: Page) {
+/** Files page filter › Location › Workspace only. */
+export async function filterWorkspaceOnly(page: Page) {
   await page
     .getByRole('button', { exact: true, name: m.workspaces_filter() })
     .click();
   await page
     .getByRole('button', {
       exact: true,
-      name: m.create_location_standalone(),
+      name: m.files_location_workspace(),
     })
     .click();
   await expect(page).toHaveURL(
-    (url) => url.searchParams.get('location') === 'standalone'
+    (url) => url.searchParams.get('location') === 'workspace'
   );
   await page.keyboard.press('Escape');
 }
