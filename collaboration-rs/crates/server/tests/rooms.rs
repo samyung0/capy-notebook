@@ -15094,6 +15094,64 @@ async fn a_slow_agent_compute_holds_no_pool_connection() {
     }
 }
 
+/// Q451 (Q478): a room-path agent Undo of a note reads the stored note under
+/// its first transaction and replays it once that transaction committed, so
+/// the replay (a debug hook makes it three seconds slow) holds neither the
+/// pooled connection nor the operation's lock: another transaction takes
+/// that lock at once meanwhile, and the Undo then lands. Fails if the replay
+/// runs inside the transaction.
+#[tokio::test]
+async fn a_note_undos_stored_replay_runs_after_its_transaction() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note_named(&env, "hello world", "capy-it-slow-replay").await;
+    let room = format!("material:{material}:schema:1");
+    let mut person = Client::open(server.port).await;
+    person.joined(&room, &token(&room, &user, "write")).await;
+    assert!(person.settle(|c| c.block_text() == "hello world").await);
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &note_edit(
+            &user,
+            &material,
+            &format!("e_{material}"),
+            serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }]),
+        ),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(person.settle(|c| c.block_text() == "hello there").await);
+    let undo = format!("u_{material}");
+    let request = undo_step(&user, &undo, &material, &receipt);
+    let port = server.port;
+    let sent =
+        tokio::spawn(async move { internal(port, "/internal/documents/undo", &request).await });
+    tokio::time::sleep(Duration::from_millis(1000)).await;
+    let mut probe = db(&env).await;
+    for _ in 0..5 {
+        let tx = probe.transaction().await.expect("probe");
+        let free: bool = tx
+            .query_one(
+                "SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))",
+                &[&format!("agent-operation:{undo}")],
+            )
+            .await
+            .expect("lock")
+            .get(0);
+        tx.rollback().await.expect("rollback");
+        assert!(
+            free,
+            "the Undo holds its operation's lock through the replay"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert!(!sent.is_finished(), "the probe came after the replay");
+    let (status, answer) = sent.await.expect("undo");
+    assert_eq!(status, 200, "{answer}");
+    assert!(person.settle(|c| c.block_text() == "hello world").await);
+}
+
 /// Q446 (Epo 2026-10-27, REVIEW-final-rust L1): an agent edit computed on a
 /// snapshot whose block a person deletes before its admission (a slow
 /// compute, a debug hook) types among letters yrs dropped with the block
