@@ -80,5 +80,5 @@ the open file's header. Lost-access items wait on the copy-out decision.
 - D2: notes as Markdown and DOCX; quizzes and flashcards later (their embed
   has a primitive export to start from).
 - D3: payers may Clone to… and Download lost-access items (latest version).
-- D4: the copy opens at once, read-only and without a room, marked
-  processing until its index is copied.
+- D4 (revised 2026-10-28): the copy opens at once and editable, with its
+  room; a publication of its edits waits until its index is copied.
