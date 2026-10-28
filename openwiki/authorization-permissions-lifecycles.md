@@ -1617,6 +1617,16 @@ it and offers Rename/Properties/Delete only where the workspace's
 `capabilities` allow editing. Global search (`Store.Search`) follows the same
 set for workspaces, files and flashcard sets.
 
+The Files page's Files tab filters by owner and location (Epo 2026-10-28):
+My files (the default, the paid-for list above) or All files (`scope=all`:
+that plus every file in workspaces the caller owns or is a member of,
+`memberWorkspacesSQL`, never a link or public workspace it only opened), and
+All locations (the default) or Workspace only (`location=workspace`). Every
+row of `GET /api/files` carries `rights` (`FileRights`: rename, trash, move,
+clone), read with the page from the rules each action checks, and the row's
+menu and the selection's Delete offer only those; a lost-access row has none
+and may only be deleted.
+
 Workspace visits (Epo 2026-10-26, migration `0120_workspace_visits.sql`).
 `workspace_visits (user_id, workspace_id, opened_at)` records when each
 signed-in user last opened a workspace (`POST /api/workspaces/{id}/visit`,

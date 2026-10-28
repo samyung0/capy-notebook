@@ -2616,5 +2616,10 @@
   "merge_strip": "你的部分编辑无法同步到这篇笔记。",
   "merge_title": "待审阅的编辑",
   "merge_yours": "你的版本",
-  "merge_yours_deleted": "你删除了此块。"
+  "merge_yours_deleted": "你删除了此块。",
+  "files_filter_owner": "所有者",
+  "files_owner_mine": "我的文件",
+  "files_owner_all": "所有文件",
+  "files_location_all": "所有位置",
+  "files_location_workspace": "仅工作区"
 }

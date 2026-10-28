@@ -2004,8 +2004,12 @@ export const handlers = [
           asc
         )
       );
+    // The mock user owns every mock workspace, so each row allows everything.
     return HttpResponse.json({
-      items: rows.slice(offset, offset + limit),
+      items: rows.slice(offset, offset + limit).map((f) => ({
+        ...f,
+        rights: { clone: true, move: true, rename: true, trash: true },
+      })),
       nextCursor:
         offset + limit < rows.length ? String(offset + limit) : undefined,
     });

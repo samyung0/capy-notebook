@@ -132,6 +132,7 @@ export * from './fileKind.ts';
 export * from './fileLinks.ts';
 export * from './filePage.ts';
 export * from './filePreview.ts';
+export * from './fileRights.ts';
 export * from './fileStatus.ts';
 export * from './flashcard.ts';
 export * from './flashcardAttemptRef.ts';

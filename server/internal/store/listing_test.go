@@ -217,3 +217,77 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 		t.Fatalf("deletion-pending owner still listed: %+v %+v", hidden.Items, hiddenFiles.Items)
 	}
 }
+
+// The Files page's All files (Epo 2026-10-28): what the caller pays for plus
+// every file of its own and member workspaces, never a link workspace it
+// only opened, each row with what the caller may do with it.
+func TestAllFilesAddsMemberWorkspacesWithEachRowsRights(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_all_owner")
+	member := newBlobTestUser(t, s, "u_all_member")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Shared", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "By link", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')`,
+		ws.ID, member); err != nil {
+		t.Fatal(err)
+	}
+	theirs := uploadWorkspaceFile(t, s, owner, ws.ID)
+	mine := uploadWorkspaceFile(t, s, member, ws.ID)
+	standalone := uploadStandaloneFile(t, s, member, 1024)
+	linked := uploadWorkspaceFile(t, s, owner, link.ID)
+	// A viewer now: it still pays for its upload.
+	for _, q := range []string{
+		`UPDATE workspace_members SET role='viewer' WHERE workspace_id='` + ws.ID + `' AND user_id='` + member + `'`,
+		`UPDATE workspaces SET privacy='link' WHERE id='` + link.ID + `'`,
+		`INSERT INTO workspace_link_grants (workspace_id, user_id) VALUES ('` + link.ID + `', '` + member + `')`,
+	} {
+		if _, err := s.pool.Exec(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RecordWorkspaceVisit(ctx, member, link.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	listed := func(f FileListFilter) map[string]FileRights {
+		t.Helper()
+		page, err := s.ListOwnedFiles(ctx, member, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]FileRights{}
+		for _, file := range page.Items {
+			if file.Rights == nil {
+				t.Fatalf("%s listed without rights", file.ID)
+			}
+			out[file.ID] = *file.Rights
+		}
+		return out
+	}
+	if mineOnly := listed(FileListFilter{}); len(mineOnly) != 2 || !mineOnly[standalone.ID].Rename {
+		t.Fatalf("My files = %+v, want the two the member pays for", mineOnly)
+	}
+	all := listed(FileListFilter{All: true})
+	if _, ok := all[linked.ID]; ok || len(all) != 3 {
+		t.Fatalf("All files = %+v, want its own two and the member workspace's other file", all)
+	}
+	for id, want := range map[string]FileRights{
+		theirs.ID:     {Clone: true},
+		mine.ID:       {Trash: true, Move: true, Clone: true},
+		standalone.ID: {Rename: true, Trash: true, Move: true, Clone: true},
+	} {
+		if all[id] != want {
+			t.Fatalf("rights of %s = %+v, want %+v", id, all[id], want)
+		}
+	}
+	if inWorkspaces := listed(FileListFilter{All: true, Locations: []string{"workspace"}}); len(inWorkspaces) != 2 {
+		t.Fatalf("All files in workspaces = %+v, want the member workspace's two", inWorkspaces)
+	}
+}
