@@ -173,7 +173,9 @@ func (a *api) sourceUploadTicket(w http.ResponseWriter, r *http.Request) {
 	var batch string
 	turn, err := a.takeSourceTicket(w, r, &batch)
 	if err != nil {
-		if status := answerError(w, r, err); batch != "" && status != http.StatusTooManyRequests {
+		// A refused ticket is a failed file of its batch.
+		answerError(w, r, err)
+		if batch != "" {
 			a.failSourceBatchFile(r.Context(), batch)
 		}
 		return
@@ -238,10 +240,11 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 	var batch string
 	file, err := a.receiveSource(w, r, &batch)
 	if err != nil {
-		// A refused upload is a failed file of its batch; the browser never
-		// retries one (Q282, src/api/uploadTurn.ts). The 429 exception spares
-		// nothing since Q282: no refusal here is a 429, as a route limit
-		// answers before this handler and the upload class lines up tickets.
+		// A refused upload is a failed file of its batch, except a 429: a
+		// parsed file whose job would pass its uploader's 20 ingest leases
+		// (too_many_ingest_leases, at FinalizeUploadSession), which the
+		// batch's idle sweep settles. The browser never retries an upload
+		// (Q282, src/api/uploadTurn.ts).
 		if status := a.failUpload(w, r, err); batch != "" && status != http.StatusTooManyRequests {
 			a.failSourceBatchFile(r.Context(), batch)
 		}
