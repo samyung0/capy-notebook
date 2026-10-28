@@ -293,6 +293,26 @@ def _row(
     }
 
 
+async def test_a_file_with_no_workspace_is_read_not_inspected_or_edited(
+    monkeypatch,
+):
+    # Until Go's source sessions take one (Epo 2026-10-28, NO_SESSION).
+    gateway = _Gateway([_row("source_file", "f_loose", ws="", name="", edit=True)])
+    monkeypatch.setattr(tools, "_gateway_read", gateway.read)
+    monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
+    ctx = _account()
+    target = {"kind": "source_file", "id": "f_loose"}
+
+    for result in [
+        await tools._inspect_document({"target": target}, ctx),
+        await tools._inspect_office_document({"file_id": "f_loose"}, ctx),
+        await tools._check_source_target(ctx, "f_loose"),
+    ]:
+        assert result is not None and result.refused
+        assert tools.NO_SESSION.format(id="f_loose") in result.text()
+    assert {path for path, _ in gateway.posts} == {"/api/internal/documents/access"}
+
+
 async def test_read_document_checks_access_and_returns_where_the_file_lives(
     monkeypatch,
 ):

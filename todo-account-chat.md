@@ -210,6 +210,9 @@ listing stay workspace-only.
   An Office file with no workspace is asked under workspace "" (Epo
   2026-10-28); its Rust side is on editor/office-changes-no-workspace and
   lands in the same train, before or with account chat.
+  Inspect and edit of a text or Office file with no workspace are refused
+  (`NO_SESSION` in tools.py) until Go's source sessions take one; the Rust
+  session does that after the 2026-10-28 deployment. Remove the refusal then.
 - Review round 2026-10-28 (fixes in): rebased onto main 6f2967c7a and
   renamed to 0128_account_chat; a local DB that ran the old 0127_account_chat
   needs a fresh migration run. Rebased onto main 01ccd1e0f (ghost text's
