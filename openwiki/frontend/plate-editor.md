@@ -232,7 +232,11 @@ DOM-to-point mapping and native caret movement alone. slate-react renders no
 decorations inside a void, so a caret on an inline equation is drawn right
 after it; a caret on a block void (a block equation, an image, an embed) is not
 drawn. Positions beside an inline element resolve through the slate-yjs patch
-(Mermaid source below).
+(Mermaid source below). A peer's `s` or `f` that decodes to a position on a
+root type (`tname`) instead of an item is skipped (`decodePosition`; Epo
+2026-10-29, Q546): resolving it would make this tab's note `Y.Doc` create
+that root type and keep it, one per name a peer sends. Carets always name
+items.
 
 The Plate editor initially has a query-cache value so the React tree has a valid
 shape before connection, but that value is never supplied as Yjs initialization
@@ -349,12 +353,17 @@ caret replaces slate-yjs's `sendCursorPosition`,
 inside the 50 ms throttle (`sendCaret`, `cursorThrottle.ts`). The pointer
 (`sendPointer`, mouse and pen only) names the innermost block under it by its
 stable `data-block-id` and x and y as 0–1000 of its box, at most every 50 ms,
+read in an animation frame with that frame's layout, not in the timer (Q547),
 and `p: null` when it leaves the editor, the page scrolls (a still pointer
 fires no pointermove, so it would name a block it left) or the tab is hidden
 or the window blurred, until it moves again; an id the room would refuse goes
 as null. `BlockSelectionPresence` folds `BlockSelectionPlugin`'s selected ids
 into runs of adjacent siblings in document order (`blockRuns`), at most 16,
-none past that.
+none past that. It visits only the selected blocks (Q547): each id resolves
+through `blockIndex` over the rendered note and slate's element map, and the
+paths order them, an ancestor before its descendants. On the 2 MB load-test
+note at CPU x4 a selection change cost the old walk of the whole note about
+58 ms, and costs well under 1 ms this way.
 
 `RemotePresenceMarks` draws co-editors' pointers and block selections as Epo
 picked from the mocks (2026-10-28, capy-harness

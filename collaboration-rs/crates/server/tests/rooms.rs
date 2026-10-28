@@ -10297,6 +10297,33 @@ async fn a_source_room_relays_an_office_cursor() {
     }
 }
 
+/// Epo 2026-10-28 (review T4): an items room keeps no presence. A quiz's
+/// room, a Note-model room of kind `quiz`, drops the caret a note's room
+/// keeps. Fails if the room kind check (`note.kind == "note"`) goes.
+#[tokio::test]
+async fn an_items_room_drops_the_caret_a_note_room_keeps() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let caret = r#"{"s":"AQKS9tMIAQA="}"#;
+    let owner = user(&env).await;
+    let quiz = quiz_named(&env, &owner, "presence-items").await;
+    let room = format!("material:{quiz}:schema:1");
+    let mut sender = Client::open(server.port).await;
+    sender.joined(&room, &token(&room, &owner, "write")).await;
+    let id = sender.id();
+    sender.send(7, &awareness_update(id, 1, caret)).await;
+    // The room holds no state, so its answer to a query is silence.
+    sender.drain().await;
+    sender.send_on(1, 8, &[]).await;
+    assert!(!sender.hears(7, 1000).await, "an items room kept a caret");
+    let (writer, _, note) = shared_note(&env, "presence").await;
+    let mut sender = Client::open(server.port).await;
+    sender.joined(&note, &token(&note, &writer, "write")).await;
+    let id = sender.id();
+    sender.send(7, &awareness_update(id, 1, caret)).await;
+    assert_eq!(sender.awareness_states(1).await, [(id, caret.to_owned())]);
+}
+
 impl Client {
     /// The states the room sends for `client`, through the first `done`
     /// accepts.

@@ -14,9 +14,8 @@ import {
   presenceClients,
 } from '@/features/collaboration/presence';
 import { InlineEquationPlugin } from './equationPlugins';
-import { sendCaret } from './notePresence';
+import { blockIndex, sendCaret } from './notePresence';
 import {
-  blockIndex,
   placeMarks,
   readPeerMarks,
   readRemotePeers,
@@ -99,7 +98,7 @@ function room() {
   /** What `decorate` returns for the root entry. */
   const drawn = (peers = readRemotePeers(editor, clients)) =>
     remoteCursorRangesForEntry(editor, [editor, []], peers);
-  return { clients, connection, drawn, editor, peer, relay, select };
+  return { clients, connection, doc, drawn, editor, peer, relay, select };
 }
 
 it('marks a peer caret, not only a peer selection, once', () => {
@@ -217,6 +216,37 @@ it('labels and colours a peer caret from the presence, never from its awareness'
   });
   relay();
   expect(readRemotePeers(editor, clients)).toEqual([]);
+});
+
+/** Q546 (Epo 2026-10-29, review S1): a caret position naming a root type
+ * (`tname`) instead of an item is skipped, as `s` or as `f`, so resolving it
+ * never makes this tab's note Y.Doc create and keep that root type
+ * (security regression: fails with the `tname` check in `decodePosition`
+ * reverted, the document gaining "x1" and "x2"). */
+it('skips a peer caret naming a root type and adds no type to the note', () => {
+  const { doc, drawn, peer, relay, select } = room();
+  // 01 02 78 31 00 and 01 02 78 32 00: positions on root types "x1" and "x2".
+  const x1 = 'AQJ4MQA=';
+  const x2 = 'AQJ4MgA=';
+  select({ offset: 2, path: [0, 0] });
+  const item = peer.getLocalState()?.s as string;
+  peer.setLocalState({ s: x1 });
+  relay();
+  expect(drawn()).toEqual([]);
+  expect(doc.share.has('x1')).toBe(false);
+  // A root-type focus draws nothing; a root-type anchor leaves the caret.
+  peer.setLocalState({ f: x2, s: item });
+  relay();
+  expect(drawn()).toEqual([]);
+  peer.setLocalState({ f: item, s: x2 });
+  relay();
+  expect(drawn()).toEqual([
+    expect.objectContaining({
+      anchor: { offset: 2, path: [0, 0] },
+      remoteCursorCaret: true,
+    }),
+  ]);
+  expect(doc.share.has('x2')).toBe(false);
 });
 
 /** A block's box (left, top, width, height) in page coordinates. */

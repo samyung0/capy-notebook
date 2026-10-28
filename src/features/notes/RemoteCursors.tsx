@@ -30,6 +30,7 @@ import { cn } from '@/lib/cn';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import {
   type BlockRun,
+  blockIndex,
   decodePosition,
   type NotePointer,
   readNotePresence,
@@ -322,43 +323,6 @@ export function readPeerMarks(
     color: connection.person % PEER_COLORS,
     name: connection.name ?? m.editor_collaborator(),
     p: presence.p,
-  };
-}
-
-/**
- * The note's rendered blocks by `data-block-id`, so a mark finds its block
- * without searching the note. One pass over the note fills it; an id with no
- * live element there (a block rendered since) runs the pass again, at most
- * once between two `next()` calls (one per layout).
- */
-export function blockIndex(root: ParentNode) {
-  const blocks = new Map<string, Element>();
-  let filled = false;
-  const fill = () => {
-    filled = true;
-    blocks.clear();
-    for (const block of root.querySelectorAll('[data-block-id]')) {
-      const id = block.getAttribute('data-block-id');
-      // The first in document order, as `querySelector` finds it.
-      if (id && !blocks.has(id)) blocks.set(id, block);
-    }
-  };
-  const live = (id: string) => {
-    const block = blocks.get(id);
-    return block?.isConnected && block.getAttribute('data-block-id') === id
-      ? block
-      : undefined;
-  };
-  return {
-    find(id: string) {
-      const block = live(id);
-      if (block || filled) return block;
-      fill();
-      return live(id);
-    },
-    next() {
-      filled = false;
-    },
   };
 }
 

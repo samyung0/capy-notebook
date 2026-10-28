@@ -1,4 +1,9 @@
-import { createSlateEditor } from 'platejs';
+import {
+  createSlateEditor,
+  ElementApi,
+  type SlateEditor,
+  type TElement,
+} from 'platejs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
@@ -11,7 +16,21 @@ import {
   setNotePresence,
 } from './notePresence';
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+/** Timers under the test's control, and animation frames 16 ms apart (the
+ * test runs in Node, which has none). */
+const fakeTime = () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('requestAnimationFrame', (frame: () => void) =>
+    setTimeout(frame, 16)
+  );
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id));
+};
+const nextFrame = () => vi.advanceTimersByTime(16);
 
 const id = (n: number, length: number) => String(n).padStart(length, '0');
 const runs = (count: number, length = 1) =>
@@ -99,6 +118,17 @@ describe('sending a note presence', () => {
   });
 });
 
+/** `editor`'s elements by id, as the rendered note resolves them. */
+const nodesOf = (editor: SlateEditor) => {
+  const nodes = new Map<string, TElement>();
+  for (const [node] of editor.api.nodes<TElement>({
+    at: [],
+    match: (node) => ElementApi.isElement(node) && typeof node.id === 'string',
+  }))
+    nodes.set(node.id as string, node);
+  return (id: string) => nodes.get(id);
+};
+
 describe('block selection runs', () => {
   const editor = createSlateEditor({
     value: [
@@ -114,20 +144,39 @@ describe('block selection runs', () => {
     ],
   });
 
+  const runsOf = (ids: string[]) =>
+    blockRuns(editor, new Set(ids), nodesOf(editor));
+
   it('folds selected blocks into runs of adjacent siblings in order', () => {
-    expect(blockRuns(editor, new Set(['p5', 'p1', 'p2']))).toEqual([
+    expect(runsOf(['p5', 'p1', 'p2'])).toEqual([
       ['p1', 'p2'],
       ['p5', 'p5'],
     ]);
-    expect(blockRuns(editor, new Set(['p3', 'col', 'p5']))).toEqual([
-      ['p3', 'p5'],
-    ]);
-    // A nested block starts a run of its own.
-    expect(blockRuns(editor, new Set(['col', 'c1']))).toEqual([
+    expect(runsOf(['p3', 'col', 'p5'])).toEqual([['p3', 'p5']]);
+    // A nested block starts a run of its own, after its ancestor whichever
+    // was selected first.
+    expect(runsOf(['col', 'c1'])).toEqual([
       ['col', 'col'],
       ['c1', 'c1'],
     ]);
-    expect(blockRuns(editor, new Set())).toBeUndefined();
+    expect(runsOf(['c1', 'col'])).toEqual([
+      ['col', 'col'],
+      ['c1', 'c1'],
+    ]);
+    // An id no block holds any more is left out.
+    expect(runsOf(['gone', 'p2'])).toEqual([['p2', 'p2']]);
+    expect(runsOf([])).toBeUndefined();
+  });
+
+  /** Q547: only the selected blocks are visited, each found by its id. */
+  it('looks up only the selected blocks', () => {
+    const asked: string[] = [];
+    const nodeOf = nodesOf(editor);
+    blockRuns(editor, new Set(['p3', 'p1']), (id) => {
+      asked.push(id);
+      return nodeOf(id);
+    });
+    expect(asked.sort()).toEqual(['p1', 'p3']);
   });
 
   it('sends none past 16 runs', () => {
@@ -140,8 +189,8 @@ describe('block selection runs', () => {
     });
     const every = (count: number) =>
       new Set(Array.from({ length: count }, (_, n) => `b${n * 2}`));
-    expect(blockRuns(many, every(16))).toHaveLength(16);
-    expect(blockRuns(many, every(17))).toBeUndefined();
+    expect(blockRuns(many, every(16), nodesOf(many))).toHaveLength(16);
+    expect(blockRuns(many, every(17), nodesOf(many))).toBeUndefined();
   });
 });
 
@@ -173,34 +222,44 @@ const pointerEvent = (type: string, x: number, y: number, kind = 'mouse') =>
     pointerType: kind,
   });
 
-it('sends the pointer as 0–1000 of its block, at most every 50 ms, and null once it leaves', () => {
-  vi.useFakeTimers();
+it('sends the pointer as 0–1000 of its block, measured in a frame at most every 50 ms, and null once it leaves', () => {
+  fakeTime();
   const awareness = new Awareness(new Y.Doc());
   const root = new Block();
   const stop = sendPointer(root as unknown as HTMLElement, awareness);
   const pointer = () => awareness.getLocalState()?.p;
   root.dispatchEvent(pointerEvent('pointermove', 150, 75));
+  // Measured in the next frame, not in the event or the timer (Q547).
+  expect(pointer()).toBeUndefined();
+  nextFrame();
   expect(pointer()).toEqual(['b1', 250, 250]);
   root.dispatchEvent(pointerEvent('pointermove', 200, 100));
   root.dispatchEvent(pointerEvent('pointermove', 400, 200));
+  nextFrame();
   expect(pointer()).toEqual(['b1', 250, 250]);
   vi.advanceTimersByTime(50);
+  nextFrame();
   // The latest, clamped to the block's box.
   expect(pointer()).toEqual(['b1', 1000, 1000]);
   vi.advanceTimersByTime(100);
   root.dispatchEvent(pointerEvent('pointermove', 100, 50, 'touch'));
+  nextFrame();
   expect(pointer()).toEqual(['b1', 1000, 1000]);
+  // A frame still pending when the pointer leaves sends nothing after it.
+  root.dispatchEvent(pointerEvent('pointermove', 150, 75));
   root.dispatchEvent(pointerEvent('pointerleave', 0, 0));
+  nextFrame();
   expect(pointer()).toBeNull();
   stop();
   root.dispatchEvent(pointerEvent('pointermove', 150, 75));
+  vi.advanceTimersByTime(100);
   expect(pointer()).toBeNull();
 });
 
 /** Review E3: a scroll, a hidden tab or a blurred window drops the pointer
  * until it moves again, so co-editors never see it on a block it left. */
 it('drops the pointer on a scroll, a hidden tab or a blurred window', () => {
-  vi.useFakeTimers();
+  fakeTime();
   const awareness = new Awareness(new Y.Doc());
   const root = new Block();
   const page = root.ownerDocument;
@@ -209,6 +268,7 @@ it('drops the pointer on a scroll, a hidden tab or a blurred window', () => {
   const moveThen = (drop: () => void) => {
     vi.advanceTimersByTime(50);
     root.dispatchEvent(pointerEvent('pointermove', 150, 75));
+    nextFrame();
     expect(pointer()).toEqual(['b1', 250, 250]);
     drop();
     expect(pointer()).toBeNull();
@@ -217,6 +277,7 @@ it('drops the pointer on a scroll, a hidden tab or a blurred window', () => {
   moveThen(() => page.defaultView.dispatchEvent(new Event('blur')));
   vi.advanceTimersByTime(50);
   root.dispatchEvent(pointerEvent('pointermove', 150, 75));
+  nextFrame();
   // A tab shown again is no reason to drop it.
   page.dispatchEvent(new Event('visibilitychange'));
   expect(pointer()).toEqual(['b1', 250, 250]);

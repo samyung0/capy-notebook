@@ -1,9 +1,9 @@
 import { slateRangeToRelativeRange, type YjsEditor } from '@slate-yjs/core';
 import {
-  ElementApi,
   type Path,
   PathApi,
   type SlateEditor,
+  type TElement,
   type TRange,
 } from 'platejs';
 import type { Awareness } from 'y-protocols/awareness';
@@ -156,7 +156,11 @@ const encodePosition = (position: Y.RelativePosition) =>
 /** A position a peer's `s` or `f` names; null when it names none. */
 export function decodePosition(value: string): Y.RelativePosition | null {
   try {
-    return Y.decodeRelativePosition(base64ToBytes(value));
+    const position = Y.decodeRelativePosition(base64ToBytes(value));
+    // A caret names an item. One naming a root type (`tname`) is skipped:
+    // resolving it would make the note's Y.Doc create that root type and keep
+    // it, one per name a peer sends (Epo 2026-10-29, Q546).
+    return position.tname === null ? position : null;
   } catch {
     return null;
   }
@@ -235,8 +239,8 @@ export function pointerOn(
 
 /**
  * Sends this tab's pointer over the note (Epo 2026-10-28): the innermost
- * block under it, x and y as 0–1000 of that block's box, at most every
- * 50 ms; null once it leaves, the page scrolls or the tab or window loses
+ * block under it, x and y as 0–1000 of that block's box, measured in an
+ * animation frame at most every 50 ms; null once it leaves, the page scrolls or the tab or window loses
  * focus. A mouse or pen only: a touch is no pointer
  * (co-editors' mouse pointers, Epo 2026-10-20). Returns the undo.
  */
@@ -246,21 +250,33 @@ export function sendPointer(
   ms = CURSOR_SEND_MS
 ) {
   let latest: PointerEvent | null = null;
-  const pointer = throttled(() => {
+  let frame = 0;
+  // The block's box is read in the next frame, with that frame's layout,
+  // not in the timer, where reading it could force a layout mid-frame (Q547).
+  const measure = () => {
+    frame = 0;
     const event = latest;
     if (event)
       setNotePresence(awareness, {
         p: pointerOn(root, event.target, event.clientX, event.clientY),
       });
+  };
+  const pointer = throttled(() => {
+    frame ||= requestAnimationFrame(measure);
   }, ms);
   const move = (event: PointerEvent) => {
     if (event.pointerType === 'touch') return;
     latest = event;
     pointer.schedule();
   };
+  const stopSending = () => {
+    pointer.cancel();
+    cancelAnimationFrame(frame);
+    frame = 0;
+  };
   const leave = () => {
     latest = null;
-    pointer.cancel();
+    stopSending();
     setNotePresence(awareness, { p: null });
   };
   // A scroll moves the blocks under a still pointer and fires no pointermove,
@@ -277,7 +293,7 @@ export function sendPointer(
   page.addEventListener('visibilitychange', hidden);
   view?.addEventListener('blur', leave);
   return () => {
-    pointer.cancel();
+    stopSending();
     root.removeEventListener('pointermove', move);
     root.removeEventListener('pointerleave', leave);
     page.removeEventListener('scroll', leave, { capture: true });
@@ -286,24 +302,68 @@ export function sendPointer(
   };
 }
 
+/**
+ * The note's rendered blocks by `data-block-id`, so a co-editor's mark or
+ * this tab's selected blocks are found without searching the note. One pass over the note fills it; an id with no
+ * live element there (a block rendered since) runs the pass again, at most
+ * once between two `next()` calls (one per layout).
+ */
+export function blockIndex(root: ParentNode) {
+  const blocks = new Map<string, Element>();
+  let filled = false;
+  const fill = () => {
+    filled = true;
+    blocks.clear();
+    for (const block of root.querySelectorAll('[data-block-id]')) {
+      const id = block.getAttribute('data-block-id');
+      // The first in document order, as `querySelector` finds it.
+      if (id && !blocks.has(id)) blocks.set(id, block);
+    }
+  };
+  const live = (id: string) => {
+    const block = blocks.get(id);
+    return block?.isConnected && block.getAttribute('data-block-id') === id
+      ? block
+      : undefined;
+  };
+  return {
+    find(id: string) {
+      const block = live(id);
+      if (block || filled) return block;
+      fill();
+      return live(id);
+    },
+    next() {
+      filled = false;
+    },
+  };
+}
+
 /** The selected blocks as runs of adjacent siblings in document order;
- * none past 16 runs (Epo 2026-10-28) or for an id the room would refuse. */
+ * none past 16 runs (Epo 2026-10-28) or for an id the room would refuse.
+ * Only the selected blocks are visited (Q547): `nodeOf` finds each by id and
+ * its path orders it, an ancestor before its descendants. */
 export function blockRuns(
   editor: SlateEditor,
-  ids: ReadonlySet<string>
+  ids: ReadonlySet<string>,
+  nodeOf: (id: string) => TElement | undefined
 ): BlockRun[] | undefined {
   if (ids.size === 0) return;
+  const blocks: [string, Path][] = [];
+  for (const id of ids) {
+    const node = nodeOf(id);
+    const path = node && editor.api.findPath(node);
+    if (!path) continue;
+    if (!isId(id)) return;
+    blocks.push([id, path]);
+  }
+  blocks.sort(
+    ([, left], [, right]) =>
+      PathApi.compare(left, right) || left.length - right.length
+  );
   const runs: BlockRun[] = [];
   let previous: Path | null = null;
-  for (const [node, path] of editor.api.nodes({
-    at: [],
-    match: (node) =>
-      ElementApi.isElement(node) &&
-      typeof node.id === 'string' &&
-      ids.has(node.id),
-  })) {
-    const id = node.id as string;
-    if (!isId(id)) return;
+  for (const [id, path] of blocks) {
     const run = runs.at(-1);
     if (run && previous && PathApi.equals(PathApi.next(previous), path))
       run[1] = id;

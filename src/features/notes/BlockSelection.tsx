@@ -4,14 +4,19 @@ import {
   useBlockSelected,
   useCursorOverlay,
 } from '@platejs/selection/react';
-import { KEYS } from 'platejs';
+import { ElementApi, KEYS } from 'platejs';
 import {
   type PlateElementProps,
   useEditorRef,
   usePluginOption,
 } from 'platejs/react';
 import { useEffect, useMemo } from 'react';
-import { blockRuns, setNotePresence, throttled } from './notePresence';
+import {
+  blockIndex,
+  blockRuns,
+  setNotePresence,
+  throttled,
+} from './notePresence';
 import { editorAwareness } from './uploadPresence';
 
 /** Ported from plate-playground-template block-selection.tsx: only blocks the
@@ -91,16 +96,31 @@ export function BlockSelectionPresence() {
   const selected = usePluginOption(BlockSelectionPlugin, 'selectedIds');
   const runs = useMemo(() => {
     const awareness = editorAwareness(editor);
-    return awareness
-      ? throttled(() =>
-          setNotePresence(awareness, {
-            b: blockRuns(
-              editor,
-              editor.getOption(BlockSelectionPlugin, 'selectedIds') ?? new Set()
-            ),
-          })
-        )
-      : null;
+    if (!awareness) return null;
+    // Selected ids resolve through the rendered blocks, not a walk of the
+    // note (Q547).
+    let root: Element | undefined;
+    let blocks: ReturnType<typeof blockIndex> | undefined;
+    const nodeOf = (id: string) => {
+      const block = blocks?.find(id);
+      const node = block && editor.api.toSlateNode(block);
+      return ElementApi.isElement(node) && node.id === id ? node : undefined;
+    };
+    return throttled(() => {
+      const at = editor.api.toDOMNode(editor);
+      if (at !== root) {
+        root = at;
+        blocks = at && blockIndex(at);
+      }
+      blocks?.next();
+      setNotePresence(awareness, {
+        b: blockRuns(
+          editor,
+          editor.getOption(BlockSelectionPlugin, 'selectedIds') ?? new Set(),
+          nodeOf
+        ),
+      });
+    });
   }, [editor]);
   useEffect(() => {
     if (selected) runs?.schedule();
