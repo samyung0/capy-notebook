@@ -24,11 +24,11 @@ export interface User {
   chatSteps: UserChatSteps;
   classLabel?: string;
   customization?: Customization;
-  editorModel: Ref;
   email: string;
   id: string;
   locale: string;
   name: string;
+  noteAiEnabled: boolean;
   planTier: PlanTier;
   streak: number;
   studyPreferences: StudyPreferences;

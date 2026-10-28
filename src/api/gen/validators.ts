@@ -4160,14 +4160,11 @@ export const GetMeResponse = zod.object({
   "style": zod.enum(['capy', 'fisheye', 'notion']),
   "theme": zod.enum(['latte', 'frappe', 'mocha'])
 }).optional(),
-  "editorModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}),
   "email": zod.string(),
   "id": zod.string(),
   "locale": zod.string(),
   "name": zod.string(),
+  "noteAiEnabled": zod.boolean(),
   "planTier": zod.enum(['free', 'pro']),
   "streak": zod.int(),
   "studyPreferences": zod.object({
@@ -4253,14 +4250,11 @@ export const UpdateMeResponse = zod.object({
   "style": zod.enum(['capy', 'fisheye', 'notion']),
   "theme": zod.enum(['latte', 'frappe', 'mocha'])
 }).optional(),
-  "editorModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}),
   "email": zod.string(),
   "id": zod.string(),
   "locale": zod.string(),
   "name": zod.string(),
+  "noteAiEnabled": zod.boolean(),
   "planTier": zod.enum(['free', 'pro']),
   "streak": zod.int(),
   "studyPreferences": zod.object({
@@ -4348,7 +4342,7 @@ export const SetLocaleResponse = zod.void()
 
 
 /**
- * @summary Set chat, generate and editor model preferences
+ * @summary Set the chat model and the note AI switch
  */
 export const SetModelPrefsBody = zod.object({
   "chatModel": zod.object({
@@ -4356,10 +4350,7 @@ export const SetModelPrefsBody = zod.object({
   "providerSlug": zod.string()
 }).optional(),
   "chatThinking": zod.string().optional(),
-  "editorModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}).optional()
+  "noteAiEnabled": zod.boolean().optional()
 })
 
 export const SetModelPrefsResponse = zod.void()
@@ -4396,7 +4387,7 @@ export const ListModelSlotsResponse = zod.object({
  * @summary Enabled models for a slot
  */
 export const ListModelsQueryParams = zod.object({
-  "slot": zod.enum(['chat', 'editor']).optional()
+  "slot": zod.enum(['chat']).optional()
 })
 
 export const ListModelsResponse = zod.object({

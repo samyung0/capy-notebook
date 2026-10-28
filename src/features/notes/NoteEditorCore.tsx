@@ -97,9 +97,8 @@ import {
   sendLateDrafts,
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
-import { editorAiEnabled } from '@/lib/features';
 import { isBoolean, PREF_KEYS, readPref, writePref } from '@/lib/localPrefs';
-import { AiMenu } from './ai/AiMenu';
+import { GhostTextSync } from './ai/GhostTextView';
 import { NoteBlockDialogsProvider } from './blocks/dialogContext';
 import {
   CollaborationProvider,
@@ -2367,9 +2366,9 @@ export function NoteEditorCore({
                 </div>
                 {/* Window-wide listeners: only the editor on screen. */}
                 {!locked && phase === 'live' && <EditorCommandPalette />}
-                {!locked &&
-                  phase === 'live' &&
-                  editorAiEnabled(allowExternalAssets) && <AiMenu />}
+                {!locked && phase === 'live' && allowExternalAssets && (
+                  <GhostTextSync title={material.title} />
+                )}
               </CollaborationProvider>
             </Plate>
           </div>

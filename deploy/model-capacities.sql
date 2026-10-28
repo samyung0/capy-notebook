@@ -23,21 +23,23 @@
 -- so the gate stops at 32. Each current provider held 32 in flight without a
 -- 429 on 2026-10-20.
 -- OpenRouter DeepSeek V4.1 Flash 1017 (InferenceNet, then Cloudflare, since
--- 2026-10-21) reads pages and images for captioning, so it has no interactive
--- reserve either. InferenceNet answered 128 page reads at once (p95 8.6 s) and
--- Cloudflare 64 (p95 10.1 s), so this row's gate is 64 (decision 2026-10-21).
--- Page reads lease the vlm_page gate instead of this row (CAPY_VLM_PAGE_CAPACITY:
--- 64 in production, 20 in UAT and local), so it gates standalone image
--- captions only. The two gates add up: production can hold 128 calls in flight
--- on this route, which InferenceNet held, but Cloudflare, the fallback, was
--- measured only at 64, so an InferenceNet outage during a burst may leave
--- reads slow or busy on Cloudflare.
+-- 2026-10-21) captions standalone images, serves chat and, from 2026-10-28,
+-- note ghost text, so the row is 76 in flight with 56 kept for interactive
+-- calls (chat and ghost text; decision 2026-10-28); UAT and local keep 16/12.
+-- InferenceNet answered 128 page reads at once (p95 8.6 s) and Cloudflare 64
+-- (p95 10.1 s); a 2026-10-28 ghost-text probe from the ingest host (about 400
+-- tokens in, 20 out) held 64 in flight at about 5,000 calls a minute with no
+-- 429 (first token p50 0.39 s, total p95 1.0 s). Page reads lease the vlm_page
+-- gate instead of this row (CAPY_VLM_PAGE_CAPACITY: 64 in production, 20 in
+-- UAT and local), so the gates add up: production can hold 140 calls in flight
+-- on this route, and Cloudflare, the fallback, was measured only at 64, so an
+-- InferenceNet outage during a burst may leave calls slow or busy there.
 -- OpenRouter MiniMax 3.1 Flash (Together, then Wafer since 2026-10-25; a chat
 -- choice since 2026-10-24) serves chat alone, so all but one call is kept for
 -- interactive use (the reserve must stay below the total). Together and Wafer
 -- each held 16 calls at once in the 2026-10-23 probe (total p95 3.0 s and
 -- 3.1 s), so the gate is 16.
--- Interactive reserves: 83% GLM / 60% DeepSeek / 40% embedding.
+-- Interactive reserves: 83% GLM / 60% DeepSeek / 74% DeepSeek 1017 / 40% embedding.
 -- The reranker is a separate DeepInfra model on the same account, with its own
 -- 200-request limit. Only interactive search calls it, so its reserve never
 -- binds; it copies the embedding's 80.
@@ -47,7 +49,7 @@ WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
     ('deepseek', 'deepseek-flash', 2500, 2200),
     ('zai', 'glm-5.3-flash', 150, 125),
     ('openrouter', 'deepseek/deepseek-v4-flash-0731', 32, 0),
-    ('openrouter', 'deepseek/deepseek-v4.1-flash-1017', 64, 0),
+    ('openrouter', 'deepseek/deepseek-v4.1-flash-1017', 76, 56),
     ('openrouter', 'minimax/minimax-m3.1-flash', 16, 15),
     ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200, 80),
     ('deepinfra', 'Qwen/Qwen3-Reranker-4B', 200, 80)

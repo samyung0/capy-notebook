@@ -1,4 +1,3 @@
-import { AIChatPlugin } from '@platejs/ai/react';
 import {
   flip,
   offset,
@@ -11,13 +10,10 @@ import {
   useEditorRef,
   useEditorSelector,
   useEventEditorValue,
-  usePluginOption,
 } from 'platejs/react';
 import { FloatingToolbar as SharedFloatingToolbar } from '@/components/ui/BlockToolbar';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
-import { features } from '@/lib/features';
-import { openAiMenu } from './ai/aiMenuState';
 import { useCollaborationActions } from './Collaboration';
 import { useEditorRuntime } from './EditorRuntime';
 import { insertInlineEquation } from './editorCommands';
@@ -28,25 +24,6 @@ import {
 } from './toolbar/ToolbarButton';
 
 export function FloatingToolbar() {
-  return features.editorAi ? (
-    <FloatingToolbarWithAi />
-  ) : (
-    <FloatingToolbarChrome hideForAi={false} showAi={false} />
-  );
-}
-
-function FloatingToolbarWithAi() {
-  const aiOpen = usePluginOption(AIChatPlugin, 'open');
-  return <FloatingToolbarChrome hideForAi={aiOpen} showAi />;
-}
-
-function FloatingToolbarChrome({
-  hideForAi,
-  showAi,
-}: {
-  hideForAi: boolean;
-  showAi: boolean;
-}) {
   const editor = useEditorRef();
   const inLink = useEditorSelector(
     (ed) => ed.api.some({ match: { type: KEYS.link } }),
@@ -74,7 +51,6 @@ function FloatingToolbarChrome({
       placement: 'top',
     },
     focusedEditorId,
-    hideToolbar: hideForAi,
   });
   const { clickOutsideRef, hidden, props, ref } = useFloatingToolbar(state);
 
@@ -88,18 +64,6 @@ function FloatingToolbarChrome({
         positionRef={ref}
         role="toolbar"
       >
-        {showAi && (
-          <ToolbarButton
-            className="w-auto px-2"
-            label={m.editor_ai_commands()}
-            onClick={() => openAiMenu(editor)}
-            shortcut={EDITOR_SHORTCUTS.ai}
-            tooltipSide="top"
-          >
-            <EditorIcon name="sparkles" />{' '}
-            <span className="pr-1 text-xs">{m.editor_ask_ai()}</span>
-          </ToolbarButton>
-        )}
         <MarkToolbarButton
           label={m.editor_bold()}
           markKey={KEYS.bold}

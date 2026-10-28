@@ -215,8 +215,7 @@ GRANT SELECT (
 ) ON workspaces TO capy_ops_admin;
 GRANT SELECT (
   id, email, locale,
-  chat_model_provider_slug, chat_model_slug,
-  editor_model_provider_slug, editor_model_slug
+  chat_model_provider_slug, chat_model_slug
 ) ON users TO capy_ops_admin;
 GRANT SELECT (
   user_id, email_workspace_invite, email_billing
@@ -246,7 +245,6 @@ GRANT UPDATE (version, updated_at)
   ON model_registry_state TO capy_ops_admin;
 GRANT UPDATE (
   chat_model_provider_slug, chat_model_slug,
-  editor_model_provider_slug, editor_model_slug,
   updated_at
 ) ON users TO capy_ops_admin;
 GRANT INSERT (

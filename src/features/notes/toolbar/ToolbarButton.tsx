@@ -3,7 +3,6 @@ import { ToolbarButton as SharedToolbarButton } from '@/components/ui/ToolbarBut
 
 /** Shortcuts that are actually registered on the Plate editor. */
 export const EDITOR_SHORTCUTS = {
-  ai: 'Ctrl+J',
   bold: 'Ctrl+B',
   code: 'Ctrl+E',
   highlight: 'Ctrl+Shift+H',

@@ -39,7 +39,7 @@ func (a *api) registerModels(api huma.API) {
 	const tag = "Account"
 	reg(api, http.MethodGet, "/api/model-slots", "listModelSlots", tag, "Known model slots", http.StatusOK, a.listModelSlots)
 	reg(api, http.MethodGet, "/api/models", "listModels", tag, "Enabled models for a slot", http.StatusOK, a.listModels)
-	reg(api, http.MethodPatch, "/api/me/models", "setModelPrefs", tag, "Set chat, generate and editor model preferences", http.StatusNoContent, a.setModelPrefs)
+	reg(api, http.MethodPatch, "/api/me/models", "setModelPrefs", tag, "Set the chat model and the note AI switch", http.StatusNoContent, a.setModelPrefs)
 }
 
 func (a *api) listModelSlots(context.Context, *struct{}) (*modelSlotsOutput, error) {
@@ -95,9 +95,7 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 	for _, item := range items {
 		out.Models = append(out.Models, item.opt)
 	}
-	if slot == models.SlotEditor {
-		out.SelectedThinking = models.ThinkingInstant
-	} else if selected, ok := findListed(items, out.SelectedModel); ok && selected.Thinking != nil {
+	if selected, ok := findListed(items, out.SelectedModel); ok && selected.Thinking != nil {
 		resolved, err := listedCfg(items, out.SelectedModel).ResolveThinking(prefs.Thinking(slot))
 		if err != nil {
 			return nil, hErr(fmt.Errorf("%w: %v", store.ErrModelUnavailable, err))
@@ -132,9 +130,9 @@ func listedCfg(items []listedModel, ref models.Ref) models.Config {
 
 func (a *api) setModelPrefs(ctx context.Context, in *setModelsInput) (*Empty, error) {
 	if err := a.s.SetModelPrefs(ctx, userID(ctx), store.ModelPrefsPatch{
-		ChatModel:    in.Body.ChatModel,
-		EditorModel:  in.Body.EditorModel,
-		ChatThinking: in.Body.ChatThinking,
+		ChatModel:     in.Body.ChatModel,
+		ChatThinking:  in.Body.ChatThinking,
+		NoteAIEnabled: in.Body.NoteAIEnabled,
 	}); err != nil {
 		return nil, hErr(err)
 	}
@@ -166,7 +164,18 @@ func (a *api) resolveLLM(ctx context.Context, userID, slot string) (resolvedLLM,
 		return out, fmt.Errorf("%w: registry not configured", store.ErrModelUnavailable)
 	}
 	switch slot {
-	case models.SlotChat, models.SlotEditor:
+	case models.SlotEditor:
+		// Ghost text runs on the slot's default pin with reasoning off.
+		cfg, err := a.modelReg.Default(ctx, slot)
+		if err != nil {
+			return out, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
+		}
+		out.Cfg = cfg
+		out.Rates = store.RatesFromConfig(cfg)
+		out.UserID = userID
+		out.Thinking = models.ThinkingInstant
+		return out, nil
+	case models.SlotChat:
 		if userID == "" {
 			return out, fmt.Errorf("%w: missing user for %s", store.ErrModelUnavailable, slot)
 		}
@@ -185,13 +194,7 @@ func (a *api) resolveLLM(ctx context.Context, userID, slot string) (resolvedLLM,
 		out.Cfg = cfg
 		out.Rates = store.RatesFromConfig(cfg)
 		out.UserID = userID
-		stored := prefs.Thinking(slot)
-		if slot == models.SlotEditor {
-			// Editor calls have a fixed policy, separate from selectable levels.
-			out.Thinking = models.ThinkingInstant
-		} else {
-			out.Thinking, err = cfg.ResolveThinking(stored)
-		}
+		out.Thinking, err = cfg.ResolveThinking(prefs.Thinking(slot))
 		if err != nil {
 			return resolvedLLM{}, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
 		}

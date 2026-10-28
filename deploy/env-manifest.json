@@ -1005,10 +1005,6 @@
       "targets": ["workflow", "build"],
       "required_for": ["build"]
     },
-    "VITE_FEATURE_EDITOR_AI": {
-      "kind": "variable",
-      "targets": ["workflow", "build"]
-    },
     "VITE_FEATURE_EXPLORE": {
       "kind": "variable",
       "targets": ["workflow", "build"]

@@ -128,14 +128,11 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 			}
 		}
 	}
-	var beforePreferences [4]string
+	var beforePreferences [2]string
 	if err := tx.QueryRow(ctx,
-		`SELECT chat_model_provider_slug, chat_model_slug,
-			editor_model_provider_slug, editor_model_slug
+		`SELECT chat_model_provider_slug, chat_model_slug
 		 FROM users WHERE id='u_1'`,
-	).Scan(
-		&beforePreferences[0], &beforePreferences[1], &beforePreferences[2], &beforePreferences[3],
-	); err != nil {
+	).Scan(&beforePreferences[0], &beforePreferences[1]); err != nil {
 		t.Fatal(err)
 	}
 	result, err := registry.saveTx(ctx, tx, request)
@@ -200,14 +197,11 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 			t.Fatalf("slot %s has %d defaults after Save", slot, defaults)
 		}
 	}
-	var afterPreferences [4]string
+	var afterPreferences [2]string
 	if err := tx.QueryRow(ctx,
-		`SELECT chat_model_provider_slug, chat_model_slug,
-			editor_model_provider_slug, editor_model_slug
+		`SELECT chat_model_provider_slug, chat_model_slug
 		 FROM users WHERE id='u_1'`,
-	).Scan(
-		&afterPreferences[0], &afterPreferences[1], &afterPreferences[2], &afterPreferences[3],
-	); err != nil {
+	).Scan(&afterPreferences[0], &afterPreferences[1]); err != nil {
 		t.Fatal(err)
 	}
 	if afterPreferences != beforePreferences {
@@ -386,9 +380,8 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO users (
 			id, name, email,
-			chat_model_provider_slug, chat_model_slug,
-			editor_model_provider_slug, editor_model_slug
-		) VALUES ($1, 'All Prefs', $2, $3, $4, $3, $4)`,
+			chat_model_provider_slug, chat_model_slug
+		) VALUES ($1, 'All Prefs', $2, $3, $4)`,
 		userID, userID+"@example.test", retiredRef.ProviderSlug, retiredRef.ModelSlug,
 	); err != nil {
 		t.Fatal(err)
@@ -410,24 +403,20 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.RemappedUsers != 2 || result.DisabledRows < 1 {
-		t.Fatalf("unexpected all-slot remap result: %+v", result)
+	if result.RemappedUsers != 1 || result.DisabledRows < 1 {
+		t.Fatalf("unexpected remap result: %+v", result)
 	}
-	var preferences [2]models.Ref
+	var preference models.Ref
 	if err := tx.QueryRow(ctx, `
-		SELECT chat_model_provider_slug, chat_model_slug,
-			editor_model_provider_slug, editor_model_slug
+		SELECT chat_model_provider_slug, chat_model_slug
 		FROM users WHERE id=$1`, userID,
-	).Scan(
-		&preferences[0].ProviderSlug, &preferences[0].ModelSlug,
-		&preferences[1].ProviderSlug, &preferences[1].ModelSlug,
-	); err != nil {
+	).Scan(&preference.ProviderSlug, &preference.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
-	// Each slot lands on its own default, Flash for both.
-	want := [2]models.Ref{{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}, {ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}}
-	if preferences != want {
-		t.Fatalf("preferences = %q, want %q", preferences, want)
+	// The chat preference lands on the chat default.
+	want := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}
+	if preference != want {
+		t.Fatalf("preference = %q, want %q", preference, want)
 	}
 	var enabled bool
 	if err := tx.QueryRow(ctx,

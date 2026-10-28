@@ -500,7 +500,6 @@ Pageviews fire once per parameterized TanStack route pattern
 | `source_ingest_failed` | File reaches `failed`. `reason` is a short code, never the SSE message. |
 | `chat_turn_sent` and `chat_turn_completed` | `useChatStream.send`. `hasScope` is `false`. Completed fires once for ok, error, or abort. |
 | `material_generated` / `material_generate_failed` | `useGenerate` success or error. |
-| `editor_ai_used` | Plate AI menu submit. `continue` vs typed or other actions (`command`). Prompt is not sent. |
 | `quiz_attempt_finished` | The check of a quiz's last unchecked question succeeds (not a page that opens an already finished try). |
 | `share_link_created` | Visibility becomes `link` or `public`. |
 | `collaborator_invited` | Invite create succeeds. |
@@ -597,7 +596,8 @@ named provider directly. These exact routing exceptions are allowed:
   (decision 2026-10-20, after Relace's endpoint answered 429 for every summary;
   each held 32 summary calls in flight without a 429 when probed that day);
   `deepseek/deepseek-v4.1-flash-1017`, the captioning pin for page reads and
-  image captions (decision 2026-10-19), goes to InferenceNet, then Cloudflare
+  image captions (decision 2026-10-19) and the editor slot's ghost-text pin
+  (decision 2026-10-28), goes to InferenceNet, then Cloudflare
   (decision 2026-10-21: both read page text as well as DeepInfra did;
   InferenceNet describes non-text visuals such as QR codes less often, which is
   accepted). Default routing is
@@ -698,16 +698,15 @@ enabled version of that provider/model identity. The
 is written onto the **assistant message**. Settings changes apply to the next
 message in an existing thread. Generate resolves the
 same chat pair and chat thinking per request. The browser cannot choose a model per message.
-Chat and editor preferences are edited in **Settings → LLM** (editor only when
-`VITE_FEATURE_EDITOR_AI` is on)
-(`GET /api/models`, `PATCH /api/me/models`). Empty preference writes are
-rejected, and a `PATCH` only touches the slots it names. Editor AI
-(`/ai/command`, `/ai/copilot`) resolves
-the `users.editor_model_provider_slug` / `users.editor_model_slug` pair the same
-way chat does. It is the highest-call-volume
-slot per user, so it is the one where an expensive choice shows up first in
-credit burn. Editor thinking is forced to Instant on the Python call.
-Settings show Instant as a disabled control for this slot.
+The chat preference is edited in **Settings → LLM** (`GET /api/models`,
+`PATCH /api/me/models`). Empty preference writes are rejected, and a `PATCH`
+only touches the fields it names. The same `PATCH` carries the note AI switch
+(`noteAiEnabled`, `users.note_ai_enabled`, off by default). Note ghost text
+(`/ai/copilot`) has no per-user model (Epo 2026-10-28): it always runs on the
+editor slot's default pin, `deepseek/deepseek-v4.1-flash-1017`, with reasoning
+off (`instant`). It is the highest-call-volume path per user, about 0.08
+credits a suggestion and a few hundred suggestions an hour of steady writing
+(`todo-ghost-text.md`).
 
 Open quiz parts are graded by typesafe.ai's Jev (`server/internal/jev`, model
 pinned to `jev-1.13.0`, key `JEV_TYPESAFE_API_KEY`), which Go calls directly:
@@ -1178,10 +1177,10 @@ original id. Every provider call runs under a retry policy in `models.py`: a
 busy answer (429, 503, 529) waits for the provider's `Retry-After`, else a
 jittered backoff, and every attempt is a new call id. Interactive calls get two
 attempts inside three seconds and then fail closed as `provider_busy` (HTTP 503
-carrying `retryAfterSeconds`, with a `Retry-After` header on the Plate copilot
+carrying `retryAfterSeconds`, with a `Retry-After` header on the ghost-text
 route; generate answers through Huma, which sets no header, so
 the wait is in the body only; an SSE `error` event with `retryAfterSeconds` on
-chat and Plate commands). A request cancelled while its admission is in flight
+chat). A request cancelled while its admission is in flight
 is undone by a detached task that abandons the never-sent call row and frees
 its lease, without delaying the cancellation. A `Retry-After`
 longer than what is left of the budget ends the call at once. Ingest embedding,
@@ -1268,8 +1267,8 @@ it an OpenAI-compatible stream reports no usage at all**, which is how the
 single highest-volume path in the product ends up costing an unknown amount.
 
 Usage reaches the gateway as a `usage` envelope: on the SSE `done` event for
-chat, as `data-usage` (stripped before the browser) for
-Plate command streams, and in the JSON body for `/generate` and `/plate-ai/copilot`.
+chat, and in the JSON body for `/generate`. Ghost text (`/plate-ai/copilot`)
+answers only its text; its usage settles through the bound provider session.
 
 ### Ingest is billed to the actor
 
@@ -1637,12 +1636,12 @@ orders of magnitude. Listing workspaces touches one index. A chat turn gets
 12 responses before its first write, 4 tool calls per response and 160 per
 turn (`pipeline/pipeline/retrieval/limits.py`). Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
-(`/chat/stream`, `/generate`, `/ai/command`, question checks (`/check`: a
+(`/chat/stream`, `/generate`, question checks (`/check`: a
 quiz's, a review session's, the bank's, one question each; Epo 2026-10-25
 keeps them here, since a learner does not check 15 questions a minute) and
 `/computation-check`) are 200/hour with burst 15, plus
-a 15/minute short-window guard so a scripted loop trips immediately. Cheap
-editor routes (`/ai/copilot`) have their own 120/minute
+a 15/minute short-window guard so a scripted loop trips immediately. Ghost
+text (`/ai/copilot`) has its own 120/minute
 class so typing in the note does not consume the chat allowance. Upload
 routes (a gateway upload's ticket, which the upload itself needs, and the
 import routes) carry a tighter budget on top of the general one, and so do the
@@ -1832,8 +1831,9 @@ Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 150/125 and Qwen embedding 200/80; local development
 keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
 rows: DeepSeek Flash 2500/1500, GLM 150/125 (still keyed `zai/glm-5.3-flash`),
-OpenRouter DeepSeek V4 Flash 0731 32/0 and V4.1 Flash 1017 64/0 (ingest-only,
-so no interactive reserve; page reads lease the `vlm_page` gate instead),
+OpenRouter DeepSeek V4 Flash 0731 32/0 (ingest-only, so no interactive
+reserve) and V4.1 Flash 1017 76/56 (captions, chat and ghost text; page reads
+lease the `vlm_page` gate instead),
 MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together and Wafer each held 16
 calls at once in the 2026-10-23 probe), Qwen
 embedding 200/80 (total/interactive reserve). Existing settings remain, so an
@@ -1843,8 +1843,10 @@ limits; the reserves are application policy. GLM's 150 calls in flight with 125
 reserved for interactive use (decision 2026-10-21): DigitalOcean held 150 in
 flight for 66 s with no error and a first-token p95 of 2.2 s, and answered 250
 at once, but half of those waited past the 15 s first-event bound. Ingest uses
-no GLM. 1017's 64 (decision 2026-10-21): InferenceNet answered 128 page reads at
-once and Cloudflare 64. Migration `0097` (2026-10-20) copied an existing
+no GLM. 1017's 76/56 (decision 2026-10-28, raised from 64/0 when chat and
+ghost text joined captions): InferenceNet answered 128 page reads at once and
+Cloudflare 64, and a ghost-text probe held 64 calls in flight at about 5,000
+a minute with no 429. Migration `0097` (2026-10-20) copied an existing
 `relace/glm-5.3-flash` row to `zai/glm-5.3-flash` capped at 48/40; the relace
 and `tencent` rows are history. GLM 429s appear under Health "Busy models". An interactive
 429 fails at once with the busy message when its `Retry-After` is past the 3 s

@@ -30,9 +30,10 @@ var allSlots = []Slot{
 	SlotRerank,
 }
 
+// The editor slot runs on its default pin (Epo 2026-10-28), so only chat is
+// picked per user.
 var userModelSlots = []UserModelSlot{
 	SlotChat,
-	SlotEditor,
 }
 
 // llmSlots are the slots served by a text model: they need a context window

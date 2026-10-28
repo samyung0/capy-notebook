@@ -44,7 +44,6 @@ const (
 // route patterns.
 var aiSuffixes = []string{
 	"/chat/stream",
-	"/ai/command",
 	"/generate",
 	// Server grading, which sends open answers to Jev: a quiz, review or bank
 	// check, one question each (the signed-out grade is under /api/public/),

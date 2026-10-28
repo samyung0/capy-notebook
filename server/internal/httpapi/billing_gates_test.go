@@ -147,26 +147,24 @@ func assertInteractiveCreditsForbidden(t *testing.T, fx billingFixture) {
 		t.Fatalf("generate: %d %s", gen.Code, gen.Body.String())
 	}
 
+	if _, err := fx.pool.Exec(context.Background(), `UPDATE users SET note_ai_enabled=true WHERE id=$1`, fx.actorID); err != nil {
+		t.Fatal(err)
+	}
 	copilot := doReq(t, fx.handler, http.MethodPost, "/api/workspaces/"+ws+"/ai/copilot", fx.actorID,
-		map[string]any{"prompt": "continue this sentence."})
+		map[string]any{"title": "Notes", "before": "continue this sentence "})
 	if copilot.Code != http.StatusForbidden || errorCode(t, copilot) != "llm_credits_exhausted" {
 		t.Fatalf("copilot: %d %s", copilot.Code, copilot.Body.String())
 	}
+}
 
-	command := doReq(t, fx.handler, http.MethodPost, "/api/workspaces/"+ws+"/ai/command", fx.actorID,
-		map[string]any{
-			"messages": []any{map[string]any{
-				"role": "user", "parts": []any{map[string]any{"type": "text", "text": "summarize"}},
-			}},
-			"ctx": map[string]any{
-				"children": []any{map[string]any{
-					"type": "p", "children": []any{map[string]any{"text": "Draft"}},
-				}},
-				"toolName": "generate",
-			},
-		})
-	if command.Code != http.StatusForbidden || errorCode(t, command) != "llm_credits_exhausted" {
-		t.Fatalf("command: %d %s", command.Code, command.Body.String())
+// Ghost text refuses before any spend while the user's note AI switch is off.
+func TestCopilotRefusesWhileNoteAIOff(t *testing.T) {
+	fx := openBilling(t)
+	ws := fx.workspaceID
+	got := doReq(t, fx.handler, http.MethodPost, "/api/workspaces/"+ws+"/ai/copilot", fx.actorID,
+		map[string]any{"before": "continue this sentence "})
+	if got.Code != http.StatusForbidden || errorCode(t, got) != "note_ai_disabled" {
+		t.Fatalf("copilot: %d %s", got.Code, got.Body.String())
 	}
 }
 

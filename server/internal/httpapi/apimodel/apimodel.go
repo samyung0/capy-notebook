@@ -124,12 +124,12 @@ type ModelsResponse struct {
 	SelectedThinking string        `json:"selectedThinking"`
 }
 
-// SetModelPrefsReq patches one or more slot preferences. Omitted fields are
-// left as they are, so a picker on one slot cannot reset another.
+// SetModelPrefsReq patches Settings → LLM. Omitted fields are left as they
+// are, so one control cannot reset another.
 type SetModelPrefsReq struct {
-	ChatModel    *models.Ref `json:"chatModel,omitempty"`
-	EditorModel  *models.Ref `json:"editorModel,omitempty"`
-	ChatThinking *string     `json:"chatThinking,omitempty"`
+	ChatModel     *models.Ref `json:"chatModel,omitempty"`
+	ChatThinking  *string     `json:"chatThinking,omitempty"`
+	NoteAIEnabled *bool       `json:"noteAiEnabled,omitempty"`
 }
 
 // SourceUploadPolicy describes the server-owned file allowlist and parser

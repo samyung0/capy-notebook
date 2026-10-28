@@ -5989,7 +5989,7 @@ export const getSetModelPrefsUrl = () => {
 }
 
 /**
- * @summary Set chat, generate and editor model preferences
+ * @summary Set the chat model and the note AI switch
  */
 export const setModelPrefs = async (setModelPrefsReq: NonReadonly<SetModelPrefsReq>, options?: RequestInit): Promise<setModelPrefsResponse> => {
 

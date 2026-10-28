@@ -19,7 +19,6 @@ import {
 } from '@/components/ui/Dialog';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
-import { openAiMenu } from '@/features/notes/ai/aiMenuState';
 import { useCollaborationActions } from '@/features/notes/Collaboration';
 import {
   importDocxDocument,
@@ -65,7 +64,6 @@ import { ToolbarStudyMenu } from '@/features/notes/toolbar/ToolbarStudyMenu';
 import { TableMenu } from '@/features/notes/toolbar/ToolbarTableMenu';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { editorAiEnabled } from '@/lib/features';
 import { useHorizontalWheelScroll } from '@/lib/useHorizontalWheelScroll';
 
 // TODO: what is this
@@ -426,15 +424,6 @@ export function NoteToolbar({ className }: { className?: string }) {
         </div>
         <div className="ml-auto flex shrink-0 items-center pl-1 sm:pl-2">
           <ToolbarDocumentComments />
-          {editorAiEnabled(allowExternalAssets) && (
-            <ToolbarButton
-              label={m.editor_ai_commands()}
-              onClick={() => openAiMenu(editor)}
-              shortcut={EDITOR_SHORTCUTS.ai}
-            >
-              <EditorIcon name="sparkles" />
-            </ToolbarButton>
-          )}
           <EditorSettingsDialog />
         </div>
       </Toolbar>

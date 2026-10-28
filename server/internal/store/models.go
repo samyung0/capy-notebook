@@ -32,9 +32,10 @@ type User struct {
 	ChatSendKey string `json:"chatSendKey" enum:"enter,shift_enter"`
 	// Customization is the look last synced from one of the user's devices;
 	// nil until they first press Sync.
-	Customization      *Customization     `json:"customization,omitempty"`
-	ChatModel          models.Ref         `json:"chatModel"`
-	EditorModel        models.Ref         `json:"editorModel"`
+	Customization *Customization `json:"customization,omitempty"`
+	ChatModel     models.Ref     `json:"chatModel"`
+	// NoteAIEnabled turns on note ghost text, off by default (Settings → LLM).
+	NoteAIEnabled      bool               `json:"noteAiEnabled"`
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
 }
