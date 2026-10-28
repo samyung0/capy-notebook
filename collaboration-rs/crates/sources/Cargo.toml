@@ -49,6 +49,9 @@ axum.workspace = true
 # Reads an XLSX room's computed values as an editor's engine does
 # (tests/live_undo_office.rs); office-service builds it already.
 betteroffice-xlsx = { path = "../../../vendor/betteroffice/crates/betteroffice-xlsx", default-features = false }
+# Inserts an image into a DOCX room as an editor does (tests/store_db.rs);
+# office-service builds it already.
+docx-edit = { package = "betteroffice-docx-edit", path = "../../../vendor/betteroffice/crates/docx-edit" }
 # Builds a DOCX fixture variant (tests/live_undo_office.rs); office-service
 # builds it already.
 ooxml-opc = { package = "betteroffice-opc", path = "../../../vendor/betteroffice/crates/ooxml-opc" }

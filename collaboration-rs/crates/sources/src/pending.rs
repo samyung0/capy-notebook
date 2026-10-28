@@ -139,7 +139,9 @@ fn decoded(row: &tokio_postgres::Row, index: usize, file_id: &str) -> Option<Vec
 
 impl Sources {
     /// The pending effects of the workspace's Office files among `file_ids`
-    /// (text files and files of other workspaces are left out). `live`
+    /// (text files and files of other workspaces are left out); an empty
+    /// `workspace_id` reads only files with no workspace, the caller having
+    /// checked the actor's access to each. `live`
     /// answers a room's state when this instance has it loaded. Cached files
     /// cost one statement for all and no engine call; the rest are read
     /// [`READS_AT_ONCE`] at a time, and those not read within `budget`
@@ -160,7 +162,7 @@ impl Sources {
         let rows = client
             .query(
                 &format!(
-                    "SELECT d.file_id,d.epoch,d.checkpoint,{CACHED_EFFECTS_SQL} FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=ANY($2) AND f.workspace_id=$3 AND f.trashed_at IS NULL AND d.format<>'text' ORDER BY d.file_id"
+                    "SELECT d.file_id,d.epoch,d.checkpoint,{CACHED_EFFECTS_SQL} FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=ANY($2) AND f.workspace_id IS NOT DISTINCT FROM NULLIF($3,'') AND f.trashed_at IS NULL AND d.format<>'text' ORDER BY d.file_id"
                 ),
                 &[&engine, &file_ids, &workspace_id],
             )
