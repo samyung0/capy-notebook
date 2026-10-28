@@ -214,7 +214,7 @@ func TestRetentionBetweenMessages(t *testing.T) {
 	want := map[ResultRetention][]string{
 		RetainFull: {
 			"list_sources", "create_material", "add_questions", "add_question_media", "create_deck",
-			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document", "search_files_summary", "create_workspace", "search_knowledge", "list_workspaces",
+			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document", "search_files_summary", "create_workspace", "create_chapter", "search_knowledge", "list_workspaces",
 		},
 		RetainCitedPassages: {"search_workspace", "read_document", "search_web", "search_files_content"},
 		RetainUsedExcerpts:  {"read_knowledge"},

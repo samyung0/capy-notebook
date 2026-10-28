@@ -35,7 +35,9 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # Hashes of what workspace chat sent the model before account chat: written
 # by running the snapshot below against commit 79209a759's pipeline with the
 # v42 contract (agent_tools.json before account scopes). Never regenerate it
-# from the current code to make this pass.
+# from the current code to make this pass. Changed on purpose since:
+# create_chapter and the editing skill's chapter-list line (Epo 2026-10-29),
+# the owner schemas and skills/editing keys alone.
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 
 OWNER = frozenset(
@@ -181,6 +183,7 @@ def test_the_account_profile_offers_the_account_tools():
         "list_sources",
         "list_workspaces",
         "create_workspace",
+        "create_chapter",
         "resolve_source_change",
         "read_document",
         "capture_page",
@@ -214,6 +217,11 @@ def test_the_account_profile_offers_the_account_tools():
             "workspace_id"
             not in contract.DEFINITIONS[name]["inputSchema"]["properties"]
         )
+    # create_chapter names its workspace here; No workspace has no chapters.
+    chapter = by_name["create_chapter"]["parameters"]
+    assert "workspace_id" in chapter["properties"]
+    assert chapter["required"] == ["workspace_id"]
+    assert "required" not in contract.DEFINITIONS["create_chapter"]["inputSchema"]
     # Workspace chat's list_sources, listing by workspace here (Q523).
     listing = by_name["list_sources"]
     assert listing["description"] == profiles.account.LIST_SOURCES
@@ -253,6 +261,9 @@ def test_the_account_prompt_turn_context_and_skills_name_the_users_files():
     assert "Open:" not in context and "workspace_id=" not in context
     editing = skills.text(skills.EDITING, account=True)
     assert "list_sources" not in editing and "No workspace" in editing
+    # The outline names where new files go before their chapters (review F1/F3).
+    assert "No workspace, which has no chapters" in editing
+    assert "create_chapter" in editing and "create_workspace" in editing
     assert "No workspace" in skills.text(skills.DECK_BUILDING, account=True)
 
 
@@ -952,6 +963,77 @@ async def test_create_workspace_cuts_what_is_over_its_limit(monkeypatch):
     assert "Every tool that creates can create in it" in text
     assert tools.CUT_NOTE.format(what="name", limit=tools.WORKSPACE_NAME_MAX) in text
     assert tools.TAGS_CUT_NOTE.format(limit=tools.WORKSPACE_TAGS_MAX, left=2) in text
+
+
+async def test_create_chapter_cuts_its_name_and_names_its_workspace(monkeypatch):
+    sent = {}
+
+    async def post(path, payload, op_id, ctx, **_kwargs):
+        sent.update(payload, path=path)
+        return tools._receipt_result(
+            {
+                "operationId": op_id,
+                "kind": "create_chapter",
+                "outcome": "succeeded",
+                "workspaceId": payload["workspaceId"],
+                "name": payload["name"],
+            },
+            ctx,
+        )
+
+    monkeypatch.setattr(tools, "_post_operation", post)
+    name = "N" * (tools.CHAPTER_NAME_MAX + 5)
+
+    result = await tools.run(
+        "create_chapter",
+        {"name": name, "workspace_id": "ws_1", "_tool_call_id": "call_1"},
+        _account(),
+    )
+    missing = await tools.run("create_chapter", {"_tool_call_id": "call_2"}, _account())
+
+    assert sent["path"] == "/api/internal/chapters"
+    assert sent["scope"] == "account" and sent["workspaceId"] == "ws_1"
+    assert sent["name"] == name[: tools.CHAPTER_NAME_MAX]
+    text = result.text()
+    assert not result.refused, text
+    assert f"chapter_id={tools.chapter_id(tools.operation_id('m_1', 'call_1'))}" in text
+    assert tools.CUT_NOTE.format(what="name", limit=tools.CHAPTER_NAME_MAX) in text
+    assert missing.refused
+    assert tools.CHAPTER_NEEDS_ITS_WORKSPACE in missing.text()
+
+
+def test_list_sources_names_empty_chapters():
+    # Review F2: a build reuses a chapter with nothing in it yet.
+    outline = {"chapters": [{"id": "ch_1", "name": "Kinematics"}], "files": []}
+
+    text = tools._source_listing(outline, [], None).text()
+
+    assert "## Kinematics (chapter_id=ch_1)" in text
+
+
+async def test_a_chapter_the_turn_creates_takes_its_items(monkeypatch):
+    # Workspace chat checks chapter_id against the turn's chapters before Go.
+    def post(url, **kwargs):
+        return _Resp(
+            {
+                "operationId": "op_abc",
+                "kind": "create_chapter",
+                "outcome": "succeeded",
+                "workspaceId": "ws_1",
+                "name": "Kinematics",
+            }
+        )
+
+    monkeypatch.setattr(tools.requests, "post", post)
+    ctx = _ctx(assistant_message_id="m_1")
+
+    created = await tools._create_chapter(
+        {"name": "Kinematics", "_tool_call_id": "call_1"}, ctx
+    )
+
+    assert not created.refused, created.text()
+    assert ctx.chapters == [{"id": "ch_abc", "name": "Kinematics"}]
+    assert tools.unknown_chapter(ctx, {"chapter_id": "ch_abc"}) is None
 
 
 @pytest.mark.parametrize("named", ["ws_2", None])

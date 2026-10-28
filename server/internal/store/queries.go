@@ -809,6 +809,18 @@ func (s *Store) AddChapter(ctx context.Context, wsID, actorID, name string) (Cha
 	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID); err != nil {
 		return Chapter{}, err
 	}
+	ch, err := addChapterTx(ctx, tx, wsID, id, name)
+	if err != nil {
+		return Chapter{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Chapter{}, err
+	}
+	return ch, nil
+}
+
+// addChapterTx appends a chapter; the caller holds the workspace's editor lock.
+func addChapterTx(ctx context.Context, tx pgx.Tx, wsID, id, name string) (Chapter, error) {
 	var pos int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM chapters WHERE workspace_id=$1`, wsID).Scan(&pos); err != nil {
 		return Chapter{}, err
@@ -817,9 +829,6 @@ func (s *Store) AddChapter(ctx context.Context, wsID, actorID, name string) (Cha
 		return Chapter{}, ErrTooManyChapters
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO chapters (id, workspace_id, name, position) VALUES ($1,$2,$3,$4)`, id, wsID, name, pos); err != nil {
-		return Chapter{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return Chapter{}, err
 	}
 	return Chapter{ID: id, WorkspaceID: wsID, Name: name, Order: pos, FileIDs: []string{}}, nil

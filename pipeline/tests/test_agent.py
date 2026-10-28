@@ -1652,6 +1652,9 @@ async def test_checkpoint_folds_trailing_user_message_from_failed_turn(monkeypat
 def test_operation_id_matches_the_go_fixture():
     # server/internal/store/agent_operations_test.go pins the same literal.
     assert tools.operation_id("m_1", "call_1") == "op_4bf000a1f98d2dcd046acbf1"
+    assert (
+        tools.chapter_id("op_4bf000a1f98d2dcd046acbf1") == "ch_4bf000a1f98d2dcd046acbf1"
+    )
     assert tools.operation_id("m_1", "call_1") != tools.operation_id("m_1", "call_2")
 
 

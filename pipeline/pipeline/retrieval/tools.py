@@ -34,6 +34,7 @@ from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
 from ..generated.limits import (
+    CHAPTER_NAME_MAX,
     QUESTION_DESCRIPTION_MAX,
     QUESTION_METADATA_MAX,
     TAG_VALUE_MAX,
@@ -444,6 +445,12 @@ def operation_id(assistant_message_id: str, tool_call_id: str) -> str:
     return "op_" + digest[:24]
 
 
+def chapter_id(op_id: str) -> str:
+    """The chapter a create_chapter call made: its operation id under the
+    chapter prefix (Go's store.ChatChapterID), so a recovered receipt names it."""
+    return "ch_" + op_id.removeprefix("op_")
+
+
 def _result(text: str, *, passages: list[Passage] | None = None) -> ToolResult:
     return ToolResult(text_parts=[text], passages=list(passages or []))
 
@@ -631,11 +638,10 @@ def _source_listing(
     for item in documents:
         if item["kind"] == "material":
             materials.setdefault(item.get("chapterId"), []).append(item)
+    # Empty chapters too, so a build reuses them (Epo 2026-10-29, review F2).
     for chapter in outline["chapters"]:
         files = by_chapter.pop(chapter["id"], [])
         filed = materials.pop(chapter["id"], [])
-        if not files and not filed:
-            continue
         lines.append(f"\n## {chapter['name']} (chapter_id={chapter['id']})")
         lines.extend(_file_line(f, sources[f["id"]]["editable"]) for f in files)
         lines.extend(_material_line(item, summaries) for item in filed)
@@ -1103,6 +1109,49 @@ async def _create_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         operation_id(ctx.assistant_message_id, call_id),
         ctx,
         failure="create the workspace",
+    )
+    if not (result.refused or result.failed):
+        result.text_parts.extend(notes)
+    return result
+
+
+CHAPTER_NEEDS_ITS_WORKSPACE = (
+    "create_chapter needs the workspace_id of a workspace the user can edit: "
+    "No workspace has no chapters."
+)
+
+
+async def _create_chapter(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """A chapter at the end of the workspace's (Epo 2026-10-29): an optional
+    name, an over-limit one cut and said, the default Go's Chapter (n)."""
+    if not _gateway_ready() or not ctx.user_id or not ctx.assistant_message_id:
+        return _refused(
+            "Chapter creation is unavailable for this user.",
+            code="lifecycle_rejected",
+        )
+    call_id = str(args.get("_tool_call_id") or "")
+    if not call_id:
+        return _refused("create_chapter is missing its tool-call id.")
+    workspace_id = (
+        str(args.get("_workspace_id") or "") if ctx.account else ctx.workspace_id
+    )
+    if not workspace_id:
+        return _refused(CHAPTER_NEEDS_ITS_WORKSPACE)
+    notes: list[str] = []
+    payload = {
+        "scope": "account" if ctx.account else "workspace",
+        "userId": ctx.user_id,
+        "workspaceId": workspace_id,
+        "assistantMessageId": ctx.assistant_message_id,
+        "toolCallId": call_id,
+        "name": _cut(args.get("name"), CHAPTER_NAME_MAX, "name", notes),
+    }
+    result = await _post_operation(
+        "/api/internal/chapters",
+        payload,
+        operation_id(ctx.assistant_message_id, call_id),
+        ctx,
+        failure="create the chapter",
     )
     if not (result.refused or result.failed):
         result.text_parts.extend(notes)
@@ -1889,6 +1938,19 @@ def _receipt_result(body: dict[str, Any], ctx: ToolContext | None = None) -> Too
         return _result(
             f"Created the workspace{name} (workspace_id={body.get('workspaceId')}). "
             "Every tool that creates can create in it with this workspace_id."
+        )
+    if body.get("kind") == "create_chapter" and body.get("outcome") == "succeeded":
+        # No effect, so no Undo (Epo 2026-10-29); a recovered receipt has no name.
+        chapter = chapter_id(str(body.get("operationId") or ""))
+        name = str(body.get("name") or "")
+        if ctx is not None and not ctx.account:
+            # The turn's chapter check and list_sources reach it at once.
+            ctx.chapters.append({"id": chapter, "name": name})
+            ctx._scope_outline = None
+        named = f" '{name}'" if name else ""
+        return _result(
+            f"Created the chapter{named} (chapter_id={chapter}) at the end of the "
+            "workspace's chapters. File items in it with this chapter_id."
         )
     effect = body.get("effect")
     if not isinstance(effect, dict) or body.get("outcome") != "succeeded":
@@ -4402,6 +4464,7 @@ _register("search_files_summary", _search_files_summary)
 _register("search_files_content", _search_files_content)
 _register("list_workspaces", _list_workspaces)
 _register("create_workspace", _create_workspace)
+_register("create_chapter", _create_chapter)
 _register("read_document", _read_document)
 _register("capture_page", _capture_page)
 _register("create_material", _create_material)
@@ -4552,7 +4615,7 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
     if (
         ctx.account
-        and (name in DESTINATION_TOOLS or name == "list_sources")
+        and (name in DESTINATION_TOOLS or name in ("list_sources", "create_chapter"))
         and "workspace_id" in args
     ):
         # The account schema copy's own argument (profiles/account.py); Go's

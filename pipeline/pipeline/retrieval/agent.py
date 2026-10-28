@@ -74,6 +74,7 @@ WRITE_TOOLS = frozenset(
     {
         "create_material",
         "create_workspace",
+        "create_chapter",
         "add_questions",
         "add_question_media",
         "edit_document",
@@ -185,6 +186,8 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
         detail = "listing workspaces"
     elif name == "create_workspace":
         detail = str(args.get("name") or "") or "New Workspace"
+    elif name == "create_chapter":
+        detail = str(args.get("name") or "") or "New chapter"
     elif name in ("create_material", "create_deck"):
         detail = str(args.get("title") or "")
     elif name in ("add_questions", "add_question_media"):

@@ -333,6 +333,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/documents/list", a.internalListDocuments)
 		r.Post("/api/internal/documents/access", a.internalDocumentAccess)
 		r.Post("/api/internal/workspaces", a.internalCreateWorkspace)
+		r.Post("/api/internal/chapters", a.internalCreateChapter)
 		r.Post("/api/internal/changes", a.internalChanges)
 		r.Post("/api/internal/changes/resolve", a.internalResolveChange)
 		r.Post("/api/internal/documents/inspect", a.internalInspectDocument)

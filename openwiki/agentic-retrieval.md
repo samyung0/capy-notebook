@@ -5430,6 +5430,17 @@ for life so the provider prompt cache holds.
   destination must be No workspace or a scope workspace the actor edits.
   `POST /api/internal/workspaces` is `create_workspace` (a receipt, no Undo,
   under the combined workspace cap).
+- **Chapters.** `create_chapter` (both scopes, operation `material.create`)
+  appends a chapter named as asked or `Chapter (n)` with the lowest free n, an
+  over-limit name cut and said; `POST /api/internal/chapters` records a
+  receipt and no Undo, and the chapter's id is its operation id under `ch_`
+  (`store.ChatChapterID`, `tools.chapter_id`) so a recovered receipt names it.
+  Account chat's copy takes a required `workspace_id` of a workspace the user
+  edits; workspace chat's adds the chapter to the turn's chapters at once.
+  The editing skill shows, with scope and level, the outline of what it will
+  create: each new file and its chapter (account chat's: its workspace, or No
+  workspace, first). `list_sources` names empty chapters too, so a build
+  reuses them, and the playground creates chapters locally (Epo 2026-10-29).
 - **Refusals in account words.** An unreadable item:
   "No file you can read has the id …: it may have been deleted, moved to trash
   or be outside your workspaces. list_sources shows a workspace's current ids;

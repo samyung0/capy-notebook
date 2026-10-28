@@ -159,7 +159,9 @@ import (
 // v45: account chat's list_files is list_sources, one definition offered in
 // both scopes (Epo 2026-10-28, Q523); the account profile's copy takes
 // workspace_id and says what it lists there.
-const ContractVersion = 45
+// v46: create_chapter (Epo 2026-10-29) appends a chapter, named as asked or
+// Chapter (n), in both scopes; account chat's copy names its workspace_id.
+const ContractVersion = 46
 
 // Scope is the kind of chat a tool is offered in: a workspace's, or the
 // account's across the user's own files (Epo 2026-10-27). A conversation keeps
@@ -977,6 +979,19 @@ func Definitions() []Definition {
 			Mutates:            true,
 			Concurrency:        "mutate",
 			RequiredOperations: []Operation{OpWorkspaceCreate},
+		}),
+		// Account chat's copy (profiles/account.py) takes the workspace_id.
+		chatTool(Definition{
+			Name:      "create_chapter",
+			Scopes:    both,
+			Retention: RetainFull,
+			Description: "Add a chapter at the end of the workspace's chapters, for files to be filed in " +
+				"by the chapter_id it returns. Without a name it is Chapter (n). A name over its limit " +
+				"is cut to it and saved.",
+			InputSchema:        obj(map[string]any{"name": str("")}),
+			Mutates:            true,
+			Concurrency:        "mutate",
+			RequiredOperations: []Operation{OpMaterialCreate},
 		}),
 		chatTool(Definition{
 			Name:      "read_document",

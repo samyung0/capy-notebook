@@ -492,6 +492,17 @@ export function useChatStream(workspaceId: string | null) {
                 void qc.invalidateQueries({ queryKey: ['workspaces'] });
                 void qc.invalidateQueries({ queryKey: ['tags'] });
               }
+              // A chapter chat made has no effect either (Epo 2026-10-29); the
+              // account chat's names no workspace, so every chapter list refetches.
+              if (
+                toolNames.get(callId) === 'create_chapter' &&
+                result.outcome === 'succeeded'
+              ) {
+                void qc.invalidateQueries({
+                  predicate: ({ queryKey }) =>
+                    queryKey[0] === 'workspace' && queryKey[2] === 'chapters',
+                });
+              }
               setMessages((prev) =>
                 prev.map((msg) => {
                   if (msg.id !== currentId) return msg;
