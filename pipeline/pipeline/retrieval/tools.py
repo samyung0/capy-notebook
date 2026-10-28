@@ -721,6 +721,16 @@ NO_ACCOUNT_ITEM = (
     "current ids; search_files_summary finds a file by name across your "
     "workspaces."
 )
+
+
+def _not_found(ctx: ToolContext, kind: str, rid: str) -> str:
+    """What an item's tool adds to Go's plain not found: account chat's one
+    text (Q525, review W1), or workspace chat's hint for a source file (Q482)."""
+    if ctx.account:
+        return NO_ACCOUNT_ITEM.format(id=rid)
+    return NO_WORKSPACE_ITEM.format(id=rid) if kind == "source_file" else ""
+
+
 OUTSIDE_CHOSEN = (
     '"{id}" is outside the sources chosen for this chat, and the chat cannot '
     "widen that choice."
@@ -3103,7 +3113,7 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
             "count": int(args.get("count") or 60),
         },
         "inspect the document",
-        NO_WORKSPACE_ITEM.format(id=rid) if kind == "source_file" else "",
+        _not_found(ctx, kind, rid),
         account=ctx.account,
     )
     if isinstance(body, ToolResult):
@@ -3314,7 +3324,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         failure="edit the document",
         timeout=60 if images else 10,
         explain=explain,
-        not_found=NO_WORKSPACE_ITEM.format(id=rid) if kind == "source_file" else "",
+        not_found=_not_found(ctx, kind, rid),
     )
     if result.effects:
         # This turn's own view: drop cached outlines and re-read the exact
@@ -3852,7 +3862,7 @@ async def _inspect_office_document(
             },
         },
         "inspect the file",
-        NO_WORKSPACE_ITEM.format(id=rid),
+        _not_found(ctx, "source_file", rid),
         account=ctx.account,
     )
     if isinstance(body, ToolResult):
@@ -3940,7 +3950,7 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             ctx,
             failure="edit the file",
             explain=explain,
-            not_found=NO_WORKSPACE_ITEM.format(id=rid),
+            not_found=_not_found(ctx, "source_file", rid),
         )
     if result.effects and (cut := _NOT_APPLIED.search(result.text())):
         result.progress = (int(cut[1]), len(commands))
@@ -4004,6 +4014,7 @@ def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
                 "count": 200,
             },
             f"read quiz {quiz_id}",
+            _not_found(ctx, "material", quiz_id),
             account=ctx.account,
         )
         return body if isinstance(body, ToolResult) else quiz_questions(quiz_id, body)
@@ -4031,6 +4042,7 @@ def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
             failure="edit the quiz",
             # Go stores each figure in the bucket before the edit.
             timeout=60 if images else 10,
+            not_found=_not_found(ctx, "material", quiz_id),
         )
 
     return QuizStore(load, create, edit)

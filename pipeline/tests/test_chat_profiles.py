@@ -350,6 +350,48 @@ async def test_the_document_tools_point_a_missing_id_to_list_sources(monkeypatch
     assert {path for path, _ in gateway.posts} == {"/api/internal/documents/access"}
 
 
+async def test_a_not_found_after_the_access_check_is_account_chats_one_text(
+    monkeypatch,
+):
+    # Review W1, Q525: Go answering 404 after access passed (the item trashed
+    # in between) gives the access refusal's text, not workspace chat's
+    # NO_WORKSPACE_ITEM; a quiz the user names is read and edited the same.
+    readable = _row("source_file", "f_1", edit=True)
+
+    def post(url, **kwargs):
+        if url.endswith("/documents/access"):
+            items = json.loads(kwargs["data"])["items"]
+            return _Resp({"items": [{**i, **readable} for i in items]})
+        return _Resp({"code": "not_found", "message": "not found"}, 404)
+
+    monkeypatch.setattr(tools.requests, "post", post)
+    ctx = _account()
+    target = {"kind": "source_file", "id": "f_1"}
+    quizzes = tools._gateway_quizzes(ctx, "c_3")
+
+    for result in [
+        await tools._inspect_document({"target": target}, ctx),
+        await tools._edit_document(
+            {"target": target, "commands": [], "_tool_call_id": "c_1"}, ctx
+        ),
+        await tools._inspect_office_document({"file_id": "f_1"}, ctx),
+        await tools._edit_office_document(
+            {
+                "file_id": "f_1",
+                "commands": [{"type": "set_cell"}],
+                "_tool_call_id": "c_2",
+            },
+            ctx,
+        ),
+    ]:
+        assert result.refused
+        assert tools.NO_ACCOUNT_ITEM.format(id="f_1") in result.text()
+        assert "No workspace item" not in result.text()
+    for result in [await quizzes.load("q_1"), await quizzes.edit("q_1", [], [], [])]:
+        assert result.refused
+        assert tools.NO_ACCOUNT_ITEM.format(id="q_1") in result.text()
+
+
 async def test_read_document_checks_access_and_returns_where_the_file_lives(
     monkeypatch,
 ):
