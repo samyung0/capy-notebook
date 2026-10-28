@@ -445,7 +445,12 @@ the upload fails in the browser (a cancel, the row's remove button, a closed
 editor or dialog, or a refusal), it gives the ticket back with
 `DELETE /api/uploads/tickets/{id}` (its owner only), which hands the
 ticket's place, or its turn's bytes, to the line at once. The browser never
-retries an upload itself (Q282). A source ticket given back counts at once
+retries an upload itself (Q282), so a refused source ticket or upload counts
+once, at once, as a failed file of its batch: the gateway counts a refusal
+before the upload's session exists, and the session's expiry
+(`upload_sessions_settle_source_batch`) counts one after it, a 429
+`too_many_ingest_leases` (the parsed file's job past the uploader's 20 ingest
+leases) among them. A source ticket given back counts at once
 as a failed file of its batch, or as a removed one when the user removed its
 row (`?reason=removed`). Any other reason is a 400. Giving back a ticket the upload already spent is a
 harmless 410. An abandoned tab sends nothing, and its ticket waits for its

@@ -260,15 +260,15 @@ func putUpload(ctx context.Context, objects blob.Store, uploadID, key string, bo
 }
 
 // failUpload answers a refused upload. What is left of the body is not read:
-// the connection closes after the answer. It returns the status sent.
-func (a *api) failUpload(w http.ResponseWriter, r *http.Request, err error) int {
+// the connection closes after the answer.
+func (a *api) failUpload(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Connection", "close")
-	return answerError(w, r, err)
+	answerError(w, r, err)
 }
 
 // answerError answers err as the JSON operations answer errors
-// (reportHandlerError) and returns the status sent.
-func answerError(w http.ResponseWriter, r *http.Request, err error) int {
+// (reportHandlerError).
+func answerError(w http.ResponseWriter, r *http.Request, err error) {
 	var status huma.StatusError
 	if !errors.As(err, &status) {
 		err = hErr(err)
@@ -276,5 +276,4 @@ func answerError(w http.ResponseWriter, r *http.Request, err error) int {
 	answer := reportHandlerError(r.Context(), err)
 	errors.As(answer, &status)
 	writeJSON(w, status.GetStatus(), answer)
-	return status.GetStatus()
 }
