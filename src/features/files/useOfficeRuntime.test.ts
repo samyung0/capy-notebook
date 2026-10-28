@@ -5,6 +5,7 @@ import {
   keepsFocus,
   officeNotices,
   openRequestedPresenter,
+  viewCheckpoint,
 } from './useOfficeRuntime';
 import { opensAtSizeLimit } from './useSourceSession';
 
@@ -160,5 +161,25 @@ describe('an edit open at the size limit', () => {
 
   it('leaves a read session (storage full) to its own banner', () => {
     expect(opensAtSizeLimit({ ...full, access: 'read' }, 0)).toBe(false);
+  });
+});
+
+describe('what view mode exports over the base', () => {
+  it('is the saved edits while a publication waits to become the base', () => {
+    // Checkpoints equal (just published, room still open), yet the session
+    // carries the edits, all stored against the base it still opens on.
+    const session = {
+      checkpoint: 3,
+      indexedCheckpoint: 3,
+      state: btoa(String.fromCharCode(1, 2, 3)),
+      stateSeedSHA256: 'seed',
+    };
+    const { checkpoint, checkpointSeedSHA256 } = viewCheckpoint(session);
+    expect(new Uint8Array(checkpoint!)).toEqual(new Uint8Array([1, 2, 3]));
+    expect(checkpointSeedSHA256).toBe('seed');
+  });
+
+  it('is nothing when the session carries no saved edits', () => {
+    expect(viewCheckpoint({ state: null, stateSeedSHA256: null })).toEqual({});
   });
 });
