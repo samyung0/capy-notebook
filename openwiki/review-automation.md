@@ -9,9 +9,9 @@ tags: [security, review, uat, strix, codex, playwright, ci]
 
 Deterministic checks run in GitHub Actions. Code review and agent-driven scans
 run on the developer's machine and are never a promotion gate. Only
-`audit.yml` (daily) and `agent-visibility.yml` (nightly, when the read path
-changed since its last green run) have a schedule, and nothing deploys on
-push.
+`audit.yml` (daily) and `agent-visibility.yml` (nightly, unless only paths
+the lane never reads changed since its last green run) have a schedule, and
+nothing deploys on push.
 
 | Runs in Actions                                                                              | Runs locally                                                                                              |
 | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |

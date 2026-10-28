@@ -2,8 +2,9 @@
 # or the agent creates or edits reaches what the chat model receives. The e2e
 # stack's Go server, collaboration server and Postgres, the real pipeline in
 # process, a scripted model and stub embeddings: no provider is called.
-# Nightly when the read path changed since the last green run, by hand, and
-# as a production promotion gate (promote-production.yml).
+# Nightly unless only paths the lane never reads changed since the last green
+# run (scripts/ci/visibility-unchanged.sh), by hand, and as a production
+# promotion gate (promote-production.yml, Q544).
 name: Agent visibility
 
 on:
@@ -40,10 +41,15 @@ jobs:
           ref: ${{ inputs.revision || github.sha }}
           fetch-depth: 0
           submodules: recursive
-      # The read path: the retrieval tools, Go's internal routes and the
-      # stores behind them, the collaboration crates that compute changes,
-      # the fork, the stack and the lane itself.
-      - name: Skip a nightly run when the read path is unchanged since the last green run
+      # The lane gates production (Q544): a revision from before it cannot
+      # pass, and says why instead of failing to find its tests.
+      - name: Check the revision has the lane
+        run: |
+          test -d pipeline/tests/stack || {
+            echo "::error::This revision predates the Agent visibility lane (pipeline/tests/stack), which gates production (Q544): promote a revision that has it."
+            exit 1
+          }
+      - name: Skip a nightly run when only paths the lane never reads changed
         id: changed
         if: github.event_name == 'schedule'
         env:
@@ -52,22 +58,9 @@ jobs:
           set -euo pipefail
           last=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow=agent-visibility.yml \
             --branch main --status=success --limit 1 --json headSha --jq '.[0].headSha // ""')
-          if [ -n "$last" ] && git cat-file -e "$last^{commit}" 2>/dev/null &&
-            git diff --quiet "$last" HEAD -- \
-              pipeline/pipeline/retrieval \
-              'server/internal/httpapi/internal_*.go' \
-              server/internal/store/{note_index,source_documents,source_refresh,account_scope,item_changes,trash,file_move}.go \
-              server/internal/{materialdoc,agenttools,embeds} \
-              server/migrations \
-              collaboration-rs/crates/{sources,notes,items} \
-              collaboration-rs/crates/server/src/{edits,http,room}.rs \
-              vendor/betteroffice \
-              deploy/docker-compose.e2e.yml \
-              e2e/fixtures/seed.sql \
-              pipeline/tests/stack \
-              .github/workflows/agent-visibility.yml; then
+          if [ -n "$last" ] && bash scripts/ci/visibility-unchanged.sh "$last"; then
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No read-path change since the last green run ($last)." >> "$GITHUB_STEP_SUMMARY"
+            echo "Only paths the lane never reads changed since the last green run ($last)." >> "$GITHUB_STEP_SUMMARY"
           fi
       # The e2e_stack job's images and layer cache (ci.yml), read only.
       - if: steps.changed.outputs.run != 'false'
@@ -93,9 +86,17 @@ jobs:
           enable-cache: true
       - if: steps.changed.outputs.run != 'false'
         run: uv sync --frozen --extra test
-      # The lane starts the stack from the loaded images, seeds it and stops it.
+      # The lane starts the stack from the loaded images, seeds it and stops
+      # it; when a test failed it first writes the stack's logs.
       - if: steps.changed.outputs.run != 'false'
         name: Run the Agent visibility lane
         run: uv run --extra test pytest -m stack pipeline/tests/stack
         env:
           E2E_PREBUILT_IMAGES: "true"
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          if-no-files-found: ignore
+          name: agent-visibility-compose-logs
+          path: test-results/agent-visibility-compose.log
+          retention-days: 7

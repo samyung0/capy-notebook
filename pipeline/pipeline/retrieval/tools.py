@@ -927,7 +927,9 @@ async def _search_files_content(args: dict[str, Any], ctx: ToolContext) -> ToolR
         else ""
     )
     # Each passage says how many of its document's edits are not indexed yet,
-    # as workspace chat's do (Q527): its changes load as a read would load them.
+    # as workspace chat's do (Q527): its changes load as a read would load them,
+    # one Go call per item at once (Go refuses a whole /changes call over one
+    # unreadable item); a failed load leaves only that item's line out.
     sources = ctx.pending_sources
     documents = {p.file_id: p.kind for p in labelled}
     await asyncio.gather(

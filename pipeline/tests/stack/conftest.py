@@ -6,7 +6,13 @@ Real Go, collaboration server and Postgres from deploy/docker-compose.e2e.yml
 the real pipeline in process, a scripted model (test_agent's
 ``_script_stream``, which records every request) and stub embeddings over an
 index seeded with the pipeline's own store functions. No provider is called:
-any connection off the loopback fails the test (``no_provider``).
+a connection the pytest process opens off the loopback fails the test
+(``no_provider``). The guard sees Python sockets only, not libpq (every DSN
+here is loopback and the library's is cleared) nor the containers (the e2e
+stack holds no provider keys): enough in CI, where no proxy or key exists.
+When a test fails, the stack's logs are written to
+test-results/agent-visibility-compose.log before teardown (the workflow
+keeps them as an artifact).
 
 Environment, as the Playwright stack takes it: E2E_PREBUILT_IMAGES=true
 starts the images without building them (CI loads them from its layer cache),
@@ -42,6 +48,7 @@ from pipeline.retrieval.tools import ToolContext
 
 ROOT = Path(__file__).resolve().parents[3]
 FILES = ROOT / "e2e" / "fixtures" / "files" / "basic"
+LOGS = ROOT / "test-results" / "agent-visibility-compose.log"
 CONTENT_TYPES = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -335,7 +342,7 @@ def _rows(doc_id: str, chunks: list) -> list[dict[str, Any]]:
 
 
 @pytest.fixture(scope="session")
-def stack():
+def stack(request):
     """The compose stack, seeded with e2e/fixtures/seed.sql, and the pipeline
     pointed at it."""
     env = dict(os.environ)
@@ -391,14 +398,24 @@ def stack():
                 cfg.gateway_url, env["E2E_AUTH_SECRET"], cfg.pipeline_secret, dsn
             )
     finally:
+        if started and request.session.testsfailed:
+            logs = subprocess.run(
+                [*base, "logs", "--no-color", "--timestamps"],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            LOGS.parent.mkdir(exist_ok=True)
+            LOGS.write_text(logs.stdout + logs.stderr, encoding="utf-8")
         if started and env.get("E2E_KEEP_STACK") != "true":
             compose("down", "-v", "--remove-orphans")
 
 
 @pytest.fixture(autouse=True)
 def no_provider(monkeypatch):
-    """Embeddings are the stub; every connection off the loopback (a
-    provider, a model router) is refused and fails the test."""
+    """Embeddings are the stub; every Python socket connection off the
+    loopback (a provider, a model router) is refused and fails the test."""
     refused: list[Any] = []
     real = socket.socket.connect
 

@@ -127,7 +127,7 @@ async function inspect<T>(
 
 /** A document's unindexed changes as the chat's turn reads them: a file's
  * from the collaboration service's effects reader, a note's (with `live`)
- * from its open room. The Agent visibility lane checks what the model then
+ * from its open room or its stored content. The Agent visibility lane checks what the model then
  * receives (pipeline/tests/stack); these two seams need a real editor. */
 async function changes(
   api: APIRequestContext,
@@ -1011,19 +1011,18 @@ test.describe('agent writes to notes', () => {
     // stores 2 s after the last one): the agent's read merges the room as
     // its edit does, so it reads what the editors see (Epo 2026-10-13).
     await typeAtEnd(ownerPage, 'Owner types here.', ' Typed live.');
-    // The note's live changes come from its room while the typing is unsaved
-    // (Q417): Go asks the collaboration service, which answers from the room.
+    // A live read of the note's changes holds the typing: from the room while
+    // it is unsaved (Q417), from the stored note once the room saved it, 2 s
+    // after the last keystroke. Either way it is there, so the check never
+    // races that save; Go's and Rust's own tests pin which side answered.
     await expect
-      .poll(async () => {
-        const read = JSON.parse(
-          await changes(anonymousApi, '/api/internal/note-changes', {
-            live: true,
-            materialIds: [id],
-          })
-        ) as { live: boolean; notes: object[] };
-        return read.live && JSON.stringify(read.notes).includes('Typed live.');
-      })
-      .toBe(true);
+      .poll(() =>
+        changes(anonymousApi, '/api/internal/note-changes', {
+          live: true,
+          materialIds: [id],
+        })
+      )
+      .toContain('Typed live.');
     await shows('Owner types here. Typed live.');
     expect((await blocks(anonymousApi, id)).map((block) => block.text)).toEqual(
       [
