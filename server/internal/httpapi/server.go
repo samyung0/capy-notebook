@@ -537,11 +537,10 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 	var workspaceLimit *store.WorkspaceLimitExceededError
 	if errors.As(err, &workspaceLimit) {
 		writeJSON(w, http.StatusForbidden, map[string]any{
-			"code":                "workspace_limit_exceeded",
-			"message":             "owned workspace limit exceeded",
-			"workspacesUsed":      workspaceLimit.Used,
-			"workspacesRequested": workspaceLimit.Requested,
-			"workspacesLimit":     workspaceLimit.Limit,
+			"code":            "workspace_limit_exceeded",
+			"message":         "workspace limit exceeded",
+			"workspacesUsed":  workspaceLimit.Used,
+			"workspacesLimit": workspaceLimit.Limit,
 		})
 		return
 	}

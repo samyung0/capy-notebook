@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from '@tanstack/react-router';
-import { isApiError } from '@/api/client';
+import { isApiError, isWorkspaceLimitError } from '@/api/client';
 import { useAcceptWorkspaceInvite } from '@/api/hooks';
+import { showErrorToast } from '@/api/queryClient';
 import { AuthGate } from '@/components/app/AuthProvider';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Panel } from '@/components/app/layout';
@@ -13,10 +14,12 @@ import { clearStashedToken } from '@/lib/urlTokenStash';
 import { useStashedToken } from '@/lib/useStashedToken';
 
 export function isUnavailableWorkspaceInviteError(error: unknown): boolean {
-  // The reader's own frozen account is theirs to hear about.
+  // The reader's own frozen account and workspace cap are theirs to hear
+  // about.
   return (
     isNonDisclosing(error) &&
-    !(isApiError(error) && error.code === 'account_over_quota')
+    !(isApiError(error) && error.code === 'account_over_quota') &&
+    !isWorkspaceLimitError(error)
   );
 }
 
@@ -42,15 +45,23 @@ function InviteContent() {
   const navigate = useNavigate();
   const {
     data: acceptData,
-    error: acceptError,
-    isError: acceptIsError,
+    error,
     isPending: acceptIsPending,
     isSuccess: acceptIsSuccess,
     mutate: acceptMutation,
   } = useAcceptWorkspaceInvite();
+  // Past the workspace cap (owned and joined together) the invite stays
+  // open to accept after leaving or deleting one, and the limit is toasted.
+  const acceptError = isWorkspaceLimitError(error) ? null : error;
+  const acceptIsError = !!acceptError;
   // Used or refused: a retry keeps it in state, a refresh does not.
   const accept = (value: string) =>
-    acceptMutation(value, { onSettled: () => clearStashedToken('invite') });
+    acceptMutation(value, {
+      onError: (refusal) => {
+        if (isWorkspaceLimitError(refusal)) showErrorToast(refusal);
+      },
+      onSettled: () => clearStashedToken('invite'),
+    });
 
   if (
     !token ||
