@@ -425,6 +425,26 @@ Plate budget green). Compare within the run; GHA varies between runs.
 
 Still below D8's floor on common-note typing, scroll and DOM weight.
 
+**After the third tuning round, on GHA** (run 40732888335, `4bc98c28f`;
+this runner was slower for both editors, so compare within the run):
+
+| Case | Plate | BlockSuite |
+| --- | --- | --- |
+| Open, near-limit / common | 11.3 / 13.2 s | 13.1 / 13.5 s |
+| Open blocking | 5.2 s | 3.5 s |
+| First key after open, to frame | 182 ms | 134 ms |
+| JS heap after open | 336 MB | 273 MB |
+| DOM nodes after open | 35k | 183k |
+| Typing, near-limit: blocking per key / p95 | 64.9 / 144 ms | 22.5 / 96 ms |
+| Typing, common: blocking per key / p95 | 31.3 / 104 ms | 23.3 / 96 ms |
+| Typing, small: p95 | 48 ms | 24 ms |
+| Scroll, near-limit / common | 44.8 / 50.6 FPS | 57.8 / 56.7 FPS |
+| Peer burst (180 s box) | 1.3 keys/s | 38.1 keys/s |
+
+BlockSuite is around Plate or better on every case, which meets D8 as relaxed.
+The run's one failure was Plate's own read-only open budget (Plate's static
+view, which this branch doesn't touch; main's last run was over it too).
+
 - **Server (load-test note, Plate vs blocks):** room load 71 vs 560 ms
   (replay 15 vs 291 ms), memory kept 7 vs 16 MB, `value()` 13 vs 20 ms, a
   joiner's step-1 answer 5 vs 9 ms. A keystroke's admission went from about
