@@ -104,6 +104,16 @@ export class EditorHost extends SignalWatcher(
     )}`;
   };
 
+  /** Capy (local change 8): the given blocks, keyed as `renderChildren`
+   * keys them; the page note renders its children in chunks with it. */
+  renderModels = (models: BlockModel[]): TemplateResult => {
+    return html`${repeat(
+      models,
+      model => model.id,
+      model => this._renderModel(model)
+    )}`;
+  };
+
   get command(): CommandManager {
     return this.std.command;
   }

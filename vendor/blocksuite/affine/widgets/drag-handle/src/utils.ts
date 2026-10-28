@@ -194,8 +194,9 @@ export const getClosestBlockByPoint = (
     rect: noteRect,
   }) as BlockComponent | null;
 
+  // Capy (local change 8): a page note's blocks sit in chunks.
   const blockSelector =
-    '.affine-note-block-container > .affine-block-children-container > [data-block-id]';
+    '.affine-note-block-container > .affine-block-children-container > [data-block-id], .affine-note-block-container > .affine-block-children-container > .affine-note-chunk > [data-block-id]';
 
   const closestBlock = (
     block && containChildBlock([closestNoteBlock], block.model)

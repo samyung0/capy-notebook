@@ -171,6 +171,23 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
      the inline editor's nesting (`rich-text` > `v-line` > `v-element` >
      `v-text`).
 
+8. Scroll, third round (2026-10-29, same section). Each change is marked
+   `Capy (local change 8)` in the source; on a sync, reapply them by that
+   marker.
+   - `blocks/note` `note-block.ts`: the page note renders its children in
+     `.affine-note-chunk` elements of about 32 blocks (at most 64), which
+     the app makes `content-visibility: auto` (`pageEditor.css`), in place
+     of one such box per block. With 3,400 boxes Chrome's visibility check
+     (`IntersectionObserverController::computeIntersections`) and hit
+     testing walked every one on each scrolled frame. A block starts a chunk
+     when its id hashes to one (FNV-1a mod 32), so an insert or delete moves
+     no other block between chunks unless it starts or ends one; a moved
+     block is rendered anew (the view store keeps the newest element per id).
+   - `framework/std` `view/element/lit-host.ts`: `renderModels(models)`,
+     `renderChildren`'s keyed render of a given list, for the chunks.
+   - `widgets/drag-handle` `utils.ts`: the selector for a note's top-level
+     blocks also matches them inside a chunk.
+
 Outside this directory, for BlockSuite:
 
 - `patches/@atlaskit__pragmatic-drag-and-drop@1.4.0.patch`: upstream's yarn

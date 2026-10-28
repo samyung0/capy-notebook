@@ -1,15 +1,24 @@
-/* A note's top-level blocks off screen are skipped (style, layout, paint),
- * as Plate's chunks and the shared note's blocks are. BlockSuite renders
- * every block and the page root is one editable host, so without this each
- * caret move made Chrome walk the whole note's text (Selection.addRange,
- * about 50 ms a key on the near-limit note) and scrolling painted all of
- * it. The clip margin keeps heading icons, bullets and toggles that sit
- * outside a block visible under the paint containment this implies. */
+/* A note's chunks of top-level blocks off screen are skipped (style, layout,
+ * paint), as Plate's chunks and the shared note's blocks are. BlockSuite
+ * renders every block and the page root is one editable host, so without
+ * this each caret move made Chrome walk the whole note's text
+ * (Selection.addRange, about 50 ms a key on the near-limit note) and
+ * scrolling painted all of it. Chunks of about 32 blocks (vendor README
+ * local change 8), not single blocks: Chrome checks each skipped box's
+ * visibility and hit-tests past it on every scrolled frame. The clip margin
+ * keeps heading icons, bullets and toggles that sit outside a block visible
+ * under the paint containment this implies. */
 affine-note
   > .affine-note-block-container
   > .affine-block-children-container
-  > [data-block-id] {
+  > .affine-note-chunk {
   content-visibility: auto;
-  contain-intrinsic-size: auto 2.5rem;
+  contain-intrinsic-size: auto 80rem;
   overflow-clip-margin: 6rem;
+}
+
+/* Each block keeps the formatting context its own containment gave it
+ * before the chunks: its margins stay inside it. */
+.affine-note-chunk > [data-block-id] {
+  display: flow-root;
 }
