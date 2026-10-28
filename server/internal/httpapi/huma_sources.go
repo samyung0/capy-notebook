@@ -238,8 +238,10 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 	var batch string
 	file, err := a.receiveSource(w, r, &batch)
 	if err != nil {
-		// A refused upload is a failed file of its batch, except a 429 the
-		// browser retries (withUploadRetry).
+		// A refused upload is a failed file of its batch; the browser never
+		// retries one (Q282, src/api/uploadTurn.ts). The 429 exception spares
+		// nothing since Q282: no refusal here is a 429, as a route limit
+		// answers before this handler and the upload class lines up tickets.
 		if status := a.failUpload(w, r, err); batch != "" && status != http.StatusTooManyRequests {
 			a.failSourceBatchFile(r.Context(), batch)
 		}
