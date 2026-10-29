@@ -989,6 +989,14 @@ NOT_A_SCOPE_WORKSPACE = (
     'workspace_id "{id}" is not one of the user\'s workspaces. search_files_summary, '
     "search_files_content and reads name each item's workspace."
 )
+# An account create naming a workspace outside the turn's list, refused before
+# anything is sent (Epo 2026-10-29, Q578); Go would answer as for a view-only
+# one. create_chapter has no No workspace to fall back on.
+NOT_A_DESTINATION = (
+    'workspace_id "{id}" is not one of the user\'s workspaces, so nothing was '
+    "created. list_workspaces lists them, create_workspace makes a new one{rest}."
+)
+NO_WORKSPACE_CHOICE = ", or leave workspace_id out to create in No workspace"
 NO_WORKSPACE_LISTED = (
     "You did not name a workspace_id, so these are the user's files and "
     "materials outside their workspaces, newest first."
@@ -4629,6 +4637,18 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
                 )
             args["_workspace_id"] = destination.strip()
     args = without_blanks(name, args)
+    named = str(args.get("_workspace_id") or "")
+    if (
+        named
+        and isinstance(ctx.scope, AccountScope)
+        and (name in DESTINATION_TOOLS or name == "create_chapter")
+        # An edit of an existing quiz or file ignores workspace_id.
+        and contract.blank(args.get("quiz_id"))
+        and contract.blank(args.get("file_id"))
+        and ctx.scope.workspace(named) is None
+    ):
+        rest = "" if name == "create_chapter" else NO_WORKSPACE_CHOICE
+        return _refused(NOT_A_DESTINATION.format(id=named, rest=rest))
     problem = contract.validate_args(
         name, {k: v for k, v in args.items() if not k.startswith("_")}
     )

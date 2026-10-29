@@ -5513,7 +5513,15 @@ for life so the provider prompt cache holds.
   user can edit or one `create_workspace` just made, as the account editing
   skill says; Epo 2026-10-29, Q579); `tools.run` moves it to
   `_workspace_id`, and without one the item lands in No workspace (or
-  `list_sources` lists the files with no workspace). Go's definitions stay
+  `list_sources` lists the files with no workspace). A create (an
+  `add_questions` without `quiz_id`, an `edit_office_document` without
+  `file_id`, `create_chapter` too) naming a workspace outside the turn's
+  list is refused there before anything is sent (`NOT_A_DESTINATION`:
+  nothing was created; `list_workspaces`, `create_workspace` or, except for
+  `create_chapter`, leaving `workspace_id` out for No workspace; Epo
+  2026-10-29, Q578), as `list_sources` refuses one (`NOT_A_SCOPE_WORKSPACE`);
+  a workspace `create_workspace` made this turn is in the list, and Go still
+  refuses a view-only one. Go's definitions stay
   byte for byte, and the profile swaps their workspace wording (the made-from
   line, `search_web`) on its copies (`WORDING`).
 - **`_` arguments.** Keys starting with `_` are the pipeline's own; the agent

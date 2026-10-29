@@ -1316,6 +1316,80 @@ async def test_a_workspace_the_turn_creates_joins_its_list(monkeypatch):
     )
 
 
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("create_material", {"kind": "note", "title": "N", "content": "body"}),
+        ("create_deck", {"title": "D"}),
+        ("add_questions", {"title": "Q", "questions": []}),
+        (
+            "edit_office_document",
+            {"commands": [{"type": "create", "format": "docx", "title": "Plan"}]},
+        ),
+        ("create_chapter", {"name": "Kinematics"}),
+    ],
+)
+async def test_an_account_create_refuses_a_workspace_that_is_not_the_users(
+    monkeypatch, tool, args
+):
+    # Q578: Go would answer as for a view-only workspace and say not to retry.
+    posted = []
+    monkeypatch.setattr(tools.requests, "post", lambda *a, **k: posted.append(a))
+    ctx = _account(office_tools=True)
+
+    result = await tools.run(
+        tool, {**args, "workspace_id": "ws_gone", "_tool_call_id": "c"}, ctx
+    )
+
+    assert result.refused and not posted
+    assert result.text() == (
+        'workspace_id "ws_gone" is not one of the user\'s workspaces, so nothing '
+        "was created. list_workspaces lists them, create_workspace makes a new one"
+        + (
+            "."
+            if tool == "create_chapter"
+            else ", or leave workspace_id out to create in No workspace."
+        )
+    )
+
+
+async def test_an_account_create_lands_in_a_workspace_the_turn_created(monkeypatch):
+    def post(url, **kwargs):
+        if url.endswith("/api/internal/workspaces"):
+            return _Resp(
+                {
+                    "kind": "create_workspace",
+                    "outcome": "succeeded",
+                    "workspaceId": "ws_new",
+                }
+            )
+        posted.append(json.loads(kwargs["data"]))
+        return _Resp(
+            {
+                "outcome": "succeeded",
+                "effect": {
+                    "operation": "created",
+                    "resource": {"kind": "material", "id": "mat_1", "title": "C"},
+                },
+            }
+        )
+
+    posted: list[dict[str, Any]] = []
+    monkeypatch.setattr(tools.requests, "post", post)
+    ctx = _account(skills_read={skills.EDITING})
+    cards = {"kind": "flashcards", "title": "C", "cards": [{"front": "a", "back": "b"}]}
+
+    await tools._create_workspace({"name": "Physics", "_tool_call_id": "call_ws"}, ctx)
+    result = await tools.run(
+        "create_material",
+        {**cards, "workspace_id": "ws_new", "_tool_call_id": "c"},
+        ctx,
+    )
+
+    assert not result.refused, result.text()
+    assert posted[0]["workspaceId"] == "ws_new"
+
+
 async def test_an_account_read_of_a_file_moved_away_says_so(monkeypatch):
     # Q489: Go marks a file this account chat edited, moved where the user
     # cannot open it.
