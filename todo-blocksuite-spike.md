@@ -510,6 +510,37 @@ step-1 answer, `trial` admission of a large update, the structural check and
 - two tabs typing in one block while a third moves it, with every keystroke
   checked afterwards. This one needs piece 5, since the outcome depends on D3.
 
+### 7. Dig: collection, server cost, effects, offline (2026-10-29)
+
+- **Tombstones, folds, collection.** Collection, folds, held deletions, 24 h
+  Undo and the late merge work on blocks rooms with no change to the crate
+  (`blocks/tests/collection*.rs`, 12,000 fuzz seeds). Text costs the same as
+  Plate. Per-block keys cost more: a 150-paragraph paste grows 38.6 KB vs
+  15.3 KB, a block move 25 B vs 17 B, an agent replace-block about 2.4×. A
+  deleted block's `blocks` key is never collected (about 20 B per deleted id).
+  Q444 is slightly better than Plate: typing into an empty deleted block reads
+  as `Since`/`Window`, not hidden.
+- **Server RAM and CPU** (`bench/collaboration/scripts/layout-cost`, laptop,
+  near-limit note). Typing admission is faster than Plate's (p95 1 µs vs
+  19 µs). Every other update (a move, Enter, a paste, a delete, a reconnect)
+  runs a full room check: 58–390 ms, 50 moves 5.2 s vs 9 ms, an hour of edits
+  60 s CPU vs 0.2 s. The room keeps 2.3× Plate's heap (15.9 vs 7.0 MiB), peaking
+  about 41 MiB during a full check; reload 2×; the step-1 answer is 31%
+  larger. The prod-box package is `layout-box/`; nothing has run on the box.
+- **Edit effects.** The same edits give byte-identical `NotePendingChanges`
+  (`server/tests/effects_layouts.rs`, `note_effects_layouts_test.go`); derived
+  ids shift but nothing aligns by them. The live read (Q417) projects through
+  the room's model (unit test in `edits.rs`). T5 skips on blocks (boundary 3).
+  The bridge's N1/N3/N4/N6 normalizations show as changes nobody made on a
+  switched note's first save.
+- **Offline, drafts.** The blocks note is an `ItemRoom`: offline strips,
+  per-edit drafts, restore after reload, draft send, the Q465 leave prompt,
+  paused swaps (`blocksRoom.test.ts`, `blocksuite-offline.spec.ts`). Other
+  lineage and a late answer with unsent edits open copy-only: there is no
+  merge view or late merge for blocks yet.
+- **Seeds.** Fixed ranges in CI, longer runs through env variables, a failing
+  seed printed and turned into a named test. No seed list file.
+
 ## Gates
 
 **No speed gate** (Epo, 2026-10-27, D8). Optimize where we can. The floor is
@@ -879,3 +910,24 @@ not for step 1.
   packages plus the build fixes. Proposal: two weeks for step 1, with a
   check-in after pieces 1–3 (the spec, the converters, and the editor running
   on MSW).
+
+- **Admission cost** (dig 2026-10-29). (a) Extend `blocks::bound` to Enter,
+  delete and move, checking only the blocks an update touches; (b) cap the
+  full check and refuse past it; (c) accept while dev-only, decide after the
+  box run.
+- **Room memory** 2.3× Plate. (a) Accept and raise the memory line after the
+  box run; (b) cut the second projection at load; (c) decide after the box run.
+- **Deleted block ids** stay in the `blocks` map forever (about 20 B each).
+  (a) Accept; (b) collect a deleted head no session holds (changes `ydoc::gc`).
+- **Switch normalizations in effects.** (a) Accept until the cut; (b) requeue
+  the index on a switched room's first save; (c) make Plate's index text join
+  cell and blockquote paragraphs with `\n` now.
+- **Blocks leg in the Agent visibility lane:** nightly now (T5 skipped), or at
+  the cut once D16 exists.
+- **Merge for blocks notes:** copy-only until the cut, a minimal per-block
+  merge view, or the full Q229/Q237 bind merge. Late answer with unsent
+  edits: copy-only (built) or port the late merge (only `hiddenDocument` reads
+  Plate).
+- **Room swap leftovers** (caret/focus restore, phone copy-in-place) before
+  the cut? **Leave prompt** (Q465) for Plate notes too?
+- **Dead Rust helpers** `notes::index_text::from_doc`/`item_refs`: delete now?
