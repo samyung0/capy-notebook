@@ -18,6 +18,7 @@ import {
   DRAFT_EXPIRY_MS,
   type EditDraft,
   heldDraftSessions,
+  putDrafts,
 } from '@/lib/editDrafts';
 import {
   COPY_WRITE_MS,
@@ -337,6 +338,97 @@ describe('recordCopy', () => {
     expect(stored.puts[0]).toMatchObject([
       { id: 's:copy', seq: 5, session: 's' },
     ]);
+  });
+});
+
+// Q568, Q569: a write storage refuses keeps its value, which the copy's next
+// save moment (a flush, its stop) writes again, with no retry timer.
+describe('recordCopy refused by storage', () => {
+  const options = (onUnstored = vi.fn()) => ({
+    adopted: null,
+    base: [p('a', 'A')],
+    key: KEY,
+    limitBytes: 1024,
+    lineage: ROOM,
+    onLimit: () => {},
+    onUnstored,
+    revision: 3,
+  });
+  /** The next write is refused: thrown at once, or rejected later. */
+  const refuseNext = (how: 'sync' | 'async') =>
+    vi.mocked(putDrafts).mockImplementationOnce((rows) => {
+      stored.puts.push(rows);
+      const error = new DOMException('Quota exceeded', 'QuotaExceededError');
+      if (how === 'sync') throw error;
+      return Promise.reject(error);
+    });
+  const mine = (write: number) =>
+    decode((stored.puts[write] as EditDraft[])[0]).mine;
+  const settle = () => new Promise((resolve) => setTimeout(resolve));
+
+  it('writes a refused value at the next flush or stop, with no timer', async () => {
+    vi.useFakeTimers();
+    const recorder = recordCopy(options());
+    refuseNext('async');
+    recorder.edited([p('a', 'A refused')]);
+    recorder.flush();
+    await vi.advanceTimersByTimeAsync(10 * COPY_WRITE_MS);
+    expect(stored.puts).toHaveLength(1);
+    recorder.flush();
+    expect(mine(1)).toEqual([p('a', 'A refused')]);
+    refuseNext('sync');
+    recorder.edited([p('a', 'A again')]);
+    recorder.flush();
+    expect(recorder.stop()).toMatchObject({ seq: 4 });
+    expect(stored.puts).toHaveLength(4);
+    expect(mine(3)).toEqual([p('a', 'A again')]);
+  });
+
+  it('keeps newer typing over a refused value, and counts only the newest write', async () => {
+    const recorder = recordCopy(options());
+    refuseNext('async');
+    recorder.edited([p('a', 'old')]);
+    recorder.flush();
+    recorder.edited([p('a', 'new')]);
+    await settle();
+    recorder.flush();
+    expect(mine(1)).toEqual([p('a', 'new')]);
+    // Refused once a newer write went out: nothing comes back.
+    refuseNext('async');
+    recorder.edited([p('a', 'newer')]);
+    recorder.flush();
+    recorder.edited([p('a', 'newest')]);
+    recorder.flush();
+    await settle();
+    recorder.flush();
+    expect(stored.puts).toHaveLength(4);
+    expect(mine(3)).toEqual([p('a', 'newest')]);
+  });
+
+  it('reports a refusal once, thrown or rejected, until a write lands or the copy stops', async () => {
+    const onUnstored = vi.fn();
+    const recorder = recordCopy(options(onUnstored));
+    refuseNext('sync');
+    recorder.edited([p('a', 'A')]);
+    recorder.flush();
+    expect(onUnstored.mock.calls).toEqual([[true]]);
+    refuseNext('async');
+    recorder.flush();
+    await settle();
+    expect(onUnstored.mock.calls).toEqual([[true]]);
+    recorder.flush();
+    await settle();
+    expect(onUnstored.mock.calls).toEqual([[true], [false]]);
+    refuseNext('async');
+    recorder.edited([p('a', 'B')]);
+    recorder.flush();
+    await settle();
+    expect(onUnstored.mock.calls).toEqual([[true], [false], [true]]);
+    // The stop's own write refused too: false at the stop, nothing after.
+    refuseNext('async');
+    recorder.stop();
+    await settle();
+    expect(onUnstored.mock.calls).toEqual([[true], [false], [true], [false]]);
   });
 });
 

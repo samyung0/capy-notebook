@@ -221,7 +221,8 @@ export const COPY_WRITE_MS = 1000;
  * mount edits it): past the 7-day expiry it is never merged (Q421).
  * `onUnstored` says whether the copy holds edits storage refused (Q568): true
  * at a failed write, false once one lands or the copy stops (its edits go to
- * the room, or are dropped).
+ * the room, or are dropped). A refused value is written again at the next
+ * flush (Q569), with no retry timer.
  */
 export function recordCopy({
   adopted,
@@ -280,28 +281,39 @@ export function recordCopy({
       onLimit();
       return;
     }
-    kept = latest;
+    const value = latest;
+    kept = value;
     latest = null;
     seq += 1;
     written = { id, key, seq };
-    void putDrafts([
-      {
-        data,
-        id,
-        key,
-        kind: 'copy',
-        lineage,
-        savedAt: Date.now(),
-        seq,
-        session,
-      },
-    ]).then(
-      () => stored(true),
-      (error) => {
-        console.warn('Draft storage failed:', error);
-        stored(false);
-      }
-    );
+    const at = seq;
+    // Only the newest write's answer counts: each holds the whole copy. A
+    // refused one keeps its value for the next save moment (Q569), unless
+    // something newer was typed since.
+    const refused = (error: unknown) => {
+      console.warn('Draft storage failed:', error);
+      if (at !== seq) return;
+      latest ??= value;
+      stored(false);
+    };
+    try {
+      void putDrafts([
+        {
+          data,
+          id,
+          key,
+          kind: 'copy',
+          lineage,
+          savedAt: Date.now(),
+          seq,
+          session,
+        },
+      ]).then(() => {
+        if (at === seq) stored(true);
+      }, refused);
+    } catch (error) {
+      refused(error);
+    }
   };
   return {
     edited(value: MaterialValue, inserted = false) {
