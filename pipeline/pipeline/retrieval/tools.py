@@ -4562,6 +4562,15 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         name = schema["function"]["name"]
         if name in extra:
             schema["function"]["description"] += extra[name]
+        elif name == "create_chapter":
+            # The chat models name every chapter (Epo 2026-10-29, Q582); calls
+            # are still checked against Go's definition, where a nameless one
+            # is Chapter (n). parameters is Go's dict, so it is copied.
+            function = schema["function"]
+            function["description"] = function["description"].replace(
+                " Without a name it is Chapter (n).", ""
+            )
+            function["parameters"] = {**function["parameters"], "required": ["name"]}
     # The switch never changes the list (cache rule); a library that is not
     # ready does, as its tools drop out too.
     return schemas if _library_ready(ctx) else [without_excerpts(s) for s in schemas]

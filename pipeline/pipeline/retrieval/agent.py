@@ -1843,8 +1843,10 @@ def _limit_for(
     if repeats >= LOOP_REFUSE_AT:
         return (
             f"Not run: you called {call.name} with these same arguments "
-            f"{repeats - 1} times in a row this turn. Use the result you already "
-            "have, change the arguments, or answer the learner."
+            f"{repeats - 1} times in a row this turn, so it did nothing new. Call "
+            "it again only with different arguments (pass any argument it needs, "
+            "for example a create_chapter name), use the result you already have, "
+            "or answer the learner."
         )
     # Before the first write lands the response ceiling bounds the turn.
     if building and budget.tool_calls_turn >= BUILD_TOOLS_PER_TURN:

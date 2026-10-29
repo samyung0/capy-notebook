@@ -3785,7 +3785,9 @@ materials are sources.
   arguments restart it, identical calls in one response count once. At 2
   (`LOOP_LOG_AT`) it is logged; from 3 (`LOOP_REFUSE_AT`) the call is refused
   as a `limit_reached` result ("Not run: you called … with these same
-  arguments …"), which still counts as an errored write for the stall guard;
+  arguments …", which says to call it again only with different arguments,
+  passing any it needs such as a `create_chapter` name; Epo 2026-10-29,
+  Q582), which still counts as an errored write for the stall guard;
   at 6 (`LOOP_STOP_AT`) every result of that response ends with
   `agent.LOOP_NOTICE` and the next response runs with tools off, reported as
   `loop`. A tool re-read with the same arguments after a write changed what it
@@ -5559,6 +5561,10 @@ for life so the provider prompt cache holds.
   over-limit name cut and said; `POST /api/internal/chapters` records a
   receipt and no Undo, and the chapter's id is its operation id under `ch_`
   (`store.ChatChapterID`, `tools.chapter_id`) so a recovered receipt names it.
+  The schema both chats show the model (`tools.schemas_for`) requires `name`
+  and drops the Chapter (n) sentence; Go's definition keeps `name` optional
+  and calls are checked against it, so a nameless call still lands as
+  `Chapter (n)` (Epo 2026-10-29, Q582).
   Account chat's copy takes a required `workspace_id` of a workspace the user
   edits; workspace chat's adds the chapter to the turn's chapters at once.
   The editing skill shows, with scope and level, a brief outline of what it

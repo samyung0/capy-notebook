@@ -7003,7 +7003,14 @@ async def test_a_repeated_call_is_refused_from_its_third_time(monkeypatch):
 
     assert ran == ["list_sources", "read_skill", "list_sources"]
     refused = _results(seen, -1)[-2:]
-    assert all(r.startswith("Not run: you called list_sources") for r in refused)
+    # It says what to do instead (Epo 2026-10-29, Q582).
+    told = (
+        "Not run: you called list_sources with these same arguments 2 times in a "
+        "row this turn, so it did nothing new. Call it again only with different "
+        "arguments (pass any argument it needs, for example a create_chapter "
+        "name), use the result you already have, or answer the learner."
+    )
+    assert all(r.startswith(told) for r in refused), refused
     assert events[-1]["telemetry"]["stopReason"] == "answer"
 
 

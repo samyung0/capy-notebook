@@ -39,7 +39,9 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # create_chapter and the editing skill's chapter-list line (Epo 2026-10-29), the
 # shorter Plan (Epo 2026-10-29), the OpenUI catalog without Facts/Fact (Epo
 # 2026-10-29), the Plan-first line replacing 'Do not ask whether to create
-# them' (Epo 2026-10-29, Q581; the messages keys alone),
+# them' (Epo 2026-10-29, Q581; the messages keys alone), create_chapter's name
+# required in the chat copy without its Chapter (n) sentence (Epo 2026-10-29,
+# Q582; the owner schemas keys alone),
 # the owner schemas and skills/editing keys alone.
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 
@@ -223,7 +225,8 @@ def test_the_account_profile_offers_the_account_tools():
     # create_chapter names its workspace here; No workspace has no chapters.
     chapter = by_name["create_chapter"]["parameters"]
     assert "workspace_id" in chapter["properties"]
-    assert chapter["required"] == ["workspace_id"]
+    # name is required in the chat copies only (Q582).
+    assert chapter["required"] == ["name", "workspace_id"]
     assert "required" not in contract.DEFINITIONS["create_chapter"]["inputSchema"]
     # Workspace chat's list_sources, listing by workspace here (Q523).
     listing = by_name["list_sources"]
@@ -1393,6 +1396,40 @@ async def test_an_account_create_lands_in_a_workspace_the_turn_created(monkeypat
 
     assert not result.refused, result.text()
     assert posted[0]["workspaceId"] == "ws_new"
+
+
+@pytest.mark.parametrize("account", [False, True])
+async def test_chat_schemas_require_a_chapter_name_and_a_nameless_one_still_posts(
+    monkeypatch, account
+):
+    # Q582: the models see name as required; Go keeps its optional name and
+    # names a nameless chapter Chapter (n), so nothing refuses one.
+    sent: dict[str, Any] = {}
+
+    def post(url, **kwargs):
+        sent.update(json.loads(kwargs["data"]))
+        return _Resp({"kind": "create_chapter", "outcome": "succeeded"})
+
+    monkeypatch.setattr(tools.requests, "post", post)
+    kw = {"assistant_message_id": "m_1", "skills_read": {skills.EDITING}}
+    ctx = _account(**kw) if account else _ctx(**kw)
+    profile = profiles.account.PROFILE if account else profiles.workspace.PROFILE
+    chapter = next(
+        s["function"]
+        for s in profile.schemas(ctx)
+        if s["function"]["name"] == "create_chapter"
+    )
+
+    result = await tools.run(
+        "create_chapter",
+        {"_tool_call_id": "c", **({"workspace_id": "ws_1"} if account else {})},
+        ctx,
+    )
+
+    assert "name" in chapter["parameters"]["required"]
+    assert "Chapter (n)" not in chapter["description"]
+    assert not result.refused, result.text()
+    assert sent["toolCallId"] == "c" and not sent["name"]
 
 
 async def test_an_account_read_of_a_file_moved_away_says_so(monkeypatch):
