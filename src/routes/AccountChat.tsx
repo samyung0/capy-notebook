@@ -241,7 +241,7 @@ export default function AccountChat() {
         )}
         <Panel
           className="min-w-0 flex-1"
-          frost="right"
+          frost="center"
           sectionClassName="h-full gap-0 overflow-hidden"
         >
           <AppErrorBoundary>
