@@ -1,5 +1,4 @@
-"""Two small live checks through EliteLLM; requires OPENROUTER_API_KEY (DeepSeek
-Flash runs on OpenRouter's 1017 since 2026-10-29)."""
+"""Two small live checks through EliteLLM; requires DEEPSEEK_API_KEY."""
 
 from __future__ import annotations
 

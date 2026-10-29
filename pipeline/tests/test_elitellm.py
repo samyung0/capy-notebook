@@ -12,14 +12,16 @@ from pipeline.elitellm.client import (
     ANTHROPIC_URL,
     DEEPINFRA_EMBED_URL,
     OPENROUTER_CHAT_URL,
-    OPENROUTER_MODELS,
     OPENROUTER_ROUTING,
+    ZAI_OPENROUTER_MODELS,
     _as_obj,
     _thinking_for_call,
     anthropic_endpoint,
     anthropic_request,
     anthropic_thinking_body,
     assistant_message_from_obj,
+    deepseek_request,
+    deepseek_thinking_body,
     embed_batch,
     jsonable,
     message_from_response,
@@ -273,13 +275,13 @@ async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
     assert seen["body"]["reasoning"] == {"enabled": False}
     assert seen["body"]["max_tokens"] == 400
     # Every slug an operator may register has a provider pin.
-    assert all(
-        ("zai", slug) in OPENROUTER_MODELS
+    zai_models = {
+        ZAI_OPENROUTER_MODELS[slug]
         for slug in provider_spec("zai")["allowedModelSlugs"]
+    }
+    assert set(provider_spec("openrouter")["allowedModelSlugs"]) | zai_models == set(
+        OPENROUTER_ROUTING
     )
-    assert set(provider_spec("openrouter")["allowedModelSlugs"]) | set(
-        OPENROUTER_MODELS.values()
-    ) == set(OPENROUTER_ROUTING)
 
 
 def test_minimax_runs_on_together_then_wafer_at_the_chat_pins_effort():
@@ -505,67 +507,58 @@ def test_openai_chat_body_sends_reasoning_effort():
     assert "messages" in body
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("thinking", "reasoning"),
-    [
-        ("mid", {"effort": "medium"}),
-        ("high", {"effort": "high"}),
-        ("max", {"effort": "max"}),
-        (None, {"enabled": False}),
-    ],
-)
-async def test_deepseek_flash_runs_on_openrouter_1017_at_its_pins_effort(
-    monkeypatch: pytest.MonkeyPatch, thinking: str | None, reasoning: dict
-):
-    """Epo 2026-10-29: DeepSeek Flash keeps its catalog identity and runs on
-    OpenRouter's 1017 (InferenceNet, then Cloudflare) on the OpenRouter key;
-    a call that turns reasoning off sends it off."""
-    spec = _spec(
-        model_slug="deepseek-flash",
-        thinking_levels=("mid", "high", "max"),
-        default_thinking="high",
-    )
-    seen: dict[str, object] = {}
-
-    async def post_json(url, headers, body):
-        seen.update(url=url, headers=headers, body=body)
-        return {
-            "choices": [{"message": {"role": "assistant", "content": "ok"}}],
-            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
-        }
-
-    bind_request_llm(thinking)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or")
-    monkeypatch.setattr("pipeline.elitellm.client._post_json", post_json)
-
-    await elitellm_complete(
+def test_deepseek_sends_thinking_and_effort():
+    spec = _spec()
+    on = deepseek_thinking_body("mid")
+    assert on == {"thinking": {"type": "enabled"}, "reasoning_effort": "medium"}
+    off = deepseek_thinking_body("instant")
+    assert off == {"thinking": {"type": "disabled"}}
+    assert deepseek_thinking_body("max") == {
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "max",
+    }
+    body = deepseek_request(
         spec,
         [{"role": "user", "content": "q"}],
-        reasoning=False if thinking is None else None,
+        temperature=0.0,
+        tools=None,
+        response_format=None,
+        max_tokens=16,
+        thinking="high",
+        stream=False,
+        tool_choice=None,
     )
+    assert body["model"] == "deepseek-v4-flash"
+    assert body["thinking"] == {"type": "enabled"}
+    assert body["reasoning_effort"] == "high"
 
-    assert seen["url"] == OPENROUTER_CHAT_URL
-    assert seen["headers"]["authorization"] == "Bearer sk-or"
-    assert seen["body"]["model"] == "deepseek/deepseek-v4.1-flash-1017"
-    assert seen["body"]["provider"] == {
-        "order": ["InferenceNet", "Cloudflare"],
-        "allow_fallbacks": False,
+
+def test_deepseek_flash_41_accepts_the_legacy_vision_request_shape():
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "caption"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,xx"}},
+            ],
+        }
+    ]
+    common = {
+        "temperature": 0.3,
+        "tools": None,
+        "response_format": None,
+        "max_tokens": 16,
+        "thinking": "instant",
+        "stream": False,
+        "tool_choice": None,
     }
-    assert seen["body"]["reasoning"] == reasoning
-    # Another DeepSeek slug has no OpenRouter pin.
-    with pytest.raises(RegistryError, match="no OpenRouter provider pin"):
-        openrouter_request(
-            _spec(),
-            [{"role": "user", "content": "q"}],
-            temperature=None,
-            tools=None,
-            response_format=None,
-            max_tokens=None,
-            thinking="high",
-            stream=False,
-            tool_choice=None,
-        )
+    flash = deepseek_request(_spec(), messages, **common)
+    vision = deepseek_request(_spec(model_slug="deepseek-flash"), messages, **common)
+    assert vision["model"] == "deepseek-flash"
+    assert vision["messages"] == flash["messages"] == messages
+    assert {key: value for key, value in vision.items() if key != "model"} == {
+        key: value for key, value in flash.items() if key != "model"
+    }
 
 
 def test_anthropic_max_is_adaptive():

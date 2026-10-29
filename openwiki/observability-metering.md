@@ -580,21 +580,16 @@ named provider directly. These exact routing exceptions are allowed:
   without an effort reasons as at `max`, so every GLM request sends
   `reasoning: {effort}` with `low`, `high` or `max`; `low` is the floor a
   reasoning-off call runs at and `high` the chat default.
-- `deepseek/deepseek-flash` keeps its `deepseek` catalog identity, display
-  name, credit rates and capacity row but is served through OpenRouter as
-  `deepseek/deepseek-v4.1-flash-1017` on InferenceNet, then Cloudflare (Epo
-  2026-10-29), with `OPENROUTER_API_KEY` as the `deepseek` provider's
-  `platformEnv` (`OPENROUTER_MODELS` maps the catalog pair). Its row offers
-  `mid`, `high` and `max`, sent as OpenRouter's `medium`, `high` and `max`
-  (`DEEPSEEK_EFFORTS`; both providers took `xhigh` and `max` in the UAT
-  probe), `high` by default (`low` stays mapped for rows migrations seed with
-  it); a reasoning-off call sends
-  `reasoning: {enabled: false}`. DeepSeek's own API is no longer called for
-  chat: `DEEPSEEK_API_KEY` serves only `search_web`. Its agentic-loop
-  certification was re-recorded through OpenRouter at `max` (at `high` 1017
-  skips reasoning on the trivial certification prompt, while it reasons on
-  harder tool turns at both levels), and the `deepseek-v4-flash` and
-  `deepseek-v4-flash-vision-exp` certifications were retired (Epo 2026-10-29).
+- `deepseek/deepseek-flash` posts to DeepSeek's own chat API
+  (`https://api.deepseek.com/chat/completions`, platform `DEEPSEEK_API_KEY`,
+  which `search_web` also uses). It ran on OpenRouter's 1017 for part of
+  2026-10-29 and came back the same day (Epo 2026-10-29: OpenRouter's routes
+  were unreliable); its catalog identity and name never changed. Thinking goes
+  as `thinking: {type: enabled}` with `reasoning_effort` (`mid` sent as
+  `medium`), and a reasoning-off call sends `thinking: {type: disabled}`. Its
+  agentic-loop certification is recorded on DeepSeek's API (UAT host,
+  2026-10-29); the `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`
+  certifications stay retired.
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
   `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`, except MiniMax 3.1
@@ -813,8 +808,9 @@ rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
 whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
 300 / 60 / 1000 (Z.AI's list price, decision 2026-10-20, kept on OpenRouter,
 where DigitalOcean lists less), DeepSeek Flash 300 / 60 / 1200 (Epo's
-rate for its OpenRouter 1017 route, 2026-10-29; 600 / 12 / 2400 at DeepSeek's
-own peak-hour price before), OpenRouter
+rate set 2026-10-29 for the OpenRouter 1017 route, kept since the row went back
+to DeepSeek's API; 600 / 12 / 2400 at DeepSeek's own peak-hour price before),
+OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
 decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
 price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
@@ -1864,12 +1860,11 @@ share.
 Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 150/125 and Qwen embedding 200/80; local development
 keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
-rows: DeepSeek Flash 40/0 (on 1017's route since 2026-10-29; chat and Generate only, so no reserve), GLM 150/125 (still keyed `zai/glm-5.3-flash`),
+rows: DeepSeek Flash 40/0 (on DeepSeek's API, whose account allows 2500; chat and Generate only, so no reserve, Epo 2026-10-29), GLM 150/125 (still keyed `zai/glm-5.3-flash`),
 OpenRouter DeepSeek V4 Flash 0731 32/0 (ingest-only, so no interactive
 reserve) and V4.1 Flash 1017 40/20 (ghost text up to 40, captions up to 20;
-page reads lease the `vlm_page` gate instead; with DeepSeek Flash 80 in flight
-on InferenceNet, up from 76, Epo 2026-10-29; UAT and local 8/0
-and 8/4),
+page reads lease the `vlm_page` gate instead, Epo 2026-10-29; UAT and local
+8/4),
 MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together and Wafer each held 16
 calls at once in the 2026-10-23 probe), Qwen
 embedding 200/80 (total/interactive reserve). Existing settings remain, so an

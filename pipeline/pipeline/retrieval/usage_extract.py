@@ -147,7 +147,7 @@ def response_usage(resp: Any, *, provider: str) -> NormalizedUsage:
     """Usage of a whole response, or of the stream chunk carrying it, with the
     provider OpenRouter served it from (every OpenRouter chunk names it)."""
     out = extract_usage(_attr(resp, "usage"), provider=provider)
-    if provider in ("zai", "deepseek", "openrouter"):
+    if provider in ("zai", "openrouter"):
         out.served_by = str(_attr(resp, "provider") or "")[:80]
     return out
 

@@ -797,7 +797,7 @@ func TestBindEliteLLMDraftRejectsNonCanonicalSlugs(t *testing.T) {
 }
 
 func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
-	t.Setenv("OPENROUTER_API_KEY", "sk-test")
+	t.Setenv("DEEPSEEK_API_KEY", "sk-test")
 	t.Setenv("DEEPINFRA_API_KEY", "sk-test")
 	flash := gridDraft{
 		ProviderSlug:    "deepseek",
@@ -833,8 +833,7 @@ func TestBindEliteLLMDraftAllowsRoutedGLM(t *testing.T) {
 }
 
 func TestBindEliteLLMDraftRequiresPlatformEnv(t *testing.T) {
-	// DeepSeek runs on OpenRouter (Epo 2026-10-29).
-	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("DEEPSEEK_API_KEY", "")
 	draft := gridDraft{
 		ProviderSlug:    "deepseek",
 		ModelSlug:       "deepseek-v4-flash",
