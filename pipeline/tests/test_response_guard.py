@@ -14,6 +14,9 @@ from pipeline.retrieval.response_guard import ResponseGuard
         '<invoke name="search_workspace">',
         '{"tool_calls" \n: []}',
         "[TOOL_CALLS]",
+        # MiniMax's answer in the 2026-10-30 loop trace, held as text.
+        "]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+        "</tool_call>",
     ],
 )
 def test_guard_holds_protocol_markers_across_every_split(marker):

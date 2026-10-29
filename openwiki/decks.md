@@ -77,13 +77,31 @@ serially.
    Then ppt-master's checker runs on
    the slide alone in a temporary project, and up to six of its errors come
    back as the refusal. A passing slide is kept (writing it again replaces it)
-   and counts as a landed write for the stall guard.
+   and counts as a landed write for the stall guard. Its result starts with
+   "Slide N is written and kept." before the outline: four outlines in a row
+   otherwise read alike, and MiniMax rewrote kept slides (2026-10-30).
 4. **Export.** Once every slide is written, a Sources slide is added from the
-   style's `sources.svg` when the deck credits library books (one line per
-   book: title, authors, edition, licence), the final check and the exporter
-   run, and the PPTX is stored (below). An export failure keeps the slides and
-   names the slide to rewrite; a store refusal (quota, credits, ingest leases)
-   is the tool's refusal, and writing any slide again retries both.
+   style's `sources.svg` when the deck credits library books: one credit per
+   book (title, authors, edition, licence), wrapped to the sources module's
+   1,152 px by ppt-master's own `text_measure.py wrap` (the estimator its
+   checker measures with), each line a `<tspan>` (`deck.sources_svg`). Then
+   the final check and the exporter run, and the PPTX is stored (below). An
+   export problem keeps the slides and is an errored write, never a landed
+   one (Epo 2026-10-30, T2b; `deck.ExportProblem`):
+   - the final check refusing a slide the model wrote is the tool's refusal,
+     naming each slide by number and title, never a ppt-master file name;
+   - the Sources slide failing the check, more credits than its module holds,
+     or the exporter failing is a tool failure saying it is not the model's
+     slide and that the deck cannot be saved this turn (`deck.NOT_YOURS`).
+
+   A store refusal (quota, credits, ingest leases) is the tool's refusal, and
+   writing any slide again retries both. Until 2026-10-30 the Sources slide
+   was one unwrapped line per book, so OpenStax Physics's credit (152
+   characters) ran off the canvas, the result told the model to rewrite
+   `11_sources.svg`, and both chat models tried an 11th slide and rebuilt the
+   deck while every retry counted as progress (capy-harness
+   2026-10-30-loop-trace). `playground.py --check` exports that credit through
+   the pinned ppt-master.
 5. **After storing** `write_slide` on that deck is refused: the PPTX is the
    document. People edit it in the PPTX editor; the agent edits its text with
    `edit_document` `replace_text`; anything larger is a new deck. No SVG copy is

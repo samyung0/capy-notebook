@@ -19,6 +19,11 @@ _OPENERS = (
     "<function=",
     "<invoke ",
     "[tool_calls]",
+    # MiniMax's own markup, which it once wrote as a whole answer after
+    # 30,771 reasoning tokens, closing tags only (2026-10-30 loop trace, T5).
+    "]<]minimax[>[",
+    "</invoke>",
+    "</tool_call>",
 )
 # GLM's argument markup (AskUser<arg_key>question</arg_key><arg_value>...).
 # Checked on prose answers only, once the response ends: an answer program

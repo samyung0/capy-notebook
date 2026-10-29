@@ -106,7 +106,17 @@ library's subject list to `search_knowledge` and the skill list to
 `excerpt_ids` from the write tools when the library is not ready this turn
 (not configured, down or empty, as its tools drop out; the model otherwise
 fills it with workspace passage ids). The Workspace only switch never changes
-the list. Curate mode's prompt module
+the list. Both profiles' schemas list each object's arguments in
+`tools.ARGUMENT_ORDER`, required first (`tools.in_writing_order`, Epo
+2026-10-30, T3a): DeepSeek Flash's routes (Morph, InferenceNet) generate
+arguments in the schema's property order, so with Go's alphabetical order an
+optional property before the one the model writes first was left out
+(create_material's content, cards and chapter_id; a question's options,
+correct answer and markscheme; create_chapter's name before it was required;
+capture bbox), and a field the model could not write in place landed in a
+later one. A question's fields follow DeepSeek's own order, measured on
+Cloudflare, which does not constrain. Go's definitions stay alphabetical.
+Curate mode's prompt module
 (`prompts/curate.py`) was deleted on 2026-10-04. Almost nothing model-facing is
 written in `retrieval/`: `LANG_RULE` lives in `chat.py`, and `retrieval/`
 keeps tool results and refusal strings, which the model reads as data rather
@@ -3746,7 +3756,8 @@ materials are sources.
   successful write before the stall guard and the tool calls left. Once tools
   are off it carries `FINAL_NOTICE`, which asks for the materials made, what
   is left of the request and what the learner can ask next, and says a deck
-  with slides left unwritten was not saved; a turn that cannot write gets
+  not stored (slides left unwritten, or an export that failed) was not saved;
+  a turn that cannot write gets
   `FINAL_ANSWER_NOTICE` instead (answer with what was found). The message's
   private `_kind` is `turn_context`.
 - **Limits** (`retrieval/limits.py`). Every turn: four tool calls per response,
@@ -5750,7 +5761,9 @@ as read-only "Asked:" lines and are never re-asked.
 
 Before rendering, `retrieval/response_guard.py` holds partial protocol markers across
 stream chunks and detects known tool-call envelopes, including DSML, XML tool calls,
-and JSON `tool_calls` fields (GLM's argument markup is checked on prose answers only, above). A match drains the current provider call for usage and
+MiniMax's `]<]minimax[>[` sentinel and the closing `</invoke>` and `</tool_call>`
+tags (MiniMax once wrote only those as a whole answer, 2026-10-30), and JSON
+`tool_calls` fields (GLM's argument markup is checked on prose answers only, above). A match drains the current provider call for usage and
 streams nothing from the marker on; the call text never shows and nothing in that
 response runs (its real tool calls included), and prose sent before the marker
 becomes narration. This is a bounded protocol filter, not a content-safety

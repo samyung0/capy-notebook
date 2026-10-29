@@ -21,10 +21,12 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -68,16 +70,47 @@ def available() -> bool:
     return (SKILL / "SKILL.md").exists()
 
 
-def _script(name: str, *args: str) -> subprocess.CompletedProcess[str]:
+def _script(
+    name: str, *args: str, stdin: str | None = None
+) -> subprocess.CompletedProcess[str]:
     if not available():
         raise RuntimeError(f"ppt-master is not installed at {SKILL}")
     return subprocess.run(
         [*PYTHON, str(SKILL / "scripts" / name), *args],
+        input=stdin,
         capture_output=True,
-        text=True,
+        # UTF-8 stdio both ways whatever the locale (a Windows playground
+        # otherwise sends a credit's "·" through cp1252).
+        encoding="utf-8",
+        env={**os.environ, "PYTHONUTF8": "1"},
         timeout=SCRIPT_TIMEOUT_S,
         check=False,
     )
+
+
+def wrap(text: str, *, size: float, width: float, family: str) -> list[str]:
+    """``text`` in lines of at most ``width`` px, wrapped by ppt-master's
+    text_measure with the estimator its checker measures with."""
+    proc = _script(
+        "text_measure.py",
+        "wrap",
+        "--stdin",
+        "--json",
+        "--max-width",
+        str(width),
+        "--size",
+        str(size),
+        "--family",
+        family,
+        "--x",
+        "0",
+        "--dy",
+        "1",
+        stdin=text,
+    )
+    if proc.returncode:
+        raise RuntimeError(f"text_measure wrap failed: {proc.stderr[-800:]}")
+    return json.loads(proc.stdout)["lines"]
 
 
 def check(project: Path) -> dict[str, list[str]]:
@@ -101,12 +134,7 @@ def check(project: Path) -> dict[str, list[str]]:
 
 
 def export(project: Path, pptx: Path) -> str:
-    """The checked svg_output as a PPTX; the problem, or empty."""
-    errors = check(project)
-    if errors:
-        return "; ".join(
-            f"{name}: {e}" for name, errs in errors.items() for e in errs[:MAX_ERRORS]
-        )
+    """svg_output, already through check(), as a PPTX; the problem, or empty."""
     proc = _script(
         "svg_to_pptx.py",
         str(project),
@@ -138,14 +166,47 @@ def style_text(style: str) -> str:
     return (folder / "style.md").read_text(encoding="utf-8") + "\n\n" + examples
 
 
-def sources_svg(style: str, credits: list[str], page: int, lang: str) -> str:
-    rows = "\n".join(
-        f'    <text x="64" y="{210 + 40 * i}">{escape(credit)}</text>'
-        for i, credit in enumerate(credits)
-    )
+# The credit rows of a style's sources.svg: its sources module
+# (data-pptx-bounds "64 180 1152 480") in the root's Arial 20 px. A credit
+# wraps at the module's width, its lines LINE apart; credits are GAP apart.
+SOURCES_X = 64
+SOURCES_WIDTH = 1152
+SOURCES_FIRST = 210
+SOURCES_BOTTOM = 660
+SOURCES_SIZE = 20
+SOURCES_FAMILY = "Arial"
+SOURCES_LINE = 26
+SOURCES_GAP = 40
+
+
+def sources_svg(style: str, credits: list[str], page: int, lang: str) -> str | None:
+    """The deck's Sources slide, each credit wrapped as ppt-master wraps a
+    text block (a tspan per line), or None when the credits are too many
+    for the module's height."""
+    rows: list[str] = []
+    y = SOURCES_FIRST
+    for credit in credits:
+        lines = wrap(
+            credit, size=SOURCES_SIZE, width=SOURCES_WIDTH, family=SOURCES_FAMILY
+        )
+        last = y + SOURCES_LINE * (len(lines) - 1)
+        if last + 0.35 * SOURCES_SIZE > SOURCES_BOTTOM:
+            return None
+        rest = "".join(
+            f'<tspan x="{SOURCES_X}" dy="{SOURCES_LINE}">{escape(line)}</tspan>'
+            for line in lines[1:]
+        )
+        rows.append(
+            f'    <text x="{SOURCES_X}" y="{y}">{escape(lines[0])}{rest}</text>'
+        )
+        y = last + SOURCES_GAP
     template = (STYLE_DIR / style / "sources.svg").read_text(encoding="utf-8")
     return template.format(
-        lang=escape(lang), kicker="SOURCES", title="Sources", rows=rows, page=page
+        lang=escape(lang),
+        kicker="SOURCES",
+        title="Sources",
+        rows="\n".join(rows),
+        page=page,
     )
 
 
@@ -216,6 +277,13 @@ def outline_text(record: dict[str, Any]) -> str:
             f"{n}. {slide['title']} ({'written' if slide['svg'] else 'to write'})"
         )
     return "\n".join(out)
+
+
+def written_text(record: dict[str, Any], n: int) -> str:
+    """A landed write's result: which slide it was, then the outline. Four
+    outlines in a row otherwise read alike, and MiniMax rewrote a kept slide
+    (2026-10-30 loop trace)."""
+    return f"Slide {n} is written and kept.\n{outline_text(record)}"
 
 
 def created_text(record: dict[str, Any]) -> str:
@@ -347,20 +415,70 @@ def _place(project: Path, figures: dict[int, bytes]) -> None:
         (project / "images" / f"c{page}.jpg").write_bytes(image)
 
 
-def save(record: dict[str, Any], project: Path, pptx: Path) -> str:
+@dataclass(frozen=True)
+class ExportProblem:
+    """Why a complete deck did not export, in the model's words. ``ours`` when
+    no slide the model wrote is at fault (the Sources slide, the exporter):
+    writing slides again cannot fix it."""
+
+    text: str
+    ours: bool
+
+
+# The end of an export problem the model cannot fix (Epo 2026-10-30, T2b).
+NOT_YOURS = (
+    " Writing slides again does not change it, so this deck cannot be saved in "
+    "this turn: tell the learner."
+)
+
+
+def save(record: dict[str, Any], project: Path, pptx: Path) -> ExportProblem | None:
     """Rewrite svg_output from the record, closed by a Sources slide when the deck
-    credits library books, and export it; the problem, or empty."""
+    credits library books, check it and export it; the problem, or None. The
+    model is pointed at its own slides only, by number and title."""
     out = project / "svg_output"
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
     slides = record["deck"]["slides"]
+    names: dict[str, tuple[int, str]] = {}
     for n, slide in enumerate(slides, 1):
+        names[_file(n, slide["title"])] = (n, slide["title"])
         (out / _file(n, slide["title"])).write_text(slide["svg"], encoding="utf-8")
     books = credits(record)
     if books:
         lang = ET.fromstring(slides[0]["svg"]).attrib["lang"]
         page = len(slides) + 1
-        (out / _file(page, "sources")).write_text(
-            sources_svg(record["deck"]["style"], books, page, lang), encoding="utf-8"
+        svg = sources_svg(record["deck"]["style"], books, page, lang)
+        if svg is None:
+            return ExportProblem(
+                f"The deck did not export: its Sources slide, made from the "
+                f"{len(books)} books it credits, cannot hold them all.{NOT_YOURS}",
+                ours=True,
+            )
+        (out / _file(page, "sources")).write_text(svg, encoding="utf-8")
+    errors = check(project)
+    yours = {name: errs for name, errs in errors.items() if name in names}
+    if yours:
+        listed = "\n".join(
+            f"- slide {names[name][0]} ({names[name][1]}): {e}"
+            for name, errs in yours.items()
+            for e in errs[:MAX_ERRORS]
         )
-    return export(project, pptx)
+        return ExportProblem(
+            "The deck did not export: the final check refused these slides. "
+            f"Write each of them again; the deck exports once every slide passes.\n{listed}",
+            ours=False,
+        )
+    if errors:
+        ours = "; ".join(e for errs in errors.values() for e in errs[:MAX_ERRORS])
+        return ExportProblem(
+            "The deck did not export: its Sources slide, made from the books it "
+            f"credits and not written by you, failed the check ({ours}).{NOT_YOURS}",
+            ours=True,
+        )
+    problem = export(project, pptx)
+    if problem:
+        return ExportProblem(
+            f"The deck did not export: {problem}.{NOT_YOURS}", ours=True
+        )
+    return None

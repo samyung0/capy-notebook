@@ -1022,20 +1022,23 @@ async def deck_locally(
             return tools._refused(f"write_slide: {problem}")
         record["excerpt_ids"] = sorted({*record["excerpt_ids"], *credited})
         operation = "edited"
-        outline = deck.outline_text(record)
+        outline = deck.written_text(record, clean["slide"])
     production_deck.add_books(record, books)
+    exported = None
     if name == "write_slide" and deck.complete(record):
         pptx = state["run_dir"] / "materials" / f"{rid}.pptx"
-        problem = await asyncio.to_thread(deck.save, record, project, pptx)
-        if problem:
-            outline += f"\n\nThe export failed; rewrite the slide it names: {problem}"
-        else:
+        exported = await asyncio.to_thread(deck.save, record, project, pptx)
+        if not exported:
             # runs/<run>/materials/<id>.pptx, the path the download route serves.
             record["pptx"] = str(pptx.relative_to(state["run_dir"].parent.parent))
             outline += "\n\nEvery slide is written; the deck is exported."
     slides = record["deck"]["slides"]
     record["size"] = f"{sum(1 for s in slides if s['svg'])} of {len(slides)} slides written"
     write_material(state, record)
+    if exported:
+        # An errored write, as production returns it (Epo 2026-10-30).
+        text = f"{outline}\n\n{exported.text}"
+        return tools._failed(text) if exported.ours else tools._refused(text)
     result = tools._receipt_result(
         {
             "outcome": "succeeded",
@@ -2537,6 +2540,31 @@ def check_decks() -> None:
 
     with TemporaryDirectory() as tmp:
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))
+
+    # The Sources slide wraps each credit with ppt-master's text_measure and
+    # passes its checker: OpenStax Physics's one-line credit ran 17.6% off the
+    # canvas, and every deck crediting it failed to export (2026-10-30).
+    physics = {
+        "id": "physics",
+        "title": "Physics",
+        "authors": ["Paul Peter Urone", "Roger Hinrichs", "Fatih Gozuacik", "Denise Pattison", "Catherine Tabor"],
+        "edition": "1st edition, Texas Education Agency, 2020 WEB PDF",
+        "license": "CC BY 4.0",
+        "excerptIds": ["exc_1"],
+    }
+    with TemporaryDirectory() as tmp:
+        project = Path(tmp)
+        record = production_deck.create({"title": "Relativity", "slides": [{"title": "One idea", "brief": "b"}]}, "deck_sources")
+        record["deck"]["slides"][0]["svg"] = slide()
+        production_deck.add_books(record, [physics, {**physics, "id": "physics_2"}])
+        problem = production_deck.save(record, project, project / "deck.pptx")
+        assert problem is None, problem
+        assert "<tspan" in (project / "svg_output" / "02_sources.svg").read_text(encoding="utf-8")
+        assert (project / "deck.pptx").stat().st_size > 10_000
+        # Too many credits for the module's height: ours, said so, not the model's slide.
+        production_deck.add_books(record, [{**physics, "id": f"physics_{n}"} for n in range(3, 12)])
+        problem = production_deck.save(record, project, project / "deck.pptx")
+        assert problem and problem.ours and "cannot hold them all" in problem.text, problem
 
 
 def check_questions() -> None:

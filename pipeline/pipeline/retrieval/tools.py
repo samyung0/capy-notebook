@@ -4355,15 +4355,16 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(f"write_slide: {problem}")
     deck.add_books(record, books)
     ctx.library_reads.credit()
-    outline = deck.outline_text(record)
+    outline = deck.written_text(record, args["slide"])
     if not deck.complete(record):
         return _result(outline)
     pptx = project / "deck.pptx"
     problem = await limits.render_thread(deck.save, record, project, pptx)
     if problem:
-        return _result(
-            f"{outline}\n\nThe export failed; rewrite the slide it names: {problem}"
-        )
+        # An errored write for the stall guard, never a landed one: a deck
+        # that cannot export must not keep the turn going (Epo 2026-10-30).
+        text = f"{outline}\n\n{problem.text}"
+        return _failed(text) if problem.ours else _refused(text)
     call_id = str(args.get("_tool_call_id") or "")
     payload = {
         **_chat_context(ctx, call_id),
@@ -4573,7 +4574,105 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
             function["parameters"] = {**function["parameters"], "required": ["name"]}
     # The switch never changes the list (cache rule); a library that is not
     # ready does, as its tools drop out too.
-    return schemas if _library_ready(ctx) else [without_excerpts(s) for s in schemas]
+    if not _library_ready(ctx):
+        schemas = [without_excerpts(s) for s in schemas]
+    return [in_writing_order(s) for s in schemas]
+
+
+# The order a tool's arguments are offered in. DeepSeek Flash's routes (Morph,
+# InferenceNet) generate arguments in the schema's property order, so a
+# property before the one the model writes first is left out: Go's
+# alphabetical order lost create_material's content and create_chapter's name
+# (Epo 2026-10-30, T3a). Required properties come first; then these, what the
+# call is about before what it says before how; then any other in Go's order.
+ARGUMENT_ORDER = (
+    "target",
+    "kind",
+    "type",
+    "id",
+    "file_id",
+    "material_id",
+    "quiz_id",
+    "question_id",
+    "deck_id",
+    "card_id",
+    "block_id",
+    "change_id",
+    "excerpt_id",
+    "after_question_id",
+    "after_block_id",
+    "after_card_id",
+    "name",
+    "title",
+    "question",
+    "query",
+    "workspace_id",
+    "chapter_id",
+    "slide",
+    "page",
+    "description",
+    "expected_text",
+    "expected_front",
+    "expected_back",
+    "text",
+    "markdown",
+    "content",
+    "cards",
+    "front",
+    "back",
+    # A question's fields as DeepSeek writes them unconstrained (Cloudflare,
+    # 2026-10-30): one it cannot write in place lands in a later field.
+    "options",
+    "correct",
+    "accepted",
+    "marks",
+    "markscheme",
+    "model_answer",
+    "unit",
+    "hints",
+    "explanation",
+    "replaces",
+    "questions",
+    "slides",
+    "brief",
+    "svg",
+    "commands",
+    "media",
+    "tags",
+    "subject",
+    "roles",
+    "bbox",
+    "start",
+    "count",
+    "file_ids",
+    "checkpoint",
+    "excerpt_ids",
+    "sources",
+)
+_ARGUMENT_RANK = {name: n for n, name in enumerate(ARGUMENT_ORDER)}
+
+
+def in_writing_order(value: Any) -> Any:
+    """``value`` (a model schema or any part of one) with every object's
+    properties in ARGUMENT_ORDER, required first. Copies: the parameters are
+    Go's dicts."""
+    if isinstance(value, list):
+        return [in_writing_order(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    out = {key: in_writing_order(inner) for key, inner in value.items()}
+    properties = out.get("properties")
+    if isinstance(properties, dict) and properties:
+        required = set(out.get("required") or ())
+        keys = sorted(
+            properties,
+            key=lambda name: (
+                name not in required,
+                _ARGUMENT_RANK.get(name, len(ARGUMENT_ORDER)),
+            ),
+        )
+        out["properties"] = {name: properties[name] for name in keys}
+    return out
 
 
 def without_excerpts(schema: dict[str, Any]) -> dict[str, Any]:

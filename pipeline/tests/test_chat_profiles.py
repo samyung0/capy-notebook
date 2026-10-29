@@ -1400,6 +1400,60 @@ async def test_an_account_create_lands_in_a_workspace_the_turn_created(monkeypat
     assert posted[0]["workspaceId"] == "ws_new"
 
 
+def _objects(schema: Any, path: str = ""):
+    """Every object schema inside a tool's parameters, with its path."""
+    if isinstance(schema, list):
+        for n, item in enumerate(schema):
+            yield from _objects(item, f"{path}[{n}]")
+    elif isinstance(schema, dict):
+        if isinstance(schema.get("properties"), dict):
+            yield path, schema
+        for key, inner in schema.items():
+            yield from _objects(inner, f"{path}.{key}")
+
+
+@pytest.mark.parametrize("account", [False, True])
+def test_chat_schemas_list_what_a_call_needs_before_what_it_may_add(account):
+    """(Epo 2026-10-30, T3a) DeepSeek Flash's routes write arguments in schema
+    order, so an optional property listed before the one the model writes
+    first is dropped: Go's alphabetical create_material lost content, cards
+    and chapter_id on Morph in 3 of 3 calls, the order below lost none."""
+    ctx = (_account if account else _ctx)(library_catalog=CATALOG)
+    profile = profiles.account.PROFILE if account else profiles.workspace.PROFILE
+    schemas = {
+        s["function"]["name"]: s["function"]["parameters"] for s in profile.schemas(ctx)
+    }
+    for name, parameters in schemas.items():
+        for path, obj in _objects(parameters, name):
+            keys = list(obj["properties"])
+            required = set(obj.get("required") or ())
+            assert keys == sorted(keys, key=lambda k: k not in required), (path, keys)
+    material = list(schemas["create_material"]["properties"])
+    assert material[: material.index("cards") + 1] == [
+        "kind",
+        "title",
+        *(["workspace_id"] if account else []),
+        "chapter_id",
+        "content",
+        "cards",
+    ]
+    question = schemas["add_questions"]["properties"]["questions"]["items"]
+    assert list(question["properties"])[:3] == ["question", "options", "correct"]
+    assert list(schemas["capture_knowledge_page"]["properties"]) == [
+        "excerpt_id",
+        "page",
+        "bbox",
+    ]
+    assert list(schemas["read_knowledge"]["properties"]) == [
+        "excerpt_id",
+        "start",
+        "count",
+    ]
+    # Go's definitions stay as Go wrote them.
+    go = contract.DEFINITIONS["create_material"]["inputSchema"]["properties"]
+    assert next(iter(go)) == "cards"
+
+
 @pytest.mark.parametrize("account", [False, True])
 async def test_chat_schemas_require_a_chapter_name_and_a_nameless_one_still_posts(
     monkeypatch, account

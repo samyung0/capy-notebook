@@ -77,6 +77,9 @@ def decks(monkeypatch, tmp_path):
 
     monkeypatch.setattr(deck, "check", check)
     monkeypatch.setattr(deck, "export", export)
+    # ppt-master's text_measure: one line per credit (the playground's --check
+    # wraps real credits).
+    monkeypatch.setattr(deck, "wrap", lambda text, **_: [text])
     monkeypatch.setattr(tools, "_post_operation", post)
     ctx = ToolContext(
         workspace_id="ws",
@@ -181,7 +184,8 @@ async def test_deck_scripts_run_on_the_render_pool(decks, monkeypatch):
     written = await _write(ctx, rid, 1, _slide())
 
     assert not written.refused, written.text()
-    assert exports and len(threads) == 2
+    # The slide's own check, the deck's final check, the export.
+    assert exports and len(threads) == 3
     assert all(name.startswith("capy-render") for name in threads)
 
 
@@ -190,6 +194,8 @@ async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks
     rid = await _outline(ctx)
 
     first = await _write(ctx, rid, 1, _slide())
+    # The result says which slide it answers before the outline (2026-10-30).
+    assert first.text().startswith("Slide 1 is written and kept.\nDeck ")
     assert (
         "1. Slide 1 (written)" in first.text()
         and "2. Slide 2 (to write)" in first.text()
@@ -222,6 +228,84 @@ async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks
     again = await _write(ctx, rid, 1, _slide(), call="c_again")
     assert again.refused and "edit_office_document" in again.text()
     assert len(posts) == 1
+
+
+async def test_a_final_check_refusal_names_the_slide_and_lands_no_write(
+    decks, monkeypatch
+):
+    """The final check's refusal names the model's slide by number and title,
+    never a ppt-master file, and is an errored write: a deck that cannot
+    export must not count as progress (2026-10-30 loop trace)."""
+    ctx, exports, posts = decks
+    monkeypatch.setattr(
+        deck,
+        "check",
+        lambda project: (
+            {"02_slide_2.svg": ["modules overlap"]}
+            if len(list((project / "svg_output").glob("*.svg"))) > 1
+            else {}
+        ),
+    )
+    rid = await _outline(ctx)
+    await _write(ctx, rid, 1, _slide())
+    last = await _write(ctx, rid, 2, _slide())
+
+    assert last.refused and last.outcome == "refused"
+    assert "- slide 2 (Slide 2): modules overlap" in last.text()
+    assert ".svg" not in last.text()
+    assert "2. Slide 2 (written)" in last.text(), "the slide itself is kept"
+    assert not exports and not posts
+
+
+async def test_our_sources_slide_failing_is_not_the_models_to_fix(decks, monkeypatch):
+    """The Sources slide is made from the credits: when it fails, the result
+    says so and that writing slides again cannot help, as a failed write."""
+    ctx, exports, posts = decks
+    book = {"id": "b", "title": "Book", "license": "CC BY 4.0", "excerptIds": ["exc_1"]}
+    monkeypatch.setattr(
+        deck,
+        "check",
+        lambda project: (
+            {"02_sources.svg": ["text exceeds the root viewBox"]}
+            if (project / "svg_output" / "02_sources.svg").exists()
+            else {}
+        ),
+    )
+    rid = await _outline(ctx, slides=1)
+    deck.add_books(ctx.decks[rid], [book])
+    written = await _write(ctx, rid, 1, _slide())
+
+    assert written.outcome == "failed"
+    text = written.text()
+    assert "Sources slide" in text and "not written by you" in text
+    assert "text exceeds the root viewBox" in text and deck.NOT_YOURS.strip() in text
+    assert "sources.svg" not in text
+    assert not exports and not posts
+
+    # Credits that do not fit the module's height are said the same way.
+    monkeypatch.setattr(deck, "wrap", lambda text, **_: [text] * 20)
+    again = await _write(ctx, rid, 1, _slide(), call="c_again")
+    assert again.outcome == "failed" and "cannot hold them all" in again.text()
+
+
+def test_the_sources_slide_wraps_each_credit_as_tspans(monkeypatch):
+    monkeypatch.setattr(
+        deck,
+        "wrap",
+        lambda text, **_: [text[:10], text[10:]] if len(text) > 10 else [text],
+    )
+    svg = deck.sources_svg("editorial", ["A long credit line", "Short"], 3, "en")
+    assert (
+        '<text x="64" y="210">A long cre<tspan x="64" dy="26">dit line</tspan></text>'
+        in svg
+    )
+    # The next credit starts below the last line of the one before.
+    assert '<text x="64" y="276">Short</text>' in svg
+    # 18 lines fill the module's 480 px; a 19th does not fit.
+    monkeypatch.setattr(deck, "wrap", lambda text, **_: ["line"] * 18)
+    assert deck.sources_svg("editorial", ["many lines"], 3, "en") is not None
+    monkeypatch.setattr(deck, "wrap", lambda text, **_: ["line"] * 19)
+    assert deck.sources_svg("editorial", ["many lines"], 3, "en") is None
 
 
 async def test_figures_are_this_turns_bbox_captures_and_credit_their_book(

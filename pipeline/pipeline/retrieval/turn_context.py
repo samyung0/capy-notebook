@@ -31,7 +31,10 @@ FINAL_ANSWER_NOTICE = (
     "\nTools are off for this response. Answer now with what you found, and say "
     "what is still open."
 )
-UNSAVED_DECK = " A deck with slides left unwritten was not saved: say so."
+UNSAVED_DECK = (
+    " A deck not stored (slides left unwritten, or an export that failed) was "
+    "not saved: say so."
+)
 
 
 def tools_off(messages: list[dict[str, Any]]) -> bool:

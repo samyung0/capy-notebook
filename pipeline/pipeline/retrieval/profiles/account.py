@@ -95,7 +95,8 @@ def schemas(ctx: ToolContext) -> list[dict[str, Any]]:
             parameters["required"] = [*parameters.get("required", []), "workspace_id"]
         elif function["name"] in tools.DESTINATION_TOOLS:
             function["parameters"]["properties"]["workspace_id"] = WORKSPACE_ID
-    return out
+    # workspace_id lands in its place among the arguments (T3a).
+    return [tools.in_writing_order(schema) for schema in out]
 
 
 def messages(*, locale: str | None, writes: bool = True, **kwargs: Any) -> list[dict]:
