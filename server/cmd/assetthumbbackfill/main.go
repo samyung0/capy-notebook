@@ -1,5 +1,5 @@
 // Command assetthumbbackfill makes the Embeds tab thumbnails of editor images
-// stored before migration 0131 (openwiki/thumbnails.md). One-shot and
+// stored before migration 0132 (openwiki/thumbnails.md). One-shot and
 // idempotent: it reads only ready images still without a thumbnail, makes
 // one attempt each (a failure is logged and the card keeps its icon), and can
 // be rerun. Nothing runs it at startup.

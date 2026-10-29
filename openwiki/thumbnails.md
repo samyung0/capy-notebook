@@ -232,7 +232,7 @@ which drew only icons before. Audio gets none.
   failed`) and the card keeps its icon until the backfill.
 - Stored at `thumbs/{asset id}/{sha256}.jpg` (`Cache-Control: public,
   max-age=31536000, immutable`), named in `editor_assets.thumbnail_key`
-  (migration 0131), a counted blob reference beside `object_path`. It follows
+  (migration 0132), a counted blob reference beside `object_path`. It follows
   its row: kept while the image's node is gone from its note (the row is only
   trashed, so undo and redo find it), released when the row is purged a day
   later, deleted with its uploader, or deleted from the Embeds tab. A row gone
@@ -246,7 +246,7 @@ which drew only icons before. Audio gets none.
 - `GET /api/editor-assets` signs it per row as `thumbnailUrl`, the same
   hour-stable link; every row is one the caller pays for. The Embeds grid card
   draws it, the list row keeps the image or audio icon.
-- Images stored before migration 0131 get theirs from the one-shot,
+- Images stored before migration 0132 get theirs from the one-shot,
   idempotent `assetthumbbackfill` (ready images still without one, one attempt
   each, rerunnable; run by hand, never at startup):
   `docker exec <server container> /app/assetthumbbackfill` (the container has
