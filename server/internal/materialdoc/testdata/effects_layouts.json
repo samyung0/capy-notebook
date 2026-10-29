@@ -1,0 +1,5028 @@
+{
+  "indexed": [
+    {
+      "type": "p",
+      "id": "p1",
+      "children": [
+        {
+          "text": "Marsh notes."
+        }
+      ]
+    },
+    {
+      "type": "p",
+      "id": "l1",
+      "indent": 1,
+      "listStyleType": "disc",
+      "children": [
+        {
+          "text": "Low marsh"
+        }
+      ]
+    },
+    {
+      "type": "p",
+      "id": "l2",
+      "indent": 2,
+      "listStyleType": "disc",
+      "children": [
+        {
+          "text": "Cordgrass"
+        }
+      ]
+    },
+    {
+      "type": "callout",
+      "id": "co",
+      "variant": "tip",
+      "children": [
+        {
+          "type": "p",
+          "id": "co1",
+          "children": [
+            {
+              "text": "Tides flood twice."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "id": "tb",
+      "children": [
+        {
+          "type": "tr",
+          "id": "r0",
+          "children": [
+            {
+              "type": "td",
+              "id": "x0",
+              "children": [
+                {
+                  "type": "p",
+                  "id": "x0p",
+                  "children": [
+                    {
+                      "text": "Site"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "td",
+              "id": "x1",
+              "children": [
+                {
+                  "type": "p",
+                  "id": "x1p",
+                  "children": [
+                    {
+                      "text": "Salinity"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "tr",
+          "id": "r1",
+          "children": [
+            {
+              "type": "td",
+              "id": "x2",
+              "children": [
+                {
+                  "type": "p",
+                  "id": "x2p",
+                  "children": [
+                    {
+                      "text": "Inlet"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "td",
+              "id": "x3",
+              "children": [
+                {
+                  "type": "p",
+                  "id": "x3p",
+                  "children": [
+                    {
+                      "text": "30"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "code_block",
+      "id": "cb",
+      "lang": "python",
+      "children": [
+        {
+          "type": "code_line",
+          "id": "k0",
+          "children": [
+            {
+              "text": "x = 1"
+            }
+          ]
+        },
+        {
+          "type": "code_line",
+          "id": "k1",
+          "children": [
+            {
+              "text": "y = 2"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "p",
+      "id": "p2",
+      "children": [
+        {
+          "text": "Move me, see "
+        },
+        {
+          "type": "a",
+          "id": "ln",
+          "url": "https://example.com",
+          "children": [
+            {
+              "text": "the link"
+            }
+          ]
+        },
+        {
+          "text": "."
+        }
+      ]
+    },
+    {
+      "type": "material_ref",
+      "id": "mr",
+      "materialId": "fc1",
+      "refKind": "flashcards",
+      "children": [
+        {
+          "text": ""
+        }
+      ]
+    },
+    {
+      "type": "p",
+      "id": "p3",
+      "children": [
+        {
+          "text": "Delete me."
+        }
+      ]
+    }
+  ],
+  "items": {
+    "fc1": {
+      "schemaVersion": 1,
+      "value": [
+        {
+          "type": "flashcards",
+          "id": "cards",
+          "children": [
+            {
+              "type": "flashcard",
+              "id": "c1",
+              "children": [
+                {
+                  "type": "flashcard_front",
+                  "children": [
+                    {
+                      "text": "How often do tides flood?"
+                    }
+                  ]
+                },
+                {
+                  "type": "flashcard_back",
+                  "children": [
+                    {
+                      "text": "Twice a day"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "fc2": {
+      "schemaVersion": 1,
+      "value": [
+        {
+          "type": "flashcards",
+          "id": "cards",
+          "children": [
+            {
+              "type": "flashcard",
+              "id": "c1",
+              "children": [
+                {
+                  "type": "flashcard_front",
+                  "children": [
+                    {
+                      "text": "What binds the dunes?"
+                    }
+                  ]
+                },
+                {
+                  "type": "flashcard_back",
+                  "children": [
+                    {
+                      "text": "Twice a day"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "seed only",
+      "changed": [],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 2,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p3",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 2,
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "type": "p",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "typing in a paragraph",
+      "changed": ["p1"],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes. Salt."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 2,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p3",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes. Salt."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 2,
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "type": "p",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "typing in a nested list item",
+      "changed": ["l2"],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 2,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass grows"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p3",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 2,
+          "children": [
+            {
+              "text": "Cordgrass grows"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "type": "p",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "typing in a callout paragraph",
+      "changed": ["co"],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 2,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice. Mostly."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p3",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 2,
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice. Mostly."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "type": "p",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "typing in a table cell",
+      "changed": ["tb"],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 2,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30 ppt"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p3",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 2,
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30 ppt"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "type": "p",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a code line inserted first",
+      "changed": ["cb"],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 2,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k9",
+              "children": [
+                {
+                  "text": "import tide"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p3",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 2,
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "import tide"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l2",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "type": "p",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "typing after a link",
+      "changed": ["p2"],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 2,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": ". Done"
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p3",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 2,
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": ". Done"
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "type": "p",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a block moved to the top",
+      "changed": ["p2"],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 2,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p3",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 2,
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "type": "p",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a nested list item outdented",
+      "changed": ["l2"],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p3",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "type": "p",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a block deleted",
+      "changed": ["p3"],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 2,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 2,
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "two paragraphs pasted",
+      "changed": ["n1", "n2"],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "n1",
+          "children": [
+            {
+              "text": "Pasted one."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "n2",
+          "children": [
+            {
+              "text": "Pasted two."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 2,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p3",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "id": "n1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Pasted one."
+            }
+          ]
+        },
+        {
+          "id": "n2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Pasted two."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 2,
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "type": "p",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an embedded set's reference pasted",
+      "changed": ["mr2"],
+      "plate": [
+        {
+          "type": "p",
+          "id": "p1",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l1",
+          "indent": 1,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "l2",
+          "indent": 2,
+          "listStyleType": "disc",
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "id": "co",
+          "variant": "tip",
+          "children": [
+            {
+              "type": "p",
+              "id": "co1",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "id": "tb",
+          "children": [
+            {
+              "type": "tr",
+              "id": "r0",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x0",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x0p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x1",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x1p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tr",
+              "id": "r1",
+              "children": [
+                {
+                  "type": "td",
+                  "id": "x2",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x2p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "td",
+                  "id": "x3",
+                  "children": [
+                    {
+                      "type": "p",
+                      "id": "x3p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code_block",
+          "id": "cb",
+          "lang": "python",
+          "children": [
+            {
+              "type": "code_line",
+              "id": "k0",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "type": "code_line",
+              "id": "k1",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p2",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "type": "a",
+              "id": "ln",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "material_ref",
+          "id": "mr2",
+          "materialId": "fc2",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "id": "p3",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ],
+      "blocks": [
+        {
+          "id": "p1",
+          "type": "p",
+          "children": [
+            {
+              "text": "Marsh notes."
+            }
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 1,
+          "children": [
+            {
+              "text": "Low marsh"
+            }
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "p",
+          "listStyleType": "disc",
+          "indent": 2,
+          "children": [
+            {
+              "text": "Cordgrass"
+            }
+          ]
+        },
+        {
+          "id": "co",
+          "type": "callout",
+          "variant": "tip",
+          "children": [
+            {
+              "id": "co1",
+              "type": "p",
+              "children": [
+                {
+                  "text": "Tides flood twice."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tb",
+          "type": "table",
+          "children": [
+            {
+              "id": "r0",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r0:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Site"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r0:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r0:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Salinity"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "r1",
+              "type": "tr",
+              "children": [
+                {
+                  "id": "r1:tb-c0",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c0.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "Inlet"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "r1:tb-c1",
+                  "type": "td",
+                  "children": [
+                    {
+                      "id": "r1:tb-c1.p",
+                      "type": "p",
+                      "children": [
+                        {
+                          "text": "30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cb",
+          "type": "code_block",
+          "lang": "python",
+          "children": [
+            {
+              "id": "cb.l0",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "x = 1"
+                }
+              ]
+            },
+            {
+              "id": "cb.l1",
+              "type": "code_line",
+              "children": [
+                {
+                  "text": "y = 2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "type": "p",
+          "children": [
+            {
+              "text": "Move me, see "
+            },
+            {
+              "id": "p2.i0",
+              "type": "a",
+              "url": "https://example.com",
+              "children": [
+                {
+                  "text": "the link"
+                }
+              ]
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "id": "mr",
+          "type": "material_ref",
+          "materialId": "fc1",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "mr2",
+          "type": "material_ref",
+          "materialId": "fc2",
+          "refKind": "flashcards",
+          "children": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "type": "p",
+          "children": [
+            {
+              "text": "Delete me."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

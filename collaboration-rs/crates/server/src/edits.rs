@@ -577,15 +577,20 @@ pub async fn live_note(app: &Shared, room: &str) -> Result<Value, DocumentError>
     let Ok(Ok(Some((state, model)))) = tokio::time::timeout(SNAPSHOT_WAIT, answer).await else {
         return Ok(none);
     };
-    let value = tokio::task::spawn_blocking(move || {
-        let doc = ydoc::scratch_doc();
-        ydoc::replay(&doc, &state, &[] as &[Vec<u8>]).map_err(|error| error.to_string())?;
-        model.value(&doc.transact())
-    })
-    .await
-    .map_err(|error| DocumentError::Unknown(error.to_string()))?
-    .map_err(DocumentError::Unknown)?;
+    let value = tokio::task::spawn_blocking(move || live_value(&state, model))
+        .await
+        .map_err(|error| DocumentError::Unknown(error.to_string()))?
+        .map_err(DocumentError::Unknown)?;
     Ok(json!({ "content": { "schemaVersion": 1, "value": value } }))
+}
+
+/// A room's state projected by its own model, so a blocks note reads as the
+/// Plate value it stores (a Plate read of it would find no content root and
+/// give an empty note).
+fn live_value(state: &[u8], model: Model) -> Result<Vec<Value>, String> {
+    let doc = ydoc::scratch_doc();
+    ydoc::replay(&doc, state, &[] as &[Vec<u8>]).map_err(|error| error.to_string())?;
+    model.value(&doc.transact())
 }
 
 /// This instance's live copy of `room`, when it has the room loaded.
@@ -2619,8 +2624,42 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        Change, DocumentError, Model, Scratch, Write, compute, compute_quiz, over_update_cap,
+        Change, DocumentError, Model, Scratch, Write, compute, compute_quiz, live_value,
+        over_update_cap,
     };
+
+    /// Q417 on a blocks note: the live read projects the room's typing in a
+    /// nested list item through the blocks layout to the value Go's note
+    /// effects read. Fails if it reads the room as Plate.
+    #[test]
+    fn a_live_blocks_note_reads_as_its_projection() {
+        use yrs::{Map, ReadTxn, Text, Transact};
+        let value = vec![
+            json!({ "type": "p", "id": "l1", "indent": 1, "listStyleType": "disc", "children": [{ "text": "Low" }] }),
+            json!({ "type": "p", "id": "l2", "indent": 2, "listStyleType": "disc", "children": [{ "text": "Grass" }] }),
+        ];
+        let doc = ydoc::scratch_doc();
+        let state = Model::Blocks.state_from_value(&value).unwrap();
+        ydoc::replay(&doc, &state, &[] as &[Vec<u8>]).unwrap();
+        {
+            let mut txn = doc.transact_mut();
+            let blocks = txn.get_map(blocks::BLOCKS_ROOT).unwrap();
+            let Some(yrs::Out::YMap(l2)) = blocks.get(&txn, "l2") else {
+                panic!("l2")
+            };
+            let Some(yrs::Out::YText(text)) = l2.get(&txn, "prop:text") else {
+                panic!("text")
+            };
+            text.insert(&mut txn, 5, " grows");
+        }
+        let live = doc
+            .transact()
+            .encode_state_as_update_v1(&yrs::StateVector::default());
+        let read = live_value(&live, Model::Blocks).unwrap();
+        assert_eq!(read[1]["id"], "l2");
+        assert_eq!(read[1]["indent"], 2);
+        assert_eq!(read[1]["children"][0]["text"], "Grass grows");
+    }
 
     /// An agent edit or content-API write whose update, stored or sent live,
     /// is over the cap is refused before it commits; one at the cap goes (Epo

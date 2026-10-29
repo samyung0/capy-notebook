@@ -4,6 +4,7 @@ computing them from the stored content against the indexed blocks."""
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -29,6 +30,11 @@ def _fence(block: dict) -> str:
     return "```chart\n" + json.dumps(block["block"]) + "\n```"
 
 
+@pytest.mark.skipif(
+    os.environ.get("COLLABORATION_DOCUMENT_LAYOUT") == "blocks",
+    reason="a blocks note takes no agent edits until they act on block ids "
+    "(todo-blocksuite-spike.md boundary 3, D16)",
+)
 async def test_a_notes_text_and_chart_changes_reach_its_inspect(stack, turn):
     """T5: a paragraph change and a small chart change as text, a heavy chart
     change as a data placeholder that resolve_source_change reads."""
