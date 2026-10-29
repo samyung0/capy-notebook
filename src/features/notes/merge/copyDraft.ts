@@ -219,6 +219,9 @@ export const COPY_WRITE_MS = 1000;
  * before it first (Q410, Q421), so the bound drops only that edit.
  * `editedAt` is the copy's last edit (the adopted row's write until this
  * mount edits it): past the 7-day expiry it is never merged (Q421).
+ * `onUnstored` says whether the copy holds edits storage refused (Q568): true
+ * at a failed write, false once one lands or the copy stops (its edits go to
+ * the room, or are dropped).
  */
 export function recordCopy({
   adopted,
@@ -227,6 +230,7 @@ export function recordCopy({
   limitBytes,
   lineage,
   onLimit,
+  onUnstored,
   revision,
 }: {
   adopted: StoredCopy | null;
@@ -235,6 +239,7 @@ export function recordCopy({
   limitBytes: number;
   lineage: string;
   onLimit: () => void;
+  onUnstored?: (unstored: boolean) => void;
   revision: number;
 }) {
   const row = adopted?.row;
@@ -251,6 +256,12 @@ export function recordCopy({
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
   let over = false;
+  let unstored = false;
+  const stored = (ok: boolean) => {
+    if (stopped || unstored === !ok) return;
+    unstored = !ok;
+    onUnstored?.(unstored);
+  };
   const flush = () => {
     clearTimeout(timer);
     timer = undefined;
@@ -284,7 +295,13 @@ export function recordCopy({
         seq,
         session,
       },
-    ]).catch((error) => console.warn('Draft storage failed:', error));
+    ]).then(
+      () => stored(true),
+      (error) => {
+        console.warn('Draft storage failed:', error);
+        stored(false);
+      }
+    );
   };
   return {
     edited(value: MaterialValue, inserted = false) {
@@ -311,6 +328,10 @@ export function recordCopy({
     stop(): DraftRef | null {
       flush();
       stopped = true;
+      if (unstored) {
+        unstored = false;
+        onUnstored?.(false);
+      }
       return written;
     },
   };

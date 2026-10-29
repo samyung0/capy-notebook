@@ -2389,7 +2389,9 @@ room joins (`src/features/notes/merge/`):
   stops under the `offline-limit` strip, and the bind merges the copy as
   last written. An edit that inserts more than one character, which no
   keystroke does (a paste of text or of blocks, `insertsMany`), writes the
-  typing before it first, so the bound drops only that edit (Q410, Q421).
+  typing before it first, so the bound drops only that edit (Q410, Q421). A
+  write storage refuses is reported (`onUnstored`) until one lands or the
+  copy stops: meanwhile closing or reloading the tab asks (Q568).
   A paused editor
   (a room swap before its bind) writes its copy, stops recording and lets go
   of its lock, so the next mount adopts it (Q409). An unreadable copy

@@ -791,6 +791,8 @@ export function NoteEditorCore({
   // The copy past the offline bound (review r1 L2): the editor stops, as
   // drafts do, until the room joins.
   const [copyFull, setCopyFull] = useState(false);
+  // The copy holds edits this device's storage refused (Q568).
+  const [copyUnstored, setCopyUnstored] = useState(false);
   const [copy] = useState(() =>
     recordCopy({
       adopted: copies.adopted,
@@ -802,9 +804,21 @@ export function NoteEditorCore({
         setCopyFull(true);
         reportOffline.current?.('offline-limit');
       },
+      onUnstored: setCopyUnstored,
       revision: copies.adopted?.copy.revision ?? material.revision,
     })
   );
+  // Closing or reloading the tab asks while the copy holds them, as the
+  // live room's drafts do (Q561); in-app navigation never asks.
+  useEffect(() => {
+    if (!copyUnstored) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [copyUnstored]);
   // The copy was edited before the room's first sync.
   const copyEdited = useRef(false);
   const [scrollArea, setScrollArea] = useState<HTMLDivElement | null>(null);

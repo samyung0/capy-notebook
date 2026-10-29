@@ -662,7 +662,10 @@ Plate notes, flashcard sets and quizzes follow the same rule (Q561, Epo
 (`ItemRoom`) arm the listener while the recorder reports storage failing
 and ask, when the tab goes, only if one of this tab's own edits has no
 receipt yet (the recorder's count; a collaborator's never counts); a room
-that ended or unmounted asks nothing more.
+that ended or unmounted asks nothing more. A note open as its saved copy
+before the room joins (Q229) asks while the copy recorder's last write was
+refused and no later one landed (Q568, `recordCopy`'s `onUnstored`); the
+bind or any other stop of the copy ends that.
 
 The save banner (`SaveBanner`, `src/components/banners/SaveBanner.tsx`) is one
 strip under the file or note header with one state at a time:
