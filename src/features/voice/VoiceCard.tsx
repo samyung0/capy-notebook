@@ -14,16 +14,18 @@ import './voice.css';
 
 /**
  * The sidebar's voice card, above Settings, inside a slowly turning rainbow
- * ring and lightening on hover: it opens the account voice overlay (`onOpen` closes the phone
+ * ring: it opens the account voice overlay (`onOpen` closes the phone
  * drawer). The mic sits where the rows' icons do, so the 70px rail shows only
- * the mic in its ring. Hidden where the browser cannot record.
+ * the mic in its ring. Hidden where the browser cannot record. Its hover is
+ * a faint tint over its own fill, white or frost, a step lighter than the
+ * rows' grey, which would hide the white.
  */
 export function VoiceCard({ onOpen }: { onOpen?: () => void }) {
   const [supported] = useState(() => recordingType() !== null);
   if (!supported) return null;
   return (
     <button
-      className="relative mb-2 flex w-full items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-[14px] bg-surface frosted:bg-(--frost-fill) py-[7.5px] pr-3 pl-[7px] text-fg transition-all duration-150 ease-out frosted:hover:bg-surface-hover-bg hover:bg-surface-hover-bg active:scale-[0.98]"
+      className="relative mb-2 flex w-full items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-[14px] bg-surface frosted:bg-(--frost-fill) py-[7.5px] pr-3 pl-[7px] text-fg transition-all duration-150 ease-out hover:shadow-[inset_0_0_0_100px_rgb(0_0_0/0.035)] active:scale-[0.98] dark:hover:shadow-[inset_0_0_0_100px_rgb(255_255_255/0.05)]"
       onClick={() => {
         onOpen?.();
         setAccountVoiceOpen(true);
