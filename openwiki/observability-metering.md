@@ -807,10 +807,10 @@ cached-read input, and output. One credit is $0.0005 of provider cost, so a
 rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
 whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
 300 / 60 / 1000 (Z.AI's list price, decision 2026-10-20, kept on OpenRouter,
-where DigitalOcean lists less), DeepSeek Flash 300 / 60 / 1200 (Epo's
-rate set 2026-10-29 for the OpenRouter 1017 route, kept since the row went back
-to DeepSeek's API; 600 / 12 / 2400 at DeepSeek's own peak-hour price before),
-OpenRouter
+where DigitalOcean lists less), DeepSeek Flash 600 / 12 / 2400 (DeepSeek's
+peak price, $0.30 / $0.006 / $1.20 per million; off-peak is half; UAT's row
+version 7 since 2026-10-29, after version 6 charged 300 / 60 / 1200 while the
+row ran on OpenRouter's 1017), OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
 decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
 price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
