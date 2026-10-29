@@ -604,8 +604,9 @@ function StudyBody({
             <p className="mt-2 border-divider border-t py-4 text-fg-muted">
               {m.plan_empty()}
             </p>
-          ) : sections.every((s) => s.all.length === 0) ? (
-            // Nothing in the workspace yet, filters or not.
+          ) : !plan && sections.every((s) => s.all.length === 0) ? (
+            // Nothing in the workspace yet, filters or not. A plan keeps its
+            // groups, locked ones too.
             <p className="mt-2 border-divider border-t py-4 text-fg-muted">
               {m.study_empty()}
             </p>
