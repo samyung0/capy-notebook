@@ -590,7 +590,11 @@ named provider directly. These exact routing exceptions are allowed:
   probe), `high` by default (`low` stays mapped for rows migrations seed with
   it); a reasoning-off call sends
   `reasoning: {enabled: false}`. DeepSeek's own API is no longer called for
-  chat: `DEEPSEEK_API_KEY` serves only `search_web`.
+  chat: `DEEPSEEK_API_KEY` serves only `search_web`. Its agentic-loop
+  certification was re-recorded through OpenRouter at `max` (at `high` 1017
+  skips reasoning on the trivial certification prompt, while it reasons on
+  harder tool turns at both levels), and the `deepseek-v4-flash` and
+  `deepseek-v4-flash-vision-exp` certifications were retired (Epo 2026-10-29).
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
   `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`, except MiniMax 3.1

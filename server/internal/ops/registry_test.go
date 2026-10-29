@@ -533,7 +533,7 @@ func TestRegistryCompileRefusesInstantRowMovedIntoChat(t *testing.T) {
 		Version: 1,
 		Slots:   models.AllSlots(),
 		Configs: []CatalogConfig{{
-			ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash",
+			ProviderSlug: "deepseek", ModelSlug: "deepseek-flash",
 			Version: 1, Enabled: true, Slots: []string{models.SlotEditor},
 			IsDefaultFor:   []string{models.SlotEditor},
 			ThinkingLevels: []string{"instant"}, DefaultThinking: "instant",
@@ -801,7 +801,7 @@ func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
 	t.Setenv("DEEPINFRA_API_KEY", "sk-test")
 	flash := gridDraft{
 		ProviderSlug:    "deepseek",
-		ModelSlug:       "deepseek-v4-flash",
+		ModelSlug:       "deepseek-flash",
 		ThinkingLevels:  []string{"instant", "low", "mid", "high", "max"},
 		DefaultThinking: "instant",
 		Capabilities:    []string{models.CapabilityVision},

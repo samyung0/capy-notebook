@@ -20,11 +20,11 @@ REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "pipeline" / "tests" / "model_replay_certifications.json"
 REPLAY_NODE = "pipeline/tests/test_model_replay.py::test_certified_two_turn_replay"
 CASSETTE_DIR = Path("pipeline/tests/cassettes/replay")
-# The zai pin's slug is typed (--model): OpenRouter serves it under another
-# name (z-ai/glm-5.3-flash).
+# The zai and deepseek pins' slugs are typed (--model): OpenRouter serves them
+# under other names (z-ai/glm-5.3-flash, deepseek/deepseek-v4.1-flash-1017).
 MODEL_LIST_ENDPOINTS: dict[str, str | None] = {
     "anthropic": "https://api.anthropic.com/v1/models",
-    "deepseek": "https://api.deepseek.com/models",
+    "deepseek": None,
     "openai": "https://api.openai.com/v1/models",
     "zai": None,
     # The OpenRouter chat pins are elitellm's allowlist, not a model list.

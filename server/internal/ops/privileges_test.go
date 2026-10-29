@@ -443,22 +443,16 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	}
 
 	readStore := newReadStoreForTest(t, readPool)
-	modelRef := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash"}
+	// A certified chat row that is no slot's default: the seeded MiniMax pin,
+	// restored at cleanup.
+	modelRef := models.Ref{ProviderSlug: "openrouter", ModelSlug: "minimax/minimax-m3.1-flash"}
 	userID := "ops_role_user_" + suffix
-	if _, err := owner.Exec(ctx, `
-		INSERT INTO model_configs (
-			version, provider_name, model_name, provider_slug, model_slug,
-			context_window_tokens,
-			thinking_levels, default_thinking, params,
-			slots, capabilities, micros_per_input_token, micros_per_cached_input_token,
-			micros_per_output_token, enabled, is_default_for
-		) VALUES (
-			99, 'Ops', 'Role Model', $1, $2,
-			100000,
-			ARRAY['low','high']::text[], 'high', '{}'::jsonb,
-			ARRAY['chat'], ARRAY['vision'], 1, 1, 1, true, '{}'
-		)`, modelRef.ProviderSlug, modelRef.ModelSlug,
-	); err != nil {
+	var seededVersion int
+	if err := owner.QueryRow(ctx, `
+		SELECT version FROM model_configs
+		WHERE provider_slug=$1 AND model_slug=$2 AND enabled`,
+		modelRef.ProviderSlug, modelRef.ModelSlug,
+	).Scan(&seededVersion); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := owner.Exec(ctx, `
@@ -486,8 +480,8 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		_, _ = owner.Exec(ctx, `DELETE FROM reconcile_runs WHERE requested_by_id=$1`, userID)
 		_, _ = owner.Exec(ctx, `DELETE FROM email_outbox WHERE user_id=$1`, userID)
 		_, _ = owner.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID)
-		_, _ = owner.Exec(ctx, `DELETE FROM model_configs WHERE provider_slug=$1 AND model_slug=$2 AND version >= 99`, modelRef.ProviderSlug, modelRef.ModelSlug)
-		_, _ = owner.Exec(ctx, `UPDATE model_configs SET enabled=true WHERE provider_slug=$1 AND model_slug=$2 AND version=1`, modelRef.ProviderSlug, modelRef.ModelSlug)
+		_, _ = owner.Exec(ctx, `DELETE FROM model_configs WHERE provider_slug=$1 AND model_slug=$2 AND version > $3`, modelRef.ProviderSlug, modelRef.ModelSlug, seededVersion)
+		_, _ = owner.Exec(ctx, `UPDATE model_configs SET enabled=true WHERE provider_slug=$1 AND model_slug=$2 AND version=$3`, modelRef.ProviderSlug, modelRef.ModelSlug, seededVersion)
 	})
 	if _, err := readPool.Exec(ctx, `SELECT touch_operator_seen($1)`, userID); err != nil {
 		t.Fatalf("read/auth last-seen touch failed: %v", err)

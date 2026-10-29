@@ -84,10 +84,12 @@ func TestEliteLLMProvidersPlatformEnv(t *testing.T) {
 }
 
 func TestAgenticLoopCertificationIsProviderAndSlugKeyed(t *testing.T) {
-	if !AgenticLoopCertified("deepseek", "deepseek-flash") ||
-		!AgenticLoopCertified("deepseek", "deepseek-v4-flash") ||
-		!AgenticLoopCertified("deepseek", "deepseek-v4-flash-vision-exp") {
-		t.Fatal("seeded deepseek slugs must be certified")
+	if !AgenticLoopCertified("deepseek", "deepseek-flash") {
+		t.Fatal("the seeded deepseek slug must be certified")
+	}
+	// Retired with DeepSeek's own route (Epo 2026-10-29).
+	if AgenticLoopCertified("deepseek", "deepseek-v4-flash") {
+		t.Fatal("deepseek-v4-flash has no route and must not be certified")
 	}
 	if AgenticLoopCertified("deepseek", "deepseek/deepseek-v4-flash") {
 		t.Fatal("liteLLM ids are not cert keys")
@@ -95,7 +97,7 @@ func TestAgenticLoopCertificationIsProviderAndSlugKeyed(t *testing.T) {
 	if AgenticLoopCertified("anthropic", "claude-not-certified") {
 		t.Fatal("unknown slug must not inherit a cert")
 	}
-	if AgenticLoopCertified("other-provider", "deepseek-v4-flash") {
+	if AgenticLoopCertified("other-provider", "deepseek-flash") {
 		t.Fatal("a certified slug must not transfer across providers")
 	}
 }
