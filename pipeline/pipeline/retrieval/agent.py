@@ -607,6 +607,9 @@ async def _run_turn(
     write_errors = 0
     # A tools-off response that called tools anyway gets one more response.
     refused_off = False
+    # A response that wrote a tool call as text is sent back once (Epo
+    # 2026-10-29).
+    text_call_sent_back = False
 
     # The response after a send-back runs even past the planning cap.
     send_back_pending = False
@@ -926,19 +929,28 @@ async def _run_turn(
             not renderer.answer_shaped and contains_arg_markup(assembled.text)
         )
         if (guard.flagged and text_ask is None) or leaked:
-            if not tools_off:
-                budget.stop_reason = STOP_ERROR
-                yield _flagged_error()
-                return
-            # GLM writes a tool call as text when tools are off. The turn ends
-            # as if it had reached its cap: the call text is dropped, the
-            # materials already made stay, and prose sent before it is narration.
-            log.warning("tools-off response wrote a tool call as text; ending the turn")
+            # A tool call written as text never runs and never shows: the call
+            # text is dropped and prose sent before it is narration. With tools
+            # on, the model is sent back once to call the tool properly; then,
+            # or with tools off (GLM's habit), the turn ends as if it had
+            # reached its cap, the materials already made kept (Epo 2026-10-29).
             if started:
                 yield events.block_end(block_id, "narration")
                 activity.append(
                     {"id": block_id, "kind": "narration", "text": renderer.raw}
                 )
+            if not tools_off and not text_call_sent_back:
+                log.warning("response wrote a tool call as text; sending it back")
+                text_call_sent_back = True
+                send_back_pending = True
+                messages.extend(
+                    [
+                        {"role": "assistant", "content": renderer.raw},
+                        {"role": "user", "content": TEXT_CALL_SEND_BACK},
+                    ]
+                )
+                continue
+            log.warning("response wrote a tool call as text; ending the turn")
             budget.stop_reason = (
                 STOP_TOOL_CAP
                 if tool_stop
@@ -1237,6 +1249,11 @@ STALL_NOTICE = (
 # the tool cap the result names the cap (Epo 2026-10-15).
 TOOL_CAP_RESULT = (
     "You have exceeded the tool call limit! Any more tool calls will be dropped."
+)
+# After a response that wrote a tool call as text (Epo 2026-10-29).
+TEXT_CALL_SEND_BACK = (
+    "Your last response wrote a tool call as text, so it did not run. Call "
+    "tools through the tool call interface, never as text in your response."
 )
 TOOLS_OFF_RESULT = (
     "Not run: tools are off for this response. Do not send any tool calls; "

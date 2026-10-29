@@ -2006,7 +2006,6 @@ async def test_a_client_drop_after_a_tool_leaves_a_checkpoint_with_it(monkeypatc
         ("provider_busy", agent.elitellm.ProviderBusy("busy", retry_after=1), None),
         ("source_changed", pending.SourceChanged(), None),
         ("invalid_answer", _assembled(""), None),
-        ("response_flagged", _assembled(_LEAKED_TOOL_CALL), None),
         ("context_too_large", None, agent.compact.ContextTooLarge("full")),
         ("compaction_failed", None, agent.compact.InvalidSummary("empty")),
     ],
@@ -4914,37 +4913,39 @@ async def test_calls_past_the_tool_cap_are_answered_with_the_cap(
     assert events[-1]["telemetry"]["stopReason"] == "tool_cap"
 
 
-@pytest.mark.parametrize("deltas, fails", [(True, False), (False, False), (True, True)])
-async def test_tool_protocol_in_text_flags_response_without_tools_or_repair(
-    monkeypatch, deltas, fails
-):
-    text = (
-        _answer(("Safe prefix", []))
-        + '<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="create_material">'
+async def _forbidden(*_args, **_kwargs):
+    pytest.fail("a tool call written as text must not run")
+
+
+async def test_a_tool_call_written_as_text_is_sent_back_once(monkeypatch):
+    stream, seen = _script_stream(
+        [_assembled(_LEAKED_TOOL_CALL, [_call("create_material")]), _assembled("Done.")]
     )
-    completed = []
-
-    async def stream(_messages, *, on_event, **_kwargs):
-        if deltas:
-            for character in text:
-                on_event(StreamEvent(kind="text", text=character))
-        completed.append(True)
-        if fails:
-            raise RuntimeError("provider disconnected after leaking protocol")
-        return _assembled(text, [_call("create_material")])
-
-    async def forbidden(*_args, **_kwargs):
-        pytest.fail("flagged response must neither call tools nor call a repair model")
-
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    monkeypatch.setattr(agent.models, "complete_text", forbidden)
-    monkeypatch.setattr(agent.tools, "run", forbidden)
+    monkeypatch.setattr(agent.tools, "run", _forbidden)
     events = await _collect("help", ToolContext(workspace_id="ws", user_id="u"))
-    assert completed == [True]
-    assert events[-1]["code"] == "response_flagged"
-    assert events[-1]["message"] == "Response flagged due to safety concern"
-    assert not any(event["type"] == "tool_start" for event in events)
-    assert "DSML" not in "".join(event.get("text", "") for event in events)
+
+    # The turn context follows the send-back.
+    sent_back = seen[-1]["messages"][-3:-1]
+    assert sent_back[0]["role"] == "assistant" and "DSML" not in sent_back[0]["content"]
+    assert sent_back[1]["content"] == agent.TEXT_CALL_SEND_BACK
+    assert events[-1]["type"] == "done"
+    assert not any(e["type"] in ("error", "tool_start") for e in events)
+    assert "DSML" not in json.dumps(events, ensure_ascii=False)
+
+
+async def test_a_second_tool_call_written_as_text_ends_the_turn(monkeypatch):
+    stream, seen = _script_stream(
+        [_assembled(_LEAKED_TOOL_CALL), _assembled(_LEAKED_TOOL_CALL)]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _forbidden)
+    events = await _collect("help", ToolContext(workspace_id="ws", user_id="u"))
+
+    assert len(seen) == 2
+    assert events[-1]["type"] == "done"
+    assert events[-1]["telemetry"]["stopReason"] == "planning_cap"
+    assert "DSML" not in json.dumps(events, ensure_ascii=False)
 
 
 async def test_chat_rejects_instant_before_any_model_call(monkeypatch):

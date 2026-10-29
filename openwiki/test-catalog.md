@@ -1647,7 +1647,7 @@ UAT scripted chat turns (2026-10-14):
 Chat reasoning and response guards (2026-09-22):
 
 - `pipeline/tests/test_response_guard.py`: chunk-boundary detection of DSML, XML and JSON tool envelopes, with ordinary Markdown/program text preserved.
-- `pipeline/tests/test_agent.py`: flagged responses drain once, execute no tools and make no repair call; Instant chat fails before a model call; normal chat accepts four tool calls per response.
+- `pipeline/tests/test_agent.py`: a response that writes a tool call as text runs nothing, never shows the call text, and is sent back once with `TEXT_CALL_SEND_BACK`; a second one ends the turn at `planning_cap` with no error (Epo 2026-10-29); Instant chat fails before a model call; normal chat accepts four tool calls per response.
 - `pipeline/tests/test_retrieval_helpers.py`: chat request validation rejects Instant, off, empty and null thinking.
 - `server/internal/models/registry_test.go`, `server/internal/store/chat_pin_test.go`: migrated catalog omits Instant for chat, ops/database validation rejects it, preference writes reject it, and persisted safety errors survive history reloads.
 - `server/internal/httpapi/helpers_test.go`: relay preserves the `response_flagged` error code. `chat_response_guard_test.go` checks the full stream clears partial answer/citations, preserves completed activity and persists the notice. `fail_closed_test.go` checks chat catalog levels and the editor's fixed Instant policy.
