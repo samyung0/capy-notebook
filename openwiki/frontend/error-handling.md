@@ -227,14 +227,13 @@ not offline use: without a service worker the app itself does not load offline.
   a restored query until it is used and marks it for storage. Query `meta` cannot
   carry the mark, because hooks replace it with `queryMeta(options)`.
 - Stored: `/me`, workspace lists (not searches), a workspace and its chapters,
-  files, materials, conversations and study states, file metadata, the
-  dashboard recents, Thinking, notifications and the unread count, learning
-  progress, the review overview, quiz attempts (the quiz page resumes its open
-  one from it), calendar events, labels, tasks, tags,
-  notification preferences, integrations, models, LLM key last-4s, Explore,
-  and the question bank's syllabus and progress. Infinite lists keep their first
-  page.
-- Never stored: file, note, quiz, card and canvas bodies and chat messages
+  files, materials, conversations, study states and study plans, file metadata,
+  the dashboard recents, notifications and the unread count, learning progress,
+  the review overview, quiz attempts (the quiz page resumes its open one from
+  it), calendar events, labels, tasks, tags, notification preferences,
+  integrations, models, Explore, and the question bank's syllabus and progress.
+  Infinite lists keep their first page.
+- Never stored: file, note, quiz and card bodies and chat messages
   (always fetched live), collaboration tokens, presigned links, review sessions,
   answer keys (quiz and bank edit views), ingest slots, workspace stats, upload
   policy, billing, usage, account deletion preflight, searches, members and
