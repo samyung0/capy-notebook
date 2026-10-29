@@ -24,9 +24,10 @@ from . import Profile
 WORKSPACE_ID = {
     "type": "string",
     "minLength": 1,
-    "description": "Where a new item is created (a workspace_id a search, listing "
-    "or read named), only when the user names one they can edit; omit it to "
-    "create it in No workspace. An edit of an existing item ignores it.",
+    "description": "Where a new item is created: a workspace the user can edit "
+    "(a workspace_id a search, listing or read named) or one create_workspace "
+    "just made; omit it to create it in No workspace. An edit of an existing "
+    "item ignores it.",
 }
 
 # list_sources lists one workspace or the files with no workspace here, under

@@ -374,7 +374,15 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 	content, embedded := req.Content, []store.EmbeddedDraft(nil)
 	var assets []store.AgentAsset
 	var figures *agentFigures
-	if req.Kind == "note" {
+	// A note sent without content is the blank note a user's new note starts
+	// as, not markdown to convert (Epo 2026-10-29).
+	blank := req.Kind == "note" && strings.TrimSpace(req.Content) == ""
+	if blank {
+		if content, err = materialdoc.Marshal(materialdoc.Empty()); err != nil {
+			a.fail(w, err)
+			return
+		}
+	} else if req.Kind == "note" {
 		figures = newAgentFigures(req.AssistantMessageID, req.ToolCallID, req.Figures)
 		var ok bool
 		if content, embedded, ok = a.convertAgentNote(w, r, req, figures); !ok {
@@ -403,7 +411,7 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 	op, created, err := a.s.CreateMaterialOperation(ctx, store.MaterialDraft{
 		ID: store.ChatMaterialID(req.AssistantMessageID, req.ToolCallID), ActorUserID: req.UserID,
 		WorkspaceID: req.WorkspaceID, WorkspaceName: ws.Name, Kind: store.MaterialKind(req.Kind), Title: title,
-		Questions: req.Questions, Cards: cards, Content: content, Embedded: embedded, Assets: assets,
+		Questions: req.Questions, Cards: cards, Content: content, Blank: blank, Embedded: embedded, Assets: assets,
 		ChapterID: chapterID, ScopeFileNames: sourceNames, Provenance: req.Provenance,
 	}, store.AgentOperation{
 		ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: req.UserID,
@@ -435,6 +443,13 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 	}
 	if req.Kind == "note" && op.Effect != nil {
 		op.Effect.BlockIDs = topBlockIDs(content)
+	}
+	if blank {
+		// The model reads the notice in the tool result, so it claims no
+		// content the note does not have.
+		writeJSON(w, http.StatusOK, store.DocumentEdit{AgentOperation: op,
+			Notice: "The note was created blank because content was empty; add its content with edit_document."})
+		return
 	}
 	writeJSON(w, http.StatusOK, op)
 }
