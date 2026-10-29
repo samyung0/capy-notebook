@@ -550,7 +550,7 @@ function StudyBody({
       {!hidden && (
         <>
           <div className="mt-8 flex flex-wrap items-center gap-2">
-            <h3 className="mr-auto font-bold">{m.study_chapters()}</h3>
+            <h3 className="mr-auto font-bold">{m.study_contents()}</h3>
             {plan && (
               <AddStepsPopover
                 defaultWorkspaceId={workspaceId}
