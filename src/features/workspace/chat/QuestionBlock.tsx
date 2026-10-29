@@ -116,6 +116,7 @@ export function QuestionBlock({
           label={m.chat_question_dismiss()}
           onClick={onDismiss}
           size="xs"
+          variant="ghost-hover"
         />
       </div>
       <div role="radiogroup">

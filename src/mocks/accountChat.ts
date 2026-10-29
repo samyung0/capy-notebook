@@ -119,6 +119,8 @@ export const accountChatHandlers = [
           await delay(600);
           send({ phase: 'running_tools', type: 'phase' });
           for (const [name, detail] of [
+            ['list_workspaces', ''],
+            ['list_sources', ''],
             ['search_files_content', body.text.slice(0, 40)],
             ['read_document', 'Reading list.md'],
           ]) {

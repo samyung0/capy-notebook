@@ -177,12 +177,11 @@ const COPY: Record<string, Copy> = {
     group: (count) => m.chat_step_list_trash_group({ count }),
     run: () => m.chat_step_list_trash_run(),
   },
-  // Account chat's workspace list reads as list_sources does.
   list_workspaces: {
-    done: () => m.chat_step_list_sources_done(),
-    fail: () => m.chat_step_list_sources_fail(),
-    group: (count) => m.chat_step_list_sources_group({ count }),
-    run: () => m.chat_step_list_sources_run(),
+    done: () => m.chat_step_list_workspaces_done(),
+    fail: () => m.chat_step_list_workspaces_fail(),
+    group: (count) => m.chat_step_list_workspaces_group({ count }),
+    run: () => m.chat_step_list_workspaces_run(),
   },
   read_document: read(
     (count) => m.chat_step_read_files_group({ count }),

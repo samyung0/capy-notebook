@@ -170,7 +170,7 @@ export default function AccountChat() {
   const header = (
     <div className="flex h-12.25 shrink-0 items-center gap-1 pt-2.5 pr-2 pl-1.5">
       <ToolbarButton label={m.action_back()} onClick={back}>
-        <Icon name="navigationBack" />
+        <Icon className="-translate-y-px" name="navigationBack" />
       </ToolbarButton>
       {!lg && (
         <ToolbarButton

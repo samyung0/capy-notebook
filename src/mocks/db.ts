@@ -2527,6 +2527,7 @@ export const chatMessages: WireMessage[] = [
     status: 'complete',
   },
   {
+    activity: accountSeedActivity(hours(4)),
     // Account citations name where each source lives ("" is No workspace).
     citations: [
       {
@@ -2558,8 +2559,53 @@ export const chatMessages: WireMessage[] = [
   },
 ];
 
-const after = (iso: string, ms: number) =>
-  new Date(new Date(iso).getTime() + ms).toISOString();
+function after(iso: string, ms: number) {
+  return new Date(new Date(iso).getTime() + ms).toISOString();
+}
+
+/** The seeded account turn's steps: one of each account tool kind, the list
+ * calls twice so the trace groups them, a failed web search and a created
+ * mindmap. */
+function accountSeedActivity(createdAt: string): ActivityBlock[] {
+  const steps: [string, string, ActivityBlock['outcome']?][] = [
+    ['list_workspaces', ''],
+    ['list_sources', ''],
+    ['list_sources', 'Biology 101'],
+    ['search_files_summary', 'reading list'],
+    ['search_files_content', 'genetics unit'],
+    ['read_document', 'Reading list.md'],
+    ['search_knowledge', 'The Selfish Gene'],
+    ['search_web', 'The Selfish Gene summary', 'failed'],
+    ['read_skill', 'note_building'],
+    ['create_material', 'Cell biology mindmap'],
+  ];
+  return steps.map(([name, detail, outcome = 'succeeded'], index) => {
+    const callId = `m_account2_${index}`;
+    return {
+      callId,
+      detail,
+      ...(name === 'create_material' && {
+        effects: [
+          {
+            operation: 'created' as const,
+            operationId: callId,
+            resource: {
+              id: 'mat_1',
+              kind: 'material' as const,
+              title: 'Cell biology mindmap',
+            },
+          },
+        ],
+      }),
+      endedAt: after(createdAt, 900 + index * 700),
+      id: callId,
+      kind: 'tool',
+      name,
+      outcome,
+      startedAt: after(createdAt, 400 + index * 700),
+    };
+  });
+}
 
 /** A fixture's Office edits as history keeps them: a cut call the turn
  * followed with an edit of its file closed as done, one it never followed
