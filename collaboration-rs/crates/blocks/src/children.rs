@@ -89,10 +89,11 @@ pub fn child_writes<T: ReadTxn>(txn: &T, update: &Update) -> Option<ChildWrites>
             }
         } else if &**key == MATERIAL_PROP
             && flavour == MATERIAL_REF
-            && let Some(block_id) = string(txn, &block, "sys:id")
-            && blocks.insert(block_id.clone())
+            // The block's id is its key in the blocks map.
+            && let Some(block_id) = parent.item().and_then(|item| item.parent_sub().cloned())
+            && blocks.insert(block_id.to_string())
         {
-            writes.blocks.push(block_id);
+            writes.blocks.push(block_id.to_string());
         }
     }
     (!writes.asset_ids.is_empty() || !writes.blocks.is_empty()).then_some(writes)

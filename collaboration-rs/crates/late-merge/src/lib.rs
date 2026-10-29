@@ -35,7 +35,7 @@ mod write;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -67,6 +67,29 @@ pub struct Merged {
     /// document does not: it sits in a block someone deleted (placed into
     /// the tombstone, or left out where the block was collected).
     pub hidden: Vec<ID>,
+    /// Values [merge_keyed] left out because the current document collected
+    /// their key's last value, each with the values below it that the tab
+    /// wrote: what the tab pastes again under fresh keys, in this order.
+    pub rekeyed: Vec<Rekey>,
+}
+
+/// A value the keyed merge left out: written again with no origin it might
+/// be lost on a replica still holding the key's last value, so the tab
+/// writes it again under a fresh key (Epo 2026-10-29, the re-key design).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rekey {
+    /// Its key (the block id).
+    pub key: String,
+    /// Its value's item in the tab's document.
+    pub item: ID,
+    /// The value whose children list it, and the key listed just before it
+    /// there (None: first), as the tab's document had them; None when no
+    /// value lists it.
+    pub parent: Option<String>,
+    pub left: Option<String>,
+    /// The keys below it, depth first, whose values the tab wrote and the
+    /// merge left out with it.
+    pub subtree: Vec<String>,
 }
 
 /// The tab's unsent edits as one v1 update against `current`, under their
@@ -74,17 +97,67 @@ pub struct Merged {
 /// document as fetched, a v1 state. What `current` holds is what the room
 /// acknowledged: the collection keeps every client's clock.
 pub fn merge(old: &[u8], current: &[u8]) -> Result<Merged, Refused> {
-    unsent(old, current, None)
+    unsent(old, current, None, None)
+}
+
+/// A map whose keys are never set again by a replica lacking the key's
+/// last value (`ydoc::gc::UniqueKeys`): the map's root name (None for a
+/// nested map) and the key.
+pub type UniqueKeys<'a> = &'a dyn Fn(Option<&str>, &str) -> bool;
+
+/// A layout's keyed values: which keys never repeat, and the key under
+/// which a value lists its children (an array of keys). The blocks
+/// layout's is [BLOCKS].
+#[derive(Clone, Copy)]
+pub struct Keyed<'a> {
+    pub unique: UniqueKeys<'a>,
+    pub children: &'a str,
+}
+
+/// The blocks layout: block ids in the `blocks` root, children listed in
+/// `sys:children` (`blocks::unique_key`).
+pub const BLOCKS: Keyed<'static> = Keyed {
+    unique: &blocks_key,
+    children: "sys:children",
+};
+
+fn blocks_key(root: Option<&str>, _key: &str) -> bool {
+    root == Some("blocks")
+}
+
+/// [merge], where a value for a `unique` key whose last value the current
+/// document collected is left out with the values below it that the tab
+/// wrote, and reported in [Merged::rekeyed] for the tab to write again
+/// under fresh keys: written with no origin, a replica still holding that
+/// value would order it by client id and might lose it. What else sat in
+/// it (typing into a block someone deleted) stays hidden.
+pub fn merge_keyed(old: &[u8], current: &[u8], keyed: &Keyed<'_>) -> Result<Merged, Refused> {
+    unsent(old, current, None, Some(keyed))
 }
 
 /// `merge`, with every unsent unit written as a new one under `author` (the
 /// tab's newly assigned client id), from the first clock `current` lacks
 /// for it. Not repeat-safe: a second run writes the edits again.
 pub fn reauthor(old: &[u8], current: &[u8], author: u64) -> Result<Merged, Refused> {
-    unsent(old, current, Some(ClientID::new(author)))
+    unsent(old, current, Some(ClientID::new(author)), None)
 }
 
-fn unsent(old: &[u8], current: &[u8], author: Option<ClientID>) -> Result<Merged, Refused> {
+/// [reauthor] with [merge_keyed]'s rule.
+pub fn reauthor_keyed(
+    old: &[u8],
+    current: &[u8],
+    author: u64,
+    keyed: &Keyed<'_>,
+) -> Result<Merged, Refused> {
+    unsent(old, current, Some(ClientID::new(author)), Some(keyed))
+}
+
+fn unsent(
+    old: &[u8],
+    current: &[u8],
+    author: Option<ClientID>,
+    keyed: Option<&Keyed<'_>>,
+) -> Result<Merged, Refused> {
     let (old, current) = (load(old)?, load(current)?);
     let held = current.transact().state_vector();
     let update = old.transact().encode_state_as_update_v1(&held);
@@ -100,7 +173,140 @@ fn unsent(old: &[u8], current: &[u8], author: Option<ClientID>) -> Result<Merged
         }
         Some(*item.id())
     };
-    place::stable_left(&update, &current, &view, &own, author, &block_of)
+    let (left_out, rekeyed) = match keyed {
+        Some(keyed) => rekeys(&old, &current, &view, &held, keyed),
+        None => (HashSet::new(), Vec::new()),
+    };
+    let mut merged =
+        place::stable_left(&update, &current, &view, &own, author, &block_of, &left_out)?;
+    merged.rekeyed = rekeyed;
+    Ok(merged)
+}
+
+/// The values [merge_keyed] leaves out (their item ids) and what it reports
+/// of them. A value is left out when its key is unique, the tab wrote it
+/// over a value the current document collected (the nearest value behind it
+/// the room had), and the current document has no value for the key; the
+/// values below it (by `keyed.children`, in the tab's document) that the tab
+/// wrote go with it.
+fn rekeys(
+    old: &Doc,
+    current: &Doc,
+    view: &View,
+    held: &StateVector,
+    keyed: &Keyed<'_>,
+) -> (HashSet<ID>, Vec<Rekey>) {
+    let txn = old.transact();
+    let unsent = |id: &ID| id.clock >= held.get(&id.client);
+    let mut roots: Vec<String> = txn.root_refs().map(|(name, _)| name.to_string()).collect();
+    roots.sort();
+    let mut left_out = HashSet::new();
+    let mut reports = Vec::new();
+    for root in roots {
+        let Some(branch) = BranchID::get_root(&txn, root.as_str()) else {
+            continue;
+        };
+        // Each live value's item and its children's keys.
+        let mut values: BTreeMap<String, (ItemPtr, Vec<String>)> = BTreeMap::new();
+        for (key, item) in branch.map_items() {
+            if item.is_deleted() || !(keyed.unique)(Some(root.as_str()), key) {
+                continue;
+            }
+            values.insert(key.to_string(), (item, children(item, keyed.children)));
+        }
+        let parent = ParentRef::Root(Arc::from(root.as_str()));
+        let dropped: Vec<String> = values
+            .iter()
+            .filter(|(key, (item, _))| {
+                if !unsent(item.id()) {
+                    return false;
+                }
+                // The nearest value behind it the room had.
+                let mut behind = item.left();
+                while let Some(b) = behind.filter(|b| unsent(b.id())) {
+                    behind = b.left();
+                }
+                behind.is_some_and(|b| view.is_removed(b.id()))
+                    && current_head(&current.transact(), &parent, &Arc::from(key.as_str()))
+                        .is_none()
+            })
+            .map(|(key, _)| key.clone())
+            .collect();
+        let mut below_another = HashSet::new();
+        let mut found = Vec::new();
+        for key in &dropped {
+            let mut subtree = Vec::new();
+            let mut stack: Vec<String> = values[key].1.iter().rev().cloned().collect();
+            while let Some(child) = stack.pop() {
+                let Some((item, kids)) = values.get(&child) else {
+                    continue;
+                };
+                if !unsent(item.id()) || subtree.contains(&child) {
+                    continue;
+                }
+                subtree.push(child.clone());
+                stack.extend(kids.iter().rev().cloned());
+            }
+            below_another.extend(subtree.iter().cloned());
+            found.push((key.clone(), subtree));
+        }
+        for (key, subtree) in found {
+            for id in std::iter::once(&key).chain(&subtree) {
+                left_out.insert(*values[id].0.id());
+            }
+            if below_another.contains(&key) {
+                continue;
+            }
+            let listing = values
+                .iter()
+                .find(|(_, (_, kids))| kids.contains(&key))
+                .map(|(p, (_, kids))| (p.clone(), kids.clone()));
+            let (parent, left) = match listing {
+                Some((p, kids)) => {
+                    let at = kids.iter().position(|k| *k == key).unwrap_or(0);
+                    (Some(p), at.checked_sub(1).map(|i| kids[i].clone()))
+                }
+                None => (None, None),
+            };
+            reports.push(Rekey {
+                key: key.clone(),
+                item: *values[&key].0.id(),
+                parent,
+                left,
+                subtree,
+            });
+        }
+    }
+    (left_out, reports)
+}
+
+/// The keys a value lists in its `children` array, live entries in order.
+fn children(item: ItemPtr, children: &str) -> Vec<String> {
+    let ItemContent::Type(inner) = item.content() else {
+        return Vec::new();
+    };
+    let branch = BranchPtr::from(inner.as_ref());
+    let Some((_, array)) = branch.map_items().find(|(k, _)| k.as_ref() == children) else {
+        return Vec::new();
+    };
+    let ItemContent::Type(list) = array.content() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut next = BranchPtr::from(list.as_ref()).start();
+    while let Some(entry) = next {
+        if !entry.is_deleted()
+            && let ItemContent::Any(values) = entry.content()
+        {
+            for value in values {
+                if let yrs::Any::String(key) = value {
+                    out.push(key.to_string());
+                }
+            }
+        }
+        next = entry.right();
+    }
+    out
 }
 
 /// A working document holding `state` (no local writes go into it).

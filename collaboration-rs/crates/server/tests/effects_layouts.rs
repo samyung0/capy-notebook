@@ -169,10 +169,7 @@ fn add_block(
 ) {
     let blocks = txn.get_or_insert_map(blocks::BLOCKS_ROOT);
     let y = blocks.insert(txn, id, MapPrelim::default());
-    y.insert(txn, "sys:id", id);
     y.insert(txn, "sys:flavour", flavour);
-    let version = blocks::schema::flavour(flavour).unwrap().version;
-    y.insert(txn, "sys:version", Any::Number(f64::from(version)));
     y.insert(txn, "sys:children", ArrayPrelim::default());
     for (key, value) in blocks::schema::defaults(flavour) {
         y.insert(txn, format!("prop:{key}"), any(&value));

@@ -909,7 +909,13 @@ pub async fn fold(
                 if it_panic {
                     panic!("integration test collection panic");
                 }
-                let collected = ydoc::gc::collect(&scratch, window, &holds.held, holds.live_room);
+                let collected = ydoc::gc::collect_with(
+                    &scratch,
+                    window,
+                    &holds.held,
+                    holds.live_room,
+                    unique_keys(model),
+                );
                 loaded(&collected.state, &scratch, model, 0)?;
                 Ok(collected)
             });
@@ -977,13 +983,19 @@ pub fn collect_live(
 ) -> Result<Option<(yrs::Doc, u64)>, String> {
     guarded(|| {
         let client = doc.client_id();
-        let collected = ydoc::gc::collect(doc, window, held, Some(client));
+        let collected = ydoc::gc::collect_with(doc, window, held, Some(client), unique_keys(model));
         if collected.units == 0 {
             return Ok(None);
         }
         let live = loaded(&collected.state, doc, model, client.get())?;
         Ok(Some((live, collected.units)))
     })
+}
+
+/// The keys a collection of `model`'s document may let go once deleted: a
+/// blocks note's block ids; none for Plate.
+fn unique_keys(model: Model) -> Option<ydoc::gc::UniqueKeys<'static>> {
+    (model == Model::Blocks).then_some(&blocks::unique_key)
 }
 
 fn whole(doc: &yrs::Doc) -> Vec<u8> {

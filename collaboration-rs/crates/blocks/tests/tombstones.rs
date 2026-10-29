@@ -70,6 +70,20 @@ fn stats(doc: &Doc) -> Stats {
 fn collected(doc: &Doc) -> Doc {
     let window = ydoc::gc::Window::of(&doc.transact(), 1);
     let state = ydoc::gc::collect(doc, &window, &IdSet::new(), None).state;
+    // GC_STATE_DUMP=<file>: one line per collected state (length and hash),
+    // to compare a collection change's output byte for byte.
+    if let Ok(path) = std::env::var("GC_STATE_DUMP") {
+        use std::hash::{Hash, Hasher};
+        use std::io::Write as _;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        state.hash(&mut hasher);
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .unwrap();
+        writeln!(file, "{} {:016x}", state.len(), hasher.finish()).unwrap();
+    }
     let fresh = common::doc(&state, 99);
     assert!(!ydoc::has_pending(&fresh.transact()));
     fresh
@@ -386,14 +400,13 @@ fn run_plate(script: Script, value: &[Value], plate: &mut Plate) {
     match script {
         Script::Typing => {
             let i = plain[plain.len() / 2];
-            let mut offset = leaf_text(value, i).len();
-            for _ in 0..TYPED {
+            let start = leaf_text(value, i).len();
+            for offset in start..start + TYPED {
                 plate.apply(&[Operation::InsertText {
                     path: leaf(i),
                     offset,
                     text: "x".into(),
                 }]);
-                offset += 1;
             }
         }
         Script::TwoWritersThenDelete => {
@@ -649,6 +662,8 @@ struct Row {
     seed: Stats,
     before: Stats,
     after: Stats,
+    /// Collected with the deleted-key rule (blocks only).
+    keyed: Option<Stats>,
 }
 
 #[test]
@@ -681,12 +696,27 @@ fn tombstone_growth_blocks_against_plate_on_the_near_limit_note() {
             };
             assert!(after.deleted_items >= gone, "{script:?}: {after:?}");
         }
+        // With the deleted-key rule: a deleted block's `blocks` key goes too.
+        let keyed = {
+            let window = ydoc::gc::Window::of(&doc.transact(), 1);
+            let unique: Option<ydoc::gc::UniqueKeys> = Some(&blocks::unique_key);
+            let state = ydoc::gc::collect_with(&doc, &window, &IdSet::new(), None, unique).state;
+            let keyed = common::doc(&state, 98);
+            assert!(!ydoc::has_pending(&keyed.transact()));
+            blocks::check(&keyed.transact()).unwrap();
+            assert_eq!(
+                blocks::value(&keyed.transact()).unwrap(),
+                blocks::value(&doc.transact()).unwrap()
+            );
+            stats(&keyed)
+        };
         rows.push(Row {
             script,
             layout: "blocks",
             seed,
             before,
             after,
+            keyed: Some(keyed),
         });
 
         // Plate.
@@ -708,15 +738,16 @@ fn tombstone_growth_blocks_against_plate_on_the_near_limit_note() {
             seed,
             before,
             after: stats(&after_doc),
+            keyed: None,
         });
     }
     println!(
-        "| script | layout | state seed | state edited (+growth) | state collected (+growth) | deleted items edited / collected | delete set bytes edited / collected |"
+        "| script | layout | state seed | state edited (+growth) | state collected (+growth) | deleted items edited / collected | delete set bytes edited / collected | with the key rule: collected (+growth), deleted items |"
     );
-    println!("| --- | --- | --- | --- | --- | --- | --- |");
+    println!("| --- | --- | --- | --- | --- | --- | --- | --- |");
     for row in &rows {
         println!(
-            "| {:?} | {} | {} | {} (+{}) | {} (+{}) | {} / {} | {} / {} |",
+            "| {:?} | {} | {} | {} (+{}) | {} (+{}) | {} / {} | {} / {} | {} |",
             row.script,
             row.layout,
             row.seed.state,
@@ -728,6 +759,12 @@ fn tombstone_growth_blocks_against_plate_on_the_near_limit_note() {
             row.after.deleted_items,
             row.before.delete_set,
             row.after.delete_set,
+            row.keyed.map_or("-".to_string(), |k| format!(
+                "{} (+{}), {}",
+                k.state,
+                k.state as i64 - row.seed.state as i64,
+                k.deleted_items
+            )),
         );
     }
 }

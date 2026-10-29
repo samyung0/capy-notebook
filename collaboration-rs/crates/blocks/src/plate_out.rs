@@ -85,7 +85,7 @@ fn text<'a>(block: &'a Block, key: &str) -> Result<&'a [Run], ProjectionError> {
     block.text(key).ok_or_else(|| bad(block, key))
 }
 
-fn element(block: &Block, depth: usize) -> Result<Value, ProjectionError> {
+pub(crate) fn element(block: &Block, depth: usize) -> Result<Value, ProjectionError> {
     let mut node;
     let children: Value = match block.flavour.as_str() {
         PARAGRAPH => {

@@ -65,7 +65,8 @@ fn update_of(state: &[u8], edit: impl FnOnce(&mut yrs::TransactionMut)) -> Vec<u
 fn growth(state: &[u8], update: &[u8]) -> Option<blocks::bound::Growth> {
     let room = common::doc(state, 1);
     let update = ydoc::decode(update).unwrap();
-    blocks::bound::growth(&room.transact(), &ydoc::Incoming::new(&update))
+    let txn = room.transact();
+    blocks::bound::growth(&txn, &ydoc::Incoming::new(&update), &blocks::Tree::of(&txn))
 }
 
 fn every_block() -> Vec<Value> {
@@ -161,13 +162,24 @@ fn three_paragraphs() -> Vec<u8> {
     blocks::state_from_value(value.as_array().unwrap(), 1).unwrap()
 }
 
-/// Anything but typing is checked exactly: a format, a new block, a move, a
-/// prop write, a Mermaid source. Typing into a text holding a format value
-/// no visible char shows (a zero-width link) is too: the store never took
-/// that value. Fails if any is bounded.
+/// A Mermaid source and an embed in a text are checked exactly; a format, a
+/// move, a prop write and a delete are bounded with the top-level elements
+/// they rewrite (`structure.rs` walks the rest). Typing into a text holding
+/// a format value no visible char shows (a zero-width link) is checked
+/// exactly too: the store never took that value. Fails if a source or an
+/// embed is bounded, or a plain format or structural edit is not.
 #[test]
-fn anything_but_typing_is_unbounded() {
+fn sources_and_embeds_are_unbounded() {
     let state = three_paragraphs();
+    let source = update_of(&state, |txn| {
+        text(txn, "m", "prop:source").insert(txn, 0, "x");
+    });
+    let embed = update_of(&state, |txn| {
+        text(txn, "a", "prop:text").insert_embed(txn, 0, Any::from("x"));
+    });
+    for (name, update) in [("source", source), ("embed", embed)] {
+        assert_eq!(growth(&state, &update), None, "{name}");
+    }
     let bold = update_of(&state, |txn| {
         let text = text(txn, "a", "prop:text");
         text.format(txn, 0, 1, [("bold".into(), Any::Bool(true))].into());
@@ -179,18 +191,19 @@ fn anything_but_typing_is_unbounded() {
         };
         block.insert(txn, "prop:type", "h1");
     });
-    let source = update_of(&state, |txn| {
-        text(txn, "m", "prop:source").insert(txn, 0, "x");
-    });
     let deleted = update_of(&state, |txn| common::delete_block(txn, "b"));
-    for (name, update) in [
-        ("format", bold),
-        ("move", moved),
-        ("prop", prop),
-        ("source", source),
-        ("delete", deleted),
+    for (name, update, before, after) in [
+        ("format", bold, 1, 1),
+        ("move", moved, 1, 1),
+        ("prop", prop, 1, 1),
+        ("delete", deleted, 1, 0),
     ] {
-        assert_eq!(growth(&state, &update), None, "{name}");
+        let growth = growth(&state, &update).unwrap_or_else(|| panic!("{name}"));
+        assert_eq!(
+            (growth.before.len(), growth.after.len()),
+            (before, after),
+            "{name}"
+        );
     }
 
     // A link typed and deleted leaves its format items around nothing.

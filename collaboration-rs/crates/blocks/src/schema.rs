@@ -1,6 +1,6 @@
 //! The flavours a note's blocks layout holds (todo-blocksuite-layout.md
-//! "Block flavours"): each one's schema version, the parents it may sit
-//! under, its props and the defaults BlockSuite's `addBlock` writes.
+//! "Block flavours"): the parents each one may sit under, its props and the
+//! defaults BlockSuite's `addBlock` writes.
 //!
 //! The `affine:*` prop lists and defaults are BlockSuite's own
 //! (`affine/model/src/blocks/*`, AFFiNE canary 5f192549), plus the props the
@@ -27,7 +27,6 @@ pub enum Kind {
 
 pub struct Flavour {
     pub name: &'static str,
-    pub version: u32,
     /// Flavours it may sit under; empty for the page root.
     pub parents: &'static [&'static str],
     pub props: &'static [(&'static str, Kind)],
@@ -69,14 +68,12 @@ use Kind::*;
 pub const FLAVOURS: &[Flavour] = &[
     Flavour {
         name: PAGE,
-        version: 2,
         parents: &[],
         props: &[("title", Text)],
         flat: false,
     },
     Flavour {
         name: NOTE,
-        version: 1,
         parents: &[PAGE],
         props: &[
             ("xywh", Str),
@@ -92,7 +89,6 @@ pub const FLAVOURS: &[Flavour] = &[
     },
     Flavour {
         name: PARAGRAPH,
-        version: 1,
         parents: TEXT_PARENTS,
         props: &[
             ("type", Str),
@@ -105,7 +101,6 @@ pub const FLAVOURS: &[Flavour] = &[
     },
     Flavour {
         name: LIST,
-        version: 1,
         parents: TEXT_PARENTS,
         props: &[
             ("type", Str),
@@ -121,7 +116,6 @@ pub const FLAVOURS: &[Flavour] = &[
     },
     Flavour {
         name: CODE,
-        version: 1,
         parents: CONTENT,
         props: &[
             ("text", Text),
@@ -137,14 +131,12 @@ pub const FLAVOURS: &[Flavour] = &[
     },
     Flavour {
         name: DIVIDER,
-        version: 1,
         parents: CONTENT,
         props: &[],
         flat: false,
     },
     Flavour {
         name: CALLOUT,
-        version: 1,
         parents: CONTENT,
         props: &[
             ("icon", Map),
@@ -156,7 +148,6 @@ pub const FLAVOURS: &[Flavour] = &[
     },
     Flavour {
         name: LATEX,
-        version: 1,
         parents: CONTENT,
         props: &[
             ("xywh", Str),
@@ -171,7 +162,6 @@ pub const FLAVOURS: &[Flavour] = &[
     },
     Flavour {
         name: IMAGE,
-        version: 1,
         parents: CONTENT,
         props: &[
             ("caption", Str),
@@ -192,21 +182,18 @@ pub const FLAVOURS: &[Flavour] = &[
     },
     Flavour {
         name: TABLE,
-        version: 1,
         parents: NOTE_ONLY,
         props: &[("comments", Map), ("textAlign", Str)],
         flat: true,
     },
     Flavour {
         name: MATERIAL_REF,
-        version: 1,
         parents: NOTE_ONLY,
         props: &[("materialId", Str), ("refKind", Str)],
         flat: false,
     },
     Flavour {
         name: AUDIO,
-        version: 1,
         parents: CONTENT,
         props: &[
             ("assetId", Str),
@@ -219,7 +206,6 @@ pub const FLAVOURS: &[Flavour] = &[
     },
     Flavour {
         name: VIDEO,
-        version: 1,
         parents: CONTENT,
         props: &[
             ("provider", Str),
@@ -231,42 +217,36 @@ pub const FLAVOURS: &[Flavour] = &[
     },
     Flavour {
         name: TOC,
-        version: 1,
         parents: CONTENT,
         props: &[],
         flat: false,
     },
     Flavour {
         name: CHART,
-        version: 1,
         parents: NOTE_ONLY,
         props: &[("block", Map), ("width", Str)],
         flat: false,
     },
     Flavour {
         name: PLOT,
-        version: 1,
         parents: NOTE_ONLY,
         props: &[("block", Map), ("width", Str)],
         flat: false,
     },
     Flavour {
         name: GRAPH,
-        version: 1,
         parents: NOTE_ONLY,
         props: &[("block", Map), ("width", Str)],
         flat: false,
     },
     Flavour {
         name: HTML,
-        version: 1,
         parents: NOTE_ONLY,
         props: &[("html", Str), ("caption", Str)],
         flat: false,
     },
     Flavour {
         name: MERMAID,
-        version: 1,
         parents: CONTENT,
         props: &[
             ("source", Text),
@@ -278,14 +258,12 @@ pub const FLAVOURS: &[Flavour] = &[
     },
     Flavour {
         name: COLUMNS,
-        version: 1,
         parents: NOTE_ONLY,
         props: &[],
         flat: false,
     },
     Flavour {
         name: COLUMN,
-        version: 1,
         parents: &[COLUMNS],
         props: &[("width", Str)],
         flat: false,

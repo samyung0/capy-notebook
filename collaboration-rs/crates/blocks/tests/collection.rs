@@ -241,10 +241,10 @@ fn offline_tabs_delete_and_move_blocks_and_undo_after_a_collection() {
     for (id, text) in [("b", "Bravo text"), ("e", "Echo text"), ("a", "Alpha text")] {
         assert!(notes.contains(&id.to_string()), "{id} missing: {notes:?}");
         assert_eq!(common::text_of(&txn, id), text);
-        let Some(Out::YMap(block)) = common::blocks_map(&txn).get(&txn, id) else {
-            panic!("no block {id}");
-        };
-        assert_eq!(block.get(&txn, "sys:id").unwrap().to_string(&txn), id);
+        assert!(matches!(
+            common::blocks_map(&txn).get(&txn, id),
+            Some(Out::YMap(_))
+        ));
     }
     // T3's Undo restores the cell; T2's typing into e went with e (plain
     // Yjs: T3's Undo restores what T3 deleted, which never held it).

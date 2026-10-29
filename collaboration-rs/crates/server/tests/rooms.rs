@@ -1320,9 +1320,7 @@ fn add_blocks_paragraph(doc: &Doc, origin: &str, id: &str, text: &str, index: u3
     let blocks = doc.get_or_insert_map(blocks::BLOCKS_ROOT);
     let mut txn = doc.transact_mut_with(origin);
     let block = blocks.insert(&mut txn, id, yrs::MapPrelim::default());
-    block.insert(&mut txn, "sys:id", id);
     block.insert(&mut txn, "sys:flavour", "affine:paragraph");
-    block.insert(&mut txn, "sys:version", yrs::Any::Number(1.0));
     block.insert(&mut txn, "sys:children", yrs::ArrayPrelim::default());
     block.insert(&mut txn, "prop:type", "text");
     block.insert(&mut txn, "prop:collapsed", false);
@@ -1425,6 +1423,17 @@ async fn blocks_folds_collect_and_an_undo_after_them_restores_a_deleted_block() 
     assert!(log_folded(&env, &material).await);
     a.ack_all().await;
     let x2 = blocks_listing(&a.doc, "x2");
+    // x1's `blocks` key: the deleted-key rule (`blocks::unique_key`) lets it
+    // go once no session holds it.
+    let x1_key = {
+        use yrs::Map as _;
+        let txn = a.doc.transact();
+        let blocks = txn.get_map(blocks::BLOCKS_ROOT).expect("blocks");
+        let Some(yrs::Out::YMap(x1)) = blocks.get(&txn, "x1") else {
+            panic!("no x1");
+        };
+        *x1.as_ref().item().expect("a map value").id()
+    };
     let y = blocks_listing(&a.doc, "y");
     // A deletes y, which its Undo may restore.
     a.write(|doc| delete_blocks_paragraph(doc, "a", "y")).await;
@@ -1457,6 +1466,10 @@ async fn blocks_folds_collect_and_an_undo_after_them_restores_a_deleted_block() 
     assert!(
         collected_in_base(&env, &material, x2).await,
         "the ended session's listings kept their middle"
+    );
+    assert!(
+        collected_in_base(&env, &material, x1_key).await,
+        "a deleted block's key stayed"
     );
     assert!(
         !collected_in_base(&env, &material, y).await,

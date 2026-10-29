@@ -9,19 +9,31 @@
 //! inside 24 h), and swaps the collected document in (Q401). A twin room R
 //! admits the same updates and never collects.
 //!
+//! Tabs also cut a block and paste it back, keeping its id only while they
+//! still hold its key (D20 with the deleted-key rule), and a day can pass
+//! while a tab is away: its session ends, its Undo empties, and it comes
+//! back late, its edits placed by the late merge. The collection lets a
+//! deleted block's `blocks` key go (`blocks::unique_key`), and the keyed late
+//! merge (`merge_keyed`) leaves out a value for such a key, which the tab
+//! pastes again under a fresh id (`common::repaste`); BLOCKS_GC_KEYED=0 runs the
+//! plain collection, merge and D20, and BLOCKS_GC_KEYED=collect-only the
+//! keyed collection with the plain merge and D20 (the control: it diverges).
+//! plain collection, plain merge and plain D20 instead. R, which keeps every
+//! key, stands for every tab open since before a collection.
+//!
 //! Checked: every collected state loads with nothing pending, the same
-//! state vector and value, and passes the check; no tab's update names
-//! collected history (so none takes the late path); after every admission S
-//! and R hold the same blocks; at the end every tab, S and a fresh load of
-//! S converge and pass the check. BLOCKS_GC_CASES and BLOCKS_GC_SEED run
-//! more or other cases.
+//! state vector and value, and passes the check; an update naming what a
+//! collection's window deleted is answered late, and its merge names
+//! nothing collected; after every admission S and R hold the same blocks;
+//! at the end every tab, S and a fresh load of S converge and pass the
+//! check. BLOCKS_GC_CASES and BLOCKS_GC_SEED run more or other cases.
 
 mod common;
 
 use std::collections::HashSet;
 
 use serde_json::{Value, json};
-use ydoc::gc::{Named, Window, collect, named_collected};
+use ydoc::gc::{Named, Window, collect_with, named_collected};
 use yrs::undo::{Options, UndoManager};
 use yrs::{Doc, IdSet, Map, Origin, Out, ReadTxn, Text, Transact};
 
@@ -51,6 +63,10 @@ struct Tab {
     /// The window index of the last S state this tab's session reached.
     reached: usize,
     added: u32,
+    /// A cut block: its id and text.
+    clipboard: Option<(String, String)>,
+    /// Away while a day passed: its session ended, it comes back late.
+    expired: bool,
 }
 
 impl Tab {
@@ -68,6 +84,8 @@ impl Tab {
             online: true,
             reached,
             added: 0,
+            clipboard: None,
+            expired: false,
         }
     }
 }
@@ -126,7 +144,7 @@ fn flavour(txn: &impl ReadTxn, id: &str) -> String {
         .unwrap_or_default()
 }
 
-fn edit(tab: &mut Tab, client: u64, rng: &mut Rng) -> String {
+fn edit(tab: &mut Tab, client: u64, rng: &mut Rng, keyed: bool) -> String {
     if rng.below(6) == 0 {
         let undone = tab.undo.undo_blocking();
         return format!("undo {undone}");
@@ -138,7 +156,32 @@ fn edit(tab: &mut Tab, client: u64, rng: &mut Rng) -> String {
         .filter(|id| flavour(&txn, id) == "affine:paragraph")
         .cloned()
         .collect();
-    match rng.below(6) {
+    match rng.below(8) {
+        // Cut a paragraph.
+        6 if !paragraphs.is_empty() => {
+            let id = paragraphs[rng.below(paragraphs.len())].clone();
+            let text = common::text_of(&txn, &id);
+            common::delete_block(&mut txn, &id);
+            tab.clipboard = Some((id.clone(), text));
+            return format!("cut {id}");
+        }
+        // Paste the cut block back (D20).
+        7 if tab.clipboard.is_some() => {
+            let (id, text) = tab.clipboard.clone().unwrap();
+            tab.added += 1;
+            let fresh = format!("n{client}_{}", tab.added);
+            let pasted = if keyed {
+                common::paste_id(&txn, &id, &fresh)
+            } else if common::blocks_map(&txn).get(&txn, &id).is_some() {
+                fresh
+            } else {
+                id.clone()
+            };
+            let at = rng.below(ids.len() + 1) as u32;
+            common::add_paragraph(&mut txn, &pasted, &text, blocks::NOTE_ID, at);
+            let kept = if pasted == id { "kept" } else { "fresh" };
+            return format!("paste {kept} {pasted}");
+        }
         0 if !paragraphs.is_empty() => {
             let id = &paragraphs[rng.below(paragraphs.len())];
             let text = common::text(&txn, id);
@@ -205,6 +248,14 @@ struct Rooms {
     since: u64,
     /// Updates answered late and merged.
     late: u64,
+    /// Blocks the late merges hid.
+    hidden: u64,
+    /// Blocks pasted again under fresh ids after a keyed merge.
+    rekeyed: u64,
+    /// The deleted-key rule on.
+    keyed: bool,
+    /// The keyed merge on (the control turns it off).
+    guarded: bool,
     seed: Doc,
     log: Vec<String>,
 }
@@ -240,11 +291,10 @@ impl Rooms {
         let repair = self.s.transact().encode_state_as_update_v1(&before);
         common::apply(&self.r, &repair);
         blocks::check(&self.s.transact()).unwrap();
-        assert_eq!(
-            blocks::blocks_json(&self.s.transact()),
-            blocks::blocks_json(&self.r.transact()),
-            "case {case}: S and R differ"
-        );
+        if blocks::blocks_json(&self.s.transact()) != blocks::blocks_json(&self.r.transact()) {
+            eprintln!("log:\n{}", self.log.join("\n"));
+            panic!("case {case}: S and R differ");
+        }
         self.mark();
         true
     }
@@ -252,9 +302,22 @@ impl Rooms {
     /// Collects S at the newest window every session reached and swaps the
     /// result in; the units collected.
     fn fold(&mut self, tabs: &[Tab], case: u64) -> u64 {
-        let reached = tabs.iter().map(|t| t.reached).min().unwrap();
+        // Ended sessions no longer hold the window back.
+        let reached = tabs
+            .iter()
+            .filter(|t| !t.expired)
+            .map(|t| t.reached)
+            .min()
+            .unwrap_or(self.latest());
         let window = &self.windows[reached];
-        let collected = collect(&self.s, window, &self.held, Some(self.s.client_id()));
+        let unique: Option<ydoc::gc::UniqueKeys> = self.keyed.then_some(&blocks::unique_key);
+        let collected = collect_with(
+            &self.s,
+            window,
+            &self.held,
+            Some(self.s.client_id()),
+            unique,
+        );
         if collected.units > 0 {
             self.collected = window.delete_set.clone();
         }
@@ -277,15 +340,25 @@ impl Rooms {
 /// Sends what the tab holds; a late answer runs the late merge (the
 /// stable-left placement onto S's document, under the tab's own ids), which
 /// must name nothing collected, and the tab reloads on the result with an
-/// empty Undo, as the browser does.
+/// empty Undo, as the browser does; then it pastes the blocks the keyed
+/// merge left out again under fresh ids (`common::repaste`), which the room
+/// admits like any edit.
 fn send(tab: &mut Tab, rooms: &mut Rooms, case: u64) {
     let sv = rooms.s.transact().state_vector();
     let update = tab.doc.transact().encode_state_as_update_v1(&sv);
-    if rooms.admit(&update, case) {
+    // A tab whose session ended is late whatever it names.
+    if !tab.expired && rooms.admit(&update, case) {
         return;
     }
     rooms.late += 1;
-    let merged = late_merge::merge(&common::state(&tab.doc), &common::state(&rooms.s)).unwrap();
+    let (old, current) = (common::state(&tab.doc), common::state(&rooms.s));
+    let merged = if rooms.guarded {
+        late_merge::merge_keyed(&old, &current, &late_merge::BLOCKS)
+    } else {
+        late_merge::merge(&old, &current)
+    }
+    .unwrap();
+    rooms.hidden += merged.hidden.len() as u64;
     rooms.log.push(format!(
         "tab {} answered late, {} blocks hidden",
         tab.doc.client_id().get(),
@@ -300,7 +373,34 @@ fn send(tab: &mut Tab, rooms: &mut Rooms, case: u64) {
         eprintln!("log:\n{}", rooms.log.join("\n"));
         panic!("case {case}: the late merge names collected history");
     }
-    *tab = Tab::join(&rooms.s, tab.doc.client_id().get(), rooms.latest());
+    // The same session's id generator: ids it minted are never minted again.
+    let added = tab.added;
+    let old_doc = tab.doc.clone();
+    let client = tab.doc.client_id().get();
+    *tab = Tab::join(&rooms.s, client, rooms.latest());
+    tab.added = added;
+    if merged.rekeyed.is_empty() {
+        return;
+    }
+    let before = tab.doc.transact().state_vector();
+    let mut added = tab.added;
+    let mapped = common::repaste(
+        &old_doc,
+        &mut tab.doc.transact_mut(),
+        &merged.rekeyed,
+        &mut || {
+            added += 1;
+            format!("n{client}_{added}")
+        },
+    );
+    tab.added = added;
+    rooms.rekeyed += mapped.len() as u64;
+    rooms.log.push(format!("tab {client} re-keys {mapped:?}"));
+    let update = tab.doc.transact().encode_state_as_update_v1(&before);
+    if !rooms.admit(&update, case) {
+        eprintln!("log:\n{}", rooms.log.join("\n"));
+        panic!("case {case}: a re-paste was answered late");
+    }
 }
 
 fn hear(tab: &mut Tab, rooms: &Rooms) {
@@ -332,8 +432,12 @@ fn offline_tabs_folds_and_undo_converge_with_an_uncollected_twin() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0x6c0_11ec7);
+    let mode = std::env::var("BLOCKS_GC_KEYED").unwrap_or_default();
+    let keyed = mode != "0";
+    let guarded = keyed && mode != "collect-only";
     let (mut collected, mut folds, mut undos, mut since, mut days, mut late) =
         (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut hidden, mut pastes_kept, mut expired, mut rekeyed) = (0u64, 0u64, 0u64, 0u64);
     for case in 0..cases {
         let mut rng = Rng(seed ^ (case + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15));
         let state = blocks::state_from_value(&seed_value(&mut rng), 1).unwrap();
@@ -345,6 +449,10 @@ fn offline_tabs_folds_and_undo_converge_with_an_uncollected_twin() {
             collected: IdSet::new(),
             since: 0,
             late: 0,
+            hidden: 0,
+            rekeyed: 0,
+            keyed,
+            guarded,
             seed: common::doc(&state, 3),
             log: Vec::new(),
         };
@@ -381,12 +489,16 @@ fn offline_tabs_folds_and_undo_converge_with_an_uncollected_twin() {
                     rooms.log.push(format!("fold: {units} units"));
                     folds += u64::from(units > 0);
                 }
-                // A day passes (26 h) while every tab is connected: Undo
-                // reaches back 24 h (Q2), so every stack empties, and H's
-                // 25 h are over.
-                3 if tabs.iter().all(|t| t.online) => {
+                // A day passes (26 h): Undo reaches back 24 h (Q2), so every
+                // stack empties, H's 25 h are over, and a session away that
+                // long ends (its tab comes back late).
+                3 => {
                     for tab in tabs.iter_mut() {
                         tab.undo.clear_all();
+                        if !tab.online && !tab.expired {
+                            tab.expired = true;
+                            expired += 1;
+                        }
                     }
                     rooms.held = IdSet::new();
                     rooms.log.push("a day passes".into());
@@ -394,7 +506,8 @@ fn offline_tabs_folds_and_undo_converge_with_an_uncollected_twin() {
                 }
                 _ => {
                     let undo_before = tabs[k].undo.undo_stack().len();
-                    let what = edit(&mut tabs[k], client, &mut rng);
+                    let what = edit(&mut tabs[k], client, &mut rng, guarded);
+                    pastes_kept += u64::from(what.starts_with("paste kept"));
                     rooms.log.push(format!(
                         "tab {client} ({}): {what}",
                         if tabs[k].online { "online" } else { "offline" }
@@ -416,6 +529,8 @@ fn offline_tabs_folds_and_undo_converge_with_an_uncollected_twin() {
             }
         }
         late += rooms.late;
+        hidden += rooms.hidden;
+        rekeyed += rooms.rekeyed;
         for tab in tabs.iter_mut() {
             hear(tab, &rooms);
         }
@@ -431,7 +546,7 @@ fn offline_tabs_folds_and_undo_converge_with_an_uncollected_twin() {
         }
     }
     eprintln!(
-        "gc fuzz: {cases} cases, {folds} folds that collected, {collected} units at the last folds, {undos} undos, {since} updates into blocks deleted since, {days} days passed, {late} late merges"
+        "gc fuzz (keyed {keyed}, guarded {guarded}): {cases} cases, {folds} folds that collected, {collected} units at the last folds, {undos} undos, {since} updates into blocks deleted since, {days} days passed, {expired} sessions ended away, {late} late merges hiding {hidden} blocks and re-keying {rekeyed}, {pastes_kept} pastes kept their id"
     );
     assert!(folds > 0 && undos > 0);
 }

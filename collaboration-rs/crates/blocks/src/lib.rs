@@ -7,6 +7,8 @@
 //! - [canonical] is a Plate value after the spec's normalizations and derived
 //!   ids: `value(state_from_value(v)) == canonical(v)`.
 //! - [check] is the structural check and [repair] the repair on entry (D3).
+//! - [bound::growth] bounds what an update adds to the projection, against
+//!   the room and its parent index ([Tree]), for admission without a copy.
 //!
 //! Both directions go through one tree of [Block]s: [plate_in] builds it from
 //! Plate JSON, [store] writes and reads it in yrs, [plate_out] gives Plate
@@ -24,15 +26,26 @@ mod plate_in;
 mod plate_out;
 pub mod schema;
 mod store;
+mod structure;
 
 pub use check::{MAX_NESTING, Repair, Violation, check, repair};
 pub use store::blocks_json;
+pub use structure::Tree;
 
 /// The room doc's root map.
 pub const BLOCKS_ROOT: &str = "blocks";
 /// The fixed ids of the two hub blocks.
 pub const ROOT_ID: &str = "root";
 pub const NOTE_ID: &str = "note";
+
+/// Keys a collection may let go once deleted (`ydoc::gc::collect_with`,
+/// `late_merge::merge_keyed`): a block id in `blocks` is set again only by
+/// its deleter's Undo or a replica holding its deleted value (a paste keeps
+/// an id only when the tab holds its key, D20). Flat table keys are not:
+/// BlockSuite deletes and sets them again on live rows (`y-map-updater.ts`).
+pub fn unique_key(root: Option<&str>, _key: &str) -> bool {
+    root == Some(BLOCKS_ROOT)
+}
 
 /// A Plate value the blocks layout cannot hold.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

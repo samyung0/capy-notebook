@@ -47,12 +47,11 @@ pub(crate) fn seed(txn: &mut TransactionMut, blocks: &MapRef, content: &[Block])
     }
 }
 
+/// A yBlock: its id is its key, and it holds no `sys:id` or `sys:version`
+/// (vendor/blocksuite/README.md, local change 9).
 fn write(txn: &mut TransactionMut, blocks: &MapRef, block: &Block, children: &[&str]) {
-    let version = schema::flavour(&block.flavour).map_or(1, |f| f.version);
     let y = blocks.insert(txn, block.id.as_str(), MapPrelim::default());
-    y.insert(txn, "sys:id", block.id.as_str());
     y.insert(txn, "sys:flavour", block.flavour.as_str());
-    y.insert(txn, "sys:version", Any::Number(f64::from(version)));
     y.insert(
         txn,
         "sys:children",
@@ -268,6 +267,26 @@ fn read<T: ReadTxn>(
     }
     let map = yblock(txn, blocks, id).ok_or_else(missing)?;
     let flavour = string(txn, &map, "sys:flavour").ok_or_else(missing)?;
+    let props = props(txn, id, &map)?;
+    let children = child_ids(txn, &map)
+        .ok_or_else(missing)?
+        .iter()
+        .map(|child| read(txn, blocks, child, seen, depth + 1))
+        .collect::<Result<_, _>>()?;
+    Ok(Block {
+        id: id.into(),
+        flavour,
+        props,
+        children,
+    })
+}
+
+/// A block's props (without the `prop:` prefix), sorted by name.
+pub(crate) fn props<T: ReadTxn>(
+    txn: &T,
+    id: &str,
+    map: &MapRef,
+) -> Result<Vec<(String, Prop)>, ProjectionError> {
     let mut props = Vec::new();
     for (key, out) in map.iter(txn) {
         let Some(name) = key.strip_prefix("prop:") else {
@@ -284,21 +303,11 @@ fn read<T: ReadTxn>(
         props.push((name.to_string(), prop));
     }
     props.sort_by(|a, b| a.0.cmp(&b.0));
-    let children = child_ids(txn, &map)
-        .ok_or_else(missing)?
-        .iter()
-        .map(|child| read(txn, blocks, child, seen, depth + 1))
-        .collect::<Result<_, _>>()?;
-    Ok(Block {
-        id: id.into(),
-        flavour,
-        props,
-        children,
-    })
+    Ok(props)
 }
 
 /// The `blocks` map as JSON, for the goldens: block id →
-/// `{flavour, version, children, props}`, a Y.Text as its delta, a Y.Map as
+/// `{flavour, children, props}`, a Y.Text as its delta, a Y.Map as
 /// an object (keys sorted) and a Y.Array as an array.
 pub fn blocks_json<T: ReadTxn>(txn: &T) -> Value {
     let Some(blocks) = txn.get_map(BLOCKS_ROOT) else {
@@ -322,7 +331,6 @@ pub fn blocks_json<T: ReadTxn>(txn: &T) -> Value {
             id,
             json!({
                 "flavour": map.get(txn, "sys:flavour").map(|v| json_of(txn, &v)),
-                "version": map.get(txn, "sys:version").map(|v| json_of(txn, &v)),
                 "children": map.get(txn, "sys:children").map(|v| json_of(txn, &v)),
                 "props": props,
             }),

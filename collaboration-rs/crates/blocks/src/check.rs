@@ -54,22 +54,7 @@ pub fn check<T: ReadTxn>(txn: &T) -> Result<(), Violation> {
     // id → (flavour, children)
     let mut tree: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
     for id in &ids {
-        let malformed = || Violation::Malformed(id.clone());
-        let map = yblock(txn, &blocks, id).ok_or_else(malformed)?;
-        if string(txn, &map, "sys:id").as_deref() != Some(id) {
-            return Err(malformed());
-        }
-        if !matches!(map.get(txn, "sys:version"), Some(Out::Any(Any::Number(_)))) {
-            return Err(malformed());
-        }
-        let flavour = string(txn, &map, "sys:flavour").ok_or_else(malformed)?;
-        let schema = schema::flavour(&flavour).ok_or_else(|| Violation::Flavour {
-            id: id.clone(),
-            flavour: flavour.clone(),
-        })?;
-        let children = child_ids(txn, &map).ok_or_else(malformed)?;
-        props(txn, id, &map, schema)?;
-        tree.insert(id.clone(), (flavour, children));
+        tree.insert(id.clone(), entry(txn, &blocks, id)?);
     }
 
     let flavour_of = |id: &str| tree.get(id).map(|(f, _)| f.as_str());
@@ -140,9 +125,28 @@ pub fn check<T: ReadTxn>(txn: &T) -> Result<(), Violation> {
     Ok(())
 }
 
+/// One block's own shape (its `sys:*` keys and props): its flavour and
+/// child ids.
+pub(crate) fn entry<T: ReadTxn>(
+    txn: &T,
+    blocks: &MapRef,
+    id: &str,
+) -> Result<(String, Vec<String>), Violation> {
+    let malformed = || Violation::Malformed(id.into());
+    let map = yblock(txn, blocks, id).ok_or_else(malformed)?;
+    let flavour = string(txn, &map, "sys:flavour").ok_or_else(malformed)?;
+    let schema = schema::flavour(&flavour).ok_or_else(|| Violation::Flavour {
+        id: id.into(),
+        flavour: flavour.clone(),
+    })?;
+    let children = child_ids(txn, &map).ok_or_else(malformed)?;
+    props(txn, id, &map, schema)?;
+    Ok((flavour, children))
+}
+
 /// A prop key's expected type, for a flavour's own props and a table's flat
 /// keys (`rows.<id>.<field>`, `columns.<id>.<field>`, `cells.<row>:<col>.text`).
-fn kind_of(schema: &schema::Flavour, key: &str) -> Option<Kind> {
+pub(crate) fn kind_of(schema: &schema::Flavour, key: &str) -> Option<Kind> {
     if let Some((_, kind)) = schema.props.iter().find(|(name, _)| *name == key) {
         return Some(*kind);
     }
@@ -165,11 +169,10 @@ fn props<T: ReadTxn>(
     map: &MapRef,
     schema: &schema::Flavour,
 ) -> Result<(), Violation> {
+    // `sys:id` and `sys:version` are refused as unknown keys: the room keeps
+    // the trimmed block map (local change 9).
     for (key, value) in map.iter(txn) {
-        if matches!(
-            key,
-            "sys:id" | "sys:flavour" | "sys:version" | "sys:children"
-        ) {
+        if matches!(key, "sys:flavour" | "sys:children") {
             continue;
         }
         let bad = || Violation::Prop {
@@ -196,12 +199,7 @@ fn props<T: ReadTxn>(
                 }
                 true
             }
-            (Kind::Str | Kind::StrOrNull | Kind::StrOrMap, Out::Any(Any::String(_))) => true,
-            (Kind::Num | Kind::NumOrNull, Out::Any(Any::Number(_) | Any::BigInt(_))) => true,
-            (Kind::Bool, Out::Any(Any::Bool(_))) => true,
-            (Kind::StrOrNull | Kind::NumOrNull, Out::Any(Any::Null)) => true,
-            (Kind::Map | Kind::StrOrMap, Out::YMap(_)) => true,
-            _ => false,
+            (kind, value) => fits(kind, value),
         };
         if !fits {
             return Err(bad());
@@ -217,6 +215,22 @@ fn props<T: ReadTxn>(
         }
     }
     Ok(())
+}
+
+/// Whether a non-text prop value has the type `kind` asks for.
+pub(crate) fn fits(kind: Kind, value: &Out) -> bool {
+    matches!(
+        (kind, value),
+        (
+            Kind::Str | Kind::StrOrNull | Kind::StrOrMap,
+            Out::Any(Any::String(_))
+        ) | (
+            Kind::Num | Kind::NumOrNull,
+            Out::Any(Any::Number(_) | Any::BigInt(_))
+        ) | (Kind::Bool, Out::Any(Any::Bool(_)))
+            | (Kind::StrOrNull | Kind::NumOrNull, Out::Any(Any::Null))
+            | (Kind::Map | Kind::StrOrMap, Out::YMap(_))
+    )
 }
 
 /// One change [repair] made.

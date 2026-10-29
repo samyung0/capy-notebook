@@ -124,6 +124,7 @@ pub fn stable_left(
     own: &Own,
     author: Option<ClientID>,
     block_of: &BlockOf<'_>,
+    left_out: &std::collections::HashSet<ID>,
 ) -> Result<Merged, Refused> {
     let txn = current.transact();
     let store = txn.store();
@@ -248,6 +249,10 @@ pub fn stable_left(
             let of = |id: &ID| struct_of(id).and_then(|d| res[d].clone());
             let dropped = |id: &ID| new_gc(id) || matches!(of(id), Some(Res::Drop));
             let resolved = (|| -> Result<Res, Refused> {
+                // A value the keyed merge leaves out for the tab to re-key.
+                if left_out.contains(&piece.id()) {
+                    return Ok(Res::Drop);
+                }
                 if refs.iter().any(&dropped) {
                     return Ok(Res::Drop);
                 }
@@ -604,8 +609,10 @@ pub fn stable_left(
     // What the tab shows that the merged document would hide: pieces dropped
     // for a block the current document lacks, or placed inside a deleted one
     // (text, embeds and attribute values alike).
+    // A re-keyed value is pasted again whole: not hidden.
     let hidden: Vec<usize> = (0..news.len())
         .filter(|&i| !dead[i] && in_deleted(&ParentRef::Item(news[i].id())))
+        .filter(|&i| !block_of(&news[i].id()).is_some_and(|b| left_out.contains(&b)))
         .collect();
 
     if let Some(author) = author {
@@ -624,6 +631,7 @@ pub fn stable_left(
         return Ok(Merged {
             update,
             hidden: blocks(&hidden, &news, block_of),
+            rekeyed: Vec::new(),
         });
     }
 
@@ -707,6 +715,7 @@ pub fn stable_left(
     Ok(Merged {
         update: write::update(sections, &deletes)?,
         hidden: blocks(&hidden, &news, block_of),
+        rekeyed: Vec::new(),
     })
 }
 

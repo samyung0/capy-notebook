@@ -602,9 +602,7 @@ fn key(layout: L, c: &mut Client, erase: u32) -> Option<Vec<u8>> {
 /// An `affine:paragraph` as the blocks layout writes one (blocks/src/store.rs).
 fn block_paragraph(txn: &mut TransactionMut, blocks: &MapRef, id: &str, line: &str) {
     let block = blocks.insert(txn, id, MapPrelim::default());
-    block.insert(txn, "sys:id", id);
     block.insert(txn, "sys:flavour", "affine:paragraph");
-    block.insert(txn, "sys:version", Any::Number(1.0));
     block.insert(txn, "sys:children", ArrayPrelim::from(Vec::<Any>::new()));
     block.insert(txn, "prop:collapsed", false);
     let text: TextRef = block.insert(txn, "prop:text", TextPrelim::new(""));

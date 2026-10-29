@@ -139,6 +139,35 @@ fn a_missing_default_is_refused() {
     );
 }
 
+/// The trimmed block map (vendor/blocksuite/README.md, local change 9): a
+/// block's id is its key, and a `sys:id` or `sys:version` is refused, so a
+/// room stays trimmed.
+#[test]
+fn a_sys_id_or_version_is_refused() {
+    for (key, value) in [
+        ("sys:id", yrs::Any::from("a")),
+        ("sys:version", yrs::Any::Number(1.0)),
+    ] {
+        let (doc, _) = two_clients();
+        blocks::check(&doc.transact()).unwrap();
+        {
+            let mut txn = doc.transact_mut();
+            let blocks = common::blocks_map(&txn);
+            let yrs::Out::YMap(a) = yrs::Map::get(&blocks, &txn, "a").unwrap() else {
+                panic!()
+            };
+            yrs::Map::insert(&a, &mut txn, key, value);
+        }
+        assert_eq!(
+            blocks::check(&doc.transact()),
+            Err(Violation::Prop {
+                id: "a".into(),
+                key: key.into()
+            })
+        );
+    }
+}
+
 /// A list nested `levels` deep: one bulleted item per indent.
 fn nested_list(levels: usize) -> Vec<serde_json::Value> {
     (1..=levels)

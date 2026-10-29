@@ -452,6 +452,7 @@ dependencies = [
  "late-merge",
  "notes",
  "serde_json",
+ "stats_alloc",
  "thiserror",
  "ydoc",
  "yrs",

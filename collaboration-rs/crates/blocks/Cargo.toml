@@ -16,6 +16,8 @@ yrs.workspace = true
 flate2 = "1"
 # The collection tests place a late tab's edits as the browser does.
 late-merge = { path = "../late-merge" }
+# The deleted-key cost test counts the bytes a loaded room keeps.
+stats_alloc = "0.1.10"
 # The bound tests measure the projection as the room does.
 notes.workspace = true
 

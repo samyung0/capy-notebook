@@ -168,6 +168,26 @@ fn stretches(item: &ItemPtr, window: &Window, held: &IdSet) -> Vec<(Range<u32>, 
 /// is the open room's own client, whose marker chains stay; None at the
 /// unload fold.
 pub fn collect(doc: &Doc, window: &Window, held: &IdSet, live_room: Option<ClientID>) -> Collected {
+    collect_with(doc, window, held, live_room, None)
+}
+
+/// A map whose keys are never set again by a replica lacking the key's
+/// last value: given the map's root name (None for a nested map) and the
+/// key. The blocks layout's `blocks` root (a block id) is one.
+pub type UniqueKeys<'a> = &'a dyn Fn(Option<&str>, &str) -> bool;
+
+/// [collect], where a key `unique` names, deleted at W and not held, goes
+/// whole (its value current at W too) unless a kept item names it: only
+/// its writer's Undo (held) or a replica holding the value sets it again,
+/// and such a set names the value, so it is answered late. None keeps
+/// every key's value current at W ([collect]).
+pub fn collect_with(
+    doc: &Doc,
+    window: &Window,
+    held: &IdSet,
+    live_room: Option<ClientID>,
+    unique: Option<UniqueKeys<'_>>,
+) -> Collected {
     let txn = doc.transact();
     let store = txn.store();
     let mut seqs = Sequences::default();
@@ -234,8 +254,17 @@ pub fn collect(doc: &Doc, window: &Window, held: &IdSet, live_room: Option<Clien
             continue;
         };
         let head = chain[at];
-        // A map set names the key's current value, deleted or not.
-        if window.delete_set.contains(head.id()) {
+        // A map set names the key's current value, deleted or not; a unique
+        // key's deleted value is set again only by a replica holding it.
+        let unique_key = unique.is_some_and(|unique| {
+            let root = match head.parent_branch().map(|branch| branch.id()) {
+                Some(BranchID::Root(name)) => Some(name),
+                _ => None,
+            };
+            head.parent_sub()
+                .is_some_and(|key| unique(root.as_deref(), key))
+        });
+        if window.delete_set.contains(head.id()) && !unique_key {
             edged.insert(*head.id());
         }
         heads.push((head, &chain[..at]));

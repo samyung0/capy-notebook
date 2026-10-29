@@ -1,14 +1,18 @@
 //! The per-update growth bound of a blocks room, the counterpart of
-//! `notes::bound`: what a typing update can add to the room's projection at
-//! most, read from the update's own structs against the room, never a copy
-//! of it.
+//! `notes::bound`: what an update adds to the room's projection at most, read
+//! from the update's own structs against the room, never a copy of it.
 //!
-//! It covers typing alone: new strings in a block's text props and deleted
-//! strings there. Anything else (a format, a new block, a move, a prop
-//! write, a Mermaid source) is `None`, and the caller checks exactly.
-//! Typing leaves the tree (the `blocks` map, every `sys:children`) as it
-//! was, so a room whose tree passed [crate::check] still passes it, and
-//! the repair on entry has nothing to do. What typing can change:
+//! Typing (new strings in a block's text props, deleted strings there) is
+//! priced here. Structure (a new, deleted, moved or rewritten block) and a
+//! text whose formats change go to [crate::structure], which proves the tree
+//! stays valid and gives the top-level elements the update rewrites, before
+//! and after it. Anything either cannot model (an embed, a Mermaid source, a
+//! new type in an existing block, a write past the blocks map) is `None`,
+//! and the caller checks exactly.
+//!
+//! Typing leaves the tree (the `blocks` map, every `sys:children`) as it was,
+//! so a room whose tree passed [crate::check] still passes it, and the repair
+//! on entry has nothing to do. What typing can change:
 //!
 //! - Deleting strings never grows the projection: a char's attributes come
 //!   from the format items before it, not from other chars, so the runs
@@ -26,11 +30,13 @@
 //!   meets a value it has not checked.
 //!
 //! Cost: O(update) plus one walk of each text the update types into, and of
-//! the room items its deletes cover.
+//! the room items its deletes cover; structure adds what [crate::structure]
+//! reads.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use serde_json::Value;
 use yrs::block::{Item, ItemContent, ItemPtr, UpdateParent};
 use yrs::branch::{BranchID, BranchPtr};
 use yrs::types::TypeRef;
@@ -39,9 +45,10 @@ use yrs::{Any, ID, MapRef, ReadTxn, StateVector};
 use ydoc::Incoming;
 use ydoc::steps::{Walk, step};
 
-use crate::BLOCKS_ROOT;
 use crate::schema::{self, MERMAID};
 use crate::store::{any_value, string};
+use crate::structure::{self, Edits};
+use crate::{BLOCKS_ROOT, Tree};
 
 /// A run's fixed bytes on top of its attributes and owner id: an inline
 /// element's `{"id":"<owner>.i<n>","type":"inline_equation","texExpression":`
@@ -64,19 +71,30 @@ const LINE_NODES: u64 = 5;
 const DELETE_WALK: u64 = 200_000;
 
 /// What an update adds to the room's projection, at most.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Growth {
+    /// Typing: the bytes and nodes its strings add at most.
     pub bytes: u64,
     pub nodes: u64,
     /// A string lands in a live text: its nodes sit at most one level below
     /// the deepest leaf the room's projection has (an inline element's leaf).
     pub typed: bool,
+    /// Structure: the top-level elements of the projection the update
+    /// rewrites, as the room projects them now and after the update (typing
+    /// aside, which `bytes` prices). Every other top-level element stays as
+    /// it is, so the projection's metrics move by the difference.
+    pub before: Vec<Value>,
+    pub after: Vec<Value>,
+    /// What [Tree::apply] writes into the room's parent index: each block the
+    /// update lists, with its parent, and each block it deletes.
+    pub(crate) listed: Vec<(String, String)>,
+    pub(crate) deleted: Vec<String>,
 }
 
 /// The bound of `incoming` against the room, or `None` when it holds
-/// anything but typing. Call it only on a room whose tree passed the
-/// structural check.
-pub fn growth<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Option<Growth> {
+/// anything the bound does not model. Call it only on a room whose tree
+/// passed the structural check, with that tree's index.
+pub fn growth<T: ReadTxn>(txn: &T, incoming: &Incoming, tree: &Tree) -> Option<Growth> {
     let root = BranchID::get_root(txn, BLOCKS_ROOT)?;
     let bound = Bound {
         txn,
@@ -84,20 +102,30 @@ pub fn growth<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Option<Growth> {
         state: txn.state_vector(),
         root,
     };
-    bound.run()
+    bound.run(tree)
 }
 
-struct Bound<'a, T: ReadTxn> {
-    txn: &'a T,
-    incoming: &'a Incoming<'a>,
-    state: StateVector,
-    root: BranchPtr,
+pub(crate) struct Bound<'a, T: ReadTxn> {
+    pub txn: &'a T,
+    pub incoming: &'a Incoming<'a>,
+    pub state: StateVector,
+    pub root: BranchPtr,
 }
 
 /// A text a string lands in, or `Hidden` for one outside the projection's
 /// reach (a deleted text or block): what lands there adds nothing.
-enum Place {
+pub(crate) enum Place {
     Text(BranchPtr),
+    Hidden,
+}
+
+/// Where a new item lands: a held type (and its map key), a type the update
+/// creates, or nowhere the projection reaches (a deleted holder, a collected
+/// neighbour).
+#[derive(Clone)]
+enum Container {
+    Held(BranchPtr, Option<Arc<str>>),
+    New,
     Hidden,
 }
 
@@ -113,7 +141,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
     /// The block text prop `branch` is: its owner id's length, or `None`
     /// when it is anything else (a nested type, a Mermaid source, a root).
     /// `Some(Hidden)` for one deleted, or in a deleted block.
-    fn text_prop(&self, branch: BranchPtr) -> Option<(Place, u64)> {
+    pub(crate) fn text_prop(&self, branch: BranchPtr) -> Option<(Place, u64)> {
         if !matches!(branch.type_ref(), TypeRef::Text) {
             return None;
         }
@@ -140,89 +168,130 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
         Some((place, escaped_len(&id) + escaped_len(&key)))
     }
 
-    /// The held text a new string lands in: `None` when it is not a block's
-    /// text prop, or the update's chain leaves update and room.
-    fn place_of(&self, item: &'a Item, places: &mut HashMap<ID, Option<Place>>) -> Option<Place> {
+    /// Where a held item sits: its type and map key.
+    fn holder(&self, item: ItemPtr) -> Option<Container> {
+        Some(Container::Held(
+            item.parent_branch()?,
+            item.parent_sub().cloned(),
+        ))
+    }
+
+    /// The container a new item lands in, as yrs will integrate it: `None`
+    /// when the update's chain leaves update and room.
+    fn container(
+        &self,
+        item: &'a Item,
+        memo: &mut HashMap<ID, Option<Container>>,
+    ) -> Option<Container> {
         match self.incoming.landing(self.txn.store(), &self.state, item) {
-            ydoc::Landing::Gone => return Some(Place::Hidden),
-            ydoc::Landing::At(id) => {
-                return Some(self.text_prop(self.held_item(&id)?.parent_branch()?)?.0);
-            }
+            ydoc::Landing::Gone => return Some(Container::Hidden),
+            ydoc::Landing::At(id) => return self.holder(self.held_item(&id)?),
             ydoc::Landing::Chain => {}
         }
         let mut chain = Vec::new();
         let mut at = item;
         let found = loop {
             step(Walk::Placement);
-            if let Some(known) = places.get(at.id()) {
-                break known.as_ref().map(Place::copy);
+            if let Some(known) = memo.get(at.id()) {
+                break known.clone();
             }
             // A reference cycle stays unplaced.
-            places.insert(*at.id(), None);
+            memo.insert(*at.id(), None);
             chain.push(*at.id());
             match at.update_parent() {
                 UpdateParent::Item(parent) if self.held(parent) => {
-                    break match self.held_item(parent)?.content() {
-                        ItemContent::Deleted(_) => Some(Place::Hidden),
-                        ItemContent::Type(branch) => self
-                            .text_prop(BranchPtr::from(branch.as_ref()))
-                            .map(|(place, _)| place),
+                    let held = self.held_item(parent)?;
+                    break match held.content() {
+                        ItemContent::Deleted(_) => Some(Container::Hidden),
+                        ItemContent::Type(branch) => Some(Container::Held(
+                            BranchPtr::from(branch.as_ref()),
+                            at.parent_sub().cloned(),
+                        )),
                         _ => None,
                     };
+                }
+                // A type the update creates: the item comes with it.
+                UpdateParent::Item(_) => break Some(Container::New),
+                UpdateParent::Root(name) => {
+                    break BranchID::get_root(self.txn, &**name)
+                        .map(|root| Container::Held(root, at.parent_sub().cloned()));
                 }
                 UpdateParent::Unknown => {
                     let sibling = at.origin().or(at.right_origin())?;
                     if self.held(sibling) {
                         // Yjs drops an item next to a collected struct.
                         let Some(held) = self.held_item(sibling) else {
-                            break Some(Place::Hidden);
+                            break Some(Container::Hidden);
                         };
-                        break self
-                            .text_prop(held.parent_branch()?)
-                            .map(|(place, _)| place);
+                        break self.holder(held);
                     }
                     at = self.incoming.item_at(sibling)?;
                 }
-                // A parent the update creates, a root, a branch id: no typing.
-                _ => break None,
+                UpdateParent::Branch(_) => break None,
             }
         };
         for id in chain {
-            places.insert(id, found.as_ref().map(Place::copy));
+            memo.insert(id, found.clone());
         }
         found
     }
 
-    fn run(&self) -> Option<Growth> {
-        let mut places = HashMap::new();
+    fn run(&self, tree: &Tree) -> Option<Growth> {
+        let mut memo = HashMap::new();
         // The new strings per text, in first-seen order.
         let mut texts: Vec<(BranchPtr, Vec<&str>)> = Vec::new();
         let mut index: HashMap<BranchID, usize> = HashMap::new();
+        let mut edits = Edits::default();
         for item in self.incoming.items() {
             if item.id().clock + item.len() <= self.state.get(&item.id().client) {
                 continue;
             }
-            let ItemContent::String(text) = item.content() else {
-                return None;
+            let (branch, key) = match self.container(item, &mut memo)? {
+                Container::Hidden | Container::New => continue,
+                Container::Held(branch, key) => (branch, key),
             };
-            if item.parent_sub().is_some() {
-                return None;
-            }
-            match self.place_of(item, &mut places)? {
-                Place::Hidden => {}
-                Place::Text(branch) => {
+            match (self.text_prop(branch), key, item.content()) {
+                (Some((Place::Hidden, _)), None, _) => {}
+                (Some((Place::Text(branch), _)), None, ItemContent::String(text)) => {
                     let at = *index.entry(branch.id()).or_insert_with(|| {
                         texts.push((branch, Vec::new()));
                         texts.len() - 1
                     });
                     texts[at].1.push(text.as_str());
+                    edits.text(branch).inserts.push(item);
                 }
+                // Typed and erased before it was sent: it shows nothing, but
+                // a text read whole places the items after it by it.
+                (Some((Place::Text(branch), _)), None, ItemContent::Deleted(_)) => {
+                    edits.text(branch).inserts.push(item);
+                }
+                (_, _, ItemContent::Deleted(_)) => {}
+                (Some((Place::Text(branch), _)), None, ItemContent::Format(key, _))
+                    if schema::TEXT_ATTRIBUTES.contains(&&**key) =>
+                {
+                    let text = edits.text(branch);
+                    text.inserts.push(item);
+                    text.formats = true;
+                }
+                // An embed, an attribute the check refuses.
+                (Some(_), _, _) => return None,
+                (None, key, _) => edits.place(self, branch, key, item)?,
             }
         }
-        self.deletes_only_strings()?;
+        self.deletes(&mut edits)?;
 
+        // A text whose formats change, or one a structural update trims, is
+        // read whole after the update ([crate::structure]); the rest of the
+        // typing is priced here.
+        let structural = edits.holds_structure();
+        for text in edits.texts_mut() {
+            text.rewrite = text.formats || (structural && text.trimmed);
+        }
         let mut growth = Growth::default();
         for (branch, strings) in &texts {
+            if edits.rewrites(*branch) {
+                continue;
+            }
             let (_, owner) = self.text_prop(*branch)?;
             let shell = run_shell(*branch, owner)?;
             growth.typed = true;
@@ -240,13 +309,17 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                 }
             }
         }
+        if structural || edits.rewrites_any() {
+            structure::bound(self, tree, edits, &mut growth)?;
+        }
         Some(growth)
     }
 
-    /// Whether every live room item the update deletes is a string in a
-    /// block's text prop (the update's own new items may delete anything:
-    /// they are placed above).
-    fn deletes_only_strings(&self) -> Option<()> {
+    /// Reads the live room items the update deletes: strings and formats in
+    /// a block's text prop mark that text; block entries, prop entries and
+    /// child listings go to `edits`; anything else must sit in a block the
+    /// update deletes.
+    fn deletes(&self, edits: &mut Edits) -> Option<()> {
         let store = self.txn.store();
         let mut walked: u64 = 0;
         for (client, ranges) in self.incoming.delete_ranges() {
@@ -261,28 +334,28 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                         return None;
                     }
                     let (range, item) = store.get_block_range(&ID::new(*client, clock))?;
+                    let covered = (clock.max(range.clock), until.min(range.clock + range.len));
                     clock = range.clock + range.len;
                     let Some(item) = item else { continue };
                     if item.is_deleted() {
                         continue;
                     }
-                    if !matches!(item.content(), ItemContent::String(_)) {
-                        return None;
+                    let branch = item.parent_branch()?;
+                    match (self.text_prop(branch), item.content()) {
+                        (Some((Place::Hidden, _)), _) => {}
+                        (Some((Place::Text(branch), _)), ItemContent::String(_)) => {
+                            edits.text(branch).trimmed = true;
+                        }
+                        (Some((Place::Text(branch), _)), ItemContent::Format(..)) => {
+                            edits.text(branch).formats = true;
+                        }
+                        (Some(_), _) => return None,
+                        (None, _) => edits.delete(self, branch, item, covered)?,
                     }
-                    self.text_prop(item.parent_branch()?)?;
                 }
             }
         }
         Some(())
-    }
-}
-
-impl Place {
-    fn copy(&self) -> Place {
-        match self {
-            Place::Text(branch) => Place::Text(*branch),
-            Place::Hidden => Place::Hidden,
-        }
     }
 }
 
