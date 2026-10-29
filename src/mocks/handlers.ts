@@ -692,7 +692,8 @@ const mockCreditSettings: CreditSettings = {
   reloadThresholdMicros: 0,
   spendingLimitCents: 5000,
   spentThisMonthCents: 1800,
-  starterAvailable: false,
+  // On so the Usage tab shows the starter offer, though a card is saved.
+  starterAvailable: true,
 };
 
 type GradeOneBody = { questionId: string; answers: Answers };

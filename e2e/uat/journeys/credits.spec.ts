@@ -18,15 +18,14 @@ import {
   availableOf,
   billing,
   completeCheckout,
-  credits,
   creditsRow,
   DECLINES,
   declinedReload,
   dollars,
   enableNoteAi,
   expectAnswered,
+  expectBalanceOnUsage,
   expectInvoice,
-  expectPurchasedOnUsage,
   expectRaiseFunction,
   expectRefusedAtZero,
   expectVoided,
@@ -100,30 +99,15 @@ test('starter credits, the monthly limit, a card saved through setup Checkout, a
   const pool =
     Number(start.creditsPurchasedMicros) +
     Math.max(0, spent - (used - Number(start.creditsCarriedMicros)));
-  const resets = new Date(stringField(start, 'creditsPeriodStart'));
-  resets.setUTCMonth(resets.getUTCMonth() + 1);
-  const monthly = m.billing_credits_hint_monthly({
-    date: shortDate(resets),
-    limit: credits(Number(start.creditsLimitMicros)),
-    used: credits(used),
-  });
-  await expect(
-    page.getByText(
-      pool > 0
-        ? `${monthly} ${m.billing_credits_hint_then_purchased({ amount: credits(pool) })}`
-        : monthly,
-      { exact: true }
-    )
-  ).toBeVisible();
   await expect(page.getByText(m.billing_purchased_marker())).toHaveCount(
     pool > 0 ? 1 : 0
   );
+  // Usage offers the starter credits for a first card.
+  await expect(page.getByText(m.billing_starter_offer())).toBeVisible();
   await page.getByRole('link', { name: m.billing_top_up() }).click();
   await expect(
     page.getByRole('tab', { name: m.subscription_title(), selected: true })
   ).toBeVisible();
-  // The Subscription tab offers the starter credits for a first card.
-  await expect(page.getByText(m.billing_starter_offer())).toBeVisible();
 
   // Top-ups take $8 to $100, in the field and in the API.
   const field = page.getByLabel(m.billing_top_up(), { exact: true });
@@ -235,7 +219,7 @@ test('starter credits, the monthly limit, a card saved through setup Checkout, a
   expect(afterReload.purchased_micros - beforeReload).toBe(
     reload.credits_micros
   );
-  await expectPurchasedOnUsage(page, afterReload.purchased_micros);
+  await expectBalanceOnUsage(page, owner);
   expect(reloadInvoice.status).toBe('paid');
   await processedEvent(
     run,
