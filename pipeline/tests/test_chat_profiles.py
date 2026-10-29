@@ -41,7 +41,9 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # 2026-10-29), the Plan-first line replacing 'Do not ask whether to create
 # them' (Epo 2026-10-29, Q581; the messages keys alone), create_chapter's name
 # required in the chat copy without its Chapter (n) sentence (Epo 2026-10-29,
-# Q582; the owner schemas keys alone),
+# Q582; the owner schemas keys alone), the chapter_id descriptions saying "not
+# in a chapter" instead of "unfiled" (Epo 2026-10-30; the owner schemas keys
+# alone),
 # the owner schemas and skills/editing keys alone.
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 

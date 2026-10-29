@@ -3082,10 +3082,10 @@ async def test_list_sources_includes_materials_and_scoped_file_editability(
         "Notes (id=mat_1, kind=material, material_kind=note, editable=true)"
         "\n  Mitosis phases"
     ) in text
-    # A material sits under the chapter it is filed in; the rest are unfiled.
+    # A material sits under the chapter it is in; the rest are in no chapter.
     biology = text.split("## Biology (chapter_id=ch_1)")[1].split("\n## ")[0]
     assert "Cells quiz (id=mat_2" in biology
-    assert "Notes (id=mat_1" in text.split("## Unfiled study materials")[1]
+    assert "Notes (id=mat_1" in text.split("## Study materials not in a chapter")[1]
     # Only notes are outlined and indexed; the other kinds name their tools.
     assert (
         "Cells quiz (id=mat_2, kind=material, material_kind=quiz, editable=true); "

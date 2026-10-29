@@ -623,7 +623,7 @@ func officeCommandSchema() map[string]any {
 			variant("create", "First command only, without file_id: makes a new file; the call's other commands then apply to it.", map[string]any{
 				"format":     map[string]any{"type": "string", "enum": []string{"xlsx", "docx"}},
 				"title":      map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle, "description": "The file's name, without its extension."},
-				"chapter_id": str("The chapter to file it in; omit to leave it unfiled."),
+				"chapter_id": str("The chapter to put it in; omit it to not put it in a chapter."),
 			}, "format", "title"),
 			variant("set_range", "XLSX: write a rectangle of cells.", map[string]any{
 				"sheet":    sheet,
@@ -1143,7 +1143,7 @@ func Definitions() []Definition {
 					"description": "note only: markdown.",
 				},
 				"sources":     sourcesSchema("The "),
-				"chapter_id":  str("The chapter to file it in; omit to leave it unfiled."),
+				"chapter_id":  str("The chapter to put it in; omit it to not put it in a chapter."),
 				"excerpt_ids": excerptIDs("Library excerpts it was written from; they become its attribution."),
 			}, "kind"),
 			Mutates:            true,
@@ -1221,7 +1221,7 @@ func Definitions() []Definition {
 						"brief": map[string]any{"type": "string", "minLength": 1, "maxLength": 1200},
 					}, "title", "brief"),
 				},
-				"chapter_id":  str("The chapter to file the deck in; omit to leave it unfiled."),
+				"chapter_id":  str("The chapter to put the deck in; omit it to not put the deck in a chapter."),
 				"sources":     sourcesSchema("The "),
 				"excerpt_ids": deckExcerpts(),
 			}, "title", "slides"),

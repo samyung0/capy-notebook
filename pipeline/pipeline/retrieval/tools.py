@@ -647,11 +647,11 @@ def _source_listing(
         lines.extend(_material_line(item, summaries) for item in filed)
     unfiled = [f for files in by_chapter.values() for f in files]
     if unfiled:
-        lines.append("\n## Unfiled")
+        lines.append("\n## Not in a chapter")
         lines.extend(_file_line(f, sources[f["id"]]["editable"]) for f in unfiled)
     loose = [item for items in materials.values() for item in items]
     if loose:
-        lines.append("\n## Unfiled study materials")
+        lines.append("\n## Study materials not in a chapter")
         lines.extend(_material_line(item, summaries) for item in loose)
     return _result(
         "\n".join(lines)
@@ -4421,7 +4421,7 @@ def render_progress(progress: dict[str, Any]) -> str:
     if weak:
         lines.append("Least retained chapters:")
         lines.extend(
-            f"- {w['chapter'] or 'Unfiled'}: {round(100 * w['retention'])}% retained "
+            f"- {w['chapter'] or 'Not in a chapter'}: {round(100 * w['retention'])}% retained "
             f"across {w['items']} rated questions and cards"
             for w in weak
         )

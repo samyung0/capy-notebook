@@ -1393,7 +1393,7 @@ def test_study_progress_renders_states_quizzes_and_weak_chapters():
     assert "Done:\n- Cells.pdf (file f_1)" in text
     assert "Started:\n- Organelles (material m_2)" in text
     assert "- Cell quiz: 62% on 2026-10-03 (Cells)" in text
-    assert "- Unfiled: 41% retained across 7" in text
+    assert "- Not in a chapter: 41% retained across 7" in text
     assert (
         tools.render_progress({}) == "No study progress recorded in this workspace yet."
     )
