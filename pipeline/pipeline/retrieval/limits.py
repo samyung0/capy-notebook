@@ -138,6 +138,72 @@ def call_slot_policy() -> CallSlotPolicy | None:
     return _call_slot_policy.get()
 
 
+class ModelQueue:
+    """Chat model calls waiting at one model's capacity gate, in arrival order
+    (Epo 2026-10-29). The gate itself is the shared Postgres lease count; in
+    this process only the head of the line tries it, polling, and a call on
+    the model ending here wakes the head at once."""
+
+    def __init__(self) -> None:
+        self.waiting = 0
+        self._turn = asyncio.Lock()
+        self._freed = asyncio.Event()
+
+    async def head(self, budget_s: float, left: asyncio.Event | None) -> bool:
+        """Wait to be the head: True holding the turn (pair with ``leave``),
+        False once ``budget_s`` runs out or ``left`` is set."""
+        acquire = asyncio.ensure_future(self._turn.acquire())
+        gone = asyncio.ensure_future(left.wait()) if left is not None else None
+        try:
+            await asyncio.wait(
+                {acquire} if gone is None else {acquire, gone},
+                timeout=max(budget_s, 0),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        except BaseException:
+            self._drop(acquire)
+            raise
+        finally:
+            if gone is not None:
+                gone.cancel()
+        if not acquire.done() or (left is not None and left.is_set()):
+            self._drop(acquire)
+            return False
+        return True
+
+    def _drop(self, acquire: asyncio.Future[bool]) -> None:
+        """Give up a turn being waited for, or handed over: a cancelled
+        acquire passes a turn it was just handed on to the next waiter."""
+        if not acquire.done():
+            acquire.cancel()
+        elif not acquire.cancelled() and acquire.exception() is None:
+            self._turn.release()
+
+    def leave(self) -> None:
+        self._turn.release()
+
+    def freed(self) -> None:
+        self._freed.set()
+
+    async def pause(self, seconds: float) -> None:
+        """The head's wait between gate tries: ``seconds``, or less once a
+        call on the model ends here."""
+        self._freed.clear()
+        try:
+            async with asyncio.timeout(seconds):
+                await self._freed.wait()
+        except TimeoutError:
+            pass
+
+
+MODEL_QUEUES: dict[str, ModelQueue] = {}
+
+
+def model_queue(key: str) -> ModelQueue:
+    """The line for one model's gate (``provider:model``)."""
+    return MODEL_QUEUES.setdefault(key, ModelQueue())
+
+
 # The retrieval service is one uvicorn process (Epo 2026-10-24, rate-limit
 # audit; openwiki/agentic-retrieval.md "Process capacity"): model calls in
 # flight (Q292, inner-turn slots), each taking a slot for its request and

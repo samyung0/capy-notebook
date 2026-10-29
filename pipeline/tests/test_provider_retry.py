@@ -492,3 +492,136 @@ async def test_ingest_summary_counts_an_unusable_answer_as_an_attempt(
     with pytest.raises(models.UnusableAnswer):
         await _summary()
     assert calls == 6
+
+
+# Chat's model queue (Epo 2026-10-29): over the cap a chat call waits its turn;
+# a busy provider puts it back once, unseen, and the second busy answer shows.
+
+
+@pytest.fixture
+def chat_turn():
+    """Bind a chat turn's slot policy and record its waiting status."""
+    from pipeline.retrieval import limits
+
+    seen: list[str] = []
+    limits.MODEL_QUEUES.clear()
+    token = limits.bind_call_slots(
+        limits.CallSlotPolicy(
+            limits.CHAT_SLOT_WAIT_S,
+            on_wait=lambda: seen.append("waiting"),
+            on_granted=lambda: seen.append("granted"),
+        )
+    )
+    yield seen
+    limits.reset_call_slots(token)
+    limits.MODEL_QUEUES.clear()
+
+
+async def test_chat_calls_over_the_cap_go_in_arrival_order(monkeypatch, chat_turn):
+    import asyncio
+
+    admitted: list[str] = []
+    used = 0
+
+    async def open_call(call_id, *, deadline, pause=None, **_kwargs):
+        nonlocal used
+        while used >= 1:
+            if deadline is None:
+                raise accounting.GateFull("full")
+            # A long poll: only the end of the call holding the slot wakes it.
+            await pause(30)
+        used += 1
+        admitted.append(asyncio.current_task().get_name())
+
+    async def release_call(_call_id):
+        nonlocal used
+        used -= 1
+
+    held = asyncio.Event()
+
+    async def stream(*_args, **_kwargs):
+        if asyncio.current_task().get_name() == "first":
+            await held.wait()
+        return _assembled()
+
+    monkeypatch.setattr(models.accounting, "open_call", open_call)
+    monkeypatch.setattr(models.accounting, "release_call", release_call)
+    monkeypatch.setattr(models, "_stream_via_adapter", stream)
+
+    def call(name):
+        return asyncio.create_task(
+            models.stream_agent_response(
+                [{"role": "user", "content": name}], model=_spec()
+            ),
+            name=name,
+        )
+
+    first = call("first")
+    await asyncio.sleep(0)
+    second = call("second")
+    await asyncio.sleep(0)
+    third = call("third")
+    await asyncio.sleep(0.05)
+    assert admitted == ["first"]
+    held.set()
+    await asyncio.wait_for(asyncio.gather(first, second, third), timeout=2)
+    assert admitted == ["first", "second", "third"]
+    assert chat_turn == ["waiting", "waiting", "granted", "granted"]
+
+
+async def test_a_busy_provider_puts_a_chat_call_back_once_unseen(
+    monkeypatch, sleeps, chat_turn
+):
+    attempts = 0
+
+    async def stream(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            # Past the 3 s interactive budget, within the chat's wait.
+            raise _busy(retry_after=10)
+        return _assembled("second time")
+
+    monkeypatch.setattr(models, "_stream_via_adapter", stream)
+    assembled = await models.stream_agent_response(
+        [{"role": "user", "content": "hi"}], model=_spec()
+    )
+    assert assembled.text == "second time"
+    assert sleeps == [10]
+    assert chat_turn == ["waiting", "granted"]
+
+
+async def test_a_second_busy_answer_reaches_the_chat(monkeypatch, sleeps, chat_turn):
+    attempts = 0
+
+    async def stream(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise _busy(retry_after=10)
+
+    monkeypatch.setattr(models, "_stream_via_adapter", stream)
+    with pytest.raises(elitellm.ProviderBusy):
+        await models.stream_agent_response(
+            [{"role": "user", "content": "hi"}], model=_spec()
+        )
+    assert attempts == 2
+    assert sleeps == [10]
+
+
+async def test_generate_and_editor_keep_failing_fast(monkeypatch, sleeps):
+    from pipeline.retrieval import limits
+
+    token = limits.bind_call_slots(limits.CallSlotPolicy(wait_s=0))
+
+    async def stream(*_args, **_kwargs):
+        raise _busy(retry_after=10)
+
+    monkeypatch.setattr(models, "_stream_via_adapter", stream)
+    try:
+        with pytest.raises(elitellm.ProviderBusy):
+            await models.complete_text(
+                [{"role": "user", "content": "hi"}], model=_spec()
+            )
+    finally:
+        limits.reset_call_slots(token)
+    assert sleeps == []

@@ -3096,7 +3096,11 @@ AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
   is sent (`ClientDrop.left`, Q359). A waiting call cancelled as a slot
   is handed to it passes the slot to the next waiter. Generate and the editor
   AI routes have no waiting status (Q268): past the 64 their call answers the
-  existing 503 `provider_busy` at once, before reaching the provider. Embedding
+  existing 503 `provider_busy` at once, before reaching the provider. A chat
+  call past its model's capacity gate (`model_capacities`) waits the same way
+  in that model's line, and a busy provider answer puts it back in line once
+  without showing the error ([observability-metering.md](observability-metering.md),
+  Epo 2026-10-29). Embedding
   and rerank calls inside tools take no slot, and the ingest worker binds no
   slot policy.
 - **Turns in progress.** At most 96 chat turns and generate requests run

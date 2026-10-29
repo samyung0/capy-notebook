@@ -16,6 +16,7 @@ import math
 import random
 import secrets
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -285,6 +286,10 @@ def model_capacity(
     return f"{provider}:{model}", capacity
 
 
+class GateFull(elitellm.ProviderBusy):
+    """The model's capacity gate stayed full until the call's deadline."""
+
+
 def _gate_poll_s(settlement_mode: str) -> float:
     if settlement_mode == "ingest":
         return random.uniform(1.0, 2.0)
@@ -304,6 +309,7 @@ async def open_call(
     deadline: float | None = None,
     capacity: tuple[str, int] | None = None,
     provider_timeout_s: float | None = None,
+    pause: Callable[[float], Awaitable[None]] | None = None,
 ) -> None:
     """Insert the pending row before the provider HTTP call.
 
@@ -311,7 +317,8 @@ async def open_call(
     database cannot prove the stub exists, so it must not call the provider.
     A gated model takes its capacity lease in the same transaction as the row;
     while the gate is full this polls until ``deadline`` (a monotonic instant)
-    and then raises ProviderBusy without inserting anything. A call with no
+    and then raises GateFull without inserting anything; ``pause`` replaces
+    the sleep between tries (a chat queue's head, woken early). A call with no
     catalog model is gated only by its own ``capacity``. ``provider_timeout_s``
     replaces the mode's provider timeout for a call that runs longer (an
     audio transcription task); the receipt window and lease follow it.
@@ -370,11 +377,11 @@ async def open_call(
             break
         wait = _gate_poll_s(state.settlement_mode)
         if deadline is None or time.monotonic() + wait > deadline:
-            raise elitellm.ProviderBusy(
+            raise GateFull(
                 f"{provider}/{model} is at its concurrency cap",
                 retry_after=BUSY_RETRY_AFTER_S,
             )
-        await asyncio.sleep(wait)
+        await (pause or asyncio.sleep)(wait)
     if admission_mode is not None:
         state.leased_calls.add(call_id)
     state.receipt_deadlines[call_id] = time.monotonic() + receipt_timeout_s

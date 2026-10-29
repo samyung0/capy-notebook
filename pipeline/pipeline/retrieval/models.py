@@ -129,6 +129,60 @@ def _slotted_stream(stream):
     return slotted
 
 
+def _chat_wait() -> limits.CallSlotPolicy | None:
+    """The chat's slot policy when this call may wait (a chat turn's calls;
+    generate and editor bind a zero wait, ingest none)."""
+    policy = limits.call_slot_policy()
+    if policy is None or policy.wait_s <= 0 or not _interactive():
+        return None
+    return policy
+
+
+def _gate_key(spec: ModelConfig) -> str:
+    return f"{spec.provider_slug}:{spec.model_slug}"
+
+
+async def _open_in_line(
+    open_call: Any, chat: limits.CallSlotPolicy, key: str, deadline: float
+) -> None:
+    """Open a chat call past its model's capacity in arrival order (Epo
+    2026-10-29): straight through when nobody waits and the gate has room,
+    else behind the calls already waiting, the head trying the gate until
+    ``deadline``. The waiting status shows while it waits."""
+    queue = limits.model_queue(key)
+    if not queue.waiting:
+        try:
+            await open_call(deadline=None)
+            return
+        except accounting.GateFull:
+            pass
+
+    async def pause(seconds: float) -> None:
+        await queue.pause(seconds)
+        if chat.left is not None and chat.left.is_set():
+            raise CallNotStarted("the client left while the call waited")
+
+    if chat.on_wait is not None:
+        chat.on_wait()
+    queue.waiting += 1
+    try:
+        if not await queue.head(deadline - time.monotonic(), chat.left):
+            if chat.left is not None and chat.left.is_set():
+                raise CallNotStarted("the client left while the call waited")
+            raise accounting.GateFull(
+                f"{key} is at its concurrency cap",
+                retry_after=accounting.BUSY_RETRY_AFTER_S,
+            )
+        try:
+            await open_call(deadline=deadline, pause=pause)
+        finally:
+            queue.leave()
+    finally:
+        queue.waiting -= 1
+    if chat.on_granted is not None:
+        chat.on_granted()
+
+
 @asynccontextmanager
 async def _tracked_call(
     *,
@@ -149,16 +203,22 @@ async def _tracked_call(
     usage it sent is billed, and with none it is abandoned unbilled.
     """
     call_id = accounting.new_call_id()
-    await accounting.open_call(
+    open_call = functools.partial(
+        accounting.open_call,
         call_id,
         kind=kind,
         purpose=purpose,
         thinking=thinking,
         context=context,
         spec=spec,
-        deadline=deadline,
         capacity=capacity,
     )
+    # A chat call on its model's own gate waits in that model's line.
+    chat = _chat_wait() if spec is not None and capacity is None else None
+    if chat is None or spec is None or deadline is None:
+        await open_call(deadline=deadline)
+    else:
+        await _open_in_line(open_call, chat, _gate_key(spec), deadline)
     try:
         yield call_id
     except accounting.SettlementError:
@@ -190,6 +250,10 @@ async def _tracked_call(
         # The attempt is over whichever way it ended; free its slot so the
         # next waiter is not held behind an abandoned or settled call.
         await accounting.release_call(call_id)
+        if spec is not None and capacity is None:
+            queue = limits.MODEL_QUEUES.get(_gate_key(spec))
+            if queue is not None:
+                queue.freed()
 
 
 @dataclass(frozen=True)
@@ -216,7 +280,14 @@ def _interactive() -> bool:
 
 
 def retry_policy() -> RetryPolicy:
-    return INTERACTIVE_RETRY if _interactive() else INGEST_RETRY
+    """A chat call keeps its two attempts but may wait its turn's whole wait:
+    in its model's line, and once behind a busy provider (Epo 2026-10-29)."""
+    if not _interactive():
+        return INGEST_RETRY
+    chat = _chat_wait()
+    if chat is None:
+        return INTERACTIVE_RETRY
+    return RetryPolicy(attempts=INTERACTIVE_RETRY.attempts, budget_s=chat.wait_s)
 
 
 def busy_error(exc: BaseException) -> BaseException | None:
@@ -285,7 +356,14 @@ async def _retry_or_raise(
             retry_after=wait,
             provider_retry_after=_provider_retry_after(busy),
         ) from exc
+    # A chat shows the waiting status, not the busy answer, until it is back
+    # in its model's line (Epo 2026-10-29).
+    chat = _chat_wait() if busy is not None else None
+    if chat is not None and chat.on_wait is not None:
+        chat.on_wait()
     await asyncio.sleep(wait)
+    if chat is not None and chat.on_granted is not None:
+        chat.on_granted()
 
 
 # Another attempt would get the same answer, so these end a ``transient`` call
