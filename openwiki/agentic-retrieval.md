@@ -2824,7 +2824,12 @@ current pending changes applied. Embedded source instructions remain untrusted.
    treats its first `Answer([...])` as root (`openui.with_root`, Epo
    2026-10-25): GLM writes the call bare, alone or glued to prose, and the
    pipeline puts `root = ` on its own line before it, so the browser's preface
-   split renders it. The browser's official parser keeps
+   split renders it. An `AskUser` statement that root never reaches is still
+   asked (`openui.asks_line`, Epo 2026-10-29): once the program validates, the
+   renderer appends a second `root = Answer([...])` listing root's children and
+   then those questions, with no cap; both parsers take the later root, so the
+   question card, history and summaries all carry them. After a prose
+   preface the repaired program replaces the fenced one. The browser's official parser keeps
    recoverable partial programs. Missing references, dropped content, invalid
    chart data show an inline interruption notice; excess empty placeholders do
    not, while excess content does. Unusable programs show the chat error, never
@@ -5462,9 +5467,11 @@ for life so the provider prompt cache holds.
   (`store.ChatChapterID`, `tools.chapter_id`) so a recovered receipt names it.
   Account chat's copy takes a required `workspace_id` of a workspace the user
   edits; workspace chat's adds the chapter to the turn's chapters at once.
-  The editing skill shows, with scope and level, the outline of what it will
-  create: each new file and its chapter (account chat's: its workspace, or No
-  workspace, first). `list_sources` names empty chapters too, so a build
+  The editing skill shows, with scope and level, a brief outline of what it
+  will create: each new file and its chapter, new chapters made with
+  `create_chapter` once the learner proceeds; account chat's also offers where
+  new files go (a workspace they edit, a new one or No workspace). The plan
+  stays short (Epo 2026-10-29). `list_sources` names empty chapters too, so a build
   reuses them, and the playground creates chapters locally (Epo 2026-10-29).
 - **Refusals in account words.** An unreadable item:
   "No file you can read has the id …: it may have been deleted, moved to trash

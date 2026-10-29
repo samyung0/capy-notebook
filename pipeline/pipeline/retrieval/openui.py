@@ -397,6 +397,42 @@ def with_root(text: str) -> str:
     return (head + "\n\n" if head else "") + "root = " + text[bare.start() :]
 
 
+def _source(value: Any) -> str:
+    """A parsed value written back as program text."""
+    if isinstance(value, Ref):
+        return value.name
+    if isinstance(value, Call):
+        return f"{value.name}({', '.join(_source(arg) for arg in value.args)})"
+    if isinstance(value, list):
+        return f"[{', '.join(_source(item) for item in value)}]"
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return json.dumps(value, ensure_ascii=False)
+
+
+def asks_line(program: Program) -> str:
+    """A root line that also lists the AskUser statements root never reaches,
+    or "" when there are none (Epo 2026-10-29): a model that defines its
+    questions but leaves them out of root still asks them. Both parsers take
+    the later root."""
+    root = program.statements.get(ROOT)
+    if not (isinstance(root, Call) and root.args and isinstance(root.args[0], list)):
+        return ""
+    reached = {id(call) for call in walk(program)}
+    asks = [
+        Ref(name)
+        for name, value in program.statements.items()
+        if isinstance(value, Call)
+        and value.name == "AskUser"
+        and id(value) not in reached
+    ]
+    if not asks:
+        return ""
+    return f"{ROOT} = {_source(Call(root.name, [root.args[0] + asks, *root.args[1:]]))}"
+
+
 def _inside_string(text: str) -> bool:
     """Does the text end inside a string literal? A prefix that does not
     tokenize is treated as inside one, so a fence there never closes it."""
@@ -431,6 +467,8 @@ class LangRenderer:
         self.answer_shaped: bool | None = None
         self.complete = False
         self.invalid = False
+        # Set by finish when it appended asks_line.
+        self.asks_added = False
         self.order: list[int] = []
         self.program: Program | None = None
         self._held = ""
@@ -524,6 +562,10 @@ class LangRenderer:
                 offset = fence.start() if fence else start.start()
                 recovered.push(self.raw[offset:])
                 recovered.finish()
+                if recovered.asks_added:
+                    # The repaired program replaces the fenced one; prose stays.
+                    preface = self.raw[:offset].rstrip()
+                    self.raw = (preface + "\n\n" if preface else "") + recovered.text
                 self.program = recovered.program
                 self.order = recovered.order
         if self.answer_shaped:
@@ -545,6 +587,13 @@ class LangRenderer:
                 problem = str(exc)
             self.invalid = problem is not None
             self.complete = not self.invalid
+            line = asks_line(self.program) if self.complete and self.program else ""
+            if line:
+                added = ("" if self.text.endswith("\n") else "\n") + line + "\n"
+                self.text += added
+                tail += added
+                self.asks_added = True
+                self.program = parse(self.text, strict=True)
             if self.program is not None:
                 for n in cited_in_statement_order(self.program, self.known()):
                     if n not in self.order:
