@@ -957,45 +957,13 @@ The command and gateway share `reconcile_runs`, so concurrent invocations are
 safe and do not create a second run for the same UTC schedule slot. Never run
 `down -v` on either project: it deletes the database volume.
 
-#### Removing Coolify from a host
+#### Coolify is gone
 
-UAT moved off Coolify in one cutover window, then a soak with Coolify stopped
-but installed (Epo 2026-10-23). Once nothing needs it, remove from the host:
-Coolify's containers and images (`coollabsio/*`, `traefik`, its
-`postgres:15-alpine`; keep the `redis` image Capy uses), the `coolify`
-network, the volumes `coolify-db`, `coolify-redis` and the old
-`<uuid>_capy_*` ones, unused anonymous volumes (`docker volume prune`, which
-leaves named volumes alone), the build cache (`docker builder prune -af`),
-`/data/coolify` (it holds Coolify's app key, its root SSH key and a copy of
-every env value), the `coolify` key in root's `authorized_keys`, the
-`/etc/cron.d/capy-prune-app-images` and
-`/usr/local/sbin/capy-prune-app-images.sh` files, the ufw "Docker networks to
-the host" rule (re-run the app-host playbook's `firewall` tag), the `uat-coolify`
-hostname with its DNS record and Access application, and in GitHub the
-`COOLIFY_*` values and the Coolify deploy key. Revoke `COOLIFY_API_TOKEN` here,
-when Coolify is removed, not at the cutover: the way back below needs it.
-
-To go back to Coolify during the soak (review L7):
-
-1. Stop the new stacks, keeping their volumes: in `/opt/capy/ops/current`
-   and then `/opt/capy/app/current`, as root,
-   `docker compose -p capy-ops -f compose.yml --env-file stack.env down` and
-   `docker compose -p capy -f compose.yml --env-file stack.env down`. Never
-   `-v`.
-2. Point the tunnel's app hostnames back at Coolify's proxy
-   (`http://localhost:80` with the HTTP Host header override each had before
-   the cutover).
-3. Undo the cutover's `docker update --restart=no` on Coolify's containers
-   (restore each to the policy recorded with
-   `docker inspect -f '{{.HostConfig.RestartPolicy.Name}}'` before the
-   cutover), start Coolify, then start both applications from Coolify. They
-   come back on the old `<uuid>_capy-pgdata` volume: writes made since the
-   cutover stay in `capy-pgdata` and are not in it. Coolify pulls the floating
-   `pgvector/pgvector:pg16` and `redis:7-alpine` tags again, so its Postgres
-   and Redis can be newer builds than the ones it ran before.
-4. Revert the switch on main (`git revert`), which brings back the
-   `COOLIFY_*` manifest keys; put their `deploy/.env.uat` lines back and
-   `pnpm env:push`, so `COOLIFY_API_TOKEN` must still be valid.
+Coolify was removed from UAT, production and the ingest host on 2026-10-29
+(Epo), ending the soak early, so there is no way back to it. UAT keeps the
+pre-cutover volumes `9kx3durs3sxyfotgy20scemv_capy-pgdata` and
+`9kx3durs3sxyfotgy20scemv_capy-collaboration-sources`, which no container
+uses, until Epo decides what happens to them.
 
 ### 1.2 A/AAAA instead of a tunnel
 
@@ -1705,10 +1673,9 @@ That last point is why the public interface needs its own rule. The playbook
 appends a `DOCKER-USER` block to ufw's `after.rules` (IPv4) and `after6.rules`
 (IPv6) that drops every new connection arriving on the public interface (the
 default route's, `eth0` on the UAT VM) for any container, whatever the port or
-protocol, including any port a compose file publishes later (and, while
-Coolify was installed, Traefik's 80 and 443 and Coolify's 8000, 6001 and
-6002). Replies to the containers' own outbound connections, the cloudflared
-tunnel among them, are not new and pass. ufw creates and refills the chain at
+protocol, including any port a compose file publishes later. Replies to the
+containers' own outbound connections, the cloudflared tunnel among them, are
+not new and pass. ufw creates and refills the chain at
 boot and on every reload, and Docker keeps the chain's rules when it restarts, so the rule
 survives both. The WireGuard address's services, traffic between containers
 and the tunnel's loopback hop are not on the public interface.
