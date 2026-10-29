@@ -7,12 +7,14 @@ import {
   streamChat,
 } from '@/api/chatStream';
 import { isApiError, qk } from '@/api/client';
+import { updateConversationBodyTitleMax } from '@/api/gen/validators';
 import { useStopChatTurn } from '@/api/hooks';
 import type {
   ActivityBlock,
   ChatMessage,
   ChatRole,
   ChatStatus,
+  Conversation,
   ResourceEffect,
   UndoRef,
   WireMessage,
@@ -83,6 +85,49 @@ export function invalidateForEffects(
       void qc.invalidateQueries({ queryKey: qk.workspaceStats(workspaceId) });
     }
   }
+}
+
+/** A new conversation's title, as the server sets it from the first message
+ * (titleFrom in server/internal/httpapi/chat_stream.go). */
+function titleFrom(text: string) {
+  const chars = [...text.replaceAll('\n', ' ').trim()];
+  if (chars.length <= updateConversationBodyTitleMax) return chars.join('');
+  return `${chars
+    .slice(0, updateConversationBodyTitleMax - 1)
+    .join('')
+    .trim()}…`;
+}
+
+/** Lists a started turn's conversation where the server now has it: first
+ * among the unpinned (pinned ones sort by pin time and keep their place), a
+ * new one (`title` given) added. One missing from the live list (archived)
+ * stays out. The list refetches when the turn settles. */
+function listTurn(
+  qc: QueryClient,
+  workspaceId: string | null,
+  id: string,
+  title: string | undefined
+) {
+  qc.setQueryData<Conversation[]>(qk.conversations(workspaceId), (list) => {
+    if (!list) return list;
+    const now = new Date().toISOString();
+    const found = list.find((c) => c.id === id);
+    // An account conversation's workspaceId is "".
+    const row: Conversation | undefined = found
+      ? { ...found, updatedAt: now }
+      : title === undefined
+        ? undefined
+        : {
+            createdAt: now,
+            id,
+            title,
+            updatedAt: now,
+            workspaceId: workspaceId ?? '',
+          };
+    if (!row) return list;
+    if (row.pinnedAt) return list.map((c) => (c.id === id ? row : c));
+    return [row, ...list.filter((c) => c.id !== id)];
+  });
 }
 
 /** A turn in this panel. `key` stays the placeholder's id after the server
@@ -308,6 +353,7 @@ export function useChatStream(workspaceId: string | null) {
       const placeholderId = tempId();
       let currentId = placeholderId;
       let conversationId = thread?.conversationId ?? null;
+      const newTitle = conversationId ? undefined : titleFrom(trimmed);
       let terminal = false;
       let citationVersion = -1;
       let citations = 0;
@@ -460,6 +506,9 @@ export function useChatStream(workspaceId: string | null) {
               currentId = messageId;
               conversationId = cid;
               stopper.named({ conversationId: cid, messageId });
+              // The server saved the message before this first event, so the
+              // list moves now rather than at the turn's end.
+              listTurn(qc, workspaceId, cid, newTitle);
               update(key, (t) => ({
                 ...t,
                 conversationId: cid,
