@@ -370,8 +370,8 @@ async def test_qwen_embedding_uses_exact_deepinfra_route(
 ):
     seen: dict[str, object] = {}
 
-    async def post_json(url, headers, body):
-        seen.update(url=url, headers=headers, body=body)
+    async def post_json(url, headers, body, *, timeout=None):
+        seen.update(url=url, headers=headers, body=body, timeout=timeout)
         return {"data": [{"embedding": [0.0, 1.0]}], "usage": {}}
 
     monkeypatch.setenv("DEEPINFRA_API_KEY", "sk-deepinfra")
@@ -386,6 +386,10 @@ async def test_qwen_embedding_uses_exact_deepinfra_route(
 
     await embed_batch(spec, ["one", "two"], dimensions=2560)
 
+    # An interactive embedding waits 30 s, not the 15 s other interactive
+    # calls get (Epo 2026-10-30).
+    assert seen["timeout"] == 30.0
+    assert cfg.interactive_provider_timeout_s == 15.0
     assert seen["url"] == DEEPINFRA_EMBED_URL
     assert seen["body"] == {
         "model": "Qwen/Qwen3-Embedding-4B",

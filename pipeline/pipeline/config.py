@@ -117,12 +117,16 @@ class Config:
     parse_spool_ttl_hours: int = int(_env("CAPY_PARSE_SPOOL_TTL_HOURS", "2"))
     # Interactive calls should fail while the browser request is still useful.
     # For a stream this bounds the wait for its first event (a provider that
-    # queues or never starts); a non-streaming interactive call (embeddings)
-    # gets it as a whole-call bound. Background ingest has its own larger bound
-    # and remains retryable.
+    # queues or never starts); any other non-streaming interactive call (a
+    # rerank) gets it as a whole-call bound. Background ingest has its own
+    # larger bound and remains retryable.
     interactive_provider_timeout_s: float = float(
         _env("CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S", "15")
     )
+    # Whole-call bound for an interactive embedding (a search's query): on UAT
+    # DeepInfra's Qwen3-Embedding-4B took 12.5 s and timed out at 15 s (Epo
+    # 2026-10-30).
+    interactive_embedding_timeout_s: float = 30.0
     # Silence allowed once an interactive stream has started, restarting on
     # every event. Longer than the first-event bound because some providers
     # (GLM-5.3-Flash, measured on Relace and on DigitalOcean) send a tool
@@ -358,11 +362,13 @@ for key, value in (
         raise ValueError(f"{key} must be positive")
 
 if cfg.interactive_stream_max_s <= max(
-    cfg.interactive_provider_timeout_s, cfg.interactive_stream_idle_s
+    cfg.interactive_provider_timeout_s,
+    cfg.interactive_embedding_timeout_s,
+    cfg.interactive_stream_idle_s,
 ):
     raise ValueError(
-        "CAPY_INTERACTIVE_STREAM_MAX_S must exceed CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S "
-        "and CAPY_INTERACTIVE_STREAM_IDLE_S"
+        "CAPY_INTERACTIVE_STREAM_MAX_S must exceed CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S, "
+        "the 30 s interactive embedding bound and CAPY_INTERACTIVE_STREAM_IDLE_S"
     )
 
 if cfg.parse_spool_ttl_hours <= 0:

@@ -1082,9 +1082,11 @@ are complete and a large write streams nothing for 40 seconds or more. The
 timeout's message names the bound that fired: no first event, silence after
 the start, or the backstop. Comment-only keep-alives do not count as events,
 so a request parked in a provider queue times out like a silent one. The
-stream backstop bounds the whole stream. Non-streaming interactive calls such
-as query embeddings get the 15 seconds as a whole-call bound, a search rerank
-included; the search itself waits at most 5 seconds for the scores (admission
+stream backstop bounds the whole stream. A query embedding gets 30 seconds as
+a whole-call bound (`cfg.interactive_embedding_timeout_s`, code-only; Epo
+2026-10-30, after DeepInfra's Qwen3-Embedding-4B took 12.5 s and timed out at
+15 s on UAT); other non-streaming interactive calls, a search rerank
+included, get the 15 seconds as a whole-call bound; the search itself waits at most 5 seconds for the scores (admission
 and busy retry included) while the request runs on to its receipt. Ingest calls keep
 their 120-second bound. Only the awaits on the provider are timed, so a slow
 consumer between chunks never counts as provider silence. The transport keeps
@@ -2155,7 +2157,7 @@ the likelihood grew every time the registry was reconfigured.
 | `COLLABORATION_ALLOWED_ORIGINS` | gateway, collaboration | the gateway accepts a Clerk session token only when its `azp` is one of these; with Clerk on outside development and e2e it refuses to boot when the list is empty |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
-| `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | wait for an interactive stream's first event, whole-call bound for non-streaming interactive calls; default 15 |
+| `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | wait for an interactive stream's first event, whole-call bound for non-streaming interactive calls other than query embeddings (30 s, code-only); default 15 |
 | `CAPY_INTERACTIVE_STREAM_IDLE_S` | retrieval | silence allowed once an interactive stream has started; default 120 |
 | `CAPY_INTERACTIVE_STREAM_MAX_S` | retrieval | whole-stream backstop; the interactive receipt window is this plus five minutes; default 600 |
 | `GATEWAY_URL` / `PIPELINE_SECRET` | import worker | the gateway's private URL and shared secret for `/api/internal/import/*`; the gateway's empty `PIPELINE_SECRET` disables Drive imports |

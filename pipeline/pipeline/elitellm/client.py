@@ -982,6 +982,8 @@ async def embed_batch(
             "dimensions": dimensions,
             "encoding_format": "float",
         },
+        # An interactive embedding has its own bound (Epo 2026-10-30).
+        timeout=cfg.interactive_embedding_timeout_s if _interactive() else None,
     )
     return _as_obj(raw)
 
