@@ -1192,12 +1192,15 @@ Provider SDK automatic retries are disabled, so one call id represents one
 outbound provider attempt; retrying only the settlement callback keeps the
 original id. Every provider call runs under a retry policy in `models.py`: a
 busy answer (429, 503, 529) waits for the provider's `Retry-After`, else a
-jittered backoff, and every attempt is a new call id. A chat turn's calls get
-two attempts inside the turn's 60 s wait (`CHAT_SLOT_WAIT_S`): a first busy
-answer shows the waiting status, not the error, and puts the call back in its
-model's line once the `Retry-After` has passed; a second shows the error (Epo
-2026-10-29). Other interactive calls (generate, the editor AI routes and ghost
-text) get two attempts inside three seconds and then fail closed as
+jittered backoff, and every attempt is a new call id. A chat turn's model
+(LLM) calls get two attempts inside the turn's 60 s wait (`CHAT_SLOT_WAIT_S`):
+a first busy answer shows the waiting status, not the error, and gets a 60 s
+window of its own (its `Retry-After`, then its model's line), so it always goes
+back in line; a Stop ends that wait at once; a second busy answer shows the
+error (Epo 2026-10-29 and its review). One chat call can so wait about 180 s
+at worst: a call slot, the line, then the retry's line. Other interactive
+calls (generate, the editor AI routes, ghost text, and embeddings and reranks
+inside a chat's tools) get two attempts inside three seconds and then fail closed as
 `provider_busy` (HTTP 503
 carrying `retryAfterSeconds`, with a `Retry-After` header on the ghost-text
 route; generate answers through Huma, which sets no header, so
@@ -1846,9 +1849,11 @@ waits in its model's line in the retrieval process (`limits.ModelQueue`, Epo
 2026-10-29): it goes straight through when nobody waits and the gate has room;
 otherwise it waits behind the calls already waiting, with the waiting status,
 and only the head of the line tries the gate, polling, woken at once when a
-call on that model ends in this process (`models._open_in_line`). Past the
-turn's 60 s it fails as `provider_busy`; a Stop or a dropped hop leaves the
-line and starts nothing. Leases use the call id and receipt deadline and are
+call on that model ends in this process (`models._open_in_line`). A call in
+line gives back its process call slot, and the head takes one again before it
+tries the gate, so a full model never fills the 64 slots other models and
+routes need. Past the turn's 60 s it fails as `provider_busy`; a Stop or a
+dropped hop leaves the line and starts nothing. Leases use the call id and receipt deadline and are
 released when the call ends. The VLM read of text-less document pages has a
 gate of its own: its leases use the fixed key `vlm_page` with a limit of
 `CAPY_VLM_PAGE_CAPACITY` across every worker (40 in production since 2026-10-29, 20 in UAT and

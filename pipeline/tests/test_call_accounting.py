@@ -657,6 +657,49 @@ async def test_open_call_polls_the_full_gate_until_its_deadline(monkeypatch):
         accounting.reset(token)
 
 
+async def test_a_queued_chat_head_waits_through_its_pause_hook(monkeypatch):
+    """A chat queue's head waits between gate tries through ``pause``, which a
+    call ending wakes early (Epo 2026-10-29); with no deadline a full gate
+    answers GateFull at once."""
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
+    answers = [False, True]
+
+    async def to_thread(_function, *_args):
+        return answers.pop(0)
+
+    paused = []
+
+    async def pause(seconds):
+        paused.append(seconds)
+
+    monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
+    token = accounting.bind("cr_1")
+    try:
+        await accounting.open_call(
+            "pc_1",
+            kind=accounting.KIND_LLM,
+            purpose=accounting.PURPOSE_AGENT,
+            spec=_gated_spec(),
+            deadline=accounting.time.monotonic() + 60,
+            pause=pause,
+        )
+        assert len(paused) == 1
+        answers.append(False)
+        with pytest.raises(accounting.GateFull):
+            await accounting.open_call(
+                "pc_2",
+                kind=accounting.KIND_LLM,
+                purpose=accounting.PURPOSE_AGENT,
+                spec=_gated_spec(),
+                deadline=None,
+            )
+        assert len(paused) == 1
+    finally:
+        accounting.reset(token)
+
+
 def test_admission_holds_the_model_wide_lock_for_one_statement():
     """(security regression: rate-limit audit M13, Q298) Admission sweeps
     expired leases before it takes the model-wide lock, then holds the lock
