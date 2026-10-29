@@ -117,7 +117,9 @@ other render failure.
 | Store-only, audio | none |
 
 - The image is WebP, quality 60, 200 px wide (narrower images are not
-  enlarged), cut at 400 px tall from the top: cards crop pages from the top.
+  enlarged), cut at 400 px tall from the top: cards crop pages from the top
+  and draw a slide whole (`object-contain`; a 16:9 slide is wider than the
+  16:10 and 16:11 panels, so a centred crop cut its sides).
 - The update is fenced to the bytes rendered: `UPDATE files SET thumbnail_key
   ... WHERE source_sha256 = <rendered bytes> AND trashed_at IS NULL`. A file
   replaced, trashed or deleted meanwhile takes nothing, and the new key is

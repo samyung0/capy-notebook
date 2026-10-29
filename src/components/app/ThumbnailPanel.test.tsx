@@ -18,6 +18,10 @@ describe('ThumbnailPanel', () => {
     const photo = render({ fileKind: 'image', thumbnailUrl: '/t/b.webp' });
     expect(photo).not.toContain('brightness');
     expect(photo).toContain('object-center');
+    // A 16:9 slide is wider than the card: shown whole, never cropped.
+    const slide = render({ fileKind: 'slides', thumbnailUrl: '/t/c.webp' });
+    expect(slide).toContain('object-contain');
+    expect(slide).not.toContain('object-cover');
   });
 
   it('draws every note block, and an empty note as the icon', () => {

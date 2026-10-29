@@ -60,10 +60,14 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
       <img
         alt=""
         className={cn(
-          'size-full object-cover',
-          fileKind === 'slides' || fileKind === 'image'
-            ? 'object-center'
-            : 'object-top',
+          'size-full',
+          // A slide is wider than the card, so it fits whole; pages crop
+          // from the top and photos from the centre.
+          fileKind === 'slides'
+            ? 'object-contain'
+            : fileKind === 'image'
+              ? 'object-cover object-center'
+              : 'object-cover object-top',
           fileKind && PAGE_KINDS.includes(fileKind) && 'dark:brightness-[.86]'
         )}
         decoding="async"

@@ -137,6 +137,36 @@ describe('mergeRecentItems', () => {
       ['m_solo', true],
     ]);
   });
+
+  it('offers Move to… to the file payer or its workspace owner', () => {
+    const owned = { ...workspace, id: 'ws_own', isOwner: true } as Workspace;
+    const shared = { ...workspace, id: 'ws_2', isOwner: false } as Workspace;
+    const items = mergeRecentItems(
+      [
+        file('f_solo', '2026-04-01T00:00:00.000Z', ''),
+        {
+          ...file('f_owned', '2026-03-01T00:00:00.000Z', 'ws_own'),
+          isPayer: false,
+        },
+        file('f_paid', '2026-02-01T00:00:00.000Z', 'ws_2'),
+        {
+          ...file('f_other', '2026-01-01T00:00:00.000Z', 'ws_2'),
+          isPayer: false,
+        },
+      ],
+      [],
+      [owned, shared],
+      10
+    );
+    expect(
+      items.map((item) => [item.id, item.kind === 'file' && item.canMoveTo])
+    ).toEqual([
+      ['f_solo', true],
+      ['f_owned', true],
+      ['f_paid', true],
+      ['f_other', false],
+    ]);
+  });
 });
 
 describe('fromRecent', () => {

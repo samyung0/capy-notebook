@@ -265,8 +265,8 @@ function useHeader(
   /** Members and editors copy a workspace's items; any reader a standalone
    * one. An embedded row or an unprocessed file is never offered. */
   canClone: boolean;
-  /** Move to… on a workspace pane's file (fileCanMoveTo); the standalone
-   * page has no Move. */
+  /** Move to… (fileCanMoveTo); the standalone page reads no workspace, so
+   * there only the file's payer moves it. */
   canMoveTo?: boolean;
   material?: Material | MaterialRef;
   materialCapabilities?: AccessCapabilities;
@@ -312,8 +312,7 @@ function useHeader(
         !!fileData &&
         fileCanClone(fileData) &&
         (!fileData.workspaceId || !!workspace?.canClone),
-      canMoveTo:
-        !standalone && !!fileData && fileCanMoveTo(fileData, workspace),
+      canMoveTo: !!fileData && fileCanMoveTo(fileData, workspace),
       file: fileData,
       icon: fileData ? fileIconName(fileData) : '_file',
       showImageZoom: !!fileData && isImageFile(fileData),

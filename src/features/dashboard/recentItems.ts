@@ -6,12 +6,14 @@ import type {
   SourceFile,
   Workspace,
 } from '@/api/types';
-import { fileCanClone } from '@/features/files/fileUtils';
+import { fileCanClone, fileCanMoveTo } from '@/features/files/fileUtils';
 
 export type RecentItem =
   | {
       canClone: boolean;
       canEdit: boolean;
+      /** Move to… (fileCanMoveTo). */
+      canMoveTo: boolean;
       createdAt: string;
       file: SourceFile;
       fileKind: FileKind;
@@ -35,7 +37,7 @@ export type RecentItem =
 /** A Recent row: the item and when the caller last opened it. */
 export type OpenedRecentItem = RecentItem & { openedAt: string };
 
-/** The rows as recent items; workspaces supply edit and clone rights. */
+/** The rows as recent items; workspaces supply edit, clone and move rights. */
 function toRecentItems(
   files: SourceFile[],
   materials: MaterialListItem[],
@@ -51,6 +53,7 @@ function toRecentItems(
     ...files.map((file) => ({
       canClone: fileCanClone(file) && canClone(file.workspaceId),
       canEdit: canEdit(file.workspaceId),
+      canMoveTo: fileCanMoveTo(file, workspaceById.get(file.workspaceId)),
       createdAt: file.addedAt,
       file,
       fileKind: file.kind,

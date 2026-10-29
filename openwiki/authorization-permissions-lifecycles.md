@@ -621,8 +621,10 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
   refetches its file, so it follows on its next open. Both workspaces'
   trees hear of it (0125 `notify_workspace_tree`).
 - Entry points: Move to… in the Files page and workspace file menus (it
-  replaces the chapter-only move for files) and the workspace Add file
-  dialog's Your files tab (`GET /api/files?q=`). Clone to… opens the same
+  replaces the chapter-only move for files), the dashboard's Recent menus,
+  the header of a file opened at `/files/{id}` (its payer only: that page
+  reads no workspace) and the workspace Add file dialog's Your files tab
+  (`GET /api/files?q=`). Clone to… opens the same
   dialog with its name field and No workspace.
 
 Download (Epo 2026-10-27/28, `src/features/files/downloadItem.ts`). Every

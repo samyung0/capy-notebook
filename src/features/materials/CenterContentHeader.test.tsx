@@ -47,7 +47,7 @@ vi.mock('@/features/workspace/WorkspaceHealth', () => ({
   WorkspaceStatusButton: () => null,
 }));
 
-function render(menuShown: boolean) {
+function render(menuShown: boolean, standalone = false) {
   const editorStatus = createEditorStatusStore();
   editorStatus.getState().report({ saveState: 'saved' });
   return renderToStaticMarkup(
@@ -75,6 +75,7 @@ function render(menuShown: boolean) {
         onToggleFullscreen={() => undefined}
         presence={createPresenceStore()}
         readOnly={false}
+        standalone={standalone}
         workspaceId="ws_1"
       />
     </QueryClientProvider>
@@ -124,4 +125,9 @@ it('offers the payer Move to… and opens the moved file in its new workspace', 
   header.actions.length = 0;
   render(true);
   expect(header.actions[0]?.canMoveTo).toBe(false);
+  // The file's own page offers it to its payer too.
+  header.isPayer = true;
+  header.actions.length = 0;
+  render(true, true);
+  expect(header.actions[0]?.canMoveTo).toBe(true);
 });
