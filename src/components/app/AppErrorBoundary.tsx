@@ -28,9 +28,9 @@ import { Panel } from './layout';
  * main landmark. */
 export const InShellMain = createContext(false);
 
-/** A fallback's frame: the page's main landmark, or a plain box in the shell. */
-/** The fallback's page panel. Inside the shell its main already pads the
- * panel, so it sits level with the sidebar; alone it pads itself. */
+/** The fallback's page panel, frosted as the centre panel like any page's.
+ * Inside the shell its main already pads the panel, so it sits level with the
+ * sidebar; alone it pads itself. */
 function FallbackFrame({
   children,
   className,
@@ -46,6 +46,7 @@ function FallbackFrame({
     >
       <Panel
         className="h-full w-full"
+        frost="center"
         sectionClassName="h-full w-full min-h-full flex flex-row"
       >
         {children}
