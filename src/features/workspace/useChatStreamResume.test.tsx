@@ -46,7 +46,7 @@ vi.mock('@/api/chatStream', async (original) => ({
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { api } = await import('@/api/client');
-const { useChatStream } = await import('./useChatStream');
+const { seedsAgain, useChatStream } = await import('./useChatStream');
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -119,7 +119,7 @@ it('follows a running turn again and stops it', async () => {
   const post = vi.spyOn(api, 'post').mockResolvedValue(undefined);
   connections.push(replaying('Mitochondria turn food'));
   const view = await mount();
-  await act(async () => view.chat().hydrate('c_1', history));
+  await act(async () => view.chat().hydrate('c_1', history, true));
 
   expect(resumeChat).toHaveBeenCalledWith(
     'c_1',
@@ -159,7 +159,7 @@ it('reconnects after a drop and rebuilds the answer from the replay', async () =
     }
   );
   const view = await mount();
-  await act(async () => view.chat().hydrate('c_1', history));
+  await act(async () => view.chat().hydrate('c_1', history, true));
   await act(() =>
     vi.waitFor(() => expect(view.answer()?.status).toBe('complete'))
   );
@@ -177,7 +177,7 @@ it('shows the saved row of a turn that ended before it was followed', async () =
   ]);
   connections.push(async (handlers) => handlers.onGone?.());
   const view = await mount();
-  await act(async () => view.chat().hydrate('c_1', history));
+  await act(async () => view.chat().hydrate('c_1', history, true));
   await act(() =>
     vi.waitFor(() => expect(view.answer()?.status).toBe('complete'))
   );
@@ -208,11 +208,36 @@ it('stops following a resumed turn when another conversation shows', async () =>
     return replaying('Mitochondria')(handlers, s);
   });
   const view = await mount();
-  await act(async () => view.chat().hydrate('c_1', history));
+  await act(async () => view.chat().hydrate('c_1', history, true));
   await act(async () => view.chat().startNew());
 
   expect(signal?.aborted).toBe(true);
   expect(post).not.toHaveBeenCalled();
   expect(view.chat().messages).toEqual([]);
   await view.unmount();
+});
+
+// Epo 2026-10-29: stored history paints at once but only this open's fetch
+// decides whether a running turn is followed.
+it('paints stored history without following, then follows the fetched one', async () => {
+  connections.push(replaying('Mitochondria'));
+  const view = await mount();
+  await act(async () => view.chat().hydrate('c_1', history, false));
+
+  expect(resumeChat).not.toHaveBeenCalled();
+  expect(view.chat().streaming).toBe(false);
+  expect(view.answer()?.id).toBe('m_1');
+
+  await act(async () => view.chat().hydrate('c_1', history, true));
+  expect(resumeChat).toHaveBeenCalledTimes(1);
+  expect(view.chat().streaming).toBe(true);
+  await view.unmount();
+});
+
+it('seeds a conversation from stored history once, then once from the fetch', () => {
+  expect(seedsAgain(null, 'c_1', false)).toBe(true);
+  expect(seedsAgain({ current: false, id: 'c_1' }, 'c_1', false)).toBe(false);
+  expect(seedsAgain({ current: false, id: 'c_1' }, 'c_1', true)).toBe(true);
+  expect(seedsAgain({ current: true, id: 'c_1' }, 'c_1', true)).toBe(false);
+  expect(seedsAgain({ current: true, id: 'c_1' }, 'c_2', false)).toBe(true);
 });

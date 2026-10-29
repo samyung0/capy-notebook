@@ -1966,11 +1966,15 @@ export const useConversations = (
   options?: QueryUiOptions
 ) => useQuery({ ...conversationsQuery(wsId), meta: queryMeta(options) });
 
+/** Stored, so a reopened chat paints at once; every open refetches, since
+ * another tab or device may have added turns (Epo 2026-10-29). */
 export const messagesQuery = (convId: string | null) =>
   queryOptions({
+    ...persisted,
     enabled: !!convId,
     queryFn: () => api.get<WireMessage[]>(`/conversations/${convId}/messages`),
     queryKey: qk.messages(convId ?? ''),
+    staleTime: 0,
   });
 export const useMessages = (convId: string | null, options?: QueryUiOptions) =>
   useQuery({ ...messagesQuery(convId), meta: queryMeta(options) });

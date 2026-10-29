@@ -48,6 +48,22 @@ export function toChatMessage(row: WireMessage): ChatMessage {
   };
 }
 
+/** The conversation a chat panel seeded last, and whether from history this
+ * open fetched (`current`) or from the stored cache. */
+export interface Seeded {
+  current: boolean;
+  id: string;
+}
+
+/** Whether conversation `id` seeds (again): the stored history paints once,
+ * then the history this open fetched seeds it once more; later refetches
+ * (after a turn) leave the thread alone (Epo 2026-10-29). */
+export const seedsAgain = (
+  seeded: Seeded | null,
+  id: string,
+  current: boolean
+) => seeded?.id !== id || (current && !seeded.current);
+
 /** Refresh only the caches a committed effect touched. Runs for live tool
  * results, never for hydrated history, so reopening a conversation does not
  * refetch or replace a mounted editor. */
@@ -592,10 +608,7 @@ export function useChatStream(workspaceId: string | null) {
           if (ac.signal.aborted) break;
           if (conn.gone && ids) {
             // The turn ended since its row was read: show the row as saved.
-            const rows = await qc.fetchQuery({
-              ...messagesQuery(ids.conversationId),
-              staleTime: 0,
-            });
+            const rows = await qc.fetchQuery(messagesQuery(ids.conversationId));
             const row = rows.find(({ id }) => id === currentId);
             terminal = true;
             if (row)
@@ -647,8 +660,10 @@ export function useChatStream(workspaceId: string | null) {
     [qc, patch, setMessagesIn, stopTurn, update, workspaceId]
   );
 
+  /** Shows a saved conversation. `current` history was fetched on this open;
+   * older history (the stored cache) only paints and never follows a turn. */
   const hydrate = useCallback(
-    (convId: string | null, history: ChatMessage[]) => {
+    (convId: string | null, history: ChatMessage[], current: boolean) => {
       // A conversation still streaming here is fresher than its history.
       const live = Object.entries(threadsRef.current).find(
         ([, t]) => t.streaming && convId && t.conversationId === convId
@@ -660,7 +675,10 @@ export function useChatStream(workspaceId: string | null) {
       const key = tempId();
       const last = history.at(-1);
       const running =
-        convId && last?.role === 'assistant' && last.status === 'streaming'
+        current &&
+        convId &&
+        last?.role === 'assistant' &&
+        last.status === 'streaming'
           ? { conversationId: convId, messageId: last.id }
           : null;
       show(key, {

@@ -233,8 +233,15 @@ not offline use: without a service worker the app itself does not load offline.
   it), calendar events, labels, tasks, tags, notification preferences,
   integrations, models, Explore, and the question bank's syllabus and progress.
   Infinite lists keep their first page.
-- Never stored: file, note, quiz and card bodies and chat messages
-  (always fetched live), collaboration tokens, presigned links, review sessions,
+- Chat messages (account and workspace chat) are stored for the 10
+  conversations fetched most recently. Their `staleTime` is 0, so every open
+  refetches. The chat panel paints the stored history at once and seeds the
+  conversation again once this open's fetch lands; only that fetched history
+  decides whether a running answer is followed (T19), so a stale "running" row
+  never reconnects and a turn started elsewhere is not missed. A failed refetch
+  leaves the stored history painted and unfollowed.
+- Never stored: file, note, quiz and card bodies, collaboration tokens,
+  presigned links, review sessions,
   answer keys (quiz and bank edit views), ingest slots, workspace stats, upload
   policy, billing, usage, account deletion preflight, searches, members and
   discussions.

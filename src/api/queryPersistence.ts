@@ -2,7 +2,9 @@ import {
   type DehydratedState,
   dehydrate,
   hydrate,
+  type Query,
   type QueryClient,
+  type QueryKey,
 } from '@tanstack/react-query';
 import { del, get, set } from 'idb-keyval';
 
@@ -52,12 +54,29 @@ function firstPageOnly(data: unknown): unknown {
   return data;
 }
 
+/** Chat histories are kept for the conversations fetched most recently only:
+ * each write stores the whole cache, and long chats are large. */
+const KEPT_CHATS = 10;
+
+const isChatHistory = (key: QueryKey) =>
+  key[0] === 'conversation' && key[2] === 'messages';
+
 export function dehydratePersisted(client: QueryClient): DehydratedState {
+  const stored = (query: Query) =>
+    query.state.status === 'success' && isPersisted(query);
+  const dropped = new Set(
+    client
+      .getQueryCache()
+      .findAll({
+        predicate: (query) => stored(query) && isChatHistory(query.queryKey),
+      })
+      .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)
+      .slice(KEPT_CHATS)
+  );
   return dehydrate(client, {
     serializeData: firstPageOnly,
     shouldDehydrateMutation: () => false,
-    shouldDehydrateQuery: (query) =>
-      query.state.status === 'success' && isPersisted(query),
+    shouldDehydrateQuery: (query) => stored(query) && !dropped.has(query),
   });
 }
 

@@ -66,7 +66,12 @@ import { useVoiceInput, VoiceButton, VoiceElapsed } from './chat/VoiceInput';
 import { insertTranscript } from './chat/voiceRecording';
 import { sourceEntryId, webHref } from './chat/webCitation';
 import type { TabAction } from './PanelTabRow';
-import { toChatMessage, useChatStream } from './useChatStream';
+import {
+  type Seeded,
+  seedsAgain,
+  toChatMessage,
+  useChatStream,
+} from './useChatStream';
 import { useProcessFileChanges } from './useProcessFileChanges';
 
 /** Page label for a citation, or a transcript passage's start time; absent
@@ -425,14 +430,18 @@ export function ChatPanel({
   const [selectId, setSelectId] = useState(request ? request.id : restoredId);
   // Workspace only applies per message; it stays where the learner left it.
   const [workspaceOnly, setWorkspaceOnly] = useState(WORKSPACE_ONLY_DEFAULT);
-  const { data: history, error: historyError } = useMessages(selectId, {
+  const {
+    data: history,
+    error: historyError,
+    fetchStatus: historyFetchStatus,
+  } = useMessages(selectId, {
     errorBoundary: false,
   });
   // A thread the link names that is gone or not the caller's (review r1 F2).
   const missingThread = !!selectId && isMissing(historyError);
   const opening =
     selectId !== null && conversationId !== selectId && !historyError;
-  const hydratedRef = useRef<string | null>(null);
+  const hydratedRef = useRef<Seeded | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const dockFieldRef = useRef<HTMLTextAreaElement>(null);
@@ -485,13 +494,18 @@ export function ChatPanel({
     (!!dock && !pageOpen) || questions.length === 0
   );
 
-  // Seed local state when a previously-saved conversation is opened.
+  // Seed local state when a saved conversation opens: cached history paints at
+  // once, then this open's refetch seeds it again once and decides whether a
+  // running answer is followed. Later refetches (after a turn) leave it alone.
   useEffect(() => {
-    if (selectId && history && hydratedRef.current !== selectId) {
-      hydratedRef.current = selectId;
-      hydrate(selectId, history.map(toChatMessage));
-    }
-  }, [selectId, history, hydrate]);
+    if (!(selectId && history)) return;
+    // A fetch paused offline or failed leaves the cached history painted,
+    // never followed.
+    const current = historyFetchStatus === 'idle' && !historyError;
+    if (!seedsAgain(hydratedRef.current, selectId, current)) return;
+    hydratedRef.current = { current, id: selectId };
+    hydrate(selectId, history.map(toChatMessage), current);
+  }, [selectId, history, historyFetchStatus, historyError, hydrate]);
 
   // The shown conversation is kept while the panel is mounted: leaving the
   // page forgets it, a reload or a closed tab does not.
