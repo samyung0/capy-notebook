@@ -694,6 +694,7 @@ const mockCreditSettings: CreditSettings = {
   spentThisMonthCents: 1800,
   // On so the Usage tab shows the starter offer, though a card is saved.
   starterAvailable: true,
+  starterCardUsed: false,
 };
 
 type GradeOneBody = { questionId: string; answers: Answers };

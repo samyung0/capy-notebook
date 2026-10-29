@@ -4,6 +4,7 @@ import { m } from '@/i18n';
 import { UsageTab } from './UsageTab';
 
 const pending = vi.hoisted(() => ({ billing: true, usage: true }));
+const starter = vi.hoisted(() => ({ available: false, cardUsed: false }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => (
     <a href="/">{children}</a>
@@ -15,7 +16,11 @@ vi.mock('@/api/hooks', () => ({
     data: pending.billing
       ? undefined
       : {
-          creditSettings: { reload: { amountCents: 0, skipped: false } },
+          creditSettings: {
+            reload: { amountCents: 0, skipped: false },
+            starterAvailable: starter.available,
+            starterCardUsed: starter.cardUsed,
+          },
           creditsCarriedMicros: 0,
           creditsLimitMicros: 20_000_000,
           creditsPeriodStart: '2026-10-01T00:00:00Z',
@@ -30,6 +35,7 @@ vi.mock('@/api/hooks', () => ({
     isPending: pending.billing,
   }),
   useCancelReloadRetry: () => ({ isPending: false, mutate: vi.fn() }),
+  usePaymentMethodCheckout: () => ({ isPending: false, mutate: vi.fn() }),
   useUsage: () => ({
     data: pending.usage ? undefined : { bySurface: [] },
     isFetching: true,
@@ -64,4 +70,24 @@ it('reserves date lines during initial loading and keeps cached data during refr
   expect(loading.match(/<li[ >]/g)?.length).toBe(
     loaded.match(/<li[ >]/g)?.length
   );
+});
+
+it('offers the starter credits and says when the saved card was used before', () => {
+  pending.billing = false;
+  pending.usage = false;
+  starter.available = true;
+  starter.cardUsed = false;
+  const offer = renderToStaticMarkup(<UsageTab />);
+  expect(offer).toContain(m.billing_starter_offer());
+  expect(offer).not.toContain(m.billing_starter_card_used());
+
+  starter.cardUsed = true;
+  const used = renderToStaticMarkup(<UsageTab />);
+  expect(used).toContain(m.billing_starter_card_used());
+  expect(used).not.toContain(m.billing_starter_offer());
+
+  starter.available = false;
+  const granted = renderToStaticMarkup(<UsageTab />);
+  expect(granted).not.toContain(m.billing_starter_card_used());
+  expect(granted).not.toContain(m.billing_starter_offer());
 });

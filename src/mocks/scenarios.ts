@@ -333,6 +333,7 @@ export function getMockScenarioHandlers(
               reloadThresholdMicros: 0,
               spentThisMonthCents: 0,
               starterAvailable: true,
+              starterCardUsed: false,
             },
             creditsCarriedMicros: 0,
             creditsLimitMicros: PLAN_LIMITS.free.creditLimitMicros,

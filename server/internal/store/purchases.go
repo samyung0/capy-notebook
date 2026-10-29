@@ -59,8 +59,8 @@ type PaymentMethod struct {
 	ExpMonth int    `json:"expMonth,omitempty"`
 	ExpYear  int    `json:"expYear,omitempty"`
 	// CardKey identifies a card for the starter grant: Stripe's card
-	// fingerprint, empty for any other method (Link earns none). It is never
-	// stored with the method.
+	// fingerprint, empty for any other method (Link earns none). The saved
+	// method keeps it so Usage can tell a card that already earned the grant.
 	CardKey string `json:"-"`
 }
 
@@ -93,6 +93,9 @@ type CreditSettings struct {
 	// StarterAvailable: the account has not had its starter credits, which its
 	// first saved card adds.
 	StarterAvailable bool `json:"starterAvailable"`
+	// StarterCardUsed: the starter credits are available but the saved card
+	// already earned them on another account, so only a new card adds them.
+	StarterCardUsed bool `json:"starterCardUsed"`
 }
 
 func utcMonthStart() time.Time { return monthStart() }
@@ -119,11 +122,12 @@ func (s *Store) CreditSettings(ctx context.Context, userID string) (CreditSettin
 		SELECT auto_reload_enabled, reload_amount_cents, reload_threshold_micros,
 		       reload_pm_id, reload_pm_type, reload_pm_brand, reload_pm_last4,
 		       reload_pm_exp_month, reload_pm_exp_year, spending_limit_cents, reload_skipped_at,
-		       NOT EXISTS (SELECT 1 FROM starter_grants g WHERE g.user_id = $1)
+		       NOT EXISTS (SELECT 1 FROM starter_grants g WHERE g.user_id = $1),
+		       EXISTS (SELECT 1 FROM starter_grants g WHERE g.card_key = reload_pm_card_key)
 		FROM user_credits WHERE user_id = $1`, userID).Scan(
 		&out.AutoReload, &out.ReloadAmountCents, &out.ReloadThresholdMicros,
 		&pmID, &pmType, &pmBrand, &pmLast4, &pmExpMonth, &pmExpYear,
-		&out.SpendingLimitCents, &skippedAt, &out.StarterAvailable)
+		&out.SpendingLimitCents, &skippedAt, &out.StarterAvailable, &out.StarterCardUsed)
 	if isNoRows(err) {
 		// No counter row yet: the column defaults, and no grant (it writes one).
 		out.ReloadAmountCents = 1000
@@ -133,6 +137,8 @@ func (s *Store) CreditSettings(ctx context.Context, userID string) (CreditSettin
 	if err != nil {
 		return out, err
 	}
+	// The account's own grant holds its card's key too.
+	out.StarterCardUsed = out.StarterCardUsed && out.StarterAvailable
 	if pmID != nil {
 		pm := PaymentMethod{ID: *pmID, Type: deref(pmType), Brand: deref(pmBrand), Last4: deref(pmLast4)}
 		if pmExpMonth != nil && pmExpYear != nil {
@@ -243,9 +249,9 @@ func (s *Store) SavePaymentMethod(ctx context.Context, userID string, pm Payment
 	_, err = s.pool.Exec(ctx, `UPDATE user_credits
 		SET reload_pm_id = $2, reload_pm_type = $3, reload_pm_brand = NULLIF($4, ''),
 		    reload_pm_last4 = NULLIF($5, ''), reload_pm_exp_month = $6, reload_pm_exp_year = $7,
-		    reload_armed = true, updated_at = now()
+		    reload_pm_card_key = NULLIF($9, ''), reload_armed = true, updated_at = now()
 		WHERE user_id = $1 AND (NOT $8 OR reload_pm_id IS NULL)`,
-		userID, pm.ID, pm.Type, pm.Brand, pm.Last4, expMonth, expYear, onlyIfNone)
+		userID, pm.ID, pm.Type, pm.Brand, pm.Last4, expMonth, expYear, onlyIfNone, pm.CardKey)
 	return err
 }
 

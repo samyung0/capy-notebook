@@ -1791,6 +1791,8 @@ components:
           type: integer
         starterAvailable:
           type: boolean
+        starterCardUsed:
+          type: boolean
       required:
         - autoReload
         - reloadAmountCents
@@ -1799,6 +1801,7 @@ components:
         - spentThisMonthCents
         - reload
         - starterAvailable
+        - starterCardUsed
       type: object
     Customization:
       additionalProperties: false

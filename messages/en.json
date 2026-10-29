@@ -2154,6 +2154,7 @@
   "billing_change_limit": "Change limit",
   "billing_buy_credits": "Buy credits",
   "billing_purchased_owed": "You owe {amount} credits. They come off your next top-up.",
+  "billing_starter_card_used": "Link a new card to get 800 free credits. This card has been used before.",
   "billing_starter_offer": "Add a card to get 800 free credits, once. Adding it charges nothing.",
   "billing_auto_reload": "Auto-reload",
   "billing_auto_reload_line": "Reload {amount} when credits reach {threshold}",

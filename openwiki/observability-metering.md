@@ -927,7 +927,12 @@ nothing. The card key is Stripe's card fingerprint; no other card data is
 stored there. Only a card earns the grant: a Link method has no fingerprint
 and earns none, and nothing derived from its email is kept (Epo 2026-10-24). Rows are kept when an
 account is purged, so a recreated account cannot claim the same card again.
-`CreditSettings.starterAvailable` drives the offer on the Subscription tab.
+`CreditSettings.starterAvailable` drives the offer on the Usage tab. The saved
+auto-reload method keeps its card key (`user_credits.reload_pm_card_key`,
+migration 0131), and `starterCardUsed` turns the offer into "Link a new card…
+This card has been used before." when that card already earned another
+account's grant. On UAT, `scripts/uat/clear-starter-grants.sh` empties
+`starter_grants` so the shared test-card fingerprints earn the grant again.
 
 **Gate.** Available is `max(limit − used, 0) + purchased − reserved`. At zero
 or below new work is refused unless a started reload's 60-second window is open

@@ -202,7 +202,10 @@ export function UsageTab() {
             </div>
           )}
           {billing?.creditSettings.starterAvailable && (
-            <StarterOffer className="mt-6" />
+            <StarterOffer
+              cardUsed={billing.creditSettings.starterCardUsed}
+              className="mt-6"
+            />
           )}
           <p className="t-meta mt-6 mb-1 text-fg-muted">
             {m.billing_by_area()}

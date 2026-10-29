@@ -418,6 +418,25 @@ func TestStarterCreditsOncePerAccountAndCard(t *testing.T) {
 	if settings, err := s.CreditSettings(ctx, first); err != nil || settings.StarterAvailable {
 		t.Fatalf("granted account starter available=%t err=%v", settings.StarterAvailable, err)
 	}
+	// Usage tells a saved card that already earned the grant elsewhere.
+	cardUsed := func(userID, cardKey string) bool {
+		t.Helper()
+		pm := PaymentMethod{ID: "pm_" + cardKey, Type: "card", CardKey: cardKey}
+		if err := s.SavePaymentMethod(ctx, userID, pm, false); err != nil {
+			t.Fatal(err)
+		}
+		settings, err := s.CreditSettings(ctx, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return settings.StarterCardUsed
+	}
+	if !cardUsed(second, "card:fp_a") {
+		t.Fatal("another account's granted card is not reported as used")
+	}
+	if cardUsed(second, "card:fp_new") || cardUsed(second, "") || cardUsed(first, "card:fp_a") {
+		t.Fatal("a new card, a Link method or the account's own granted card is reported as used")
+	}
 
 	var wg sync.WaitGroup
 	var granted atomic.Int32

@@ -285,8 +285,14 @@ function BuyCredits({
 }
 
 /** The account's first saved card adds the starter credits (once). Shown on
- * the Usage tab. */
-export function StarterOffer({ className }: { className?: string }) {
+ * the Usage tab; `cardUsed` when the saved card already earned them elsewhere. */
+export function StarterOffer({
+  cardUsed,
+  className,
+}: {
+  cardUsed: boolean;
+  className?: string;
+}) {
   const { isPending, mutate: addCard } = usePaymentMethodCheckout();
   return (
     <div
@@ -297,7 +303,7 @@ export function StarterOffer({ className }: { className?: string }) {
     >
       <Icon className="size-4.5 shrink-0 text-fg-muted" name="info" />
       <span>
-        {m.billing_starter_offer()}{' '}
+        {cardUsed ? m.billing_starter_card_used() : m.billing_starter_offer()}{' '}
         <button
           className="font-semibold text-fg underline underline-offset-4 disabled:opacity-50"
           disabled={isPending}
