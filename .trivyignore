@@ -14,3 +14,8 @@ CVE-2026-57432 exp:2026-11-22
 CVE-2026-57433 exp:2026-11-22
 CVE-2026-8376 exp:2026-11-22
 CVE-2026-103111 exp:2026-11-22
+
+# Same image (Epo 2026-10-29, Q574): libssl3/openssl CVE-2026-84782 is a DTLS
+# handshake retransmission over-read; Postgres speaks TLS over TCP only and is
+# reachable only on the WireGuard link. Pin pgvector's next clean rebuild.
+CVE-2026-84782 exp:2026-11-28
