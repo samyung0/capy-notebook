@@ -28,9 +28,6 @@ import { waitsForConnection } from '@/lib/online';
 import { fileKindLabel } from './fileKindLabel';
 import { formatFileSize } from './fileUtils';
 
-const accessLabel = (access: EditorAssetAccess) =>
-  access === 'open' ? m.files_access_open() : m.files_access_lost();
-
 /** The Files page's Embeds tab: every image and audio clip the caller pays
  * for (M16), named by its block (note, quiz or set) and drawn as the image's
  * thumbnail, else the image or audio icon. One in a block the caller can open opens it. Any can be deleted for good (Q273), since nothing restores it, and
@@ -85,7 +82,7 @@ export function EmbedsTab({
                 access === value ? undefined : (value as EditorAssetAccess)
               ),
             options: EDITOR_ASSET_ACCESS.map((value) => ({
-              label: accessLabel(value),
+              label: m.files_access_lost(),
               value,
             })),
             selected: access ? [access] : [],

@@ -153,9 +153,7 @@ const item = (
   workspaceName: 'Biology',
 });
 
-const tab = (
-  props: { access?: 'open' | 'lost'; view?: 'grid' | 'list' } = {}
-) => (
+const tab = (props: { access?: 'lost'; view?: 'grid' | 'list' } = {}) => (
   <EmbedsTab
     onAccessChange={(access) => embeds.access.push(`set:${access}`)}
     onViewChange={() => undefined}
@@ -205,8 +203,8 @@ it('lists media under their note, opening or deleting by access', () => {
   );
 });
 
-// The access filter asks the listing for one kind and switches between them;
-// picking the chosen one again clears it.
+// The one access filter, Private files, asks the listing for media in notes
+// the viewer cannot open; picking it again clears it, which lists everything.
 it('filters by whether the note can be opened', async () => {
   embeds.items = [item('asset_b', 'lecture.mp3', 'Lecture', true)];
   embeds.access = [];
@@ -214,16 +212,20 @@ it('filters by whether the note can be opened', async () => {
   expect(embeds.access).toContain('lost');
   expect(html).toContain(m.files_lost_media_notice());
 
+  expect(html).not.toContain('data-filter="open"');
+
   const root = createRoot(document.getElementById('root') as never);
-  await act(async () => root.render(tab({ access: 'lost' })));
-  for (const value of ['open', 'lost']) {
-    await act(async () => {
+  const pick = () =>
+    act(async () => {
       document
-        .querySelector(`[data-filter=${value}]`)
+        .querySelector('[data-filter=lost]')
         ?.dispatchEvent(new window.Event('click', { bubbles: true }));
     });
-  }
-  expect(embeds.access).toContain('set:open');
+  await act(async () => root.render(tab()));
+  await pick();
+  expect(embeds.access).toContain('set:lost');
+  await act(async () => root.render(tab({ access: 'lost' })));
+  await pick();
   expect(embeds.access).toContain('set:undefined');
   await act(async () => root.unmount());
 });

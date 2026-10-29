@@ -222,14 +222,20 @@ which drew only icons before. Audio gets none.
   (`create_material` notes and `ensureFigureAssets` edits) once their rows
   are inserted. `assetthumb.Make` decodes PNG, JPEG, GIF (its first frame)
   and WebP within the editors' 2400 px side limit; AVIF and anything that does
-  not decode gets none. 200 px wide (narrower images are not enlarged), cut at
-  400 px tall from the top, flattened on white, JPEG quality 70. A 2400 x 2400
+  not decode gets none. A JPEG is turned the way its EXIF orientation says
+  (phones store photos as taken), scaled small first so the turn is cheap.
+  200 px wide (narrower images are not enlarged), cut at 400 px tall from the
+  top, flattened on white, JPEG quality 70. A 2400 x 2400
   photo took about 280 ms and came out at 9.5 KB (developer PC, 2026-10-29).
 - A small room, after the response: at most two batches at once (an upload is
   one image, an agent write all its figures, made one after another), each
-  image within 3 s for its put and record. A batch that finds both slots taken
-  is skipped. Nothing retries: a failure is logged (`editor image thumbnail
-  failed`) and the card keeps its icon until the backfill.
+  image's put within 3 s (`assetthumb.PutWindow`). A batch that finds both
+  slots taken is skipped. Nothing retries: a failure is logged (`editor image
+  thumbnail failed`) and the card keeps its icon until the backfill. Recording
+  the key and queueing a key no row takes (after a failed put, which may still
+  have written it, or a failed record) run without a deadline, so a slow put
+  leaves no object behind. A process stopped between its put and its record
+  can still leave one; the monthly orphan sweep reports it.
 - Stored at `thumbs/{asset id}/{sha256}.jpg` (`Cache-Control: public,
   max-age=31536000, immutable`), named in `editor_assets.thumbnail_key`
   (migration 0132), a counted blob reference beside `object_path`. It follows

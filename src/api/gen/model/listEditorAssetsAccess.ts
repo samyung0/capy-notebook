@@ -9,6 +9,5 @@ export type ListEditorAssetsAccess = typeof ListEditorAssetsAccess[keyof typeof 
 
 
 export const ListEditorAssetsAccess = {
-  open: 'open',
   lost: 'lost',
 } as const;

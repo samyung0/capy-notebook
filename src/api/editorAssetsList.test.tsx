@@ -37,7 +37,7 @@ it("drops the previous filter's rows while the next filter loads", async () => {
   vi.spyOn(api, 'get').mockImplementation((path: string) =>
     path.includes('access=lost')
       ? new Promise(() => undefined)
-      : Promise.resolve(page('asset_open'))
+      : Promise.resolve(page('asset_all'))
   );
   function Probe({ access }: { access?: EditorAssetAccess }) {
     const { data } = useEditorAssets(access);
@@ -55,8 +55,8 @@ it("drops the previous filter's rows while the next filter loads", async () => {
       )
     );
   const text = () => document.getElementById('root')?.textContent;
-  await show('open');
-  await act(() => vi.waitFor(() => expect(text()).toBe('asset_open')));
+  await show();
+  await act(() => vi.waitFor(() => expect(text()).toBe('asset_all')));
   await show('lost');
   expect(text()).toBe('loading');
   await act(async () => root.unmount());

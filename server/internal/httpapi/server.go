@@ -157,10 +157,9 @@ type api struct {
 	// so a stop request reaches its relay (chat_stop.go) and a browser can
 	// follow it again (chat_resume.go).
 	turns sync.Map
-	// assetThumbs is the room editor image thumbnails run in, and
-	// assetThumbWork lets tests wait for them (editor_asset_thumbnails.go).
-	assetThumbs    chan struct{}
-	assetThumbWork sync.WaitGroup
+	// assetThumbs is the room editor image thumbnails run in
+	// (editor_asset_thumbnails.go).
+	assetThumbs chan struct{}
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and, in

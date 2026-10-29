@@ -8,7 +8,7 @@ import type { ListEditorAssetsAccess } from './listEditorAssetsAccess.ts';
 
 export type ListEditorAssetsParams = {
 /**
- * Only media in notes the caller can open, or only those it cannot
+ * Only media in notes the caller can no longer open
  */
 access?: ListEditorAssetsAccess;
 /**

@@ -73,9 +73,9 @@ func main() {
 }
 
 func thumbnail(ctx context.Context, objects blob.Store, st *store.Store, img store.EditorImageToThumbnail) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	readCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	r, err := objects.Open(ctx, img.ObjectPath)
+	r, err := objects.Open(readCtx, img.ObjectPath)
 	if err != nil {
 		return err
 	}

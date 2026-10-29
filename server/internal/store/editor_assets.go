@@ -664,14 +664,11 @@ type EditorAssetPage struct {
 	NextCursor string            `json:"nextCursor,omitempty"`
 }
 
-// EditorAssetAccess narrows ListEditorAssets to media in notes the caller can
-// open or to those it cannot; empty lists both.
+// EditorAssetAccess narrows ListEditorAssets to media in notes the caller
+// cannot open (the Embeds tab's Private files); empty lists everything.
 type EditorAssetAccess string
 
-const (
-	EditorAssetsOpen EditorAssetAccess = "open"
-	EditorAssetsLost EditorAssetAccess = "lost"
-)
+const EditorAssetsLost EditorAssetAccess = "lost"
 
 var editorAssetSort = listSort{column: "a.created_at", kind: "time"}
 
@@ -689,10 +686,7 @@ func (s *Store) ListEditorAssets(
 		limit = listPageMax
 	}
 	filter := `(l.lost OR (m.trashed_at IS NULL AND top.trashed_at IS NULL))`
-	switch access {
-	case EditorAssetsOpen:
-		filter = `NOT l.lost AND m.trashed_at IS NULL AND top.trashed_at IS NULL`
-	case EditorAssetsLost:
+	if access == EditorAssetsLost {
 		filter = `l.lost`
 	}
 	clause, cursorArgs, err := cursorClause(editorAssetSort, "a.id", false, cursor, 2)

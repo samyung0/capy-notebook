@@ -1484,7 +1484,7 @@ export const listEditorAssetsQueryLimitMax = 100;
 
 
 export const ListEditorAssetsQueryParams = zod.object({
-  "access": zod.enum(['open', 'lost']).optional().describe('Only media in notes the caller can open, or only those it cannot'),
+  "access": zod.enum(['lost']).optional().describe('Only media in notes the caller can no longer open'),
   "limit": zod.int().min(1).max(listEditorAssetsQueryLimitMax).default(listEditorAssetsQueryLimitDefault),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })

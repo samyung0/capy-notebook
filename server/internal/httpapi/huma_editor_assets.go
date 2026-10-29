@@ -14,7 +14,7 @@ import (
 // and resolve stay on raw chi (editor_assets.go).
 
 type editorAssetsInput struct {
-	Access string `query:"access" enum:"open,lost" doc:"Only media in notes the caller can open, or only those it cannot"`
+	Access string `query:"access" enum:"lost" doc:"Only media in notes the caller can no longer open"`
 	Limit  int    `query:"limit" minimum:"1" maximum:"100" default:"40"`
 	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
 }

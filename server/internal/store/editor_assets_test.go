@@ -642,3 +642,68 @@ func TestEditorAssetThumbnailFollowsItsAsset(t *testing.T) {
 		t.Fatalf("a thumbnail for a purged asset: %v, queued=%v, want queued", err, blobQueued(t, s, late))
 	}
 }
+
+// A pasted image and a material clone's image take the source's thumbnail
+// with its object (review r1): the key gains a holder per copy.
+func TestEditorAssetThumbnailCopies(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	f := editorAssetFixture{t: t, s: s, ctx: ctx}
+	ownerID := newBlobTestUser(t, s, "u_thumb_copies")
+	workspace, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Figures", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	note := func(title string, ids ...string) Material {
+		t.Helper()
+		m, err := s.CreateMaterial(ctx, Material{
+			CreatedBy: ownerID, WorkspaceID: workspace.ID, WorkspaceName: workspace.Name,
+			Kind: "note", Title: title, Content: noteWithImages(t, ids...),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	source, target := note("Source"), note("Target")
+	asset := f.ready(ownerID, workspace.ID, source.ID)
+	next := noteWithImages(t, asset.ID)
+	if _, err := s.UpdateMaterial(ctx, source.ID, MaterialPatch{
+		Content: &next, UpdatedBy: ownerID, ExpectedRevision: &source.Revision,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	key := "thumbs/" + asset.ID + "/" + uid("sha") + ".jpg"
+	if err := s.SetEditorAssetThumbnail(ctx, asset.ID, key); err != nil {
+		t.Fatal(err)
+	}
+	thumbOf := func(id string) string {
+		t.Helper()
+		var got string
+		if err := s.pool.QueryRow(ctx, `SELECT COALESCE(thumbnail_key,'') FROM editor_assets WHERE id=$1`, id).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	roomy := planlimits.Limits{ImageBytes: 2 << 20, SourceFileBytes: 10 << 20}
+	adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{asset.ID}, roomy)
+	if err != nil || adopted[asset.ID] == "" || adopted[asset.ID] == asset.ID {
+		t.Fatalf("adopt = %v, %v; want a copy", adopted, err)
+	}
+	if thumbOf(adopted[asset.ID]) != key {
+		t.Fatal("a pasted copy did not take the thumbnail")
+	}
+
+	clone, err := s.CloneMaterial(ctx, ownerID, source.ID, CloneTarget{Name: "Clone"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cloned string
+	if err := s.pool.QueryRow(ctx, `SELECT id FROM editor_assets WHERE material_id=$1`, clone.ID).Scan(&cloned); err != nil {
+		t.Fatalf("cloned asset: %v", err)
+	}
+	if thumbOf(cloned) != key || blobRefCount(t, s, key) != 3 {
+		t.Fatalf("clone's thumbnail %q, refs %d; want the key held three times", thumbOf(cloned), blobRefCount(t, s, key))
+	}
+}

@@ -8887,14 +8887,13 @@ paths:
     get:
       operationId: listEditorAssets
       parameters:
-        - description: Only media in notes the caller can open, or only those it cannot
+        - description: Only media in notes the caller can no longer open
           explode: false
           in: query
           name: access
           schema:
-            description: Only media in notes the caller can open, or only those it cannot
+            description: Only media in notes the caller can no longer open
             enum:
-              - open
               - lost
             type: string
         - explode: false

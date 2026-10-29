@@ -187,6 +187,11 @@ func TestAgentEditStoresFiguresBeforeTheirBlocks(t *testing.T) {
 	if n := assetObjects(t, mem, assetID); n != 1 {
 		t.Fatalf("objects = %d, want the retry's second upload deleted", n)
 	}
+	// An edit's figure gets its thumbnail too, trashed or not (undo may
+	// bring it back).
+	if key := awaitAssetThumbnail(t, st, assetID); key == "" {
+		t.Fatal("the edit's figure got no thumbnail")
+	}
 }
 
 // A library figure add_question_media places becomes the quiz's own image:
