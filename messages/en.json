@@ -2495,6 +2495,7 @@
   "progress_show_unread": "Not read",
   "progress_show_untracked": "Not tracked",
   "progress_nothing_shown": "Nothing matches these filters",
+  "study_empty": "Nothing to study yet. Files, notes and quizzes you add to this workspace show up here, by chapter, with files outside a chapter under Others.",
   "progress_toggle_results": "Show results of {name}",
   "progress_not_tracked": "Not tracked",
   "progress_read_on": "Read {date}",

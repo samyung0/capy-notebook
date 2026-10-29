@@ -2495,6 +2495,7 @@
   "progress_show_unread": "未读",
   "progress_show_untracked": "未跟踪",
   "progress_nothing_shown": "没有符合筛选条件的项目",
+  "study_empty": "还没有可学习的内容。添加到此工作区的文件、笔记和测验会按章节显示在这里，不在章节中的文件归入“其他”。",
   "progress_toggle_results": "显示 {name} 的结果",
   "progress_not_tracked": "未跟踪",
   "progress_read_on": "{date} 已读",

@@ -604,6 +604,11 @@ function StudyBody({
             <p className="mt-2 border-divider border-t py-4 text-fg-muted">
               {m.plan_empty()}
             </p>
+          ) : sections.every((s) => s.all.length === 0) ? (
+            // Nothing in the workspace yet, filters or not.
+            <p className="mt-2 border-divider border-t py-4 text-fg-muted">
+              {m.study_empty()}
+            </p>
           ) : shown.length === 0 ? (
             <p className="py-8 text-center text-fg-muted">
               {m.progress_nothing_shown()}
