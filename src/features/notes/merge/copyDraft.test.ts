@@ -430,6 +430,46 @@ describe('recordCopy refused by storage', () => {
     await settle();
     expect(onUnstored.mock.calls).toEqual([[true], [false], [true], [false]]);
   });
+
+  it('keeps the prompt on when an older write lands after a newer one was refused', async () => {
+    const onUnstored = vi.fn();
+    const recorder = recordCopy(options(onUnstored));
+    let land = () => {};
+    vi.mocked(putDrafts).mockImplementationOnce((rows) => {
+      stored.puts.push(rows);
+      return new Promise<void>((resolve) => {
+        land = resolve;
+      });
+    });
+    recorder.edited([p('a', 'older')]);
+    recorder.flush();
+    refuseNext('sync');
+    recorder.edited([p('a', 'newer')]);
+    recorder.flush();
+    land();
+    await settle();
+    expect(onUnstored.mock.calls).toEqual([[true]]);
+    recorder.flush();
+    expect(mine(2)).toEqual([p('a', 'newer')]);
+  });
+
+  it('keeps a refused value and the prompt once past its bound, until the stop', async () => {
+    const onUnstored = vi.fn();
+    const recorder = recordCopy({ ...options(onUnstored), limitBytes: 64 });
+    refuseNext('async');
+    recorder.edited([p('a', 'A short')]);
+    recorder.flush();
+    recorder.edited([p('a', 'x'.repeat(100))]);
+    recorder.flush();
+    await settle();
+    expect(recorder.over).toBe(true);
+    expect(recorder.kept).toEqual([p('a', 'A short')]);
+    expect(onUnstored.mock.calls).toEqual([[true]]);
+    recorder.flush();
+    expect(stored.puts).toHaveLength(1);
+    recorder.stop();
+    expect(onUnstored.mock.calls).toEqual([[true], [false]]);
+  });
 });
 
 // Review r1 M2: the rows go only once what they hold is stored elsewhere;
