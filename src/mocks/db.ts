@@ -2567,7 +2567,11 @@ function after(iso: string, ms: number) {
  * calls twice so the trace groups them, a failed web search and a created
  * mindmap. */
 function accountSeedActivity(createdAt: string): ActivityBlock[] {
-  const steps: [string, string, ActivityBlock['outcome']?][] = [
+  const steps: [
+    string,
+    string,
+    Extract<ActivityBlock, { kind: 'tool' }>['outcome']?,
+  ][] = [
     ['list_workspaces', ''],
     ['list_sources', ''],
     ['list_sources', 'Biology 101'],

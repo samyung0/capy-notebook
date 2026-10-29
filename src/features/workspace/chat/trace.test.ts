@@ -103,7 +103,7 @@ describe('stepTitle', () => {
     });
     expect(stepTitle(search, 'done')).toEqual({
       label: '“osmosis”',
-      text: 'Searched your sources for “osmosis”',
+      text: 'Searched your files for “osmosis”',
     });
     const web = tool('w', 'search_web', undefined, { detail: 'airlift' });
     expect(stepTitle(web, 'running').text).toBe(
