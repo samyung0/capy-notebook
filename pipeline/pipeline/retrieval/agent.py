@@ -48,12 +48,16 @@ from .chunking import estimate_tokens
 from .limits import (
     BUILD_TOOLS_PER_TURN,
     CHAT_SLOT_WAIT_S,
+    LOOP_LOG_AT,
+    LOOP_REFUSE_AT,
+    LOOP_STOP_AT,
     MAX_CONCURRENT,
     PLANNING_RESPONSES,
     STALL_RESPONSES,
     STOP_ANSWER,
     STOP_CLIENT_GONE,
     STOP_ERROR,
+    STOP_LOOP,
     STOP_PLANNING_CAP,
     STOP_STALL,
     STOP_TOOL_CAP,
@@ -603,6 +607,8 @@ async def _run_turn(
     stalled = 0
     stall_stop = False
     tool_stop = False
+    # The loop ladder's last rung: the next response runs with tools off.
+    loop_stop = False
     # Errored writes earn the guard extra responses (limits.WRITE_ERROR_GRACE).
     write_errors = 0
     # A tools-off response that called tools anyway gets one more response.
@@ -649,7 +655,7 @@ async def _run_turn(
                 )
         else:
             tools_off = terminal_call or step >= planning_cap - 1
-        tools_off = tools_off or refused_off
+        tools_off = tools_off or refused_off or loop_stop
         # A tools-off call still sends the tools under the default tool_choice;
         # only the turn context says tools are off. Dropping them, or sending
         # tool_choice "none" (Relace then leaves them out of the prompt), changes
@@ -954,6 +960,8 @@ async def _run_turn(
             budget.stop_reason = (
                 STOP_TOOL_CAP
                 if tool_stop
+                else STOP_LOOP
+                if loop_stop
                 else STOP_STALL
                 if stall_stop
                 else STOP_PLANNING_CAP
@@ -1052,6 +1060,14 @@ async def _run_turn(
                     for call in calls
                 )
                 continue
+            longest = budget.count_repeats(
+                [(call.id, call.name, call.arguments) for call in calls]
+            )
+            if longest >= LOOP_LOG_AT:
+                log.warning(
+                    "loop ladder: a tool repeated its arguments %d times", longest
+                )
+            loop_stop = longest >= LOOP_STOP_AT
             # Progress is a write that landed; nothing else in a response
             # counts against the stall guard.
             writes_before = writes
@@ -1111,7 +1127,13 @@ async def _run_turn(
                 if writes
                 else step == planning_cap - 2
             )
-            if last_with_tools:
+            if loop_stop:
+                for message in messages[results_from:]:
+                    if message.get("role") == "tool" and isinstance(
+                        message.get("content"), str
+                    ):
+                        message["content"] += LOOP_NOTICE
+            elif last_with_tools:
                 notice = (
                     STALL_NOTICE
                     if writes
@@ -1181,6 +1203,8 @@ async def _run_turn(
             budget.stop_reason = (
                 STOP_TOOL_CAP
                 if tool_stop
+                else STOP_LOOP
+                if loop_stop
                 else STOP_STALL
                 if stall_stop
                 else STOP_ANSWER
@@ -1203,6 +1227,8 @@ async def _run_turn(
         budget.stop_reason = budget.stop_reason or (
             STOP_TOOL_CAP
             if tool_stop
+            else STOP_LOOP
+            if loop_stop
             else STOP_STALL
             if stall_stop
             else STOP_PLANNING_CAP
@@ -1249,6 +1275,11 @@ STALL_NOTICE = (
 # the tool cap the result names the cap (Epo 2026-10-15).
 TOOL_CAP_RESULT = (
     "You have exceeded the tool call limit! Any more tool calls will be dropped."
+)
+# Under each result when the loop ladder ends the turn (Epo 2026-10-29).
+LOOP_NOTICE = (
+    "\n\nYou keep repeating the same tool call, so tools are off now. Answer "
+    "the learner with what you have."
 )
 # After a response that wrote a tool call as text (Epo 2026-10-29).
 TEXT_CALL_SEND_BACK = (
@@ -1807,6 +1838,13 @@ def _limit_for(
         return (
             f"This response already used its {TOOLS_PER_RESPONSE} tool-call limit. "
             "Continue in the next step."
+        )
+    repeats = budget.call_repeats.get(call.id, 0)
+    if repeats >= LOOP_REFUSE_AT:
+        return (
+            f"Not run: you called {call.name} with these same arguments "
+            f"{repeats - 1} times in a row this turn. Use the result you already "
+            "have, change the arguments, or answer the learner."
         )
     # Before the first write lands the response ceiling bounds the turn.
     if building and budget.tool_calls_turn >= BUILD_TOOLS_PER_TURN:

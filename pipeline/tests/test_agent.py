@@ -4524,9 +4524,16 @@ async def test_a_building_turn_has_no_response_ceiling_while_writes_land(
 ):
     """Twenty responses, a write landing every third one: nothing stops it,
     though a turn with no write has 12."""
-    reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e"}', "k")])
+    # Each call differs, so the loop ladder never counts a repeat.
+    reads = iter(range(20))
+
+    def reading() -> AssembledResponse:
+        read = json.dumps({"excerpt_id": f"e_{next(reads)}"})
+        return _assembled("", [_call("read_knowledge", read, "k")])
+
     stream, seen = _script_stream(
-        [reading, reading, _writing()] * 6 + [reading, _assembled("Done.")]
+        [r for i in range(6) for r in (reading(), reading(), _writing(title=f"n{i}"))]
+        + [reading(), _assembled("Done.")]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _land)
@@ -4593,20 +4600,22 @@ async def test_errored_writes_extend_the_stall_guard_twice_at_most(
 ):
     """A refused create_material is an attempt at progress: each of the first
     two grants two more responses, so the guard fires after nine, not five."""
-    reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k")])
-    refused = _writing("bad", "refused")
     # A landed write, then three refused writes plus reads: only two of the
     # refusals count, so the threshold is 5 + 2 + 2 = 9 barren responses.
+    # Each call differs, so the loop ladder never counts a repeat.
     stream, seen = _script_stream(
         [_writing()]
-        + [refused] * 3
-        + [reading] * 6
+        + [_writing("bad", f"refused {i}") for i in range(3)]
+        + [
+            _assembled("", [_call("read_knowledge", f'{{"excerpt_id":"e_{i}"}}', "k")])
+            for i in range(6)
+        ]
         + [_assembled("Nothing more written.")]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
     async def _run(name, args, _ctx):
-        if args.get("title") == "refused":
+        if args.get("title", "").startswith("refused"):
             return ToolResult(text_parts=["read e_1 first"], refused=True)
         return ToolResult(text_parts=["done"])
 
@@ -6952,3 +6961,61 @@ async def test_an_office_edit_reads_what_the_engine_left_unapplied(monkeypatch):
     created = await edit("c2", commands=[create] + [span] * 50)
     assert created.progress == (50, 51)
     assert (await edit("c3", file_id="f_1", commands=[span])).progress is None
+
+
+# ------------------------------------- Loop ladder (Epo 2026-10-29, doom loop)
+
+
+def _results(seen: list[dict], response: int) -> list[str]:
+    """The tool results the given response's request ends with."""
+    return [m["content"] for m in seen[response]["messages"] if m.get("role") == "tool"]
+
+
+async def test_a_repeated_call_is_refused_from_its_third_time(monkeypatch):
+    """Other tools between keep the streak; each identical call in one
+    response is the same repeat."""
+    ran: list[str] = []
+
+    async def _count(name, args, ctx):
+        ran.append(name)
+        return ToolResult(text_parts=["done"])
+
+    same = '{"query": "a", "workspace_id": "ws_1"}'
+    stream, seen = _script_stream(
+        [
+            _assembled(calls=[_call("list_sources", same, "a1")]),
+            _assembled(calls=[_call("read_skill", '{"name":"editing"}', "s1")]),
+            _assembled(calls=[_call("list_sources", same, "a2")]),
+            _assembled(
+                calls=[
+                    _call(
+                        "list_sources", '{"workspace_id": "ws_1", "query": "a"}', "a3"
+                    ),
+                    _call("list_sources", same, "a4"),
+                ]
+            ),
+            _assembled("Done."),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(tools, "run", _count)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    assert ran == ["list_sources", "read_skill", "list_sources"]
+    refused = _results(seen, -1)[-2:]
+    assert all(r.startswith("Not run: you called list_sources") for r in refused)
+    assert events[-1]["telemetry"]["stopReason"] == "answer"
+
+
+async def test_the_sixth_repeat_turns_tools_off_and_ends_the_turn(monkeypatch):
+    stream, seen = _script_stream(
+        [_assembled(calls=[_call("list_sources", "{}", f"c{i}")]) for i in range(6)]
+        + [_assembled("Here is what I found.")]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(tools, "run", _land)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    assert seen[-1]["tools_off"]
+    assert _results(seen, -1)[-1].endswith(agent.LOOP_NOTICE)
+    assert events[-1]["telemetry"]["stopReason"] == "loop"

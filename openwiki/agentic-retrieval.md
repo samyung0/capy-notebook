@@ -3709,7 +3709,20 @@ materials are sources.
   gets `LAST_ANSWER_NOTICE` (answer with what was found) instead, so a
   question turn is never told to create a material. Under the stall guard the
   notice is `agent.STALL_NOTICE` instead, which says to start writing now or
-  the turn ends (Epo 2026-10-15). The credit guard remains a separate platform billing cutoff;
+  the turn ends (Epo 2026-10-15). The loop ladder (Epo 2026-10-29, OpenRouter's
+  Agent SDK doom-loop rungs kept in our loop, since that SDK detects loops
+  client-side and routing through OpenRouter would not enable it) counts, per
+  tool, the responses in a row that call it with the same arguments
+  (`TurnBudget.count_repeats`, arguments compared as canonical JSON, text that
+  is not JSON as written): other tools between keep the streak, changed
+  arguments restart it, identical calls in one response count once. At 2
+  (`LOOP_LOG_AT`) it is logged; from 3 (`LOOP_REFUSE_AT`) the call is refused
+  as a `limit_reached` result ("Not run: you called … with these same
+  arguments …"), which still counts as an errored write for the stall guard;
+  at 6 (`LOOP_STOP_AT`) every result of that response ends with
+  `agent.LOOP_NOTICE` and the next response runs with tools off, reported as
+  `loop`. A tool re-read with the same arguments after a write changed what it
+  lists counts as a repeat too. The credit guard remains a separate platform billing cutoff;
   its silent terminal call reports `planning_cap`.
 - **Write guard** (`tools.write_sources`, shared with the playground). For a
   **material** target (`create_material`, `edit_document`, the three question

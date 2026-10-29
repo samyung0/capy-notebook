@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import functools
+import json
 from collections import deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -253,6 +254,14 @@ STALL_RESPONSES = 5
 WRITE_ERROR_GRACE = 2
 WRITE_ERROR_GRACE_MAX = 2
 
+# OpenRouter's doom-loop ladder, kept in our own loop (Epo 2026-10-29): a tool
+# called again with the same arguments is logged at 2 in a row, refused from
+# LOOP_REFUSE_AT and ends the turn at LOOP_STOP_AT. Other tools between keep a
+# tool's streak; changed arguments restart it.
+LOOP_LOG_AT = 2
+LOOP_REFUSE_AT = 3
+LOOP_STOP_AT = 6
+
 STOP_ANSWER = "answer"
 STOP_PLANNING_CAP = "planning_cap"
 STOP_TOOL_CAP = "tool_cap"
@@ -261,6 +270,9 @@ STOP_TOOL_CAP = "tool_cap"
 # not this: a silent one reports planning_cap, so operators sizing
 # STALL_RESPONSES do not read billing cutoffs as stalls.
 STOP_STALL = "stall"
+# The loop ladder ended the turn: one tool called with the same arguments
+# LOOP_STOP_AT times in a row.
+STOP_LOOP = "loop"
 STOP_ERROR = "error"
 STOP_TURN_FAILED = "turn_failed"
 STOP_CLIENT_GONE = "client_gone"
@@ -282,6 +294,26 @@ class TurnBudget:
     reasoning_tokens: int = 0
     embedding_calls: int = 0
     stop_reason: str = ""
+    # Per tool: its last arguments (canonical JSON) and how many responses in
+    # a row called it with them.
+    repeats: dict[str, tuple[str, int]] = field(default_factory=dict)
+    # The streak of each call in the response being run, by call id.
+    call_repeats: dict[str, int] = field(default_factory=dict)
+
+    def count_repeats(self, calls: list[tuple[str, str, str]]) -> int:
+        """Count one response's calls, given as (call id, tool, arguments),
+        into the per-tool streaks; identical calls in it count once. Returns
+        the longest streak."""
+        self.call_repeats = {}
+        counted: dict[tuple[str, str], int] = {}
+        for call_id, name, arguments in calls:
+            key = _canonical(arguments)
+            if (name, key) not in counted:
+                last, streak = self.repeats.get(name, ("", 0))
+                counted[name, key] = streak + 1 if last == key and streak else 1
+                self.repeats[name] = (key, counted[name, key])
+            self.call_repeats[call_id] = counted[name, key]
+        return max(counted.values(), default=0)
 
     def note_tool(self, name: str) -> None:
         self.tool_calls_by_name[name] = self.tool_calls_by_name.get(name, 0) + 1
@@ -304,3 +336,12 @@ class TurnBudget:
             "embeddingCalls": self.embedding_calls,
             "stopReason": self.stop_reason,
         }
+
+
+def _canonical(arguments: str) -> str:
+    """Arguments compared by meaning, not spelling; text that is not JSON is
+    compared as written (a malformed call repeats too)."""
+    try:
+        return json.dumps(json.loads(arguments or "{}"), sort_keys=True)
+    except ValueError:
+        return arguments
