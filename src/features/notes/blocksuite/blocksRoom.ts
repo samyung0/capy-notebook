@@ -1,21 +1,18 @@
-import { Awareness } from 'y-protocols/awareness';
-import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
-import { getMaterialCollaborationToken } from '@/api/hooks';
+import { type ItemProvider, ItemRoom } from '@/features/collaboration/itemRoom';
 import { NoteSeat } from '@/features/collaboration/noteSeat';
-import {
-  RoomProvider,
-  type RoomProviderConfig,
-} from '@/features/collaboration/roomProvider';
+import type { RoomProviderConfig } from '@/features/collaboration/roomProvider';
 import type { MaterialValue } from '@/features/materials/document';
 
 /* A blocks-layout note's room (todo-blocksuite-spike.md, step 1 piece 3):
- * its Y.Doc joined through a room provider, as an item room joins
- * (itemRoom.ts). The editor is built only once the room synced, which is
+ * an item room over the note's Y.Doc, whose lifecycle is layout-neutral
+ * (it moves Yjs updates only). Offline it keeps editing with every local
+ * update stored as a draft (editDrafts, PE:97), restores and syncs them at
+ * the next open of the same room, and opens refused, other-lineage and
+ * expired drafts read-only for copying (the merge view has no blocks
+ * counterpart yet). The editor is built only once the room synced, which is
  * after the provider adopted the token's client id (Q213): before that a
  * write would go under an id the room refuses (`unassigned`). */
-
-export type BlocksProvider = Pick<RoomProvider, 'connect' | 'destroy'>;
 
 export interface BlocksProviderConfig extends RoomProviderConfig {
   /** The room's seed under MSW: the material's stored content. */
@@ -23,114 +20,46 @@ export interface BlocksProviderConfig extends RoomProviderConfig {
   materialId: string;
 }
 
-let mockFactory: ((config: BlocksProviderConfig) => BlocksProvider) | null =
-  null;
+let mockFactory: ((config: BlocksProviderConfig) => ItemProvider) | null = null;
 
 export function registerMockBlocksProvider(
-  factory: (config: BlocksProviderConfig) => BlocksProvider
+  factory: (config: BlocksProviderConfig) => ItemProvider
 ) {
   mockFactory = factory;
 }
 
-/** Under MSW the in-page room stands in for the collaboration server. */
-function createBlocksProvider(config: BlocksProviderConfig): BlocksProvider {
-  if (USE_MSW) {
-    if (!mockFactory) throw new Error('Mock blocks provider is not registered');
-    return mockFactory(config);
-  }
-  return new RoomProvider(config);
-}
-
-export type BlocksRoomState =
-  | { status: 'connecting' }
-  | { status: 'ready'; readonly: boolean }
-  | { status: 'unavailable' };
-
-export class BlocksRoom {
-  readonly doc = new Y.Doc();
-  /** The editor's selections (`selectionV2`) ride on the room's awareness
-   * beside its other fields; a read channel shares none (AU:10). */
-  readonly awareness = new Awareness(this.doc);
+export interface BlocksRoom {
+  readonly materialId: string;
+  readonly room: ItemRoom;
   /** The channel the note's embedded quizzes and sets join inside, as on
    * Plate (NoteEditorCore). MSW's rooms have none. */
-  readonly seat = new NoteSeat();
-  private provider: BlocksProvider | null = null;
-  private state: BlocksRoomState = { status: 'connecting' };
-  private destroyed = false;
-  private readonly listeners = new Set<() => void>();
+  readonly seat: NoteSeat;
+}
 
-  readonly materialId: string;
-  private readonly initialValue: MaterialValue;
-
-  constructor(materialId: string, initialValue: MaterialValue) {
-    this.materialId = materialId;
-    this.initialValue = initialValue;
-  }
-
-  readonly subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  };
-
-  readonly getSnapshot = () => this.state;
-
-  private set(state: BlocksRoomState) {
-    if (this.destroyed) return;
-    this.state = state;
-    for (const listener of this.listeners) listener();
-  }
-
-  async start() {
-    let first: Awaited<ReturnType<typeof getMaterialCollaborationToken>>;
-    try {
-      first = await getMaterialCollaborationToken(this.materialId);
-    } catch {
-      this.set({ status: 'unavailable' });
-      return;
-    }
-    if (this.destroyed) return;
-    const readonly = first.access !== 'write';
-    let cached: string | null = first.token;
-    let last: string | undefined;
-    this.provider = createBlocksProvider({
-      awareness: readonly ? null : this.awareness,
-      document: this.doc,
-      initialValue: this.initialValue,
-      materialId: this.materialId,
-      name: first.room,
-      // Refused or closed for good: the note stays unavailable until it is
-      // opened again (no retries in this step).
-      onAuthenticationFailed: () => this.set({ status: 'unavailable' }),
-      onSynced: ({ state }) => {
-        if (state && this.state.status === 'connecting')
-          this.set({ readonly, status: 'ready' });
-      },
-      token: async (previous) => {
-        if (cached) {
-          last = cached;
-          cached = null;
-          return last;
+/** The note's room, not started. `onReplace`: it ended here for good
+ * (refused, moved to a new lineage, recovery left), and a fresh one takes
+ * its place. */
+export function createBlocksRoom(
+  materialId: string,
+  initialValue: MaterialValue,
+  { actorId, onReplace }: { actorId: string; onReplace: () => void }
+): BlocksRoom {
+  const seat = new NoteSeat();
+  const room = new ItemRoom(materialId, {
+    // The editor's selections (`selectionV2`) ride on the room's awareness.
+    awareness: true,
+    drafts: { actorId },
+    leave: 'unstored',
+    onReplace,
+    // Under MSW the in-page room stands in for the collaboration server.
+    provider: USE_MSW
+      ? (config) => {
+          if (!mockFactory)
+            throw new Error('Mock blocks provider is not registered');
+          return mockFactory({ ...config, initialValue, materialId });
         }
-        const fresh = await getMaterialCollaborationToken(this.materialId, {
-          previousToken: previous ?? last,
-        });
-        last = fresh.token;
-        return fresh.token;
-      },
-      url: first.url,
-    });
-    this.seat.attach(
-      this.provider instanceof RoomProvider ? this.provider : null
-    );
-    this.provider.connect();
-  }
-
-  destroy() {
-    this.destroyed = true;
-    this.listeners.clear();
-    this.seat.attach(null);
-    this.provider?.destroy();
-    this.awareness.destroy();
-    this.doc.destroy();
-  }
+      : undefined,
+    seat,
+  });
+  return { materialId, room, seat };
 }

@@ -28,6 +28,26 @@ export function markUnsent(room: object, value: boolean) {
   for (const listener of listeners) listener();
 }
 
+/* Rooms whose leaving loses edits only while this device cannot store them
+ * (a note, as Office and text files, Q465): the tab's close or reload asks,
+ * in-app navigation never does (the drafts and the room keep every edit). */
+const unstored = new Set<object>();
+
+export function markUnstored(room: object, value: boolean) {
+  const had = unstored.size > 0;
+  if (value) unstored.add(room);
+  else unstored.delete(room);
+  const has = unstored.size > 0;
+  if (had === has || typeof window === 'undefined') return;
+  if (has) window.addEventListener('beforeunload', warnUnstored);
+  else window.removeEventListener('beforeunload', warnUnstored);
+}
+
+function warnUnstored(event: BeforeUnloadEvent) {
+  event.preventDefault();
+  event.returnValue = '';
+}
+
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
   return () => {

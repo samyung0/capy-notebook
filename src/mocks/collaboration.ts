@@ -35,7 +35,10 @@ import {
   type MaterialValue,
   quizNode,
 } from '@/features/materials/document';
-import { registerMockBlocksProvider } from '@/features/notes/blocksuite/blocksRoom';
+import {
+  type BlocksProviderConfig,
+  registerMockBlocksProvider,
+} from '@/features/notes/blocksuite/blocksRoom';
 import { blocksLayout } from '@/features/notes/blocksuite/flag';
 import {
   applyValue,
@@ -613,18 +616,20 @@ const UNREACHABLE = 'capy.mock.collaboration.unreachable';
 const REACHABILITY = 'capy:mock-collaboration-reachability';
 /** How many times this tab's source providers joined a room. */
 const SOURCE_JOINS = 'capy.mock.sourceJoins';
-// Unit tests run without a window: always reachable there.
+// Unit tests run without a window: reachable there unless a test takes the
+// service down (`setCollaborationReachable`).
 const browser = typeof window !== 'undefined';
+let unitReachable = true;
+const unitReachability = new EventTarget();
 // The Office bench's co-editor case edits a source room as a second peer
 // (bench/editor/scripts/runtime.office.ts); only in its load-test build.
 if (browser && import.meta.env.VITE_LOAD_TEST_SEED === 'true')
   (window as Window & { __capyMockRooms?: typeof rooms }).__capyMockRooms =
     rooms;
 function reachable() {
-  return (
-    !browser ||
-    (navigator.onLine && sessionStorage.getItem(UNREACHABLE) !== 'true')
-  );
+  return browser
+    ? navigator.onLine && sessionStorage.getItem(UNREACHABLE) !== 'true'
+    : unitReachable;
 }
 /** Another editor of a note, headless (e2e): its own document and presence in
  * the note's mock room, to write blocks and set awareness as a peer would. */
@@ -735,6 +740,11 @@ export function mockOwnAwareness(targetId: string) {
 }
 
 export function setCollaborationReachable(value: boolean) {
+  if (!browser) {
+    unitReachable = value;
+    unitReachability.dispatchEvent(new Event(REACHABILITY));
+    return;
+  }
   if (value) sessionStorage.removeItem(UNREACHABLE);
   else sessionStorage.setItem(UNREACHABLE, 'true');
   window.dispatchEvent(new Event(REACHABILITY));
@@ -1710,15 +1720,116 @@ export function registerMockCollaborationProvider() {
   registerProviderType('mock', MockCollaborationProvider);
   registerMockSourceProvider((config) => new MockSourceProvider(config));
   registerMockItemProvider((config) => new MockItemProvider(config));
-  // The BlockSuite note's room: joined at once, synced on the next tick.
-  registerMockBlocksProvider((config) => {
-    const leave = join(mockBlocksRoom(config.materialId, config.initialValue), {
-      awareness: config.awareness ?? undefined,
-      document: config.document,
-      onPresence: config.onPresence,
-      origin: {},
-    });
-    queueMicrotask(() => config.onSynced?.({ state: true }));
-    return { connect: () => {}, destroy: leave };
-  });
+  registerMockBlocksProvider((config) => new MockBlocksProvider(config));
 }
+
+/** The BlockSuite note's room as the service: joined while reachable
+ * (offline, or `setCollaborationReachable(false)`, drops it as a lost
+ * socket and joins again once back), synced on the next tick, and a
+ * checkpoint request stores the room before its receipt. */
+class MockBlocksProvider implements ItemProvider {
+  private readonly config: BlocksProviderConfig;
+  private leave: (() => void) | null = null;
+  private room: Room | null = null;
+  private wanted = false;
+  private waiting: Promise<void> | null = null;
+
+  constructor(config: BlocksProviderConfig) {
+    this.config = config;
+    for (const type of ['online', 'offline', REACHABILITY])
+      reachabilityEvents().addEventListener(type, this.onReachability);
+    config.document.on('update', this.sent);
+  }
+
+  /** A local update reached the room at once: none waits unacknowledged,
+   * and the editor may ask for its receipt. */
+  private readonly sent = (_: Uint8Array, origin: unknown) => {
+    if (origin === this || !this.room) return;
+    queueMicrotask(() => this.config.onUnsyncedChanges?.({ number: 0 }));
+  };
+
+  private readonly onReachability = () => {
+    if (!reachable()) this.drop(true);
+    else if (this.wanted) this.connect();
+  };
+
+  connect() {
+    this.wanted = true;
+    if (this.leave || this.waiting) return;
+    // As the room provider: the JOIN waits for the draft send of stored
+    // steps the room never accepted (Q327).
+    const before = this.config.beforeJoin?.();
+    if (before) {
+      this.waiting = before;
+      void before.then(() => {
+        if (this.waiting !== before) return;
+        this.waiting = null;
+        if (this.wanted) this.connect();
+      });
+      return;
+    }
+    if (!reachable()) return;
+    if (buildRefused) {
+      this.config.onAuthenticationFailed?.(outdated);
+      return;
+    }
+    const room = mockBlocksRoom(
+      this.config.materialId,
+      this.config.initialValue
+    );
+    this.room = room;
+    this.leave = join(room, {
+      awareness: this.config.awareness ?? undefined,
+      document: this.config.document,
+      onPresence: this.config.onPresence,
+      origin: this,
+    });
+    queueMicrotask(() => {
+      if (this.room === room) this.config.onSynced?.({ state: true });
+    });
+  }
+
+  /** The room leaves this channel; `lost`: as a socket that went away. */
+  private drop(lost: boolean) {
+    if (!this.leave) return;
+    this.leave();
+    this.leave = null;
+    this.room = null;
+    this.config.onSynced?.({ state: false });
+    if (lost) this.config.onClose?.({ code: 1006, reason: 'socket closed' });
+  }
+
+  /** A checkpoint request: the room stores what it holds, then answers. */
+  sendStateless(payload: string) {
+    const request = JSON.parse(payload) as { id?: string; type?: string };
+    const room = this.room;
+    if (request.type !== 'checkpoint-request' || !request.id || !room) return;
+    checkpointRoom(room);
+    const receipt = JSON.stringify({
+      checkpointIds: [request.id],
+      materialId: this.config.materialId,
+      type: 'checkpoint-persisted',
+    });
+    queueMicrotask(() => {
+      if (this.room === room) this.config.onStateless?.({ payload: receipt });
+    });
+  }
+
+  wake() {}
+
+  disconnect() {
+    this.wanted = false;
+    this.waiting = null;
+    this.drop(false);
+  }
+
+  destroy() {
+    for (const type of ['online', 'offline', REACHABILITY])
+      reachabilityEvents().removeEventListener(type, this.onReachability);
+    this.config.document.off('update', this.sent);
+    this.disconnect();
+  }
+}
+
+const reachabilityEvents = (): EventTarget =>
+  browser ? window : unitReachability;

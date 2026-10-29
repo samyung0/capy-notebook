@@ -176,7 +176,11 @@ export function NoteEditor({
   if (material.kind === 'note' && blocksLayout())
     return (
       <Suspense fallback={<FileLoading />}>
-        <BlockSuiteNote key={material.id} material={material} />
+        <BlockSuiteNote
+          key={material.id}
+          material={material}
+          onEditorStatusChange={onEditorStatusChange}
+        />
       </Suspense>
     );
 

@@ -80,8 +80,10 @@ function pageExtensions() {
  * Renders a note room's editor into `container`: BlockSuite's page editor
  * over the room's synced document, with its client id adopted (see
  * `openRoomStore`). Material refs publish their elements to `islands`.
- * Returns its unmount. The page specs look up their scroll container as
- * `.affine-page-viewport`.
+ * Returns its unmount and its read-only switch, which pauses and resumes
+ * edits in place (offline past the bound, a draft send, a paused swap)
+ * without building the editor again. The page specs look up their scroll
+ * container as `.affine-page-viewport`.
  */
 export function mountNoteEditor(
   container: HTMLElement,
@@ -97,9 +99,14 @@ export function mountNoteEditor(
     html`<div class="affine-page-viewport">${std.render()}</div>`,
     container
   );
-  return () => {
-    render(null, container);
-    opened.dispose();
+  return {
+    setReadonly: (readonly: boolean) => {
+      opened.store.readonly = readonly;
+    },
+    unmount: () => {
+      render(null, container);
+      opened.dispose();
+    },
   };
 }
 

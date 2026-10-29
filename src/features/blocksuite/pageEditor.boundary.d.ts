@@ -6,9 +6,9 @@ import type { BlockIslands } from '@/features/notes/blocksuite/islands';
 export function mountPageEditor(container: HTMLElement): () => void;
 
 /** A note room's editor over its synced, id-adopted document, its material
- * refs published to `islands`; returns its unmount. */
+ * refs published to `islands`; returns its unmount and read-only switch. */
 export function mountNoteEditor(
   container: HTMLElement,
   room: { awareness: Awareness; doc: Y.Doc; id: string; readonly: boolean },
   islands: BlockIslands
-): () => void;
+): { setReadonly: (readonly: boolean) => void; unmount: () => void };

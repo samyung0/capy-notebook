@@ -161,7 +161,10 @@ vi.mock('@/lib/editDrafts', () => ({
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
-vi.mock('./unsentItems', () => ({ markUnsent: vi.fn() }));
+vi.mock('./unsentItems', () => ({
+  markUnsent: vi.fn(),
+  markUnstored: vi.fn(),
+}));
 
 const { ItemRoom, openItemRoom } = await import('./itemRoom');
 const { NoteSeat } = await import('./noteSeat');

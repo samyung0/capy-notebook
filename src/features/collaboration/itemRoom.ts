@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { getMaterialCollaborationToken } from '@/api/hooks';
@@ -45,7 +46,7 @@ import type { NoteSeat } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
 import { limitUndo, type UndoTarget, undoTarget } from './undo';
-import { markUnsent } from './unsentItems';
+import { markUnsent, markUnstored } from './unsentItems';
 import { LOCAL_EDIT } from './yText';
 
 /* A live item's room (a flashcard set, a quiz's content or keys document;
@@ -159,6 +160,9 @@ const TRANSIENT_CLOSES = new Set([
 const EVICTED = 'collaboration room evicted';
 
 export interface ItemRoomOptions {
+  /** The room's presence fields ride on an awareness of its document, which
+   * a writer's channel shares (a read channel shares none, AU:10). */
+  awareness?: boolean;
   /** A quiz's keys document instead of the material's own. */
   document?: 'keys';
   /** An editor's room: unsent edits are kept on this device under this
@@ -167,8 +171,16 @@ export interface ItemRoomOptions {
   /** An embedded quiz's or set's room: it joins inside its note's channel
    * (Epo 2026-10-20). */
   inside?: NoteSeat | null;
+  /** Whose leaving asks first: by default (items) while the room has not
+   * acknowledged an edit; `unstored` (a note, as Office and text files,
+   * Q465) only while this device also fails to store them, and only on the
+   * tab's close or reload. */
+  leave?: 'unstored';
   /** The room ended for good here (refused, moved): mount a fresh one. */
   onReplace?: () => void;
+  /** Makes the provider instead of the collaboration server's (a note's
+   * blocks room under MSW). */
+  provider?: (config: RoomProviderConfig) => ItemProvider;
   /** A reader (a View, a study page): asks for a read channel even when the
    * user may write (REVIEW5 N2), so the server refuses anything it sends. */
   read?: boolean;
@@ -178,6 +190,8 @@ export interface ItemRoomOptions {
 
 export class ItemRoom {
   readonly doc = new Y.Doc();
+  /** With `awareness`: the room's presence fields. */
+  readonly awareness: Awareness | null;
   readonly undo: Y.UndoManager;
   /** What the item's Undo and Redo buttons act on. */
   readonly history: UndoTarget;
@@ -239,6 +253,7 @@ export class ItemRoom {
   constructor(materialId: string, options: ItemRoomOptions = {}) {
     this.materialId = materialId;
     this.options = options;
+    this.awareness = options.awareness ? new Awareness(this.doc) : null;
     // The document holds only this item: Undo covers this user's own edits
     // to it, never others' or the server's.
     this.undo = new Y.UndoManager(this.doc, {
@@ -330,7 +345,8 @@ export class ItemRoom {
     }
     if (this.destroyed) return;
     let cached: string | null = first.token;
-    this.provider = createItemProvider({
+    this.provider = (this.options.provider ?? createItemProvider)({
+      awareness: access === 'write' ? this.awareness : null,
       // While its never-accepted steps are held, a JOIN waits for the draft
       // send to take them (Q327).
       beforeJoin: () => {
@@ -363,8 +379,11 @@ export class ItemRoom {
         // note's View reads here): a read channel holds nothing of its own,
         // so a fresh document joins naming no version, as a first open does
         // (Q425), rather than the same old version answered late again.
+        // A writer's unsent edits are not merged here (a note's late merge
+        // has no blocks counterpart yet): they open for copying.
         if (refusal === 'late') {
-          this.moved();
+          if (this.recorder?.unsaved) this.refused();
+          else this.moved();
           return;
         }
         if (reason.includes('collaboration room moved')) return;
@@ -630,6 +649,7 @@ export class ItemRoom {
         onStorage: (ok) => {
           this.storageOk = ok;
           this.showOffline();
+          this.markUnsent();
         },
         report: editIncidentReporter('material', this.materialId),
         token: () => this.lastToken,
@@ -739,7 +759,14 @@ export class ItemRoom {
     value = this.unsynced > 0 ||
       (this.snapshot.status === 'offline' && !!this.recorder?.unsaved)
   ) {
-    markUnsent(this, value && !this.ended);
+    if (this.options.leave === 'unstored')
+      markUnstored(
+        this,
+        !this.ended &&
+          !this.storageOk &&
+          (this.unsynced > 0 || !!this.recorder?.unsaved)
+      );
+    else markUnsent(this, value && !this.ended);
   }
 
   /** The server refused this channel's update (or discarded the room's
@@ -776,6 +803,7 @@ export class ItemRoom {
     this.sender?.stop();
     this.stopHold?.();
     markUnsent(this, false);
+    markUnstored(this, false);
     this.options.seat?.attach(null);
     this.provider?.destroy();
     this.provider = null;
@@ -842,9 +870,11 @@ export class ItemRoom {
     this.waiting?.();
     this.reconnector.dispose();
     markUnsent(this, false);
+    markUnstored(this, false);
     void this.recorder?.dispose();
     this.options.seat?.attach(null);
     this.provider?.destroy();
+    this.awareness?.destroy();
     this.undo.destroy();
     this.doc.destroy();
     this.snapshot.recovery?.doc.destroy();
