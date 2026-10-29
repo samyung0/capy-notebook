@@ -503,8 +503,10 @@ export function ChatPanel({
     // never followed.
     const current = historyFetchStatus === 'idle' && !historyError;
     if (!seedsAgain(hydratedRef.current, selectId, current)) return;
-    hydratedRef.current = { current, id: selectId };
-    hydrate(selectId, history.map(toChatMessage), current);
+    // A turn this tab sent before the fetch landed keeps the thread; the
+    // fetch after that turn seeds it then.
+    const seeded = hydrate(selectId, history.map(toChatMessage), current);
+    hydratedRef.current = { current: current && seeded, id: selectId };
   }, [selectId, history, historyFetchStatus, historyError, hydrate]);
 
   // The shown conversation is kept while the panel is mounted: leaving the
@@ -553,6 +555,8 @@ export function ChatPanel({
   });
   useEffect(() => forgetGone(), [historyError]);
   function openThread(id: string) {
+    // The shown conversation is already seeded.
+    if (id === selectId) return;
     hydratedRef.current = null;
     setSelectId(id);
   }

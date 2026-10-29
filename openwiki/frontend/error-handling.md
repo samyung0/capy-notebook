@@ -234,12 +234,18 @@ not offline use: without a service worker the app itself does not load offline.
   integrations, models, Explore, and the question bank's syllabus and progress.
   Infinite lists keep their first page.
 - Chat messages (account and workspace chat) are stored for the 10
-  conversations fetched most recently. Their `staleTime` is 0, so every open
-  refetches. The chat panel paints the stored history at once and seeds the
-  conversation again once this open's fetch lands; only that fetched history
-  decides whether a running answer is followed (T19), so a stale "running" row
-  never reconnects and a turn started elsewhere is not missed. A failed refetch
-  leaves the stored history painted and unfollowed.
+  conversations fetched most recently, each with its latest 40 messages (10
+  chats of 60 long turns measured 7 MB and 15 ms a write in full on a desktop,
+  2026-10-29). Older histories that nothing shows also leave memory. Their
+  `staleTime` is 0, so every open refetches. The chat panel paints the stored
+  history at once and seeds the conversation again once this open's fetch
+  lands; only that fetched history decides whether a running answer is followed
+  (T19), so a stale "running" row never reconnects and a turn started elsewhere
+  is not missed. A fetch paused offline or failed leaves the stored history
+  painted and unfollowed. A turn sent before the fetch lands keeps its thread,
+  and the fetch after that turn seeds it. Clicking the shown conversation again
+  does nothing. Undo and Redo answered in the tab outlive a seed. A failed
+  refetch's kept data is stored like any other (every persisted query).
 - Never stored: file, note, quiz and card bodies, collaboration tokens,
   presigned links, review sessions,
   answer keys (quiz and bank edit views), ingest slots, workspace stats, upload

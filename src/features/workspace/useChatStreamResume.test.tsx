@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { parseHTML } from 'linkedom';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { ChatStreamHandlers } from '@/api/chatStream';
-import type { ChatMessage } from '@/api/types';
+import type { ChatMessage, ResourceEffect } from '@/api/types';
 
 // linkedom's document before react-dom/client loads, which reads it once.
 const { document, window } = parseHTML(
@@ -240,4 +240,114 @@ it('seeds a conversation from stored history once, then once from the fetch', ()
   expect(seedsAgain({ current: false, id: 'c_1' }, 'c_1', true)).toBe(true);
   expect(seedsAgain({ current: true, id: 'c_1' }, 'c_1', true)).toBe(false);
   expect(seedsAgain({ current: true, id: 'c_1' }, 'c_2', false)).toBe(true);
+});
+
+const answered: ChatMessage[] = [
+  history[0] as ChatMessage,
+  { ...(history[1] as ChatMessage), content: 'Energy', status: 'complete' },
+];
+
+// Epo 2026-10-29 (L1): a turn sent on the stored paint keeps the thread when
+// the fetch lands, so the panel seeds from the fetch after that turn.
+it('keeps a turn sent before the fetch landed and reports it did not seed', async () => {
+  connections.push((handlers, signal) => {
+    handlers.onStart?.({ conversationId: 'c_1', messageId: 'm_3' });
+    return until(signal);
+  });
+  const view = await mount();
+  await act(async () => view.chat().hydrate('c_1', answered, false));
+  await act(async () => {
+    void view.chat().send('And ATP?', { workspaceOnly: false });
+  });
+
+  let seeded = true;
+  await act(async () => {
+    seeded = view.chat().hydrate('c_1', answered, true);
+  });
+
+  expect(seeded).toBe(false);
+  expect(view.chat().streaming).toBe(true);
+  expect(view.chat().messages.at(-2)?.content).toBe('And ATP?');
+  await view.unmount();
+});
+
+// Epo 2026-10-29 (L3): an Undo answered in this tab outlives a seed from
+// history that still shows the edit.
+it('shows this tab’s Undo outcome when the conversation seeds again', async () => {
+  const edit: ResourceEffect = {
+    operation: 'edited',
+    operationId: 'op_1',
+    resource: { id: 'f_1', kind: 'source_file', title: 'grades.xlsx' },
+    undo: { operationId: 'op_1', status: 'available' },
+  };
+  const undone: ResourceEffect = {
+    ...edit,
+    operation: 'edit_undone',
+    undo: { operationId: 'op_2', status: 'available' },
+  };
+  const edited: ChatMessage[] = [
+    history[0] as ChatMessage,
+    {
+      activity: [
+        {
+          callId: 'call_1',
+          effects: [edit],
+          id: 't_1',
+          kind: 'tool',
+          name: 'edit_document',
+          outcome: 'succeeded',
+        },
+      ],
+      content: 'Edited',
+      id: 'm_1',
+      role: 'assistant',
+      status: 'complete',
+    },
+  ];
+  const effectShown = () => {
+    const block = view.chat().messages.at(-1)?.activity?.[0];
+    return block?.kind === 'tool' ? block.effects?.[0] : undefined;
+  };
+  const view = await mount();
+  await act(async () => view.chat().hydrate('c_1', edited, false));
+  await act(async () => view.chat().applyUndo('op_1', undone));
+  await act(async () => view.chat().hydrate('c_1', edited, true));
+
+  expect(effectShown()).toEqual(undone);
+
+  // A refused Redo keeps its operation id: the walk stops on it.
+  const refused = {
+    ...undone,
+    undo: { operationId: 'op_2', status: 'available' as const },
+  };
+  await act(async () => view.chat().refuseUndo(refused));
+  await act(async () => view.chat().hydrate('c_1', edited, true));
+  expect(effectShown()?.undo).toEqual({
+    operationId: 'op_2',
+    status: 'unavailable',
+  });
+  await view.unmount();
+});
+
+// A thread seeded from fetched history counts as seeded while this tab's turn
+// streams, so coming back to it mid-answer does not seed it again after.
+it('reports a thread seeded from fetched history as seeded during its turn', async () => {
+  connections.push((handlers, signal) => {
+    handlers.onStart?.({ conversationId: 'c_1', messageId: 'm_3' });
+    return until(signal);
+  });
+  const view = await mount();
+  await act(async () => view.chat().hydrate('c_1', answered, true));
+  await act(async () => {
+    void view.chat().send('And ATP?', { workspaceOnly: false });
+  });
+
+  let seeded = false;
+  await act(async () => {
+    seeded = view.chat().hydrate('c_1', answered, true);
+  });
+
+  expect(seeded).toBe(true);
+  expect(view.chat().streaming).toBe(true);
+  await view.unmount();
 });

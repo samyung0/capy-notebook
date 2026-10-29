@@ -54,30 +54,63 @@ function firstPageOnly(data: unknown): unknown {
   return data;
 }
 
-/** Chat histories are kept for the conversations fetched most recently only:
- * each write stores the whole cache, and long chats are large. */
+/** Chat histories are kept for the conversations fetched most recently only,
+ * each with its latest messages: each write stores the whole cache, and long
+ * chats are large (10 chats of 60 turns measured 7 MB and 15 ms a write in
+ * full on a desktop, 2026-10-29). The refetch brings the rest. */
 const KEPT_CHATS = 10;
+const KEPT_CHAT_MESSAGES = 40;
 
 const isChatHistory = (key: QueryKey) =>
   key[0] === 'conversation' && key[2] === 'messages';
 
+/** The persisted queries that hold data, a failed refetch's kept data
+ * included, and only the newest chat histories. Older chat histories nothing
+ * shows also leave memory, where their long `gcTime` would keep them. */
 export function dehydratePersisted(client: QueryClient): DehydratedState {
+  const cache = client.getQueryCache();
   const stored = (query: Query) =>
-    query.state.status === 'success' && isPersisted(query);
+    query.state.data !== undefined && isPersisted(query);
   const dropped = new Set(
-    client
-      .getQueryCache()
+    cache
       .findAll({
         predicate: (query) => stored(query) && isChatHistory(query.queryKey),
       })
       .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)
       .slice(KEPT_CHATS)
   );
-  return dehydrate(client, {
+  for (const query of dropped)
+    if (query.getObserversCount() === 0 && query.state.fetchStatus === 'idle')
+      cache.remove(query);
+  const state = dehydrate(client, {
     serializeData: firstPageOnly,
     shouldDehydrateMutation: () => false,
     shouldDehydrateQuery: (query) => stored(query) && !dropped.has(query),
   });
+  return {
+    ...state,
+    queries: state.queries.map((query) => {
+      const { data } = query.state;
+      return {
+        ...query,
+        state: {
+          ...query.state,
+          data:
+            isChatHistory(query.queryKey) && Array.isArray(data)
+              ? data.slice(-KEPT_CHAT_MESSAGES)
+              : data,
+          // A failed refetch's data is stored as data: the error is this
+          // visit's.
+          ...(query.state.status === 'error' && {
+            error: null,
+            fetchFailureCount: 0,
+            fetchFailureReason: null,
+            status: 'success' as const,
+          }),
+        },
+      };
+    }),
+  };
 }
 
 /** Deletes the stored cache (signed out, or the account's deletion

@@ -153,6 +153,19 @@ function listTurn(
  * names the message, so the bubble (and its timers) does not remount. */
 export type LiveMessage = ChatMessage & { key?: string };
 
+/** `msg` with each tool effect passed through `next`. */
+const mapEffects = <M extends ChatMessage>(
+  msg: M,
+  next: (effect: ResourceEffect) => ResourceEffect
+): M => ({
+  ...msg,
+  activity: msg.activity?.map((block) =>
+    block.kind === 'tool'
+      ? { ...block, effects: block.effects?.map(next) }
+      : block
+  ),
+});
+
 const tempId = () =>
   `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -226,6 +239,8 @@ function online(signal: AbortSignal): Promise<void> {
  * (Epo 2026-10-27, T19). */
 type Thread = {
   conversationId: string | null;
+  /** Seeded from the stored cache, not from history fetched on this open. */
+  fromStore?: boolean;
   messages: LiveMessage[];
   pendingSources: PendingSources | null;
   resumed?: boolean;
@@ -271,6 +286,22 @@ export function useChatStream(workspaceId: string | null) {
   // reading when it is no longer shown.
   const stopRefs = useRef(new Map<string, () => void>());
   const leaveRefs = useRef(new Map<string, () => void>());
+  // Each Undo or Redo answered in this tab, by the operation it stepped: a
+  // seeded history shows the step's outcome, not the effect it replaced.
+  const stepsRef = useRef(new Map<string, ResourceEffect>());
+  const stepped = useCallback((effect: ResourceEffect) => {
+    let current = effect;
+    const seen = new Set<string>();
+    for (;;) {
+      const id = current.undo?.operationId;
+      const next = id === undefined ? undefined : stepsRef.current.get(id);
+      // A refusal keeps its operation id: stop there.
+      if (id === undefined || next === undefined || seen.has(id))
+        return current;
+      seen.add(id);
+      current = next;
+    }
+  }, []);
   const shown = threads[active] ?? emptyThread();
 
   useEffect(() => {
@@ -661,16 +692,22 @@ export function useChatStream(workspaceId: string | null) {
   );
 
   /** Shows a saved conversation. `current` history was fetched on this open;
-   * older history (the stored cache) only paints and never follows a turn. */
+   * older history (the stored cache) only paints and never follows a turn.
+   * False when a turn streaming here, on a thread seeded from the stored
+   * cache, won over the history: the fetch after that turn seeds it. */
   const hydrate = useCallback(
-    (convId: string | null, history: ChatMessage[], current: boolean) => {
+    (
+      convId: string | null,
+      history: ChatMessage[],
+      current: boolean
+    ): boolean => {
       // A conversation still streaming here is fresher than its history.
       const live = Object.entries(threadsRef.current).find(
         ([, t]) => t.streaming && convId && t.conversationId === convId
       );
       if (live) {
         show(live[0]);
-        return;
+        return !live[1].fromStore;
       }
       const key = tempId();
       const last = history.at(-1);
@@ -684,7 +721,8 @@ export function useChatStream(workspaceId: string | null) {
       show(key, {
         ...emptyThread(),
         conversationId: convId,
-        messages: history,
+        fromStore: !current,
+        messages: history.map((msg) => mapEffects(msg, stepped)),
         resumed: !!running,
         streaming: !!running,
       });
@@ -701,8 +739,9 @@ export function useChatStream(workspaceId: string | null) {
             ),
           running
         );
+      return true;
     },
-    [follow, show]
+    [follow, show, stepped]
   );
 
   const startNew = useCallback(() => show(tempId()), [show]);
@@ -717,19 +756,11 @@ export function useChatStream(workspaceId: string | null) {
    * marked unavailable after a refusal, which disables the button. */
   const replaceEffect = useCallback(
     (operationId: string, next: ResourceEffect) => {
-      const swap = (msg: LiveMessage): LiveMessage => ({
-        ...msg,
-        activity: msg.activity?.map((block) =>
-          block.kind === 'tool'
-            ? {
-                ...block,
-                effects: block.effects?.map((effect) =>
-                  effect.undo?.operationId === operationId ? next : effect
-                ),
-              }
-            : block
-        ),
-      });
+      stepsRef.current.set(operationId, next);
+      const swap = (msg: LiveMessage) =>
+        mapEffects(msg, (effect) =>
+          effect.undo?.operationId === operationId ? next : effect
+        );
       setThreads((prev) =>
         Object.fromEntries(
           Object.entries(prev).map(([k, t]) => [
