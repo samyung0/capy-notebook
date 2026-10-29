@@ -1847,11 +1847,12 @@ share.
 Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 150/125 and Qwen embedding 200/80; local development
 keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
-rows: DeepSeek Flash 40/30 (on 1017's route since 2026-10-29), GLM 150/125 (still keyed `zai/glm-5.3-flash`),
+rows: DeepSeek Flash 40/0 (on 1017's route since 2026-10-29; chat and Generate only, so no reserve), GLM 150/125 (still keyed `zai/glm-5.3-flash`),
 OpenRouter DeepSeek V4 Flash 0731 32/0 (ingest-only, so no interactive
-reserve) and V4.1 Flash 1017 36/26 (captions and ghost text; page reads
-lease the `vlm_page` gate instead; with DeepSeek Flash it splits the measured
-76/56, Epo 2026-10-29; UAT and local 8/6 each),
+reserve) and V4.1 Flash 1017 40/20 (ghost text up to 40, captions up to 20;
+page reads lease the `vlm_page` gate instead; with DeepSeek Flash 80 in flight
+on InferenceNet, up from 76, Epo 2026-10-29; UAT and local 8/0
+and 8/4),
 MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together and Wafer each held 16
 calls at once in the 2026-10-23 probe), Qwen
 embedding 200/80 (total/interactive reserve). Existing settings remain, so an
