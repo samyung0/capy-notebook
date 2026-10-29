@@ -13,7 +13,7 @@
     },
     "deepseek": {
       "name": "DeepSeek",
-      "platformEnv": "DEEPSEEK_API_KEY",
+      "platformEnv": "OPENROUTER_API_KEY",
       "thinking": ["instant", "low", "mid", "high", "max"]
     },
     "zai": {

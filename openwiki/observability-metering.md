@@ -580,6 +580,17 @@ named provider directly. These exact routing exceptions are allowed:
   without an effort reasons as at `max`, so every GLM request sends
   `reasoning: {effort}` with `low`, `high` or `max`; `low` is the floor a
   reasoning-off call runs at and `high` the chat default.
+- `deepseek/deepseek-flash` keeps its `deepseek` catalog identity, display
+  name, credit rates and capacity row but is served through OpenRouter as
+  `deepseek/deepseek-v4.1-flash-1017` on InferenceNet, then Cloudflare (Epo
+  2026-10-29), with `OPENROUTER_API_KEY` as the `deepseek` provider's
+  `platformEnv` (`OPENROUTER_MODELS` maps the catalog pair). Its row offers
+  `mid`, `high` and `max`, sent as OpenRouter's `medium`, `high` and `max`
+  (`DEEPSEEK_EFFORTS`; both providers took `xhigh` and `max` in the UAT
+  probe), `high` by default (`low` stays mapped for rows migrations seed with
+  it); a reasoning-off call sends
+  `reasoning: {enabled: false}`. DeepSeek's own API is no longer called for
+  chat: `DEEPSEEK_API_KEY` serves only `search_web`.
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
   `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`, except MiniMax 3.1
@@ -797,7 +808,9 @@ cached-read input, and output. One credit is $0.0005 of provider cost, so a
 rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
 whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
 300 / 60 / 1000 (Z.AI's list price, decision 2026-10-20, kept on OpenRouter,
-where DigitalOcean lists less), DeepSeek Flash 600 / 12 / 2400, OpenRouter
+where DigitalOcean lists less), DeepSeek Flash 300 / 60 / 1200 (Epo's
+rate for its OpenRouter 1017 route, 2026-10-29; 600 / 12 / 2400 at DeepSeek's
+own peak-hour price before), OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
 decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
 price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
@@ -1830,10 +1843,11 @@ share.
 Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 150/125 and Qwen embedding 200/80; local development
 keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
-rows: DeepSeek Flash 2500/1500, GLM 150/125 (still keyed `zai/glm-5.3-flash`),
+rows: DeepSeek Flash 40/30 (on 1017's route since 2026-10-29), GLM 150/125 (still keyed `zai/glm-5.3-flash`),
 OpenRouter DeepSeek V4 Flash 0731 32/0 (ingest-only, so no interactive
-reserve) and V4.1 Flash 1017 76/56 (captions, chat and ghost text; page reads
-lease the `vlm_page` gate instead),
+reserve) and V4.1 Flash 1017 36/26 (captions and ghost text; page reads
+lease the `vlm_page` gate instead; with DeepSeek Flash it splits the measured
+76/56, Epo 2026-10-29; UAT and local 8/6 each),
 MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together and Wafer each held 16
 calls at once in the 2026-10-23 probe), Qwen
 embedding 200/80 (total/interactive reserve). Existing settings remain, so an

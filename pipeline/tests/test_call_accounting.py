@@ -953,4 +953,4 @@ async def test_openrouter_serving_provider_is_recorded_as_served_by(monkeypatch)
     )
     assert metadata["servedBy"] == "DigitalOcean"
     # Direct providers carry no such field and record nothing.
-    assert response_usage(json.loads(final_chunk), provider="deepseek").served_by == ""
+    assert response_usage(json.loads(final_chunk), provider="openai").served_by == ""

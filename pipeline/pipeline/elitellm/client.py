@@ -21,6 +21,8 @@ from .providers import platform_api_key
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+# DeepSeek's own chat API: the lab playground and frozen bench scripts only;
+# the app sends DeepSeek Flash through OpenRouter (Epo 2026-10-29).
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
 DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
 DEEPINFRA_INFERENCE_URL = "https://api.deepinfra.com/v1/inference/"
@@ -53,9 +55,14 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
         "allow_fallbacks": False,
     },
 }
-# The zai pin keeps its catalog identity; OpenRouter names the model with an
-# org prefix.
-ZAI_OPENROUTER_MODELS = {"glm-5.3-flash": "z-ai/glm-5.3-flash"}
+# Catalog pins OpenRouter serves under another name, each keeping its catalog
+# identity: GLM-5.3-Flash with an org prefix, and DeepSeek Flash on 1017
+# rather than DeepSeek's own API, whose key only search_web uses now (Epo
+# 2026-10-29).
+OPENROUTER_MODELS = {
+    ("zai", "glm-5.3-flash"): "z-ai/glm-5.3-flash",
+    ("deepseek", "deepseek-flash"): "deepseek/deepseek-v4.1-flash-1017",
+}
 
 DEEPINFRA_QWEN_EMBED_MODEL = "Qwen/Qwen3-Embedding-4B"
 DEEPINFRA_QWEN_RERANK_MODEL = "Qwen/Qwen3-Reranker-4B"
@@ -240,17 +247,30 @@ def deepseek_thinking_body(thinking: str) -> dict[str, Any]:
 MINIMAX_EFFORTS = {
     "minimax/minimax-m3.1-flash": {"low": "low", "mid": "medium", "high": "high"},
 }
+# DeepSeek Flash's levels on OpenRouter; its row offers mid to max (Epo
+# 2026-10-29), and InferenceNet and Cloudflare both took xhigh and max in the
+# probe. Low stays mapped for the rows migrations seed with it.
+DEEPSEEK_EFFORTS = {"low": "low", "mid": "medium", "high": "high", "max": "max"}
 
 
 def openrouter_reasoning(spec: ModelConfig, thinking: str) -> dict[str, Any]:
     """GLM cannot turn reasoning off, and a request without an effort reasons
     as at max, so every GLM request names its effort (decision 2026-10-21).
-    MiniMax reasons at the chat pin's effort too. The DeepSeek pins run with
-    reasoning off."""
+    MiniMax reasons at the chat pin's effort too, and DeepSeek Flash at its
+    pin's (off when a call turns reasoning off). The other DeepSeek pins run
+    with reasoning off."""
     if spec.model_slug in MINIMAX_EFFORTS:
         if thinking not in MINIMAX_EFFORTS[spec.model_slug]:
             raise RegistryError("MiniMax supports only low, mid, or high reasoning")
         return {"effort": MINIMAX_EFFORTS[spec.model_slug][thinking]}
+    if spec.provider_slug == "deepseek":
+        if thinking in ("", "instant"):
+            return {"enabled": False}
+        if thinking not in DEEPSEEK_EFFORTS:
+            raise RegistryError(
+                "DeepSeek Flash supports only low, mid, high, or max reasoning"
+            )
+        return {"effort": DEEPSEEK_EFFORTS[thinking]}
     if spec.provider_slug != "zai":
         return {"enabled": False}
     if thinking not in ("low", "high", "max"):
@@ -476,9 +496,9 @@ def openrouter_request(
     tool_choice: Any | None,
 ) -> dict[str, Any]:
     model = (
-        ZAI_OPENROUTER_MODELS.get(spec.model_slug)
-        if spec.provider_slug == "zai"
-        else spec.model_slug
+        spec.model_slug
+        if spec.provider_slug == "openrouter"
+        else OPENROUTER_MODELS.get((spec.provider_slug, spec.model_slug))
     )
     routing = OPENROUTER_ROUTING.get(model or "")
     if routing is None:
@@ -802,20 +822,7 @@ async def complete(
             tool_choice=tool_choice,
         )
         return _as_obj(await _post_json(OPENAI_CHAT_URL, _bearer(key), body))
-    if spec.provider_slug == "deepseek":
-        body = deepseek_request(
-            spec,
-            messages,
-            temperature=temperature,
-            tools=tools,
-            response_format=response_format,
-            max_tokens=max_tokens,
-            thinking=thinking,
-            stream=False,
-            tool_choice=tool_choice,
-        )
-        return _as_obj(await _post_json(DEEPSEEK_CHAT_URL, _bearer(key), body))
-    if spec.provider_slug in ("zai", "openrouter"):
+    if spec.provider_slug in ("zai", "deepseek", "openrouter"):
         body = openrouter_request(
             spec,
             messages,
@@ -894,22 +901,7 @@ async def stream(
         async for event in _stream_sse(OPENAI_CHAT_URL, _bearer(key), body):
             yield _as_obj(event)
         return
-    if spec.provider_slug == "deepseek":
-        body = deepseek_request(
-            spec,
-            messages,
-            temperature=temperature,
-            tools=tools,
-            response_format=response_format,
-            max_tokens=max_tokens,
-            thinking=thinking,
-            stream=True,
-            tool_choice=tool_choice,
-        )
-        async for event in _stream_sse(DEEPSEEK_CHAT_URL, _bearer(key), body):
-            yield _as_obj(event)
-        return
-    if spec.provider_slug in ("zai", "openrouter"):
+    if spec.provider_slug in ("zai", "deepseek", "openrouter"):
         body = openrouter_request(
             spec,
             messages,
