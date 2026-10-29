@@ -458,7 +458,14 @@ Chat SSE failures stay on the assistant turn. A `response_flagged` error clears 
 stream that closes before a terminal `done` frame, both mark that turn as errored;
 they do not crash a page boundary or emit the default mutation toast. A
 `model_unavailable` (422) response before the stream opens is the same surface,
-with copy that sends the user to Settings → LLM.
+with copy that sends the user to Settings → LLM. A refusal before the stream
+opens on a new chat's first send (such as 403 `llm_credits_exhausted`) is too: Go creates a new conversation only after the
+turn's checks pass (`chat_stream.go`), so the refusal leaves no empty
+conversation in the list, and the panel keeps the message and its error with no
+conversation id. New chat stays enabled while the panel shows any message
+(`ChatPanel`'s `onActiveChange(id, shown)`), and the account page's New chat
+asks the panel for a new chat directly, since the URL is already `/chat`
+(Epo's report 2026-10-29).
 
 Stop is a request, not a dropped connection (Epo 2026-10-21): the button calls
 `POST /api/conversations/{id}/messages/{messageId}/stop` (`useStopChatTurn`)

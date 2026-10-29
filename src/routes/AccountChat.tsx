@@ -49,6 +49,7 @@ export default function AccountChat() {
   });
   const [request, setRequest] = useState<ChatRequest>();
   const [active, setActive] = useState<string | null>(null);
+  const [shown, setShown] = useState(false);
   const activeRef = useRef<string | null>(null);
   const urlRef = useRef(conversationId ?? null);
   urlRef.current = conversationId ?? null;
@@ -88,13 +89,21 @@ export default function AccountChat() {
   // panel reports no thread while one opens, so only named threads count;
   // New chat goes through the URL instead.
   const onActiveChange = useCallback(
-    (id: string | null) => {
+    (id: string | null, panelShown: boolean) => {
       activeRef.current = id;
       setActive(id);
+      setShown(panelShown);
       if (id && id !== urlRef.current) void show(id);
     },
     [show]
   );
+  // New chat also leaves a first send refused before it got a conversation,
+  // which the URL (still /chat) cannot tell apart from a new chat.
+  const newChat = () => {
+    activeRef.current = null;
+    setRequest((previous) => ({ id: null, seq: (previous?.seq ?? 0) + 1 }));
+    if (urlRef.current) void show(null);
+  };
   const onRemoved = (id: string) => {
     if (id === active) void show(null);
   };
@@ -183,11 +192,7 @@ export default function AccountChat() {
       <h1 className="t-subtitle ml-1 min-w-0 flex-1 truncate">
         {m.workspace_tab_chat()}
       </h1>
-      <ToolbarButton
-        disabled={!active}
-        label={m.chat_new()}
-        onClick={() => void show(null)}
-      >
+      <ToolbarButton disabled={!shown} label={m.chat_new()} onClick={newChat}>
         <Icon name="newChat" />
       </ToolbarButton>
     </div>
@@ -215,7 +220,7 @@ export default function AccountChat() {
               />
               <ConversationList
                 activeId={active}
-                onNew={() => void show(null)}
+                onNew={newChat}
                 onOpen={(id) => void show(id)}
                 onRemoved={onRemoved}
                 workspaceId={null}
@@ -255,7 +260,7 @@ export default function AccountChat() {
         <ChatHistoryDialog
           activeId={active}
           onClose={() => setHistoryOpen(false)}
-          onNew={() => void show(null)}
+          onNew={newChat}
           onOpen={(id) => void show(id)}
           onRemoved={onRemoved}
           open={historyOpen}

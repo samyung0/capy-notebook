@@ -342,8 +342,10 @@ export function ChatPanel({
   /** Each opened chat (a request, new or restored) puts the caret in the
    * composer: the account chat page. */
   focusOnOpen?: boolean;
-  /** The shown thread, for the left panel to highlight. */
-  onActiveChange?: (id: string | null) => void;
+  /** The shown thread, for the left panel to highlight, and whether the panel
+   * shows any messages: a first send refused before it got a conversation
+   * still has its message and error, so New chat stays available. */
+  onActiveChange?: (id: string | null, shown: boolean) => void;
   color?: UserColor;
   /** Draws the panel's tab row with this chat's own actions (history, new chat). */
   renderTabRow?: (actions: TabAction[]) => ReactNode;
@@ -518,9 +520,10 @@ export function ChatPanel({
   useEffect(() => {
     if (request) followRequest(request);
   }, [request]);
+  const shown = messages.length > 0;
   useEffect(() => {
-    onActiveChange?.(conversationId);
-  }, [conversationId, onActiveChange]);
+    onActiveChange?.(conversationId, shown);
+  }, [conversationId, shown, onActiveChange]);
 
   // The dock always starts a new conversation (one still answering keeps
   // streaming in the background), then grows into the chat page; the keyboard
@@ -548,7 +551,7 @@ export function ChatPanel({
     onClick: () => setHistoryOpen(true),
   };
   const newAction: TabAction = {
-    disabled: !conversationId,
+    disabled: !shown,
     icon: 'newChat',
     label: m.chat_new(),
     onClick: openNew,

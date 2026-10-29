@@ -140,6 +140,15 @@ func assertInteractiveCreditsForbidden(t *testing.T, fx billingFixture) {
 	if chat.Code != http.StatusForbidden || errorCode(t, chat) != "llm_credits_exhausted" {
 		t.Fatalf("chat: %d %s", chat.Code, chat.Body.String())
 	}
+	// A refused first send leaves no empty chat behind (Epo 2026-10-29).
+	var chats int
+	if err := fx.pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM conversations WHERE user_id = $1`, fx.actorID).Scan(&chats); err != nil {
+		t.Fatal(err)
+	}
+	if chats != 0 {
+		t.Fatalf("a refused first send left %d conversations", chats)
+	}
 
 	gen := doReq(t, fx.handler, http.MethodPost, "/api/workspaces/"+ws+"/generate", fx.actorID,
 		generateBody("quiz", "Credits quiz"))

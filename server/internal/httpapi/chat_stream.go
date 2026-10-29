@@ -260,6 +260,14 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, scope chatScope
 	}
 	defer charge.release(ctx)
 
+	if conv.ID == "" {
+		conv, err = a.s.CreateConversation(ctx, userID, wsID, titleFrom(req.Text))
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+	}
+
 	// History must be loaded before the current user row so Python sees the
 	// question once, as `query`.
 	prompt, err := a.s.ConversationPrompt(ctx, conv.ID)
@@ -485,12 +493,13 @@ func (a *api) chatTurnContext(ctx context.Context, userID, wsID string, req chat
 	return turn, err
 }
 
-// resolveConversation opens a new conversation in the turn's scope or loads
-// the user's own, which must be of that scope (an account conversation has
-// workspace "").
+// resolveConversation loads the user's own conversation, which must be of the
+// turn's scope (an account conversation has workspace ""). A new one is only
+// scoped here (no ID): it is created once the turn's checks pass, so a refused
+// first send leaves no empty chat behind.
 func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID string) (store.Conversation, error) {
 	if convID == "" {
-		return a.s.CreateConversation(ctx, userID, wsID, "")
+		return store.Conversation{WorkspaceID: wsID}, nil
 	}
 	conv, err := a.s.GetConversation(ctx, userID, convID)
 	if err != nil {
