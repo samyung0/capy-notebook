@@ -1437,7 +1437,9 @@ due shows a sample card turned to its ratings; without a past review the
 result step opens `/learning/reviews/tour-sample`, which the result page
 renders from sample data without fetching while the tour runs (once it stops,
 the id reads as unavailable). The workspace page lends its panels through
-`registerTourPanels`; the parts are found by `data-save-state`,
+`registerTourPanels`, and the panel preferences the tour changes (each
+panel open or closed, and its view) are put back when it stops, so a panel
+kept closed stays closed. The parts are found by `data-save-state`,
 `data-undo-buttons`, `data-question-edit` and `data-voice-mic`. It is built on
 the app's Radix Popover with a virtual anchor, no tour library.
 
