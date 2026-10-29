@@ -163,7 +163,6 @@
   "blocks": {
     "a": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -177,7 +176,6 @@
     },
     "b": {
       "flavour": "affine:list",
-      "version": 1,
       "children": ["c", "d", "e"],
       "props": {
         "checked": false,
@@ -194,7 +192,6 @@
     },
     "c": {
       "flavour": "affine:list",
-      "version": 1,
       "children": [],
       "props": {
         "checked": false,
@@ -211,13 +208,11 @@
     },
     "d": {
       "flavour": "affine:divider",
-      "version": 1,
       "children": [],
       "props": {}
     },
     "e": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -231,7 +226,6 @@
     },
     "f": {
       "flavour": "affine:table",
-      "version": 1,
       "children": [],
       "props": {
         "cells.fr:f-c0.text": [
@@ -247,7 +241,6 @@
     },
     "note": {
       "flavour": "affine:note",
-      "version": 1,
       "children": ["a", "b", "f"],
       "props": {
         "background": {
@@ -271,7 +264,6 @@
     },
     "root": {
       "flavour": "affine:page",
-      "version": 2,
       "children": ["note"],
       "props": {
         "title": []

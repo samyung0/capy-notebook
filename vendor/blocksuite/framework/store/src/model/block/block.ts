@@ -35,8 +35,11 @@ export class Block {
     return this._syncController.version;
   }
 
+  /* Capy (vendor/blocksuite/README.md, local change 9): a yBlock holds no
+   * `sys:id`; its id is its key in the blocks map, passed in. */
   constructor(
     readonly schema: Schema,
+    id: string,
     readonly yBlock: YBlock,
     readonly doc?: Store,
     readonly options: BlockOptions = {}
@@ -54,12 +57,19 @@ export class Block {
     if (blockSchema?.model.isFlatData) {
       this._syncController = new FlatSyncController(
         schema,
+        id,
         yBlock,
         doc,
         onChange
       );
     } else {
-      this._syncController = new SyncController(schema, yBlock, doc, onChange);
+      this._syncController = new SyncController(
+        schema,
+        id,
+        yBlock,
+        doc,
+        onChange
+      );
     }
   }
 }

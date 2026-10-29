@@ -200,7 +200,6 @@ it('writes the spec props of text blocks', () => {
       textAlign: 'right',
       type: 'todo',
     },
-    version: 1,
   });
   expect(blocks.roman.props).toMatchObject({
     listStyleType: 'upper-roman',
@@ -308,7 +307,6 @@ it('writes a table as flat data', () => {
       'rows.r1.order': 'a1',
       'rows.r1.rowId': 'r1',
     },
-    version: 1,
   });
   expect(blocksToValue(blocks)[0]).toMatchObject({
     children: [
@@ -349,13 +347,18 @@ it('stores figures as deep Y types and media with schema defaults', () => {
 });
 
 it('seeds an empty value with root, note and one paragraph', () => {
-  const blocks = readBlocks(applyValue(new Y.Doc(), []));
+  const doc = applyValue(new Y.Doc(), []);
+  const blocks = readBlocks(doc);
   const [paragraph] = blocks.note.children;
+  // The trimmed block map: no `sys:id` (the key is the id), no `sys:version`.
+  for (const yBlock of doc.getMap<Y.Map<unknown>>(BLOCKS_ROOT).values())
+    expect(
+      [...yBlock.keys()].filter((key) => key.startsWith('sys:')).sort()
+    ).toEqual(['sys:children', 'sys:flavour']);
   expect(blocks.root).toEqual({
     children: ['note'],
     flavour: 'affine:page',
     props: { title: [] },
-    version: 2,
   });
   // Every schema default is written; displayMode is DocOnly.
   expect(blocks.note.props).toEqual({
@@ -378,7 +381,6 @@ it('seeds an empty value with root, note and one paragraph', () => {
     children: [],
     flavour: 'affine:paragraph',
     props: { collapsed: false, text: [], type: 'text' },
-    version: 1,
   });
 });
 

@@ -23,13 +23,21 @@ pipeline and share pages are unchanged. Quizzes and flashcards stay
 
 | Key | Value |
 | --- | --- |
-| `sys:id` | string, equal to the map key |
 | `sys:flavour` | string, one of the flavours below |
-| `sys:version` | number, the flavour schema's `version` |
-| `sys:children` | `Y.Array<string>` of child ids, in order |
+| `sys:children` | `Y.Array<string>` of child ids, in order, on every block (a leaf's is empty) |
 | `prop:<name>` | the prop value, encoded by `native2Y` (below) |
 
 `meta:*` props (`createdAt`, `createdBy` …) are never written.
+
+**The block map is trimmed** (Epo, 2026-10-29): a yBlock holds no `sys:id`
+and no `sys:version`. A block's id is its key in `blocks`; its version is its
+flavour schema's (no migration reads a stored one). The vendored store reads
+both that way and writes neither (`vendor/blocksuite/README.md`, local change
+9), and the structural check refuses either key, so a room stays trimmed. On
+the near-limit note that keeps 12.98 MiB of room heap instead of 15.85 (Plate:
+6.96) and a 7% smaller state. Empty `sys:children`, `prop:collapsed` and the
+written defaults stay: a lazily created children array loses a concurrent
+first child, and BlockSuite writes a missing default back on every open.
 
 **Every default is written at seed.** When a browser opens a block that lacks a
 prop its schema defaults to a value other than `undefined`, BlockSuite writes
@@ -273,6 +281,8 @@ A blocks room is valid when:
 - each flavour sits under a parent its schema allows (`metadata.parent`), and
   `capy:material-ref`, `capy:chart`/`plot`/`graph`/`html-embed` sit directly under
   `note`;
+- a yBlock holds `sys:flavour`, `sys:children` and `prop:*` keys only (no
+  `sys:id`, no `sys:version`);
 - every `prop:*` key is in the flavour's prop list, with the value types above,
   and every non-`undefined` default is present;
 - no block is nested more than 8 levels below `note` (D18);

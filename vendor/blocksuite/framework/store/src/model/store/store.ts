@@ -676,7 +676,8 @@ export class Store {
         },
       };
 
-      const block = new Block(this._schema, yBlock, this, options);
+      // Capy (local change 9): the key is the block's id.
+      const block = new Block(this._schema, id, yBlock, this, options);
       this._runQuery(block);
 
       // Capy (vendor/blocksuite/README.md, local change 6): a copy of the

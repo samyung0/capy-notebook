@@ -74,7 +74,6 @@
   "blocks": {
     "h": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -88,7 +87,6 @@
     },
     "img": {
       "flavour": "affine:image",
-      "version": 1,
       "children": [],
       "props": {
         "caption": "",
@@ -104,7 +102,6 @@
     },
     "l": {
       "flavour": "affine:list",
-      "version": 1,
       "children": ["h", "img"],
       "props": {
         "checked": false,
@@ -121,7 +118,6 @@
     },
     "note": {
       "flavour": "affine:note",
-      "version": 1,
       "children": ["l"],
       "props": {
         "background": {
@@ -145,7 +141,6 @@
     },
     "root": {
       "flavour": "affine:page",
-      "version": 2,
       "children": ["note"],
       "props": {
         "title": []

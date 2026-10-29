@@ -36,10 +36,13 @@ describe('BlockSuite store layout', () => {
     const blocks = doc.getMap('blocks');
     expect(blocks.size).toBe(3);
 
+    // The trimmed block map (local change 9): the key is the id, and no
+    // `sys:id` or `sys:version` is written.
     const paragraph = blocks.get(paragraphId) as Y.Map<unknown>;
-    expect(paragraph.get('sys:id')).toBe(paragraphId);
+    expect(
+      [...paragraph.keys()].filter((key) => key.startsWith('sys:')).sort()
+    ).toEqual(['sys:children', 'sys:flavour']);
     expect(paragraph.get('sys:flavour')).toBe('affine:paragraph');
-    expect(paragraph.get('sys:version')).toBeTypeOf('number');
     expect(paragraph.get('sys:children')).toBeInstanceOf(Y.Array);
     expect(paragraph.get('prop:type')).toBe('text');
     const text = paragraph.get('prop:text');

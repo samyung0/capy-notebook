@@ -108,13 +108,17 @@ export class SyncController {
 
   readonly yChildren: Y.Array<string[]>;
 
+  /* Capy (vendor/blocksuite/README.md, local change 9): the id is the
+   * block's key in the blocks map, not a `sys:id` it holds; a missing
+   * `sys:version` reads as the schema's. */
   constructor(
     readonly schema: Schema,
+    id: string,
     readonly yBlock: YBlock,
     readonly doc?: Store,
     readonly onChange?: (key: string, isLocal: boolean) => void
   ) {
-    const { id, flavour, version, yChildren, props } = this._parseYBlock();
+    const { flavour, version, yChildren, props } = this._parseYBlock();
 
     this.id = id;
     this.flavour = flavour;
@@ -243,7 +247,6 @@ export class SyncController {
   }
 
   private _parseYBlock() {
-    let id: string | undefined;
     let flavour: string | undefined;
     let version: number | undefined;
     let yChildren: Y.Array<string[]> | undefined;
@@ -253,10 +256,6 @@ export class SyncController {
       if (key.startsWith('prop:')) {
         const keyName = key.replace('prop:', '');
         props[keyName] = this._getPropsProxy(keyName, value);
-        return;
-      }
-      if (key === 'sys:id' && typeof value === 'string') {
-        id = value;
         return;
       }
       if (key === 'sys:flavour' && typeof value === 'string') {
@@ -273,12 +272,6 @@ export class SyncController {
       }
     });
 
-    if (!id) {
-      throw new BlockSuiteError(
-        ErrorCode.ModelCRUDError,
-        'block id is not found when creating model'
-      );
-    }
     if (!flavour) {
       throw new BlockSuiteError(
         ErrorCode.ModelCRUDError,
@@ -320,7 +313,6 @@ export class SyncController {
     }
 
     return {
-      id,
       flavour,
       version,
       props,

@@ -12,8 +12,9 @@ import type {
  * import, and the same layout the Rust `blocks` crate writes.
  *
  * Both directions go through a JSON form of the map, `BlocksJson` (the shared
- * goldens' `blocks`): block id → `{flavour, version, children, props}`, with a
- * `Y.Text` as its delta array and dotted flat-data keys as they are stored.
+ * goldens' `blocks`): block id → `{flavour, children, props}`, with a `Y.Text`
+ * as its delta array and dotted flat-data keys as they are stored. A yBlock
+ * holds no `sys:id` (its key is its id) and no `sys:version`.
  */
 
 export const BLOCKS_ROOT = 'blocks';
@@ -29,38 +30,34 @@ export interface BlockJson {
   children: string[];
   flavour: string;
   props: Record<string, unknown>;
-  version: number;
 }
 
 export type BlocksJson = Record<string, BlockJson>;
 
-/** Every flavour the layout writes, with its schema `version`. */
-const VERSIONS: Record<string, number> = {
-  'affine:callout': 1,
-  'affine:code': 1,
-  'affine:divider': 1,
-  'affine:image': 1,
-  'affine:latex': 1,
-  'affine:list': 1,
-  'affine:note': 1,
-  'affine:page': 2,
-  'affine:paragraph': 1,
-  'affine:table': 1,
-  'capy:audio': 1,
-  'capy:chart': 1,
-  'capy:column': 1,
-  'capy:columns': 1,
-  'capy:graph': 1,
-  'capy:html-embed': 1,
-  'capy:material-ref': 1,
-  'capy:mermaid': 1,
-  'capy:plot': 1,
-  'capy:toc': 1,
-  'capy:video': 1,
-};
-export const FLAVOURS: ReadonlySet<string> = /* @__PURE__ */ new Set(
-  Object.keys(VERSIONS)
-);
+/** Every flavour the layout writes. */
+export const FLAVOURS: ReadonlySet<string> = /* @__PURE__ */ new Set([
+  'affine:callout',
+  'affine:code',
+  'affine:divider',
+  'affine:image',
+  'affine:latex',
+  'affine:list',
+  'affine:note',
+  'affine:page',
+  'affine:paragraph',
+  'affine:table',
+  'capy:audio',
+  'capy:chart',
+  'capy:column',
+  'capy:columns',
+  'capy:graph',
+  'capy:html-embed',
+  'capy:material-ref',
+  'capy:mermaid',
+  'capy:plot',
+  'capy:toc',
+  'capy:video',
+]);
 
 /** `NoteDisplayMode.DocOnly`: the note shows in the page, never on a canvas. */
 const DOC_ONLY = 'doc';
@@ -462,7 +459,6 @@ class Writer {
       children: [],
       flavour,
       props: schemaDefaults(flavour),
-      version: VERSIONS[flavour],
     };
     this.blocks[id] = block;
     return block;
@@ -1244,9 +1240,7 @@ export function writeBlocks(doc: Y.Doc, blocks: BlocksJson) {
     for (const [id, block] of Object.entries(blocks)) {
       const yBlock = new Y.Map<unknown>();
       root.set(id, yBlock);
-      yBlock.set('sys:id', id);
       yBlock.set('sys:flavour', block.flavour);
-      yBlock.set('sys:version', block.version);
       yBlock.set('sys:children', Y.Array.from(block.children));
       for (const [key, value] of Object.entries(block.props)) {
         if (isTextProp(block.flavour, key)) {
@@ -1272,7 +1266,6 @@ export function readBlocks(doc: Y.Doc): BlocksJson {
       children: (yBlock.get('sys:children') as Y.Array<string>).toArray(),
       flavour: yBlock.get('sys:flavour') as string,
       props,
-      version: yBlock.get('sys:version') as number,
     };
   }
   return blocks;

@@ -16,7 +16,6 @@ export interface BlockSnapshotJson {
   id: string;
   props: Record<string, unknown>;
   type: 'block';
-  version: number;
 }
 
 /** BlockSuite's marker for a `Text` prop in a snapshot (TEXT_UNIQ_IDENTIFIER). */
@@ -42,7 +41,7 @@ function nestFlat(flavour: string, props: Record<string, unknown>) {
 }
 
 function snapshot(blocks: BlocksJson, id: string): BlockSnapshotJson {
-  const { children, flavour, props, version } = blocks[id];
+  const { children, flavour, props } = blocks[id];
   return {
     children: children.map((child) => snapshot(blocks, child)),
     flavour,
@@ -58,7 +57,6 @@ function snapshot(blocks: BlocksJson, id: string): BlockSnapshotJson {
             ])
           ),
     type: 'block',
-    version,
   };
 }
 

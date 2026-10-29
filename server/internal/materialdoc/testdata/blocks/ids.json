@@ -86,7 +86,6 @@
   "blocks": {
     "dup": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -100,7 +99,6 @@
     },
     "note": {
       "flavour": "affine:note",
-      "version": 1,
       "children": ["note-b0", "dup", "note-b2", "note-b3"],
       "props": {
         "background": {
@@ -124,7 +122,6 @@
     },
     "note-b0": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -138,7 +135,6 @@
     },
     "note-b2": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -152,7 +148,6 @@
     },
     "note-b3": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -166,7 +161,6 @@
     },
     "root": {
       "flavour": "affine:page",
-      "version": 2,
       "children": ["note"],
       "props": {
         "title": []

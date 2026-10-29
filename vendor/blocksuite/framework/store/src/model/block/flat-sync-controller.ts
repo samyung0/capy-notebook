@@ -21,13 +21,17 @@ export class FlatSyncController {
 
   readonly yChildren: Y.Array<string[]>;
 
+  /* Capy (vendor/blocksuite/README.md, local change 9): the id is the
+   * block's key in the blocks map, not a `sys:id` it holds; a missing
+   * `sys:version` reads as the schema's. */
   constructor(
     readonly schema: Schema,
+    id: string,
     readonly yBlock: YBlock,
     readonly doc?: Store,
     readonly onChange?: (key: string, isLocal: boolean) => void
   ) {
-    const { id, flavour, version, yChildren, props } = this._parseYBlock();
+    const { flavour, version, yChildren, props } = this._parseYBlock();
 
     this.id = id;
     this.flavour = flavour;
@@ -72,17 +76,12 @@ export class FlatSyncController {
   }
 
   private _parseYBlock() {
-    let id: string | undefined;
     let flavour: string | undefined;
     let version: number | undefined;
     let yChildren: Y.Array<string[]> | undefined;
     const props: Set<string> = new Set();
 
     this.yBlock.forEach((value, key) => {
-      if (key === 'sys:id' && typeof value === 'string') {
-        id = value;
-        return;
-      }
       if (key === 'sys:flavour' && typeof value === 'string') {
         flavour = value;
         return;
@@ -104,12 +103,6 @@ export class FlatSyncController {
       }
     });
 
-    if (!id) {
-      throw new BlockSuiteError(
-        ErrorCode.ModelCRUDError,
-        'block id is not found when creating model'
-      );
-    }
     if (!flavour) {
       throw new BlockSuiteError(
         ErrorCode.ModelCRUDError,
@@ -146,7 +139,6 @@ export class FlatSyncController {
     }
 
     return {
-      id,
       flavour,
       version,
       props,

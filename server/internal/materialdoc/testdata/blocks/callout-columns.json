@@ -155,13 +155,11 @@
   "blocks": {
     "cg": {
       "flavour": "capy:columns",
-      "version": 1,
       "children": ["cl", "cr"],
       "props": {}
     },
     "cl": {
       "flavour": "capy:column",
-      "version": 1,
       "children": ["cl1"],
       "props": {
         "width": "50%"
@@ -169,7 +167,6 @@
     },
     "cl1": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -183,7 +180,6 @@
     },
     "co": {
       "flavour": "affine:callout",
-      "version": 1,
       "children": ["co1", "co2"],
       "props": {
         "backgroundColorName": "grey",
@@ -197,7 +193,6 @@
     },
     "co1": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -211,7 +206,6 @@
     },
     "co2": {
       "flavour": "affine:list",
-      "version": 1,
       "children": [],
       "props": {
         "checked": false,
@@ -228,7 +222,6 @@
     },
     "cr": {
       "flavour": "capy:column",
-      "version": 1,
       "children": ["cr1", "cr2"],
       "props": {
         "width": "50%"
@@ -236,7 +229,6 @@
     },
     "cr1": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -250,13 +242,11 @@
     },
     "cr2": {
       "flavour": "affine:divider",
-      "version": 1,
       "children": [],
       "props": {}
     },
     "note": {
       "flavour": "affine:note",
-      "version": 1,
       "children": ["co", "cg"],
       "props": {
         "background": {
@@ -280,7 +270,6 @@
     },
     "root": {
       "flavour": "affine:page",
-      "version": 2,
       "children": ["note"],
       "props": {
         "title": []

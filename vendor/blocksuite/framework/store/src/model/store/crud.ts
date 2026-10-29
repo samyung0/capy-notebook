@@ -86,13 +86,14 @@ export class DocCRUD {
 
   private _findRoot(): string | null {
     let rootId: string | null = null;
-    this._yBlocks.forEach(yBlock => {
+    // Capy (local change 9): a block's id is its key, there is no `sys:id`.
+    this._yBlocks.forEach((yBlock, id) => {
       const flavour = yBlock.get('sys:flavour') as string;
       const schema = this._schema.flavourSchemaMap.get(flavour);
       if (!schema) return;
 
       if (schema.model.role === 'root') {
-        rootId = yBlock.get('sys:id') as string;
+        rootId = id;
       }
     });
     return rootId;
@@ -146,14 +147,13 @@ export class DocCRUD {
     const yBlock = new Y.Map() as YBlock;
     this._yBlocks.set(id, yBlock);
 
-    const version = schema.version;
     const children = (
       initialProps.children as undefined | (string | BlockModel)[]
     )?.map(child => (typeof child === 'string' ? child : child.id));
 
-    yBlock.set('sys:id', id);
+    // Capy (local change 9): no `sys:id` (the key is the id) and no
+    // `sys:version` (a missing one reads as the schema's).
     yBlock.set('sys:flavour', flavour);
-    yBlock.set('sys:version', version);
     yBlock.set('sys:children', Y.Array.from(children ?? []));
 
     const defaultProps = schema.model.props?.(internalPrimitives) ?? {};

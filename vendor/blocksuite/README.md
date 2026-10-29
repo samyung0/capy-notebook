@@ -188,6 +188,20 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
    - `widgets/drag-handle` `utils.ts`: the selector for a note's top-level
      blocks also matches them inside a chunk.
 
+9. Trimmed block map (2026-10-29, Epo; `todo-blocksuite-layout.md`
+   "yBlock keys"): a yBlock holds no `sys:id` and no `sys:version`. On the
+   near-limit note that keeps 18% less room heap and a 7% smaller state.
+   Each change is marked `Capy (... local change 9)` in the source; on a
+   sync, reapply them by that marker.
+   - `framework/store` `model/block/block.ts`, `sync-controller.ts`,
+     `flat-sync-controller.ts`: the block's id is a constructor argument,
+     its key in the blocks map (`store.ts` `_onBlockAdded` passes it), not
+     a `sys:id` read from the yBlock. A missing `sys:version` already read
+     as the schema's version, and nothing reads the stored one (the
+     model's `version` is its schema's).
+   - `framework/store` `model/store/crud.ts`: `_findRoot` takes the root's
+     id from its key; `addBlock` writes neither key.
+
 Outside this directory, for BlockSuite:
 
 - `patches/@atlaskit__pragmatic-drag-and-drop@1.4.0.patch`: upstream's yarn

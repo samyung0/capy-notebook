@@ -254,7 +254,6 @@
   "blocks": {
     "i": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -296,7 +295,6 @@
     },
     "m": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -398,7 +396,6 @@
     },
     "note": {
       "flavour": "affine:note",
-      "version": 1,
       "children": ["m", "i"],
       "props": {
         "background": {
@@ -422,7 +419,6 @@
     },
     "root": {
       "flavour": "affine:page",
-      "version": 2,
       "children": ["note"],
       "props": {
         "title": []

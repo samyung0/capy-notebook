@@ -291,7 +291,6 @@
   "blocks": {
     "note": {
       "flavour": "affine:note",
-      "version": 1,
       "children": ["tb"],
       "props": {
         "background": {
@@ -315,7 +314,6 @@
     },
     "root": {
       "flavour": "affine:page",
-      "version": 2,
       "children": ["note"],
       "props": {
         "title": []
@@ -323,7 +321,6 @@
     },
     "tb": {
       "flavour": "affine:table",
-      "version": 1,
       "children": [],
       "props": {
         "cells.r0:tb-c0.text": [

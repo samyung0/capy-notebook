@@ -207,7 +207,6 @@
   "blocks": {
     "ch": {
       "flavour": "capy:chart",
-      "version": 1,
       "children": [],
       "props": {
         "block": {
@@ -227,7 +226,6 @@
     },
     "gr": {
       "flavour": "capy:graph",
-      "version": 1,
       "children": [],
       "props": {
         "block": {
@@ -250,7 +248,6 @@
     },
     "ht": {
       "flavour": "capy:html-embed",
-      "version": 1,
       "children": [],
       "props": {
         "caption": "Snippet",
@@ -259,7 +256,6 @@
     },
     "me": {
       "flavour": "capy:mermaid",
-      "version": 1,
       "children": [],
       "props": {
         "caption": [
@@ -284,7 +280,6 @@
     },
     "mr": {
       "flavour": "capy:material-ref",
-      "version": 1,
       "children": [],
       "props": {
         "materialId": "mat_q",
@@ -293,7 +288,6 @@
     },
     "note": {
       "flavour": "affine:note",
-      "version": 1,
       "children": ["toc", "ch", "gr", "ht", "me", "mr"],
       "props": {
         "background": {
@@ -317,7 +311,6 @@
     },
     "root": {
       "flavour": "affine:page",
-      "version": 2,
       "children": ["note"],
       "props": {
         "title": []
@@ -325,7 +318,6 @@
     },
     "toc": {
       "flavour": "capy:toc",
-      "version": 1,
       "children": [],
       "props": {}
     }

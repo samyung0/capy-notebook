@@ -127,7 +127,6 @@
   "blocks": {
     "au": {
       "flavour": "capy:audio",
-      "version": 1,
       "children": [],
       "props": {
         "assetId": "asset_3",
@@ -138,7 +137,6 @@
     },
     "im": {
       "flavour": "affine:image",
-      "version": 1,
       "children": [],
       "props": {
         "caption": "A marsh",
@@ -157,7 +155,6 @@
     },
     "im2": {
       "flavour": "affine:image",
-      "version": 1,
       "children": [],
       "props": {
         "caption": "",
@@ -173,7 +170,6 @@
     },
     "note": {
       "flavour": "affine:note",
-      "version": 1,
       "children": ["im", "im2", "au", "vi"],
       "props": {
         "background": {
@@ -197,7 +193,6 @@
     },
     "root": {
       "flavour": "affine:page",
-      "version": 2,
       "children": ["note"],
       "props": {
         "title": []
@@ -205,7 +200,6 @@
     },
     "vi": {
       "flavour": "capy:video",
-      "version": 1,
       "children": [],
       "props": {
         "caption": "Clip",

@@ -189,7 +189,6 @@
   "blocks": {
     "b1": {
       "flavour": "affine:list",
-      "version": 1,
       "children": ["b2", "b3", "c1"],
       "props": {
         "checked": false,
@@ -206,7 +205,6 @@
     },
     "b2": {
       "flavour": "affine:list",
-      "version": 1,
       "children": [],
       "props": {
         "checked": false,
@@ -223,7 +221,6 @@
     },
     "b3": {
       "flavour": "affine:list",
-      "version": 1,
       "children": [],
       "props": {
         "checked": false,
@@ -240,7 +237,6 @@
     },
     "c1": {
       "flavour": "affine:paragraph",
-      "version": 1,
       "children": [],
       "props": {
         "collapsed": false,
@@ -254,7 +250,6 @@
     },
     "note": {
       "flavour": "affine:note",
-      "version": 1,
       "children": ["b1", "t1", "t2", "r1", "q1"],
       "props": {
         "background": {
@@ -278,7 +273,6 @@
     },
     "q1": {
       "flavour": "affine:list",
-      "version": 1,
       "children": [],
       "props": {
         "checked": false,
@@ -295,7 +289,6 @@
     },
     "r1": {
       "flavour": "affine:list",
-      "version": 1,
       "children": [],
       "props": {
         "checked": false,
@@ -312,7 +305,6 @@
     },
     "root": {
       "flavour": "affine:page",
-      "version": 2,
       "children": ["note"],
       "props": {
         "title": []
@@ -320,7 +312,6 @@
     },
     "t1": {
       "flavour": "affine:list",
-      "version": 1,
       "children": [],
       "props": {
         "checked": true,
@@ -337,7 +328,6 @@
     },
     "t2": {
       "flavour": "affine:list",
-      "version": 1,
       "children": [],
       "props": {
         "checked": false,

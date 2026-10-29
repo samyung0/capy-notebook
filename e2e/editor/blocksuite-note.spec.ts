@@ -75,7 +75,8 @@ const peerFlavours = (page: Page, text: string) =>
       import('yjs').Map<unknown>
     >;
     const found: string[] = [];
-    for (const block of blocks.values()) {
+    // A block's id is its key in the map (no `sys:id`).
+    for (const [id, block] of blocks.entries()) {
       if (!String(block.get('prop:text') ?? '').includes(text)) continue;
       found.push(String(block.get('sys:flavour')));
       // A callout's text sits in its paragraphs.
@@ -83,7 +84,7 @@ const peerFlavours = (page: Page, text: string) =>
         if (
           (parent.get('sys:children') as import('yjs').Array<string>)
             .toArray()
-            .includes(String(block.get('sys:id')))
+            .includes(id)
         )
           found.push(
             `${parent.get('sys:flavour')}${parent.get('prop:variant') ? `:${parent.get('prop:variant')}` : ''}`

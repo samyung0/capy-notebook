@@ -122,7 +122,6 @@
   "blocks": {
     "c": {
       "flavour": "affine:code",
-      "version": 1,
       "children": [],
       "props": {
         "caption": "",
@@ -137,7 +136,6 @@
     },
     "c2": {
       "flavour": "affine:code",
-      "version": 1,
       "children": [],
       "props": {
         "caption": "",
@@ -152,7 +150,6 @@
     },
     "eq": {
       "flavour": "affine:latex",
-      "version": 1,
       "children": [],
       "props": {
         "index": "a0",
@@ -165,13 +162,11 @@
     },
     "hr": {
       "flavour": "affine:divider",
-      "version": 1,
       "children": [],
       "props": {}
     },
     "note": {
       "flavour": "affine:note",
-      "version": 1,
       "children": ["c", "c2", "hr", "eq"],
       "props": {
         "background": {
@@ -195,7 +190,6 @@
     },
     "root": {
       "flavour": "affine:page",
-      "version": 2,
       "children": ["note"],
       "props": {
         "title": []
