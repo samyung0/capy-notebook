@@ -1057,8 +1057,7 @@ sees a graph's recipe change (elements, board, size) redraws it in an idle
 callback (`graphRedraw.ts`) and writes `image`, outside Undo, only when the
 SVG differs, so its own write never redraws again; readers keep the stored
 SVG. The Rust server writes the same maps on bootstrap and an agent's insert
-and reads them in one place (`plate::map_value`, behind
-`plate::block_value`); room admission takes a block as its map only and
+and reads them in one place (`plate::map_value`); room admission takes a block as its map only and
 refuses a crafted update that puts an unknown key, a wrong type, an oversize
 value or another shape into one (`figure_map.rs`; where the relaxed check for
 a merge's kept states runs: [embeds](../embeds.md#live-figures)).

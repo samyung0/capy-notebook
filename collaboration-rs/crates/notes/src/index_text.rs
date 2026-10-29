@@ -5,16 +5,12 @@
 //! text, in document order. Both read the golden fixtures in
 //! `server/internal/materialdoc/testdata/index_text`.
 //!
-//! No I/O: the caller passes each embedded item's text ([ItemText], from the
-//! item's loaded room, else its stored `materials.content`, through
-//! [item_from_content]).
+//! No I/O: the caller passes each embedded item's text ([ItemText], from its
+//! stored `materials.content` through [item_from_content]).
 
 use serde_json::Value;
-use yrs::ReadTxn;
-use yrs::branch::BranchPtr;
 
 use crate::catalog::{self, Index};
-use crate::plate::{self, Insert, ProjectionError};
 
 /// The index text of one top-level block.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -35,72 +31,6 @@ impl ItemText for NoItems {
     fn item_text(&self, _: &str) -> Option<String> {
         None
     }
-}
-
-/// The material ids a live note references, in document order (an item
-/// reference is a top-level block only). `root` is the note's content root,
-/// read under `_txn`.
-pub fn item_refs<T: ReadTxn>(_txn: &T, root: BranchPtr) -> Result<Vec<String>, ProjectionError> {
-    let mut out = Vec::new();
-    for op in plate::insert_delta(&root)? {
-        if let Insert::Element(element) = op.insert
-            && plate::string_attribute(element, "type")
-                .as_deref()
-                .map(rule)
-                == Some(Index::Item)
-            && let Some(id) = plate::string_attribute(element, "materialId")
-        {
-            out.push(id);
-        }
-    }
-    Ok(out)
-}
-
-/// The material ids stored content (`{"schemaVersion":1,"value":[...]}`)
-/// references, in document order.
-pub fn content_item_refs(value: &Value) -> Vec<String> {
-    top_level(value)
-        .filter(|node| node_rule(node) == Index::Item)
-        .filter_map(|node| node["materialId"].as_str().map(str::to_owned))
-        .collect()
-}
-
-/// A live note's index text per block, read from its room's content root
-/// under `_txn`: one top-level element at a time, a figure's `block` through
-/// `plate::block_value`.
-pub fn from_doc<T: ReadTxn>(
-    _txn: &T,
-    root: BranchPtr,
-    items: &impl ItemText,
-) -> Result<Vec<IndexBlock>, ProjectionError> {
-    let mut blocks = Vec::new();
-    for op in plate::insert_delta(&root)? {
-        let mut pieces = Vec::new();
-        let id = match op.insert {
-            Insert::Text(text) => {
-                push(&mut pieces, text.trim().to_owned());
-                String::new()
-            }
-            Insert::Element(element) => {
-                let typ = plate::string_attribute(element, "type");
-                if typ.as_deref().map(rule) == Some(Index::Figure) {
-                    if let Some(block) = plate::block_value(element)? {
-                        push(&mut pieces, figure(&block));
-                    }
-                } else {
-                    write_block(&plate::element(&element)?, items, &mut pieces);
-                }
-                plate::string_attribute(element, "id").unwrap_or_default()
-            }
-        };
-        if !pieces.is_empty() {
-            blocks.push(IndexBlock {
-                id,
-                text: pieces.join("\n\n"),
-            });
-        }
-    }
-    Ok(blocks)
 }
 
 /// Stored content's (`{"schemaVersion":1,"value":[...]}`) index text per block.
@@ -334,9 +264,8 @@ fn labelled(head: &str, tail: &str) -> String {
 
 /// A chart, plot or graph block, its fields on lines and empty ones left out,
 /// read as it is drawn: repaired (`questions::repair_figure`, Epo
-/// 2026-10-18), whether it comes from a room (already repaired by
-/// `plate::block_value`) or from stored content a whole-document write left
-/// as sent. Go's `figureIndexText` repairs the same way.
+/// 2026-10-18), as stored content a whole-document write left as sent may
+/// need. Go's `figureIndexText` repairs the same way.
 fn figure(block: &Value) -> String {
     let mut repaired = block.clone();
     crate::questions::repair_figure(&mut repaired);

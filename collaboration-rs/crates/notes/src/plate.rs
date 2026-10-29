@@ -304,22 +304,6 @@ pub fn held_block_value(element: BranchPtr) -> Result<Option<Value>, ProjectionE
     }
 }
 
-/// A chart's, plot's or graph's `block` as JSON (`None` without one), as
-/// the projection reads it: a live map repaired (`map_value`), a plain value
-/// as it is.
-pub fn block_value(element: BranchPtr) -> Result<Option<Value>, ProjectionError> {
-    let Some(entry) = element
-        .entry_item("block")
-        .filter(|entry| !entry.is_deleted())
-    else {
-        return Ok(None);
-    };
-    match entry_value("block", entry)? {
-        Any::Undefined => Ok(None),
-        value => Ok(Some(json::any_to_value(&value)?)),
-    }
-}
-
 /// Whether an element of type `kind` holds `key` as a text (a `mermaid`
 /// block's source, shape A): the embed catalog's `sharedText`.
 pub fn holds_text(kind: &str, key: &str) -> bool {
@@ -361,8 +345,8 @@ pub fn lists_of(kind: &str) -> &'static [&'static str] {
 
 /// A figure's live `block` map as its value, repaired on read
 /// (`questions::repair_figure`): the one place the map is read, for the
-/// projection, the metrics, admission's check and the index text (through
-/// [properties], [element] and [block_value]). Its entries are plain values
+/// projection, the metrics and admission's check (through [properties] and
+/// [element]). Its entries are plain values
 /// or lists of maps of plain values, in key order (as a plain object
 /// attribute reads, `json::any_to_value`); anything else is an error.
 fn map_value(branch: &Branch) -> Result<Value, ProjectionError> {
@@ -559,7 +543,7 @@ fn any_below(top: BranchPtr, mut visit: impl FnMut(BranchPtr) -> bool) -> bool {
 }
 
 /// An element's live string attribute `key`.
-pub fn string_attribute(element: BranchPtr, key: &str) -> Option<String> {
+fn string_attribute(element: BranchPtr, key: &str) -> Option<String> {
     let entry = element
         .entry_item(key)
         .filter(|entry| !entry.is_deleted())?;

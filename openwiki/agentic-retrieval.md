@@ -5784,8 +5784,8 @@ per series, a graph its elements as stored terms, a Mermaid diagram its
 caption and whole source in a ```` ```mermaid ```` fence, an embedded quiz its
 stems, options and solutions and a flashcard set its fronts and backs, at the
 reference; media, equations and interactive HTML give nothing. The
-collaboration server's `notes::index_text` gives the same blocks from a live
-room or stored content, for note effects. The worker chunks `text` with `chunk_markdown`, hashes the chunks under a `note:` prefix
+collaboration server's `notes::index_text` gives the same blocks from stored
+content, tested on the same golden fixtures. The worker chunks `text` with `chunk_markdown`, hashes the chunks under a `note:` prefix
 so a note never shares a content row with a file of identical text, and
 claims a new content row without moving the alias. It reuses vectors for
 unchanged chunk text from the note's previous content row, which stays

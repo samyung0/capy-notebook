@@ -191,8 +191,8 @@ A note's index text is what retrieval chunks and searches
 ([agentic-retrieval](agentic-retrieval.md#note-indexing)) and what note
 effects compare. Every element names what it contributes, its `index` rule,
 with no default (Epo 2026-10-17). Go's `materialdoc.ExtractIndexBlocks` and
-the collaboration server's `notes::index_text` (`from_content` for stored
-content, `from_doc` for a live room) read it, and give the same text per
+the collaboration server's `notes::index_text::from_content` read it from
+stored content, and give the same text per
 top-level block, `{id, text}` in document order, a block without text left
 out; the note's text joins the blocks with a blank line. Both are tested on
 the golden fixtures in `server/internal/materialdoc/testdata/index_text`
@@ -257,14 +257,9 @@ decimal, the shortest that reads back exactly, never with an exponent
   gives nothing. Saving an item's content or projecting its room marks its
   note dirty as the note's own edits do, so an item edit reindexes the note.
   The Rust extraction does no I/O: its caller passes each item's text
-  (`ItemText`, from the item's room or `index_text::item_from_content` of its
-  stored content); `item_refs` (a live room) and `content_item_refs` name the
-  ids to load.
+  (`ItemText`, `index_text::item_from_content` of its stored content).
 
-`notes::index_text::from_doc` reads a room one top-level element at a time
-(`plate::element`, and a figure's `block` through `plate::block_value`, which
-reads its live map through `plate::map_value`, repaired), in a read transaction, with
-no encode and no JSON of the whole room. The rule is the generated
+The rule is the generated
 `catalog::Index` enum, so an element without one, or a rule the extraction
 does not handle, does not build; the catalog tests in each language
 (`TestIndexTextFollowsTheCatalog`, `index_text_follows_the_catalog`) give
@@ -308,8 +303,8 @@ figures).
   in each layer:
   `questions::repair_figure` in the collaboration server (called only by
   `plate::map_value`, the one place a block map is read, behind
-  `plate::properties` and `plate::block_value`: the projection, the metrics,
-  admission's check and the index text) and `repairFigureBlock`
+  `plate::properties`: the projection, the metrics and admission's check)
+  and `repairFigureBlock`
   in the browser (`parseMaterialDocument`, the note's figure, a live View's
   blocks in `liveNoteBlocks.ts`, the chart editor's preview, the graph
   redraw) and Go's `questions.RepairFigure` (its index text only), all run
