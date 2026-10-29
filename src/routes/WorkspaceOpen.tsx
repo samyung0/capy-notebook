@@ -97,7 +97,7 @@ import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsD
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
-import { isBoolean, PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
+import { isBoolean, PREF_KEYS, readPref, useLocalPref } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
@@ -581,6 +581,13 @@ function WorkspaceOpen() {
   const tourPanels = useRef<TourPanels | null>(null);
   useEffect(() => {
     tourPanels.current = {
+      // The tour wrote back what the panels were before it.
+      restore: () => {
+        setLeftOpen(readPref(PREF_KEYS.leftPanel, true, isBoolean));
+        setLeftView(readPref(PREF_KEYS.leftView, 'chats', isLeftView));
+        setRightOpen(readPref(PREF_KEYS.rightPanel, false, isBoolean));
+        setTab(readPref(PREF_KEYS.rightView, 'files', isPanelTab));
+      },
       showChats: () => {
         setLeftOpen(true);
         setLeftView('chats');

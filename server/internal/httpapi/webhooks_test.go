@@ -1220,7 +1220,8 @@ func TestStripeWebhook_PostPurgeTerminalPayloadsAreRedactedInStore(t *testing.T)
 		VALUES ('sub_post_purge','user_webhook_purged','active','pro',now()+interval '1 month')`); err != nil {
 		t.Fatal(err)
 	}
-	a := &api{wh: st, cfg: Config{StripeWebhookSecret: testStripeSecret}}
+	a := &api{s: st, cfg: Config{StripeWebhookSecret: testStripeSecret}}
+	a.wh = starterProvisioner{Store: st, a: a}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/webhooks/stripe", a.stripeWebhook)
 	srv := httptest.NewServer(mux)

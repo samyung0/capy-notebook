@@ -1415,20 +1415,45 @@ step.
 
 Start tour runs the guided tour app-wide (`Tour`, mounted by `AppShell` while
 one runs): ten steps across the workspace (Files panel, Chats panel with its
-view menu open, the editor, the sample quiz's question dialog, Study), a
-review, its result, Settings → Customizations and the dashboard. Each step
-opens its page, waits for it, lights a panel, a dialog or the whole page and
-outlines the buttons it names; the question dialog's Undo and Redo also get a
-held "Undo · Redo" label. The card sits beside the lit part or, without room,
-in its bottom-right corner. A step whose part this width lacks (side panels on
-phones) or whose sample is missing (no note, quiz or past review) is passed
-over. The workspace page lends its panels through `registerTourPanels`; the
-parts are found by `data-save-state`, `data-undo-buttons`,
-`data-question-edit` and `data-getting-started-row`. It is built on the app's
-Radix Popover with a virtual anchor, no tour library. The starter workspace's
-sample note, Word file and quiz (a copy of a template workspace) are decided
-but not built, so a new account's tour passes over the editor and question
-steps for now.
+view menu open, the editor, a question's edit dialog, Study), a review, its
+result, Settings → Customizations and the mic, on the dashboard. Each step opens its
+page, waits for it, lights a panel, a dialog or the whole page and outlines the
+buttons it names; the question dialog's Undo and Redo also get a held
+"Undo · Redo" label. The card sits beside the lit part or, without room, in
+its bottom-right corner; a part under 96px tall goes above or below it
+instead, so the phone mic is not covered. The question step edits the workspace's first quiz,
+else the welcome note's embedded one: the note opens in Edit and its quiz
+block's Edit opens the same dialog. The last step lights the mic that opens the
+account voice overlay: the voice card on the rail or the full sidebar, and on
+phones the mic after the nav and recent-files buttons in the top row (shown
+where the browser can record). A step whose part this width lacks (side panels
+on phones) or whose note is missing is passed over.
+
+Where the starter workspace has nothing yet, the tour shows examples
+(`guide/tourSamples.ts`, labelled Example) only while it runs for that
+workspace and the real data is empty; they are inert, never sent and never
+cached. An empty Chats list shows sample rows; a workspace review with nothing
+due shows a sample card turned to its ratings; without a past review the
+result step opens `/learning/reviews/tour-sample`, which the result page
+renders from sample data without fetching while the tour runs (once it stops,
+the id reads as unavailable). The workspace page lends its panels through
+`registerTourPanels`, and the panel preferences the tour changes (each
+panel open or closed, and its view) are put back when it stops, so a panel
+kept closed stays closed. The parts are found by `data-save-state`,
+`data-undo-buttons`, `data-question-edit` and `data-voice-mic`. It is built on
+the app's Radix Popover with a virtual anchor, no tour library.
+
+The starter workspace comes with sample content (Epo 2026-10-29, replacing
+the template-workspace copy): right after provisioning inserts it,
+`starterProvisioner` (`httpapi/starter.go`, the store the middleware and the
+Clerk webhook are given) adds a Getting started chapter holding the welcome
+note, with two quiz questions and two flashcards embedded
+(`store.CreateStarterNote`, copy in `store/starter.go`, English or Chinese by
+the account's locale), and a blank Word file built like the Create tab's
+(`addBlankOfficeFile`). The account pays for both, as for anything it adds.
+A failure there is reported to Sentry and never fails the request; the
+workspace keeps what was added. Embedded items record no study, so the
+welcome note's questions count nowhere.
 
 Sources: [auth landing](../src/features/auth/AuthLanding.tsx),
 [password reset](../src/routes/ForgotPassword.tsx),

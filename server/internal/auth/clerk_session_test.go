@@ -138,6 +138,15 @@ func openClerkTestStore(t *testing.T) *store.Store {
 	return st
 }
 
+// provisioningStore is the store as the middleware takes it, without the
+// starter workspace's sample content (httpapi's starterProvisioner adds that).
+type provisioningStore struct{ *store.Store }
+
+func (p provisioningStore) CreateDefaultWorkspace(ctx context.Context, userID string) error {
+	_, err := p.Store.CreateDefaultWorkspace(ctx, userID)
+	return err
+}
+
 // clerkRequester sends authenticated requests for one Clerk identity through
 // the real middleware and returns the status and the refusal code.
 func clerkRequester(t *testing.T, st *store.Store, f *fakeClerk, userID string) func() (int, string) {
@@ -145,7 +154,7 @@ func clerkRequester(t *testing.T, st *store.Store, f *fakeClerk, userID string) 
 	t.Cleanup(func() {
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
-	handler := auth.Middleware(auth.Config{SecretKey: "sk_test_fake", Store: st})(
+	handler := auth.Middleware(auth.Config{SecretKey: "sk_test_fake", Store: provisioningStore{st}})(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if auth.UserID(r.Context()) != userID {
 				t.Errorf("handler user = %q, want %q", auth.UserID(r.Context()), userID)

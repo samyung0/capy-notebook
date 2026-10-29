@@ -1456,17 +1456,18 @@ func decodeQuestions(raw json.RawMessage) ([]json.RawMessage, error) {
 	return questions, nil
 }
 
-// CreateMaterialDraft persists a draft without a receipt (the Generate path
-// and the bank page's copy).
+// CreateMaterialDraft persists a draft without a receipt (the Generate path,
+// the bank page's copy and the starter workspace's note, with its embedded
+// rows).
 func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (Material, error) {
 	mt, err := draft.material()
 	if err != nil {
 		return Material{}, err
 	}
-	if draft.ChapterName == "" {
+	if draft.ChapterName == "" && len(draft.Embedded) == 0 {
 		return s.CreateMaterial(ctx, mt)
 	}
-	if mt.ChapterID != nil {
+	if draft.ChapterName != "" && mt.ChapterID != nil {
 		return Material{}, fmt.Errorf("%w: chapter id and chapter name are exclusive", materialdoc.ErrInvalid)
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -1474,11 +1475,17 @@ func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (M
 		return Material{}, err
 	}
 	defer tx.Rollback(ctx)
-	if mt.ChapterID, err = resolveUploadChapterID(ctx, tx, mt.WorkspaceID, nil, draft.ChapterName); err != nil {
-		return Material{}, err
+	if draft.ChapterName != "" {
+		if mt.ChapterID, err = resolveUploadChapterID(ctx, tx, mt.WorkspaceID, nil, draft.ChapterName); err != nil {
+			return Material{}, err
+		}
 	}
 	id, err := s.createMaterialTx(ctx, tx, mt)
 	if err != nil {
+		return Material{}, err
+	}
+	mt.ID = id
+	if err := s.createEmbeddedTx(ctx, tx, mt, draft.Embedded); err != nil {
 		return Material{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

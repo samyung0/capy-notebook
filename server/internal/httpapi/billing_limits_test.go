@@ -132,7 +132,7 @@ func TestInvoiceListsAreCachedAMinute(t *testing.T) {
 // just paid sees the new invoice on the next read rather than a minute later.
 func TestStripeEventsDropTheCustomersInvoiceList(t *testing.T) {
 	a, _, ctx := checkoutTestAPI(t)
-	a.wh = a.s
+	a.wh = starterProvisioner{Store: a.s, a: a}
 	a.cfg.StripeWebhookSecret = testStripeSecret
 	reads := 0
 	a.stripeInvoices = func(string) ([]*stripe.Invoice, error) {

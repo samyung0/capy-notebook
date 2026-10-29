@@ -214,7 +214,12 @@ const NEW_ACCOUNT_LISTS = {
   '/api/materials': { items: [] },
   '/api/notifications': { items: [] },
   '/api/notifications/unread-count': { count: 0 },
-  '/api/review/overview': { suggestions: [], unfinished: [], workspaces: [] },
+  '/api/review/overview': {
+    plans: [],
+    suggestions: [],
+    unfinished: [],
+    workspaces: [],
+  },
   '/api/review/sessions': { items: [], more: false },
   '/api/search': [],
   '/api/tags': [],

@@ -614,8 +614,11 @@ Continue or Review link. `canReview` (practised items, or any tracked quiz or
 set in scope of a kind the "review items" preference takes; for a plan only
 its quiz and set steps; a cheap EXISTS) decides: a row without it still opens and
 raises an info toast, "Nothing to review yet", asking for a quiz or flashcards
-first. Suggestions keep their Start.
-- **Past reviews**: the table below.
+first. Suggestions keep their Start. With no workspace, plan or unfinished
+session the tab says "Nothing to review yet." instead.
+- **Past reviews**: the table below, hidden until a first session finishes
+  (Epo 2026-10-29); a filter that hides every row keeps it, saying nothing
+  matches, so the filter can be reset.
 
 ### Past reviews
 

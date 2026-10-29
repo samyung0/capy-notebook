@@ -38,9 +38,7 @@ export function ReviewTab() {
       {!data.workspaces.length &&
         !data.plans.length &&
         !data.unfinished.length && (
-          <p className="py-8 text-center text-fg-muted">
-            {m.review_no_workspaces()}
-          </p>
+          <p className="py-8 text-center text-fg-muted">{m.review_empty()}</p>
         )}
       {data.suggestions.length > 0 && (
         <section>

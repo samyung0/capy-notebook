@@ -459,15 +459,26 @@ func (s *Store) UpsertUserFromWebhook(ctx context.Context, id, name, email, avat
 	return err
 }
 
+// starterWorkspaceName names every account's starter workspace.
+const starterWorkspaceName = "My workspace"
+
+// StarterWorkspace is the workspace CreateDefaultWorkspace inserted, with the
+// account's locale for its sample content; ID is empty when it inserted none.
+type StarterWorkspace struct {
+	ID     string
+	Locale string
+}
+
 // CreateDefaultWorkspace provisions a starter workspace once and queues the
 // welcome email. It uses the same user-row lock as every owned-workspace
 // insert, then makes the empty check, insert, completion marker and email one
 // transaction. The durable marker lets a failed first attempt retry without
 // recreating a workspace the user deletes.
-func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error {
+func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) (StarterWorkspace, error) {
+	var starter StarterWorkspace
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return starter, err
 	}
 	defer tx.Rollback(ctx)
 
@@ -476,20 +487,20 @@ func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error
 		if errors.As(err, &locked) {
 			// A late identity event must not recreate content after the local
 			// account crossed a terminal boundary.
-			return nil
+			return starter, nil
 		}
-		return err
+		return starter, err
 	}
 	status, err := s.accountAccess(ctx, tx, userID)
 	if err != nil {
-		return err
+		return starter, err
 	}
 	if err := status.Err(); err != nil {
 		var locked *AccountLockedError
 		if errors.As(err, &locked) {
-			return nil
+			return starter, nil
 		}
-		return err
+		return starter, err
 	}
 
 	var provisioned bool
@@ -498,36 +509,38 @@ func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error
 	if err := tx.QueryRow(ctx, `SELECT starter_workspace_provisioned_at IS NOT NULL, email, locale
 		FROM users WHERE id=$1`, userID).Scan(&provisioned, &email, &locale); err != nil {
 		if isNoRows(err) {
-			return ErrNotFound
+			return starter, ErrNotFound
 		}
-		return err
+		return starter, err
 	}
 	if provisioned {
-		return tx.Commit(ctx)
+		return starter, tx.Commit(ctx)
 	}
 
 	var n int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workspaces WHERE user_id=$1`, userID).Scan(&n); err != nil {
-		return err
+		return starter, err
 	}
 	if n == 0 {
 		if _, err := s.gateWorkspacesTx(ctx, tx, userID); err != nil {
-			return err
+			return starter, err
 		}
 		embed, err := s.newWorkspaceEmbedding(ctx)
 		if err != nil {
-			return err
+			return starter, err
 		}
+		id := uid("ws")
 		if err := s.insertWorkspaceTx(
-			ctx, tx, uid("ws"), userID, "My workspace", nil, embed,
+			ctx, tx, id, userID, starterWorkspaceName, nil, embed,
 		); err != nil {
-			return err
+			return starter, err
 		}
+		starter = StarterWorkspace{ID: id, Locale: locale}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE users SET
 		starter_workspace_provisioned_at=COALESCE(starter_workspace_provisioned_at,now()),
 		updated_at=now() WHERE id=$1`, userID); err != nil {
-		return err
+		return StarterWorkspace{}, err
 	}
 	// Provisioning runs once per account on the server, so it is where the
 	// welcome mail starts; onboarding's Confirm and Skip are client-only.
@@ -544,9 +557,12 @@ func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error
 		IdempotencyKey: "welcome:" + userID,
 		Category:       "lifecycle",
 	}); err != nil {
-		return err
+		return StarterWorkspace{}, err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return StarterWorkspace{}, err
+	}
+	return starter, nil
 }
 
 func (s *Store) AssertWorkspaceOwner(ctx context.Context, userID, wsID string) error {
