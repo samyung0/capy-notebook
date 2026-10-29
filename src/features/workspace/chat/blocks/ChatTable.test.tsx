@@ -4,11 +4,13 @@ import { m } from '@/i18n';
 import type { RowProps } from '../schema';
 import { ChatTable } from './ChatTable';
 import { CitationContext } from './Cite';
+import { Prose } from './text';
 
 const CELL = /<td[^>]*>.*?<\/td>/g;
 const CITED_LAST_CELL =
   /^<td[^>]*>No ATP<sup[^>]*>.*>2<\/button><\/sup><\/td>$/;
 const ROW_LINE = /Row \d/;
+const HEADER_CELL = /<th(?:\s[^>]*)?>/;
 // Passage 7 shows as source 1 and passage 9 as source 2.
 const SHOWN: Record<number, number> = { 7: 1, 9: 2 };
 
@@ -45,5 +47,24 @@ describe('ChatTable', () => {
     expect(html).not.toMatch(ROW_LINE);
     // The table's own sources stay under it.
     expect(html.split('</table>')[1]).toContain(m.chat_sources());
+  });
+});
+
+describe('Markdown tables', () => {
+  it("draw with the Table component's parts, without Streamdown's frame or buttons", () => {
+    const md = renderToStaticMarkup(
+      <Prose text={'| Tool | Result |\n|---|---|\n| `list_sources` | ok |'} />
+    );
+    const table = renderToStaticMarkup(
+      <ChatTable
+        props={{ columns: ['Tool'], rows: [row({ cells: ['ok'] })] }}
+      />
+    );
+    const header = (html: string) => html.match(HEADER_CELL)?.[0];
+
+    expect(md).not.toContain('data-streamdown="table-wrapper"');
+    expect(md).not.toContain('<button');
+    expect(md).toContain('<thead><tr');
+    expect(header(md)).toBe(header(table));
   });
 });

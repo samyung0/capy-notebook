@@ -15,6 +15,7 @@ import {
 } from '@/features/notes/richBlockConfig';
 import { cn } from '@/lib/cn';
 import type { CalloutProps, MdProps, RevealProps, StepProps } from '../schema';
+import { TableCell, TableFrame, TableHead, TableRow } from './ChatTable';
 import { Cites, elements } from './Cite';
 import { CodeBlock } from './CodeBlock';
 import { chatMath, MathSpan, prepareMath } from './math';
@@ -103,6 +104,14 @@ const components = {
   // A `<picture>` source loads nothing.
   source: () => null,
   span: MathSpan,
+  // Markdown tables take the Table component's look, without Streamdown's
+  // framed card and its copy, download and full-screen buttons.
+  table: TableFrame,
+  tbody: ({ children }: { children?: ReactNode }) => <tbody>{children}</tbody>,
+  td: TableCell,
+  th: TableHead,
+  thead: ({ children }: { children?: ReactNode }) => <thead>{children}</thead>,
+  tr: TableRow,
   ul: ({ children }: { children?: ReactNode }) => (
     <ul className="ml-5 list-outside list-disc whitespace-normal">
       {children}

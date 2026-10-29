@@ -5597,7 +5597,11 @@ still render as Markdown through the same `Prose` renderer, as does a plain
 Markdown reply. Blocks sit 20px apart with no frames around figures; fenced
 code is chat's own `CodeBlock` (copy, download, highlighted by the notes'
 lowlight loaded with the first block and coloured by the shared `hljs-*`
-rules); charts stop growing at 480px and diagrams at min(60vh, 32rem) tall.
+rules); a `Table` and a Markdown table draw with the same parts
+(`blocks/ChatTable.tsx`: `TableFrame`, `TableRow`, `TableHead`, `TableCell`),
+Billing & usage's table look at the chat's 12px table text: no frame or header
+band, muted 11px header labels, a divider under the header and every row,
+scrolling sideways, and no Streamdown table buttons (Epo 2026-10-29); charts stop growing at 480px and diagrams at min(60vh, 32rem) tall.
 Raised `k` markers come from
 the message's citation list by `n` and follow the last paragraph of the text
 they back (Streamdown's root is `display: contents` so that paragraph can run

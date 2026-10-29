@@ -126,14 +126,15 @@ export const chatFixtures = [
   },
   {
     content: [
-      'root = Answer([intro, table])',
+      'root = Answer([intro, table, md])',
       'intro = Md("Compare the mechanisms and their energy requirements.")',
       'table = Table(["Mechanism", "Direction", "Energy", "Example"], [r1, r2, r3], [1, 2], "Membrane transport comparison")',
       'r1 = Row(["Simple diffusion", "Down the concentration gradient", "No ATP", "Oxygen moving through the phospholipid bilayer"], [1])',
       'r2 = Row(["Facilitated diffusion", "Down the concentration gradient", "No ATP", "Glucose moving through a specific carrier protein"], [2])',
       'r3 = Row(["Active transport / 主动运输", "Against the concentration gradient", "Energy required", "Mineral ions entering plant root hair cells"], [2])',
+      'md = Md("The same kind of check as a Markdown table:\\n\\n| Tool | Check performed | Result |\\n|---|---|---|\\n| `list_sources` | Listed the workspace files | ✅ |\\n| `search_knowledge` | Searched general biology | ✅ |")',
     ].join('\n'),
-    hint: 'Four columns, long cells, CJK text, caption and row-level citations.',
+    hint: 'Four columns, long cells, CJK text, caption and row-level citations, then a Markdown table.',
     id: 'chat-openui-table',
     label: 'OpenUI: comparison table',
     passages: [1, 2],
