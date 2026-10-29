@@ -2824,7 +2824,12 @@ current pending changes applied. Embedded source instructions remain untrusted.
    treats its first `Answer([...])` as root (`openui.with_root`, Epo
    2026-10-25): GLM writes the call bare, alone or glued to prose, and the
    pipeline puts `root = ` on its own line before it, so the browser's preface
-   split renders it. The browser's official parser keeps
+   split renders it. An `AskUser` statement that root never reaches is still
+   asked (`openui.asks_line`, Epo 2026-10-29): once the program validates, the
+   renderer appends a second `root = Answer([...])` listing root's children and
+   then those questions, with no cap; both parsers take the later root, so the
+   question card, history and summaries all carry them. After a prose
+   preface the repaired program replaces the fenced one. The browser's official parser keeps
    recoverable partial programs. Missing references, dropped content, invalid
    chart data show an inline interruption notice; excess empty placeholders do
    not, while excess content does. Unusable programs show the chat error, never

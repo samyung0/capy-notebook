@@ -109,6 +109,37 @@ def test_the_first_bare_answer_call_is_the_root(raw):
     assert openui.with_root("x = Answer([a])\n") == "x = Answer([a])\n"
 
 
+# DeepSeek Flash's answer on UAT (2026-10-28): root lists only the heading.
+ORPHAN_ASKS = """root = Answer([intro, ask])
+intro = Md("Let me pin down two things.")
+ask = AskUser("Two quick choices and I'll begin:", [])
+ask1 = AskUser("What level?", ["Beginner", "Undergraduate"])
+ask2 = AskUser("Where should I file them?", ["My workspace", "No workspace"])
+"""
+
+
+def _questions(text: str) -> list[str]:
+    program = openui.parse(text, strict=True)
+    return [call.args[0] for call in openui.walk(program) if call.name == "AskUser"]
+
+
+@pytest.mark.parametrize("preface", ["", "Here is the plan.\n\n```openui-lang\n"])
+def test_asks_root_leaves_out_are_still_asked(preface):
+    raw = preface + ORPHAN_ASKS + ("```\nAfterword." if preface else "")
+    out, renderer = _stream(raw, 0, 7)
+    text = out if not preface else renderer.raw[renderer.raw.index("root =") :]
+    if preface:
+        assert renderer.raw.startswith("Here is the plan.\n\nroot = Answer(")
+    else:
+        assert out == renderer.text
+    assert _questions(text) == [
+        "Two quick choices and I'll begin:",
+        "What level?",
+        "Where should I file them?",
+    ]
+    assert text.endswith("root = Answer([intro, ask, ask1, ask2])\n")
+
+
 @pytest.mark.parametrize(
     ("raw", "problem"),
     [
