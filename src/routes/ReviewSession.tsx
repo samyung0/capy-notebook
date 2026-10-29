@@ -30,6 +30,8 @@ import { SkeletonList } from '@/components/ui/feedback';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
+import { sampleReview } from '@/features/guide/tourSamples';
+import { useRunningTour } from '@/features/guide/tourStore';
 import {
   RemovedAssetsContext,
   useRemovedAssets,
@@ -215,6 +217,10 @@ function Session({
   const item = shown ? itemOf(shown.key) : undefined;
   const liveItem = shown ? session?.live.get(shown.key) : undefined;
   const ended = !!session && !shown;
+  // A fresh workspace with nothing to review shows the tour its sample.
+  const tour = useRunningTour();
+  const sample =
+    tour?.workspaceId === workspaceId && session?.order.length === 0;
   // A session ends once its answers are saved, skipped items or not; one
   // whose items all left their material is finished here too.
   const sessionId = session?.ref.id;
@@ -292,7 +298,7 @@ function Session({
       <PagePanel
         header={
           <QuizPageHeader
-            meta={item?.materialTitle}
+            meta={sample ? m.tour_example() : item?.materialTitle}
             onBack={back}
             title={m.review_title({ workspace: ws?.name ?? '' })}
             trail={[
@@ -408,6 +414,8 @@ function Session({
                 />
               </div>
             </div>
+          ) : sample ? (
+            <SampleReview />
           ) : session.order.length === 0 ? (
             <p className="t-card-title m-auto">{m.review_nothing()}</p>
           ) : (
@@ -433,6 +441,29 @@ function Session({
         </div>
       </PagePanel>
     </RemovedAssetsContext.Provider>
+  );
+}
+
+/** The tour's sample: a card turned to its ratings, laid out as a session's
+ * first item, display-only. */
+function SampleReview() {
+  const stack = useCardStack();
+  const { card, total } = sampleReview();
+  return (
+    <div className="flex w-full flex-col gap-4" inert>
+      <StudyPosition
+        className="mx-auto mb-1 w-full max-w-160"
+        position={1}
+        total={total}
+      />
+      <div className="mx-auto w-full max-w-160">
+        <CardStack
+          card={card}
+          onRate={() => undefined}
+          stack={{ ...stack, flipped: true }}
+        />
+      </div>
+    </div>
   );
 }
 

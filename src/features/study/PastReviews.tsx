@@ -58,6 +58,10 @@ export function PastReviews() {
       setSearch(sortSearch('pastReviews', next, asc, PAST_REVIEW_SORT_DEFAULT)),
     sort,
   };
+  // No past reviews: the section stays hidden until the first one finishes.
+  // A filter that hides every row keeps it, so the filter can be reset.
+  const filtered = has.length > 0 || workspaceIds.length > 0;
+  if (!filtered && (isLoading || (data && rows.length === 0))) return null;
 
   return (
     <section>
@@ -101,7 +105,9 @@ export function PastReviews() {
       ) : isLoading ? (
         <SkeletonList count={6} rowHeight={52} />
       ) : rows.length === 0 ? (
-        <p className="py-8 text-center text-fg-muted">{m.past_empty()}</p>
+        <p className="py-8 text-center text-fg-muted">
+          {m.progress_nothing_shown()}
+        </p>
       ) : (
         <div className="flex flex-col gap-3" ref={revealRef}>
           {/* Billing's plain table, scrolling sideways; Time and Status

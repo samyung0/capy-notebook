@@ -26,6 +26,8 @@ export function VoiceCard({ onOpen }: { onOpen?: () => void }) {
   return (
     <button
       className="relative mb-2 flex w-full items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-[14px] bg-surface frosted:bg-(--frost-fill) py-[7.5px] pr-3 pl-[7px] text-fg transition-all duration-150 ease-out hover:shadow-[inset_0_0_0_100px_rgb(0_0_0/0.035)] active:scale-[0.98] dark:hover:shadow-[inset_0_0_0_100px_rgb(255_255_255/0.05)]"
+      // The tour's last step lights it.
+      data-voice-mic
       onClick={() => {
         onOpen?.();
         setAccountVoiceOpen(true);
