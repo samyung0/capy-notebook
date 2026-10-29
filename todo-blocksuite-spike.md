@@ -913,6 +913,38 @@ not for step 1.
   copy-only.
 - **Blocks leg in the Agent visibility lane: queued** after the admission
   cost, room memory and deleted block ids answers.
+- **Structural admission on the bound (option a).** Enter, merge, delete,
+  move, indent, paste and prop writes admit from the update's own structs and
+  a parent index (`blocks::Tree`, `crates/blocks/src/structure.rs`), not a
+  full-room check; anything the repair on entry would fix still goes exact.
+  Near-limit note: 50 moves 5,174 → 69 ms (Plate 4.7 ms), an hour of edits
+  60.4 → 2.85 s (Plate 0.15 s), reconnect 86 → 21 ms; 20,000 differential
+  seeds clean, 93% of structural updates on the bound. Left: `ydoc::inspect`'s
+  trial copy on pastes and reconnects, the first paste on a fresh room, and
+  the typing bound's pessimistic pricing near the limit.
+- **Room memory: measured again after the bound.** 13.0 MiB idle (+0.3 MiB
+  once the parent index exists) against Plate's 7.0; the box run decides.
+- **Deleted block keys are collected (D20 amended).** The collection drops a
+  deleted `blocks` key no session holds, so a deleted block leaves one marker
+  (8 B, Plate 9 B). D20 now reads: a pasted block keeps its id only when the
+  tab's own document still holds that id's key; otherwise it takes a fresh id.
+  A late write to a collected key is re-keyed: the late merge reports the
+  blocks it dropped for a collected key, and the tab pastes them again under
+  fresh ids where they were (Rust half now, browser half with the late merge
+  after canvas). Typing into a deleted block stays a hidden piece (Q444).
+  Client-only markers were tested and rejected (`deleted_key_markers.rs`).
+  Table row keys stay outside the rule (BlockSuite rewrites them on ordinary
+  edits).
+- **Trimmed block format: drop `sys:id` and `sys:version` only.** The id is
+  read from the `blocks` map key and the version from the schema. Room memory
+  on the near-limit note goes 15.85 → 12.98 MiB (1.86× Plate), which Epo
+  accepts: still far below an Office room. `prop:collapsed` stays (D14
+  folding), defaults stay written, and `sys:children` stays on every block
+  (dropping it orphans a child when two peers add a first child at once).
+- **Leave prompt, Q561 (on main 0fd074a02):** Plate notes, flashcard sets and
+  quizzes take the narrow Q465 rule on `editor/narrow-leave`. When main is
+  next merged here, fold this branch's `markUnstored`/`leave: 'unstored'`
+  into main's version so one leave-prompt path remains.
 - **Dead Rust helpers deleted.** `notes::index_text::from_doc` and
   `item_refs` (344873b68, 2026-10-17, for live-room effects) never had a
   caller: effects were built in Go from stored content (b95d392ce) and Q417
@@ -925,13 +957,5 @@ not for step 1.
   check-in after pieces 1–3 (the spec, the converters, and the editor running
   on MSW).
 
-- **Admission cost** (dig 2026-10-29). (a) Extend `blocks::bound` to Enter,
-  delete and move, checking only the blocks an update touches; (b) cap the
-  full check and refuse past it; (c) accept while dev-only, decide after the
-  box run.
-- **Room memory** 2.3× Plate. (a) Accept and raise the memory line after the
-  box run; (b) cut the second projection at load; (c) decide after the box run.
-- **Deleted block ids** stay in the `blocks` map forever (about 20 B each).
-  (a) Accept; (b) collect a deleted head no session holds (changes `ydoc::gc`).
 - **Room swap leftovers** (caret/focus restore, phone copy-in-place) before
   the cut? **Leave prompt** (Q465) for Plate notes too?
