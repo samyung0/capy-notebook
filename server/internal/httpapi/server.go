@@ -168,7 +168,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	billing.Init(billing.Config{SecretKey: cfg.StripeSecretKey})
 	a := &api{
 		s:                  s,
-		wh:                 s,
 		blob:               b,
 		pipe:               pipe,
 		rdb:                rdb,
@@ -198,6 +197,10 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripePortal:         billing.CreatePortalSession,
 		streamByUser:         make(map[string]int),
 	}
+	// Provisioning, from the first request or the Clerk webhook, also adds the
+	// starter workspace's sample content.
+	provisioner := starterProvisioner{Store: s, a: a}
+	a.wh = provisioner
 	if a.captcha == nil {
 		a.captcha = newTurnstileVerifier(cfg.TurnstileSecret, cfg.TurnstileHosts)
 	}
@@ -276,7 +279,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		E2ESecret:         cfg.E2ESecret,
 		E2EUserIDs:        cfg.E2EUserIDs,
 		AuthorizedParties: cfg.AuthorizedParties,
-		Store:             s,
+		Store:             provisioner,
 		PublicPrefix:      publicPrefix,
 		PublicReadPrefix: []string{
 			"/api/public/",

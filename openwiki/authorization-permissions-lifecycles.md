@@ -1425,10 +1425,19 @@ phones) or whose sample is missing (no note, quiz or past review) is passed
 over. The workspace page lends its panels through `registerTourPanels`; the
 parts are found by `data-save-state`, `data-undo-buttons`,
 `data-question-edit` and `data-getting-started-row`. It is built on the app's
-Radix Popover with a virtual anchor, no tour library. The starter workspace's
-sample note, Word file and quiz (a copy of a template workspace) are decided
-but not built, so a new account's tour passes over the editor and question
-steps for now.
+Radix Popover with a virtual anchor, no tour library.
+
+The starter workspace comes with sample content (Epo 2026-10-29, replacing
+the template-workspace copy): right after provisioning inserts it,
+`starterProvisioner` (`httpapi/starter.go`, the store the middleware and the
+Clerk webhook are given) adds a Getting started chapter holding the welcome
+note, with two quiz questions and two flashcards embedded
+(`store.CreateStarterNote`, copy in `store/starter.go`, English or Chinese by
+the account's locale), and a blank Word file built like the Create tab's
+(`addBlankOfficeFile`). The account pays for both, as for anything it adds.
+A failure there is reported to Sentry and never fails the request; the
+workspace keeps what was added. Embedded items record no study, so the
+welcome note's questions count nowhere.
 
 Sources: [auth landing](../src/features/auth/AuthLanding.tsx),
 [password reset](../src/routes/ForgotPassword.tsx),

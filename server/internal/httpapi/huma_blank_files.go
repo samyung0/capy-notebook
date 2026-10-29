@@ -54,34 +54,48 @@ func (a *api) createBlankFile(ctx context.Context, in *createBlankFileInput) (*f
 		}
 		chapterID = &b.ChapterID
 	}
-	created, err := a.s.CreateOfficeDocument(ctx, actor, b.Format, []json.RawMessage{})
+	file, err := a.addBlankOfficeFile(ctx, actor, in.ID, b.Format, name, chapterID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, err
+	}
+	return &fileOutput{Body: file}, nil
+}
+
+// addBlankOfficeFile builds a blank Office file from the engine's starter and
+// stores it in the workspace as the actor's unprocessed source: the Create
+// tab's Blank DOCX and XLSX, and the starter workspace's Word file.
+func (a *api) addBlankOfficeFile(ctx context.Context, actor, wsID, format, name string, chapterID *string) (store.File, error) {
+	if a.blob == nil {
+		return store.File{}, huma.Error503ServiceUnavailable("blob store not configured")
+	}
+	created, err := a.s.CreateOfficeDocument(ctx, actor, format, []json.RawMessage{})
+	if err != nil {
+		return store.File{}, hErr(err)
 	}
 	kind := kindFromName(name)
 	maxBytes, err := a.sourceMaxBytes(ctx, actor)
 	if err != nil {
-		return nil, hErr(err)
+		return store.File{}, hErr(err)
 	}
 	if err := sourceupload.Validate(name, kind, sourceupload.ParseModeNone, int64(len(created.Content)), maxBytes); err != nil {
-		return nil, huma.Error422UnprocessableEntity(err.Error())
+		return store.File{}, huma.Error422UnprocessableEntity(err.Error())
 	}
 	sum := sha256.Sum256(created.Content)
 	blobPath, size, err := a.blob.Put(sourceObjectKey(store.ObjectKeyID("blob")), bytes.NewReader(created.Content))
 	if err != nil {
-		return nil, hErr(err)
+		return store.File{}, hErr(err)
 	}
 	// Uncancelled from here: a browser that leaves after the commit must not
 	// have its file's object deleted.
 	ctx = context.WithoutCancel(ctx)
 	file, err := a.s.CreateBlankFile(ctx, store.BlankFileDraft{
-		WorkspaceID: in.ID, ActorUserID: actor, Name: name, Kind: kind, ChapterID: chapterID,
+		WorkspaceID: wsID, ActorUserID: actor, Name: name, Kind: kind, ChapterID: chapterID,
 		SizeBytes: size, BlobPath: blobPath, Parser: a.parser, SHA256: hex.EncodeToString(sum[:]),
 	})
 	if err != nil {
 		// A refused or failed insert leaves no row for the object.
 		_ = a.blob.Delete(ctx, blobPath)
-		return nil, hErr(err)
+		return store.File{}, hErr(err)
 	}
-	return &fileOutput{Body: file}, nil
+	return file, nil
 }
