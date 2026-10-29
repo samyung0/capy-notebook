@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# A note room's server costs in the Plate and the blocks layout, same content
-# (layout-cost/src/main.rs). Local, no Docker: builds on the collaboration
-# server's crates with its Cargo.lock, and prints one JSON line per note and
-# layout to stdout and bench/collaboration/.results/layout-cost.jsonl.
-# RUNS (5) sets the repeats per step.
+# A note room's server CPU and memory in the Plate and the blocks layout, same
+# content, per editing state (layout-cost/src/main.rs). Local, no Docker:
+# builds on the collaboration server's crates and model.rs with its
+# Cargo.lock, and prints one JSON line per note, layout and state to stdout and
+# bench/collaboration/.results/layout-cost.jsonl. SCALE (1), ROOMS (20), RUNS
+# (5), NOTES, LAYOUTS and STATES pass through; the prod box run is
+# layout-box/README.md.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"

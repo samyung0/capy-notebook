@@ -1,7 +1,8 @@
-# Server cost of a note in the Plate and the blocks layout, same content
-# (todo-blocksuite-spike.md, "6. Measure"). Its own workspace, built on the
-# collaboration server's crates; run.sh copies the server's Cargo.lock in so
-# both resolve the same versions.
+# Server CPU and memory of a note room in the Plate and the blocks layout, same
+# content, per editing state (todo-blocksuite-spike.md, "6. Measure"). Its own
+# workspace, built on the collaboration server's crates and its model.rs;
+# run-layout-cost.sh copies the server's Cargo.lock in so both resolve the
+# same versions.
 [package]
 name = "layout-cost"
 version = "0.1.0"
@@ -10,6 +11,10 @@ publish = false
 
 [dependencies]
 blocks = { path = "../../../../collaboration-rs/crates/blocks" }
+items = { path = "../../../../collaboration-rs/crates/items" }
+libc = "0.2"
+# model.rs names a blank flashcard with one.
+uuid = { version = "1", features = ["v4"] }
 notes = { path = "../../../../collaboration-rs/crates/notes" }
 ydoc = { path = "../../../../collaboration-rs/crates/ydoc" }
 yrs = { path = "../../../../vendor/betteroffice/third_party/yrs" }

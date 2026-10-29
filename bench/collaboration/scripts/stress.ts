@@ -41,7 +41,12 @@
  *   repository, Office rooms cycle through: DOCX and PPTX peers type into
  *   story text, XLSX peers write their own cells of the first sheet;
  * - STRESS_JOIN_CONCURRENCY caps peers joining at once (16 on UAT);
- * - STRESS_IDLE=true keeps the peers connected without typing.
+ * - STRESS_IDLE=true keeps the peers connected without typing;
+ * - STRESS_NOTE=limit seeds the `plate` kind's notes with the near-limit
+ *   load-test note instead of five short paragraphs (layout-cost box run).
+ * Note rooms in the blocks layout (a server with
+ * COLLABORATION_DOCUMENT_LAYOUT=blocks) are typed into through their blocks'
+ * `prop:text`; nothing else changes.
  *
  * The collaboration server is measured from outside, so the same scenarios
  * judge any implementation that speaks the protocol (capy-sync with Yjs sync,
@@ -125,6 +130,8 @@ const EDIT_MS = Number(process.env.STRESS_EDIT_MS ?? 1500);
 const DROP_PER_SECOND = Number(process.env.STRESS_DROP_PER_SECOND ?? 0.02);
 // Idle connections: peers stay connected with awareness renewal and never type.
 const IDLE = process.env.STRESS_IDLE === 'true';
+const NOTE = process.env.STRESS_NOTE ?? 'small';
+if (NOTE !== 'small' && NOTE !== 'limit') throw new Error('STRESS_NOTE must be small or limit');
 // Presence load (reports/2026-10-28-presence-load.md): every typing peer of a
 // note room publishes its caret STRESS_CURSOR_HZ times a second (0: none) in
 // the STRESS_CURSOR_PAYLOAD shape: `compact` the 2026-10-28 decision's (base64
@@ -286,7 +293,9 @@ async function createWorkspaceRooms(
       const material = await call('POST', `/api/workspaces/${workspace}/materials`, undefined, {
         // The near-limit note is the app's load-test note (~2 MB, ~7,400 nodes).
         content:
-          kind === 'plate' ? plateNote(5) : { schemaVersion: 1, value: buildBiologyLoadTestValue() },
+          kind === 'plate' && NOTE === 'small'
+            ? plateNote(5)
+            : { schemaVersion: 1, value: buildBiologyLoadTestValue() },
         kind: 'note',
         title: `Stress ${randomBytes(3).toString('hex')}`,
       });
@@ -733,8 +742,8 @@ const target = REMOTE ? await uatTarget() : EXTERNAL ? externalTarget() : await 
 
 /**
  * What a room's peers type into: the DOCX body story, the PPTX stories, the
- * XLSX sheets (each peer writes cells of the first sheet), the text source or
- * the Plate tree.
+ * XLSX sheets (each peer writes cells of the first sheet), the text source,
+ * the Plate tree, or a blocks-layout note's `blocks` map (its blocks' texts).
  */
 function typingTarget(room: Room, doc: Y.Doc): Y.Text | Y.Map<unknown> | null {
   if (room.format === 'docx') {
@@ -744,6 +753,7 @@ function typingTarget(room: Room, doc: Y.Doc): Y.Text | Y.Map<unknown> | null {
   if (room.format === 'pptx') return doc.getMap('pptx:stories');
   if (room.format === 'xlsx') return doc.getMap('xlsx:sheets');
   if (room.format === 'text') return doc.getText('source');
+  if (doc.share.has('blocks')) return doc.getMap('blocks');
   return doc.get('content', Y.XmlText);
 }
 
@@ -1429,7 +1439,7 @@ async function stressRoom(room: Room, peerCount: number) {
     };
     for (const event of events) {
       // XLSX cells are map entries; text changes come as deltas.
-      if (event.target instanceof Y.Map) {
+      if (event.target instanceof Y.Map && room.format === 'xlsx') {
         for (const [key, change] of event.changes.keys)
           if (change.action !== 'delete') scan(cellText(event.target.get(key)));
       } else

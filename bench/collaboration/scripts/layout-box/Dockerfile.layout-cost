@@ -1,0 +1,24 @@
+# The in-process layout-cost matrix (../layout-cost) as an offline image:
+# the repository root as context (staged by prepare-L.sh), the same Rust and
+# Debian as the collaboration image, so its glibc allocator is production's.
+# The notes crate links V8, which the build downloads, as the server's does.
+FROM rust:1.98-bookworm AS build
+WORKDIR /workspace
+COPY vendor/betteroffice vendor/betteroffice
+COPY collaboration-rs collaboration-rs
+COPY bench/collaboration/scripts/layout-cost bench/collaboration/scripts/layout-cost
+WORKDIR /workspace/bench/collaboration/scripts/layout-cost
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/workspace/bench/collaboration/scripts/layout-cost/target,sharing=locked \
+    cp /workspace/collaboration-rs/Cargo.lock Cargo.lock \
+    && cargo build --release \
+    && cp target/release/layout-cost /usr/local/bin/layout-cost
+
+FROM debian:bookworm-slim
+COPY --from=build /usr/local/bin/layout-cost /usr/local/bin/layout-cost
+COPY bench/collaboration/scripts/layout-box/layout-values.json /usr/local/share/capy/layout-values.json
+# The collaboration server's allocator settings (human/deployment-runbook.md,
+# 2026-10-17), so RSS readings match a production room's.
+ENV MALLOC_ARENA_MAX=2 MALLOC_TRIM_THRESHOLD_=131072 MALLOC_MMAP_THRESHOLD_=131072
+USER nobody
+ENTRYPOINT ["layout-cost", "/usr/local/share/capy/layout-values.json"]

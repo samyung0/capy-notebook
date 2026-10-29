@@ -1,0 +1,76 @@
+# Capacity overlay for the layout-cost stack steps (run-step.sh): the
+# blocksuite-notes branch's Rust collaboration server and gateway, layered on
+# its deploy/docker-compose.e2e.yml and bench/collaboration/scripts/
+# docker-compose.stress.yml, Compose project capy-capacity, as the
+# 2026-10-28 presence run's capacity-P.yml: collaboration on production's
+# cores 2-3 (COLLABORATION_CPUSET) with production's allocator settings and
+# engine pool, Postgres, Redis, the gateway and the fake S3 on 1, generators
+# on 0-1, no host ports. CAP_LAYOUT (plate or blocks, set by run-step.sh)
+# picks the note rooms' layout.
+services:
+  db:
+    cpuset: "1"
+    ports: !reset []
+  redis:
+    cpuset: "1"
+  server:
+    image: capy-capacity-server:L
+    cpuset: "1"
+    ports: !reset []
+    environment:
+      COLLABORATION_URL: ws://collaboration:1234
+  collaboration:
+    image: capy-capacity-collaboration:L
+    cpuset: "2,3"
+    ports: !reset []
+    environment:
+      COLLAB_HEALTH_INTERVAL_MS: "20000"
+      COLLABORATION_DOCUMENT_LAYOUT: ${CAP_LAYOUT:?set by run-step.sh}
+      COLLABORATION_ENGINE_SAVE_PROCESSES: "2"
+      COLLABORATION_ENGINE_BACKGROUND_PROCESSES: "1"
+      COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES: "4294967296"
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+      MALLOC_MMAP_THRESHOLD_: "131072"
+  s3:
+    cpuset: "1"
+
+  gen1: &gen
+    image: node:22-alpine
+    profiles: ["gen"]
+    cpuset: "0,1"
+    working_dir: /gen
+    command:
+      [
+        "node",
+        "--max-old-space-size=3072",
+        "/gen/bench/collaboration/scripts/stress.bundle.mjs",
+      ]
+    env_file: ["${CAP_STEP:?set by run-step.sh}/gen1.env"]
+    volumes:
+      - ${CAP_GEN_ROOT:?set by run-step.sh}:/gen:ro
+      - ${CAP_STEP:?set by run-step.sh}/gen1:/out
+  gen2:
+    <<: *gen
+    env_file: ["${CAP_STEP:?set by run-step.sh}/gen2.env"]
+    volumes:
+      - ${CAP_GEN_ROOT:?set by run-step.sh}:/gen:ro
+      - ${CAP_STEP:?set by run-step.sh}/gen2:/out
+  gen3:
+    <<: *gen
+    env_file: ["${CAP_STEP:?set by run-step.sh}/gen3.env"]
+    volumes:
+      - ${CAP_GEN_ROOT:?set by run-step.sh}:/gen:ro
+      - ${CAP_STEP:?set by run-step.sh}/gen3:/out
+  gen4:
+    <<: *gen
+    env_file: ["${CAP_STEP:?set by run-step.sh}/gen4.env"]
+    volumes:
+      - ${CAP_GEN_ROOT:?set by run-step.sh}:/gen:ro
+      - ${CAP_STEP:?set by run-step.sh}/gen4:/out
+
+  tools:
+    image: node:22-alpine
+    profiles: ["tools"]
+    volumes:
+      - /root/capy-capacity:/w

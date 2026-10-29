@@ -1,0 +1,27 @@
+# The in-process layout-cost matrix as a throwaway container of Compose
+# project capy-capacity (run-matrix.sh). Offline and read-only: no network,
+# no volumes, it reads only the note values baked into its image and writes
+# JSONL to stdout. Pinned to production's collaboration cores (2-3), one
+# core's worth of CPU (it is single-threaded), and a hard 2 GiB memory cap
+# with no swap, so it cannot starve production's services.
+name: capy-capacity
+services:
+  matrix:
+    image: capy-capacity-layout-cost:L
+    cpuset: "2,3"
+    cpus: 1.0
+    mem_limit: 2g
+    memswap_limit: 2g
+    pids_limit: 16
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      SCALE: ${CAP_SCALE:-1}
+      ROOMS: ${CAP_ROOMS:-20}
+      RUNS: ${CAP_RUNS:-5}
+      NOTES: ${CAP_NOTES:-load-test,small}
+      LAYOUTS: ${CAP_LAYOUTS:-plate,blocks}
+      CAPY_SHA: ${CAP_SHA:-}

@@ -1,0 +1,15 @@
+# Layout-cost stack steps (README.md here): the same rooms in the Plate and the
+# blocks layout, against the branch's real server. Each room has its PEERS and
+# a watcher. <group> <step> <rooms> [VAR=value ...]
+# Idle loaded rooms: the server's RSS per room (incl. two sockets' buffers).
+plate idle-limit-plate 20 LAYOUT=plate NOTE=limit IDLE=true PEERS=1 MINUTES=2
+blocks idle-limit-blocks 20 LAYOUT=blocks NOTE=limit IDLE=true PEERS=1 MINUTES=2
+plate idle-small-plate 200 LAYOUT=plate NOTE=small IDLE=true PEERS=1 MINUTES=2
+blocks idle-small-blocks 200 LAYOUT=blocks NOTE=small IDLE=true PEERS=1 MINUTES=2
+# Typing at 10 edits a second per peer, ten rooms at once (per room = /10).
+plate type1-limit-plate 10 LAYOUT=plate NOTE=limit PEERS=1 EDIT_MS=100 MINUTES=3
+blocks type1-limit-blocks 10 LAYOUT=blocks NOTE=limit PEERS=1 EDIT_MS=100 MINUTES=3
+plate type5-limit-plate 10 LAYOUT=plate NOTE=limit PEERS=5 EDIT_MS=100 MINUTES=3
+blocks type5-limit-blocks 10 LAYOUT=blocks NOTE=limit PEERS=5 EDIT_MS=100 MINUTES=3
+plate type5-small-plate 10 LAYOUT=plate NOTE=small PEERS=5 EDIT_MS=100 MINUTES=3
+blocks type5-small-blocks 10 LAYOUT=blocks NOTE=small PEERS=5 EDIT_MS=100 MINUTES=3
