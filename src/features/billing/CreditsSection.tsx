@@ -21,6 +21,7 @@ import { Input, InputError } from '@/components/ui/Input';
 import { Switch } from '@/components/ui/Switch';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { describeError } from '@/lib/errors';
 import { userColorPair } from '@/lib/userColor';
 import {
@@ -192,7 +193,6 @@ function BuyCredits({
             {m.billing_purchased_owed({ amount: formatCredits(view.owed) })}
           </p>
         )}
-        {settings.starterAvailable && <StarterOffer />}
       </div>
       <div>
         <form noValidate onSubmit={submit}>
@@ -284,11 +284,17 @@ function BuyCredits({
   );
 }
 
-/** The account's first saved card adds the starter credits (once). */
-function StarterOffer() {
+/** The account's first saved card adds the starter credits (once). Shown on
+ * the Usage tab. */
+export function StarterOffer({ className }: { className?: string }) {
   const { isPending, mutate: addCard } = usePaymentMethodCheckout();
   return (
-    <div className="mt-3 flex items-start gap-2 text-fg-secondary text-sm">
+    <div
+      className={cn(
+        'flex items-start gap-2 text-fg-secondary text-sm',
+        className
+      )}
+    >
       <Icon className="size-4.5 shrink-0 text-fg-muted" name="info" />
       <span>
         {m.billing_starter_offer()}{' '}

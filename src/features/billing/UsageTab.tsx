@@ -1,6 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useBilling, useUsage } from '@/api/hooks';
-import type { BillingInfo } from '@/api/types';
 import { TabHeader } from '@/components/app/tabPanel';
 import {
   type Segment,
@@ -13,6 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { userColorPair } from '@/lib/userColor';
 import { CreditNotices } from './CreditNotices';
+import { StarterOffer } from './CreditsSection';
 // Credit periods start at UTC midnight, so dates are read and shown in UTC;
 // local time would put a western user's period a day early.
 import { monthName, periodMonth, shortDate } from './creditLabels';
@@ -201,12 +201,8 @@ export function UsageTab() {
               </span>
             </div>
           )}
-          {(billingPending || resetsAt) && (
-            <p className="t-meta mt-2 text-fg-muted">
-              {!billing || !view || !resetsAt
-                ? loadingValue
-                : creditsHint(billing, view, shortDate(resetsAt))}
-            </p>
+          {billing?.creditSettings.starterAvailable && (
+            <StarterOffer className="mt-6" />
           )}
           <p className="t-meta mt-6 mb-1 text-fg-muted">
             {m.billing_by_area()}
@@ -230,38 +226,4 @@ export function UsageTab() {
 /** Where purchased credits start on the bar, in percent. */
 function markerAt(view: CreditView) {
   return (view.limit / view.barTotal) * 100;
-}
-
-/** The line under the credits bar: how far into the monthly allowance, then
- * the purchased credits, and what is owed. */
-function creditsHint(billing: BillingInfo, view: CreditView, date: string) {
-  const limit = formatCredits(view.limit);
-  const pool = formatCredits(view.purchasedPool);
-  if (view.owed > 0) {
-    const owed = formatCredits(view.owed);
-    return view.purchasedPool > 0
-      ? m.billing_credits_hint_owed({ limit, owed, pool })
-      : m.billing_credits_hint_owed_no_pool({ limit, owed });
-  }
-  if (view.monthlyUsed >= view.limit && view.purchasedPool > 0) {
-    return m.billing_credits_hint_purchased_used({
-      date,
-      limit,
-      pool,
-      used: formatCredits(view.purchasedUsed),
-    });
-  }
-  const used = formatCredits(view.monthlyUsed);
-  const monthly =
-    view.carried > 0
-      ? m.billing_credits_hint_carried({
-          carried: formatCredits(view.carried),
-          date,
-          limit,
-          month: monthName(periodMonth(billing.creditsPeriodStart, -1)),
-          used,
-        })
-      : m.billing_credits_hint_monthly({ date, limit, used });
-  if (view.purchasedPool <= 0) return monthly;
-  return `${monthly} ${m.billing_credits_hint_then_purchased({ amount: pool })}`;
 }
