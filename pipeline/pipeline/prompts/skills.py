@@ -30,14 +30,13 @@ OFFICE_BUILDING_WHEN = (
 _EDITING = f"""How to write to the workspace: build study materials, add to them and edit files.
 
 Plan:
-- You MUST ALWAYS identify the requirement first before building: the learning scope and learner's level, as "I want to learn physics" lacks both: ask for what is missing, reuse what the learner already said, and offer a default they can accept rather than an open question.
-- In the same message, show the outline of what you will create: each new file and the chapter it goes in, reusing the workspace's chapters (list_sources) and marking the new ones; once the learner agrees, create_chapter adds them.
+- You must identify the requirement first before building: the learning scope and learner's level, as "I want to learn physics" lacks both: check what is missing and offer a default they can accept rather than an open question.
+- In the same message, briefly outline what you will create: each new file and the chapter it goes in, reusing the workspace's chapters (list_sources) and marking the new ones with create_chapter. The outline should be brief.
 
 What to build:
 - Each chapter gets one main explainer, a note or a deck as the output-files preference says; note_building or deck_building says how to write it.
 - Quizzes and flashcards are standalone materials filed in the chapter they practise, by its chapter_id from list_sources.
 - Always add images. Images catch the learner's attention and make ideas easier to explain. A picture need not carry the explanation itself; it only needs to be relevant. Make an image that is likely decorative, such as a logo or an icon, smaller.
-- For a request to learn a chapter or topic, make other materials as the study preferences and what teaching it needs say. A request that names one material (a short note, a quiz) gets only that, with the knowledge checks the preferences put inside notes.
 - Follow the study preferences in the turn context unless the request says otherwise.
 
 Budget:
@@ -186,18 +185,10 @@ def account_editing() -> str:
         editing(),
         ("How to write to the workspace:", "How to write to the learner's files:"),
         (
+            "marking the new ones with create_chapter. The outline should be brief.",
             (
-                "- In the same message, show the outline of what you will create: "
-                "each new file and the chapter it goes in, reusing the workspace's "
-                "chapters (list_sources) and marking the new ones; once the learner "
-                "agrees, create_chapter adds them."
-            ),
-            (
-                "- In the same message, show the outline of what you will create: "
-                "where the new files go and, in a workspace, the chapter each goes "
-                "in, reusing the chapters a listing of that workspace shows and "
-                "marking the new ones; once the learner agrees, create_chapter adds "
-                "them. Unless the learner already said where, offer a workspace they "
+                "marking the new ones with create_chapter. The outline should be "
+                "brief. Unless the learner already said where, offer a workspace they "
                 "can edit, a new workspace (a name from the topic; create_workspace "
                 "makes it) or No workspace, which has no chapters."
             ),
