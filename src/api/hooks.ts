@@ -1347,6 +1347,9 @@ export const useEditorAssets = (access?: EditorAssetAccess) =>
         `/editor-assets${listSearch({ access }, pageParam)}`
       ),
     queryKey: qk.editorAssets(access),
+    // Nothing invalidates it when an editor adds an image, so each visit
+    // refetches instead of showing the list from up to 5 minutes before.
+    staleTime: 0,
   });
 
 /** Deletes one of them at once, wherever it sits: nothing restores it, and
