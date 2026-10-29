@@ -14,6 +14,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 go build -trimpath -o /out/reconcile ./cmd/reconcile && \
     CGO_ENABLED=0 go build -trimpath -o /out/office-maintenance ./cmd/office-maintenance && \
     CGO_ENABLED=0 go build -trimpath -o /out/previewbackfill ./cmd/previewbackfill && \
+    CGO_ENABLED=0 go build -trimpath -o /out/assetthumbbackfill ./cmd/assetthumbbackfill && \
     CGO_ENABLED=0 go build -trimpath -o /out/migrate ./cmd/migrate
 
 FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
@@ -23,6 +24,7 @@ COPY --from=build /out/api /api
 COPY --from=build /out/reconcile /app/reconcile
 COPY --from=build /out/office-maintenance /app/office-maintenance
 COPY --from=build /out/previewbackfill /app/previewbackfill
+COPY --from=build /out/assetthumbbackfill /app/assetthumbbackfill
 COPY --from=build /out/migrate /migrate
 EXPOSE 8080
 ENTRYPOINT ["/api"]

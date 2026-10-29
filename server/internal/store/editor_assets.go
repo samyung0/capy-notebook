@@ -403,6 +403,39 @@ func (s *Store) PurgeTrashedEditorAssets(ctx context.Context, limit int) (int, e
 	return purged, nil
 }
 
+// SetEditorAssetThumbnail points a ready asset at its thumbnail (assetthumb).
+// A trashed asset takes it too, since undo may bring it back; an asset gone
+// meanwhile takes nothing and the key is queued for deletion at once.
+func (s *Store) SetEditorAssetThumbnail(ctx context.Context, assetID, key string) error {
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE editor_assets SET thumbnail_key=$2
+			WHERE id=$1 AND status='ready'`, assetID, key)
+		if err != nil || tag.RowsAffected() > 0 {
+			return err
+		}
+		return s.EnqueueBlobDeletionTx(ctx, tx, 0, key)
+	})
+}
+
+// EditorImageToThumbnail is a ready image without a thumbnail, for the
+// one-shot backfill (cmd/assetthumbbackfill).
+type EditorImageToThumbnail struct{ ID, ObjectPath string }
+
+// EditorImagesWithoutThumbnails pages through ready images that have no
+// thumbnail, by id after the cursor.
+func (s *Store) EditorImagesWithoutThumbnails(ctx context.Context, after string, limit int) ([]EditorImageToThumbnail, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, object_path FROM editor_assets
+		WHERE purpose='image' AND status='ready' AND thumbnail_key IS NULL AND id > $1
+		ORDER BY id LIMIT $2`, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (EditorImageToThumbnail, error) {
+		var img EditorImageToThumbnail
+		return img, row.Scan(&img.ID, &img.ObjectPath)
+	})
+}
+
 // AdoptEditorAssets gives the target material its own copy of each source
 // asset, for an image pasted from another note or quiz. It returns the target's
 // asset id per adoptable source: the same id when the asset is already the
@@ -496,10 +529,11 @@ func (s *Store) AdoptEditorAssets(
 		newID := uid("asset")
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
 			(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path,
-			 content_type, size_bytes, status, etag, completed_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,now())`,
+			 content_type, size_bytes, status, etag, completed_at, thumbnail_key)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,now(),
+			 (SELECT thumbnail_key FROM editor_assets WHERE id=$12))`,
 			newID, nullStr(workspaceID), materialID, ownerID, actorID, asset.Name, asset.Purpose,
-			asset.ObjectPath, asset.ContentType, asset.SizeBytes, nullStr(asset.ETag)); err != nil {
+			asset.ObjectPath, asset.ContentType, asset.SizeBytes, nullStr(asset.ETag), asset.ID); err != nil {
 			return nil, false, err
 		}
 		adopted[asset.ID] = newID
@@ -619,6 +653,10 @@ type EditorAssetItem struct {
 	WorkspaceID string `json:"workspaceId,omitempty"`
 	// LostAccess: the caller can no longer open its note (lostAccessSQL).
 	LostAccess bool `json:"lostAccess"`
+	// ThumbnailKey is the image's card thumbnail, signed by the handler into
+	// ThumbnailURL (openwiki/thumbnails.md).
+	ThumbnailKey string  `json:"-"`
+	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"An image's 200 px card thumbnail, an hour-stable link; absent for audio and for images without one"`
 }
 
 type EditorAssetPage struct {
@@ -667,7 +705,8 @@ func (s *Store) ListEditorAssets(
 			CASE WHEN l.lost THEN '' ELSE top.id END, top.kind,
 			`+workspaceNameSQL("top.workspace_id", "top.title")+`,
 			`+workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')")+`,
-			CASE WHEN l.lost THEN '' ELSE COALESCE(top.workspace_id,'') END, l.lost
+			CASE WHEN l.lost THEN '' ELSE COALESCE(top.workspace_id,'') END, l.lost,
+			COALESCE(a.thumbnail_key,'')
 		FROM editor_assets a
 		JOIN materials m ON m.id=a.material_id
 		JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
@@ -681,7 +720,8 @@ func (s *Store) ListEditorAssets(
 		var item EditorAssetItem
 		var kind MaterialKind
 		err := row.Scan(&item.ID, &item.Name, &item.Purpose, &item.SizeBytes, &item.CreatedAt,
-			&item.MaterialID, &kind, &item.MaterialTitle, &item.WorkspaceName, &item.WorkspaceID, &item.LostAccess)
+			&item.MaterialID, &kind, &item.MaterialTitle, &item.WorkspaceName, &item.WorkspaceID, &item.LostAccess,
+			&item.ThumbnailKey)
 		item.MaterialType = kind.RefType()
 		return item, err
 	})

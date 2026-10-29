@@ -2013,6 +2013,9 @@ components:
         sizeBytes:
           format: int64
           type: integer
+        thumbnailUrl:
+          description: An image's 200 px card thumbnail, an hour-stable link; absent for audio and for images without one
+          type: string
         workspaceId:
           type: string
         workspaceName:

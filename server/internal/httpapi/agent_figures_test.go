@@ -84,6 +84,12 @@ func TestAgentNoteStoresItsFiguresAsAssets(t *testing.T) {
 		!strings.Contains(stored.Content, "The action potential (CC BY 4.0)") {
 		t.Fatalf("content = %s, want the image pointing at its asset with its caption", stored.Content)
 	}
+	// Its card thumbnail follows in the background (Sam 2026-10-29).
+	if key := awaitAssetThumbnail(t, st, assetID); key == "" {
+		t.Fatal("the figure got no thumbnail")
+	} else if _, _, ok := mem.Object(key); !ok {
+		t.Fatalf("thumbnail %s was recorded but not stored", key)
+	}
 }
 
 // A figure the write did not render, or one over the payer's image cap,

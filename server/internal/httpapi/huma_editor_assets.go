@@ -36,6 +36,12 @@ func (a *api) listEditorAssets(ctx context.Context, in *editorAssetsInput) (*edi
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// Every row is one the caller pays for, so it may see the image.
+	for i := range page.Items {
+		if page.Items[i].ThumbnailURL, err = a.thumbnailURL(ctx, page.Items[i].ThumbnailKey); err != nil {
+			return nil, hErr(err)
+		}
+	}
 	return &editorAssetsOutput{Body: page}, nil
 }
 

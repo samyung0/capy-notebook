@@ -1501,6 +1501,7 @@ export const ListEditorAssetsResponse = zod.object({
   "name": zod.string(),
   "purpose": zod.enum(['image', 'audio']),
   "sizeBytes": zod.int(),
+  "thumbnailUrl": zod.string().optional().describe('An image\'s 200 px card thumbnail, an hour-stable link; absent for audio and for images without one'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string()
 })),

@@ -157,6 +157,10 @@ type api struct {
 	// so a stop request reaches its relay (chat_stop.go) and a browser can
 	// follow it again (chat_resume.go).
 	turns sync.Map
+	// assetThumbs is the room editor image thumbnails run in, and
+	// assetThumbWork lets tests wait for them (editor_asset_thumbnails.go).
+	assetThumbs    chan struct{}
+	assetThumbWork sync.WaitGroup
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and, in
@@ -174,6 +178,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		rdb:                rdb,
 		parser:             parser,
 		cfg:                cfg,
+		assetThumbs:        make(chan struct{}, assetThumbnailSlots),
 		mailRecorder:       cfg.MailRecorder,
 		limiter:            ratelimit.New(rdb, cfg.RateLimit),
 		captcha:            cfg.CaptchaVerifier,

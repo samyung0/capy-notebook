@@ -548,3 +548,97 @@ func TestEditorAssetMaterialTakesTheUploadersCaps(t *testing.T) {
 		t.Fatalf("pro caps = %d image, %d audio; want 2 and 30 MiB", image, audio)
 	}
 }
+
+// An image's thumbnail is a counted reference that follows its asset row
+// (Sam 2026-10-29): kept while the image's node is gone and back on undo,
+// shared by a clone's copy as object_path is, and released when the last row
+// holding it is purged. A row gone before its thumbnail lands queues the key.
+func TestEditorAssetThumbnailFollowsItsAsset(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	f := editorAssetFixture{t: t, s: s, ctx: ctx}
+	ownerID := newBlobTestUser(t, s, "u_thumb_owner")
+	clonerID := newBlobTestUser(t, s, "u_thumb_cloner")
+	workspace, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Figures", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	material, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, WorkspaceID: workspace.ID, WorkspaceName: workspace.Name,
+		Kind: "note", Title: "Figures", Content: noteWithImages(t),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset := f.ready(ownerID, workspace.ID, material.ID)
+	save := func(ids ...string) {
+		t.Helper()
+		next := noteWithImages(t, ids...)
+		updated, err := s.UpdateMaterial(ctx, material.ID, MaterialPatch{
+			Content: &next, UpdatedBy: ownerID, ExpectedRevision: &material.Revision,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		material = updated
+	}
+	save(asset.ID)
+	key := "thumbs/" + asset.ID + "/" + uid("sha") + ".jpg"
+	if err := s.SetEditorAssetThumbnail(ctx, asset.ID, key); err != nil {
+		t.Fatal(err)
+	}
+	if got := blobRefCount(t, s, key); got != 1 {
+		t.Fatalf("thumbnail refs = %d, want 1", got)
+	}
+	page, err := s.ListEditorAssets(ctx, ownerID, "", 10, "")
+	if err != nil || len(page.Items) != 1 || page.Items[0].ThumbnailKey != key {
+		t.Fatalf("listed %+v, %v; want the asset with its thumbnail key", page.Items, err)
+	}
+
+	// The node leaves and comes back (undo): the thumbnail stays.
+	save()
+	save(asset.ID)
+	if f.trashed(asset.ID) || blobRefCount(t, s, key) != 1 {
+		t.Fatalf("after undo trashed=%v refs=%d, want the asset back with its thumbnail",
+			f.trashed(asset.ID), blobRefCount(t, s, key))
+	}
+
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`, workspace.ID); err != nil {
+		t.Fatal(err)
+	}
+	clone, err := s.CloneWorkspace(ctx, clonerID, workspace.ID, WorkspaceCreate{Name: "Clone"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cloned string
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(thumbnail_key,'') FROM editor_assets WHERE workspace_id=$1`,
+		clone.ID).Scan(&cloned); err != nil {
+		t.Fatal(err)
+	}
+	if cloned != key || blobRefCount(t, s, key) != 2 {
+		t.Fatalf("clone's thumbnail %q with %d refs, want the shared key twice", cloned, blobRefCount(t, s, key))
+	}
+
+	// Dropped for a day and purged: the clone still holds it.
+	save()
+	if _, err := s.pool.Exec(ctx, `UPDATE editor_assets SET trashed_at=now()-interval '25 hours' WHERE id=$1`, asset.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PurgeTrashedEditorAssets(ctx, 100); err != nil || f.exists(asset.ID) {
+		t.Fatalf("purge: %v, asset left %v", err, f.exists(asset.ID))
+	}
+	if blobRefCount(t, s, key) != 1 || blobQueued(t, s, key) {
+		t.Fatalf("after the purge refs=%d queued=%v, want the clone's", blobRefCount(t, s, key), blobQueued(t, s, key))
+	}
+	if err := s.DeleteWorkspace(ctx, clonerID, clone.ID); err != nil {
+		t.Fatal(err)
+	}
+	if blobRefCount(t, s, key) != 0 || !blobQueued(t, s, key) {
+		t.Fatalf("after the clone's delete refs=%d queued=%v, want released", blobRefCount(t, s, key), blobQueued(t, s, key))
+	}
+
+	late := "thumbs/" + asset.ID + "/" + uid("sha") + ".jpg"
+	if err := s.SetEditorAssetThumbnail(ctx, asset.ID, late); err != nil || !blobQueued(t, s, late) {
+		t.Fatalf("a thumbnail for a purged asset: %v, queued=%v, want queued", err, blobQueued(t, s, late))
+	}
+}

@@ -373,8 +373,9 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 	}
 	content, embedded := req.Content, []store.EmbeddedDraft(nil)
 	var assets []store.AgentAsset
+	var figures *agentFigures
 	if req.Kind == "note" {
-		figures := newAgentFigures(req.AssistantMessageID, req.ToolCallID, req.Figures)
+		figures = newAgentFigures(req.AssistantMessageID, req.ToolCallID, req.Figures)
 		var ok bool
 		if content, embedded, ok = a.convertAgentNote(w, r, req, figures); !ok {
 			return
@@ -411,6 +412,12 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 	})
 	if err != nil || !created {
 		a.deleteAgentAssets(ctx, assets)
+	} else if len(assets) > 0 {
+		ids := make([]string, len(assets))
+		for i, asset := range assets {
+			ids[i] = asset.ID
+		}
+		a.thumbnailFigures(ctx, figures, ids)
 	}
 	if err != nil {
 		if errors.Is(err, store.ErrEmptyMaterial) {

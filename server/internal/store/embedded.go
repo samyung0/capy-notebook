@@ -291,10 +291,11 @@ func (s *Store) copyEmbeddedTx(
 	for _, asset := range assets {
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
 			(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path,
-			 content_type, size_bytes, status, etag, completed_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,now())`,
+			 content_type, size_bytes, status, etag, completed_at, thumbnail_key)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,now(),
+			 (SELECT thumbnail_key FROM editor_assets WHERE id=$12))`,
 			asset.newID, nullStr(note.WorkspaceID), id, payerID, actorID, asset.name, asset.purpose,
-			asset.objectPath, asset.contentType, asset.sizeBytes, nullStr(asset.etag)); err != nil {
+			asset.objectPath, asset.contentType, asset.sizeBytes, nullStr(asset.etag), asset.oldID); err != nil {
 			return "", err
 		}
 	}

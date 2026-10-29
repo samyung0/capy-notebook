@@ -189,8 +189,9 @@ already has `DATABASE_URL`).
 | `flashcards` | `{kind, cardCount, first?: {front, hasImage}}`, the front whole (its cap is 200 characters) |
 | `mindmap`, `diagram` | `{kind, source}`, the Mermaid source cut to 1 KB on a line boundary |
 
-Editor assets have no small variant (the stored object is the uploaded image,
-up to the plan image cap), so `{t:'image'}` and `hasImage` are markers only:
+Material previews do not draw editor images (an image's small copy is for
+the Embeds tab only, [Editor images](#editor-images)), so `{t:'image'}` and
+`hasImage` are markers only:
 cards draw a tinted frame with the image glyph where the image is (a note that
 is only an image fills its page with it; under a long flashcard front the frame
 shrinks and the front keeps at most three lines). Epo kept the marker over
@@ -209,6 +210,53 @@ render and bundled the same way.
 Sources: [extractor](../server/internal/materialdoc/preview.go),
 [table test](../server/internal/materialdoc/preview_test.go),
 [writers test](../server/internal/store/material_preview_test.go).
+
+## Editor images
+
+Each image in a note, quiz or flashcard set (an editor asset, `purpose =
+'image'`) gets a small JPEG for the Files page's Embeds tab (Sam 2026-10-29),
+which drew only icons before. Audio gets none.
+
+- Made in Go from the bytes it already holds, never fetched back: an upload
+  (`storeEditorAssetBytes`) after its asset is ready, and an agent's figures
+  (`create_material` notes and `ensureFigureAssets` edits) once their rows
+  are inserted. `assetthumb.Make` decodes PNG, JPEG, GIF (its first frame)
+  and WebP within the editors' 2400 px side limit; AVIF and anything that does
+  not decode gets none. 200 px wide (narrower images are not enlarged), cut at
+  400 px tall from the top, flattened on white, JPEG quality 70. A 2400 x 2400
+  photo took about 280 ms and came out at 9.5 KB (developer PC, 2026-10-29).
+- A small room, after the response: at most two batches at once (an upload is
+  one image, an agent write all its figures, made one after another), each
+  image within 3 s for its put and record. A batch that finds both slots taken
+  is skipped. Nothing retries: a failure is logged (`editor image thumbnail
+  failed`) and the card keeps its icon until the backfill.
+- Stored at `thumbs/{asset id}/{sha256}.jpg` (`Cache-Control: public,
+  max-age=31536000, immutable`), named in `editor_assets.thumbnail_key`
+  (migration 0131), a counted blob reference beside `object_path`. It follows
+  its row: kept while the image's node is gone from its note (the row is only
+  trashed, so undo and redo find it), released when the row is purged a day
+  later, deleted with its uploader, or deleted from the Embeds tab. A row gone
+  before its thumbnail lands takes nothing and the key is queued at once.
+- Copies of a row (a pasted image, an embedded copy, a workspace or material
+  clone) take its key with its `object_path`: both already name the source
+  asset, so sharing the thumbnail shows nothing new. Unlike file thumbnails,
+  no object is copied.
+- A platform cost like file thumbnails: no quota, and the storage triggers
+  ignore it.
+- `GET /api/editor-assets` signs it per row as `thumbnailUrl`, the same
+  hour-stable link; every row is one the caller pays for. The Embeds grid card
+  draws it, the list row keeps the image or audio icon.
+- Images stored before migration 0131 get theirs from the one-shot,
+  idempotent `assetthumbbackfill` (ready images still without one, one attempt
+  each, rerunnable; run by hand, never at startup):
+  `docker exec <server container> /app/assetthumbbackfill` (the container has
+  `DATABASE_URL` and the `B2_*` settings).
+
+Sources: [maker](../server/internal/assetthumb/assetthumb.go),
+[room](../server/internal/httpapi/editor_asset_thumbnails.go),
+[store test](../server/internal/store/editor_assets_test.go)
+(`TestEditorAssetThumbnailFollowsItsAsset`),
+[upload test](../server/internal/httpapi/editor_asset_thumbnails_test.go).
 
 ## Browser captures
 
