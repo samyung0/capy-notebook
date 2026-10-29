@@ -1004,12 +1004,14 @@ Apply to one explicitly selected database with
 `psql -v ON_ERROR_STOP=1 -f deploy/model-capacities.sql`. If environments share
 an account, divide its quota among them before applying the script.
 
-Migration `0030_rerank_slot.sql` seeds DeepInfra `Qwen/Qwen3-Reranker-4B` as
-the `rerank` default and copies the environment's Qwen embedding capacity to it
-when one exists. Where none exists, set the reranker's capacity in Ops or with
-the script above; until then every search logs `rerank failed; keeping fused
-order` and returns unreranked results. It needs no new secret
-(`DEEPINFRA_API_KEY` on the retrieval service). To turn reranking off, remove
+Migration `0134_alibaba_rerank.sql` makes Alibaba `qwen3-rerank` the `rerank`
+default with a capacity of 64 (32 reserved), replacing DeepInfra
+`Qwen/Qwen3-Reranker-4B` from `0030_rerank_slot.sql`. It reuses the
+environment's `ALIBABA_MODELSTUDIO_KEY` and `ALIBABA_MODELSTUDIO_URL` (the
+Singapore workspace's `.../compatible-mode/v1` base), now also passed to the
+retrieval and Ops services; the key needs rerank enabled in Model Studio.
+Without the key, the URL or a capacity row every search logs `rerank failed;
+keeping fused order` and returns unreranked results. To turn reranking off, remove
 the reranker from the `rerank` column in the Ops model catalog and save;
 running retrieval processes stop reranking within one registry poll
 (10 minutes). That save disables the reranker row, so turning reranking back

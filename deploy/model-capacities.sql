@@ -42,9 +42,9 @@
 -- at Epo's 40 in flight with no reserve: chat and Generate take all 40 and
 -- ingest never runs on it (Epo 2026-10-29).
 -- Interactive reserves: 83% GLM / 0% DeepSeek Flash (chat only) / 50% DeepSeek 1017 / 40% embedding.
--- The reranker is a separate DeepInfra model on the same account, with its own
--- 200-request limit. Only interactive search calls it, so its reserve never
--- binds; it copies the embedding's 80.
+-- The reranker is Alibaba qwen3-rerank (Singapore): 64 in flight answered
+-- without an error in bench/rag/providers' ramp (2026-10-30). Only interactive
+-- search calls it, so its reserve never binds.
 
 WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
   VALUES
@@ -54,7 +54,7 @@ WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
     ('openrouter', 'deepseek/deepseek-v4.1-flash-1017', 40, 20),
     ('openrouter', 'minimax/minimax-m3.1-flash', 16, 15),
     ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200, 80),
-    ('deepinfra', 'Qwen/Qwen3-Reranker-4B', 200, 80)
+    ('alibaba', 'qwen3-rerank', 64, 32)
 )
 INSERT INTO model_capacities (provider, model, concurrency_total, interactive_reserve)
 SELECT provider, model, concurrency_total, interactive_reserve FROM capacities c

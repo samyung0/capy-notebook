@@ -154,8 +154,8 @@ async def test_rerank_settles_under_its_own_catalog_version(monkeypatch):
             thinking="",
             spec=_spec(
                 version=3,
-                provider_slug="deepinfra",
-                model_slug="Qwen/Qwen3-Reranker-4B",
+                provider_slug="alibaba",
+                model_slug="qwen3-rerank",
                 thinking_levels=(),
                 default_thinking="",
             ),
@@ -167,8 +167,8 @@ async def test_rerank_settles_under_its_own_catalog_version(monkeypatch):
     assert (sent["kind"], sent["purpose"], sent["provider"], sent["model"]) == (
         "rerank",
         "rerank",
-        "deepinfra",
-        "Qwen/Qwen3-Reranker-4B",
+        "alibaba",
+        "qwen3-rerank",
     )
     assert sent["modelVersion"] == 3 and sent["inputTokens"] == 268
     assert state.credits_exhausted and state.terminal_call_allowed

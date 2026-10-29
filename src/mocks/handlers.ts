@@ -547,8 +547,8 @@ const MOCK_USAGE_EVENT_SHAPES = [
   },
   {
     kind: 'rerank',
-    modelSlug: 'Qwen/Qwen3-Reranker-4B',
-    providerSlug: 'deepinfra',
+    modelSlug: 'qwen3-rerank',
+    providerSlug: 'alibaba',
     surface: 'chat',
   },
   {

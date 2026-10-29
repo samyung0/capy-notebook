@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import secrets
 from collections.abc import AsyncIterator, Mapping
@@ -23,7 +24,6 @@ OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
 DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
-DEEPINFRA_INFERENCE_URL = "https://api.deepinfra.com/v1/inference/"
 # OpenRouter models, each held on vetted providers with fallbacks off
 # (OpenRouter tries `order` in turn and nothing outside it). Default routing
 # moves between providers that differ on image input, so a model with no entry
@@ -58,7 +58,11 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
 ZAI_OPENROUTER_MODELS = {"glm-5.3-flash": "z-ai/glm-5.3-flash"}
 
 DEEPINFRA_QWEN_EMBED_MODEL = "Qwen/Qwen3-Embedding-4B"
-DEEPINFRA_QWEN_RERANK_MODEL = "Qwen/Qwen3-Reranker-4B"
+# Alibaba Model Studio serves the rerank slot from the Singapore workspace
+# whose OpenAI-compatible base is ALIBABA_MODELSTUDIO_URL; rerank lives beside it.
+ALIBABA_RERANK_MODEL = "qwen3-rerank"
+ALIBABA_COMPAT_SUFFIX = "/compatible-mode/v1"
+ALIBABA_RERANK_PATH = "/compatible-api/v1/reranks"
 
 CONTINUITY_KEYS = (
     "thinking_blocks",
@@ -988,29 +992,46 @@ async def rerank(
     query: str,
     documents: list[str],
 ) -> dict[str, Any]:
-    """Score documents against one query on DeepInfra's inference route.
+    """Score documents against one query with Alibaba's qwen3-rerank.
 
-    The route pairs ``queries[i]`` with ``documents[i]``, so the query repeats
-    once per document. It accepts an ``instruction`` field but ignores it
-    (bench/rag/rerank/reports/2026-09-25-library-rerank.md), so none is sent.
-    The answer carries ``scores`` in document order and ``input_tokens``. The
-    request has the whole-call bound of any non-streaming call.
+    Its scores move slightly with the other documents in a request
+    (bench/rag/providers), so callers send the candidates in fused order, as
+    search always has. The answer lists ``results`` as index and
+    ``relevance_score`` plus ``usage.total_tokens``; it comes back as
+    ``scores`` in document order and ``input_tokens``. The request has the
+    whole-call bound of any non-streaming call.
     """
-    if (
-        spec.provider_slug != "deepinfra"
-        or spec.model_slug != DEEPINFRA_QWEN_RERANK_MODEL
-    ):
+    if spec.provider_slug != "alibaba" or spec.model_slug != ALIBABA_RERANK_MODEL:
         raise RegistryError(
             f"elitellm has no rerank route for {spec.provider_slug}/{spec.model_slug}"
         )
-    key = platform_api_key("deepinfra")
+    key = platform_api_key("alibaba")
     if not key:
-        raise RegistryError("missing DEEPINFRA_API_KEY")
-    return await _post_json(
-        DEEPINFRA_INFERENCE_URL + spec.model_slug,
+        raise RegistryError("missing ALIBABA_MODELSTUDIO_KEY")
+    base = os.environ.get("ALIBABA_MODELSTUDIO_URL", "").strip().rstrip("/")
+    if not base.endswith(ALIBABA_COMPAT_SUFFIX):
+        raise RegistryError(
+            f"ALIBABA_MODELSTUDIO_URL must be the workspace's ...{ALIBABA_COMPAT_SUFFIX} base"
+        )
+    raw = await _post_json(
+        base.removesuffix(ALIBABA_COMPAT_SUFFIX) + ALIBABA_RERANK_PATH,
         _bearer(key),
-        {"queries": [query] * len(documents), "documents": documents},
+        {
+            "model": spec.model_slug,
+            "query": query,
+            "documents": documents,
+            "top_n": len(documents),
+        },
     )
+    scores: list[float | None] = [None] * len(documents)
+    for row in raw.get("results") or []:
+        index = row.get("index") if isinstance(row, dict) else None
+        if isinstance(index, int) and 0 <= index < len(scores):
+            scores[index] = row.get("relevance_score")
+    if any(score is None for score in scores):
+        raise ProviderError("qwen3-rerank answered without one score per document")
+    usage = raw.get("usage") or {}
+    return {"scores": scores, "input_tokens": usage.get("total_tokens")}
 
 
 def _thinking_for_call(spec: ModelConfig, reasoning: bool | None) -> str:

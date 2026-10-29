@@ -1,7 +1,7 @@
 """Search reranking: the first 20 fused candidates follow the rerank slot's
 model, the rest keep fused order, and any failure keeps the fused order.
 
-Calls run the real models and elitellm path against a mock DeepInfra
+Calls run the real models and elitellm path against a mock Alibaba
 transport. Accounting is unbound, so no ledger row is written, except in the
 background-settlement test, which fakes the gateway.
 """
@@ -23,10 +23,10 @@ from pipeline.retrieval.search import _rerank_spec as registry_rerank_spec
 
 SPEC = ModelConfig(
     version=1,
-    provider_name="Qwen",
-    model_name="Reranker 4B",
-    provider_slug="deepinfra",
-    model_slug="Qwen/Qwen3-Reranker-4B",
+    provider_name="Alibaba",
+    model_name="Qwen3 Rerank",
+    provider_slug="alibaba",
+    model_slug="qwen3-rerank",
     slots=(registry.Slot.RERANK,),
 )
 ROWS = [{"id": f"c{i}", "indexed_text": f"Section\n\nchunk {i}"} for i in range(25)]
@@ -35,12 +35,15 @@ REVERSED = [f"c{i}" for i in range(19, -1, -1)] + [f"c{i}" for i in range(20, 25
 
 def _scores(request: httpx.Request) -> httpx.Response:
     """Scores that reverse the first 20 rows."""
-    return httpx.Response(200, json={"scores": list(range(20)), "input_tokens": 300})
+    results = [{"index": i, "relevance_score": i} for i in range(20)]
+    return httpx.Response(
+        200, json={"results": results, "usage": {"total_tokens": 300}}
+    )
 
 
 @pytest.fixture
-async def deepinfra(monkeypatch):
-    """Install a rerank default and route DeepInfra to ``serve(handler)``."""
+async def provider(monkeypatch):
+    """Install a rerank default and route Alibaba to ``serve(handler)``."""
     clients: list[httpx.AsyncClient] = []
     seen: list[dict] = []
 
@@ -55,29 +58,35 @@ async def deepinfra(monkeypatch):
         monkeypatch.setattr("pipeline.elitellm.client._client", lambda: client)
         return seen
 
-    monkeypatch.setenv("DEEPINFRA_API_KEY", "sk-deepinfra")
+    monkeypatch.setenv("ALIBABA_MODELSTUDIO_KEY", "sk-alibaba")
+    monkeypatch.setenv(
+        "ALIBABA_MODELSTUDIO_URL",
+        "https://ws.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+    )
     monkeypatch.setattr(search, "_rerank_spec", lambda: SPEC)
     yield serve
     for client in clients:
         await client.aclose()
 
 
-async def test_first_twenty_are_reranked_and_the_tail_keeps_fused_order(deepinfra):
-    seen = deepinfra(_scores)
+async def test_first_twenty_are_reranked_and_the_tail_keeps_fused_order(provider):
+    seen = provider(_scores)
 
     ranked, reranked = await search.rerank("what is chunk 7", ROWS)
 
     assert seen == [
         {
-            "queries": ["what is chunk 7"] * 20,
+            "model": "qwen3-rerank",
+            "query": "what is chunk 7",
             "documents": [row["indexed_text"] for row in ROWS[:20]],
+            "top_n": 20,
         }
     ]
     assert reranked and [row["id"] for row in ranked] == REVERSED
 
 
-async def test_a_provider_error_keeps_fused_order(deepinfra, caplog):
-    deepinfra(lambda request: httpx.Response(500, text="down"))
+async def test_a_provider_error_keeps_fused_order(provider, caplog):
+    provider(lambda request: httpx.Response(500, text="down"))
 
     with caplog.at_level(logging.WARNING, logger="capy.search"):
         assert await search.rerank("q", ROWS) == (ROWS, False)
@@ -85,7 +94,7 @@ async def test_a_provider_error_keeps_fused_order(deepinfra, caplog):
 
 
 async def test_reranks_answering_past_the_bound_keep_fused_order_and_settle(
-    deepinfra, monkeypatch, caplog
+    provider, monkeypatch, caplog
 ):
     """Parallel searches whose reranks answer after the bound: each search
     keeps fused order at the bound, and every opened call still posts its
@@ -96,7 +105,7 @@ async def test_reranks_answering_past_the_bound_keep_fused_order_and_settle(
         await answer.wait()
         return _scores(request)
 
-    deepinfra(late)
+    provider(late)
     monkeypatch.setattr(models, "RERANK_TIMEOUT_S", 0.05)
     monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
     monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
@@ -133,9 +142,9 @@ async def test_reranks_answering_past_the_bound_keep_fused_order_and_settle(
     assert sorted(settled) == sorted((call_id, 300) for call_id in opened)
 
 
-async def test_scores_return_before_the_settlement_finishes(deepinfra, monkeypatch):
+async def test_scores_return_before_the_settlement_finishes(provider, monkeypatch):
     """A slow gateway delays the zero-credit receipt, never the search."""
-    deepinfra(_scores)
+    provider(_scores)
     monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
     monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
 
@@ -166,8 +175,8 @@ async def test_scores_return_before_the_settlement_finishes(deepinfra, monkeypat
     assert (settled[0]["kind"], settled[0]["modelVersion"]) == ("rerank", 1)
 
 
-async def test_an_unassigned_rerank_slot_skips_reranking(deepinfra, monkeypatch):
-    seen = deepinfra(lambda request: httpx.Response(500))
+async def test_an_unassigned_rerank_slot_skips_reranking(provider, monkeypatch):
+    seen = provider(lambda request: httpx.Response(500))
     monkeypatch.setattr(search, "_rerank_spec", registry_rerank_spec)
     monkeypatch.setattr(registry.registry, "_current", {})
 
@@ -189,9 +198,9 @@ def test_a_refresh_drops_a_cleared_rerank_default(monkeypatch):
 
         def fetchall(self):
             return [
-                (1, "Qwen", "Reranker 4B", "deepinfra", "Qwen/Qwen3-Reranker-4B",
-                 {}, ["rerank"], [], "", 63, 63, True,
-                 catalog["default_for"], 0, 63)
+                (1, "Alibaba", "Qwen3 Rerank", "alibaba", "qwen3-rerank",
+                 {}, ["rerank"], [], "", 200, 200, True,
+                 catalog["default_for"], 0, 200)
             ]  # fmt: skip
 
     @contextlib.contextmanager
@@ -204,7 +213,7 @@ def test_a_refresh_drops_a_cleared_rerank_default(monkeypatch):
     monkeypatch.setattr(registry.db, "connect", connect)
     fresh = registry.Registry()
     fresh.refresh()
-    assert fresh.default(registry.Slot.RERANK).model_name == "Reranker 4B"
+    assert fresh.default(registry.Slot.RERANK).model_name == "Qwen3 Rerank"
 
     catalog.update(rev=2, default_for=[])
     fresh.refresh()

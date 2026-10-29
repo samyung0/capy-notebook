@@ -260,8 +260,8 @@ func TestRerankSettlesAtZeroCreditsUnderTheRerankerRow(t *testing.T) {
 		CallID:       "pc_rerank",
 		Kind:         KindRerank,
 		Purpose:      KindRerank,
-		Provider:     "deepinfra",
-		Model:        "Qwen/Qwen3-Reranker-4B",
+		Provider:     "alibaba",
+		Model:        "qwen3-rerank",
 		InputTokens:  9000,
 		ModelVersion: 1,
 	}
@@ -278,9 +278,9 @@ func TestRerankSettlesAtZeroCreditsUnderTheRerankerRow(t *testing.T) {
 	versionedEmbedding := call
 	versionedEmbedding.CallID, versionedEmbedding.Kind, versionedEmbedding.Purpose =
 		"pc_embed_versioned", KindEmbedding, KindEmbedding
-	versionedEmbedding.Model = "Qwen/Qwen3-Embedding-4B"
+	versionedEmbedding.Provider, versionedEmbedding.Model = "deepinfra", "Qwen/Qwen3-Embedding-4B"
 	notReranker := call
-	notReranker.CallID, notReranker.Model = "pc_rerank_embedder", "Qwen/Qwen3-Embedding-4B"
+	notReranker.CallID, notReranker.Provider, notReranker.Model = "pc_rerank_embedder", "deepinfra", "Qwen/Qwen3-Embedding-4B"
 	for _, tc := range []struct {
 		call ProviderCallUsage
 		want string
@@ -309,8 +309,8 @@ func TestRerankSettlesAtZeroCreditsUnderTheRerankerRow(t *testing.T) {
 	}
 	if len(page.Items) != 1 || version != 1 || credits != 0 ||
 		page.Items[0].Kind != KindRerank ||
-		page.Items[0].ProviderSlug != "deepinfra" ||
-		page.Items[0].ModelSlug != "Qwen/Qwen3-Reranker-4B" {
+		page.Items[0].ProviderSlug != "alibaba" ||
+		page.Items[0].ModelSlug != "qwen3-rerank" {
 		t.Fatalf("rerank usage = v%d %d credits, events %#v", version, credits, page.Items)
 	}
 }

@@ -511,7 +511,7 @@ func TestRegistryCompileAllowsUnassignedRerankSlot(t *testing.T) {
 		Version: 1,
 		Slots:   models.AllSlots(),
 		Configs: []CatalogConfig{{
-			ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Reranker-4B",
+			ProviderSlug: "alibaba", ModelSlug: "qwen3-rerank",
 			Version: 1, Enabled: true,
 			Slots: []string{models.SlotRerank}, IsDefaultFor: []string{models.SlotRerank},
 			Capabilities: []string{models.CapabilityRerank},

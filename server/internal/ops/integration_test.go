@@ -14,6 +14,7 @@ func TestMain(m *testing.M) {
 		"OPENAI_API_KEY",
 		"DEEPINFRA_API_KEY",
 		"OPENROUTER_API_KEY",
+		"ALIBABA_MODELSTUDIO_KEY",
 	} {
 		if os.Getenv(key) == "" {
 			_ = os.Setenv(key, "test-"+key)

@@ -188,7 +188,7 @@ func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 		{"deepseek", "deepseek-flash", 91, 13},
 		{"zai", "glm-5.3-flash", 150, 125},
 		{"deepinfra", "Qwen/Qwen3-Embedding-4B", 200, 80},
-		{"deepinfra", "Qwen/Qwen3-Reranker-4B", 200, 80},
+		{"alibaba", "qwen3-rerank", 64, 32},
 		{"openrouter", "minimax/minimax-m3.1-flash", 16, 15},
 	} {
 		var total, reserve int
@@ -246,16 +246,27 @@ func TestZaiCapacityMigrationCopiesTheRelaceRowUnderZAIsCap(t *testing.T) {
 	}
 }
 
-// DeepInfra may serve the reranker only in the rerank slot.
-func TestDeepInfraServesTheRerankerOnlyInTheRerankSlot(t *testing.T) {
+// The rerank slot is Alibaba's (0134): DeepInfra may no longer hold a reranker
+// row, and the slot's only default is qwen3-rerank with its capacity.
+func TestRerankSlotIsAlibabaQwen3Rerank(t *testing.T) {
 	s := openMigrateTestStore(t)
-	_, err := s.pool.Exec(context.Background(), `
+	ctx := context.Background()
+	_, err := s.pool.Exec(ctx, `
 		INSERT INTO model_configs (version, provider_name, model_name, provider_slug, model_slug,
 		  context_window_tokens, slots, capabilities,
 		  micros_per_input_token, micros_per_output_token, micros_per_cached_input_token)
 		VALUES (2, 'Qwen', 'Reranker 4B', 'deepinfra', 'Qwen/Qwen3-Reranker-4B',
-		  0, ARRAY['captioning'], ARRAY['vision'], 63, 63, 63)`)
+		  0, ARRAY['rerank'], ARRAY['rerank'], 63, 63, 63)`)
 	if err == nil || !strings.Contains(err.Error(), "model_configs_deepinfra_check") {
 		t.Fatalf("expected the deepinfra check, got %v", err)
+	}
+	var ok bool
+	if err := s.pool.QueryRow(ctx, `SELECT count(*)=1 AND bool_and(provider_slug='alibaba'
+	  AND model_slug='qwen3-rerank' AND enabled) FROM model_configs WHERE 'rerank'=ANY(is_default_for)`).Scan(&ok); err != nil || !ok {
+		t.Fatalf("rerank default: ok=%v err=%v", ok, err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM model_capacities
+	  WHERE provider='alibaba' AND model='qwen3-rerank')`).Scan(&ok); err != nil || !ok {
+		t.Fatalf("rerank capacity: ok=%v err=%v", ok, err)
 	}
 }

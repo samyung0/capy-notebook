@@ -2271,10 +2271,13 @@ always point at document passages.
    `add_questions` starting a quiz, `write_slide` storing a deck; Q536), so a
    same-turn read or search naming the new id finds it.
 4. `search.rerank` reorders the first 20 fused candidates
-   (`RERANK_CANDIDATES`) with the `rerank` slot's default, DeepInfra
-   `Qwen/Qwen3-Reranker-4B` (decision 2026-09-25). It scores each row's
-   `indexed_text` (heading context and text) against the raw query, without
-   the embedding instruct prefix; candidates 21 to 40 follow in fused order.
+   (`RERANK_CANDIDATES`) with the `rerank` slot's default, Alibaba Model
+   Studio `qwen3-rerank` in the Singapore workspace (decision 2026-10-30,
+   replacing DeepInfra `Qwen/Qwen3-Reranker-4B`; bench/rag/providers). It
+   scores each row's `indexed_text` (heading context and text) against the raw
+   query, without the embedding instruct prefix, in one request with the 20
+   candidates in fused order: its scores move slightly with the other
+   documents in a request. Candidates 21 to 40 follow in fused order.
    The 5-second bound (`models.RERANK_TIMEOUT_S`) covers the whole wait a
    search sees: admission and the provider request, busy retry included; the
    zero-credit `rerank` settlement finishes in the background once the

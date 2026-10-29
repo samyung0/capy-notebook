@@ -565,10 +565,13 @@ either slug before it constructs or persists that identity. Most rows call the
 named provider directly. These exact routing exceptions are allowed:
 
 - `deepinfra/Qwen/Qwen3-Embedding-4B` uses the same identity on DeepInfra's
-  OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`), and
-  `deepinfra/Qwen/Qwen3-Reranker-4B` its inference endpoint
-  (`/v1/inference/Qwen/Qwen3-Reranker-4B`). The database check
-  `model_configs_deepinfra_check` keeps each in its own slot.
+  OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`). The database
+  check `model_configs_deepinfra_check` keeps it the only DeepInfra row, in the
+  `retrieval` slot.
+- `alibaba/qwen3-rerank` posts to the rerank route beside the Singapore
+  workspace's OpenAI-compatible base (`ALIBABA_MODELSTUDIO_URL` with
+  `/compatible-mode/v1` replaced by `/compatible-api/v1/reranks`) with
+  `ALIBABA_MODELSTUDIO_KEY`; the `alibaba` provider allows only that model.
 - `zai/glm-5.3-flash` keeps its `zai` catalog identity, credit rates and
   capacity row but is served through OpenRouter (decision 2026-10-21): the
   request names OpenRouter's `z-ai/glm-5.3-flash`, routed to DigitalOcean, then
@@ -823,7 +826,7 @@ DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
 decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
 price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
 1200 (Together's list price, which Wafer matches, 2026-10-24), embedding 40,
-reranker 50.
+reranker 200 (Alibaba qwen3-rerank's $0.10, migration 0134).
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
 There is no USD estimate on `model_configs` or `usage_events`.
@@ -1265,12 +1268,12 @@ actor at the workspace pin's rates.
 
 A search rerank has its own usage kind, `rerank`, settled at zero credits on
 the chat or generate session that ran the search. Its `provider_calls` and
-`usage_events` rows carry the reranker's provider/model and the tokens DeepInfra
-reports (`input_tokens`, or `inference_status.tokens_input`). The usage row's
+`usage_events` rows carry the reranker's provider/model and the tokens Alibaba
+reports (`usage.total_tokens`, passed on as `input_tokens`). The usage row's
 catalog columns name the reranker row the pipeline called: the settle payload
 sends its `modelVersion`, the gateway requires one on every `rerank` call and
 refuses one on any other kind, and the row must serve the `rerank` slot. Billing
-therefore shows "{surface} · Rerank · deepinfra/Qwen/Qwen3-Reranker-4B" and a
+therefore shows "{surface} · Rerank · alibaba/qwen3-rerank" and a
 separate Rerank bucket. Search takes the scores as
 soon as they arrive and the settlement finishes in a background task
 (`accounting.settle_in_background`), so a slow gateway never holds a search.
