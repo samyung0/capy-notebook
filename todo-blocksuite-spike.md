@@ -165,9 +165,9 @@ pushed early at `0ca84842d`; the final push adds the agent-edits room work
   `materials.content` with `materials.indexed_blocks`, aligned by element id.
   Q415's per-revision column and Q417's live read are on the release branch.
 - With `value()` giving today's JSON and stable element ids, the Go side and
-  the pipeline need no change. The two Rust spots that read the doc directly
-  are on the porting list: `notes::index_text::from_doc`, and Q417's detailed
-  read of the open room.
+  the pipeline need no change. Q417's detailed read of the open room projects
+  through the room's model (`edits.rs` `live_value`); `from_doc`, which was
+  never called, was deleted 2026-10-29.
 - Ids `value()` invents inside a block (code lines, table cells) must not shift
   when a line is inserted. Otherwise one inserted line reads as many changed
   lines. Settle it in the layout spec.
@@ -703,7 +703,6 @@ Legend:
   - `commands.rs` and `edit.rs` (agent edit commands and durable Undo
     payloads);
   - `validate.rs`, `bound.rs`;
-  - `index_text.rs`: `from_doc` builds index blocks from the Y doc directly.
 
   A blocks module sits beside them, and the cut deletes the Plate ones
   (boundary 7). The harness also counts `prescan.rs`, though it has no yrs
@@ -904,6 +903,21 @@ The other questions from the decision walk-through are in
 `todo-blocksuite-decisions.md` ("Questions for Epo"); they matter at the cut,
 not for step 1.
 
+## Decided 2026-10-29 (dig answers)
+
+- **Switch normalizations in effects: accepted.** A switched note's first save
+  may list the N1/N3/N4/N6 cleanups as changes; no requeue, Plate's index text
+  stays as it is.
+- **Merge for blocks notes: queued**, after the canvas work, since it needs UI
+  design. Until then other lineage and a late answer with unsent edits open
+  copy-only.
+- **Blocks leg in the Agent visibility lane: queued** after the admission
+  cost, room memory and deleted block ids answers.
+- **Dead Rust helpers deleted.** `notes::index_text::from_doc` and
+  `item_refs` (344873b68, 2026-10-17, for live-room effects) never had a
+  caller: effects were built in Go from stored content (b95d392ce) and Q417
+  reads the room through `ExtractIndexBlocks`.
+
 ## Decisions for Epo
 
 - **D10. Timebox.** The review judged one week too short for about 74 upstream
@@ -919,15 +933,5 @@ not for step 1.
   box run; (b) cut the second projection at load; (c) decide after the box run.
 - **Deleted block ids** stay in the `blocks` map forever (about 20 B each).
   (a) Accept; (b) collect a deleted head no session holds (changes `ydoc::gc`).
-- **Switch normalizations in effects.** (a) Accept until the cut; (b) requeue
-  the index on a switched room's first save; (c) make Plate's index text join
-  cell and blockquote paragraphs with `\n` now.
-- **Blocks leg in the Agent visibility lane:** nightly now (T5 skipped), or at
-  the cut once D16 exists.
-- **Merge for blocks notes:** copy-only until the cut, a minimal per-block
-  merge view, or the full Q229/Q237 bind merge. Late answer with unsent
-  edits: copy-only (built) or port the late merge (only `hiddenDocument` reads
-  Plate).
 - **Room swap leftovers** (caret/focus restore, phone copy-in-place) before
   the cut? **Leave prompt** (Q465) for Plate notes too?
-- **Dead Rust helpers** `notes::index_text::from_doc`/`item_refs`: delete now?
