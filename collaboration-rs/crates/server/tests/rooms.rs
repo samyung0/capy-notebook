@@ -1281,6 +1281,224 @@ async fn folds_collect_the_stored_and_open_documents_and_an_undo_after_them_rest
     );
 }
 
+/// A blocks note's `sys:children`, read from `doc` (empty when missing).
+fn blocks_children(doc: &Doc, id: &str) -> Vec<String> {
+    use yrs::{Array as _, Map as _};
+    let txn = doc.transact();
+    let Some(blocks) = txn.get_map(blocks::BLOCKS_ROOT) else {
+        return Vec::new();
+    };
+    let Some(yrs::Out::YMap(block)) = blocks.get(&txn, id) else {
+        return Vec::new();
+    };
+    let Some(yrs::Out::YArray(children)) = block.get(&txn, "sys:children") else {
+        return Vec::new();
+    };
+    children.iter(&txn).map(|v| v.to_string(&txn)).collect()
+}
+
+/// A blocks note's block text (`prop:text`), empty when missing.
+fn blocks_text(doc: &Doc, id: &str) -> String {
+    use yrs::{GetString as _, Map as _};
+    let txn = doc.transact();
+    let Some(blocks) = txn.get_map(blocks::BLOCKS_ROOT) else {
+        return String::new();
+    };
+    let Some(yrs::Out::YMap(block)) = blocks.get(&txn, id) else {
+        return String::new();
+    };
+    match block.get(&txn, "prop:text") {
+        Some(yrs::Out::YText(text)) => text.get_string(&txn),
+        _ => String::new(),
+    }
+}
+
+/// Adds a paragraph as BlockSuite's `addBlock` writes it, under the note at
+/// `index`, in a transaction with `origin`.
+fn add_blocks_paragraph(doc: &Doc, origin: &str, id: &str, text: &str, index: u32) {
+    use yrs::{Array as _, Map as _, Text as _};
+    let blocks = doc.get_or_insert_map(blocks::BLOCKS_ROOT);
+    let mut txn = doc.transact_mut_with(origin);
+    let block = blocks.insert(&mut txn, id, yrs::MapPrelim::default());
+    block.insert(&mut txn, "sys:id", id);
+    block.insert(&mut txn, "sys:flavour", "affine:paragraph");
+    block.insert(&mut txn, "sys:version", yrs::Any::Number(1.0));
+    block.insert(&mut txn, "sys:children", yrs::ArrayPrelim::default());
+    block.insert(&mut txn, "prop:type", "text");
+    block.insert(&mut txn, "prop:collapsed", false);
+    let y = block.insert(&mut txn, "prop:text", yrs::TextPrelim::new(""));
+    y.insert(&mut txn, 0, text);
+    let Some(yrs::Out::YMap(note)) = blocks.get(&txn, blocks::NOTE_ID) else {
+        panic!("no note");
+    };
+    let Some(yrs::Out::YArray(children)) = note.get(&txn, "sys:children") else {
+        panic!("no note children");
+    };
+    let index = index.min(children.len(&txn));
+    children.insert(&mut txn, index, id);
+}
+
+/// Deletes block `id` (a note child with no children) as BlockSuite does:
+/// out of the note's children, then out of the map, with `origin`.
+fn delete_blocks_paragraph(doc: &Doc, origin: &str, id: &str) {
+    use yrs::{Array as _, Map as _};
+    let at = blocks_children(doc, blocks::NOTE_ID)
+        .iter()
+        .position(|child| child == id)
+        .expect("listed under the note") as u32;
+    let blocks = doc.get_or_insert_map(blocks::BLOCKS_ROOT);
+    let mut txn = doc.transact_mut_with(origin);
+    let Some(yrs::Out::YMap(note)) = blocks.get(&txn, blocks::NOTE_ID) else {
+        panic!("no note");
+    };
+    let Some(yrs::Out::YArray(children)) = note.get(&txn, "sys:children") else {
+        panic!("no note children");
+    };
+    children.remove(&mut txn, at);
+    blocks.remove(&mut txn, id);
+}
+
+/// The unit listing `id` in the note's `sys:children` (deleted or not).
+fn blocks_listing(doc: &Doc, id: &str) -> yrs::ID {
+    use yrs::Map as _;
+    let txn = doc.transact();
+    let blocks = txn.get_map(blocks::BLOCKS_ROOT).expect("blocks");
+    let Some(yrs::Out::YMap(note)) = blocks.get(&txn, blocks::NOTE_ID) else {
+        panic!("no note");
+    };
+    let Some(yrs::Out::YArray(children)) = note.get(&txn, "sys:children") else {
+        panic!("no note children");
+    };
+    let mut next = yrs::branch::BranchPtr::from(children.as_ref() as &yrs::branch::Branch).start();
+    while let Some(item) = next {
+        if let yrs::block::ItemContent::Any(values) = item.content()
+            && let Some(at) = values.iter().position(|v| v.to_string() == id)
+        {
+            return yrs::ID::new(item.id().client, item.id().clock + at as u32);
+        }
+        next = item.right();
+    }
+    panic!("{id} was never listed");
+}
+
+/// The blocks layout under the same folds (todo-blocksuite-spike.md,
+/// "Effects and collection": collection is generic): an ended session's
+/// deleted listings lose their middle item in the stored base and the open
+/// room, while a block deletion a counted session's Undo may restore is
+/// held; a tab joining loads the collected state, and the counted tab's
+/// Undo brings the deleted block back with its id and text, which the
+/// joined tab and the next load show. Not run on the Mac (needs the Docker
+/// stack); fails if nothing is collected or the held block is lost.
+#[tokio::test]
+async fn blocks_folds_collect_and_an_undo_after_them_restores_a_deleted_block() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged_with(
+        &env,
+        &[
+            ("COLLABORATION_GC_COLLECT", "true"),
+            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
+            ("COLLABORATION_DOCUMENT_LAYOUT", "blocks"),
+        ],
+    )
+    .await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = tab(server.port, &room, &user).await;
+    let mut b = tab(server.port, &room, &user).await;
+    assert!(a.settle(|c| blocks_text(&c.doc, "b1") == "base").await);
+    let mut undo = yrs::undo::UndoManager::<()>::with_options(yrs::undo::Options {
+        capture_timeout_millis: 0,
+        tracked_origins: std::collections::HashSet::from([yrs::Origin::from("a")]),
+        ..Default::default()
+    });
+    undo.expand_scope(&a.doc, &a.doc.get_or_insert_map(blocks::BLOCKS_ROOT));
+    // y, then x1, x3 and x2 between them: x2's listing is an item nothing
+    // names once the three are deleted.
+    a.write(|doc| {
+        add_blocks_paragraph(doc, "setup", "y", "Keep me", 1);
+        add_blocks_paragraph(doc, "setup", "x1", "one", 2);
+        add_blocks_paragraph(doc, "setup", "x3", "three", 3);
+        add_blocks_paragraph(doc, "setup", "x2", "two", 3);
+    })
+    .await;
+    persisted(&mut a, "typed").await;
+    assert!(log_folded(&env, &material).await);
+    a.ack_all().await;
+    let x2 = blocks_listing(&a.doc, "x2");
+    let y = blocks_listing(&a.doc, "y");
+    // A deletes y, which its Undo may restore.
+    a.write(|doc| delete_blocks_paragraph(doc, "a", "y")).await;
+    persisted(&mut a, "y").await;
+    assert!(log_folded(&env, &material).await);
+    a.ack_all().await;
+    // B deletes x1-x3; its session then ends.
+    assert!(
+        b.settle(|c| blocks_children(&c.doc, blocks::NOTE_ID) == ["b1", "x1", "x2", "x3"])
+            .await
+    );
+    b.write(|doc| {
+        for id in ["x1", "x2", "x3"] {
+            delete_blocks_paragraph(doc, "b", id);
+        }
+    })
+    .await;
+    persisted(&mut b, "cut").await;
+    assert!(log_folded(&env, &material).await);
+    b.leave(false).await;
+    a.ack_all().await;
+    // A edits on; once it has acknowledged B's cut, a fold's window holds it.
+    for (n, mark) in ["!", "?"].into_iter().enumerate() {
+        a.write(|doc| add_blocks_paragraph(doc, "edit", &format!("m{n}"), mark, 0))
+            .await;
+        persisted(&mut a, mark).await;
+        assert!(log_folded(&env, &material).await);
+        a.ack_all().await;
+    }
+    assert!(
+        collected_in_base(&env, &material, x2).await,
+        "the ended session's listings kept their middle"
+    );
+    assert!(
+        !collected_in_base(&env, &material, y).await,
+        "a block deletion a counted session may undo was collected"
+    );
+    assert!(logs.has(&["live document collected", &material]).await);
+    let mut joined = tab(server.port, &room, &user).await;
+    assert!(
+        joined
+            .settle(|c| blocks_children(&c.doc, blocks::NOTE_ID) == ["m1", "m0", "b1"])
+            .await
+    );
+    assert!(collected_in(&joined.doc, x2));
+    // A's Undo brings y back under its id, with its text.
+    a.write(|_| assert!(undo.undo_blocking())).await;
+    for client in [&mut a, &mut joined] {
+        assert!(
+            client
+                .settle(
+                    |c| blocks_children(&c.doc, blocks::NOTE_ID) == ["m1", "m0", "b1", "y"]
+                        && blocks_text(&c.doc, "y") == "Keep me"
+                )
+                .await,
+            "{:?}",
+            blocks_children(&client.doc, blocks::NOTE_ID)
+        );
+        blocks::check(&client.doc.transact()).expect("a valid blocks room");
+    }
+    persisted(&mut a, "undo").await;
+    assert!(log_folded(&env, &material).await);
+    drop((a, joined));
+    wait_unloaded(server.port).await;
+    let mut fresh = Client::open(server.port).await;
+    fresh.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        fresh
+            .settle(|c| blocks_text(&c.doc, "y") == "Keep me")
+            .await
+    );
+    blocks::check(&fresh.doc.transact()).expect("a valid stored blocks room");
+}
+
 /// Q443 (Epo 2026-10-27, gc_views seed 8462): a session holds only the
 /// deletions new to the room, so a tab that deleted offline a letter
 /// another tab then deleted first, in a run it cut, holds nothing once it

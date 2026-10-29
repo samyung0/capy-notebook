@@ -14,6 +14,8 @@ yrs.workspace = true
 
 [dev-dependencies]
 flate2 = "1"
+# The collection tests place a late tab's edits as the browser does.
+late-merge = { path = "../late-merge" }
 # The bound tests measure the projection as the room does.
 notes.workspace = true
 

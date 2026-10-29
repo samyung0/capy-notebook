@@ -8,7 +8,10 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 use yrs::updates::decoder::Decode;
-use yrs::{Any, Array, ArrayRef, Map, MapRef, Out, ReadTxn, Transact, TransactionMut};
+use yrs::{
+    Any, Array, ArrayPrelim, ArrayRef, GetString, Map, MapPrelim, MapRef, Out, ReadTxn, Text,
+    TextPrelim, TextRef, Transact, TransactionMut,
+};
 
 pub fn repo(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -143,4 +146,36 @@ pub fn sync(docs: &[yrs::Doc]) {
             apply(doc, other);
         }
     }
+}
+
+/// A paragraph as BlockSuite's `addBlock` writes it, listed under `parent`
+/// at `index`.
+pub fn add_paragraph(txn: &mut TransactionMut, id: &str, text: &str, parent: &str, index: u32) {
+    let block = blocks_map(txn).insert(txn, id, MapPrelim::default());
+    block.insert(txn, "sys:id", id);
+    block.insert(txn, "sys:flavour", "affine:paragraph");
+    block.insert(txn, "sys:version", Any::Number(1.0));
+    block.insert(txn, "sys:children", ArrayPrelim::default());
+    block.insert(txn, "prop:type", "text");
+    block.insert(txn, "prop:collapsed", false);
+    let y = block.insert(txn, "prop:text", TextPrelim::new(""));
+    y.insert(txn, 0, text);
+    let children = children(txn, parent);
+    let index = index.min(children.len(txn));
+    children.insert(txn, index, Any::from(id));
+}
+
+/// Block `id`'s `prop:text`.
+pub fn text(txn: &impl ReadTxn, id: &str) -> TextRef {
+    let Some(Out::YMap(block)) = blocks_map(txn).get(txn, id) else {
+        panic!("no block {id}");
+    };
+    let Some(Out::YText(text)) = block.get(txn, "prop:text") else {
+        panic!("no text on {id}");
+    };
+    text
+}
+
+pub fn text_of(txn: &impl ReadTxn, id: &str) -> String {
+    text(txn, id).get_string(txn)
 }

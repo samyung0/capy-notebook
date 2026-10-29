@@ -449,6 +449,7 @@ name = "blocks"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "late-merge",
  "notes",
  "serde_json",
  "thiserror",
