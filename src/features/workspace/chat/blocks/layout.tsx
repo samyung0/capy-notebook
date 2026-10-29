@@ -1,12 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
-import type {
-  AccordionItemProps,
-  CardProps,
-  FactProps,
-  TabProps,
-} from '../schema';
+import type { AccordionItemProps, CardProps, TabProps } from '../schema';
 import { elements } from './Cite';
 import { Prose } from './text';
 
@@ -78,19 +73,6 @@ export function Accordion({
         </details>
       ))}
     </div>
-  );
-}
-
-export function Facts({ props }: { props: { items: unknown[] } }) {
-  return (
-    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-      {elements<FactProps>(props.items).map((fact, index) => (
-        <div className="contents" key={index}>
-          <dt className="text-fg-muted">{fact.props.label}</dt>
-          <dd className="text-right">{fact.props.value}</dd>
-        </div>
-      ))}
-    </dl>
   );
 }
 

@@ -172,25 +172,21 @@ def swapped(text: str, *pairs: tuple[str, str]) -> str:
     return text
 
 
-ACCOUNT_LANDING = (
-    "What you create lands in No workspace unless the learner names a workspace "
-    "they can edit; create_material, create_deck, add_questions (a new quiz) "
-    "and edit_office_document (a new file) then take its workspace_id from a "
-    "search, a listing or a read."
-)
-
-
 def account_editing() -> str:
     return swapped(
         editing(),
         ("How to write to the workspace:", "How to write to the learner's files:"),
         (
-            "marking the new ones with create_chapter. The outline should be brief.",
             (
-                "marking the new ones with create_chapter. The outline should be "
-                "brief. Unless the learner already said where, offer a workspace they "
-                "can edit, a new workspace (a name from the topic; create_workspace "
-                "makes it) or No workspace, which has no chapters."
+                "each new file and the chapter it goes in, reusing the workspace's "
+                "chapters (list_sources) and marking the new ones with create_chapter."
+            ),
+            (
+                "each new file, the chapter it goes in. Identify which workspace you "
+                "should work in, and reuse the workspace's chapters (list_sources) and "
+                "mark the new ones with create_chapter. If there is no suitable "
+                "workspace, also suggest creating a workspace for the new files "
+                "(create_workspace goes first before any files are created)."
             ),
         ),
         (
@@ -200,7 +196,7 @@ def account_editing() -> str:
             ),
             (
                 "- Quizzes and flashcards are standalone materials, filed in the "
-                f"chapter they practise when they land in a workspace. {ACCOUNT_LANDING}"
+                "chapter they practise when they land in a workspace."
             ),
         ),
         (

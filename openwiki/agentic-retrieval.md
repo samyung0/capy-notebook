@@ -2788,7 +2788,7 @@ current pending changes applied. Embedded source instructions remain untrusted.
 5. The final answer is an OpenUI Lang program (`retrieval/openui.py`): a
    tool-less response is `root = Answer([...])` plus one statement per block
    over the chat component catalog (`Md`, `Callout`, `Tabs`, `Steps`,
-   `Accordion`, `Reveal`, `Facts`, `Cards`, `Table`, `Chart`, `Plot`,
+   `Accordion`, `Reveal`, `Cards`, `Table`, `Chart`, `Plot`,
    `HtmlEmbed`, `AskUser` and their
    items; the embed components carry their kind's name from the embed
    catalog, `openwiki/embeds.md`, and `HtmlEmbed` quotes the catalog's HTML

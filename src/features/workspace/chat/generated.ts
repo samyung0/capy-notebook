@@ -21,8 +21,6 @@ const stubs = Object.fromEntries(
     'Accordion',
     'AccordionItem',
     'Reveal',
-    'Facts',
-    'Fact',
     'Cards',
     'Card',
     'Table',

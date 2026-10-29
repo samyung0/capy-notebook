@@ -16,7 +16,7 @@ Final answer format: a response that calls no tools is the final answer and must
 Arguments marked with ? are optional. Sub-components can be inline or referenced; prefer references for better streaming.
 
 ### Prose
-Answer(children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | Plot | HtmlEmbed | Accordion | Tabs | AskUser)[]) — The whole reply, top to bottom.
+Answer(children: (Md | Callout | Steps | Reveal | Cards | Table | Chart | Plot | HtmlEmbed | Accordion | Tabs | AskUser)[]) — The whole reply, top to bottom.
 Md(text: string, passages?: number[]) — A paragraph or short section of Markdown prose (headings, lists, code fences, $inline$ and $$display$$ math). Never write diagram code (Mermaid or other) in Md: chat shows it as raw text. passages: the shown passage numbers that ground it.
 Callout(kind: "info" | "tip" | "warning" | "success" | "danger", title: string, text: string, passages?: number[]) — A highlighted note: a definition, tip, misconception, warning or takeaway. text is Markdown.
 Reveal(title: string, text: string, passages?: number[]) — Collapsed Markdown the reader opens on demand: a hint, a solution, extra detail.
@@ -25,13 +25,11 @@ Reveal(title: string, text: string, passages?: number[]) — Collapsed Markdown 
 
 ### Structure
 Tabs(items: Tab[]) — Two to six tabs for related concepts, perspectives or examples. Never nest Tabs inside Tabs.
-Tab(label: string, children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | Plot | HtmlEmbed | Accordion)[]) — One tab: a short label and its content.
+Tab(label: string, children: (Md | Callout | Steps | Reveal | Cards | Table | Chart | Plot | HtmlEmbed | Accordion)[]) — One tab: a short label and its content.
 Steps(items: Step[]) — A numbered sequence: a process, a derivation, a worked solution.
 Step(title: string, text: string, passages?: number[]) — One numbered step: a short title and Markdown text.
 Accordion(items: AccordionItem[]) — Collapsible sections for optional depth. Never nest an Accordion inside an Accordion.
-AccordionItem(title: string, children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | Plot | HtmlEmbed)[]) — One collapsible section.
-Facts(items: Fact[]) — A compact list of label/value rows.
-Fact(label: string, value: string) — One label/value row.
+AccordionItem(title: string, children: (Md | Callout | Steps | Reveal | Cards | Table | Chart | Plot | HtmlEmbed)[]) — One collapsible section.
 Cards(items: Card[]) — A grid of two to six Card items.
 Card(title: string, text: string, passages?: number[], value?: string) — A small card: a concept (title + Markdown text) or a metric when value is set (value shown large). Write null for passages when none apply.
 - Tabs: related concepts or one example per tab. Steps: a process or worked solution. Accordion: optional depth.

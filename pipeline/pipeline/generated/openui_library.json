@@ -71,19 +71,6 @@
       ]
     },
     {
-      "name": "Facts",
-      "props": [
-        "items"
-      ]
-    },
-    {
-      "name": "Fact",
-      "props": [
-        "label",
-        "value"
-      ]
-    },
-    {
       "name": "Cards",
       "props": [
         "items"

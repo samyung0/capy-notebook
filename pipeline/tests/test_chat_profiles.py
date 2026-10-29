@@ -37,7 +37,8 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # v42 contract (agent_tools.json before account scopes). Never regenerate it
 # from the current code to make this pass. Changed on purpose since:
 # create_chapter and the editing skill's chapter-list line (Epo 2026-10-29), the
-# shorter Plan (Epo 2026-10-29),
+# shorter Plan (Epo 2026-10-29), the OpenUI catalog without Facts/Fact (Epo
+# 2026-10-29),
 # the owner schemas and skills/editing keys alone.
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 
@@ -248,10 +249,6 @@ def test_the_account_prompt_turn_context_and_skills_name_the_users_files():
     )
 
     assert profile is profiles.account.PROFILE
-    assert (
-        "lands in No workspace unless the learner names a workspace"
-        in messages[0]["content"]
-    )
     assert "search_workspace" not in messages[0]["content"]
     assert messages[-1]["content"].startswith("[Your files only: on.")
     # Live compaction puts the account line back, not the workspace one.
@@ -261,8 +258,8 @@ def test_the_account_prompt_turn_context_and_skills_name_the_users_files():
     # No open item, and the workspaces ride with the first message instead.
     assert "Open:" not in context and "workspace_id=" not in context
     editing = skills.text(skills.EDITING, account=True)
-    # The outline also offers where new files go (review F1/F3; Epo 2026-10-29).
-    assert "No workspace, which has no chapters" in editing
+    # The outline also picks where new files go (Epo 2026-10-29).
+    assert "Identify which workspace you should work in" in editing
     assert "create_chapter" in editing and "create_workspace" in editing
     assert "No workspace" in skills.text(skills.DECK_BUILDING, account=True)
 

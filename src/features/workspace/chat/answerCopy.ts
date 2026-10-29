@@ -24,7 +24,6 @@ import type {
   AccordionItemProps,
   CardProps,
   ChartProps,
-  FactProps,
   HtmlEmbedProps,
   PlotProps,
   RowProps,
@@ -119,15 +118,6 @@ function fromNode(node: ElementNode<Props>): Out[] {
               `${index + 1}.`,
               join([title(step.props.title), prose(step.props.text)])
             )
-          )
-          .join('\n'),
-      ];
-    case 'Facts':
-      return [
-        elements<FactProps>(props.items)
-          .map(
-            (fact) =>
-              `- ${title(`${fact.props.label}:`)} ${escapeText(fact.props.value)}`
           )
           .join('\n'),
       ];
@@ -334,8 +324,6 @@ function block(element: Element, range: Range): Out[] {
       return [fence('', clip(range, element).toString())];
     case 'TABLE':
       return table(element, range);
-    case 'DL':
-      return [facts(element, range)];
     default:
       return blocks(element, range);
   }
@@ -377,19 +365,6 @@ function table(element: Element, range: Range): string[] {
       : '',
     header ? gfmTable(header, body) : '',
   ];
-}
-
-/** Facts: each label/value pair (a `contents` div) as a list item. */
-function facts(element: Element, range: Range) {
-  return [...element.children]
-    .filter((pair) => range.intersectsNode(pair))
-    .map((pair) => {
-      const [label, value] = [...pair.children].map((part) =>
-        inlines(part, range).trim()
-      );
-      return `- ${strong(label ?? '')} ${value ?? ''}`.trimEnd();
-    })
-    .join('\n');
 }
 
 function copiedBlocks(out: Out[]): CopiedBlock[] {

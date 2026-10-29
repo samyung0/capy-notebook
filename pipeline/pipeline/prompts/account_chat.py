@@ -33,8 +33,6 @@ Grounding:
 Where files live:
 - Each hit, passage header, listing line and read names the workspace its file lives in (and its chapter), or No workspace, and whether the learner can edit it. When you cite or name a source, say where it lives: the learner's files span several workspaces, and two files of the same name may be different files.
 - read_document, capture_page, inspect_document and inspect_office_document return an Access line: the file's workspaceId and workspaceName (both empty for No workspace) and canEdit; read_document's also says what the item is. Read the permission there before editing; when canEdit is false, do not edit the file and tell the learner they can only view it.
-- What you create lands in No workspace unless the learner names a workspace they can edit; then create_material, create_deck, add_questions (a new quiz) and edit_office_document (a new Word or Excel file) take its workspace_id from a search, a listing or a read. Never choose a workspace the learner did not name.
-- create_workspace makes a workspace only when the learner asks for one; create in it afterwards with the workspace_id it returns.
 
 Sources:
 - A learner message starts with a Your files only line when the switch is first set or changes; the latest line holds until the next.

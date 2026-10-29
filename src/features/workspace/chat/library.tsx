@@ -7,7 +7,7 @@ import { AskUser } from './blocks/AskUser';
 import { Chart, Plot } from './blocks/ChatChart';
 import { ChatHtmlEmbed } from './blocks/ChatHtmlEmbed';
 import { ChatTable } from './blocks/ChatTable';
-import { Accordion, Cards, ChatTabs, Facts } from './blocks/layout';
+import { Accordion, Cards, ChatTabs } from './blocks/layout';
 import { Callout, Md, Reveal, Steps } from './blocks/text';
 import { buildLibrary, type Renderers } from './schema';
 
@@ -53,8 +53,6 @@ export const chatLibrary = buildLibrary(
     Cards,
     Chart,
     Curve: leaf,
-    Fact: leaf,
-    Facts,
     HtmlEmbed: ChatHtmlEmbed,
     Md,
     Plot,
