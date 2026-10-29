@@ -37,11 +37,10 @@
 -- interactive use (the reserve must stay below the total). Together and Wafer
 -- each held 16 calls at once in the 2026-10-23 probe (total p95 3.0 s and
 -- 3.1 s), so the gate is 16.
--- DeepSeek Flash (chat's default) runs on OpenRouter's 1017 with its own
--- provider order, Morph then Cloudflare (Epo 2026-10-29): Morph held 40 calls
--- at once and 30 in flight for 45 s (about 670 a minute) without a 429. 40 in
--- flight with no reserve: chat and Generate take all 40 and ingest never runs
--- on it.
+-- DeepSeek Flash (chat's default) runs on DeepSeek's own API (2500 concurrent
+-- requests per account, https://api-docs.deepseek.com/quick_start/rate_limit/)
+-- at Epo's 40 in flight with no reserve: chat and Generate take all 40 and
+-- ingest never runs on it (Epo 2026-10-29).
 -- Interactive reserves: 83% GLM / 0% DeepSeek Flash (chat only) / 50% DeepSeek 1017 / 40% embedding.
 -- The reranker is a separate DeepInfra model on the same account, with its own
 -- 200-request limit. Only interactive search calls it, so its reserve never

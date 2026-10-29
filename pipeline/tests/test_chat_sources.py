@@ -404,7 +404,7 @@ def test_search_keeps_only_http_results_and_sends_the_query_alone(monkeypatch):
         sent.append({"url": url, **json})
         return Response()
 
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+    monkeypatch.setattr(websearch, "platform_api_key", lambda _slug: "sk-test")
     monkeypatch.setattr(requests, "post", post)
     results = asyncio.run(websearch.search("q" * 200))
     assert [r.url for r in results] == ["https://ok.org/p", "https://ok.org/q"]

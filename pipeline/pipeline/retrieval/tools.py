@@ -4579,7 +4579,7 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
     return [in_writing_order(s) for s in schemas]
 
 
-# The order a tool's arguments are offered in. DeepSeek Flash's routes (Morph,
+# The order a tool's arguments are offered in. Some OpenRouter routes (Morph,
 # InferenceNet) generate arguments in the schema's property order, so a
 # property before the one the model writes first is left out: Go's
 # alphabetical order lost create_material's content and create_chapter's name
