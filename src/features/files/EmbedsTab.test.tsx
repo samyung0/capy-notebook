@@ -177,6 +177,10 @@ it('lists media under their note, opening or deleting by access', () => {
   expect(html).toContain(m.files_note_unavailable());
   expect(html).toContain(`${m.file_kind_image()} · 2 KB`);
   expect(html).toContain(`${m.file_kind_audio()} · 2 KB`);
+  // Drawn as what it is, not as its note.
+  expect(html).toContain('#image"');
+  expect(html).toContain('#audio"');
+  expect(html).not.toContain('#java-enum"');
   // Delete on both, the open image's too.
   expect(html.match(/data-menu/g)).toHaveLength(2);
   expect(html.match(/href="\/materials\//g)).toHaveLength(1);
