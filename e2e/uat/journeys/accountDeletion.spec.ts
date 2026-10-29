@@ -150,6 +150,8 @@ test('account deletion: an owner with an Office file, a note image, a member and
   }
 
   // 2. The cloner's standalone copy: its own asset row over the same object.
+  // A new account already holds its starter workspace; the copy adds to it.
+  const before = Number((await account(cloner)).storageUsedBytes);
   const clone = string(
     object(
       await api(
@@ -179,7 +181,9 @@ test('account deletion: an owner with an Office file, a note image, a member and
   assert((await contentText(run, clone)).includes(copy.id));
   expect(await blobRefs(run, image.object_path)).toBe(2);
   const kept = Number((await account(cloner)).storageUsedBytes);
-  expect(kept).toBe(Number(cloneRow.size_bytes) + Number(copy.size_bytes));
+  expect(kept - before).toBe(
+    Number(cloneRow.size_bytes) + Number(copy.size_bytes)
+  );
   await noProviderCalls(run, workspaceId);
 
   // Every object the owner holds, recorded before the purge deletes its rows.
