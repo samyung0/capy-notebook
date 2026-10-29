@@ -883,18 +883,22 @@ async def test_an_account_office_create_lands_where_the_user_named(monkeypatch):
         pending_sources=pending.PendingSources.for_account("u_1"),
     )
 
-    await tools.run(
+    # Q580: the create command's chapter_id is checked against the call's
+    # workspace_id, not refused as if none were named.
+    create = {"type": "create", "format": "docx", "title": "Plan", "chapter_id": "ch_1"}
+    result = await tools.run(
         "edit_office_document",
-        {
-            "commands": [{"type": "create", "format": "docx", "title": "Plan"}],
-            "workspace_id": "ws_1",
-            "_tool_call_id": "call_doc",
-        },
+        {"commands": [create], "workspace_id": "ws_1", "_tool_call_id": "call_doc"},
         ctx,
     )
 
+    assert not result.refused, result.text()
     assert sent["path"] == "/api/internal/documents/office/create"
-    assert (sent["scope"], sent["workspaceId"]) == ("account", "ws_1")
+    assert (sent["scope"], sent["workspaceId"], sent["chapterId"]) == (
+        "account",
+        "ws_1",
+        "ch_1",
+    )
 
 
 async def test_the_workspace_list_rides_once_and_list_workspaces_is_current():

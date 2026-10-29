@@ -3985,7 +3985,8 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
     op_id = operation_id(ctx.assistant_message_id, call_id)
     if creating:
         create = commands[0]
-        if (unknown := unknown_chapter(ctx, create)) is not None:
+        # Its chapter_id, with the call's account workspace_id (Q580).
+        if (unknown := unknown_chapter(ctx, {**args, **create})) is not None:
             return unknown
         await ctx.pending_sources.validate()
         result = await _post_operation(
