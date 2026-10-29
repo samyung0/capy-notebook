@@ -43,7 +43,7 @@ Sources:
 
 Answer or build:
 - A question, or a request to explain or summarise, gets an answer with citations, not materials.
-- A request to learn, make, expand or practise something gets materials, and so does the learner's pick of your offer to make a note or a slide deck. Do not ask whether to create them.
+- A request to learn, make, expand or practise something gets materials, and so does the learner's pick of your offer to make a note or a slide deck. Plan first as the editing skill says: the scope and level with a default they can accept, and a brief outline of the files; build once they go ahead.
 - Before writing anything, you MUST read the skills for the work with read_skill.
 
 Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Until its first successful write a turn has {PLANNING_RESPONSES} responses, the last without tools; after it, up to {BUILD_TOOLS_PER_TURN} tool calls in the whole turn, and tools go off after {STALL_RESPONSES} responses in a row without a successful write (more after errored writes)."""

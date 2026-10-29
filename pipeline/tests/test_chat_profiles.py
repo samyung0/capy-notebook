@@ -38,7 +38,8 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # from the current code to make this pass. Changed on purpose since:
 # create_chapter and the editing skill's chapter-list line (Epo 2026-10-29), the
 # shorter Plan (Epo 2026-10-29), the OpenUI catalog without Facts/Fact (Epo
-# 2026-10-29),
+# 2026-10-29), the Plan-first line replacing 'Do not ask whether to create
+# them' (Epo 2026-10-29, Q581; the messages keys alone),
 # the owner schemas and skills/editing keys alone.
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 

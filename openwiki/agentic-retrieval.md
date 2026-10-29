@@ -3604,8 +3604,9 @@ materials are sources.
   a pointer to the all sources rules for off); answer or build (a
   question, or a request to explain or summarise, gets an answer with
   citations, not materials; a request to learn, make, expand or practise gets
-  materials without asking whether to create them, and so does the learner's
-  pick of the offer to make a note or a slide deck; a write starts by reading
+  materials, and so does the learner's pick of the offer to make a note or a
+  slide deck, planned first as the editing skill says and built once the
+  learner goes ahead (Epo 2026-10-29, Q581); a write starts by reading
   its skills); and the budget every turn shares (tool calls
   per response; the planning cap until the first successful write, then up to
   the build budget's tool calls in the whole turn and the stall guard, more
@@ -3644,9 +3645,9 @@ materials are sources.
   last write; Write guard, below). Since 2026-10-14 `editing` is the general
   guideline for every write: it also holds the plan (ask first only when the
   request lacks the learning scope or the learner's level, as "I want to learn
-  physics" lacks both, offering a default, otherwise build directly following
-  the study preferences: Epo 2026-10-14, moved here from the prompt
-  2026-10-21; survey; search where the need is), the output rules (one main explainer per chapter, a note or a deck
+  physics" lacks both, offering a default, and outline the new files before
+  building once the learner goes ahead, following the study preferences: Epo
+  2026-10-14, moved here from the prompt 2026-10-21, outline 2026-10-29; survey; search where the need is), the output rules (one main explainer per chapter, a note or a deck
   as the output-files preference says; quizzes and flashcards standalone in
   the chapter they practise; other materials as the study preferences and the
   chapter's teaching need say), an example the sources lack labelled as
