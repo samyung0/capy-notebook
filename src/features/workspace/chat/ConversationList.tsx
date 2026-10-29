@@ -85,8 +85,9 @@ export function ConversationList({
           <span className="line-clamp-1 flex-1 translate-y-px">
             {c.title || m.chat_untitled()}
           </span>
-          {/* A turn still answering, in any tab (Epo 2026-10-27, T19). */}
-          {c.running && (
+          {/* A turn still answering in any tab, on chats the panel does not
+              show live (Epo 2026-10-27, T19; Q576 F4). */}
+          {c.running && !active && (
             <Spinner
               className="ml-1.5 size-3.5 shrink-0"
               label={m.chat_running()}

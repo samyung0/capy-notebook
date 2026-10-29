@@ -243,7 +243,9 @@ not offline use: without a service worker the app itself does not load offline.
   (T19), so a stale "running" row never reconnects and a turn started elsewhere
   is not missed. A fetch paused offline or failed leaves the stored history
   painted and unfollowed. A turn sent before the fetch lands keeps its thread,
-  and the fetch after that turn seeds it. Clicking the shown conversation again
+  and the fetch after that turn seeds it; a send refused before it lands
+  (credits, a rate limit) was never saved, so the seed keeps its message and
+  error after the fetched history (Q576 F2). Clicking the shown conversation again
   does nothing. Undo and Redo answered in the tab outlive a seed. A failed
   refetch's kept data is stored like any other (every persisted query).
 - Never stored: file, note, quiz and card bodies, collaboration tokens,

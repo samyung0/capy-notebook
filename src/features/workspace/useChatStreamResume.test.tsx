@@ -271,6 +271,29 @@ it('keeps a turn sent before the fetch landed and reports it did not seed', asyn
   await view.unmount();
 });
 
+// Epo 2026-10-29, Q576 F2: a send refused on the stored paint was never saved,
+// so the fetch's seed keeps it and its error after the history.
+it('keeps a send refused before the fetch landed, with its error, after the seed', async () => {
+  connections.push(async (handlers) => {
+    handlers.onError?.('Out of credits', 'llm_credits_exhausted');
+  });
+  const view = await mount();
+  await act(async () => view.chat().hydrate('c_1', answered, false));
+  await act(async () => {
+    await view.chat().send('And ATP?', { workspaceOnly: false });
+  });
+  await act(async () => view.chat().hydrate('c_1', answered, true));
+
+  const { messages } = view.chat();
+  expect(messages.slice(0, 2).map(({ id }) => id)).toEqual(['m_0', 'm_1']);
+  expect(messages.at(-2)?.content).toBe('And ATP?');
+  expect(messages.at(-1)).toMatchObject({
+    error: 'Out of credits',
+    status: 'error',
+  });
+  await view.unmount();
+});
+
 // Epo 2026-10-29 (L3): an Undo answered in this tab outlives a seed from
 // history that still shows the edit.
 it('shows this tab’s Undo outcome when the conversation seeds again', async () => {

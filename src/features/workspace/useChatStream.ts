@@ -694,7 +694,9 @@ export function useChatStream(workspaceId: string | null) {
   /** Shows a saved conversation. `current` history was fetched on this open;
    * older history (the stored cache) only paints and never follows a turn.
    * False when a turn streaming here, on a thread seeded from the stored
-   * cache, won over the history: the fetch after that turn seeds it. */
+   * cache, won over the history: the fetch after that turn seeds it. A send
+   * refused on the stored paint was never saved, so it stays after the
+   * history with its error (Epo 2026-10-29, Q576 F2). */
   const hydrate = useCallback(
     (
       convId: string | null,
@@ -709,6 +711,16 @@ export function useChatStream(workspaceId: string | null) {
         show(live[0]);
         return !live[1].fromStore;
       }
+      const shownThread = threadsRef.current[activeRef.current];
+      const known = new Set(history.map(({ id }) => id));
+      const lastSaved =
+        shownThread?.fromStore && shownThread.conversationId === convId
+          ? shownThread.messages
+              .map(({ id }) => known.has(id))
+              .lastIndexOf(true)
+          : -1;
+      const unsaved =
+        lastSaved < 0 ? [] : shownThread.messages.slice(lastSaved + 1);
       const key = tempId();
       const last = history.at(-1);
       const running =
@@ -722,7 +734,10 @@ export function useChatStream(workspaceId: string | null) {
         ...emptyThread(),
         conversationId: convId,
         fromStore: !current,
-        messages: history.map((msg) => mapEffects(msg, stepped)),
+        messages: [
+          ...history.map((msg) => mapEffects(msg, stepped)),
+          ...unsaved,
+        ],
         resumed: !!running,
         streaming: !!running,
       });

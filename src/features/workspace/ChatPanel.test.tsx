@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
-import type { ChatMessage } from '@/api/types';
+import type { ChatMessage, Conversation } from '@/api/types';
 import { getLocale, m } from '@/i18n';
 import type { ChatRequest } from './ChatPanel';
 
@@ -15,15 +15,18 @@ const { document, window } = parseHTML(
   '<!doctype html><html><body><div id="root"></div></body></html>'
 );
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
+// React reads `oninput` on the document to know input events exist.
+Object.assign(document, { oninput: null });
 
 // What the selected thread's messages read answers with.
 const thread = vi.hoisted(() => ({
   asked: [] as (string | null)[],
+  conversations: [] as Conversation[],
   error: null as unknown,
 }));
 vi.mock('@/api/hooks', async (original) => ({
   ...(await original<typeof import('@/api/hooks')>()),
-  useConversations: () => ({ data: [] }),
+  useConversations: () => ({ data: thread.conversations }),
   useMe: () => ({ data: undefined }),
   useMessages: (id: string | null) => {
     thread.asked.push(id);
@@ -67,6 +70,7 @@ vi.mock('@/components/ui/Menu', () => ({
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { ChatPanel, Citations } = await import('./ChatPanel');
+const { ConversationList } = await import('./chat/ConversationList');
 
 const render = (node: ReactNode) =>
   renderToStaticMarkup(
@@ -192,15 +196,21 @@ it('sends a spoken question once as a new chat, not again when the panel mounts 
   expect(stream.send.mock.calls[0][0]).toBe(request.prompt);
 });
 
-it('reopens the chat a reload kept in its own scope, behind a request it mounts with (T19)', async () => {
-  const stored = new Map([
-    ['capy.chat.open.account', '"c_kept"'],
-    ['capy.chat.open.ws_bio', '"c_ws"'],
-  ]);
+/** localStorage holding `entries`, as a reload finds it. */
+function keptChats(entries: Record<string, string>) {
+  const stored = new Map(Object.entries(entries));
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => stored.get(key) ?? null,
     removeItem: (key: string) => stored.delete(key),
     setItem: (key: string, value: string) => stored.set(key, value),
+  });
+  return stored;
+}
+
+it('reopens the chat a reload kept in its own scope, behind a request it mounts with (T19)', async () => {
+  const stored = keptChats({
+    'capy.chat.open.account': '"c_kept"',
+    'capy.chat.open.ws_bio': '"c_ws"',
   });
   const firstAsked = async (node: ReactNode) => {
     thread.asked = [];
@@ -234,4 +244,87 @@ it('reopens the chat a reload kept in its own scope, behind a request it mounts 
   expect(gone.text).not.toContain(m.error_not_found_title());
   thread.error = null;
   vi.unstubAllGlobals();
+});
+
+// Epo 2026-10-29, Q576 F1: a page switch in place leaves the shown chat filed
+// under the workspace it was shown in.
+it('keeps the shown chat under the workspace it opened in when the page switches workspace in place', async () => {
+  const stored = keptChats({ 'capy.chat.open.ws_a': '"c_a"' });
+  const client = new QueryClient();
+  const panel = (workspaceId: string) => (
+    <QueryClientProvider client={client}>
+      <ChatPanel workspaceId={workspaceId} />
+    </QueryClientProvider>
+  );
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () => root.render(panel('ws_a')));
+  await act(async () => root.render(panel('ws_b')));
+  expect(stored.get('capy.chat.open.ws_a')).toBe('"c_a"');
+  expect(stored.has('capy.chat.open.ws_b')).toBe(false);
+  act(() => root.unmount());
+  expect(stored.has('capy.chat.open.ws_a')).toBe(false);
+  vi.unstubAllGlobals();
+});
+
+// Epo 2026-10-29, Q576 F3: a send while the kept chat opens would start a new
+// chat that the opened one then replaces.
+it('holds a send until the kept chat has opened', async () => {
+  keptChats({ 'capy.chat.open.account': '"c_kept"' });
+  stream.send.mockClear();
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatPanel workspaceId={null} />
+      </QueryClientProvider>
+    )
+  );
+  const field = document.querySelector('textarea') as HTMLTextAreaElement;
+  const proto = (
+    window as unknown as { HTMLTextAreaElement: { prototype: object } }
+  ).HTMLTextAreaElement.prototype;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(
+      field,
+      'And ATP?'
+    );
+    field.dispatchEvent(new window.Event('input', { bubbles: true }));
+  });
+  const send = [...document.querySelectorAll('button')].find(
+    (button) => button.getAttribute('aria-label') === m.chat_send()
+  );
+  expect(send?.hasAttribute('disabled')).toBe(true);
+  await act(async () => {
+    send?.dispatchEvent(new window.Event('click', { bubbles: true }));
+  });
+  expect(stream.send).not.toHaveBeenCalled();
+  act(() => root.unmount());
+  vi.unstubAllGlobals();
+});
+
+// Epo 2026-10-29, Q576 F4 (T19): the panel already shows its chat's answer live.
+it('spins only on running chats other than the one the panel shows', () => {
+  const row = (id: string): Conversation => ({
+    createdAt: '2026-10-29T00:00:00Z',
+    id,
+    running: true,
+    title: id,
+    updatedAt: '2026-10-29T00:00:00Z',
+    workspaceId: '',
+  });
+  thread.conversations = [row('c_shown'), row('c_other')];
+  const html = render(
+    <ConversationList
+      activeId="c_shown"
+      onOpen={() => undefined}
+      onRemoved={() => undefined}
+      workspaceId={null}
+    />
+  );
+  thread.conversations = [];
+  const rows = html.split('<button').filter((part) => part.includes('c_'));
+  const spins = (id: string) =>
+    rows.find((part) => part.includes(id))?.includes(m.chat_running());
+  expect(spins('c_shown')).toBe(false);
+  expect(spins('c_other')).toBe(true);
 });

@@ -510,17 +510,21 @@ export function ChatPanel({
   }, [selectId, history, historyFetchStatus, historyError, hydrate]);
 
   // The shown conversation is kept while the panel is mounted: leaving the
-  // page forgets it, a reload or a closed tab does not.
+  // page forgets it, a reload or a closed tab does not. It is kept under the
+  // scope it was shown in, which a page switch in place leaves as it was
+  // (Epo 2026-10-29, Q576 F1); a new chat clears the panel's own scope.
   const shownId = selectId ?? conversationId;
+  const [shownIn, setShownIn] = useState({ id: shownId, workspaceId });
+  if (shownIn.id !== shownId) setShownIn({ id: shownId, workspaceId });
   useEffect(() => {
-    const key = PREF_KEYS.openChat(workspaceId);
-    if (shownId) writePref(key, shownId);
-    else removePref(key);
-  }, [shownId, workspaceId]);
-  useEffect(
-    () => () => removePref(PREF_KEYS.openChat(workspaceId)),
-    [workspaceId]
-  );
+    const key = PREF_KEYS.openChat(shownIn.workspaceId);
+    if (!shownIn.id) {
+      removePref(key);
+      return;
+    }
+    writePref(key, shownIn.id);
+    return () => removePref(key);
+  }, [shownIn]);
 
   // Keep the newest message in view as tokens stream in or a thread opens;
   // an Undo on an older receipt changes messages too and must not scroll.
@@ -533,7 +537,9 @@ export function ChatPanel({
 
   function submit() {
     const trimmed = text.trim();
-    if (!trimmed || streaming || overLimit) return;
+    // Not while a conversation opens: the send would start a new chat that
+    // the opened one then replaces (Q576 F3).
+    if (!trimmed || streaming || overLimit || opening) return;
     setText('');
     void send(trimmed, chatTurn(workspaceOnly, openResource));
   }
@@ -776,7 +782,9 @@ export function ChatPanel({
                 )}
                 <IconButton
                   className="size-9 rounded-lg"
-                  disabled={!(streaming || (text.trim() && !overLimit))}
+                  disabled={
+                    !(streaming || (text.trim() && !overLimit && !opening))
+                  }
                   icon="send"
                   // An outlined plane: grey until there is something to send.
                   iconClassName={cn(

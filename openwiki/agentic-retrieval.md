@@ -3353,9 +3353,13 @@ connection.
   per chat scope (`capy.chat.open.<workspaceId>`, the account chat's
   `capy.chat.open.account`), written when one mounts in the panel or a new
   chat's first send gets its id, and removed when the panel unmounts
-  (another page) or shows a new chat. A reload or reopened tab opens it in
+  (another page) or shows a new chat. The id stays under the scope it was
+  shown in: a page switch to another workspace that keeps the panel mounted
+  leaves it there (Q576 F1). A reload or reopened tab opens it in
   the panel's first render, with a loading skeleton in place of the empty
-  chat until its history arrives; a kept conversation that is gone (404)
+  chat until its history arrives, and the composer sends nothing while the
+  skeleton shows, so a send cannot start a new chat the opened one then
+  replaces (Q576 F3); a kept conversation that is gone (404)
   opens a new chat. On `/chat/{id}` the URL's conversation opens first
   instead (`AccountChat` mounts the panel with it as its request), and a
   requested one that is gone shows not found. When a history ends in a `streaming`
@@ -3373,7 +3377,8 @@ connection.
   turn) fails as before. Every connection stops reading at the turn's last
   event, so a Stop from another tab ends it at once.
 - Every other conversation with a running turn shows a spinner ("Answering")
-  in the conversation lists (`ConversationList`), patched from the
+  in the conversation lists (`ConversationList`; not the one the panel shows,
+  whose answer is live there, Q576 F4), patched from the
   `chat_turn` events in every cached list; a turn in a conversation no list
   holds yet refetches them, and every events-stream connect refetches them
   too.
