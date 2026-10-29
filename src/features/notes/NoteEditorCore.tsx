@@ -1671,12 +1671,14 @@ export function NoteEditorCore({
   useEffect(() => {
     if (!lateDocument) applyDrafts(ydoc, restored, RESTORE_ORIGIN);
     // Armed while this device's draft storage fails: the tab's close or
-    // reload asks only if the room has not acknowledged an edit then (Q561,
-    // as Office and text files, Q465). In-app navigation never asks; the
+    // reload asks only if the room has not acknowledged a local edit then
+    // (Q561, as Office and text files, Q465): the recorder counts this tab's
+    // edits (restored rows, a late merge's apply, typing past the offline
+    // bound), never a collaborator's. In-app navigation never asks; the
     // drafts and the room keep every edit.
     let disposed = false;
     const leaving = (event: BeforeUnloadEvent) => {
-      if (!(hasUnsavedWork() || current.unsaved)) return;
+      if (!current.unsaved) return;
       event.preventDefault();
       event.returnValue = '';
     };

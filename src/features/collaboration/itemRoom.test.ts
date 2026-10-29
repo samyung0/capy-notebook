@@ -238,9 +238,42 @@ it("asks on the tab's close only while storage fails with an edit unacknowledged
   expect(asks()).toBe(true);
   drafts.onStorage?.(true);
   expect(asks()).toBe(false);
-  // A room gone from the page asks nothing more.
-  drafts.onStorage?.(false);
   room.destroy();
+});
+
+// A room that ended (refused here), turned read-only or left the page asks
+// nothing more while storage fails, nor once a late write's failure (its
+// recorder's last) arrives after it ended or left.
+it('stops asking once the room ends, turns read-only or is destroyed', async () => {
+  const asks = leavePrompt();
+  const unacknowledged = async () => {
+    const { room } = await started();
+    const provider = providers.at(-1)!;
+    provider.config.onSynced?.({ state: true });
+    provider.config.onUnsyncedChanges?.({ number: 1 });
+    drafts.onStorage?.(false);
+    expect(asks()).toBe(true);
+    const event = (type: string) =>
+      provider.config.onStateless?.({ payload: JSON.stringify({ type }) });
+    return { event, room };
+  };
+
+  const ended = await unacknowledged();
+  ended.event('document-rejected');
+  expect(asks()).toBe(false);
+  drafts.onStorage?.(false);
+  expect(asks()).toBe(false);
+  ended.room.destroy();
+
+  const readOnly = await unacknowledged();
+  readOnly.event('room-read-only');
+  expect(asks()).toBe(false);
+  readOnly.room.destroy();
+
+  const destroyed = await unacknowledged();
+  destroyed.room.destroy();
+  expect(asks()).toBe(false);
+  drafts.onStorage?.(false);
   expect(asks()).toBe(false);
 });
 

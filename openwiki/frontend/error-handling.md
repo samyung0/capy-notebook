@@ -660,8 +660,9 @@ reload only while this device's draft storage is failing (the recorder's
 Plate notes, flashcard sets and quizzes follow the same rule (Q561, Epo
 2026-10-29): the note editor (`NoteEditorCore`) and an item room
 (`ItemRoom`) arm the listener while the recorder reports storage failing
-and ask, when the tab goes, only if an edit has no receipt yet; a room that
-ended or unmounted asks nothing more.
+and ask, when the tab goes, only if one of this tab's own edits has no
+receipt yet (the recorder's count; a collaborator's never counts); a room
+that ended or unmounted asks nothing more.
 
 The save banner (`SaveBanner`, `src/components/banners/SaveBanner.tsx`) is one
 strip under the file or note header with one state at a time:

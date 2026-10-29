@@ -834,11 +834,6 @@ export class ItemRoom {
     this.end();
   }
 
-  /** Edits not yet acknowledged by the server. */
-  get hasUnsyncedChanges() {
-    return this.unsynced > 0;
-  }
-
   destroy() {
     this.destroyed = true;
     this.sender?.stop();

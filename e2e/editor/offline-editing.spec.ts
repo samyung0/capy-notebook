@@ -225,64 +225,141 @@ test('offline edits outlive a reload and save once the room is back', async ({
 // Q561 (Epo 2026-10-29, Q465's rule): leaving a note in the app asks nothing
 // and keeps every edit; the tab's own close or reload asks only while this
 // device's draft storage fails (writes refused, as on a full disk) and the
-// room has not acknowledged an edit.
+// room has not acknowledged a local edit.
 test("a note's tab close asks only while storage fails with an edit unacknowledged", async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const dialogs: string[] = [];
   page.on('dialog', (dialog) => {
     dialogs.push(dialog.message());
     void dialog.dismiss();
   });
+  // The app's own `beforeunload` listeners, called by `blocksUnload`: a
+  // dispatched event would also reach MSW's, which stops mocking this page.
+  await page.addInitScript(() => {
+    const own = new Set<EventListenerOrEventListenerObject>();
+    const add = window.addEventListener;
+    const remove = window.removeEventListener;
+    window.addEventListener = function (
+      this: Window,
+      ...args: Parameters<Window['addEventListener']>
+    ) {
+      const caller = new Error('caller').stack?.split('\n')[2] ?? '';
+      if (args[0] === 'beforeunload' && args[1] && caller.includes('/src/'))
+        own.add(args[1]);
+      add.apply(this, args);
+    };
+    window.removeEventListener = function (
+      this: Window,
+      ...args: Parameters<Window['removeEventListener']>
+    ) {
+      if (args[0] === 'beforeunload' && args[1]) own.delete(args[1]);
+      remove.apply(this, args);
+    };
+    Object.assign(window, { ownLeaveListeners: own });
+  });
   const blocksUnload = () =>
     page.evaluate(() => {
       const event = new Event('beforeunload', { cancelable: true });
-      window.dispatchEvent(event);
+      const { ownLeaveListeners } = window as unknown as {
+        ownLeaveListeners: Set<EventListenerOrEventListenerObject>;
+      };
+      for (const listener of ownLeaveListeners)
+        if (typeof listener === 'function') listener.call(window, event);
+        else listener.handleEvent(event);
       return event.defaultPrevented;
     });
+  // The drafts worker refuses writes while `failDraftWrites` is set.
+  const failWrites = (fail: boolean) =>
+    page.evaluate((on) => {
+      const flags = window as { failDraftWrites?: boolean };
+      if (flags.failDraftWrites === undefined) {
+        const post = Worker.prototype.postMessage;
+        Worker.prototype.postMessage = function (
+          this: Worker,
+          ...args: Parameters<Worker['postMessage']>
+        ) {
+          const op = (args[0] as { op?: string } | null)?.op;
+          if (
+            flags.failDraftWrites &&
+            (op === 'append' || op === 'put' || op === 'merge')
+          )
+            throw new DOMException('Quota exceeded', 'QuotaExceededError');
+          post.apply(this, args);
+        };
+      }
+      flags.failDraftWrites = on;
+    }, fail);
+  const leaveNote = async () => {
+    await page
+      .getByRole('link', { exact: true, name: 'Scenario annotations.pdf' })
+      .click();
+    await expect(page).toHaveURL(/[?&]file=/);
+  };
+  const saved = () =>
+    expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'saved',
+      { timeout: 30_000 }
+    );
   const editor = await openNote(page);
   const timeOrigin = await page.evaluate(() => performance.timeOrigin);
   await setReachable(page, false);
   await type(page, ' Kept across the app.');
   expect(await blocksUnload()).toBe(false);
-  await page
-    .getByRole('link', { exact: true, name: 'Scenario annotations.pdf' })
-    .click();
-  await expect(page).toHaveURL(/[?&]file=/);
+  await leaveNote();
   await setReachable(page, true);
   await page.getByRole('link', { exact: true, name: 'Scenario note' }).click();
   await expect(editor).toContainText('Kept across the app.', {
     timeout: 30_000,
   });
-  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
-    'data-save-state',
-    'saved'
-  );
+  await saved();
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(timeOrigin);
 
-  await page.evaluate(() => {
-    const post = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function (
-      this: Worker,
-      ...args: Parameters<Worker['postMessage']>
-    ) {
-      const op = (args[0] as { op?: string } | null)?.op;
-      if (op === 'append' || op === 'put' || op === 'merge')
-        throw new DOMException('Quota exceeded', 'QuotaExceededError');
-      post.apply(this, args);
-    };
-  });
+  await failWrites(true);
   await setReachable(page, false);
   await type(page, ' Only in memory.');
   await expect.poll(blocksUnload).toBe(true);
   // The room stores the edit: nothing to lose, though storage still fails.
   await setReachable(page, true);
-  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
-    'data-save-state',
-    'saved',
-    { timeout: 30_000 }
-  );
+  await saved();
+  expect(await blocksUnload()).toBe(false);
+  // A collaborator's typing is not this tab's edit.
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { mockNotePeer } = await import(path);
+    mockNotePeer('mock-scenario-note').append([
+      { children: [{ text: 'Typed by a peer.' }], id: 'q561-peer', type: 'p' },
+    ]);
+  });
+  await expect(editor).toContainText('Typed by a peer.');
+  expect(await blocksUnload()).toBe(false);
+  await saved();
+  // Storage recovers (its retried whole note lands) while an edit is still
+  // unacknowledged: nothing is lost now.
+  await setReachable(page, false);
+  await type(page, ' Unacknowledged.');
+  await expect.poll(blocksUnload).toBe(true);
+  await failWrites(false);
+  await expect.poll(blocksUnload, { timeout: 15_000 }).toBe(false);
+  // Storage fails only at the unmount's last write: the next page asks
+  // nothing.
+  await type(page, ' Typed before leaving.');
+  await failWrites(true);
+  await leaveNote();
+  expect(await blocksUnload()).toBe(false);
+  // Leaving while the prompt is armed: the next page asks nothing.
+  await setReachable(page, true);
+  await page.getByRole('link', { exact: true, name: 'Scenario note' }).click();
+  await expect(editor).toContainText('Typed before leaving.', {
+    timeout: 30_000,
+  });
+  await saved();
+  await setReachable(page, false);
+  await type(page, ' Last.');
+  await expect.poll(blocksUnload).toBe(true);
+  await leaveNote();
   expect(await blocksUnload()).toBe(false);
   expect(dialogs).toEqual([]);
 });
