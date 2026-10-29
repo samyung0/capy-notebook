@@ -2,7 +2,8 @@
 
 One attempt per search and no retry: a failed search is free and the agent
 answers from what it has (Epo 2026-10-24). The request carries the platform
-DeepSeek key and the query only; the learner's question and IP
+DeepSeek key (DEEPSEEK_API_KEY, which only this search uses since chat's
+DeepSeek Flash moved to OpenRouter, Epo 2026-10-29) and the query only; the learner's question and IP
 (``ori_question``, ``localization``) are never sent. Results are pages anyone
 can publish, so the caller shows them as source data, never instructions.
 """
@@ -10,13 +11,12 @@ can publish, so the caller shows them as source data, never instructions.
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urlsplit
 
 import requests
-
-from ..config import platform_api_key
 
 SEARCH_URL = "https://api.deepseek.com/v1/tools/search"
 # Results per search; DeepSeek bills per search whatever the count.
@@ -81,7 +81,7 @@ def _result(raw: object) -> WebResult | None:
 
 async def search(query: str) -> list[WebResult]:
     """The results for one query (possibly none). Raises SearchFailed."""
-    key = platform_api_key("deepseek")
+    key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
     if not key:
         raise SearchFailed("the search key is not configured")
 

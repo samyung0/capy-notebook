@@ -1037,8 +1037,8 @@ Migration `0011_retire_deepseek_pro.sql` removes V4 Pro's catalog and operationa
 configuration directly. Its original seed remains in frozen `0001`; fresh
 databases replay the removal before serving traffic.
 `pnpm model:certify --provider deepseek --model deepseek-flash` records/replays
-two live tool turns on DeepSeek's API (`DEEPSEEK_API_KEY`; last recorded on
-the UAT host 2026-10-29); `uv run --extra test python pipeline/scripts/smoke_deepseek_flash.py`
+two live tool turns, through OpenRouter's 1017 on `OPENROUTER_API_KEY` since
+2026-10-29 (recorded on the UAT host); `uv run --extra test python pipeline/scripts/smoke_deepseek_flash.py`
 makes two additional small paid calls for image input and max thinking.
 
 The initial schema in `0001_init.sql` creates the capacity table. Apply the Ops

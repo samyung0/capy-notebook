@@ -122,12 +122,6 @@ def test_certified_model_slugs_are_sorted_and_provider_scoped(tmp_path: Path):
             {"limit": 1000},
         ),
         (
-            "deepseek",
-            "https://api.deepseek.com/models",
-            "authorization",
-            {},
-        ),
-        (
             "openai",
             "https://api.openai.com/v1/models",
             "authorization",

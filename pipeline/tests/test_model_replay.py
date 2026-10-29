@@ -15,12 +15,10 @@ from pipeline.elitellm import (
 )
 from pipeline.elitellm.client import (
     ANTHROPIC_URL,
-    DEEPSEEK_CHAT_URL,
     OPENAI_CHAT_URL,
     OPENAI_RESPONSES_URL,
     OPENROUTER_CHAT_URL,
     anthropic_request,
-    deepseek_request,
     openai_responses_request,
     openrouter_request,
 )
@@ -47,6 +45,16 @@ PROMPT = (
     "Call search_workspace with query photosynthesis. "
     "Do not answer until the tool result is available."
 )
+# DeepSeek Flash on Morph calls the tool on PROMPT without reasoning, even at
+# max, so its first turn carries nothing to pass back; a step to work out
+# first makes it reason (2026-10-29).
+PROMPTS = {
+    "deepseek": (
+        "Work out how many minutes a trip from 9:40 to 13:05 takes, then call "
+        "search_workspace with that number as the query. Do not answer until "
+        "the tool result is available."
+    ),
+}
 
 
 def _load_manifest() -> dict:
@@ -77,6 +85,11 @@ def _spec(provider_slug: str, model_id: str) -> ModelConfig:
         default = "high"
     elif provider_slug == "zai":
         levels = ("low", "high", "max")
+        default = "max"
+    elif provider_slug == "deepseek":
+        # DeepSeek Flash on OpenRouter's 1017, Morph then Cloudflare (UAT's
+        # row, Epo 2026-10-29), certified at max on its own prompt (PROMPTS).
+        levels = ("mid", "high", "max")
         default = "max"
     elif provider_slug == "openrouter":
         # MiniMax 3.1 Flash's catalog levels (migration 0112).
@@ -165,11 +178,12 @@ async def _turn(
 
 # The hosts each provider's certification must have been recorded against. A
 # cassette recorded on a retired transport (the zai pin moved from Tencent
-# TokenHub to Relace, to Z.AI itself, then to OpenRouter) is not a
-# certification of the live route.
+# TokenHub to Relace, to Z.AI itself, then to OpenRouter; DeepSeek Flash from
+# DeepSeek's API to OpenRouter on 2026-10-29) is not a certification of the
+# live route.
 LIVE_ROUTE_HOSTS = {
     "anthropic": {ANTHROPIC_URL.split("/")[2]},
-    "deepseek": {DEEPSEEK_CHAT_URL.split("/")[2]},
+    "deepseek": {OPENROUTER_CHAT_URL.split("/")[2]},
     "openai": {OPENAI_CHAT_URL.split("/")[2], OPENAI_RESPONSES_URL.split("/")[2]},
     "zai": {OPENROUTER_CHAT_URL.split("/")[2]},
     "openrouter": {OPENROUTER_CHAT_URL.split("/")[2]},
@@ -274,19 +288,20 @@ def test_certified_request_shape(provider_slug: str, model_id: str):
         return
     assert spec.provider_slug == "deepseek"
     assert uses_responses(spec, tools=True) is False
-    body = deepseek_request(
+    body = openrouter_request(
         spec,
         [{"role": "user", "content": "q"}],
         temperature=0.0,
         tools=[SEARCH_TOOL],
         response_format=None,
         max_tokens=4096,
-        thinking="instant",
-        stream=False,
+        thinking=spec.default_thinking,
+        stream=True,
         tool_choice="auto",
     )
-    assert body["model"] == model_id
-    assert body["thinking"] == {"type": "disabled"}
+    assert body["model"] == "deepseek/deepseek-v4.1-flash-1017"
+    assert body["reasoning"] == {"effort": "max"}
+    assert body["stream"] is True
 
 
 @pytest.mark.parametrize(
@@ -312,7 +327,7 @@ async def test_certified_two_turn_replay(
     if os.environ.get("CAPY_TEST_RECORD", "none") == "none":
         monkeypatch.setenv(env_name_for_provider(provider_slug), "sk-replay")
 
-    user = [{"role": "user", "content": PROMPT}]
+    user = [{"role": "user", "content": PROMPTS.get(provider_slug, PROMPT)}]
     first = await _turn(spec, user)
     call_id = _tool_call_id(first)
     assert call_id, f"{model_id} first turn had no tool call"

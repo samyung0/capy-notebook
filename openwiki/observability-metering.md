@@ -580,16 +580,24 @@ named provider directly. These exact routing exceptions are allowed:
   without an effort reasons as at `max`, so every GLM request sends
   `reasoning: {effort}` with `low`, `high` or `max`; `low` is the floor a
   reasoning-off call runs at and `high` the chat default.
-- `deepseek/deepseek-flash` posts to DeepSeek's own chat API
-  (`https://api.deepseek.com/chat/completions`, platform `DEEPSEEK_API_KEY`,
-  which `search_web` also uses). It ran on OpenRouter's 1017 for part of
-  2026-10-29 and came back the same day (Epo 2026-10-29: OpenRouter's routes
-  were unreliable); its catalog identity and name never changed. Thinking goes
-  as `thinking: {type: enabled}` with `reasoning_effort` (`mid` sent as
-  `medium`), and a reasoning-off call sends `thinking: {type: disabled}`. Its
-  agentic-loop certification is recorded on DeepSeek's API (UAT host,
-  2026-10-29); the `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`
-  certifications stay retired.
+- `deepseek/deepseek-flash` keeps its `deepseek` catalog identity, name,
+  thinking levels and capacity row and runs through OpenRouter as
+  `deepseek/deepseek-v4.1-flash-1017` on `OPENROUTER_API_KEY` (the `deepseek`
+  provider's `platformEnv`; `OPENROUTER_MODELS` maps the pair), with its own
+  provider order, Morph's fp8 endpoint then Cloudflare, fallbacks off
+  (`OPENROUTER_PIN_ROUTING`; 1017's own row keeps InferenceNet then
+  Cloudflare). Epo chose it on 2026-10-29 after a day on InferenceNet and then
+  on DeepSeek's API, from live probes of the cheap 1017 endpoints: Morph held
+  40 calls at once and 30 in flight for 45 s (about 670 a minute) with no 429,
+  Wafer was rate-limited from 20 in flight (about 500 a minute), and Reka left
+  1017 during the probe. `mid`, `high` and `max` go as OpenRouter efforts
+  (`DEEPSEEK_EFFORTS`, `mid` as `medium`); a reasoning-off call sends
+  `reasoning: {enabled: false}`. `DEEPSEEK_API_KEY` serves only `search_web`.
+  Its agentic-loop certification is recorded through Morph at `max` on its own
+  prompt (`test_model_replay.PROMPTS`: Morph calls the tool on the shared
+  prompt without reasoning, so the first turn carried nothing to pass back);
+  the `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` certifications
+  stay retired.
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
   `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`, except MiniMax 3.1
@@ -808,9 +816,10 @@ rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
 whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
 300 / 60 / 1000 (Z.AI's list price, decision 2026-10-20, kept on OpenRouter,
 where DigitalOcean lists less), DeepSeek Flash 600 / 12 / 2400 (DeepSeek's
-peak price, $0.30 / $0.006 / $1.20 per million; off-peak is half; UAT's row
-version 7 since 2026-10-29, after version 6 charged 300 / 60 / 1200 while the
-row ran on OpenRouter's 1017), OpenRouter
+peak price, $0.30 / $0.006 / $1.20 per million, from UAT's row version 7 set
+while the row ran on DeepSeek's API on 2026-10-29 and kept on the Morph route
+until a rate for it is set; version 6 charged 300 / 60 / 1200 on InferenceNet),
+OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
 decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
 price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
@@ -1860,7 +1869,7 @@ share.
 Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 150/125 and Qwen embedding 200/80; local development
 keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
-rows: DeepSeek Flash 40/0 (on DeepSeek's API, whose account allows 2500; chat and Generate only, so no reserve, Epo 2026-10-29), GLM 150/125 (still keyed `zai/glm-5.3-flash`),
+rows: DeepSeek Flash 40/0 (on Morph, which held 40 at once without a 429; chat and Generate only, so no reserve, Epo 2026-10-29), GLM 150/125 (still keyed `zai/glm-5.3-flash`),
 OpenRouter DeepSeek V4 Flash 0731 32/0 (ingest-only, so no interactive
 reserve) and V4.1 Flash 1017 40/20 (ghost text up to 40, captions up to 20;
 page reads lease the `vlm_page` gate instead, Epo 2026-10-29; UAT and local
