@@ -222,21 +222,10 @@ test('offline edits outlive a reload and save once the room is back', async ({
   );
 });
 
-// Q561 (Epo 2026-10-29, Q465's rule): leaving a note in the app asks nothing
-// and keeps every edit; the tab's own close or reload asks only while this
-// device's draft storage fails (writes refused, as on a full disk) and the
-// room has not acknowledged a local edit.
-test("a note's tab close asks only while storage fails with an edit unacknowledged", async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
-  const dialogs: string[] = [];
-  page.on('dialog', (dialog) => {
-    dialogs.push(dialog.message());
-    void dialog.dismiss();
-  });
-  // The app's own `beforeunload` listeners, called by `blocksUnload`: a
-  // dispatched event would also reach MSW's, which stops mocking this page.
+/** Records the app's own `beforeunload` listeners, which `leaveAsks` calls:
+ * a dispatched event would also reach MSW's, which stops mocking the page.
+ * Set it up before the page opens. */
+async function probeLeave(page: Page) {
   await page.addInitScript(() => {
     const own = new Set<EventListenerOrEventListenerObject>();
     const add = window.addEventListener;
@@ -259,38 +248,61 @@ test("a note's tab close asks only while storage fails with an edit unacknowledg
     };
     Object.assign(window, { ownLeaveListeners: own });
   });
-  const blocksUnload = () =>
-    page.evaluate(() => {
-      const event = new Event('beforeunload', { cancelable: true });
-      const { ownLeaveListeners } = window as unknown as {
-        ownLeaveListeners: Set<EventListenerOrEventListenerObject>;
+}
+
+/** Whether closing the tab would ask now. */
+function leaveAsks(page: Page) {
+  return page.evaluate(() => {
+    const event = new Event('beforeunload', { cancelable: true });
+    const { ownLeaveListeners } = window as unknown as {
+      ownLeaveListeners: Set<EventListenerOrEventListenerObject>;
+    };
+    for (const listener of ownLeaveListeners)
+      if (typeof listener === 'function') listener.call(window, event);
+      else listener.handleEvent(event);
+    return event.defaultPrevented;
+  });
+}
+
+/** The drafts worker refuses writes (as on a full disk) while `fail`. */
+async function failDraftWrites(page: Page, fail: boolean) {
+  await page.evaluate((on) => {
+    const flags = window as { failDraftWrites?: boolean };
+    if (flags.failDraftWrites === undefined) {
+      const post = Worker.prototype.postMessage;
+      Worker.prototype.postMessage = function (
+        this: Worker,
+        ...args: Parameters<Worker['postMessage']>
+      ) {
+        const op = (args[0] as { op?: string } | null)?.op;
+        if (
+          flags.failDraftWrites &&
+          (op === 'append' || op === 'put' || op === 'merge')
+        )
+          throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        post.apply(this, args);
       };
-      for (const listener of ownLeaveListeners)
-        if (typeof listener === 'function') listener.call(window, event);
-        else listener.handleEvent(event);
-      return event.defaultPrevented;
-    });
-  // The drafts worker refuses writes while `failDraftWrites` is set.
-  const failWrites = (fail: boolean) =>
-    page.evaluate((on) => {
-      const flags = window as { failDraftWrites?: boolean };
-      if (flags.failDraftWrites === undefined) {
-        const post = Worker.prototype.postMessage;
-        Worker.prototype.postMessage = function (
-          this: Worker,
-          ...args: Parameters<Worker['postMessage']>
-        ) {
-          const op = (args[0] as { op?: string } | null)?.op;
-          if (
-            flags.failDraftWrites &&
-            (op === 'append' || op === 'put' || op === 'merge')
-          )
-            throw new DOMException('Quota exceeded', 'QuotaExceededError');
-          post.apply(this, args);
-        };
-      }
-      flags.failDraftWrites = on;
-    }, fail);
+    }
+    flags.failDraftWrites = on;
+  }, fail);
+}
+
+// Q561 (Epo 2026-10-29, Q465's rule): leaving a note in the app asks nothing
+// and keeps every edit; the tab's own close or reload asks only while this
+// device's draft storage fails (writes refused, as on a full disk) and the
+// room has not acknowledged a local edit.
+test("a note's tab close asks only while storage fails with an edit unacknowledged", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const dialogs: string[] = [];
+  page.on('dialog', (dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.dismiss();
+  });
+  await probeLeave(page);
+  const blocksUnload = () => leaveAsks(page);
+  const failWrites = (fail: boolean) => failDraftWrites(page, fail);
   const leaveNote = async () => {
     await page
       .getByRole('link', { exact: true, name: 'Scenario annotations.pdf' })
@@ -465,6 +477,23 @@ async function openCopy(page: Page) {
   await expect(editor).toContainText(seed);
   return editor;
 }
+
+// Q568 (Epo 2026-10-29): a note opened as its saved copy (Q229) reports the
+// copy's refused writes as its drafts do: the tab's close asks while the copy
+// holds edits storage refused, and stops once a write lands.
+test("a saved copy's tab close asks while storage refuses its edits", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await probeLeave(page);
+  await openCopy(page);
+  await failDraftWrites(page, true);
+  await type(page, ' Refused.');
+  await expect.poll(() => leaveAsks(page)).toBe(true);
+  await failDraftWrites(page, false);
+  await type(page, ' Stored.');
+  await expect.poll(() => leaveAsks(page)).toBe(false);
+});
 
 // Merge view review r1 Q-M3 (Q409): a room swap before the first bind (the
 // room moved while the service was away) pauses the editor, which stores
