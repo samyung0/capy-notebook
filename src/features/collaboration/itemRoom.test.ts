@@ -161,14 +161,12 @@ vi.mock('@/lib/editDrafts', () => ({
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
-vi.mock('./unsentItems', () => ({ markUnsent: vi.fn() }));
 
 const { ItemRoom, openItemRoom } = await import('./itemRoom');
 const { NoteSeat } = await import('./noteSeat');
 const { applyDrafts } = await import('@/lib/editDrafts');
 const { itemEditingStopped } = await import('./itemRoom');
 const { markUpdateAvailable } = await import('@/lib/appRelease');
-const { markUnsent } = await import('./unsentItems');
 const { draftSender, dropExpiredGroup } = await import('@/lib/editDrafts');
 const { userToast } = await import('@/components/ui/userToast');
 
@@ -192,6 +190,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 async function started(onReplace = vi.fn()) {
@@ -199,6 +198,51 @@ async function started(onReplace = vi.fn()) {
   await room.start();
   return { onReplace, room };
 }
+
+/** The page's `beforeunload` listeners: whether closing the tab asks. */
+function leavePrompt() {
+  const page = new EventTarget();
+  vi.stubGlobal('addEventListener', page.addEventListener.bind(page));
+  vi.stubGlobal('removeEventListener', page.removeEventListener.bind(page));
+  return () => {
+    const event = new Event('beforeunload', { cancelable: true });
+    page.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+}
+
+// Q561 (Epo 2026-10-29, Q465's rule): no in-app guard; the tab's own close
+// or reload asks only while this device's draft storage fails and the room
+// has not acknowledged an edit (its receipt). Fails if the prompt arms on
+// unacknowledged edits alone, as the old one did.
+it("asks on the tab's close only while storage fails with an edit unacknowledged", async () => {
+  const asks = leavePrompt();
+  const { room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onUnsyncedChanges?.({ number: 1 });
+  expect(asks()).toBe(false);
+  drafts.onStorage?.(false);
+  expect(asks()).toBe(true);
+  // Acknowledged and stored by the room: nothing to lose.
+  provider.config.onUnsyncedChanges?.({ number: 0 });
+  const { id } = JSON.parse(provider.stateless.at(-1) ?? '{}');
+  provider.config.onStateless?.({
+    payload: JSON.stringify({
+      checkpointIds: [id],
+      type: 'checkpoint-persisted',
+    }),
+  });
+  expect(asks()).toBe(false);
+  provider.config.onUnsyncedChanges?.({ number: 1 });
+  expect(asks()).toBe(true);
+  drafts.onStorage?.(true);
+  expect(asks()).toBe(false);
+  // A room gone from the page asks nothing more.
+  drafts.onStorage?.(false);
+  room.destroy();
+  expect(asks()).toBe(false);
+});
 
 // Rate-limit review r6 S-2: two copies of one embedded set in a note share
 // one room, so the note's channel joins it once (the server closes a second
@@ -710,8 +754,9 @@ it('stops when refused as outdated, a writer keeping its edits stored', async ()
 });
 
 // Edits this device could not store are lost on the reload: the strip says
-// so and leaving still asks.
+// so and closing the tab still asks.
 it('says the reload loses edits this device could not store', async () => {
+  const asks = leavePrompt();
   const { room } = await started();
   const [provider] = providers;
   provider.config.onSynced?.({ state: true });
@@ -720,7 +765,7 @@ it('says the reload loses edits this device could not store', async () => {
     reason: 'collaboration-outdated',
   });
   expect(room.getSnapshot().offline).toBe('outdated-unstored');
-  expect(markUnsent).toHaveBeenLastCalledWith(room, true);
+  expect(asks()).toBe(true);
   room.destroy();
 });
 

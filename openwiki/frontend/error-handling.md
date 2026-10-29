@@ -657,6 +657,11 @@ leave prompt (`beforeunload`, in `useSourceSession`) shows on a tab close or
 reload only while this device's draft storage is failing (the recorder's
 `onStorage`) and the room has not acknowledged a local edit
 (`leaveLoses`); the few milliseconds a draft write takes are not guarded.
+Plate notes, flashcard sets and quizzes follow the same rule (Q561, Epo
+2026-10-29): the note editor (`NoteEditorCore`) and an item room
+(`ItemRoom`) arm the listener while the recorder reports storage failing
+and ask, when the tab goes, only if an edit has no receipt yet; a room that
+ended or unmounted asks nothing more.
 
 The save banner (`SaveBanner`, `src/components/banners/SaveBanner.tsx`) is one
 strip under the file or note header with one state at a time:

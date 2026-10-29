@@ -2075,7 +2075,7 @@ design, option d), and the nudge's release file on 2026-10-17.
   through the new version's checks as offline edits do; a refusal there
   gives the usual refused draft. A source whose edits this device stored no
   longer counts as unsaved, so Reload brings no "Leave site?" prompt (a
-  source or item editor whose storage failed still asks).
+  note, source or item editor whose storage failed still asks).
 - **The next page change loads the new app**: any refused room (an editor's
   or a reader's) marks the update available, as the nudge below does. Drafts made by a refused client never carry
   normalization damage: it never synced the new content.
@@ -2344,7 +2344,8 @@ recorder stores nothing more. What was stored stays; nothing reaches the
 editor through REST-backed dialogs offline anyway. When storage fails
 (private mode, a full disk) editing continues in memory under the
 `offline-unstored` banner; after a failed write the next one holds the whole
-document, and the banner goes back to `offline` only once that lands. `navigator.storage.persist()` is asked once, at the
+document, and the banner goes back to `offline` only once that lands. Until
+then closing or reloading the tab asks while an edit has no receipt (Q561). `navigator.storage.persist()` is asked once, at the
 first row written while offline, except on Firefox, which prompts. Safari
 deletes script storage of a site not visited for 7 days, and private windows
 delete it on close. Rows of a note the account no longer has go on a 404, or a 403
@@ -3525,10 +3526,10 @@ opens with the draft read-only for copying until Reload (`QuizRecovery`,
 naming another room (a discard) does the same with the edits as a draft of
 the old lineage. An eviction notice's `mode` decides its close: a drain
 (access widened; the room stored first) rejoins with the document as it is,
-a discard replaces the room as a moved one. Leaving
-the tab or navigating in the app while an
-item room holds edits the server has not acknowledged asks first
-(`unsentItems.ts`).
+a discard replaces the room as a moved one. Navigating in the app never
+asks; closing or reloading the tab asks only while this device's draft
+storage fails and the room has not acknowledged an edit (Q561, as notes and
+sources; [error-handling.md](error-handling.md#collaborative-source-failures)).
 
 Flashcard sets edit live (live-items, Epo 2026-10-10). Each set has its own
 Yjs document, `material:<id>:schema:<n>` like a note's: the root map `cards`

@@ -1228,7 +1228,6 @@
   "editor_drafts_lost": "Some unsaved edits from your last session couldn't be restored.",
   "editor_copy_merge_failed": "Some offline edits couldn't be added yet. They're kept and will be added when you reopen this note.",
   "item_edits_refused": "Your latest changes couldn't be saved. They're shown read-only to copy until you reload.",
-  "item_leave_unsent": "Some changes haven't reached the server yet. Leave anyway?",
   "editor_save_failed_undone": "Your latest changes couldn't be saved and were undone.",
   "editor_access_lost": "You no longer have access",
   "editor_access_lost_body": "Ask the owner to share it with you again.",

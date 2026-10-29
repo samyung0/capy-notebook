@@ -1670,6 +1670,16 @@ export function NoteEditorCore({
   // connects (init waits a task), and count as unsaved.
   useEffect(() => {
     if (!lateDocument) applyDrafts(ydoc, restored, RESTORE_ORIGIN);
+    // Armed while this device's draft storage fails: the tab's close or
+    // reload asks only if the room has not acknowledged an edit then (Q561,
+    // as Office and text files, Q465). In-app navigation never asks; the
+    // drafts and the room keep every edit.
+    let disposed = false;
+    const leaving = (event: BeforeUnloadEvent) => {
+      if (!(hasUnsavedWork() || current.unsaved)) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
     const current = recordDrafts({
       adopted: adoptedRows,
       doc: ydoc,
@@ -1689,6 +1699,8 @@ export function NoteEditorCore({
       onLost: toastDraftsLost,
       onStorage: (ok) => {
         storageOk.current = ok;
+        if (ok || disposed) window.removeEventListener('beforeunload', leaving);
+        else window.addEventListener('beforeunload', leaving);
         showOffline();
       },
       report: reportIncident,
@@ -1697,6 +1709,8 @@ export function NoteEditorCore({
     });
     recorder.current = current;
     return () => {
+      disposed = true;
+      window.removeEventListener('beforeunload', leaving);
       void current.dispose();
       if (recorder.current === current) recorder.current = null;
     };

@@ -222,6 +222,71 @@ test('offline edits outlive a reload and save once the room is back', async ({
   );
 });
 
+// Q561 (Epo 2026-10-29, Q465's rule): leaving a note in the app asks nothing
+// and keeps every edit; the tab's own close or reload asks only while this
+// device's draft storage fails (writes refused, as on a full disk) and the
+// room has not acknowledged an edit.
+test("a note's tab close asks only while storage fails with an edit unacknowledged", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const dialogs: string[] = [];
+  page.on('dialog', (dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.dismiss();
+  });
+  const blocksUnload = () =>
+    page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+  const editor = await openNote(page);
+  const timeOrigin = await page.evaluate(() => performance.timeOrigin);
+  await setReachable(page, false);
+  await type(page, ' Kept across the app.');
+  expect(await blocksUnload()).toBe(false);
+  await page
+    .getByRole('link', { exact: true, name: 'Scenario annotations.pdf' })
+    .click();
+  await expect(page).toHaveURL(/[?&]file=/);
+  await setReachable(page, true);
+  await page.getByRole('link', { exact: true, name: 'Scenario note' }).click();
+  await expect(editor).toContainText('Kept across the app.', {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved'
+  );
+  expect(await page.evaluate(() => performance.timeOrigin)).toBe(timeOrigin);
+
+  await page.evaluate(() => {
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (
+      this: Worker,
+      ...args: Parameters<Worker['postMessage']>
+    ) {
+      const op = (args[0] as { op?: string } | null)?.op;
+      if (op === 'append' || op === 'put' || op === 'merge')
+        throw new DOMException('Quota exceeded', 'QuotaExceededError');
+      post.apply(this, args);
+    };
+  });
+  await setReachable(page, false);
+  await type(page, ' Only in memory.');
+  await expect.poll(blocksUnload).toBe(true);
+  // The room stores the edit: nothing to lose, though storage still fails.
+  await setReachable(page, true);
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 30_000 }
+  );
+  expect(await blocksUnload()).toBe(false);
+  expect(dialogs).toEqual([]);
+});
+
 // Q229: a note whose join ran out (its 30 s) shows its saved copy, editable.
 // What is typed there is kept on this device as the copy, and the next
 // open's first sync merges it into the room block by block, as ordinary
