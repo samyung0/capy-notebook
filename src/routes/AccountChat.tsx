@@ -193,7 +193,7 @@ export default function AccountChat() {
           <Icon name="menu" />
         </ToolbarButton>
       )}
-      <h1 className="t-subtitle ml-1 min-w-0 flex-1 truncate">
+      <h1 className="t-subtitle ml-1 min-w-0 flex-1 translate-y-px truncate">
         {m.workspace_tab_chat()}
       </h1>
       <ToolbarButton disabled={!shown} label={m.chat_new()} onClick={newChat}>
