@@ -2120,9 +2120,9 @@ those services start.
    `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
    So are the VLM page-read gates, `CAPY_VLM_PAGE_CAPACITY` (page reads in
-   flight across the workers) and `CAPY_VLM_PAGES_PER_JOB`: production 64 and
+   flight across the workers) and `CAPY_VLM_PAGES_PER_JOB`: production 40 and
    40 (the production ingest Compose's values when the GitHub variables are
-   blank), local/UAT Compose fixes 20 and 10.
+   blank; 64 overall until 2026-10-29, lowered so 1017's route holds at most 120), local/UAT Compose fixes 20 and 10.
    Production limits are eight coordinator processes, seven parse children
    (`CAPY_PARSE_WORKERS`), parser depth 8 (`CAPY_PARSE_QUEUE_DEPTH`, parsing
    plus waiting) and 500 text-less pages per document

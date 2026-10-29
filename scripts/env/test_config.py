@@ -436,10 +436,10 @@ class ConfigTest(unittest.TestCase):
             CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
             CLERK_PUBLISHABLE_KEY="pk_public",
             DEPLOYMENT_APP_URL="https://app.example.com",
-            CAPY_VLM_PAGE_CAPACITY="64",
+            CAPY_VLM_PAGE_CAPACITY="40",
             CAPY_VLM_PAGES_PER_JOB="40",
         )
-        gates = {"CAPY_VLM_PAGE_CAPACITY": "64", "CAPY_VLM_PAGES_PER_JOB": "40"}
+        gates = {"CAPY_VLM_PAGE_CAPACITY": "40", "CAPY_VLM_PAGES_PER_JOB": "40"}
         with tempfile.TemporaryDirectory() as temp:
             with contextlib.redirect_stdout(io.StringIO()):
                 config.render(values, "production", temp, "a" * 40)

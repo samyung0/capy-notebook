@@ -1839,7 +1839,7 @@ provider request is created. A full gate polls with jitter within the call budge
 then fails as `provider_busy`. Leases use the call id and receipt deadline and are
 released when the call ends. The VLM read of text-less document pages has a
 gate of its own: its leases use the fixed key `vlm_page` with a limit of
-`CAPY_VLM_PAGE_CAPACITY` across every worker (64 in production, 20 in UAT and
+`CAPY_VLM_PAGE_CAPACITY` across every worker (40 in production since 2026-10-29, 20 in UAT and
 local) in place of the captioning row, so those
 reads need no `model_capacities` row and do not count against GLM's ingest
 share.

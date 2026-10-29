@@ -32,9 +32,9 @@
 -- (p95 10.1 s); a 2026-10-28 ghost-text probe from the ingest host (about 400
 -- tokens in, 20 out) held 64 in flight at about 5,000 calls a minute with no
 -- 429 (first token p50 0.39 s, total p95 1.0 s). Page reads lease the vlm_page
--- gate instead of this row (CAPY_VLM_PAGE_CAPACITY: 64 in production, 20 in
--- UAT and local), so the gates add up: production can hold 144 calls in flight
--- on this route, and Cloudflare, the fallback, was measured only at 64, so an
+-- gate instead of this row (CAPY_VLM_PAGE_CAPACITY: 40 in production since
+-- 2026-10-29, 20 in UAT and local), so the gates add up: production can hold
+-- 120 calls in flight on this route, and Cloudflare, the fallback, was measured only at 64, so an
 -- InferenceNet outage during a burst may leave calls slow or busy there.
 -- OpenRouter MiniMax 3.1 Flash (Together, then Wafer since 2026-10-25; a chat
 -- choice since 2026-10-24) serves chat alone, so all but one call is kept for
