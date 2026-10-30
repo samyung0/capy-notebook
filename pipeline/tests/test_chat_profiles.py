@@ -1,7 +1,7 @@
 """Chat profiles (todo-account-chat.md): workspace chat shows the model what it
 did before account chat, byte for byte; account chat offers its own tools,
 prompt and turn context, checks access through Go before reading, and
-creates into No workspace unless a workspace is named."""
+creates outside workspaces unless a workspace is named."""
 
 from __future__ import annotations
 
@@ -14,13 +14,13 @@ from typing import Any
 import psycopg
 import pytest
 
+from pipeline.prompts import account_chat, preferences
 from pipeline.prompts import chat as chat_prompts
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import (
     accounting,
     contract,
     evidence,
-    markdown_answer,
     pending,
     profiles,
     search,
@@ -126,9 +126,12 @@ def _hashed(snapshot: dict[str, Any]) -> dict[str, str]:
 def test_the_workspace_profile_shows_the_model_what_it_did_before():
     profile = profiles.workspace.PROFILE
     contexts = {
-        "owner": _ctx(library_catalog=CATALOG),
+        "owner": _ctx(library_catalog=CATALOG, edit_tools=True),
         "owner_office_progress": _ctx(
-            library_catalog=CATALOG, office_tools=True, study_progress=True
+            library_catalog=CATALOG,
+            office_tools=True,
+            edit_tools=True,
+            study_progress=True,
         ),
         "owner_no_library": _ctx(),
         "viewer": _ctx(operations=VIEWER, role="viewer", library_catalog=CATALOG),
@@ -165,17 +168,13 @@ def test_the_workspace_profile_shows_the_model_what_it_did_before():
                 contexts["viewer"], final=True, writing=False
             ),
         },
-        "skills": {
-            name: skills.text(name) for name in skills.offered(markdown_answer.OPENUI)
-        },
+        "skills": {name: skills.text(name) for name in skills.SKILLS},
         "mode_note": chat_prompts.with_mode_note(
             {"role": "user", "content": "q", "_workspace_only": True}
         ),
         "send_back": [
-            profile.send_back[(True, False)],
-            profile.send_back[(True, True)],
-            profile.send_back[(False, False)],
-            profile.send_back[(False, True)],
+            profile.send_back[True],
+            profile.send_back[False],
         ],
         "not_available": tools.NOT_AVAILABLE,
     }
@@ -184,7 +183,9 @@ def test_the_workspace_profile_shows_the_model_what_it_did_before():
 
 
 def test_the_account_profile_offers_the_account_tools():
-    schemas = profiles.account.PROFILE.schemas(_account(library_catalog=CATALOG))
+    schemas = profiles.account.PROFILE.schemas(
+        _account(library_catalog=CATALOG, edit_tools=True)
+    )
     by_name = {s["function"]["name"]: s["function"] for s in schemas}
 
     assert set(by_name) == {
@@ -197,9 +198,10 @@ def test_the_account_profile_offers_the_account_tools():
         "resolve_source_change",
         "read_document",
         "capture_page",
-        "search_knowledge",
-        "read_knowledge",
-        "capture_knowledge_page",
+        "search_library",
+        "search_images",
+        "read_library",
+        "capture_library_page",
         "search_web",
         "read_skill",
         "create_material",
@@ -213,7 +215,7 @@ def test_the_account_profile_offers_the_account_tools():
     office = {
         s["function"]["name"]: s["function"]
         for s in profiles.account.PROFILE.schemas(
-            _account(library_catalog=CATALOG, office_tools=True)
+            _account(library_catalog=CATALOG, office_tools=True, edit_tools=True)
         )
     }
     # Every tool that creates takes where it lands (Epo 2026-10-28, T2).
@@ -227,7 +229,7 @@ def test_the_account_profile_offers_the_account_tools():
             "workspace_id"
             not in contract.DEFINITIONS[name]["inputSchema"]["properties"]
         )
-    # create_chapter names its workspace here; No workspace has no chapters.
+    # create_chapter names its workspace here; outside workspaces has no chapters.
     chapter = by_name["create_chapter"]["parameters"]
     assert "workspace_id" in chapter["properties"]
     # name is required in the chat copies only (Q582).
@@ -270,7 +272,7 @@ def test_the_account_prompt_turn_context_and_skills_name_the_users_files():
     # The outline also picks where new files go (Epo 2026-10-29).
     assert "Identify which workspace you should work in" in editing
     assert "create_chapter" in editing and "create_workspace" in editing
-    assert "No workspace" in skills.text(skills.DECK_BUILDING, account=True)
+    assert "outside workspaces" in skills.text(skills.DECK_BUILDING, account=True)
 
 
 class _Gateway:
@@ -512,7 +514,7 @@ async def test_search_files_content_labels_hits_from_the_turns_scope(monkeypatch
     assert [p.file_id for p in result.passages] == ["f_mine", "f_chem", "f_pdf"]
     mine, chem, pdf = result.passages
     assert pdf.can_edit is False  # a PDF reads view only
-    assert mine.location().startswith("No workspace › f_mine.pdf")
+    assert mine.location().startswith("Outside workspaces › f_mine.pdf")
     assert chem.location().startswith("Chemistry › Acids › f_chem.pdf")
     assert (mine.can_edit, chem.can_edit) == (True, True)
     text = tools.render_result(result, list(enumerate(result.passages, 1)))
@@ -919,8 +921,7 @@ async def test_the_workspace_list_rides_once_and_list_workspaces_is_current():
     assert listed == (
         "The user's workspaces:\n"
         "- Biology (workspace_id=ws_2, view only)\n"
-        "- Chemistry (workspace_id=ws_1, view and edit)\n"
-        "Their other files are in No workspace."
+        "- Chemistry (workspace_id=ws_1, view and edit)"
     )
     ctx.workspaces_shown = listed
     packed = evidence.pack(ctx, [])
@@ -1101,7 +1102,9 @@ async def test_an_account_create_lands_where_the_user_named(monkeypatch, named, 
     assert "workspaceId" in sent if named else "workspaceId" not in sent
     if tool == "create_material":
         where = (
-            "the workspace 'Biology' (workspace_id=ws_2)" if named else "No workspace"
+            "the workspace 'Biology' (workspace_id=ws_2)"
+            if named
+            else "the user's files outside workspaces"
         )
         assert f"It is now in {where}." in result.text()
 
@@ -1361,7 +1364,7 @@ async def test_an_account_create_refuses_a_workspace_that_is_not_the_users(
         + (
             "."
             if tool == "create_chapter"
-            else ", or leave workspace_id out to create in No workspace."
+            else ", or leave workspace_id out to create it outside workspaces."
         )
     )
 
@@ -1421,7 +1424,7 @@ def test_chat_schemas_list_what_a_call_needs_before_what_it_may_add(account):
     order, so an optional property listed before the one the model writes
     first is dropped: Go's alphabetical create_material lost content, cards
     and chapter_id on Morph in 3 of 3 calls, the order below lost none."""
-    ctx = (_account if account else _ctx)(library_catalog=CATALOG)
+    ctx = (_account if account else _ctx)(library_catalog=CATALOG, edit_tools=True)
     profile = profiles.account.PROFILE if account else profiles.workspace.PROFILE
     schemas = {
         s["function"]["name"]: s["function"]["parameters"] for s in profile.schemas(ctx)
@@ -1442,12 +1445,12 @@ def test_chat_schemas_list_what_a_call_needs_before_what_it_may_add(account):
     ]
     question = schemas["add_questions"]["properties"]["questions"]["items"]
     assert list(question["properties"])[:3] == ["question", "options", "correct"]
-    assert list(schemas["capture_knowledge_page"]["properties"]) == [
+    assert list(schemas["capture_library_page"]["properties"]) == [
         "excerpt_id",
         "page",
         "bbox",
     ]
-    assert list(schemas["read_knowledge"]["properties"]) == [
+    assert list(schemas["read_library"]["properties"]) == [
         "excerpt_id",
         "start",
         "count",
@@ -1594,3 +1597,41 @@ async def test_an_account_edit_names_the_account_scope_not_a_workspace(monkeypat
     assert not result.refused, result.text()
     assert sent["url"].endswith("/api/internal/documents/edit")
     assert sent["scope"] == "account" and "workspaceId" not in sent
+
+
+def test_account_chat_says_its_own_tuned_text():
+    """Epo's playground tuning (2026-10-30), account chat only: the prompt,
+    the skills, read_library and the writing preference; workspace chat keeps
+    its text and shares the answer format."""
+    prompt = account_chat.system_prompt("en")
+    assert chat_prompts.MARKDOWN_RULE in prompt
+    assert chat_prompts.MARKDOWN_RULE in chat_prompts.system_prompt("en")
+    assert prompt.endswith(account_chat.ALL_SOURCES_RULES)
+    assert account_chat.ANSWER_STYLE in prompt
+    assert account_chat.ANSWER_STYLE not in chat_prompts.system_prompt("en")
+    assert account_chat.LONG_ANSWER_OFFER in prompt
+    read_only = account_chat.system_prompt("en", writes=False)
+    assert account_chat.READ_ONLY_RULE in read_only
+    assert account_chat.LONG_ANSWER_OFFER not in read_only
+
+    assert "No need to restate" in skills.text(skills.EDITING, account=True)
+    assert "No need to restate" not in skills.text(skills.EDITING)
+    # The account lines Epo's copy of the workspace text did not carry stay.
+    assert "create_workspace goes first" in skills.text(skills.EDITING, account=True)
+
+    def described(ctx, profile) -> str:
+        return next(
+            s["function"]["description"]
+            for s in profile.schemas(ctx)
+            if s["function"]["name"] == "read_library"
+        )
+
+    assert "Include relevant images" in described(
+        _account(library_catalog=CATALOG), profiles.account.PROFILE
+    )
+    assert "Include relevant images" not in described(
+        _ctx(library_catalog=CATALOG), profiles.workspace.PROFILE
+    )
+    style = {"writingStyle": "brief"}
+    assert "Avoid stacking" in preferences.lines(style, account=True)[1]
+    assert "Avoid stacking" not in preferences.lines(style)[1]

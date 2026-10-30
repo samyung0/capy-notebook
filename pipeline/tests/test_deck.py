@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import re
 import threading
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -108,7 +110,7 @@ async def _outline(ctx: ToolContext, slides: int = 2) -> str:
         ctx,
     )
     assert not made.refused, made.text()
-    return re.search(r"Deck (deck_\w+)", made.text()).group(1)
+    return re.search(r"PowerPoint (deck_\w+)", made.text()).group(1)
 
 
 async def _write(ctx: ToolContext, rid: str, n: int, svg: str, call: str = ""):
@@ -121,7 +123,9 @@ async def _write(ctx: ToolContext, rid: str, n: int, svg: str, call: str = ""):
 
 async def test_deck_tools_are_always_offered_and_need_the_deck_skill(monkeypatch):
     monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
-    ctx = ToolContext(workspace_id="ws", user_id="u", operations=_EDITOR)
+    ctx = ToolContext(
+        workspace_id="ws", user_id="u", operations=_EDITOR, edit_tools=True
+    )
     # Offered without ppt-master too (Epo 2026-10-14); a deck then fails loudly.
     monkeypatch.setattr(deck, "available", lambda: False)
     schemas = {s["function"]["name"]: s for s in tools.schemas_for(ctx)}
@@ -195,7 +199,7 @@ async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks
 
     first = await _write(ctx, rid, 1, _slide())
     # The result says which slide it answers before the outline (2026-10-30).
-    assert first.text().startswith("Slide 1 is written and kept.\nDeck ")
+    assert first.text().startswith("Slide 1 is written and kept.\nPowerPoint ")
     assert (
         "1. Slide 1 (written)" in first.text()
         and "2. Slide 2 (to write)" in first.text()
@@ -359,6 +363,113 @@ async def test_figures_are_this_turns_bbox_captures_and_credit_their_book(
     assert exports == [["01_slide_1.svg", "02_sources.svg"]]
     books = posts[0]["payload"]["provenance"]["books"]
     assert [(b["id"], b["excerptIds"]) for b in books] == [("b_circles", ["exc_1"])]
+
+
+async def test_a_library_figure_goes_on_a_slide_by_id(decks, monkeypatch):
+    """D3 (Epo 2026-10-30): a slide places a figure read_library or
+    search_images listed as figure:<id>, checked as a note's are; its rendered
+    box is the image and its book is credited."""
+    ctx, exports, posts = decks
+    figure = object()
+
+    async def library_figures(_ctx, refs):
+        if refs != ["fig_1"]:
+            return tools._refused(
+                f"Not applied: figure {refs[0]} is not a library figure."
+            )
+        return {"fig_1": figure}, ["exc_1"]
+
+    async def render_figure(found):
+        assert found is figure
+        return b"\xff\xd8 fig", (40, 30)
+
+    async def provenance(excerpt_ids):
+        return [
+            {"id": "b_circles", "title": "Circles", "excerptIds": list(excerpt_ids)}
+        ]
+
+    monkeypatch.setattr(tools, "library_figures", library_figures)
+    monkeypatch.setattr(tools, "render_figure", render_figure)
+    monkeypatch.setattr(library, "provenance", provenance)
+    rid = await _outline(ctx, slides=1)
+
+    def placed(ref: str) -> str:
+        return _slide(
+            f'<image href="figure:{ref}" x="64" y="260" width="40" height="30"/>'
+        )
+
+    unknown = await _write(ctx, rid, 1, placed("fig_9"))
+    assert unknown.refused and "fig_9 is not a library figure" in unknown.text()
+    done = await _write(ctx, rid, 1, placed("fig_1"))
+    assert not done.refused, done.text()
+    assert (Path(ctx.deck_dir) / rid / "images" / "fig_1.jpg").read_bytes() == (
+        b"\xff\xd8 fig"
+    )
+    assert exports == [["01_slide_1.svg", "02_sources.svg"]]
+    books = posts[0]["payload"]["provenance"]["books"]
+    assert [(b["id"], b["excerptIds"]) for b in books] == [("b_circles", ["exc_1"])]
+
+
+@pytest.fixture
+def kept(monkeypatch, tmp_path):
+    monkeypatch.setattr(deck, "KEPT_ROOT", tmp_path / "kept")
+    monkeypatch.setattr(deck, "_kept", {})
+    monkeypatch.setattr(deck, "_root_cleared", True)
+
+
+async def test_an_unfinished_deck_is_finished_in_a_later_message(decks, kept, tmp_path):
+    """Kept past its turn (Epo 2026-10-30): a later message of the same user in
+    the same chat scope finishes it; its crops are renamed apart from that
+    turn's capture numbers. Anyone else's write finds nothing."""
+    ctx, exports, _posts = decks
+    jpeg = b"\xff\xd8 crop"
+    ctx.captures.append(
+        capture.record(
+            call_id="cap",
+            file_id="f_1",
+            page=2,
+            box=[100, 100, 600, 600],
+            jpeg=jpeg,
+            size=(40, 30),
+            started=0,
+        )
+    )
+    ctx.pending_images["cap"] = ("label", capture.data_url(jpeg))
+    rid = await _outline(ctx)
+    first = await _write(ctx, rid, 1, _figure(1))
+    assert not first.refused, first.text()
+    deck.keep(ctx.decks[rid], Path(ctx.deck_dir) / rid, tools.deck_owner(ctx))
+
+    later = replace(
+        ctx, decks={}, deck_dir=str(tmp_path / "later"), captures=[], pending_images={}
+    )
+    other = replace(later, user_id="u_2")
+    gone = await _write(other, rid, 2, _slide())
+    assert gone.refused
+    assert (
+        gone.text() == f"write_slide: PowerPoint {rid} not found or has been removed."
+    )
+    done = await _write(later, rid, 2, _slide())
+    assert not done.refused, done.text()
+    images = Path(later.deck_dir) / rid / "images"
+    [name] = [p.name for p in images.iterdir()]
+    assert name.endswith("_c1.jpg") and (images / name).read_bytes() == jpeg
+    assert f"../images/{name}" in later.decks[rid]["deck"]["slides"][0]["svg"]
+    assert exports == [["01_slide_1.svg", "02_slide_2.svg"]]
+
+
+def test_kept_decks_last_a_day_and_three_per_owner(kept, monkeypatch, tmp_path):
+    now = SimpleNamespace(value=1000.0)
+    monkeypatch.setattr(deck, "time", SimpleNamespace(time=lambda: now.value))
+    for n in range(4):
+        outline = {"title": f"D{n}", "slides": [{"title": "s", "brief": "b"}]}
+        deck.keep(deck.create(outline, f"deck_{n}"), None, "owner")
+    # The fourth dropped the oldest.
+    assert deck.take("deck_0", "owner", tmp_path / "p0") is None
+    assert deck.take("deck_1", "owner", tmp_path / "p1")["id"] == "deck_1"
+    now.value += deck.KEPT_FOR
+    assert deck.take("deck_2", "owner", tmp_path / "p2") is None
+    assert not (deck.KEPT_ROOT / "deck_2").exists()
 
 
 def test_an_office_picture_is_a_figure_as_it_is():

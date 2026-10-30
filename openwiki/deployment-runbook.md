@@ -1883,10 +1883,10 @@ developer PC holds a key that can write.
 3. Endpoint `https://s3.eu-central-003.backblazeb2.com`, region
    `eu-central-003`.
 4. No CORS rules and no lifecycle rule. The browser never touches this bucket:
-   `capture_knowledge_page` renders a page server-side and the books are
+   `capture_library_page` renders a page server-side and the books are
    permanent.
 5. The five variables are **all or none**, enforced at import of
-   `pipeline.config`: set all five and `capture_knowledge_page` is offered;
+   `pipeline.config`: set all five and `capture_library_page` is offered;
    set none and the tool is simply unoffered. A **partial set raises while the
    module is imported**, so the retrieval service — the only service that
    declares these five, under `retrieval` in both Compose files — fails to

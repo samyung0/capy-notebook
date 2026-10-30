@@ -139,15 +139,12 @@ names the command. The sources are `preview/` (`main.tsx`, `index.html`,
 
 ## Answer format
 
-**Answer format** beside the model picks how the agent writes its final
-answer (`answer.format` in the config): `openui`, production's OpenUI Lang
-program, or `markdown`, Markdown with `[#n]` citations, callouts, `:::tabs`,
-`<details>` and chart, plot and html-embed fences whose rules sit behind the
-`figures` skill (`pipeline/pipeline/retrieval/markdown_answer.py`,
-`prompts/answer_markdown.txt`). Each answer is drawn by the app's own chat
-renderers, `LangAnswer` or `MarkdownAnswer`, on the preview bundle's
-`answer.html` (`preview/answer.tsx`) in a frame under the turn, so rebuild the
-bundle after changing either renderer.
+The agent writes Markdown with `[#n]` citations, callouts, `:::tabs`,
+`<details>` and chart, plot and html-embed fences
+(`pipeline/pipeline/retrieval/markdown_answer.py`,
+`prompts/answer_markdown.txt`). Each answer is drawn by the app's own
+`MarkdownAnswer` on the preview bundle's `answer.html` (`preview/answer.tsx`)
+in a frame under the turn, so rebuild the bundle after changing it.
 
 ## Config
 
@@ -162,7 +159,7 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `answer.citations` | `as_is` (production numbering), `renumber` (markers rewritten to 1, 2, … in first-appearance order while streaming; the final list holds only the passages used) or `structured` (the answer is JSON: claims with the passages that ground each; the playground writes the prose and numbers) |
 | `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it, except the all sources rules. The addon is appended either way |
 | `all_sources_rules` | `null` keeps production's all sources rules; a string replaces them and `""` drops them. Sent in both modes of the Workspace only switch, before the answer format (or last when a replaced `system_prompt` dropped it) |
-| `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_knowledge": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `search_knowledge` still receives the live subject list |
+| `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_library": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `search_library` still receives the live subject list |
 | `skills` | Map of skill names (`editing`, `note_building`, `deck_building`) to replacement text for what `read_skill` returns, edited in the Skills panel. The system prompt and the other skills keep production's text, which is the same in both modes of the Workspace only switch |
 | `skill_addons` | Map of skill names to text appended to what `read_skill` returns (after any `skills` replacement), so a teaching variant rides on production's current text; seen in the config JSON and each call's full context |
 | `workspace_only` | The per-message Workspace only switch (default off). The prompt and tools are the same either way; on, the turn's message carries the mode line and the library tools and `search_web` answer that they are not available. `search_web` calls DeepSeek's real search on the platform key when the switch is off |
@@ -247,8 +244,8 @@ them (`check_note`): quiz fences through `quizcheck`, flashcards with a front an
 `html-embed` with html (no fallback), under 64 KB, loading only from the CDNs the frame's CSP
 names (`embed/_headers`; the SVG namespace URL is allowed) and with no fetch.
 
-The library reads, `capture_knowledge_page` and compaction use the real
-code path. `capture_knowledge_page` renders from the knowledge-base bucket into
+The library reads, `capture_library_page` and compaction use the real
+code path. `capture_library_page` renders from the knowledge-base bucket into
 the same capture cache, keyed by the book's `books/<sha256>.pdf` object key.
 
 ## Account chat
@@ -332,7 +329,7 @@ model actually received; repeated use replays each page only once.
 Before replay, read-only library queries check that each saved result still
 matches. The full text enters normal history and counts as already read for
 material writes while it remains in the model request. Compaction can remove
-that permission: an ID or summary alone requires a new `read_knowledge` call.
+that permission: an ID or summary alone requires a new `read_library` call.
 The application and playground use the same retention, revalidation and write
 guards. Source text is stored in private message evidence. New successful
 writes retain their credited excerpt reads. Opening a saved run

@@ -180,7 +180,6 @@ img.capture {
     </div>
     <div class="row">
       <label>Model <select id="models"></select></label>
-      <label>Answer format <select id="answerFormat"><option value="openui">OpenUI</option><option value="markdown">Markdown</option></select></label>
     </div>
     <div class="row">
       <label>Workspace <select id="workspaces"></select></label>
@@ -195,7 +194,7 @@ img.capture {
     </div>
     <div class="row">
       <label>Output <select id="prefMain"><option>note</option><option>deck</option></select></label>
-      <label>Writing <select id="prefWriting"><option>brief</option><option>normal</option><option>verbose</option><option>story</option></select></label>
+      <label>Writing <select id="prefWriting"><option>brief</option><option>normal</option><option>story</option></select></label>
       <label>Quiz <select id="prefQuiz"><option>more</option><option>less</option><option>off</option></select></label>
       <label>Flashcards <select id="prefCards"><option>more</option><option>less</option><option>off</option></select></label>
       <label>Visuals <select id="prefVisuals"><option>fewer</option><option>more</option></select></label>
@@ -269,7 +268,7 @@ img.capture {
         Apply writes this description into <code>tool_descriptions</code>. Save
         stores it with the config. Reset restores this tool's production
         description. Argument schemas stay fixed; the live subject catalog is
-        appended automatically to <code>search_knowledge</code>.
+        appended automatically to <code>search_library</code>.
       </p>
       <details>
         <summary>Tools array sent with the request</summary>
@@ -496,7 +495,6 @@ function setConfig(c, resetDrafts = false) {
   $('models').value = modelOption?.value || '';
   $('workspaces').value = c.workspace_id || state.defaults.workspace_id;
   $('workspaceOnly').checked = c.workspace_only === true;
-  $('answerFormat').value = (c.answer && c.answer.format) || 'openui';
   const prefs = { ...PREF_DEFAULTS, ...(c.study_preferences || {}) };
   $('prefWriting').value = prefs.writingStyle;
   $('prefQuiz').value = prefs.quiz;
@@ -605,18 +603,15 @@ $('workspaces').onchange = () => {
   setConfig(c);
 };
 // Mirrors pipeline/prompts/preferences.py DEFAULTS.
+// Production's DEFAULTS (pipeline/prompts/preferences.py): the server fills
+// missing fields with those, so the selects must show the same.
 const PREF_DEFAULTS = {
   flashcards: 'off',
   knowledgeChecks: true,
   mainFormat: 'note',
   quiz: 'less',
   visualAids: 'more',
-  writingStyle: 'normal',
-};
-$('answerFormat').onchange = () => {
-  const c = currentConfig();
-  c.answer = { ...c.answer, format: $('answerFormat').value };
-  setConfig(c);
+  writingStyle: 'brief',
 };
 $('workspaceOnly').onchange = () => {
   const c = currentConfig();
@@ -759,12 +754,11 @@ const writtenText = (written) =>
     .join('');
 
 // The answer drawn by the app's chat components in a frame
-// (preview/answer.tsx), in the answer format the turn ran with.
-let answerFormat = 'openui';
+// (preview/answer.tsx).
 let answerCitations = [];
 const answerFrames = new Map();
 function renderAnswer(text) {
-  const d = card('rendered', `<div class="muted">rendered answer · ${esc(answerFormat)}</div>`);
+  const d = card('rendered', `<div class="muted">rendered answer</div>`);
   const frame = document.createElement('iframe');
   frame.className = 'answer-frame';
   frame.src = '/preview/answer.html';
@@ -772,7 +766,7 @@ function renderAnswer(text) {
   answerFrames.set(frame, {
     citations: answerCitations,
     content: text,
-    format: answerFormat,
+    format: 'markdown',
   });
 }
 addEventListener('message', (event) => {
@@ -912,7 +906,6 @@ function configCard(label, c, prompt) {
       ? ` via ${esc(new URL(m.transport.url).host)}`
       : '';
   const cit = (c.answer && c.answer.citations) || 'as_is';
-  answerFormat = (c.answer && c.answer.format) || 'openui';
   answerCitations = [];
   card(
     'stat',

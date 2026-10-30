@@ -1364,6 +1364,7 @@ export const ListMessagesResponseItem = zod.object({
 })).nullish(),
   "citations": zod.array(zod.object({
   "chunkId": zod.string().optional(),
+  "excerptId": zod.string().optional(),
   "fileId": zod.string(),
   "fileName": zod.string(),
   "kind": zod.string().optional(),
@@ -3195,6 +3196,30 @@ export const GetLearningProgressResponse = zod.object({
 
 
 /**
+ * @summary A library figure for a chat answer
+ */
+export const getLibraryFigurePathIdMax = 128;
+
+
+export const getLibraryFigurePathIdRegExp = new RegExp('^[A-Za-z0-9_-]+$');
+
+
+export const GetLibraryFigureParams = zod.object({
+  "id": zod.string().max(getLibraryFigurePathIdMax).regex(getLibraryFigurePathIdRegExp)
+})
+
+export const GetLibraryFigureResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "credit": zod.string(),
+  "height": zod.int(),
+  "id": zod.string(),
+  "image": zod.string(),
+  "label": zod.string(),
+  "width": zod.int()
+})
+
+
+/**
  * @summary List the notes, quizzes and flashcard sets the caller pays for, or can open (scope=member)
  */
 export const listOwnedMaterialsQueryScopeDefault = `owned`;
@@ -4239,7 +4264,7 @@ export const GetMeResponse = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'story']).optional()
 }),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -4329,7 +4354,7 @@ export const UpdateMeResponse = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'story']).optional()
 }),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -4430,7 +4455,7 @@ export const SetStudyPreferencesBody = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'story']).optional()
 })
 
 export const SetStudyPreferencesResponse = zod.void()

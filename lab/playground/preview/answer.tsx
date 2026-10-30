@@ -1,23 +1,20 @@
-/* One chat answer as the app draws it, at /preview/answer.html: an OpenUI
- * program through LangAnswer, or the Markdown format through MarkdownAnswer
- * (the answer format switch in the playground's config). ui.html posts
- * {format, content, citations} into the frame once it says it is ready, and
- * sizes the frame from the heights it posts back; a citation click asks the
- * page to open that source. */
+/* One chat answer as the app draws it, at /preview/answer.html, through
+ * MarkdownAnswer. ui.html posts {format, content, citations} into the frame
+ * once it says it is ready, and sizes the frame from the heights it posts
+ * back; a citation click asks the page to open that source. */
 import '@/styles/tailwind.css';
 import 'streamdown/styles.css';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Citation } from '@/api/types';
 import { TooltipProvider } from '@/components/ui/Tooltip';
-import { LangAnswer } from '@/features/workspace/chat/LangAnswer';
 import { MarkdownAnswer } from '@/features/workspace/chat/MarkdownAnswer';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 
 interface Shown {
   citations: Citation[];
   content: string;
-  format: 'markdown' | 'openui';
 }
 
 const post = (message: object) => parent.postMessage(message, location.origin);
@@ -43,14 +40,8 @@ function Answer() {
   if (!shown) return null;
   const open = (citation: Citation) =>
     post({ n: citation.n, type: 'open-citation' });
-  return shown.format === 'markdown' ? (
+  return (
     <MarkdownAnswer
-      citations={shown.citations}
-      content={shown.content}
-      onOpenCitation={open}
-    />
-  ) : (
-    <LangAnswer
       citations={shown.citations}
       complete
       content={shown.content}
@@ -64,11 +55,14 @@ function Answer() {
 const root = document.getElementById('root');
 if (root)
   createRoot(root).render(
-    <ThemeProvider>
-      <TooltipProvider>
-        <div className="p-1 text-fg">
-          <Answer />
-        </div>
-      </TooltipProvider>
-    </ThemeProvider>
+    // Library figures load through React Query, as in the app's chat.
+    <QueryClientProvider client={new QueryClient()}>
+      <ThemeProvider>
+        <TooltipProvider>
+          <div className="p-1 text-fg">
+            <Answer />
+          </div>
+        </TooltipProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   );

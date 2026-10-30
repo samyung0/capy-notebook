@@ -32,7 +32,7 @@ FINAL_ANSWER_NOTICE = (
     "what is still open."
 )
 UNSAVED_DECK = (
-    " A deck not stored (slides left unwritten, or an export that failed) was "
+    " A PowerPoint not stored (slides left unwritten, or an export that failed) was "
     "not saved: say so."
 )
 
@@ -102,7 +102,10 @@ def message(
         ),
         "\nStudy preferences (a request that names one material gets only that material):",
     ]
-    lines.extend(f"- {line}" for line in preferences.lines(ctx.study_preferences))
+    lines.extend(
+        f"- {line}"
+        for line in preferences.lines(ctx.study_preferences, account=ctx.account)
+    )
     # One line per excerpt: a second page of the same excerpt is the same input,
     # and the model pays for every line on every call.
     sections: dict[str, str] = {}

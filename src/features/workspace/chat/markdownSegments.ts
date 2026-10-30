@@ -2,18 +2,28 @@
  * The Markdown answer format (pipeline/pipeline/prompts/answer_markdown.txt)
  * split into the parts the chat blocks draw: Markdown runs, callouts
  * (`> [!TIP] Title`), reveals (`<details>`), `:::tabs` and the figure
- * fences (chart, plot, html-embed) plus the trailing `ask` fence. Anything
+ * fences (chart, plot, html-embed, mermaid) plus the trailing `ask` fence. Anything
  * else stays Markdown, so a half-streamed or unusual answer still reads.
  */
 
-export const FIGURE_LANGS = ['chart', 'plot', 'html-embed', 'ask'] as const;
+import type { CalloutVariant } from '@/features/notes/richBlockConfig';
+
+export const FIGURE_LANGS = [
+  'chart',
+  'plot',
+  'html-embed',
+  'mermaid',
+  'ask',
+] as const;
 export type FigureLang = (typeof FIGURE_LANGS)[number];
 
 export type Segment =
   | { type: 'md'; text: string }
-  | { type: 'callout'; kind: string; title: string; text: string }
+  | { type: 'callout'; kind: CalloutVariant; title: string; text: string }
   | { type: 'reveal'; title: string; text: string }
   | { type: 'tabs'; tabs: { label: string; segments: Segment[] }[] }
+  /** A library figure on its own line, `![caption](figure:<id>)`. */
+  | { type: 'libraryFigure'; id: string; caption: string }
   | {
       type: 'figure';
       lang: FigureLang;
@@ -23,6 +33,16 @@ export type Segment =
       /** The closing fence arrived. */
       closed: boolean;
     };
+
+export type FigureSegment = Extract<Segment, { type: 'figure' }>;
+
+const CALLOUT_KINDS: Record<string, CalloutVariant> = {
+  caution: 'warning',
+  danger: 'danger',
+  success: 'success',
+  tip: 'tip',
+  warning: 'warning',
+};
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*([\w-]*)(.*)$/;
 const CALLOUT = /^ {0,3}>[ \t]*\[!(\w+)\][ \t]*(.*)$/;
@@ -34,6 +54,10 @@ const DETAILS_OPEN = /^ {0,3}<details>/i;
 const DETAILS_CLOSE = /<\/details>/i;
 const SUMMARY = /<summary>([\s\S]*?)<\/summary>/i;
 const ATTRIBUTE = /(\w+)=(?:"([^"]*)"|(\S+))/g;
+const TRAILING_ASK = /(?:^|\n)```ask\n([\s\S]*?)\n```\s*$/;
+// The note format's figure line; its optional size title is ignored here.
+const LIBRARY_FIGURE =
+  /^ {0,3}!\[((?:[^\]\\]|\\.)*)\]\(\s*<?figure:([\w-]+)>?(?:\s+"[^"]*")?\s*\)[ \t]*$/;
 
 function isFigure(lang: string): lang is FigureLang {
   return (FIGURE_LANGS as readonly string[]).includes(lang);
@@ -47,7 +71,13 @@ function closingFence(lines: string[], from: number, marker: string): number {
 }
 
 export function parseMarkdownAnswer(text: string): Segment[] {
-  return parseLines(text.split('\n'), true);
+  // The questions close the answer, so an unclosed block above cannot take them.
+  const ask = text.match(TRAILING_ASK);
+  if (!ask) return parseLines(text.split('\n'), true);
+  return [
+    ...parseLines(text.slice(0, ask.index).split('\n'), true),
+    { body: ask[1], closed: true, info: '', lang: 'ask', type: 'figure' },
+  ];
 }
 
 function parseLines(lines: string[], allowTabs: boolean): Segment[] {
@@ -81,6 +111,17 @@ function parseLines(lines: string[], allowTabs: boolean): Segment[] {
       i = end === -1 ? stop : end + 1;
       continue;
     }
+    const figure = LIBRARY_FIGURE.exec(line);
+    if (figure) {
+      flush();
+      out.push({
+        caption: figure[1].replace(/\\(.)/g, '$1').trim(),
+        id: figure[2],
+        type: 'libraryFigure',
+      });
+      i++;
+      continue;
+    }
     const callout = CALLOUT.exec(line);
     if (callout) {
       flush();
@@ -91,7 +132,7 @@ function parseLines(lines: string[], allowTabs: boolean): Segment[] {
         body.push(quoted[1]);
       }
       out.push({
-        kind: callout[1].toLowerCase(),
+        kind: CALLOUT_KINDS[callout[1].toLowerCase()] ?? 'info',
         text: body.join('\n'),
         title: callout[2].trim(),
         type: 'callout',
@@ -147,5 +188,26 @@ export function fenceAttributes(info: string): Record<string, string> {
       match[1],
       match[2] ?? match[3],
     ])
+  );
+}
+
+/** A fence line or body as a JSON object, or null when it is not one. */
+export function fenceJson(text: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether the text stops inside a figure, whose closing fence never came. */
+export function unfinished(segments: Segment[]): boolean {
+  return segments.some((segment) =>
+    segment.type === 'tabs'
+      ? segment.tabs.some((tab) => unfinished(tab.segments))
+      : segment.type === 'figure' && !segment.closed
   );
 }

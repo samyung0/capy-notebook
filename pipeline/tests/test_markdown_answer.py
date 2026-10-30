@@ -1,10 +1,8 @@
-"""The Markdown answer format's markers and its figures skill
-(retrieval/markdown_answer.py)."""
+"""The answer format's citation markers (retrieval/markdown_answer.py)."""
 
 from __future__ import annotations
 
-from pipeline.retrieval import markdown_answer, skills, tools
-from pipeline.retrieval.tools import ToolContext
+from pipeline.retrieval import markdown_answer
 
 
 def test_markers_cite_shown_passages_in_first_seen_order():
@@ -16,15 +14,15 @@ def test_markers_cite_shown_passages_in_first_seen_order():
     assert renderer.text == "A [#3]. B [#1, 3]. C [#7] D [#2]"
 
 
-async def test_figures_skill_is_offered_only_with_the_markdown_format():
-    assert skills.FIGURES not in skills.offered(markdown_answer.OPENUI)
-    assert skills.FIGURES in skills.offered(markdown_answer.MARKDOWN)
-    refused = await tools._read_skill(
-        {"name": "figures"}, ToolContext(workspace_id="ws_1")
+def test_a_figures_passages_cite_in_reading_order():
+    """A chart, plot or html-embed citing only through its passages still
+    reaches the citation list; a code fence's text cites nothing."""
+    text = (
+        "Intro [#2].\n\n"
+        '```chart\n{"kind": "bar", "passages": [3, 9]}\n```\n\n'
+        '```html-embed title="Slider" passages=1,2\n<input>\n```\n\n'
+        "```python\nprint('[#4]')\n```\n\n"
+        '```plot\n{"kind": "line", "passages": [5]'
     )
-    assert "No skill named figures" in refused.text()
-    read = await tools._read_skill(
-        {"name": "figures"},
-        ToolContext(workspace_id="ws_1", answer_format=markdown_answer.MARKDOWN),
-    )
-    assert "```chart" in read.text()
+    assert markdown_answer.cited(text, 5) == [2, 3, 1]
+    assert markdown_answer.cited(text + "}\n```\n", 5) == [2, 3, 1, 5]

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..prompts import skills as prompts
-from . import contract, deck, markdown_answer
+from . import contract, deck
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,6 @@ EDITING = "editing"
 NOTE_BUILDING = "note_building"
 DECK_BUILDING = "deck_building"
 OFFICE_BUILDING = "office_building"
-FIGURES = "figures"
 SKILLS: dict[str, Skill] = {
     EDITING: Skill(
         prompts.EDITING_WHEN, prompts.editing, account=prompts.account_editing
@@ -61,8 +60,6 @@ SKILLS: dict[str, Skill] = {
     # Reading it offers the Office tools for the rest of the conversation
     # (tools._read_skill, Epo 2026-10-20).
     OFFICE_BUILDING: Skill(prompts.OFFICE_BUILDING_WHEN, prompts.office_building),
-    # Offered only with the Markdown answer format (ToolContext.answer_format).
-    FIGURES: Skill(prompts.FIGURES_WHEN, prompts.figures),
 }
 
 # The skills each tool needs: editing for every write, note_building for note
@@ -82,16 +79,6 @@ FORMAT_COMMANDS = frozenset({"insert_markdown", "replace_block"})
 
 _HEADER = "# Skill: "
 _HEADER_LINE = re.compile(r"^# Skill: (\S+)$", re.MULTILINE)
-
-
-def offered(answer_format: str) -> list[str]:
-    """The skills read_skill offers: figures only with the Markdown answer
-    format, whose figure fences it describes."""
-    return [
-        name
-        for name in SKILLS
-        if name != FIGURES or answer_format == markdown_answer.MARKDOWN
-    ]
 
 
 def text(name: str, *, account: bool = False) -> str:

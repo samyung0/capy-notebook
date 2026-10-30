@@ -158,23 +158,23 @@ export function YourFilesPanel({
                     key={file.id}
                     onClick={() => toggle(file)}
                     selected={selected}
+                    // A file outside workspaces has no place line, as on
+                    // other file cards (Epo 2026-10-30).
                     subtitle={
-                      here ? (
-                        m.source_your_files_here()
-                      ) : file.workspaceId ? (
-                        <>
-                          {ws && (
-                            <img
-                              alt=""
-                              className="size-3.5 shrink-0 -translate-y-px rounded-[3px]"
-                              src={iconUrl(ws.iconId)}
-                            />
-                          )}
-                          <span className="truncate">{wsName}</span>
-                        </>
-                      ) : (
-                        m.files_no_workspace()
-                      )
+                      here
+                        ? m.source_your_files_here()
+                        : file.workspaceId && (
+                            <>
+                              {ws && (
+                                <img
+                                  alt=""
+                                  className="size-3.5 shrink-0 -translate-y-px rounded-[3px]"
+                                  src={iconUrl(ws.iconId)}
+                                />
+                              )}
+                              <span className="truncate">{wsName}</span>
+                            </>
+                          )
                     }
                     thumbnail={{
                       fileKind: file.kind,

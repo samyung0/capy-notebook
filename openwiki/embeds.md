@@ -127,15 +127,15 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   where they render (`surfaces`) and who edits them (`edit.user` surfaces,
   `edit.agent` tools):
 
-  | Kind | Class | Element | Fence | Chat | Material kinds |
-  | --- | --- | --- | --- | --- | --- |
-  | chart | live_map | `chart` | ```` ```chart ```` JSON | `Chart` | – |
-  | plot | live_map | `plot` | ```` ```plot ```` JSON | `Plot` | – |
-  | graph | live_map | `graph` | ```` ```graph ```` JSON | – | – |
-  | html_embed | value | `html_embed` | ```` ```html-embed ```` YAML | `HtmlEmbed` | – |
-  | mermaid | live_source | `mermaid` | ```` ```mermaid ```` source | `Mermaid` | mindmap, diagram |
-  | quiz | item | `material_ref` | ```` ```quiz ```` YAML | – | quiz |
-  | flashcards | item | `material_ref` | ```` ```flashcards ```` YAML | – | flashcards |
+  | Kind | Class | Element | Fence | Material kinds |
+  | --- | --- | --- | --- | --- |
+  | chart | live_map | `chart` | ```` ```chart ```` JSON | – |
+  | plot | live_map | `plot` | ```` ```plot ```` JSON | – |
+  | graph | live_map | `graph` | ```` ```graph ```` JSON | – |
+  | html_embed | value | `html_embed` | ```` ```html-embed ```` YAML | – |
+  | mermaid | live_source | `mermaid` | ```` ```mermaid ```` source | mindmap, diagram |
+  | quiz | item | `material_ref` | ```` ```quiz ```` YAML | quiz |
+  | flashcards | item | `material_ref` | ```` ```flashcards ```` YAML | flashcards |
 
   Users edit chart and graph in notes and quizzes, plot in notes only (a
   quiz's question dialog shows one, Epo 2026-10-17), html_embed in notes, and
@@ -159,8 +159,8 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   `image` block, which is no embed). Names are one word per kind in each
   layer's casing (Epo 2026-10-13; agent contract v24). `rules` is what the
   agent is told about a kind wherever it writes one: the HTML embed's rules
-  are quoted by the note format (`Formats.note`) and by chat's `HtmlEmbed`
-  description, since both draw it in the same frame.
+  are quoted by the note format (`Formats.note`) and by the chat answer
+  format, since both draw it in the same frame.
 - **`materialKinds`**: each kind's required element (`quiz`, `flashcards`,
   `mermaid` for mindmap and diagram, none for a note) and whether it is an
   item (quiz, flashcards).
@@ -379,8 +379,7 @@ figures).
    `server/internal/materialdoc/catalog_test.go` (Go's validator, over the
    every-block note and a document of each material kind: add a sample of a
    new element there), `src/features/notes/embedCatalog.test.ts` (the
-   read-only plugin kit, chat's component for each kind, and each kind's
-   fence in and out: add a fence body for a new kind), the collaboration
+   read-only plugin kit and each kind's fence in and out: add a fence body for a new kind), the collaboration
    server's `collaboration-rs/crates/notes/tests/catalog.rs` (the store and
    room admission over a document of each material kind, the shared-text
    key and shared maps, the media types, inspect per embed kind, reference kinds, each

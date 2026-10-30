@@ -1,6 +1,6 @@
 /* The browser against the embed catalog (openwiki/embeds.md): the read-only
    plugin kit and the live editor know every element type with the catalog's
-   void and inline flags, chat has each embed's component, every embed's fence converts
+   void and inline flags, every embed's fence converts
    to its element and back, and every element names its index rule. */
 import { readFileSync } from 'node:fs';
 import { serializeMd } from '@platejs/markdown';
@@ -88,19 +88,6 @@ describe('the embed catalog', () => {
     const rules = ['none', 'text', 'figure', 'mermaid', 'question', 'item'];
     for (const element of EMBED_CATALOG.elements)
       expect(rules, element.type).toContain(element.index);
-  });
-
-  it('names chat components the chat library has', () => {
-    const file = new URL(
-      '../../../pipeline/pipeline/generated/openui_library.json',
-      import.meta.url
-    );
-    const library = JSON.parse(readFileSync(file, 'utf8')) as {
-      components: { name: string }[];
-    };
-    const components = library.components.map((c) => c.name);
-    for (const embed of EMBED_CATALOG.embeds)
-      if ('chat' in embed) expect(components).toContain(embed.chat);
   });
 
   it.each(EMBED_CATALOG.embeds.map((embed) => [embed.kind, embed] as const))(

@@ -28,7 +28,7 @@ MAIN_FORMAT = {
         "preferences and what teaching the chapter needs say."
     ),
     "deck": (
-        "Output files: a deck explains each chapter; make other materials as these "
+        "Output files: a PowerPoint explains each chapter; make other materials as these "
         "preferences and what teaching the chapter needs say."
     ),
 }
@@ -37,7 +37,6 @@ MAIN_FORMAT = {
 WRITING = {
     "brief": "Explainers are short: key points first, one example where it helps.",
     "normal": "Explainers cover each idea with a definition, an explanation and an example.",
-    "verbose": "Explainers are full: every idea explained step by step with worked examples.",
     # From three narrated science-documentary transcripts: a scene with stakes,
     # a question held open, the idea's history with each concept explained
     # where the story needs it, turns, a closed loop (Epo 2026-10-25).
@@ -76,19 +75,40 @@ COUNT = {
 LEVEL = {"off": 0, "less": 1, "more": 2}
 
 
+# Account chat's wording (Epo 2026-10-30).
+ACCOUNT_WRITING = {
+    **WRITING,
+    "brief": (
+        "Avoid stacking difficult terms, chemical names or long equations unless "
+        "its the central idea/flow for the response. Prefer hiding complexities for "
+        'generic questions such as "How does a car work" when its obvious that user '
+        "just want to have a brief overview. If more explanations can be provided, "
+        "ask if the user wants to know more."
+    ),
+    "normal": (
+        'Prefer hiding complexities for generic questions such as "How does a car '
+        'work" when its obvious that user just want to have a brief overview. If '
+        "more explanations can be provided, ask if the user wants to know more."
+    ),
+}
+
+
 def merged(saved: dict[str, Any] | None) -> dict[str, Any]:
     """Saved values over defaults."""
     return {**DEFAULTS, **{k: v for k, v in (saved or {}).items() if v is not None}}
 
 
-def lines(saved: dict[str, Any] | None) -> list[str]:
-    """One instruction per preference, saved values over defaults."""
+def lines(saved: dict[str, Any] | None, *, account: bool = False) -> list[str]:
+    """One instruction per preference, saved values over defaults, each led by
+    what it governs: Output files, Notes or General (Epo 2026-10-30).
+    ``account``: account chat's wording."""
     p = merged(saved)
+    writing = ACCOUNT_WRITING if account else WRITING
     # Each item on gets its count; an item off is said off, or the model adds
     # it anyway (a default build made flashcards, 2026-10-14).
     items = {
-        "quiz": ("a quiz of {} questions", "quizzes"),
-        "flashcards": ("a set of {} flashcards", "flashcards"),
+        "quiz": ("a quiz of at most {} questions", "quizzes"),
+        "flashcards": ("a set of at most {} flashcards", "flashcards"),
     }
     on = [
         made.format(COUNT[k][p[k]])
@@ -105,16 +125,18 @@ def lines(saved: dict[str, Any] | None) -> list[str]:
         checks = "cards" if cards else "questions"
     standalone = "standalone " if notes and checks != "off" else ""
     if not on:
-        practice = f"Build no {standalone}quizzes or flashcards unless asked."
+        practice = (
+            f"Output files: build no {standalone}quizzes or flashcards unless asked."
+        )
     else:
-        practice = f"Practise each chapter with {' and '.join(on)}"
+        practice = f"Output files: each chapter with {' and '.join(on)}"
         practice += (
             f"; make no {standalone}{' or '.join(off)} unless asked." if off else "."
         )
     return [
         MAIN_FORMAT.get(p["mainFormat"], MAIN_FORMAT["note"]),
-        WRITING.get(p["writingStyle"], WRITING["brief"]),
+        f"General: {writing.get(p['writingStyle'], writing['brief'])}",
         practice,
-        *([CHECKS[checks]] if notes else []),
-        VISUALS.get(p["visualAids"], VISUALS["more"]),
+        *([f"Notes: {CHECKS[checks]}"] if notes else []),
+        f"General: {VISUALS.get(p['visualAids'], VISUALS['more'])}",
     ]

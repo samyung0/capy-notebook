@@ -37,15 +37,15 @@ it('refetches only after the last overlapping optimistic save settles', async ()
 
   try {
     const first = save({ writingStyle: 'brief' });
-    const second = save({ writingStyle: 'verbose' });
+    const second = save({ writingStyle: 'story' });
     await vi.waitFor(() => expect(pending).toHaveLength(1));
-    expect(writingStyle()).toBe('verbose');
+    expect(writingStyle()).toBe('story');
 
     pending[0]();
     await first;
     // The second save is still in flight, so its optimistic value stays.
     expect(client.getQueryState(qk.me)?.isInvalidated).toBe(false);
-    expect(writingStyle()).toBe('verbose');
+    expect(writingStyle()).toBe('story');
 
     await vi.waitFor(() => expect(pending).toHaveLength(2));
     pending[1]();

@@ -1,11 +1,11 @@
 # Editorial
 
-The default deck style. Taken from ppt-master's example deck
+The default PowerPoint style. Taken from ppt-master's example deck
 `ppt169_muelltrennung_de_quick` (<https://hugohe3.github.io/ppt-master-examples/viewer.html?project=ppt169_muelltrennung_de_quick>,
 MIT, Copyright (c) 2025-2026 Hugo He). The three slides in `examples/` are
 that deck's pages 2, 5 and 8 with the body font changed from Segoe UI to
 Arial, the face the app's PPTX runtime serves. They are German; write in the
-deck's own language.
+PowerPoint's own language.
 
 ## Page
 
@@ -55,9 +55,11 @@ regions, chemical indicators), and then only as small chips or bars.
 | note, footer | Arial | 15 | 13.5 |
 
 Bold widens Latin text about 7%. Keep text about 5% inside its module's
-bounds. Write a paragraph as one `<text>`: its first line as the text, each
-later line `<tspan x="<the text's x>" dy="26">` at body size; it exports as one
-text box. Give each list item, label and heading its own `<text>`.
+bounds. Write a paragraph as one `<text>` with its first line as the text and each
+later line in its own closed `<tspan>` at body size, for example
+`<text x="64" y="352">First line<tspan x="64" dy="26">second line</tspan><tspan x="64" dy="26">third line</tspan></text>`;
+it exports as one text box. Give each list item, label and heading its own
+`<text>`.
 
 ## Components
 

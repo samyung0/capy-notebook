@@ -272,7 +272,7 @@ class Config:
     library_require_tags: bool = _env("CAPY_LIBRARY_REQUIRE_TAGS", "1") == "1"
     # The library's source PDFs live in their own private bucket with their own
     # restricted key, not a prefix of the app bucket. Unset leaves
-    # capture_knowledge_page unoffered.
+    # capture_library_page unoffered.
     knowledge_base_b2_endpoint: str = _env("KNOWLEDGE_BASE_B2_ENDPOINT", "")
     knowledge_base_b2_region: str = _env("KNOWLEDGE_BASE_B2_REGION", "")
     knowledge_base_b2_bucket: str = _env("KNOWLEDGE_BASE_B2_BUCKET", "")

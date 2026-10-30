@@ -2,12 +2,10 @@
 
 One user send is one turn. Each streamed model response is either narration
 (if it also calls tools) or the persisted answer (first completed response
-with text and no tools). The answer is an OpenUI Lang program whose blocks
-name their passages (``openui.py``); the program streams through as written
-and the citation list follows it, each entry carrying the passage number the
-program cites so the browser numbers the markers 1..k in reading order. Local
-parser recovery keeps usable partial answers and Markdown stays readable;
-unusable output shows an error without another model request.
+with text and no tools). The answer is Markdown with ``[#n]`` citation
+markers (``markdown_answer.py``); it streams through as written and the
+citation list follows it, each entry carrying the passage number the answer
+cites so the browser numbers the markers 1..k in reading order.
 """
 
 from __future__ import annotations
@@ -20,6 +18,7 @@ import shutil
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from .. import elitellm, obs, registry
@@ -30,12 +29,12 @@ from . import (
     capture,
     citation_regions,
     compact,
+    deck,
     events,
     evidence,
     library,
     markdown_answer,
     models,
-    openui,
     pending,
     pending_hints,
     profiles,
@@ -88,7 +87,6 @@ WRITE_TOOLS = frozenset(
         "edit_office_document",
     }
 )
-from .openui import LangRenderer
 from .response_guard import (
     FLAGGED_CODE,
     FLAGGED_MESSAGE,
@@ -130,7 +128,7 @@ def _target_id(name: str, args: dict[str, Any]) -> str:
 
 
 def _excerpt_id(name: str, args: dict[str, Any]) -> str:
-    if name in ("read_knowledge", "capture_knowledge_page"):
+    if name in ("read_library", "capture_library_page"):
         return str(args.get("excerpt_id") or "")
     return ""
 
@@ -174,15 +172,16 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
         "search_workspace",
         "search_files_summary",
         "search_files_content",
-        "search_knowledge",
+        "search_library",
+        "search_images",
         "search_web",
     ):
         detail = str(args.get("query") or "")
-    elif name == "read_knowledge":
+    elif name == "read_library":
         detail = named(_excerpt_id(name, args))
     elif name == "read_skill":
         detail = str(args.get("name") or "")
-    elif name in ("capture_page", "capture_knowledge_page"):
+    elif name in ("capture_page", "capture_library_page"):
         page = args.get("page")
         detail = f"page {page}" if page is not None else ""
     elif name == "list_sources":
@@ -439,6 +438,17 @@ async def run_agent(
         # cancelled record must not leave the directory. The policy reset
         # comes last: in another context (the generator finalized elsewhere)
         # it raises.
+        # An unfinished PowerPoint is kept for a later message (deck.keep).
+        for record in ctx.decks.values():
+            if not record.get("file"):
+                try:
+                    deck.keep(
+                        record,
+                        Path(ctx.deck_dir) / record["id"] if ctx.deck_dir else None,
+                        tools.deck_owner(ctx),
+                    )
+                except Exception:
+                    log.exception("keeping deck %s failed", record["id"])
         if ctx.deck_dir:
             shutil.rmtree(ctx.deck_dir, ignore_errors=True)
         try:
@@ -507,10 +517,12 @@ async def _run_turn(
     ctx.pending_sources.read_ids = set()
     prior = await evidence.history_turns(history, ctx)
     schemas = profile.schemas(ctx)
-    # The Markdown answer format asks with the AskUser tool.
-    markdown = ctx.answer_format == markdown_answer.MARKDOWN
-    if spec.provider_slug == "zai" or markdown:
-        schemas = [*schemas, ASK_USER_SCHEMA]
+    # Before the tools a skill read offers, where the turn appends them.
+    fixed = sum(
+        s["function"]["name"] not in tools.EDIT_TOOLS + tools.OFFICE_TOOLS
+        for s in schemas
+    )
+    schemas = [*schemas[:fixed], ASK_USER_SCHEMA, *schemas[fixed:]]
     # A viewer is offered no write tool, and told so.
     can_write = any(s["function"]["name"] in WRITE_TOOLS for s in schemas)
     # Account chat lists its workspaces once, with the conversation's first
@@ -528,14 +540,11 @@ async def _run_turn(
         mode_shown=evidence.mode_shown(history),
         writes=can_write,
     )
-    if markdown:
-        messages[0]["content"] = chat_prompts.markdown_head(messages[0]["content"])
     query_msg = messages[-1]
     # Q221 (Epo 2026-10-24): a first-turn reply that is only an AskUser
     # question goes back to the model once, so the learner gets the answer
     # before the offer; a learner who cannot write is asked for the answer
-    # alone. Until it is sent back, a reply streams nothing before a part
-    # other than the question shows (_ANSWER_PART).
+    # alone.
     send_back_ok = not prior and not (checkpoint or {}).get("summary")
     sent_back = False
     # Unindexed edits matching the user's words, not hinted earlier in the
@@ -670,7 +679,7 @@ async def _run_turn(
         active_schemas = None if terminal_call else schemas
 
         yield events.phase("planning")
-        guard = ResponseGuard()
+        guard = ResponseGuard(ask_markup=spec.provider_slug == "zai")
         try:
 
             def _count() -> None:
@@ -815,17 +824,11 @@ async def _run_turn(
                     q.put_nowait(None)
 
             finisher = asyncio.create_task(_finish())
-            renderer = _renderer(ctx)
-            # Text is held back until its shape is known: a program streams from
-            # its first statement; plain prose (narration, or an answer that
-            # ignored the format) is emitted once the response ends. The citation list
-            # grows as statements complete and is settled in reading order.
+            renderer = markdown_answer.MarkdownRenderer(lambda: len(ctx.citations))
+            # The citation list grows as markers complete and is settled in
+            # reading order.
             started = False
             sent_citations: list[dict[str, Any]] = []
-            # A reply the send-back may return is held until it shows a part
-            # other than the question.
-            holding = send_back_ok and not sent_back and not markdown
-            held = ""
             try:
                 while True:
                     ev = await pending_q.get()
@@ -838,12 +841,9 @@ async def _run_turn(
                     if ev.kind != "text" or not ev.text:
                         continue
                     prose = renderer.push(guard.push(ev.text))
-                    if holding and prose:
-                        held += prose
-                        if not _ANSWER_PART.search(renderer.raw):
-                            continue
-                        prose, held, holding = held, "", False
-                    if prose and not _client_gone(client):
+                    if (prose.strip() or (prose and started)) and not _client_gone(
+                        client
+                    ):
                         if not started:
                             yield events.block_start(block_id)
                             started = True
@@ -920,9 +920,7 @@ async def _run_turn(
         # GLM sometimes writes its AskUser call as text in its own call
         # markup; it is read back as the call it meant.
         text_ask = (
-            text_ask_user(assembled.text)
-            if spec.provider_slug == "zai" and not renderer.answer_shaped
-            else None
+            text_ask_user(assembled.text) if spec.provider_slug == "zai" else None
         )
         if text_ask is not None:
             prose, ask_call = text_ask
@@ -936,8 +934,10 @@ async def _run_turn(
                     else {}
                 ),
             )
-        leaked = contains_tool_protocol(assembled.text) or (
-            not renderer.answer_shaped and contains_arg_markup(assembled.text)
+            # The guard held the markup; it never shows.
+            guard.finish()
+        leaked = contains_tool_protocol(assembled.text) or contains_arg_markup(
+            assembled.text
         )
         if (guard.flagged and text_ask is None) or leaked:
             # A tool call written as text never runs and never shows: the call
@@ -948,7 +948,7 @@ async def _run_turn(
             if started:
                 yield events.block_end(block_id, "narration")
                 activity.append(
-                    {"id": block_id, "kind": "narration", "text": renderer.raw}
+                    {"id": block_id, "kind": "narration", "text": renderer.text}
                 )
             if not tools_off and not text_call_sent_back:
                 log.warning("response wrote a tool call as text; sending it back")
@@ -956,7 +956,7 @@ async def _run_turn(
                 send_back_pending = True
                 messages.extend(
                     [
-                        {"role": "assistant", "content": renderer.raw},
+                        {"role": "assistant", "content": renderer.text},
                         {"role": "user", "content": TEXT_CALL_SEND_BACK},
                     ]
                 )
@@ -980,20 +980,21 @@ async def _run_turn(
 
         calls = assembled.tool_calls
         text = assembled.text.strip()
-        asked = (
-            ask_user_answer(calls, text, len(ctx.citations), markdown=True)
-            if markdown
-            else None
-            if renderer.answer_shaped
-            else ask_user_answer(calls, text, len(ctx.citations))
-        )
+        asked = ask_user_answer(calls)
+        others = [call for call in calls if call.name != ASK_USER]
         ask_only = (
             send_back_ok
             and not sent_back
             and not started
-            and _ask_only(renderer, text, asked)
+            and asked is not None
+            and not others
+            and not text
         )
-        if asked is not None:
+        # A question ends the turn; calls beside it run first (Epo 2026-10-30).
+        closing_ask = None
+        if asked is not None and others and not (terminal_call or tools_off):
+            calls, closing_ask = others, asked
+        elif asked is not None:
             calls, text = [], asked
         state = accounting.current()
         exhausted = bool(state and state.credits_exhausted)
@@ -1005,15 +1006,11 @@ async def _run_turn(
         if (terminal_call or tools_off) and not refuse:
             calls = []
         if calls:
-            tail = renderer.finish()
-            narration = renderer.text if renderer.answer_shaped else assembled.text
-            if narration.strip():
-                if not started:
-                    yield events.block_start(block_id)
-                    started = True
-                    yield events.block_delta(block_id, narration)
-                elif tail:
-                    yield events.block_delta(block_id, tail)
+            narration = renderer.text
+            if narration.strip() and not started:
+                yield events.block_start(block_id)
+                started = True
+                yield events.block_delta(block_id, narration)
             if started:
                 yield events.block_end(block_id, "narration")
                 activity.append(
@@ -1113,17 +1110,16 @@ async def _run_turn(
                 list(activity), evidence.pack(ctx, cited_order)
             )
             stalled = 0 if writes > writes_before else stalled + 1
-            # A read of the office_building skill offers the Office tools from
-            # the next response on, appended so the rest of the request's
-            # prefix stays cached (Epo 2026-10-20).
-            if ctx.office_tools and not any(
-                s["function"]["name"] in tools.OFFICE_TOOLS for s in schemas
-            ):
-                schemas = schemas + [
-                    s
-                    for s in profile.schemas(ctx)
-                    if s["function"]["name"] in tools.OFFICE_TOOLS
-                ]
+            # A read of the office_building or editing skill offers its tools
+            # from the next response on, appended so the rest of the request's
+            # prefix stays cached (Epo 2026-10-20, editing 2026-10-30).
+            listed = {s["function"]["name"] for s in schemas}
+            schemas = schemas + [
+                s
+                for s in profile.schemas(ctx)
+                if s["function"]["name"] not in listed
+                and s["function"]["name"] in tools.EDIT_TOOLS + tools.OFFICE_TOOLS
+            ]
             # The next response is the last with tools: say so where the model
             # reads first, under each result (Epo 2026-10-14).
             last_with_tools = (
@@ -1155,50 +1151,42 @@ async def _run_turn(
                         message["content"] += notice
             if exhausted and state and state.terminal_call_allowed:
                 terminal_pending = True
-            continue
+            if closing_ask is None:
+                continue
+            # No model call follows: the question is the answer's own block.
+            block_n += 1
+            block_id = f"b{block_n}"
+            renderer = markdown_answer.MarkdownRenderer(lambda: len(ctx.citations))
+            started = False
+            assembled = replace(assembled, text="")
+            text = closing_ask
 
         if text and ask_only and not terminal_call and not exhausted:
             # Nothing of the reply was shown; the next response answers.
             sent_back = True
             send_back_pending = True
             messages.extend(
-                _send_back(assembled, asked, writes=can_write, texts=profile.send_back)
+                _send_back(assembled, writes=can_write, texts=profile.send_back)
             )
             continue
 
         if text:
             if not started:
                 yield events.phase("answering")
-            if asked is not None and markdown:
+            if not renderer.text:
+                # No deltas reached us (a non-streaming adapter); render whole.
+                renderer.push(assembled.text)
+            if asked is not None:
                 # The questions follow the prose already streamed.
                 gap = "\n\n" if renderer.text.strip() else ""
                 added = renderer.push(gap + asked)
                 if started:
                     yield events.block_delta(block_id, added)
-            elif asked is not None:
-                # The question replaces the held-back prose as a whole program.
-                renderer = LangRenderer(lambda: len(ctx.citations))
-                renderer.push(asked)
-            elif not renderer.raw:
-                # No deltas reached us (a non-streaming adapter); render whole.
-                renderer.push(assembled.text)
-            tail = renderer.finish()
-            if renderer.answer_shaped:
-                if not started:
-                    yield events.block_start(block_id)
-                    started = True
-                    yield events.block_delta(block_id, renderer.text)
-                elif tail:
-                    yield events.block_delta(block_id, tail)
-                answer, cited_order = renderer.text, renderer.reading_order()
-            else:
-                # Plain Markdown is already usable. Malformed programs above
-                # keep their local parser recovery; neither path calls the model
-                # again. A bare Answer([...]) gets its root (openui.with_root).
-                answer, cited_order = renderer.raw, renderer.reading_order()
+            if not started:
                 yield events.block_start(block_id)
                 started = True
-                yield events.block_delta(block_id, answer)
+                yield events.block_delta(block_id, renderer.text)
+            answer, cited_order = renderer.text, renderer.reading_order()
             yield events.block_end(block_id, "answer")
             cited = [n for n in cited_order if 1 <= n <= len(ctx.citations)]
             final_citations = await citation_regions.refine(
@@ -1304,13 +1292,10 @@ TOOLS_OFF_RESULT = (
     "answer now as the turn context asks."
 )
 
-# The answer component the model sometimes calls as a tool (GLM, 2026-10-14).
+# The model asks the learner with this tool; a call ends the turn on its
+# question (ask_user_answer).
 ASK_USER = "AskUser"
 
-# GLM is offered AskUser as a real tool: it calls it as one, and DigitalOcean
-# drops calls to tools the request does not list (decision 2026-10-21). A call
-# still ends the turn on its question (ask_user_answer). The wording follows the
-# answer format's AskUser (prompts/openui_lang.txt).
 ASK_USER_SCHEMA = {
     "type": "function",
     "function": {
@@ -1338,62 +1323,22 @@ ASK_USER_SCHEMA = {
 }
 
 
-# The answer format's limit on questions (prompts/openui_lang.txt).
+# The answer format's limit on questions (prompts/answer_markdown.txt).
 ASK_USER_MAX = 3
 
 
-# A statement of an answer part other than the question: a reply holding one
-# is not only an AskUser question (Q221).
-_ANSWER_PART = re.compile(
-    r"^\s*[A-Za-z_]\w*\s*=\s*(?!Answer\b|AskUser\b)[A-Z]\w*\s*\(", re.MULTILINE
-)
-
-
-def _renderer(ctx: ToolContext) -> LangRenderer | markdown_answer.MarkdownRenderer:
-    """The streaming renderer of the turn's answer format."""
-    if ctx.answer_format == markdown_answer.MARKDOWN:
-        return markdown_answer.MarkdownRenderer(lambda: len(ctx.citations))
-    return LangRenderer(lambda: len(ctx.citations))
-
-
-def _ask_only(
-    renderer: LangRenderer | markdown_answer.MarkdownRenderer,
-    prose: str,
-    asked: str | None,
-) -> bool:
-    """The reply is only AskUser questions: a tool-called AskUser with no
-    prose, or a program whose parts are only AskUser components."""
-    if asked is not None:
-        return not prose
-    if not isinstance(renderer, LangRenderer) or not renderer.answer_shaped:
-        return False
-    try:
-        names = {call.name for call in openui.walk(openui.parse(renderer.text))}
-    except openui.ParseError:
-        return False
-    return ASK_USER in names and names <= {"Answer", ASK_USER}
-
-
 def _send_back(
-    assembled: AssembledResponse,
-    asked: str | None,
-    *,
-    writes: bool,
-    texts: dict[tuple[bool, bool], str],
+    assembled: AssembledResponse, *, writes: bool, texts: dict[bool, str]
 ) -> list[dict[str, Any]]:
-    """The reply as sent, then the send-back: as the result of each AskUser
-    call when the model called the tool, else as a user message. A learner who
-    cannot write gets the texts that ask for the answer alone. ``texts`` are
-    the profile's, by (writes, as a tool result)."""
+    """The reply as sent, then the send-back as the result of each AskUser
+    call. A learner who cannot write gets the text that asks for the answer
+    alone. ``texts`` are the profile's, by whether the learner can write."""
     assistant = dict(assembled.provider_message)
     assistant.setdefault("role", "assistant")
     assistant.setdefault("content", assembled.text)
     if assembled.output_items:
         assistant["output_items"] = assembled.output_items
     asks = [call for call in assembled.tool_calls if call.name == ASK_USER]
-    if asked is None or not asks:
-        assistant.pop("tool_calls", None)
-        return [assistant, {"role": "user", "content": texts[(writes, False)]}]
     assistant["tool_calls"] = [
         {
             "id": call.id,
@@ -1408,7 +1353,7 @@ def _send_back(
             {
                 "role": "tool",
                 "tool_call_id": call.id,
-                "content": texts[(writes, True)],
+                "content": texts[writes],
             }
             for call in asks
         ),
@@ -1443,35 +1388,11 @@ def text_ask_user(text: str) -> tuple[str, ToolCall] | None:
     return text[: match.start()].strip(), call
 
 
-# Citation markers in prose: [3] or [1, 2].
-_MARKERS = re.compile(r"\s*\[(\d+(?:\s*,\s*\d+)*)\]")
-
-
-def _cited(prose: str, known: int) -> tuple[str, list[int]]:
-    """The prose without its citation markers, and the passages they name:
-    an Md carries its passages as numbers, not as markers in its text.
-    Markers naming no shown passage stay as written."""
-    cited: list[int] = []
-
-    def take(match: re.Match[str]) -> str:
-        numbers = [int(n) for n in re.findall(r"\d+", match.group(1))]
-        if not all(1 <= n <= known for n in numbers):
-            return match.group(0)
-        cited.extend(n for n in numbers if n not in cited)
-        return ""
-
-    return _MARKERS.sub(take, prose).strip(), cited
-
-
-def ask_user_answer(
-    calls: list[ToolCall], prose: str, known: int, *, markdown: bool = False
-) -> str | None:
+def ask_user_answer(calls: list[ToolCall]) -> str | None:
     """A response that calls AskUser as a tool meant to end the turn on its
-    questions: the answer program with its prose and one AskUser component per
-    call that carries a question, at most ASK_USER_MAX, or None when none does
-    (Epo 2026-10-14). The prose keeps its citations to the ``known`` shown
-    passages. ``markdown``: only the questions' ``ask`` fence, which follows
-    the prose the Markdown format already streamed (markdown_answer.ask_fence)."""
+    questions: their ``ask`` fence, at most ASK_USER_MAX, which follows the
+    prose already streamed (markdown_answer.ask_fence), or None when no call
+    carries a question (Epo 2026-10-14)."""
     asks: list[tuple[str, list[str]]] = []
     for call in calls:
         if call.name != ASK_USER or len(asks) == ASK_USER_MAX:
@@ -1495,22 +1416,7 @@ def ask_user_answer(
             else []
         )
         asks.append((question.strip(), choices))
-    if not asks:
-        return None
-    if markdown:
-        return markdown_answer.ask_fence(asks)
-    names = [f"ask{n}" for n in range(1, len(asks) + 1)]
-    lines = [
-        f"{name} = AskUser({json.dumps(question, ensure_ascii=False)}, "
-        f"{json.dumps(choices, ensure_ascii=False)})"
-        for name, (question, choices) in zip(names, asks, strict=True)
-    ]
-    if prose:
-        body, cited = _cited(prose, known)
-        passages = f", {json.dumps(cited)}" if cited else ""
-        names.insert(0, "intro")
-        lines.insert(0, f"intro = Md({json.dumps(body, ensure_ascii=False)}{passages})")
-    return f"root = Answer([{', '.join(names)}])\n" + "\n".join(lines)
+    return markdown_answer.ask_fence(asks) if asks else None
 
 
 def _append_turn_context(
@@ -1602,7 +1508,7 @@ def _activity(
         block["error"] = error
     if result.effects:
         block["effects"] = list(result.effects)
-    if ctx is not None and name in ("capture_page", "capture_knowledge_page"):
+    if ctx is not None and name in ("capture_page", "capture_library_page"):
         # "Looked at page 4": the frontend row; the image itself is not kept.
         for record in ctx.captures:
             if record["callId"] == call.id:
@@ -1826,7 +1732,7 @@ async def _run_tools(
     for call, result in ordered:
         text = _result_text(result, tools.assign_citations(ctx, result.passages))
         ctx.library_evidence.observe(
-            call.name, _parse_args(call.arguments), result, text, ctx.library_reads
+            call.name, _parse_args(call.arguments), result, ctx.library_reads
         )
         result.text_parts = [text]
         message = {"role": "tool", "tool_call_id": call.id, "content": text}

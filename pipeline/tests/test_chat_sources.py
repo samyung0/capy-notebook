@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 import requests
@@ -16,7 +17,6 @@ from pipeline.retrieval import (
     agent,
     contract,
     evidence,
-    openui,
     pending,
     tools,
     websearch,
@@ -108,13 +108,15 @@ async def _collect(query: str, ctx: ToolContext, model: ModelConfig, **kwargs):
     ]
 
 
-def _program(*parts: str) -> str:
-    names = [f"p{i}" for i in range(len(parts))]
-    lines = [f"{n} = {part}" for n, part in zip(names, parts, strict=True)]
-    return f"root = Answer([{', '.join(names)}])\n" + "\n".join(lines) + "\n"
+def _ask(question: str, *choices: str) -> ToolCall:
+    return ToolCall(
+        id="ask_1",
+        name="AskUser",
+        arguments=json.dumps({"question": question, "choices": list(choices)}),
+    )
 
 
-OFFER = 'AskUser("Shall I make a note of this?", ["Make a note", "No thanks"])'
+OFFER = _ask("Shall I make a note of this?", "Make a note", "No thanks")
 
 
 # ------------------------------------------------------------- the switch
@@ -186,7 +188,7 @@ def test_the_tool_list_is_the_same_in_both_modes(monkeypatch):
     on = tools.schemas_for(_ctx(library_catalog=CATALOG, workspace_only=True))
     assert on == off
     names = {s["function"]["name"] for s in on}
-    assert {"search_web", "search_knowledge", "read_knowledge"} <= names
+    assert {"search_web", "search_library", "read_library"} <= names
 
 
 async def test_workspace_only_answers_the_outside_tools_as_not_available(monkeypatch):
@@ -200,7 +202,7 @@ async def test_workspace_only_answers_the_outside_tools_as_not_available(monkeyp
     ctx = _ctx(library_catalog=CATALOG, workspace_only=True)
     for name, args in (
         ("search_web", {"query": "berlin airlift"}),
-        ("search_knowledge", {"query": "berlin airlift"}),
+        ("search_library", {"query": "berlin airlift"}),
     ):
         result = await tools.run(name, args, ctx)
         assert result.refused
@@ -208,6 +210,7 @@ async def test_workspace_only_answers_the_outside_tools_as_not_available(monkeyp
 
 
 def _excerpts_offered(ctx: ToolContext) -> bool:
+    ctx.edit_tools = True
     schema = next(
         s for s in tools.schemas_for(ctx) if s["function"]["name"] == "create_material"
     )
@@ -481,15 +484,15 @@ async def test_a_cited_web_result_stays_for_the_next_message():
 async def test_an_offer_only_first_reply_goes_back_once_unshown(monkeypatch):
     stream, seen = _script(
         [
-            AssembledResponse(text=_program(OFFER)),
-            AssembledResponse(text=_program('Md("The answer.")', OFFER)),
+            AssembledResponse(tool_calls=[OFFER]),
+            AssembledResponse(text="The answer.", tool_calls=[OFFER]),
         ]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     events = await _collect("Explain the airlift", _writer(monkeypatch), _model())
 
     assert len(seen) == 2
-    assert seen[1]["messages"][-2]["content"] == chat_prompts.SEND_BACK
+    assert seen[1]["messages"][-2]["content"] == chat_prompts.SEND_BACK_TOOL
     deltas = "".join(e["text"] for e in events if e["type"] == "block_delta")
     assert "The answer." in deltas and deltas.count("Shall I make a note") == 1
     assert "The answer." in events[-1]["answer"]
@@ -499,8 +502,8 @@ async def test_the_send_back_runs_once_and_past_the_planning_cap(monkeypatch):
     monkeypatch.setattr(agent, "PLANNING_RESPONSES", 1)
     stream, seen = _script(
         [
-            AssembledResponse(text=_program(OFFER)),
-            AssembledResponse(text=_program(OFFER)),
+            AssembledResponse(tool_calls=[OFFER]),
+            AssembledResponse(tool_calls=[OFFER]),
         ]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
@@ -514,7 +517,7 @@ async def test_the_send_back_runs_once_and_past_the_planning_cap(monkeypatch):
 
 
 async def test_a_later_turn_is_not_sent_back(monkeypatch):
-    stream, seen = _script([AssembledResponse(text=_program(OFFER))])
+    stream, seen = _script([AssembledResponse(tool_calls=[OFFER])])
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     history = [
         {"id": "u1", "role": "user", "content": "earlier"},
@@ -525,11 +528,11 @@ async def test_a_later_turn_is_not_sent_back(monkeypatch):
 
 
 async def test_a_read_only_first_reply_goes_back_for_the_answer_alone(monkeypatch):
-    clarify = 'AskUser("Which chapter do you mean?", ["Chapter 1", "Chapter 2"])'
+    clarify = _ask("Which chapter do you mean?", "Chapter 1", "Chapter 2")
     stream, seen = _script(
         [
-            AssembledResponse(text=_program(clarify)),
-            AssembledResponse(text=_program('Md("The answer.")')),
+            AssembledResponse(tool_calls=[clarify]),
+            AssembledResponse(text="The answer."),
         ]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
@@ -539,7 +542,7 @@ async def test_a_read_only_first_reply_goes_back_for_the_answer_alone(monkeypatc
     )
     events = await _collect("Explain the airlift", viewer, _model())
     assert len(seen) == 2
-    assert seen[1]["messages"][-2]["content"] == chat_prompts.SEND_BACK_READ_ONLY
+    assert seen[1]["messages"][-2]["content"] == chat_prompts.SEND_BACK_TOOL_READ_ONLY
     assert "The answer." in events[-1]["answer"]
 
     ask = ToolCall(
@@ -605,18 +608,17 @@ async def test_glm_text_askuser_is_read_back_as_the_call_it_meant(monkeypatch):
         if not recovered:
             assert events[-1]["type"] == "error"
             continue
-        program = openui.parse(events[-1]["answer"], strict=True)
-        asks = [c for c in openui.walk(program) if c.name == "AskUser"]
-        assert [(c.prop("question"), c.prop("choices")) for c in asks] == [
-            ("Shall I make a note?", ["Make a note", "No thanks"])
-        ]
+        assert events[-1]["answer"].endswith(
+            '```ask\n{"question": "Shall I make a note?", '
+            '"choices": ["Make a note", "No thanks"]}\n```'
+        )
         assert "arg_key" not in events[-1]["answer"]
 
 
-async def test_glm_markup_inside_an_answer_program_is_no_turn_error(monkeypatch):
+async def test_glm_markup_after_an_answer_is_no_turn_error(monkeypatch):
     text = (
-        _program('Md("The blockade began in June 1948.")')
-        + "AskUser<arg_key>question</arg_key><arg_value>Shall I make a note?"
+        "The blockade began in June 1948.\n"
+        "AskUser<arg_key>question</arg_key><arg_value>Shall I make a note?"
         "</arg_value>\n"
     )
     stream, _ = _script([AssembledResponse(text=text)])
@@ -627,21 +629,6 @@ async def test_glm_markup_inside_an_answer_program_is_no_turn_error(monkeypatch)
     assert "The blockade began in June 1948." in events[-1]["answer"]
 
 
-def test_a_tool_called_askuser_keeps_its_prose_citations():
-    ask = ToolCall(
-        id="a", name="AskUser", arguments='{"question": "More?", "choices": []}'
-    )
-    program = openui.parse(
-        agent.ask_user_answer(
-            [ask], "It began in 1948 [1] and ended [2, 3]. See [9].", 3
-        ),
-        strict=True,
-    )
-    intro = next(c for c in openui.walk(program) if c.name == "Md")
-    assert intro.prop("text") == "It began in 1948 and ended. See [9]."
-    assert intro.prop("passages") == [1, 2, 3]
-
-
 # ------------------------------------------------------------- the note pick
 
 
@@ -649,8 +636,9 @@ async def test_the_note_pick_builds_the_note(monkeypatch):
     """Phase 2: an explanation gets an answer, not materials; the learner's pick
     of its note offer is a new request that builds the note."""
     question = "Explain how the Truman Doctrine and the Marshall Plan worked together."
-    answer = _program('Md("Containment, then recovery.")', OFFER)
-    stream, seen = _script([AssembledResponse(text=answer)])
+    stream, seen = _script(
+        [AssembledResponse(text="Containment, then recovery.", tool_calls=[OFFER])]
+    )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     first = await _collect(question, _writer(monkeypatch), _model())
     assert len(seen) == 1, "an answer with its offer is not sent back"
@@ -659,7 +647,8 @@ async def test_the_note_pick_builds_the_note(monkeypatch):
         "A question, or a request to explain or summarise, gets an answer with "
         "citations, not materials." in system
     )
-    assert "Shall I make a note" in first[-1]["answer"]
+    answer = first[-1]["answer"]
+    assert "Shall I make a note" in answer
 
     ran: list[str] = []
 
@@ -676,7 +665,7 @@ async def test_the_note_pick_builds_the_note(monkeypatch):
     stream, seen = _script(
         [
             AssembledResponse(tool_calls=[build]),
-            AssembledResponse(text=_program('Md("I made the note.")')),
+            AssembledResponse(text="I made the note."),
         ]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
@@ -688,8 +677,80 @@ async def test_the_note_pick_builds_the_note(monkeypatch):
     # The question panel sends the offer and the pick (chat/questions.ts).
     pick = "Shall I make a note of this?\nMake a note"
     events = await _collect(pick, _writer(monkeypatch), _model(), history=history)
+    # The writes come with the editing skill; the stubbed run skips it.
     offered = {t["function"]["name"] for t in seen[0]["tools"]}
-    assert "create_material" in offered
+    assert "read_skill" in offered and "create_material" not in offered
     assert seen[0]["messages"][-2]["content"].endswith(pick)
     assert ran == ["create_material"]
     assert events[-1]["type"] == "done" and "I made the note." in events[-1]["answer"]
+
+
+async def test_glm_text_askuser_never_streams_and_goes_back_alone(monkeypatch):
+    """GLM's written AskUser is read back before anything shows, so a reply
+    that is only the question goes back like a called one."""
+
+    text = "AskUser<arg_key>question</arg_key><arg_value>Shall I make a note?"
+
+    async def _stream(_messages, *, on_event=None, **_kwargs):
+        calls.append(1)
+        reply = text if len(calls) == 1 else "The answer."
+        for start in range(0, len(reply), 5):
+            on_event(StreamEvent(kind="text", text=reply[start : start + 5]))
+        return AssembledResponse(text=reply)
+
+    calls: list[int] = []
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    events = await _collect("When did it begin?", _ctx(), _model("zai"))
+    assert len(calls) == 2
+    deltas = "".join(e["text"] for e in events if e["type"] == "block_delta")
+    assert deltas == "The answer."
+
+
+async def test_askuser_beside_other_calls_runs_them_and_ends_the_turn(monkeypatch):
+    """The prose stays narration and the question is the answer's own block."""
+    read = ToolCall(id="r", name="list_sources", arguments="{}")
+    stream, seen = _script(
+        [AssembledResponse(text="Looking.", tool_calls=[read, OFFER])]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    events = await _collect("What do I have?", _ctx(), _model())
+    assert len(seen) == 1
+    done = events[-1]
+    assert [block["callId"] for block in done["activity"] if "callId" in block] == ["r"]
+    assert done["answer"].startswith("```ask")
+    ends = [e["kind"] for e in events if e["type"] == "block_end"]
+    assert ends == ["narration", "answer"]
+
+
+async def test_a_fresh_turn_can_write_with_its_write_tools_locked(monkeypatch):
+    """The editing skill unlocks the writes, so create_chapter keeps can_write
+    true and the read-only rule out of the first request."""
+    stream, seen = _script([AssembledResponse(text="The answer.")])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    await _collect("Explain the airlift", _writer(monkeypatch), _model())
+    names = [t["function"]["name"] for t in seen[0]["tools"]]
+    assert not set(tools.EDIT_TOOLS) & set(names)
+    assert chat_prompts.READ_ONLY_RULE not in seen[0]["messages"][0]["content"]
+
+
+@pytest.mark.parametrize(
+    "figure",
+    [
+        None,
+        {"decorative": True},
+        {"excluded": True},
+        {"withheld": True},
+        {"bbox": tools.deck.WHOLE_PAGE},
+    ],
+)
+async def test_a_figure_the_library_does_not_show_is_no_answer_figure(
+    monkeypatch, figure
+):
+    shown = {"decorative": False, "excluded": False, "withheld": False, "bbox": [1, 2]}
+    found = {} if figure is None else {"f": SimpleNamespace(**{**shown, **figure})}
+
+    async def _figures(_refs):
+        return found
+
+    monkeypatch.setattr(tools.library, "figures", _figures)
+    assert await tools.answer_figure("f") is None

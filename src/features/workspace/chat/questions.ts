@@ -1,37 +1,27 @@
-import { isLangAnswer, splitAnswer } from './answer';
-import type { ElementNode } from './blocks/Cite';
-import { parseAnswer } from './library';
-import type { AskUserProps } from './schema';
+import type { AskUserProps } from './blocks/AskUser';
+import { fenceJson, parseMarkdownAnswer } from './markdownSegments';
+
+/** The questions of an `ask` fence, one JSON object per line. */
+export function askQuestions(body: string): AskUserProps[] {
+  return body.split('\n').flatMap((line) => {
+    const { choices, question } = fenceJson(line) ?? {};
+    if (typeof question !== 'string' || !question.trim()) return [];
+    return {
+      choices: Array.isArray(choices)
+        ? choices.filter((c): c is string => typeof c === 'string')
+        : [],
+      question,
+    };
+  });
+}
 
 /** The questions a completed answer asks, in reading order. */
 export function extractQuestions(content: string): AskUserProps[] {
-  if (!isLangAnswer(content)) return [];
-  const result = parseAnswer(splitAnswer(content).program);
-  const found: AskUserProps[] = [];
-  const visit = (value: unknown) => {
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item);
-      return;
-    }
-    if (!value || typeof value !== 'object') return;
-    const node = value as ElementNode;
-    if (node.type !== 'element') return;
-    if (node.typeName === 'AskUser') {
-      const props = node.props as Partial<AskUserProps>;
-      if (typeof props.question === 'string' && props.question.trim()) {
-        found.push({
-          choices: Array.isArray(props.choices)
-            ? props.choices.filter((c): c is string => typeof c === 'string')
-            : [],
-          question: props.question,
-        });
-      }
-      return;
-    }
-    for (const prop of Object.values(node.props)) visit(prop);
-  };
-  visit(result?.root);
-  return found;
+  return parseMarkdownAnswer(content).flatMap((segment) =>
+    segment.type === 'figure' && segment.lang === 'ask' && segment.closed
+      ? askQuestions(segment.body)
+      : []
+  );
 }
 
 export interface QuestionAnswer {

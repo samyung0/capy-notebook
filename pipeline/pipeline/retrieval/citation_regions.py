@@ -111,7 +111,7 @@ def resolve(pdf: Path, passages: list[Passage]) -> list[list[dict[str, Any]]]:
 
 async def refine(workspace_id: str, passages: list[Passage]) -> list[dict[str, Any]]:
     """Read each cited PDF once; inaccessible/non-native sources keep their boxes.
-    An account chat's passage names its own workspace (None for No workspace)."""
+    An account chat's passage names its own workspace (None outside workspaces)."""
     citations = [p.as_citation() for p in passages]
     files: dict[str, list[int]] = defaultdict(list)
     for index, passage in enumerate(passages):

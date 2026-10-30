@@ -11,7 +11,6 @@ import json
 from importlib import resources
 from typing import Any
 
-from ..retrieval import openui
 from ..retrieval.limits import (
     BUILD_TOOLS_PER_TURN,
     PLANNING_RESPONSES,
@@ -44,7 +43,7 @@ Sources:
 
 Answer or build:
 - A question, or a request to explain or summarise, gets an answer with citations, not materials.
-- A request to learn, make, expand or practise something gets materials, and so does the learner's pick of your offer to make a note or a slide deck. Plan first as the editing skill says: the scope and level with a default they can accept, and a brief outline of the files; build once they go ahead.
+- A request to learn, make, expand or practise something gets materials, and so does the learner's pick of your offer to make a note or a PowerPoint. Plan first as the editing skill says: the scope and level with a default they can accept, and a brief outline of the files; build once they go ahead.
 - Before writing to the workspace, you MUST read the skills for the work with read_skill.
 
 Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Until its first successful write a turn has {PLANNING_RESPONSES} responses, the last without tools; after it, up to {BUILD_TOOLS_PER_TURN} tool calls in the whole turn, and tools go off after {STALL_RESPONSES} responses in a row without a successful write (more after errored writes)."""
@@ -56,7 +55,7 @@ FIRST_TURN_OFFER = (
     "On the first message of a chat (no earlier conversation or memory), when "
     "the learner asks for an explanation or a summary, answer it in full first, "
     "then end the answer with one AskUser question offering to turn it into a "
-    "note or a slide deck, with choices like Make a note, Make a slide deck and "
+    "note or a PowerPoint, with choices like Make a note, Make a PowerPoint and "
     "No thanks. The offer never replaces the answer."
 )
 
@@ -67,8 +66,8 @@ FIRST_TURN_OFFER = (
 MODE_LINES = {
     True: "[Workspace only: on. Use only this workspace's files and materials.]",
     False: (
-        "[Workspace only: off. Workspace first; the library, search_web and your "
-        "own knowledge may expand it.]"
+        "[Workspace only: off. Workspace first; then your own knowledge; "
+        "search_library and search_web may expand it.]"
     ),
 }
 
@@ -95,34 +94,21 @@ def with_mode_note(message: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# Q221: a first-turn reply that is only an AskUser question goes back once.
-SEND_BACK = (
-    "Your reply holds only a question and no answer. If the question is the offer "
-    "to make a note or a deck, write the answer to the learner's message first, "
-    "then end with the same offer. If you need the learner's input before you can "
-    "answer, send the same question again."
-)
-# The same, as the result of a tool-called AskUser (GLM), which shows nothing
-# yet (Epo 2026-10-24).
+# Q221: a first-turn reply that is only an AskUser question goes back once,
+# as the result of the AskUser call, which shows nothing yet (Epo 2026-10-24).
 SEND_BACK_TOOL = (
     "Not shown yet: your reply has this question but no answer text. If it is the "
-    "offer to make a note or a deck, write the answer to the learner's message as "
+    "offer to make a note or a PowerPoint, write the answer to the learner's message as "
     "text now, then call AskUser again with the same offer. If you need the "
     "learner's input before you can answer, call AskUser again with the same "
     "question."
 )
-# The same two for a learner who cannot write: the answer alone, since no
-# note or deck can be made for them (Editor 2026-10-24).
-SEND_BACK_READ_ONLY = (
-    "Your reply holds only a question and no answer. Write the answer to the "
-    "learner's message, with no offer to make a note or a deck: this workspace "
-    "does not let you write. If you need the learner's input before you can "
-    "answer, send the same question again."
-)
+# The same for a learner who cannot write: the answer alone, since no
+# note or PowerPoint can be made for them (Editor 2026-10-24).
 SEND_BACK_TOOL_READ_ONLY = (
     "Not shown yet: your reply has this question but no answer text. Write the "
     "answer to the learner's message as text now, with no offer to make a note or "
-    "a deck: this workspace does not let you write. If you need the learner's "
+    "a PowerPoint: this workspace does not let you write. If you need the learner's "
     "input before you can answer, call AskUser again with the same question."
 )
 
@@ -138,11 +124,11 @@ ALL_SOURCES_RULES = """All sources mode (when Workspace only is off):
 - You may also use the library, and search_web when the workspace, the library and your own knowledge cannot answer. You may use your own knowledge to explain and connect ideas in answers and materials. Cite what comes from a source, and never present your own knowledge as coming from the learner's files.
 - Cite a web result by its number, like a passage. Never write a URL or a link in the answer; the citation carries it.
 - The shared library holds verified open textbooks. One excerpt is one section of one book.
-- Search with the learner's subject id from search_knowledge's list to keep results in that subject, or omit subject for a direct search. A result names each excerpt's book. An empty result under a role filter reports what the subject holds by role, so relax the filter on purpose rather than rewording.
-- A search result is a selection aid, not a read: read an excerpt with read_knowledge before using it. Its scope says where it applies and when linked source context is needed.
+- Search with the learner's subject id from search_library's list to keep results in that subject, or omit subject for a direct search. A result names each excerpt's book. An empty result under a role filter reports what the subject holds by role, so relax the filter on purpose rather than rewording.
+- A search result is a selection aid, not a read: read an excerpt with read_library before using it. Its scope says where it applies and when linked source context is needed.
 - Distinguish incidental examples from necessary tools, populations, professions, periods or method variants, and keep applicability explicit. Unreviewed scope is unknown, not unrestricted. Related material is not coverage of the request; explain the supported scope and any gaps in the material itself.
 - Subject tags are imperfect. If a subject search misses, search again without subject while keeping the learner's constraints. Counts show searchable passages, not proof of coverage.
-- If calculations, numbers or formulas look wrong or corrupted, inspect the page image with capture_knowledge_page. If it is unavailable or illegible, state the limitation instead of guessing.
+- If calculations, numbers or formulas look wrong or corrupted, inspect the page image with capture_library_page. If it is unavailable or illegible, state the limitation instead of guessing.
 - `[Diagram description: ...]` in excerpt text is a reviewer's description of a figure, not the book's wording: use it to understand the figure and never quote it as the book's text.
 - If the library has nothing in the requested scope, say so plainly."""
 
@@ -177,28 +163,13 @@ FOLLOW_REFERENCES_RULE = (
     "does not establish that the workspace lacks it."
 )
 
-# The answer format: an OpenUI Lang program over the chat component catalog.
-# The text is generated from the frontend library (`pnpm gen:openui`), so the
-# model and the renderer agree on every component; `retrieval/openui.py`
-# parses answers against the spec generated alongside it.
-LANG_RULE = (
-    resources.files("pipeline.prompts").joinpath("openui_lang.txt").read_text("utf-8")
-).strip()
-
-
-# The Markdown answer format the playground compares against OpenUI
-# (retrieval/markdown_answer.py); its figure fences are the figures skill.
+# The answer format: Markdown (retrieval/markdown_answer.py), drawn by
+# MarkdownAnswer.tsx.
 MARKDOWN_RULE = (
     resources.files("pipeline.prompts")
     .joinpath("answer_markdown.txt")
     .read_text("utf-8")
 ).strip()
-
-
-def markdown_head(head: str) -> str:
-    """A system prompt (workspace or account) with the Markdown answer format
-    in place of the OpenUI one."""
-    return head.replace(LANG_RULE, MARKDOWN_RULE)
 
 
 def system_prompt(locale: str | None, *, writes: bool = True) -> str:
@@ -212,7 +183,7 @@ def system_prompt(locale: str | None, *, writes: bool = True) -> str:
             *((FIRST_TURN_OFFER,) if writes else (READ_ONLY_RULE,)),
         )
     )
-    return rules + "\n\n" + ALL_SOURCES_RULES + "\n\n" + LANG_RULE
+    return rules + "\n\n" + ALL_SOURCES_RULES + "\n\n" + MARKDOWN_RULE
 
 
 def memory_message(summary: str) -> dict[str, Any]:
@@ -313,13 +284,9 @@ Return only the compacted memory."""
 
 
 def _checkpoint_turn(turn: dict[str, Any]) -> dict[str, str]:
-    # An assistant answer is a component program; the summarizer reads its text.
-    content = str(turn.get("content") or "")
-    if turn.get("role") == "assistant":
-        content = openui.text_of(content)
     return {
         "role": str(turn.get("role") or "user"),
-        "content": content,
+        "content": str(turn.get("content") or ""),
         **(
             {"provenance": "untrusted_source_data"}
             if turn.get("_kind") == "source_evidence"

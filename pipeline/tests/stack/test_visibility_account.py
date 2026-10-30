@@ -76,7 +76,7 @@ async def test_account_reads_carry_each_items_changes(stack, turn):
 
 
 async def test_an_account_note_with_no_workspace_is_found_and_read(stack, turn):
-    """T8: a note account chat creates in No workspace is found by
+    """T8: a note account chat creates outside workspaces is found by
     search_files_summary and read by inspect_document."""
     title = stack.marker()
     await turn(

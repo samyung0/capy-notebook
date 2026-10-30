@@ -51,7 +51,6 @@ from . import (
     deck,
     library,
     limits,
-    markdown_answer,
     pending,
     pending_hints,
     questions,
@@ -192,6 +191,9 @@ class ToolContext:
     workspace_only: bool = False
     # The library excerpts this turn read, for the write guard and crediting.
     library_reads: LibraryReads = field(default_factory=LibraryReads)
+    # Library figures search_images showed this turn, by id, with the excerpt
+    # that lists each: a write may place them as if that excerpt were read.
+    shown_figures: dict[str, str] = field(default_factory=dict)
     # What the turn message tells the model about the learner: the file or
     # material they have open, and their saved study preferences.
     open_resource: dict[str, Any] = field(default_factory=dict)
@@ -209,15 +211,16 @@ class ToolContext:
     # or an earlier turn of the conversation was offered them (the gateway's
     # officeTools); then they stay for the rest of the conversation.
     office_tools: bool = False
-    # The answer format (markdown_answer.FORMATS): production chat is OpenUI;
-    # the playground switches to Markdown to compare them.
-    answer_format: str = markdown_answer.OPENUI
+    # The writes the editing skill covers are offered, the same way: this turn
+    # read editing, or an earlier turn was offered them (the gateway's
+    # editTools).
+    edit_tools: bool = False
     # The requester's study progress is on in this workspace, so the agent may
     # read it.
     study_progress: bool = False
     library_evidence: LibraryEvidence = field(default_factory=LibraryEvidence)
     # The library's subjects that hold excerpts, fetched once per turn for
-    # search_knowledge's description; its subject argument takes their ids.
+    # search_library's description; its subject argument takes their ids.
     library_catalog: list[dict[str, Any]] | None = None
     # Resource operations the gateway granted this actor for the turn
     # (contract.OPERATIONS names). Tools whose required operations are not all
@@ -707,7 +710,7 @@ def _scope_fields(ctx: ToolContext) -> dict[str, Any]:
 
 def _destination(args: dict[str, Any]) -> dict[str, Any]:
     """Where an account create lands: the workspace_id the model named (run
-    moves it to ``_workspace_id``), or No workspace when it named none."""
+    moves it to ``_workspace_id``), or outside workspaces when it named none."""
     workspace_id = str(args.get("_workspace_id") or "")
     return {"workspaceId": workspace_id} if workspace_id else {}
 
@@ -806,7 +809,7 @@ async def _account_item(
 
 def access_line(row: dict[str, Any], *, typed: bool = False) -> str:
     """The access block an account read returns with its content: where the
-    item lives ("" for No workspace) and whether the user may edit it; with
+    item lives ("" outside workspaces) and whether the user may edit it; with
     ``typed`` (read_document, Epo 2026-10-28) also what the item is."""
     block: dict[str, Any] = {
         "workspaceId": row.get("workspaceId") or "",
@@ -960,15 +963,13 @@ def workspaces_text(ctx: ToolContext) -> str:
     at the turn's start (at most 50, the workspace cap)."""
     assert isinstance(ctx.scope, AccountScope)
     if not ctx.scope.workspaces:
-        return "The user has no workspaces; their files are in No workspace."
+        return "The user has no workspaces; their files are outside workspaces."
     lines = [
         f"- {w.name} (workspace_id={w.id}, "
         f"{'view and edit' if can_edit(ctx, w) else 'view only'})"
         for w in sorted(ctx.scope.workspaces, key=lambda w: w.name.lower())
     ]
-    return "\n".join(
-        ["The user's workspaces:", *lines, "Their other files are in No workspace."]
-    )
+    return "\n".join(["The user's workspaces:", *lines])
 
 
 async def _list_workspaces(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -995,12 +996,12 @@ NOT_A_SCOPE_WORKSPACE = (
 )
 # An account create naming a workspace outside the turn's list, refused before
 # anything is sent (Epo 2026-10-29, Q578); Go would answer as for a view-only
-# one. create_chapter has no No workspace to fall back on.
+# one. create_chapter has no outside-workspaces fallback.
 NOT_A_DESTINATION = (
     'workspace_id "{id}" is not one of the user\'s workspaces, so nothing was '
     "created. list_workspaces lists them, create_workspace makes a new one{rest}."
 )
-NO_WORKSPACE_CHOICE = ", or leave workspace_id out to create in No workspace"
+NO_WORKSPACE_CHOICE = ", or leave workspace_id out to create it outside workspaces"
 NO_WORKSPACE_LISTED = (
     "You did not name a workspace_id, so these are the user's files and "
     "materials outside their workspaces, newest first."
@@ -1129,7 +1130,7 @@ async def _create_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
 
 CHAPTER_NEEDS_ITS_WORKSPACE = (
     "create_chapter needs the workspace_id of a workspace the user can edit: "
-    "No workspace has no chapters."
+    "files outside workspaces have no chapters."
 )
 
 
@@ -1194,7 +1195,7 @@ def _summary_line(hit: dict[str, Any], row: dict[str, Any], ctx: ToolContext) ->
                 f"chapter_id={hit['chapter_id']}"
             )
     else:
-        parts.append("no workspace")
+        parts.append("outside workspaces")
     # The item's own editability (a PDF is not), while the turn may edit.
     editable = bool(row.get("editable")) and "document.edit" in ctx.operations
     parts.append("view and edit" if editable else "view only")
@@ -1337,7 +1338,7 @@ def _cites_page(passage: Passage, file_id: str, page: int) -> bool:
 
 
 # A user message attaches at most this many images, capture_page,
-# capture_knowledge_page and resolve_source_change's image changes together, so
+# capture_library_page and resolve_source_change's image changes together, so
 # the images every request of the turn carries stay bounded (Epo 2026-10-21,
 # raised and shared 2026-10-22). Only a capture says the decided sentence; a
 # source change past the cap fails with its own reason.
@@ -1415,7 +1416,7 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return limit
     file_id, page, bbox = args["file_id"], args["page"], args.get("bbox")
     # Where the file lives: the turn's workspace, or in account scope the
-    # file's own (None for No workspace), returned with the capture.
+    # file's own (None outside workspaces), returned with the capture.
     where: str | None = ctx.workspace_id
     access = ""
     if ctx.account:
@@ -1520,9 +1521,11 @@ def _catalog_lines(catalog: list[dict[str, Any]]) -> str:
 
 def _excerpt_link(excerpt_id: str, section_path: str | None, pages: list[int]) -> str:
     listed = ", ".join(str(p) for p in pages)
+    # Not in brackets: an answer cites a read by its passage number, and a
+    # bracketed id read as one (Epo 2026-10-30).
     return (
-        f"[{excerpt_id}]"
-        + (f" {section_path}" if section_path else "")
+        f"excerpt_id={excerpt_id}"
+        + (f" — {section_path}" if section_path else "")
         + (f" (pages {listed})" if listed else "")
     )
 
@@ -1589,10 +1592,10 @@ def _no_excerpts(
     return f"{head} Search again with other words or roles."
 
 
-async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+async def _search_library(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     query = str(args.get("query") or "").strip()
     if not query:
-        return _refused("search_knowledge needs a query.")
+        return _refused("search_library needs a query.")
     subject = str(args.get("subject") or "").strip() or None
     roles = [str(r) for r in (args.get("roles") or [])]
     if subject and subject not in {s["id"] for s in ctx.library_catalog or []}:
@@ -1605,7 +1608,7 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     try:
         result = await library.search(query, subject=subject, roles=roles)
     except ValueError as exc:
-        return _refused(f"search_knowledge: {exc}")
+        return _refused(f"search_library: {exc}")
     if not result.excerpts:
         return _result(_no_excerpts(subject, roles, result.available_roles))
     blocks = []
@@ -1625,7 +1628,7 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         )
     return _result(
         "\n\n".join(blocks)
-        + "\n\nRead an excerpt in full with read_knowledge before writing from it."
+        + "\n\nRead an excerpt in full with read_library before writing from it."
     )
 
 
@@ -1689,17 +1692,17 @@ def _without_repeats(chunks: list[dict[str, Any]]) -> list[str]:
     return texts
 
 
-async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+async def _read_library(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     excerpt_id = str(args.get("excerpt_id") or "").strip()
     if not excerpt_id:
-        return _refused("read_knowledge takes an excerpt_id.")
+        return _refused("read_library takes an excerpt_id.")
     start = max(0, int(args.get("start") or 0))
     try:
         read = await library.read_excerpt(
             excerpt_id, start=start, count=int(args.get("count") or library.READ_CHUNKS)
         )
     except ValueError as exc:
-        return _refused(f"read_knowledge: {exc}")
+        return _refused(f"read_library: {exc}")
     for excerpt in (read.excerpt, read.previous, read.following):
         if excerpt is not None:
             _learn_excerpt(ctx, excerpt)
@@ -1732,18 +1735,95 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             for chunk, text in zip(read.chunks[:n], texts, strict=False)
         )
         return (
-            source_block(f"{head}\n\n{body}" + _excerpt_figures(read.figures)),
+            f"{head}\n\n{body}" + _excerpt_figures(read.figures),
             _tail(read.chunks, n, read.next_start, end),
         )
 
-    _, text = _fitting(page, len(read.chunks))
+    n, _ = _fitting(page, len(read.chunks))
+    text, tail = page(n)
+    if estimate_tokens(text + tail) > TOOL_RESULT_MAX_TOKENS:
+        # One chunk overflows: the next start goes first, ahead of the clip.
+        text, tail = tail.lstrip("\n") + "\n\n" + text, ""
     ctx.library_reads.note(
         read.excerpt.id, start, _short_section(read.excerpt.section_path), text=text
     )
-    return _result(text)
+    # The page is one numbered passage, so an answer cites it like a file's
+    # (Epo 2026-10-30, C1); the book and its pages show under the answer.
+    pages = read.excerpt.pages
+    passage = Passage(
+        chunk_id=f"library:{read.excerpt.id}:{start}",
+        file_id=read.excerpt.id,
+        file_name=read.excerpt.book_title,
+        chunk_idx=start,
+        section_path=read.excerpt.section_path,
+        text=text,
+        hit_text=texts[0],
+        page_start=min(pages) if pages else None,
+        page_end=max(pages) if pages else None,
+        kind="library",
+    )
+    return _result(tail.lstrip("\n"), passages=[passage])
 
 
-async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+# search_images (Epo 2026-10-30): the library's excerpt search finds the
+# figures, since each figure's description is in the search text of the chunk
+# that cites it; a plain text search over the descriptions ranked poorly.
+# Figures come in excerpt rank order, a few excerpts deeper than a search.
+IMAGE_EXCERPTS = 10
+IMAGES_SHOWN = 8
+
+
+async def _search_images(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """Library figures for what an image should show, one group for now: the
+    learner's own images join as a second once they carry descriptions."""
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return _refused("search_images needs a query.")
+    if ctx.budget is not None:
+        ctx.budget.embedding_calls += 1
+    try:
+        result = await library.search(query, top_k=IMAGE_EXCERPTS)
+    except ValueError as exc:
+        return _refused(f"search_images: {exc}")
+    found = await library.figures(
+        list(dict.fromkeys(f for e in result.excerpts for f in e.figure_ids))
+    )
+    lines: list[str] = []
+    listed: set[str] = set()
+    for excerpt in result.excerpts:
+        _learn_excerpt(ctx, excerpt)
+        for ref in excerpt.figure_ids:
+            figure = found.get(ref)
+            if (
+                len(lines) == IMAGES_SHOWN
+                or figure is None
+                or ref in listed
+                or figure.withheld
+                or not (figure.label or figure.description)
+            ):
+                continue
+            listed.add(ref)
+            ctx.shown_figures[ref] = excerpt.id
+            note = " — ".join(p for p in (figure.label, figure.description) if p)
+            where = [f"{figure.book_title}, p. {figure.page}"]
+            if figure.credit:
+                where.append(f"credit: {figure.credit}")
+            lines.append(f"- {ref}: {note} ({'; '.join(where)})")
+    if not lines:
+        return _result(
+            "No image matched. Search again with other words for what it shows."
+        )
+    # The model is told what it can place, not how the images were found.
+    return _result(
+        "Images:\n"
+        + "\n".join(lines)
+        + "\n\nPlace one on its own line as ![caption](figure:<id>) in your answer "
+        "or a note, in a quiz question with add_question_media, or on a slide "
+        'as <image href="figure:<id>">.'
+    )
+
+
+async def _capture_library_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     """Render a page of the book behind a library excerpt.
 
     The excerpt is the unit the model works in, so only its own pages and the
@@ -1757,7 +1837,7 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
     try:
         target = await library.capture_target(excerpt_id)
     except ValueError as exc:
-        return _refused(f"capture_knowledge_page: {exc}")
+        return _refused(f"capture_library_page: {exc}")
     if page in target.withheld_pages:
         return _refused(
             f"Page {page} of {target.book_title} is withheld from the library; "
@@ -1774,9 +1854,9 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
             target.object_key, target.bytes, page, bbox, cfg.capture_max_edge
         )
     except capture.CaptureUnavailable as exc:
-        return _refused(f"capture_knowledge_page: {exc}", code=exc.code)
+        return _refused(f"capture_library_page: {exc}", code=exc.code)
     except ValueError as exc:
-        return _refused(f"capture_knowledge_page: {exc}")
+        return _refused(f"capture_library_page: {exc}")
     if (limit := _image_limit(ctx)) is not None:
         return limit
     call_id = str(args.get("_tool_call_id") or "")
@@ -1798,7 +1878,7 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         | {"excerptId": target.excerpt_id}
     )
     ctx.pending_images[call_id] = (
-        f"capture_knowledge_page result {n}: {label}",
+        f"capture_library_page result {n}: {label}",
         capture.data_url(jpeg),
     )
     ctx.budget_images.add(call_id)
@@ -1819,7 +1899,13 @@ WEB_SEARCH_CAP = 3
 WEB_FREE_FAILURES = 2
 # The tools outside the workspace, offered in both modes of the switch.
 OUTSIDE_TOOLS = frozenset(
-    {"search_knowledge", "read_knowledge", "capture_knowledge_page", "search_web"}
+    {
+        "search_library",
+        "read_library",
+        "search_images",
+        "capture_library_page",
+        "search_web",
+    }
 )
 NOT_AVAILABLE = (
     "{tool} is not available this turn: Workspace only is on. Use the workspace's "
@@ -2029,7 +2115,7 @@ def _created_in(resource: dict[str, Any], ctx: ToolContext | None) -> str:
         return "the workspace"
     workspace_id = resource.get("workspaceId")
     if not workspace_id:
-        return "No workspace"
+        return "the user's files outside workspaces"
     known = ctx.scope.workspace(workspace_id)
     name = f"'{known.name}' " if known else ""
     return f"the workspace {name}(workspace_id={workspace_id})"
@@ -2080,7 +2166,7 @@ def _relocations(effect: dict[str, Any]) -> str:
 # Account chat's chapter refusals (Epo 2026-10-28, T3).
 CHAPTER_NEEDS_WORKSPACE = (
     "chapter_id needs the workspace_id of its workspace: without one the item "
-    "is created in No workspace, which has no chapters. list_sources with that "
+    "is created outside workspaces, where there are no chapters. list_sources with that "
     "workspace_id lists its chapters."
 )
 CHAPTERS_LISTED = {
@@ -2278,7 +2364,7 @@ async def render_figure(
     figure: library.Figure,
 ) -> tuple[bytes, tuple[int, int]] | ToolResult:
     """A figure's box on its page as a JPEG with its size, as
-    capture_knowledge_page renders it: deterministic, so a retried write sends
+    capture_library_page renders it: deterministic, so a retried write sends
     the same bytes."""
     try:
         image, _, size = await capture.render_knowledge(
@@ -2293,6 +2379,37 @@ async def render_figure(
     except ValueError as exc:
         return _refused(f"figure {figure.id}: {exc}")
     return image, size
+
+
+class FigureUnavailable(Exception):
+    """The library shows the figure, but its page could not be rendered now."""
+
+
+async def answer_figure(ref: str) -> dict[str, Any] | None:
+    """A library figure as a chat answer shows it (Epo 2026-10-30): the JPEG
+    of its box with its label and printed credit, or None when the library
+    does not show it (the rule placing it in a note follows)."""
+    figure = (await library.figures([ref])).get(ref)
+    if (
+        figure is None
+        or figure.decorative
+        or figure.excluded
+        or figure.withheld
+        or figure.bbox == deck.WHOLE_PAGE
+    ):
+        return None
+    rendered = await render_figure(figure)
+    if isinstance(rendered, ToolResult):
+        raise FigureUnavailable(rendered.text())
+    image, (width, height) = rendered
+    return {
+        "credit": " ".join(figure.credit.split()),
+        "height": height,
+        "id": figure.id,
+        "image": base64.b64encode(image).decode(),
+        "label": " ".join(figure.label.split()),
+        "width": width,
+    }
 
 
 def figure_caption(text: str, figure: library.Figure) -> str:
@@ -2365,14 +2482,17 @@ def _switch(ctx: ToolContext) -> str:
 async def library_figures(
     ctx: ToolContext, refs: list[str]
 ) -> tuple[dict[str, library.Figure], list[str]] | ToolResult:
-    """The library figures a write places, by id, with an excerpt this turn
-    read that lists each (credited with the write), or a refusal naming every
-    figure it cannot show.
+    """The library figures a write places, by id, with an excerpt that lists
+    each (credited with the write), or a refusal naming every figure it cannot
+    show.
 
     A figure must be one the library shows (not decorative, excluded or on a
-    withheld page), boxed apart from its page, and listed by an excerpt this
-    turn read, the rule excerpt_ids follow. Shared by notes, quiz questions
-    and the playground's local writes.
+    withheld page), boxed apart from its page, and listed by an excerpt. It
+    need not have been read this turn (Epo 2026-10-30, R1, as named
+    excerpt_ids since 2026-10-14: a PowerPoint finished in a later message
+    places figures an earlier one listed); the credited excerpt is one this
+    turn read or search_images showed it from, else the first that lists it.
+    Shared by notes, quiz questions, slides and the playground's local writes.
     """
     if ctx.workspace_only:
         return _refused(
@@ -2399,16 +2519,40 @@ async def library_figures(
             )
         elif not figure.excerpt_ids:
             problems.append(f"{ref} is listed by no excerpt")
-        elif not (used := [e for e in figure.excerpt_ids if e in read]):
-            problems.append(
-                f"{ref} is listed by excerpt {', '.join(figure.excerpt_ids)}, which "
-                "this turn has not read: read_knowledge it first"
-            )
         else:
-            excerpts.append(used[0])
+            used = [
+                e
+                for e in figure.excerpt_ids
+                if e in read or e == ctx.shown_figures.get(ref)
+            ]
+            excerpts.append((used or figure.excerpt_ids)[0])
     if problems:
         return _refused("Not applied: figure " + "; ".join(problems) + ".")
     return {ref: found[ref] for ref in refs}, list(dict.fromkeys(excerpts))
+
+
+async def slide_figures(
+    ctx: ToolContext, svg: str
+) -> tuple[str, dict[str, bytes], list[dict[str, Any]]] | ToolResult:
+    """The library figures a slide places by id (Epo 2026-10-30, D3), checked
+    as a note's are (library_figures): the SVG with each href pointing at the
+    figure's file, each figure's box rendered, and the books they credit; or a
+    refusal. Shared with the playground's local slides."""
+    refs = list(dict.fromkeys(deck.FIGURE_HREF.findall(svg)))
+    if not refs:
+        return svg, {}, []
+    checked = await library_figures(ctx, refs)
+    if isinstance(checked, ToolResult):
+        return _refused(f"write_slide: {checked.text()}")
+    found, excerpts = checked
+    images: dict[str, bytes] = {}
+    for ref in refs:
+        rendered = await render_figure(found[ref])
+        if isinstance(rendered, ToolResult):
+            return rendered
+        images[ref] = rendered[0]
+    svg = deck.FIGURE_HREF.sub(r'href="../images/\1.jpg"', svg)
+    return svg, images, await library.provenance(excerpts)
 
 
 def _figure_images(images: dict[str, bytes]) -> list[dict[str, str]]:
@@ -2483,7 +2627,7 @@ async def write_sources(
 _WORD = re.compile(r"[a-z0-9][a-z0-9.\-/]*")
 _NUMBER = re.compile(r"(?<![\w.])(\d+\.\d+|\d{2,}(?:,\d{3})*)(?![\w])")
 _READ_LINE = re.compile(
-    r"^(\[exc_|- \[exc_|roles:|teaches:|scope:|chunks \d+-\d+ of this excerpt"
+    r"^(excerpt_id=|- excerpt_id=|roles:|teaches:|scope:|chunks \d+-\d+ of this excerpt"
     r"|(Previous|Next) in this book:|Source context|Excerpts on this page:"
     r"|\[p\. \d+(-\d+)?\]$|\((next start|page cut|end of)\b|.* \(book \S+, version \d+\), section "
     r"|</?source>$)"
@@ -3415,16 +3559,18 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
 async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     name = str(args["name"]).strip()
-    offered = skills.offered(ctx.answer_format)
+    offered = list(skills.SKILLS)
     if name not in offered:
         return _refused(
             f"No skill named {name}. Skills: {', '.join(offered)}.",
             code="unavailable_target",
         )
+    # The agent appends the tools a skill offers to the turn's tools after
+    # this call (agent._run_turn).
     if name == skills.OFFICE_BUILDING:
-        # The agent appends the Office tools to the turn's tools after this
-        # call (agent._run_turn).
         ctx.office_tools = True
+    elif name == skills.EDITING:
+        ctx.edit_tools = True
     return _result(skills.render(name, skills.text(name, account=ctx.account)))
 
 
@@ -3891,7 +4037,7 @@ async def _office_items(
         lines.append(line)
     head = (
         f"{name} format={body.get('format')}\npictures and charts by id; a picture "
-        "attached as capture n is on the next message and a deck slide may use it "
+        "attached as capture n is on the next message and a slide may use it "
         "as a figure:"
     )
     # The notice names ids and part paths from the file: fenced like the
@@ -4310,7 +4456,7 @@ async def _create_deck(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     books, _ = prepared
     record = deck.create(args, deck.deck_id(ctx.assistant_message_id, call_id))
     if args.get("_workspace_id"):
-        # Where an account deck lands; without it, No workspace.
+        # Where an account deck lands; without it, outside workspaces.
         record["workspace_id"] = args["_workspace_id"]
     deck.add_books(record, books)
     ctx.decks[record["id"]] = record
@@ -4319,29 +4465,44 @@ async def _create_deck(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return _result(deck.created_text(record))
 
 
+def deck_owner(ctx: ToolContext) -> str:
+    """Who may finish a kept PowerPoint: the same user in the same chat scope."""
+    return f"{ctx.user_id}\n{ctx.workspace_id}"
+
+
 async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     """Check one slide alone with ppt-master's checker and keep it. Once every
     slide is written, close the deck with its Sources slide, export it and
     store the PPTX as a workspace file (Go /api/internal/files)."""
     rid = str(args["deck_id"])
-    record = ctx.decks.get(rid)
+    if not ctx.deck_dir:
+        ctx.deck_dir = tempfile.mkdtemp(prefix="capy-deck-")
+    record = ctx.decks.get(rid) or deck.take(
+        rid, deck_owner(ctx), Path(ctx.deck_dir) / rid
+    )
     if record is None:
         return _refused(
-            f"write_slide: {rid} is not a deck this turn outlined; a deck is written "
-            "within the turn that creates it.",
+            f"write_slide: PowerPoint {rid} not found or has been removed.",
             code="unavailable_target",
         )
+    ctx.decks[rid] = record
     if record.get("file"):
         return _refused(
-            f"Deck {rid} is stored as file {record['file']}, which is now the document: "
+            f"PowerPoint {rid} is stored as file {record['file']}, which is now the document: "
             "edit it with edit_office_document (the office_building skill), or make "
-            "a new deck.",
+            "a new one.",
             code="unavailable_target",
         )
     prepared = await write_sources(ctx, "write_slide", args)
     if isinstance(prepared, ToolResult):
         return prepared
     books, _ = prepared
+    placed = await slide_figures(ctx, args["svg"])
+    if isinstance(placed, ToolResult):
+        return placed
+    svg, library_images, figure_books = placed
+    args = {**args, "svg": svg}
+    books = [*books, *figure_books]
     problems, figures, excerpts = deck.turn_figures(ctx.captures, ctx.pending_images)
     # A library crop on the slide credits its book, named in excerpt_ids or not.
     cropped = sorted(
@@ -4349,11 +4510,9 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     )
     if cropped:
         books = [*books, *await library.provenance(cropped)]
-    if not ctx.deck_dir:
-        ctx.deck_dir = tempfile.mkdtemp(prefix="capy-deck-")
     project = Path(ctx.deck_dir) / rid
     problem = await limits.render_thread(
-        deck.write, record, args, problems, figures, project
+        deck.write, record, args, problems, figures, project, library_images
     )
     if problem:
         return _refused(f"write_slide: {problem}")
@@ -4385,7 +4544,7 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         payload,
         operation_id(ctx.assistant_message_id, call_id),
         ctx,
-        failure="store the deck",
+        failure="store the PowerPoint",
         timeout=60,
     )
     if not result.effects:
@@ -4398,7 +4557,7 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     ctx._scope_outline = None  # a same-turn read finds the new file (Q536)
     result.text_parts = [
         (
-            f"{outline}\n\nEvery slide is written. The deck is stored as "
+            f"{outline}\n\nEvery slide is written. The PowerPoint is stored as "
             f"'{payload['name']}' (file id {record['file']}) and is parsed in the "
             "background; from now on that PPTX is the document."
         )
@@ -4467,12 +4626,13 @@ def _register(name: str, handler: Handler) -> None:
 
 
 _register("search_workspace", _search_workspace)
-_register("search_knowledge", _search_knowledge)
-_register("read_knowledge", _read_knowledge)
+_register("search_library", _search_library)
+_register("read_library", _read_library)
+_register("search_images", _search_images)
 _register("search_web", _search_web)
 _register("read_skill", _read_skill)
 _register("read_study_progress", _read_study_progress)
-_register("capture_knowledge_page", _capture_knowledge_page)
+_register("capture_library_page", _capture_library_page)
 _register("list_sources", _list_sources)
 _register("search_files_summary", _search_files_summary)
 _register("search_files_content", _search_files_content)
@@ -4498,15 +4658,39 @@ _register("edit_office_document", _edit_office_document)
 
 
 # Offered only with the Library switch on and a configured library.
-KNOWLEDGE_TOOLS = ("search_knowledge", "read_knowledge")
-KNOWLEDGE_CAPTURE = "capture_knowledge_page"
+KNOWLEDGE_TOOLS = ("search_library", "read_library", "search_images")
+KNOWLEDGE_CAPTURE = "capture_library_page"
 # Offered with ppt-master installed (the retrieval image has it).
 DECK_TOOLS = ("create_deck", "write_slide")
 # Offered once the office_building skill is read (ToolContext.office_tools).
 OFFICE_TOOLS = ("inspect_office_document", "edit_office_document")
+# The writes that need the editing skill, offered once it is read
+# (ToolContext.edit_tools), so a turn that only answers carries none of their
+# definitions (Epo 2026-10-30).
+EDIT_TOOLS = tuple(
+    name for name, needs in skills.REQUIRES.items() if skills.EDITING in needs
+)
+
+
+def _locked(name: str, ctx: ToolContext) -> list[str]:
+    """The skills whose read offers this tool and that the conversation has
+    not read yet (a read still in the request counts)."""
+    return [
+        skill
+        for skill, names, offered in (
+            (skills.EDITING, EDIT_TOOLS, ctx.edit_tools),
+            (skills.OFFICE_BUILDING, OFFICE_TOOLS, ctx.office_tools),
+        )
+        if name in names and not offered and skill not in ctx.skills_read
+    ]
 
 
 def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
+    return not _locked(spec.name, ctx) and _available(spec, ctx)
+
+
+def _available(spec: ToolSpec, ctx: ToolContext) -> bool:
+    """Offered once its skills are read: scope, operations and services."""
     definition = spec.definition
     if ("account" if ctx.account else "workspace") not in definition["scopes"]:
         return False
@@ -4516,8 +4700,6 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
         return False
     if spec.name == "read_study_progress":
         return ctx.study_progress
-    if spec.name in OFFICE_TOOLS:
-        return ctx.office_tools
     if spec.name == KNOWLEDGE_CAPTURE:
         # Without the knowledge-base bucket there is nothing to render.
         return _library_ready(ctx) and bool(cfg.knowledge_base_b2_bucket)
@@ -4557,12 +4739,12 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
     extra = {
         "read_skill": skills.catalog(
             preferences.merged(ctx.study_preferences)["mainFormat"],
-            skills.offered(ctx.answer_format),
+            list(skills.SKILLS),
         )
     }
     if ctx.library_catalog:
-        extra["search_knowledge"] = (
-            "\n\nSubjects this library holds:\n" + _catalog_lines(ctx.library_catalog)
+        extra["search_library"] = "\n\nSubjects this library holds:\n" + _catalog_lines(
+            ctx.library_catalog
         )
     for schema in schemas:
         name = schema["function"]["name"]
@@ -4581,7 +4763,14 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
     # ready does, as its tools drop out too.
     if not _library_ready(ctx):
         schemas = [without_excerpts(s) for s in schemas]
+    # The tools a skill read offers come last, where the turn appended them,
+    # so the prefix before them stays cached.
+    schemas.sort(key=lambda s: _unlock_rank(s["function"]["name"]))
     return [in_writing_order(s) for s in schemas]
+
+
+def _unlock_rank(name: str) -> int:
+    return 2 if name in OFFICE_TOOLS else 1 if name in EDIT_TOOLS else 0
 
 
 # The order a tool's arguments are offered in. Some OpenRouter routes (Morph,
@@ -4768,7 +4957,7 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(text.format(tool=name), code="lifecycle_rejected")
     # Dispatch rechecks what admission offered: a tool the model names without
     # holding its operations is refused, whatever the prompt said.
-    if not _offered(spec, ctx):
+    if not _available(spec, ctx):
         return _refused(
             f"{name} is unavailable for this user.", code="lifecycle_rejected"
         )
@@ -4780,7 +4969,12 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     )
     if problem:
         return _refused(problem)
-    needs = skills.missing(name, args, ctx.skills_read)
+    # A tool a skill read offers, named before that read, needs the skill too.
+    needs = list(
+        dict.fromkeys(
+            [*_locked(name, ctx), *skills.missing(name, args, ctx.skills_read)]
+        )
+    )
     if needs:
         return _refused(skills.refusal(needs, write=mutates(name)))
     try:
@@ -4863,7 +5057,7 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
         locations = "\n".join(
             _read_location(number, passage)
             for number, passage in numbered
-            if passage.kind != "web"
+            if passage.kind not in ("web", "library")
         )
         if locations:
             text += "\n\nLocations for read_document:\n" + locations

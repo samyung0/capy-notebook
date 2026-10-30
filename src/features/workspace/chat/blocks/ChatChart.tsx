@@ -1,4 +1,3 @@
-import { createContext, useContext } from 'react';
 import {
   CategoryChart,
   type ChartFrameProps,
@@ -7,9 +6,8 @@ import {
 } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
 import { Icon } from '@/components/ui/Icon';
+import type { ChartBlock, PlotBlock } from '@/features/questions/types';
 import { m } from '@/i18n';
-import { chartBlock, chartKey, plotBlock } from '../answer';
-import type { ChartProps, PlotProps } from '../schema';
 import { CiteFooter } from './Cite';
 
 /**
@@ -19,9 +17,15 @@ import { CiteFooter } from './Cite';
  * per mark, and the values as a table for inspection.
  */
 
-export const InvalidChartContext = createContext<ReadonlySet<string>>(
-  new Set()
-);
+/** A shared block with what chat adds: its sources and the illustrative
+ * mark. */
+interface FigureProps<Block> {
+  block: Block;
+  illustrative: boolean;
+  passages?: number[];
+}
+export type ChartProps = FigureProps<ChartBlock>;
+export type PlotProps = FigureProps<PlotBlock>;
 
 function Values({
   columns,
@@ -91,70 +95,35 @@ function Frame({
         </figcaption>
         {/* Charts scale with their box; past this their labels outgrow the text. */}
         {children}
-        <ChartLegend names={legend} />
+        <div className="mt-2">
+          <ChartLegend names={legend} />
+        </div>
       </div>
       <Values columns={values.columns} rows={values.rows} />
       <CiteFooter
-        note={
-          illustrative
-            ? m.chat_chart_illustrative()
-            : passages?.length
-              ? undefined
-              : m.chat_chart_unsourced()
-        }
+        note={illustrative ? m.chat_chart_illustrative() : undefined}
         passages={passages}
       />
     </figure>
   );
 }
 
-export function Chart({
-  props,
-  statementId,
-}: {
-  props: ChartProps;
-  statementId?: string;
-}) {
-  const invalid = useContext(InvalidChartContext);
-  const block = invalid.has(chartKey(props, statementId))
-    ? null
-    : chartBlock(props);
-  if (!block) return null;
+export function Chart({ props }: { props: ChartProps }) {
+  const { block, illustrative, passages } = props;
   return (
     <CategoryChart
       authored={false}
-      data={{
-        ...block,
-        illustrative: props.illustrative,
-        passages: props.passages,
-      }}
+      data={{ ...block, illustrative, passages }}
       frame={Frame}
     />
   );
 }
 
 /** The shared plot block's renderer in the chat frame (values table, sources,
- * illustrative note); props the block schema refuses draw nothing. */
-export function Plot({
-  props,
-  statementId,
-}: {
-  props: PlotProps;
-  statementId?: string;
-}) {
-  const invalid = useContext(InvalidChartContext);
-  const block = invalid.has(chartKey(props, statementId))
-    ? null
-    : plotBlock(props);
-  if (!block) return null;
+ * illustrative note). */
+export function Plot({ props }: { props: PlotProps }) {
+  const { block, illustrative, passages } = props;
   return (
-    <PlotChart
-      data={{
-        ...block,
-        illustrative: props.illustrative,
-        passages: props.passages,
-      }}
-      frame={Frame}
-    />
+    <PlotChart data={{ ...block, illustrative, passages }} frame={Frame} />
   );
 }

@@ -2592,7 +2592,7 @@ function accountSeedActivity(createdAt: string): ActivityBlock[] {
     ['search_files_summary', 'reading list'],
     ['search_files_content', 'genetics unit'],
     ['read_document', 'Reading list.md'],
-    ['search_knowledge', 'The Selfish Gene'],
+    ['search_library', 'The Selfish Gene'],
     ['search_web', 'The Selfish Gene summary', 'failed'],
     ['read_skill', 'note_building'],
     ['create_material', 'Cell biology mindmap'],

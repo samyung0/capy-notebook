@@ -39,11 +39,11 @@ Pending import scenarios keep their polling response until Reset.
 The mock chat stream uses the current `block_start` / `block_delta` /
 `block_end` protocol so partial answers and tool results render while streaming.
 
-### OpenUI chat previews
+### Chat answer previews
 
-In **Biology 101 → Chat → History**, each **OpenUI:** or **OpenUI failure:**
+In **Biology 101 → Chat → History**, each **Answer:** or **Answer failure:**
 conversation opens a saved preview immediately. The original plain-text cell
-answer remains available. In **User scenarios**, click the matching OpenUI button. It opens the dedicated workspace Chat tab and
+answer remains available. In **User scenarios**, click the matching answer button. It opens the dedicated workspace Chat tab and
 sends a fixture prompt through the real composer.
 
 The fixtures cover prose/code/math and CJK text; tabs, steps, accordions and

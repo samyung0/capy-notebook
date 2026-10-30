@@ -6,8 +6,8 @@
 // scripted calls run as a model's would, under the owner's operations and the
 // contract's validation, against the real workspace, index and gateway.
 //
-// Not called: the library tools (search_knowledge, read_knowledge,
-// capture_knowledge_page), because UAT has no knowledge library, and
+// Not called: the library tools (search_library, read_library,
+// capture_library_page), because UAT has no knowledge library, and
 // search_web, which charges per search, so Workspace only is on; create_deck
 // and write_slide, because a stored deck enqueues a paid
 // parse and index; resolve_source_change, whose result UAT cannot see (the
@@ -184,7 +184,7 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
         name: 'create_material',
       },
     ],
-    'root = Answer([a])\na = Md("Scripted tools ran.", [1])',
+    'Scripted tools ran. [#1]',
   ]);
   // The answer cites passage 1, a chunk of one of the two sources.
   const cited = citations(first.frames);
@@ -277,7 +277,7 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
         name: 'restore_file',
       },
     ],
-    'root = Answer([a])\na = Md("Scripted edits ran.")',
+    'Scripted edits ran.',
   ]);
   assert.deepEqual(
     [

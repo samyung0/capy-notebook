@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
+from ..prompts.sources import source_block
 from .library import READ_CHUNKS
 
 if TYPE_CHECKING:
@@ -29,7 +30,7 @@ class ExcerptRead:
             "was used in an earlier successful material write and still matches the "
             "library. Its full text below counts as already read for material writes "
             f"while present in context (excerpt_id={self.excerpt_id}, start={self.start}):\n"
-            + self.text
+            + source_block(self.text)
         )
 
 
@@ -59,7 +60,7 @@ class LibraryEvidence:
             for owner, read in latest.values():
                 if owner != i:
                     continue
-                result = await tools._read_knowledge(
+                result = await tools._read_library(
                     {
                         "excerpt_id": read.excerpt_id,
                         "start": read.start,
@@ -67,13 +68,11 @@ class LibraryEvidence:
                     },
                     scratch,
                 )
-                if (
-                    result.outcome == "succeeded"
-                    and any(
-                        (r.excerpt_id, r.start) == read.key
-                        for r in scratch.library_reads.reads
-                    )
-                    and tools.limit_tool_result(result.text()) == read.text
+                # The page's own text, not the tool output: that carries a
+                # passage number local to its turn.
+                if result.outcome == "succeeded" and any(
+                    (r.excerpt_id, r.start) == read.key and r.text == read.text
+                    for r in scratch.library_reads.reads
                 ):
                     self.inherited[read.key] = read
                     text = read.replay()
@@ -119,12 +118,11 @@ class LibraryEvidence:
         name: str,
         args: dict[str, Any],
         result: ToolResult,
-        shown: str,
         reads: LibraryReads,
     ) -> None:
         # A section read (book and section, no excerpt_id) is not retained: a
         # later turn reads its excerpts again before writing from them.
-        if name != "read_knowledge" or result.outcome != "succeeded":
+        if name != "read_library" or result.outcome != "succeeded":
             return
         key = (
             str(args.get("excerpt_id") or "").strip(),
@@ -133,7 +131,7 @@ class LibraryEvidence:
         read = next((r for r in reads.reads if (r.excerpt_id, r.start) == key), None)
         if read is not None:
             count = int(args.get("count") or READ_CHUNKS)
-            self.fresh[key] = ExcerptRead(*key, count, read.section, shown)
+            self.fresh[key] = ExcerptRead(*key, count, read.section, read.text)
 
     def wrote(self, excerpt_ids: list[str]) -> None:
         """A material write landed crediting these excerpts (tools.landed)."""

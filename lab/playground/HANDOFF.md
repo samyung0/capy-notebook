@@ -53,7 +53,7 @@ and raw measurements of the 2026-10-30 session are outside the repository, in
 
 ## Findings 2026-10-30
 
-- **Answer format** (handed to the OpenUI session, which owns it now): DeepSeek
+- **Answer format** (OpenUI dropped 2026-10-30; this note is history): DeepSeek
   Flash breaks programs with a bare `"` inside a string, Python-style
   `Md("""…""")`, statements root never lists (silently dropped), a program
   with no root, and its reasoning written after the program; MiniMax writes

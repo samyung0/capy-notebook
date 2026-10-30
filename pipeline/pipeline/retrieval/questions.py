@@ -985,7 +985,7 @@ def _figure_problems(figure: dict[str, Any]) -> list[str]:
     ]
     if not isinstance(figure.get("id"), str) or not figure["id"].strip():
         problems.append(
-            "media.id: expected the id of a figure read_knowledge listed this turn; "
+            "media.id: expected the id of a figure read_library or search_images listed; "
             f"sent {_sent(figure.get('id'))}"
         )
     if "caption" in figure and not isinstance(figure["caption"], str):

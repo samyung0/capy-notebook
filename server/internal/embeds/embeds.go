@@ -72,7 +72,7 @@ const (
 
 // Surfaces an embed renders on.
 const (
-	SurfaceChat     = "chat"     // chat answers (OpenUI)
+	SurfaceChat     = "chat"     // chat answers
 	SurfaceNote     = "note"     // the note editor and its View
 	SurfaceMaterial = "material" // a standalone material of its own
 	SurfaceQuiz     = "quiz"     // inside a quiz question
@@ -162,8 +162,6 @@ type Embed struct {
 	// whose refKind is the kind.
 	Element string `json:"element"`
 	Fence   Fence  `json:"fence"`
-	// Chat is the OpenUI component of chat answers; empty when chat has none.
-	Chat string `json:"chat,omitempty"`
 	// Materials are the material kinds that hold one as their whole document.
 	Materials []string `json:"materials,omitempty"`
 	// QuestionBlock kinds are question blocks too: quizzes, notes and chat
@@ -369,7 +367,7 @@ func Embeds() []Embed {
 	return []Embed{
 		{
 			Kind: "chart", Class: ClassLiveMap, Element: "chart",
-			Fence: Fence{Lang: "chart", Body: "json"}, Chat: "Chart",
+			Fence:         Fence{Lang: "chart", Body: "json"},
 			QuestionBlock: true, QuestionMedia: true,
 			Surfaces: []string{SurfaceChat, SurfaceNote, SurfaceQuiz, SurfaceShare, SurfaceExport},
 			Edit: Edit{
@@ -380,7 +378,7 @@ func Embeds() []Embed {
 		},
 		{
 			Kind: "plot", Class: ClassLiveMap, Element: "plot",
-			Fence: Fence{Lang: "plot", Body: "json"}, Chat: "Plot",
+			Fence:         Fence{Lang: "plot", Body: "json"},
 			QuestionBlock: true, QuestionMedia: true,
 			Surfaces: []string{SurfaceChat, SurfaceNote, SurfaceQuiz, SurfaceShare, SurfaceExport},
 			// Notes edit a plot (Epo 2026-10-17); a quiz shows one.
@@ -400,7 +398,7 @@ func Embeds() []Embed {
 		},
 		{
 			Kind: "html_embed", Class: ClassValue, Element: "html_embed",
-			Fence: Fence{Lang: "html-embed", Body: "yaml"}, Chat: "HtmlEmbed",
+			Fence:    Fence{Lang: "html-embed", Body: "yaml"},
 			Surfaces: []string{SurfaceChat, SurfaceNote, SurfaceShare, SurfaceExport},
 			Edit:     Edit{User: []string{SurfaceNote}, Agent: writeNote},
 			Rules:    htmlEmbedRules,

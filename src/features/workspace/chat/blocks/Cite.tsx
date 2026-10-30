@@ -5,7 +5,7 @@ import { m } from '@/i18n';
 /**
  * Passage numbers in an answer are the model's own ([n] as shown in the tool
  * results). The answer's citation list carries each entry's `n`; its position
- * in that list is the number the reader sees, so the same program renders
+ * in that list is the number the reader sees, so the same answer renders
  * the same way live and from history.
  */
 export interface CitationLookup {
@@ -42,24 +42,6 @@ export function useCitationLookup(
       },
     };
   }, [citations, onOpenCitation]);
-}
-
-/** Element nodes as the OpenUI parser hands them to a container. */
-export interface ElementNode<P = Record<string, unknown>> {
-  partial: boolean;
-  props: P;
-  type: 'element';
-  typeName: string;
-}
-
-export function elements<P>(value: unknown): ElementNode<P>[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (node): node is ElementNode<P> =>
-      !!node &&
-      typeof node === 'object' &&
-      (node as ElementNode).type === 'element'
-  );
 }
 
 /** Raised source numbers (¹,²) at the end of the text they back. */

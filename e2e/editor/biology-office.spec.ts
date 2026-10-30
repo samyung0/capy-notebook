@@ -1173,7 +1173,7 @@ test.describe('DOCX on a phone', () => {
       .click({ timeout: 60_000 });
     // The MSW User scenarios panel floats over the chat field's history button.
     await page.getByRole('button', { name: m.chat_history() }).press('Enter');
-    await page.getByRole('button', { name: 'OpenUI: Office citation' }).click();
+    await page.getByRole('button', { name: 'Answer: Office citation' }).click();
     await page.getByTitle(m.chat_source_number({ n: 1 })).click();
     const frame = page.frameLocator('iframe[src*="office-runtime"]');
     const highlight = frame.locator('[data-citation-highlight]').first();
@@ -1473,7 +1473,7 @@ test('an Office citation highlights its passage again after the runtime reloads'
   await page.goto('/workspaces/ws_bio');
   await showPanelView(page, m.workspace_tab_chat());
   await page.getByRole('button', { name: m.chat_history() }).click();
-  await page.getByRole('button', { name: 'OpenUI: Office citation' }).click();
+  await page.getByRole('button', { name: 'Answer: Office citation' }).click();
   await page.getByTitle(m.chat_source_number({ n: 1 })).click();
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
   const highlight = frame.locator('[data-citation-highlight]').first();

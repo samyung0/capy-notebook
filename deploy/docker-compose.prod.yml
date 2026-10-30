@@ -266,7 +266,7 @@ services:
       # Unset leaves curate mode's library tools unavailable.
       LIBRARY_DATABASE_URL: ${LIBRARY_DATABASE_URL:-}
       # Dedicated bucket holding the library's book PDFs, all five or none.
-      # Unset leaves capture_knowledge_page unavailable.
+      # Unset leaves capture_library_page unavailable.
       KNOWLEDGE_BASE_B2_ENDPOINT: ${KNOWLEDGE_BASE_B2_ENDPOINT:-}
       KNOWLEDGE_BASE_B2_REGION: ${KNOWLEDGE_BASE_B2_REGION:-}
       KNOWLEDGE_BASE_B2_BUCKET: ${KNOWLEDGE_BASE_B2_BUCKET:-}

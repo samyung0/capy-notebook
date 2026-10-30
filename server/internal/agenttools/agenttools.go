@@ -24,7 +24,7 @@ import (
 // version it does not know.
 //
 // v6: curate mode adds the library.read operation, the knowledge tools
-// (including capture_knowledge_page), the conversation progress ledger
+// (including capture_library_page), the conversation progress ledger
 // (create_ledger plus a todo id on create_material and edit_document) and
 // excerpt_ids on both writes.
 // v7: the library taxonomy gains subjects over topics; browse_knowledge takes
@@ -47,9 +47,9 @@ import (
 // v15: create_deck and write_slide write a slide deck the ppt-master way; the
 // exported PPTX is stored as a workspace file. list_question_bank filters a
 // topic by answer_type instead of question_type.
-// v16: search_knowledge filters by book and section; read_knowledge takes a
+// v16: search_library filters by book and section; read_library takes a
 // count. Section reading for the intake comparison: browse_knowledge with book
-// lists its outline and read_knowledge with book and section reads a section in
+// lists its outline and read_library with book and section reads a section in
 // order; the pipeline offers those two arguments only behind
 // CAPY_LIBRARY_SECTION_TOOLS.
 // v17: html-embed fences name their muted line `caption` instead of `title`,
@@ -80,8 +80,8 @@ import (
 // read_question or copy_questions; the learner's bank keeps its own copy.
 // v27: add_question_media takes a library figure, {"type": "figure", "id",
 // "caption"?}, stored as the quiz's own image (Epo 2026-10-13).
-// v28: search_knowledge takes a subject id instead of topics, book and
-// section; browse_knowledge and section reading (read_knowledge's book and
+// v28: search_library takes a subject id instead of topics, book and
+// section; browse_knowledge and section reading (read_library's book and
 // section) are gone (Epo 2026-10-14).
 // v29: the skills are editing, note_building and deck_building; insert_markdown
 // takes after_block_id "end"; create and edit receipts list the note blocks
@@ -151,7 +151,7 @@ import (
 // search_files_content beside search_files_summary (names and descriptors),
 // list_files takes a workspace_id, the account stream request's scope
 // carries its workspaces with names and edit rights, create_workspace
-// (operation workspace.create) makes a workspace, search_knowledge's hits
+// (operation workspace.create) makes a workspace, search_library's hits
 // are kept between messages (a later "make it a note" needs no new search),
 // resolve_source_change is offered in account chat, whose reads now carry
 // their items' unindexed changes, and list_workspaces lists the user's
@@ -733,9 +733,9 @@ func officeCommandSchema() map[string]any {
 			variant("add_slide", "PPTX: add a slide with its layout's title and text placeholders, empty, right after after_slide or right before before_slide (at most one), last with neither.", map[string]any{
 				"after_slide":  slideID,
 				"before_slide": slideID,
-				"layout":       str("A layout id the deck read lists; omit for the layout of the slide it follows (the first slide's when it goes first)."),
+				"layout":       str("A layout id the PowerPoint read lists; omit for the layout of the slide it follows (the first slide's when it goes first)."),
 			}),
-			variant("delete_slide", "PPTX: delete a slide, never the deck's only one.", map[string]any{
+			variant("delete_slide", "PPTX: delete a slide, never its only one.", map[string]any{
 				"slide_id":      slideID,
 				"expected_text": map[string]any{"type": "string", "description": "The slide's text as its slide read shows it: every paragraph, one a line, in shape order, then its speaker notes as the read shows them (cut marker included); blank lines and the spaces around a line are not compared."},
 			}, "slide_id", "expected_text"),
@@ -859,7 +859,7 @@ func excerptIDs(desc string) map[string]any {
 // deckExcerpts is excerpt_ids on the deck tools: their books are credited on
 // the deck's Sources slide.
 func deckExcerpts() map[string]any {
-	return excerptIDs("Library excerpts this was written from; they become the deck's Sources slide.")
+	return excerptIDs("Library excerpts this was written from; they become the PowerPoint's Sources slide.")
 }
 
 // bboxSchema is the optional zoom region of the page-capture tools.
@@ -938,8 +938,8 @@ func Definitions() []Definition {
 			Scopes:    accountOnly,
 			Retention: RetainFull,
 			Description: "Find the user's files and materials by their names and summaries, in their " +
-				"workspaces and with no workspace. Each hit gives its id, workspace and chapter (or no " +
-				"workspace), whether the user can edit it, and its summary when it has one. Use it " +
+				"workspaces and outside them. Each hit gives its id, workspace and chapter (or outside " +
+				"workspaces), whether the user can edit it, and its summary when it has one. Use it " +
 				"before search_files_content.",
 			InputSchema:        obj(map[string]any{"query": str("")}, "query"),
 			Concurrency:        "read",
@@ -949,8 +949,8 @@ func Definitions() []Definition {
 			Name:      "search_files_content",
 			Scopes:    accountOnly,
 			Retention: RetainCitedPassages,
-			Description: "Search the content of the user's files, in their workspaces and with no " +
-				"workspace, for passages matching one focused query. Each passage names its file's " +
+			Description: "Search the content of the user's files, in their workspaces and outside " +
+				"them, for passages matching one focused query. Each passage names its file's " +
 				"workspace and chapter and whether the user can edit it.",
 			InputSchema: obj(map[string]any{
 				"query": str(""),
@@ -1033,11 +1033,11 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
-			Name:      "search_knowledge",
+			Name:      "search_library",
 			Scopes:    both,
 			Retention: RetainFull,
 			Description: "Search the shared library of verified textbook excerpts, one section " +
-				"of one book each. A hit is a selection aid; read_knowledge reads the excerpt.",
+				"of one book each. A hit is a selection aid; read_library reads the excerpt.",
 			InputSchema: obj(map[string]any{
 				"query":   str(""),
 				"subject": str("A subject id listed below: search only its excerpts."),
@@ -1055,7 +1055,7 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),
 		chatTool(Definition{
-			Name:      "read_knowledge",
+			Name:      "read_library",
 			Scopes:    both,
 			Retention: RetainUsedExcerpts,
 			Description: "Read an excerpt's reviewed notes and source chunks in order from a " +
@@ -1071,8 +1071,22 @@ func Definitions() []Definition {
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),
+		// Library figures only for now; the learner's own images join as a
+		// second group once their pictures carry descriptions (Epo 2026-10-30).
 		chatTool(Definition{
-			Name:      "capture_knowledge_page",
+			Name:      "search_images",
+			Scopes:    both,
+			Retention: RetainFull,
+			Description: "Find images (diagrams, photos, charts) by what they show. Each hit gives " +
+				"the image id, its label and description, where it is printed and its credit. " +
+				"Place one by its id in a chat answer, a note or a quiz question.",
+			InputSchema:        obj(map[string]any{"query": str("What the image should show.")}, "query"),
+			UsesEmbedding:      true,
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpLibraryRead},
+		}),
+		chatTool(Definition{
+			Name:      "capture_library_page",
 			Scopes:    both,
 			Retention: RetainNone,
 			Description: "Render a printed page an excerpt covers, or a region of it, as an " +
@@ -1185,7 +1199,7 @@ func Definitions() []Definition {
 			Scopes:    both,
 			Retention: RetainFull,
 			Description: "Add a chart, a plot or a library figure to one quiz question, shown after " +
-				`its text. A figure is one read_knowledge listed this turn: {"type": "figure", "id": ` +
+				`its text. A figure is one read_library or search_images listed: {"type": "figure", "id": ` +
 				`"<figure id>", "caption": "what it shows"}; the question shows it with its printed ` +
 				`credit and the quiz credits its book. Example: {"quiz_id": "mat_1", "question_id": "q_3f9a1c2b7e", ` +
 				`"media": {"type": "plot", "title": "Action potential", "xTitle": "Time (ms)", "yTitle": ` +
@@ -1208,8 +1222,8 @@ func Definitions() []Definition {
 			Name:      "create_deck",
 			Scopes:    both,
 			Retention: RetainFull,
-			Description: "Create a slide deck from an outline, one title and brief per slide, as " +
-				"the deck skill describes.",
+			Description: "Create a PowerPoint from an outline, one title and brief per slide, as " +
+				"the deck_building skill describes.",
 			InputSchema: obj(map[string]any{
 				"title": map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle},
 				"slides": map[string]any{
@@ -1221,7 +1235,7 @@ func Definitions() []Definition {
 						"brief": map[string]any{"type": "string", "minLength": 1, "maxLength": 1200},
 					}, "title", "brief"),
 				},
-				"chapter_id":  str("The chapter to put the deck in; omit it to not put the deck in a chapter."),
+				"chapter_id":  str("The chapter to put the PowerPoint in; omit it to not put it in a chapter."),
 				"sources":     sourcesSchema("The "),
 				"excerpt_ids": deckExcerpts(),
 			}, "title", "slides"),
@@ -1233,7 +1247,7 @@ func Definitions() []Definition {
 			Name:      "write_slide",
 			Scopes:    both,
 			Retention: RetainFull,
-			Description: "Write one slide of a deck as SVG in the deck skill's rules; writing a " +
+			Description: "Write one slide of a PowerPoint as SVG in the deck_building skill's rules; writing a " +
 				"slide again replaces it.",
 			InputSchema: obj(map[string]any{
 				"deck_id":     str(""),
@@ -1360,7 +1374,7 @@ func Definitions() []Definition {
 				"table cells, the body's and then the headers', footers' and notes', which take replace_text " +
 				"only; the first page also lists the file's paragraph styles. " +
 				"PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, " +
-				"first line), the first page also listing the deck's layouts; with slide, count of that " +
+				"first line), the first page also listing the PowerPoint's layouts; with slide, count of that " +
 				"slide's shapes and paragraphs from start, each shape followed by its paragraphs with their " +
 				"target ids, the first page also giving the slide's speaker notes. Reads also list pictures, " +
 				"charts with their first points, equations and drawn shapes' text. The cheap read: " +

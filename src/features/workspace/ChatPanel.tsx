@@ -59,7 +59,7 @@ import {
 } from './chat/ChatDock';
 import { ChatHistoryDialog } from './chat/ChatHistoryDialog';
 import { ChatTrace, type UndoHandlers } from './chat/ChatTrace';
-import { LangAnswer } from './chat/LangAnswer';
+import { MarkdownAnswer } from './chat/MarkdownAnswer';
 import { QuestionBlock } from './chat/QuestionBlock';
 import { extractQuestions } from './chat/questions';
 import { useVoiceInput, VoiceButton, VoiceElapsed } from './chat/VoiceInput';
@@ -87,17 +87,17 @@ function pageLabel(c: Citation): string | null {
 }
 
 /** Where an account chat's cited source lives, before its name: its
- * workspace's icon and name, or No workspace. Workspace chats' citations
- * carry no place. */
+ * workspace's icon and name; a file outside workspaces shows only its name
+ * (Epo 2026-10-30). Workspace chats' citations carry no place. */
 function CitationPlace({ citation }: { citation: Citation }) {
   const { data: workspaces } = useWorkspaces(
     { sort: 'accessed' },
     { errorBoundary: false }
   );
-  const iconId =
-    citation.workspaceName &&
-    workspaces?.find((workspace) => workspace.id === citation.workspaceId)
-      ?.iconId;
+  if (!citation.workspaceName) return null;
+  const iconId = workspaces?.find(
+    (workspace) => workspace.id === citation.workspaceId
+  )?.iconId;
   return (
     <>
       {iconId && (
@@ -110,7 +110,7 @@ function CitationPlace({ citation }: { citation: Citation }) {
         />
       )}
       <span className="min-w-0 max-w-[45%] shrink-0 truncate text-fg-muted">
-        {citation.workspaceName || m.files_no_workspace()}
+        {citation.workspaceName}
       </span>
       <span aria-hidden className="text-fg-muted">
         ·
@@ -185,6 +185,24 @@ export function Citations({
           );
         }
         const page = pageLabel(c);
+        if (c.kind === 'library') {
+          // A library book: its title and pages, opening nothing (Epo
+          // 2026-10-30); a raised number scrolls here, as for the web.
+          return (
+            <Badge
+              className="max-w-full frosted:not-hover:bg-(--frost-fill) font-medium"
+              id={sourceEntryId(msg.id, i)}
+              key={`${c.chunkId}:${i}`}
+              size="sm"
+              title={c.snippet}
+            >
+              <span className="text-fg-muted">{i + 1}</span>
+              <Icon className="size-3 shrink-0 text-fg-muted" name="book" />
+              <span className="truncate">{c.fileName}</span>
+              {page ? <span className="text-fg-muted">{page}</span> : null}
+            </Badge>
+          );
+        }
         return (
           <Badge
             asChild
@@ -226,10 +244,10 @@ function AssistantBubble({
   // trace until its block ends and the trace takes it.
   const draft = msg.phase === 'answering' ? msg.currentBlockText : undefined;
   const answer = msg.content || draft || '';
-  // A web citation's raised number moves to its sources-list entry; a file
-  // or note citation opens its passage.
+  // A web or library citation's raised number moves to its sources-list
+  // entry; a file or note citation opens its passage.
   const openCitation = (citation: Citation) => {
-    if (citation.kind !== 'web') {
+    if (citation.kind !== 'web' && citation.kind !== 'library') {
       onOpenCitation?.(citation);
       return;
     }
@@ -245,7 +263,7 @@ function AssistantBubble({
       <ChatTrace handlers={handlers} live={live} mode={mode} msg={msg} />
       {msg.currentBlockText && msg.phase !== 'answering' && !msg.content ? (
         <div className="mt-6 mb-4">
-          <LangAnswer
+          <MarkdownAnswer
             citations={msg.citations}
             complete={false}
             content={msg.currentBlockText}
@@ -255,7 +273,7 @@ function AssistantBubble({
         </div>
       ) : null}
       {answer ? (
-        <LangAnswer
+        <MarkdownAnswer
           citations={msg.citations}
           complete={msg.status === 'complete'}
           content={answer}

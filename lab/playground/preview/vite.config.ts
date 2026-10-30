@@ -1,5 +1,5 @@
 /* The output preview's bundle: the app's markdown import, read-only note
- * renderer and styles on one page, and the chat answer renderers on
+ * renderer and styles on one page, and the chat answer renderer on
  * answer.html, served by playground.py at /preview/.
  * Build from the repository root (playground.py --check and a server start
  * without a bundle run the same):
@@ -17,7 +17,7 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     outDir: path.join(repo, 'lab/playground/local/preview'),
-    // answer.html: one chat answer, OpenUI or Markdown (answer.tsx).
+    // answer.html: one chat answer (answer.tsx).
     rollupOptions: {
       input: [
         path.join(import.meta.dirname, 'index.html'),

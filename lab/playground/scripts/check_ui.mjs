@@ -53,8 +53,8 @@ const resolvePreview = async (index, prompt) => {
   const request = pending.filter((p) => p.url === '/api/prompt')[index];
   const config = JSON.parse(request.options.body);
   const toolPrompts = {
-    search_knowledge: 'Production search',
-    read_knowledge: 'Production read',
+    search_library: 'Production search',
+    read_library: 'Production read',
   };
   request.resolve({
     ok: true,
@@ -104,12 +104,12 @@ await resolvePreview(4, 'Production prompt');
 assert.equal(element('prompt').value, 'Production prompt');
 
 // Tool drafts survive switching tools and late previews; Apply and Reset update JSON.
-element('toolName').value = 'search_knowledge';
+element('toolName').value = 'search_library';
 element('toolName').onchange();
 type('toolPrompt', 'My search instructions');
-element('toolName').value = 'read_knowledge';
+element('toolName').value = 'read_library';
 element('toolName').onchange();
-element('toolName').value = 'search_knowledge';
+element('toolName').value = 'search_library';
 element('toolName').onchange();
 assert.equal(element('toolPrompt').value, 'My search instructions');
 configure(JSON.parse(element('json').value));
@@ -117,7 +117,7 @@ await resolvePreview(5, 'Production prompt');
 assert.equal(element('toolPrompt').value, 'My search instructions');
 element('applyToolPrompt').onclick();
 assert.equal(
-  JSON.parse(element('json').value).tool_descriptions.search_knowledge,
+  JSON.parse(element('json').value).tool_descriptions.search_library,
   'My search instructions'
 );
 await resolvePreview(6, 'Production prompt');
@@ -128,7 +128,7 @@ assert.equal(
 element('resetToolPrompt').onclick();
 await resolvePreview(7, 'Production prompt');
 assert.equal(
-  JSON.parse(element('json').value).tool_descriptions.search_knowledge,
+  JSON.parse(element('json').value).tool_descriptions.search_library,
   undefined
 );
 assert.equal(element('toolPrompt').value, 'Production search');

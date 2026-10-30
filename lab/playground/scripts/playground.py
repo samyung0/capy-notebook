@@ -59,7 +59,8 @@ RUNS = LOCAL / "runs"
 PREVIEW = LOCAL / "preview"
 PREVIEW_BUILD = "pnpm exec vite build --config lab/playground/preview/vite.config.ts"
 EMBED = REPO / "embed"
-SLIDE_FIGURE = re.compile(r"""href=(["'])\.\./images/(c\d+\.jpg)\1""")
+# A capture (c<n>.jpg) or a library figure placed by id (<figure id>.jpg, D3).
+SLIDE_FIGURE = re.compile(r"""href=(["'])\.\./images/([\w-]+\.jpg)\1""")
 # Production derives the write operations from the actor's role; the playground
 # grants an editor's, plus library.read, which production grants with every chat.
 BUILD_OPERATIONS = frozenset(
@@ -157,10 +158,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "template": " [extraction confidence {score:.2f}: {reasons}]",
     },
     # citations: as_is | renumber | structured (see citations.py)
-    # format: the answer format, "openui" (production) or "markdown"
-    # (pipeline/retrieval/markdown_answer.py); the page draws either with the
-    # app's components (preview/answer.tsx).
-    "answer": {"citations": "as_is", "format": "openui"},
+    "answer": {"citations": "as_is"},
 }
 
 
@@ -191,10 +189,8 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(400, "tool_descriptions must map known tool names to text")
     if out["all_sources_rules"] is not None and not isinstance(out["all_sources_rules"], str):
         raise HTTPException(400, "all_sources_rules must be null or text")
-    from pipeline.retrieval import markdown_answer, skills
+    from pipeline.retrieval import skills
 
-    if out["answer"]["format"] not in markdown_answer.FORMATS:
-        raise HTTPException(400, "answer.format must be openui or markdown")
     texts = out["skills"]
     if not isinstance(texts, dict) or any(
         name not in skills.SKILLS or not isinstance(text, str)
@@ -261,16 +257,6 @@ def model_spec(model: dict[str, Any]):
     )
 
 
-def in_format(c: dict[str, Any], prompt: str) -> str:
-    """The prompt with the config's answer format (the agent swaps it the same
-    way; done here too so the page and the saved run show what was sent)."""
-    from pipeline.prompts import chat as chat_prompts
-
-    if c["answer"]["format"] == "markdown":
-        return chat_prompts.markdown_head(prompt)
-    return prompt
-
-
 def effective_prompt(
     c: dict[str, Any],
     base: str | None = None,
@@ -280,8 +266,9 @@ def effective_prompt(
     """The exact system prompt a turn sends, the same in both modes of the
     Workspace only switch: production text without the all sources rules, or the
     config's replacement; then the all sources rules (production's or
-    all_sources_rules) where production puts them, before the answer format, or
-    last when a replacement dropped that; then the addons.
+    all_sources_rules) where production puts them, before the answer format
+    (last in account chat, or when a replacement dropped the format); then the
+    addons.
     ``with_all_sources=False`` is the editable part the page shows."""
     import capture
     import citations
@@ -293,6 +280,7 @@ def effective_prompt(
     prompts = account_chat if c.get("account") else chat_prompts
     if base is None:
         base = prompts.system_prompt(c["locale"])
+    last = base.endswith("\n\n" + prompts.ALL_SOURCES_RULES)
     base = base.replace("\n\n" + prompts.ALL_SOURCES_RULES, "", 1)
     text = base if c["system_prompt"] is None else c["system_prompt"]
     rules = (
@@ -301,9 +289,11 @@ def effective_prompt(
         else c["all_sources_rules"]
     )
     if rules and with_all_sources:
-        head, lang, tail = text.rpartition("\n\n" + chat_prompts.LANG_RULE)
+        head, answer, tail = text.rpartition("\n\n" + chat_prompts.MARKDOWN_RULE)
         text = (
-            f"{head}\n\n{rules}{lang}{tail}" if lang else f"{text}\n\n{rules}"
+            f"{head}\n\n{rules}{answer}{tail}"
+            if answer and not last
+            else f"{text}\n\n{rules}"
         )
     offers_capture = c["tools"] is None or capture.NAME in c["tools"]
     use_capture = offers_capture and c["capture"]["addon"]
@@ -320,7 +310,7 @@ def effective_prompt(
 SUBJECT_CATALOG = "\n\nSubjects this library holds:\n"
 # The lists production appends per turn, kept when a config replaces the text.
 CATALOGS = {
-    "search_knowledge": SUBJECT_CATALOG,
+    "search_library": SUBJECT_CATALOG,
     "read_skill": "\n\nSkills:\n",
 }
 
@@ -1022,21 +1012,32 @@ async def deck_locally(
             None,
         )
         if record is None:
-            return tools._refused(
-                f"write_slide: {rid} is not a deck this turn outlined; a deck is written "
-                "within the turn that creates it.",
-                code="unavailable_target",
+            # An earlier message's unfinished PowerPoint, as production keeps it.
+            record = production_deck.take(
+                rid, tools.deck_owner(ctx), state["run_dir"] / "materials" / rid
             )
+            if record is None:
+                return tools._refused(
+                    f"write_slide: PowerPoint {rid} not found or has been removed.",
+                    code="unavailable_target",
+                )
+            state["materials"].append(record)
         if record.get("pptx"):
             return tools._refused(
-                f"Deck {rid} is exported to {record['pptx']}, which is now the document: "
-                "change its text with edit_document replace_text, or make a new deck.",
+                f"PowerPoint {rid} is exported to {record['pptx']}, which is now the document: "
+                "change its text with edit_document replace_text, or make a new one.",
                 code="unavailable_target",
             )
         prepared = await tools.write_sources(ctx, "write_slide", clean)
         if isinstance(prepared, tools.ToolResult):
             return prepared
         books, credited = prepared
+        placed = await tools.slide_figures(ctx, clean["svg"])
+        if isinstance(placed, tools.ToolResult):
+            return placed
+        svg, library_images, figure_books = placed
+        clean = {**clean, "svg": svg}
+        books = [*books, *figure_books]
         # The model knows a capture by its number in the turn, as production
         # (deck.turn_figures). A whole page is refused: a slide shrinks it
         # unreadable.
@@ -1062,7 +1063,9 @@ async def deck_locally(
         if cropped:
             books = [*books, *await library.provenance(cropped)]
         project = state["run_dir"] / "materials" / rid
-        problem = await asyncio.to_thread(deck.write, record, clean, captures, figures, project)
+        problem = await asyncio.to_thread(
+            deck.write, record, clean, captures, figures, project, library_images
+        )
         if problem:
             return tools._refused(f"write_slide: {problem}")
         record["excerpt_ids"] = sorted({*record["excerpt_ids"], *credited})
@@ -1327,7 +1330,7 @@ async def check_note(markdown: str) -> str:
 def save_knowledge_capture(
     state: dict[str, Any], ctx, call_id: str, run_id: str
 ) -> dict[str, Any]:
-    """capture_knowledge_page renders through the production tool, which keeps its
+    """capture_library_page renders through the production tool, which keeps its
     JPEG on the ToolContext; put it on disk in the shape the page already renders."""
     import base64
 
@@ -1470,13 +1473,16 @@ class Turn:
         office_tools = any(
             (m.get("toolEvidence") or {}).get("officeTools") for m in self.history
         )
+        edit_tools = any(
+            (m.get("toolEvidence") or {}).get("editTools") for m in self.history
+        )
         common = {
             "workspace_only": workspace_only,
             "assistant_message_id": self.id,
             "study_preferences": dict(c["study_preferences"] or {}),
             "study_progress": bool(c["study_progress"]),
             "office_tools": office_tools,
-            "answer_format": c["answer"]["format"],
+            "edit_tools": edit_tools,
         }
         if user:
             ctx = tools.ToolContext(
@@ -1517,14 +1523,10 @@ class Turn:
         }
 
         def system_prompt(locale, *, writes=True):
-            return in_format(
-                c, effective_prompt(c, saved["system_prompt"](locale, writes=writes))
-            )
+            return effective_prompt(c, saved["system_prompt"](locale, writes=writes))
 
         def account_prompt(locale, *, writes=True):
-            return in_format(
-                c, effective_prompt(c, saved["account_prompt"](locale, writes=writes))
-            )
+            return effective_prompt(c, saved["account_prompt"](locale, writes=writes))
 
         gateway = account.Gateway(
             ctx, state, saved["gateway_read"], saved["post_operation"]
@@ -1579,8 +1581,8 @@ class Turn:
                             "url": f"/api/runs/{self.id}/captures/{cap['n']}.jpg",
                         }
                     )
-            elif name in tools.OFFICE_TOOLS and not ctx_.office_tools:
-                # Production refuses an Office tool it has not offered first.
+            elif tools._locked(name, ctx_):
+                # Production refuses a tool a skill read has not offered yet.
                 result = await saved["run"](name, args, ctx_)
             elif problem:
                 result = tools._refused(problem)
@@ -1591,9 +1593,12 @@ class Turn:
             elif name == "read_skill" and (
                 text := skill_text(c, clean["name"])
             ) is not None:
-                # Production's _read_skill: office_building offers the Office tools.
+                # Production's _read_skill: office_building and editing offer
+                # their tools.
                 if clean["name"] == skills.OFFICE_BUILDING:
                     ctx_.office_tools = True
+                elif clean["name"] == skills.EDITING:
+                    ctx_.edit_tools = True
                 result = tools._result(skills.render(clean["name"], text))
             elif name == "list_sources" and not ctx_.account:
                 # Account chat lists through production with account.Gateway.
@@ -1628,7 +1633,7 @@ class Turn:
                     state["extra"].append(
                         {"type": "material", **written, "run": self.id}
                     )
-            if name == "capture_knowledge_page" and not result.refused:
+            if name == "capture_library_page" and not result.refused:
                 state["extra"].append(
                     save_knowledge_capture(state, ctx_, record["call_id"], self.id)
                 )
@@ -2128,6 +2133,14 @@ class Turn:
             recorded.append(event)
             yield event
         finally:
+            # Production's agent.run_agent: an unfinished PowerPoint is kept.
+            for m in self.state["materials"]:
+                if m["kind"] == "deck" and not m.get("pptx"):
+                    production_deck.keep(
+                        m,
+                        self.run_dir / "materials" / m["id"],
+                        tools.deck_owner(ctx),
+                    )
             chat_prompts.chat_messages = saved["chat_messages"]
             chat_prompts.system_prompt = saved["system_prompt"]
             account_chat.system_prompt = saved["account_prompt"]
@@ -2383,7 +2396,6 @@ def build_app(target: str):
                 user_id=user,
                 workspace_only=c["workspace_only"],
                 operations=account.OPERATIONS,
-                answer_format=c["answer"]["format"],
             )
             base, rules = production_account_prompt(c["locale"]), account_chat.ALL_SOURCES_RULES
 
@@ -2398,7 +2410,6 @@ def build_app(target: str):
                 user_id="playground",
                 workspace_only=c["workspace_only"],
                 operations=operations_for(c),
-                answer_format=c["answer"]["format"],
             )
             base, rules = production_prompt(c["locale"]), chat_prompts.ALL_SOURCES_RULES
 
@@ -2409,9 +2420,9 @@ def build_app(target: str):
         # descriptions, so this reads the library exactly as a turn does.
         await tools.load_library_catalog(ctx)
         return {
-            "prompt": in_format(c, effective_prompt(c, base, with_all_sources=False)),
+            "prompt": effective_prompt(c, base, with_all_sources=False),
             "all_sources_rules": rules,
-            "full_prompt": in_format(c, effective_prompt(c, base)),
+            "full_prompt": effective_prompt(c, base),
             "tools": schemas(c),
             "skills": skill_texts(c),
             "preferences": production_preferences,
@@ -2541,6 +2552,19 @@ def build_app(target: str):
             raise HTTPException(404)
         return FileResponse(path, media_type="font/woff2")
 
+    @app.get("/api/library/figures/{figure_id}")
+    async def library_figure(figure_id: str):
+        """Go's route for a chat answer's library figure, so the answer
+        preview draws it from the same path (pipeline answer_figure)."""
+        await reconnect()
+        try:
+            shown = await tools.answer_figure(figure_id)
+        except tools.FigureUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+        if shown is None:
+            raise HTTPException(404, "library figure not found")
+        return shown
+
     @app.get("/api/page")
     async def page(file_id: str, page: int, bbox: str | None = None):
         import capture
@@ -2596,7 +2620,7 @@ def check_decks() -> None:
             ({"slide": 1, "svg": slide(lang="")}, "needs lang"),
             ({"slide": 1, "svg": slide(body=long, bounds="64 260 300 60")}, "refused by the checker"),
             ({"slide": 1, "svg": slide(body='<image href="../images/c13.jpg" x="64" y="260" width="40" height="30"/>')}, "was not made this turn"),
-            ({"slide": 9, "svg": slide()}, "the deck has 2 slides"),
+            ({"slide": 9, "svg": slide()}, "the PowerPoint has 2 slides"),
         ):
             refused = await deck_locally("write_slide", {"deck_id": rid, **args}, ctx, state, "m1")
             assert refused.refused and says in refused.text(), refused.text()
@@ -2751,6 +2775,7 @@ def check_figures() -> None:
 
     figure = library.Figure(
         id="fig_1", book_title="B", page=3, bbox=[0, 0, 500, 500], label="Figure 1",
+        description="",
         credit="CC BY 4.0", decorative=False, excluded=False, withheld=False,
         object_key="books/x.pdf", bytes=1, excerpt_ids=["exc_1"],
     )
@@ -2898,7 +2923,7 @@ def check_preferences() -> None:
     production = preferences.lines({"writingStyle": "brief"})
     with preference_wording(merged({"preference_text": {"writingStyle=brief": "Short."}})):
         assert preferences.lines({"writingStyle": "brief"}) == [
-            *production[:1], "Short.", *production[2:]
+            *production[:1], "General: Short.", *production[2:]
         ]
     assert preferences.lines({"writingStyle": "brief"}) == production
     try:
@@ -2925,15 +2950,15 @@ def check() -> None:
             },
         }
         for name, catalog in (
-            ("read_knowledge", ""),
-            ("search_knowledge", SUBJECT_CATALOG + '- "math" (10 excerpts)'),
+            ("read_library", ""),
+            ("search_library", SUBJECT_CATALOG + '- "math" (10 excerpts)'),
         )
     ]
     config = merged(
         {
             "tool_descriptions": {
-                "read_knowledge": "custom read",
-                "search_knowledge": "custom search",
+                "read_library": "custom read",
+                "search_library": "custom search",
             }
         }
     )
@@ -2948,7 +2973,7 @@ def check() -> None:
     assert tool_prompt(schemas[1]["function"]) == "production"
     assert schemas[0]["function"]["description"] == "production"
     assert configured_tools(merged({}), schemas) == schemas
-    for invalid in (None, [], {"unknown": "x"}, {"search_knowledge": 1}):
+    for invalid in (None, [], {"unknown": "x"}, {"search_library": 1}):
         try:
             merged({"tool_descriptions": invalid})
         except HTTPException as exc:
@@ -3148,8 +3173,8 @@ def check() -> None:
             "en"
         )
         lib = merged({"all_sources_rules": "MY RULES", "tools": []})
-        assert effective_prompt(lib, "base\n\n" + chat.LANG_RULE) == (
-            "base\n\nMY RULES\n\n" + chat.LANG_RULE
+        assert effective_prompt(lib, "base\n\n" + chat.MARKDOWN_RULE) == (
+            "base\n\nMY RULES\n\n" + chat.MARKDOWN_RULE
         )
         assert effective_prompt({**lib, "system_prompt": "mine"}, "x") == "mine\n\nMY RULES"
         assert effective_prompt(lib, "base", with_all_sources=False) == "base"

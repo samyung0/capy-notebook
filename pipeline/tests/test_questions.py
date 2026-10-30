@@ -533,7 +533,7 @@ async def test_a_library_figure_goes_after_the_question_text(monkeypatch):
     ctx.library_reads.note("e_1", 0, "1.1")
     figure = library.Figure(
         id="fig_1", book_title="B", page=3, bbox=[0, 0, 500, 500],
-        label="Figure 2.1: A cell", credit="CC BY 4.0", decorative=False,
+        label="Figure 2.1: A cell", description="", credit="CC BY 4.0", decorative=False,
         excluded=False, withheld=False, object_key="books/x.pdf", bytes=1,
         excerpt_ids=["e_1"],
     )  # fmt: skip
