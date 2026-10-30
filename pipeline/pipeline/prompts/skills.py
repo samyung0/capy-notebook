@@ -115,7 +115,10 @@ Practice from the library (Workspace only off):
 - Reuse library exercises and worked examples before writing new questions. Keep a worked example's question, givens, model and solution together, and never splice numbers from different examples. Label adapted or new practice as such; call it a source exercise only when the source asks it."""
 
 
-FIGURES_WHEN = "read before writing a chart, plot or html-embed figure in an answer"
+FIGURES_WHEN = (
+    "read before writing a chart, plot or html-embed figure in a chat answer, "
+    "never for notes or other materials"
+)
 
 
 def figures() -> str:
