@@ -1,0 +1,27 @@
+{
+  "account": {
+    "user_id": "user_3LLmrB3L5mx9OEsV5Mp89zdKQEQ"
+  },
+  "workspace_only": false,
+  "study_preferences": {},
+  "model": {
+    "provider_slug": "deepseek",
+    "model_slug": "deepseek-flash",
+    "version": 9,
+    "thinking": "high",
+    "transport": null
+  },
+  "system_prompt": null,
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "answer": {
+    "citations": "as_is"
+  }
+}

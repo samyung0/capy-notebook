@@ -4716,27 +4716,19 @@ def without_blanks(name: str, args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    spec = REGISTRY.get(name)
-    if spec is None:
-        return _refused(f"No tool named {name}.", code="unsupported_operation")
-    if ctx.workspace_only and name in OUTSIDE_TOOLS:
-        # Listed in both modes so the prompt cache survives the switch.
-        text = ACCOUNT_NOT_AVAILABLE if ctx.account else NOT_AVAILABLE
-        return _refused(text.format(tool=name), code="lifecycle_rejected")
-    # Dispatch rechecks what admission offered: a tool the model names without
-    # holding its operations is refused, whatever the prompt said.
-    if not _offered(spec, ctx):
-        return _refused(
-            f"{name} is unavailable for this user.", code="lifecycle_rejected"
-        )
+def dispatch_args(
+    name: str, args: dict[str, Any], ctx: ToolContext
+) -> dict[str, Any] | ToolResult:
+    """The arguments as the handler takes them: blanks dropped and, in
+    account chat, workspace_id moved to ``_workspace_id`` and checked against
+    the scope. Shared with the playground's dispatch."""
     if (
         ctx.account
         and (name in DESTINATION_TOOLS or name in ("list_sources", "create_chapter"))
         and "workspace_id" in args
     ):
         # The account schema copy's own argument (profiles/account.py); Go's
-        # schema, validated below, does not have it.
+        # schema, validated after this, does not have it.
         args = dict(args)
         destination = args.pop("workspace_id")
         if not contract.blank(destination):
@@ -4758,6 +4750,26 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     ):
         rest = "" if name == "create_chapter" else NO_WORKSPACE_CHOICE
         return _refused(NOT_A_DESTINATION.format(id=named, rest=rest))
+    return args
+
+
+async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    spec = REGISTRY.get(name)
+    if spec is None:
+        return _refused(f"No tool named {name}.", code="unsupported_operation")
+    if ctx.workspace_only and name in OUTSIDE_TOOLS:
+        # Listed in both modes so the prompt cache survives the switch.
+        text = ACCOUNT_NOT_AVAILABLE if ctx.account else NOT_AVAILABLE
+        return _refused(text.format(tool=name), code="lifecycle_rejected")
+    # Dispatch rechecks what admission offered: a tool the model names without
+    # holding its operations is refused, whatever the prompt said.
+    if not _offered(spec, ctx):
+        return _refused(
+            f"{name} is unavailable for this user.", code="lifecycle_rejected"
+        )
+    args = dispatch_args(name, args, ctx)
+    if isinstance(args, ToolResult):
+        return args
     problem = contract.validate_args(
         name, {k: v for k, v in args.items() if not k.startswith("_")}
     )

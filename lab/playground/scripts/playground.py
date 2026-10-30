@@ -31,6 +31,7 @@ from unittest.mock import patch
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import account
 import deck
 import office
 from deck import production as production_deck
@@ -73,6 +74,10 @@ def operations_for(c: dict[str, Any]) -> frozenset[str]:
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "workspace_id": "odl_eval_odl",
+    # account: null is workspace chat on workspace_id; {"user_id": ...} is that
+    # user's account chat across their workspaces (account.py), and
+    # workspace_id, open_resource and scope_file_ids are not used.
+    "account": None,
     "scope_file_ids": None,
     "locale": "en",
     # workspace_only: the per-message Workspace only switch; on, only the
@@ -205,6 +210,12 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(
             400, "preference_text must map field=value names (preferences.py) to text"
         )
+    if out["account"] is not None and not (
+        isinstance(out["account"], dict)
+        and isinstance(out["account"].get("user_id"), str)
+        and out["account"]["user_id"]
+    ):
+        raise HTTPException(400, 'account must be null or {"user_id": "<user id>"}')
     if out["history_mode"] not in ("evidence", "full"):
         raise HTTPException(400, 'history_mode must be "evidence" or "full"')
     if out["tools"] is not None and (
@@ -260,14 +271,17 @@ def effective_prompt(
     import capture
     import citations
 
+    from pipeline.prompts import account_chat
     from pipeline.prompts import chat as chat_prompts
 
+    # Account chat has its own prompt and all sources rules (account.py).
+    prompts = account_chat if c.get("account") else chat_prompts
     if base is None:
-        base = chat_prompts.system_prompt(c["locale"])
-    base = base.replace("\n\n" + chat_prompts.ALL_SOURCES_RULES, "", 1)
+        base = prompts.system_prompt(c["locale"])
+    base = base.replace("\n\n" + prompts.ALL_SOURCES_RULES, "", 1)
     text = base if c["system_prompt"] is None else c["system_prompt"]
     rules = (
-        chat_prompts.ALL_SOURCES_RULES
+        prompts.ALL_SOURCES_RULES
         if c["all_sources_rules"] is None
         else c["all_sources_rules"]
     )
@@ -456,10 +470,14 @@ async def create_chapter_locally(
     args: dict[str, Any], ctx, state: dict[str, Any], message_id: str
 ):
     """create_chapter without a gateway: the chapter lives in the run's state,
-    named and given its id as Go would, and joins the turn's chapters."""
+    named and given its id as Go would, and joins the turn's chapters (in
+    account chat, those of the workspace the call names)."""
     from pipeline.retrieval import store, tools
 
-    outline = await store.workspace_outline(ctx.workspace_id)
+    workspace = args.get("_workspace_id") or ctx.workspace_id
+    if not workspace:
+        return tools._refused(tools.CHAPTER_NEEDS_ITS_WORKSPACE)
+    outline = await store.workspace_outline(workspace)
     chapters = state.setdefault("chapters", [])
     notes: list[str] = []
     name = tools._cut(args.get("name"), tools.CHAPTER_NAME_MAX, "name", notes)
@@ -470,7 +488,7 @@ async def create_chapter_locally(
             n += 1
         name = f"Chapter ({n})"
     op = tools.operation_id(message_id, str(args.get("_tool_call_id") or ""))
-    chapters.append({"id": tools.chapter_id(op), "name": name})
+    chapters.append({"id": tools.chapter_id(op), "name": name, "workspace_id": workspace})
     result = tools._receipt_result(
         {"operationId": op, "kind": "create_chapter", "outcome": "succeeded", "name": name},
         ctx,
@@ -492,7 +510,12 @@ async def create_material_locally(
     from pipeline.retrieval import questions, tools
 
     kind, call_id = str(args.get("kind") or ""), str(args.get("_tool_call_id") or "")
-    if (unknown := tools.unknown_chapter(ctx, args)) is not None:
+    unknown = (
+        await account.chapter_refusal(ctx, args, state)
+        if ctx.account
+        else tools.unknown_chapter(ctx, args)
+    )
+    if unknown is not None:
         return unknown
     content = str(args.get("content") or "")
     fences = questions.Check(questions.FENCE)
@@ -533,11 +556,12 @@ async def create_material_locally(
         "size": material_size(kind, args),
         "edits": [],
     }
+    account.tag(record, args)
     state["materials"].append(record)
     # A note's blocks get their ids now, as the gateway's receipt lists them.
     written = [t["id"] for t in inspected(record)] if kind == "note" else []
     write_material(state, record)
-    result = tools._receipt_result(
+    result = account.receipt(
         {
             "outcome": "succeeded",
             "effect": {
@@ -550,7 +574,9 @@ async def create_material_locally(
                 },
                 "blockIds": written,
             },
-        }
+        },
+        ctx,
+        args,
     )
     tools.landed(ctx, credited)
     return tools.with_repairs(figures.noted(result), fences)
@@ -956,7 +982,10 @@ async def deck_locally(
         return tools._refused(problem)
     if name == "create_deck":
         chapter = str(clean.get("chapter_id") or "")
-        if chapter and chapter not in {c["id"] for c in ctx.chapters}:
+        if ctx.account:
+            if (refused := await account.chapter_refusal(ctx, args, state)) is not None:
+                return refused
+        elif chapter and chapter not in {c["id"] for c in ctx.chapters}:
             return tools._refused(
                 "chapter_id is not a chapter of this workspace; the turn context lists them."
             )
@@ -967,6 +996,7 @@ async def deck_locally(
         rid = production_deck.deck_id(message_id, str(args.get("_tool_call_id") or ""))
         record = deck.create(clean, rid)
         record["excerpt_ids"] = credited
+        account.tag(record, args)
         state["materials"].append(record)
         operation = "created"
         outline = deck.created_text(record)
@@ -1093,20 +1123,21 @@ async def questions_locally(
         return run_material(state, quiz_id)
 
     def receipt(operation: str, record: dict[str, Any]):
-        return tools._receipt_result(
-            {
-                "outcome": "succeeded",
-                "effect": {
-                    "operation": operation,
-                    "resource": {
-                        "kind": "material",
-                        "id": record["id"],
-                        "title": record["title"],
-                        "materialKind": "quiz",
-                    },
+        body = {
+            "outcome": "succeeded",
+            "effect": {
+                "operation": operation,
+                "resource": {
+                    "kind": "material",
+                    "id": record["id"],
+                    "title": record["title"],
+                    "materialKind": "quiz",
                 },
-            }
-        )
+            },
+        }
+        if operation == "created":
+            return account.receipt(body, ctx, args)
+        return tools._receipt_result(body)
 
     async def load(quiz_id: str):
         record = record_of(quiz_id)
@@ -1134,6 +1165,7 @@ async def questions_locally(
             "edits": [],
         }
         record["size"] = material_size("quiz", record)
+        account.tag(record, args)
         state["materials"].append(record)
         write_material(state, record)
         return receipt("created", record)
@@ -1383,6 +1415,7 @@ class Turn:
         from pipeline import elitellm, obs, registry
         from pipeline.config import cfg
         from pipeline.elitellm import client as llm_client
+        from pipeline.prompts import account_chat
         from pipeline.prompts import chat as chat_prompts
         from pipeline.retrieval import (
             agent,
@@ -1410,29 +1443,49 @@ class Turn:
             if use_capture
             else None
         )
+        user = account.user_of(c)
         quality = (
-            load_quality(c["target"], c["workspace_id"]) if c["quality"]["show"] else {}
+            load_quality(c["target"], c["workspace_id"])
+            if c["quality"]["show"] and not user
+            else {}
         )
-        ctx = tools.ToolContext(
-            workspace_id=c["workspace_id"],
-            user_id="playground",
-            workspace_only=workspace_only,
-            operations=operations_for(c),
-            file_ids=c["scope_file_ids"] or None,
-            assistant_message_id=self.id,
-            open_resource=dict(c["open_resource"] or {}),
-            study_preferences=dict(c["study_preferences"] or {}),
-            study_progress=bool(c["study_progress"]),
-            # The gateway offers the Office tools once a completed turn read
-            # office_building (store.ConversationPrompt); here only the
-            # history the page still sends counts, not what a checkpoint folded.
-            office_tools=any(
-                (m.get("toolEvidence") or {}).get("officeTools") for m in self.history
-            ),
+        # The gateway offers the Office tools once a completed turn read
+        # office_building (store.ConversationPrompt); here only the
+        # history the page still sends counts, not what a checkpoint folded.
+        office_tools = any(
+            (m.get("toolEvidence") or {}).get("officeTools") for m in self.history
         )
+        common = {
+            "workspace_only": workspace_only,
+            "assistant_message_id": self.id,
+            "study_preferences": dict(c["study_preferences"] or {}),
+            "study_progress": bool(c["study_progress"]),
+            "office_tools": office_tools,
+        }
+        if user:
+            ctx = tools.ToolContext(
+                workspace_id="",
+                scope=await account.scope(user),
+                user_id=user,
+                operations=account.OPERATIONS,
+                **common,
+            )
+        else:
+            ctx = tools.ToolContext(
+                workspace_id=c["workspace_id"],
+                user_id="playground",
+                operations=operations_for(c),
+                file_ids=c["scope_file_ids"] or None,
+                open_resource=dict(c["open_resource"] or {}),
+                **common,
+            )
         saved = {
             "chat_messages": chat_prompts.chat_messages,
             "system_prompt": chat_prompts.system_prompt,
+            "account_prompt": account_chat.system_prompt,
+            "gateway_read": tools._gateway_read,
+            "post_operation": tools._post_operation,
+            "outline": store.workspace_outline,
             "schemas_for": tools.schemas_for,
             "run": tools.run,
             "mutates": tools.mutates,
@@ -1450,6 +1503,13 @@ class Turn:
         def system_prompt(locale, *, writes=True):
             return effective_prompt(c, saved["system_prompt"](locale, writes=writes))
 
+        def account_prompt(locale, *, writes=True):
+            return effective_prompt(c, saved["account_prompt"](locale, writes=writes))
+
+        gateway = account.Gateway(
+            ctx, state, saved["gateway_read"], saved["post_operation"]
+        )
+
         def schemas_for(ctx_):
             schemas = turn_tools(c, saved["schemas_for"](ctx_))
             state["tool_schemas"] = schemas
@@ -1463,8 +1523,11 @@ class Turn:
                 # As the model sent them, for slip analyses.
                 "args": {k: v for k, v in args.items() if not k.startswith("_")},
             }
-            # Blank means absent, as production's dispatch (tools.run) has it.
-            args = tools.without_blanks(name, args)
+            # Blank means absent and account chat's workspace_id moves aside,
+            # as production's dispatch (tools.run) has it.
+            prepared = tools.dispatch_args(name, args, ctx_)
+            refused = prepared if isinstance(prepared, tools.ToolResult) else None
+            args = args if refused else prepared
             clean = {k: v for k, v in args.items() if not k.startswith("_")}
             if clean != record["args"]:
                 record["clean_args"] = clean
@@ -1475,7 +1538,9 @@ class Turn:
                 if name in tools.contract.DEFINITIONS
                 else None
             )
-            if offered is not None and name not in offered:
+            if refused is not None:
+                result = refused
+            elif offered is not None and name not in offered:
                 result = tools._refused(
                     f"{name} is not offered in this configuration.",
                     code="unsupported_operation",
@@ -1510,7 +1575,8 @@ class Turn:
                 if clean["name"] == skills.OFFICE_BUILDING:
                     ctx_.office_tools = True
                 result = tools._result(skills.render(clean["name"], text))
-            elif name == "list_sources":
+            elif name == "list_sources" and not ctx_.account:
+                # Account chat lists through production with account.Gateway.
                 result = await list_sources_locally(ctx_, state)
             elif name == "read_study_progress":
                 result = tools._result(tools.render_progress(c["study_progress"]))
@@ -1878,6 +1944,10 @@ class Turn:
 
             chat_prompts.chat_messages = chat_messages
         chat_prompts.system_prompt = system_prompt
+        account_chat.system_prompt = account_prompt
+        if ctx.account:
+            tools._gateway_read, tools._post_operation = gateway.read, gateway.post
+            store.workspace_outline = account.outline_with_run(saved["outline"], state)
         tools.schemas_for, tools.run = schemas_for, run
         tools.mutates, tools.render_result, models.stream_agent_response = (
             mutates,
@@ -2040,6 +2110,12 @@ class Turn:
         finally:
             chat_prompts.chat_messages = saved["chat_messages"]
             chat_prompts.system_prompt = saved["system_prompt"]
+            account_chat.system_prompt = saved["account_prompt"]
+            tools._gateway_read, tools._post_operation = (
+                saved["gateway_read"],
+                saved["post_operation"],
+            )
+            store.workspace_outline = saved["outline"]
             tools.schemas_for, tools.run = saved["schemas_for"], saved["run"]
             tools.mutates, tools.render_result, models.stream_agent_response = (
                 saved["mutates"],
@@ -2160,6 +2236,9 @@ def build_app(target: str):
     # A running turn temporarily patches prompts and schemas with its own config.
     production_schemas = tools.schemas_for
     production_prompt = chat_prompts.system_prompt
+    from pipeline.prompts import account_chat
+
+    production_account_prompt = account_chat.system_prompt
     production_preferences = preference_texts()
 
     async def library_summary() -> dict[str, Any] | None:
@@ -2204,7 +2283,9 @@ def build_app(target: str):
             )
             models = [dict(r) for r in await cur.fetchall()]
             cur = await conn.execute(
-                "SELECT w.id, w.name, count(f.id) AS files, (SELECT count(*) FROM rag_chunks c WHERE c.workspace_id = w.id) AS chunks "
+                "SELECT w.id, w.name, count(f.id) AS files, (SELECT count(*) FROM rag_chunks c "
+                "JOIN rag_file_contents rfc ON rfc.content_id = c.content_id JOIN files cf ON cf.id = rfc.file_id "
+                "WHERE cf.workspace_id = w.id AND cf.trashed_at IS NULL) AS chunks "
                 "FROM workspaces w LEFT JOIN files f ON f.workspace_id = w.id AND f.trashed_at IS NULL GROUP BY 1, 2 ORDER BY 4 DESC, 2"
             )
             workspaces = [dict(r) for r in await cur.fetchall()]
@@ -2306,30 +2387,51 @@ def build_app(target: str):
     @app.post("/api/prompt")
     async def prompt(request: Request):
         """The two layers a turn sends: the system prompt and the tools array."""
-        from pipeline.retrieval import contract, tools
+        from pipeline.prompts import account_chat
+        from pipeline.retrieval import contract, profiles, tools
 
         c = merged(await request.json())
-        ctx = tools.ToolContext(
-            workspace_id=c["workspace_id"],
-            user_id="playground",
-            workspace_only=c["workspace_only"],
-            operations=operations_for(c),
-        )
+        if user := account.user_of(c):
+            await reconnect()
+            ctx = tools.ToolContext(
+                workspace_id="",
+                scope=await account.scope(user),
+                user_id=user,
+                workspace_only=c["workspace_only"],
+                operations=account.OPERATIONS,
+            )
+            base, rules = production_account_prompt(c["locale"]), account_chat.ALL_SOURCES_RULES
+
+            def schemas(c_):
+                # The config's narrowing and descriptions over the account copy
+                # (a turn applies them before it; only list_sources differs, as
+                # the profile replaces its description).
+                return turn_tools(c_, profiles.account.schemas(ctx))
+        else:
+            ctx = tools.ToolContext(
+                workspace_id=c["workspace_id"],
+                user_id="playground",
+                workspace_only=c["workspace_only"],
+                operations=operations_for(c),
+            )
+            base, rules = production_prompt(c["locale"]), chat_prompts.ALL_SOURCES_RULES
+
+            def schemas(c_):
+                return turn_tools(c_, production_schemas(ctx))
+
         # The pinned version's topic catalog rides in the knowledge tool
         # descriptions, so this reads the library exactly as a turn does.
         await tools.load_library_catalog(ctx)
         return {
-            "prompt": effective_prompt(
-                c, production_prompt(c["locale"]), with_all_sources=False
-            ),
-            "all_sources_rules": chat_prompts.ALL_SOURCES_RULES,
-            "full_prompt": effective_prompt(c, production_prompt(c["locale"])),
-            "tools": turn_tools(c, production_schemas(ctx)),
+            "prompt": effective_prompt(c, base, with_all_sources=False),
+            "all_sources_rules": rules,
+            "full_prompt": effective_prompt(c, base),
+            "tools": schemas(c),
             "skills": skill_texts(c),
             "preferences": production_preferences,
             "tool_prompts": {
                 s["function"]["name"]: tool_prompt(s["function"])
-                for s in turn_tools({**c, "tool_descriptions": {}}, production_schemas(ctx))
+                for s in schemas({**c, "tool_descriptions": {}})
             },
         }
 

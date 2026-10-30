@@ -144,6 +144,7 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 
 | Field | Meaning |
 | --- | --- |
+| `account` | `null` (default) is workspace chat on `workspace_id`; `{"user_id": "<user id>"}` is that user's account chat ([Account chat](#account-chat)). `configs/account-uat.json` is Epo's UAT account |
 | `model` | A `model_configs` pin (`provider_slug`, `model_slug`, `version`, `thinking`). Add `adhoc: {…}` to pin a model the catalog lacks; the provider's platform key must exist. The Model picker lists every adhoc pin a saved config holds beside the catalog, and picking one copies the whole pin |
 | `model.transport` | Send this pin to another OpenAI-compatible endpoint: `{"url", "key_env", "wire_model", "body"}`. `body` picks the request builder (`zai`, `openai`, `deepseek`). `null` uses the production route |
 | `answer.citations` | `as_is` (production numbering), `renumber` (markers rewritten to 1, 2, … in first-appearance order while streaming; the final list holds only the passages used) or `structured` (the answer is JSON: claims with the passages that ground each; the playground writes the prose and numbers) |
@@ -237,6 +238,39 @@ names (`embed/_headers`; the SVG namespace URL is allowed) and with no fetch.
 The library reads, `capture_knowledge_page` and compaction use the real
 code path. `capture_knowledge_page` renders from the knowledge-base bucket into
 the same capture cache, keyed by the book's `books/<sha256>.pdf` object key.
+
+## Account chat
+
+With `account` set, a turn is that user's account chat as production runs it:
+the account system prompt and tools (`profiles/account.py`), the user's owned
+and member workspaces as its scope, and the account skills. The prompt and
+tool editors show the account text. Go's account routes are answered by
+`scripts/account.py` from the target database with Go's own SQL
+(`server/internal/store/account_scope.go`), read-only: `documents/access`
+(every account read and search) and `documents/list` (`list_sources`), with
+the run's own materials added. `create_workspace` and `create_chapter` make a
+workspace or chapter that exists only in the run; later listings and chapter
+checks see it. Other gateway reads are unreachable here, as in workspace
+mode: `inspect_document` and `inspect_office_document` of an item the
+database holds fail (Go reads its document); the run's own materials inspect.
+A `tool_descriptions` override of `list_sources` does not apply, since the
+account profile replaces that description.
+
+### Real chats to continue
+
+`scripts/import_chat.py` turns stored conversations into runs, one per
+assistant answer, named `<target>-<conversation>-t<n>-<question>` so they sort
+first in Runs. Opening one restores the conversation up to that answer; the
+next question runs under the selected config, which must name the
+conversation's user in `account`. Read-only, one SELECT per conversation.
+
+```sh
+uv run --project pipeline python lab/playground/scripts/import_chat.py --target uat conv_a8be00792c conv_289d6b3dd5
+```
+
+A worktree has no `.env.local`; `CAPY_ENV_LOCAL=<checkout>/.env.local` makes
+the playground and the importer read the checkout's in place (the library URL
+and the knowledge bucket keys come only from there).
 
 ## Citation modes
 
