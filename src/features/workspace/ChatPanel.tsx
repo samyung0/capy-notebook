@@ -404,7 +404,7 @@ export function ChatPanel({
     refuseUndo,
   } = useChatStream(workspaceId);
   const { data: me } = useMe({ errorBoundary: false });
-  const mode: ChatSteps = me?.chatSteps ?? 'normal';
+  const mode: ChatSteps = me?.chatSteps ?? 'verbose';
   const sendKey = me?.chatSendKey ?? 'enter';
   // Dock only: the chat page is open, or a chip leads back to it after a
   // citation or a created file took the learner to the file.

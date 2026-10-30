@@ -185,7 +185,7 @@ export const user: Omit<User, 'account'> = {
     providerSlug: 'deepseek',
   },
   chatSendKey: 'enter',
-  chatSteps: 'normal',
+  chatSteps: 'verbose',
   classLabel: 'Grade 11 · Science',
   email: 'kate@capynotebook.app',
   id: 'u_1',

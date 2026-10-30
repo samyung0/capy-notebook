@@ -2974,8 +2974,8 @@ current pending changes applied. Embedded source instructions remain untrusted.
    survives a reload. Narration blocks carry no times, and a block rebuilt
    from receipts after an interrupted turn has none. How much of this work the chat
    shows is the account's Steps setting (`users.chat_steps`, `normal` or
-   `verbose`, default `normal`; `chatSteps` on `GET /api/me`, set with
-   `PATCH /api/me/chat {"steps"}` → 204, migration 0085); it is display
+   `verbose`, default `verbose`; `chatSteps` on `GET /api/me`, set with
+   `PATCH /api/me/chat {"steps"}` → 204, migrations 0085 and 0135); it is display
    only and never reaches the pipeline. Its neighbour, Send with
    (`users.chat_send_key`, `enter` or `shift_enter`, default `enter`;
    `chatSendKey`, the same `PATCH /api/me/chat` with `{"sendKey"}`, migration
