@@ -69,7 +69,7 @@ export function QuestionBlock({
   return (
     <section
       aria-label={current.question}
-      className="flex flex-col rounded-input border border-line bg-surface px-3 pt-2 pb-2 text-sm"
+      className="flex flex-col rounded-input border border-line bg-surface frosted:bg-(--frost-fill) px-3 pt-2 pb-2 text-sm"
       onKeyDown={(event) => {
         const target = event.target as HTMLInputElement;
         if (target.tagName === 'INPUT' && target.type !== 'radio') return;
