@@ -338,6 +338,68 @@ test.fixme('PDF tools persist private marks, undo restores IDs, and narrow tools
   await page.keyboard.press('Escape');
 });
 
+test('a PDF stays on the same spot of its page through zoom and a narrower pane', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_scenarios');
+  const panel = page.getByTestId('mock-scenario-panel');
+  await panel.locator('summary').click({ timeout: 60_000 });
+  await panel.locator('[data-scenario="chat-answer-overview"]').click();
+  const source = page.getByTitle(m.chat_source_number({ n: 2 })).first();
+  await expect(source).toBeVisible({ timeout: 60_000 });
+  await source.click();
+  const pages = page.locator('[data-page]');
+  await expect(pages).toHaveCount(3, { timeout: 60_000 });
+
+  // The page under the pane's middle, and how far down it.
+  const place = () =>
+    pages.first().evaluate((first) => {
+      let scroller = first.parentElement as HTMLElement;
+      while (getComputedStyle(scroller).overflowY !== 'auto')
+        scroller = scroller.parentElement as HTMLElement;
+      const box = scroller.getBoundingClientRect();
+      const middle = box.top + scroller.clientHeight / 2;
+      const under = [...document.querySelectorAll('[data-page]')].find(
+        (candidate) => candidate.getBoundingClientRect().bottom >= middle
+      ) as HTMLElement;
+      const rect = under.getBoundingClientRect();
+      return {
+        fraction: (middle - rect.top) / rect.height,
+        page: Number(under.dataset.page),
+      };
+    });
+  const expectPlace = async (before: { fraction: number; page: number }) => {
+    await expect
+      .poll(() => place().then(({ page: at }) => at))
+      .toBe(before.page);
+    const { fraction } = await place();
+    expect(Math.abs(fraction - before.fraction)).toBeLessThan(0.02);
+  };
+
+  // The citation's own scroll has landed on page 2 before the reader moves.
+  await expect(page.locator('[data-page="2"][data-painted]')).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.waitForTimeout(600);
+  await pages
+    .nth(1)
+    .evaluate((node) => node.scrollIntoView({ block: 'center' }));
+  await page.waitForTimeout(300);
+  const reading = await place();
+  expect(reading.page).toBe(2);
+
+  const zoomIn = page.getByRole('button', { name: m.material_zoom_in() });
+  await zoomIn.click();
+  await zoomIn.click();
+  await expectPlace(reading);
+  await page.getByRole('button', { name: m.material_zoom_out() }).click();
+  await expectPlace(reading);
+
+  await page.setViewportSize({ height: 800, width: 1000 });
+  await expectPlace(reading);
+});
+
 test('a chat citation opens the note and flashes its passage, once per click', async ({
   page,
 }) => {
