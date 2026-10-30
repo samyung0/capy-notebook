@@ -14,9 +14,7 @@ PROFILE = Profile(
     messages=chat_prompts.chat_messages,
     mode_lines=chat_prompts.MODE_LINES,
     send_back={
-        (True, False): chat_prompts.SEND_BACK,
-        (True, True): chat_prompts.SEND_BACK_TOOL,
-        (False, False): chat_prompts.SEND_BACK_READ_ONLY,
-        (False, True): chat_prompts.SEND_BACK_TOOL_READ_ONLY,
+        True: chat_prompts.SEND_BACK_TOOL,
+        False: chat_prompts.SEND_BACK_TOOL_READ_ONLY,
     },
 )

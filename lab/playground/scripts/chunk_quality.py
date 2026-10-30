@@ -101,7 +101,7 @@ async def run(target: str, workspace_id: str, output: Path) -> None:
         cur = await conn.execute(
             "SELECT c.id, fc.file_id, f.name, c.chunk_idx, c.text, c.page_start, c.page_end "
             "FROM rag_chunks c JOIN rag_file_contents fc ON fc.content_id = c.content_id "
-            "JOIN files f ON f.id = fc.file_id WHERE c.workspace_id = %s AND f.trashed_at IS NULL ORDER BY fc.file_id, c.chunk_idx",
+            "JOIN files f ON f.id = fc.file_id WHERE f.workspace_id = %s AND f.trashed_at IS NULL ORDER BY fc.file_id, c.chunk_idx",
             (workspace_id,),
         )
         rows = [dict(r) for r in await cur.fetchall()]

@@ -105,7 +105,9 @@ def test_material_tool_is_hidden_without_a_gateway(monkeypatch):
 def test_material_tool_needs_the_create_operation(monkeypatch):
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gateway")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "secret")
-    ctx = ToolContext(workspace_id="ws", user_id="u_1", operations=_READ)
+    ctx = ToolContext(
+        workspace_id="ws", user_id="u_1", operations=_READ, edit_tools=True
+    )
 
     assert "create_material" not in [
         s["function"]["name"] for s in tools.schemas_for(ctx)
@@ -163,6 +165,11 @@ def _names(ctx: ToolContext) -> list[str]:
     return [s["function"]["name"] for s in tools.schemas_for(ctx)]
 
 
+def _shown(ctx: ToolContext, result: tools.ToolResult) -> str:
+    """A result as the model reads it, its passages numbered."""
+    return tools.render_result(result, tools.assign_citations(ctx, result.passages))
+
+
 def _excerpt(**kwargs) -> library.Excerpt:
     return library.Excerpt(
         id=kwargs.pop("id", "e_1"),
@@ -186,16 +193,16 @@ def test_knowledge_tools_need_a_library_that_answered_and_the_operation(
     monkeypatch.setattr(tools.library, "enabled", lambda: True)
     ctx = ToolContext(workspace_id="ws", user_id="u_1", operations=_LIBRARY)
 
-    assert "search_knowledge" not in _names(ctx), "no subject list: library down"
+    assert "search_library" not in _names(ctx), "no subject list: library down"
     ctx.library_catalog = [_STATISTICS]
     assert set(tools.KNOWLEDGE_TOOLS) <= set(_names(ctx))
     assert "search_workspace" in _names(ctx)
 
     monkeypatch.setattr(tools.library, "enabled", lambda: False)
-    assert "search_knowledge" not in _names(ctx), "no library configured"
+    assert "search_library" not in _names(ctx), "no library configured"
     monkeypatch.setattr(tools.library, "enabled", lambda: True)
     ctx.operations = _READ
-    assert "search_knowledge" not in _names(ctx), "library.read was not granted"
+    assert "search_library" not in _names(ctx), "library.read was not granted"
 
 
 def test_knowledge_capture_also_needs_the_knowledge_base_bucket(monkeypatch):
@@ -224,7 +231,7 @@ _STATISTICS = {
 }
 
 
-def test_subject_list_rides_on_search_knowledge_only(monkeypatch):
+def test_subject_list_rides_on_search_library_only(monkeypatch):
     monkeypatch.setattr(tools.library, "enabled", lambda: True)
     ctx = ToolContext(
         workspace_id="ws",
@@ -238,17 +245,17 @@ def test_subject_list_rides_on_search_knowledge_only(monkeypatch):
         for s in tools.schemas_for(ctx)
     }
 
-    assert '- "statistics" (12 excerpts)' in described["search_knowledge"]
-    assert "Statistics" not in described["search_knowledge"]
-    assert "also: stats" not in described["search_knowledge"]
-    assert "statistics" not in described["read_knowledge"], (
+    assert '- "statistics" (12 excerpts)' in described["search_library"]
+    assert "Statistics" not in described["search_library"]
+    assert "also: stats" not in described["search_library"]
+    assert "statistics" not in described["read_library"], (
         "the list is long; it is listed once"
     )
     assert "browse_knowledge" not in described
-    assert "statistics" not in contract.DEFINITIONS["search_knowledge"]["description"]
+    assert "statistics" not in contract.DEFINITIONS["search_library"]["description"]
 
 
-async def test_search_knowledge_renders_excerpts_and_refuses_unknown_subjects(
+async def test_search_library_renders_excerpts_and_refuses_unknown_subjects(
     monkeypatch,
 ):
     """A subject is checked against the turn's catalog, which the description
@@ -280,26 +287,82 @@ async def test_search_knowledge_renders_excerpts_and_refuses_unknown_subjects(
         return library.SearchResult([excerpt], subject, roles)
 
     monkeypatch.setattr(tools.library, "search", _search)
-    result = await tools._search_knowledge(
+    result = await tools._search_library(
         {"query": "least squares", "subject": "statistics", "roles": ["introduction"]},
         ctx,
     )
     text = result.text()
 
     assert (
-        "[e_1] Advanced High School Statistics (book ahss) — 8.1 Line fitting "
+        "excerpt_id=e_1 — Advanced High School Statistics (book ahss) — 8.1 Line fitting "
         "(pages 338, 339)" in text
     )
     assert "roles: introduction" in text and "figures: fig_8_1" in text
     assert "topics:" not in text
     assert "least squares line" in text and "Fitting a line" in text
-    assert "One predictor" in text and "- [e_2] 8.2 Residuals (pages 340)" in text
+    assert (
+        "One predictor" in text
+        and "- excerpt_id=e_2 — 8.2 Residuals (pages 340)" in text
+    )
     assert "Complete reviewed notes" not in text
 
-    refused = await tools._search_knowledge({"query": "x", "subject": "algebra"}, ctx)
+    refused = await tools._search_library({"query": "x", "subject": "algebra"}, ctx)
     assert refused.refused and "Unknown subject id 'algebra'" in refused.text()
     assert "listed in this tool's description" in refused.text()
     assert searched == ["least squares"], "an unknown subject never searches"
+
+
+def _figure(ref: str, **kwargs) -> library.Figure:
+    return library.Figure(
+        id=ref,
+        book_title="Advanced High School Statistics",
+        page=338,
+        bbox=[100.0, 100.0, 400.0, 400.0],
+        label=kwargs.pop("label", f"Figure {ref}"),
+        description=kwargs.pop("description", "A scatterplot with a fitted line."),
+        credit="",
+        decorative=False,
+        excluded=False,
+        withheld=kwargs.pop("withheld", False),
+        object_key="books/ahss.pdf",
+        bytes=1,
+        excerpt_ids=kwargs.pop("excerpt_ids", ["e_1"]),
+    )
+
+
+async def test_search_images_lists_library_figures_a_write_may_place(monkeypatch):
+    """search_images lists the shown, described figures of the excerpts the
+    library search ranks, in that order and once each (Epo 2026-10-30); a note
+    may then place one, credited with the excerpt that lists it, without a
+    read_library."""
+    ctx = _library_ctx()
+    first = _excerpt(figure_ids=["fig_1", "fig_hidden"])
+    second = _excerpt(id="e_2", figure_ids=["fig_2", "fig_1", "fig_blank"])
+
+    async def _search(query, **_kwargs):
+        return library.SearchResult([first, second], None, [])
+
+    async def _figures(refs):
+        figures = {
+            "fig_1": _figure("fig_1"),
+            "fig_hidden": _figure("fig_hidden", withheld=True),
+            "fig_2": _figure("fig_2", excerpt_ids=["e_2"]),
+            "fig_blank": _figure("fig_blank", label="", description=""),
+        }
+        return {ref: figures[ref] for ref in refs if ref in figures}
+
+    monkeypatch.setattr(tools.library, "search", _search)
+    monkeypatch.setattr(tools.library, "figures", _figures)
+    text = (await tools._search_images({"query": "line of best fit"}, ctx)).text()
+
+    assert text.startswith("Images:\n- fig_1: Figure fig_1 — A scatterplot")
+    assert "- fig_2: Figure fig_2" in text
+    assert text.count("fig_1:") == 1
+    assert ctx.shown_figures == {"fig_1": "e_1", "fig_2": "e_2"}
+
+    placed = await tools.library_figures(ctx, ["fig_2"])
+    assert not isinstance(placed, tools.ToolResult)
+    assert placed[1] == ["e_2"], "credited with the excerpt that lists it"
 
 
 async def test_empty_result_reports_role_counts_only_under_a_subject(monkeypatch):
@@ -316,7 +379,7 @@ async def test_empty_result_reports_role_counts_only_under_a_subject(monkeypatch
         )
 
     monkeypatch.setattr(tools.library, "search", _search)
-    filtered = await tools._search_knowledge(
+    filtered = await tools._search_library(
         {"query": "proofs", "subject": "statistics", "roles": ["formal"]}, ctx
     )
 
@@ -326,7 +389,7 @@ async def test_empty_result_reports_role_counts_only_under_a_subject(monkeypatch
     assert "That subject holds: introduction 3, exercise 1" in filtered.text()
 
     # Without a subject the same counts would be the whole library's.
-    unfiltered = await tools._search_knowledge(
+    unfiltered = await tools._search_library(
         {"query": "proofs", "roles": ["formal"]}, ctx
     )
     assert "no subject filter" in unfiltered.text()
@@ -344,7 +407,7 @@ def _read_result(**kwargs) -> library.ExcerptRead:
     )
 
 
-async def test_read_knowledge_pages_in_chunk_units_and_records_the_read(monkeypatch):
+async def test_read_library_pages_in_chunk_units_and_records_the_read(monkeypatch):
     ctx = ToolContext(workspace_id="ws", operations=_LIBRARY)
 
     async def _read(excerpt_id, *, start=0, **_kwargs):
@@ -356,17 +419,27 @@ async def test_read_knowledge_pages_in_chunk_units_and_records_the_read(monkeypa
         )
 
     monkeypatch.setattr(tools.library, "read_excerpt", _read)
-    result = await tools._read_knowledge({"excerpt_id": "e_1", "start": 42}, ctx)
+    result = await tools._read_library({"excerpt_id": "e_1", "start": 42}, ctx)
+    text = _shown(ctx, result)
 
-    assert "(chunk 42) Residuals" in result.text()
-    assert "chunks 40-44 of this excerpt, from 42" in result.text()
-    assert "(next start = 43)" in result.text(), "next start is the last chunk plus one"
+    assert text.startswith("<source>\n[1] Library: Advanced High School Statistics")
+    assert "(chunk 42) Residuals" in text
+    assert "chunks 40-44 of this excerpt, from 42" in text
+    assert "(next start = 43)" in text, "next start is the last chunk plus one"
+    # Cited by that number, it shows as the book and its pages (Epo 2026-10-30).
+    cited = ctx.citations[0].as_citation()
+    assert (cited["kind"], cited["excerptId"], cited["fileName"]) == (
+        "library",
+        "e_1",
+        "Advanced High School Statistics",
+    )
+    assert (cited["pageStart"], cited["pageEnd"]) == (338, 339)
     assert [(r.excerpt_id, r.start) for r in ctx.library_reads.reads] == [("e_1", 42)]
     assert ctx.library_reads.reads[0].section == "8.1 Line fitting"
 
     # A repeat of the same position returns the text and adds nothing.
-    again = await tools._read_knowledge({"excerpt_id": "e_1", "start": 42}, ctx)
-    assert "(chunk 42) Residuals" in again.text()
+    again = await tools._read_library({"excerpt_id": "e_1", "start": 42}, ctx)
+    assert "(chunk 42) Residuals" in _shown(ctx, again)
     assert len(ctx.library_reads.reads) == 1
 
 
@@ -386,9 +459,10 @@ async def test_a_page_the_output_limit_cuts_continues_at_the_first_unshown_chunk
         )
 
     monkeypatch.setattr(tools.library, "read_excerpt", _read)
-    text = (
-        await tools._read_knowledge({"excerpt_id": "e_1", "start": 40, "count": 3}, ctx)
-    ).text()
+    text = _shown(
+        ctx,
+        await tools._read_library({"excerpt_id": "e_1", "start": 40, "count": 3}, ctx),
+    )
 
     assert "(chunk 41)" in text and "(chunk 42)" not in text
     assert text.endswith("(page cut at the tool output limit; next start = 42)")
@@ -397,9 +471,9 @@ async def test_a_page_the_output_limit_cuts_continues_at_the_first_unshown_chunk
     # One chunk over the limit by itself: the next start goes ahead of the clip.
     monkeypatch.setattr(tools, "TOOL_RESULT_MAX_TOKENS", 200)
     shown = tools.limit_tool_result(
-        (await tools._read_knowledge({"excerpt_id": "e_1", "count": 3}, ctx)).text()
+        _shown(ctx, await tools._read_library({"excerpt_id": "e_1", "count": 3}, ctx))
     )
-    assert shown.startswith("(page cut at the tool output limit; next start = 41)")
+    assert "(page cut at the tool output limit; next start = 41)" in shown[:200]
     assert shown.endswith(
         "[Tool output truncated. Narrow the request or continue reading.]"
     )
@@ -506,9 +580,12 @@ def test_turn_context_renders_open_file_preferences_and_reads():
 
     assert rendered["_kind"] == "turn_context"
     assert "Open: Cells.pdf (file f_1). The learner owns this workspace." in body
-    assert "key points first" in body, "brief writing"
-    assert "a deck explains each chapter" in body
-    assert "a quiz of 2 questions and a set of 10 flashcards" in body
+    assert "General: Explainers are short" in body, "brief writing"
+    assert "a PowerPoint explains each chapter" in body
+    assert (
+        "each chapter with a quiz of at most 2 questions and a set of at most 10 flashcards"
+        in body
+    )
     # Knowledge checks are notes only: a deck's turn gets no check line.
     assert "knowledge check" not in body, "deck main format"
     ctx.study_preferences["mainFormat"] = "note"
@@ -533,10 +610,14 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert "Open: nothing. The learner can only view this workspace." in empty
     assert "Library excerpts" not in empty
     assert (
-        "a quiz of 2 questions; make no standalone flashcards unless asked." in empty
+        "Output files: each chapter with a quiz of at most 2 questions; make no "
+        "standalone flashcards unless asked." in empty
     ), "default preferences: quiz less, flashcards off said off"
     assert "a note explains each chapter" in empty
-    assert "knowledge check of at most 1 question" in empty
+    assert (
+        "Notes: Close each note section with a knowledge check of at most 1 question."
+        in empty
+    )
 
 
 # --------------------------------------------------------------- citations

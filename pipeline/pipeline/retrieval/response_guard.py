@@ -26,9 +26,9 @@ _OPENERS = (
     "</tool_call>",
 )
 # GLM's argument markup (AskUser<arg_key>question</arg_key><arg_value>...).
-# Checked on prose answers only, once the response ends: an answer program
-# streams, and the browser drops a statement it cannot parse.
+# Checked once the response ends: it can stream before it reads as markup.
 _ARG_MARKUP = ("<arg_key", "</arg_value")
+_ASK = "AskUser"
 _JSON_KEYS = ('"tool_calls"', '"function_call"')
 _JSON_CALL = re.compile(r'"(?:tool_calls|function_call)"\s*:', re.IGNORECASE)
 
@@ -46,9 +46,12 @@ def contains_arg_markup(text: str) -> bool:
 class ResponseGuard:
     """Hold incomplete markers so splitting one across deltas cannot leak it."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, ask_markup: bool = False) -> None:
+        """``ask_markup``: hold everything from a written AskUser on, for
+        agent.text_ask_user to read back when the response ends."""
         self.pending = ""
         self.flagged = False
+        self.ask_markup = ask_markup
 
     def push(self, text: str) -> str:
         if self.flagged:
@@ -58,9 +61,17 @@ class ResponseGuard:
         if contains_tool_protocol(text):
             self.flagged = True
             return ""
+        if self.ask_markup and (at := text.find(_ASK)) >= 0:
+            self.pending = text[at:]
+            return text[:at]
         lower = text.lower()
         hold = 0
-        for marker in (*_OPENERS, *_JSON_KEYS):
+        markers = (
+            *_OPENERS,
+            *_JSON_KEYS,
+            *((_ASK.lower(),) if self.ask_markup else ()),
+        )
+        for marker in markers:
             for size in range(1, len(marker) + 1):
                 if lower.endswith(marker[:size]):
                     hold = max(hold, size)

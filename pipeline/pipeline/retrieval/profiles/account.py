@@ -5,7 +5,7 @@ Its tools are the contract's ``account`` scope (tools._offered). The tools
 that create (tools.DESTINATION_TOOLS) and list_sources take an optional
 ``workspace_id`` here only (create_chapter a required one): this profile adds
 it to its copy of their schema, and tools.run moves it out before checking
-the call against Go's definition, which stays byte for byte. Omitted, the item lands in No workspace.
+the call against Go's definition, which stays byte for byte. Omitted, the item lands outside workspaces.
 Skills (skills.text) and this profile's copies of the tool descriptions
 replace their workspace wording.
 """
@@ -26,7 +26,7 @@ WORKSPACE_ID = {
     "minLength": 1,
     "description": "Where a new item is created: a workspace the user can edit "
     "(a workspace_id a search, listing or read named) or one create_workspace "
-    "just made; omit it to create it in No workspace. An edit of an existing "
+    "just made; omit it to create it outside workspaces. An edit of an existing "
     "item ignores it.",
 }
 
@@ -35,17 +35,17 @@ WORKSPACE_ID = {
 # which tools.run moves out as it does a create's.
 LIST_SOURCES = (
     "List one of the user's workspaces by chapter (workspace_id), or without it "
-    "their newest files and materials with no workspace, with ids, kinds and "
+    "their newest files and materials outside workspaces, with ids, kinds and "
     "whether the user can edit each."
 )
 LISTED_WORKSPACE = {
     "description": "A workspace id from search_files_summary, search_files_content "
-    "or a read; omit it to list the files with no workspace.",
+    "or a read; omit it to list the files outside workspaces.",
     "minLength": 1,
     "type": "string",
 }
 
-# create_chapter adds to a workspace the user can edit; No workspace has none.
+# create_chapter adds to a workspace the user can edit; outside workspaces has none.
 CHAPTER_WORKSPACE = {
     "type": "string",
     "minLength": 1,
@@ -54,7 +54,8 @@ CHAPTER_WORKSPACE = {
 }
 
 # Go's descriptions written for workspace chat, in account words (Epo
-# 2026-10-28, T3): the made-from line of the creates and search_web.
+# 2026-10-28, T3): the made-from line of the creates and search_web; and
+# read_library's tuned line (2026-10-30).
 WORDING = (
     (
         "named in words or by id: workspace files,",
@@ -71,6 +72,13 @@ WORDING = (
     (
         "call it only when the workspace, the library",
         "call it only when the learner's files, the library",
+    ),
+    (
+        "the notes and scope come on its first page.",
+        (
+            "the notes and scope come on its first page. Include relevant images "
+            "you found."
+        ),
     ),
 )
 
@@ -115,9 +123,7 @@ PROFILE = Profile(
     messages=messages,
     mode_lines=account_chat.MODE_LINES,
     send_back={
-        (True, False): account_chat.SEND_BACK,
-        (True, True): account_chat.SEND_BACK_TOOL,
-        (False, False): account_chat.SEND_BACK_READ_ONLY,
-        (False, True): account_chat.SEND_BACK_TOOL_READ_ONLY,
+        True: account_chat.SEND_BACK_TOOL,
+        False: account_chat.SEND_BACK_TOOL_READ_ONLY,
     },
 )

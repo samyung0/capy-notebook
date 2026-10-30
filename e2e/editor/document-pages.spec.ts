@@ -422,7 +422,7 @@ test('a chat citation opens the PDF, scrolls its box to the middle, then flashes
   // cited mid-page 2 (chatFixtures' scenarioPdfRegion).
   const panel = page.getByTestId('mock-scenario-panel');
   await panel.locator('summary').click({ timeout: 60_000 });
-  await panel.locator('[data-scenario="chat-openui-overview"]').click();
+  await panel.locator('[data-scenario="chat-answer-overview"]').click();
   const source = page.getByTitle(m.chat_source_number({ n: 2 })).first();
   await expect(source).toBeVisible({ timeout: 60_000 });
   await recordCitationFlashes(page);

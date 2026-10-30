@@ -76,23 +76,11 @@ details > summary {
   border-left: 3px solid #48c;
   background: #fbfcff;
 }
-.ou {
-  border: 1px solid #dde;
-  padding: 4px 8px;
-  margin: 4px 0;
-}
-.ou-name {
-  font-size: 10px;
-  color: #88a;
-  text-transform: uppercase;
-}
-.ou-table {
-  border-collapse: collapse;
-}
-.ou-table td,
-.ou-table th {
-  border: 1px solid #ccd;
-  padding: 2px 6px;
+.answer-frame {
+  display: block;
+  width: 100%;
+  height: 40px;
+  border: 0;
 }
 pre {
   max-height: 320px;
@@ -206,7 +194,7 @@ img.capture {
     </div>
     <div class="row">
       <label>Output <select id="prefMain"><option>note</option><option>deck</option></select></label>
-      <label>Writing <select id="prefWriting"><option>brief</option><option>normal</option><option>verbose</option><option>story</option></select></label>
+      <label>Writing <select id="prefWriting"><option>brief</option><option>normal</option><option>story</option></select></label>
       <label>Quiz <select id="prefQuiz"><option>more</option><option>less</option><option>off</option></select></label>
       <label>Flashcards <select id="prefCards"><option>more</option><option>less</option><option>off</option></select></label>
       <label>Visuals <select id="prefVisuals"><option>fewer</option><option>more</option></select></label>
@@ -280,7 +268,7 @@ img.capture {
         Apply writes this description into <code>tool_descriptions</code>. Save
         stores it with the config. Reset restores this tool's production
         description. Argument schemas stay fixed; the live subject catalog is
-        appended automatically to <code>search_knowledge</code>.
+        appended automatically to <code>search_library</code>.
       </p>
       <details>
         <summary>Tools array sent with the request</summary>
@@ -615,13 +603,15 @@ $('workspaces').onchange = () => {
   setConfig(c);
 };
 // Mirrors pipeline/prompts/preferences.py DEFAULTS.
+// Production's DEFAULTS (pipeline/prompts/preferences.py): the server fills
+// missing fields with those, so the selects must show the same.
 const PREF_DEFAULTS = {
   flashcards: 'off',
   knowledgeChecks: true,
   mainFormat: 'note',
   quiz: 'less',
   visualAids: 'more',
-  writingStyle: 'normal',
+  writingStyle: 'brief',
 };
 $('workspaceOnly').onchange = () => {
   const c = currentConfig();
@@ -763,85 +753,39 @@ const writtenText = (written) =>
     .map(([name, n]) => ` + ${esc(name)} ≈${k(n)}`)
     .join('');
 
-// A crude drawing of an OpenUI Lang answer; the app's components are not here.
-function md(text) {
-  // Markdown tables first: a run of lines starting with |.
-  return String(text)
-    .split(/((?:^\|.*(?:\n|$))+)/m)
-    .map((part, i) => (i % 2 ? mdTable(part) : mdInline(part)))
-    .join('');
+// The answer drawn by the app's chat components in a frame
+// (preview/answer.tsx).
+let answerCitations = [];
+const answerFrames = new Map();
+function renderAnswer(text) {
+  const d = card('rendered', `<div class="muted">rendered answer</div>`);
+  const frame = document.createElement('iframe');
+  frame.className = 'answer-frame';
+  frame.src = '/preview/answer.html';
+  d.appendChild(frame);
+  answerFrames.set(frame, {
+    citations: answerCitations,
+    content: text,
+    format: 'markdown',
+  });
 }
-function mdTable(block) {
-  const rows = block
-    .trim()
-    .split('\n')
-    .filter((line) => !/^\|[\s:|-]+\|$/.test(line.trim()))
-    .map((line) => line.trim().replace(/^\||\|$/g, '').split('|'));
-  return `<table class="ou-table">${rows
-    .map((cells, r) => `<tr>${cells.map((c) => `<${r ? 'td' : 'th'}>${mdInline(c.trim())}</${r ? 'td' : 'th'}>`).join('')}</tr>`)
-    .join('')}</table>`;
-}
-function mdInline(text) {
-  return esc(text)
-    .replace(/^### (.*)$/gm, '<h4>$1</h4>')
-    .replace(/^## (.*)$/gm, '<h3>$1</h3>')
-    .replace(/^# (.*)$/gm, '<h3>$1</h3>')
-    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>')
-    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-    .replace(/^\s*[-*] (.*)$/gm, '• $1')
-    .replace(/\n/g, '<br>');
-}
-function drawOpenUI(tree) {
-  const draw = (value, depth = 0) => {
-    if (depth > 40) return '…';
-    if (value && value.ref) value = tree.statements[value.ref];
-    if (value == null) return '';
-    if (Array.isArray(value))
-      return value.every((v) => typeof v !== 'object' || v === null)
-        ? esc(value.join(' · '))
-        : value.every((v) => Array.isArray(v) && v.every((x) => typeof x !== 'object'))
-          ? esc(value.map((v) => `(${v.join(', ')})`).join(' '))
-          : value.map((v) => draw(v, depth + 1)).join('');
-    if (typeof value !== 'object') return md(String(value));
-    const { $: name, props } = value;
-    const cite = Array.isArray(props.passages) && props.passages.length
-      ? `<sup class="muted">[${props.passages.join(',')}]</sup>`
-      : '';
-    if (name === 'Table')
-      return `<div class="ou"><span class="ou-name">Table</span>${props.caption ? `<i>${esc(props.caption)}</i>` : ''}<table class="ou-table"><tr>${(props.columns || []).map((c) => `<th>${esc(c)}</th>`).join('')}</tr>${(props.rows || []).map((r) => { const row = r && r.ref ? tree.statements[r.ref] : r; return `<tr>${((row && row.props && row.props.cells) || []).map((c) => `<td>${md(String(c))}</td>`).join('')}</tr>`; }).join('')}</table>${cite}</div>`;
-    const parts = Object.entries(props)
-      .filter(([key]) => key !== 'passages')
-      .map(([key, v]) =>
-        ['title', 'label', 'value', 'kind', 'question'].includes(key) && typeof v === 'string'
-          ? `<div><b>${esc(v)}</b></div>`
-          : key === 'html' && typeof v === 'string'
-            ? `<div class="muted">html, ${v.length} characters</div>`
-            : `<div>${draw(v, depth + 1)}</div>`
-      )
-      .join('');
-    return name === 'Answer'
-      ? parts
-      : `<div class="ou"><span class="ou-name">${esc(name)}</span>${parts}${cite}</div>`;
-  };
-  return draw(tree.statements[tree.root]);
-}
-async function renderAnswer(text) {
-  try {
-    const tree = await (
-      await fetch('/api/openui', {
-        body: JSON.stringify({ text }),
-        headers: { 'content-type': 'application/json' },
-        method: 'POST',
-      })
-    ).json();
-    if (tree.error) return card('stat', `<b>rendered answer</b> did not parse: ${esc(tree.error)}`);
-    card('rendered', `<div class="muted">rendered answer</div>${tree.markdown != null ? md(tree.markdown) : drawOpenUI(tree)}`);
-  } catch (e) {
-    card('stat', `<b>rendered answer</b> failed: ${esc(e.message)}`);
+addEventListener('message', (event) => {
+  if (event.origin !== location.origin) return;
+  const frame = [...answerFrames.keys()].find((f) => f.contentWindow === event.source);
+  if (!frame) return;
+  const shown = answerFrames.get(frame);
+  if (event.data.type === 'answer-ready')
+    frame.contentWindow.postMessage(shown, location.origin);
+  if (event.data.type === 'answer-height') frame.style.height = `${event.data.height}px`;
+  if (event.data.type === 'open-citation') {
+    const c = shown.citations.find((x) => x.n === event.data.n);
+    if (c) open(citeHref(c), '_blank');
   }
-}
-
+});
+const citeHref = (c) => {
+  const box = (c.regions && c.regions[0] && c.regions[0].bbox) || null;
+  return `/api/page?file_id=${encodeURIComponent(c.fileId)}&page=${c.pageStart || 1}${box ? '&bbox=' + box.join(',') : ''}`;
+};
 function card(cls, html) {
   const d = document.createElement('div');
   d.className = 'card ' + cls;
@@ -962,9 +906,10 @@ function configCard(label, c, prompt) {
       ? ` via ${esc(new URL(m.transport.url).host)}`
       : '';
   const cit = (c.answer && c.answer.citations) || 'as_is';
+  answerCitations = [];
   card(
     'stat',
-    `<b>${esc(label)}</b> · ${esc(m.provider_slug)}/${esc(m.model_slug)} (${esc(m.thinking || '')})${via} · ${esc(c.workspace_id)}${c.workspace_only ? ' · workspace only' : ''} · tools: ${esc(c.tools ? c.tools.join(', ') : 'production')} · capture ${esc(cap)} · ${esc(q)} · citations ${esc(cit)}` +
+    `<b>${esc(label)}</b> · ${esc(m.provider_slug)}/${esc(m.model_slug)} (${esc(m.thinking || '')})${via} · ${esc(c.workspace_id)}${c.workspace_only ? ' · workspace only' : ''} · tools: ${esc(c.tools ? c.tools.join(', ') : 'production')} · capture ${esc(cap)} · ${esc(q)} · citations ${esc(cit)} · answer ${esc(answerFormat)}` +
       `<details><summary>config JSON</summary><pre>${esc(JSON.stringify(c, null, 2))}</pre></details>` +
       (prompt
         ? `<details><summary>system prompt sent</summary><pre>${esc(prompt)}</pre></details>`
@@ -1064,16 +1009,15 @@ function render(ev, runId) {
     return;
   }
   if (ev.type === 'citations') {
+    answerCitations = ev.citations;
     const d = card(
       '',
       `<b>Citations${ev.final ? ' (used by the answer, renumbered)' : ''}</b>` +
         ev.citations
-          .map((c, i) => {
-            const box =
-              (c.regions && c.regions[0] && c.regions[0].bbox) || null;
-            const href = `/api/page?file_id=${encodeURIComponent(c.fileId)}&page=${c.pageStart || 1}${box ? '&bbox=' + box.join(',') : ''}`;
-            return `<div class="cite">[${i + 1}] ${esc(c.fileName)} p.${c.pageStart ?? '?'} <a target="_blank" href="${href}">view</a> <span class="muted">${esc((c.snippet || '').slice(0, 120))}</span></div>`;
-          })
+          .map(
+            (c, i) =>
+              `<div class="cite">[${i + 1}] ${esc(c.fileName)} p.${c.pageStart ?? '?'} <a target="_blank" href="${citeHref(c)}">view</a> <span class="muted">${esc((c.snippet || '').slice(0, 120))}</span></div>`
+          )
           .join('') +
         (ev.unused && ev.unused.length
           ? `<details><summary class="muted">${ev.unused.length} retrieved but not cited</summary>${ev.unused.map((c) => `<div class="cite muted">${esc(c.fileName)} p.${c.pageStart ?? '?'} ${esc((c.snippet || '').slice(0, 100))}</div>`).join('')}</details>`

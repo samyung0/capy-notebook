@@ -129,7 +129,7 @@ test('account chat: search, list, read and write across workspaces and no worksp
         name: 'search_files_content',
       },
     ],
-    'root = Answer([a])\na = Md("Scripted account reads ran.", [1])',
+    'Scripted account reads ran. [#1]',
   ]);
   // An account citation says where its source lives.
   const [cited] = citations(first.frames) as (Citation & {
@@ -246,7 +246,7 @@ test('account chat: search, list, read and write across workspaces and no worksp
           name: 'create_workspace',
         },
       ],
-      'root = Answer([a])\na = Md("Scripted account writes ran.")',
+      'Scripted account writes ran.',
     ],
     { 5: 'refused', 8: 'refused' }
   );

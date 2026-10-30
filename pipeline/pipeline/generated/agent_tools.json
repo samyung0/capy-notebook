@@ -128,7 +128,7 @@
     {
       "name": "search_files_summary",
       "version": 1,
-      "description": "Find the user's files and materials by their names and summaries, in their workspaces and with no workspace. Each hit gives its id, workspace and chapter (or no workspace), whether the user can edit it, and its summary when it has one. Use it before search_files_content.",
+      "description": "Find the user's files and materials by their names and summaries, in their workspaces and outside them. Each hit gives its id, workspace and chapter (or outside workspaces), whether the user can edit it, and its summary when it has one. Use it before search_files_content.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -160,7 +160,7 @@
     {
       "name": "search_files_content",
       "version": 1,
-      "description": "Search the content of the user's files, in their workspaces and with no workspace, for passages matching one focused query. Each passage names its file's workspace and chapter and whether the user can edit it.",
+      "description": "Search the content of the user's files, in their workspaces and outside them, for passages matching one focused query. Each passage names its file's workspace and chapter and whether the user can edit it.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -380,9 +380,9 @@
       "retention": "none"
     },
     {
-      "name": "search_knowledge",
+      "name": "search_library",
       "version": 1,
-      "description": "Search the shared library of verified textbook excerpts, one section of one book each. A hit is a selection aid; read_knowledge reads the excerpt.",
+      "description": "Search the shared library of verified textbook excerpts, one section of one book each. A hit is a selection aid; read_library reads the excerpt.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -433,7 +433,7 @@
       "retention": "full"
     },
     {
-      "name": "read_knowledge",
+      "name": "read_library",
       "version": 1,
       "description": "Read an excerpt's reviewed notes and source chunks in order from a chunk index; the notes and scope come on its first page.",
       "inputSchema": {
@@ -477,7 +477,40 @@
       "retention": "used_excerpts"
     },
     {
-      "name": "capture_knowledge_page",
+      "name": "search_images",
+      "version": 1,
+      "description": "Find images (diagrams, photos, charts) by what they show. Each hit gives the image id, its label and description, where it is printed and its credit. Place one by its id in a chat answer, a note or a quiz question.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "description": "What the image should show.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": true,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
+      "requiredOperations": [
+        "library.read"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "capture_library_page",
       "version": 1,
       "description": "Render a printed page an excerpt covers, or a region of it, as an image you read directly.",
       "inputSchema": {
@@ -841,7 +874,7 @@
     {
       "name": "add_question_media",
       "version": 1,
-      "description": "Add a chart, a plot or a library figure to one quiz question, shown after its text. A figure is one read_knowledge listed this turn: {\"type\": \"figure\", \"id\": \"\u003cfigure id\u003e\", \"caption\": \"what it shows\"}; the question shows it with its printed credit and the quiz credits its book. Example: {\"quiz_id\": \"mat_1\", \"question_id\": \"q_3f9a1c2b7e\", \"media\": {\"type\": \"plot\", \"title\": \"Action potential\", \"xTitle\": \"Time (ms)\", \"yTitle\": \"Membrane potential (mV)\", \"series\": [{\"name\": \"Vm\", \"points\": [[0, -70], [1, 30], [2, -80], [4, -70]]}]}}",
+      "description": "Add a chart, a plot or a library figure to one quiz question, shown after its text. A figure is one read_library or search_images listed: {\"type\": \"figure\", \"id\": \"\u003cfigure id\u003e\", \"caption\": \"what it shows\"}; the question shows it with its printed credit and the quiz credits its book. Example: {\"quiz_id\": \"mat_1\", \"question_id\": \"q_3f9a1c2b7e\", \"media\": {\"type\": \"plot\", \"title\": \"Action potential\", \"xTitle\": \"Time (ms)\", \"yTitle\": \"Membrane potential (mV)\", \"series\": [{\"name\": \"Vm\", \"points\": [[0, -70], [1, 30], [2, -80], [4, -70]]}]}}",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -893,17 +926,17 @@
     {
       "name": "create_deck",
       "version": 1,
-      "description": "Create a slide deck from an outline, one title and brief per slide, as the deck skill describes.",
+      "description": "Create a PowerPoint from an outline, one title and brief per slide, as the deck_building skill describes.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "chapter_id": {
-            "description": "The chapter to put the deck in; omit it to not put the deck in a chapter.",
+            "description": "The chapter to put the PowerPoint in; omit it to not put it in a chapter.",
             "minLength": 1,
             "type": "string"
           },
           "excerpt_ids": {
-            "description": "Library excerpts this was written from; they become the deck's Sources slide. Optional; omitted, the excerpts read since your last write are credited.",
+            "description": "Library excerpts this was written from; they become the PowerPoint's Sources slide. Optional; omitted, the excerpts read since your last write are credited.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -975,7 +1008,7 @@
     {
       "name": "write_slide",
       "version": 1,
-      "description": "Write one slide of a deck as SVG in the deck skill's rules; writing a slide again replaces it.",
+      "description": "Write one slide of a PowerPoint as SVG in the deck_building skill's rules; writing a slide again replaces it.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -984,7 +1017,7 @@
             "type": "string"
           },
           "excerpt_ids": {
-            "description": "Library excerpts this was written from; they become the deck's Sources slide. Optional; omitted, the excerpts read since your last write are credited.",
+            "description": "Library excerpts this was written from; they become the PowerPoint's Sources slide. Optional; omitted, the excerpts read since your last write are credited.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -1530,7 +1563,7 @@
     {
       "name": "inspect_office_document",
       "version": 1,
-      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and table cells, the body's and then the headers', footers' and notes', which take replace_text only; the first page also lists the file's paragraph styles. PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, first line), the first page also listing the deck's layouts; with slide, count of that slide's shapes and paragraphs from start, each shape followed by its paragraphs with their target ids, the first page also giving the slide's speaker notes. Reads also list pictures, charts with their first points, equations and drawn shapes' text. The cheap read: with ids, the pictures come back as images and the charts with every point.",
+      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and table cells, the body's and then the headers', footers' and notes', which take replace_text only; the first page also lists the file's paragraph styles. PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, first line), the first page also listing the PowerPoint's layouts; with slide, count of that slide's shapes and paragraphs from start, each shape followed by its paragraphs with their target ids, the first page also giving the slide's speaker notes. Reads also list pictures, charts with their first points, equations and drawn shapes' text. The cheap read: with ids, the pictures come back as images and the charts with every point.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2330,7 +2363,7 @@
                       "type": "string"
                     },
                     "layout": {
-                      "description": "A layout id the deck read lists; omit for the layout of the slide it follows (the first slide's when it goes first).",
+                      "description": "A layout id the PowerPoint read lists; omit for the layout of the slide it follows (the first slide's when it goes first).",
                       "minLength": 1,
                       "type": "string"
                     },
@@ -2345,7 +2378,7 @@
                 },
                 {
                   "additionalProperties": false,
-                  "description": "PPTX: delete a slide, never the deck's only one.",
+                  "description": "PPTX: delete a slide, never its only one.",
                   "properties": {
                     "expected_text": {
                       "description": "The slide's text as its slide read shows it: every paragraph, one a line, in shape order, then its speaker notes as the read shows them (cut marker included); blank lines and the spaces around a line are not compared.",

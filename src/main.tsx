@@ -1,7 +1,6 @@
 import './lib/zodJitless';
 // Before Sentry or the router read the address (urlTokenStash.ts).
 import './lib/bootUrlTokens';
-import './lib/openuiDevtools';
 // The first stylesheet, so Tailwind sets the cascade layer order: a
 // component's `@layer components` loaded earlier ranks it below base.
 import './styles/tailwind.css';

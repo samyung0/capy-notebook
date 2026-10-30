@@ -136,7 +136,7 @@ export async function runJourney(
       'Explain the source for this scenario.'
     );
     await ui.click(m.chat_send());
-    if (id !== 'chat-openui-slow') await ui.button(m.chat_send());
+    if (id !== 'chat-answer-slow') await ui.button(m.chat_send());
   };
   const formSave = async () => {
     await ui.click(m.action_save());

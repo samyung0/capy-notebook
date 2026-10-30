@@ -6,8 +6,8 @@ import { CharCount, Input } from '@/components/ui/Input';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
+import type { AskUserProps } from './blocks/AskUser';
 import { composeAnswers, type QuestionAnswer } from './questions';
-import type { AskUserProps } from './schema';
 
 /**
  * The latest reply's questions, one at a time, in the composer's place.

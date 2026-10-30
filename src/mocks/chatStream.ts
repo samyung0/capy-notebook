@@ -260,7 +260,7 @@ export function mockChatStream(fixture?: ChatFixture) {
             const quiz = materials.find((item) => item.id === 'qz_1');
             const note = workspaceFiles.find((file) => file.id === 'f_2');
             const later: [MockStep, number, ResourceEffect[]?][] = [
-              [{ detail: 'water potential', name: 'search_knowledge' }, 600],
+              [{ detail: 'water potential', name: 'search_library' }, 600],
               [
                 { detail: quiz?.title, name: 'create_material' },
                 900,

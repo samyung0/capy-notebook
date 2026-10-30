@@ -63,7 +63,7 @@ function isCreated(tool: ToolBlock, effect: ResourceEffect): boolean {
 const ICONS: Record<string, ActivityIconKind> = {
   add_question_media: 'edit',
   add_questions: 'edit',
-  capture_knowledge_page: 'look',
+  capture_library_page: 'look',
   capture_page: 'look',
   create_chapter: 'edit',
   create_deck: 'edit',
@@ -77,13 +77,14 @@ const ICONS: Record<string, ActivityIconKind> = {
   list_trashed_files: 'list',
   list_workspaces: 'list',
   read_document: 'read',
-  read_knowledge: 'read',
+  read_library: 'read',
   read_skill: 'read',
   resolve_source_change: 'edit',
   restore_file: 'restore',
   search_files_content: 'search',
   search_files_summary: 'search',
-  search_knowledge: 'search',
+  search_images: 'search',
+  search_library: 'search',
   search_web: 'search',
   search_workspace: 'search',
   trash_file: 'trash',
@@ -154,7 +155,7 @@ const COPY: Record<string, Copy> = {
     group: (count) => m.chat_step_questions_group({ count }),
     run: (label) => m.chat_step_questions_run({ label }),
   },
-  capture_knowledge_page: look,
+  capture_library_page: look,
   capture_page: look,
   create_chapter: create,
   create_deck: create,
@@ -187,7 +188,7 @@ const COPY: Record<string, Copy> = {
     (count) => m.chat_step_read_files_group({ count }),
     m.chat_step_fallback_file
   ),
-  read_knowledge: read(
+  read_library: read(
     (count) => m.chat_step_read_library_group({ count }),
     m.chat_step_fallback_book
   ),
@@ -227,7 +228,13 @@ const COPY: Record<string, Copy> = {
     group: (count) => m.chat_step_search_sources_group({ count }),
     run: (label) => m.chat_step_search_sources_run({ label }),
   },
-  search_knowledge: {
+  search_images: {
+    done: (label) => m.chat_step_search_images_done({ label }),
+    fail: () => m.chat_step_search_images_fail(),
+    group: (count) => m.chat_step_search_images_group({ count }),
+    run: (label) => m.chat_step_search_images_run({ label }),
+  },
+  search_library: {
     done: (label) => m.chat_step_search_library_done({ label }),
     fail: () => m.chat_step_search_library_fail(),
     group: (count) => m.chat_step_search_library_group({ count }),
@@ -273,7 +280,8 @@ const SEARCHES = new Set([
   'search_files_content',
   'search_files_summary',
   'search_workspace',
-  'search_knowledge',
+  'search_images',
+  'search_library',
   'search_web',
 ]);
 

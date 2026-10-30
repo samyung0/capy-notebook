@@ -10,8 +10,12 @@ import {
 } from 'vitest';
 import { type StreamStart, streamChat } from '@/api/chatStream';
 import type { WireMessage } from '@/api/types';
-import { inspectAnswer, isLangAnswer } from '@/features/workspace/chat/answer';
-import { parseAnswer } from '@/features/workspace/chat/library';
+import { chartFigure, plotFigure } from '@/features/workspace/chat/answer';
+import {
+  parseMarkdownAnswer,
+  type Segment,
+  unfinished,
+} from '@/features/workspace/chat/markdownSegments';
 import { extractQuestions } from '@/features/workspace/chat/questions';
 import { chatFixtures } from './chatFixtures';
 import { chatMessages, conversations } from './db';
@@ -51,23 +55,30 @@ afterAll(() => {
   vi.unstubAllGlobals();
 });
 
-it('renders each design fixture and keeps only the intentional local recovery failures', () => {
-  const gaps = new Set([
-    'chat-openui-partial',
-    'chat-openui-invalid-chart',
-    'chat-openui-unusable',
-  ]);
+/** Chart and plot fences the block schema refuses, tabs included. */
+const refused = (segments: Segment[]): number =>
+  segments
+    .map((segment) => {
+      if (segment.type === 'tabs')
+        return refused(segment.tabs.flatMap((tab) => tab.segments));
+      if (segment.type !== 'figure' || !segment.closed) return 0;
+      if (segment.lang === 'chart') return chartFigure(segment.body) ? 0 : 1;
+      if (segment.lang === 'plot') return plotFigure(segment.body) ? 0 : 1;
+      return 0;
+    })
+    .reduce((sum, count) => sum + count, 0);
+
+it('parses each design fixture and keeps only the intentional gaps', () => {
+  const gaps = new Set(['chat-answer-partial', 'chat-answer-unusable']);
   for (const fixture of chatFixtures) {
-    if (!isLangAnswer(fixture.content)) continue;
-    const result = parseAnswer(fixture.content);
-    expect(inspectAnswer(result).gap, fixture.id).toBe(gaps.has(fixture.id));
-    if (!gaps.has(fixture.id)) {
-      expect(result?.root, fixture.id).toBeTruthy();
-      expect(result?.meta.errors, fixture.id).toEqual([]);
-    }
+    const segments = parseMarkdownAnswer(fixture.content);
+    expect(unfinished(segments), fixture.id).toBe(gaps.has(fixture.id));
+    expect(refused(segments), fixture.id).toBe(
+      fixture.id === 'chat-answer-invalid-chart' ? 1 : 0
+    );
   }
   const questions = chatFixtures.find(
-    ({ id }) => id === 'chat-openui-questions'
+    ({ id }) => id === 'chat-answer-questions'
   )!;
   expect(extractQuestions(questions.content)).toHaveLength(3);
   expect(extractQuestions(questions.content)[2].choices).toEqual([]);
@@ -88,13 +99,13 @@ it('seeds every preview in Biology chat history, including cleared flagged respo
         message.role === 'assistant'
     );
     expect(saved).toBeDefined();
-    if (fixture.id === 'chat-openui-overview') {
+    if (fixture.id === 'chat-answer-overview') {
       expect(saved?.citations?.map(({ fileId }) => fileId)).toEqual([
         'f_1',
         'f_2',
       ]);
     }
-    if (fixture.id === 'chat-openui-office') {
+    if (fixture.id === 'chat-answer-office') {
       expect(saved?.citations).toMatchObject([
         {
           fileId: 'bio-office-docx',
@@ -104,7 +115,7 @@ it('seeds every preview in Biology chat history, including cleared flagged respo
         },
       ]);
     }
-    if (fixture.id === 'chat-openui-flagged') {
+    if (fixture.id === 'chat-answer-flagged') {
       expect(saved).toMatchObject({
         citations: [],
         content: '',
@@ -117,13 +128,13 @@ it('seeds every preview in Biology chat history, including cleared flagged respo
 });
 
 it.each([
-  ['chat-openui-layouts', undefined],
-  ['chat-openui-partial', undefined],
-  ['chat-openui-flagged', 'response_flagged'],
-  ['chat-openui-empty', 'invalid_answer'],
-  ['chat-openui-interrupted', 'agent_failed'],
+  ['chat-answer-layouts', undefined],
+  ['chat-answer-partial', undefined],
+  ['chat-answer-flagged', 'response_flagged'],
+  ['chat-answer-empty', 'invalid_answer'],
+  ['chat-answer-interrupted', 'agent_failed'],
 ] as const)(
-  'streams %s through the real parser and persists its outcome',
+  'streams %s and persists its outcome',
   async (scenario, errorCode) => {
     server.use(...getMockScenarioHandlers(scenario));
     let start: StreamStart | undefined;

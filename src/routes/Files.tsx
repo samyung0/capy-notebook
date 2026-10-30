@@ -307,19 +307,19 @@ function ActiveFiles({
             })),
             selected: kinds,
           },
+          // One switch (Epo 2026-10-30): off lists every file, on only
+          // those in a workspace.
           {
-            defaultValue: 'all',
             key: 'location',
             label: m.create_filter_location(),
-            onToggle: (value) =>
+            onToggle: () =>
               setSearch({
-                location: value === 'workspace' ? 'workspace' : undefined,
+                location: location === 'workspace' ? undefined : 'workspace',
               }),
             options: [
-              { label: m.files_location_all(), value: 'all' },
               { label: m.files_location_workspace(), value: 'workspace' },
             ],
-            selected: [location ?? 'all'],
+            selected: location === 'workspace' ? ['workspace'] : [],
           },
           {
             emptyLabel: m.create_filter_no_workspaces(),

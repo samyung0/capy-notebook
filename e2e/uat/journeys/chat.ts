@@ -111,7 +111,7 @@ export async function scriptedSearch(
   await showPanelView(page, m.workspace_tab_chat());
   const { frames } = await scripted(page, [
     [{ arguments: { query }, name: 'search_workspace' }],
-    'root = Answer([a])\na = Md("Scripted search ran.", [1])',
+    'Scripted search ran. [#1]',
   ]);
   return citations(frames);
 }

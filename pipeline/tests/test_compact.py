@@ -394,8 +394,8 @@ def _library_turn(files: int = 8, sections: int = 4) -> list[list[dict]]:
             for n in range(12)
         )
         body = f"ex_{sid}\n" + "section prose sentence " * 220
-        turn.append(_library_exchange(f"s{index}", "search_knowledge", hits))
-        turn.append(_library_exchange(f"r{index}", "read_knowledge", body))
+        turn.append(_library_exchange(f"s{index}", "search_library", hits))
+        turn.append(_library_exchange(f"r{index}", "read_library", body))
         turn.append(
             _library_exchange(f"w{index}", "create_material", f"Created ex_{sid} note.")
         )

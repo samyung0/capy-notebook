@@ -567,6 +567,7 @@ func (a *api) relayChat(
 		"workspaceOnly":      turn.workspaceOnly,
 		"studyPreferences":   turn.studyPreferences,
 		"officeTools":        prompt.OfficeTools,
+		"editTools":          prompt.EditTools,
 	}
 	// One field says the turn's scope (Epo 2026-10-27); a workspace turn keeps
 	// its own fields beside it.

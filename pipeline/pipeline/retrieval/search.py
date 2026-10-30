@@ -38,7 +38,9 @@ class Passage:
     # "material" (file_id then holds the material id and file_name its title),
     # or a web page when kind is "web" (search_web: file_id holds the page's
     # link, file_name its title, section_path its site, text DeepSeek's summary
-    # and hit_text its display snippet).
+    # and hit_text its display snippet), or a library read when kind is
+    # "library" (read_library: file_id holds the excerpt id, file_name the
+    # book's title, text the page as read; Epo 2026-10-30).
     file_id: str
     file_name: str
     chunk_idx: int
@@ -107,20 +109,21 @@ class Passage:
                 part for part in (self.section_path, self.published) if part
             )
             return f"Web: {self.file_name}" + (f" ({meta})" if meta else "")
+        if self.kind == "library":
+            return f"Library: {self.file_name}" + (
+                f" › {_page_span(self.page_start, self.page_end)}"
+                if self.page_start
+                else ""
+            )
         parts = [self.file_name]
         if self.workspace_id is not None:
-            parts[:0] = [self.workspace_name or "No workspace"] + (
+            parts[:0] = [self.workspace_name or "Outside workspaces"] + (
                 [self.chapter_name] if self.chapter_name else []
             )
         if self.section_path:
             parts.append(self.section_path)
         if self.page_start:
-            span = (
-                f"p.{self.page_start}"
-                if self.page_end in (None, self.page_start)
-                else f"pp.{self.page_start}–{self.page_end}"
-            )
-            parts.append(span)
+            parts.append(_page_span(self.page_start, self.page_end))
         sentences = self.transcript_regions()
         if sentences:
             parts.append(
@@ -167,6 +170,8 @@ class Passage:
             return source_block(
                 f"[{index}] {self.location()}\n{self.file_id}\n{self.text}"
             )
+        if self.kind == "library":
+            return source_block(f"[{index}] {self.location()}\n{self.text}")
         block = source_block(f"[{index}] {self.location()}\n{self.reading_text()}")
         if not unindexed:
             return block
@@ -190,6 +195,20 @@ class Passage:
                 "published": self.published,
                 "snippet": (self.hit_text or self.text)[:400],
             }
+        if self.kind == "library":
+            # Shown as the book and its pages; it opens nothing (Epo 2026-10-30).
+            citation = {
+                "kind": "library",
+                "fileId": "",
+                "excerptId": self.file_id,
+                "chunkId": self.chunk_id,
+                "fileName": self.file_name,
+                "snippet": (self.hit_text or self.text)[:400],
+            }
+            if self.page_start:
+                citation["pageStart"] = self.page_start
+                citation["pageEnd"] = self.page_end or self.page_start
+            return citation
         citation: dict[str, Any] = {
             "fileId": "" if self.kind == "material" else self.file_id,
             "chunkId": self.chunk_id,
@@ -208,6 +227,10 @@ class Passage:
         if self.regions:
             citation["regions"] = self.regions[:12]
         return citation
+
+
+def _page_span(start: int, end: int | None) -> str:
+    return f"p.{start}" if end in (None, start) else f"pp.{start}–{end}"
 
 
 def _clock(ms: int) -> str:

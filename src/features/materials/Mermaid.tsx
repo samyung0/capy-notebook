@@ -410,6 +410,7 @@ export function renderMermaid(
  * the box scrolls instead.
  */
 export function Mermaid({
+  bare = false,
   className,
   code,
   delay = 0,
@@ -419,6 +420,8 @@ export function Mermaid({
   onError,
   svgHeight,
 }: {
+  /** No panel: the diagram sits straight on the page (chat answers). */
+  bare?: boolean;
   /** Extra classes for the rendered diagram box. */
   className?: string;
   code: string;
@@ -499,7 +502,8 @@ export function Mermaid({
     body = (
       <div
         className={cn(
-          'mermaid-render justify-center-safe flex overflow-auto rounded-lg p-3',
+          'mermaid-render justify-center-safe flex overflow-auto',
+          !bare && 'rounded-lg p-3',
           // Matches MediaFrame's MAX_HEIGHT; the SVG scales down to fit, to
           // MIN_SCALE at least, and the box scrolls past that.
           '[&>svg]:max-h-[min(70vh,48rem)]',
@@ -521,7 +525,7 @@ export function Mermaid({
               size && svgHeight ? svgHeight(size[0], size[1]) : undefined,
             '--svg-min-h': size ? `${size[1] * MIN_SCALE}px` : undefined,
             '--svg-min-w': size ? `${size[0] * MIN_SCALE}px` : undefined,
-            background: result.background,
+            background: bare ? undefined : result.background,
           } as CSSProperties
         }
       />

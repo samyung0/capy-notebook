@@ -30,11 +30,17 @@ def test_guard_holds_protocol_markers_across_every_split(marker):
         assert guard.push("more unsafe arguments") == ""
 
 
-def test_guard_preserves_ordinary_markdown_and_program_text():
-    text = (
-        'root = Answer([Md("Use list_sources. x < y. The key is \\"tool_calls\\".")])\n'
-    )
+def test_guard_preserves_ordinary_markdown():
+    text = 'Use list_sources. x < y. The key is "tool_calls".\n'
     guard = ResponseGuard()
     emitted = "".join(guard.push(character) for character in text) + guard.finish()
     assert emitted == text
     assert not guard.flagged
+
+
+def test_ask_markup_waits_for_the_read_back():
+    guard = ResponseGuard(ask_markup=True)
+    text = "It began in 1948. AskUser<arg_key>question</arg_key>"
+    shown = "".join(guard.push(character) for character in text)
+    assert shown == "It began in 1948. "
+    assert guard.finish() == "AskUser<arg_key>question</arg_key>"

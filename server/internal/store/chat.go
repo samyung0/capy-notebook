@@ -71,12 +71,15 @@ type Citation struct {
 	// Kind is "material" when the passage came from an indexed note; then
 	// MaterialID names the note and FileID is empty. It is "web" for a
 	// search_web result; then URL, SiteName and Published (YYYY-MM-DD, when
-	// known) describe the page and FileID is empty.
+	// known) describe the page and FileID is empty. It is "library" for a
+	// read_library page (Epo 2026-10-30): ExcerptID names the excerpt,
+	// FileName the book and the pages its excerpt prints on.
 	Kind       string `json:"kind,omitempty"`
 	MaterialID string `json:"materialId,omitempty"`
+	ExcerptID  string `json:"excerptId,omitempty"`
 	FileID     string `json:"fileId"`
 	ChunkID    string `json:"chunkId,omitempty"`
-	// N is the passage number the answer program cites; the entry's position
+	// N is the passage number the answer cites; the entry's position
 	// in the list is the number the reader sees.
 	N         int      `json:"n,omitempty"`
 	FileName  string   `json:"fileName"`
@@ -173,6 +176,9 @@ type ConversationPrompt struct {
 	// OfficeTools says an earlier turn of the conversation, compacted or not,
 	// was offered the Office tools, which then stay offered (Epo 2026-10-15).
 	OfficeTools bool `json:"officeTools,omitempty"`
+	// EditTools says the same of the writes the editing skill covers
+	// (Epo 2026-10-30).
+	EditTools bool `json:"editTools,omitempty"`
 }
 
 // Region locates one source block inside its page. Stored and shipped ahead of
@@ -719,12 +725,14 @@ func (s *Store) ConversationPrompt(ctx context.Context, convID string) (Conversa
 	if throughID != nil {
 		out.Checkpoint = &cp
 	}
-	// The retrieval service marks a turn's evidence officeTools once it read
-	// the office_building skill; a checkpoint drops that turn from History.
+	// The retrieval service marks a turn's evidence officeTools or editTools
+	// once it read the office_building or editing skill; a checkpoint drops
+	// that turn from History.
 	err = s.pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM messages
-		 WHERE conversation_id=$1 AND status <> 'streaming'
-		   AND metadata->'toolEvidence'->>'officeTools' = 'true')`, convID).Scan(&out.OfficeTools)
+		SELECT COALESCE(bool_or(metadata->'toolEvidence'->>'officeTools' = 'true'), false),
+		       COALESCE(bool_or(metadata->'toolEvidence'->>'editTools' = 'true'), false)
+		  FROM messages
+		 WHERE conversation_id=$1 AND status <> 'streaming'`, convID).Scan(&out.OfficeTools, &out.EditTools)
 	return out, err
 }
 

@@ -36,7 +36,7 @@ export function accountCitations(): Citation[] {
 }
 
 const answer =
-  'root = Answer([Md("Your Biology 101 cheatsheet covers the organelles, and your reading list has *The Selfish Gene* for this month, which fits the genetics unit.", [1, 2])])';
+  'Your Biology 101 cheatsheet covers the organelles, and your reading list has *The Selfish Gene* for this month, which fits the genetics unit. [#1,2]';
 
 /** The account conversations list and create, and the account chat stream: a
  * canned turn that searches and reads across the user's files, then answers

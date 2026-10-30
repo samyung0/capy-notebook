@@ -619,7 +619,7 @@ async def read_excerpt(
 
 @dataclass
 class CaptureTarget:
-    """What ``capture_knowledge_page`` may render for one excerpt: the book's
+    """What ``capture_library_page`` may render for one excerpt: the book's
     stored object and the pages the excerpt itself (or one of its figures) covers,
     less the book's withheld pages."""
 
@@ -682,6 +682,7 @@ class Figure:
     page: int
     bbox: list[float]
     label: str
+    description: str
     credit: str
     decorative: bool
     excluded: bool
@@ -698,7 +699,8 @@ async def figures(figure_ids: list[str]) -> dict[str, Figure]:
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT f.id, b.title, f.page, f.bbox, f.label, f.credit, f.decorative,
+            SELECT f.id, b.title, f.page, f.bbox, f.label, f.description, f.credit,
+                   f.decorative,
                    f.excluded, f.page = ANY(b.withheld_pages) AS withheld,
                    v.object_key, b.bytes,
                    ARRAY(SELECT e.id FROM library_excerpts e
@@ -722,6 +724,7 @@ async def figures(figure_ids: list[str]) -> dict[str, Figure]:
             page=int(row["page"]),
             bbox=[float(v) for v in row["bbox"]],
             label=row["label"],
+            description=row["description"],
             credit=row["credit"],
             decorative=row["decorative"],
             excluded=row["excluded"],

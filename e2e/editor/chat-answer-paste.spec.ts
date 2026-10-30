@@ -6,7 +6,7 @@ import { clickTextEnd, openEditorNote } from './helpers';
 /**
  * A chat answer copied with the keyboard pastes into a note as note blocks
  * (answerCopy.ts, ChatAnswerPastePlugin): whole blocks from the answer's
- * OpenUI program, a partly selected one read from its DOM.
+ * Markdown, a partly selected one read from its DOM.
  */
 
 /** Open the note, then the saved chat whose answer gets copied. */
@@ -17,7 +17,7 @@ async function openChat(page: Page, label: string) {
     EDITOR_NOTE.thirdParagraph
   );
   await page.getByText(label, { exact: true }).first().click();
-  await expect(page.locator('[data-ui]').first()).toBeVisible();
+  await expect(page.locator('[data-chat-answer]').first()).toBeVisible();
   return editor;
 }
 
@@ -28,13 +28,11 @@ async function selectAnswer(
   range?: { start: string; from: string; end: string; to: string }
 ) {
   await page.evaluate((bounds) => {
-    const blocks = [...document.querySelectorAll('[data-ui]')].filter(
-      (element) => !element.parentElement?.closest('[data-ui]')
-    );
+    const answer = document.querySelector('[data-chat-answer]')!;
     const selected = document.createRange();
     if (bounds) {
       const textNode = (text: string) => {
-        const walker = document.createTreeWalker(blocks[0].parentElement!, 4);
+        const walker = document.createTreeWalker(answer, 4);
         while (walker.nextNode())
           if (walker.currentNode.textContent?.includes(text))
             return walker.currentNode as Text;
@@ -45,8 +43,7 @@ async function selectAnswer(
       selected.setStart(start, start.data.indexOf(bounds.from));
       selected.setEnd(end, end.data.indexOf(bounds.to) + bounds.to.length);
     } else {
-      selected.setStartBefore(blocks[0]);
-      selected.setEndAfter(blocks.at(-1)!);
+      selected.selectNodeContents(answer);
     }
     const selection = getSelection()!;
     selection.removeAllRanges();
@@ -69,7 +66,7 @@ test.describe('chat answer paste', () => {
   test('a whole answer brings every tab and closed reveal as note blocks', async ({
     page,
   }) => {
-    const editor = await openChat(page, 'OpenUI: tabs, steps + reveals');
+    const editor = await openChat(page, 'Answer: tabs + reveals');
     await selectAnswer(page);
     await pasteBelowThird(page, editor);
 
@@ -90,7 +87,7 @@ test.describe('chat answer paste', () => {
   test('math and fenced code paste as equations and a code block', async ({
     page,
   }) => {
-    const editor = await openChat(page, 'OpenUI: prose, code + math');
+    const editor = await openChat(page, 'Answer: prose, code + math');
     await selectAnswer(page);
     await pasteBelowThird(page, editor);
 
@@ -114,7 +111,7 @@ test.describe('chat answer paste', () => {
   test('a triple-click on the last line copies that paragraph alone', async ({
     page,
   }) => {
-    const editor = await openChat(page, 'OpenUI: prose, code + math');
+    const editor = await openChat(page, 'Answer: prose, code + math');
     // Chrome ends this selection in the model label under the answer.
     await page
       .locator('[data-chat-answer]')
@@ -132,7 +129,7 @@ test.describe('chat answer paste', () => {
   test('a selection ending inside a callout keeps the callout with the selected text', async ({
     page,
   }) => {
-    const editor = await openChat(page, 'OpenUI: overview + citations');
+    const editor = await openChat(page, 'Answer: overview + citations');
     await selectAnswer(page, {
       end: 'Boundary, instructions',
       from: 'Its parts',

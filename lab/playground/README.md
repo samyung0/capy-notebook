@@ -137,6 +137,15 @@ three minutes, so `--check` does not run it). Without a bundle the dialog
 names the command. The sources are `preview/` (`main.tsx`, `index.html`,
 `vite.config.ts`).
 
+## Answer format
+
+The agent writes Markdown with `[#n]` citations, callouts, `:::tabs`,
+`<details>` and chart, plot and html-embed fences
+(`pipeline/pipeline/retrieval/markdown_answer.py`,
+`prompts/answer_markdown.txt`). Each answer is drawn by the app's own
+`MarkdownAnswer` on the preview bundle's `answer.html` (`preview/answer.tsx`)
+in a frame under the turn, so rebuild the bundle after changing it.
+
 ## Config
 
 Fields absent from a config take the defaults in `DEFAULT_CONFIG`
@@ -144,12 +153,13 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 
 | Field | Meaning |
 | --- | --- |
+| `account` | `null` (default) is workspace chat on `workspace_id`; `{"user_id": "<user id>"}` is that user's account chat ([Account chat](#account-chat)). `configs/account-uat.json` is Epo's UAT account |
 | `model` | A `model_configs` pin (`provider_slug`, `model_slug`, `version`, `thinking`). Add `adhoc: {…}` to pin a model the catalog lacks; the provider's platform key must exist. The Model picker lists every adhoc pin a saved config holds beside the catalog, and picking one copies the whole pin |
 | `model.transport` | Send this pin to another OpenAI-compatible endpoint: `{"url", "key_env", "wire_model", "body"}`. `body` picks the request builder (`zai`, `openai`, `deepseek`). `null` uses the production route |
 | `answer.citations` | `as_is` (production numbering), `renumber` (markers rewritten to 1, 2, … in first-appearance order while streaming; the final list holds only the passages used) or `structured` (the answer is JSON: claims with the passages that ground each; the playground writes the prose and numbers) |
 | `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it, except the all sources rules. The addon is appended either way |
 | `all_sources_rules` | `null` keeps production's all sources rules; a string replaces them and `""` drops them. Sent in both modes of the Workspace only switch, before the answer format (or last when a replaced `system_prompt` dropped it) |
-| `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_knowledge": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `search_knowledge` still receives the live subject list |
+| `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_library": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `search_library` still receives the live subject list |
 | `skills` | Map of skill names (`editing`, `note_building`, `deck_building`) to replacement text for what `read_skill` returns, edited in the Skills panel. The system prompt and the other skills keep production's text, which is the same in both modes of the Workspace only switch |
 | `skill_addons` | Map of skill names to text appended to what `read_skill` returns (after any `skills` replacement), so a teaching variant rides on production's current text; seen in the config JSON and each call's full context |
 | `workspace_only` | The per-message Workspace only switch (default off). The prompt and tools are the same either way; on, the turn's message carries the mode line and the library tools and `search_web` answer that they are not available. `search_web` calls DeepSeek's real search on the platform key when the switch is off |
@@ -234,9 +244,42 @@ them (`check_note`): quiz fences through `quizcheck`, flashcards with a front an
 `html-embed` with html (no fallback), under 64 KB, loading only from the CDNs the frame's CSP
 names (`embed/_headers`; the SVG namespace URL is allowed) and with no fetch.
 
-The library reads, `capture_knowledge_page` and compaction use the real
-code path. `capture_knowledge_page` renders from the knowledge-base bucket into
+The library reads, `capture_library_page` and compaction use the real
+code path. `capture_library_page` renders from the knowledge-base bucket into
 the same capture cache, keyed by the book's `books/<sha256>.pdf` object key.
+
+## Account chat
+
+With `account` set, a turn is that user's account chat as production runs it:
+the account system prompt and tools (`profiles/account.py`), the user's owned
+and member workspaces as its scope, and the account skills. The prompt and
+tool editors show the account text. Go's account routes are answered by
+`scripts/account.py` from the target database with Go's own SQL
+(`server/internal/store/account_scope.go`), read-only: `documents/access`
+(every account read and search) and `documents/list` (`list_sources`), with
+the run's own materials added. `create_workspace` and `create_chapter` make a
+workspace or chapter that exists only in the run; later listings and chapter
+checks see it. Other gateway reads are unreachable here, as in workspace
+mode: `inspect_document` and `inspect_office_document` of an item the
+database holds fail (Go reads its document); the run's own materials inspect.
+A `tool_descriptions` override of `list_sources` does not apply, since the
+account profile replaces that description.
+
+### Real chats to continue
+
+`scripts/import_chat.py` turns stored conversations into runs, one per
+assistant answer, named `<target>-<conversation>-t<n>-<question>` so they sort
+first in Runs. Opening one restores the conversation up to that answer; the
+next question runs under the selected config, which must name the
+conversation's user in `account`. Read-only, one SELECT per conversation.
+
+```sh
+uv run --project pipeline python lab/playground/scripts/import_chat.py --target uat conv_a8be00792c conv_289d6b3dd5
+```
+
+A worktree has no `.env.local`; `CAPY_ENV_LOCAL=<checkout>/.env.local` makes
+the playground and the importer read the checkout's in place (the library URL
+and the knowledge bucket keys come only from there).
 
 ## Citation modes
 
@@ -286,7 +329,7 @@ model actually received; repeated use replays each page only once.
 Before replay, read-only library queries check that each saved result still
 matches. The full text enters normal history and counts as already read for
 material writes while it remains in the model request. Compaction can remove
-that permission: an ID or summary alone requires a new `read_knowledge` call.
+that permission: an ID or summary alone requires a new `read_library` call.
 The application and playground use the same retention, revalidation and write
 guards. Source text is stored in private message evidence. New successful
 writes retain their credited excerpt reads. Opening a saved run

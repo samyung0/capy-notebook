@@ -34,6 +34,13 @@ OPS_SCHEMA_FIXTURE = (
 )
 
 
+def _shown(ctx, result) -> str:
+    """A result as the model reads it, its passages numbered."""
+    from pipeline.retrieval import tools
+
+    return tools.render_result(result, tools.assign_citations(ctx, result.passages))
+
+
 def test_ops_schema_fixture_matches_the_owned_schema():
     """The ops Library section reads this schema; Python owns it."""
     assert OPS_SCHEMA_FIXTURE.read_bytes() == library.LIBRARY_SCHEMA.encode(), (
@@ -339,16 +346,17 @@ async def test_the_last_page_of_an_excerpt_names_its_neighbours_in_the_book(
         "only the last page"
     )
     ctx = tools.ToolContext(workspace_id="ws")
-    text = (
-        await tools._read_knowledge(
+    text = _shown(
+        ctx,
+        await tools._read_library(
             {"excerpt_id": "e_worked", "start": 2, "count": 1}, ctx
-        )
-    ).text()
+        ),
+    )
     assert text.endswith(
         "(chunk 2) Worked example continued: extrapolation warning\n</source>\n\n"
         "(end of excerpt)\n"
-        "Previous in this book: [e_intro] Ch 8 › 8.1 Fitting (pages 1)\n"
-        "Next in this book: [e_shaky] Ch 8 › 8.3 Unverified (pages 1)"
+        "Previous in this book: excerpt_id=e_intro — Ch 8 › 8.1 Fitting (pages 1)\n"
+        "Next in this book: excerpt_id=e_shaky — Ch 8 › 8.3 Unverified (pages 1)"
     )
 
 
@@ -375,8 +383,8 @@ async def test_context_links_come_with_section_paths_and_pages(library_db):
     ]
     assert tools._excerpt_scope(excerpt).endswith(
         "Source context (scope explains when needed):\n"
-        "- [e_worked] Ch 8 › 8.2 Prediction (pages 1)\n"
-        "- [e_gone]"
+        "- excerpt_id=e_worked — Ch 8 › 8.2 Prediction (pages 1)\n"
+        "- excerpt_id=e_gone"
     )
 
 

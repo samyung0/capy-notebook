@@ -1,18 +1,62 @@
 import { expect, test } from 'vitest';
-import { extractQuestions } from './questions';
+import { composeAnswers, extractQuestions } from './questions';
 
-// The pipeline lists AskUsers root left out in a later root line (Epo
-// 2026-10-29); the browser's parser must take that later root.
-test('a later root line brings in the questions the first left out', () => {
-  const program = [
-    'root = Answer([intro, ask])',
-    'intro = Md("Two things first.")',
-    'ask = AskUser("Two quick choices:", [])',
-    'ask1 = AskUser("What level?", ["Beginner", "Undergraduate"])',
-    'root = Answer([intro, ask, ask1])',
+const answer = [
+  'Two things first.',
+  '',
+  '```ask',
+  '{"question": "Which one next?", "choices": ["Atomicity", "Isolation"]}',
+  '{"question": "Anything to include?", "choices": []}',
+  '```',
+].join('\n');
+
+test('extracts the questions of a completed answer in reading order', () => {
+  expect(extractQuestions(answer)).toEqual([
+    { choices: ['Atomicity', 'Isolation'], question: 'Which one next?' },
+    { choices: [], question: 'Anything to include?' },
+  ]);
+  expect(extractQuestions('Plain prose')).toEqual([]);
+});
+
+test('keeps question shape: strings as choices, and only real questions', () => {
+  expect(
+    extractQuestions(
+      [
+        '```ask',
+        '{"question": "Depth?", "choices": ["Intro", 2]}',
+        '{"question": "No choices"}',
+        '{"question": "  "}',
+        'not json',
+        '```',
+      ].join('\n')
+    )
+  ).toEqual([
+    { choices: ['Intro'], question: 'Depth?' },
+    { choices: [], question: 'No choices' },
+  ]);
+});
+
+test('composes answered questions into one message and drops the rest', () => {
+  const questions = extractQuestions(answer);
+  expect(
+    composeAnswers(questions, [{ choice: 'Isolation', other: ' ' }, {}])
+  ).toBe('Which one next?\nIsolation');
+  expect(composeAnswers(questions, [{}, { other: 'The exam question.' }])).toBe(
+    'Anything to include?\nThe exam question.'
+  );
+});
+
+test('an unclosed block above the questions cannot take them', () => {
+  const open = [
+    '<details>',
+    '<summary>More</summary>',
+    '',
+    'Text.',
+    '',
+    answer,
   ].join('\n');
-  expect(extractQuestions(program)).toEqual([
-    { choices: [], question: 'Two quick choices:' },
-    { choices: ['Beginner', 'Undergraduate'], question: 'What level?' },
+  expect(extractQuestions(open).map(({ question }) => question)).toEqual([
+    'Which one next?',
+    'Anything to include?',
   ]);
 });

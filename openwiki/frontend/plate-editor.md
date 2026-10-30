@@ -570,16 +570,16 @@ answer holds only its rendered DOM, so `copyAnswer` (`chat/answerCopy.ts`, the
 answer's `onCopy`) also writes `application/x-capy-answer` when the selection
 lies inside one answer: a list of plain-Markdown blocks in the note format,
 a callout carried as its variant plus its body (`chat/answerClipboard.ts`).
-Each OpenUI block renders inside a `display: contents` element (`data-ui`)
-that knows its node (`library.tsx`). Only the blocks holding the selection's
-two ends can be partly selected: every block between them is rebuilt from its
-props (every tab, a closed reveal or accordion item's body, a chart, plot or
-html-embed as its fence), and a partly selected one is read from its DOM up
-to the selection's end, keeping its shape (a callout stays a callout with the
-selected text, a step a list item). Charts, plots, embeds and formulas
+Each answer block renders inside a `display: contents` element that knows its
+Markdown segment (`chat/MarkdownAnswer.tsx`, `answerCopy.ts`). Only the blocks
+holding the selection's two ends can be partly selected: every block between
+them is rebuilt from its source without its citation markers (every tab, a
+closed reveal's body, a chart, plot or html-embed as its fence), and a partly
+selected one is read from its DOM up to the selection's end, keeping its shape
+(a callout stays a callout with the selected text). Charts, plots, embeds and formulas
 (`data-tex`) copy whole once touched; citations, buttons and asked questions
-are left out; tabs, reveals and accordion items become a bold title over
-their content. `ChatAnswerPastePlugin` (`pastePlugins.ts`) reads each block
+are left out; tabs and reveals become a bold title over their content; a
+library figure copies as its caption. `ChatAnswerPastePlugin` (`pastePlugins.ts`) reads each block
 like agent Markdown (plain, no MDX) and wraps callout blocks. A selection
 that runs past the answer into its own message's model label or sources (a
 triple-click on the last line, `data-chat-message`) stops at the answer's

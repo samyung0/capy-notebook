@@ -297,17 +297,6 @@ fields) and the author-side computation warning, with a small LaTeX check.
 
 ### rag
 
-[`rich_chat_validity.py`](rag/scripts/rich_chat_validity.py) samples the current
-rich-chat prompt with frozen synthetic evidence through GLM on Relace and official
-DeepSeek, with GLM at Low and DeepSeek at High. It uses the production request builders, no retries, and no repair
-requests. Run `uv run python bench/rag/scripts/rich_chat_validity.py
-bench/rag/reports/local/<fresh-directory> --repeats 2`; credentials are read in
-memory from the UAT worker. Re-score saved output without network access by
-replacing `--repeats 2` with `--score`. The sibling TypeScript scorer uses the
-official parser and local recovery checks. Add `--model deepseek` or `--model glm`
-to limit the live sample to one provider. These are format samples, not
-production failure-rate measurements or retrieval-quality tests.
-
 The pending-hints eval (`rag/scripts/hints_eval_*.py`, fixtures in
 `rag/fixtures/hints-eval/`, findings in
 [`rag/reports/2026-10-20-hints-eval.md`](rag/reports/2026-10-20-hints-eval.md))

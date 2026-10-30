@@ -45,7 +45,7 @@ const base = { live: false, startedAt: at(0), stopped: false, thinking: false };
 
 describe('toolIcon', () => {
   it('acts out each tool family and bounces for the rest', () => {
-    expect(toolIcon('search_knowledge')).toBe('search');
+    expect(toolIcon('search_library')).toBe('search');
     expect(toolIcon('search_web')).toBe('search');
     expect(toolIcon('read_skill')).toBe('read');
     expect(toolIcon('capture_page')).toBe('look');
@@ -312,7 +312,7 @@ describe('Normal mode', () => {
       activity: [
         tool('a', 'list_sources'),
         { id: 'n', kind: 'narration', text: 'Checking the textbook.' },
-        tool('b', 'search_knowledge'),
+        tool('b', 'search_library'),
       ],
       startedAt: undefined,
     });

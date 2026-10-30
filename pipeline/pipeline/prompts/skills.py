@@ -17,10 +17,11 @@ NOTE_BUILDING_WHEN = (
 )
 DECK_BUILDING_WHEN = (
     "read together with editing, in the same response, before making a PowerPoint "
-    "deck (create_deck, write_slide)"
+    "(create_deck, write_slide)"
 )
 OFFICE_BUILDING_WHEN = (
-    "read before reading a Word, Excel or PowerPoint file; to edit or create one, read "
+    "read before reading a Word, Excel or PowerPoint file (it offers "
+    "inspect_office_document and edit_office_document); to edit or create one, read "
     "it together with editing, in the same response"
 )
 
@@ -34,7 +35,7 @@ Plan:
 - In the same message, briefly outline what you will create: each new file and the chapter it goes in, reusing the workspace's chapters (list_sources) and marking the new ones with create_chapter. The outline should be brief.
 
 What to build:
-- Each chapter gets one main explainer, a note or a deck as the output-files preference says; note_building or deck_building says how to write it.
+- Each chapter gets one main explainer, a note or a PowerPoint as the output-files preference says; note_building or deck_building says how to write it.
 - Quizzes and flashcards are standalone materials filed in the chapter they practise, by its chapter_id from list_sources.
 - Always add images. Images catch the learner's attention and make ideas easier to explain. A picture need not carry the explanation itself; it only needs to be relevant. Make an image that is likely decorative, such as a logo or an icon, smaller.
 - Follow the study preferences in the turn context unless the request says otherwise.
@@ -65,9 +66,9 @@ _OFFICE_BUILDING = """How to read, edit and create Word (DOCX), Excel (XLSX) and
 Read:
 - XLSX: the sheet list first (no range), then the ranges you need, at most 2,000 cells a read. A cell shows its input, then → its shown value when that differs (a formula's result).
 - DOCX: paragraphs with their target ids, each with its style (unless the default) and list, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column; tracked-deleted text is left out. After the body come the headers', footers' and notes' paragraphs under == part == lines; they take replace_text only. A paragraph marked locked (with why: a picture, a field, tracked changes, the table or content control before it) refuses replace_text and format_text, and delete_paragraph unless it only follows a table; one marked content control or table cannot be an anchor. The first page lists the paragraph styles by id and name. A command copies an id whole, as the read shows it.
-- PPTX: without slide, the slides count at a time from start, each with its layout and its first shapes (id, kind, placeholder type, first line of text) and how many more it holds; the first page lists the deck's layouts. With slide (its number), that slide's shapes and paragraphs count at a time from start, each shape with its name and box in points from the slide's top left corner and then its paragraphs with their target ids, levels and table cells; the first page also gives the slide's speaker notes, cut past a length with a marker. A shape marked equation takes no edits.
-- Pictures, charts, equations and drawn shapes: a DOCX read lists them under their paragraph, a PPTX slide read on their shapes (the deck read gives a picture's alt text and a chart's type and title), the XLSX sheet list under their sheet with their anchor cells. A picture shows its alt text and pixel size, or why it is not viewable (then only its alt text is known); a chart its type, title and each series' cell references and first points as [idx, category, value]; an equation or drawn shape its text.
-- ids (any format, at most 4 a call, copied whole from a read): each picture comes back as an image on the next message, counting toward the message's images and usable as a deck figure by the capture number its line names; each chart with every point; an id not found is named. These files have no page view: capture_page does not take them.
+- PPTX: without slide, the slides count at a time from start, each with its layout and its first shapes (id, kind, placeholder type, first line of text) and how many more it holds; the first page lists the PowerPoint's layouts. With slide (its number), that slide's shapes and paragraphs count at a time from start, each shape with its name and box in points from the slide's top left corner and then its paragraphs with their target ids, levels and table cells; the first page also gives the slide's speaker notes, cut past a length with a marker. A shape marked equation takes no edits.
+- Pictures, charts, equations and drawn shapes: a DOCX read lists them under their paragraph, a PPTX slide read on their shapes (the PowerPoint read gives a picture's alt text and a chart's type and title), the XLSX sheet list under their sheet with their anchor cells. A picture shows its alt text and pixel size, or why it is not viewable (then only its alt text is known); a chart its type, title and each series' cell references and first points as [idx, category, value]; an equation or drawn shape its text.
+- ids (any format, at most 4 a call, copied whole from a read): each picture comes back as an image on the next message, counting toward the message's images and usable as a slide figure by the capture number its line names; each chart with every point; an id not found is named. These files have no page view: capture_page does not take them.
 
 Edit, one file a call; one stale expectation refuses the whole call:
 - set_range writes a rectangle of cells: expected holds the range's inputs exactly as the read shows them ("" for an empty cell), values the new inputs ("=..." for a formula, "" to clear), both in the range's shape.
@@ -81,12 +82,12 @@ Edit, one file a call; one stale expectation refuses the whole call:
 - insert_table adds a table of text, at most 20 rows of 10 cells, after after_id (in call order) or at the body's end; an empty paragraph follows it only where Word needs one (the table ends the body or comes before another table). delete_table names the table's id and its cells' text as rows of cells.
 - format_text (DOCX, PPTX) formats text, its one occurrence in a paragraph (bold, italic, underline, strikethrough, colour, size, font; highlight in DOCX only); set_alignment (DOCX, PPTX) aligns one paragraph.
 - set_shape_text (PPTX) replaces a shape's whole text: expected_text is its paragraphs as the slide read shows them, joined by line breaks; paragraphs is the new text, one string a paragraph (at most {shape_paragraphs}, {shape_characters} characters together). Its paragraphs keep their level and bullet, added ones continue the last. A table's text is edited by paragraph with replace_text, insert_paragraph and delete_paragraph.
-- add_slide (PPTX) adds a slide right after after_slide or right before before_slide, last with neither, holding its layout's title and text placeholders, empty; layout is a layout id from the deck read, by default the layout of the slide it follows. Read the slide afterwards for its placeholders' ids and fill them with set_shape_text. A slide on a blank layout (every slide of a deck made with create_deck) has none: add_text_box puts text on it.
+- add_slide (PPTX) adds a slide right after after_slide or right before before_slide, last with neither, holding its layout's title and text placeholders, empty; layout is a layout id from the PowerPoint read, by default the layout of the slide it follows. Read the slide afterwards for its placeholders' ids and fill them with set_shape_text. A slide on a blank layout (every slide of a PowerPoint made with create_deck) has none: add_text_box puts text on it.
 - add_text_box (PPTX) adds a text box of paragraphs (one string each) at x, y with width w and height h, in points from the slide's top left corner and inside the slide; the slide read gives the slide's size and each shape's box.
-- delete_slide (PPTX) names the slide's text as its slide read shows it, every paragraph one a line in shape order and then its speaker notes as shown, cut marker included (blank lines and the spaces around a line are not compared), and never deletes the deck's only slide; move_slide puts a slide right after after_slide or right before before_slide.
+- delete_slide (PPTX) names the slide's text as its slide read shows it, every paragraph one a line in shape order and then its speaker notes as shown, cut marker included (blank lines and the spaces around a line are not compared), and never deletes the PowerPoint's only slide; move_slide puts a slide right after after_slide or right before before_slide.
 - A call's later commands cannot name the slides and shapes its earlier ones add: read again for their ids.
 
-Create: a new Excel or Word file is a create command first, without file_id, followed by the commands that fill it; a new Word file's insert_paragraph and insert_table commands omit after_id and build it in order. A deck is made with create_deck (the deck_building skill).
+Create: a new Excel or Word file is a create command first, without file_id, followed by the commands that fill it; a new Word file's insert_paragraph and insert_table commands omit after_id and build it in order. A PowerPoint is made with create_deck (the deck_building skill).
 
 Limits: edit_office_document's description lists a call's limits, per command kind (commands, cells, paragraphs, table cells, formatted spans, list and alignment paragraphs, rows, sheets, slides, text boxes, shape text); past one, the commands before it apply and the rest come back unapplied, by index, to send in another call. A call's commands are at most 256 KB; a larger call is refused, so split it.""".format(
     shape_paragraphs=f"{OFFICE_SHAPE_TEXT['paragraphs']:,}",
@@ -94,7 +95,7 @@ Limits: edit_office_document's description lists a call's limits, per command ki
 )
 
 _EDITING_LIBRARY = """
-- excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_knowledge this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""
+- excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_library this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""
 
 _NOTE_BUILDING = """How to write a note, a chapter's main explainer when the output-files preference says Capy Note.
 
@@ -108,7 +109,7 @@ _BUILDING_LIBRARY = """
 
 Practice from the library (Workspace only off):
 - Use one primary excerpt per section, and keep one book's notation unless another fills a gap you can name.
-- To show a figure read_knowledge listed this turn, put `![caption](figure:<figure id>)` on its own line in a note, or `![caption](figure:<figure id> "small")` for a half-width one: the note stores the picture with its printed credit and credits its book. Any other image URL becomes a plain link.
+- To show a figure read_library or search_images listed, put `![caption](figure:<figure id>)` on its own line in a note, or `![caption](figure:<figure id> "small")` for a half-width one: the note stores the picture with its printed credit and credits its book. Any other image URL becomes a plain link.
 - Always add images. Images catch the learner's attention and make ideas easier to explain. A picture need not carry the explanation itself; it only needs to be relevant. Make an image that is likely decorative, such as a logo or an icon, small.
 - Reuse library exercises and worked examples before writing new questions. Keep a worked example's question, givens, model and solution together, and never splice numbers from different examples. Label adapted or new practice as such; call it a source exercise only when the source asks it."""
 
@@ -130,11 +131,11 @@ def note_building(formats: dict[str, str]) -> str:
 def deck_rules(viewbox: str) -> str:
     """How one slide is written; ppt-master's checker and exporter enforce it."""
     return f"""Write one slide as a single SVG; ppt-master's exporter turns it into native PowerPoint shapes.
-- Root: <svg xmlns="http://www.w3.org/2000/svg" viewBox="{viewbox}" lang="<the deck's BCP-47 language>" data-pptx-page-role="cover|toc|section|content|ending" font-family=... font-size=...>, then a background <rect id="background" data-pptx-role="background" .../>.
+- Root: <svg xmlns="http://www.w3.org/2000/svg" viewBox="{viewbox}" lang="<the PowerPoint's BCP-47 language>" data-pptx-page-role="cover|toc|section|content|ending" font-family=... font-size=...>, then a background <rect id="background" data-pptx-role="background" .../>.
 - Every visible part sits in a module: a root-level <g id="..." data-pptx-bounds="x y width height"> whose bounds enclose its children. Modules do not overlap. A checker measures every text line against its module's bounds and the canvas and refuses the slide when text spills out, so write each sentence first, estimate its width from the style's characters-per-100px table, then size the module.
 - Anchor a label inside a box at the box's centre (text-anchor="middle") or right edge (text-anchor="end"), so text near the canvas's right side grows inward. A refused slide moves or reflows its text, or widens its module, before cutting words.
 - Allowed: rect, circle, ellipse, line, polyline, polygon, path, text and tspan, g, defs with linearGradient, and image. Each text has x and y; set font-size, font-weight and fill on it or inherit them from its module. Write raw Unicode; escape & < > as &amp; &lt; &gt;. No style element, class, foreignObject, textPath, filters, animation, script, symbol or use, and no HTML entities.
-- A figure is <image href="../images/c<n>.jpg" x y width height preserveAspectRatio="xMidYMid meet"/> for capture n of this turn, a page capture made with a bbox around the figure or an Office picture inspect_office_document attached (its result names n).
+- A figure is <image href="figure:<figure id>" x y width height preserveAspectRatio="xMidYMid meet"/> for a figure read_library or search_images listed; the slide credits its book. Anything else is <image href="../images/c<n>.jpg" .../> for capture n of this turn: a page capture made with a bbox around a picture no figure lists, or an Office picture inspect_office_document attached (its result names n).
 - Write the slide for one audience move (what the student knows before it and after it) and lay its points out by how they relate: order as a numbered sequence, contrast side by side, membership as parallel cards. Use only facts from what you read; the footer names the source."""
 
 
@@ -142,18 +143,18 @@ def deck_building(rules: str, style: str, style_text: str) -> str:
     """The deck skill: the method, the slide rules and the style with its
     reference slides (ppt-master's Quick route, openwiki/decks.md)."""
     return (
-        "How to make a PowerPoint deck, a chapter's main explainer when the "
-        "output-files preference says Powerpoint.\n\n"
+        "How to make a PowerPoint, a chapter's main explainer when the "
+        "output-files preference says PowerPoint.\n\n"
         "Plan:\n"
         "- Outline with create_deck: one title and brief per slide, in order, one slide per idea, "
         "8 to 20 per chapter, opening with a cover. A brief says the slide's audience move (what "
         "the student knows before and after), how its points relate, and the content with its source.\n"
         "- Then write the slides one per write_slide call, each from what you just read for it.\n"
         "- A slide the checker refuses comes back with its errors: fix those and send the whole "
-        "slide again. Once every slide is written the deck is exported and stored in the workspace "
+        "slide again. Once every slide is written the PowerPoint is exported and stored in the workspace "
         "as a PPTX file.\n"
-        "- Finish a deck in the turn that creates it: its slides last only until the turn ends, "
-        "and a deck with slides left unwritten is not saved.\n\n"
+        "- Finish a PowerPoint in the turn if you can; an unfinished one can be continued with "
+        "write_slide in a later message for 24 hours, and is not saved until every slide is written.\n\n"
         f"Slides:\n{rules}\n\n"
         f"Write every slide in the {style} style:\n\n{style_text}"
     )
@@ -190,6 +191,35 @@ def account_editing() -> str:
             ),
         ),
         (
+            "briefly outline what you will create",
+            "very briefly outline what you will create",
+        ),
+        (
+            "The outline should be brief.",
+            "No need to explain in depth what each file contains.",
+        ),
+        (
+            "unless the request says otherwise.",
+            (
+                "unless the request says otherwise. No need to restate the preferences "
+                "back to user."
+            ),
+        ),
+        (
+            (
+                "\nALWAYS read the document again to see if you need to adjust the "
+                "visuals to meet the user preferences."
+            ),
+            "",
+        ),
+        (
+            (
+                " Omitted, the write credits the excerpts read since your last write, "
+                "or all read this turn when none are new."
+            ),
+            "",
+        ),
+        (
             (
                 "- Quizzes and flashcards are standalone materials filed in the "
                 "chapter they practise, by its chapter_id from list_sources."
@@ -216,6 +246,13 @@ def account_note_building(formats: dict[str, str]) -> str:
             "Practice from the library (Workspace only off):",
             "Practice from the library (Your files only off):",
         ),
+        (
+            (
+                "- Use one primary excerpt per section, and keep one book's notation "
+                "unless another fills a gap you can name.\n"
+            ),
+            "",
+        ),
     )
 
 
@@ -225,8 +262,12 @@ def account_deck_building(rules: str, style: str, style_text: str) -> str:
         (
             "stored in the workspace as a PPTX file.",
             (
-                "stored as a PPTX file in the workspace create_deck named, or in No "
-                "workspace."
+                "stored as a PPTX file in the workspace create_deck named, or outside "
+                "workspaces."
             ),
+        ),
+        (
+            "the footer names the source.",
+            "the footer names the source with 200 character limit.",
         ),
     )

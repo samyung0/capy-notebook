@@ -1,10 +1,11 @@
-import { createContext, Fragment, useContext } from 'react';
+import { createContext, Fragment, useContext, useMemo } from 'react';
+import type { Citation } from '@/api/types';
 import { m } from '@/i18n';
 
 /**
  * Passage numbers in an answer are the model's own ([n] as shown in the tool
  * results). The answer's citation list carries each entry's `n`; its position
- * in that list is the number the reader sees, so the same program renders
+ * in that list is the number the reader sees, so the same answer renders
  * the same way live and from history.
  */
 export interface CitationLookup {
@@ -17,22 +18,30 @@ export const CitationContext = createContext<CitationLookup>({
   numberOf: () => undefined,
 });
 
-/** Element nodes as the OpenUI parser hands them to a container. */
-export interface ElementNode<P = Record<string, unknown>> {
-  partial: boolean;
-  props: P;
-  type: 'element';
-  typeName: string;
-}
-
-export function elements<P>(value: unknown): ElementNode<P>[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (node): node is ElementNode<P> =>
-      !!node &&
-      typeof node === 'object' &&
-      (node as ElementNode).type === 'element'
-  );
+/** The lookup for an answer's citation list, for CitationContext. */
+export function useCitationLookup(
+  citations: Citation[] | undefined,
+  onOpenCitation: ((citation: Citation) => void) | undefined
+): CitationLookup {
+  return useMemo(() => {
+    const byPassage = new Map<number, number>();
+    citations?.forEach((citation, index) => {
+      if (citation.n !== undefined && !byPassage.has(citation.n)) {
+        byPassage.set(citation.n, index);
+      }
+    });
+    return {
+      numberOf: (n) => {
+        const index = byPassage.get(n);
+        return index === undefined ? undefined : index + 1;
+      },
+      open: (n) => {
+        const index = byPassage.get(n);
+        const citation = index === undefined ? undefined : citations?.[index];
+        if (citation) onOpenCitation?.(citation);
+      },
+    };
+  }, [citations, onOpenCitation]);
 }
 
 /** Raised source numbers (¹,²) at the end of the text they back. */

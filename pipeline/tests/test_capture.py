@@ -173,7 +173,7 @@ async def test_a_message_allows_sixteen_images(monkeypatch, rendered):
     assert [r.text().endswith(tools.IMAGE_LIMIT) for r in taken] == [False] * 15 + [
         True
     ]
-    knowledge = await tools._capture_knowledge_page(
+    knowledge = await tools._capture_library_page(
         {"excerpt_id": "e_1", "page": 1, "_tool_call_id": "k18"}, ctx
     )
     for refused in [*(r for r in results if r.refused), knowledge]:
@@ -284,7 +284,7 @@ async def test_two_source_images_side_by_side_at_fifteen_attach_one(monkeypatch)
 async def test_two_knowledge_captures_side_by_side_at_fifteen_attach_one(
     monkeypatch, pdf
 ):
-    """Review r2 M1: the same for capture_knowledge_page."""
+    """Review r2 M1: the same for capture_library_page."""
 
     async def _target(excerpt_id):
         return _capture_target([338, 339])
@@ -298,7 +298,7 @@ async def test_two_knowledge_captures_side_by_side_at_fifteen_attach_one(
     ctx = ToolContext(workspace_id="ws_1", images_taken=15)
     results = await asyncio.gather(
         *(
-            tools._capture_knowledge_page(
+            tools._capture_library_page(
                 {"excerpt_id": "e_1", "page": page, "_tool_call_id": f"k{page}"}, ctx
             )
             for page in (338, 339)
@@ -693,7 +693,7 @@ async def test_knowledge_capture_refuses_a_withheld_page_as_withheld(monkeypatch
     monkeypatch.setattr(tools.library, "capture_target", _target)
     monkeypatch.setattr(capture, "render_knowledge", _render)
     ctx = ToolContext(workspace_id="ws_1")
-    refused = await tools._capture_knowledge_page(
+    refused = await tools._capture_library_page(
         {"excerpt_id": "e_1", "page": 339, "_tool_call_id": "a"}, ctx
     )
     assert refused.refused and "Page 339" in refused.text()
@@ -718,20 +718,20 @@ async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pd
     monkeypatch.setattr(capture, "render_knowledge", _render)
     ctx = ToolContext(workspace_id="ws_1")
 
-    outside = await tools._capture_knowledge_page(
+    outside = await tools._capture_library_page(
         {"excerpt_id": "e_1", "page": 400, "_tool_call_id": "a"}, ctx
     )
     assert outside.refused and "pages 338, 339, 341" in outside.text()
     assert not rendered and not ctx.pending_images
 
     # 341 is the page of one of the excerpt's figures.
-    inside = await tools._capture_knowledge_page(
+    inside = await tools._capture_library_page(
         {"excerpt_id": "e_1", "page": 341, "_tool_call_id": "b"}, ctx
     )
     assert not inside.refused and not inside.passages, "a capture adds no citation"
     label, url = ctx.pending_images["b"]
     assert label == (
-        "capture_knowledge_page result 1: Advanced High School Statistics page 341"
+        "capture_library_page result 1: Advanced High School Statistics page 341"
     )
     assert url.startswith("data:image/jpeg;base64,")
     assert rendered == [("books/aaa.pdf", 1024, 341)]

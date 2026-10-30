@@ -52,6 +52,9 @@ PROVIDER_KEYS = (
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
     "OPENROUTER_API_KEY",
+    # The rerank slot (Alibaba qwen3-rerank since 2026-10-30).
+    "ALIBABA_MODELSTUDIO_KEY",
+    "ALIBABA_MODELSTUDIO_URL",
 )
 B2_KEYS = ("B2_ENDPOINT", "B2_REGION", "B2_BUCKET", "B2_KEY_ID", "B2_APP_KEY")
 # The knowledge library and its private bucket are developer-local secrets: the
@@ -115,6 +118,11 @@ def port_open(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+# Tunnels this process opened; a short-lived script closes them as it ends,
+# since a Windows child outlives its parent.
+OPENED: list[subprocess.Popen] = []
+
+
 def ensure_tunnel(ports: tuple[int, ...] = tuple(TUNNELS)) -> bool:
     """Open whatever forwards among `ports` are down; True when something had
     to be reopened. Called at start and before every request that reaches a
@@ -147,6 +155,7 @@ def ensure_tunnel(ports: tuple[int, ...] = tuple(TUNNELS)) -> bool:
             f"root@{INGEST_HOST}",
         ],
     )
+    OPENED.append(tunnel)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         if all(port_open(p) for p in ports):
@@ -176,7 +185,9 @@ def prepare_environment(target: str) -> str:
     for key in (*PROVIDER_KEYS, *B2_KEYS):
         if env.get(key):
             os.environ.setdefault(key, env[key])
-    local_env = env_file(REPO / ".env.local")
+    # A worktree has no .env.local of its own: CAPY_ENV_LOCAL names the
+    # checkout's, read where it is.
+    local_env = env_file(Path(os.environ.get("CAPY_ENV_LOCAL") or REPO / ".env.local"))
     for key in (*PROVIDER_KEYS, *LIBRARY_KEYS, *KNOWLEDGE_B2_KEYS, *OFFICE_KEYS):
         if local_env.get(key):
             os.environ.setdefault(key, local_env[key])

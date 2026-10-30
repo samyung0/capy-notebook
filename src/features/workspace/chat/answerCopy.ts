@@ -4,51 +4,33 @@
  * math lost), so a copy inside one answer also writes ANSWER_CLIPBOARD_TYPE:
  * the selection as note Markdown. Only the blocks holding the selection's two
  * ends can be partly selected; every block between them is whole and comes
- * from its OpenUI props (every tab, a closed reveal's body, a chart's data).
- * A partly selected block is read from the DOM up to the selection's end and
- * keeps its block shape. Charts, plots, embeds and formulas copy whole once
+ * from its Markdown source (every tab, a closed reveal's body, a chart's
+ * data). A partly selected block is read from the DOM up to the selection's
+ * end and keeps its block shape. Figures and formulas copy whole once
  * touched; citations, buttons and asked questions are left out.
  */
 
 import type { ClipboardEvent } from 'react';
 import { HTML_EMBED_MAX_BYTES, htmlBytes } from '@/features/materials/document';
-import {
-  type CalloutVariant,
-  normalizeCalloutVariant,
-} from '@/features/notes/richBlockConfig';
-import { chartBlock, plotBlock } from './answer';
+import type { CalloutVariant } from '@/features/notes/richBlockConfig';
+import { chartFigure, plotFigure } from './answer';
 import { ANSWER_CLIPBOARD_TYPE, type CopiedBlock } from './answerClipboard';
-import { type ElementNode, elements } from './blocks/Cite';
+import { withoutMarkers } from './blocks/citeMarkers';
 import { prepareMath } from './blocks/math';
-import type {
-  AccordionItemProps,
-  CardProps,
-  ChartProps,
-  HtmlEmbedProps,
-  PlotProps,
-  RowProps,
-  StepProps,
-  TableProps,
-  TabProps,
-} from './schema';
+import {
+  type FigureSegment,
+  fenceAttributes,
+  type Segment,
+} from './markdownSegments';
 
-type Props = Record<string, unknown>;
 type Out = string | { callout: CalloutVariant; md: string };
 
-/** Each rendered block's element (a `display: contents` wrapper) and node. */
-const rendered = new WeakMap<Element, ElementNode<Props>>();
+/** Each rendered block's element (a `display: contents` wrapper) and source. */
+const rendered = new WeakMap<Element, Segment>();
 
-export function registerBlock(
-  element: Element | null,
-  typeName: string,
-  props: Props
-) {
-  if (element)
-    rendered.set(element, { partial: false, props, type: 'element', typeName });
+export function registerBlock(element: Element | null, segment: Segment) {
+  if (element) rendered.set(element, segment);
 }
-
-/** Blocks that copy whole once the selection touches them. */
-const ATOMIC = new Set(['Chart', 'Plot', 'HtmlEmbed']);
 
 const PUNCTUATION = /[!-/:-@[-`{-~]/g;
 const PADDED = /^(\s*)([\s\S]*?)(\s*)$/;
@@ -65,12 +47,9 @@ const mark = (md: string, marker: string) => {
   return body ? `${before}${marker}${body}${marker}${after}` : md;
 };
 const strong = (md: string) => mark(md, '**');
-const title = (text: unknown) =>
-  typeof text === 'string' && text.trim()
-    ? strong(escapeText(text.trim()))
-    : '';
-const prose = (text: unknown) =>
-  typeof text === 'string' ? prepareMath(text).trim() : '';
+const title = (text: string) =>
+  text.trim() ? strong(escapeText(text.trim())) : '';
+const prose = (text: string) => prepareMath(withoutMarkers(text)).trim();
 const join = (parts: string[]) => parts.filter(Boolean).join('\n\n');
 
 /** The longest run of backticks in `text`. */
@@ -93,88 +72,47 @@ function gfmTable(header: string[], rows: string[][]) {
   );
 }
 
-const children = (value: unknown) => elements<Props>(value).flatMap(fromNode);
+/** A whole figure, from its fence. One the block refuses shows as code and
+ * copies as code, since a note refuses the fence. */
+function fromFigure({ body, closed, info, lang }: FigureSegment): Out[] {
+  if (!closed || lang === 'ask') return [];
+  if (lang === 'mermaid') return [fence(lang, body)];
+  if (lang === 'html-embed') {
+    const html = body.trim();
+    if (!html || htmlBytes(html) > HTML_EMBED_MAX_BYTES) return [];
+    const caption = fenceAttributes(info).title;
+    // JSON is YAML, which the html-embed fence reads.
+    return [
+      fence(lang, JSON.stringify(caption ? { caption, html } : { html })),
+    ];
+  }
+  const figure = lang === 'chart' ? chartFigure(body) : plotFigure(body);
+  return [figure ? fence(lang, JSON.stringify(figure.block)) : fence('', body)];
+}
 
-/** A whole block, from its props. */
-function fromNode(node: ElementNode<Props>): Out[] {
-  const props = node.props;
-  switch (node.typeName) {
-    case 'Md':
-      return [prose(props.text)];
-    case 'Callout':
+/** A whole block, from its source. */
+function fromSegment(segment: Segment): Out[] {
+  switch (segment.type) {
+    case 'md':
+      return [prose(segment.text)];
+    case 'callout':
       return [
         {
-          callout: normalizeCalloutVariant(props.kind),
-          md: join([title(props.title), prose(props.text)]),
+          callout: segment.kind,
+          md: join([title(segment.title), prose(segment.text)]),
         },
       ];
-    case 'Reveal':
-      return [title(props.title), prose(props.text)];
-    case 'Steps':
-      return [
-        elements<StepProps>(props.items)
-          .map((step, index) =>
-            listItem(
-              `${index + 1}.`,
-              join([title(step.props.title), prose(step.props.text)])
-            )
-          )
-          .join('\n'),
-      ];
-    case 'Cards':
-      return elements<CardProps>(props.items).flatMap((card) => [
-        card.props.value
-          ? `${title(`${card.props.title}:`)} ${escapeText(card.props.value)}`
-          : title(card.props.title),
-        prose(card.props.text),
+    case 'reveal':
+      return [title(segment.title), prose(segment.text)];
+    case 'tabs':
+      return segment.tabs.flatMap((tab) => [
+        title(tab.label),
+        ...tab.segments.flatMap(fromSegment),
       ]);
-    case 'Table': {
-      const table = props as unknown as TableProps;
-      const cells = (row: string[]) =>
-        row.map((cell) => escapeText(String(cell)).replace(WHITESPACE, ' '));
-      return [
-        title(table.caption),
-        gfmTable(
-          cells(table.columns ?? []),
-          elements<RowProps>(table.rows).map((row) => cells(row.props.cells))
-        ),
-      ];
-    }
-    case 'Tabs':
-      return elements<TabProps>(props.items).flatMap((tab) => [
-        title(tab.props.label),
-        ...children(tab.props.children),
-      ]);
-    case 'Accordion':
-      return elements<AccordionItemProps>(props.items).flatMap((item) => [
-        title(item.props.title),
-        ...children(item.props.children),
-      ]);
-    case 'Chart': {
-      const block = chartBlock(props as unknown as ChartProps);
-      return block ? [fence('chart', JSON.stringify(block))] : [];
-    }
-    case 'Plot': {
-      const block = plotBlock(props as unknown as PlotProps);
-      return block ? [fence('plot', JSON.stringify(block))] : [];
-    }
-    case 'HtmlEmbed': {
-      const embed = props as unknown as HtmlEmbedProps;
-      const html = typeof embed.html === 'string' ? embed.html.trim() : '';
-      if (!html || htmlBytes(html) > HTML_EMBED_MAX_BYTES) return [];
-      // JSON is YAML, which the html-embed fence reads.
-      return [
-        fence(
-          'html-embed',
-          JSON.stringify(
-            embed.title ? { caption: embed.title, html } : { html }
-          )
-        ),
-      ];
-    }
-    default:
-      // AskUser, and items their container reads.
-      return [];
+    case 'libraryFigure':
+      return [escapeText(segment.caption)];
+    case 'figure':
+      return fromFigure(segment);
   }
 }
 
@@ -279,15 +217,14 @@ const texts = (out: Out[]) =>
   out.filter((part): part is string => typeof part === 'string');
 
 function block(element: Element, range: Range): Out[] {
-  const node = rendered.get(element);
-  if (node) {
-    if (ATOMIC.has(node.typeName) || covers(range, element))
-      return fromNode(node);
-    if (node.typeName === 'AskUser') return [];
-    if (node.typeName === 'Callout')
+  const segment = rendered.get(element);
+  if (segment) {
+    if (segment.type === 'figure' || covers(range, element))
+      return fromSegment(segment);
+    if (segment.type === 'callout')
       return [
         {
-          callout: normalizeCalloutVariant(node.props.kind),
+          callout: segment.kind,
           md: join(texts(blocks(element, range))),
         },
       ];

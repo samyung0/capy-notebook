@@ -261,7 +261,7 @@ def _reply(text: str = "", calls: list[ToolCall] | None = None) -> AssembledResp
 
 
 TOOL = _reply(calls=[ToolCall(id="call_1", name="list_sources", arguments="{}")])
-ANSWER = _reply('root = Answer([c0])\nc0 = Md("Done.")\n')
+ANSWER = _reply("Done.\n")
 
 # The user whose turn a model call or tool belongs to (each turn is a task).
 USER: contextvars.ContextVar[str] = contextvars.ContextVar("user")

@@ -35,6 +35,7 @@ from ..retrieval import (
     pending,
     scripted,
     store,
+    tools,
     workflows,
 )
 from ..retrieval.agent import (
@@ -285,6 +286,8 @@ class ChatStreamReq(LLMPin):
     studyProgress: bool = False
     # An earlier turn of the conversation was offered the Office tools.
     officeTools: bool = False
+    # An earlier turn was offered the writes the editing skill covers.
+    editTools: bool = False
     # The requester's workspace role: owner, editor or viewer (workspace turns).
     role: Literal["owner", "editor", "viewer"] | None = None
 
@@ -483,6 +486,7 @@ async def _chat_events(req: ChatStreamReq):
         study_preferences=dict(req.studyPreferences or {}),
         study_progress=req.studyProgress,
         office_tools=req.officeTools,
+        edit_tools=req.editTools,
         **({"role": req.role} if req.role else {}),
     )
     turn_id = req.assistantMessageId or ""
@@ -588,6 +592,29 @@ async def chat_stream(req: ChatStreamReq):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ------------------------------------------------------------ library figures
+
+
+class LibraryFigureReq(BaseModel):
+    id: str = Field(min_length=1, max_length=128, pattern=r"^[\w-]+$")
+
+
+@app.post("/library/figure")
+async def library_figure(req: LibraryFigureReq):
+    """One library figure for a chat answer's ![caption](figure:<id>): its
+    image, label and printed credit. Go serves it to signed-in users."""
+    if not library.enabled():
+        return JSONResponse({"code": "not_found"}, status_code=404)
+    try:
+        shown = await tools.answer_figure(req.id)
+    except tools.FigureUnavailable:
+        log.warning("library figure %s did not render", req.id, exc_info=True)
+        return JSONResponse({"code": "unavailable"}, status_code=503)
+    if shown is None:
+        return JSONResponse({"code": "not_found"}, status_code=404)
+    return shown
 
 
 # ------------------------------------------------------------------- generate

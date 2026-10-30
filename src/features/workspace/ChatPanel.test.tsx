@@ -106,10 +106,33 @@ it('names where each account citation lives, and leaves workspace citations as t
   expect(badges[0]).toContain('Biology 101');
   expect(badges[0]).toContain('flask');
   expect(badges[0]).toContain('Organelles cheatsheet.md');
-  expect(badges[1]).toContain(m.files_no_workspace());
+  expect(badges[1]).not.toContain('·');
   expect(badges[1]).toContain('Reading list.md');
   expect(badges[2]).not.toContain('·');
   expect(badges[2]).toContain('Cell structure.pdf');
+});
+
+it('shows a library citation as its book and pages', () => {
+  const msg: ChatMessage = {
+    citations: [
+      {
+        excerptId: 'exc_bio_185',
+        fileId: '',
+        fileName: 'Concepts of Biology',
+        kind: 'library',
+        pageEnd: 130,
+        pageStart: 129,
+        snippet: 'Water moves down its concentration gradient.',
+      },
+    ],
+    content: '',
+    id: 'm_1',
+    role: 'assistant',
+    status: 'complete',
+  };
+  const html = render(<Citations msg={msg} />);
+  expect(html).toContain('Concepts of Biology');
+  expect(html).toContain('pp. 129–130');
 });
 
 it('reads Your files only in the account chat and Workspace only in a workspace', () => {

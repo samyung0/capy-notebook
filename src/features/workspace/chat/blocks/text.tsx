@@ -5,22 +5,23 @@ import {
   useContext,
   useMemo,
 } from 'react';
-import { Streamdown } from 'streamdown';
+import { defaultRehypePlugins, Streamdown } from 'streamdown';
 import { Icon } from '@/components/ui/Icon';
 import {
   CALLOUT_CONTAINER_CLASS,
   CALLOUT_ICON,
   CALLOUT_VARIANT_CLASS,
-  normalizeCalloutVariant,
+  type CalloutVariant,
 } from '@/features/notes/richBlockConfig';
 import { cn } from '@/lib/cn';
-import type { CalloutProps, MdProps, RevealProps, StepProps } from '../schema';
 import { TableCell, TableFrame, TableHead, TableRow } from './ChatTable';
-import { Cites, elements } from './Cite';
+import { Cites } from './Cite';
 import { CodeBlock } from './CodeBlock';
+import { citedPassages, citeMarkers } from './citeMarkers';
 import { chatMath, MathSpan, prepareMath } from './math';
 
 const plugins = { math: chatMath };
+const rehypePlugins = [...Object.values(defaultRehypePlugins), citeMarkers];
 const TRAILING_NEWLINE = /\n$/;
 const LANGUAGE_CLASS = /language-(\S+)/;
 
@@ -47,7 +48,7 @@ function Code({
 
 function Heading({ children }: { children?: ReactNode }) {
   return (
-    <h2 className="mt-1 font-semibold text-[17px] tracking-tight first:mt-0">
+    <h2 className="mt-3 font-semibold text-[17px] tracking-tight first:mt-0">
       {children}
     </h2>
   );
@@ -87,14 +88,14 @@ const components = {
   h1: Heading,
   h2: Heading,
   h3: ({ children }: { children?: ReactNode }) => (
-    <h3 className="mt-1 font-semibold text-[15px] first:mt-0">{children}</h3>
+    <h3 className="mt-2 font-semibold text-[15px] first:mt-0">{children}</h3>
   ),
   h4: ({ children }: { children?: ReactNode }) => (
-    <h4 className="font-semibold text-sm">{children}</h4>
+    <h4 className="mt-1 font-semibold text-sm first:mt-0">{children}</h4>
   ),
   img: Image,
   li: ({ children }: { children?: ReactNode }) => (
-    <li className="[&+li]:mt-0.5 [&>p]:inline">{children}</li>
+    <li className="[&+li]:mt-2 [&>p]:inline">{children}</li>
   ),
   ol: ({ children }: { children?: ReactNode }) => (
     <ol className="ml-5 list-outside list-decimal whitespace-normal marker:[font-variant-numeric:normal]">
@@ -103,9 +104,14 @@ const components = {
   ),
   // A `<picture>` source loads nothing.
   source: () => null,
-  span: MathSpan,
-  // Markdown tables take the Table component's look, without Streamdown's
-  // framed card and its copy, download and full-screen buttons.
+  span: (props: ComponentProps<typeof MathSpan> & { 'data-cite'?: string }) =>
+    props['data-cite'] === undefined ? (
+      <MathSpan {...props} />
+    ) : (
+      <Cites passages={citedPassages(props['data-cite'])} />
+    ),
+  // Markdown tables take the chat's table look, without Streamdown's framed
+  // card and its copy, download and full-screen buttons.
   table: TableFrame,
   tbody: ({ children }: { children?: ReactNode }) => <tbody>{children}</tbody>,
   td: TableCell,
@@ -119,20 +125,15 @@ const components = {
   ),
 };
 
-/**
- * Markdown inside a rich answer (and the plain-Markdown fallback), with
- * `$…$` / `$$…$$` math. Citation markers follow the last paragraph on its
- * line: Streamdown's root is `display: contents`, so that paragraph can sit
- * inline beside the markers while earlier blocks keep their 8px gap.
- */
+/** Markdown in a chat answer, with `$…$` / `$$…$$` math and `[#n]` citation
+ * markers. Streamdown's root is `display: contents`, so its blocks sit in the
+ * wrapper with their 12px gap; a heading adds its own room above. */
 export function Prose({
   text,
-  passages,
   className,
   muted,
 }: {
   text: string;
-  passages?: number[];
   className?: string;
   muted?: boolean;
 }) {
@@ -146,69 +147,45 @@ export function Prose({
       )}
     >
       <Streamdown
-        className="contents [&>*:not(:last-child)]:mb-2 [&>p:last-child]:inline"
+        className="contents [&>*:not(:last-child)]:mb-4"
         components={components}
         plugins={plugins}
+        rehypePlugins={rehypePlugins}
       >
         {source}
       </Streamdown>
-      <Cites passages={passages} />
     </div>
   );
 }
 
-export function Md({ props }: { props: MdProps }) {
-  return <Prose passages={props.passages} text={props.text} />;
+export interface CalloutProps {
+  kind: CalloutVariant;
+  text: string;
+  title: string;
+}
+
+export interface RevealProps {
+  text: string;
+  title: string;
 }
 
 export function Callout({ props }: { props: CalloutProps }) {
-  const variant = normalizeCalloutVariant(props.kind);
   return (
     <div
       className={cn(
         'flex items-start gap-2 px-3 py-2.5',
         CALLOUT_CONTAINER_CLASS,
-        CALLOUT_VARIANT_CLASS[variant]
+        CALLOUT_VARIANT_CLASS[props.kind]
       )}
     >
-      <Icon className="mt-px" name={CALLOUT_ICON[variant]} size={16} />
+      <Icon className="mt-px" name={CALLOUT_ICON[props.kind]} size={16} />
       <div className="min-w-0 flex-1">
-        <p className="mb-0.5 font-semibold text-[13.5px]" data-copy="strong">
+        <p className="mb-1 font-semibold text-[13.5px]" data-copy="strong">
           {props.title}
         </p>
-        <Prose
-          className="text-fg text-sm"
-          passages={props.passages}
-          text={props.text}
-        />
+        <Prose className="text-fg text-sm" text={props.text} />
       </div>
     </div>
-  );
-}
-
-export function Steps({ props }: { props: { items: unknown[] } }) {
-  return (
-    <ol className="flex flex-col gap-3">
-      {elements<StepProps>(props.items).map((step, index) => (
-        <li className="relative pl-6" key={index}>
-          <span
-            className="absolute top-px left-0 w-4 text-right font-semibold text-fg-muted text-xs"
-            data-copy-skip
-          >
-            {index + 1}
-          </span>
-          <p className="font-semibold text-sm" data-copy="strong">
-            {step.props.title}
-          </p>
-          <Prose
-            className="mt-0.5 text-sm"
-            muted
-            passages={step.props.passages}
-            text={step.props.text}
-          />
-        </li>
-      ))}
-    </ol>
   );
 }
 
@@ -226,12 +203,7 @@ export function Reveal({ props }: { props: RevealProps }) {
         />
         {props.title}
       </summary>
-      <Prose
-        className="mt-3 pl-3 text-sm"
-        muted
-        passages={props.passages}
-        text={props.text}
-      />
+      <Prose className="mt-3 pl-3 text-sm" muted text={props.text} />
     </details>
   );
 }

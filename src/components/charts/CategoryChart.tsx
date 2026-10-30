@@ -121,14 +121,15 @@ function AxisTitle({
   textAnchor: 'start' | 'middle';
 }) {
   return (
-    <text className="fill-fg-muted text-[10px]" {...position}>
+    <text className="fill-fg-muted text-[9px]" {...position}>
       <title>{text}</title>
-      {fitLabel(text, width, 10, 1)[0]}
+      {fitLabel(text, width, 9, 1)[0]}
     </text>
   );
 }
 // Above the plot: room for the top title. Below: from the lowest axis text's
-// baseline to the bottom title's, then its descent.
+// baseline to the bottom title's, then its descent. The bottom title centres
+// on the whole chart, as the title and legend do.
 const TOP_TITLE = 16;
 const BOTTOM_TITLE_GAP = 20;
 const DESCENT = 4;
@@ -311,8 +312,8 @@ export function CategoryChart({
             <AxisTitle
               text={props.yTitle}
               textAnchor="middle"
-              width={right - left}
-              x={(left + right) / 2}
+              width={W}
+              x={W / 2}
               y={top + bottomTitle}
             />
           )}
@@ -534,8 +535,8 @@ export function CategoryChart({
           <AxisTitle
             text={props.xTitle}
             textAnchor="middle"
-            width={right - left}
-            x={(left + right) / 2}
+            width={W}
+            x={W / 2}
             y={offset + bottomTitle}
           />
         )}

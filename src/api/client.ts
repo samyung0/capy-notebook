@@ -366,6 +366,7 @@ export const qk = {
   learningProgress: ['learning', 'progress'] as const,
   /** Everything under Learning: progress and plans. */
   learningRoot: ['learning'] as const,
+  libraryFigure: (id: string) => ['library-figure', id] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
   materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,

@@ -470,7 +470,8 @@ export type UpdateWorkspaceMemberReq = Omit<
    from the generated spec. ChatMessage is the UI-facing turn: the generated
    Message shape with role/status narrowed to unions and an optional client-only
    `pending` flag while a temp (pre-persisted) row streams. */
-export type { Conversation, FileLinks } from './gen/model';
+/** A shared-library figure a chat answer shows (`figure:<id>`). */
+export type { Conversation, FileLinks, LibraryFigure } from './gen/model';
 
 /** `n` is the passage number the answer program cites; its index in the
  * message's citation list is the number the reader sees. An account chat's

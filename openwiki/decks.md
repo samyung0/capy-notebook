@@ -44,9 +44,9 @@ retrieval image holds ppt-master, and where it is missing a deck fails loudly
 serially.
 
 1. **Skill.** `read_skill("deck_building")` returns the method (outline first,
-   one slide per call, finish the deck in the turn that creates it: its slides
-   last only until the turn ends, and the final notice says an unfinished deck
-   was not saved), the slide rules
+   one slide per call, finish the deck in the turn if possible: an unfinished
+   one can be continued with write_slide in a later message for 24 hours, and
+   the final notice says it was not saved), the slide rules
    (`prompts/skills.py` `deck_rules`; since 2026-10-25 they also say to anchor
    a box's label at its centre or right edge so text near the right side grows
    inward, and to move, reflow or widen before cutting words after a refusal)
@@ -66,8 +66,15 @@ serially.
    strings kept on the outline and sent as written when the deck is stored
    (agentic-retrieval.md, `generate_material`).
 3. **`write_slide {deck_id, slide, svg, excerpt_ids?}`.** At most 40,000
-   characters of SVG. Our checks first: the XML parses, the root is `<svg>`
-   with `viewBox="0 0 1280 720"` and `lang`, and every `<image>` is
+   characters of SVG. A library figure goes on a slide as
+   `<image href="figure:<figure id>">` (Epo 2026-10-30, D3): checked as a
+   note's figure is (`tools.library_figures`: listed by an excerpt this turn
+   read or shown by `search_images`, not decorative, excluded, withheld or a
+   whole page), its box rendered as `capture_library_page` renders it
+   (`tools.render_figure`), the href pointed at `../images/<figure id>.jpg`
+   and its excerpt's book credited (`tools.slide_figures`). Our checks then:
+   the XML parses, the root is `<svg>` with `viewBox="0 0 1280 720"` and
+   `lang`, and every other `<image>` is
    `../images/c<n>.jpg` for capture n of this turn, made with a bbox or an
    Office picture `inspect_office_document` attached by id (Q278; a
    capture's result names n; a whole page, a number no capture holds, or a
@@ -116,14 +123,33 @@ the model copied it into slides (`lab/playground/DECKS.md`, 2026-10-05).
 `svg_output/` and export; `agent.run_agent` removes it when the turn ends. The
 slide SVGs themselves live on the deck record.
 
+**Unfinished PowerPoints are kept** (Epo 2026-10-30). When a turn ends with a
+deck not stored (slides left unwritten, a stop, or an export that failed),
+`agent.run_agent` hands a copy of its record and images to `deck.keep`: kept
+in the retrieval process for 24 hours (`KEPT_FOR`) under
+`<tmp>/capy-decks-kept/<id>/images`, at most three per owner (`KEPT_PER_OWNER`;
+a fourth drops the oldest), the owner being the same user in the same chat
+scope (`tools.deck_owner`: user id and workspace id). Its crops are renamed
+`k<random>_c<n>.jpg`, and its slides' hrefs with them, so the next turn's
+capture 1 cannot overwrite them. A later message's `write_slide` with that id
+takes it back (`deck.take`: the images move into the turn's project) and
+carries on; the outline and which slides are written are already in the
+conversation, since create_deck's and write_slide's results are kept whole.
+An id no owner kept, one expired or dropped for the cap, or another owner's is
+refused `write_slide: PowerPoint <id> not found or has been removed.`.
+Expired decks go on the next keep or take; a restart forgets them all (the
+first use clears the folder). The turn-end notice still says an unfinished
+deck was not saved (Epo kept it). Nothing touches the database.
+
 **Figures.** Nothing is rasterised: drawn diagrams export as native shapes and
-book figures are the turn's bbox crops and Office pictures read by id
+book figures are library figures placed by id (their stored box, D3), the
+turn's bbox crops of what no figure lists, and Office pictures read by id
 (whole, `deck.turn_figures`), embedded as images. A slide names a
 capture by its page; the JPEG comes from the capture's attached image
 (`ToolContext.pending_images`), and a later capture of the same page wins. The
 turn's image budget can drop an older capture mid-turn (Q349); a slide naming
 it is then refused as no longer available. A
-crop from `capture_knowledge_page` carries its `excerptId`, so the slide credits
+crop from `capture_library_page` carries its `excerptId`, so the slide credits
 that excerpt's book whether or not `excerpt_ids` named it. The library admits
 only CC BY, BY-SA, CC0 and public domain, so every crop may be redistributed
 with its credit; a BY-SA figure makes the deck BY-SA (Go computes the licence).
@@ -166,9 +192,13 @@ The PPTX viewer and editor load Liberation Sans as Arial and Caladea as Cambria
 (`src/office-runtime/pptxFonts.ts`), so the `editorial` style's titles render
 with Cambria's metrics. `replace_text` works on agent-made decks (checked
 2026-10-05 on three playground decks with the BetterOffice runtime: 38 to 213
-editable paragraphs; edit, export, reopen and Undo). Each SVG `<text>` line is
-its own shape, so a sentence wrapped over lines is several targets and a longer
-replacement does not reflow into the next line's box. An edit of the deck is a
+editable paragraphs; edit, export, reopen and Undo). A paragraph is one SVG
+`<text>` whose later lines are `<tspan x dy>`, so it exports as one shape with
+the model's lines joined by line breaks (ppt-master's default export); each
+list item, label and heading is its own `<text>` and shape (Epo 2026-10-30,
+Q590). The lines stay as written: a longer replacement does not rewrap them
+until `--reflow-text` comes with the BetterOffice 0.5.1 pin (Q591). Decks made
+before then hold one shape per line. An edit of the deck is a
 source-file edit: no `excerpt_ids`, and its provenance is unchanged. Once a
 deck exists the agent reads and edits it with `inspect_office_document` and
 `edit_office_document` ([agentic-retrieval.md](agentic-retrieval.md), Office

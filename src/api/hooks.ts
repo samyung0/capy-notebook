@@ -86,6 +86,7 @@ import type {
   ItemAttempts,
   Label,
   LearningProgress,
+  LibraryFigure,
   Material,
   MaterialCollaborationToken,
   MaterialComment,
@@ -231,6 +232,17 @@ export const ingestSlotsQuery = () =>
   });
 export const useIngestSlots = (options?: QueryUiOptions) =>
   useQuery({ ...ingestSlotsQuery(), meta: queryMeta(options) });
+
+/** One library figure for a chat answer; an id names one figure forever. */
+export const useLibraryFigure = (id: string, options?: QueryUiOptions) =>
+  useQuery({
+    gcTime: Number.POSITIVE_INFINITY,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<LibraryFigure>(`/library/figures/${encodeURIComponent(id)}`),
+    queryKey: qk.libraryFigure(id),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
 
 export const modelsQuery = (slot: ModelSlot) =>
   queryOptions({
