@@ -29,7 +29,12 @@ export interface ChatFixture {
   passages?: readonly (
     | number
     | { fileId: string; snippet: string }
-    | { materialId: string; name: string; snippet: string }
+    | {
+        blockIds?: string[];
+        materialId: string;
+        name: string;
+        snippet: string;
+      }
   )[];
   prompt: string;
   slow?: boolean;
@@ -57,6 +62,21 @@ const created =
 const officeEdited = 'I filled in the weekly plan of the course guide. [#1]';
 
 export const chatFixtures = [
+  {
+    content: 'Your note has a second paragraph. [#1]',
+    hint: 'A source whose block changed text since the answer.',
+    id: 'chat-answer-note-block',
+    label: 'Answer: note citation by block',
+    passages: [
+      {
+        blockIds: [`${EDITOR_NOTE.id}:second`],
+        materialId: EDITOR_NOTE.id,
+        name: EDITOR_NOTE.title,
+        snippet: 'What this paragraph said when it was cited.',
+      },
+    ],
+    prompt: 'What was in my second paragraph?',
+  },
   {
     content: 'Your note closes on its third paragraph. [#1]',
     hint: 'A source that opens a note at the cited passage.',
@@ -583,6 +603,7 @@ export function fixtureCitations(
     if (typeof passage === 'object' && 'materialId' in passage)
       return [
         {
+          blockIds: passage.blockIds,
           fileId: '',
           fileName: passage.name,
           kind: 'material',

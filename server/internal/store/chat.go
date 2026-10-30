@@ -87,6 +87,8 @@ type Citation struct {
 	PageStart *int     `json:"pageStart,omitempty"`
 	PageEnd   *int     `json:"pageEnd,omitempty"`
 	Regions   []Region `json:"regions,omitempty"`
+	// BlockIDs are the top-level note blocks a material passage came from.
+	BlockIDs  []string `json:"blockIds,omitempty"`
 	URL       string   `json:"url,omitempty"`
 	SiteName  string   `json:"siteName,omitempty"`
 	Published string   `json:"published,omitempty"`

@@ -1146,6 +1146,11 @@ components:
     Citation:
       additionalProperties: false
       properties:
+        blockIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         chunkId:
           type: string
         excerptId:

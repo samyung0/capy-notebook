@@ -146,7 +146,7 @@ test('account chat: search, list, read and write across workspaces and no worksp
   const [loosely, inShared] = kept(reads, 'list_sources');
   assert(summary?.includes(`file_id=${ownText}`), summary);
   assert(summary.includes(`file_id=${memberText}`), summary);
-  assert(summary.includes(`file_id=${loose}, no workspace`), summary);
+  assert(summary.includes(`file_id=${loose}, outside workspaces`), summary);
   // Edit rights: the viewer's file is view only, the owner's text editable.
   assert(
     summary.includes(`workspace_id=${shared}, view only`) &&

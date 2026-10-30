@@ -57,7 +57,6 @@ import {
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { followMoves } from '@/features/files/fileMoved';
 import { officeFormatOf } from '@/features/files/fileUtils';
-import type { OfficeCitation } from '@/features/files/officeProtocol';
 import {
   registerTourPanels,
   type TourPanels,
@@ -65,6 +64,7 @@ import {
 import { CenterContent } from '@/features/materials/CenterContent';
 import type { OneColumnChrome } from '@/features/materials/CenterContentHeader';
 import {
+  type NoteCitationTarget,
   type OpenItem,
   openItemFromSearch,
   searchFromOpenItem,
@@ -449,7 +449,7 @@ function WorkspaceOpen() {
   const [citationTarget, setCitationTarget] = useState<{
     fileId: string;
     regions: Region[];
-    citation?: OfficeCitation;
+    citation?: NoteCitationTarget;
   } | null>(null);
   // The chat dock sits 8px above the Office frame's bottom chrome, which the
   // runtime reports; written to the box's style so the workspace does not
@@ -502,10 +502,14 @@ function WorkspaceOpen() {
 
   function openCitation(citation: Citation) {
     if (citation.materialId) {
-      // A note has no boxes: its View finds the quoted text (Q593). A new
-      // object per click, so a repeat flashes again.
+      // A note has no boxes: its View finds the cited blocks, else the
+      // quoted text (Q593, Q594). A new object per click, so a repeat
+      // flashes again.
       setCitationTarget({
-        citation: citation.snippet ? { quote: citation.snippet } : undefined,
+        citation: {
+          blockIds: citation.blockIds ?? undefined,
+          quote: citation.snippet,
+        },
         fileId: citation.materialId,
         regions: [],
       });

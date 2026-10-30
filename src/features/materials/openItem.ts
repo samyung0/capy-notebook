@@ -28,8 +28,11 @@ export type OpenItem =
       kind: 'material';
       id: string;
       target?: string;
-      citation?: OfficeCitation;
+      citation?: NoteCitationTarget;
     };
+
+/** A note citation: the blocks it came from, and its text for one without. */
+export type NoteCitationTarget = OfficeCitation & { blockIds?: string[] };
 
 /** URL search params for the open item — mutually exclusive `file` | `material`. */
 export type WorkspaceOpenSearch = {

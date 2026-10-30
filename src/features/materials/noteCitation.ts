@@ -1,4 +1,5 @@
 import { scrollToCenter } from '@/features/files/scrollToCenter';
+import type { NoteCitationTarget } from './openItem';
 
 /** A cited block's flash, as long as a PDF box's (PdfView). */
 const FLASH_MS = 1600;
@@ -16,11 +17,33 @@ const NOT_TEXT = /[^\p{L}\p{N}]+/gu;
 const plain = (text: string) =>
   text.replace(LINK_TARGET, '').replace(NOT_TEXT, '').toLowerCase();
 
+/** Each rendered note root's top-level blocks: its children, in this order. */
+const rendered = new WeakMap<Element, readonly unknown[]>();
+
+export function registerNoteBlocks(note: Element, ids: readonly unknown[]) {
+  rendered.set(note, ids);
+}
+
+/** The blocks from the first cited id to the last that still exist (Q594):
+ * an edited block stays cited, whatever it says now. */
+export function blocksWithIds(note: Element, ids: string[]): HTMLElement[] {
+  const order = rendered.get(note) ?? [];
+  const found = ids
+    .map((id) => order.indexOf(id))
+    .filter((index) => index !== -1);
+  if (!found.length) return [];
+  return [...note.children].slice(
+    Math.min(...found),
+    Math.max(...found) + 1
+  ) as HTMLElement[];
+}
+
 /**
- * The note's top-level blocks behind a citation's snippet (Q593): the longest
- * snippet line found in exactly one block places it, and the other lines near
- * it extend the range. An edited note or a line found twice finds nothing, so
- * the note just opens, as an Office citation does.
+ * The note's top-level blocks behind a citation's snippet, for a citation with
+ * no block ids (Q593): the longest snippet line found in exactly one block
+ * places it, and the other lines near it extend the range. An edited note or a
+ * line found twice finds nothing, so the note just opens, as an Office citation
+ * does.
  */
 export function citedBlocks(note: Element, quote: string): HTMLElement[] {
   const blocks = [...note.children] as HTMLElement[];
@@ -52,7 +75,10 @@ export function citedBlocks(note: Element, quote: string): HTMLElement[] {
 
 /** Waits for the note in `scroller`, scrolls its cited blocks to the middle and
  * flashes them, as a PDF citation does. Returns the stop. */
-export function showNoteCitation(scroller: HTMLElement, quote: string) {
+export function showNoteCitation(
+  scroller: HTMLElement,
+  { blockIds = [], quote }: NoteCitationTarget
+) {
   let timer = 0;
   let flashed: HTMLElement[] = [];
   let stopScroll = () => {};
@@ -64,7 +90,8 @@ export function showNoteCitation(scroller: HTMLElement, quote: string) {
         timer = window.setTimeout(look, POLL_MS);
       return;
     }
-    const blocks = citedBlocks(note, quote);
+    const byId = blocksWithIds(note, blockIds);
+    const blocks = byId.length ? byId : citedBlocks(note, quote);
     if (!blocks.length) return;
     stopScroll = scrollToCenter(scroller, blocks[0], () => {
       flashed = blocks;

@@ -1,6 +1,6 @@
 import { parseHTML } from 'linkedom';
 import { describe, expect, it } from 'vitest';
-import { citedBlocks } from './noteCitation';
+import { blocksWithIds, citedBlocks, registerNoteBlocks } from './noteCitation';
 
 const { document } = parseHTML('<!doctype html><html><body></body></html>');
 
@@ -11,6 +11,31 @@ function note(...blocks: string[]) {
 }
 
 const ids = (blocks: HTMLElement[]) => blocks.map((block) => block.id);
+
+describe('blocksWithIds', () => {
+  const root = note(
+    '<p id="a">Now reads something else.</p>',
+    '<p id="b">In between.</p>',
+    '<p id="c">Also rewritten.</p>'
+  );
+  registerNoteBlocks(root, ['one', 'two', 'three']);
+
+  it('finds the cited blocks whatever they say now', () => {
+    expect(ids(blocksWithIds(root, ['one']))).toEqual(['a']);
+  });
+
+  it('spans the first cited block to the last that still exists', () => {
+    expect(ids(blocksWithIds(root, ['one', 'three', 'gone']))).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
+  });
+
+  it('finds nothing when every cited block is gone', () => {
+    expect(blocksWithIds(root, ['gone'])).toEqual([]);
+  });
+});
 
 describe('citedBlocks', () => {
   it('finds a passage through its Markdown marks', () => {

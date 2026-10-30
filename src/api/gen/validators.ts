@@ -1363,6 +1363,7 @@ export const ListMessagesResponseItem = zod.object({
   "total": zod.int().optional()
 })).nullish(),
   "citations": zod.array(zod.object({
+  "blockIds": zod.array(zod.string()).nullish(),
   "chunkId": zod.string().optional(),
   "excerptId": zod.string().optional(),
   "fileId": zod.string(),

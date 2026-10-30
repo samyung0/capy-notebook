@@ -20,7 +20,7 @@ from .. import registry
 from ..config import cfg
 from ..prompts.sources import source_block
 from . import models, store
-from .chunking import AUDIO_SPACE, QueryTerms, search_query_terms
+from .chunking import AUDIO_SPACE, NOTE_BLOCK_SPACE, QueryTerms, search_query_terms
 from .lang import UND
 
 log = logging.getLogger("capy.search")
@@ -218,13 +218,20 @@ class Passage:
         if self.kind == "material":
             citation["kind"] = "material"
             citation["materialId"] = self.file_id
+            blocks = [
+                region["blockId"]
+                for region in self.regions
+                if region.get("space") == NOTE_BLOCK_SPACE
+            ]
+            if blocks:
+                citation["blockIds"] = blocks[:40]
         if self.workspace_id is not None:
             citation["workspaceId"] = self.workspace_id
             citation["workspaceName"] = self.workspace_name
         if self.page_start:
             citation["pageStart"] = self.page_start
             citation["pageEnd"] = self.page_end or self.page_start
-        if self.regions:
+        if self.regions and self.kind != "material":
             citation["regions"] = self.regions[:12]
         return citation
 

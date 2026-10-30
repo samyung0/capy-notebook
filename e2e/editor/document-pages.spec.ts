@@ -359,6 +359,23 @@ test('a chat citation opens the note and flashes its passage, once per click', a
   await expect(flashed).toHaveText('Third paragraph gamma');
 });
 
+test('a chat citation finds its note block by id after the text changed', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_bio');
+  const panel = page.getByTestId('mock-scenario-panel');
+  await panel.locator('summary').click({ timeout: 60_000 });
+  await panel.locator('[data-scenario="chat-answer-note-block"]').click();
+  const source = page.getByTitle(m.chat_source_number({ n: 1 })).first();
+  await expect(source).toBeVisible({ timeout: 60_000 });
+  await source.click();
+  await expect(page.locator('[data-citation-flash]')).toHaveText(
+    'Second paragraph beta',
+    { timeout: 30_000 }
+  );
+});
+
 // biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
 test.fixme('workspace PDF mode survives reload and retains the citation page', async ({
   page,

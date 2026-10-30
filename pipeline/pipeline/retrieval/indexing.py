@@ -25,7 +25,13 @@ from ..prompts.ingest import (
 )
 from ..registry import embedding_spec, ingest_spec
 from . import accounting, models, store
-from .chunking import Chunk, clip_to_tokens, estimate_tokens, tokenize_for_search
+from .chunking import (
+    NOTE_BLOCK_SPACE,
+    Chunk,
+    clip_to_tokens,
+    estimate_tokens,
+    tokenize_for_search,
+)
 from .lang import detect_lang
 
 log = logging.getLogger("capy.retrieval.indexing")
@@ -229,6 +235,37 @@ async def fill_descriptor(
     return error
 
 
+def note_block_regions(
+    chunks: list[Chunk], blocks: list[dict[str, Any]]
+) -> list[list[dict[str, str]]]:
+    """Each chunk's note blocks as regions, for its citations (Epo 2026-10-30,
+    Q594): a block whose text the chunk holds, or the block a long block's
+    chunk came from. Chunks run in note order, so the search starts at the
+    previous chunk's first block; overlap repeats only blocks from there on."""
+
+    def flat(text: str) -> str:
+        return " ".join(text.split())
+
+    texts = [(str(block["id"]), flat(str(block["text"]))) for block in blocks]
+    regions: list[list[dict[str, str]]] = []
+    start = 0
+    for chunk in chunks:
+        text = flat(chunk.text)
+        found: list[int] = []
+        for index in range(start, len(texts)):
+            block_text = texts[index][1]
+            if block_text and (block_text in text or text in block_text):
+                found.append(index)
+            elif found and block_text:
+                break
+        if found:
+            start = found[0]
+        regions.append(
+            [{"blockId": texts[i][0], "space": NOTE_BLOCK_SPACE} for i in found]
+        )
+    return regions
+
+
 async def index_material(
     *,
     workspace_id: str,
@@ -278,6 +315,7 @@ async def index_material(
     missing = list(dict.fromkeys(text for text in indexed if text not in reusable))
     if missing:
         reusable.update(zip(missing, await models.embed(missing, spec=spec)))
+    regions = note_block_regions(chunks, blocks)
     rows = [
         {
             "id": _uid("chk"),
@@ -288,7 +326,7 @@ async def index_material(
             "token_count": max(1, estimate_tokens(text)),
             "page_start": None,
             "page_end": None,
-            "regions": [],
+            "regions": regions[idx],
             "lang": detect_lang(chunk.text),
             "search_text": "" if chunk.reference else tokenize_for_search(text),
             "confidence": chunk.confidence,

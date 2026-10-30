@@ -128,7 +128,12 @@ import {
   resolveMaterialMode,
 } from './modePolicy';
 import { showNoteCitation } from './noteCitation';
-import { type OpenItem, readDocumentMode, saveDocumentMode } from './openItem';
+import {
+  type NoteCitationTarget,
+  type OpenItem,
+  readDocumentMode,
+  saveDocumentMode,
+} from './openItem';
 import { embedKey, useNoteFooter } from './useNoteFooter';
 
 /* Interactive Plate is the heaviest chunk in this route. View mode
@@ -471,7 +476,7 @@ function MaterialBody({
   target,
 }: {
   centerQuiz: boolean;
-  citation?: OfficeCitation;
+  citation?: NoteCitationTarget;
   materialId: string;
   workspaceId: string;
   mode: MaterialMode | null;
@@ -522,11 +527,11 @@ function MaterialBody({
 
 /** Shows a chat citation's passage in the note beside it. Each click brings
  * a new citation object, so a repeat scrolls and flashes again. */
-function NoteCitation({ citation }: { citation: OfficeCitation }) {
+function NoteCitation({ citation }: { citation: NoteCitationTarget }) {
   const anchor = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const scroller = anchor.current?.parentElement;
-    return scroller ? showNoteCitation(scroller, citation.quote) : undefined;
+    return scroller ? showNoteCitation(scroller, citation) : undefined;
   }, [citation]);
   return <span hidden ref={anchor} />;
 }
@@ -604,7 +609,7 @@ function MaterialContentBody({
   /** A question or card to bring into view once the material shows. */
   target?: string;
   /** A chat citation's passage to show once a note paints (Q593). */
-  citation?: OfficeCitation;
+  citation?: NoteCitationTarget;
 }) {
   const {
     data: material,
