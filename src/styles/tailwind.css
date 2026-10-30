@@ -824,10 +824,13 @@ html[data-page-frame] .page-frame {
    frost instead of covering it, and translucent lines and fields (selects,
    inputs), so they sit on the frost instead of as opaque grey and white.
    --frost-fill is the same light fill for controls and tiles that would
-   otherwise paint the card colour (`frosted:bg-(--frost-fill)`). Menus and
-   dialogs portal out of the panel and keep the opaque tokens. */
+   otherwise paint the card colour (`frosted:bg-(--frost-fill)`), and
+   --frost-fill-hover its hover: a thinner fill, still lighter than the panel,
+   where an opaque hover wash would turn the control darker than the frost.
+   Menus and dialogs portal out of the panel and keep the opaque tokens. */
 html[data-page-frame] .page-frame [data-frosted] {
   --frost-fill: rgb(255 255 255 / 0.5);
+  --frost-fill-hover: rgb(255 255 255 / 0.3);
   --surface-page-hover: rgb(0 0 0 / 0.06);
   --surface-card-hover-bg: rgb(0 0 0 / 0.06);
   /* Grid cards, a step lighter than a row's hover as on opaque panels. */
@@ -840,6 +843,7 @@ html[data-page-frame] .page-frame [data-frosted] {
 }
 html.dark[data-page-frame] .page-frame [data-frosted] {
   --frost-fill: rgb(255 255 255 / 0.05);
+  --frost-fill-hover: rgb(255 255 255 / 0.1);
   --surface-page-hover: rgb(255 255 255 / 0.08);
   --surface-card-hover-bg: rgb(255 255 255 / 0.08);
   --surface-item-hover: rgb(255 255 255 / 0.06);

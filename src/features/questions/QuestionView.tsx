@@ -250,28 +250,36 @@ export function OptionKey({
  * correct answer the learner missed once checked. */
 export type RowState = 'selected' | 'right' | 'wrong' | 'missed';
 
-/** Answer item: a row over one bottom rule instead of a box. A state thickens
- * and colours the rule; the row's height stays put. */
+/** A checked answer's soft green or red fill and text, see-through on a
+ * frosted panel so the frost shows under it. */
+export function reviewTintClass(right: boolean) {
+  return right
+    ? 'bg-tint-success frosted:bg-tint-success/60 text-tint-success-fg'
+    : 'bg-tint-error frosted:bg-tint-error/60 text-tint-error-fg';
+}
+
+/** Answer item: a row over one bottom rule instead of a box. Choosing one
+ * thickens and colours the rule; once checked, right, wrong and missed rows
+ * turn to a tinted block reaching a little past the text on each side. The
+ * row's height stays put. */
 export function answerRowClass(state?: RowState) {
+  const checked = state === 'right' || state === 'wrong' || state === 'missed';
   return cn(
     'flex min-h-11 items-center gap-3 border-b px-0.5 py-2',
     state ? 'border-b-2 pb-[7px]' : 'border-line',
     state === 'selected' && 'border-solid-accent-1 text-tint-accent-1-fg',
-    state === 'right' && 'border-solid-success',
-    state === 'wrong' && 'border-solid-error',
-    state === 'missed' && 'border-solid-success border-dashed'
+    checked && '-mx-2 rounded-lg border-transparent px-2.5',
+    checked && reviewTintClass(state !== 'wrong')
   );
 }
 
-/** A key badge's colours for a row state: filled when chosen or marked,
- * outlined in green for a missed correct answer. */
+/** A key badge's colours for a row state: filled when chosen or checked. */
 export function optionKeyClass(state?: RowState) {
   return cn(
     state === 'selected' && 'bg-solid-accent-1 text-surface',
-    state === 'right' && 'bg-tint-success-fg text-surface',
-    state === 'wrong' && 'bg-tint-error-fg text-surface',
-    state === 'missed' &&
-      'text-tint-success-fg ring-[1.5px] ring-tint-success-fg ring-inset'
+    (state === 'right' || state === 'missed') &&
+      'bg-tint-success-fg text-surface',
+    state === 'wrong' && 'bg-tint-error-fg text-surface'
   );
 }
 

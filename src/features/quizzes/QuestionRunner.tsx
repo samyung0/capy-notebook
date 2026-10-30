@@ -26,6 +26,7 @@ import {
   QuestionView,
   type QuestionViewProps,
   type RowState,
+  reviewTintClass,
   TextView,
 } from '@/features/questions/QuestionView';
 import {
@@ -198,9 +199,7 @@ function GapText({
                 'mx-1 inline-grid min-w-[7ch] max-w-[calc(100%-2ch)] border-line-strong border-b align-baseline focus-within:-mb-px focus-within:border-solid-accent-1 focus-within:border-b-2',
                 'after:invisible after:col-start-1 after:row-start-1 after:overflow-hidden after:whitespace-pre after:px-0.5 after:leading-none after:content-[attr(data-value)]',
                 results &&
-                  (right
-                    ? 'border-solid-success border-b-2'
-                    : 'border-solid-error border-b-2')
+                  cn('rounded-md border-transparent', reviewTintClass(!!right))
               )}
               data-value={typed[gap]}
             >
@@ -209,8 +208,7 @@ function GapText({
                 className={cn(
                   'col-start-1 row-start-1 w-full min-w-0 bg-transparent px-0.5 text-center text-[length:inherit] text-fg outline-none placeholder:text-placeholder',
                   results &&
-                    !right &&
-                    'text-tint-error-fg line-through decoration-1'
+                    (right ? 'text-tint-success-fg' : 'text-tint-error-fg')
                 )}
                 disabled={review || disabled}
                 maxLength={SHORT_ANSWER_MAX}
@@ -251,8 +249,8 @@ function gapValues(
 }
 
 /** A choice as an underlined row: chosen while answering; after checking,
- * right or wrong with a tag, and a correct answer that was not chosen marked
- * on a dashed rule. */
+ * the learner's choice and the correct answer as green or red tinted rows
+ * with a tag. */
 function ChoiceRow({
   label,
   text,
@@ -281,7 +279,7 @@ function ChoiceRow({
     : selected
       ? 'selected'
       : undefined;
-  const marked = state === 'right' || state === 'wrong';
+  const checked = state === 'right' || state === 'wrong' || state === 'missed';
   return (
     <button
       aria-pressed={selected}
@@ -297,14 +295,12 @@ function ChoiceRow({
     >
       {(label !== null || review) && (
         <OptionKey className={optionKeyClass(state)}>
-          {marked ? (
+          {checked ? (
             <Icon
-              name={state === 'right' ? 'check' : 'x'}
+              name={state === 'wrong' ? 'x' : 'check'}
               size={13}
               strokeWidth={2.25}
             />
-          ) : state === 'missed' && label === null ? (
-            <Icon name="check" size={13} strokeWidth={2.25} />
           ) : (
             label
           )}
@@ -569,9 +565,13 @@ function PartRunner({
                 'w-full border-line-strong px-0.5 focus-within:border-b-2 has-disabled:bg-transparent',
                 unitError && 'border-solid-error border-b-2',
                 review &&
-                  (right
-                    ? 'border-solid-success border-b-2 pr-9'
-                    : 'border-solid-error border-b-2 pr-9')
+                  cn(
+                    'rounded-md border-transparent pr-9',
+                    // Over the field's own transparent fill once disabled.
+                    right
+                      ? 'frosted:has-disabled:bg-tint-success/60 has-disabled:bg-tint-success'
+                      : 'frosted:has-disabled:bg-tint-error/60 has-disabled:bg-tint-error'
+                  )
               )}
             />
             {review && (
@@ -677,10 +677,8 @@ function PartRunner({
                   )}
                   <span
                     className={cn(
-                      'w-16 border-b-2 px-1.5 py-1.5 font-bold',
-                      correct
-                        ? 'border-solid-success text-tint-success-fg'
-                        : 'border-solid-error text-tint-error-fg'
+                      'w-16 rounded-md px-1.5 py-1.5 font-bold',
+                      reviewTintClass(correct)
                     )}
                   >
                     {letter < 0 ? '–' : optionLetter(letter)}
@@ -752,12 +750,12 @@ function PartRunner({
                           : 'border-line-strong text-fg-muted',
                         state === 'selected' &&
                           'border-solid-accent-1 text-tint-accent-1-fg',
-                        state === 'right' &&
-                          'border-solid-success text-tint-success-fg',
-                        state === 'wrong' &&
-                          'border-solid-error text-tint-error-fg',
-                        state === 'missed' &&
-                          'border-solid-success border-dashed text-tint-success-fg',
+                        state &&
+                          state !== 'selected' &&
+                          cn(
+                            'rounded-md border-transparent',
+                            reviewTintClass(state !== 'wrong')
+                          ),
                         review && !state && 'opacity-45',
                         !(review || disabled || state) && 'hover:text-fg'
                       )}
