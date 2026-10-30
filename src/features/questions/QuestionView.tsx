@@ -118,8 +118,11 @@ function Figure({
   block: ImageBlock | GraphBlock;
   src: string | undefined;
 }) {
+  // The stored size is the image's own pixels: shown at most that wide and at
+  // most a little wider than a chart (max-w-md), so a large upload or a 2x
+  // screenshot does not fill the question.
   return (
-    <figure className="mx-auto w-fit max-w-full">
+    <figure className="mx-auto w-fit max-w-[min(100%,36rem)]">
       <img
         alt={block.description ?? ''}
         className={cn(
