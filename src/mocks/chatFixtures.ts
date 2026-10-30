@@ -1,4 +1,5 @@
 import type { Citation, SourceFile } from '@/api/types';
+import { EDITOR_NOTE } from './editorSeed';
 
 /** One tool call of a fixture's turn and the files or materials it changed.
  * `undo` defaults to available; `none` is an edit no loaded room took, whose
@@ -25,7 +26,11 @@ export interface ChatFixture {
   id: string;
   label: string;
   /** Cited sources: a place among the indexed files, or a file and quote. */
-  passages?: readonly (number | { fileId: string; snippet: string })[];
+  passages?: readonly (
+    | number
+    | { fileId: string; snippet: string }
+    | { materialId: string; name: string; snippet: string }
+  )[];
   prompt: string;
   slow?: boolean;
 }
@@ -52,6 +57,20 @@ const created =
 const officeEdited = 'I filled in the weekly plan of the course guide. [#1]';
 
 export const chatFixtures = [
+  {
+    content: 'Your note closes on its third paragraph. [#1]',
+    hint: 'A source that opens a note at the cited passage.',
+    id: 'chat-answer-note-citation',
+    label: 'Answer: note citation',
+    passages: [
+      {
+        materialId: EDITOR_NOTE.id,
+        name: EDITOR_NOTE.title,
+        snippet: EDITOR_NOTE.thirdParagraph,
+      },
+    ],
+    prompt: 'What does my note end on?',
+  },
   {
     content: overview,
     hint: 'A list, prose, a callout and clickable source markers.',
@@ -560,7 +579,18 @@ export function fixtureCitations(
   sources: Pick<SourceFile, 'id' | 'name' | 'indexed'>[]
 ): Citation[] {
   const indexed = sources.filter((source) => source.indexed);
-  return (fixture.passages ?? []).flatMap((passage, index) => {
+  return (fixture.passages ?? []).flatMap((passage, index): Citation[] => {
+    if (typeof passage === 'object' && 'materialId' in passage)
+      return [
+        {
+          fileId: '',
+          fileName: passage.name,
+          kind: 'material',
+          materialId: passage.materialId,
+          n: index + 1,
+          snippet: passage.snippet,
+        },
+      ];
     const quoted = typeof passage === 'object';
     const source = quoted
       ? sources.find(({ id }) => id === passage.fileId)

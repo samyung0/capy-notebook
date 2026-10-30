@@ -5794,6 +5794,13 @@ paragraph/line/cell geometry. Ambiguous, short or unsupported matches open witho
 a highlight. Editing hides the overlay. See
 [Office citation geometry](frontend/office-files.md#citation-geometry).
 
+A note has no boxes, so a workspace chat's citation of one opens it in View
+and finds the quoted text there (Q593, `noteCitation.ts`): the longest snippet
+line found in exactly one top-level block places it, nearby lines extend the
+range, and those blocks scroll to the middle and flash for 1.6 s as a PDF box
+does, again on each click. Text the note no longer holds, or holds twice, opens
+the note with no flash. Account chat's citations open their note without one.
+
 ## Note indexing
 
 Workspace notes (`materials.kind='note'` with a workspace) are indexed into

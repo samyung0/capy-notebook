@@ -338,6 +338,27 @@ test.fixme('PDF tools persist private marks, undo restores IDs, and narrow tools
   await page.keyboard.press('Escape');
 });
 
+test('a chat citation opens the note and flashes its passage, once per click', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_bio');
+  const panel = page.getByTestId('mock-scenario-panel');
+  await panel.locator('summary').click({ timeout: 60_000 });
+  await panel.locator('[data-scenario="chat-answer-note-citation"]').click();
+  const source = page.getByTitle(m.chat_source_number({ n: 1 })).first();
+  await expect(source).toBeVisible({ timeout: 60_000 });
+  await source.click();
+  await expect(page).toHaveURL(/material=mat_e2e_editor/);
+  const flashed = page.locator('[data-citation-flash]');
+  await expect(flashed).toHaveText('Third paragraph gamma', {
+    timeout: 30_000,
+  });
+  await expect(flashed).toHaveCount(0);
+  await source.click();
+  await expect(flashed).toHaveText('Third paragraph gamma');
+});
+
 // biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
 test.fixme('workspace PDF mode survives reload and retains the citation page', async ({
   page,

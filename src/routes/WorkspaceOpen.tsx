@@ -459,8 +459,7 @@ function WorkspaceOpen() {
     viewerBox.current?.style.setProperty('--office-inset', `${inset}px`);
   }, []);
   const openItem =
-    searchedOpenItem?.kind === 'file' &&
-    citationTarget?.fileId === searchedOpenItem.id
+    searchedOpenItem && citationTarget?.fileId === searchedOpenItem.id
       ? {
           ...searchedOpenItem,
           citation: citationTarget.citation,
@@ -503,8 +502,16 @@ function WorkspaceOpen() {
 
   function openCitation(citation: Citation) {
     if (citation.materialId) {
+      // A note has no boxes: its View finds the quoted text (Q593). A new
+      // object per click, so a repeat flashes again.
+      setCitationTarget({
+        citation: citation.snippet ? { quote: citation.snippet } : undefined,
+        fileId: citation.materialId,
+        regions: [],
+      });
       navigate({
         replace: true,
+        resetScroll: false,
         search: { material: citation.materialId, mode: 'view' },
         to: '.',
       });

@@ -732,6 +732,32 @@ math-field {
   }
 }
 
+/* A note's cited blocks (noteCitation.ts), timed like the PDF box. Under
+   reduced motion the highlight holds instead of pulsing. */
+@keyframes citation-block-flash {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  12%,
+  45%,
+  80% {
+    background-color: var(--highlight-bg);
+  }
+  28% {
+    background-color: color-mix(in srgb, var(--highlight-bg) 35%, transparent);
+  }
+}
+
+[data-citation-flash] {
+  animation: citation-block-flash 1600ms linear both;
+  border-radius: var(--radius-sm);
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    background-color: var(--highlight-bg);
+  }
+}
+
 @keyframes nav-flash-a {
   from {
     background-color: var(--highlight-bg);

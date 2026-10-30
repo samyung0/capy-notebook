@@ -22,8 +22,14 @@ export type OpenItem =
       regions?: Region[];
       citation?: OfficeCitation;
     }
-  /** `target` is a quiz question or flashcard to bring into view. */
-  | { kind: 'material'; id: string; target?: string };
+  /** `target` is a quiz question or flashcard to bring into view; `citation`
+   * a chat citation's passage in a note. */
+  | {
+      kind: 'material';
+      id: string;
+      target?: string;
+      citation?: OfficeCitation;
+    };
 
 /** URL search params for the open item — mutually exclusive `file` | `material`. */
 export type WorkspaceOpenSearch = {
