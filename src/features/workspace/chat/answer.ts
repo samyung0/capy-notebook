@@ -26,16 +26,102 @@ export const isLangAnswer = (content: string) =>
 
 export const programStart = (content: string) => content.search(ROOT_HEAD);
 
+/** The program comes back with its raw-quote statements repaired, so the
+ * renderer and every parse of it read the same text. */
 export function splitAnswer(content: string) {
   const start = programStart(content);
-  if (start <= 0) return { prefix: '', program: content };
+  if (start <= 0) return { prefix: '', program: repairQuotes(content) };
   const before = content.slice(0, start);
   // Keep the opening fence with the program: OpenUI strips its matching close.
   const offset = before.match(OPENING_FENCE)?.index ?? start;
   return {
     prefix: content.slice(0, offset).trim(),
-    program: content.slice(offset),
+    program: repairQuotes(content.slice(offset)),
   };
+}
+
+const SPACE = /[ \t\r]*/y;
+const NAME = /[A-Za-z_][A-Za-z0-9_]*/y;
+const NUMBER = /-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
+const STRING = /"(?:\\[\s\S]|[^"\\])*"/y;
+const ASSIGN = /[ \t]*[A-Za-z_][A-Za-z0-9_]*[ \t]*=/y;
+const CLOSER = /[ \t\r]*(?:[,)\]]|$)/y;
+
+/** Does the line read as one `name = value` statement of strings, numbers,
+ * names, arrays and component calls, with commas between items?
+ * Mirrors `openui._is_statement` in the pipeline. */
+function isStatement(line: string) {
+  let at = 0;
+  const eat = (pattern: RegExp) => {
+    pattern.lastIndex = at;
+    const found = pattern.exec(line)?.[0];
+    if (found !== undefined) at = pattern.lastIndex;
+    return found;
+  };
+  const items = (close: string): boolean => {
+    for (;;) {
+      eat(SPACE);
+      if (line[at] === close) {
+        at++;
+        return true;
+      }
+      if (!value()) return false;
+      eat(SPACE);
+      if (line[at] === ',') at++;
+      else if (line[at] !== close) return false;
+    }
+  };
+  const value = (): boolean => {
+    eat(SPACE);
+    if (line[at] === '[') {
+      at++;
+      return items(']');
+    }
+    if (eat(STRING) || eat(NUMBER)) return true;
+    if (!eat(NAME)) return false;
+    eat(SPACE);
+    if (line[at] !== '(') return true;
+    at++;
+    return items(')');
+  };
+  if (!(eat(ASSIGN) && value())) return false;
+  eat(SPACE);
+  return at === line.length;
+}
+
+/** The line with a backslash before each double quote that cannot end its
+ * string: one not followed by `,`, `)`, `]` or the line end. */
+function escapeStrayQuotes(line: string) {
+  let out = '';
+  let from = 0;
+  let inside = false;
+  for (let at = 0; at < line.length; at++) {
+    if (inside && line[at] === '\\') at++;
+    else if (line[at] === '"') {
+      CLOSER.lastIndex = at + 1;
+      if (inside && !CLOSER.test(line)) {
+        out += `${line.slice(from, at)}\\`;
+        from = at;
+      } else inside = !inside;
+    }
+  }
+  return out + line.slice(from);
+}
+
+/** A statement that does not parse because a string holds raw double quotes
+ * is re-read with those quotes as literal characters (Epo 2026-10-30, Q587);
+ * the pipeline repairs alike (`openui.repair_quotes`). A statement that parses
+ * never changes, since each of its strings ends before `,`, `)`, `]` or the
+ * line end, and one the re-read does not fix stays as written. An unfinished
+ * last statement mid-stream does not parse, so it waits until it is whole. */
+export function repairQuotes(program: string) {
+  return program
+    .split('\n')
+    .map((line) => {
+      const fixed = escapeStrayQuotes(line);
+      return fixed !== line && isStatement(fixed) ? fixed : line;
+    })
+    .join('\n');
 }
 
 /** Equations can resemble statements; an actual component program is not Markdown. */

@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
-import { createParser } from '@openuidev/lang-core';
+import { createParser, createStreamingParser } from '@openuidev/lang-core';
 import { describe, expect, it } from 'vitest';
+import quoteCases from '../../../../pipeline/tests/fixtures/openui_quote_repair.json';
 import {
   chartKey,
   inspectAnswer,
   isLangAnswer,
   isProgramSyntax,
+  repairQuotes,
   splitAnswer,
 } from './answer';
 import { PROMPT_PATH, renderPrompt, renderSpec, SPEC_PATH } from './generated';
@@ -160,6 +162,38 @@ describe('local answer recovery', () => {
       invalidCharts: new Set(),
       text: 'Slide the pH',
     });
+  });
+
+  // The pipeline's test_openui.py reads the same cases (Epo 2026-10-30, Q587).
+  it.each(quoteCases.map((c) => [c.name, c] as const))(
+    're-reads raw quotes like the pipeline: %s',
+    (_name, c) => {
+      expect(repairQuotes(c.line)).toBe(c.repaired);
+    }
+  );
+
+  it('renders a repaired statement whole, with its passages', () => {
+    const { program: source } = splitAnswer(
+      [
+        'root = Answer([bigpic, risk])',
+        quoteCases[0].line,
+        quoteCases[1].line,
+      ].join('\n')
+    );
+    const inspected = inspectAnswer(parseAnswer(source));
+    expect(inspected.gap).toBe(false);
+    expect(inspected.text).toContain('"usually hydrogen nuclei—protons"');
+    expect(inspected.text).toContain('"extremely low"');
+    // The Renderer parses the text it receives with the streaming parser.
+    const streamed = createStreamingParser(
+      chatLibrary.toJSONSchema(),
+      chatLibrary.root
+    ).set(source);
+    const blocks = streamed.root?.props.children as {
+      props: { passages: number[]; text: string };
+    }[];
+    expect(blocks.map((block) => block.props.passages)).toEqual([[2], [1]]);
+    expect(blocks[0].props.text).toContain('"usually hydrogen nuclei—protons"');
   });
 
   it('keeps a fence paired when prose surrounds the program', () => {

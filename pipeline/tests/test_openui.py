@@ -3,6 +3,9 @@ streaming renderer whose output equals its input, and the text projection."""
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from pipeline.retrieval import openui
@@ -163,6 +166,33 @@ def test_incomplete_or_invalid_programs_are_flagged(raw, problem):
     except openui.ParseError as exc:
         found = str(exc)
     assert problem in found
+
+
+# The browser's chat/library.test.ts reads the same cases (Epo 2026-10-30, Q587).
+QUOTE_CASES = json.loads(
+    (Path(__file__).parent / "fixtures" / "openui_quote_repair.json").read_text("utf-8")
+)
+
+
+@pytest.mark.parametrize("case", QUOTE_CASES, ids=lambda case: case["name"])
+def test_raw_quotes_in_a_string_are_repaired_like_the_browser(case):
+    assert openui.repair_quotes(case["line"]) == case["repaired"]
+
+
+def test_a_repaired_statement_keeps_its_text_and_citations():
+    raw = "\n".join(
+        [
+            "root = Answer([bigpic, risk])",
+            QUOTE_CASES[0]["line"],
+            QUOTE_CASES[1]["line"],
+        ]
+    )
+    out, renderer = _stream(raw, 3, 5)
+    # The stored text stays as written; every parse repairs it.
+    assert out == raw and renderer.complete
+    assert renderer.order == [2, 1] and renderer.reading_order() == [2, 1]
+    text = openui.text_of(raw)
+    assert '"usually hydrogen nuclei—protons"' in text and '"extremely low"' in text
 
 
 def test_partial_program_keeps_the_citations_seen_so_far():

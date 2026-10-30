@@ -186,6 +186,21 @@ LANG_RULE = (
 ).strip()
 
 
+# The Markdown answer format the playground compares against OpenUI
+# (retrieval/markdown_answer.py); its figure fences are the figures skill.
+MARKDOWN_RULE = (
+    resources.files("pipeline.prompts")
+    .joinpath("answer_markdown.txt")
+    .read_text("utf-8")
+).strip()
+
+
+def markdown_head(head: str) -> str:
+    """A system prompt (workspace or account) with the Markdown answer format
+    in place of the OpenUI one."""
+    return head.replace(LANG_RULE, MARKDOWN_RULE)
+
+
 def system_prompt(locale: str | None, *, writes: bool = True) -> str:
     """The same text in both modes of the Workspace only switch."""
     rules = "\n- ".join(

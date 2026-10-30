@@ -20,6 +20,7 @@ from pipeline.retrieval import (
     accounting,
     contract,
     evidence,
+    markdown_answer,
     pending,
     profiles,
     search,
@@ -164,7 +165,9 @@ def test_the_workspace_profile_shows_the_model_what_it_did_before():
                 contexts["viewer"], final=True, writing=False
             ),
         },
-        "skills": {name: skills.text(name) for name in skills.SKILLS},
+        "skills": {
+            name: skills.text(name) for name in skills.offered(markdown_answer.OPENUI)
+        },
         "mode_note": chat_prompts.with_mode_note(
             {"role": "user", "content": "q", "_workspace_only": True}
         ),

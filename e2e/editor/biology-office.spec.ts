@@ -141,8 +141,9 @@ for (const [format, name] of [
       timeout: 60_000,
     });
     if (format === 'pptx') {
-      await frame.getByTestId('pptx-next-slide').click();
-      await frame.getByTestId('pptx-next-slide').click();
+      const third = frame.locator('aside button').nth(2);
+      await third.click();
+      await expect(third).toHaveAttribute('aria-current', 'page');
       await expect(frame.getByRole('region')).toContainText(
         'Clipboard input 日本 😀日本語'
       );
@@ -2154,9 +2155,10 @@ test('PPTX Present fills the screen, and Presenter view drives the show from a s
   await notes.getByRole('button', { exact: true, name: 'End' }).click();
   await closed;
   await expect(show).toHaveCount(0);
-  await expect(
-    frame.getByText(m.files_office_slide_position({ current: 2, total: 20 }))
-  ).toBeVisible();
+  await expect(frame.locator('aside button').nth(1)).toHaveAttribute(
+    'aria-current',
+    'page'
+  );
 
   // The runtime reloading by itself takes the notes window with it, and the
   // next Presenter view gets a fresh one that shows its notes.

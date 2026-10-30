@@ -157,7 +157,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "template": " [extraction confidence {score:.2f}: {reasons}]",
     },
     # citations: as_is | renumber | structured (see citations.py)
-    "answer": {"citations": "as_is"},
+    # format: the answer format, "openui" (production) or "markdown"
+    # (pipeline/retrieval/markdown_answer.py); the page draws either with the
+    # app's components (preview/answer.tsx).
+    "answer": {"citations": "as_is", "format": "openui"},
 }
 
 
@@ -188,8 +191,10 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(400, "tool_descriptions must map known tool names to text")
     if out["all_sources_rules"] is not None and not isinstance(out["all_sources_rules"], str):
         raise HTTPException(400, "all_sources_rules must be null or text")
-    from pipeline.retrieval import skills
+    from pipeline.retrieval import markdown_answer, skills
 
+    if out["answer"]["format"] not in markdown_answer.FORMATS:
+        raise HTTPException(400, "answer.format must be openui or markdown")
     texts = out["skills"]
     if not isinstance(texts, dict) or any(
         name not in skills.SKILLS or not isinstance(text, str)
@@ -254,6 +259,16 @@ def model_spec(model: dict[str, Any]):
         default_thinking=model.get("thinking") or "high",
         context_window_tokens=int(adhoc.get("context_window_tokens") or 200000),
     )
+
+
+def in_format(c: dict[str, Any], prompt: str) -> str:
+    """The prompt with the config's answer format (the agent swaps it the same
+    way; done here too so the page and the saved run show what was sent)."""
+    from pipeline.prompts import chat as chat_prompts
+
+    if c["answer"]["format"] == "markdown":
+        return chat_prompts.markdown_head(prompt)
+    return prompt
 
 
 def effective_prompt(
@@ -1461,6 +1476,7 @@ class Turn:
             "study_preferences": dict(c["study_preferences"] or {}),
             "study_progress": bool(c["study_progress"]),
             "office_tools": office_tools,
+            "answer_format": c["answer"]["format"],
         }
         if user:
             ctx = tools.ToolContext(
@@ -1501,10 +1517,14 @@ class Turn:
         }
 
         def system_prompt(locale, *, writes=True):
-            return effective_prompt(c, saved["system_prompt"](locale, writes=writes))
+            return in_format(
+                c, effective_prompt(c, saved["system_prompt"](locale, writes=writes))
+            )
 
         def account_prompt(locale, *, writes=True):
-            return effective_prompt(c, saved["account_prompt"](locale, writes=writes))
+            return in_format(
+                c, effective_prompt(c, saved["account_prompt"](locale, writes=writes))
+            )
 
         gateway = account.Gateway(
             ctx, state, saved["gateway_read"], saved["post_operation"]
@@ -2145,7 +2165,9 @@ class Turn:
             "config": c,
             "question": self.question,
             "history": self.history,
-            "system_prompt": system_prompt(c["locale"]),
+            "system_prompt": (account_prompt if ctx.account else system_prompt)(
+                c["locale"]
+            ),
             "tool_schemas": state.get("tool_schemas", []),
             "answer": done.get("answer", ""),
             "answer_raw": done.get("answer_raw"),
@@ -2283,9 +2305,7 @@ def build_app(target: str):
             )
             models = [dict(r) for r in await cur.fetchall()]
             cur = await conn.execute(
-                "SELECT w.id, w.name, count(f.id) AS files, (SELECT count(*) FROM rag_chunks c "
-                "JOIN rag_file_contents rfc ON rfc.content_id = c.content_id JOIN files cf ON cf.id = rfc.file_id "
-                "WHERE cf.workspace_id = w.id AND cf.trashed_at IS NULL) AS chunks "
+                "SELECT w.id, w.name, count(f.id) AS files, (SELECT count(*) FROM rag_file_contents fc JOIN rag_chunks c ON c.content_id = fc.content_id WHERE fc.workspace_id = w.id) AS chunks "
                 "FROM workspaces w LEFT JOIN files f ON f.workspace_id = w.id AND f.trashed_at IS NULL GROUP BY 1, 2 ORDER BY 4 DESC, 2"
             )
             workspaces = [dict(r) for r in await cur.fetchall()]
@@ -2348,42 +2368,6 @@ def build_app(target: str):
         )
         return {"saved": name}
 
-    @app.post("/api/openui")
-    async def openui_tree(request: Request):
-        """An answer as a tree the page can draw: each component call with its
-        props named, refs left for the page to resolve."""
-        from pipeline.retrieval import openui
-
-        text = str((await request.json()).get("text") or "")
-        if not openui.is_lang_shaped(text):
-            return {"markdown": text}
-        body = re.sub(r"^\s*```[\w-]*\s*\n|\n?```\s*$", "", text)
-        try:
-            program = openui.parse(body, strict=True)
-        except openui.ParseError as exc:
-            return {"error": str(exc)}
-
-        def plain(value):
-            if isinstance(value, openui.Call):
-                names = openui.COMPONENTS.get(value.name, [])
-                return {
-                    "$": value.name,
-                    "props": {
-                        (names[i] if i < len(names) else f"arg{i}"): plain(arg)
-                        for i, arg in enumerate(value.args)
-                    },
-                }
-            if isinstance(value, openui.Ref):
-                return {"ref": value.name}
-            if isinstance(value, list):
-                return [plain(item) for item in value]
-            return value
-
-        return {
-            "root": openui.ROOT,
-            "statements": {k: plain(v) for k, v in program.statements.items()},
-        }
-
     @app.post("/api/prompt")
     async def prompt(request: Request):
         """The two layers a turn sends: the system prompt and the tools array."""
@@ -2399,6 +2383,7 @@ def build_app(target: str):
                 user_id=user,
                 workspace_only=c["workspace_only"],
                 operations=account.OPERATIONS,
+                answer_format=c["answer"]["format"],
             )
             base, rules = production_account_prompt(c["locale"]), account_chat.ALL_SOURCES_RULES
 
@@ -2413,6 +2398,7 @@ def build_app(target: str):
                 user_id="playground",
                 workspace_only=c["workspace_only"],
                 operations=operations_for(c),
+                answer_format=c["answer"]["format"],
             )
             base, rules = production_prompt(c["locale"]), chat_prompts.ALL_SOURCES_RULES
 
@@ -2423,9 +2409,9 @@ def build_app(target: str):
         # descriptions, so this reads the library exactly as a turn does.
         await tools.load_library_catalog(ctx)
         return {
-            "prompt": effective_prompt(c, base, with_all_sources=False),
+            "prompt": in_format(c, effective_prompt(c, base, with_all_sources=False)),
             "all_sources_rules": rules,
-            "full_prompt": effective_prompt(c, base),
+            "full_prompt": in_format(c, effective_prompt(c, base)),
             "tools": schemas(c),
             "skills": skill_texts(c),
             "preferences": production_preferences,
