@@ -20,7 +20,7 @@ export type FigureLang = (typeof FIGURE_LANGS)[number];
 export type Segment =
   | { type: 'md'; text: string }
   | { type: 'callout'; kind: CalloutVariant; title: string; text: string }
-  | { type: 'reveal'; title: string; text: string }
+  | { type: 'reveal'; title: string; segments: Segment[] }
   | { type: 'tabs'; tabs: { label: string; segments: Segment[] }[] }
   /** A library figure on its own line, `![caption](figure:<id>)`. */
   | { type: 'libraryFigure'; id: string; caption: string }
@@ -142,19 +142,23 @@ function parseLines(lines: string[], allowTabs: boolean): Segment[] {
     if (allowTabs && TABS_OPEN.test(line)) {
       flush();
       const tabs: { label: string; lines: string[] }[] = [];
+      // Lines before the first tab read as the answer around the tabs.
+      const before: string[] = [];
       for (i++; i < lines.length && !CONTAINER_CLOSE.test(lines[i]); i++) {
         const tab = TAB.exec(lines[i]);
         if (tab) tabs.push({ label: tab[1].trim(), lines: [] });
-        else tabs.at(-1)?.lines.push(lines[i]);
+        else (tabs.at(-1)?.lines ?? before).push(lines[i]);
       }
       i++;
-      out.push({
-        tabs: tabs.map((tab) => ({
-          label: tab.label,
-          segments: parseLines(tab.lines, false),
-        })),
-        type: 'tabs',
-      });
+      out.push(...parseLines(before, false));
+      if (tabs.length)
+        out.push({
+          tabs: tabs.map((tab) => ({
+            label: tab.label,
+            segments: parseLines(tab.lines, false),
+          })),
+          type: 'tabs',
+        });
       continue;
     }
     if (DETAILS_OPEN.test(line)) {
@@ -163,11 +167,15 @@ function parseLines(lines: string[], allowTabs: boolean): Segment[] {
       while (end < lines.length && !DETAILS_CLOSE.test(lines[end])) end++;
       const block = lines.slice(i, end + 1).join('\n');
       out.push({
-        text: block
-          .replace(DETAILS_OPEN, '')
-          .replace(SUMMARY, '')
-          .replace(DETAILS_CLOSE, '')
-          .trim(),
+        segments: parseLines(
+          block
+            .replace(DETAILS_OPEN, '')
+            .replace(SUMMARY, '')
+            .replace(DETAILS_CLOSE, '')
+            .trim()
+            .split('\n'),
+          false
+        ),
         title: SUMMARY.exec(block)?.[1].trim() ?? '',
         type: 'reveal',
       });
@@ -208,6 +216,8 @@ export function unfinished(segments: Segment[]): boolean {
   return segments.some((segment) =>
     segment.type === 'tabs'
       ? segment.tabs.some((tab) => unfinished(tab.segments))
-      : segment.type === 'figure' && !segment.closed
+      : segment.type === 'reveal'
+        ? unfinished(segment.segments)
+        : segment.type === 'figure' && !segment.closed
   );
 }

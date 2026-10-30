@@ -69,9 +69,24 @@ describe('parseMarkdownAnswer', () => {
       type: 'figure',
     });
     expect(segments[3]).toMatchObject({
-      text: 'Think about $E = mc^2$.',
+      segments: [{ text: 'Think about $E = mc^2$.', type: 'md' }],
       title: 'Hint',
     });
+  });
+
+  it('keeps lines above the first tab, and a tabs block with no tab', () => {
+    const lines = (...text: string[]) => text.join('\n');
+    expect(
+      parseMarkdownAnswer(
+        lines(':::tabs', 'Two views.', '::tab[A]', 'One', ':::')
+      )
+    ).toMatchObject([
+      { text: 'Two views.', type: 'md' },
+      { tabs: [{ label: 'A' }], type: 'tabs' },
+    ]);
+    expect(parseMarkdownAnswer(lines(':::tabs', 'Only this.', ':::'))).toEqual([
+      { text: 'Only this.', type: 'md' },
+    ]);
   });
 
   it('takes a mermaid fence as a figure', () => {
@@ -151,6 +166,33 @@ describe('MarkdownAnswer', () => {
   it('never shows an ask fence as code', () => {
     const html = draw('```ask\nnot json\n```');
     expect(html).not.toContain('not json');
+  });
+
+  it('draws a figure inside a reveal', () => {
+    const html = draw(
+      [
+        '<details><summary>Worked</summary>',
+        '```chart',
+        '{"kind": "bar", "title": "Rate (%)", "labels": ["A", "B"], "series": [{"name": "s", "values": [1, 2]}]}',
+        '```',
+        '</details>',
+      ].join('\n')
+    );
+    expect(html).toContain('Rate (%)');
+    expect(html).not.toContain('&quot;kind&quot;');
+  });
+
+  it('keeps a numbered list counting after a figure', () => {
+    expect(draw('3. Third\n4. Fourth')).toContain('<ol');
+    expect(draw('3. Third\n4. Fourth')).toContain('start="3"');
+  });
+
+  it('shows no Sources label when no passage has a citation', () => {
+    const chart =
+      '{"kind": "bar", "title": "Rate (%)", "labels": ["A"], "series": [{"name": "s", "values": [1]}], "passages": [9]}';
+    expect(draw(`\`\`\`chart\n${chart}\n\`\`\``)).not.toContain(
+      m.chat_sources()
+    );
   });
 
   it('draws an html-embed', () => {

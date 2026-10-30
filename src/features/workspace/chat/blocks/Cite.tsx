@@ -81,17 +81,19 @@ export function CiteFooter({
   passages?: number[];
   note?: string;
 }) {
-  if (!(passages?.length || note)) return null;
+  const { numberOf } = useContext(CitationContext);
+  const known = passages?.filter((n) => numberOf(n) !== undefined);
+  if (!(known?.length || note)) return null;
   return (
     <div
       className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-muted text-xs"
       data-copy-skip
     >
       {note ? <span>{note}</span> : null}
-      {passages?.length ? (
+      {known?.length ? (
         <span>
           {m.chat_sources()}
-          <Cites passages={passages} />
+          <Cites passages={known} />
         </span>
       ) : null}
     </div>

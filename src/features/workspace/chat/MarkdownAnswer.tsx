@@ -129,7 +129,11 @@ function SegmentView({
     case 'callout':
       return <Callout props={segment} />;
     case 'reveal':
-      return <Reveal props={segment} />;
+      return (
+        <Reveal title={segment.title}>
+          <Segments segments={segment.segments} streaming={streaming} />
+        </Reveal>
+      );
     case 'tabs':
       return (
         <ChatTabs

@@ -190,7 +190,7 @@ export function Citations({
           // 2026-10-30); a raised number scrolls here, as for the web.
           return (
             <Badge
-              className="max-w-full frosted:not-hover:bg-(--frost-fill) font-medium"
+              className="max-w-full frosted:bg-(--frost-fill) font-medium"
               id={sourceEntryId(msg.id, i)}
               key={`${c.chunkId}:${i}`}
               size="sm"

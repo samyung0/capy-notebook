@@ -103,7 +103,7 @@ function fromSegment(segment: Segment): Out[] {
         },
       ];
     case 'reveal':
-      return [title(segment.title), prose(segment.text)];
+      return [title(segment.title), ...segment.segments.flatMap(fromSegment)];
     case 'tabs':
       return segment.tabs.flatMap((tab) => [
         title(tab.label),

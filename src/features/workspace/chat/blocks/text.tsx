@@ -97,8 +97,11 @@ const components = {
   li: ({ children }: { children?: ReactNode }) => (
     <li className="[&+li]:mt-2 [&>p]:inline">{children}</li>
   ),
-  ol: ({ children }: { children?: ReactNode }) => (
-    <ol className="ml-5 list-outside list-decimal whitespace-normal marker:[font-variant-numeric:normal]">
+  ol: ({ children, start }: { children?: ReactNode; start?: number }) => (
+    <ol
+      className="ml-5 list-outside list-decimal whitespace-normal marker:[font-variant-numeric:normal]"
+      start={start}
+    >
       {children}
     </ol>
   ),
@@ -164,11 +167,6 @@ export interface CalloutProps {
   title: string;
 }
 
-export interface RevealProps {
-  text: string;
-  title: string;
-}
-
 export function Callout({ props }: { props: CalloutProps }) {
   return (
     <div
@@ -189,7 +187,13 @@ export function Callout({ props }: { props: CalloutProps }) {
   );
 }
 
-export function Reveal({ props }: { props: RevealProps }) {
+export function Reveal({
+  children,
+  title,
+}: {
+  children: ReactNode;
+  title: string;
+}) {
   return (
     <details className="group">
       <summary
@@ -201,9 +205,11 @@ export function Reveal({ props }: { props: RevealProps }) {
           name="chevronRight"
           size={12}
         />
-        {props.title}
+        {title}
       </summary>
-      <Prose className="mt-3 pl-3 text-sm" muted text={props.text} />
+      <div className="mt-3 flex flex-col gap-4 pl-3 text-fg-secondary text-sm">
+        {children}
+      </div>
     </details>
   );
 }
