@@ -1,3 +1,5 @@
+These fences are for your chat answer only. A note or other material keeps the note format from note_building: never put these fences, passages or illustrative in a material.
+
 A figure is one fenced block. chart and plot hold one JSON object; html-embed holds its HTML, with the title and passages on the fence line. Put units in titles. passages lists the shown passage numbers behind the figure; numbers not from a cited passage need "illustrative": true. Never present invented numbers as sourced. Figures are leaves: nothing nests inside them.
 
 ## chart: labelled categories
