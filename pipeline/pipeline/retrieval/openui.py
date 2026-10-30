@@ -180,11 +180,106 @@ class _Parser:
         raise ParseError(f"unexpected {value!r}")
 
 
+_SPACE = re.compile(r"[ \t\r]*")
+_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_NUMBER = re.compile(r"-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
+_STRING = re.compile(r'"(?:\\[\s\S]|[^"\\])*"')
+_ASSIGN = re.compile(r"[ \t]*[A-Za-z_][A-Za-z0-9_]*[ \t]*=")
+_CLOSER = re.compile(r"[ \t\r]*(?:[,)\]]|$)")
+
+
+def _is_statement(line: str) -> bool:
+    """Does the line read as one ``name = value`` statement of strings,
+    numbers, names, arrays and component calls, with commas between items?
+    Mirrors ``isStatement`` in the browser's ``chat/answer.ts``."""
+    at = 0
+
+    def eat(pattern: re.Pattern[str]) -> str:
+        nonlocal at
+        found = pattern.match(line, at)
+        if found is None:
+            return ""
+        at = found.end()
+        return found.group(0)
+
+    def items(close: str) -> bool:
+        nonlocal at
+        while True:
+            eat(_SPACE)
+            if line[at : at + 1] == close:
+                at += 1
+                return True
+            if not value():
+                return False
+            eat(_SPACE)
+            if line[at : at + 1] == ",":
+                at += 1
+            elif line[at : at + 1] != close:
+                return False
+
+    def value() -> bool:
+        nonlocal at
+        eat(_SPACE)
+        if line[at : at + 1] == "[":
+            at += 1
+            return items("]")
+        if eat(_STRING) or eat(_NUMBER):
+            return True
+        if not eat(_NAME):
+            return False
+        eat(_SPACE)
+        if line[at : at + 1] != "(":
+            return True
+        at += 1
+        return items(")")
+
+    if not (eat(_ASSIGN) and value()):
+        return False
+    eat(_SPACE)
+    return at == len(line)
+
+
+def _escape_stray_quotes(line: str) -> str:
+    """The line with a backslash before each double quote that cannot end its
+    string: one not followed by ``,``, ``)``, ``]`` or the line end."""
+    out: list[str] = []
+    start = 0
+    inside = False
+    at = 0
+    while at < len(line):
+        if inside and line[at] == "\\":
+            at += 1
+        elif line[at] == '"':
+            if inside and not _CLOSER.match(line, at + 1):
+                out.append(line[start:at] + "\\")
+                start = at
+            else:
+                inside = not inside
+        at += 1
+    return "".join(out) + line[start:]
+
+
+def repair_quotes(text: str) -> str:
+    """A statement that does not parse because a string holds raw double
+    quotes is re-read with those quotes as literal characters (Epo 2026-10-30,
+    Q587); the browser repairs alike (``repairQuotes`` in ``chat/answer.ts``).
+    A statement that parses never changes, since each of its strings ends
+    before ``,``, ``)``, ``]`` or the line end, and one the re-read does not
+    fix stays as written. Stored answers keep their text; every parse
+    repairs."""
+    lines = text.split("\n")
+    for index, line in enumerate(lines):
+        fixed = _escape_stray_quotes(line)
+        if fixed != line and _is_statement(fixed):
+            lines[index] = fixed
+    return "\n".join(lines)
+
+
 def parse(text: str, *, strict: bool = False) -> Program:
-    """The statements of ``text``. Non-strict parsing stops at a trailing
-    partial statement; strict parsing raises :class:`ParseError` on any
-    malformed or unfinished input."""
-    tokens, open_string = _tokenize(text)
+    """The statements of ``text`` after :func:`repair_quotes`. Non-strict
+    parsing stops at a trailing partial statement; strict parsing raises
+    :class:`ParseError` on any malformed or unfinished input."""
+    tokens, open_string = _tokenize(repair_quotes(text))
     if open_string and strict:
         raise ParseError("unterminated string")
     parser = _Parser(tokens)
@@ -437,7 +532,7 @@ def _inside_string(text: str) -> bool:
     """Does the text end inside a string literal? A prefix that does not
     tokenize is treated as inside one, so a fence there never closes it."""
     try:
-        return _tokenize(text)[1]
+        return _tokenize(repair_quotes(text))[1]
     except ParseError:
         return True
 

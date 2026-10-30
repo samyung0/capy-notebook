@@ -2842,7 +2842,24 @@ current pending changes applied. Embedded source instructions remain untrusted.
    renderer appends a second `root = Answer([...])` listing root's children and
    then those questions, with no cap; both parsers take the later root, so the
    question card, history and summaries all carry them. After a prose
-   preface the repaired program replaces the fenced one. The browser's official parser keeps
+   preface the repaired program replaces the fenced one. A statement that
+   does not parse because a string holds raw double quotes (DeepSeek Flash
+   quoting its source) is re-read locally by the same rule on both sides
+   (`repairQuotes` in `chat/answer.ts`, `openui.repair_quotes`; Epo
+   2026-10-30, Q587): inside a string a double quote ends it only before `,`,
+   `)`, `]` or the line end, any other is a literal quote, and the line takes
+   the re-read only when it then reads as one whole statement (strings,
+   numbers, names, arrays and calls, commas between items). A statement that
+   parses never changes; one the re-read does not fix (a quote right before a
+   comma inside the text) stays as written and keeps the interruption notice.
+   The repair runs on every read, never on store: `messages.content` keeps the
+   model's text, the pipeline's `parse` repairs before tokenizing (live
+   citations, the final list, `_ask_only`, summaries), and the browser's
+   `splitAnswer` hands the repaired program to the official `Renderer` and to
+   `parseAnswer` alike, so the blocks, the gap check and the question card
+   read the same text and old answers display too. Mid-stream the unfinished
+   last statement does not read as whole, so it is repaired once its line
+   closes. The browser's official parser keeps
    recoverable partial programs. Missing references, dropped content, invalid
    chart data show an inline interruption notice; excess empty placeholders do
    not, while excess content does. Unusable programs show the chat error, never
