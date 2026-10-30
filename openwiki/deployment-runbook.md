@@ -3408,8 +3408,8 @@ enabled payment methods. The reload worker runs only where
 `STRIPE_SECRET_KEY` is set.
 
 Plan credit limits are data, not migrations: the Free monthly allowance is
-200 credits (`UPDATE plan_limits SET credit_limit_micros = 200000000 WHERE
-plan_tier = 'free';`, Epo 2026-10-16), and the one-off 800-credit starter grant
+300 credits (`UPDATE plan_limits SET credit_limit_micros = 300000000 WHERE
+plan_tier = 'free';`, Epo 2026-10-30), and the one-off 800-credit starter grant
 comes with the first saved card (migration 0109, no setting). A database built from
 migrations still seeds the older values, so set the row by hand in each
 environment, **before** the deploy that restarts the API and the ingest worker:
