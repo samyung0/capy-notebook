@@ -36,7 +36,7 @@
     <text x="232" y="308" font-size="18" font-weight="bold" fill="#8A8A82">einmal benutzt</text>
     <text x="96" y="402" font-family="Cambria" font-size="64" font-weight="bold" fill="#12525C">25 Cent</text>
     <text x="96" y="444" font-size="24" font-weight="bold">Einwegpfand</text>
-    <text font-size="20" fill="#57574F" x="96" y="486">Gesetzlich einheitlich auf fast alle</text><text font-size="20" fill="#57574F" x="96" y="512">Einweg-Kunststoffflaschen und alle</text><text font-size="20" fill="#57574F" x="96" y="538">Getränkedosen. Wein und Spirituosen</text><text font-size="20" fill="#57574F" x="96" y="564">aus Glas sind ausgenommen.</text></g>
+    <text font-size="20" fill="#57574F" x="96" y="486">Gesetzlich einheitlich auf fast alle<tspan x="96" dy="26">Einweg-Kunststoffflaschen und alle</tspan><tspan x="96" dy="26">Getränkedosen. Wein und Spirituosen</tspan><tspan x="96" dy="26">aus Glas sind ausgenommen.</tspan></text></g>
 
   <g id="pfand-mehrweg" data-pptx-bounds="680 244 536 340" fill="#1C1C1A">
     <rect x="680" y="250" width="536" height="328" rx="6" fill="#FFFFFF" stroke="#D8D3C8" stroke-width="1" />
@@ -46,7 +46,7 @@
     <text x="788" y="308" font-size="18" font-weight="bold" fill="#8A8A82">immer wieder</text>
     <text x="712" y="402" font-family="Cambria" font-size="64" font-weight="bold" fill="#12525C">bis 50-mal</text>
     <text x="712" y="444" font-size="24" font-weight="bold">neu befüllt</text>
-    <text font-size="20" fill="#57574F" x="712" y="486">Mehrwegflaschen aus Glas werden</text><text font-size="20" fill="#57574F" x="712" y="512">bis zu 50-mal neu befüllt.</text><text font-size="20" fill="#57574F" x="712" y="538">Das Pfand legt der Hersteller fest:</text><text font-size="20" fill="#57574F" x="712" y="564">meist 8 oder 15 Cent.</text></g>
+    <text font-size="20" fill="#57574F" x="712" y="486">Mehrwegflaschen aus Glas werden<tspan x="712" dy="26">bis zu 50-mal neu befüllt.</tspan><tspan x="712" dy="26">Das Pfand legt der Hersteller fest:</tspan><tspan x="712" dy="26">meist 8 oder 15 Cent.</tspan></text></g>
 
   <g id="pfand-quote" data-pptx-bounds="64 604 1152 62" fill="#1C1C1A">
     <rect x="64" y="610" width="4" height="50" fill="#12525C" />

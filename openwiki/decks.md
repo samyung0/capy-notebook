@@ -166,9 +166,13 @@ The PPTX viewer and editor load Liberation Sans as Arial and Caladea as Cambria
 (`src/office-runtime/pptxFonts.ts`), so the `editorial` style's titles render
 with Cambria's metrics. `replace_text` works on agent-made decks (checked
 2026-10-05 on three playground decks with the BetterOffice runtime: 38 to 213
-editable paragraphs; edit, export, reopen and Undo). Each SVG `<text>` line is
-its own shape, so a sentence wrapped over lines is several targets and a longer
-replacement does not reflow into the next line's box. An edit of the deck is a
+editable paragraphs; edit, export, reopen and Undo). A paragraph is one SVG
+`<text>` whose later lines are `<tspan x dy>`, so it exports as one shape with
+the model's lines joined by line breaks (ppt-master's default export); each
+list item, label and heading is its own `<text>` and shape (Epo 2026-10-30,
+Q590). The lines stay as written: a longer replacement does not rewrap them
+until `--reflow-text` comes with the BetterOffice 0.5.1 pin (Q591). Decks made
+before then hold one shape per line. An edit of the deck is a
 source-file edit: no `excerpt_ids`, and its provenance is unchanged. Once a
 deck exists the agent reads and edits it with `inspect_office_document` and
 `edit_office_document` ([agentic-retrieval.md](agentic-retrieval.md), Office

@@ -55,7 +55,9 @@ regions, chemical indicators), and then only as small chips or bars.
 | note, footer | Arial | 15 | 13.5 |
 
 Bold widens Latin text about 7%. Keep text about 5% inside its module's
-bounds; break long lines with one `<text>` per line, 26 px apart at body size.
+bounds. Write a paragraph as one `<text>`: its first line as the text, each
+later line `<tspan x="<the text's x>" dy="26">` at body size; it exports as one
+text box. Give each list item, label and heading its own `<text>`.
 
 ## Components
 
