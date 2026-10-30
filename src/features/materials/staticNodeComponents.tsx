@@ -2,7 +2,6 @@
  * a Plate store: no Plate hooks, no editor transforms, no edit affordances.
  * Styling is shared with the editable components via nodeStyles. */
 
-import { getTableColumnCount } from '@platejs/table';
 import {
   type Descendant,
   KEYS,
@@ -77,7 +76,6 @@ import type {
 } from './document';
 import {
   isColumnWidth,
-  isTableSize,
   mediaWidth,
   quizQuestionElementToQuestion,
 } from './document';
@@ -95,6 +93,7 @@ import {
   MermaidView,
   StaticMediaAsset,
 } from './staticViews';
+import { tableColumnWidths } from './tableColumns';
 import { YouTubeEmbed, type YouTubeNode } from './YouTubeEmbed';
 import { youtubeWatchUrl } from './youtubeUrl';
 
@@ -177,14 +176,7 @@ function LinkElement(props: SlateElementProps) {
 }
 
 function Table(props: SlateElementProps) {
-  const table = props.element as TTableElement;
-  const colSizes = Array.from(
-    { length: getTableColumnCount(table) },
-    (_, index) => {
-      const size = table.colSizes?.[index];
-      return isTableSize(size) && size > 0 ? size : 120;
-    }
-  );
+  const colSizes = tableColumnWidths(props.element as TTableElement);
 
   return (
     <SlateElement {...props} className={TABLE_WRAP_CLASS}>
