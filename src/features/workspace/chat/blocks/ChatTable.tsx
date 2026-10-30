@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 export function TableFrame({ children }: { children?: ReactNode }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-left text-xs">{children}</table>
+      <table className="w-full text-left text-[14px]">{children}</table>
     </div>
   );
 }
@@ -18,7 +18,7 @@ export function TableRow({ children }: { children?: ReactNode }) {
 export function TableHead({ children }: { children?: ReactNode }) {
   return (
     <th
-      className="py-2.5 pr-4 align-bottom font-medium text-[11px] text-fg-muted last:pr-0"
+      className="py-2.5 pr-4 align-bottom font-medium text-fg-muted last:pr-0"
       scope="col"
     >
       {children}
