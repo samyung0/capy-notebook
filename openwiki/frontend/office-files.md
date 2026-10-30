@@ -1971,7 +1971,10 @@ pptx-react reads directly (its fallbacks are its own look). Colour buttons
 open Capy's 40-colour palette under Document colors, with the clear item and
 a Custom color row; the shape picker is a labelled grid of popover buttons
 and alignment a column of them.
-Strip thumbnails paint off screen and show only their latest paint.
+Strip thumbnails paint off screen and show only their latest paint. They
+paint at 126px and take the width their button leaves (126px, 111px beside
+the strip's scrollbar on Windows), so a thumbnail stays inside its selection
+border (Q588).
 
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the fork's document roots, the contributor

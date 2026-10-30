@@ -2222,6 +2222,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   2026-10-28, Q476: accepted with no client handling; the normal deploy
   order, backend before site, avoids it). Its deploy request names "client
   protocol 22 -> 23".
+  The PPTX Edit strip's scrollbar fit (pin 383d00566: a strip thumbnail
+  takes the width its button leaves; Epo 2026-10-30, Q588) raised
+  `CLIENT_PROTOCOL` to 24 and `MIN_SOURCE` to 24, so every source tab on the
+  older pin (protocols 20 to 23) reloads; `MIN_MATERIAL` stays 22. Its deploy
+  request names "client protocol 23 -> 24, source 20 -> 24".
 
 #### When to bump
 
