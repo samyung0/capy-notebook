@@ -1714,16 +1714,15 @@ the editor's strip and notes geometry in `pptx-runtime.css`, which also maps
 Capy's tokens onto pptx-react's `--pptx-*` variables (their fallbacks are the
 fork's own colours); slides keep their own colours. The viewer's thumbnails
 take the width their button leaves (126px, less beside the strip's
-scrollbar), so a thumbnail never covers its selection border. The viewer's
-strip ends in a pager (previous, "Slide x of y", next). View mode has no count row, so the
-strip and the notes start right under the file header; edit mode adds the
-editor's flat toolbar row (`singleRowToolbar`, 40px, 36px in a frame under
-640px) above the same layout. Below desktop (Capy's window under 1024px,
-the `narrow` flag in the frame's style message, so tablets and phones) or in a
-frame under 640px, the strip is a row of 96px thumbnails under the slide in
-both modes, with no pager: the row is the navigation. The editor takes the
-flag as pptx-react's `stripBelow` prop; the viewer as its `pptx-viewer-narrow`
-class.
+scrollbar), so a thumbnail never covers its selection border. View mode has
+no count row, so the strip and the notes start right under the file header;
+edit mode adds the editor's flat toolbar row (`singleRowToolbar`, 40px, 36px
+in a frame under 640px) above the same layout. Below desktop (Capy's window
+under 1024px, the `narrow` flag in the frame's style message, so tablets and
+phones) or in a frame under 640px, the strip is a row of 96px thumbnails
+under the slide in both modes. Neither mode has a pager (Epo 2026-10-30): the
+strip and the row are the slide navigation. The editor takes the flag as
+pptx-react's `stripBelow` prop; the viewer as its `pptx-viewer-narrow` class.
 
 The PPTX toolbar row follows Google Slides and Capy's DOCX row: new slide
 with a layout dropdown, undo and redo, a zoom dropdown, then select, text box,
@@ -1741,9 +1740,9 @@ row scrolls sideways under a vertical wheel, with edge fades.
 show's and presenter window's controls (exit, previous, next, Full screen, ⋮,
 pause, resume, reset, notes size) to Capy's Hugeicons
 (`PptxEditor`'s `icons`; the viewer provides the same set to
-`PresentationOverlay` through pptx-react's `IconSetContext`), the presenter's
-arrows matching the viewer pager's. Capy hides the editor's agent
-proposals (`showProposals`) and its Present button (`showPresentButton`);
+`PresentationOverlay` through pptx-react's `IconSetContext`). Capy hides
+the editor's agent proposals (`showProposals`) and its Present button
+(`showPresentButton`);
 save, PNG export, arrange and the slide operations without other UI (delete
 slide, move slide, delete object) are host menu commands that
 `PptxEditorApi.runCommand` runs by id (`PPTX_COMMAND_IDS`), with

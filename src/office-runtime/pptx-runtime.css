@@ -59,19 +59,12 @@
 
 /* pptx-react's slideStrip, slideButton, slideNumber and slidePreview. */
 .pptx-viewer-strip {
-  display: flex;
   flex: 0 0 auto;
-  flex-direction: column;
   width: 184px;
-  background: var(--pptx-strip-bg);
-  border-right: 1px solid var(--pptx-divider);
-}
-
-.pptx-viewer-slides {
-  flex: 1;
-  min-height: 0;
   padding: 14px 10px;
   overflow-y: auto;
+  background: var(--pptx-strip-bg);
+  border-right: 1px solid var(--pptx-divider);
 }
 
 .pptx-viewer-slide {
@@ -112,37 +105,6 @@
 
 .pptx-viewer-slide-preview canvas {
   display: block;
-}
-
-.pptx-viewer-pager {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 4px;
-  align-items: center;
-  justify-content: center;
-  height: 40px;
-  font-size: 12px;
-  color: var(--pptx-text-muted);
-  border-top: 1px solid var(--pptx-divider);
-}
-
-.pptx-viewer-pager button {
-  display: grid;
-  place-items: center;
-  width: var(--toolbar-button);
-  height: var(--toolbar-button);
-  color: var(--pptx-text);
-  cursor: pointer;
-  border-radius: var(--radius-button);
-}
-
-.pptx-viewer-pager button:hover:not(:disabled) {
-  background: var(--pptx-hover);
-}
-
-.pptx-viewer-pager button:disabled {
-  cursor: default;
-  opacity: 0.45;
 }
 
 /* pptx-react's stage: only the slide scrolls, so the Notes button keeps its
@@ -240,8 +202,7 @@
 }
 
 /* pptx-react's narrow layout (Capy's window below desktop, or a frame under
-   640px): the strip becomes a row of 96px thumbnails under the slide, with no
-   pager under it. */
+   640px): the strip becomes a row of 96px thumbnails under the slide. */
 /* At the stage's bottom left, over the first thumbnail, as the editor's
    narrow layout; Capy's chat button floats at the right. */
 .pptx-viewer-narrow .pptx-viewer-notes-toggle {
@@ -254,19 +215,15 @@
 }
 
 .pptx-viewer-narrow .pptx-viewer-strip {
+  display: flex;
+  gap: 8px;
   order: 1;
   width: auto;
-  border-top: 1px solid var(--pptx-divider);
-  border-right: 0;
-}
-
-.pptx-viewer-narrow .pptx-viewer-slides {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 8px;
   padding: 8px 10px;
   overflow-x: auto;
   overflow-y: hidden;
+  border-top: 1px solid var(--pptx-divider);
+  border-right: 0;
 }
 
 .pptx-viewer-narrow .pptx-viewer-slide {
