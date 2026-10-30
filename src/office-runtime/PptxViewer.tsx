@@ -534,7 +534,8 @@ export function PptxViewer({
   );
 }
 
-/** pptx-react's SlideThumbnail, painted at the strip's 126px width. */
+/** pptx-react's SlideThumbnail, painted at the strip's 126px width and never
+ * shown wider. */
 function SlideThumbnail({
   frame,
   resolveImage,
@@ -550,7 +551,8 @@ function SlideThumbnail({
     const scale = 126 / frame.width;
     const dpr = window.devicePixelRatio || 1;
     sizeCanvasForSlide(canvas, frame, dpr, scale);
-    // Fills its frame, which is narrower in the narrow layout.
+    // Fills its frame, which is narrower in the narrow layout or beside the
+    // rail's scrollbar.
     canvas.style.width = '100%';
     canvas.style.height = 'auto';
     void paintSlide(context, frame, dpr, scale, { resolveImage }).catch(

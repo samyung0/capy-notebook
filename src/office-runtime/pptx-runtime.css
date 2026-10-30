@@ -99,10 +99,12 @@
   text-align: right;
 }
 
+/* Takes the width the button leaves: 126px, less beside the strip's
+   scrollbar (15px on Windows), so the thumbnail stays inside the border. */
 .pptx-viewer-slide-preview {
   display: block;
-  flex: 0 0 auto;
-  width: 126px;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   background: #fff;
   box-shadow: 0 1px 4px rgb(20 31 50 / 16%);
@@ -274,5 +276,6 @@
 }
 
 .pptx-viewer-narrow .pptx-viewer-slide-preview {
+  flex: 0 0 auto;
   width: 96px;
 }

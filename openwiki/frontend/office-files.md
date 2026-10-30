@@ -1712,8 +1712,10 @@ at their slide's aspect ratio), the slide fitted with 20px around it, and the
 speaker notes below when shown (read-only in view). The viewer (`PptxViewer.tsx`) copies
 the editor's strip and notes geometry in `pptx-runtime.css`, which also maps
 Capy's tokens onto pptx-react's `--pptx-*` variables (their fallbacks are the
-fork's own colours); slides keep their own colours. The viewer's strip ends in
-a pager (previous, "Slide x of y", next). View mode has no count row, so the
+fork's own colours); slides keep their own colours. The viewer's thumbnails
+take the width their button leaves (126px, less beside the strip's
+scrollbar), so a thumbnail never covers its selection border. The viewer's
+strip ends in a pager (previous, "Slide x of y", next). View mode has no count row, so the
 strip and the notes start right under the file header; edit mode adds the
 editor's flat toolbar row (`singleRowToolbar`, 40px, 36px in a frame under
 640px) above the same layout. Below desktop (Capy's window under 1024px,
