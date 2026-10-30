@@ -33,6 +33,7 @@ from . import (
     events,
     evidence,
     library,
+    markdown_answer,
     models,
     openui,
     pending,
@@ -506,7 +507,9 @@ async def _run_turn(
     ctx.pending_sources.read_ids = set()
     prior = await evidence.history_turns(history, ctx)
     schemas = profile.schemas(ctx)
-    if spec.provider_slug == "zai":
+    # The Markdown answer format asks with the AskUser tool.
+    markdown = ctx.answer_format == markdown_answer.MARKDOWN
+    if spec.provider_slug == "zai" or markdown:
         schemas = [*schemas, ASK_USER_SCHEMA]
     # A viewer is offered no write tool, and told so.
     can_write = any(s["function"]["name"] in WRITE_TOOLS for s in schemas)
@@ -525,6 +528,8 @@ async def _run_turn(
         mode_shown=evidence.mode_shown(history),
         writes=can_write,
     )
+    if markdown:
+        messages[0]["content"] = chat_prompts.markdown_head(messages[0]["content"])
     query_msg = messages[-1]
     # Q221 (Epo 2026-10-24): a first-turn reply that is only an AskUser
     # question goes back to the model once, so the learner gets the answer
@@ -810,7 +815,7 @@ async def _run_turn(
                     q.put_nowait(None)
 
             finisher = asyncio.create_task(_finish())
-            renderer = LangRenderer(lambda: len(ctx.citations))
+            renderer = _renderer(ctx)
             # Text is held back until its shape is known: a program streams from
             # its first statement; plain prose (narration, or an answer that
             # ignored the format) is emitted once the response ends. The citation list
@@ -819,7 +824,7 @@ async def _run_turn(
             sent_citations: list[dict[str, Any]] = []
             # A reply the send-back may return is held until it shows a part
             # other than the question.
-            holding = send_back_ok and not sent_back
+            holding = send_back_ok and not sent_back and not markdown
             held = ""
             try:
                 while True:
@@ -976,7 +981,9 @@ async def _run_turn(
         calls = assembled.tool_calls
         text = assembled.text.strip()
         asked = (
-            None
+            ask_user_answer(calls, text, len(ctx.citations), markdown=True)
+            if markdown
+            else None
             if renderer.answer_shaped
             else ask_user_answer(calls, text, len(ctx.citations))
         )
@@ -1162,7 +1169,13 @@ async def _run_turn(
         if text:
             if not started:
                 yield events.phase("answering")
-            if asked is not None:
+            if asked is not None and markdown:
+                # The questions follow the prose already streamed.
+                gap = "\n\n" if renderer.text.strip() else ""
+                added = renderer.push(gap + asked)
+                if started:
+                    yield events.block_delta(block_id, added)
+            elif asked is not None:
                 # The question replaces the held-back prose as a whole program.
                 renderer = LangRenderer(lambda: len(ctx.citations))
                 renderer.push(asked)
@@ -1336,12 +1349,23 @@ _ANSWER_PART = re.compile(
 )
 
 
-def _ask_only(renderer: LangRenderer, prose: str, asked: str | None) -> bool:
+def _renderer(ctx: ToolContext) -> LangRenderer | markdown_answer.MarkdownRenderer:
+    """The streaming renderer of the turn's answer format."""
+    if ctx.answer_format == markdown_answer.MARKDOWN:
+        return markdown_answer.MarkdownRenderer(lambda: len(ctx.citations))
+    return LangRenderer(lambda: len(ctx.citations))
+
+
+def _ask_only(
+    renderer: LangRenderer | markdown_answer.MarkdownRenderer,
+    prose: str,
+    asked: str | None,
+) -> bool:
     """The reply is only AskUser questions: a tool-called AskUser with no
     prose, or a program whose parts are only AskUser components."""
     if asked is not None:
         return not prose
-    if not renderer.answer_shaped:
+    if not isinstance(renderer, LangRenderer) or not renderer.answer_shaped:
         return False
     try:
         names = {call.name for call in openui.walk(openui.parse(renderer.text))}
@@ -1439,13 +1463,16 @@ def _cited(prose: str, known: int) -> tuple[str, list[int]]:
     return _MARKERS.sub(take, prose).strip(), cited
 
 
-def ask_user_answer(calls: list[ToolCall], prose: str, known: int) -> str | None:
+def ask_user_answer(
+    calls: list[ToolCall], prose: str, known: int, *, markdown: bool = False
+) -> str | None:
     """A response that calls AskUser as a tool meant to end the turn on its
     questions: the answer program with its prose and one AskUser component per
     call that carries a question, at most ASK_USER_MAX, or None when none does
     (Epo 2026-10-14). The prose keeps its citations to the ``known`` shown
-    passages."""
-    asks = []
+    passages. ``markdown``: only the questions' ``ask`` fence, which follows
+    the prose the Markdown format already streamed (markdown_answer.ask_fence)."""
+    asks: list[tuple[str, list[str]]] = []
     for call in calls:
         if call.name != ASK_USER or len(asks) == ASK_USER_MAX:
             continue
@@ -1467,14 +1494,17 @@ def ask_user_answer(calls: list[ToolCall], prose: str, known: int) -> str | None
             if isinstance(choices, list)
             else []
         )
-        asks.append(
-            f"AskUser({json.dumps(question.strip(), ensure_ascii=False)}, "
-            f"{json.dumps(choices, ensure_ascii=False)})"
-        )
+        asks.append((question.strip(), choices))
     if not asks:
         return None
+    if markdown:
+        return markdown_answer.ask_fence(asks)
     names = [f"ask{n}" for n in range(1, len(asks) + 1)]
-    lines = [f"{name} = {ask}" for name, ask in zip(names, asks, strict=True)]
+    lines = [
+        f"{name} = AskUser({json.dumps(question, ensure_ascii=False)}, "
+        f"{json.dumps(choices, ensure_ascii=False)})"
+        for name, (question, choices) in zip(names, asks, strict=True)
+    ]
     if prose:
         body, cited = _cited(prose, known)
         passages = f", {json.dumps(cited)}" if cited else ""

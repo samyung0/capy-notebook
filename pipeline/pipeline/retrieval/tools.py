@@ -51,6 +51,7 @@ from . import (
     deck,
     library,
     limits,
+    markdown_answer,
     pending,
     pending_hints,
     questions,
@@ -208,6 +209,9 @@ class ToolContext:
     # or an earlier turn of the conversation was offered them (the gateway's
     # officeTools); then they stay for the rest of the conversation.
     office_tools: bool = False
+    # The answer format (markdown_answer.FORMATS): production chat is OpenUI;
+    # the playground switches to Markdown to compare them.
+    answer_format: str = markdown_answer.OPENUI
     # The requester's study progress is on in this workspace, so the agent may
     # read it.
     study_progress: bool = False
@@ -3411,10 +3415,10 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
 async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     name = str(args["name"]).strip()
-    skill = skills.SKILLS.get(name)
-    if skill is None:
+    offered = skills.offered(ctx.answer_format)
+    if name not in offered:
         return _refused(
-            f"No skill named {name}. Skills: {', '.join(skills.SKILLS)}.",
+            f"No skill named {name}. Skills: {', '.join(offered)}.",
             code="unavailable_target",
         )
     if name == skills.OFFICE_BUILDING:
@@ -4552,7 +4556,8 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
     # The model maps the learner's words onto a subject from this list.
     extra = {
         "read_skill": skills.catalog(
-            preferences.merged(ctx.study_preferences)["mainFormat"]
+            preferences.merged(ctx.study_preferences)["mainFormat"],
+            skills.offered(ctx.answer_format),
         )
     }
     if ctx.library_catalog:

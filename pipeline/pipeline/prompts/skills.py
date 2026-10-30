@@ -5,6 +5,8 @@ call. ``retrieval/skills.py`` offers them; Epo tunes this text in the playground
 
 from __future__ import annotations
 
+from importlib import resources
+
 from ..retrieval.contract import OFFICE_SHAPE_TEXT
 from ..retrieval.limits import WRITE_ERROR_GRACE, WRITE_ERROR_GRACE_MAX
 
@@ -111,6 +113,14 @@ Practice from the library (Workspace only off):
 - To show a figure read_knowledge listed this turn, put `![caption](figure:<figure id>)` on its own line in a note, or `![caption](figure:<figure id> "small")` for a half-width one: the note stores the picture with its printed credit and credits its book. Any other image URL becomes a plain link.
 - Always add images. Images catch the learner's attention and make ideas easier to explain. A picture need not carry the explanation itself; it only needs to be relevant. Make an image that is likely decorative, such as a logo or an icon, small.
 - Reuse library exercises and worked examples before writing new questions. Keep a worked example's question, givens, model and solution together, and never splice numbers from different examples. Label adapted or new practice as such; call it a source exercise only when the source asks it."""
+
+
+FIGURES_WHEN = "read before writing a chart, plot or html-embed figure in an answer"
+
+
+def figures() -> str:
+    """The Markdown answer format's figure fences (prompts/answer_markdown.txt)."""
+    return resources.files("pipeline.prompts").joinpath("figures.md").read_text("utf-8")
 
 
 def editing() -> str:

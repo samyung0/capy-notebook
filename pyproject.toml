@@ -67,6 +67,8 @@ pipeline = [
     "generated/embeds.json",
     "generated/openui_library.json",
     "prompts/openui_lang.txt",
+    "prompts/answer_markdown.txt",
+    "prompts/figures.md",
     "retrieval/hsk_words.tsv",
     "prompts/deck_styles/*/*.md",
     "prompts/deck_styles/*/*.svg",

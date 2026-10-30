@@ -5112,6 +5112,74 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
     assert asked == ["Q1?", "Q2?", "Q3?"]
 
 
+async def test_markdown_format_streams_as_written_and_cites_its_markers(monkeypatch):
+    """The playground's Markdown answer format: its rule replaces the OpenUI
+    one, the text streams as written, [#n] markers set the citations, and
+    AskUser is offered."""
+    from pipeline.prompts import chat as chat_prompts
+
+    raw = "Light is absorbed. [#1]\n\nCarbon is fixed. [#2,9]\n"
+    chunks = [raw[i : i + 7] for i in range(0, len(raw), 7)]
+    finals = [
+        _assembled("", [_call("read_document", '{"file_id":"f_1"}')]),
+        _assembled(raw),
+    ]
+    stream, seen = _stream_chunks([[], chunks], finals)
+
+    async def _run(name, args, ctx):
+        del name, args, ctx
+        return ToolResult(
+            passages=[
+                _passage(chunk_id="c1"),
+                _passage(chunk_id="c2", text="Calvin cycle fixes carbon."),
+            ]
+        )
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    ctx = ToolContext(workspace_id="ws_1", answer_format="markdown")
+    events = await _collect("q", ctx)
+
+    system = seen[0]["messages"][0]["content"]
+    assert chat_prompts.MARKDOWN_RULE in system
+    assert chat_prompts.LANG_RULE not in system
+    assert "AskUser" in [t["function"]["name"] for t in seen[0]["tools"]]
+    deltas = [e["text"] for e in events if e["type"] == "block_delta"]
+    assert "".join(deltas) == raw
+    assert events[-1]["answer"] == raw
+    cites = [e for e in events if e["type"] == "citations"]
+    assert [c["n"] for c in cites[-1]["citations"]] == [1, 2], "9 was never shown"
+
+
+async def test_markdown_format_ends_on_askuser_with_an_ask_fence(monkeypatch):
+    prose = "Before I build it:"
+    call = _call(
+        "AskUser", json.dumps({"question": "Which depth?", "choices": ["Intro"]})
+    )
+    stream, seen = _stream_chunks([[prose]], [_assembled(prose, [call])])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    ran: list[str] = []
+
+    async def _run(name, _args, _ctx):
+        ran.append(name)
+        return ToolResult(text_parts=["no"])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    # A follow-up turn, so the first-turn send-back (Q221) does not apply.
+    history = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "x"}]
+    ctx = ToolContext(workspace_id="ws_1", answer_format="markdown")
+    events = []
+    async for event in agent.run_agent(
+        query="teach me", ctx=ctx, history=history, model=_model()
+    ):
+        events.append(event)
+
+    fence = '```ask\n{"question": "Which depth?", "choices": ["Intro"]}\n```'
+    deltas = "".join(e["text"] for e in events if e["type"] == "block_delta")
+    assert deltas == f"{prose}\n\n{fence}"
+    assert events[-1]["answer"] == deltas and not ran and len(seen) == 1
+
+
 @pytest.mark.parametrize(("provider", "offered"), [("zai", True), ("deepseek", False)])
 async def test_glm_is_offered_askuser_as_a_real_tool(monkeypatch, provider, offered):
     """DigitalOcean drops calls to tools a request does not list, and GLM calls

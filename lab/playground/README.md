@@ -137,6 +137,18 @@ three minutes, so `--check` does not run it). Without a bundle the dialog
 names the command. The sources are `preview/` (`main.tsx`, `index.html`,
 `vite.config.ts`).
 
+## Answer format
+
+**Answer format** beside the model picks how the agent writes its final
+answer (`answer.format` in the config): `openui`, production's OpenUI Lang
+program, or `markdown`, Markdown with `[#n]` citations, callouts, `:::tabs`,
+`<details>` and chart, plot and html-embed fences whose rules sit behind the
+`figures` skill (`pipeline/pipeline/retrieval/markdown_answer.py`,
+`prompts/answer_markdown.txt`). Each answer is drawn by the app's own chat
+renderers, `LangAnswer` or `MarkdownAnswer`, on the preview bundle's
+`answer.html` (`preview/answer.tsx`) in a frame under the turn, so rebuild the
+bundle after changing either renderer.
+
 ## Config
 
 Fields absent from a config take the defaults in `DEFAULT_CONFIG`

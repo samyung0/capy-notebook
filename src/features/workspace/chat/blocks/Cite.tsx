@@ -1,4 +1,5 @@
-import { createContext, Fragment, useContext } from 'react';
+import { createContext, Fragment, useContext, useMemo } from 'react';
+import type { Citation } from '@/api/types';
 import { m } from '@/i18n';
 
 /**
@@ -16,6 +17,32 @@ export interface CitationLookup {
 export const CitationContext = createContext<CitationLookup>({
   numberOf: () => undefined,
 });
+
+/** The lookup for an answer's citation list, for CitationContext. */
+export function useCitationLookup(
+  citations: Citation[] | undefined,
+  onOpenCitation: ((citation: Citation) => void) | undefined
+): CitationLookup {
+  return useMemo(() => {
+    const byPassage = new Map<number, number>();
+    citations?.forEach((citation, index) => {
+      if (citation.n !== undefined && !byPassage.has(citation.n)) {
+        byPassage.set(citation.n, index);
+      }
+    });
+    return {
+      numberOf: (n) => {
+        const index = byPassage.get(n);
+        return index === undefined ? undefined : index + 1;
+      },
+      open: (n) => {
+        const index = byPassage.get(n);
+        const citation = index === undefined ? undefined : citations?.[index];
+        if (citation) onOpenCitation?.(citation);
+      },
+    };
+  }, [citations, onOpenCitation]);
+}
 
 /** Element nodes as the OpenUI parser hands them to a container. */
 export interface ElementNode<P = Record<string, unknown>> {

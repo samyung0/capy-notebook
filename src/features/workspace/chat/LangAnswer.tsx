@@ -11,7 +11,7 @@ import {
 import { copyAnswer } from './answerCopy';
 import { LatestAnswerContext } from './blocks/AskUser';
 import { InvalidChartContext } from './blocks/ChatChart';
-import { CitationContext, type CitationLookup } from './blocks/Cite';
+import { CitationContext, useCitationLookup } from './blocks/Cite';
 import { Prose } from './blocks/text';
 import { chatLibrary, parseAnswer } from './library';
 
@@ -103,25 +103,7 @@ function AnswerBody({
   const inspected = useMemo(() => inspectAnswer(result), [result]);
   const [renderFailure, setRenderFailure] = useState<string | null>(null);
   const failed = renderFailure === content;
-  const lookup = useMemo<CitationLookup>(() => {
-    const byPassage = new Map<number, number>();
-    citations?.forEach((citation, index) => {
-      if (citation.n !== undefined && !byPassage.has(citation.n)) {
-        byPassage.set(citation.n, index);
-      }
-    });
-    return {
-      numberOf: (n) => {
-        const index = byPassage.get(n);
-        return index === undefined ? undefined : index + 1;
-      },
-      open: (n) => {
-        const index = byPassage.get(n);
-        const citation = index === undefined ? undefined : citations?.[index];
-        if (citation) onOpenCitation?.(citation);
-      },
-    };
-  }, [citations, onOpenCitation]);
+  const lookup = useCitationLookup(citations, onOpenCitation);
 
   if (!isLangAnswer(content)) return <Markdown text={content} />;
   if (!result?.root && !isProgramSyntax(content)) {

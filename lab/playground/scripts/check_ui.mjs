@@ -22,6 +22,8 @@ const element = (id) => {
 };
 const context = vm.createContext({
   document: { getElementById: element, createElement: makeElement },
+  // The answer frames' messages (renderAnswer); no frame posts here.
+  addEventListener: () => {},
   AbortController,
   TextDecoder,
   URL,

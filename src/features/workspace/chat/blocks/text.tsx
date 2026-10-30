@@ -5,7 +5,7 @@ import {
   useContext,
   useMemo,
 } from 'react';
-import { Streamdown } from 'streamdown';
+import { defaultRehypePlugins, Streamdown } from 'streamdown';
 import { Icon } from '@/components/ui/Icon';
 import {
   CALLOUT_CONTAINER_CLASS,
@@ -18,9 +18,11 @@ import type { CalloutProps, MdProps, RevealProps, StepProps } from '../schema';
 import { TableCell, TableFrame, TableHead, TableRow } from './ChatTable';
 import { Cites, elements } from './Cite';
 import { CodeBlock } from './CodeBlock';
+import { citedPassages, citeMarkers } from './citeMarkers';
 import { chatMath, MathSpan, prepareMath } from './math';
 
 const plugins = { math: chatMath };
+const rehypePlugins = [...Object.values(defaultRehypePlugins), citeMarkers];
 const TRAILING_NEWLINE = /\n$/;
 const LANGUAGE_CLASS = /language-(\S+)/;
 
@@ -103,7 +105,12 @@ const components = {
   ),
   // A `<picture>` source loads nothing.
   source: () => null,
-  span: MathSpan,
+  span: (props: ComponentProps<typeof MathSpan> & { 'data-cite'?: string }) =>
+    props['data-cite'] === undefined ? (
+      <MathSpan {...props} />
+    ) : (
+      <Cites passages={citedPassages(props['data-cite'])} />
+    ),
   // Markdown tables take the Table component's look, without Streamdown's
   // framed card and its copy, download and full-screen buttons.
   table: TableFrame,
@@ -149,6 +156,7 @@ export function Prose({
         className="contents [&>*:not(:last-child)]:mb-2 [&>p:last-child]:inline"
         components={components}
         plugins={plugins}
+        rehypePlugins={rehypePlugins}
       >
         {source}
       </Streamdown>
