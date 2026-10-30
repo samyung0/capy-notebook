@@ -32,11 +32,11 @@
 -- 2026-10-29, 20 in UAT and local), so the gates add up: production can hold
 -- 80 calls in flight on this route, and Cloudflare, the fallback, was measured only at 64, so an
 -- InferenceNet outage during a burst may leave calls slow or busy there.
--- OpenRouter MiniMax 3.1 Flash (Together, then Wafer since 2026-10-25; a chat
--- choice since 2026-10-24) serves chat alone, so all but one call is kept for
--- interactive use (the reserve must stay below the total). Together and Wafer
--- each held 16 calls at once in the 2026-10-23 probe (total p95 3.0 s and
--- 3.1 s), so the gate is 16.
+-- OpenRouter MiniMax 3.1 Flash (Together, then DigitalOcean since 2026-10-30; a
+-- chat choice since 2026-10-24) serves chat alone, so all but one call is kept
+-- for interactive use (the reserve must stay below the total). Together held 16
+-- calls at once in the 2026-10-23 probe (total p95 3.0 s) and both held 16 in
+-- the 2026-10-30 probe (slowest 1.7 s and 2.7 s), so the gate is 16.
 -- DeepSeek Flash (chat's default) runs on DeepSeek's own API (2500 concurrent
 -- requests per account, https://api-docs.deepseek.com/quick_start/rate_limit/)
 -- at Epo's 40 in flight with no reserve: chat and Generate take all 40 and

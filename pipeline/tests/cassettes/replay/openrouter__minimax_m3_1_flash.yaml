@@ -3,7 +3,7 @@ interactions:
       body:
         '{"model":"minimax/minimax-m3.1-flash","messages":[{"role":"user","content":"Call
         search_workspace with query photosynthesis. Do not answer until the tool result
-        is available."}],"provider":{"order":["together","wafer"],"allow_fallbacks":false},"reasoning":{"effort":"high"},"temperature":0.0,"tools":[{"type":"function","function":{"name":"search_workspace","description":"Search
+        is available."}],"provider":{"order":["together","digitalocean"],"allow_fallbacks":false},"reasoning":{"effort":"high"},"temperature":0.0,"tools":[{"type":"function","function":{"name":"search_workspace","description":"Search
         the user''s notes.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}}],"tool_choice":"auto","stream":true,"stream_options":{"include_usage":true}}'
       headers:
         accept:
@@ -82,7 +82,7 @@ interactions:
         '{"model":"minimax/minimax-m3.1-flash","messages":[{"role":"user","content":"Call
         search_workspace with query photosynthesis. Do not answer until the tool result
         is available."},{"role":"assistant","content":"","tool_calls":[{"id":"call_01a16c23f2967c42ac45c579","type":"function","function":{"name":"search_workspace","arguments":"{\"query\":\"photosynthesis\"}"}}],"reasoning":"We
-        need call tool and wait."},{"role":"tool","tool_call_id":"call_01a16c23f2967c42ac45c579","content":"{\"passages\":[]}"}],"provider":{"order":["together","wafer"],"allow_fallbacks":false},"reasoning":{"effort":"high"},"temperature":0.0,"tools":[{"type":"function","function":{"name":"search_workspace","description":"Search
+        need call tool and wait."},{"role":"tool","tool_call_id":"call_01a16c23f2967c42ac45c579","content":"{\"passages\":[]}"}],"provider":{"order":["together","digitalocean"],"allow_fallbacks":false},"reasoning":{"effort":"high"},"temperature":0.0,"tools":[{"type":"function","function":{"name":"search_workspace","description":"Search
         the user''s notes.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}}],"tool_choice":"auto","stream":true,"stream_options":{"include_usage":true}}'
       headers:
         accept:

@@ -2058,7 +2058,11 @@ those services start.
    and `pnpm env:check` fail with "unknown configuration keys: ZAI_API_KEY":
    delete the line, and put the OpenRouter key in `OPENROUTER_API_KEY`. The
    `production` environment needs `OPENROUTER_API_KEY` before a production
-   deploy, since the renderer writes an empty key without it. Uploaded audio
+   deploy, since the renderer writes an empty key without it. OpenRouter's
+   Sensitive Info guardrail stays off on every key the platform uses, UAT and
+   production alike: its redaction rewrites the request text the model reads,
+   such as SVG coordinates turned into `[PHONE]`, and the model then rewrites
+   correct work (Epo 2026-10-30). Uploaded audio
    needs `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
    (variable, the workspace's `…/compatible-mode/v1` URL with no trailing
    slash; the pipeline refuses to start with any other ending) from an Alibaba

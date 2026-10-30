@@ -284,8 +284,8 @@ async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
     )
 
 
-def test_minimax_runs_on_together_then_wafer_at_the_chat_pins_effort():
-    """Q224: MiniMax 3.1 Flash runs on Together, then Wafer (Epo 2026-10-25), and its
+def test_minimax_runs_on_together_then_digitalocean_at_the_chat_pins_effort():
+    """Q224: MiniMax 3.1 Flash runs on Together, then DigitalOcean (Epo 2026-10-30), and its
     thinking levels map onto OpenRouter's efforts."""
     spec = _spec(
         provider_slug="openrouter",
@@ -306,7 +306,7 @@ def test_minimax_runs_on_together_then_wafer_at_the_chat_pins_effort():
     )
     assert body["model"] == "minimax/minimax-m3.1-flash"
     assert body["provider"] == {
-        "order": ["together", "wafer"],
+        "order": ["together", "digitalocean"],
         "allow_fallbacks": False,
     }
     assert body["reasoning"] == {"effort": "medium"}

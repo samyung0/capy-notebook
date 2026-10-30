@@ -603,7 +603,8 @@ named provider directly. These exact routing exceptions are allowed:
   Flash (`minimax/minimax-m3.1-flash`, a chat choice since 2026-10-24, Q224,
   migration `0112_chat_sources.sql`), which sends the chat pin's effort
   (`low`, `mid` as `medium`, `high`; `MINIMAX_EFFORTS`) at temperature 0.2 and
-  goes to Together, then Wafer (Epo 2026-10-25). Every OpenRouter
+  goes to Together, then DigitalOcean (Epo 2026-10-30; Wafer, its fallback
+  from 2026-10-25, stopped serving the model). Every OpenRouter
   model, GLM included, takes its provider list from `OPENROUTER_ROUTING` in
   `pipeline/elitellm/client.py`: an
   ordered `order` with `allow_fallbacks: false`, so OpenRouter tries the listed
@@ -822,7 +823,7 @@ InferenceNet, version 7 at this rate on DeepSeek's API and version 8 at
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
 decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
 price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
-1200 (Together's list price, which Wafer matches, 2026-10-24), embedding 40,
+1200 (Together's list price, which DigitalOcean matches, 2026-10-24), embedding 40,
 reranker 200 (Alibaba qwen3-rerank's $0.10, migration 0134).
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
@@ -1880,8 +1881,8 @@ OpenRouter DeepSeek V4 Flash 0731 32/0 (ingest-only, so no interactive
 reserve) and V4.1 Flash 1017 40/20 (ghost text up to 40, captions up to 20;
 page reads lease the `vlm_page` gate instead, Epo 2026-10-29; UAT and local
 8/4),
-MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together and Wafer each held 16
-calls at once in the 2026-10-23 probe), Qwen
+MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together and DigitalOcean each held 16
+calls at once in the 2026-10-30 probe), Qwen
 embedding 200/80 (total/interactive reserve). Existing settings remain, so an
 environment that already has rows changes them in Ops.
 DeepSeek and DeepInfra totals follow their published account/model concurrency
