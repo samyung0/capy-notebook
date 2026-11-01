@@ -11,6 +11,14 @@ on:
   schedule:
     - cron: "37 18 * * *"
   workflow_dispatch:
+    inputs:
+      # The note layout the collaboration server runs (todo-blocksuite-spike.md):
+      # a blocks run is by hand only until the cut; T5 skips on blocks.
+      layout:
+        description: Note layout
+        type: choice
+        options: [plate, blocks]
+        default: plate
   workflow_call:
     inputs:
       revision:
@@ -93,6 +101,7 @@ jobs:
         run: uv run --extra test pytest -m stack pipeline/tests/stack
         env:
           E2E_PREBUILT_IMAGES: "true"
+          COLLABORATION_DOCUMENT_LAYOUT: ${{ inputs.layout == 'blocks' && 'blocks' || '' }}
       - if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

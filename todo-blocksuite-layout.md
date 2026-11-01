@@ -240,7 +240,7 @@ import write blocks directly, so they stop mattering.
 - **N5** `textIndent` (DOCX paste only) is dropped.
 - **N6** a cell or caption's marks inside multi-paragraph text are kept, its
   paragraph breaks become `\n`.
-- **N8** a media width in percent becomes pixels against a 768 px reference and back (D21).
+- **N8** a media width in percent becomes pixels against a 768 px reference and back (D21): images, and from 2026-11-01 video, Mermaid, chart, plot and graph blocks (not built yet).
 - **N7** a paragraph ending on an inline void (an inline equation) gets the
   trailing empty text leaf Slate's normalization adds.
 

@@ -869,7 +869,13 @@ Legend:
   column has no fixed width even today (768 px half width, 1280 px full,
   `NoteEditorCore.tsx:263`, `:2311`). Images use `affine:image`'s
   `width`/`height` and its own resize handles; `widthPercent` (ours) is gone.
-  Narrow screens clamp a wide image to the column. While the bridge stands,
+  Narrow screens clamp a wide image to the column.
+  **Extended 2026-11-01 (Epo):** every block whose width could break when it
+  is dragged onto the canvas uses pixels too: `capy:video` (YouTube),
+  `capy:mermaid`, `capy:chart`, `capy:plot`, `capy:graph`. The seed and
+  `value()` convert them as N8 does for images. Column splits inside a column
+  group stay fractions of the group (they are relative to each other, not to
+  the page). Not built yet: queued after the server memory dig. While the bridge stands,
   `value()` converts to the stored `"<n>%"` against a 768 px reference
   (clamped to 20–100) and the seed converts back (N8). Open: whether the
   other resizable blocks (YouTube, Mermaid, chart, plot, graph) share the
@@ -949,6 +955,15 @@ not for step 1.
   `item_refs` (344873b68, 2026-10-17, for live-room effects) never had a
   caller: effects were built in Go from stored content (b95d392ce) and Q417
   reads the room through `ExtractIndexBlocks`.
+
+- **Agent visibility lane on blocks: manual only** (Epo 2026-11-01). The
+  workflow takes a `layout` input (plate or blocks) when run by hand; nightly
+  and promotion runs stay on Plate.
+- **Merge view, browser late merge and re-key for blocks: on hold** (Epo
+  2026-11-01), with the canvas work.
+- **Room swap leftovers, Q6 read-only rendering, the porting plan, D10: on
+  hold** (Epo 2026-11-01): the AFFiNE and workspace/study plan will change
+  them.
 
 ## Decisions for Epo
 
