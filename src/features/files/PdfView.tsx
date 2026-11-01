@@ -24,6 +24,7 @@ import { FileModeControl, useFileMode } from './FileModeControl';
 import { FileError } from './FileStates';
 import { FileHeaderTarget } from './fileModeContext';
 import { PdfAnnotations } from './PdfAnnotations';
+import { keepPdfPlace } from './pdfPlace';
 import { scrollToCenter } from './scrollToCenter';
 
 // Keep PDF rendering available under the app's CSP and while offline.
@@ -364,6 +365,12 @@ export default function PdfView({
   ]);
 
   useEffect(() => {
+    const scroller = scrollRef.current;
+    const content = containerRef.current;
+    return scroller && content ? keepPdfPlace(scroller, content) : undefined;
+  }, []);
+
+  useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
@@ -447,7 +454,10 @@ export default function PdfView({
         </Toolbar>
       )}
       <div ref={setStrip} />
-      <div className="min-h-0 flex-1 overflow-auto" ref={scrollRef}>
+      <div
+        className="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
+        ref={scrollRef}
+      >
         <div
           className="relative flex min-h-full w-max min-w-full flex-col items-center [&_.react-pdf__Page__textContent_span]:cursor-inherit"
           ref={containerRef}

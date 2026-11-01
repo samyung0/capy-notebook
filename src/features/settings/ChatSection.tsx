@@ -37,7 +37,7 @@ export function ChatSection() {
         <Select
           disabled={!me}
           onValueChange={(value) => setChatPrefs({ steps: value as ChatSteps })}
-          value={me?.chatSteps ?? 'normal'}
+          value={me?.chatSteps ?? 'verbose'}
         >
           <SelectTrigger aria-label={m.settings_chat_steps()} layout="row">
             <SelectValue />

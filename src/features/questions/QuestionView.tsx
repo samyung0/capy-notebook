@@ -118,8 +118,11 @@ function Figure({
   block: ImageBlock | GraphBlock;
   src: string | undefined;
 }) {
+  // The stored size is the image's own pixels: shown at most that wide and at
+  // most a little wider than a chart (max-w-md), so a large upload or a 2x
+  // screenshot does not fill the question.
   return (
-    <figure className="mx-auto w-fit max-w-full">
+    <figure className="mx-auto w-fit max-w-[min(100%,36rem)]">
       <img
         alt={block.description ?? ''}
         className={cn(
@@ -259,19 +262,17 @@ export function answerRowClass(state?: RowState) {
     state === 'selected' && 'border-solid-accent-1 text-tint-accent-1-fg',
     state === 'right' && 'border-solid-success',
     state === 'wrong' && 'border-solid-error',
-    state === 'missed' && 'border-solid-success border-dashed'
+    state === 'missed' && 'border-solid-success'
   );
 }
 
-/** A key badge's colours for a row state: filled when chosen or marked,
- * outlined in green for a missed correct answer. */
+/** A key badge's colours for a row state: filled when chosen or checked. */
 export function optionKeyClass(state?: RowState) {
   return cn(
     state === 'selected' && 'bg-solid-accent-1 text-surface',
-    state === 'right' && 'bg-tint-success-fg text-surface',
-    state === 'wrong' && 'bg-tint-error-fg text-surface',
-    state === 'missed' &&
-      'text-tint-success-fg ring-[1.5px] ring-tint-success-fg ring-inset'
+    (state === 'right' || state === 'missed') &&
+      'bg-tint-success-fg text-surface',
+    state === 'wrong' && 'bg-tint-error-fg text-surface'
   );
 }
 

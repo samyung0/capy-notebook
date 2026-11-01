@@ -170,7 +170,7 @@ lane"), including the five that came with credit top-ups (`invoice.paid`,
 `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`,
 `checkout.session.async_payment_succeeded`); after a sandbox top-up,
 `invoice.paid` answers 200 and is processed in `webhook_events`. The Free row of
-`plan_limits` holds the 200-credit monthly allowance.
+`plan_limits` holds the 300-credit monthly allowance.
 
 The sandbox's failed-payment settings match the runbook ("Failed payments"):
 one-off invoices (auto-reload) retry the card three times a day apart and are

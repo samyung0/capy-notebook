@@ -260,6 +260,14 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, scope chatScope
 	}
 	defer charge.release(ctx)
 
+	if conv.ID == "" {
+		conv, err = a.s.CreateConversation(ctx, userID, wsID, titleFrom(req.Text))
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+	}
+
 	// History must be loaded before the current user row so Python sees the
 	// question once, as `query`.
 	prompt, err := a.s.ConversationPrompt(ctx, conv.ID)
@@ -287,9 +295,10 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, scope chatScope
 	// that cannot reach the pipeline hangs up on it.
 	pipeCtx, cancelPipe := context.WithCancel(ctx)
 	defer cancelPipe()
-	run := &runningTurn{convID: conv.ID, cancelPipe: cancelPipe}
+	run := newRunningTurn(userID, conv.ID, cancelPipe)
 	a.turns.Store(assistant.ID, run)
 	defer a.turns.Delete(assistant.ID)
+	a.publishChatTurn(ctx, userID, conv.ID, "streaming")
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -298,10 +307,13 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, scope chatScope
 
 	// The browser reads the events on its own writer: the relay never waits
 	// for it, and a browser that left misses the rest of the turn, which goes
-	// on. The response closes after the last event is written.
+	// on (another tab may follow it, chat_resume.go). The response closes
+	// after the last event is written.
 	browser := newBrowserWriter(w, flusher.Flush)
 	defer browser.finish()
-	send := browser.send
+	run.join(browser)
+	defer run.end()
+	send := run.send
 
 	send(map[string]any{
 		"type":             "start",
@@ -398,10 +410,10 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, scope chatScope
 		case err != nil:
 			obs.CaptureErr(saveCtx, err, map[string]string{"stage": "chat_stopped_calls"})
 		case !added:
-			a.finalizeTurn(saveCtx, assistant.ID, status, saved)
+			a.finalizeTurn(saveCtx, run, assistant.ID, status, saved)
 		}
 	} else {
-		a.finalizeTurn(saveCtx, assistant.ID, status, saved)
+		a.finalizeTurn(saveCtx, run, assistant.ID, status, saved)
 	}
 	charge.settle(saveCtx)
 
@@ -485,12 +497,13 @@ func (a *api) chatTurnContext(ctx context.Context, userID, wsID string, req chat
 	return turn, err
 }
 
-// resolveConversation opens a new conversation in the turn's scope or loads
-// the user's own, which must be of that scope (an account conversation has
-// workspace "").
+// resolveConversation loads the user's own conversation, which must be of the
+// turn's scope (an account conversation has workspace ""). A new one is only
+// scoped here (no ID): it is created once the turn's checks pass, so a refused
+// first send leaves no empty chat behind.
 func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID string) (store.Conversation, error) {
 	if convID == "" {
-		return a.s.CreateConversation(ctx, userID, wsID, "")
+		return store.Conversation{WorkspaceID: wsID}, nil
 	}
 	conv, err := a.s.GetConversation(ctx, userID, convID)
 	if err != nil {
@@ -554,6 +567,7 @@ func (a *api) relayChat(
 		"workspaceOnly":      turn.workspaceOnly,
 		"studyPreferences":   turn.studyPreferences,
 		"officeTools":        prompt.OfficeTools,
+		"editTools":          prompt.EditTools,
 	}
 	// One field says the turn's scope (Epo 2026-10-27); a workspace turn keeps
 	// its own fields beside it.

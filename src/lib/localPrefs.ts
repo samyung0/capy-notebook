@@ -29,6 +29,11 @@ export const PREF_KEYS = {
   noteToolbar: 'capy.note.toolbar',
   openChapters: (workspaceId: string) =>
     `capy.workspace.openChapters.${workspaceId}`,
+  /** The conversation a mounted chat panel shows, per workspace or for the
+   * account chat (null), so a reload or a reopened tab comes back to it (Epo
+   * 2026-10-27, T19). */
+  openChat: (workspaceId: string | null) =>
+    `capy.chat.open.${workspaceId ?? 'account'}`,
   /** A Quick review batch: its items, when it began, which are done; per
    * workspace, or `plan-<id>` per plan. */
   quickReview: (scope: string) => `capy.quickReview.${scope}`,
@@ -94,6 +99,14 @@ export function useLocalPref<T>(
 export function writePref(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // per-viewer convenience only
+  }
+}
+
+export function removePref(key: string): void {
+  try {
+    localStorage.removeItem(key);
   } catch {
     // per-viewer convenience only
   }

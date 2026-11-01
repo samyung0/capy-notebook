@@ -131,6 +131,8 @@ class Region:
 
 # Milliseconds from the start of a recording.
 AUDIO_SPACE = "audio-ms"
+# A note chunk's regions name its blocks rather than places on a page.
+NOTE_BLOCK_SPACE = "note-block"
 
 
 @dataclass

@@ -544,7 +544,6 @@ func TestInternalMaterialRejectsEmptyContent(t *testing.T) {
 		{"kind": "quiz", "questions": []any{}},
 		{"kind": "flashcards", "cards": []any{}},
 		{"kind": "mindmap", "content": ""},
-		{"kind": "note", "content": "   "},
 	} {
 		body["workspaceId"], body["userId"] = "ws_e2e_private", "u_editor"
 		body["assistantMessageId"], body["toolCallId"] = msgID, "call_"+body["kind"].(string)
@@ -553,6 +552,44 @@ func TestInternalMaterialRejectsEmptyContent(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("%s: status = %d body=%s", body["kind"], rec.Code, rec.Body.String())
 		}
+	}
+}
+
+// A note sent with blank content is the blank note a user's new note starts
+// as, and the receipt tells the model it is blank (Epo 2026-10-29).
+func TestInternalMaterialCreatesABlankNoteFromBlankContent(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret,
+		noteBody(msgID, "call_blank", "Blank "+msgID, " \n\n "))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	receipt := decodeReceipt(t, rec)
+	cleanupMaterial(t, st, receipt.Effect.Resource.ID)
+	var out struct {
+		Notice string `json:"notice"`
+		Effect struct {
+			BlockIDs []string `json:"blockIds"`
+		} `json:"effect"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	note, err := st.GetMaterial(t.Context(), receipt.Effect.Resource.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := materialdoc.Parse(note.Content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blank := materialdoc.Empty().Value[0]
+	if len(doc.Value) != 1 || doc.Value[0]["type"] != blank["type"] || fmt.Sprint(doc.Value[0]["children"]) != fmt.Sprint(blank["children"]) {
+		t.Fatalf("note = %s, want the blank note", note.Content)
+	}
+	if !strings.Contains(out.Notice, "created blank") || !slices.Equal(out.Effect.BlockIDs, []string{doc.Value[0]["id"].(string)}) {
+		t.Fatalf("receipt = %s", rec.Body.String())
 	}
 }
 

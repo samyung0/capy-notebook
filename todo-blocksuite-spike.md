@@ -941,10 +941,10 @@ not for step 1.
   accepts: still far below an Office room. `prop:collapsed` stays (D14
   folding), defaults stay written, and `sys:children` stays on every block
   (dropping it orphans a child when two peers add a first child at once).
-- **Leave prompt, Q561 (on main 0fd074a02):** Plate notes, flashcard sets and
-  quizzes take the narrow Q465 rule on `editor/narrow-leave`. When main is
-  next merged here, fold this branch's `markUnstored`/`leave: 'unstored'`
-  into main's version so one leave-prompt path remains.
+- **Leave prompt, Q561 (on main 869e8e62b):** Plate notes, flashcard sets and
+  quizzes take the narrow Q465 rule. Merged here 2026-11-01: this branch's
+  `markUnstored`/`leave: 'unstored'` is gone, and the blocks note uses main's
+  one ItemRoom leave prompt.
 - **Dead Rust helpers deleted.** `notes::index_text::from_doc` and
   `item_refs` (344873b68, 2026-10-17, for live-room effects) never had a
   caller: effects were built in Go from stored content (b95d392ce) and Q417

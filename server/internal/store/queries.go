@@ -1371,6 +1371,9 @@ type MaterialDraft struct {
 	Cards [][2]string
 	// Mindmap and diagram markdown (a mermaid block), or a note's document.
 	Content string
+	// Blank is a note an agent sent without content, stored as the blank note
+	// a user's new note starts as (materialdoc.Empty), so it has no text.
+	Blank bool
 	// The chapter the material is filed in; nil leaves it unfiled.
 	ChapterID *string
 	// Or the chapter's name: one of that name in any case is reused, else it
@@ -1391,7 +1394,8 @@ type MaterialDraft struct {
 
 // material builds the validated Plate document for the draft's kind. Empty
 // generated output is refused here for every kind, so neither entry path can
-// persist a blank artifact.
+// persist a blank artifact, except a note an agent asked for blank (Blank,
+// Epo 2026-10-29).
 func (d MaterialDraft) material() (Material, error) {
 	mt := Material{
 		ID: d.ID, CreatedBy: d.ActorUserID, WorkspaceID: d.WorkspaceID, WorkspaceName: d.WorkspaceName,
@@ -1435,7 +1439,7 @@ func (d MaterialDraft) material() (Material, error) {
 		if err != nil {
 			return Material{}, err
 		}
-		if strings.TrimSpace(text) == "" {
+		if strings.TrimSpace(text) == "" && !d.Blank {
 			return Material{}, ErrEmptyMaterial
 		}
 		mt.Content = d.Content
@@ -1456,17 +1460,18 @@ func decodeQuestions(raw json.RawMessage) ([]json.RawMessage, error) {
 	return questions, nil
 }
 
-// CreateMaterialDraft persists a draft without a receipt (the Generate path
-// and the bank page's copy).
+// CreateMaterialDraft persists a draft without a receipt (the Generate path,
+// the bank page's copy and the starter workspace's note, with its embedded
+// rows).
 func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (Material, error) {
 	mt, err := draft.material()
 	if err != nil {
 		return Material{}, err
 	}
-	if draft.ChapterName == "" {
+	if draft.ChapterName == "" && len(draft.Embedded) == 0 {
 		return s.CreateMaterial(ctx, mt)
 	}
-	if mt.ChapterID != nil {
+	if draft.ChapterName != "" && mt.ChapterID != nil {
 		return Material{}, fmt.Errorf("%w: chapter id and chapter name are exclusive", materialdoc.ErrInvalid)
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -1474,11 +1479,17 @@ func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (M
 		return Material{}, err
 	}
 	defer tx.Rollback(ctx)
-	if mt.ChapterID, err = resolveUploadChapterID(ctx, tx, mt.WorkspaceID, nil, draft.ChapterName); err != nil {
-		return Material{}, err
+	if draft.ChapterName != "" {
+		if mt.ChapterID, err = resolveUploadChapterID(ctx, tx, mt.WorkspaceID, nil, draft.ChapterName); err != nil {
+			return Material{}, err
+		}
 	}
 	id, err := s.createMaterialTx(ctx, tx, mt)
 	if err != nil {
+		return Material{}, err
+	}
+	mt.ID = id
+	if err := s.createEmbeddedTx(ctx, tx, mt, draft.Embedded); err != nil {
 		return Material{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

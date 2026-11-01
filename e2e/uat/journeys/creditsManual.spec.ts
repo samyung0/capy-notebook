@@ -15,8 +15,8 @@ import {
   creditsRow,
   DECLINES,
   declinedReload,
+  expectBalanceOnUsage,
   expectInvoice,
-  expectPurchasedOnUsage,
   expectVoided,
   MICROS,
   nested,
@@ -85,7 +85,7 @@ async function topUp(run: UatRun, owner: Actor, since: number) {
   );
   const after = await creditsRow(run, owner);
   expect(after.purchased_micros - before).toBe(purchase.credits_micros);
-  await expectPurchasedOnUsage(page, after.purchased_micros);
+  await expectBalanceOnUsage(page, owner);
   await processedEvent(
     run,
     'checkout.session.completed',

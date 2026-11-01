@@ -48,12 +48,12 @@ export const buttonVariants = cva(BASE_BUTTON_STYLE, {
       'ghost-link': 'border-none text-link hover:text-link-hover',
       'ghost-muted': 'border-none text-fg-muted hover:text-fg',
       gray: 'border border-transparent bg-page text-fg hover:bg-page-hover',
-      // On a frosted panel the card-coloured fills turn to the frost's
-      // (tailwind.css); a hover still tints them.
+      // On a frosted panel the card-coloured fills and their hover turn to
+      // the frost's (tailwind.css).
       outline:
-        'border border-line bg-surface frosted:not-hover:bg-(--frost-fill) text-fg hover:bg-surface-hover-bg/80',
+        'border border-line bg-surface frosted:bg-(--frost-fill) text-fg frosted:hover:bg-(--frost-fill-hover) hover:bg-surface-hover-bg/80',
       surface:
-        'border border-transparent bg-surface frosted:not-hover:bg-(--frost-fill) text-fg hover:bg-surface-hover-bg',
+        'border border-transparent bg-surface frosted:bg-(--frost-fill) text-fg frosted:hover:bg-(--frost-fill-hover) hover:bg-surface-hover-bg',
     },
   },
 });

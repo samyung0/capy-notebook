@@ -889,7 +889,6 @@ export const EMBED_CATALOG = {
         "lang": "chart",
         "body": "json"
       },
-      "chat": "Chart",
       "questionBlock": true,
       "questionMedia": true,
       "surfaces": [
@@ -1002,7 +1001,6 @@ export const EMBED_CATALOG = {
         "lang": "plot",
         "body": "json"
       },
-      "chat": "Plot",
       "questionBlock": true,
       "questionMedia": true,
       "surfaces": [
@@ -1178,7 +1176,6 @@ export const EMBED_CATALOG = {
         "lang": "html-embed",
         "body": "yaml"
       },
-      "chat": "HtmlEmbed",
       "surfaces": [
         "chat",
         "note",

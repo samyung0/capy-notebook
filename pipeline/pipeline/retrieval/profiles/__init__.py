@@ -24,8 +24,8 @@ class Profile:
     messages: Callable[..., list[dict[str, Any]]]
     # The sources switch's notes before a learner message.
     mode_lines: dict[bool, str]
-    # Q221's send-back texts: (writes, as a tool result) -> text.
-    send_back: dict[tuple[bool, bool], str]
+    # Q221's send-back texts: can the learner write -> text.
+    send_back: dict[bool, str]
 
 
 def of(ctx: ToolContext) -> Profile:

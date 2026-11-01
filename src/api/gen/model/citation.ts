@@ -7,7 +7,10 @@
 import type { Region } from './region.ts';
 
 export interface Citation {
+  /** @nullable */
+  blockIds?: string[] | null;
   chunkId?: string;
+  excerptId?: string;
   fileId: string;
   fileName: string;
   kind?: string;

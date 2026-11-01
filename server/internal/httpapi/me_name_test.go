@@ -107,7 +107,7 @@ func TestChatPrefs(t *testing.T) {
 		}
 		return me.ChatSteps, me.ChatSendKey
 	}
-	if steps, key := prefs(); steps != "normal" || key != "enter" {
+	if steps, key := prefs(); steps != "verbose" || key != "enter" {
 		t.Fatalf("defaults = %q, %q", steps, key)
 	}
 	for _, bad := range []map[string]any{{"steps": "loud"}, {"steps": ""}, {"sendKey": "space"}} {
@@ -115,12 +115,12 @@ func TestChatPrefs(t *testing.T) {
 			t.Fatalf("%v: status %d, want 422", bad, rec.Code)
 		}
 	}
-	for _, body := range []map[string]any{{"steps": "verbose"}, {"sendKey": "shift_enter"}} {
+	for _, body := range []map[string]any{{"steps": "normal"}, {"sendKey": "shift_enter"}} {
 		if rec := doReq(t, h, http.MethodPatch, "/api/me/chat", "", body); rec.Code != http.StatusNoContent {
 			t.Fatalf("%v: status %d: %s", body, rec.Code, rec.Body.String())
 		}
 	}
-	if steps, key := prefs(); steps != "verbose" || key != "shift_enter" {
+	if steps, key := prefs(); steps != "normal" || key != "shift_enter" {
 		t.Fatalf("prefs = %q, %q", steps, key)
 	}
 }

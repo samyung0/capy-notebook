@@ -12,6 +12,7 @@ import {
   parseMaterialDocument,
 } from './document';
 import { MaterialRenderProvider } from './MaterialRenderContext';
+import { registerNoteBlocks } from './noteCitation';
 import { staticNoteComponents } from './staticNodeComponents';
 import { StaticMaterialKit } from './staticPlugins';
 import { UnsupportedBlockPlugin } from './UnsupportedBlock';
@@ -118,6 +119,13 @@ function KeyedStatic({
       className={cn('slate-editor', className)}
       data-slate-editor
       data-slate-node="value"
+      ref={(root) => {
+        if (root)
+          registerNoteBlocks(
+            root,
+            value.map((block) => block.id)
+          );
+      }}
     >
       {value.map((block, index) => {
         const path = [index];

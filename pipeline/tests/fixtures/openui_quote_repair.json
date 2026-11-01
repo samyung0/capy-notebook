@@ -1,0 +1,32 @@
+[
+  {
+    "name": "a textbook quote in Md reads as literal quotes (conv_a8be00792c bigpic)",
+    "line": "bigpic = Md(\"- In an **MRI**, contrast comes from *the density of nuclei* — \"usually hydrogen nuclei—protons\" in the source's words.\", [2])",
+    "repaired": "bigpic = Md(\"- In an **MRI**, contrast comes from *the density of nuclei* — \\\"usually hydrogen nuclei—protons\\\" in the source's words.\", [2])"
+  },
+  {
+    "name": "quotes around a comma and a phrase read as literal (conv_a8be00792c risk)",
+    "line": "risk = Md(\"Radiation above visible light \"carries some health hazards… known to cause cell damage,\" and diagnostic X-rays use \"extremely low\" intensity.\", [1])",
+    "repaired": "risk = Md(\"Radiation above visible light \\\"carries some health hazards… known to cause cell damage,\\\" and diagnostic X-rays use \\\"extremely low\\\" intensity.\", [1])"
+  },
+  {
+    "name": "a quoted word in a table cell",
+    "line": "r1 = Row([\"Contrast from\", \"the \"density\" of nuclei\"])",
+    "repaired": "r1 = Row([\"Contrast from\", \"the \\\"density\\\" of nuclei\"])"
+  },
+  {
+    "name": "escaped quotes already parse and stay as written",
+    "line": "s3 = Step(\"3. Slam them into the target\", \"\\\"When they strike the target, X-rays are produced.\\\" Much of the energy becomes heat.\")",
+    "repaired": "s3 = Step(\"3. Slam them into the target\", \"\\\"When they strike the target, X-rays are produced.\\\" Much of the energy becomes heat.\")"
+  },
+  {
+    "name": "a quote before a comma still fails and stays as written",
+    "line": "risk = Md(\"X-rays use \"extremely low\", which buys information.\")",
+    "repaired": "risk = Md(\"X-rays use \"extremely low\", which buys information.\")"
+  },
+  {
+    "name": "an unfinished statement mid-stream stays as written",
+    "line": "bigpic = Md(\"contrast comes from — \"usually hydrogen",
+    "repaired": "bigpic = Md(\"contrast comes from — \"usually hydrogen"
+  }
+]

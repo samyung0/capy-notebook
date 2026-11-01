@@ -570,16 +570,16 @@ answer holds only its rendered DOM, so `copyAnswer` (`chat/answerCopy.ts`, the
 answer's `onCopy`) also writes `application/x-capy-answer` when the selection
 lies inside one answer: a list of plain-Markdown blocks in the note format,
 a callout carried as its variant plus its body (`chat/answerClipboard.ts`).
-Each OpenUI block renders inside a `display: contents` element (`data-ui`)
-that knows its node (`library.tsx`). Only the blocks holding the selection's
-two ends can be partly selected: every block between them is rebuilt from its
-props (every tab, a closed reveal or accordion item's body, a chart, plot or
-html-embed as its fence), and a partly selected one is read from its DOM up
-to the selection's end, keeping its shape (a callout stays a callout with the
-selected text, a step a list item). Charts, plots, embeds and formulas
+Each answer block renders inside a `display: contents` element that knows its
+Markdown segment (`chat/MarkdownAnswer.tsx`, `answerCopy.ts`). Only the blocks
+holding the selection's two ends can be partly selected: every block between
+them is rebuilt from its source without its citation markers (every tab, a
+closed reveal's body, a chart, plot or html-embed as its fence), and a partly
+selected one is read from its DOM up to the selection's end, keeping its shape
+(a callout stays a callout with the selected text). Charts, plots, embeds and formulas
 (`data-tex`) copy whole once touched; citations, buttons and asked questions
-are left out; tabs, reveals and accordion items become a bold title over
-their content. `ChatAnswerPastePlugin` (`pastePlugins.ts`) reads each block
+are left out; tabs and reveals become a bold title over their content; a
+library figure copies as its caption. `ChatAnswerPastePlugin` (`pastePlugins.ts`) reads each block
 like agent Markdown (plain, no MDX) and wraps callout blocks. A selection
 that runs past the answer into its own message's model label or sources (a
 triple-click on the last line, `data-chat-message`) stops at the answer's
@@ -2074,7 +2074,7 @@ design, option d), and the nudge's release file on 2026-10-17.
   through the new version's checks as offline edits do; a refusal there
   gives the usual refused draft. A source whose edits this device stored no
   longer counts as unsaved, so Reload brings no "Leave site?" prompt (a
-  source or item editor whose storage failed still asks).
+  note, source or item editor whose storage failed still asks).
 - **The next page change loads the new app**: any refused room (an editor's
   or a reader's) marks the update available, as the nudge below does. Drafts made by a refused client never carry
   normalization damage: it never synced the new content.
@@ -2221,6 +2221,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   2026-10-28, Q476: accepted with no client handling; the normal deploy
   order, backend before site, avoids it). Its deploy request names "client
   protocol 22 -> 23".
+  The PPTX Edit strip's scrollbar fit (pin 383d00566: a strip thumbnail
+  takes the width its button leaves; Epo 2026-10-30, Q588) raised
+  `CLIENT_PROTOCOL` to 24 and `MIN_SOURCE` to 24, so every source tab on the
+  older pin (protocols 20 to 23) reloads; `MIN_MATERIAL` stays 22. Its deploy
+  request names "client protocol 23 -> 24, source 20 -> 24".
 
 #### When to bump
 
@@ -2343,7 +2348,8 @@ recorder stores nothing more. What was stored stays; nothing reaches the
 editor through REST-backed dialogs offline anyway. When storage fails
 (private mode, a full disk) editing continues in memory under the
 `offline-unstored` banner; after a failed write the next one holds the whole
-document, and the banner goes back to `offline` only once that lands. `navigator.storage.persist()` is asked once, at the
+document, and the banner goes back to `offline` only once that lands. Until
+then closing or reloading the tab asks while an edit has no receipt (Q561). `navigator.storage.persist()` is asked once, at the
 first row written while offline, except on Firefox, which prompts. Safari
 deletes script storage of a site not visited for 7 days, and private windows
 delete it on close. Rows of a note the account no longer has go on a 404, or a 403
@@ -2387,7 +2393,13 @@ room joins (`src/features/notes/merge/`):
   stops under the `offline-limit` strip, and the bind merges the copy as
   last written. An edit that inserts more than one character, which no
   keystroke does (a paste of text or of blocks, `insertsMany`), writes the
-  typing before it first, so the bound drops only that edit (Q410, Q421).
+  typing before it first, so the bound drops only that edit (Q410, Q421). A
+  write storage refuses is reported (`onUnstored`) until one lands or the
+  copy stops: meanwhile closing or reloading the tab asks (Q568). The
+  refused value is written again at the copy's next save moment (`pagehide`,
+  unmount, a pause, the bind), unless newer typing replaced it, with no
+  retry timer; what still-failing storage refuses at an in-app unmount is
+  lost, as Q465 accepts (Q569).
   A paused editor
   (a room swap before its bind) writes its copy, stops recording and lets go
   of its lock, so the next mount adopts it (Q409). An unreadable copy
@@ -3524,10 +3536,10 @@ opens with the draft read-only for copying until Reload (`QuizRecovery`,
 naming another room (a discard) does the same with the edits as a draft of
 the old lineage. An eviction notice's `mode` decides its close: a drain
 (access widened; the room stored first) rejoins with the document as it is,
-a discard replaces the room as a moved one. Leaving
-the tab or navigating in the app while an
-item room holds edits the server has not acknowledged asks first
-(`unsentItems.ts`).
+a discard replaces the room as a moved one. Navigating in the app never
+asks; closing or reloading the tab asks only while this device's draft
+storage fails and the room has not acknowledged an edit (Q561, as notes and
+sources; [error-handling.md](error-handling.md#collaborative-source-failures)).
 
 Flashcard sets edit live (live-items, Epo 2026-10-10). Each set has its own
 Yjs document, `material:<id>:schema:<n>` like a note's: the root map `cards`

@@ -1,6 +1,5 @@
 import { useDraggable, useDropLine } from '@platejs/dnd';
 import { ResizeHandle } from '@platejs/resizable';
-import { getTableColumnCount } from '@platejs/table';
 import {
   TablePlugin,
   TableProvider,
@@ -27,6 +26,7 @@ import { useMemo, useRef } from 'react';
 import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
 import { Popover, PopoverAnchor } from '@/components/ui/Popover';
 import { isTableSize } from '@/features/materials/document';
+import { tableColumnWidths } from '@/features/materials/tableColumns';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -39,7 +39,6 @@ import {
   TH_CLASS,
 } from './nodeStyles';
 
-const DEFAULT_COLUMN_WIDTH = 120;
 const DEFAULT_ROW_HEIGHT = 48;
 const TABLE_GRIP_COLUMN_WIDTH = 8;
 
@@ -56,13 +55,10 @@ function TableElementContent({ children, ...props }: PlateElementProps) {
   const tableRef = useRef<HTMLTableElement>(null);
   const { marginLeft, props: tableProps } = useTableElement();
   const colSizes = useTableColSizes();
-  const resolvedColSizes = useMemo(() => {
-    const columnCount = getTableColumnCount(props.element as TTableElement);
-    return Array.from({ length: columnCount }, (_, index) => {
-      const size = colSizes[index];
-      return isTableSize(size) && size > 0 ? size : DEFAULT_COLUMN_WIDTH;
-    });
-  }, [colSizes, props.element]);
+  const resolvedColSizes = useMemo(
+    () => tableColumnWidths(props.element as TTableElement, colSizes),
+    [colSizes, props.element]
+  );
   const tableWidth =
     resolvedColSizes.reduce((total, width) => total + width, 0) +
     (readOnly ? 0 : TABLE_GRIP_COLUMN_WIDTH);

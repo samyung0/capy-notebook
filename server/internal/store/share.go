@@ -1512,11 +1512,12 @@ func (s *Store) cloneWorkspaceOnce(
 	for _, asset := range snapshot.assets {
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
 			(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path,
-			 content_type, size_bytes, status, etag, created_at, completed_at)
-			VALUES ($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,'ready',$10,$11,$12)`,
+			 content_type, size_bytes, status, etag, created_at, completed_at, thumbnail_key)
+			VALUES ($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,'ready',$10,$11,$12,
+			 (SELECT thumbnail_key FROM editor_assets WHERE id=$13))`,
 			asset.newID, newID, nullStr(snapshot.materialIDs[asset.materialID]), userID, asset.name, asset.purpose,
 			asset.objectPath, asset.contentType, asset.sizeBytes, asset.etag,
-			asset.createdAt, asset.completedAt); err != nil {
+			asset.createdAt, asset.completedAt, asset.oldID); err != nil {
 			return "", nil, 0, err
 		}
 	}
@@ -2289,11 +2290,12 @@ func (s *Store) cloneMaterialOnce(
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
 			(id, workspace_id, material_id, user_id, created_by, name, purpose,
-			 object_path, content_type, size_bytes, status, etag, created_at, completed_at)
-			VALUES ($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,'ready',$10,$11,$12)`,
+			 object_path, content_type, size_bytes, status, etag, created_at, completed_at, thumbnail_key)
+			VALUES ($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,'ready',$10,$11,$12,
+			 (SELECT thumbnail_key FROM editor_assets WHERE id=$13))`,
 			asset.newID, nullStr(dest.workspaceID), home, userID, asset.name, asset.purpose, asset.objectPath,
 			asset.contentType, asset.sizeBytes, asset.etag, asset.createdAt,
-			asset.completedAt); err != nil {
+			asset.completedAt, asset.oldID); err != nil {
 			return "", err
 		}
 	}

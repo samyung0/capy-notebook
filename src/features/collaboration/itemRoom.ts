@@ -46,7 +46,6 @@ import type { NoteSeat } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
 import { limitUndo, type UndoTarget, undoTarget } from './undo';
-import { markUnsent, markUnstored } from './unsentItems';
 import { LOCAL_EDIT } from './yText';
 
 /* A live item's room (a flashcard set, a quiz's content or keys document;
@@ -171,11 +170,6 @@ export interface ItemRoomOptions {
   /** An embedded quiz's or set's room: it joins inside its note's channel
    * (Epo 2026-10-20). */
   inside?: NoteSeat | null;
-  /** Whose leaving asks first: by default (items) while the room has not
-   * acknowledged an edit; `unstored` (a note, as Office and text files,
-   * Q465) only while this device also fails to store them, and only on the
-   * tab's close or reload. */
-  leave?: 'unstored';
   /** The room ended for good here (refused, moved): mount a fresh one. */
   onReplace?: () => void;
   /** Makes the provider instead of the collaboration server's (a note's
@@ -228,6 +222,15 @@ export class ItemRoom {
   private room = '';
   private recorder: DraftRecorder | null = null;
   private storageOk = true;
+  /** Armed while this device's draft storage fails: the tab's close or
+   * reload asks only if the room has not acknowledged an edit then (Q561,
+   * as Office and text files, Q465). In-app navigation never asks; the
+   * drafts and the room keep every edit. */
+  private readonly leaving = (event: BeforeUnloadEvent) => {
+    if (!(this.unsynced > 0 || this.recorder?.unsaved)) return;
+    event.preventDefault();
+    event.returnValue = '';
+  };
   private overLimit = false;
   /** The room refuses this build (the version gate). */
   private stale = false;
@@ -442,7 +445,6 @@ export class ItemRoom {
             status: this.live(),
             synced: true,
           });
-          this.markUnsent();
           this.requestReceipt();
           // A first sync after DRAFT_SEND_WAIT_MS still takes the held
           // steps (Q360).
@@ -454,7 +456,6 @@ export class ItemRoom {
       },
       onUnsyncedChanges: ({ number }) => {
         this.unsynced = number;
-        this.markUnsent();
         if (this.snapshot.synced && this.snapshot.status !== 'offline')
           this.set({ status: this.live() });
         if (number === 0) this.requestReceipt();
@@ -648,8 +649,8 @@ export class ItemRoom {
         onLost: toastDraftsLost,
         onStorage: (ok) => {
           this.storageOk = ok;
+          this.armLeave(!ok);
           this.showOffline();
-          this.markUnsent();
         },
         report: editIncidentReporter('material', this.materialId),
         token: () => this.lastToken,
@@ -690,7 +691,6 @@ export class ItemRoom {
   private goOffline() {
     if (this.stale) return;
     this.set({ status: 'offline' });
-    this.markUnsent();
     if (!this.recorder || this.snapshot.offline) return;
     this.recorder.disconnected();
     this.set({ offline: 'offline' });
@@ -725,7 +725,7 @@ export class ItemRoom {
         if (covered < 0) return;
         for (const [id, sequence] of this.pending)
           if (sequence <= covered) this.pending.delete(id);
-        void this.recorder?.covered(covered).then(() => this.markUnsent());
+        void this.recorder?.covered(covered);
         if (this.snapshot.synced && this.snapshot.status !== 'offline')
           this.set({ status: this.live() });
         return;
@@ -754,19 +754,11 @@ export class ItemRoom {
     );
   }
 
-  /** Edits the server has not acknowledged, or (offline) not stored. */
-  private markUnsent(
-    value = this.unsynced > 0 ||
-      (this.snapshot.status === 'offline' && !!this.recorder?.unsaved)
-  ) {
-    if (this.options.leave === 'unstored')
-      markUnstored(
-        this,
-        !this.ended &&
-          !this.storageOk &&
-          (this.unsynced > 0 || !!this.recorder?.unsaved)
-      );
-    else markUnsent(this, value && !this.ended);
+  /** A room that ended or unmounted asks nothing more, as a source does. */
+  private armLeave(armed: boolean) {
+    if (armed && !(this.ended || this.destroyed))
+      globalThis.addEventListener?.('beforeunload', this.leaving);
+    else globalThis.removeEventListener?.('beforeunload', this.leaving);
   }
 
   /** The server refused this channel's update (or discarded the room's
@@ -802,8 +794,7 @@ export class ItemRoom {
   private end() {
     this.sender?.stop();
     this.stopHold?.();
-    markUnsent(this, false);
-    markUnstored(this, false);
+    this.armLeave(false);
     this.options.seat?.attach(null);
     this.provider?.destroy();
     this.provider = null;
@@ -817,7 +808,7 @@ export class ItemRoom {
     this.set({ access: 'read', readOnlyCode: code ?? null });
     void this.recorder?.discard();
     this.recorder = null;
-    this.markUnsent(false);
+    this.armLeave(false);
   }
 
   /** Joins again with a fresh token, after a growing delay while joins
@@ -828,8 +819,8 @@ export class ItemRoom {
 
   /** Capy was updated and the room refuses this build: it stops for the
    * page load. An editor turns read-only under the outdated strip, its unsent
-   * edits kept for the reloaded page to send (leaving still asks when this
-   * device could not store them); a reader keeps what it painted. */
+   * edits kept for the reloaded page to send (closing the tab still asks when
+   * this device could not store them); a reader keeps what it painted. */
   private outdated() {
     if (this.destroyed || this.stale) return;
     this.stale = true;
@@ -837,7 +828,6 @@ export class ItemRoom {
     this.provider?.disconnect();
     markUpdateAvailable();
     const unstored = !this.storageOk && !!this.recorder?.unsaved;
-    this.markUnsent(unstored);
     if (this.recorder)
       this.set({ offline: unstored ? 'outdated-unstored' : 'outdated' });
   }
@@ -858,19 +848,13 @@ export class ItemRoom {
     this.end();
   }
 
-  /** Edits not yet acknowledged by the server. */
-  get hasUnsyncedChanges() {
-    return this.unsynced > 0;
-  }
-
   destroy() {
     this.destroyed = true;
     this.sender?.stop();
     this.stopHold?.();
     this.waiting?.();
     this.reconnector.dispose();
-    markUnsent(this, false);
-    markUnstored(this, false);
+    this.armLeave(false);
     void this.recorder?.dispose();
     this.options.seat?.attach(null);
     this.provider?.destroy();

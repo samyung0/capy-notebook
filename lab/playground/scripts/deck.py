@@ -26,6 +26,7 @@ from pipeline.retrieval.deck import (  # noqa: F401  (the playground's names)
     outline_text,
     save,
     write,
+    written_text,
 )
 
 PPT_MASTER_DIR = REPO / "lab/playground/local/ppt-master"

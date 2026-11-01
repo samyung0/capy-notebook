@@ -550,7 +550,7 @@ function StudyBody({
       {!hidden && (
         <>
           <div className="mt-8 flex flex-wrap items-center gap-2">
-            <h3 className="mr-auto font-bold">{m.study_chapters()}</h3>
+            <h3 className="mr-auto font-bold">{m.study_contents()}</h3>
             {plan && (
               <AddStepsPopover
                 defaultWorkspaceId={workspaceId}
@@ -603,6 +603,12 @@ function StudyBody({
           {plan && plan.steps.length === 0 ? (
             <p className="mt-2 border-divider border-t py-4 text-fg-muted">
               {m.plan_empty()}
+            </p>
+          ) : !plan && sections.every((s) => s.all.length === 0) ? (
+            // Nothing in the workspace yet, filters or not. A plan keeps its
+            // groups, locked ones too.
+            <p className="mt-2 border-divider border-t py-4 text-fg-muted">
+              {m.study_empty()}
             </p>
           ) : shown.length === 0 ? (
             <p className="py-8 text-center text-fg-muted">

@@ -129,7 +129,7 @@ test('account chat: search, list, read and write across workspaces and no worksp
         name: 'search_files_content',
       },
     ],
-    'root = Answer([a])\na = Md("Scripted account reads ran.", [1])',
+    'Scripted account reads ran. [#1]',
   ]);
   // An account citation says where its source lives.
   const [cited] = citations(first.frames) as (Citation & {
@@ -146,7 +146,7 @@ test('account chat: search, list, read and write across workspaces and no worksp
   const [loosely, inShared] = kept(reads, 'list_sources');
   assert(summary?.includes(`file_id=${ownText}`), summary);
   assert(summary.includes(`file_id=${memberText}`), summary);
-  assert(summary.includes(`file_id=${loose}, no workspace`), summary);
+  assert(summary.includes(`file_id=${loose}, outside workspaces`), summary);
   // Edit rights: the viewer's file is view only, the owner's text editable.
   assert(
     summary.includes(`workspace_id=${shared}, view only`) &&
@@ -246,7 +246,7 @@ test('account chat: search, list, read and write across workspaces and no worksp
           name: 'create_workspace',
         },
       ],
-      'root = Answer([a])\na = Md("Scripted account writes ran.")',
+      'Scripted account writes ran.',
     ],
     { 5: 'refused', 8: 'refused' }
   );

@@ -153,7 +153,7 @@ const item = (
   workspaceName: 'Biology',
 });
 
-const tab = (props: { access?: 'open' | 'lost' } = {}) => (
+const tab = (props: { access?: 'lost'; view?: 'grid' | 'list' } = {}) => (
   <EmbedsTab
     onAccessChange={(access) => embeds.access.push(`set:${access}`)}
     onViewChange={() => undefined}
@@ -177,6 +177,20 @@ it('lists media under their note, opening or deleting by access', () => {
   expect(html).toContain(m.files_note_unavailable());
   expect(html).toContain(`${m.file_kind_image()} · 2 KB`);
   expect(html).toContain(`${m.file_kind_audio()} · 2 KB`);
+  // Drawn as what it is, not as its note.
+  expect(html).toContain('#image"');
+  expect(html).toContain('#audio"');
+  expect(html).not.toContain('#java-enum"');
+  // A grid card shows an image's thumbnail in place of its icon.
+  embeds.items = [
+    {
+      ...item('asset_c', 'cell.png', 'Cell division', false),
+      thumbnailUrl: '/t/cell.jpg',
+    },
+  ];
+  expect(renderToStaticMarkup(tab({ view: 'grid' }))).toContain(
+    'src="/t/cell.jpg"'
+  );
   // Delete on both, the open image's too.
   expect(html.match(/data-menu/g)).toHaveLength(2);
   expect(html.match(/href="\/materials\//g)).toHaveLength(1);
@@ -189,8 +203,8 @@ it('lists media under their note, opening or deleting by access', () => {
   );
 });
 
-// The access filter asks the listing for one kind and switches between them;
-// picking the chosen one again clears it.
+// The one access filter, Private files, asks the listing for media in notes
+// the viewer cannot open; picking it again clears it, which lists everything.
 it('filters by whether the note can be opened', async () => {
   embeds.items = [item('asset_b', 'lecture.mp3', 'Lecture', true)];
   embeds.access = [];
@@ -198,16 +212,20 @@ it('filters by whether the note can be opened', async () => {
   expect(embeds.access).toContain('lost');
   expect(html).toContain(m.files_lost_media_notice());
 
+  expect(html).not.toContain('data-filter="open"');
+
   const root = createRoot(document.getElementById('root') as never);
-  await act(async () => root.render(tab({ access: 'lost' })));
-  for (const value of ['open', 'lost']) {
-    await act(async () => {
+  const pick = () =>
+    act(async () => {
       document
-        .querySelector(`[data-filter=${value}]`)
+        .querySelector('[data-filter=lost]')
         ?.dispatchEvent(new window.Event('click', { bubbles: true }));
     });
-  }
-  expect(embeds.access).toContain('set:open');
+  await act(async () => root.render(tab()));
+  await pick();
+  expect(embeds.access).toContain('set:lost');
+  await act(async () => root.render(tab({ access: 'lost' })));
+  await pick();
   expect(embeds.access).toContain('set:undefined');
   await act(async () => root.unmount());
 });

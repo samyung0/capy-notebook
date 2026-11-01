@@ -243,6 +243,9 @@ services:
       SENTRY_DSN: ${SENTRY_DSN_OPS:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
+      # The rerank slot: Alibaba Model Studio qwen3-rerank (Singapore workspace).
+      ALIBABA_MODELSTUDIO_KEY: ${ALIBABA_MODELSTUDIO_KEY:-}
+      ALIBABA_MODELSTUDIO_URL: ${ALIBABA_MODELSTUDIO_URL:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -376,6 +379,9 @@ services:
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
+      # The rerank slot: Alibaba Model Studio qwen3-rerank (Singapore workspace).
+      ALIBABA_MODELSTUDIO_KEY: ${ALIBABA_MODELSTUDIO_KEY:-}
+      ALIBABA_MODELSTUDIO_URL: ${ALIBABA_MODELSTUDIO_URL:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -383,7 +389,7 @@ services:
       # Unset leaves curate mode's library tools unavailable.
       LIBRARY_DATABASE_URL: ${LIBRARY_DATABASE_URL:-}
       # Dedicated bucket holding the library's book PDFs, all five or none.
-      # Unset leaves capture_knowledge_page unavailable.
+      # Unset leaves capture_library_page unavailable.
       KNOWLEDGE_BASE_B2_ENDPOINT: ${KNOWLEDGE_BASE_B2_ENDPOINT:-}
       KNOWLEDGE_BASE_B2_REGION: ${KNOWLEDGE_BASE_B2_REGION:-}
       KNOWLEDGE_BASE_B2_BUCKET: ${KNOWLEDGE_BASE_B2_BUCKET:-}

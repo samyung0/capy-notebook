@@ -74,6 +74,7 @@ import {
   buildEditorNoteValue,
   EDITOR_NOTE,
   EDITOR_WORKSPACE_ID,
+  RUNNING_CHAT,
 } from './editorSeed';
 import { errorMaterials } from './errorMaterials';
 import { markdownSamples } from './markdownSamples';
@@ -187,7 +188,7 @@ export const user: Omit<User, 'account'> = {
     providerSlug: 'deepseek',
   },
   chatSendKey: 'enter',
-  chatSteps: 'normal',
+  chatSteps: 'verbose',
   classLabel: 'Grade 11 · Science',
   email: 'kate@capynotebook.app',
   id: 'u_1',
@@ -2324,7 +2325,20 @@ for (const { material, trashed } of galleryMaterials)
   if (!trashed) materials.push(material);
 
 /* ---------------- chat: conversations + messages ---------------- */
-export const conversations: Conversation[] = [
+/** A conversation as stored; whether it is running comes from its messages. */
+export type MockConversation = Omit<Conversation, 'running'>;
+
+export const listedConversation = (
+  conversation: MockConversation
+): Conversation => ({
+  ...conversation,
+  running: chatMessages.some(
+    (msg) =>
+      msg.conversationId === conversation.id && msg.status === 'streaming'
+  ),
+});
+
+export const conversations: MockConversation[] = [
   {
     createdAt: days(1),
     id: 'conv_seed1',
@@ -2530,6 +2544,7 @@ export const chatMessages: WireMessage[] = [
     status: 'complete',
   },
   {
+    activity: accountSeedActivity(hours(4)),
     // Account citations name where each source lives ("" is No workspace).
     citations: [
       {
@@ -2561,8 +2576,57 @@ export const chatMessages: WireMessage[] = [
   },
 ];
 
-const after = (iso: string, ms: number) =>
-  new Date(new Date(iso).getTime() + ms).toISOString();
+function after(iso: string, ms: number) {
+  return new Date(new Date(iso).getTime() + ms).toISOString();
+}
+
+/** The seeded account turn's steps: one of each account tool kind, the list
+ * calls twice so the trace groups them, a failed web search and a created
+ * mindmap. */
+function accountSeedActivity(createdAt: string): ActivityBlock[] {
+  const steps: [
+    string,
+    string,
+    Extract<ActivityBlock, { kind: 'tool' }>['outcome']?,
+  ][] = [
+    ['list_workspaces', ''],
+    ['list_sources', ''],
+    ['list_sources', 'Biology 101'],
+    ['search_files_summary', 'reading list'],
+    ['search_files_content', 'genetics unit'],
+    ['read_document', 'Reading list.md'],
+    ['search_library', 'The Selfish Gene'],
+    ['search_web', 'The Selfish Gene summary', 'failed'],
+    ['read_skill', 'note_building'],
+    ['create_material', 'Cell biology mindmap'],
+  ];
+  return steps.map(([name, detail, outcome = 'succeeded'], index) => {
+    const callId = `m_account2_${index}`;
+    return {
+      callId,
+      detail,
+      ...(name === 'create_material' && {
+        effects: [
+          {
+            operation: 'created' as const,
+            operationId: callId,
+            resource: {
+              id: 'mat_1',
+              kind: 'material' as const,
+              title: 'Cell biology mindmap',
+            },
+          },
+        ],
+      }),
+      endedAt: after(createdAt, 900 + index * 700),
+      id: callId,
+      kind: 'tool',
+      name,
+      outcome,
+      startedAt: after(createdAt, 400 + index * 700),
+    };
+  });
+}
 
 /** A fixture's Office edits as history keeps them: a cut call the turn
  * followed with an edit of its file closed as done, one it never followed
@@ -2877,6 +2941,34 @@ materials.push(
 );
 /* ---------------- editor matrix fixtures (e2e/editor) ---------------- */
 if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
+  conversations.push({
+    createdAt: hours(1),
+    id: RUNNING_CHAT.id,
+    title: RUNNING_CHAT.title,
+    updatedAt: hours(1),
+    workspaceId: EDITOR_WORKSPACE_ID,
+  });
+  chatMessages.push(
+    {
+      citations: null,
+      content: RUNNING_CHAT.question,
+      conversationId: RUNNING_CHAT.id,
+      createdAt: hours(1),
+      id: 'm_e2e_running_question',
+      role: 'user',
+      status: 'complete',
+    },
+    {
+      ...mockChatModel,
+      citations: null,
+      content: '',
+      conversationId: RUNNING_CHAT.id,
+      createdAt: hours(1),
+      id: RUNNING_CHAT.answerId,
+      role: 'assistant',
+      status: 'streaming',
+    }
+  );
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,

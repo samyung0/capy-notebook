@@ -357,9 +357,9 @@ def test_missing_certified_cassette_fails():
 
 def test_router_slug_does_not_inherit_direct_cert():
     manifest = _load_manifest()
-    assert "deepseek-v4-flash" in manifest["deepseek"]
+    assert "deepseek-flash" in manifest["deepseek"]
     assert "deepinfra" not in manifest
-    assert not (manifest.get("deepinfra") or {}).get("deepseek-v4-flash")
+    assert not (manifest.get("deepinfra") or {}).get("deepseek-flash")
 
 
 def test_continuity_keys_cover_known_providers():

@@ -1,7 +1,7 @@
 // Standalone files (todo-standalone-files.md,
 // openwiki/authorization-permissions-lifecycles.md): an upload with no
-// workspace is its uploader's alone, listed under Files (My files, All
-// locations, left out by Workspace only) and opened at /files/{id}. Move puts it into a workspace, never
+// workspace is its uploader's alone, listed under Files (My files, left
+// out by Workspaces only) and opened at /files/{id}. Move puts it into a workspace, never
 // out; a workspace file moves on to another workspace, and the open one
 // follows itself there. A store-only `.bin` and no parsing anywhere: no
 // provider session or model usage.
@@ -36,8 +36,8 @@ test('standalone files: an owner uploads a file to No workspace, finds it under 
     workspaceId: '',
   });
 
-  // 1. Files lists it with no workspace (My files, All locations), and
-  // Workspace only leaves it out; it opens at /files/{id}.
+  // 1. Files lists it with no workspace (My files), and Workspaces only
+  // leaves it out; it opens at /files/{id}.
   await page.goto(`${run.env.appUrl}/files`);
   const card = fileCard(page, name);
   await expect(card).toHaveCount(1);

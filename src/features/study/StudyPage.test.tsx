@@ -12,6 +12,9 @@ const study = vi.hoisted(() => ({
     | undefined,
 }));
 
+// A workspace with nothing in it yet (the starter workspace).
+const content = vi.hoisted(() => ({ empty: false }));
+
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
     children,
@@ -57,36 +60,40 @@ vi.mock('@/api/hooks', () => ({
   useCreateStudyPlan: () => ({ mutateAsync: vi.fn() }),
   useDeleteStudyPlan: () => ({ mutate: vi.fn() }),
   useFiles: () => ({
-    data: [
-      {
-        addedAt: '',
-        chapterId: null,
-        id: 'f1',
-        kind: 'pdf',
-        name: 'Cells.pdf',
-        position: 0,
-      },
-    ],
+    data: content.empty
+      ? []
+      : [
+          {
+            addedAt: '',
+            chapterId: null,
+            id: 'f1',
+            kind: 'pdf',
+            name: 'Cells.pdf',
+            position: 0,
+          },
+        ],
   }),
   useMaterials: () => ({
-    data: [
-      {
-        chapterId: null,
-        createdAt: '',
-        id: 'qz',
-        position: 1,
-        title: 'Quiz',
-        type: 'quiz',
-      },
-      {
-        chapterId: null,
-        createdAt: '',
-        id: 'set',
-        position: 2,
-        title: 'Cards',
-        type: 'flashcards',
-      },
-    ],
+    data: content.empty
+      ? []
+      : [
+          {
+            chapterId: null,
+            createdAt: '',
+            id: 'qz',
+            position: 1,
+            title: 'Quiz',
+            type: 'quiz',
+          },
+          {
+            chapterId: null,
+            createdAt: '',
+            id: 'set',
+            position: 2,
+            title: 'Cards',
+            type: 'flashcards',
+          },
+        ],
   }),
   usePlanStudy: (_ws: string, planId?: string) => ({
     data: planId
@@ -275,5 +282,17 @@ it('points to settings and keeps the settings rows while study progress is hidde
       expect(html).not.toContain(gone);
   } finally {
     study.enabled = true;
+  }
+});
+
+it('says there is nothing to study yet in an empty workspace, and lists unchaptered items under Others', () => {
+  expect(render()).toContain(m.study_others());
+  content.empty = true;
+  try {
+    const html = render();
+    expect(html).toContain(m.study_empty());
+    expect(html).not.toContain(m.progress_nothing_shown());
+  } finally {
+    content.empty = false;
   }
 });

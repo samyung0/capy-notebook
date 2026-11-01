@@ -23,18 +23,14 @@ import { Menu } from '@/components/ui/Menu';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { m } from '@/i18n';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
-import { materialIconName } from '@/lib/fileIcons';
 import { EDITOR_ASSET_ACCESS } from '@/lib/listSearch';
 import { waitsForConnection } from '@/lib/online';
 import { fileKindLabel } from './fileKindLabel';
 import { formatFileSize } from './fileUtils';
 
-const accessLabel = (access: EditorAssetAccess) =>
-  access === 'open' ? m.files_access_open() : m.files_access_lost();
-
 /** The Files page's Embeds tab: every image and audio clip the caller pays
- * for (M16), named by its block (note, quiz or set) and drawn with that
- * block's icon. One in a block the caller can open opens it. Any can be deleted for good (Q273), since nothing restores it, and
+ * for (M16), named by its block (note, quiz or set) and drawn as the image's
+ * thumbnail, else the image or audio icon. One in a block the caller can open opens it. Any can be deleted for good (Q273), since nothing restores it, and
  * its note then shows it as removed. */
 export function EmbedsTab({
   access,
@@ -86,7 +82,7 @@ export function EmbedsTab({
                 access === value ? undefined : (value as EditorAssetAccess)
               ),
             options: EDITOR_ASSET_ACCESS.map((value) => ({
-              label: accessLabel(value),
+              label: m.files_access_lost(),
               value,
             })),
             selected: access ? [access] : [],
@@ -205,7 +201,7 @@ function EmbedCard({
         />
       }
       details={`${fileKindLabel(kind)} · ${formatFileSize(item.sizeBytes)}`}
-      icon={materialIconName(item.materialType)}
+      icon={kind}
       link={
         open
           ? linkOptions({
@@ -215,7 +211,7 @@ function EmbedCard({
           : undefined
       }
       meta={relativeTime(item.createdAt)}
-      thumbnail={{ fileKind: kind }}
+      thumbnail={{ fileKind: kind, thumbnailUrl: item.thumbnailUrl }}
       title={item.materialTitle || m.files_note_unavailable()}
       view={view}
       workspace={item.workspaceName}

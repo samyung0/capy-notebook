@@ -37,8 +37,8 @@ from pipeline.retrieval import (
     capture,
     contract,
     indexing,
+    markdown_answer,
     models,
-    openui,
     store,
     tools,
 )
@@ -365,20 +365,14 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
         ctx.pending_images,
     )
     assert messages[-1]["content"][-2]["image_url"]["url"] == image_url
-    raw_answer = (
-        "root = Answer([a])\n"
-        'a = Md("The violet observatory records the planet every night.", [2])\n'
-    )
-    stream = openui.LangRenderer(lambda: len(ctx.citations))
-    streamed = (
-        "".join(
-            stream.push(raw_answer[i : i + 7]) for i in range(0, len(raw_answer), 7)
-        )
-        + stream.finish()
+    raw_answer = "The violet observatory records the planet every night. [#2]\n"
+    stream = markdown_answer.MarkdownRenderer(lambda: len(ctx.citations))
+    streamed = "".join(
+        stream.push(raw_answer[i : i + 7]) for i in range(0, len(raw_answer), 7)
     )
     order = stream.reading_order()
     answer = stream.text
-    assert streamed == raw_answer == answer and stream.complete and order == [2]
+    assert streamed == raw_answer == answer and order == [2]
     citations = agent._ordered_citations(ctx, order)
     assert citations == [{**scan_hit.as_citation(), "n": 2}]
     # VLM text has no line boxes: its region is the whole page.

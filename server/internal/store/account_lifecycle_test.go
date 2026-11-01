@@ -364,7 +364,7 @@ func TestStarterWorkspaceProvisioningIsDurableAndOneTime(t *testing.T) {
 	if err != nil || !needsWorkspace {
 		t.Fatalf("initial profile sync pending=%v err=%v", needsWorkspace, err)
 	}
-	if err := s.CreateDefaultWorkspace(ctx, userID); err != nil {
+	if _, err := s.CreateDefaultWorkspace(ctx, userID); err != nil {
 		t.Fatal(err)
 	}
 	needsWorkspace, err = s.UpsertUserFromClerk(
@@ -376,7 +376,7 @@ func TestStarterWorkspaceProvisioningIsDurableAndOneTime(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `DELETE FROM workspaces WHERE user_id=$1`, userID); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.CreateDefaultWorkspace(ctx, userID); err != nil {
+	if _, err := s.CreateDefaultWorkspace(ctx, userID); err != nil {
 		t.Fatal(err)
 	}
 	var workspaces int
@@ -402,7 +402,7 @@ func TestStarterWorkspaceProvisioningIsDurableAndOneTime(t *testing.T) {
 		WHERE id=$1`, testActor); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.CreateDefaultWorkspace(ctx, testActor); err != nil {
+	if _, err := s.CreateDefaultWorkspace(ctx, testActor); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM email_outbox
@@ -438,7 +438,8 @@ func TestStarterWorkspaceDoesNotRaceOrdinaryCreation(t *testing.T) {
 
 	starterResult := make(chan error, 1)
 	go func() {
-		starterResult <- s.CreateDefaultWorkspace(ctx, userID)
+		_, err := s.CreateDefaultWorkspace(ctx, userID)
+		starterResult <- err
 	}()
 	waitForAccountLockWaiters(t, s, ctx, 2)
 

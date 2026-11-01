@@ -122,8 +122,6 @@ function ListPopover({
       <PopoverTrigger asChild>
         <button
           className={cn(className, open && 'bg-page-hover')}
-          // The tour's last step points here.
-          data-getting-started-row
           type="button"
         >
           <ProgressRing done={done} total={total} />

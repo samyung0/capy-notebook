@@ -260,7 +260,13 @@ func (a *api) storeEditorAssetBytes(
 		return store.EditorAsset{}, err
 	}
 	// The bytes are stored: finalize runs to its end even if the browser leaves.
-	return a.s.FinalizeEditorAssetUpload(context.WithoutCancel(ctx), uploadID, etag)
+	asset, err := a.s.FinalizeEditorAssetUpload(context.WithoutCancel(ctx), uploadID, etag)
+	if err == nil && purpose == "image" {
+		a.thumbnailEditorImages(ctx, []editorImage{{asset.ID, func() ([]byte, error) {
+			return io.ReadAll(io.NewSectionReader(spool, 0, size))
+		}}})
+	}
+	return asset, err
 }
 
 func editorAssetObjectKey(assetID, ext string) string {

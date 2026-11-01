@@ -1159,16 +1159,16 @@ async function viewPass(frame: Frame, format: OfficeFormat) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     };
     if (kind === 'pptx') {
-      const next = document.querySelector<HTMLButtonElement>(
-        '[data-testid="pptx-next-slide"]'
-      )!;
-      while (!next.disabled) {
-        next.click();
+      const [first, ...rest] = document.querySelectorAll<HTMLButtonElement>(
+        '.pptx-viewer-slide'
+      );
+      for (const thumbnail of rest) {
+        thumbnail.click();
         // Pictures decode off the main thread before the slide paints.
         await settle();
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      document.querySelector<HTMLButtonElement>('.pptx-viewer-slide')!.click();
+      first!.click();
       await settle();
       return;
     }

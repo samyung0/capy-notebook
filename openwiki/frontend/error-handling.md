@@ -227,15 +227,29 @@ not offline use: without a service worker the app itself does not load offline.
   a restored query until it is used and marks it for storage. Query `meta` cannot
   carry the mark, because hooks replace it with `queryMeta(options)`.
 - Stored: `/me`, workspace lists (not searches), a workspace and its chapters,
-  files, materials, conversations and study states, file metadata, the
-  dashboard recents, Thinking, notifications and the unread count, learning
-  progress, the review overview, quiz attempts (the quiz page resumes its open
-  one from it), calendar events, labels, tasks, tags,
-  notification preferences, integrations, models, LLM key last-4s, Explore,
-  and the question bank's syllabus and progress. Infinite lists keep their first
-  page.
-- Never stored: file, note, quiz, card and canvas bodies and chat messages
-  (always fetched live), collaboration tokens, presigned links, review sessions,
+  files, materials, conversations, study states and study plans, file metadata,
+  the dashboard recents, notifications and the unread count, learning progress,
+  the review overview, quiz attempts (the quiz page resumes its open one from
+  it), calendar events, labels, tasks, tags, notification preferences,
+  integrations, models, Explore, and the question bank's syllabus and progress.
+  Infinite lists keep their first page.
+- Chat messages (account and workspace chat) are stored for the 10
+  conversations fetched most recently, each with its latest 40 messages (10
+  chats of 60 long turns measured 7 MB and 15 ms a write in full on a desktop,
+  2026-10-29). Older histories that nothing shows also leave memory. Their
+  `staleTime` is 0, so every open refetches. The chat panel paints the stored
+  history at once and seeds the conversation again once this open's fetch
+  lands; only that fetched history decides whether a running answer is followed
+  (T19), so a stale "running" row never reconnects and a turn started elsewhere
+  is not missed. A fetch paused offline or failed leaves the stored history
+  painted and unfollowed. A turn sent before the fetch lands keeps its thread,
+  and the fetch after that turn seeds it; a send refused before it lands
+  (credits, a rate limit) was never saved, so the seed keeps its message and
+  error after the fetched history (Q576 F2). Clicking the shown conversation again
+  does nothing. Undo and Redo answered in the tab outlive a seed. A failed
+  refetch's kept data is stored like any other (every persisted query).
+- Never stored: file, note, quiz and card bodies, collaboration tokens,
+  presigned links, review sessions,
   answer keys (quiz and bank edit views), ingest slots, workspace stats, upload
   policy, billing, usage, account deletion preflight, searches, members and
   discussions.
@@ -458,7 +472,14 @@ Chat SSE failures stay on the assistant turn. A `response_flagged` error clears 
 stream that closes before a terminal `done` frame, both mark that turn as errored;
 they do not crash a page boundary or emit the default mutation toast. A
 `model_unavailable` (422) response before the stream opens is the same surface,
-with copy that sends the user to Settings → LLM.
+with copy that sends the user to Settings → LLM. A refusal before the stream
+opens on a new chat's first send (such as 403 `llm_credits_exhausted`) is too: Go creates a new conversation only after the
+turn's checks pass (`chat_stream.go`), so the refusal leaves no empty
+conversation in the list, and the panel keeps the message and its error with no
+conversation id. New chat stays enabled while the panel shows any message
+(`ChatPanel`'s `onActiveChange(id, shown)`), and the account page's New chat
+asks the panel for a new chat directly, since the URL is already `/chat`
+(Epo's report 2026-10-29).
 
 Stop is a request, not a dropped connection (Epo 2026-10-21): the button calls
 `POST /api/conversations/{id}/messages/{messageId}/stop` (`useStopChatTurn`)
@@ -508,14 +529,16 @@ A signed-in tab holds `GET /api/stream` open for its whole life, with
 `?workspace=` set on the workspace page. It carries three named SSE events:
 `notification` (read and removed events patch the notification caches; a
 created event refetches the list and the unread count, because the list joins
-each row's workspace and member for its icon), `ingest` (patched into
+each row's workspace and member for its icon; a `chat_turn` event patches a
+conversation's running mark in every cached conversation list,
+[agentic-retrieval.md](../agentic-retrieval.md#following-a-running-turn)), `ingest` (patched into
 the file caches) and `tree` (`{kind: files | materials}`, which invalidates
 that workspace list plus the chapters list after a 300 ms trailing debounce
 per kind, so one ingest's several writes cost one refetch; a hidden tab only
 marks them stale and reads them on focus). Neither Redis Pub/Sub nor Postgres
 NOTIFY replays missed events, so every successful connection refetches the
-notification list, the unread count, and the file, material and chapter
-lists. A connection that succeeds after a failed attempt (a redeploy, a
+notification list, the unread count, the file, material and chapter lists,
+and the conversation lists. A connection that succeeds after a failed attempt (a redeploy, a
 dropped network) also refetches every active query in error, so the error
 states above recover without Retry. There is no polling while disconnected; the workspace lists keep only
 `refetchOnWindowFocus`. A list read carries the client-only `ingestPct` over
@@ -657,6 +680,15 @@ leave prompt (`beforeunload`, in `useSourceSession`) shows on a tab close or
 reload only while this device's draft storage is failing (the recorder's
 `onStorage`) and the room has not acknowledged a local edit
 (`leaveLoses`); the few milliseconds a draft write takes are not guarded.
+Plate notes, flashcard sets and quizzes follow the same rule (Q561, Epo
+2026-10-29): the note editor (`NoteEditorCore`) and an item room
+(`ItemRoom`) arm the listener while the recorder reports storage failing
+and ask, when the tab goes, only if one of this tab's own edits has no
+receipt yet (the recorder's count; a collaborator's never counts); a room
+that ended or unmounted asks nothing more. A note open as its saved copy
+before the room joins (Q229) asks while the copy recorder's last write was
+refused and no later one landed (Q568, `recordCopy`'s `onUnstored`); the
+bind or any other stop of the copy ends that.
 
 The save banner (`SaveBanner`, `src/components/banners/SaveBanner.tsx`) is one
 strip under the file or note header with one state at a time:

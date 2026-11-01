@@ -1,7 +1,7 @@
 """Chat profiles (todo-account-chat.md): workspace chat shows the model what it
 did before account chat, byte for byte; account chat offers its own tools,
 prompt and turn context, checks access through Go before reading, and
-creates into No workspace unless a workspace is named."""
+creates outside workspaces unless a workspace is named."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Any
 import psycopg
 import pytest
 
+from pipeline.prompts import account_chat, preferences
 from pipeline.prompts import chat as chat_prompts
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import (
@@ -36,7 +37,14 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # by running the snapshot below against commit 79209a759's pipeline with the
 # v42 contract (agent_tools.json before account scopes). Never regenerate it
 # from the current code to make this pass. Changed on purpose since:
-# create_chapter and the editing skill's chapter-list line (Epo 2026-10-29),
+# create_chapter and the editing skill's chapter-list line (Epo 2026-10-29), the
+# shorter Plan (Epo 2026-10-29), the OpenUI catalog without Facts/Fact (Epo
+# 2026-10-29), the Plan-first line replacing 'Do not ask whether to create
+# them' (Epo 2026-10-29, Q581; the messages keys alone), create_chapter's name
+# required in the chat copy without its Chapter (n) sentence (Epo 2026-10-29,
+# Q582; the owner schemas keys alone), the chapter_id descriptions saying "not
+# in a chapter" instead of "unfiled" (Epo 2026-10-30; the owner schemas keys
+# alone),
 # the owner schemas and skills/editing keys alone.
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 
@@ -118,9 +126,12 @@ def _hashed(snapshot: dict[str, Any]) -> dict[str, str]:
 def test_the_workspace_profile_shows_the_model_what_it_did_before():
     profile = profiles.workspace.PROFILE
     contexts = {
-        "owner": _ctx(library_catalog=CATALOG),
+        "owner": _ctx(library_catalog=CATALOG, edit_tools=True),
         "owner_office_progress": _ctx(
-            library_catalog=CATALOG, office_tools=True, study_progress=True
+            library_catalog=CATALOG,
+            office_tools=True,
+            edit_tools=True,
+            study_progress=True,
         ),
         "owner_no_library": _ctx(),
         "viewer": _ctx(operations=VIEWER, role="viewer", library_catalog=CATALOG),
@@ -162,10 +173,8 @@ def test_the_workspace_profile_shows_the_model_what_it_did_before():
             {"role": "user", "content": "q", "_workspace_only": True}
         ),
         "send_back": [
-            profile.send_back[(True, False)],
-            profile.send_back[(True, True)],
-            profile.send_back[(False, False)],
-            profile.send_back[(False, True)],
+            profile.send_back[True],
+            profile.send_back[False],
         ],
         "not_available": tools.NOT_AVAILABLE,
     }
@@ -174,7 +183,9 @@ def test_the_workspace_profile_shows_the_model_what_it_did_before():
 
 
 def test_the_account_profile_offers_the_account_tools():
-    schemas = profiles.account.PROFILE.schemas(_account(library_catalog=CATALOG))
+    schemas = profiles.account.PROFILE.schemas(
+        _account(library_catalog=CATALOG, edit_tools=True)
+    )
     by_name = {s["function"]["name"]: s["function"] for s in schemas}
 
     assert set(by_name) == {
@@ -187,9 +198,10 @@ def test_the_account_profile_offers_the_account_tools():
         "resolve_source_change",
         "read_document",
         "capture_page",
-        "search_knowledge",
-        "read_knowledge",
-        "capture_knowledge_page",
+        "search_library",
+        "search_images",
+        "read_library",
+        "capture_library_page",
         "search_web",
         "read_skill",
         "create_material",
@@ -203,7 +215,7 @@ def test_the_account_profile_offers_the_account_tools():
     office = {
         s["function"]["name"]: s["function"]
         for s in profiles.account.PROFILE.schemas(
-            _account(library_catalog=CATALOG, office_tools=True)
+            _account(library_catalog=CATALOG, office_tools=True, edit_tools=True)
         )
     }
     # Every tool that creates takes where it lands (Epo 2026-10-28, T2).
@@ -217,10 +229,11 @@ def test_the_account_profile_offers_the_account_tools():
             "workspace_id"
             not in contract.DEFINITIONS[name]["inputSchema"]["properties"]
         )
-    # create_chapter names its workspace here; No workspace has no chapters.
+    # create_chapter names its workspace here; outside workspaces has no chapters.
     chapter = by_name["create_chapter"]["parameters"]
     assert "workspace_id" in chapter["properties"]
-    assert chapter["required"] == ["workspace_id"]
+    # name is required in the chat copies only (Q582).
+    assert chapter["required"] == ["name", "workspace_id"]
     assert "required" not in contract.DEFINITIONS["create_chapter"]["inputSchema"]
     # Workspace chat's list_sources, listing by workspace here (Q523).
     listing = by_name["list_sources"]
@@ -247,10 +260,6 @@ def test_the_account_prompt_turn_context_and_skills_name_the_users_files():
     )
 
     assert profile is profiles.account.PROFILE
-    assert (
-        "lands in No workspace unless the learner names a workspace"
-        in messages[0]["content"]
-    )
     assert "search_workspace" not in messages[0]["content"]
     assert messages[-1]["content"].startswith("[Your files only: on.")
     # Live compaction puts the account line back, not the workspace one.
@@ -260,11 +269,10 @@ def test_the_account_prompt_turn_context_and_skills_name_the_users_files():
     # No open item, and the workspaces ride with the first message instead.
     assert "Open:" not in context and "workspace_id=" not in context
     editing = skills.text(skills.EDITING, account=True)
-    assert "list_sources" not in editing and "No workspace" in editing
-    # The outline names where new files go before their chapters (review F1/F3).
-    assert "No workspace, which has no chapters" in editing
+    # The outline also picks where new files go (Epo 2026-10-29).
+    assert "Identify which workspace you should work in" in editing
     assert "create_chapter" in editing and "create_workspace" in editing
-    assert "No workspace" in skills.text(skills.DECK_BUILDING, account=True)
+    assert "outside workspaces" in skills.text(skills.DECK_BUILDING, account=True)
 
 
 class _Gateway:
@@ -506,7 +514,7 @@ async def test_search_files_content_labels_hits_from_the_turns_scope(monkeypatch
     assert [p.file_id for p in result.passages] == ["f_mine", "f_chem", "f_pdf"]
     mine, chem, pdf = result.passages
     assert pdf.can_edit is False  # a PDF reads view only
-    assert mine.location().startswith("No workspace › f_mine.pdf")
+    assert mine.location().startswith("Outside workspaces › f_mine.pdf")
     assert chem.location().startswith("Chemistry › Acids › f_chem.pdf")
     assert (mine.can_edit, chem.can_edit) == (True, True)
     text = tools.render_result(result, list(enumerate(result.passages, 1)))
@@ -886,18 +894,22 @@ async def test_an_account_office_create_lands_where_the_user_named(monkeypatch):
         pending_sources=pending.PendingSources.for_account("u_1"),
     )
 
-    await tools.run(
+    # Q580: the create command's chapter_id is checked against the call's
+    # workspace_id, not refused as if none were named.
+    create = {"type": "create", "format": "docx", "title": "Plan", "chapter_id": "ch_1"}
+    result = await tools.run(
         "edit_office_document",
-        {
-            "commands": [{"type": "create", "format": "docx", "title": "Plan"}],
-            "workspace_id": "ws_1",
-            "_tool_call_id": "call_doc",
-        },
+        {"commands": [create], "workspace_id": "ws_1", "_tool_call_id": "call_doc"},
         ctx,
     )
 
+    assert not result.refused, result.text()
     assert sent["path"] == "/api/internal/documents/office/create"
-    assert (sent["scope"], sent["workspaceId"]) == ("account", "ws_1")
+    assert (sent["scope"], sent["workspaceId"], sent["chapterId"]) == (
+        "account",
+        "ws_1",
+        "ch_1",
+    )
 
 
 async def test_the_workspace_list_rides_once_and_list_workspaces_is_current():
@@ -909,8 +921,7 @@ async def test_the_workspace_list_rides_once_and_list_workspaces_is_current():
     assert listed == (
         "The user's workspaces:\n"
         "- Biology (workspace_id=ws_2, view only)\n"
-        "- Chemistry (workspace_id=ws_1, view and edit)\n"
-        "Their other files are in No workspace."
+        "- Chemistry (workspace_id=ws_1, view and edit)"
     )
     ctx.workspaces_shown = listed
     packed = evidence.pack(ctx, [])
@@ -1091,7 +1102,9 @@ async def test_an_account_create_lands_where_the_user_named(monkeypatch, named, 
     assert "workspaceId" in sent if named else "workspaceId" not in sent
     if tool == "create_material":
         where = (
-            "the workspace 'Biology' (workspace_id=ws_2)" if named else "No workspace"
+            "the workspace 'Biology' (workspace_id=ws_2)"
+            if named
+            else "the user's files outside workspaces"
         )
         assert f"It is now in {where}." in result.text()
 
@@ -1319,6 +1332,168 @@ async def test_a_workspace_the_turn_creates_joins_its_list(monkeypatch):
     )
 
 
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("create_material", {"kind": "note", "title": "N", "content": "body"}),
+        ("create_deck", {"title": "D"}),
+        ("add_questions", {"title": "Q", "questions": []}),
+        (
+            "edit_office_document",
+            {"commands": [{"type": "create", "format": "docx", "title": "Plan"}]},
+        ),
+        ("create_chapter", {"name": "Kinematics"}),
+    ],
+)
+async def test_an_account_create_refuses_a_workspace_that_is_not_the_users(
+    monkeypatch, tool, args
+):
+    # Q578: Go would answer as for a view-only workspace and say not to retry.
+    posted = []
+    monkeypatch.setattr(tools.requests, "post", lambda *a, **k: posted.append(a))
+    ctx = _account(office_tools=True)
+
+    result = await tools.run(
+        tool, {**args, "workspace_id": "ws_gone", "_tool_call_id": "c"}, ctx
+    )
+
+    assert result.refused and not posted
+    assert result.text() == (
+        'workspace_id "ws_gone" is not one of the user\'s workspaces, so nothing '
+        "was created. list_workspaces lists them, create_workspace makes a new one"
+        + (
+            "."
+            if tool == "create_chapter"
+            else ", or leave workspace_id out to create it outside workspaces."
+        )
+    )
+
+
+async def test_an_account_create_lands_in_a_workspace_the_turn_created(monkeypatch):
+    def post(url, **kwargs):
+        if url.endswith("/api/internal/workspaces"):
+            return _Resp(
+                {
+                    "kind": "create_workspace",
+                    "outcome": "succeeded",
+                    "workspaceId": "ws_new",
+                }
+            )
+        posted.append(json.loads(kwargs["data"]))
+        return _Resp(
+            {
+                "outcome": "succeeded",
+                "effect": {
+                    "operation": "created",
+                    "resource": {"kind": "material", "id": "mat_1", "title": "C"},
+                },
+            }
+        )
+
+    posted: list[dict[str, Any]] = []
+    monkeypatch.setattr(tools.requests, "post", post)
+    ctx = _account(skills_read={skills.EDITING})
+    cards = {"kind": "flashcards", "title": "C", "cards": [{"front": "a", "back": "b"}]}
+
+    await tools._create_workspace({"name": "Physics", "_tool_call_id": "call_ws"}, ctx)
+    result = await tools.run(
+        "create_material",
+        {**cards, "workspace_id": "ws_new", "_tool_call_id": "c"},
+        ctx,
+    )
+
+    assert not result.refused, result.text()
+    assert posted[0]["workspaceId"] == "ws_new"
+
+
+def _objects(schema: Any, path: str = ""):
+    """Every object schema inside a tool's parameters, with its path."""
+    if isinstance(schema, list):
+        for n, item in enumerate(schema):
+            yield from _objects(item, f"{path}[{n}]")
+    elif isinstance(schema, dict):
+        if isinstance(schema.get("properties"), dict):
+            yield path, schema
+        for key, inner in schema.items():
+            yield from _objects(inner, f"{path}.{key}")
+
+
+@pytest.mark.parametrize("account", [False, True])
+def test_chat_schemas_list_what_a_call_needs_before_what_it_may_add(account):
+    """(Epo 2026-10-30, T3a) DeepSeek Flash's routes write arguments in schema
+    order, so an optional property listed before the one the model writes
+    first is dropped: Go's alphabetical create_material lost content, cards
+    and chapter_id on Morph in 3 of 3 calls, the order below lost none."""
+    ctx = (_account if account else _ctx)(library_catalog=CATALOG, edit_tools=True)
+    profile = profiles.account.PROFILE if account else profiles.workspace.PROFILE
+    schemas = {
+        s["function"]["name"]: s["function"]["parameters"] for s in profile.schemas(ctx)
+    }
+    for name, parameters in schemas.items():
+        for path, obj in _objects(parameters, name):
+            keys = list(obj["properties"])
+            required = set(obj.get("required") or ())
+            assert keys == sorted(keys, key=lambda k: k not in required), (path, keys)
+    material = list(schemas["create_material"]["properties"])
+    assert material[: material.index("cards") + 1] == [
+        "kind",
+        "title",
+        *(["workspace_id"] if account else []),
+        "chapter_id",
+        "content",
+        "cards",
+    ]
+    question = schemas["add_questions"]["properties"]["questions"]["items"]
+    assert list(question["properties"])[:3] == ["question", "options", "correct"]
+    assert list(schemas["capture_library_page"]["properties"]) == [
+        "excerpt_id",
+        "page",
+        "bbox",
+    ]
+    assert list(schemas["read_library"]["properties"]) == [
+        "excerpt_id",
+        "start",
+        "count",
+    ]
+    # Go's definitions stay as Go wrote them.
+    go = contract.DEFINITIONS["create_material"]["inputSchema"]["properties"]
+    assert next(iter(go)) == "cards"
+
+
+@pytest.mark.parametrize("account", [False, True])
+async def test_chat_schemas_require_a_chapter_name_and_a_nameless_one_still_posts(
+    monkeypatch, account
+):
+    # Q582: the models see name as required; Go keeps its optional name and
+    # names a nameless chapter Chapter (n), so nothing refuses one.
+    sent: dict[str, Any] = {}
+
+    def post(url, **kwargs):
+        sent.update(json.loads(kwargs["data"]))
+        return _Resp({"kind": "create_chapter", "outcome": "succeeded"})
+
+    monkeypatch.setattr(tools.requests, "post", post)
+    kw = {"assistant_message_id": "m_1", "skills_read": {skills.EDITING}}
+    ctx = _account(**kw) if account else _ctx(**kw)
+    profile = profiles.account.PROFILE if account else profiles.workspace.PROFILE
+    chapter = next(
+        s["function"]
+        for s in profile.schemas(ctx)
+        if s["function"]["name"] == "create_chapter"
+    )
+
+    result = await tools.run(
+        "create_chapter",
+        {"_tool_call_id": "c", **({"workspace_id": "ws_1"} if account else {})},
+        ctx,
+    )
+
+    assert "name" in chapter["parameters"]["required"]
+    assert "Chapter (n)" not in chapter["description"]
+    assert not result.refused, result.text()
+    assert sent["toolCallId"] == "c" and not sent["name"]
+
+
 async def test_an_account_read_of_a_file_moved_away_says_so(monkeypatch):
     # Q489: Go marks a file this account chat edited, moved where the user
     # cannot open it.
@@ -1422,3 +1597,41 @@ async def test_an_account_edit_names_the_account_scope_not_a_workspace(monkeypat
     assert not result.refused, result.text()
     assert sent["url"].endswith("/api/internal/documents/edit")
     assert sent["scope"] == "account" and "workspaceId" not in sent
+
+
+def test_account_chat_says_its_own_tuned_text():
+    """Epo's playground tuning (2026-10-30), account chat only: the prompt,
+    the skills, read_library and the writing preference; workspace chat keeps
+    its text and shares the answer format."""
+    prompt = account_chat.system_prompt("en")
+    assert chat_prompts.MARKDOWN_RULE in prompt
+    assert chat_prompts.MARKDOWN_RULE in chat_prompts.system_prompt("en")
+    assert prompt.endswith(account_chat.ALL_SOURCES_RULES)
+    assert account_chat.ANSWER_STYLE in prompt
+    assert account_chat.ANSWER_STYLE not in chat_prompts.system_prompt("en")
+    assert account_chat.LONG_ANSWER_OFFER in prompt
+    read_only = account_chat.system_prompt("en", writes=False)
+    assert account_chat.READ_ONLY_RULE in read_only
+    assert account_chat.LONG_ANSWER_OFFER not in read_only
+
+    assert "No need to restate" in skills.text(skills.EDITING, account=True)
+    assert "No need to restate" not in skills.text(skills.EDITING)
+    # The account lines Epo's copy of the workspace text did not carry stay.
+    assert "create_workspace goes first" in skills.text(skills.EDITING, account=True)
+
+    def described(ctx, profile) -> str:
+        return next(
+            s["function"]["description"]
+            for s in profile.schemas(ctx)
+            if s["function"]["name"] == "read_library"
+        )
+
+    assert "Include relevant images" in described(
+        _account(library_catalog=CATALOG), profiles.account.PROFILE
+    )
+    assert "Include relevant images" not in described(
+        _ctx(library_catalog=CATALOG), profiles.workspace.PROFILE
+    )
+    style = {"writingStyle": "brief"}
+    assert "Avoid stacking" in preferences.lines(style, account=True)[1]
+    assert "Avoid stacking" not in preferences.lines(style)[1]

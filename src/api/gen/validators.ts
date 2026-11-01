@@ -904,7 +904,8 @@ export const GetBillingResponse = zod.object({
   "reloadThresholdMicros": zod.int(),
   "spendingLimitCents": zod.int().optional(),
   "spentThisMonthCents": zod.int(),
-  "starterAvailable": zod.boolean()
+  "starterAvailable": zod.boolean(),
+  "starterCardUsed": zod.boolean()
 }),
   "creditsCarriedMicros": zod.int(),
   "creditsLimitMicros": zod.int(),
@@ -1222,6 +1223,7 @@ export const ListAccountConversationsResponseItem = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
   "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "running": zod.boolean(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string().describe('Empty for an account conversation')
@@ -1246,6 +1248,7 @@ export const CreateAccountConversationResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
   "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "running": zod.boolean(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string().describe('Empty for an account conversation')
@@ -1297,6 +1300,7 @@ export const UpdateConversationResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
   "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "running": zod.boolean(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string().describe('Empty for an account conversation')
@@ -1359,7 +1363,9 @@ export const ListMessagesResponseItem = zod.object({
   "total": zod.int().optional()
 })).nullish(),
   "citations": zod.array(zod.object({
+  "blockIds": zod.array(zod.string()).nullish(),
   "chunkId": zod.string().optional(),
+  "excerptId": zod.string().optional(),
   "fileId": zod.string(),
   "fileName": zod.string(),
   "kind": zod.string().optional(),
@@ -1480,7 +1486,7 @@ export const listEditorAssetsQueryLimitMax = 100;
 
 
 export const ListEditorAssetsQueryParams = zod.object({
-  "access": zod.enum(['open', 'lost']).optional().describe('Only media in notes the caller can open, or only those it cannot'),
+  "access": zod.enum(['lost']).optional().describe('Only media in notes the caller can no longer open'),
   "limit": zod.int().min(1).max(listEditorAssetsQueryLimitMax).default(listEditorAssetsQueryLimitDefault),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
@@ -1497,6 +1503,7 @@ export const ListEditorAssetsResponse = zod.object({
   "name": zod.string(),
   "purpose": zod.enum(['image', 'audio']),
   "sizeBytes": zod.int(),
+  "thumbnailUrl": zod.string().optional().describe('An image\'s 200 px card thumbnail, an hour-stable link; absent for audio and for images without one'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string()
 })),
@@ -3190,6 +3197,30 @@ export const GetLearningProgressResponse = zod.object({
 
 
 /**
+ * @summary A library figure for a chat answer
+ */
+export const getLibraryFigurePathIdMax = 128;
+
+
+export const getLibraryFigurePathIdRegExp = new RegExp('^[A-Za-z0-9_-]+$');
+
+
+export const GetLibraryFigureParams = zod.object({
+  "id": zod.string().max(getLibraryFigurePathIdMax).regex(getLibraryFigurePathIdRegExp)
+})
+
+export const GetLibraryFigureResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "credit": zod.string(),
+  "height": zod.int(),
+  "id": zod.string(),
+  "image": zod.string(),
+  "label": zod.string(),
+  "width": zod.int()
+})
+
+
+/**
  * @summary List the notes, quizzes and flashcard sets the caller pays for, or can open (scope=member)
  */
 export const listOwnedMaterialsQueryScopeDefault = `owned`;
@@ -4234,7 +4265,7 @@ export const GetMeResponse = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'story']).optional()
 }),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -4324,7 +4355,7 @@ export const UpdateMeResponse = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'story']).optional()
 }),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -4425,7 +4456,7 @@ export const SetStudyPreferencesBody = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'story']).optional()
 })
 
 export const SetStudyPreferencesResponse = zod.void()
@@ -6998,6 +7029,7 @@ export const ListConversationsResponseItem = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
   "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "running": zod.boolean(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string().describe('Empty for an account conversation')
@@ -7026,6 +7058,7 @@ export const CreateConversationResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
   "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "running": zod.boolean(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string().describe('Empty for an account conversation')

@@ -1,9 +1,7 @@
 {
   "certified": {
     "deepseek": {
-      "deepseek-flash": true,
-      "deepseek-v4-flash": true,
-      "deepseek-v4-flash-vision-exp": true
+      "deepseek-flash": true
     },
     "openrouter": {
       "minimax/minimax-m3.1-flash": true

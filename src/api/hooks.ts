@@ -50,6 +50,7 @@ import type {
   CalendarEvent,
   Chapter,
   ChatPrefs,
+  ChatStatus,
   CheckQuizQuestionReq,
   CloneFileReq,
   CloneMaterialReq,
@@ -85,6 +86,7 @@ import type {
   ItemAttempts,
   Label,
   LearningProgress,
+  LibraryFigure,
   Material,
   MaterialCollaborationToken,
   MaterialComment,
@@ -230,6 +232,17 @@ export const ingestSlotsQuery = () =>
   });
 export const useIngestSlots = (options?: QueryUiOptions) =>
   useQuery({ ...ingestSlotsQuery(), meta: queryMeta(options) });
+
+/** One library figure for a chat answer; an id names one figure forever. */
+export const useLibraryFigure = (id: string, options?: QueryUiOptions) =>
+  useQuery({
+    gcTime: Number.POSITIVE_INFINITY,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<LibraryFigure>(`/library/figures/${encodeURIComponent(id)}`),
+    queryKey: qk.libraryFigure(id),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
 
 export const modelsQuery = (slot: ModelSlot) =>
   queryOptions({
@@ -399,6 +412,10 @@ export function applyNotificationEvent(
     applyIngestEvent(qc, null, event);
     return;
   }
+  if (event.type === 'chat_turn') {
+    applyChatTurn(qc, event.conversationId, event.status);
+    return;
+  }
   // Stripe or the reload worker changed billing. A pending billing save
   // refetches when it settles, so it is left to that refetch.
   if (event.type === 'billing') {
@@ -468,6 +485,28 @@ export function applyNotificationEvent(
   }
 }
 
+const isConversationList = (query: { queryKey: QueryKey }) =>
+  query.queryKey.includes('conversations');
+
+/** Marks a conversation running, or not, in every cached conversation list;
+ * one no list holds yet (a turn just started elsewhere) refetches them. */
+function applyChatTurn(
+  qc: QueryClient,
+  conversationId: string,
+  status: ChatStatus
+) {
+  let listed = false;
+  qc.setQueriesData<Conversation[]>({ predicate: isConversationList }, (list) =>
+    list?.map((conversation) => {
+      if (conversation.id !== conversationId) return conversation;
+      listed = true;
+      return { ...conversation, running: status === 'streaming' };
+    })
+  );
+  if (!listed && status === 'streaming')
+    void qc.invalidateQueries({ predicate: isConversationList });
+}
+
 /** The one SSE connection a signed-in tab holds: notifications always, plus
  * ingest progress and tree changes for the workspace being viewed. Redis
  * Pub/Sub and Postgres NOTIFY replay nothing, so every connect refetches the
@@ -502,6 +541,8 @@ export function useEventStream(wsId: string) {
       for (const queryKey of keys) {
         void qc.refetchQueries({ queryKey, type: 'active' });
       }
+      // The running marks, whose events this stream carries.
+      void qc.refetchQueries({ predicate: isConversationList, type: 'active' });
     };
     // One ingest raises several tree events seconds apart and a bulk write
     // raises one per transaction, so a trailing debounce per kind collapses a
@@ -1318,6 +1359,9 @@ export const useEditorAssets = (access?: EditorAssetAccess) =>
         `/editor-assets${listSearch({ access }, pageParam)}`
       ),
     queryKey: qk.editorAssets(access),
+    // Nothing invalidates it when an editor adds an image, so each visit
+    // refetches instead of showing the list from up to 5 minutes before.
+    staleTime: 0,
   });
 
 /** Deletes one of them at once, wherever it sits: nothing restores it, and
@@ -1937,11 +1981,15 @@ export const useConversations = (
   options?: QueryUiOptions
 ) => useQuery({ ...conversationsQuery(wsId), meta: queryMeta(options) });
 
+/** Stored, so a reopened chat paints at once; every open refetches, since
+ * another tab or device may have added turns (Epo 2026-10-29). */
 export const messagesQuery = (convId: string | null) =>
   queryOptions({
+    ...persisted,
     enabled: !!convId,
     queryFn: () => api.get<WireMessage[]>(`/conversations/${convId}/messages`),
     queryKey: qk.messages(convId ?? ''),
+    staleTime: 0,
   });
 export const useMessages = (convId: string | null, options?: QueryUiOptions) =>
   useQuery({ ...messagesQuery(convId), meta: queryMeta(options) });

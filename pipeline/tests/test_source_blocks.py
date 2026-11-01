@@ -97,11 +97,12 @@ async def test_library_search_and_read_cards_hold_the_excerpt_in_a_block(
 
     monkeypatch.setattr(tools.library, "search", _search)
     monkeypatch.setattr(tools.library, "read_excerpt", _read)
-    found = (await tools._search_knowledge({"query": "cells"}, ctx)).text()
+    found = (await tools._search_library({"query": "cells"}, ctx)).text()
     assert _blocks(found) == 2
-    assert "read_knowledge" in found.rsplit("</source>", 1)[1]
+    assert "read_library" in found.rsplit("</source>", 1)[1]
 
-    read = (await tools._read_knowledge({"excerpt_id": "e_1"}, ctx)).text()
+    result = await tools._read_library({"excerpt_id": "e_1"}, ctx)
+    read = tools.render_result(result, tools.assign_citations(ctx, result.passages))
     assert _blocks(read) == 1
     assert read.rsplit("</source>", 1)[1] == "\n\n(next start = 1)"
 
@@ -211,7 +212,7 @@ def test_neutralising_is_linear_in_the_text_length():
 
 def test_a_captured_page_rides_in_a_block():
     messages = [{"role": "tool", "tool_call_id": "k1", "content": "Captured."}]
-    images = {"k1": ("capture_knowledge_page result 1", "data:image/jpeg;base64,AA==")}
+    images = {"k1": ("capture_library_page result 1", "data:image/jpeg;base64,AA==")}
     parts = capture.inject_images(messages, images)[-1]["content"]
     assert parts[1]["text"].endswith("\n<source>")
     assert parts[2]["type"] == "image_url"

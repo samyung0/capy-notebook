@@ -94,7 +94,7 @@ it('lists the files the user pays for and moves the picked ones here', async () 
   expect(here?.disabled).toBe(true);
   expect(here?.textContent).toContain(m.source_your_files_here());
   expect(card('other.pdf')?.textContent).toContain('Physics');
-  expect(card('alone.pdf')?.textContent).toContain(m.files_no_workspace());
+  expect(card('alone.pdf')?.textContent).toBe('alone.pdf');
 
   await click(card('other.pdf'));
   await click(card('alone.pdf'));

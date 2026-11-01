@@ -156,6 +156,25 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 	}
 }
 
+// inspect_document on a text file sends no office object and reads its lines
+// (CAPY-BACKEND-1R: the picture ids were read from that missing object).
+func TestTextInspectNeedsNoOfficeQuery(t *testing.T) {
+	fx := openDeckFiles(t)
+	authority := newOfficeAuthority(t, fx.st, map[string]string{
+		"/internal/documents/inspect": `{"format":"text","access":"edit","epoch":1,"checkpoint":1,"text":"one\ntwo"}`,
+	})
+	file := officeSource(t, fx, "notes.md")
+	rec := doInternal(t, fx.h, http.MethodPost, "/api/internal/documents/inspect", pipeSecret, map[string]any{
+		"workspaceId": fx.ws, "userId": fx.editor, "target": map[string]any{"kind": "source_file", "id": file},
+	})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"lines":[{"start":0,"text":"one"},{"start":4,"text":"two"}]`) {
+		t.Fatalf("text inspect = %d %s", rec.Code, rec.Body.String())
+	}
+	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 1 || sent[0]["office"] != nil {
+		t.Fatalf("a text read's query: %v", sent)
+	}
+}
+
 // An edit_office_document call reaches the engine in its commands, through
 // the edit route's receipt; edit_document refuses an Office file.
 func TestOfficeEditReachesTheEngineNormalized(t *testing.T) {

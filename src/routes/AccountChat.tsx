@@ -47,8 +47,13 @@ export default function AccountChat() {
   const { data: unread } = useUnreadNotificationCount({
     errorBoundary: false,
   });
-  const [request, setRequest] = useState<ChatRequest>();
+  // The URL's conversation is the panel's first, ahead of the one a reload
+  // kept (T19).
+  const [request, setRequest] = useState<ChatRequest | undefined>(() =>
+    conversationId ? { id: conversationId, seq: 0 } : undefined
+  );
   const [active, setActive] = useState<string | null>(null);
+  const [shown, setShown] = useState(false);
   const activeRef = useRef<string | null>(null);
   const urlRef = useRef(conversationId ?? null);
   urlRef.current = conversationId ?? null;
@@ -88,13 +93,21 @@ export default function AccountChat() {
   // panel reports no thread while one opens, so only named threads count;
   // New chat goes through the URL instead.
   const onActiveChange = useCallback(
-    (id: string | null) => {
+    (id: string | null, panelShown: boolean) => {
       activeRef.current = id;
       setActive(id);
+      setShown(panelShown);
       if (id && id !== urlRef.current) void show(id);
     },
     [show]
   );
+  // New chat also leaves a first send refused before it got a conversation,
+  // which the URL (still /chat) cannot tell apart from a new chat.
+  const newChat = () => {
+    activeRef.current = null;
+    setRequest((previous) => ({ id: null, seq: (previous?.seq ?? 0) + 1 }));
+    if (urlRef.current) void show(null);
+  };
   const onRemoved = (id: string) => {
     if (id === active) void show(null);
   };
@@ -170,7 +183,7 @@ export default function AccountChat() {
   const header = (
     <div className="flex h-12.25 shrink-0 items-center gap-1 pt-2.5 pr-2 pl-1.5">
       <ToolbarButton label={m.action_back()} onClick={back}>
-        <Icon name="navigationBack" />
+        <Icon className="-translate-y-px" name="navigationBack" />
       </ToolbarButton>
       {!lg && (
         <ToolbarButton
@@ -180,14 +193,10 @@ export default function AccountChat() {
           <Icon name="menu" />
         </ToolbarButton>
       )}
-      <h1 className="t-subtitle ml-1 min-w-0 flex-1 truncate">
+      <h1 className="t-subtitle ml-1 min-w-0 flex-1 translate-y-px truncate">
         {m.workspace_tab_chat()}
       </h1>
-      <ToolbarButton
-        disabled={!active}
-        label={m.chat_new()}
-        onClick={() => void show(null)}
-      >
+      <ToolbarButton disabled={!shown} label={m.chat_new()} onClick={newChat}>
         <Icon name="newChat" />
       </ToolbarButton>
     </div>
@@ -215,7 +224,7 @@ export default function AccountChat() {
               />
               <ConversationList
                 activeId={active}
-                onNew={() => void show(null)}
+                onNew={newChat}
                 onOpen={(id) => void show(id)}
                 onRemoved={onRemoved}
                 workspaceId={null}
@@ -232,7 +241,7 @@ export default function AccountChat() {
         )}
         <Panel
           className="min-w-0 flex-1"
-          frost="right"
+          frost="center"
           sectionClassName="h-full gap-0 overflow-hidden"
         >
           <AppErrorBoundary>
@@ -255,7 +264,7 @@ export default function AccountChat() {
         <ChatHistoryDialog
           activeId={active}
           onClose={() => setHistoryOpen(false)}
-          onNew={() => void show(null)}
+          onNew={newChat}
           onOpen={(id) => void show(id)}
           onRemoved={onRemoved}
           open={historyOpen}

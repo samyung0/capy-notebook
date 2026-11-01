@@ -1,7 +1,7 @@
 import { authHeaders } from './auth';
 import { API_BASE } from './client';
 import { consumeSSE, sseData, sseEvent } from './sse';
-import type { AppNotification, FileStatus } from './types';
+import type { AppNotification, ChatStatus, FileStatus } from './types';
 
 export interface IngestEvent {
   fileId: string;
@@ -22,7 +22,10 @@ export type NotificationStreamEvent =
     }
   /** A standalone file's ingest progress: it has no workspace channel, so it
    * rides the owner's notifications. */
-  | (IngestEvent & { type: 'ingest' });
+  | (IngestEvent & { type: 'ingest' })
+  /** A conversation's turn started (`streaming`) or saved its ending, for
+   * the running mark in the conversation lists (Epo 2026-10-27, T19). */
+  | { conversationId: string; status: ChatStatus; type: 'chat_turn' };
 
 export type StreamEvent =
   | { data: NotificationStreamEvent; name: 'notification' }
@@ -59,6 +62,12 @@ function parseEvent(chunk: string): StreamEvent | null {
   switch (sseEvent(chunk)) {
     case 'notification':
       if (value.type === 'ingest' && !isIngestEvent(value)) return null;
+      if (
+        value.type === 'chat_turn' &&
+        (typeof value.conversationId !== 'string' ||
+          typeof value.status !== 'string')
+      )
+        return null;
       return {
         data: value as unknown as NotificationStreamEvent,
         name: 'notification',

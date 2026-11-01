@@ -12,6 +12,7 @@ import {
 import type { WorkspaceOpenSearch } from '@/features/materials/openItem';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { TOUR_SAMPLE_SESSION } from './tourSamples';
 import { stopTour, tourPanels } from './tourStore';
 
 type Found = Element | null | undefined;
@@ -68,6 +69,9 @@ const shown = (element: Found): element is Element =>
 const TALL = 300;
 // The card's width and its gap: the room a side needs to take the card.
 const CARD_ROOM = 320 + 30;
+// A target shorter than this, with no room beside, gets the card above or
+// below it rather than on its corner, which would cover it.
+const SMALL = 96;
 // How long a step waits for its page and part before it is passed over.
 const FIND_MS = 6000;
 
@@ -153,6 +157,14 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
       go: () => inWorkspace({ material: note, mode: 'edit' }),
       loading: !materials,
       missing: !!materials && !note,
+      // Back from the note's own quiz: its question dialog closes first.
+      prepare: () => {
+        const close = questionDialog()?.querySelector(
+          '[data-slot="dialog-close"]'
+        );
+        if (close instanceof HTMLElement && once('close')) close.click();
+        return !questionDialog();
+      },
       // The room opens under the card; the cloud is outlined once it shows.
       rings: () => [find('#viewer [data-save-state]')],
       spot: centrePanel,
@@ -161,9 +173,11 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
     {
       at: inWorkspacePage,
       body: m.tour_quiz_body,
-      go: () => inWorkspace({ material: quiz, mode: 'edit' }),
+      // A quiz of its own, else the welcome note's embedded one: both edit a
+      // question in the same dialog.
+      go: () => inWorkspace({ material: quiz ?? note, mode: 'edit' }),
       loading: !materials,
-      missing: !!materials && !quiz,
+      missing: !!materials && !quiz && !note,
       // The quiz loads under the card, lit in the centre panel, then its first
       // question opens for editing.
       open: () => {
@@ -204,14 +218,13 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
     {
       at: (path) => path.startsWith('/learning/reviews/'),
       body: m.tour_result_body,
+      // Without a past review, the page shows its sample.
       go: () =>
-        session &&
         navigate({
-          params: { sessionId: session },
+          params: { sessionId: session ?? TOUR_SAMPLE_SESSION },
           to: '/learning/reviews/$sessionId',
         }),
       loading: !reviews,
-      missing: !!reviews && !session,
       spot: pagePanel,
       title: m.tour_result_title,
     },
@@ -234,11 +247,18 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
       body: m.tour_done_body,
       go: () => navigate({ to: '/' }),
       optional: true,
-      // The rail and the full sidebar both have the row; one shows.
+      // The phone's mic scrolls with the page, whose scroller can still hold
+      // the settings step's offset.
+      prepare: () => {
+        [...document.querySelectorAll('[data-voice-mic]')]
+          .find(shown)
+          ?.scrollIntoView({ block: 'nearest' });
+        return true;
+      },
+      // The rail, the full sidebar and the phone top row each have a mic
+      // that opens the account voice overlay; one shows.
       spot: () =>
-        [...document.querySelectorAll('[data-getting-started-row]')].find(
-          shown
-        ),
+        [...document.querySelectorAll('[data-voice-mic]')].find(shown),
       title: m.tour_done_title,
     },
   ];
@@ -340,7 +360,8 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
   const spot = boxes.spot;
   const beside =
     !!spot && Math.max(spot.x, innerWidth - spot.x - spot.w) >= CARD_ROOM;
-  const anchorElement = beside ? spotElement : null;
+  const small = !!spot && !beside && spot.h < SMALL;
+  const anchorElement = beside || small ? spotElement : null;
   const anchor = useMemo(
     () => ({
       current: anchorElement ?? {
@@ -367,17 +388,23 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
   // The next step's page is still opening.
   const moving = wanted.index !== index;
   // Beside: by the side with room, near the top of a tall part. In a corner:
-  // the card's bottom-right on it. Centred: hanging from the point.
+  // the card's bottom-right on it. Small: under it, or over it in the lower
+  // half. Centred: hanging from the point.
   const side =
     spot && beside
       ? spot.x + spot.w / 2 > innerWidth / 2
         ? 'left'
         : 'right'
-      : spot
-        ? 'top'
-        : 'bottom';
+      : small
+        ? spot.y + spot.h / 2 < innerHeight / 2
+          ? 'bottom'
+          : 'top'
+        : spot
+          ? 'top'
+          : 'bottom';
   const tall = !!spot && beside && spot.h > TALL;
-  const align = beside ? (tall ? 'start' : 'center') : spot ? 'end' : 'center';
+  const align =
+    beside || small ? (tall ? 'start' : 'center') : spot ? 'end' : 'center';
   const dialogLit = spotElement?.getAttribute('role') === 'dialog';
   const tip = boxes.tip;
   const tipBelow = !!tip && tip.y < innerHeight / 2;

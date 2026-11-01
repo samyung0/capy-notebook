@@ -31,7 +31,10 @@ FINAL_ANSWER_NOTICE = (
     "\nTools are off for this response. Answer now with what you found, and say "
     "what is still open."
 )
-UNSAVED_DECK = " A deck with slides left unwritten was not saved: say so."
+UNSAVED_DECK = (
+    " A PowerPoint not stored (slides left unwritten, or an export that failed) was "
+    "not saved: say so."
+)
 
 
 def tools_off(messages: list[dict[str, Any]]) -> bool:
@@ -99,7 +102,10 @@ def message(
         ),
         "\nStudy preferences (a request that names one material gets only that material):",
     ]
-    lines.extend(f"- {line}" for line in preferences.lines(ctx.study_preferences))
+    lines.extend(
+        f"- {line}"
+        for line in preferences.lines(ctx.study_preferences, account=ctx.account)
+    )
     # One line per excerpt: a second page of the same excerpt is the same input,
     # and the model pays for every line on every call.
     sections: dict[str, str] = {}

@@ -693,7 +693,6 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 		}
 	}
 	expect(list(editor, ""), false, image.ID, cardImage.ID)
-	expect(list(editor, EditorAssetsOpen), false, image.ID, cardImage.ID)
 	expect(lost(editor), true)
 	expect(list(owner, ""), false, ownImage.ID)
 	// The owner's own set in the note, its row then trashed (the block cut)
@@ -703,13 +702,12 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	ownCardImage := f.ready(owner, ws.ID, ownSet.ID)
-	expect(list(owner, EditorAssetsOpen), false, ownImage.ID, ownCardImage.ID)
+	expect(list(owner, ""), false, ownImage.ID, ownCardImage.ID)
 	if _, err := s.pool.Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id=$2,
 		purge_after=now() + interval '30 days' WHERE id=$1`, ownSet.ID, uid("trash")); err != nil {
 		t.Fatal(err)
 	}
 	expect(list(owner, ""), false, ownImage.ID)
-	expect(list(owner, EditorAssetsOpen), false, ownImage.ID)
 	if err := s.RemoveWorkspaceMember(ctx, owner, ws.ID, editor); err != nil {
 		t.Fatal(err)
 	}
@@ -718,7 +716,6 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 	}
 	expect(lost(editor), true, image.ID, cardImage.ID)
 	expect(list(editor, ""), true, image.ID, cardImage.ID)
-	expect(list(editor, EditorAssetsOpen), false)
 	expect(lost(owner), true)
 	// The owner trashes the note: its own image goes with the note's trash,
 	// while the removed editor's stay listed.
@@ -727,7 +724,6 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	expect(list(owner, ""), false)
-	expect(list(owner, EditorAssetsOpen), false)
 	expect(lost(editor), true, image.ID, cardImage.ID)
 	// Nor does an account that cannot open the note either.
 	stranger := newBlobTestUser(t, s, "u_m16_lost_stranger")

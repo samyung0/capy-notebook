@@ -263,19 +263,14 @@ export async function expectRichContent(
       timeout,
     });
   } else {
-    let current = 1;
     for (const [slide, text] of [
       [1, marker],
       [3, PPTX_OWNER],
       [18, PPTX_COLLABORATOR],
     ] as const) {
-      for (; current < slide; current++) {
-        await frame.getByTestId('pptx-next-slide').click();
-        await expect(frame.getByRole('status')).toHaveAttribute(
-          'data-slide',
-          String(current + 1)
-        );
-      }
+      const thumbnail = frame.locator('aside button').nth(slide - 1);
+      await thumbnail.click();
+      await expect(thumbnail).toHaveAttribute('aria-current', 'page');
       await expect(
         frame.getByRole('region', {
           name: m.files_office_slide_content({ current: slide, total: 20 }),

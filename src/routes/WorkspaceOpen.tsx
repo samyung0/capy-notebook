@@ -57,7 +57,6 @@ import {
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { followMoves } from '@/features/files/fileMoved';
 import { officeFormatOf } from '@/features/files/fileUtils';
-import type { OfficeCitation } from '@/features/files/officeProtocol';
 import {
   registerTourPanels,
   type TourPanels,
@@ -65,6 +64,7 @@ import {
 import { CenterContent } from '@/features/materials/CenterContent';
 import type { OneColumnChrome } from '@/features/materials/CenterContentHeader';
 import {
+  type NoteCitationTarget,
   type OpenItem,
   openItemFromSearch,
   searchFromOpenItem,
@@ -97,7 +97,7 @@ import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsD
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
-import { isBoolean, PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
+import { isBoolean, PREF_KEYS, readPref, useLocalPref } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
@@ -449,7 +449,7 @@ function WorkspaceOpen() {
   const [citationTarget, setCitationTarget] = useState<{
     fileId: string;
     regions: Region[];
-    citation?: OfficeCitation;
+    citation?: NoteCitationTarget;
   } | null>(null);
   // The chat dock sits 8px above the Office frame's bottom chrome, which the
   // runtime reports; written to the box's style so the workspace does not
@@ -459,8 +459,7 @@ function WorkspaceOpen() {
     viewerBox.current?.style.setProperty('--office-inset', `${inset}px`);
   }, []);
   const openItem =
-    searchedOpenItem?.kind === 'file' &&
-    citationTarget?.fileId === searchedOpenItem.id
+    searchedOpenItem && citationTarget?.fileId === searchedOpenItem.id
       ? {
           ...searchedOpenItem,
           citation: citationTarget.citation,
@@ -503,8 +502,20 @@ function WorkspaceOpen() {
 
   function openCitation(citation: Citation) {
     if (citation.materialId) {
+      // A note has no boxes: its View finds the cited blocks, else the
+      // quoted text (Q593, Q594). A new object per click, so a repeat
+      // flashes again.
+      setCitationTarget({
+        citation: {
+          blockIds: citation.blockIds ?? undefined,
+          quote: citation.snippet,
+        },
+        fileId: citation.materialId,
+        regions: [],
+      });
       navigate({
         replace: true,
+        resetScroll: false,
         search: { material: citation.materialId, mode: 'view' },
         to: '.',
       });
@@ -581,6 +592,13 @@ function WorkspaceOpen() {
   const tourPanels = useRef<TourPanels | null>(null);
   useEffect(() => {
     tourPanels.current = {
+      // The tour wrote back what the panels were before it.
+      restore: () => {
+        setLeftOpen(readPref(PREF_KEYS.leftPanel, true, isBoolean));
+        setLeftView(readPref(PREF_KEYS.leftView, 'chats', isLeftView));
+        setRightOpen(readPref(PREF_KEYS.rightPanel, false, isBoolean));
+        setTab(readPref(PREF_KEYS.rightView, 'files', isPanelTab));
+      },
       showChats: () => {
         setLeftOpen(true);
         setLeftView('chats');

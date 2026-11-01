@@ -39,7 +39,7 @@ func TestDefinitionsAreClosedObjects(t *testing.T) {
 	}
 	for _, name := range []string{
 		"search_workspace", "create_material", "trash_file",
-		"search_knowledge", "read_knowledge", "capture_knowledge_page",
+		"search_library", "read_library", "capture_library_page",
 	} {
 		if !seen[name] {
 			t.Fatalf("missing tool %s", name)
@@ -214,12 +214,12 @@ func TestRetentionBetweenMessages(t *testing.T) {
 	want := map[ResultRetention][]string{
 		RetainFull: {
 			"list_sources", "create_material", "add_questions", "add_question_media", "create_deck",
-			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document", "search_files_summary", "create_workspace", "create_chapter", "search_knowledge", "list_workspaces",
+			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document", "search_files_summary", "create_workspace", "create_chapter", "search_library", "search_images", "list_workspaces",
 		},
 		RetainCitedPassages: {"search_workspace", "read_document", "search_web", "search_files_content"},
-		RetainUsedExcerpts:  {"read_knowledge"},
+		RetainUsedExcerpts:  {"read_library"},
 		RetainNone: {
-			"capture_page", "read_study_progress", "capture_knowledge_page", "read_skill",
+			"capture_page", "read_study_progress", "capture_library_page", "read_skill",
 			"resolve_source_change", "inspect_document", "list_trashed_files", "inspect_office_document",
 		},
 	}

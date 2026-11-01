@@ -122,8 +122,6 @@ pub struct Embed {
     pub fence_lang: &'static str,
     /// ` + "`json`, `yaml` or `text`" + `.
     pub fence_body: &'static str,
-    /// The chat (OpenUI) component; empty when chat has none.
-    pub chat: &'static str,
     /// Material kinds that hold one as their whole document.
     pub materials: &'static [&'static str],
     pub question_block: bool,
@@ -175,12 +173,11 @@ pub const ELEMENTS: &[Element] = &[
         element: %q,
         fence_lang: %q,
         fence_body: %q,
-        chat: %q,
         materials: %s,
         question_block: %t,
         question_media: %t,
     },
-`, e.Kind, e.Class, e.Element, e.Fence.Lang, e.Fence.Body, e.Chat, rustStrs(e.Materials),
+`, e.Kind, e.Class, e.Element, e.Fence.Lang, e.Fence.Body, rustStrs(e.Materials),
 			e.QuestionBlock, e.QuestionMedia)
 	}
 	out.WriteString("];\n\npub const MATERIAL_KINDS: &[MaterialKind] = &[\n")

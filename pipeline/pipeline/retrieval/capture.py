@@ -12,7 +12,7 @@ after the tool results of its step, because chat-completions tool messages
 carry text only.
 Images live on the turn's ``ToolContext`` and are never persisted.
 
-``capture_knowledge_page`` renders a library book the same way, from the
+``capture_library_page`` renders a library book the same way, from the
 knowledge-base bucket and keyed in the same cache by its object key.
 """
 

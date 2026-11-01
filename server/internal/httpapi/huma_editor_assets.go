@@ -14,7 +14,7 @@ import (
 // and resolve stay on raw chi (editor_assets.go).
 
 type editorAssetsInput struct {
-	Access string `query:"access" enum:"open,lost" doc:"Only media in notes the caller can open, or only those it cannot"`
+	Access string `query:"access" enum:"lost" doc:"Only media in notes the caller can no longer open"`
 	Limit  int    `query:"limit" minimum:"1" maximum:"100" default:"40"`
 	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
 }
@@ -35,6 +35,12 @@ func (a *api) listEditorAssets(ctx context.Context, in *editorAssetsInput) (*edi
 	page, err := a.s.ListEditorAssets(ctx, userID(ctx), store.EditorAssetAccess(in.Access), in.Limit, in.Cursor)
 	if err != nil {
 		return nil, hErr(err)
+	}
+	// Every row is one the caller pays for, so it may see the image.
+	for i := range page.Items {
+		if page.Items[i].ThumbnailURL, err = a.thumbnailURL(ctx, page.Items[i].ThumbnailKey); err != nil {
+			return nil, hErr(err)
+		}
 	}
 	return &editorAssetsOutput{Body: page}, nil
 }

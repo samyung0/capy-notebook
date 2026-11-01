@@ -266,6 +266,15 @@ function rowKey(row: Row): string {
     : `${row.kind}:${row.partId}`;
 }
 
+/** A row's element in the body. A blanks part has no answer controls of its
+ * own: its text blocks holding the blanks stand for it (data-part-key). */
+function rowElement(row: Row) {
+  const key = CSS.escape(rowKey(row));
+  return document.querySelector<HTMLElement>(
+    `[data-row-key="${key}"], [data-part-key="${key}"]`
+  );
+}
+
 export function QuestionDialog(props: QuestionDialogProps) {
   return props.open ? (
     <QuestionDialogSession {...props} key={props.question.id} />
@@ -324,10 +333,7 @@ function QuestionDialogSession({
   // screen.
   useEffect(() => {
     if (!reveal) return;
-    const { row } = reveal;
-    const element = document.querySelector<HTMLElement>(
-      `[data-row-key="${CSS.escape(rowKey(row))}"]`
-    );
+    const element = rowElement(reveal.row);
     if (!element) return;
     // Room for the block's floating toolbar, below the phone's sticky tabs.
     scrollIntoViewWithMotion(
@@ -1062,22 +1068,33 @@ function QuestionDialogSession({
   // A block or part answer in the body: click selects it, a double click or
   // Enter edits it, and the selection shows the note editor's floating block
   // toolbar below it, portaled so selecting never moves the layout.
+  // `part`: a blanks part's text block also shows that part selected, outlined
+  // with the others holding its blanks; the last of them (`tools` given)
+  // carries the part's toolbar.
   const selectable = (
     row: Row,
     label: string,
     onEdit: () => void,
     tools: ReactNode,
-    children: ReactNode
+    children: ReactNode,
+    part?: { row: Row; onEdit: () => void; tools?: ReactNode }
   ) => {
     const key = rowKey(row);
     const active = !!selected && rowKey(selected) === key;
+    const partKey = part && rowKey(part.row);
+    const partActive = !!selected && rowKey(selected) === partKey;
+    const toolbar = active
+      ? { onEdit, tools }
+      : partActive && part?.tools
+        ? { onEdit: part.onEdit, tools: part.tools }
+        : null;
     return (
       <Popover
         modal={false}
         onOpenChange={(open) => {
           if (!open) setSelected(null);
         }}
-        open={active}
+        open={!!toolbar}
       >
         <PopoverAnchor asChild>
           <div
@@ -1085,8 +1102,9 @@ function QuestionDialogSession({
             className={cn(
               // Disabled preview controls would swallow the click.
               'relative outline-offset-2 [&_:disabled]:pointer-events-none',
-              active && 'outline-2 outline-action-accent'
+              (active || partActive) && 'outline-2 outline-action-accent'
             )}
+            data-part-key={partKey}
             data-row-key={key}
             onClick={() => setSelected(row)}
             onDoubleClick={onEdit}
@@ -1116,15 +1134,18 @@ function QuestionDialogSession({
             )
               event.preventDefault();
           }}
-          open={active}
+          open={!!toolbar}
           role="toolbar"
         >
           <ToolbarGroup>
-            <ToolbarButton label={m.question_ui_edit()} onClick={onEdit}>
+            <ToolbarButton
+              label={m.question_ui_edit()}
+              onClick={toolbar?.onEdit ?? onEdit}
+            >
               <Icon name="pencil" />
             </ToolbarButton>
           </ToolbarGroup>
-          {tools}
+          {toolbar?.tools}
         </FloatingBlockToolbar>
       </Popover>
     );
@@ -1155,6 +1176,14 @@ function QuestionDialogSession({
   ) => {
     const location = { ...section, index };
     const row: Row = { kind: 'block', location };
+    const part = draft.parts.find((item) => item.id === section.partId);
+    // A blanks part's text blocks holding blanks; the last gets its tools.
+    const gapBlocks =
+      part?.answer.type === 'gaps' && !section.solution
+        ? part.blocks.flatMap((item, i) =>
+            gapNumbers([item]).length > 0 ? [i] : []
+          )
+        : [];
     return selectable(
       row,
       m.question_ui_select_block({ type: blockLabels[block.type]() }),
@@ -1187,27 +1216,37 @@ function QuestionDialogSession({
         </p>
       ) : (
         (view ?? <QuestionBlockView block={block} />)
-      )
+      ),
+      part && gapBlocks.includes(index)
+        ? {
+            onEdit: () => openPart(part),
+            row: { kind: 'part', partId: part.id },
+            tools: index === gapBlocks.at(-1) ? partTools(part) : undefined,
+          }
+        : undefined
     );
   };
+  const partTools = (part: QuestionPart) => (
+    <>
+      {moveTools({ kind: 'part', partId: part.id })}
+      <ToolbarGroup>
+        <ToolbarButton
+          disabled={draft.parts.length <= 1}
+          label={m.question_ui_remove_part()}
+          onClick={() => removePart(part.id)}
+          variant="danger-light"
+        >
+          <Icon name="trash" />
+        </ToolbarButton>
+      </ToolbarGroup>
+    </>
+  );
   const previewAnswer = (part: QuestionPart, answer: ReactNode) =>
     selectable(
       { kind: 'part', partId: part.id },
       m.question_ui_select_answer(),
       () => openPart(part),
-      <>
-        {moveTools({ kind: 'part', partId: part.id })}
-        <ToolbarGroup>
-          <ToolbarButton
-            disabled={draft.parts.length <= 1}
-            label={m.question_ui_remove_part()}
-            onClick={() => removePart(part.id)}
-            variant="danger-light"
-          >
-            <Icon name="trash" />
-          </ToolbarButton>
-        </ToolbarGroup>
-      </>,
+      partTools(part),
       answer
     );
   // Editors see what learners only get after checking, between the waves:
@@ -1251,11 +1290,7 @@ function QuestionDialogSession({
                 onClick={() => {
                   const row: Row = { kind: 'part', partId: part.id };
                   setSelected(row);
-                  document
-                    .querySelector(
-                      `[data-row-key="${CSS.escape(rowKey(row))}"]`
-                    )
-                    ?.scrollIntoView({ block: 'nearest' });
+                  rowElement(row)?.scrollIntoView({ block: 'nearest' });
                 }}
                 onDoubleClick={() => openPart(part)}
                 onKeyDown={(event) => {
@@ -1812,7 +1847,10 @@ function QuestionDialogSession({
                   if (!part) return answer;
                   return (
                     <>
-                      {previewAnswer(part, answer)}
+                      {/* Blanks have no controls here: their text blocks
+                          stand for the part (previewBlock). */}
+                      {part.answer.type !== 'gaps' &&
+                        previewAnswer(part, answer)}
                       {draft.layout !== 'split' && hidden([part])}
                     </>
                   );

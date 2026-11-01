@@ -73,6 +73,9 @@ test('editor settings keep drafts until Apply, persist the width and keep margin
 test('the note toolbar opens as this browser last left it', async ({
   page,
 }) => {
+  // Three cold editor mounts (the open and two reloads) take about 15 s each
+  // on a loaded CI runner, past the default 60 s.
+  test.setTimeout(120_000);
   await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
   const toolbar = page.getByRole('toolbar', {
     name: m.editor_doc_formatting(),

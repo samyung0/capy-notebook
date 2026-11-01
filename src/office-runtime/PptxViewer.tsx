@@ -15,11 +15,7 @@ import {
   LocaleProvider,
   PresentationOverlay,
 } from '@betteroffice/pptx-react/presentation';
-import {
-  ArrowLeft04Icon,
-  ArrowRight04Icon,
-  Note01Icon,
-} from '@hugeicons/core-free-icons';
+import { Note01Icon } from '@hugeicons/core-free-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HugeIcon } from '@/components/ui/HugeIcon';
 import type {
@@ -356,78 +352,38 @@ export function PptxViewer({
     zoom,
   ]);
 
-  const selectSlide = (next: number) => {
-    if (next >= 0 && next < slideCount) setSlideIndex(next);
-  };
-
   return (
     <div className={cn('pptx-viewer', stripBelow && 'pptx-viewer-narrow')}>
       <div className="pptx-viewer-workspace">
+        {/* The slide navigation in both modes; no pager under it. */}
         {slides && slideCount > 0 && (
           <aside
             aria-label={m.files_office_slide_count({ count: slideCount })}
             className="pptx-viewer-strip"
           >
-            <div className="pptx-viewer-slides">
-              {slides.map((slide, index) => (
-                <button
-                  aria-current={index === slideIndex ? 'page' : undefined}
-                  className="pptx-viewer-slide"
-                  key={index}
-                  onClick={() => selectSlide(index)}
-                  type="button"
-                >
-                  <span className="pptx-viewer-slide-number">{index + 1}</span>
-                  <span
-                    aria-hidden="true"
-                    className="pptx-viewer-slide-preview"
-                    style={{
-                      aspectRatio: `${slide.frame.width} / ${slide.frame.height}`,
-                    }}
-                  >
-                    <SlideThumbnail
-                      frame={slide.frame}
-                      resolveImage={resolveImage}
-                    />
-                  </span>
-                </button>
-              ))}
-            </div>
-            {/* The strip under the slide is pager enough. */}
-            {!stripBelow && (
-              <div className="pptx-viewer-pager">
-                <button
-                  aria-label={m.files_office_previous_slide()}
-                  disabled={slideIndex === 0}
-                  onClick={() => selectSlide(slideIndex - 1)}
-                  title={m.files_office_previous_slide()}
-                  type="button"
-                >
-                  <HugeIcon icon={ArrowLeft04Icon} />
-                </button>
+            {slides.map((slide, index) => (
+              <button
+                aria-current={index === slideIndex ? 'page' : undefined}
+                className="pptx-viewer-slide"
+                key={index}
+                onClick={() => setSlideIndex(index)}
+                type="button"
+              >
+                <span className="pptx-viewer-slide-number">{index + 1}</span>
                 <span
-                  aria-atomic="true"
-                  aria-live="polite"
-                  data-slide={slideIndex + 1}
-                  role="status"
+                  aria-hidden="true"
+                  className="pptx-viewer-slide-preview"
+                  style={{
+                    aspectRatio: `${slide.frame.width} / ${slide.frame.height}`,
+                  }}
                 >
-                  {m.files_office_slide_position({
-                    current: slideIndex + 1,
-                    total: slideCount,
-                  })}
+                  <SlideThumbnail
+                    frame={slide.frame}
+                    resolveImage={resolveImage}
+                  />
                 </span>
-                <button
-                  aria-label={m.files_office_next_slide()}
-                  data-testid="pptx-next-slide"
-                  disabled={slideIndex === slideCount - 1}
-                  onClick={() => selectSlide(slideIndex + 1)}
-                  title={m.files_office_next_slide()}
-                  type="button"
-                >
-                  <HugeIcon icon={ArrowRight04Icon} />
-                </button>
-              </div>
-            )}
+              </button>
+            ))}
           </aside>
         )}
         <div className="pptx-viewer-stage">
@@ -534,7 +490,8 @@ export function PptxViewer({
   );
 }
 
-/** pptx-react's SlideThumbnail, painted at the strip's 126px width. */
+/** pptx-react's SlideThumbnail, painted at the strip's 126px width and never
+ * shown wider. */
 function SlideThumbnail({
   frame,
   resolveImage,
@@ -550,7 +507,8 @@ function SlideThumbnail({
     const scale = 126 / frame.width;
     const dpr = window.devicePixelRatio || 1;
     sizeCanvasForSlide(canvas, frame, dpr, scale);
-    // Fills its frame, which is narrower in the narrow layout.
+    // Fills its frame, which is narrower in the narrow layout or beside the
+    // rail's scrollbar.
     canvas.style.width = '100%';
     canvas.style.height = 'auto';
     void paintSlide(context, frame, dpr, scale, { resolveImage }).catch(

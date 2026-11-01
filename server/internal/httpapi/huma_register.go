@@ -576,6 +576,7 @@ type Empty struct{}
 func registerRoutes(api huma.API, a *api) {
 	a.registerBank(api)
 	a.registerAccount(api)
+	a.registerLibraryFigures(api)
 	a.registerModels(api)
 	a.registerAccountLifecycle(api)
 	a.registerWorkspaces(api)

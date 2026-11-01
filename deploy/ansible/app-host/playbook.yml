@@ -10,8 +10,6 @@
       - "6379"
     # The interface the internet reaches this host on.
     app_public_interface: "{{ ansible_default_ipv4.interface }}"
-    # Container networks allowed to reach the host (see the ufw task below).
-    app_docker_host_networks: ["10.0.0.0/16", "fdda:ad28:f840::/64"]
 
   pre_tasks:
     - name: Refuse incomplete WireGuard configuration
@@ -126,20 +124,15 @@
         comment: Capy Notebook ingest-host private service link
       tags: [firewall]
 
-    # Containers reach the host itself (Coolify's sentinel pushes to the
-    # host's published port 8000 through Docker's userland proxy, which ufw's
-    # input rules see). Docker allocates its /24 networks from the start of
-    # its 10.0.0.0/8 pool, so 10.0.0.0/16 covers them without the WireGuard
-    # link's addresses, which sit elsewhere in 10/8. The IPv6 range is
-    # Coolify's own network on this host (Epo 2026-10-20). Only Coolify needs
-    # it: it goes once Coolify is removed from the host (runbook §1.1).
-    - name: Allow Docker networks to reach the host
+    # Coolify's Sentinel was the only container that reached the host itself;
+    # with Coolify removed, the rule that let Docker networks in goes too.
+    - name: Remove the Docker networks' access to the host
       community.general.ufw:
         rule: allow
         direction: in
         from_ip: "{{ item }}"
-        comment: Docker networks to the host
-      loop: "{{ app_docker_host_networks }}"
+        delete: true
+      loop: ["10.0.0.0/16", "fdda:ad28:f840::/64"]
       tags: [firewall]
 
     - name: Stop the unused native PostgreSQL cluster

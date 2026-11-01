@@ -29,7 +29,7 @@ import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { forgetUndoPayload, useUndoPayload } from '@/lib/undoPayloads';
 import { toolErrorMessage } from '../toolErrorMessage';
 import { ActivityIcon } from './ActivityIcon';
-import { LangAnswer } from './LangAnswer';
+import { MarkdownAnswer } from './MarkdownAnswer';
 import {
   type ActivityIconKind,
   buildTrace,
@@ -517,7 +517,7 @@ function Row({
     case 'narration':
       return (
         <div>
-          <LangAnswer
+          <MarkdownAnswer
             citations={citations}
             complete
             content={row.text}

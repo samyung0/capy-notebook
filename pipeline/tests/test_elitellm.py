@@ -284,8 +284,8 @@ async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
     )
 
 
-def test_minimax_runs_on_together_then_wafer_at_the_chat_pins_effort():
-    """Q224: MiniMax 3.1 Flash runs on Together, then Wafer (Epo 2026-10-25), and its
+def test_minimax_runs_on_together_then_digitalocean_at_the_chat_pins_effort():
+    """Q224: MiniMax 3.1 Flash runs on Together, then DigitalOcean (Epo 2026-10-30), and its
     thinking levels map onto OpenRouter's efforts."""
     spec = _spec(
         provider_slug="openrouter",
@@ -306,7 +306,7 @@ def test_minimax_runs_on_together_then_wafer_at_the_chat_pins_effort():
     )
     assert body["model"] == "minimax/minimax-m3.1-flash"
     assert body["provider"] == {
-        "order": ["together", "wafer"],
+        "order": ["together", "digitalocean"],
         "allow_fallbacks": False,
     }
     assert body["reasoning"] == {"effort": "medium"}
@@ -372,8 +372,8 @@ async def test_qwen_embedding_uses_exact_deepinfra_route(
 ):
     seen: dict[str, object] = {}
 
-    async def post_json(url, headers, body):
-        seen.update(url=url, headers=headers, body=body)
+    async def post_json(url, headers, body, *, timeout=None):
+        seen.update(url=url, headers=headers, body=body, timeout=timeout)
         return {"data": [{"embedding": [0.0, 1.0]}], "usage": {}}
 
     monkeypatch.setenv("DEEPINFRA_API_KEY", "sk-deepinfra")
@@ -388,6 +388,10 @@ async def test_qwen_embedding_uses_exact_deepinfra_route(
 
     await embed_batch(spec, ["one", "two"], dimensions=2560)
 
+    # An interactive embedding waits 30 s, not the 15 s other interactive
+    # calls get (Epo 2026-10-30).
+    assert seen["timeout"] == 30.0
+    assert cfg.interactive_provider_timeout_s == 15.0
     assert seen["url"] == DEEPINFRA_EMBED_URL
     assert seen["body"] == {
         "model": "Qwen/Qwen3-Embedding-4B",
@@ -397,7 +401,7 @@ async def test_qwen_embedding_uses_exact_deepinfra_route(
     }
 
 
-async def test_qwen_rerank_uses_the_deepinfra_inference_route(monkeypatch):
+async def test_qwen3_rerank_uses_the_alibaba_workspace_route(monkeypatch):
     from pipeline.elitellm import client as transport
     from pipeline.retrieval.usage_extract import extract_usage
 
@@ -409,26 +413,30 @@ async def test_qwen_rerank_uses_the_deepinfra_inference_route(monkeypatch):
             auth=request.headers["authorization"],
             body=json.loads(request.content),
         )
-        # Shape of a live answer, 2026-09-26.
+        # Shape of a live answer, 2026-10-30: results ordered by score.
         return httpx.Response(
             200,
             json={
-                "request_id": "r1",
-                "inference_status": {
-                    "runtime_ms": 75,
-                    "cost": 6.7e-06,
-                    "tokens_input": 268,
-                },
-                "scores": [0.0067, 0.0000097, 0.912],
-                "input_tokens": 268,
+                "id": "r1",
+                "model": "qwen3-rerank",
+                "results": [
+                    {"index": 2, "relevance_score": 0.927},
+                    {"index": 0, "relevance_score": 0.557},
+                    {"index": 1, "relevance_score": 0.199},
+                ],
+                "usage": {"total_tokens": 100},
             },
         )
 
-    monkeypatch.setenv("DEEPINFRA_API_KEY", "sk-deepinfra")
+    monkeypatch.setenv("ALIBABA_MODELSTUDIO_KEY", "sk-alibaba")
+    monkeypatch.setenv(
+        "ALIBABA_MODELSTUDIO_URL",
+        "https://ws-x.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/",
+    )
     _mock_client(monkeypatch, handler)
     spec = _spec(
-        provider_slug="deepinfra",
-        model_slug="Qwen/Qwen3-Reranker-4B",
+        provider_slug="alibaba",
+        model_slug="qwen3-rerank",
         thinking_levels=(),
         default_thinking="",
         slots=("rerank",),
@@ -437,18 +445,43 @@ async def test_qwen_rerank_uses_the_deepinfra_inference_route(monkeypatch):
     raw = await transport.rerank(spec, "q", ["a", "b", "c"])
 
     assert seen == {
-        "url": "https://api.deepinfra.com/v1/inference/Qwen/Qwen3-Reranker-4B",
-        "auth": "Bearer sk-deepinfra",
-        "body": {"queries": ["q", "q", "q"], "documents": ["a", "b", "c"]},
+        "url": "https://ws-x.ap-southeast-1.maas.aliyuncs.com/compatible-api/v1/reranks",
+        "auth": "Bearer sk-alibaba",
+        "body": {
+            "model": "qwen3-rerank",
+            "query": "q",
+            "documents": ["a", "b", "c"],
+            "top_n": 3,
+        },
     }
-    assert raw["scores"] == [0.0067, 0.0000097, 0.912]
-    assert extract_usage(raw, provider="deepinfra").input_tokens == 268
-    assert (
-        extract_usage(
-            {"inference_status": {"tokens_input": 268}}, provider="deepinfra"
-        ).input_tokens
-        == 268
+    assert raw["scores"] == [0.557, 0.199, 0.927]
+    assert extract_usage(raw, provider="alibaba").input_tokens == 100
+
+
+async def test_alibaba_rerank_missing_a_document_score_is_an_error(monkeypatch):
+    from pipeline.elitellm import client as transport
+
+    def handler(request: httpx.Request):
+        return httpx.Response(
+            200, json={"results": [{"index": 0, "relevance_score": 0.5}]}
+        )
+
+    monkeypatch.setenv("ALIBABA_MODELSTUDIO_KEY", "sk-alibaba")
+    monkeypatch.setenv(
+        "ALIBABA_MODELSTUDIO_URL",
+        "https://ws-x.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
     )
+    _mock_client(monkeypatch, handler)
+    spec = _spec(
+        provider_slug="alibaba",
+        model_slug="qwen3-rerank",
+        thinking_levels=(),
+        default_thinking="",
+        slots=("rerank",),
+    )
+
+    with pytest.raises(transport.ProviderError):
+        await transport.rerank(spec, "q", ["a", "b"])
 
 
 def test_openai_uses_responses_only_with_tools_and_thinking():

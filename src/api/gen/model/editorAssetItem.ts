@@ -17,6 +17,8 @@ export interface EditorAssetItem {
   name: string;
   purpose: EditorAssetItemPurpose;
   sizeBytes: number;
+  /** An image's 200 px card thumbnail, an hour-stable link; absent for audio and for images without one */
+  thumbnailUrl?: string;
   workspaceId?: string;
   workspaceName: string;
 }

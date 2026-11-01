@@ -1,7 +1,8 @@
-/** Consume an SSE response body and pass each complete event to the caller. */
+/** Consume an SSE response body and pass each complete event to the caller,
+ * which returns true to stop reading. */
 export async function consumeSSE(
   body: ReadableStream<Uint8Array>,
-  onEvent: (chunk: string) => void
+  onEvent: (chunk: string) => unknown
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -16,7 +17,10 @@ export async function consumeSSE(
       buffer += decoder.decode(value, { stream: true });
       let separator = buffer.indexOf('\n\n', scanned);
       while (separator !== -1) {
-        onEvent(buffer.slice(0, separator));
+        if (onEvent(buffer.slice(0, separator)) === true) {
+          await reader.cancel();
+          return;
+        }
         buffer = buffer.slice(separator + 2);
         separator = buffer.indexOf('\n\n');
       }

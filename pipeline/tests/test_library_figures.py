@@ -54,6 +54,13 @@ OLD_ROW = (
 )
 
 
+def _shown(ctx, result) -> str:
+    """A result as the model reads it, its passages numbered."""
+    from pipeline.retrieval import tools
+
+    return tools.render_result(result, tools.assign_citations(ctx, result.passages))
+
+
 def _figure(i: int, **notes) -> dict:
     return {
         "id": f"f{i}",
@@ -190,14 +197,14 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
 
     # No decorative or excluded id anywhere a model reads: read, search.
     ctx = ToolContext(workspace_id="ws", operations=frozenset({"library.read"}))
-    text = (await tools._read_knowledge({"excerpt_id": "e_intro"}, ctx)).text()
+    text = _shown(ctx, await tools._read_library({"excerpt_id": "e_intro"}, ctx))
     assert "figures: fig_1, fig_2" in text and "- fig_2: Figure 8.2" in text
     assert "fig_band" not in text and "fig_nc" not in text and "fig_page" not in text
     found = await library.search("regression", vector=test_library._unit_vector(0))
     assert found.excerpts[0].figure_ids == ["fig_1", "fig_2"]
 
 
-async def test_read_knowledge_lists_figures_after_the_text(monkeypatch):
+async def test_read_library_lists_figures_after_the_text(monkeypatch):
     ctx = ToolContext(workspace_id="ws", operations=frozenset({"library.read"}))
     figures = [
         {
@@ -235,14 +242,14 @@ async def test_read_knowledge_lists_figures_after_the_text(monkeypatch):
         )
 
     monkeypatch.setattr(tools.library, "read_excerpt", _read)
-    text = (await tools._read_knowledge({"excerpt_id": "e_1"}, ctx)).text()
+    text = _shown(ctx, await tools._read_library({"excerpt_id": "e_1"}, ctx))
     assert text.endswith(
         "(chunk 0) Residuals.\n\nFigures:\n"
         "- fig_2: Figure 8.2 — A line. (credit: CC BY 4.0)\n"
         "- fig_3: Figure 8.3\n"
         "- fig_1\n</source>\n\n(end of excerpt)"
     )
-    bare = (await tools._read_knowledge({"excerpt_id": "e_2"}, ctx)).text()
+    bare = _shown(ctx, await tools._read_library({"excerpt_id": "e_2"}, ctx))
     assert "Figures:" not in bare and bare.endswith(
         "Residuals.\n</source>\n\n(end of excerpt)"
     )
@@ -284,9 +291,7 @@ def _figure_writes(monkeypatch):
     return ctx, rendered, sent
 
 
-async def test_a_note_shows_a_figure_it_read_with_the_printed_credit(
-    library_db, monkeypatch
-):
+async def test_a_note_shows_a_figure_with_the_printed_credit(library_db, monkeypatch):
     with psycopg.connect(library_db, autocommit=True) as conn:
         conn.execute(
             "UPDATE library_figures SET label = 'Figure 1: [Scatter] plot', "
@@ -299,10 +304,8 @@ async def test_a_note_shows_a_figure_it_read_with_the_printed_credit(
         "_tool_call_id": "c1",
     }
 
-    unread = await tools._create_material(note, ctx)
-    assert unread.refused and "e_intro" in unread.text() and not sent
-
-    ctx.library_reads.note("e_intro", 0, "8.1")
+    # Read in no turn of this one (R1, Epo 2026-10-30): the excerpt that lists
+    # it is credited all the same.
     result = await tools._create_material(note, ctx)
     assert not result.refused, result.text()
     body = sent[0]

@@ -18,15 +18,14 @@ import {
   availableOf,
   billing,
   completeCheckout,
-  credits,
   creditsRow,
   DECLINES,
   declinedReload,
   dollars,
   enableNoteAi,
   expectAnswered,
+  expectBalanceOnUsage,
   expectInvoice,
-  expectPurchasedOnUsage,
   expectRaiseFunction,
   expectRefusedAtZero,
   expectVoided,
@@ -90,6 +89,7 @@ test('starter credits, the monthly limit, a card saved through setup Checkout, a
   expect(start.planTier).toBe('free');
   expect(Number(start.creditsPurchasedMicros)).toBe(0);
   expect(object(start.creditSettings).starterAvailable).toBe(true);
+  expect(object(start.creditSettings).starterCardUsed).toBe(false);
   const usage = await owner.request('/api/usage');
   expect(usage.status).toBe(200);
   const spent = arrayField(usage.body, 'bySurface').reduce<number>(
@@ -100,30 +100,15 @@ test('starter credits, the monthly limit, a card saved through setup Checkout, a
   const pool =
     Number(start.creditsPurchasedMicros) +
     Math.max(0, spent - (used - Number(start.creditsCarriedMicros)));
-  const resets = new Date(stringField(start, 'creditsPeriodStart'));
-  resets.setUTCMonth(resets.getUTCMonth() + 1);
-  const monthly = m.billing_credits_hint_monthly({
-    date: shortDate(resets),
-    limit: credits(Number(start.creditsLimitMicros)),
-    used: credits(used),
-  });
-  await expect(
-    page.getByText(
-      pool > 0
-        ? `${monthly} ${m.billing_credits_hint_then_purchased({ amount: credits(pool) })}`
-        : monthly,
-      { exact: true }
-    )
-  ).toBeVisible();
   await expect(page.getByText(m.billing_purchased_marker())).toHaveCount(
     pool > 0 ? 1 : 0
   );
+  // Usage offers the starter credits for a first card.
+  await expect(page.getByText(m.billing_starter_offer())).toBeVisible();
   await page.getByRole('link', { name: m.billing_top_up() }).click();
   await expect(
     page.getByRole('tab', { name: m.subscription_title(), selected: true })
   ).toBeVisible();
-  // The Subscription tab offers the starter credits for a first card.
-  await expect(page.getByText(m.billing_starter_offer())).toBeVisible();
 
   // Top-ups take $8 to $100, in the field and in the API.
   const field = page.getByLabel(m.billing_top_up(), { exact: true });
@@ -211,12 +196,13 @@ test('starter credits, the monthly limit, a card saved through setup Checkout, a
   const saved = await creditsRow(run, owner);
   expect(saved.reload_pm_last4).toBe('4242');
   // The first saved card adds the starter credits unless an earlier UAT
-  // account already claimed this test card; the offer goes once they come.
+  // account already claimed this test card; the offer goes once they come,
+  // and otherwise it says the saved card was used before.
   const starter = await starterGrantFor(run, owner, String(saved.reload_pm_id));
   expect(saved.purchased_micros).toBe(starter);
-  expect(object((await billing(owner)).creditSettings).starterAvailable).toBe(
-    starter === 0
-  );
+  const savedSettings = object((await billing(owner)).creditSettings);
+  expect(savedSettings.starterAvailable).toBe(starter === 0);
+  expect(savedSettings.starterCardUsed).toBe(starter === 0);
 
   // Saved from that dialog at the balance as threshold, auto-reload turns on
   // (a new account starts armed) and the worker charges $10 to the card. The
@@ -235,7 +221,7 @@ test('starter credits, the monthly limit, a card saved through setup Checkout, a
   expect(afterReload.purchased_micros - beforeReload).toBe(
     reload.credits_micros
   );
-  await expectPurchasedOnUsage(page, afterReload.purchased_micros);
+  await expectBalanceOnUsage(page, owner);
   expect(reloadInvoice.status).toBe('paid');
   await processedEvent(
     run,

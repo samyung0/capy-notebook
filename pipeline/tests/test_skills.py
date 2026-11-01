@@ -27,7 +27,7 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     assert f"- editing: {skills.SKILLS['editing'].when}." in listed
     assert f"- office_building: {skills.SKILLS['office_building'].when}." in listed
     assert "main explainers are notes." in listed
-    assert "PowerPoint deck (create_deck, write_slide), only when the request" in listed
+    assert "PowerPoint (create_deck, write_slide), only when the request" in listed
     ctx.study_preferences = {"mainFormat": "deck"}
     listed = described()
     assert "main explainers are decks." in listed

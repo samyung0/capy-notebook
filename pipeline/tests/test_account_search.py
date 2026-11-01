@@ -232,6 +232,6 @@ async def test_search_files_summary_matches_names_and_summaries_in_scope(
     assert f"file_id={own}" in cells and theirs not in cells and linked not in cells
     assert f'workspace "Biology" workspace_id={spaces["own"]}, view only' in cells
     assert summary in cells
-    assert f"file_id={named}, no workspace, view and edit" in leaves
+    assert f"file_id={named}, outside workspaces, view and edit" in leaves
     # Go is asked about the hits alone, never the whole scope.
     assert [item["id"] for item in asked[0]["items"]] == [own]

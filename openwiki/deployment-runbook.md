@@ -957,45 +957,13 @@ The command and gateway share `reconcile_runs`, so concurrent invocations are
 safe and do not create a second run for the same UTC schedule slot. Never run
 `down -v` on either project: it deletes the database volume.
 
-#### Removing Coolify from a host
+#### Coolify is gone
 
-UAT moved off Coolify in one cutover window, then a soak with Coolify stopped
-but installed (Epo 2026-10-23). Once nothing needs it, remove from the host:
-Coolify's containers and images (`coollabsio/*`, `traefik`, its
-`postgres:15-alpine`; keep the `redis` image Capy uses), the `coolify`
-network, the volumes `coolify-db`, `coolify-redis` and the old
-`<uuid>_capy_*` ones, unused anonymous volumes (`docker volume prune`, which
-leaves named volumes alone), the build cache (`docker builder prune -af`),
-`/data/coolify` (it holds Coolify's app key, its root SSH key and a copy of
-every env value), the `coolify` key in root's `authorized_keys`, the
-`/etc/cron.d/capy-prune-app-images` and
-`/usr/local/sbin/capy-prune-app-images.sh` files, the ufw "Docker networks to
-the host" rule (it served only Coolify's Sentinel), the `uat-coolify`
-hostname with its DNS record and Access application, and in GitHub the
-`COOLIFY_*` values and the Coolify deploy key. Revoke `COOLIFY_API_TOKEN` here,
-when Coolify is removed, not at the cutover: the way back below needs it.
-
-To go back to Coolify during the soak (review L7):
-
-1. Stop the new stacks, keeping their volumes: in `/opt/capy/ops/current`
-   and then `/opt/capy/app/current`, as root,
-   `docker compose -p capy-ops -f compose.yml --env-file stack.env down` and
-   `docker compose -p capy -f compose.yml --env-file stack.env down`. Never
-   `-v`.
-2. Point the tunnel's app hostnames back at Coolify's proxy
-   (`http://localhost:80` with the HTTP Host header override each had before
-   the cutover).
-3. Undo the cutover's `docker update --restart=no` on Coolify's containers
-   (restore each to the policy recorded with
-   `docker inspect -f '{{.HostConfig.RestartPolicy.Name}}'` before the
-   cutover), start Coolify, then start both applications from Coolify. They
-   come back on the old `<uuid>_capy-pgdata` volume: writes made since the
-   cutover stay in `capy-pgdata` and are not in it. Coolify pulls the floating
-   `pgvector/pgvector:pg16` and `redis:7-alpine` tags again, so its Postgres
-   and Redis can be newer builds than the ones it ran before.
-4. Revert the switch on main (`git revert`), which brings back the
-   `COOLIFY_*` manifest keys; put their `deploy/.env.uat` lines back and
-   `pnpm env:push`, so `COOLIFY_API_TOKEN` must still be valid.
+Coolify was removed from UAT, production and the ingest host on 2026-10-29
+(Epo), ending the soak early, so there is no way back to it. UAT keeps the
+pre-cutover volumes `9kx3durs3sxyfotgy20scemv_capy-pgdata` and
+`9kx3durs3sxyfotgy20scemv_capy-collaboration-sources`, which no container
+uses, until Epo decides what happens to them.
 
 ### 1.2 A/AAAA instead of a tunnel
 
@@ -1036,12 +1004,14 @@ Apply to one explicitly selected database with
 `psql -v ON_ERROR_STOP=1 -f deploy/model-capacities.sql`. If environments share
 an account, divide its quota among them before applying the script.
 
-Migration `0030_rerank_slot.sql` seeds DeepInfra `Qwen/Qwen3-Reranker-4B` as
-the `rerank` default and copies the environment's Qwen embedding capacity to it
-when one exists. Where none exists, set the reranker's capacity in Ops or with
-the script above; until then every search logs `rerank failed; keeping fused
-order` and returns unreranked results. It needs no new secret
-(`DEEPINFRA_API_KEY` on the retrieval service). To turn reranking off, remove
+Migration `0134_alibaba_rerank.sql` makes Alibaba `qwen3-rerank` the `rerank`
+default with a capacity of 64 (32 reserved), replacing DeepInfra
+`Qwen/Qwen3-Reranker-4B` from `0030_rerank_slot.sql`. It reuses the
+environment's `ALIBABA_MODELSTUDIO_KEY` and `ALIBABA_MODELSTUDIO_URL` (the
+Singapore workspace's `.../compatible-mode/v1` base), now also passed to the
+retrieval and Ops services; the key needs rerank enabled in Model Studio.
+Without the key, the URL or a capacity row every search logs `rerank failed;
+keeping fused order` and returns unreranked results. To turn reranking off, remove
 the reranker from the `rerank` column in the Ops model catalog and save;
 running retrieval processes stop reranking within one registry poll
 (10 minutes). That save disables the reranker row, so turning reranking back
@@ -1069,7 +1039,8 @@ Migration `0011_retire_deepseek_pro.sql` removes V4 Pro's catalog and operationa
 configuration directly. Its original seed remains in frozen `0001`; fresh
 databases replay the removal before serving traffic.
 `pnpm model:certify --provider deepseek --model deepseek-flash` records/replays
-two live tool turns; `uv run --extra test python pipeline/scripts/smoke_deepseek_flash.py`
+two live tool turns on DeepSeek's API (`DEEPSEEK_API_KEY`; last recorded on
+the UAT host 2026-10-29); `uv run --extra test python pipeline/scripts/smoke_deepseek_flash.py`
 makes two additional small paid calls for image input and max thinking.
 
 The initial schema in `0001_init.sql` creates the capacity table. Apply the Ops
@@ -1693,9 +1664,8 @@ denying inbound by default and allowing outbound. What stays reachable:
 - WireGuard on UDP 51820, from the ingest host's public address only.
 - Loopback and established traffic (ufw's built-in rules). `cloudflared` only
   connects out, and reaches sshd and the ports the stack publishes on
-  `127.0.0.1`.
-- Until Coolify is removed from the host, Docker networks to the host
-  (`10.0.0.0/16` and Coolify's IPv6 network), for Coolify's Sentinel only.
+  `127.0.0.1`. Nothing else: the playbook deletes the rule that let Docker
+  networks reach the host, which only Coolify's Sentinel needed.
 - The database, Redis and gateway published on the WireGuard address, which
   the ingest host reaches over the link (and GitHub runners through it, by SSH
   to the ingest host). Docker forwards published ports before ufw sees them,
@@ -1705,10 +1675,9 @@ That last point is why the public interface needs its own rule. The playbook
 appends a `DOCKER-USER` block to ufw's `after.rules` (IPv4) and `after6.rules`
 (IPv6) that drops every new connection arriving on the public interface (the
 default route's, `eth0` on the UAT VM) for any container, whatever the port or
-protocol, including any port a compose file publishes later (and, while
-Coolify was installed, Traefik's 80 and 443 and Coolify's 8000, 6001 and
-6002). Replies to the containers' own outbound connections, the cloudflared
-tunnel among them, are not new and pass. ufw creates and refills the chain at
+protocol, including any port a compose file publishes later. Replies to the
+containers' own outbound connections, the cloudflared tunnel among them, are
+not new and pass. ufw creates and refills the chain at
 boot and on every reload, and Docker keeps the chain's rules when it restarts, so the rule
 survives both. The WireGuard address's services, traffic between containers
 and the tunnel's loopback hop are not on the public interface.
@@ -1914,10 +1883,10 @@ developer PC holds a key that can write.
 3. Endpoint `https://s3.eu-central-003.backblazeb2.com`, region
    `eu-central-003`.
 4. No CORS rules and no lifecycle rule. The browser never touches this bucket:
-   `capture_knowledge_page` renders a page server-side and the books are
+   `capture_library_page` renders a page server-side and the books are
    permanent.
 5. The five variables are **all or none**, enforced at import of
-   `pipeline.config`: set all five and `capture_knowledge_page` is offered;
+   `pipeline.config`: set all five and `capture_library_page` is offered;
    set none and the tool is simply unoffered. A **partial set raises while the
    module is imported**, so the retrieval service — the only service that
    declares these five, under `retrieval` in both Compose files — fails to
@@ -2089,7 +2058,11 @@ those services start.
    and `pnpm env:check` fail with "unknown configuration keys: ZAI_API_KEY":
    delete the line, and put the OpenRouter key in `OPENROUTER_API_KEY`. The
    `production` environment needs `OPENROUTER_API_KEY` before a production
-   deploy, since the renderer writes an empty key without it. Uploaded audio
+   deploy, since the renderer writes an empty key without it. OpenRouter's
+   Sensitive Info guardrail stays off on every key the platform uses, UAT and
+   production alike: its redaction rewrites the request text the model reads,
+   such as SVG coordinates turned into `[PHONE]`, and the model then rewrites
+   correct work (Epo 2026-10-30). Uploaded audio
    needs `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
    (variable, the workspace's `…/compatible-mode/v1` URL with no trailing
    slash; the pipeline refuses to start with any other ending) from an Alibaba
@@ -2119,9 +2092,9 @@ those services start.
    `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
    So are the VLM page-read gates, `CAPY_VLM_PAGE_CAPACITY` (page reads in
-   flight across the workers) and `CAPY_VLM_PAGES_PER_JOB`: production 64 and
+   flight across the workers) and `CAPY_VLM_PAGES_PER_JOB`: production 40 and
    40 (the production ingest Compose's values when the GitHub variables are
-   blank), local/UAT Compose fixes 20 and 10.
+   blank; 64 overall until 2026-10-29, lowered so 1017's route holds at most 120), local/UAT Compose fixes 20 and 10.
    Production limits are eight coordinator processes, seven parse children
    (`CAPY_PARSE_WORKERS`), parser depth 8 (`CAPY_PARSE_QUEUE_DEPTH`, parsing
    plus waiting) and 500 text-less pages per document
@@ -3435,8 +3408,8 @@ enabled payment methods. The reload worker runs only where
 `STRIPE_SECRET_KEY` is set.
 
 Plan credit limits are data, not migrations: the Free monthly allowance is
-200 credits (`UPDATE plan_limits SET credit_limit_micros = 200000000 WHERE
-plan_tier = 'free';`, Epo 2026-10-16), and the one-off 800-credit starter grant
+300 credits (`UPDATE plan_limits SET credit_limit_micros = 300000000 WHERE
+plan_tier = 'free';`, Epo 2026-10-30), and the one-off 800-credit starter grant
 comes with the first saved card (migration 0109, no setting). A database built from
 migrations still seeds the older values, so set the row by hand in each
 environment, **before** the deploy that restarts the API and the ingest worker:

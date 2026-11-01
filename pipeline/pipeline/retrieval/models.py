@@ -13,12 +13,13 @@ invisible and the user is silently not charged for it.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import functools
 import logging
 import math
 import random
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -67,6 +68,12 @@ class CallNotStarted(Exception):
     nothing was sent."""
 
 
+# Whether the current model call holds its CALL_SLOTS slot right now.
+_held_slot: contextvars.ContextVar[list[bool] | None] = contextvars.ContextVar(
+    "held_call_slot", default=None
+)
+
+
 @asynccontextmanager
 async def call_slot():
     """One model call's process slot (Epo 2026-10-24, inner-turn slots), held
@@ -97,13 +104,18 @@ async def call_slot():
                 CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
             )
         granted = policy.on_granted
-    # Both callbacks run where a failure still gives the slot back.
+    # Both callbacks run where a failure still gives the slot back. A call
+    # waiting in its model's line hands the slot back meanwhile (``held``).
+    held = [True]
+    token = _held_slot.set(held)
     try:
         if granted is not None:
             granted()
         yield
     finally:
-        slots.release()
+        _held_slot.reset(token)
+        if held[0]:
+            slots.release()
 
 
 def _slotted(call):
@@ -129,6 +141,88 @@ def _slotted_stream(stream):
     return slotted
 
 
+def _chat_wait() -> limits.CallSlotPolicy | None:
+    """The chat's slot policy when this call may wait (a chat turn's calls;
+    generate and editor bind a zero wait, ingest none)."""
+    policy = limits.call_slot_policy()
+    if policy is None or policy.wait_s <= 0 or not _interactive():
+        return None
+    return policy
+
+
+def _gate_key(spec: ModelConfig) -> str:
+    return f"{spec.provider_slug}:{spec.model_slug}"
+
+
+async def _open_in_line(
+    open_call: Callable[..., Awaitable[None]],
+    chat: limits.CallSlotPolicy,
+    key: str,
+    deadline: float,
+) -> None:
+    """Open a chat call past its model's capacity in arrival order (Epo
+    2026-10-29): straight through when nobody waits and the gate has room,
+    else behind the calls already waiting, the head trying the gate until
+    ``deadline``. The waiting status shows while it waits."""
+    queue = limits.model_queue(key)
+    if not queue.waiting:
+        try:
+            await open_call(deadline=None)
+            return
+        except accounting.GateFull:
+            pass
+
+    async def pause(seconds: float) -> None:
+        await queue.pause(seconds)
+        if chat.left is not None and chat.left.is_set():
+            raise CallNotStarted("the client left while the call waited")
+
+    if chat.on_wait is not None:
+        chat.on_wait()
+    queue.waiting += 1
+    # Waiting in line holds no process call slot, so one full model cannot
+    # fill them for every other model and route (review M2).
+    slot = _held_slot.get()
+    if slot is not None and slot[0]:
+        slot[0] = False
+        limits.CALL_SLOTS.release()
+    try:
+        if not await queue.head(deadline - time.monotonic(), chat.left):
+            if chat.left is not None and chat.left.is_set():
+                raise CallNotStarted("the client left while the call waited")
+            raise accounting.GateFull(
+                f"{key} is at its concurrency cap",
+                retry_after=accounting.BUSY_RETRY_AFTER_S,
+            )
+        try:
+            if slot is not None:
+                await _retake_slot(slot, deadline, chat)
+            await open_call(deadline=deadline, pause=pause)
+        finally:
+            queue.leave()
+    finally:
+        queue.waiting -= 1
+    if chat.on_granted is not None:
+        chat.on_granted()
+
+
+async def _retake_slot(
+    slot: list[bool], deadline: float, chat: limits.CallSlotPolicy
+) -> None:
+    """The head of a model's line takes a process call slot again, in the
+    slots' own arrival order, before it tries the gate."""
+    slots = limits.CALL_SLOTS
+    if not slots.take():
+        waiter = slots.join()
+        if not await slots.wait_for(waiter, deadline - time.monotonic(), chat.left):
+            if chat.left is not None and chat.left.is_set():
+                raise CallNotStarted("the client left while the call waited")
+            raise elitellm.ProviderBusy(
+                CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
+            )
+    slot[0] = True
+
+
 @asynccontextmanager
 async def _tracked_call(
     *,
@@ -149,16 +243,26 @@ async def _tracked_call(
     usage it sent is billed, and with none it is abandoned unbilled.
     """
     call_id = accounting.new_call_id()
-    await accounting.open_call(
+    open_call = functools.partial(
+        accounting.open_call,
         call_id,
         kind=kind,
         purpose=purpose,
         thinking=thinking,
         context=context,
         spec=spec,
-        deadline=deadline,
         capacity=capacity,
     )
+    # A chat model call on its model's own gate waits in that model's line.
+    chat = (
+        _chat_wait()
+        if kind == accounting.KIND_LLM and spec is not None and capacity is None
+        else None
+    )
+    if chat is None or spec is None or deadline is None:
+        await open_call(deadline=deadline)
+    else:
+        await _open_in_line(open_call, chat, _gate_key(spec), deadline)
     try:
         yield call_id
     except accounting.SettlementError:
@@ -190,6 +294,10 @@ async def _tracked_call(
         # The attempt is over whichever way it ended; free its slot so the
         # next waiter is not held behind an abandoned or settled call.
         await accounting.release_call(call_id)
+        if spec is not None and capacity is None:
+            queue = limits.MODEL_QUEUES.get(_gate_key(spec))
+            if queue is not None:
+                queue.freed()
 
 
 @dataclass(frozen=True)
@@ -204,6 +312,9 @@ class RetryPolicy:
 
     attempts: int
     budget_s: float
+    # A chat model call's slot policy: it waits in line and once behind a
+    # busy provider, with the waiting status (Epo 2026-10-29).
+    wait: limits.CallSlotPolicy | None = None
 
 
 INTERACTIVE_RETRY = RetryPolicy(attempts=2, budget_s=3.0)
@@ -215,8 +326,19 @@ def _interactive() -> bool:
     return state is None or state.settlement_mode != "ingest"
 
 
-def retry_policy() -> RetryPolicy:
-    return INTERACTIVE_RETRY if _interactive() else INGEST_RETRY
+def retry_policy(*, llm: bool = True) -> RetryPolicy:
+    """A chat model call keeps its two attempts but may wait its turn's whole
+    wait: in its model's line, and once behind a busy provider (Epo
+    2026-10-29). Embeddings and reranks (``llm`` False) keep the interactive
+    budget (review L2, L3)."""
+    if not _interactive():
+        return INGEST_RETRY
+    chat = _chat_wait() if llm else None
+    if chat is None:
+        return INTERACTIVE_RETRY
+    return RetryPolicy(
+        attempts=INTERACTIVE_RETRY.attempts, budget_s=chat.wait_s, wait=chat
+    )
 
 
 def busy_error(exc: BaseException) -> BaseException | None:
@@ -262,8 +384,9 @@ async def _retry_or_raise(
     policy: RetryPolicy,
     deadline: float,
     retry_any: bool,
-) -> None:
-    """Sleep before the next attempt, or raise once the call is over.
+) -> float:
+    """Sleep before the next attempt and return its deadline, or raise once
+    the call is over.
 
     ``retry_any`` also retries failures that are not busy answers; streaming
     callers use it for pre-byte failures, whose cause is usually transport.
@@ -276,6 +399,11 @@ async def _retry_or_raise(
         wait = 0.25 * (2**attempt)
     else:
         wait = _busy_wait_s(busy, attempt)
+    chat = policy.wait if busy is not None else None
+    if chat is not None:
+        # A chat's busy answer gets a window of its own, its Retry-After and
+        # then the line, so the first one always goes back in (review M1).
+        deadline = time.monotonic() + policy.budget_s
     if last or time.monotonic() + wait > deadline:
         if busy is None:
             raise exc
@@ -285,7 +413,23 @@ async def _retry_or_raise(
             retry_after=wait,
             provider_retry_after=_provider_retry_after(busy),
         ) from exc
-    await asyncio.sleep(wait)
+    # A chat shows the waiting status, not the busy answer, until it is back
+    # in its model's line (Epo 2026-10-29); a Stop ends the wait (review L1).
+    if chat is not None and chat.on_wait is not None:
+        chat.on_wait()
+    if chat is None or chat.left is None:
+        await asyncio.sleep(wait)
+    else:
+        try:
+            async with asyncio.timeout(wait):
+                await chat.left.wait()
+        except TimeoutError:
+            pass
+        else:
+            raise CallNotStarted("the client left while the call waited")
+    if chat is not None and chat.on_granted is not None:
+        chat.on_granted()
+    return deadline
 
 
 # Another attempt would get the same answer, so these end a ``transient`` call
@@ -307,15 +451,20 @@ def _usable_text(resp: Any) -> str | None:
 
 
 async def _call_with_retry(
-    attempt_call: Any, *, retry_any: bool = False, transient: bool = False
+    attempt_call: Any,
+    *,
+    retry_any: bool = False,
+    transient: bool = False,
+    llm: bool = True,
 ) -> Any:
     """Run ``attempt_call(deadline)`` under the current retry policy.
 
     ``retry_any`` also retries failures that are not busy answers, for calls
     where one dropped attempt is a permanent loss rather than a user retry.
     ``transient`` does the same except for a definitive client error.
+    ``llm`` False marks an embedding or rerank, which never waits in line.
     """
-    policy = retry_policy()
+    policy = retry_policy(llm=llm)
     deadline = time.monotonic() + policy.budget_s
     for attempt in range(policy.attempts):
         try:
@@ -325,7 +474,7 @@ async def _call_with_retry(
         except (registry.RegistryError, accounting.SettlementError):
             raise
         except Exception as exc:  # noqa: BLE001 - the policy re-raises or sleeps
-            await _retry_or_raise(
+            deadline = await _retry_or_raise(
                 exc,
                 attempt=attempt,
                 policy=policy,
@@ -429,7 +578,7 @@ async def embed(texts: list[str], *, spec: ModelConfig) -> list[list[float]]:
                 )
             return resp
 
-        resp = await _call_with_retry(_one)
+        resp = await _call_with_retry(_one, llm=False)
         ordered = sorted(resp.data, key=lambda d: d.index)
         for item in ordered:
             vector = list(item.embedding)
@@ -482,7 +631,7 @@ async def rerank(query: str, documents: list[str], *, spec: ModelConfig) -> list
             )
         return raw
 
-    request = asyncio.ensure_future(_call_with_retry(_one))
+    request = asyncio.ensure_future(_call_with_retry(_one, llm=False))
     _detached.add(request)
     request.add_done_callback(_detached.discard)
     raw = await asyncio.wait_for(
@@ -851,7 +1000,7 @@ async def stream_agent_response(
                 raise
             if stopped is not None and stopped():
                 raise
-            await _retry_or_raise(
+            deadline = await _retry_or_raise(
                 exc,
                 attempt=attempt,
                 policy=policy,
@@ -985,7 +1134,7 @@ async def stream_text(
         except Exception as exc:
             if received.seen:
                 raise
-            await _retry_or_raise(
+            deadline = await _retry_or_raise(
                 exc,
                 attempt=attempt,
                 policy=policy,

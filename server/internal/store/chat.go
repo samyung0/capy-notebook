@@ -24,13 +24,16 @@ type Conversation struct {
 	PinnedAt *time.Time `json:"pinnedAt,omitempty"`
 	// Set while the thread is out of the list, in the archived dialog.
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+	// A turn of the thread is still streaming (Epo 2026-10-27, T19).
+	Running bool `json:"running"`
 }
 
-const conversationCols = `id, COALESCE(workspace_id,''), COALESCE(title,''), created_at, updated_at, pinned_at, archived_at`
+const conversationCols = `id, COALESCE(workspace_id,''), COALESCE(title,''), created_at, updated_at, pinned_at, archived_at,
+	EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id AND m.status = 'streaming')`
 
 func scanConversation(row pgx.Row) (Conversation, error) {
 	var c Conversation
-	err := row.Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt, &c.PinnedAt, &c.ArchivedAt)
+	err := row.Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt, &c.PinnedAt, &c.ArchivedAt, &c.Running)
 	return c, err
 }
 
@@ -68,12 +71,15 @@ type Citation struct {
 	// Kind is "material" when the passage came from an indexed note; then
 	// MaterialID names the note and FileID is empty. It is "web" for a
 	// search_web result; then URL, SiteName and Published (YYYY-MM-DD, when
-	// known) describe the page and FileID is empty.
+	// known) describe the page and FileID is empty. It is "library" for a
+	// read_library page (Epo 2026-10-30): ExcerptID names the excerpt,
+	// FileName the book and the pages its excerpt prints on.
 	Kind       string `json:"kind,omitempty"`
 	MaterialID string `json:"materialId,omitempty"`
+	ExcerptID  string `json:"excerptId,omitempty"`
 	FileID     string `json:"fileId"`
 	ChunkID    string `json:"chunkId,omitempty"`
-	// N is the passage number the answer program cites; the entry's position
+	// N is the passage number the answer cites; the entry's position
 	// in the list is the number the reader sees.
 	N         int      `json:"n,omitempty"`
 	FileName  string   `json:"fileName"`
@@ -81,6 +87,8 @@ type Citation struct {
 	PageStart *int     `json:"pageStart,omitempty"`
 	PageEnd   *int     `json:"pageEnd,omitempty"`
 	Regions   []Region `json:"regions,omitempty"`
+	// BlockIDs are the top-level note blocks a material passage came from.
+	BlockIDs  []string `json:"blockIds,omitempty"`
 	URL       string   `json:"url,omitempty"`
 	SiteName  string   `json:"siteName,omitempty"`
 	Published string   `json:"published,omitempty"`
@@ -170,6 +178,9 @@ type ConversationPrompt struct {
 	// OfficeTools says an earlier turn of the conversation, compacted or not,
 	// was offered the Office tools, which then stay offered (Epo 2026-10-15).
 	OfficeTools bool `json:"officeTools,omitempty"`
+	// EditTools says the same of the writes the editing skill covers
+	// (Epo 2026-10-30).
+	EditTools bool `json:"editTools,omitempty"`
 }
 
 // Region locates one source block inside its page. Stored and shipped ahead of
@@ -462,9 +473,10 @@ func (s *Store) archivedConversationsTx(ctx context.Context, userID, wsID, stmt 
 
 /* ---------------------------------------------------------------- messages */
 
-// ListMessages returns a conversation's history in chronological order,
-// excluding still-streaming rows (orphans from a crashed stream). Ownership is
-// enforced against userID.
+// ListMessages returns a conversation's history in chronological order. A
+// still-streaming row is a running turn (a crash's are aborted at boot), which
+// the browser follows (Epo 2026-10-27, T19). Ownership is enforced against
+// userID.
 func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Message, error) {
 	if _, err := s.GetConversation(ctx, userID, convID); err != nil {
 		return nil, err
@@ -472,7 +484,7 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, conversation_id, role, content, status, metadata - 'toolEvidence', created_at
 		   FROM messages
-		  WHERE conversation_id=$1 AND status <> 'streaming'
+		  WHERE conversation_id=$1
 		  ORDER BY created_at, id`, convID)
 	if err != nil {
 		return nil, err
@@ -715,12 +727,14 @@ func (s *Store) ConversationPrompt(ctx context.Context, convID string) (Conversa
 	if throughID != nil {
 		out.Checkpoint = &cp
 	}
-	// The retrieval service marks a turn's evidence officeTools once it read
-	// the office_building skill; a checkpoint drops that turn from History.
+	// The retrieval service marks a turn's evidence officeTools or editTools
+	// once it read the office_building or editing skill; a checkpoint drops
+	// that turn from History.
 	err = s.pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM messages
-		 WHERE conversation_id=$1 AND status <> 'streaming'
-		   AND metadata->'toolEvidence'->>'officeTools' = 'true')`, convID).Scan(&out.OfficeTools)
+		SELECT COALESCE(bool_or(metadata->'toolEvidence'->>'officeTools' = 'true'), false),
+		       COALESCE(bool_or(metadata->'toolEvidence'->>'editTools' = 'true'), false)
+		  FROM messages
+		 WHERE conversation_id=$1 AND status <> 'streaming'`, convID).Scan(&out.OfficeTools, &out.EditTools)
 	return out, err
 }
 

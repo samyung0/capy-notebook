@@ -251,8 +251,8 @@ function gapValues(
 }
 
 /** A choice as an underlined row: chosen while answering; after checking,
- * right or wrong with a tag, and a correct answer that was not chosen marked
- * on a dashed rule. */
+ * right or wrong with a tag, and a correct answer that was not chosen on a
+ * green rule with a check. */
 function ChoiceRow({
   label,
   text,
@@ -281,7 +281,7 @@ function ChoiceRow({
     : selected
       ? 'selected'
       : undefined;
-  const marked = state === 'right' || state === 'wrong';
+  const checked = state === 'right' || state === 'wrong' || state === 'missed';
   return (
     <button
       aria-pressed={selected}
@@ -297,14 +297,12 @@ function ChoiceRow({
     >
       {(label !== null || review) && (
         <OptionKey className={optionKeyClass(state)}>
-          {marked ? (
+          {checked ? (
             <Icon
-              name={state === 'right' ? 'check' : 'x'}
+              name={state === 'wrong' ? 'x' : 'check'}
               size={13}
               strokeWidth={2.25}
             />
-          ) : state === 'missed' && label === null ? (
-            <Icon name="check" size={13} strokeWidth={2.25} />
           ) : (
             label
           )}
@@ -757,7 +755,7 @@ function PartRunner({
                         state === 'wrong' &&
                           'border-solid-error text-tint-error-fg',
                         state === 'missed' &&
-                          'border-solid-success border-dashed text-tint-success-fg',
+                          'border-solid-success text-tint-success-fg',
                         review && !state && 'opacity-45',
                         !(review || disabled || state) && 'hover:text-fg'
                       )}

@@ -125,8 +125,10 @@ page's Embeds tab (Epo 2026-10-24; `GET /api/editor-assets`,
 `ListEditorAssets` on `editor_assets_payer_idx`, migration 0110), named by
 its note's current title (an embedded quiz's or set's note), with its kind,
 size, workspace and added time, and `lostAccess` once the payer can no longer
-open that note (`lostAccessSQL` on the note's workspace). The tab's filter
-(`access=open|lost`) shows one kind, loaded afresh on each switch; pages are
+open that note (`lostAccessSQL` on the note's workspace). The tab lists
+everything by default; its one filter, Private files (`access=lost`, Sam
+2026-10-29), keeps only media in notes the payer can no longer open, loaded
+afresh on each switch; pages are
 keyset (newest first, ties by id) within the caller's own rows. Title and workspace name are blank once
 that workspace's owner is no longer live. Media in a trashed note or set the
 payer can still open are left out; they go with that material's trash and

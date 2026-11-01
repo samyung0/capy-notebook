@@ -49,7 +49,6 @@ export function createBlocksRoom(
     // The editor's selections (`selectionV2`) ride on the room's awareness.
     awareness: true,
     drafts: { actorId },
-    leave: 'unstored',
     onReplace,
     // Under MSW the in-page room stands in for the collaboration server.
     provider: USE_MSW

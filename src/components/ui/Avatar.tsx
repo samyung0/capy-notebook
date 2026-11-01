@@ -30,11 +30,16 @@ export function Avatar({ src, name, className, ...rest }: AvatarProps) {
   );
 }
 
-/** Pulses like a skeleton until the image arrives; a failed image falls
- * back to initials. */
+// Images already shown once this session. The browser has them cached, but
+// onLoad still fires a frame late, so a remount (navigating back to a page)
+// would pulse and fade in again without this.
+const loaded = new Set<string>();
+
+/** Pulses like a skeleton until the image arrives the first time; a failed
+ * image falls back to initials. */
 function AvatarFrame({ src, name, className, ...rest }: AvatarProps) {
-  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>(
-    'loading'
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>(() =>
+    src && loaded.has(src) ? 'loaded' : 'loading'
   );
   const showImage = src && status !== 'error';
   return (
@@ -56,7 +61,10 @@ function AvatarFrame({ src, name, className, ...rest }: AvatarProps) {
             status === 'loading' && 'opacity-0'
           )}
           onError={() => setStatus('error')}
-          onLoad={() => setStatus('loaded')}
+          onLoad={() => {
+            loaded.add(src);
+            setStatus('loaded');
+          }}
           src={src}
         />
       ) : (

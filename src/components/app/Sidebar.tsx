@@ -5,6 +5,8 @@ import { useUnreadNotificationCount } from '@/api/hooks';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { GettingStartedRow } from '@/features/guide/GettingStartedRow';
 import { VoiceCard } from '@/features/voice/VoiceCard';
+import { setAccountVoiceOpen } from '@/features/voice/voiceAsk';
+import { recordingType } from '@/features/workspace/chat/voiceRecording';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
@@ -448,16 +450,18 @@ export function MobileNavDrawer({
 }
 
 /** The phone (below sm) top of a page, scrolling with it: the nav drawer's
- * menu button joined with the arrow that opens the recent files, and the
- * profile menu behind an avatar a little larger than it
- * that carries the unread notifications dot; its Notifications item opens
- * the notifications page. */
+ * menu button joined with the arrow that opens the recent files and, where
+ * the browser can record, the mic that opens the account voice overlay (the
+ * sidebar's voice card); then the profile menu behind an avatar a little
+ * larger than it that carries the unread notifications dot; its
+ * Notifications item opens the notifications page. */
 export function PhoneTopRow({ className }: { className?: string }) {
   // Shared with the nav's own query, so this costs no extra request.
   const { data: unread } = useUnreadNotificationCount({
     errorBoundary: false,
   });
   const [recentOpen, setRecentOpen] = useState(false);
+  const [voice] = useState(() => recordingType() !== null);
   return (
     <div
       className={cn('flex items-center justify-between sm:hidden', className)}
@@ -477,6 +481,18 @@ export function PhoneTopRow({ className }: { className?: string }) {
           size="md"
           variant="outline"
         />
+        {voice && (
+          <IconButton
+            className="frosted:bg-(--frost-fill) px-3 frosted:hover:bg-surface-hover-bg active:scale-100"
+            // The tour's last step lights it.
+            data-voice-mic
+            icon="microphone"
+            label={m.voice_card_title()}
+            onClick={() => setAccountVoiceOpen(true)}
+            size="md"
+            variant="outline"
+          />
+        )}
       </ButtonGroup>
       {recentOpen && <RecentQuickOpen onClose={() => setRecentOpen(false)} />}
       <ProfileMenu

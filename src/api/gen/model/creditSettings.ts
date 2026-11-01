@@ -17,4 +17,5 @@ export interface CreditSettings {
   spendingLimitCents?: number;
   spentThisMonthCents: number;
   starterAvailable: boolean;
+  starterCardUsed: boolean;
 }

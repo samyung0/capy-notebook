@@ -40,7 +40,13 @@ export interface ChatStreamHandlers {
   onBlockStart?: (blockId: string) => void;
   onCitations?: (citations: Citation[], version: number) => void;
   onDone?: (e: StreamDone) => void;
+  /** The connection was lost before the turn's last event (a network drop,
+   * a server that went away): the turn may still run on the server. Without
+   * it, a drop reports the error. */
+  onDrop?: (error?: unknown) => void;
   onError?: (message: string, code?: string) => void;
+  /** A resume found no turn running: it ended since its row was read. */
+  onGone?: () => void;
   onPendingSources?: (event: { fileIds: string[]; omitted: boolean }) => void;
   onPhase?: (phase: ChatPhase) => void;
   onStart?: (e: StreamStart) => void;
@@ -143,9 +149,42 @@ export function chatErrorMessage(payload: unknown, fallback: string): string {
  * with a null `workspaceId` the account chat's across all the user's files
  * (which ignores `openResource`). Resolves when the stream ends (naturally,
  * on error, or on abort). */
-export async function streamChat(
+export function streamChat(
   workspaceId: string | null,
   body: ChatStreamBody,
+  handlers: ChatStreamHandlers,
+  signal?: AbortSignal
+): Promise<void> {
+  const path = workspaceId
+    ? `/workspaces/${workspaceId}/chat/stream`
+    : '/chat/stream';
+  return followChat(
+    `${API_BASE}${path}`,
+    { body: JSON.stringify(body), method: 'POST' },
+    handlers,
+    signal
+  );
+}
+
+/** Follow a running turn from its first event (Epo 2026-10-27, T19): the
+ * server replays what the turn sent so far, then the rest as it comes. */
+export function resumeChat(
+  conversationId: string,
+  messageId: string,
+  handlers: ChatStreamHandlers,
+  signal?: AbortSignal
+): Promise<void> {
+  return followChat(
+    `${API_BASE}/conversations/${conversationId}/messages/${messageId}/stream`,
+    { method: 'GET' },
+    handlers,
+    signal
+  );
+}
+
+async function followChat(
+  url: string,
+  init: { body?: string; method: 'GET' | 'POST' },
   handlers: ChatStreamHandlers,
   signal?: AbortSignal
 ): Promise<void> {
@@ -155,25 +194,35 @@ export async function streamChat(
     terminal = true;
     handlers.onError?.(message, code);
   };
+  const drop = (error?: unknown) => {
+    if (terminal || signal?.aborted) return;
+    if (!handlers.onDrop) {
+      reportError(errorCopy(error, m.chat_failed()));
+      return;
+    }
+    terminal = true;
+    handlers.onDrop(error);
+  };
   let res: Response;
   try {
     const auth = await authHeaders();
-    const path = workspaceId
-      ? `/workspaces/${workspaceId}/chat/stream`
-      : '/chat/stream';
-    res = await fetch(`${API_BASE}${path}`, {
-      body: JSON.stringify(body),
+    res = await fetch(url, {
+      ...init,
       headers: {
         Accept: 'text/event-stream',
-        'Content-Type': 'application/json',
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
         ...auth,
       },
-      method: 'POST',
       signal,
     });
   } catch (e) {
     if ((e as Error).name === 'AbortError') return;
-    reportError(errorCopy(e, m.chat_failed()));
+    drop(e);
+    return;
+  }
+  if (res.status === 204) {
+    terminal = true;
+    handlers.onGone?.();
     return;
   }
   if (!res.ok || !res.body) {
@@ -343,13 +392,15 @@ export async function streamChat(
   };
 
   try {
-    await consumeSSE(res.body, dispatch);
+    // Nothing follows the last event: a Stop from another tab ends the turn
+    // here while its server response waits on the calls still running.
+    await consumeSSE(res.body, (chunk) => {
+      dispatch(chunk);
+      return terminal;
+    });
   } catch (e) {
-    if ((e as Error).name !== 'AbortError')
-      reportError(errorCopy(e, m.chat_failed()));
+    if ((e as Error).name !== 'AbortError') drop(e);
     return;
   }
-  if (!terminal && !signal?.aborted) {
-    reportError(m.chat_failed());
-  }
+  drop();
 }

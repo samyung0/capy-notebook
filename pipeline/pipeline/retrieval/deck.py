@@ -19,12 +19,17 @@ examples/ (reference slides the model imitates) and sources.svg.
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import json
+import os
 import re
+import secrets
 import shutil
 import subprocess
 import tempfile
+import time
+from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -57,6 +62,10 @@ NS = "{http://www.w3.org/2000/svg}"
 # A slide figure names the capture it shows, numbered as this turn made them
 # (pages of two sources may share a number).
 IMAGE_HREF = re.compile(r"\.\./images/c(\d+)\.jpg")
+# A library figure by id, as notes and chat answers place one (Epo 2026-10-30,
+# D3); write_slide renders its box and points the href at that file.
+FIGURE_HREF = re.compile(r"""href=["']figure:([\w-]+)["']""")
+LIBRARY_IMAGE_HREF = re.compile(r"\.\./images/([\w-]+)\.jpg")
 WHOLE_PAGE = [0, 0, 1000, 1000]
 FILE_NAME_MAX = 120  # fieldlimits.FileName
 
@@ -68,16 +77,47 @@ def available() -> bool:
     return (SKILL / "SKILL.md").exists()
 
 
-def _script(name: str, *args: str) -> subprocess.CompletedProcess[str]:
+def _script(
+    name: str, *args: str, stdin: str | None = None
+) -> subprocess.CompletedProcess[str]:
     if not available():
         raise RuntimeError(f"ppt-master is not installed at {SKILL}")
     return subprocess.run(
         [*PYTHON, str(SKILL / "scripts" / name), *args],
+        input=stdin,
         capture_output=True,
-        text=True,
+        # UTF-8 stdio both ways whatever the locale (a Windows playground
+        # otherwise sends a credit's "·" through cp1252).
+        encoding="utf-8",
+        env={**os.environ, "PYTHONUTF8": "1"},
         timeout=SCRIPT_TIMEOUT_S,
         check=False,
     )
+
+
+def wrap(text: str, *, size: float, width: float, family: str) -> list[str]:
+    """``text`` in lines of at most ``width`` px, wrapped by ppt-master's
+    text_measure with the estimator its checker measures with."""
+    proc = _script(
+        "text_measure.py",
+        "wrap",
+        "--stdin",
+        "--json",
+        "--max-width",
+        str(width),
+        "--size",
+        str(size),
+        "--family",
+        family,
+        "--x",
+        "0",
+        "--dy",
+        "1",
+        stdin=text,
+    )
+    if proc.returncode:
+        raise RuntimeError(f"text_measure wrap failed: {proc.stderr[-800:]}")
+    return json.loads(proc.stdout)["lines"]
 
 
 def check(project: Path) -> dict[str, list[str]]:
@@ -101,12 +141,7 @@ def check(project: Path) -> dict[str, list[str]]:
 
 
 def export(project: Path, pptx: Path) -> str:
-    """The checked svg_output as a PPTX; the problem, or empty."""
-    errors = check(project)
-    if errors:
-        return "; ".join(
-            f"{name}: {e}" for name, errs in errors.items() for e in errs[:MAX_ERRORS]
-        )
+    """svg_output, already through check(), as a PPTX; the problem, or empty."""
     proc = _script(
         "svg_to_pptx.py",
         str(project),
@@ -138,14 +173,47 @@ def style_text(style: str) -> str:
     return (folder / "style.md").read_text(encoding="utf-8") + "\n\n" + examples
 
 
-def sources_svg(style: str, credits: list[str], page: int, lang: str) -> str:
-    rows = "\n".join(
-        f'    <text x="64" y="{210 + 40 * i}">{escape(credit)}</text>'
-        for i, credit in enumerate(credits)
-    )
+# The credit rows of a style's sources.svg: its sources module
+# (data-pptx-bounds "64 180 1152 480") in the root's Arial 20 px. A credit
+# wraps at the module's width, its lines LINE apart; credits are GAP apart.
+SOURCES_X = 64
+SOURCES_WIDTH = 1152
+SOURCES_FIRST = 210
+SOURCES_BOTTOM = 660
+SOURCES_SIZE = 20
+SOURCES_FAMILY = "Arial"
+SOURCES_LINE = 26
+SOURCES_GAP = 40
+
+
+def sources_svg(style: str, credits: list[str], page: int, lang: str) -> str | None:
+    """The deck's Sources slide, each credit wrapped as ppt-master wraps a
+    text block (a tspan per line), or None when the credits are too many
+    for the module's height."""
+    rows: list[str] = []
+    y = SOURCES_FIRST
+    for credit in credits:
+        lines = wrap(
+            credit, size=SOURCES_SIZE, width=SOURCES_WIDTH, family=SOURCES_FAMILY
+        )
+        last = y + SOURCES_LINE * (len(lines) - 1)
+        if last + 0.35 * SOURCES_SIZE > SOURCES_BOTTOM:
+            return None
+        rest = "".join(
+            f'<tspan x="{SOURCES_X}" dy="{SOURCES_LINE}">{escape(line)}</tspan>'
+            for line in lines[1:]
+        )
+        rows.append(
+            f'    <text x="{SOURCES_X}" y="{y}">{escape(lines[0])}{rest}</text>'
+        )
+        y = last + SOURCES_GAP
     template = (STYLE_DIR / style / "sources.svg").read_text(encoding="utf-8")
     return template.format(
-        lang=escape(lang), kicker="SOURCES", title="Sources", rows=rows, page=page
+        lang=escape(lang),
+        kicker="SOURCES",
+        title="Sources",
+        rows="\n".join(rows),
+        page=page,
     )
 
 
@@ -155,6 +223,84 @@ def sources_svg(style: str, credits: list[str], page: int, lang: str) -> str:
 # written), deck {style, slides [{title, brief, svg}]}, provenance {books} or
 # None, and file (the stored file's id) once it is stored. The playground
 # writes the same record as JSON.
+
+
+# ------------------------------------------------------------------ kept
+
+# An unfinished PowerPoint outlives its turn so a later message can finish it
+# (Epo 2026-10-30): its record and images stay in this process for KEPT_FOR,
+# at most KEPT_PER_OWNER per owner (the oldest goes first). The outline and
+# the slides' progress are already in the conversation (create_deck and
+# write_slide results are kept whole); a restart forgets them all.
+KEPT_FOR = 24 * 3600
+KEPT_PER_OWNER = 3
+KEPT_ROOT = Path(tempfile.gettempdir()) / "capy-decks-kept"
+# id -> (owner, record, expiry); dicts keep insertion order, oldest first.
+_kept: dict[str, tuple[str, dict[str, Any], float]] = {}
+_root_cleared = False
+
+
+def keep(record: dict[str, Any], project: Path | None, owner: str) -> None:
+    """Keep an unfinished PowerPoint for a later message: a copy of its
+    record and images, the captures renamed apart from the next turn's
+    numbering (its capture 1 is a new c1.jpg)."""
+    _sweep()
+    rid = record["id"]
+    target = KEPT_ROOT / rid
+    shutil.rmtree(target, ignore_errors=True)
+    (target / "images").mkdir(parents=True)
+    tag = "k" + secrets.token_hex(3) + "_"
+    images = project / "images" if project else None
+    for path in images.iterdir() if images and images.is_dir() else ():
+        name = (
+            tag + path.name
+            if IMAGE_HREF.fullmatch(f"../images/{path.name}")
+            else path.name
+        )
+        shutil.copyfile(path, target / "images" / name)
+    record = copy.deepcopy(record)
+    for slide in record["deck"]["slides"]:
+        if slide["svg"]:
+            slide["svg"] = IMAGE_HREF.sub(
+                lambda m: f"../images/{tag}c{m.group(1)}.jpg", slide["svg"]
+            )
+    _kept.pop(rid, None)
+    _kept[rid] = (owner, record, time.time() + KEPT_FOR)
+    mine = [r for r, (o, _, _) in _kept.items() if o == owner]
+    for old in mine[: max(0, len(mine) - KEPT_PER_OWNER)]:
+        _drop(old)
+
+
+def take(rid: str, owner: str, project: Path) -> dict[str, Any] | None:
+    """An unfinished PowerPoint kept for this owner, its images moved into
+    the turn's project, or None (never kept, expired, dropped for the cap or
+    another owner's)."""
+    _sweep()
+    kept = _kept.get(rid)
+    if kept is None or kept[0] != owner:
+        return None
+    del _kept[rid]
+    project.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(KEPT_ROOT / rid / "images", project / "images", dirs_exist_ok=True)
+    shutil.rmtree(KEPT_ROOT / rid, ignore_errors=True)
+    return kept[1]
+
+
+def _drop(rid: str) -> None:
+    _kept.pop(rid, None)
+    shutil.rmtree(KEPT_ROOT / rid, ignore_errors=True)
+
+
+def _sweep() -> None:
+    """Drop expired PowerPoints, and on first use what an earlier process
+    left."""
+    global _root_cleared
+    if not _root_cleared:
+        shutil.rmtree(KEPT_ROOT, ignore_errors=True)
+        _root_cleared = True
+    now = time.time()
+    for rid in [r for r, (_, _, expiry) in _kept.items() if expiry <= now]:
+        _drop(rid)
 
 
 def deck_id(assistant_message_id: str, call_id: str) -> str:
@@ -209,13 +355,20 @@ def credits(record: dict[str, Any]) -> list[str]:
 def outline_text(record: dict[str, Any]) -> str:
     slides = record["deck"]["slides"]
     out = [
-        f"Deck {record['id']}, {len(slides)} slides, style {record['deck']['style']}:"
+        f"PowerPoint {record['id']}, {len(slides)} slides, style {record['deck']['style']}:"
     ]
     for n, slide in enumerate(slides, 1):
         out.append(
             f"{n}. {slide['title']} ({'written' if slide['svg'] else 'to write'})"
         )
     return "\n".join(out)
+
+
+def written_text(record: dict[str, Any], n: int) -> str:
+    """A landed write's result: which slide it was, then the outline. Four
+    outlines in a row otherwise read alike, and MiniMax rewrote a kept slide
+    (2026-10-30 loop trace)."""
+    return f"Slide {n} is written and kept.\n{outline_text(record)}"
 
 
 def created_text(record: dict[str, Any]) -> str:
@@ -228,7 +381,7 @@ def complete(record: dict[str, Any]) -> bool:
 
 def file_name(record: dict[str, Any]) -> str:
     """The stored file's name: the title, without path separators, as .pptx."""
-    title = re.sub(r"[\\/\x00-\x1f]+", " ", record["title"]).strip() or "Deck"
+    title = re.sub(r"[\\/\x00-\x1f]+", " ", record["title"]).strip() or "PowerPoint"
     return title[: FILE_NAME_MAX - len(".pptx")].strip() + ".pptx"
 
 
@@ -278,10 +431,12 @@ def _file(n: int, title: str) -> str:
     return f"{n:02d}_{slug}.svg"
 
 
-def _local_problem(svg: str, captures: dict[int, str]) -> tuple[str, set[int]]:
+def _local_problem(
+    svg: str, captures: dict[int, str], library: dict[str, bytes]
+) -> tuple[str, set[int]]:
     """What the checker cannot say: XML that does not parse, another canvas, no
-    language, or a figure that is not a bbox capture from this turn. Returns the
-    captures used."""
+    language, or a figure that is neither a library figure write_slide rendered
+    nor a bbox capture from this turn. Returns the captures used."""
     try:
         root = ET.fromstring(svg)
     except ET.ParseError as e:
@@ -291,13 +446,17 @@ def _local_problem(svg: str, captures: dict[int, str]) -> tuple[str, set[int]]:
     if root.attrib.get("viewBox") != VIEWBOX:
         return f'the root viewBox must be "{VIEWBOX}"', set()
     if not root.attrib.get("lang"):
-        return "the root needs lang, the deck's BCP-47 language", set()
+        return "the root needs lang, the PowerPoint's BCP-47 language", set()
     pages: set[int] = set()
     for image in root.iter(f"{NS}image"):
         href = image.attrib.get("href", "")
+        named = LIBRARY_IMAGE_HREF.fullmatch(href)
+        if named and named.group(1) in library:
+            continue
         match = IMAGE_HREF.fullmatch(href)
         if not match:
-            return f'image href "{href}" must be ../images/c<capture>.jpg', set()
+            want = "figure:<figure id> or ../images/c<capture>.jpg"
+            return f'image href "{href}" must be {want}', set()
         page = int(match.group(1))
         problem = captures.get(page, f"capture {page} was not made this turn")
         if problem:
@@ -312,55 +471,110 @@ def write(
     captures: dict[int, str],
     figures: dict[int, bytes],
     project: Path,
+    library: dict[str, bytes],
 ) -> str:
     """Check one slide alone and keep it; the problem, or empty. ``captures``
     maps each capture of this turn, by number, to why it cannot be a figure, empty when
-    it can; ``figures`` holds those captures' images, placed in ``project``."""
+    it can; ``figures`` holds those captures' images and ``library`` the library
+    figures the slide places (tools.slide_figures), placed in ``project``."""
     slides = record["deck"]["slides"]
     n = args["slide"]
     if not 1 <= n <= len(slides):
-        return f"slide {n}: the deck has {len(slides)} slides"
+        return f"slide {n}: the PowerPoint has {len(slides)} slides"
     svg = args["svg"]
-    problem, pages = _local_problem(svg, captures)
+    problem, pages = _local_problem(svg, captures, library)
     if problem:
         return f"slide {n}: {problem}"
+    named = {m.group(1) for m in LIBRARY_IMAGE_HREF.finditer(svg)} & set(library)
+    placed = {f"c{p}": figures[p] for p in pages} | {n: library[n] for n in named}
     name = _file(n, slides[n - 1]["title"])
     with tempfile.TemporaryDirectory() as tmp:
         alone = Path(tmp)
         (alone / "svg_output").mkdir()
         (alone / "svg_output" / name).write_text(svg, encoding="utf-8")
-        _place(alone, {p: figures[p] for p in pages})
+        _place(alone, placed)
         errors = check(alone).get(name, [])
     if errors:
         return f"slide {n} refused by the checker:\n- " + "\n- ".join(
             errors[:MAX_ERRORS]
         )
-    _place(project, {p: figures[p] for p in pages})
+    _place(project, placed)
     slides[n - 1]["svg"] = svg
     return ""
 
 
-def _place(project: Path, figures: dict[int, bytes]) -> None:
+def _place(project: Path, figures: dict[str, bytes]) -> None:
+    """Each image as images/<name>.jpg, the file its href names."""
     if figures:
         (project / "images").mkdir(parents=True, exist_ok=True)
-    for page, image in figures.items():
-        (project / "images" / f"c{page}.jpg").write_bytes(image)
+    for name, image in figures.items():
+        (project / "images" / f"{name}.jpg").write_bytes(image)
 
 
-def save(record: dict[str, Any], project: Path, pptx: Path) -> str:
+@dataclass(frozen=True)
+class ExportProblem:
+    """Why a complete deck did not export, in the model's words. ``ours`` when
+    no slide the model wrote is at fault (the Sources slide, the exporter):
+    writing slides again cannot fix it."""
+
+    text: str
+    ours: bool
+
+
+# The end of an export problem the model cannot fix (Epo 2026-10-30, T2b).
+NOT_YOURS = (
+    " Writing slides again does not change it, so this PowerPoint cannot be saved in "
+    "this turn: tell the learner."
+)
+
+
+def save(record: dict[str, Any], project: Path, pptx: Path) -> ExportProblem | None:
     """Rewrite svg_output from the record, closed by a Sources slide when the deck
-    credits library books, and export it; the problem, or empty."""
+    credits library books, check it and export it; the problem, or None. The
+    model is pointed at its own slides only, by number and title."""
     out = project / "svg_output"
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
     slides = record["deck"]["slides"]
+    names: dict[str, tuple[int, str]] = {}
     for n, slide in enumerate(slides, 1):
+        names[_file(n, slide["title"])] = (n, slide["title"])
         (out / _file(n, slide["title"])).write_text(slide["svg"], encoding="utf-8")
     books = credits(record)
     if books:
         lang = ET.fromstring(slides[0]["svg"]).attrib["lang"]
         page = len(slides) + 1
-        (out / _file(page, "sources")).write_text(
-            sources_svg(record["deck"]["style"], books, page, lang), encoding="utf-8"
+        svg = sources_svg(record["deck"]["style"], books, page, lang)
+        if svg is None:
+            return ExportProblem(
+                f"The PowerPoint did not export: its Sources slide, made from the "
+                f"{len(books)} books it credits, cannot hold them all.{NOT_YOURS}",
+                ours=True,
+            )
+        (out / _file(page, "sources")).write_text(svg, encoding="utf-8")
+    errors = check(project)
+    yours = {name: errs for name, errs in errors.items() if name in names}
+    if yours:
+        listed = "\n".join(
+            f"- slide {names[name][0]} ({names[name][1]}): {e}"
+            for name, errs in yours.items()
+            for e in errs[:MAX_ERRORS]
         )
-    return export(project, pptx)
+        return ExportProblem(
+            "The PowerPoint did not export: the final check refused these slides. "
+            f"Write each of them again; it exports once every slide passes.\n{listed}",
+            ours=False,
+        )
+    if errors:
+        ours = "; ".join(e for errs in errors.values() for e in errs[:MAX_ERRORS])
+        return ExportProblem(
+            "The PowerPoint did not export: its Sources slide, made from the books it "
+            f"credits and not written by you, failed the check ({ours}).{NOT_YOURS}",
+            ours=True,
+        )
+    problem = export(project, pptx)
+    if problem:
+        return ExportProblem(
+            f"The PowerPoint did not export: {problem}.{NOT_YOURS}", ours=True
+        )
+    return None

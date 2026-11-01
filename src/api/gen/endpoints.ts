@@ -96,6 +96,7 @@ import type {
   InvoiceList,
   Label,
   LearningProgress,
+  LibraryFigure,
   ListAccountConversationsParams,
   ListAttemptsParams,
   ListConversationsParams,
@@ -5053,6 +5054,56 @@ export const getLearningProgress = async (params?: GetLearningProgressParams, op
 
   const data: getLearningProgressResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getLearningProgressResponse
+}
+
+
+
+export type getLibraryFigureResponse200 = {
+  data: LibraryFigure
+  status: 200
+}
+
+export type getLibraryFigureResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getLibraryFigureResponseSuccess = (getLibraryFigureResponse200) & {
+  headers: Headers;
+};
+export type getLibraryFigureResponseError = (getLibraryFigureResponseDefault) & {
+  headers: Headers;
+};
+
+export type getLibraryFigureResponse = (getLibraryFigureResponseSuccess | getLibraryFigureResponseError)
+
+export const getGetLibraryFigureUrl = (id: string,) => {
+
+
+
+
+  return `/api/library/figures/${id}`
+}
+
+/**
+ * @summary A library figure for a chat answer
+ */
+export const getLibraryFigure = async (id: string, options?: RequestInit): Promise<getLibraryFigureResponse> => {
+
+  const res = await fetch(getGetLibraryFigureUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getLibraryFigureResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getLibraryFigureResponse
 }
 
 

@@ -147,8 +147,8 @@ export function PlotChart({
         </text>
         <text
           className="fill-fg-muted text-[9px]"
-          textAnchor="end"
-          x={RIGHT}
+          textAnchor="middle"
+          x={W / 2}
           y={H - 2}
         >
           {data.xTitle}

@@ -190,7 +190,21 @@ func (a *api) ensureFigureAssets(ctx context.Context, req internalDocumentsEditR
 		return slices.Contains(created, asset.ID)
 	})
 	a.deleteAgentAssets(ctx, unused)
+	a.thumbnailFigures(ctx, f, created)
 	return created, nil
+}
+
+// thumbnailFigures starts the thumbnails of the figures stored as the assets
+// ids (editor_asset_thumbnails.go).
+func (a *api) thumbnailFigures(ctx context.Context, f *agentFigures, ids []string) {
+	var images []editorImage
+	for _, ref := range f.used {
+		if id := f.assets[ref].ID; slices.Contains(ids, id) {
+			data := f.images[ref]
+			images = append(images, editorImage{id, func() ([]byte, error) { return data, nil }})
+		}
+	}
+	a.thumbnailEditorImages(ctx, images)
 }
 
 // deleteAgentAssets removes the objects of assets whose rows were never

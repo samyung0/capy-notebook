@@ -141,8 +141,9 @@ for (const [format, name] of [
       timeout: 60_000,
     });
     if (format === 'pptx') {
-      await frame.getByTestId('pptx-next-slide').click();
-      await frame.getByTestId('pptx-next-slide').click();
+      const third = frame.locator('aside button').nth(2);
+      await third.click();
+      await expect(third).toHaveAttribute('aria-current', 'page');
       await expect(frame.getByRole('region')).toContainText(
         'Clipboard input 日本 😀日本語'
       );
@@ -1172,7 +1173,7 @@ test.describe('DOCX on a phone', () => {
       .click({ timeout: 60_000 });
     // The MSW User scenarios panel floats over the chat field's history button.
     await page.getByRole('button', { name: m.chat_history() }).press('Enter');
-    await page.getByRole('button', { name: 'OpenUI: Office citation' }).click();
+    await page.getByRole('button', { name: 'Answer: Office citation' }).click();
     await page.getByTitle(m.chat_source_number({ n: 1 })).click();
     const frame = page.frameLocator('iframe[src*="office-runtime"]');
     const highlight = frame.locator('[data-citation-highlight]').first();
@@ -1472,7 +1473,7 @@ test('an Office citation highlights its passage again after the runtime reloads'
   await page.goto('/workspaces/ws_bio');
   await showPanelView(page, m.workspace_tab_chat());
   await page.getByRole('button', { name: m.chat_history() }).click();
-  await page.getByRole('button', { name: 'OpenUI: Office citation' }).click();
+  await page.getByRole('button', { name: 'Answer: Office citation' }).click();
   await page.getByTitle(m.chat_source_number({ n: 1 })).click();
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
   const highlight = frame.locator('[data-citation-highlight]').first();
@@ -2154,9 +2155,10 @@ test('PPTX Present fills the screen, and Presenter view drives the show from a s
   await notes.getByRole('button', { exact: true, name: 'End' }).click();
   await closed;
   await expect(show).toHaveCount(0);
-  await expect(
-    frame.getByText(m.files_office_slide_position({ current: 2, total: 20 }))
-  ).toBeVisible();
+  await expect(frame.locator('aside button').nth(1)).toHaveAttribute(
+    'aria-current',
+    'page'
+  );
 
   // The runtime reloading by itself takes the notes window with it, and the
   // next Presenter view gets a fresh one that shows its notes.

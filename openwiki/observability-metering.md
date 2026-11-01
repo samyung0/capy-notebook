@@ -565,10 +565,13 @@ either slug before it constructs or persists that identity. Most rows call the
 named provider directly. These exact routing exceptions are allowed:
 
 - `deepinfra/Qwen/Qwen3-Embedding-4B` uses the same identity on DeepInfra's
-  OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`), and
-  `deepinfra/Qwen/Qwen3-Reranker-4B` its inference endpoint
-  (`/v1/inference/Qwen/Qwen3-Reranker-4B`). The database check
-  `model_configs_deepinfra_check` keeps each in its own slot.
+  OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`). The database
+  check `model_configs_deepinfra_check` keeps it the only DeepInfra row, in the
+  `retrieval` slot.
+- `alibaba/qwen3-rerank` posts to the rerank route beside the Singapore
+  workspace's OpenAI-compatible base (`ALIBABA_MODELSTUDIO_URL` with
+  `/compatible-mode/v1` replaced by `/compatible-api/v1/reranks`) with
+  `ALIBABA_MODELSTUDIO_KEY`; the `alibaba` provider allows only that model.
 - `zai/glm-5.3-flash` keeps its `zai` catalog identity, credit rates and
   capacity row but is served through OpenRouter (decision 2026-10-21): the
   request names OpenRouter's `z-ai/glm-5.3-flash`, routed to DigitalOcean, then
@@ -580,13 +583,28 @@ named provider directly. These exact routing exceptions are allowed:
   without an effort reasons as at `max`, so every GLM request sends
   `reasoning: {effort}` with `low`, `high` or `max`; `low` is the floor a
   reasoning-off call runs at and `high` the chat default.
+- `deepseek/deepseek-flash` posts to DeepSeek's own chat API
+  (`https://api.deepseek.com/chat/completions`, platform `DEEPSEEK_API_KEY`,
+  which `search_web` also uses). It ran on OpenRouter's 1017 twice, on
+  InferenceNet and then on Morph (2026-10-29), and came back each time: first
+  because OpenRouter's routes were unreliable, then on 2026-10-30 (Epo, "go back
+  to deepseek direct") after the loop trace found Morph dropping optional tool
+  arguments and the key's Sensitive Info guardrail rewriting requests, neither
+  of which DeepSeek's API does. Its catalog identity and name never changed.
+  Thinking goes
+  as `thinking: {type: enabled}` with `reasoning_effort` (`mid` sent as
+  `medium`), and a reasoning-off call sends `thinking: {type: disabled}`. Its
+  agentic-loop certification is recorded on DeepSeek's API (UAT host,
+  2026-10-29); the `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`
+  certifications stay retired.
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
   `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`, except MiniMax 3.1
   Flash (`minimax/minimax-m3.1-flash`, a chat choice since 2026-10-24, Q224,
   migration `0112_chat_sources.sql`), which sends the chat pin's effort
   (`low`, `mid` as `medium`, `high`; `MINIMAX_EFFORTS`) at temperature 0.2 and
-  goes to Together, then Wafer (Epo 2026-10-25). Every OpenRouter
+  goes to Together, then DigitalOcean (Epo 2026-10-30; Wafer, its fallback
+  from 2026-10-25, stopped serving the model). Every OpenRouter
   model, GLM included, takes its provider list from `OPENROUTER_ROUTING` in
   `pipeline/elitellm/client.py`: an
   ordered `order` with `allow_fallbacks: false`, so OpenRouter tries the listed
@@ -797,12 +815,16 @@ cached-read input, and output. One credit is $0.0005 of provider cost, so a
 rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
 whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
 300 / 60 / 1000 (Z.AI's list price, decision 2026-10-20, kept on OpenRouter,
-where DigitalOcean lists less), DeepSeek Flash 600 / 12 / 2400, OpenRouter
+where DigitalOcean lists less), DeepSeek Flash 600 / 12 / 2400 (DeepSeek's
+peak price on its own API, $0.30 / $0.006 / $1.20 per million, Epo's rate
+2026-10-30; UAT's row version 9, after version 6 at 300 / 60 / 1200 on
+InferenceNet, version 7 at this rate on DeepSeek's API and version 8 at
+300 / 8 / 1400 on the Morph-then-Cloudflare route), OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
 decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
 price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
-1200 (Together's list price, which Wafer matches, 2026-10-24), embedding 40,
-reranker 50.
+1200 (Together's list price, which DigitalOcean matches, 2026-10-24), embedding 40,
+reranker 200 (Alibaba qwen3-rerank's $0.10, migration 0134).
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
 There is no USD estimate on `model_configs` or `usage_events`.
@@ -904,7 +926,12 @@ nothing. The card key is Stripe's card fingerprint; no other card data is
 stored there. Only a card earns the grant: a Link method has no fingerprint
 and earns none, and nothing derived from its email is kept (Epo 2026-10-24). Rows are kept when an
 account is purged, so a recreated account cannot claim the same card again.
-`CreditSettings.starterAvailable` drives the offer on the Subscription tab.
+`CreditSettings.starterAvailable` drives the offer on the Usage tab. The saved
+auto-reload method keeps its card key (`user_credits.reload_pm_card_key`,
+migration 0131), and `starterCardUsed` turns the offer into "Link a new card…
+This card has been used before." when that card already earned another
+account's grant. On UAT, `scripts/uat/clear-starter-grants.sh` empties
+`starter_grants` so the shared test-card fingerprints earn the grant again.
 
 **Gate.** Available is `max(limit − used, 0) + purchased − reserved`. At zero
 or below new work is refused unless a started reload's 60-second window is open
@@ -1054,9 +1081,11 @@ are complete and a large write streams nothing for 40 seconds or more. The
 timeout's message names the bound that fired: no first event, silence after
 the start, or the backstop. Comment-only keep-alives do not count as events,
 so a request parked in a provider queue times out like a silent one. The
-stream backstop bounds the whole stream. Non-streaming interactive calls such
-as query embeddings get the 15 seconds as a whole-call bound, a search rerank
-included; the search itself waits at most 5 seconds for the scores (admission
+stream backstop bounds the whole stream. A query embedding gets 30 seconds as
+a whole-call bound (`cfg.interactive_embedding_timeout_s`, code-only; Epo
+2026-10-30, after DeepInfra's Qwen3-Embedding-4B took 12.5 s and timed out at
+15 s on UAT); other non-streaming interactive calls, a search rerank
+included, get the 15 seconds as a whole-call bound; the search itself waits at most 5 seconds for the scores (admission
 and busy retry included) while the request runs on to its receipt. Ingest calls keep
 their 120-second bound. Only the awaits on the provider are timed, so a slow
 consumer between chunks never counts as provider silence. The transport keeps
@@ -1175,8 +1204,16 @@ Provider SDK automatic retries are disabled, so one call id represents one
 outbound provider attempt; retrying only the settlement callback keeps the
 original id. Every provider call runs under a retry policy in `models.py`: a
 busy answer (429, 503, 529) waits for the provider's `Retry-After`, else a
-jittered backoff, and every attempt is a new call id. Interactive calls get two
-attempts inside three seconds and then fail closed as `provider_busy` (HTTP 503
+jittered backoff, and every attempt is a new call id. A chat turn's model
+(LLM) calls get two attempts inside the turn's 60 s wait (`CHAT_SLOT_WAIT_S`):
+a first busy answer shows the waiting status, not the error, and gets a 60 s
+window of its own (its `Retry-After`, then its model's line), so it always goes
+back in line; a Stop ends that wait at once; a second busy answer shows the
+error (Epo 2026-10-29 and its review). One chat call can so wait about 180 s
+at worst: a call slot, the line, then the retry's line. Other interactive
+calls (generate, the editor AI routes, ghost text, and embeddings and reranks
+inside a chat's tools) get two attempts inside three seconds and then fail closed as
+`provider_busy` (HTTP 503
 carrying `retryAfterSeconds`, with a `Retry-After` header on the ghost-text
 route; generate answers through Huma, which sets no header, so
 the wait is in the body only; an SSE `error` event with `retryAfterSeconds` on
@@ -1229,12 +1266,12 @@ actor at the workspace pin's rates.
 
 A search rerank has its own usage kind, `rerank`, settled at zero credits on
 the chat or generate session that ran the search. Its `provider_calls` and
-`usage_events` rows carry the reranker's provider/model and the tokens DeepInfra
-reports (`input_tokens`, or `inference_status.tokens_input`). The usage row's
+`usage_events` rows carry the reranker's provider/model and the tokens Alibaba
+reports (`usage.total_tokens`, passed on as `input_tokens`). The usage row's
 catalog columns name the reranker row the pipeline called: the settle payload
 sends its `modelVersion`, the gateway requires one on every `rerank` call and
 refuses one on any other kind, and the row must serve the `rerank` slot. Billing
-therefore shows "{surface} · Rerank · deepinfra/Qwen/Qwen3-Reranker-4B" and a
+therefore shows "{surface} · Rerank · alibaba/qwen3-rerank" and a
 separate Rerank bucket. Search takes the scores as
 soon as they arrive and the settlement finishes in a background task
 (`accounting.settle_in_background`), so a slow gateway never holds a search.
@@ -1819,10 +1856,19 @@ The app and ingest hosts share the lease table. Lowering a limit leaves existing
 calls running and blocks new admissions until usage falls below the new limit.
 Missing capacity raises an explicit configuration error before a call row or
 provider request is created. A full gate polls with jitter within the call budget,
-then fails as `provider_busy`. Leases use the call id and receipt deadline and are
+then fails as `provider_busy` (`accounting.GateFull`). A chat call instead
+waits in its model's line in the retrieval process (`limits.ModelQueue`, Epo
+2026-10-29): it goes straight through when nobody waits and the gate has room;
+otherwise it waits behind the calls already waiting, with the waiting status,
+and only the head of the line tries the gate, polling, woken at once when a
+call on that model ends in this process (`models._open_in_line`). A call in
+line gives back its process call slot, and the head takes one again before it
+tries the gate, so a full model never fills the 64 slots other models and
+routes need. Past the turn's 60 s it fails as `provider_busy`; a Stop or a
+dropped hop leaves the line and starts nothing. Leases use the call id and receipt deadline and are
 released when the call ends. The VLM read of text-less document pages has a
 gate of its own: its leases use the fixed key `vlm_page` with a limit of
-`CAPY_VLM_PAGE_CAPACITY` across every worker (64 in production, 20 in UAT and
+`CAPY_VLM_PAGE_CAPACITY` across every worker (40 in production since 2026-10-29, 20 in UAT and
 local) in place of the captioning row, so those
 reads need no `model_capacities` row and do not count against GLM's ingest
 share.
@@ -1830,12 +1876,13 @@ share.
 Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 150/125 and Qwen embedding 200/80; local development
 keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
-rows: DeepSeek Flash 2500/1500, GLM 150/125 (still keyed `zai/glm-5.3-flash`),
+rows: DeepSeek Flash 40/0 (on DeepSeek's API, whose account allows 2500; chat and Generate only, so no reserve, Epo 2026-10-29), GLM 150/125 (still keyed `zai/glm-5.3-flash`),
 OpenRouter DeepSeek V4 Flash 0731 32/0 (ingest-only, so no interactive
-reserve) and V4.1 Flash 1017 76/56 (captions, chat and ghost text; page reads
-lease the `vlm_page` gate instead),
-MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together and Wafer each held 16
-calls at once in the 2026-10-23 probe), Qwen
+reserve) and V4.1 Flash 1017 40/20 (ghost text up to 40, captions up to 20;
+page reads lease the `vlm_page` gate instead, Epo 2026-10-29; UAT and local
+8/4),
+MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together and DigitalOcean each held 16
+calls at once in the 2026-10-30 probe), Qwen
 embedding 200/80 (total/interactive reserve). Existing settings remain, so an
 environment that already has rows changes them in Ops.
 DeepSeek and DeepInfra totals follow their published account/model concurrency
@@ -2109,7 +2156,7 @@ the likelihood grew every time the registry was reconfigured.
 | `COLLABORATION_ALLOWED_ORIGINS` | gateway, collaboration | the gateway accepts a Clerk session token only when its `azp` is one of these; with Clerk on outside development and e2e it refuses to boot when the list is empty |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
-| `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | wait for an interactive stream's first event, whole-call bound for non-streaming interactive calls; default 15 |
+| `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | wait for an interactive stream's first event, whole-call bound for non-streaming interactive calls other than query embeddings (30 s, code-only); default 15 |
 | `CAPY_INTERACTIVE_STREAM_IDLE_S` | retrieval | silence allowed once an interactive stream has started; default 120 |
 | `CAPY_INTERACTIVE_STREAM_MAX_S` | retrieval | whole-stream backstop; the interactive receipt window is this plus five minutes; default 600 |
 | `GATEWAY_URL` / `PIPELINE_SECRET` | import worker | the gateway's private URL and shared secret for `/api/internal/import/*`; the gateway's empty `PIPELINE_SECRET` disables Drive imports |

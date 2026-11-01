@@ -141,7 +141,7 @@ export const MATERIAL_SORTS: MaterialListSort[] = [
 ];
 export const MATERIAL_SORT_DEFAULT: MaterialListSort = 'updated';
 
-export const EDITOR_ASSET_ACCESS: EditorAssetAccess[] = ['open', 'lost'];
+export const EDITOR_ASSET_ACCESS: EditorAssetAccess[] = ['lost'];
 
 /** The Files page: the tab, then the Files or Blocks tab's own sort and
  * filters; Embeds keeps only its access filter, Trash none. */

@@ -7,9 +7,11 @@ import {
 } from '@/api/hooks';
 import type { Conversation } from '@/api/types';
 import { ConfirmDialog } from '@/components/ui/Dialog';
-import { SkeletonList } from '@/components/ui/feedback';
+import { SkeletonList, Spinner } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
+import { sampleChats } from '@/features/guide/tourSamples';
+import { useRunningTour } from '@/features/guide/tourStore';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { PanelNewRow } from '../PanelNewRow';
@@ -48,6 +50,10 @@ export function ConversationList({
   const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState<Conversation | null>(null);
+  const tour = useRunningTour();
+  // The tour shows example rows where this workspace has no chats yet.
+  const sample =
+    tour?.workspaceId === workspaceId && conversations?.length === 0;
 
   const shown = conversations?.filter((c) =>
     matchesSearch(c.title || m.chat_untitled(), query)
@@ -79,6 +85,14 @@ export function ConversationList({
           <span className="line-clamp-1 flex-1 translate-y-px">
             {c.title || m.chat_untitled()}
           </span>
+          {/* A turn still answering in any tab, on chats the panel does not
+              show live (Epo 2026-10-27, T19; Q576 F4). */}
+          {c.running && !active && (
+            <Spinner
+              className="ml-1.5 size-3.5 shrink-0"
+              label={m.chat_running()}
+            />
+          )}
         </button>
         <HoverActions
           className={cn(
@@ -137,13 +151,25 @@ export function ConversationList({
         {!conversations && (
           <SkeletonList className="px-1.5 py-2" count={5} rowHeight={32} />
         )}
-        {shown?.length === 0 && (
-          <p className="px-2 py-1.5 text-fg-muted text-sm">
-            {conversations?.length
-              ? m.chat_no_matches()
-              : m.chat_no_conversations()}
-          </p>
-        )}
+        {shown?.length === 0 &&
+          (sample ? (
+            <div className="flex flex-col" inert>
+              <div className="t-label px-1.5 py-1.5 text-fg-muted">
+                {m.tour_example()}
+              </div>
+              {sampleChats().map((title) => (
+                <div className="rounded-button px-2 py-1.5" key={title}>
+                  <span className="line-clamp-1 translate-y-px">{title}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="px-2 py-1.5 text-fg-muted text-sm">
+              {conversations?.length
+                ? m.chat_no_matches()
+                : m.chat_no_conversations()}
+            </p>
+          ))}
         <div className="flex flex-col gap-3">
           {groups.map(
             (group) =>

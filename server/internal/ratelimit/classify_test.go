@@ -8,12 +8,13 @@ import (
 
 func TestClassifySplitsEditorFromChat(t *testing.T) {
 	cases := map[string]class{
-		"/healthz":                                          classExempt,
-		"/readyz":                                           classExempt,
-		"/api/internal/materials":                           classExempt,
-		"/webhooks/stripe":                                  classExempt,
-		"/api/workspaces/ws_1/chat/stream":                  classAI,
-		"/api/chat/stream":                                  classAI,
+		"/healthz":                         classExempt,
+		"/readyz":                          classExempt,
+		"/api/internal/materials":          classExempt,
+		"/webhooks/stripe":                 classExempt,
+		"/api/workspaces/ws_1/chat/stream": classAI,
+		"/api/chat/stream":                 classAI,
+		"/api/conversations/c_1/messages/m_1/stream":        classDefault,
 		"/api/workspaces/ws_1/generate":                     classAI,
 		"/api/quizzes/mat_1/check":                          classAI,
 		"/api/attempts":                                     classDefault,

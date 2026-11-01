@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { flushSync } from 'react-dom';
 import { chatTurn, WORKSPACE_ONLY_DEFAULT } from '@/api/chatStream';
+import { isApiError } from '@/api/client';
 import {
   useConversations,
   useMe,
@@ -26,6 +27,7 @@ import type {
 } from '@/api/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { CharCount } from '@/components/ui/Input';
@@ -41,6 +43,13 @@ import { audioStartMs, formatClock } from '@/features/files/citationRegions';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
+import {
+  isString,
+  PREF_KEYS,
+  readPref,
+  removePref,
+  writePref,
+} from '@/lib/localPrefs';
 import { textLength } from '@/lib/textLength';
 import { userColorPairDark } from '@/lib/userColor';
 import {
@@ -50,14 +59,19 @@ import {
 } from './chat/ChatDock';
 import { ChatHistoryDialog } from './chat/ChatHistoryDialog';
 import { ChatTrace, type UndoHandlers } from './chat/ChatTrace';
-import { LangAnswer } from './chat/LangAnswer';
+import { MarkdownAnswer } from './chat/MarkdownAnswer';
 import { QuestionBlock } from './chat/QuestionBlock';
 import { extractQuestions } from './chat/questions';
 import { useVoiceInput, VoiceButton, VoiceElapsed } from './chat/VoiceInput';
 import { insertTranscript } from './chat/voiceRecording';
 import { sourceEntryId, webHref } from './chat/webCitation';
 import type { TabAction } from './PanelTabRow';
-import { toChatMessage, useChatStream } from './useChatStream';
+import {
+  type Seeded,
+  seedsAgain,
+  toChatMessage,
+  useChatStream,
+} from './useChatStream';
 import { useProcessFileChanges } from './useProcessFileChanges';
 
 /** Page label for a citation, or a transcript passage's start time; absent
@@ -73,30 +87,30 @@ function pageLabel(c: Citation): string | null {
 }
 
 /** Where an account chat's cited source lives, before its name: its
- * workspace's icon and name, or No workspace. Workspace chats' citations
- * carry no place. */
+ * workspace's icon and name; a file outside workspaces shows only its name
+ * (Epo 2026-10-30). Workspace chats' citations carry no place. */
 function CitationPlace({ citation }: { citation: Citation }) {
   const { data: workspaces } = useWorkspaces(
     { sort: 'accessed' },
     { errorBoundary: false }
   );
-  const iconId =
-    citation.workspaceName &&
-    workspaces?.find((workspace) => workspace.id === citation.workspaceId)
-      ?.iconId;
+  if (!citation.workspaceName) return null;
+  const iconId = workspaces?.find(
+    (workspace) => workspace.id === citation.workspaceId
+  )?.iconId;
   return (
     <>
       {iconId && (
         <img
           alt=""
-          className="size-3.5 shrink-0 -translate-y-px rounded-[4px]"
+          className="mx-0.5 size-3.5 shrink-0 -translate-y-px rounded-[4px]"
           height={14}
           src={iconUrl(iconId)}
           width={14}
         />
       )}
       <span className="min-w-0 max-w-[45%] shrink-0 truncate text-fg-muted">
-        {citation.workspaceName || m.files_no_workspace()}
+        {citation.workspaceName}
       </span>
       <span aria-hidden className="text-fg-muted">
         ·
@@ -171,6 +185,24 @@ export function Citations({
           );
         }
         const page = pageLabel(c);
+        if (c.kind === 'library') {
+          // A library book: its title and pages, opening nothing (Epo
+          // 2026-10-30); a raised number scrolls here, as for the web.
+          return (
+            <Badge
+              className="max-w-full frosted:bg-(--frost-fill) font-medium"
+              id={sourceEntryId(msg.id, i)}
+              key={`${c.chunkId}:${i}`}
+              size="sm"
+              title={c.snippet}
+            >
+              <span className="text-fg-muted">{i + 1}</span>
+              <Icon className="size-3 shrink-0 text-fg-muted" name="book" />
+              <span className="truncate">{c.fileName}</span>
+              {page ? <span className="text-fg-muted">{page}</span> : null}
+            </Badge>
+          );
+        }
         return (
           <Badge
             asChild
@@ -212,10 +244,10 @@ function AssistantBubble({
   // trace until its block ends and the trace takes it.
   const draft = msg.phase === 'answering' ? msg.currentBlockText : undefined;
   const answer = msg.content || draft || '';
-  // A web citation's raised number moves to its sources-list entry; a file
-  // or note citation opens its passage.
+  // A web or library citation's raised number moves to its sources-list
+  // entry; a file or note citation opens its passage.
   const openCitation = (citation: Citation) => {
-    if (citation.kind !== 'web') {
+    if (citation.kind !== 'web' && citation.kind !== 'library') {
       onOpenCitation?.(citation);
       return;
     }
@@ -231,7 +263,7 @@ function AssistantBubble({
       <ChatTrace handlers={handlers} live={live} mode={mode} msg={msg} />
       {msg.currentBlockText && msg.phase !== 'answering' && !msg.content ? (
         <div className="mt-6 mb-4">
-          <LangAnswer
+          <MarkdownAnswer
             citations={msg.citations}
             complete={false}
             content={msg.currentBlockText}
@@ -241,7 +273,7 @@ function AssistantBubble({
         </div>
       ) : null}
       {answer ? (
-        <LangAnswer
+        <MarkdownAnswer
           citations={msg.citations}
           complete={msg.status === 'complete'}
           content={answer}
@@ -342,8 +374,10 @@ export function ChatPanel({
   /** Each opened chat (a request, new or restored) puts the caret in the
    * composer: the account chat page. */
   focusOnOpen?: boolean;
-  /** The shown thread, for the left panel to highlight. */
-  onActiveChange?: (id: string | null) => void;
+  /** The shown thread, for the left panel to highlight, and whether the panel
+   * shows any messages: a first send refused before it got a conversation
+   * still has its message and error, so New chat stays available. */
+  onActiveChange?: (id: string | null, shown: boolean) => void;
   color?: UserColor;
   /** Draws the panel's tab row with this chat's own actions (history, new chat). */
   renderTabRow?: (actions: TabAction[]) => ReactNode;
@@ -370,7 +404,7 @@ export function ChatPanel({
     refuseUndo,
   } = useChatStream(workspaceId);
   const { data: me } = useMe({ errorBoundary: false });
-  const mode: ChatSteps = me?.chatSteps ?? 'normal';
+  const mode: ChatSteps = me?.chatSteps ?? 'verbose';
   const sendKey = me?.chatSendKey ?? 'enter';
   // Dock only: the chat page is open, or a chip leads back to it after a
   // citation or a created file took the learner to the file.
@@ -405,15 +439,27 @@ export function ChatPanel({
   const [text, setText] = useState('');
   const overLimit = textLength(text) > CHAT_CHARACTER_LIMIT;
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [selectId, setSelectId] = useState<string | null>(null);
+  // The conversation this panel showed before a reload or a closed tab opens
+  // again in its first render (Epo 2026-10-27, T19); a request the panel
+  // mounts with (the account chat's URL) wins over it.
+  const [restoredId] = useState(() =>
+    request ? null : readPref(PREF_KEYS.openChat(workspaceId), null, isString)
+  );
+  const [selectId, setSelectId] = useState(request ? request.id : restoredId);
   // Workspace only applies per message; it stays where the learner left it.
   const [workspaceOnly, setWorkspaceOnly] = useState(WORKSPACE_ONLY_DEFAULT);
-  const { data: history, error: historyError } = useMessages(selectId, {
+  const {
+    data: history,
+    error: historyError,
+    fetchStatus: historyFetchStatus,
+  } = useMessages(selectId, {
     errorBoundary: false,
   });
   // A thread the link names that is gone or not the caller's (review r1 F2).
   const missingThread = !!selectId && isMissing(historyError);
-  const hydratedRef = useRef<string | null>(null);
+  const opening =
+    selectId !== null && conversationId !== selectId && !historyError;
+  const hydratedRef = useRef<Seeded | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const dockFieldRef = useRef<HTMLTextAreaElement>(null);
@@ -466,13 +512,37 @@ export function ChatPanel({
     (!!dock && !pageOpen) || questions.length === 0
   );
 
-  // Seed local state when a previously-saved conversation is opened.
+  // Seed local state when a saved conversation opens: cached history paints at
+  // once, then this open's refetch seeds it again once and decides whether a
+  // running answer is followed. Later refetches (after a turn) leave it alone.
   useEffect(() => {
-    if (selectId && history && hydratedRef.current !== selectId) {
-      hydratedRef.current = selectId;
-      hydrate(selectId, history.map(toChatMessage));
+    if (!(selectId && history)) return;
+    // A fetch paused offline or failed leaves the cached history painted,
+    // never followed.
+    const current = historyFetchStatus === 'idle' && !historyError;
+    if (!seedsAgain(hydratedRef.current, selectId, current)) return;
+    // A turn this tab sent before the fetch landed keeps the thread; the
+    // fetch after that turn seeds it then.
+    const seeded = hydrate(selectId, history.map(toChatMessage), current);
+    hydratedRef.current = { current: current && seeded, id: selectId };
+  }, [selectId, history, historyFetchStatus, historyError, hydrate]);
+
+  // The shown conversation is kept while the panel is mounted: leaving the
+  // page forgets it, a reload or a closed tab does not. It is kept under the
+  // scope it was shown in, which a page switch in place leaves as it was
+  // (Epo 2026-10-29, Q576 F1); a new chat clears the panel's own scope.
+  const shownId = selectId ?? conversationId;
+  const [shownIn, setShownIn] = useState({ id: shownId, workspaceId });
+  if (shownIn.id !== shownId) setShownIn({ id: shownId, workspaceId });
+  useEffect(() => {
+    const key = PREF_KEYS.openChat(shownIn.workspaceId);
+    if (!shownIn.id) {
+      removePref(key);
+      return;
     }
-  }, [selectId, history, hydrate]);
+    writePref(key, shownIn.id);
+    return () => removePref(key);
+  }, [shownIn]);
 
   // Keep the newest message in view as tokens stream in or a thread opens;
   // an Undo on an older receipt changes messages too and must not scroll.
@@ -485,7 +555,9 @@ export function ChatPanel({
 
   function submit() {
     const trimmed = text.trim();
-    if (!trimmed || streaming || overLimit) return;
+    // Not while a conversation opens: the send would start a new chat that
+    // the opened one then replaces (Q576 F3).
+    if (!trimmed || streaming || overLimit || opening) return;
     setText('');
     void send(trimmed, chatTurn(workspaceOnly, openResource));
   }
@@ -495,7 +567,20 @@ export function ChatPanel({
     setSelectId(null);
     startNew();
   }
+  // A kept conversation that is gone (deleted, archived away) opens a new
+  // chat; a requested one shows it is missing.
+  const forgetGone = useEffectEvent(() => {
+    if (
+      selectId === restoredId &&
+      isApiError(historyError) &&
+      historyError.status === 404
+    )
+      openNew();
+  });
+  useEffect(() => forgetGone(), [historyError]);
   function openThread(id: string) {
+    // The shown conversation is already seeded.
+    if (id === selectId) return;
     hydratedRef.current = null;
     setSelectId(id);
   }
@@ -518,9 +603,10 @@ export function ChatPanel({
   useEffect(() => {
     if (request) followRequest(request);
   }, [request]);
+  const shown = messages.length > 0;
   useEffect(() => {
-    onActiveChange?.(conversationId);
-  }, [conversationId, onActiveChange]);
+    onActiveChange?.(conversationId, shown);
+  }, [conversationId, shown, onActiveChange]);
 
   // The dock always starts a new conversation (one still answering keeps
   // streaming in the background), then grows into the chat page; the keyboard
@@ -548,7 +634,7 @@ export function ChatPanel({
     onClick: () => setHistoryOpen(true),
   };
   const newAction: TabAction = {
-    disabled: !conversationId,
+    disabled: !shown,
     icon: 'newChat',
     label: m.chat_new(),
     onClick: openNew,
@@ -585,7 +671,10 @@ export function ChatPanel({
         )}
         ref={scrollRef}
       >
-        {!messages.length && (
+        {!messages.length && opening && (
+          <SkeletonList className="mt-auto" count={3} rowHeight={56} />
+        )}
+        {!(messages.length || opening) && (
           <div className="m-auto max-w-[80%] text-center">
             <Icon
               className="non-scaling-svg mx-auto mb-2 size-6.5"
@@ -711,7 +800,9 @@ export function ChatPanel({
                 )}
                 <IconButton
                   className="size-9 rounded-lg"
-                  disabled={!(streaming || (text.trim() && !overLimit))}
+                  disabled={
+                    !(streaming || (text.trim() && !overLimit && !opening))
+                  }
                   icon="send"
                   // An outlined plane: grey until there is something to send.
                   iconClassName={cn(

@@ -154,8 +154,8 @@ async def test_rerank_settles_under_its_own_catalog_version(monkeypatch):
             thinking="",
             spec=_spec(
                 version=3,
-                provider_slug="deepinfra",
-                model_slug="Qwen/Qwen3-Reranker-4B",
+                provider_slug="alibaba",
+                model_slug="qwen3-rerank",
                 thinking_levels=(),
                 default_thinking="",
             ),
@@ -167,8 +167,8 @@ async def test_rerank_settles_under_its_own_catalog_version(monkeypatch):
     assert (sent["kind"], sent["purpose"], sent["provider"], sent["model"]) == (
         "rerank",
         "rerank",
-        "deepinfra",
-        "Qwen/Qwen3-Reranker-4B",
+        "alibaba",
+        "qwen3-rerank",
     )
     assert sent["modelVersion"] == 3 and sent["inputTokens"] == 268
     assert state.credits_exhausted and state.terminal_call_allowed
@@ -653,6 +653,49 @@ async def test_open_call_polls_the_full_gate_until_its_deadline(monkeypatch):
         await accounting.release_call("pc_never_leased")
         assert released == [(accounting._release_lease_sync, ("pc_1",))]
         assert state.leased_calls == set()
+    finally:
+        accounting.reset(token)
+
+
+async def test_a_queued_chat_head_waits_through_its_pause_hook(monkeypatch):
+    """A chat queue's head waits between gate tries through ``pause``, which a
+    call ending wakes early (Epo 2026-10-29); with no deadline a full gate
+    answers GateFull at once."""
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
+    answers = [False, True]
+
+    async def to_thread(_function, *_args):
+        return answers.pop(0)
+
+    paused = []
+
+    async def pause(seconds):
+        paused.append(seconds)
+
+    monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
+    token = accounting.bind("cr_1")
+    try:
+        await accounting.open_call(
+            "pc_1",
+            kind=accounting.KIND_LLM,
+            purpose=accounting.PURPOSE_AGENT,
+            spec=_gated_spec(),
+            deadline=accounting.time.monotonic() + 60,
+            pause=pause,
+        )
+        assert len(paused) == 1
+        answers.append(False)
+        with pytest.raises(accounting.GateFull):
+            await accounting.open_call(
+                "pc_2",
+                kind=accounting.KIND_LLM,
+                purpose=accounting.PURPOSE_AGENT,
+                spec=_gated_spec(),
+                deadline=None,
+            )
+        assert len(paused) == 1
     finally:
         accounting.reset(token)
 

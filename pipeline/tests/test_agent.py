@@ -120,13 +120,13 @@ def _text_chunks(text: str) -> list[str]:
 
 
 def _answer(*claims: tuple[str, list[int]]) -> str:
-    """The final answer the prompt asks for: a program, one Md per claim."""
-    names = [f"c{i}" for i in range(len(claims))]
-    lines = ["root = Answer([" + ", ".join(names) + "])"]
-    for name, (text, passages) in zip(names, claims, strict=True):
-        marks = f", {json.dumps(passages)}" if passages else ""
-        lines.append(f"{name} = Md({json.dumps(text)}{marks})")
-    return "\n".join(lines) + "\n"
+    """The final answer the prompt asks for: one paragraph per claim, each
+    closed by its citation marker."""
+    paragraphs = [
+        text + (f" [#{','.join(map(str, passages))}]" if passages else "")
+        for text, passages in claims
+    ]
+    return "\n\n".join(paragraphs) + "\n"
 
 
 def _script_stream(responses: list[AssembledResponse]):
@@ -916,16 +916,16 @@ async def test_a_write_naming_no_excerpts_credits_the_books_its_text_matches(
         "e_stats",
         0,
         "8.1",
-        text="[exc_stats] Statistics — 8.1\nchunks 3-4 of this excerpt, from 3\n"
+        text="excerpt_id=exc_stats — Statistics — 8.1\nchunks 3-4 of this excerpt, from 3\n"
         "(chunk 3) A sample of 40 seeds had a mean mass of 2.45 g, and the line "
-        "of best fit passes the means.\nNext in this book: [exc_more] 8.2 "
+        "of best fit passes the means.\nNext in this book: excerpt_id=exc_more — 8.2 "
         "(pages 12, 13)",
     )
     ctx.library_reads.note(
         "e_seeds",
         0,
         "3.2",
-        text="[exc_seeds] Botany — 3.2\nscope: germination at 75.5 percent\n"
+        text="excerpt_id=exc_seeds — Botany — 3.2\nscope: germination at 75.5 percent\n"
         "(chunk 7) Seeds need water and warmth; the line of best fit passes "
         "the means. Plant 80 seeds per tray.",
     )
@@ -2006,7 +2006,6 @@ async def test_a_client_drop_after_a_tool_leaves_a_checkpoint_with_it(monkeypatc
         ("provider_busy", agent.elitellm.ProviderBusy("busy", retry_after=1), None),
         ("source_changed", pending.SourceChanged(), None),
         ("invalid_answer", _assembled(""), None),
-        ("response_flagged", _assembled(_LEAKED_TOOL_CALL), None),
         ("context_too_large", None, agent.compact.ContextTooLarge("full")),
         ("compaction_failed", None, agent.compact.InvalidSummary("empty")),
     ],
@@ -2154,7 +2153,7 @@ async def test_a_stop_during_a_search_lets_its_rerank_finish_and_settle(monkeypa
     monkeypatch.setattr(accounting, "_post_settlement", _post)
     monkeypatch.setattr(agent.models.elitellm, "rerank", _rerank)
     monkeypatch.setattr(search, "_rerank_spec", lambda: _model())
-    search_call = _call("search_knowledge", '{"query":"q"}', "c1")
+    search_call = _call("search_library", '{"query":"q"}', "c1")
     _stop_turn(monkeypatch, [_assembled("", [search_call])], _run)
     token = accounting.bind("cr_stop")
     try:
@@ -2349,7 +2348,7 @@ async def test_a_partial_answer_keeps_the_passages_it_cited(monkeypatch, ending)
     client = agent.ClientDrop()
     ctx = ToolContext(workspace_id="ws_1")
     program = _answer(("Mitosis has four phases.", [1]), ("More.", []))
-    shown, rest = program.split('"More', 1)
+    shown, rest = program.split("More", 1)
 
     async def _stream(_messages, *, on_event=None, **_kwargs):
         if not ctx.citations:
@@ -2362,7 +2361,7 @@ async def test_a_partial_answer_keeps_the_passages_it_cited(monkeypatch, ending)
         if ending == "failure":
             raise RuntimeError("provider disconnected")
         client.stop()
-        on_event(StreamEvent(kind="text", text='"More' + rest))
+        on_event(StreamEvent(kind="text", text="More" + rest))
         return _assembled(program)
 
     async def _run(name, args, ctx):
@@ -2532,7 +2531,9 @@ async def test_the_office_tools_stay_offered_after_a_dropped_office_inspection(
     ):
         pass
     offered = [t["function"]["name"] for t in seen[3]["tools"]]
-    assert offered[-2:] == list(tools.OFFICE_TOOLS)
+    # edit_office_document also waits for the editing skill.
+    assert "inspect_office_document" in offered
+    assert "edit_office_document" not in offered
     assert not any("Sheet1!A1" in str(m["content"]) for m in seen[3]["messages"])
 
 
@@ -3083,10 +3084,10 @@ async def test_list_sources_includes_materials_and_scoped_file_editability(
         "Notes (id=mat_1, kind=material, material_kind=note, editable=true)"
         "\n  Mitosis phases"
     ) in text
-    # A material sits under the chapter it is filed in; the rest are unfiled.
+    # A material sits under the chapter it is in; the rest are in no chapter.
     biology = text.split("## Biology (chapter_id=ch_1)")[1].split("\n## ")[0]
     assert "Cells quiz (id=mat_2" in biology
-    assert "Notes (id=mat_1" in text.split("## Unfiled study materials")[1]
+    assert "Notes (id=mat_1" in text.split("## Study materials not in a chapter")[1]
     # Only notes are outlined and indexed; the other kinds name their tools.
     assert (
         "Cells quiz (id=mat_2, kind=material, material_kind=quiz, editable=true); "
@@ -3865,47 +3866,6 @@ async def _two_passage_turn(monkeypatch, chunks: list[str], final: str):
     return events, seen
 
 
-async def test_program_streams_through_with_citations_in_reading_order(monkeypatch):
-    # `b` is defined before `a` but read after it: the live list follows the
-    # stream, the final list follows the reading order, and `n` maps both.
-    raw = (
-        "root = Answer([a, b])\n"
-        'b = Md("Light is absorbed.", [1])\n'
-        'a = Md("Carbon is fixed.", [2])\n'
-    )
-    chunks = [raw[i : i + 9] for i in range(0, len(raw), 9)]
-    events, seen = await _two_passage_turn(monkeypatch, chunks, raw)
-
-    deltas = [e["text"] for e in events if e["type"] == "block_delta"]
-    assert "".join(deltas) == raw
-    assert events[-1]["answer"] == raw
-    assert seen[1]["response_format"] is None
-    cites = [e for e in events if e["type"] == "citations"]
-    # The live list follows the stream (`b` first); the final list is the
-    # reading order, sent once the whole program is parsed.
-    assert [[c["chunkId"] for c in e["citations"]] for e in cites] == [
-        ["c1"],
-        ["c2", "c1"],
-    ]
-    assert [c["n"] for c in cites[-1]["citations"]] == [2, 1]
-    assert [e["version"] for e in cites] == [1, 2]
-    assert all(e.get("final") for e in cites)
-    assert events[-1]["telemetry"]["completionCalls"] == 2
-
-
-async def test_unfinished_program_keeps_local_recovery_without_an_extra_call(
-    monkeypatch,
-):
-    raw = 'root = Answer([a, b])\na = Md("Carbon is fixed.", [2])\nb = Md("Cut off'
-    events, seen = await _two_passage_turn(monkeypatch, [raw], raw)
-    assert len(seen) == 2
-    assert sum(e["type"] == "block_start" for e in events) == 1
-    assert events[-1]["answer"] == raw
-    final = [e for e in events if e["type"] == "citations"][-1]
-    assert [c["chunkId"] for c in final["citations"]] == ["c2"]
-    assert events[-1]["telemetry"]["completionCalls"] == 2
-
-
 async def test_plain_prose_answer_uses_markdown_without_an_extra_call(monkeypatch):
     prose = "Carbon is fixed."
     events, seen = await _two_passage_turn(monkeypatch, [prose], prose)
@@ -4289,22 +4249,6 @@ async def test_a_compacted_turn_still_sends_every_capture(monkeypatch):
     assert 4950 < extras[4] - extras[0] < 5050
 
 
-@pytest.mark.parametrize(
-    "raw",
-    [
-        'root = Answer([a])\na = Nope("Carbon is fixed.", [2])\n',
-        'a = Md("Carbon is fixed.", [2])\n',
-        "root = Answer([a])\n",
-        'root = Md("Carbon is fixed.", [2])\n',
-    ],
-)
-async def test_invalid_program_stays_available_for_local_recovery(monkeypatch, raw):
-    events, seen = await _two_passage_turn(monkeypatch, [raw[:7], raw[7:]], raw)
-    assert len(seen) == 2
-    assert events[-1]["answer"] == raw
-    assert events[-1]["telemetry"]["completionCalls"] == 2
-
-
 async def test_attached_captures_count_against_the_compaction_budget(monkeypatch):
     """Images ride outside ``messages``; their patch estimate is passed as
     ``extra`` so a turn compacted to the edge of the window still fits them."""
@@ -4345,17 +4289,6 @@ async def test_attached_captures_count_against_the_compaction_budget(monkeypatch
     await _collect("q", ToolContext(workspace_id="ws_1"))
     # The turn context rides outside too; only the capture changes between calls.
     assert extras[1] - extras[0] == 2240
-
-
-async def test_fenced_program_is_unwrapped(monkeypatch):
-    program = _answer(("Carbon is fixed.", [2]))
-    raw = "```openui-lang\n" + program + "```"
-    events, seen = await _two_passage_turn(monkeypatch, [raw[:20], raw[20:]], raw)
-    assert len(seen) == 2
-    deltas = [e["text"] for e in events if e["type"] == "block_delta"]
-    assert "".join(deltas) == program and events[-1]["answer"] == program
-    final = [e for e in events if e["type"] == "citations"][-1]
-    assert [c["chunkId"] for c in final["citations"]] == ["c2"]
 
 
 # --------------------------------------------------------------- build flow
@@ -4404,7 +4337,7 @@ async def test_a_library_that_is_down_or_empty_leaves_the_turn_on_the_workspace(
         events = await _collect("teach me regression", ctx)
 
         offered = {tool["function"]["name"] for tool in seen[0]["tools"]}
-        assert "search_knowledge" not in offered
+        assert "search_library" not in offered
         assert events[-1]["telemetry"]["stopReason"] == "answer"
     assert "pool timeout" in caplog.text
 
@@ -4417,15 +4350,18 @@ async def test_a_retained_read_replays_with_its_own_count(monkeypatch):
 
     async def read(args, ctx):
         calls.append(dict(args))
-        ctx.library_reads.note(args["excerpt_id"], args.get("start", 0), "8.1")
-        return tools._result(f"{args.get('count')} chunks")
+        text = f"{args.get('count')} chunks"
+        ctx.library_reads.note(
+            args["excerpt_id"], args.get("start", 0), "8.1", text=text
+        )
+        return tools._result(text)
 
-    monkeypatch.setattr(tools, "_read_knowledge", read)
+    monkeypatch.setattr(tools, "_read_library", read)
     first = LibraryEvidence()
     reads = tools.LibraryReads()
-    reads.note("e_1", 0, "8.1")
+    reads.note("e_1", 0, "8.1", text="4 chunks")
     args = {"excerpt_id": "e_1", "count": 4}
-    first.observe("read_knowledge", args, tools._result("4 chunks"), "4 chunks", reads)
+    first.observe("read_library", args, tools._result("4 chunks"), reads)
     first.wrote(["e_1"])
     packed = first.pack()
     assert packed == [
@@ -4450,7 +4386,7 @@ async def test_a_retained_read_replays_with_its_own_count(monkeypatch):
 async def test_turn_context_comes_last_and_tracks_the_reads(monkeypatch, library_on):
     stream, seen = _script_stream(
         [
-            _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k1")]),
+            _assembled("", [_call("read_library", '{"excerpt_id":"e_1"}', "k1")]),
             _assembled(
                 "",
                 [
@@ -4467,7 +4403,7 @@ async def test_turn_context_comes_last_and_tracks_the_reads(monkeypatch, library
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
     async def _run(name, args, ctx):
-        if name == "read_knowledge":
+        if name == "read_library":
             ctx.library_reads.note("e_1", 0, "8.1 Line fitting")
             return ToolResult(text_parts=["excerpt text"])
         return ToolResult(text_parts=["Created note."])
@@ -4525,9 +4461,16 @@ async def test_a_building_turn_has_no_response_ceiling_while_writes_land(
 ):
     """Twenty responses, a write landing every third one: nothing stops it,
     though a turn with no write has 12."""
-    reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e"}', "k")])
+    # Each call differs, so the loop ladder never counts a repeat.
+    reads = iter(range(20))
+
+    def reading() -> AssembledResponse:
+        read = json.dumps({"excerpt_id": f"e_{next(reads)}"})
+        return _assembled("", [_call("read_library", read, "k")])
+
     stream, seen = _script_stream(
-        [reading, reading, _writing()] * 6 + [reading, _assembled("Done.")]
+        [r for i in range(6) for r in (reading(), reading(), _writing(title=f"n{i}"))]
+        + [reading(), _assembled("Done.")]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _land)
@@ -4545,7 +4488,7 @@ async def test_the_planning_cap_holds_until_the_first_write_lands(
     """Reads alone never lift the planning cap: the last response has tools
     off, and a refused write does not lift it either."""
     monkeypatch.setattr(agent.cfg, "agent_max_steps", 4)
-    reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e"}', "k")])
+    reading = _assembled("", [_call("read_library", '{"excerpt_id":"e"}', "k")])
     refused = _writing("bad", "refused")
     stream, seen = _script_stream([reading, refused, reading, _assembled("Read only.")])
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
@@ -4567,7 +4510,7 @@ async def test_stall_guard_turns_tools_off_after_five_barren_responses(
 ):
     """Once a write has landed, five responses in a row without another one
     turn the tools off."""
-    reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k")])
+    reading = _assembled("", [_call("read_library", '{"excerpt_id":"e_1"}', "k")])
     stream, seen = _script_stream(
         [_writing()] + [reading] * 5 + [_assembled("The library has nothing more.")]
     )
@@ -4594,20 +4537,22 @@ async def test_errored_writes_extend_the_stall_guard_twice_at_most(
 ):
     """A refused create_material is an attempt at progress: each of the first
     two grants two more responses, so the guard fires after nine, not five."""
-    reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k")])
-    refused = _writing("bad", "refused")
     # A landed write, then three refused writes plus reads: only two of the
     # refusals count, so the threshold is 5 + 2 + 2 = 9 barren responses.
+    # Each call differs, so the loop ladder never counts a repeat.
     stream, seen = _script_stream(
         [_writing()]
-        + [refused] * 3
-        + [reading] * 6
+        + [_writing("bad", f"refused {i}") for i in range(3)]
+        + [
+            _assembled("", [_call("read_library", f'{{"excerpt_id":"e_{i}"}}', "k")])
+            for i in range(6)
+        ]
         + [_assembled("Nothing more written.")]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
     async def _run(name, args, _ctx):
-        if args.get("title") == "refused":
+        if args.get("title", "").startswith("refused"):
             return ToolResult(text_parts=["read e_1 first"], refused=True)
         return ToolResult(text_parts=["done"])
 
@@ -4685,7 +4630,7 @@ async def test_a_silent_terminal_call_after_a_write_reports_the_credit_cutoff(
 
 async def test_a_response_allows_four_tool_calls(monkeypatch, library_on):
     calls = [
-        _call("read_knowledge", f'{{"excerpt_id":"e_{n}"}}', f"k{n}") for n in range(7)
+        _call("read_library", f'{{"excerpt_id":"e_{n}"}}', f"k{n}") for n in range(7)
     ]
     stream, _seen = _script_stream(
         [_assembled("", calls), _assembled("Read what the library holds.")]
@@ -4715,13 +4660,13 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
         key = args["excerpt_id"], args.get("start", 0)
         if key not in source:
             return tools._refused("Unavailable")
-        ctx.library_reads.note(*key, "Section")
+        ctx.library_reads.note(*key, "Section", text=source[key])
         return tools._result(source[key])
 
     original_run = tools.run
 
     async def run(name, args, ctx):
-        if name == "read_knowledge":
+        if name == "read_library":
             return await read(args, ctx)
         if name in ("create_material", "edit_document"):
             checked = await tools.write_sources(ctx, name, args)
@@ -4737,14 +4682,14 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
         return await original_run(name, args, ctx)
 
     monkeypatch.setattr(tools, "run", run)
-    monkeypatch.setattr(tools, "_read_knowledge", read)
+    monkeypatch.setattr(tools, "_read_library", read)
     monkeypatch.setattr(tools.library, "provenance", AsyncMock(return_value=[]))
     stream, seen = _script_stream(
         [
             _assembled(
                 calls=[
                     _call(
-                        "read_knowledge",
+                        "read_library",
                         json.dumps({"excerpt_id": eid, "start": start}),
                         str(i),
                     )
@@ -4868,7 +4813,7 @@ async def test_the_build_tool_cap_runs_one_terminal_response(
             _writing(),
             _assembled(
                 calls=[
-                    _call("read_knowledge", '{"excerpt_id":"a"}', str(i))
+                    _call("read_library", '{"excerpt_id":"a"}', str(i))
                     for i in range(4)
                 ]
             ),
@@ -4901,7 +4846,7 @@ async def test_calls_past_the_tool_cap_are_answered_with_the_cap(
     stream, seen = _script_stream(
         [
             _writing(),
-            _assembled(calls=[_call("read_knowledge", '{"excerpt_id":"a"}', "r")]),
+            _assembled(calls=[_call("read_library", '{"excerpt_id":"a"}', "r")]),
             _assembled("Made one note."),
         ]
     )
@@ -4914,37 +4859,39 @@ async def test_calls_past_the_tool_cap_are_answered_with_the_cap(
     assert events[-1]["telemetry"]["stopReason"] == "tool_cap"
 
 
-@pytest.mark.parametrize("deltas, fails", [(True, False), (False, False), (True, True)])
-async def test_tool_protocol_in_text_flags_response_without_tools_or_repair(
-    monkeypatch, deltas, fails
-):
-    text = (
-        _answer(("Safe prefix", []))
-        + '<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="create_material">'
+async def _forbidden(*_args, **_kwargs):
+    pytest.fail("a tool call written as text must not run")
+
+
+async def test_a_tool_call_written_as_text_is_sent_back_once(monkeypatch):
+    stream, seen = _script_stream(
+        [_assembled(_LEAKED_TOOL_CALL, [_call("create_material")]), _assembled("Done.")]
     )
-    completed = []
-
-    async def stream(_messages, *, on_event, **_kwargs):
-        if deltas:
-            for character in text:
-                on_event(StreamEvent(kind="text", text=character))
-        completed.append(True)
-        if fails:
-            raise RuntimeError("provider disconnected after leaking protocol")
-        return _assembled(text, [_call("create_material")])
-
-    async def forbidden(*_args, **_kwargs):
-        pytest.fail("flagged response must neither call tools nor call a repair model")
-
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    monkeypatch.setattr(agent.models, "complete_text", forbidden)
-    monkeypatch.setattr(agent.tools, "run", forbidden)
+    monkeypatch.setattr(agent.tools, "run", _forbidden)
     events = await _collect("help", ToolContext(workspace_id="ws", user_id="u"))
-    assert completed == [True]
-    assert events[-1]["code"] == "response_flagged"
-    assert events[-1]["message"] == "Response flagged due to safety concern"
-    assert not any(event["type"] == "tool_start" for event in events)
-    assert "DSML" not in "".join(event.get("text", "") for event in events)
+
+    # The turn context follows the send-back.
+    sent_back = seen[-1]["messages"][-3:-1]
+    assert sent_back[0]["role"] == "assistant" and "DSML" not in sent_back[0]["content"]
+    assert sent_back[1]["content"] == agent.TEXT_CALL_SEND_BACK
+    assert events[-1]["type"] == "done"
+    assert not any(e["type"] in ("error", "tool_start") for e in events)
+    assert "DSML" not in json.dumps(events, ensure_ascii=False)
+
+
+async def test_a_second_tool_call_written_as_text_ends_the_turn(monkeypatch):
+    stream, seen = _script_stream(
+        [_assembled(_LEAKED_TOOL_CALL), _assembled(_LEAKED_TOOL_CALL)]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _forbidden)
+    events = await _collect("help", ToolContext(workspace_id="ws", user_id="u"))
+
+    assert len(seen) == 2
+    assert events[-1]["type"] == "done"
+    assert events[-1]["telemetry"]["stopReason"] == "planning_cap"
+    assert "DSML" not in json.dumps(events, ensure_ascii=False)
 
 
 async def test_chat_rejects_instant_before_any_model_call(monkeypatch):
@@ -5050,10 +4997,7 @@ async def test_a_search_passage_names_its_documents_unindexed_edits(monkeypatch)
 
 
 async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypatch):
-    """GLM sometimes calls the AskUser answer component as a tool. The turn
-    ends on the question it meant, its prose before it, and nothing runs."""
-    from pipeline.retrieval import openui
-
+    """The turn ends on the question, its prose before it, and nothing runs."""
     stream, seen = _script_stream(
         [
             _assembled(
@@ -5083,13 +5027,12 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
     events = await _collect("I want to learn java", ToolContext(workspace_id="ws_1"))
     done = events[-1]
     assert done["type"] == "done" and not ran and len(seen) == 1
-    program = openui.parse(done["answer"], strict=True)
-    asks = [c for c in openui.walk(program) if c.name == "AskUser"]
-    assert [(c.prop("question"), c.prop("choices")) for c in asks] == [
-        ("Where should we start?", ["Beginner", "I code already"])
-    ]
-    assert "One quick question" in openui.to_text(program)
-    assert agent.ask_user_answer([_call("AskUser", "{}")], "x", 0) is None, (
+    assert done["answer"] == (
+        "One quick question before I build your chapter:\n\n"
+        '```ask\n{"question": "Where should we start?", '
+        '"choices": ["Beginner", "I code already"]}\n```'
+    )
+    assert agent.ask_user_answer([_call("AskUser", "{}")]) is None, (
         "no question, no answer"
     )
     # Every AskUser call is a question, up to the format's three (Epo 2026-10-14).
@@ -5097,33 +5040,78 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
         _call("AskUser", json.dumps({"question": f"Q{n}?", "choices": []}), f"a{n}")
         for n in range(1, 5)
     ]
-    program = openui.parse(agent.ask_user_answer(many, "", 0), strict=True)
-    asked = [c.prop("question") for c in openui.walk(program) if c.name == "AskUser"]
-    assert asked == ["Q1?", "Q2?", "Q3?"]
+    fence = agent.ask_user_answer(many)
+    assert [q in fence for q in ("Q1?", "Q2?", "Q3?", "Q4?")] == [
+        True,
+        True,
+        True,
+        False,
+    ]
 
 
-@pytest.mark.parametrize(("provider", "offered"), [("zai", True), ("deepseek", False)])
-async def test_glm_is_offered_askuser_as_a_real_tool(monkeypatch, provider, offered):
-    """DigitalOcean drops calls to tools a request does not list, and GLM calls
-    AskUser as one, so GLM's requests list it (decision 2026-10-21)."""
-    stream, seen = _script_stream([_assembled(_answer(("Hello", [])))])
+async def test_an_answer_streams_as_written_and_cites_its_markers(monkeypatch):
+    """The text streams as written, [#n] markers set the citations, and AskUser
+    is offered."""
+    from pipeline.prompts import chat as chat_prompts
+
+    raw = "Light is absorbed. [#1]\n\nCarbon is fixed. [#2,9]\n"
+    chunks = [raw[i : i + 7] for i in range(0, len(raw), 7)]
+    finals = [
+        _assembled("", [_call("read_document", '{"file_id":"f_1"}')]),
+        _assembled(raw),
+    ]
+    stream, seen = _stream_chunks([[], chunks], finals)
+
+    async def _run(name, args, ctx):
+        del name, args, ctx
+        return ToolResult(
+            passages=[
+                _passage(chunk_id="c1"),
+                _passage(chunk_id="c2", text="Calvin cycle fixes carbon."),
+            ]
+        )
+
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    model = ModelConfig(
-        version=1,
-        provider_name="Z.ai" if provider == "zai" else "DeepSeek",
-        model_name="GLM-5.3-Flash" if provider == "zai" else "Flash",
-        provider_slug=provider,
-        model_slug="glm-5.3-flash" if provider == "zai" else "deepseek-v4-flash",
-        thinking_levels=("low", "high", "max"),
-        default_thinking="high",
-        context_window_tokens=100_000,
-        slots=("chat",),
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    system = seen[0]["messages"][0]["content"]
+    assert chat_prompts.MARKDOWN_RULE in system
+    assert "AskUser" in [t["function"]["name"] for t in seen[0]["tools"]]
+    deltas = [e["text"] for e in events if e["type"] == "block_delta"]
+    assert "".join(deltas) == raw
+    assert events[-1]["answer"] == raw
+    cites = [e for e in events if e["type"] == "citations"]
+    assert [c["n"] for c in cites[-1]["citations"]] == [1, 2], "9 was never shown"
+
+
+async def test_askuser_ends_the_answer_with_an_ask_fence(monkeypatch):
+    prose = "Before I build it:"
+    call = _call(
+        "AskUser", json.dumps({"question": "Which depth?", "choices": ["Intro"]})
     )
-    await _collect("hi", ToolContext(workspace_id="ws_1"), model=model)
-    names = [t["function"]["name"] for t in seen[0]["tools"]]
-    assert ("AskUser" in names) is offered
-    if offered:
-        assert names[-1] == "AskUser", "appended, so the cached prefix is unchanged"
+    stream, seen = _stream_chunks([[prose]], [_assembled(prose, [call])])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    ran: list[str] = []
+
+    async def _run(name, _args, _ctx):
+        ran.append(name)
+        return ToolResult(text_parts=["no"])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    # A follow-up turn, so the first-turn send-back (Q221) does not apply.
+    history = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "x"}]
+    ctx = ToolContext(workspace_id="ws_1")
+    events = []
+    async for event in agent.run_agent(
+        query="teach me", ctx=ctx, history=history, model=_model()
+    ):
+        events.append(event)
+
+    fence = '```ask\n{"question": "Which depth?", "choices": ["Intro"]}\n```'
+    deltas = "".join(e["text"] for e in events if e["type"] == "block_delta")
+    assert deltas == f"{prose}\n\n{fence}"
+    assert events[-1]["answer"] == deltas and not ran and len(seen) == 1
 
 
 @pytest.mark.parametrize("writing", [True, False])
@@ -5173,7 +5161,7 @@ async def test_tool_rows_name_their_targets_and_carry_their_run_times(monkeypatc
                 "",
                 [
                     _call("read_document", '{"file_id":"f_1"}', "r1"),
-                    _call("read_knowledge", '{"excerpt_id":"ex_1"}', "k1"),
+                    _call("read_library", '{"excerpt_id":"ex_1"}', "k1"),
                     _call(
                         "inspect_document",
                         '{"target":{"kind":"material","id":"m_1"}}',
@@ -5681,6 +5669,7 @@ def test_the_office_tools_come_last_once_offered(monkeypatch):
     after every other tool (Epo 2026-10-20)."""
     _gateway(monkeypatch)
     ctx = _owner_ctx()
+    ctx.edit_tools = True
 
     def names() -> list[str]:
         return [s["function"]["name"] for s in tools.schemas_for(ctx)]
@@ -5720,8 +5709,30 @@ async def test_reading_office_building_appends_the_office_tools(monkeypatch):
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     events = await _collect("Fix my spreadsheet", _owner_ctx())
     first, second = ([t["function"]["name"] for t in s["tools"]] for s in seen)
-    assert second == first + list(tools.OFFICE_TOOLS)
+    # edit_office_document also waits for the editing skill.
+    assert second == first + ["inspect_office_document"]
     assert events[-1]["toolEvidence"]["officeTools"] is True
+
+
+async def test_reading_editing_appends_the_write_tools(monkeypatch):
+    """A turn that only answers carries none of the writes' definitions; the
+    response after the editing read sends them at the end, and the turn marks
+    its evidence so later turns keep them (Epo 2026-10-30)."""
+    _gateway(monkeypatch)
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("read_skill", '{"name": "editing"}')]),
+            _assembled(_answer(("Read it.", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    events = await _collect("Make me a quiz", _owner_ctx())
+    first, second = ([t["function"]["name"] for t in s["tools"]] for s in seen)
+    assert not set(tools.EDIT_TOOLS) & set(first)
+    assert second == first + [
+        name for name in tools.EDIT_TOOLS if name not in tools.OFFICE_TOOLS
+    ]
+    assert events[-1]["toolEvidence"]["editTools"] is True
 
 
 async def test_an_office_edit_after_office_building_alone_needs_editing(monkeypatch):
@@ -6951,3 +6962,86 @@ async def test_an_office_edit_reads_what_the_engine_left_unapplied(monkeypatch):
     created = await edit("c2", commands=[create] + [span] * 50)
     assert created.progress == (50, 51)
     assert (await edit("c3", file_id="f_1", commands=[span])).progress is None
+
+
+# ------------------------------------- Loop ladder (Epo 2026-10-29, doom loop)
+
+
+def _results(seen: list[dict], response: int) -> list[str]:
+    """The tool results the given response's request ends with."""
+    return [m["content"] for m in seen[response]["messages"] if m.get("role") == "tool"]
+
+
+async def test_a_repeated_call_is_refused_from_its_third_time(monkeypatch):
+    """Other tools between keep the streak; each identical call in one
+    response is the same repeat."""
+    ran: list[str] = []
+
+    async def _count(name, args, ctx):
+        ran.append(name)
+        return ToolResult(text_parts=["done"])
+
+    same = '{"query": "a", "workspace_id": "ws_1"}'
+    stream, seen = _script_stream(
+        [
+            _assembled(calls=[_call("list_sources", same, "a1")]),
+            _assembled(calls=[_call("read_skill", '{"name":"editing"}', "s1")]),
+            _assembled(calls=[_call("list_sources", same, "a2")]),
+            _assembled(
+                calls=[
+                    _call(
+                        "list_sources", '{"workspace_id": "ws_1", "query": "a"}', "a3"
+                    ),
+                    _call("list_sources", same, "a4"),
+                ]
+            ),
+            _assembled("Done."),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(tools, "run", _count)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    assert ran == ["list_sources", "read_skill", "list_sources"]
+    refused = _results(seen, -1)[-2:]
+    # It says what to do instead (Epo 2026-10-29, Q582).
+    told = (
+        "Not run: you called list_sources with these same arguments 2 times in a "
+        "row this turn, so it did nothing new. Call it again only with different "
+        "arguments (pass any argument it needs, for example a create_chapter "
+        "name), use the result you already have, or answer the learner."
+    )
+    assert all(r.startswith(told) for r in refused), refused
+    assert events[-1]["telemetry"]["stopReason"] == "answer"
+
+
+async def test_the_sixth_repeat_turns_tools_off_and_ends_the_turn(monkeypatch):
+    stream, seen = _script_stream(
+        [_assembled(calls=[_call("list_sources", "{}", f"c{i}")]) for i in range(6)]
+        + [_assembled("Here is what I found.")]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(tools, "run", _land)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    assert seen[-1]["tools_off"]
+    assert _results(seen, -1)[-1].endswith(agent.LOOP_NOTICE)
+    assert events[-1]["telemetry"]["stopReason"] == "loop"
+
+
+async def test_an_unfinished_deck_is_kept_when_the_turn_ends(monkeypatch):
+    """A PowerPoint the turn left unfinished is kept for a later message
+    (deck.keep, Epo 2026-10-30); a stored one is not."""
+    _gateway(monkeypatch)
+    kept = []
+    monkeypatch.setattr(
+        agent.deck,
+        "keep",
+        lambda record, project, owner: kept.append((record["id"], project, owner)),
+    )
+    stream, _seen = _script_stream([_assembled(_answer(("Done.", [])))])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    ctx = _owner_ctx()
+    ctx.decks = {"deck_a": {"id": "deck_a"}, "deck_b": {"id": "deck_b", "file": "f_1"}}
+    await _collect("Hi", ctx)
+    assert kept == [("deck_a", None, tools.deck_owner(ctx))]

@@ -198,7 +198,7 @@ listing stay workspace-only.
   description and tags; over-limit fields cut to the limit and said in the
   result; random Waves icon, no cover, no Undo; receipt kind
   `create_workspace` (0128 widens the CHECK).
-- Retention: search_knowledge (both chats) and search_files_summary keep
+- Retention: search_library (both chats) and search_files_summary keep
   their whole result between messages.
 - Workspaces: listed once with the conversation's first message (replayed
   from its answer's toolEvidence); `list_workspaces` gives the current list.

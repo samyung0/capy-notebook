@@ -79,7 +79,7 @@ export async function uploadStandalone(
 export const fileCard = (page: Page, name: string) =>
   page.locator('[data-item]').filter({ hasText: name });
 
-/** Files page filter › Location › Workspace only. */
+/** Files page filter › Location › Workspaces only. */
 export async function filterWorkspaceOnly(page: Page) {
   await page
     .getByRole('button', { exact: true, name: m.workspaces_filter() })

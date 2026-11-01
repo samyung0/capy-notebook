@@ -10,8 +10,6 @@ packages:
   - vendor/blocksuite/affine/*/*
 
 allowBuilds:
-  # Its postinstall only sends install telemetry; nothing to build.
-  "@openuidev/lang-core": false
   # Pulled in by @sentry/vite-plugin. Its postinstall fetches the platform
   # sentry-cli binary, which is what performs the source map upload.
   "@sentry/cli": true
@@ -70,6 +68,9 @@ patchedDependencies:
 #   stays under mermaid 11 (^0.16.47; mermaid 12 moves to 0.18) and
 #   micromark-extension-math 3.1.0 (^0.16.0, its last release) via remark-math.
 #   Both call only katex.renderToString, which 0.19 keeps (Epo 2026-10-22).
+# - seroval below 1.6.11 (five advisories, GHSA-97r2-qh9m-474h and others,
+#   under @tanstack/react-router via router-core): router-core's ^1.6.2 allows
+#   1.6.12, but the lockfile kept 1.6.3 on update.
 overrides:
   # One Yjs instance (our patched one) for the app and BlockSuite, whose
   # packages ask for ^13.6.27.
@@ -80,6 +81,7 @@ overrides:
   "katex@<0.18.2": 0.19.0
   "dompurify@<3.4.17": 3.4.17
   "fast-uri@<3.1.9": 3.1.9
+  "seroval@<1.6.11": 1.6.12
 
 # `pnpm audit --prod` (CI job audit_pnpm) fails on any advisory not listed
 # here. Each entry says why it waits.

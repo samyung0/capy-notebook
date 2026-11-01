@@ -338,19 +338,18 @@ export async function switchAutoReloadOff(page: Page) {
   expect((await saved).status()).toBe(200);
 }
 
-/** The purchased balance in the line under Usage's credits bar, the only
- * place that shows it. Callers are Free owners who have spent none of the
- * monthly allowance and hold purchased credits, so the purchased pool is the
- * balance and the line ends with the purchased sentence. Switches tabs in the
- * app, without reloading the page, and goes back to Subscription. */
-export async function expectPurchasedOnUsage(page: Page, micros: number) {
+/** The balance in Usage's "N left" next to Credits, purchased credits
+ * included. Switches tabs in the app, without reloading the page, and goes
+ * back to Subscription. */
+export async function expectBalanceOnUsage(page: Page, actor: Actor) {
+  const available = availableOf(await billing(actor));
   // Exact: "Detailed usage" contains "Usage".
   await page
     .getByRole('tab', { exact: true, name: m.billing_tab_usage() })
     .click();
   await expect(
     page.getByText(
-      m.billing_credits_hint_then_purchased({ amount: credits(micros) })
+      m.billing_credits_left({ amount: credits(Math.max(0, available)) })
     )
   ).toBeVisible({ timeout: 60_000 });
   await page.getByRole('tab', { name: m.subscription_title() }).click();

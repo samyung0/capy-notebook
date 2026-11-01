@@ -127,7 +127,13 @@ import {
   materialModePolicy,
   resolveMaterialMode,
 } from './modePolicy';
-import { type OpenItem, readDocumentMode, saveDocumentMode } from './openItem';
+import { showNoteCitation } from './noteCitation';
+import {
+  type NoteCitationTarget,
+  type OpenItem,
+  readDocumentMode,
+  saveDocumentMode,
+} from './openItem';
 import { embedKey, useNoteFooter } from './useNoteFooter';
 
 /* Interactive Plate is the heaviest chunk in this route. View mode
@@ -396,6 +402,7 @@ export function CenterContent({
                             <MaterialBody
                               allowExternalAssets={!readOnly}
                               centerQuiz={!standalone}
+                              citation={item.citation}
                               key={item.id}
                               materialId={item.id}
                               mode={materialMode}
@@ -458,6 +465,7 @@ const UNREADABLE_TITLES: Partial<Record<Material['kind'], () => string>> = {
  * next document start fetching for the render before the reset lands. */
 function MaterialBody({
   centerQuiz,
+  citation,
   materialId,
   workspaceId,
   mode,
@@ -468,6 +476,7 @@ function MaterialBody({
   target,
 }: {
   centerQuiz: boolean;
+  citation?: NoteCitationTarget;
   materialId: string;
   workspaceId: string;
   mode: MaterialMode | null;
@@ -502,6 +511,7 @@ function MaterialBody({
     <MaterialContent
       allowExternalAssets={allowExternalAssets}
       centerQuiz={centerQuiz}
+      citation={citation}
       forceReadOnly={readOnly || choice === 'readOnly'}
       key={materialId}
       kind={reference?.type ?? listedKind(queryClient, materialId)}
@@ -513,6 +523,17 @@ function MaterialBody({
       target={target}
     />
   );
+}
+
+/** Shows a chat citation's passage in the note beside it. Each click brings
+ * a new citation object, so a repeat scrolls and flashes again. */
+function NoteCitation({ citation }: { citation: NoteCitationTarget }) {
+  const anchor = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const scroller = anchor.current?.parentElement;
+    return scroller ? showNoteCitation(scroller, citation) : undefined;
+  }, [citation]);
+  return <span hidden ref={anchor} />;
 }
 
 /** A set's View: the stored cards, then the room's as they change. */
@@ -570,6 +591,7 @@ function MaterialContentBody({
   onPresenceChange,
   staticNote = false,
   target,
+  citation,
 }: {
   centerQuiz: boolean;
   /** The kind the opening list or route knows, for a read that fails. */
@@ -586,6 +608,8 @@ function MaterialContentBody({
   staticNote?: boolean;
   /** A question or card to bring into view once the material shows. */
   target?: string;
+  /** A chat citation's passage to show once a note paints (Q593). */
+  citation?: NoteCitationTarget;
 }) {
   const {
     data: material,
@@ -755,6 +779,9 @@ function MaterialContentBody({
         {activeMode === 'view' && (
           <div className="relative h-full min-h-0 overflow-auto">
             {material.kind === 'note' && <NoteDisplayToggles />}
+            {material.kind === 'note' && citation ? (
+              <NoteCitation citation={citation} />
+            ) : null}
             {material.kind === 'quiz' ? (
               <QuizPreview
                 content={material.content}
