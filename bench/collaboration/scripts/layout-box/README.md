@@ -33,7 +33,10 @@ There are two parts:
   `COLLABORATION_DOCUMENT_LAYOUT` is set per step, and `stress.ts` peers type
   into the rooms (into each block's `prop:text` when the room uses the blocks
   layout). `monitor.sh` samples the cgroup CPU and RSS. The steps cover idle
-  rooms, and one or five typists at 10 edits/s, for both note sizes.
+  rooms, and one or five typists at 10 edits/s, for both note sizes. After
+  the load, a step waits until every loaded room has logged `room_unload`
+  and keeps sampling for 60 s (`summary.json`: `rss.afterUnloadMB`, beside
+  `holdMB` and `peakMB`).
 
 ## Commands
 

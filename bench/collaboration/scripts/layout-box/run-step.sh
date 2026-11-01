@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # One layout-cost stack step on a fresh stack in Compose project
 # capy-capacity (the 2026-10-28 presence run's run-step.sh, note rooms only):
-# up, seed, a 20 s idle baseline, the stress generators, logs, summary
-# (summarize-L.mjs), teardown.
+# up, seed, a 20 s idle baseline, the stress generators, 60 s with every room
+# unloaded, logs, summary (summarize-L.mjs), teardown.
 #
 # Usage: run-step.sh <step name> <rooms>, with
 #   LAYOUT   plate | blocks (the collaboration server's note layout)
@@ -124,8 +124,23 @@ while :; do
   sleep 5
 done
 date +%s%3N >"$RUN/T-done"
-log "generators done; 25 s for the last collab_health line"
-sleep 25
+# A note room unloads as soon as it is empty and clean (room.rs `unloadable`:
+# its sockets gone, its last edits stored, COLLABORATION_DEBOUNCE_MS 2 s after
+# the last one, at most 10 s); there is no grace after that. Each logs
+# `room_unload` after its `room_load`. Then 60 s of monitor.sh's rows with no
+# room loaded (covering the last collab_health line too).
+log "generators done; waiting for every room to unload"
+for _ in $(seq 1 90); do
+  read -r loads unloads < <(docker logs capy-capacity-collaboration-1 2>&1 |
+    awk '$1 == "info" && $2 == "room_load" {l++} $1 == "info" && $2 == "room_unload" {u++} END {print l + 0, u + 0}')
+  [ "$loads" -gt 0 ] && [ "$unloads" -ge "$loads" ] && break
+  sleep 2
+done
+date +%s%3N >"$RUN/T-unloaded"
+echo "$loads $unloads" >"$RUN/UNLOADED"
+log "rooms loaded $loads, unloaded $unloads; 60 s of RSS after the unload"
+sleep 60
+date +%s%3N >"$RUN/T-after"
 touch "$RUN/STOP"
 
 for g in "${GEN_NAMES[@]}"; do

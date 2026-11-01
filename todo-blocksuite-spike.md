@@ -931,6 +931,14 @@ not for step 1.
   the typing bound's pessimistic pricing near the limit.
 - **Room memory: measured again after the bound.** 13.0 MiB idle (+0.3 MiB
   once the parent index exists) against Plate's 7.0; the box run decides.
+- **Box rerun, 2026-11-01** (`bench/collaboration/reports/2026-11-01-layout-cost.md`,
+  f2ad7b79f, after 1da003cfe's load fixes):
+  - An idle near-limit blocks room is 29 MiB of server RSS, down from 72 (Plate 12, down from 15). With typists it is 39–51 MiB, down from 97–101 (Plate 14–15).
+  - Load costs 105 ms of CPU, down from 367 (Plate 50).
+  - Latency: p50 29 ms and p95 36 ms in both layouts. The first run's 259 ms came from saturated generators.
+  - Once every room unloads, the server keeps 98–101% of its loaded RSS (glibc; the server never trims).
+  - Not built yet, now backed by the numbers: a `malloc_trim` after unloads, and fewer room loads at once (the RSS left is the high water of concurrent loads).
+  - The five-typist near-limit steps fill the note to its 2 MiB limit after about 157 s, in both layouts, so the plan's 3 minutes needs to drop to 2.
 - **Deleted block keys are collected (D20 amended).** The collection drops a
   deleted `blocks` key no session holds, so a deleted block leaves one marker
   (8 B, Plate 9 B). D20 now reads: a pasted block keeps its id only when the

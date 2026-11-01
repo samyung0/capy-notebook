@@ -5,12 +5,15 @@
 // node:22-alpine `tools` service on the box.
 //
 // Windows: baseline is the 20 s before the generators start; hold runs from
-// 30 s after they start (joins done) to the end of the step's minutes.
+// 30 s after they start (joins done) to the end of the step's minutes; after
+// unload is the 60 s from the moment every loaded room had logged its
+// `room_unload` (T-unloaded, UNLOADED: rooms loaded and unloaded) to T-after.
 // CPU is the collaboration container's cgroup usage over the hold, as ms of
 // CPU per second (1000 = one core). Memory is the summed VmRSS of its
 // processes (`R` rows) and its working set (memory.current less
 // inactive_file); per room is the hold's mean less the baseline's, divided by
-// the rooms (it includes each room's two sockets).
+// the rooms (it includes each room's two sockets); after unload per room is
+// what stays above the baseline once no room is loaded.
 // Verdict: `ok` when every generator exited 0 or 2 (2: only the local p95
 // budget missed) and nothing aborted; `abort` on ABORT; else `fail`.
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -31,6 +34,8 @@ const meta = json('meta.json');
 const at = (name) => Number(read(name)?.trim());
 const baseline = [at('T-baseline'), at('T-generators')];
 const hold = [at('T-generators') + 30_000, at('T-generators') + meta.minutes * 60_000];
+const afterUnload = [at('T-unloaded'), at('T-after')];
+const [loads, unloads] = (read('UNLOADED') ?? '').trim().split(' ').map(Number);
 
 const cpu = []; // [ms, usage_usec]
 const rss = []; // [ms, MiB]
@@ -44,9 +49,20 @@ for (const line of (read('monitor.tsv') ?? '').split('\n')) {
   }
   if (cells[1] === 'R' && cells[2] === 'collaboration') rss.push([now, Number(cells[3]) / 1024]);
 }
+// The registry's own room count from collab_health lines (`-t` timestamps):
+// 0 expected after the unload.
+const healthRooms = []; // [ms, rooms]
+for (const line of (read('collaboration.log') ?? '').split('\n')) {
+  const cut = line.indexOf(' collab_health {');
+  if (cut < 0) continue;
+  try {
+    healthRooms.push([Date.parse(line.slice(0, line.indexOf(' '))), JSON.parse(line.slice(cut + 15)).rooms]);
+  } catch {}
+}
 const within = (rows, [from, to]) => rows.filter(([now]) => now >= from && now <= to);
 const mean = (rows) => (rows.length ? rows.reduce((sum, [, v]) => sum + v, 0) / rows.length : null);
 const max = (rows) => (rows.length ? Math.max(...rows.map(([, v]) => v)) : null);
+const min = (rows) => (rows.length ? Math.min(...rows.map(([, v]) => v)) : null);
 const round = (v, digits = 1) => (v === null || Number.isNaN(v) ? null : Number(v.toFixed(digits)));
 
 const held = within(cpu, hold);
@@ -57,11 +73,16 @@ const cpuMsPerSecond =
 const memory = (rows) => {
   const base = mean(within(rows, baseline));
   const during = mean(within(rows, hold));
+  const unloaded = within(rows, afterUnload);
+  const after = mean(unloaded);
   return {
     baselineMB: round(base),
     holdMB: round(during),
     peakMB: round(max(rows)),
     perRoomMB: base === null || during === null ? null : round((during - base) / meta.rooms, 2),
+    afterUnloadMB: round(after),
+    afterUnloadRangeMB: [round(min(unloaded)), round(max(unloaded))],
+    afterUnloadPerRoomMB: base === null || after === null ? null : round((after - base) / meta.rooms, 2),
   };
 };
 
@@ -91,6 +112,13 @@ const summary = {
   cpuMsPerSecondPerRoom: cpuMsPerSecond === null ? null : round(cpuMsPerSecond / meta.rooms, 2),
   rss: memory(rss),
   workingSet: memory(working),
+  unload: {
+    roomsLoaded: loads,
+    roomsUnloaded: unloads,
+    waitMs: afterUnload[0] - at('T-done'),
+    windowS: round((afterUnload[1] - afterUnload[0]) / 1000),
+    healthRoomsMax: max(within(healthRooms, afterUnload)),
+  },
   markerLatencyMs: { count: latencies.length, p50: pct(0.5), p95: pct(0.95), max: pct(1) },
   failures,
   verdict,
