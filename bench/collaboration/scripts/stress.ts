@@ -835,6 +835,40 @@ function textAnchors(doc: Y.Doc) {
   return anchors;
 }
 
+/** A note's texts a marker may go into (its Plate XmlTexts or its blocks'
+ * texts), read once per doc: typing adds none, and reading every run of a
+ * near-limit note per marker made the generator the bottleneck (box run
+ * 2026-10-29: event loop p50 370-540 ms for blocks, 40-70 ms for Plate). */
+const noteTexts = new WeakMap<Y.Doc, Y.Text[]>();
+
+/** The runs of one text, as `runs` reads them. */
+function textRuns(text: Y.Text) {
+  const out: { text: Y.Text; start: number; value: string }[] = [];
+  let at = 0;
+  for (const op of text.toDelta() as { insert: unknown }[]) {
+    if (typeof op.insert === 'string') out.push({ start: at, text, value: op.insert });
+    at += typeof op.insert === 'string' ? op.insert.length : 1;
+  }
+  return out;
+}
+
+/** Runs of at least two characters: a note's from a few random texts, any
+ * other room's from all of them. */
+function markerRuns(room: Room, doc: Y.Doc) {
+  if (room.format !== 'plate') return runs(room, doc).filter((run) => run.value.length >= 2);
+  let texts = noteTexts.get(doc);
+  if (!texts) {
+    texts = [...new Set(runs(room, doc).map((run) => run.text))];
+    noteTexts.set(doc, texts);
+  }
+  for (let tries = 0; texts.length && tries < 8; tries += 1) {
+    const text = texts[randomInt(texts.length)];
+    const candidates = textRuns(text).filter((run) => run.value.length >= 2);
+    if (candidates.length) return candidates;
+  }
+  return [];
+}
+
 /** Inside a run, never inside a marker already there, so markers stay whole. */
 function insertMarker(room: Room, doc: Y.Doc, marker: string, peer: number, sequence: number) {
   if (room.format === 'text') {
@@ -860,7 +894,7 @@ function insertMarker(room: Room, doc: Y.Doc, marker: string, peer: number, sequ
     contents.set(key, JSON.stringify({ value: { kind: 'text', value: marker }, formula: null }));
     return true;
   }
-  const candidates = runs(room, doc).filter((run) => run.value.length >= 2);
+  const candidates = markerRuns(room, doc);
   if (!candidates.length) return false;
   const run = candidates[randomInt(candidates.length)];
   const blocked = new Set<number>();

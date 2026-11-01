@@ -18,7 +18,10 @@
 //!   from the format items before it, not from other chars, so the runs
 //!   only lose chars, and neighbours that become equal merge.
 //! - A new string joins a run or makes at most two new ones (its own, and the
-//!   half of a run it splits). Each new run is priced as the largest shell its
+//!   half of a run it splits). One whose left neighbour is a live char of the
+//!   text, with no format item of the room between that char and its right
+//!   origin, takes that char's attributes and joins its run: only its own
+//!   chars are priced ([Bound::joins_run]). Each new run is priced as the largest shell its
 //!   text's attributes can give (a leaf with every mark, an `a` element with
 //!   the longest url, the separator leaves around inline elements); a string
 //!   under `latex` or `mention` adds one inline element per UTF-16 unit, and a
@@ -33,7 +36,7 @@
 //! the room items its deletes cover; structure adds what [crate::structure]
 //! reads.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -69,6 +72,10 @@ const LINE_NODES: u64 = 5;
 /// The most room items one update's deletes may cover on the bound; past it
 /// the caller checks exactly.
 const DELETE_WALK: u64 = 200_000;
+/// The most room items between a new string's left neighbour and its right
+/// origin read to see that it joins the neighbour's run (concurrent inserts
+/// alone sit there); past it the string is priced as a new run.
+const JOIN_WALK: u32 = 32;
 
 /// What an update adds to the room's projection, at most.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -236,10 +243,65 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
         found
     }
 
+    /// Whether a new string `item` in `text` joins the run of its left
+    /// neighbour: that neighbour is a live char of `text` (held by the room,
+    /// or a string of this update that joined), and no format item sits
+    /// between it and the item's right origin in the room, where yrs places
+    /// the item among concurrent inserts. Its chars then take the
+    /// neighbour's attributes, and the projection merges equal neighbours.
+    fn joins_run(&self, text: BranchPtr, item: &Item, joined: &HashSet<ID>) -> bool {
+        let ID { client, clock } = *item.id();
+        let state_clock = self.state.get(&client);
+        // An overlap's left is the writer's own unit before the held clock.
+        let left = if clock < state_clock {
+            ID::new(client, state_clock - 1)
+        } else {
+            match item.origin() {
+                Some(origin) => *origin,
+                None => return false,
+            }
+        };
+        if !self.held(&left) {
+            return joined.contains(&left);
+        }
+        let Some(mut at) = self.held_item(&left) else {
+            return false;
+        };
+        if at.is_deleted()
+            || at.parent_branch() != Some(text)
+            || !matches!(at.content(), ItemContent::String(_))
+        {
+            return false;
+        }
+        let right = item.right_origin();
+        let holds = |at: ItemPtr, id: &ID| {
+            at.id().client == id.client
+                && at.id().clock <= id.clock
+                && id.clock < at.id().clock + at.len()
+        };
+        for _ in 0..JOIN_WALK {
+            if right.is_some_and(|right| holds(at, right)) {
+                return true;
+            }
+            match at.right() {
+                Some(next) => at = next,
+                None => return right.is_none(),
+            }
+            step(Walk::Reprice);
+            if matches!(at.content(), ItemContent::Format(..)) {
+                return false;
+            }
+        }
+        false
+    }
+
     fn run(&self, tree: &Tree) -> Option<Growth> {
         let mut memo = HashMap::new();
-        // The new strings per text, in first-seen order.
-        let mut texts: Vec<(BranchPtr, Vec<&str>)> = Vec::new();
+        // The new strings per text, in first-seen order, and whether each
+        // joins its left neighbour's run.
+        let mut texts: Vec<(BranchPtr, Vec<(&str, bool)>)> = Vec::new();
+        // The last unit of each new string that joined a run.
+        let mut joined: HashSet<ID> = HashSet::new();
         let mut index: HashMap<BranchID, usize> = HashMap::new();
         let mut edits = Edits::default();
         for item in self.incoming.items() {
@@ -257,7 +319,11 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                         texts.push((branch, Vec::new()));
                         texts.len() - 1
                     });
-                    texts[at].1.push(text.as_str());
+                    let joins = self.joins_run(branch, item, &joined);
+                    if joins {
+                        joined.insert(ID::new(item.id().client, item.id().clock + item.len() - 1));
+                    }
+                    texts[at].1.push((text.as_str(), joins));
                     edits.text(branch).inserts.push(item);
                 }
                 // Typed and erased before it was sent: it shows nothing, but
@@ -295,9 +361,14 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
             let (_, owner) = self.text_prop(*branch)?;
             let shell = run_shell(*branch, owner)?;
             growth.typed = true;
-            for text in strings {
+            for &(text, joins) in strings {
                 let units = text.encode_utf16().count() as u64;
                 let lines = text.matches('\n').count() as u64;
+                // Inside a run of plain chars: no new run, line or node.
+                if joins && lines == 0 && !shell.inline {
+                    growth.bytes += escaped_len(text) + SPLIT_BYTES;
+                    continue;
+                }
                 growth.bytes += escaped_len(text)
                     + SPLIT_BYTES
                     + 2 * shell.bytes

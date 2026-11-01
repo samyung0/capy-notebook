@@ -254,6 +254,25 @@ fn typing_is_bounded() {
     );
 }
 
+/// A string typed after a plain char of its text, with no format between
+/// them, joins that char's run: priced at its own bytes (plus a split
+/// surrogate's 4), no new run or node, and the bound covers it. Fails if it
+/// is priced as a new run (the shell bytes that used up a near-limit note's
+/// headroom in a few seconds of typing, box run 2026-10-29).
+#[test]
+fn typing_inside_a_run_is_priced_at_its_bytes() {
+    let state = three_paragraphs();
+    let update = update_of(&state, |txn| {
+        text(txn, "a", "prop:text").insert(txn, 1, "xyz")
+    });
+    let growth = growth(&state, &update).unwrap();
+    assert_eq!((growth.bytes, growth.nodes), (3 + 4, 0));
+    let room = common::doc(&state, 1);
+    let before = metrics(&room);
+    common::apply(&room, &update);
+    assert_eq!(metrics(&room).content_bytes, before.content_bytes + 3);
+}
+
 /// A string typed inside an inline equation's run becomes one equation per
 /// UTF-16 unit, each carrying the run's expression: bounded, and the bound
 /// covers it. Fails if the bound prices the string as text alone.

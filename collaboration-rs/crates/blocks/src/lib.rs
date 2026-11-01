@@ -141,9 +141,10 @@ pub fn state_from_value(value: &[Value], client_id: u64) -> Result<Vec<u8>, Conv
     let content = plate_in::content(value)?;
     let doc = yrs::Doc::with_options(ydoc::doc_options(client_id));
     let blocks = doc.get_or_insert_map(BLOCKS_ROOT);
-    let mut txn = doc.transact_mut();
-    store::seed(&mut txn, &blocks, &content);
-    Ok(txn.encode_state_as_update_v1(&yrs::StateVector::default()))
+    store::seed(&mut doc.transact_mut(), &blocks, &content);
+    Ok(doc
+        .transact()
+        .encode_state_as_update_v1(&yrs::StateVector::default()))
 }
 
 /// The room's Plate value: the note's subtree, flattened by the indent rule,

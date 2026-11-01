@@ -23,7 +23,11 @@
 //! Usage: `layout-cost <values.json>`. Env: `NOTES` (load-test,small),
 //! `LAYOUTS` (plate,blocks), `STATES` (all), `SCALE` (1: one hour of
 //! editing, 60 s of typing; 0.1 for a smoke run), `ROOMS` (20 idle rooms),
-//! `RUNS` (5 repeats of the one-shot steps). One JSON object per line.
+//! `RUNS` (5 repeats of the one-shot steps), `LOAD_PATH` (new: `room.rs`'s
+//! load; old: the one before 2026-11-01), `SAVE_REFRESH` (1: a store's
+//! metrics restart the bound), `LOAD_PERMITS` (2, the `burst` state's bounded
+//! run). The states `load` and `burst` run only when `STATES` names them.
+//! One JSON object per line.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::collections::HashMap;
@@ -268,34 +272,77 @@ struct Room {
     collected: IdSet,
 }
 
-/// The room load (`room.rs` load): replay the stored state into a scratch
-/// doc, integrate its state into the room's doc, measure, the stored check,
-/// the validator.
+/// Which room load to run: `room.rs`'s (`new`: the replay's copy dropped
+/// before the checks, `Model::loaded`) or the one before it (`old`: the copy
+/// held through `measure` and `stored`, a blocks room's bound left to its
+/// first exact check). Env `LOAD_PATH`, `new` by default.
+#[derive(Clone, Copy, PartialEq)]
+enum LoadPath {
+    Old,
+    New,
+}
+
+impl LoadPath {
+    fn name(self) -> &'static str {
+        match self {
+            LoadPath::Old => "old",
+            LoadPath::New => "new",
+        }
+    }
+}
+
+fn load_path() -> LoadPath {
+    match std::env::var("LOAD_PATH").as_deref() {
+        Ok("old") => LoadPath::Old,
+        _ => LoadPath::New,
+    }
+}
+
+/// The room load (`room.rs` load) on the stack's path.
 fn load(layout: L, stored: &[u8]) -> Room {
+    load_with(layout, stored, load_path())
+}
+
+/// The room load (`room.rs` load's blocking closure): replay the stored
+/// state into a scratch doc, integrate its state into the room's doc, the
+/// load checks, the validator. Left out: the contributor markers' walk.
+fn load_with(layout: L, stored: &[u8], path: LoadPath) -> Room {
     let model = layout.model();
     let scratch = ydoc::scratch_doc();
     ydoc::replay(&scratch, stored, &[] as &[Vec<u8>]).expect("replays");
     let state = scratch
         .transact()
         .encode_state_as_update_v1(&StateVector::default());
-    drop(scratch);
-    let doc = Doc::with_options(ydoc::doc_options(ROOM_CLIENT));
-    let metrics = {
-        let mut txn = doc.transact_mut();
-        txn.apply_update(ydoc::decode(&state).expect("decodes"))
-            .expect("applies");
-        drop(txn);
-        let txn = doc.transact();
-        model.assert_roots(&txn).expect("roots");
-        let metrics = model.measure(&txn).expect("measures");
-        let refused = model.stored("note", &txn).expect("stored check");
-        assert!(refused.is_none(), "loads read-only: {refused:?}");
-        metrics
+    let scratch = match path {
+        LoadPath::Old => Some(scratch),
+        LoadPath::New => None,
     };
+    let doc = Doc::with_options(ydoc::doc_options(ROOM_CLIENT));
+    doc.transact_mut()
+        .apply_update(ydoc::decode(&state).expect("decodes"))
+        .expect("applies");
+    let state = (path == LoadPath::Old).then_some(state);
+    let txn = doc.transact();
+    model.assert_roots(&txn).expect("roots");
+    let (refused, validator) = match path {
+        LoadPath::Old => {
+            let metrics = model.measure(&txn).expect("measures");
+            let refused = model.stored("note", &txn).expect("stored check");
+            (refused, model.validator("note", metrics))
+        }
+        LoadPath::New => {
+            let (_, refused, validator) = model.loaded("note", &txn).expect("load checks");
+            (refused, validator)
+        }
+    };
+    assert!(refused.is_none(), "loads read-only: {refused:?}");
+    let _durable = ydoc::Durable::of(&txn);
+    drop(txn);
+    drop((scratch, state));
     Room {
         layout,
         doc,
-        validator: model.validator("note", metrics),
+        validator,
         held: HashMap::new(),
         collected: IdSet::new(),
     }
@@ -414,6 +461,27 @@ impl Room {
             held.merge_with(batch.clone());
         }
         held
+    }
+
+    /// A store's check of the room (`room.rs` validate), timed into
+    /// `meter`; with `SAVE_REFRESH=1` its metrics restart a blocks room's
+    /// bound (`RoomValidator::stored`).
+    fn save(&mut self, meter: &mut Meter) {
+        let model = self.layout.model();
+        let cpu = meter.cpu;
+        let metrics = meter.run(|| {
+            let txn = self.doc.transact();
+            model.assert_roots(&txn).expect("roots");
+            let value = model.document_value(&txn).expect("projects");
+            notes::material::assert_canonical(&value, "note").expect("canonical");
+            let metrics = notes::limits::measure_value(&value);
+            let _ = notes::limits::limit_code(&metrics);
+            metrics
+        });
+        meter.per_update.push(ms(meter.cpu - cpu));
+        if env_f64("SAVE_REFRESH", 0.0) > 0.0 {
+            self.validator.stored(metrics);
+        }
     }
 
     fn exact_checks(&self) -> Option<u64> {
@@ -804,7 +872,12 @@ fn typing(note: &Note, state: &str, peers: usize, seconds: f64) {
         .collect();
     let rounds = scaled(seconds * 10.0);
     let mut meter = Meter::default();
+    let mut saves = Meter::default();
     for round in 0..rounds {
+        // A store every 10 s of continuous typing (COLLABORATION_MAX_DEBOUNCE_MS).
+        if round % 100 == 99 {
+            room.save(&mut saves);
+        }
         let mut out = Vec::new();
         for (i, c) in clients.iter_mut().enumerate() {
             let update = key(note.layout, c, u32::from(round % 10 == 9)).expect("a paragraph");
@@ -831,8 +904,123 @@ fn typing(note: &Note, state: &str, peers: usize, seconds: f64) {
         room,
         base,
         &meter,
-        json!({ "peers": peers, "secondsTyped": seconds_typed, "cpuMsPerSecond": (cpu_per_s * 100.0).round() / 100.0 }),
+        json!({
+            "peers": peers,
+            "secondsTyped": seconds_typed,
+            "cpuMsPerSecond": (cpu_per_s * 100.0).round() / 100.0,
+            "saves": saves.per_update.len(),
+            "saveCpuMs": ms(saves.cpu),
+            "saveMsEach": ms(saves.cpu / saves.per_update.len().max(1) as u32),
+            "savePeakMB": mb(saves.peak),
+            "loadPath": load_path().name(),
+            "saveRefresh": env_f64("SAVE_REFRESH", 0.0) > 0.0,
+        }),
     );
+}
+
+/// One room load at a time, each path: its CPU, the heap it peaks at above
+/// the process and keeps, then the first keystroke's admission.
+fn load_state(note: &Note) {
+    for path in [LoadPath::Old, LoadPath::New] {
+        let mut cpu = Vec::new();
+        let (mut peak, mut kept, mut first) = (0, 0, None);
+        for _ in 0..runs() {
+            trim();
+            let before = live();
+            PEAK.store(before, Ordering::Relaxed);
+            let started = thread_cpu();
+            let mut room = load_with(note.layout, note.seed, path);
+            cpu.push(ms(thread_cpu() - started));
+            peak = peak.max(PEAK.load(Ordering::Relaxed) - before);
+            kept = live() - before;
+            let spots = paragraphs(note.layout, &room.doc);
+            let mut c = client(&room, 40, spots[spots.len() / 2]);
+            let update = key(note.layout, &mut c, 0).expect("a paragraph");
+            let mut meter = Meter::default();
+            room.receive(&mut meter, c.id, &update);
+            first = Some((meter, room.exact_checks()));
+            drop(c);
+        }
+        cpu.sort_by(f64::total_cmp);
+        let (meter, exact) = first.expect("RUNS is at least 1");
+        emit(line(
+            note,
+            "load",
+            json!({
+                "loadPath": path.name(),
+                "loadCpuMs": { "min": cpu[0], "median": cpu[cpu.len() / 2] },
+                "loadPeakMB": mb(peak),
+                "heapKeptMB": mb(kept),
+                "firstUpdate": {
+                    "cpuMs": ms(meter.cpu),
+                    "peakMB": mb(meter.peak),
+                    "exactChecks": exact,
+                },
+            }),
+        ));
+    }
+}
+
+/// `ROOMS` rooms loading at once on their own threads, as joins after a
+/// restart load them on the blocking pool, each path, unbounded and two at a
+/// time (`LOAD_PERMITS`, 2 by default: the box's cores): the heap's high
+/// water above the process, which glibc's arenas keep resident (box run
+/// 2026-10-29), and what the rooms keep.
+fn burst(note: &Note) {
+    use std::sync::{Arc, Barrier, Condvar, Mutex};
+    let count = env_f64("ROOMS", 20.0).max(1.0) as usize;
+    let permits = env_f64("LOAD_PERMITS", 2.0).max(1.0) as usize;
+    for path in [LoadPath::Old, LoadPath::New] {
+        for limit in [count, permits] {
+            trim();
+            let before = live();
+            PEAK.store(before, Ordering::Relaxed);
+            let started = Instant::now();
+            let gate = Arc::new((Mutex::new(limit), Condvar::new()));
+            let start = Arc::new(Barrier::new(count));
+            let rooms: Vec<Room> = std::thread::scope(|scope| {
+                let handles: Vec<_> = (0..count)
+                    .map(|_| {
+                        let (gate, start) = (gate.clone(), start.clone());
+                        scope.spawn(move || {
+                            start.wait();
+                            let (lock, freed) = &*gate;
+                            let mut free = freed
+                                .wait_while(lock.lock().expect("gate"), |free| *free == 0)
+                                .expect("gate");
+                            *free -= 1;
+                            drop(free);
+                            let room = load_with(note.layout, note.seed, path);
+                            *lock.lock().expect("gate") += 1;
+                            freed.notify_one();
+                            room
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|handle| handle.join().expect("loads"))
+                    .collect()
+            });
+            let wall = started.elapsed();
+            let (peak, kept) = (PEAK.load(Ordering::Relaxed) - before, live() - before);
+            let rss = rss_mb();
+            drop(rooms);
+            emit(line(
+                note,
+                "burst",
+                json!({
+                    "loadPath": path.name(),
+                    "rooms": count,
+                    "atOnce": limit,
+                    "wallMs": ms(wall),
+                    "heapPeakPerRoomMB": mb(peak / count as isize),
+                    "heapKeptPerRoomMB": mb(kept / count as isize),
+                    "processRssMB": rss,
+                }),
+            ));
+        }
+    }
 }
 
 /// A burst of 50 block moves by one client, each its own update.
@@ -1233,6 +1421,8 @@ fn main() {
                 let started = Instant::now();
                 match state.as_str() {
                     "idle" => idle(&note),
+                    "load" => load_state(&note),
+                    "burst" => burst(&note),
                     "step1-fresh" => step1(&note),
                     "typing-1" => typing(&note, "typing-1", 1, 60.0),
                     "typing-5" => typing(&note, "typing-5", 5, 60.0),

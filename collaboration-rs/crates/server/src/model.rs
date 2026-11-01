@@ -155,6 +155,37 @@ impl Model {
         }
     }
 
+    /// A loading room's checks, off the room's task: its exact metrics, why it
+    /// loads read-only ([Model::stored]), and its admission. A blocks room
+    /// whose tree passes the structural check as stored needs no repaired
+    /// copy (the repair has nothing to do then), so it is projected once and
+    /// admits on the growth bound from its first update; one that fails it
+    /// is checked as its first store will repair it, and admits exactly
+    /// until an exact check passes.
+    pub fn loaded<T: ReadTxn>(
+        self,
+        kind: &str,
+        txn: &T,
+    ) -> Result<(Metrics, Option<String>, RoomValidator), String> {
+        if self == Model::Blocks && blocks::check(txn).is_ok() {
+            let value = blocks::value(txn).map_err(|error| error.to_string())?;
+            let metrics = notes::limits::measure_value(&value);
+            let refused = notes::material::assert_canonical(&value, kind)
+                .err()
+                .map(|error| error.to_string());
+            let mut validator = self.validator(kind, metrics);
+            if let (None, RoomValidator::Blocks(blocks)) = (&refused, &mut validator) {
+                blocks.bound = Some(metrics);
+                blocks.depth = metrics.max_depth;
+                blocks.tree = Some(blocks::Tree::of(txn));
+            }
+            return Ok((metrics, refused, validator));
+        }
+        let metrics = self.measure(txn)?;
+        let refused = self.stored(kind, txn)?;
+        Ok((metrics, refused, self.validator(kind, metrics)))
+    }
+
     /// The document seeded from `materials.content`'s value, as it is (one
     /// a room may not serve is refused at load: [Model::stored]). A blocks
     /// document refuses a value its layout cannot hold.
@@ -309,9 +340,12 @@ pub enum RoomValidator {
 /// bound, and anything else is applied to a copy, repaired as the room will
 /// repair it (D3), checked structurally and measured on its projection.
 ///
-/// The bound, with the tree's parent index, is set by an exact check alone
-/// and dropped by every write the validator did not admit (`invalidate`), so
-/// while it holds, the room's tree is one that passed the structural check:
+/// The bound, with the tree's parent index, is set by an exact check or by a
+/// load whose stored tree passed the structural check ([Model::loaded]),
+/// restarted from a store's exact metrics while it holds
+/// ([RoomValidator::stored]), and dropped by every write the validator did
+/// not admit (`invalidate`), so while it holds, the room's tree is one that
+/// passed the structural check:
 /// the repair on entry after that check's update left the tree as the check's
 /// copy had it, or wrote and dropped the bound. Typing leaves that tree as it
 /// is; a structural update admitted on the bound leaves a tree the check
@@ -516,6 +550,20 @@ impl RoomValidator {
                 validator.metrics = None;
                 validator.tree = None;
             }
+        }
+    }
+
+    /// A store's exact metrics of the room as it is now (the store checks
+    /// it while the room waits): a blocks room's bound restarts from them
+    /// while it holds, so typing's headroom under the limits is measured
+    /// again at every store instead of at an exact check of its own.
+    pub fn stored(&mut self, metrics: Metrics) {
+        if let RoomValidator::Blocks(validator) = self
+            && validator.bound.is_some()
+        {
+            validator.metrics = Some(metrics);
+            validator.bound = Some(metrics);
+            validator.depth = metrics.max_depth;
         }
     }
 
@@ -783,6 +831,31 @@ mod tests {
         ));
     }
 
+    /// A blocks room whose stored tree passes the structural check loads
+    /// with its bound and parent index set, so its first keystroke is
+    /// admitted on the bound with no exact check (no copy of the room).
+    /// Fails if the load leaves the bound to the first update.
+    #[test]
+    fn a_blocks_room_loaded_whole_admits_its_first_keystroke_on_the_bound() {
+        let state = Model::Blocks.state_from_value(&load_note()).unwrap();
+        let room = blocks_doc(&state, 1);
+        let writer = blocks_doc(&state, 50);
+        let (metrics, refused, mut validator) =
+            Model::Blocks.loaded("note", &room.transact()).unwrap();
+        assert_eq!(refused, None);
+        assert_eq!(validator.bound(), Some(metrics));
+        let id = middle_paragraph(&room.transact());
+        let update = keystroke(&writer, &id);
+        assert!(matches!(
+            validator.admit(&room, &ydoc::decode(&update).unwrap(), false),
+            super::Admitted::Accepted
+        ));
+        let super::RoomValidator::Blocks(blocks) = validator else {
+            panic!("not a blocks validator")
+        };
+        assert_eq!((blocks.exact_checks, blocks.on_bound), (0, true));
+    }
+
     /// The growth bound admits typing without a copy only once an exact
     /// check set it (a room may load unrepaired) and only while the bound
     /// plus the keystroke stays within the limits; a format change is
@@ -833,7 +906,9 @@ mod tests {
         assert_eq!(admit(&mut validator, &keystroke(&writer, "b")), (1, true));
         if let super::RoomValidator::Blocks(blocks) = &mut validator {
             blocks.bound = blocks.bound.map(|bound| notes::limits::Metrics {
-                content_bytes: notes::limits::MAX_CONTENT_BYTES - 10,
+                // A keystroke inside a run is priced at its bytes and a
+                // split surrogate's 4.
+                content_bytes: notes::limits::MAX_CONTENT_BYTES - 2,
                 ..bound
             });
         }

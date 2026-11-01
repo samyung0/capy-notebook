@@ -886,29 +886,35 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
             );
             let collected = std::mem::take(&mut loaded.collected);
             let material_kind = kind.clone();
-            let (doc, durable, metrics, mut refused) =
+            let (doc, durable, metrics, mut refused, mut validator) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
-                    let scratch = ydoc::scratch_doc();
-                    ydoc::replay(&scratch, &loaded.base, &loaded.rows)
-                        .map_err(|error| error.to_string())?;
-                    let held = scratch.transact().state_vector();
-                    let state = scratch
-                        .transact()
-                        .encode_state_as_update_v1(&StateVector::default());
+                    // The replay's copy goes before the checks: a near-limit
+                    // blocks note holds ~13 MiB of it.
+                    let (held, state) = {
+                        let scratch = ydoc::scratch_doc();
+                        ydoc::replay(&scratch, &loaded.base, &loaded.rows)
+                            .map_err(|error| error.to_string())?;
+                        let txn = scratch.transact();
+                        (
+                            txn.state_vector(),
+                            txn.encode_state_as_update_v1(&StateVector::default()),
+                        )
+                    };
+                    drop(loaded);
                     let doc = fresh_doc(&held, &assigned);
                     {
                         let mut txn = doc.transact_mut();
                         txn.apply_update(ydoc::decode(&state).map_err(|error| error.to_string())?)
                             .map_err(|error| error.to_string())?;
                     }
+                    drop(state);
                     let txn = doc.transact();
                     model.assert_roots(&txn)?;
                     markers::contributors_in(&txn).map_err(|error| error.to_string())?;
-                    let metrics = model.measure(&txn)?;
-                    let refused = model.stored(&material_kind, &txn)?;
+                    let (metrics, refused, validator) = model.loaded(&material_kind, &txn)?;
                     let durable = ydoc::Durable::of(&txn);
                     drop(txn);
-                    Ok((doc, durable, metrics, refused))
+                    Ok((doc, durable, metrics, refused, validator))
                 })
                 .await
                 .map_err(|error| error.to_string())??;
@@ -916,7 +922,6 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
             // one's, the content room's readers get the keys' items, and a
             // block this version cannot read in either makes both rooms
             // read-only (a save in one would rebuild the quiz without it).
-            let mut validator = model.validator(&kind, metrics);
             let mut reader = None;
             if model.quiz() {
                 let other = match doc_kind {
@@ -4193,9 +4198,11 @@ impl Room {
                 return;
             }
         };
-        let Kindly::Note(note) = &self.kind else {
+        let Kindly::Note(note) = &mut self.kind else {
             return;
         };
+        // Measured exactly on the room as it is: nothing ran since the check.
+        note.validator.stored(metrics);
         let (material_id, schema, doc_kind) = (note.material_id.clone(), note.schema, note.doc);
         let Some(handle) = self.own_handle() else {
             return;
