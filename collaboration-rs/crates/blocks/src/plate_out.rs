@@ -62,6 +62,18 @@ fn copy(node: &mut Map<String, Value>, block: &Block, key: &str, to: &str) {
     }
 }
 
+/// A media block's pixel width → the stored `"<n>%"` (D21, N8); 0 (an
+/// image's default) is no width.
+fn width(node: &mut Map<String, Value>, block: &Block) -> Result<(), ProjectionError> {
+    if let Some(width) = block.native("width") {
+        let px = width.as_f64().ok_or_else(|| bad(block, "width"))?;
+        if px != 0.0 {
+            node.insert("width".into(), json!(schema::px_to_percent(px)));
+        }
+    }
+    Ok(())
+}
+
 fn indent(node: &mut Map<String, Value>, indent: usize) {
     if indent > 0 {
         node.insert("indent".into(), json!(indent));
@@ -185,12 +197,7 @@ pub(crate) fn element(block: &Block, depth: usize) -> Result<Value, ProjectionEr
             if let Some(size) = block.native("size").filter(|s| s.as_f64() >= Some(0.0)) {
                 node.insert("sizeBytes".into(), size.clone());
             }
-            if let Some(width) = block.native("width") {
-                let px = width.as_f64().ok_or_else(|| bad(block, "width"))?;
-                if px != 0.0 {
-                    node.insert("width".into(), json!(schema::px_to_percent(px)));
-                }
-            }
+            width(&mut node, block)?;
             align(&mut node, block);
             caption(&mut node, block);
             indent(&mut node, depth);
@@ -207,9 +214,10 @@ pub(crate) fn element(block: &Block, depth: usize) -> Result<Value, ProjectionEr
         }
         VIDEO => {
             node = start(block, "video");
-            for key in ["provider", "videoId", "width"] {
+            for key in ["provider", "videoId"] {
                 copy(&mut node, block, key, key);
             }
+            width(&mut node, block)?;
             caption(&mut node, block);
             indent(&mut node, depth);
             empty_leaf()
@@ -217,7 +225,7 @@ pub(crate) fn element(block: &Block, depth: usize) -> Result<Value, ProjectionEr
         CHART | PLOT | GRAPH => {
             node = start(block, block.flavour.trim_start_matches("capy:"));
             copy(&mut node, block, "block", "block");
-            copy(&mut node, block, "width", "width");
+            width(&mut node, block)?;
             empty_leaf()
         }
         HTML => {
@@ -234,7 +242,7 @@ pub(crate) fn element(block: &Block, depth: usize) -> Result<Value, ProjectionEr
                 .collect();
             node.insert("source".into(), json!(source));
             copy(&mut node, block, "theme", "theme");
-            copy(&mut node, block, "width", "width");
+            width(&mut node, block)?;
             indent(&mut node, depth);
             json!([{
                 "id": format!("{}.p", block.id),

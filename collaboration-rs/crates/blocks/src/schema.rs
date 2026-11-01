@@ -210,7 +210,7 @@ pub const FLAVOURS: &[Flavour] = &[
         props: &[
             ("provider", Str),
             ("videoId", Str),
-            ("width", Str),
+            ("width", Num),
             ("caption", Str),
         ],
         flat: false,
@@ -224,19 +224,19 @@ pub const FLAVOURS: &[Flavour] = &[
     Flavour {
         name: CHART,
         parents: NOTE_ONLY,
-        props: &[("block", Map), ("width", Str)],
+        props: &[("block", Map), ("width", Num)],
         flat: false,
     },
     Flavour {
         name: PLOT,
         parents: NOTE_ONLY,
-        props: &[("block", Map), ("width", Str)],
+        props: &[("block", Map), ("width", Num)],
         flat: false,
     },
     Flavour {
         name: GRAPH,
         parents: NOTE_ONLY,
-        props: &[("block", Map), ("width", Str)],
+        props: &[("block", Map), ("width", Num)],
         flat: false,
     },
     Flavour {
@@ -251,7 +251,7 @@ pub const FLAVOURS: &[Flavour] = &[
         props: &[
             ("source", Text),
             ("caption", Text),
-            ("width", Str),
+            ("width", Num),
             ("theme", Str),
         ],
         flat: false,
@@ -270,9 +270,10 @@ pub const FLAVOURS: &[Flavour] = &[
     },
 ];
 
-/// The note column width an image's stored percentage is measured against
-/// while the Plate bridge stands (D21, N8).
-pub const IMAGE_REFERENCE_PX: f64 = 768.0;
+/// The note column width a media block's stored percentage is measured
+/// against while the Plate bridge stands (D21, N8): images, video, Mermaid,
+/// chart, plot and graph.
+pub const MEDIA_REFERENCE_PX: f64 = 768.0;
 
 /// `"<n>%"` → n, for a plain decimal n.
 pub fn percent(width: &str) -> Option<f64> {
@@ -284,14 +285,14 @@ pub fn percent(width: &str) -> Option<f64> {
         .flatten()
 }
 
-/// A stored image percentage → pixels against the reference column.
+/// A stored media percentage → pixels against the reference column.
 pub fn percent_to_px(percent: f64) -> i64 {
-    (percent * IMAGE_REFERENCE_PX / 100.0).round() as i64
+    (percent * MEDIA_REFERENCE_PX / 100.0).round() as i64
 }
 
-/// Image pixels → the stored `"<n>%"`, clamped to 20–100.
+/// Media pixels → the stored `"<n>%"`, clamped to 20–100.
 pub fn px_to_percent(px: f64) -> String {
-    let percent = (px / IMAGE_REFERENCE_PX * 100.0).round().clamp(20.0, 100.0);
+    let percent = (px / MEDIA_REFERENCE_PX * 100.0).round().clamp(20.0, 100.0);
     format!("{percent}%")
 }
 

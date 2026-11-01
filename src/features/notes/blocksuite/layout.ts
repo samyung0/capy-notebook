@@ -250,9 +250,10 @@ export function orderKey(index: number) {
 // ---------------------------------------------------------------------------
 // Plate value → BlocksJson
 
-/** The note column width an image's stored percentage is measured against
- * while the Plate bridge stands (D21, N8). */
-const IMAGE_REFERENCE_PX = 768;
+/** The note column width a media block's stored percentage is measured
+ * against while the Plate bridge stands (D21, N8): images, video, Mermaid,
+ * chart, plot and graph. */
+const MEDIA_REFERENCE_PX = 768;
 const PERCENT = /^\d+(\.\d+)?%$/;
 
 /** `"<n>%"` → n, for a plain decimal n. */
@@ -521,6 +522,13 @@ class Writer {
       const value = textAlign(node, type);
       if (value) props.textAlign = value;
     };
+    /** A media block's `"<n>%"` → pixels (N8). */
+    const width = (props: Json) => {
+      if (node.width === undefined) return;
+      const percent = percentOf(node.width);
+      if (percent === undefined) refuse(type, 'width is not a percentage');
+      props.width = Math.round((percent * MEDIA_REFERENCE_PX) / 100);
+    };
     if (TEXT_BLOCK.test(type)) {
       keys(node, type, BLOCK_KEYS, ['align']);
       const text = inline(childrenOf(node));
@@ -609,11 +617,7 @@ class Writer {
         copy(props, 'sizeBytes', 'size');
         caption(props);
         align(props);
-        if (node.width !== undefined) {
-          const percent = percentOf(node.width);
-          if (percent === undefined) refuse(type, 'width is not a percentage');
-          props.width = Math.round((percent * IMAGE_REFERENCE_PX) / 100);
-        }
+        width(props);
         copy(props, 'name');
         copy(props, 'contentType');
         break;
@@ -640,7 +644,8 @@ class Writer {
           'caption',
         ]);
         const props = write('capy:video');
-        for (const key of ['provider', 'videoId', 'width']) copy(props, key);
+        for (const key of ['provider', 'videoId']) copy(props, key);
+        width(props);
         caption(props);
         break;
       }
@@ -651,7 +656,7 @@ class Writer {
         if (!isObject(node.block)) refuse(type, 'block must be an object');
         const props = write(`capy:${type}`);
         copy(props, 'block');
-        copy(props, 'width');
+        width(props);
         break;
       }
       case 'html_embed': {
@@ -675,7 +680,7 @@ class Writer {
           caption = inline(childrenOf(element));
         }
         props.caption = caption;
-        copy(props, 'width');
+        width(props);
         copy(props, 'theme');
         break;
       }
@@ -979,6 +984,16 @@ class Reader {
       node.type = type;
       node.children = emptyLeaf();
     };
+    /** A media block's pixels → `"<n>%"` clamped to 20–100 (N8); 0 (an
+     * image's default) is no width. */
+    const width = () => {
+      if (props.width === undefined) return;
+      if (typeof props.width !== 'number')
+        refuse(block.flavour, `block ${id} has a bad width`);
+      if (props.width === 0) return;
+      const percent = Math.round((props.width / MEDIA_REFERENCE_PX) * 100);
+      node.width = `${Math.min(100, Math.max(20, percent))}%`;
+    };
     switch (block.flavour) {
       case 'affine:paragraph': {
         const type = str(props.type);
@@ -1050,16 +1065,7 @@ class Reader {
         copy('contentType');
         if (typeof props.size === 'number' && props.size >= 0)
           node.sizeBytes = props.size;
-        if (props.width !== undefined) {
-          if (typeof props.width !== 'number')
-            refuse(block.flavour, `block ${id} has a bad width`);
-          if (props.width !== 0) {
-            const percent = Math.round(
-              (props.width / IMAGE_REFERENCE_PX) * 100
-            );
-            node.width = `${Math.min(100, Math.max(20, percent))}%`;
-          }
-        }
+        width();
         align();
         caption();
         indent(depth);
@@ -1073,7 +1079,8 @@ class Reader {
         break;
       case 'capy:video':
         voidBlock('video');
-        for (const key of ['provider', 'videoId', 'width']) copy(key);
+        for (const key of ['provider', 'videoId']) copy(key);
+        width();
         caption();
         indent(depth);
         break;
@@ -1082,7 +1089,7 @@ class Reader {
       case 'capy:graph':
         voidBlock(block.flavour.slice('capy:'.length));
         copy('block');
-        copy('width');
+        width();
         break;
       case 'capy:html-embed':
         voidBlock('html_embed');
@@ -1095,7 +1102,7 @@ class Reader {
           .map((op) => op.insert)
           .join('');
         copy('theme');
-        copy('width');
+        width();
         indent(depth);
         node.children = [
           {

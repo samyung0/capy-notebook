@@ -94,21 +94,41 @@ fn pending_import_is_refused() {
     assert!(blocks::state_from_value(value.as_array().unwrap(), 7).is_err());
 }
 
+/// Every media block a canvas may hold (D21): its `"<n>%"` is pixels against
+/// 768 px, and back clamped to 20–100.
 #[test]
-fn image_widths_are_pixels_against_768() {
-    let img = |width: &str| {
-        vec![
-            json!({"id": "im", "type": "img", "assetId": "a1", "width": width, "children": [{"text": ""}]}),
-        ]
-    };
-    let state = blocks::state_from_value(&img("33.3%"), 7).unwrap();
-    let doc = common::doc(&state, 99);
-    let blocks = blocks::blocks_json(&doc.transact());
-    assert_eq!(blocks["im"]["props"]["width"], json!(256));
-    assert_eq!(blocks["im"]["props"]["height"], json!(0));
-    let widths: Vec<Value> = ["33.3%", "10%", "150%"]
-        .iter()
-        .map(|w| blocks::canonical(&img(w)).unwrap()[0]["width"].clone())
-        .collect();
-    assert_eq!(widths, [json!("33%"), json!("20%"), json!("100%")]);
+fn media_widths_are_pixels_against_768() {
+    let nodes = [
+        json!({"type": "img", "assetId": "a1"}),
+        json!({"type": "video", "provider": "youtube", "videoId": "v1"}),
+        json!({"type": "mermaid", "source": "flowchart LR"}),
+        json!({"type": "chart", "block": {}}),
+        json!({"type": "plot", "block": {}}),
+        json!({"type": "graph", "block": {}}),
+    ];
+    for node in nodes {
+        let ty = node["type"].as_str().unwrap().to_string();
+        let media = |width: &str| {
+            let mut node = node.clone();
+            node["id"] = json!("m");
+            node["width"] = json!(width);
+            node["children"] = json!([{"text": ""}]);
+            vec![node]
+        };
+        let state = blocks::state_from_value(&media("33.3%"), 7).unwrap();
+        let doc = common::doc(&state, 99);
+        let blocks = blocks::blocks_json(&doc.transact());
+        assert_eq!(blocks["m"]["props"]["width"], json!(256), "{ty}");
+        let widths: Vec<Value> = ["33.3%", "10%", "150%"]
+            .iter()
+            .map(|w| blocks::canonical(&media(w)).unwrap()[0]["width"].clone())
+            .collect();
+        assert_eq!(widths, [json!("33%"), json!("20%"), json!("100%")], "{ty}");
+    }
+    let img = blocks::state_from_value(&[json!({"id": "im", "type": "img", "assetId": "a1", "width": "50%", "children": [{"text": ""}]})], 7).unwrap();
+    let doc = common::doc(&img, 99);
+    assert_eq!(
+        blocks::blocks_json(&doc.transact())["im"]["props"]["height"],
+        json!(0)
+    );
 }

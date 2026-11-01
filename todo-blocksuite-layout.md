@@ -146,21 +146,23 @@ to the vendored schema (each one is listed in `vendor/blocksuite/README.md`).
 | `img` | `affine:image` | `sourceId` (= `assetId`, figure ids `figure:<id>` included), `size` (= `sizeBytes`), `caption` (plain text of the Plate caption), `textAlign` (= `align`), `width`/`height` in pixels (D21, N8), `name`, `contentType` (ours) |
 | `material_ref` | `capy:material-ref` | `materialId`, `refKind` (`quiz\|flashcards`); void, top level only (piece 4) |
 | `audio` | `capy:audio` | `assetId`, `name`, `contentType`, `sizeBytes`, `caption` |
-| `video` | `capy:video` | `provider`, `videoId`, `width`, `caption` |
+| `video` | `capy:video` | `provider`, `videoId`, `width` in pixels (D21, N8), `caption` |
 | `toc` | `capy:toc` | none |
-| `chart`, `plot`, `graph` | `capy:chart`, `capy:plot`, `capy:graph` | `block` (deep Y.Map), `width` |
+| `chart`, `plot`, `graph` | `capy:chart`, `capy:plot`, `capy:graph` | `block` (deep Y.Map), `width` in pixels (D21, N8) |
 | `html_embed` | `capy:html-embed` | `html`, `caption` |
-| `mermaid` + `mermaid_caption` | `capy:mermaid` | `source` (Y.Text), `caption` (Y.Text, from `mermaid_caption`), `width`, `theme` |
-| `column_group` / `column` | `capy:columns` / `capy:column` | `capy:column`: `width`; children are content blocks |
+| `mermaid` + `mermaid_caption` | `capy:mermaid` | `source` (Y.Text), `caption` (Y.Text, from `mermaid_caption`), `width` in pixels (D21, N8), `theme` |
+| `column_group` / `column` | `capy:columns` / `capy:column` | `capy:column`: `width` (the stored `"<n>%"`, a fraction of its group); children are content blocks |
 
 - `capy:*` flavours are our own schemas in `src/features/notes/blocksuite/`.
   In step 1 only `capy:material-ref` gets a real view; the rest render through
   the existing read-only React renderer as an island (enough for the bench's
   full load-test note).
-- Image widths are pixels (D21). The seed turns a stored `"<n>%"` into
-  `round(n × 768 / 100)` px and leaves `height` at 0 (drawn from the image's
+- Media widths are pixels (D21): images and, from 2026-11-01, video,
+  Mermaid, chart, plot and graph blocks. The seed turns a stored `"<n>%"`
+  into `round(n × 768 / 100)` px (an image's `height` stays 0, drawn from its
   aspect ratio); `value()` turns pixels back into `"<n>%"` against 768 px,
-  clamped to 20–100 (N8).
+  clamped to 20–100, and a width of 0 is no width (N8). Column splits keep
+  the stored percentage.
 
 ### Tables (`affine:table`, flat data)
 
@@ -240,7 +242,7 @@ import write blocks directly, so they stop mattering.
 - **N5** `textIndent` (DOCX paste only) is dropped.
 - **N6** a cell or caption's marks inside multi-paragraph text are kept, its
   paragraph breaks become `\n`.
-- **N8** a media width in percent becomes pixels against a 768 px reference and back (D21): images, and from 2026-11-01 video, Mermaid, chart, plot and graph blocks (not built yet).
+- **N8** a media width in percent becomes pixels against a 768 px reference and back (D21): images, video, Mermaid, chart, plot and graph blocks (built 2026-11-01 for all six).
 - **N7** a paragraph ending on an inline void (an inline equation) gets the
   trailing empty text leaf Slate's normalization adds.
 
@@ -296,4 +298,4 @@ are repaired on entry (D3).
 ## Open for Epo
 
 - **T1, tables:** settled 2026-10-28 (D15), merging is dropped.
-- **T2, image width:** settled 2026-10-28 (D21), pixels.
+- **T2, media width:** settled 2026-10-28 (D21), pixels; extended 2026-11-01 to video, Mermaid, chart, plot and graph, built.

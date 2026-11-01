@@ -221,7 +221,7 @@
           "title": "Salinity",
           "type": "chart"
         },
-        "width": "60%"
+        "width": 461
       }
     },
     "gr": {
@@ -275,7 +275,7 @@
           }
         ],
         "theme": "linearLight",
-        "width": "70%"
+        "width": 538
       }
     },
     "mr": {

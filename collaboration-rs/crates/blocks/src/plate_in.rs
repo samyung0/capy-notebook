@@ -225,6 +225,19 @@ fn copy(block: &mut Block, node: &Map<String, Value>, key: &str, to: &str) {
     }
 }
 
+/// A media block's stored `"<n>%"` width → pixels against the reference
+/// column (D21, N8).
+fn width(block: &mut Block, node: &Map<String, Value>, ty: &str) -> Result<(), ConvertError> {
+    if let Some(width) = node.get("width") {
+        let percent = width
+            .as_str()
+            .and_then(schema::percent)
+            .ok_or_else(|| shape(ty, "width is not a percentage"))?;
+        block.set("width", Prop::Native(json!(schema::percent_to_px(percent))));
+    }
+    Ok(())
+}
+
 fn text_align(node: &Map<String, Value>, ty: &str) -> Result<Option<&'static str>, ConvertError> {
     Ok(match node.get("align") {
         None => None,
@@ -366,13 +379,7 @@ fn block(
             if let Some(align) = text_align(node, ty)? {
                 block.set("textAlign", Prop::Native(json!(align)));
             }
-            if let Some(width) = node.get("width") {
-                let px = width
-                    .as_str()
-                    .and_then(schema::percent)
-                    .ok_or_else(|| shape(ty, "width is not a percentage"))?;
-                block.set("width", Prop::Native(json!(schema::percent_to_px(px))));
-            }
+            width(&mut block, node, ty)?;
             copy(&mut block, node, "name", "name");
             copy(&mut block, node, "contentType", "contentType");
             block
@@ -393,9 +400,10 @@ fn block(
         "video" => {
             keys(node, ty, &["provider", "videoId", "width", "caption"])?;
             let mut block = new_block(id, VIDEO);
-            for key in ["provider", "videoId", "width"] {
+            for key in ["provider", "videoId"] {
                 copy(&mut block, node, key, key);
             }
+            width(&mut block, node, ty)?;
             caption(&mut block, node)?;
             block
         }
@@ -411,7 +419,7 @@ fn block(
                 return Err(shape(ty, "block must be an object"));
             }
             copy(&mut block, node, "block", "block");
-            copy(&mut block, node, "width", "width");
+            width(&mut block, node, ty)?;
             block
         }
         "html_embed" => {
@@ -439,7 +447,7 @@ fn block(
                 caption = inline(children(child))?;
             }
             block.set("caption", Prop::Text(caption));
-            copy(&mut block, node, "width", "width");
+            width(&mut block, node, ty)?;
             copy(&mut block, node, "theme", "theme");
             block
         }

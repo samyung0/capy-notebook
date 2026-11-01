@@ -384,16 +384,22 @@ it('seeds an empty value with root, note and one paragraph', () => {
   });
 });
 
-it('keeps image widths in pixels against a 768 px column (D21)', () => {
-  const img = (width: string): MaterialValue => [
-    { children: [{ text: '' }], id: 'im', type: 'img', width },
+// Every media block a canvas may hold (D21): its `"<n>%"` is pixels against
+// 768 px, and back clamped to 20–100.
+it.each([
+  { assetId: 'a1', type: 'img' },
+  { provider: 'youtube', type: 'video', videoId: 'v1' },
+  { source: 'flowchart LR', type: 'mermaid' },
+  { block: {}, type: 'chart' },
+  { block: {}, type: 'plot' },
+  { block: {}, type: 'graph' },
+])('keeps $type widths in pixels against a 768 px column', (node) => {
+  const media = (width: string): MaterialValue => [
+    { ...node, children: [{ text: '' }], id: 'm', width },
   ];
-  expect(valueToBlocks(img('33.3%')).im.props).toMatchObject({
-    height: 0,
-    width: 256,
-  });
+  expect(valueToBlocks(media('33.3%')).m.props.width).toBe(256);
   expect(
-    ['33.3%', '10%', '150%'].map((width) => canonical(img(width))[0])
+    ['33.3%', '10%', '150%'].map((width) => canonical(media(width))[0])
   ).toMatchObject([{ width: '33%' }, { width: '20%' }, { width: '100%' }]);
 });
 

@@ -875,11 +875,12 @@ Legend:
   `capy:mermaid`, `capy:chart`, `capy:plot`, `capy:graph`. The seed and
   `value()` convert them as N8 does for images. Column splits inside a column
   group stay fractions of the group (they are relative to each other, not to
-  the page). Not built yet: queued after the server memory dig. While the bridge stands,
+  the page). Built 2026-11-01 in the blocks crate and `layout.ts`, goldens
+  reblessed. While the bridge stands,
   `value()` converts to the stored `"<n>%"` against a 768 px reference
-  (clamped to 20–100) and the seed converts back (N8). Open: whether the
-  other resizable blocks (YouTube, Mermaid, chart, plot, graph) share the
-  rule, since they share one frame and would move to the canvas too. Presence
+  (clamped to 20–100) and the seed converts back (N8). The capy block views
+  are still placeholders that draw no width, so they read and write none
+  yet; their real views take pixels clamped to the column. Presence
   is out of this plan: Epo works on it in another session.
 
 ## Held (not scheduled)
