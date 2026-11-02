@@ -389,7 +389,8 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - **Where approval lives:** Study → Assignments → the assignment → the **Marked by AI** tab (A3). The Assignments list row says "5 AI marks to approve" (W2), and "Check the AI's marks" under each question in the report opens the tab.
   - **In the tab:** pick the question, then go through the members. Rows waiting show "AI 3 / 6"; approved rows show just the mark. Approve moves to the next one, Approve all clears the question, and changing a mark approves it too.
   - **Words:** the tab is named after who marked the answers ("Marked by AI"), not the question type; "Open answer" stays only as a question type.
-  - Not decided: a per-assignment switch to skip approval, and whether the owner hears about waiting marks anywhere besides the Assignments list.
+  - **Switch (Epo, 2026-11-03):** New assignment has "Approve AI marks before members see them", on by default, under Published (A1). Turned off, AI marks reach members at once, as in practice, and the assignment never shows marks to approve.
+  - Not decided: whether the owner hears about waiting marks anywhere besides the Assignments list.
 - **Shared pages:** closed parts are still graded. Open parts show the marking points with "Mark it yourself: Yes, Partly, No", labelled self-marked in the score (F2). The anonymous grading caps and their table go.
 
 ---
