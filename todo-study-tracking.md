@@ -162,10 +162,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - The full gradebook (G1c, grouped like Canvas assignment groups) is kept under "Earlier versions". It could return inside the Assignments tab if owners ask for it.
 
 **Workspace Home (round 2, 2026-11-02).** The Home page depends on the role.
-- **Owner:**
-  - To review: assignments with open answers waiting;
-  - Needs attention: missing work, and members with topics that need practice, linking to Members;
-  - Coming up: due dates with submitted counts.
+- **Owner:** Coming up, with due dates and submitted counts. Home doesn't repeat Study: the review queue and members who need attention live in Study's Assignments and Members pages (Epo, 2026-11-02).
 - **Member:**
   - To do: assignments, with Start or Continue;
   - Practise next: their weakest topic with its evidence ("1 of 4 right"), and Practise.
