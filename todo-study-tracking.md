@@ -168,6 +168,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - An assignment appears as a task and ticks itself on submit. Other tasks are ticked by hand, by each member for themselves.
   - Owners add tasks under the table.
 - **Anything empty is not shown.** No tasks means no Tasks section.
+- **Ticks (Epo asked what they do, 2026-11-02).** A member ticks a plain task ("Read …", "Make notes on …") to say it's done, and that feeds the owner's "x of 6 done". Assignment tasks have no tick box: they tick themselves on submit.
 - **Layout (Epo, 2026-11-02):** a list without a header row. The section title "Tasks" sat right above a "Task" column header, which looked like a stutter. Each row reads "Do [Past paper 2025 P1] 60 min · Due Fri 7 Nov · 5 of 6 done". "Add a task" sits at the top right of the section, as actions do on other pages.
 - **Mocks follow a smaller global type and tighter lists** (Epo is reducing the app's global font size):
   - body 14 px (was 14.8);
@@ -275,6 +276,12 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Anti-cheating on the web is signals, not prevention.** Exam.net and Wayground report tab exits; Canvas says its logs don't prove cheating.
 
 **Suggestion (MVP; later items in R4 §2):**
+- **No exam kind.** "Before you start" appears only because an assignment has a time limit: starting starts the timer. Untimed assignments open straight away. The dialog shows just the time limit, large with a clock, and "12 questions · 40 marks". Attempts, due date, saving and marks are left out because they don't help at that moment.
+- **Written answers** on the timed page use today's quiz style: ruled lines, as on exam paper (`ruled-lines`), not a boxed textarea.
+- **Roles stay owner, editor and viewer.**
+  - Members who only study are viewers: no Upload and no Make a quiz from a file.
+  - Editors get the same Upload and extraction as the owner.
+  - In a classroom, students are viewers.
 - **Two states only, Draft or published (Epo, 2026-11-02).**
   - "New assignment" (A1) has a Published switch that is on by default, so the assignment can be submitted as soon as it is created. With the switch off it is a draft.
   - Lists show no status for published assignments, only a "Draft" label on drafts. There is no Scheduled, Open, To review or Released status, and no separate "Open for submissions" step: A6 is removed.
