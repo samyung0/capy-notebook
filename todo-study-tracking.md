@@ -126,6 +126,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - **Panel:** beside the rail, it lists the current section's own pages.
   - Study lists Members, Assignments, Topics and My results for owners, and My results, Assignments and Topics for members. These replace the tabs.
   - Files shows the folder tree, and Agent the chats. Home has no panel.
+- **The rail stays on every workspace page (Epo, 2026-11-02),** focused pages included: page picking, the quiz editor, the report, grading, the timed assignment, Submitted and topic practice. Dialogs open over a page that still shows it.
 - **Getting back to the app (Epo, 2026-11-02): N1.**
   - A Dashboard item with a back arrow sits at the top of the rail on every workspace page.
   - Top-level navigation is never hidden in a menu (Epo: "do not hide top level navigation inside some random popups"). The workspace badge only shows which workspace you are in.
