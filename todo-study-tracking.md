@@ -278,6 +278,8 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 **Suggestion (MVP; later items in R4 §2):**
 - **No exam kind.** "Before you start" appears only because an assignment has a time limit: starting starts the timer. Untimed assignments open straight away. The dialog shows just the time limit, large with a clock, and "12 questions · 40 marks". Attempts, due date, saving and marks are left out because they don't help at that moment.
 - **Written answers** on the timed page use today's quiz style: ruled lines, as on exam paper (`ruled-lines`), not a boxed textarea.
+- **"Come back later"** (bookmark icon; it was "Flag", which read like reporting a question) only marks a question for the member to return to. It's shown on the question's square and isn't recorded anywhere else.
+- **Submitted** shows just "Your mark: 31 / 40". **Results** reads title, then the mark and right/partly/wrong counts, then "Practise what I missed".
 - **Roles stay owner, editor and viewer.**
   - Members who only study are viewers: no Upload and no Make a quiz from a file.
   - Editors get the same Upload and extraction as the owner.
