@@ -42,7 +42,7 @@ Every suggestion first says how other apps do it, as Epo asked.
 | 5 | Two separate numbers: a grade (points over released work) and per-topic mastery from a small rating model, plus FSRS recall for memory | Canvas gradebook vs mastery gradebook; Elo/Rasch in Lichess, Math Garden, Duolingo | Labels and thresholds |
 | 6 | Follow-up practice: a topic session (70% focus, 30% interleaved), new variants only when the pool runs short | Sparx 60/40, IXL, Century, Kahoot's "from difficult questions" | Approval and credits |
 | 7 | Assignments: a frozen copy of a quiz with dates, a server timer, release rules and a grading queue | Canvas, Moodle, Classroom, Gradescope | Settings and roll-up |
-| 8 | Extraction: pick and tag pages, read two pages at a time with tool calls, pair the mark scheme by label, review beside the source | Formative, Microsoft Forms' flags, Gradescope regions | Limits and credits |
+| 8 | Extraction: click the pages to read, two pages at a time with tool calls, pair the mark scheme by label, review beside the page; no source stored | Formative, Microsoft Forms' flags, Gradescope regions | Limits and credits |
 | 9 | Grading with DeepSeek only after a bench run. Marks must quote the answer. Shared pages self-mark open parts. | Gradescope, CoGrader, Markit (teacher in the loop); Save My Exams | Provider, charging |
 
 ---
@@ -316,7 +316,8 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
    - Figures snap to the parser's image boxes and become crops.
 4. **Pair the mark scheme by label in code;** the model only parses its lines.
 5. **Blind-solve** to write worked solutions only where the paper has none. These are labelled AI-written.
-6. **Review screen** with the source region beside each question (X2). Then save as a practice quiz, or as the source of an assignment.
+6. **Review screen** with the page beside each question (X2). Then save as a practice quiz, or as the quiz behind an assignment.
+7. **No source is stored (Epo, 2026-11-02).** A saved question keeps no link to its file, page, region or mark-scheme page, and generated questions keep no "written from" file. The page is shown only while reviewing, read from the uploaded file. This drops R3's "save with provenance" and R2's `question_origins` table.
 
 **Cost and time:**
 - **Estimates:** about 90–180 credits for a 12-page paper with an 8-page scheme, and about 140 for a 3-page worksheet that needs solving.
