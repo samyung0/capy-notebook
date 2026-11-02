@@ -128,12 +128,31 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
   - SB2 puts Study's pages in the sidebar instead;
   - H1 is the workspace Home.
 
+**Round 2 (Epo, 2026-11-02): the Members tab is a summary, and work has two words.**
+- **Two words.**
+  - **Assignment:** quiz work the owner sets, with dates, an optional time limit, one attempt and a release. It counts in Overall.
+  - **Practice:** any quiz done any time, marked at once, not counted.
+  - "Test" and "Homework" are no longer kinds. A timed assignment is still an assignment. Categories with weights can come later if owners ask (Classroom, Canvas, Teams).
+- **What each Study tab shows:**
+
+  | Tab | Owner | Member |
+  |---|---|---|
+  | Members | One line per member: Overall on assignments, x of y done, missing, practice this week, focus topics. A row opens to show recent assignments and topics, with "See profile" and "Draft a follow-up quiz". | (not shown) |
+  | Assignments | Every assignment by status (Scheduled, Open, To review, Released), with submitted counts. Each opens its report, review queue and Release. | Their own: to do, submitted, released results. |
+  | Topics | How the group does per topic (members × topics); rename and merge topics. | Their own labels per topic. |
+  | My results | Their own study, if they study too. | To do, released results, practice, topics, and "What the owner sees". |
+
+- **The mocks are now user flows,** one canvas page each:
+  1. owner: from a past paper to an assignment;
+  2. member: doing an assignment;
+  3. owner: grading and releasing;
+  4. owner: tracking and follow-up;
+  5. member: practising weak topics;
+  6. joining, shared pages and phones.
+- The full gradebook (G1c, grouped like Canvas assignment groups) is kept under "Earlier versions". It could return inside the Assignments tab if owners ask for it.
+
 **Mock (in build order):**
-- **G1, members grid.**
-  - Member and Overall are pinned. Then come Tests, Homework and Practice groups, each with its own total followed by its items, newest first. Groups collapse to their total.
-  - Practice is one "not counted" column unless expanded.
-  - Each cell shows a status: submitted with a score, in progress, grading, missing, late, excused or not started.
-  - Filters: period and sort. The View dropdown switches to G1c, the squares view, which fits about 20 pieces of work per screen.
+- **Members tab (Main):** the summary described above, sorted by who needs attention, with rows that open.
 - **G3, quiz or assignment report:**
   - per question: percent correct and answer frequencies;
   - per marking point: how often it was awarded. Jev's stored item marks make this possible; most apps can't show it.
@@ -165,7 +184,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - **What fits is a rating model with priors,** updated after each answer: Lichess puzzles, Math Garden, Duolingo's first Birdbrain.
 
 **Suggestion:**
-- **Grade.** Marks awarded over marks possible across released assignments, excluding excused work. Work still being graded is left out. Practice never counts. Each kind gets its own total: Tests and Homework subtotals sit beside Overall, and Practice shows its average with "not counted". The owner may later weight the kinds (Classroom, Canvas, Teams).
+- **Grade.** Marks awarded over marks possible across released assignments, excluding excused work. Work still being graded is left out. Practice never counts. Practice shows separately, with its own average and "not counted". Categories with weights (Classroom, Canvas, Teams) wait until owners ask.
 - **Mastery per topic.** A Rasch-type rating with priors, updated after every graded part (R2 §5):
   - **Formula:** `P = c + (1−c)·σ(a_member + d_member,topic − b_question)`.
   - **Partial credit:** `awarded/marks` enters directly.
@@ -232,7 +251,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 
 **Suggestion (MVP; later items in R4 §2):**
 - **An assignment** is a frozen copy of a quiz, with:
-  - kind (Test or Homework), assignees (every member) and opens, due and close dates;
+  - assignees (every member) and opens, due and close dates;
   - an optional time limit enforced by the server, and one attempt;
   - optional question shuffle;
   - no feedback during the attempt;
@@ -263,7 +282,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - **The best review pattern** is Microsoft's three flag groups (missing content, uncertain conversion, unsupported type), each with "Resolved".
 
 **Suggestion (R3 §2):**
-1. **Page picker.** Tag each page as Questions, Mark scheme, Insert or Skip. Show the credit cost; cap at about 30 pages. PDF first (Office page renders were removed in Q283).
+1. **Page picker (Epo, 2026-11-02).** Pages are shown large. One click selects a page for extraction, and pages left unclicked are skipped. There are no per-page tags or buttons. A mark scheme comes as a separate file, shown as one removable chip. The footer shows the page count and the credit cost. Cap at about 30 pages. PDF first, since Office page renders were removed in Q283.
 2. **Outline** from the already indexed text. The expected question labels give a completeness check.
 3. **Extract** with a vision model and tool calls (`record_question`, `continue_question`) over windows of up to two pages.
    - The Go validator checks each call straight away, and problems go back to the model.
@@ -357,8 +376,8 @@ Steps 2, 3 and 7 can run side by side.
 
 **Assignments**
 
-9. Kinds Test and Homework, shown as "Assignment"? One attempt? Does missing become 0 after the due date? Does no close date accept late work forever?
-10. Overall score: total points, or Test/Homework weights from the start?
+9. One word, "assignment", with an optional time limit, and no Test/Homework kinds? One attempt? Does missing become 0 after the due date? Does no close date accept late work forever?
+10. Overall score: total points now, and categories with weights only later?
 11. Do test answers feed FSRS? Do students see their overall?
 12. Do members who join later get open assignments?
 
