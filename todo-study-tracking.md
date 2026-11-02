@@ -173,6 +173,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - Assignment tasks have no tick box: they complete when the member submits.
   - Ticks feed the owner's "x of 6 done".
 - **Done tasks show no status.** No check icon and no "Submitted" label: they drop out of the list. A "Show done · 1" button at the top right of the section brings them back at the bottom, crossed out (H2 and H2b).
+- **Quizzes carry no check icon anywhere (Epo, 2026-11-03).** A quiz in the task list, done or not, shows no icon: its chip is text only, and the row's icon column is blank. Elsewhere (file trees, editor headers, pickers) the quiz file icon is a question mark in a square, so a check mark never reads as "done".
 - **Layout (Epo, 2026-11-02):** a list without a header row. The section title "Tasks" sat right above a "Task" column header, which looked like a stutter. Each row reads "Do [Past paper 2025 P1] 60 min · Due Fri 7 Nov · 5 of 6 done". "Add a task" sits at the top right of the section, as actions do on other pages.
 - **Mocks follow a smaller global type and tighter lists** (Epo is reducing the app's global font size):
   - body 14 px (was 14.8);
