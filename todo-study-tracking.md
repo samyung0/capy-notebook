@@ -161,6 +161,17 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   6. joining, shared pages and phones.
 - The full gradebook (G1c, grouped like Canvas assignment groups) is kept under "Earlier versions". It could return inside the Assignments tab if owners ask for it.
 
+**Workspace Home (round 2, 2026-11-02).** The Home page depends on the role.
+- **Owner:**
+  - To review: assignments with open answers waiting;
+  - Needs attention: missing work, and members with topics that need practice, linking to Members;
+  - Coming up: due dates with submitted counts.
+- **Member:**
+  - To do: assignments, with Start or Continue;
+  - Practise next: their weakest topic with its evidence ("1 of 4 right"), and Practise.
+- **Both:** Recent files and Activity.
+- **The "Continue" card is removed.** It resumed the last file at its page, which is reading progress, and read progress is gone (§4.1 of the canvas plan). Recent files covers reopening.
+
 **Mock (in build order):**
 - **Members tab (Main):** the summary described above, sorted by who needs attention, with rows that open.
 - **G3, quiz or assignment report:**
@@ -208,7 +219,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 |---|---|
 | Not started | No answers yet |
 | Too early to tell | Fewer than 3 different questions answered |
-| Focus next | 80% sure success is under 60%; clears only below 50%, so it doesn't flicker |
+| Needs practice (was "Focus next", renamed 2026-11-02 because it was unclear) | 80% sure success is under 60%; clears only below 50%, so it doesn't flicker |
 | Getting there | Between the other two |
 | Strong | 80% sure success is over 70% |
 
@@ -376,7 +387,7 @@ Steps 2, 3 and 7 can run side by side.
 **Topics and mastery**
 
 4. A flat list per workspace, 5–20 topics, capped at 30, one per question? Can owners and editors edit them? AI merges only as suggestions?
-5. Labels and thresholds: Too early to tell under 3 questions; Focus next under 60%; Strong over 70%; 80% sureness.
+5. Labels and thresholds: Too early to tell under 3 questions; Needs practice under 60%; Strong over 70%; 80% sureness.
 6. Should flashcards stay out of mastery (memory only)?
 7. Topics replace chapters in suggestions, sessions and the agent's `read_study_progress`?
 
