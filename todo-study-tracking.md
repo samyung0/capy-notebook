@@ -126,12 +126,10 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - **Panel:** beside the rail, it lists the current section's own pages.
   - Study lists Members, Assignments, Topics and My results for owners, and My results, Assignments and Topics for members. These replace the tabs.
   - Files shows the folder tree, and Agent the chats. Home has no panel.
-- **Getting back to the app** (page 7 of the mocks):
-  - N1: a Dashboard item with a back arrow at the top of the rail;
-  - N3: the workspace badge opens a menu with the app's pages, other workspaces and All workspaces.
-  - Both can ship.
-  - Others: Canvas LMS keeps a global rail beside the course sidebar; Teams has an app bar; Notion, Slack and AFFiNE have a workspace switcher.
-  - Capy today: a back arrow in the file header goes to Workspaces.
+- **Getting back to the app (Epo, 2026-11-02): N1.**
+  - A Dashboard item with a back arrow sits at the top of the rail on every workspace page.
+  - Top-level navigation is never hidden in a menu (Epo: "do not hide top level navigation inside some random popups"). The workspace badge only shows which workspace you are in.
+  - Others: Canvas LMS keeps its global rail visible beside the course sidebar; Teams has an app bar. Capy today: a back arrow in the file header goes to Workspaces.
 
 Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then the folder tree.
 - Canvas LMS has a course sidebar with Home first. Moodle and Schoology also keep a course sidebar; Classroom uses top tabs.
