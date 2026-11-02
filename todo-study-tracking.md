@@ -276,6 +276,10 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Anti-cheating on the web is signals, not prevention.** Exam.net and Wayground report tab exits; Canvas says its logs don't prove cheating.
 
 **Suggestion (MVP; later items in R4 §2):**
+- **Make the paper first, then open it (Epo, 2026-11-02).**
+  - "New assignment" (A1) creates a draft from a quiz: title, time limit, attempts, results and switches. It shows in Assignments as Draft.
+  - "Open for submissions" (A6) then sets the open, due and close dates and who takes it.
+  - The Study header button is "New assignment", not "Assign a quiz".
 - **An assignment** is a frozen copy of a quiz, with:
   - assignees (every member) and opens, due and close dates;
   - an optional time limit enforced by the server, and one attempt;
@@ -316,7 +320,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
    - Figures snap to the parser's image boxes and become crops.
 4. **Pair the mark scheme by label in code;** the model only parses its lines.
 5. **Blind-solve** to write worked solutions only where the paper has none. These are labelled AI-written.
-6. **Review screen** with the page beside each question (X2). Then save as a practice quiz, or as the quiz behind an assignment.
+6. **Saved straight away as a quiz (Epo, 2026-11-02).** There is no separate review screen. Extraction ends by opening the new quiz in its editor (X2). The editor is today's question edit dialog laid out as a page, with a plain question list on the left, and has no source panel. Problems show as the quiz's normal issues (`IssueSummary` / `IssueIcon`, e.g. "Image: choose an image file"), never as extraction flags.
 7. **No source is stored (Epo, 2026-11-02).** A saved question keeps no link to its file, page, region or mark-scheme page, and generated questions keep no "written from" file. The page is shown only while reviewing, read from the uploaded file. This drops R3's "save with provenance" and R2's `question_origins` table.
 
 **Cost and time:**
