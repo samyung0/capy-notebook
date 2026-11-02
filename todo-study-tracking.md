@@ -41,7 +41,7 @@ Every suggestion first says how other apps do it, as Epo asked.
 | 4 | Views in this order: members grid (G1), quiz report (G3), member profile (G2), topic grid (G4) | Every LMS starts with a students × work grid | G1–G5 |
 | 5 | Two separate numbers: a grade (points over released work) and per-topic mastery from a small rating model, plus FSRS recall for memory | Canvas gradebook vs mastery gradebook; Elo/Rasch in Lichess, Math Garden, Duolingo | Labels and thresholds |
 | 6 | Follow-up practice: a topic session (70% focus, 30% interleaved), new variants only when the pool runs short | Sparx 60/40, IXL, Century, Kahoot's "from difficult questions" | Approval and credits |
-| 7 | Assignments: a frozen copy of a quiz with dates, a server timer, release rules and a grading queue | Canvas, Moodle, Classroom, Gradescope | Settings and roll-up |
+| 7 | Assignments: a frozen copy of a quiz with a due date, a server timer and a Published switch; marks show on submit, owners change any mark | Canvas, Moodle, Classroom, Gradescope | Settings and roll-up |
 | 8 | Extraction: click the pages to read, two pages at a time with tool calls, pair the mark scheme by label, review beside the page; no source stored | Formative, Microsoft Forms' flags, Gradescope regions | Limits and credits |
 | 9 | Grading with DeepSeek only after a bench run. Marks must quote the answer. Shared pages self-mark open parts. | Gradescope, CoGrader, Markit (teacher in the loop); Save My Exams | Provider, charging |
 
@@ -141,7 +141,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 
 **Round 2 (Epo, 2026-11-02): the Members tab is a summary, and work has two words.**
 - **Two words.**
-  - **Assignment:** quiz work the owner sets, with dates, an optional time limit, one attempt and a release. It counts in Overall.
+  - **Assignment:** quiz work the owner sets, with a due date, an optional time limit and one attempt. Marks show when the member submits. It counts in Overall.
   - **Practice:** any quiz done any time, marked at once, not counted.
   - "Test" and "Homework" are no longer kinds. A timed assignment is still an assignment. Categories with weights can come later if owners ask (Classroom, Canvas, Teams).
 - **What each Study tab shows:**
@@ -149,9 +149,9 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   | Tab | Owner | Member |
   |---|---|---|
   | Members | One line per member: Overall on assignments, x of y done, missing, practice this week, focus topics. A row opens to show recent assignments and topics, with "See profile" and "Draft a follow-up quiz". | (not shown) |
-  | Assignments | Every assignment by status (Scheduled, Open, To review, Released), with submitted counts. Each opens its report, review queue and Release. | Their own: to do, submitted, released results. |
+  | Assignments | Every assignment with its due date and submitted count; drafts are labelled. Each opens its report, and its open answers for changing marks. | Their own: to do and results. |
   | Topics | How the group does per topic (members × topics); rename and merge topics. | Their own labels per topic. |
-  | My results | Their own study, if they study too. | To do, released results, practice, topics, and "What the owner sees". |
+  | My results | Their own study, if they study too. | To do, results, practice, topics, and "What the owner sees". |
 
 - **The mocks are now user flows,** one canvas page each:
   1. owner: from a past paper to an assignment;
@@ -211,7 +211,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **What fits is a rating model with priors,** updated after each answer: Lichess puzzles, Math Garden, Duolingo's first Birdbrain.
 
 **Suggestion:**
-- **Grade.** Marks awarded over marks possible across released assignments, excluding excused work. Work still being graded is left out. Practice never counts. Practice shows separately, with its own average and "not counted". Categories with weights (Classroom, Canvas, Teams) wait until owners ask.
+- **Grade.** Marks awarded over marks possible across submitted assignments, excluding excused work. Work still being graded is left out. Practice never counts. Practice shows separately, with its own average and "not counted". Categories with weights (Classroom, Canvas, Teams) wait until owners ask.
 - **Mastery per topic.** A Rasch-type rating with priors, updated after every graded part (R2 §5):
   - **Formula:** `P = c + (1−c)·σ(a_member + d_member,topic − b_question)`.
   - **Partial credit:** `awarded/marks` enters directly.
@@ -271,9 +271,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - Time-out submits what is saved.
   - A close date cuts the clock short.
   - The server has to close attempts itself, because a closed tab can't submit.
-- **Two release gates:**
-  - what the review shows: Moodle's what × when matrix, Canvas's result view;
-  - when the grade reaches the student: Canvas posting, Classroom Return, Gradescope Publish.
+- **Two release gates elsewhere:** what the review shows, and when the grade reaches the student (Canvas posting, Classroom Return). Capy has neither (Epo, 2026-11-02): marks show on submit.
 - **Anti-cheating on the web is signals, not prevention.** Exam.net and Wayground report tab exits; Canvas says its logs don't prove cheating.
 
 **Suggestion (MVP; later items in R4 §2):**
@@ -287,7 +285,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - an optional time limit enforced by the server, and one attempt;
   - optional question shuffle;
   - no feedback during the attempt;
-  - release on submit, after close or manually, plus a "show answers" switch.
+  - marks shown on submit, plus a "show answers after submitting" switch.
 - **Per student:** extra time and moved dates; excused.
 - **Late and missing:** late is only a flag. Missing counts 0 after the due date, if Epo agrees.
 - **Grading:** a queue for open answers, where the teacher can override any part with a comment. Regrade one question for everyone after a key fix.
@@ -300,7 +298,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Mock:**
   - A1, the Assign dialog;
   - A2, taking a timed test;
-  - A3, the grading queue.
+  - A3, open answers, where the owner changes any AI mark.
 
 ## 8. Questions from uploaded files
 
@@ -365,7 +363,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - DeepSeek exposes only alias model ids.
   - It refuses some politically sensitive content, which matters for HKDSE History and Citizenship.
   - Answers from minors would go to a China-based provider.
-- **Assignments:** grades go through the teacher's queue (A3) before release. Practice gets them instantly.
+- **Grading (Epo, 2026-11-02): DeepSeek marks open answers on submit, for assignments and practice alike, and members see their marks at once.** The owner can change any mark later (A3), and the member's result updates. There is no review queue or release step.
 - **Shared pages:** closed parts are still graded. Open parts show the marking points with "Mark it yourself: Yes, Partly, No", labelled self-marked in the score (F2). The anonymous grading caps and their table go.
 
 ---
@@ -381,7 +379,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
    - `topic` in `add_questions`;
    - the background tagger.
 4. **Views:** G1 grid, G3 report and G2 profile, behind the visibility rules (§2), with the join notice and G5.
-5. **Assignments:** frozen copy, server timer, submit, release, grading queue, gradebook.
+5. **Assignments:** frozen copy, server timer, submit, mark changes by the owner, gradebook.
 6. **Mastery model and follow-up sessions,** after a simulator under `bench/learner-model/`.
 7. **Extraction,** PDF first, plus its bench.
 8. **Grading switch,** after the DeepSeek bench; self-marking on shared pages.
