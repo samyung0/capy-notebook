@@ -167,6 +167,13 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - An assignment appears as a task and ticks itself on submit. Other tasks are ticked by hand, by each member for themselves.
   - Owners add tasks under the table.
 - **Anything empty is not shown.** No tasks means no Tasks section.
+- **Layout (Epo, 2026-11-02):** a list without a header row. The section title "Tasks" sat right above a "Task" column header, which looked like a stutter. Each row reads "Do [Past paper 2025 P1] 60 min · Due Fri 7 Nov · 5 of 6 done". "Add a task" sits at the top right of the section, as actions do on other pages.
+- **Mocks follow a smaller global type and tighter lists** (Epo is reducing the app's global font size):
+  - body 14 px (was 14.8);
+  - meta 12.5 px;
+  - section titles 15 px and page titles 26 px;
+  - table rows 40 px with 12.5 px muted headers;
+  - list rows about 20% shorter.
 - **No cards that repeat Study.** To review and Needs attention were removed. Practise next and Coming up were folded into Tasks or left to My results.
 - **The Continue card is removed.** It resumed reading position, which is read progress, and that is gone.
 
