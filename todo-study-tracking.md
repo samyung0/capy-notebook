@@ -129,7 +129,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - **The rail stays on every workspace page (Epo, 2026-11-02),** focused pages included: page picking, the quiz editor, the report, grading, the timed assignment, Submitted and topic practice. Dialogs open over a page that still shows it.
 - **The Study panel stays open too (Epo, 2026-11-03).** Opening an assignment, its report, its open answers, the timed assignment, Submitted, results or a topic session keeps Members/Assignments/Topics/My results beside the page, with the matching item highlighted.
 - **Every screen links to the next one in its flow (Epo, 2026-11-03).**
-  - The assignment report has three tabs: Questions, Members and **Marked by AI**. Marking screen is that tab, with a question dropdown above the member list, not a separate page. "Check the AI's marks" under a question goes to the same tab.
+  - The assignment report has three tabs: Questions, Members and **Marked by AI**. The marking screen is that tab, with a question dropdown above the member list, not a separate page. "Check the AI's marks" under a question goes to the same tab.
   - Submitted links to Home and to **See results**.
   - My results gives each Needs practice topic a **Practise** button, which opens the topic session.
   - My results shows the same topic labels the owner sees on the member's profile.
