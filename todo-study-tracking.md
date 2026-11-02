@@ -161,13 +161,14 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   6. joining, shared pages and phones.
 - The full gradebook (G1c, grouped like Canvas assignment groups) is kept under "Earlier versions". It could return inside the Assignments tab if owners ask for it.
 
-**Workspace Home (round 2, 2026-11-02).** The Home page depends on the role.
-- **Owner:** Coming up, with due dates and submitted counts. Home doesn't repeat Study: the review queue and members who need attention live in Study's Assignments and Members pages (Epo, 2026-11-02).
-- **Member:**
-  - To do: assignments, with Start or Continue;
-  - Practise next: their weakest topic with its evidence ("1 of 4 right"), and Practise.
-- **Both:** Recent files and Activity.
-- **The "Continue" card is removed.** It resumed the last file at its page, which is reading progress, and read progress is gone (§4.1 of the canvas plan). Recent files covers reopening.
+**Workspace Home (Epo, 2026-11-02): a Tasks table, then Recent files and Activity.**
+- **Tasks** is the plan task list Epo described earlier: one line per task, with @ chips linking files and quizzes (`todo-canvas-workspace.md` §4.3).
+  - Shown as a table: Task, Due, and either members done (owner) or a tick (member).
+  - An assignment appears as a task and ticks itself on submit. Other tasks are ticked by hand, by each member for themselves.
+  - Owners add tasks under the table.
+- **Anything empty is not shown.** No tasks means no Tasks section.
+- **No cards that repeat Study.** To review and Needs attention were removed. Practise next and Coming up were folded into Tasks or left to My results.
+- **The Continue card is removed.** It resumed reading position, which is read progress, and that is gone.
 
 **Mock (in build order):**
 - **Members tab (Main):** the summary described above, sorted by who needs attention, with rows that open.
