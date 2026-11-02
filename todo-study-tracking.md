@@ -121,7 +121,19 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
   - Classroom, Teams and Schoology use grade categories, and the overall is total points or weighted by category.
 - **Many columns:** gradebooks pin the student and total columns and scroll the rest sideways, filtered by grading period (Canvas, Classroom, Moodle).
 
-**Workspace sidebar** (Epo, 2026-11-02): Home, Files, Agent, Study, then the folder tree.
+**Workspace shell (Epo, 2026-11-02): S2 from the canvas mocks.** The labelled icon rail is picked over a single sidebar.
+- **Rail:** the workspace badge, then Home, Files, Agent and Study, each icon with its label below. Your avatar sits at the bottom.
+- **Panel:** beside the rail, it lists the current section's own pages.
+  - Study lists Members, Assignments, Topics and My results for owners, and My results, Assignments and Topics for members. These replace the tabs.
+  - Files shows the folder tree, and Agent the chats. Home has no panel.
+- **Getting back to the app** (page 7 of the mocks):
+  - N1: a Dashboard item with a back arrow at the top of the rail;
+  - N3: the workspace badge opens a menu with the app's pages, other workspaces and All workspaces.
+  - Both can ship.
+  - Others: Canvas LMS keeps a global rail beside the course sidebar; Teams has an app bar; Notion, Slack and AFFiNE have a workspace switcher.
+  - Capy today: a back arrow in the file header goes to Workspaces.
+
+Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then the folder tree.
 - Canvas LMS has a course sidebar with Home first. Moodle and Schoology also keep a course sidebar; Classroom uses top tabs.
 - Mocks:
   - G1 shows the sidebar with Study's pages as tabs;
