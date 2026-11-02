@@ -129,7 +129,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - **The rail stays on every workspace page (Epo, 2026-11-02),** focused pages included: page picking, the quiz editor, the report, grading, the timed assignment, Submitted and topic practice. Dialogs open over a page that still shows it.
 - **The Study panel stays open too (Epo, 2026-11-03).** Opening an assignment, its report, its open answers, the timed assignment, Submitted, results or a topic session keeps Members/Assignments/Topics/My results beside the page, with the matching item highlighted.
 - **Every screen links to the next one in its flow (Epo, 2026-11-03).**
-  - The assignment report has three tabs: Questions, Members and **Open answers**. The open answers screen is that tab, with a question dropdown above the member list, not a separate page. "Check the AI's marks" under an open question goes to the same tab.
+  - The assignment report has three tabs: Questions, Members and **Marked by AI**. Marking screen is that tab, with a question dropdown above the member list, not a separate page. "Check the AI's marks" under a question goes to the same tab.
   - Submitted links to Home and to **See results**.
   - My results gives each Needs practice topic a **Practise** button, which opens the topic session.
   - My results shows the same topic labels the owner sees on the member's profile.
@@ -290,7 +290,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **No exam kind.** "Before you start" appears only because an assignment has a time limit: starting starts the timer. Untimed assignments open straight away. The dialog shows just the time limit, large with a clock, and "12 questions · 40 marks". Attempts, due date, saving and marks are left out because they don't help at that moment.
 - **Written answers** on the timed page use today's quiz style: ruled lines, as on exam paper (`ruled-lines`), not a boxed textarea.
 - **"Come back later"** (bookmark icon; it was "Flag", which read like reporting a question) only marks a question for the member to return to. It's shown on the question's square and isn't recorded anywhere else.
-- **Submitted** shows just "Your mark: 31 / 40", with links to Home and See results. **Results** keeps the mark at the top right. Below the title, after a gap, one row has the right/partly/wrong counts on the left and "Practise again" on the right.
+- **Submitted** shows the mark so far ("Your mark so far: 27 / 30") and how many answers marked by AI wait for the owner, with links to Home and See results. **Results** keeps the mark at the top right. Below the title, after a gap, one row has the right/partly/wrong counts on the left and "Practise again" on the right.
 - **Roles stay owner, editor and viewer.**
   - Members who only study are viewers: no Upload and no Make a quiz from a file.
   - Editors get the same Upload and extraction as the owner.
@@ -318,7 +318,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Mock:**
   - A1, the Assign dialog;
   - A2, taking a timed test;
-  - A3, the report's Open answers tab, where the owner changes any AI mark.
+  - A3, the report's Marked by AI tab, where the owner approves or changes AI marks.
 
 ## 8. Questions from uploaded files
 
@@ -383,7 +383,13 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - DeepSeek exposes only alias model ids.
   - It refuses some politically sensitive content, which matters for HKDSE History and Citizenship.
   - Answers from minors would go to a China-based provider.
-- **Grading (Epo, 2026-11-02): DeepSeek marks open answers on submit, for assignments and practice alike, and members see their marks at once.** The owner can change any mark later (A3), and the member's result updates. There is no review queue or release step.
+- **Grading (Epo, 2026-11-02; approval brought back 2026-11-03): DeepSeek marks open answers on submit.**
+  - **Practice:** members see AI marks at once.
+  - **Assignments:** an AI mark reaches the member only after the owner approves it. Questions with one right answer are still marked at once, so Submitted shows the mark so far, and results show "Waiting for Ms Wong" on the held answers.
+  - **Where approval lives:** Study → Assignments → the assignment → the **Marked by AI** tab (A3). The Assignments list row says "5 AI marks to approve" (W2), and "Check the AI's marks" under each question in the report opens the tab.
+  - **In the tab:** pick the question, then go through the members. Rows waiting show "AI 3 / 6"; approved rows show just the mark. Approve moves to the next one, Approve all clears the question, and changing a mark approves it too.
+  - **Words:** the tab is named after who marked the answers ("Marked by AI"), not the question type; "Open answer" stays only as a question type.
+  - Not decided: a per-assignment switch to skip approval, and whether the owner hears about waiting marks anywhere besides the Assignments list.
 - **Shared pages:** closed parts are still graded. Open parts show the marking points with "Mark it yourself: Yes, Partly, No", labelled self-marked in the score (F2). The anonymous grading caps and their table go.
 
 ---
