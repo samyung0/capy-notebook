@@ -127,6 +127,12 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
   - Study lists Members, Assignments, Topics and My results for owners, and My results, Assignments and Topics for members. These replace the tabs.
   - Files shows the folder tree, and Agent the chats. Home has no panel.
 - **The rail stays on every workspace page (Epo, 2026-11-02),** focused pages included: page picking, the quiz editor, the report, grading, the timed assignment, Submitted and topic practice. Dialogs open over a page that still shows it.
+- **The Study panel stays open too (Epo, 2026-11-03).** Opening an assignment, its report, its open answers, the timed assignment, Submitted, results or a topic session keeps Members/Assignments/Topics/My results beside the page, with the matching item highlighted.
+- **Every screen links to the next one in its flow (Epo, 2026-11-03).**
+  - The assignment report has three tabs: Questions, Members and **Open answers**. The open answers screen is that tab, with a question dropdown above the member list, not a separate page. "Check the AI's marks" under an open question goes to the same tab.
+  - Submitted links to Home and to **See results**.
+  - My results gives each Needs practice topic a **Practise** button, which opens the topic session.
+  - My results shows the same topic labels the owner sees on the member's profile.
 - **Getting back to the app (Epo, 2026-11-02): N1.**
   - A Dashboard item with a back arrow sits at the top of the rail on every workspace page.
   - Top-level navigation is never hidden in a menu (Epo: "do not hide top level navigation inside some random popups"). The workspace badge only shows which workspace you are in.
@@ -172,7 +178,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - Members mark plain tasks ("Read …", "Make notes on …") done themselves. Nothing tries to detect reading: read progress is gone, and opening a file proves little (Canvas's "view" rule only means the page was opened).
   - Assignment tasks have no tick box: they complete when the member submits.
   - Ticks feed the owner's "x of 6 done".
-- **Done tasks show no status.** No check icon and no "Submitted" label: they drop out of the list. A "Show done · 1" button at the top right of the section brings them back at the bottom, crossed out (H2 and H2b).
+- **Done tasks show no status.** No check icon and no "Submitted" label: they drop out of the list. A "Show done" button (no count) at the top right of the section brings them back at the bottom, crossed out (H2 and H2b).
 - **Quizzes carry no check icon anywhere (Epo, 2026-11-03).** A quiz in the task list, done or not, shows no icon: its chip is text only, and the row's icon column is blank. Elsewhere (file trees, editor headers, pickers) the quiz file icon is a question mark in a square, so a check mark never reads as "done".
 - **Layout (Epo, 2026-11-02):** a list without a header row. The section title "Tasks" sat right above a "Task" column header, which looked like a stutter. Each row reads "Do [Past paper 2025 P1] 60 min · Due Fri 7 Nov · 5 of 6 done". "Add a task" sits at the top right of the section, as actions do on other pages.
 - **Mocks follow a smaller global type and tighter lists** (Epo is reducing the app's global font size):
@@ -284,7 +290,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **No exam kind.** "Before you start" appears only because an assignment has a time limit: starting starts the timer. Untimed assignments open straight away. The dialog shows just the time limit, large with a clock, and "12 questions · 40 marks". Attempts, due date, saving and marks are left out because they don't help at that moment.
 - **Written answers** on the timed page use today's quiz style: ruled lines, as on exam paper (`ruled-lines`), not a boxed textarea.
 - **"Come back later"** (bookmark icon; it was "Flag", which read like reporting a question) only marks a question for the member to return to. It's shown on the question's square and isn't recorded anywhere else.
-- **Submitted** shows just "Your mark: 31 / 40". **Results** keeps the mark at the top right. Below the title, after a gap, one row has the right/partly/wrong counts on the left and "Practise again" on the right.
+- **Submitted** shows just "Your mark: 31 / 40", with links to Home and See results. **Results** keeps the mark at the top right. Below the title, after a gap, one row has the right/partly/wrong counts on the left and "Practise again" on the right.
 - **Roles stay owner, editor and viewer.**
   - Members who only study are viewers: no Upload and no Make a quiz from a file.
   - Editors get the same Upload and extraction as the owner.
@@ -312,7 +318,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Mock:**
   - A1, the Assign dialog;
   - A2, taking a timed test;
-  - A3, open answers, where the owner changes any AI mark.
+  - A3, the report's Open answers tab, where the owner changes any AI mark.
 
 ## 8. Questions from uploaded files
 
