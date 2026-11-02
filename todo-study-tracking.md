@@ -277,10 +277,11 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Anti-cheating on the web is signals, not prevention.** Exam.net and Wayground report tab exits; Canvas says its logs don't prove cheating.
 
 **Suggestion (MVP; later items in R4 §2):**
-- **Make the paper first, then open it (Epo, 2026-11-02).**
-  - "New assignment" (A1) creates a draft from a quiz: title, time limit, attempts, results and switches. It shows in Assignments as Draft.
-  - "Open for submissions" (A6) then sets the open, due and close dates and who takes it.
-  - The Study header button is "New assignment", not "Assign a quiz".
+- **Two states only, Draft or published (Epo, 2026-11-02).**
+  - "New assignment" (A1) has a Published switch that is on by default, so the assignment can be submitted as soon as it is created. With the switch off it is a draft.
+  - Lists show no status for published assignments, only a "Draft" label on drafts. There is no Scheduled, Open, To review or Released status, and no separate "Open for submissions" step: A6 is removed.
+  - Rows carry plain facts ("Due Fri 7 Nov", "5 of 6 submitted", "4 open answers to review") and actions (Review).
+  - The Study header button is "New assignment".
 - **An assignment** is a frozen copy of a quiz, with:
   - assignees (every member) and opens, due and close dates;
   - an optional time limit enforced by the server, and one attempt;
