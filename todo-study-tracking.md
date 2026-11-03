@@ -9,7 +9,7 @@ Status 2026-11-03: chapters become topics, which replace folders (§1, §3). Rou
   - R3-extract-grade: extraction and grading
   - R4-assignments: practice vs graded work
   - R5-inventory: what Capy has today
-- Mocks: the Design canvas at https://claude.ai/artifact/3fFhNn8JpR5rhLTz7kr2RP. Artboard names (G1, A2, …) are used below.
+- Mocks: the Design canvas at https://claude.ai/artifact/1TY5cpr5tDoQZTM2PvGZNd. Artboard names (G1, A2, …) are used below.
 
 Every suggestion first says how other apps do it, as Epo asked.
 
