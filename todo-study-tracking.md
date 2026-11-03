@@ -607,6 +607,14 @@ Jev scored 1,730 (88.9%), +89.
 - the grading prompt block;
 - bench round 3 on 0731 and v4.1 Flash with the rules block and copy check.
 
+**Extraction model, decided by test (Epo: not direct DeepSeek; `claude/study-extraction` ddd560f26):** extraction has its own `extraction` slot, pinned to `deepseek/deepseek-v4.1-flash-1017` on OpenRouter (InferenceNet then Cloudflare), the same pin as captions. It runs with reasoning at medium; the old "reasoning off" was our own setting.
+- **Quality against direct Flash:** MCQ 87/90 (direct 175/180). Paper 1 final answers 69/72 (direct 107/108); the misses are open proof parts without a model answer. Part marks 66/72 (direct 99/108).
+- **Cost and time:** about half the credits (2022 Paper 2: 52–53 against 108–145), but slower (about 300 s against 200–280 s).
+- **Open:**
+  - The 1017 price row is 1000 on UAT against 1100 listed now.
+  - Extraction shares 1017's 40-call concurrency with captions and ghost text.
+  - The backup provider, Cloudflare, was rate-limited during the test.
+
 **Captioning:** image captions already use the 1017 pin (`deepseek/deepseek-v4.1-flash-1017` via OpenRouter, providers InferenceNet and Cloudflare). If the extraction test picks 1017, extraction and captioning share one image model.
 
 ### Switching from Jev
