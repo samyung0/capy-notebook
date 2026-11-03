@@ -476,13 +476,19 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   200 runes; set through the API and chat's `create_topic`, no field in the UI
   yet), and a file or material has at most one (`topic_id`). The Files panel
   groups by topic in order, then Other files (no topic), as plain group rows
-  that only open and close (mock T3: 32px rows, a 16px chevron, the name in
-  bold, the count muted at the end, items indented under the name, 1px between
-  rows); there is no topic page.
-  Dragging an item onto another topic moves it there. The Add file dialog's
-  rows (upload, import, Your files) start in the open item's topic, else
-  Other files, and each row's picker changes it; nothing files itself. The
-  owner's plan caps a workspace's topics (10 Free, 20 Pro,
+  that only open and close (board T3: 32px rows, a 16px chevron, the name in
+  bold, the count muted at the end, 1px between rows); there is no topic page.
+  Item rows are 30px with a 16px icon and one truncated line starting under
+  the group's name, the open item shown by the row's background, a quiz read
+  as "<title> · quiz", and no progress mark (the Study page's Contents keeps
+  those). Dragging an item onto another topic moves it there. The Add file
+  dialog's Upload tab asks one Topic for the whole upload (board T4, starting
+  on the open item's topic, else Other files) and, while the dialog is open,
+  Files highlights that topic's row in place of the open item's; Import and
+  Your files keep their own pickers starting there too. Nothing files itself.
+  "Other files" names the no-topic group everywhere except the Study page's
+  Contents and AI generate's sources, which say Others. The owner's plan caps
+  a workspace's topics (10 Free, 20 Pro,
   [backend-storage-quota.md](backend-storage-quota.md)).
 - Owner and effective editors can add/upload, rename, move, and trash source
   files and editor assets. Deleting a file moves it to the workspace trash for

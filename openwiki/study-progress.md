@@ -228,7 +228,7 @@ focus preference doubles its part.
 Groups sum their items' parts, so more practised content ranks higher and
 nothing ranks by a rate. Only items at R at most 0.9 (FSRS's target) count.
 A workspace without topics is one group; otherwise each topic and the
-items outside topics (Others) is one, and when none passes alone but the
+items outside topics (Other files) is one, and when none passes alone but the
 whole workspace does, the workspace is the group. A group shows when its sum
 times the workspace's interest is at least 3; interest is 1 until 30 days
 after the last progress change in the workspace, eases to 0.25 by 90 days and
@@ -391,10 +391,9 @@ in other workspaces.
 
 ### Marks and menus
 
-While progress shows, Files panel rows (`FileListItem`, `MaterialListItem`) show a
-check for `done`, a dashed circle for `started` and a muted title for
-`removed`, at the row end left of the hover ⋮ (at the right edge in the
-Files dropdown below lg, whose rows have no ⋮). The row ⋮ gains Mark as read or
+Files panel rows (`FileListItem`, `MaterialListItem`) carry no progress mark
+since Epo's 2026-11-03 board T3 (the Study page's Contents rows keep theirs);
+while progress shows, a `removed` row's title is muted. The row ⋮ gains Mark as read or
 Mark as unread and Stop tracking or Start tracking; that menu is rendered only
 for roles that can edit, so viewers use the viewer header instead.
 `CenterContentHeader` has a Mark as read toggle right of the view/edit toggle
@@ -442,7 +441,7 @@ added to the topic later is not in the plan.
   reset when the menu closes). Add files (accent, left of the Filter; the UI
   never says "steps";
   `AddStepsPopover.tsx`: a workspace dropdown, then Whole workspace, its
-  topics, Others and, behind Single files, every tracked file and
+  topics, Other files and, behind Single files, every tracked file and
   material, each workspace with its icon; a tick picks the row's tracked
   files, so Whole workspace ticks every topic and file and a row with only
   some of its files picked (or in the plan) shows a dash; a row whose files
@@ -592,7 +591,7 @@ and has progress on. Rows lead with the 32px workspace icon (`rounded-button`,
 as on workspace cards).
 
 - **Worth reviewing**: the suggestions (above), each with its group (topic,
-  Others, or the workspace with "Whole workspace"), the reason in words
+  Other files, or the workspace with "Whole workspace"), the reason in words
   (`reviewReason` in `reviewText.ts`; phrasing to be tuned), the mode label in
   its theme colour (Tricky warning, Fading info, Just learned success) and
   "N items", and Start, which opens the session straight away. Study
@@ -634,7 +633,7 @@ start A to Z, the rest newest or largest first, a second click flips) and the
 list pages' filter (workspace, has quiz questions or flashcards), both kept in
 the URL (`parsePastReviewsSearch`). Study Plan is a plan session's plan, else
 "Default Plan", and sorts plan sessions by name with the others last; Topic
-is a topic session's topic or Others (empty for whole-workspace and plan
+is a topic session's topic or Other files (empty for whole-workspace and plan
 sessions) and sorts topic sessions by name with the rest last; status puts
 completed before stopped. Quiz is marks of the questions answered, Flashcards
 cards rated Good or Easy. A session ended early shows "Stopped after
@@ -650,7 +649,7 @@ number columns, and every column shares the leftover width.
 `/learning/reviews/$sessionId` (`src/routes/ReviewResult.tsx`, breadcrumb
 Learning / Review), and the end of a session, draw `ReviewResultBody`
 (`src/features/study/ReviewResult.tsx`) over `GET /api/review/sessions/{id}/result`.
-The title is the group (topic, Others, or the workspace), the meta the
+The title is the group (topic, Other files, or the workspace), the meta the
 start's date and time, workspace and minutes. "N better than last time" (plain
 green, only when N > 0) sits beside an accent Review again. A split view puts
 questions (marks) left and flashcards (Good or Easy of all) right, one column

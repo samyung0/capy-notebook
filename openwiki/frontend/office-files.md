@@ -2131,6 +2131,20 @@ citation scrolling.
 
 ## Upload and import analysis
 
+**The Upload tab is board T4** (Epo 2026-11-03): under the drop area, a Files
+list with one row per file (icon, name, size, remove), then one Topic dropdown
+for the whole upload (the open item's topic, else Other files; topics in order
+with Other files last and no New topic), then Cancel and Upload. There is no
+parse-mode choice, File Details heading or cost summary: each file goes with
+`defaultParseMode`, or with no parsing when the browser's analysis below
+refuses fast parsing (the row says it is added without processing) or the
+uploader is out of AI credits (`outOfCredits` in `features/billing/credits.ts`:
+nothing available and auto-reload off), when one line says files won't be
+processed and every file goes store-only. A row still shows what stops it (a
+name over the limit, an audio length past the cap, analysis still running)
+and Upload waits for it. The Import tab keeps the per-row topic and parse-mode
+pickers and the cost summary described below.
+
 Local selection and Google Drive/OneDrive selection both lead to the same
 details dialog. Files above the uploader's 10 MiB/30 MiB cap are
 rejected before they enter the list, except DOCX, PPTX, XLSX and raster
