@@ -16,6 +16,7 @@ export interface ExtractionReport {
   pages: number;
   recorded: string[];
   schemeRefused: string[];
+  schemeRepeats: string[];
   stopped: ExtractionReportStopped;
   unpaired: string[];
   windows: number;

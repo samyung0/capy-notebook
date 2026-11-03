@@ -24,11 +24,12 @@ A fixed pipeline, like /generate, not the chat agent:
 The printed option order is kept (``add_questions`` shuffles; this does not),
 and option lines the model also copied into a part's text are taken out. No
 question is left out for want of a key. A worked-out solution carries an
-"AI-written" label. Each figure the model boxes is cropped from its page at the
-end and placed after the text of the part it names, as an image block whose
-asset is ``figure:<id>``; the ``done`` event carries the crops and Go stores
-them as the quiz's own editor assets. Nothing links a question to its file,
-page or region (§8 item 7).
+"AI-written" label. Each figure a question needs is named in its window, boxed
+at the end by a call that sees its page alone, cropped from that page and
+placed after the text of the part it names, as an image block whose asset is
+``figure:<id>``; the ``done`` event carries the crops and Go stores them as the
+quiz's own editor assets. Nothing links a question to its file, page or region
+(§8 item 7).
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
+import dataclasses
 import functools
 import json
 import logging
@@ -79,6 +81,8 @@ SCHEME_MAX_TOKENS = 12_000
 # and a small figure stays small; the crop's long side is still at most
 # CAPY_CAPTURE_MAX_EDGE.
 FIGURE_PAGE_EDGE = 2_200
+# The locate call's reply: a few boxes.
+LOCATE_MAX_TOKENS = 1_000
 # Indexed text shown per page, and scheme text per parse call.
 PAGE_TEXT_CHARS = 6_000
 SCHEME_CHUNK_CHARS = 12_000
@@ -119,13 +123,14 @@ class Page:
 
 @dataclass(frozen=True)
 class Figure:
-    """A figure the model boxed: its page, the box on the 0-1000 grid, the
-    part whose text it follows ("" for the stem) and its description."""
+    """A figure a question needs: its page, the part whose text it follows
+    ("" for the stem), its description, and its box on the 0-1000 grid once
+    located (``locate_figures``)."""
 
     page: Page
-    box: list[float]
     part: str
     description: str
+    box: list[float] | None = None
 
 
 @dataclass(frozen=True)
@@ -388,6 +393,19 @@ def record(item: Any, ai_label: str) -> Recorded:
     )
 
 
+def _box(raw: Any) -> list[float] | None:
+    """A [left, top, right, bottom] box on the 0-1000 grid, held to the page,
+    or None when it is not one."""
+    if not (
+        isinstance(raw, list)
+        and len(raw) == 4
+        and all(type(v) in (int, float) and math.isfinite(v) for v in raw)
+    ):
+        return None
+    box = [min(1000.0, max(0.0, float(v))) for v in raw]
+    return box if box[0] < box[2] and box[1] < box[3] else None
+
+
 def read_figures(
     raw: Any, pages: list[Page], part_labels: list[str]
 ) -> tuple[list[Figure], str | None]:
@@ -404,22 +422,6 @@ def read_figures(
                 [],
                 f"{name}.image: expected {' or '.join(str(n + 1) for n in range(len(pages)))}, the page image it is on",
             )
-        box = item.get("box")
-        if not (
-            isinstance(box, list)
-            and len(box) == 4
-            and all(type(v) in (int, float) and math.isfinite(v) for v in box)
-        ):
-            return (
-                [],
-                f"{name}.box: expected [left, top, right, bottom] on a 0-1000 grid",
-            )
-        box = [min(1000.0, max(0.0, float(v))) for v in box]
-        if not (box[0] < box[2] and box[1] < box[3]):
-            return (
-                [],
-                f"{name}.box: left must be less than right and top less than bottom",
-            )
         part = str(item.get("part") or "").strip()
         if part and label_key(part) not in parts:
             return [], (
@@ -432,7 +434,7 @@ def read_figures(
                 f"{name}.description: expected at most "
                 f"{limits.QUESTION_DESCRIPTION_MAX} characters; sent {len(description)}"
             )
-        read.append(Figure(pages[image - 1], box, part, description))
+        read.append(Figure(pages[image - 1], part, description))
     return read, None
 
 
@@ -444,6 +446,8 @@ async def placed(held: Recorded, crops: dict[str, str]) -> dict[str, Any]:
         return held.question
     question = copy.deepcopy(held.question)
     for n, figure in enumerate(held.figures, 1):
+        if figure.box is None:
+            raise AssertionError("a figure is located before it is placed")
         jpeg, (width, height) = await figure.page.crop(figure.box)
         figure_id = f"q{label_key(held.label)}-{n}"
         crops[figure_id] = base64.b64encode(jpeg).decode()
@@ -506,25 +510,41 @@ def entries_from(data: Any) -> list[Entry]:
     return entries
 
 
-def _merged(entries: list[Entry]) -> dict[tuple[str, str], Entry]:
-    """Entries by label; one split across scheme chunks becomes one."""
+def _merged(
+    pieces: list[list[Entry]],
+) -> tuple[dict[tuple[str, str], Entry], list[str]]:
+    """Entries by label, from each scheme piece's entries in order. An entry
+    the scheme split across two pieces (the last of one piece and the first
+    of the next, under one label) becomes one. Any other repeat of a label is
+    another question's entry the parse named wrongly (the bench saw a later
+    question's solution named 2021 Q8(b)(ii), doubling its marks): the first
+    stays, and the repeats are returned by name."""
     out: dict[tuple[str, str], Entry] = {}
-    for entry in entries:
-        key = (label_key(entry.question), label_key(entry.part))
-        held = out.get(key)
-        if held is None:
-            out[key] = Entry(
-                entry.question,
-                entry.part,
-                entry.answer,
-                list(entry.points),
-                entry.solution,
-            )
-            continue
-        held.answer = held.answer or entry.answer
-        held.points.extend(entry.points)
-        held.solution = "\n".join(s for s in (held.solution, entry.solution) if s)
-    return out
+    repeats: list[str] = []
+    last: tuple[str, str] | None = None
+    for piece in pieces:
+        for index, entry in enumerate(piece):
+            key = (label_key(entry.question), label_key(entry.part))
+            held = out.get(key)
+            if held is None:
+                out[key] = Entry(
+                    entry.question,
+                    entry.part,
+                    entry.answer,
+                    list(entry.points),
+                    entry.solution,
+                )
+            elif index == 0 and key == last:
+                held.answer = held.answer or entry.answer
+                held.points.extend(entry.points)
+                held.solution = "\n".join(
+                    s for s in (held.solution, entry.solution) if s
+                )
+            else:
+                repeats.append(part_name(entry.question, entry.part))
+        if piece:
+            last = (label_key(piece[-1].question), label_key(piece[-1].part))
+    return out, repeats
 
 
 def _letters(answer: str, count: int) -> list[int]:
@@ -794,9 +814,9 @@ async def parse_schemes(
     *,
     model: ModelConfig,
     labels: list[tuple[str, list[str]]],
-) -> list[Entry]:
-    """Every scheme or answer file's entries, one parse call per text piece.
-    ``labels`` are the recorded questions' labels with their part labels, so
+) -> list[list[Entry]]:
+    """Each scheme or answer file piece's entries, one parse call per piece,
+    in order. ``labels`` are the recorded questions' labels with their part labels, so
     entries are named as the questions are (Epo 2026-11-03: 2024 Q3(b) was
     read as b(ii))."""
 
@@ -823,7 +843,7 @@ async def parse_schemes(
         for f in files
         for piece in _chunks(f.text)
     ]
-    return [entry for found in await asyncio.gather(*calls) for entry in found]
+    return list(await asyncio.gather(*calls))
 
 
 async def _attempted(call: Callable[[], Awaitable[Any]]) -> Any:
@@ -921,6 +941,59 @@ async def _window(run: Run, pages: list[Page], *, model: ModelConfig) -> None:
         run.open_label = recorded_here[-1]
 
 
+async def locate(
+    page: Page, figures: list[tuple[str, str]], *, model: ModelConfig
+) -> list[list[float]]:
+    """The boxes of a page's figures, (question label, description) each, from
+    a call that sees that page alone, reasoning off."""
+    message = await models.complete(
+        prompts.locate_messages(await page.image(), figures),
+        model=model,
+        response_format={"type": "json_object"},
+        max_tokens=LOCATE_MAX_TOKENS,
+        reasoning=False,
+        call_purpose="extraction_figures",
+    )
+    data = extract_json(getattr(message, "content", "") or "")
+    raw = data.get("boxes") if isinstance(data, dict) else None
+    boxes = [_box(b) for b in raw] if isinstance(raw, list) else []
+    if len(boxes) != len(figures) or None in boxes:
+        # As a scheme reply that is not JSON: a failed attempt.
+        raise elitellm.ProviderError("the figure boxes reply was not one box a figure")
+    return [box for box in boxes if box is not None]
+
+
+async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> None:
+    """Give each saved figure the box a call seeing its page alone answers:
+    boxes asked of the window, beside two pages and the whole extraction,
+    were too far off to crop from (2022 Paper 2: 3 of 10 whole, 3 missing the
+    figure; bench/extraction/reports/2026-11-04-figures-and-fidelity.md)."""
+    pages: dict[int, tuple[Page, list[tuple[Recorded, int]]]] = {}
+    for question in held:
+        for index, figure in enumerate(question.figures):
+            pages.setdefault(id(figure.page), (figure.page, []))[1].append(
+                (question, index)
+            )
+
+    async def one(page: Page, items: list[tuple[Recorded, int]]) -> None:
+        boxes = await locate(
+            page,
+            [(q.label, q.figures[i].description) for q, i in items],
+            model=model,
+        )
+        for (question, index), box in zip(items, boxes):
+            question.figures[index] = dataclasses.replace(
+                question.figures[index], box=box
+            )
+
+    await asyncio.gather(
+        *(
+            _attempted(functools.partial(one, page, items))
+            for page, items in pages.values()
+        )
+    )
+
+
 def _credits_out() -> bool:
     state = accounting.current()
     return bool(state and state.credits_exhausted)
@@ -967,7 +1040,7 @@ async def run(
             stopped = "output_limit"
             break
     held = current.held()
-    entries = (
+    entries, repeats = (
         _merged(
             await parse_schemes(
                 schemes,
@@ -976,16 +1049,15 @@ async def run(
             )
         )
         if schemes and held
-        else {}
+        else ({}, [])
     )
     used: set[tuple[str, str]] = set()
-    saved: list[dict[str, Any]] = []
     worked_out: list[str] = []
     disagreements: list[str] = []
     refused: list[str] = []
     marks_differ: list[str] = []
     figures: list[str] = []
-    crops: dict[str, str] = {}
+    finals: list[Recorded] = []
     for question in held:
         paired = pair(question, entries)
         if paired.matched:
@@ -999,7 +1071,7 @@ async def run(
                 refused.append(question.label)
             else:
                 question = paired.held
-        saved.append(await placed(question, crops))
+        finals.append(question)
         if WORKED_OUT in question.sources:
             worked_out.append(question.label)
         parts_total = sum(part["marks"] for part in question.question["parts"])
@@ -1007,6 +1079,9 @@ async def run(
             marks_differ.append(question.label)
         if question.figures:
             figures.append(question.label)
+    await locate_figures(finals, model=model)
+    crops: dict[str, str] = {}
+    saved = [await placed(question, crops) for question in finals]
     recorded = {label_key(label) for label in current.labels()}
     yield {
         "type": "done",
@@ -1034,6 +1109,9 @@ async def run(
                 {entries[key].question for key in entries if key not in used},
                 key=lambda label: (len(label), label),
             ),
+            # Scheme entries named like an earlier one and not its
+            # continuation: left out rather than merged into it.
+            "schemeRepeats": repeats,
             # Questions saved with figures cropped from the page, for the
             # starter to check.
             "figures": figures,

@@ -22,6 +22,17 @@ providers with fallbacks off, and their results record which provider served
 each call and what OpenRouter billed. ``--effort`` sets the page windows'
 thinking (mid, as the gateway pins it).
 
+Figures are cropped as production crops them (``FIGURE_PAGE_EDGE``) and written
+to ``.results/crops/<paper>-<model>-<n>/<id>.jpg``; the result lists each one's
+page, box, part and size. The fidelity check compares each saved question's
+text (stem, parts, options, table cells) and each parsed scheme entry with the
+page's own text: the PDF text layer where there is one, else both the refs
+folder's Tesseract OCR (``<pdf>.txt``) and the cached VLM page read, since the
+HKDSE scans have no text layer. It counts numbers and units missing from both
+readings (unsupported) or present in both and missing from the extraction
+(dropped), LaTeX that KaTeX cannot parse and unpaired $ signs, and scores
+gold tables cell by cell.
+
 Writes ``.results/<paper>-<model>-<n>.json`` (questions, report, usage, scores)
 and prints the scores. Keys are read into the process only, never printed.
 """
@@ -30,6 +41,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import collections
 import copy
 import dataclasses
 import functools
@@ -227,9 +240,19 @@ async def run(args) -> dict:
         jpeg, _box, _size = capture.render(pdf, number, None, cfg.capture_max_edge)
         return capture.data_url(jpeg)
 
+    async def crop(number: int, box: list[float]) -> tuple[bytes, tuple[int, int]]:
+        jpeg, _box, size = capture.render(
+            pdf, number, box, cfg.capture_max_edge, extraction.FIGURE_PAGE_EDGE
+        )
+        return jpeg, size
+
     pages = [
         extraction.Page(
-            number, gold["pdf"], texts[number], functools.partial(image, number)
+            number,
+            gold["pdf"],
+            texts[number],
+            functools.partial(image, number),
+            functools.partial(crop, number),
         )
         for number in gold["pages"]
     ]
@@ -273,11 +296,44 @@ async def run(args) -> dict:
     parse_schemes = extraction.parse_schemes
 
     async def kept(files, *, model, labels):
-        entries = await parse_schemes(files, model=model, labels=labels)
-        parsed.extend(dataclasses.asdict(entry) for entry in entries)
-        return entries
+        pieces = await parse_schemes(files, model=model, labels=labels)
+        parsed.extend(dataclasses.asdict(e) for piece in pieces for e in piece)
+        return pieces
 
     extraction.parse_schemes = kept
+    # Each placed figure's page, box and part, as the crops are made.
+    figures: list[dict] = []
+    place = extraction.placed
+
+    async def placed(held, crops):
+        out = await place(held, crops)
+        for n, figure in enumerate(held.figures, 1):
+            figures.append(
+                {
+                    "label": held.label,
+                    "id": f"q{extraction.label_key(held.label)}-{n}",
+                    "page": figure.page.number,
+                    "box": figure.box,
+                    "window_box": window_boxes.get((held.label, n)),
+                    "part": figure.part,
+                    "description": figure.description,
+                }
+            )
+        return out
+
+    extraction.placed = placed
+    # The window's boxes, before the locate call replaces them.
+    window_boxes: dict[tuple[str, int], list[float]] = {}
+    locate_figures = extraction.locate_figures
+
+    async def located(held, *, model):
+        for question in held:
+            for n, figure in enumerate(question.figures, 1):
+                if figure.box:
+                    window_boxes[(question.label, n)] = list(figure.box)
+        await locate_figures(held, model=model)
+
+    extraction.locate_figures = located
     started = time.monotonic()
     recorded: list[dict] = []
     done: dict = {}
@@ -291,6 +347,24 @@ async def run(args) -> dict:
         else:
             done = event
     seconds = time.monotonic() - started
+    crops = RESULTS / "crops" / f"{args.paper}-{args.model}-{args.repeat}"
+    crops.mkdir(parents=True, exist_ok=True)
+    images = {f["id"]: base64.b64decode(f["image"]) for f in done.get("figures", [])}
+    sizes = {
+        block["image"]["assetId"].removeprefix("figure:"): (
+            block["width"],
+            block["height"],
+        )
+        for question in done["questions"]
+        for blocks in [question["stem"], *(p["blocks"] for p in question["parts"])]
+        for block in blocks
+        if block["type"] == "image"
+    }
+    for figure in figures:
+        data = images[figure["id"]]
+        (crops / f"{figure['id']}.jpg").write_bytes(data)
+        figure["bytes"] = len(data)
+        figure["size"] = sizes[figure["id"]]
     micros = (
         (usage.input_tokens - usage.cached_read_tokens) * rates[0]
         + usage.cached_read_tokens * rates[1]
@@ -317,7 +391,447 @@ async def run(args) -> dict:
         "questions": done["questions"],
         "report": done["report"],
         "scheme_entries": parsed,
+        "figures": figures,
     }
+
+
+# ----------------------------------------------------------------- fidelity
+
+# Page furniture and mark notes, left out of a reference page's text.
+_FURNITURE = re.compile(
+    r"(?im)^.*(margins will not be marked|DSE-MATH|barcode label|go on to the next"
+    r"|page total|confidential|marker.s use|solution\s+marks\s+remarks|section [ab]"
+    r"|end of paper).*$"
+)
+_MARKS_NOTE = re.compile(r"\(\s*\d+\s*marks?\s*\)", re.IGNORECASE)
+# Scheme mark codes (1M, 1A, 1M+1A, a column's total ----(3)), on both sides.
+_MARK_CODES = re.compile(
+    r"\b\d+\s*[MA]\b|-{3,}\s*\(\s*\d+\s*\)|\(\s*\d+\s*\)\s*$", re.MULTILINE
+)
+_UNIT = re.compile(
+    r"(?<=\d)\s*(cm|mm|km|kg|m|g|s)\b|\b(minute|hour|second)s?\b|(%)|(°)"
+)
+
+
+_SCRIPTS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉", "01234567890123456789")
+
+
+def plain(text: str) -> str:
+    r"""Text or LaTeX as plain text for counting numbers and units: a
+    superscript is its digits, ^\circ is °, \text{cm} is cm, 1 000 is 1000."""
+    t = text.replace("\\%", "%").replace("\\,", "").replace("\\ ", " ")
+    t = re.sub(r"\^\s*\{?\s*\\circ\s*\}?", "°", t)
+    # A run of superscript or subscript digits is one number (4²² is 4^22).
+    t = re.sub(r"[⁰¹²³⁴-⁹₀-₉]+", lambda m: " " + m.group().translate(_SCRIPTS), t)
+    t = t.replace("−", "-").replace("–", "-")
+    t = re.sub(r"\\(?:text|mathrm|textrm|mbox)\s*\{([^{}]*)\}", r" \1 ", t)
+    t = re.sub(r"\\[a-zA-Z]+", " ", t)
+    t = re.sub(r"[{}$^_\\]", " ", t)
+    return re.sub(r"(?<=\d) (?=\d{3}(?!\d))", "", t)
+
+
+def numbers(text: str) -> collections.Counter:
+    return collections.Counter(re.findall(r"\d+(?:\.\d+)?", plain(text)))
+
+
+def units(text: str) -> collections.Counter:
+    found = collections.Counter()
+    for match in _UNIT.finditer(plain(text)):
+        found[next(g for g in match.groups() if g)] += 1
+    return found
+
+
+def reference_pages(
+    refs: Path, pdf: str, pages: list[int]
+) -> dict[str, dict[int, str]]:
+    """The page texts the check compares with: the text layer where the PDF
+    has one, else the refs folder's Tesseract OCR and the cached VLM read."""
+    import pymupdf
+
+    ocr_file = refs / pdf.replace(".pdf", ".txt")
+    ocr: dict[int, str] = {}
+    if ocr_file.exists():
+        chunks = re.split(r"(?m)^PAGE (\d+)$", ocr_file.read_text())
+        ocr = {int(chunks[i]): chunks[i + 1] for i in range(1, len(chunks) - 1, 2)}
+    out: dict[str, dict[int, str]] = {"ocr": {}, "vlm": {}}
+    with pymupdf.open(refs / pdf) as doc:
+        for number in pages:
+            layer = doc[number - 1].get_text().strip()
+            if len(layer) >= TEXT_LAYER_MIN:
+                out["ocr"][number] = out["vlm"][number] = layer
+                continue
+            out["ocr"][number] = ocr.get(number, "")
+            cached = RESULTS / "text" / f"{pdf.removesuffix('.pdf')}-{number:02d}.txt"
+            out["vlm"][number] = cached.read_text() if cached.exists() else ""
+    return out
+
+
+def spans(pages: dict[int, str], labels: list[str]) -> dict[str, str]:
+    """Each numbered question's text in the pages, from its label at a line's
+    start to the next number's; a label not found has no span."""
+    # Without its furniture, a page's last line alone a number is its page
+    # number.
+    text = "\n".join(
+        re.sub(r"\n\s*\d{1,3}\s*$", "\n", _FURNITURE.sub("", pages[n]).rstrip())
+        for n in sorted(pages)
+    )
+    text = _MARKS_NOTE.sub(" ", text)
+    out: dict[str, str] = {}
+    pos = 0
+    for label in labels:
+        if not label.isdigit():
+            continue
+        start = re.compile(rf"(?m)^\W{{0,3}}{label}\s*[.,]").search(text, pos)
+        if start is None:
+            continue
+        after = re.compile(rf"(?m)^\W{{0,3}}{int(label) + 1}\s*[.,]")
+        end = after.search(text, start.end())
+        out[label] = text[start.end() : end.start() if end else len(text)]
+        pos = start.end()
+    return out
+
+
+def question_text(question: dict) -> str:
+    """What a learner reads of a question: its text, table cells and options
+    (not a figure's description, which the model writes)."""
+    out = []
+    for blocks in [question["stem"], *(p["blocks"] for p in question["parts"])]:
+        for block in blocks:
+            if block["type"] == "text":
+                out.append(block["text"])
+            elif block["type"] == "table":
+                out.extend(cell for row in block.get("rows") or [] for cell in row)
+    for part in question["parts"]:
+        if part["answer"]["type"] == "mcq":
+            out.extend(part["answer"]["options"])
+    return "\n".join(out)
+
+
+def _diff(extracted: str, references: list[str]) -> dict:
+    """Numbers and units in the extraction that no reference has (unsupported)
+    and ones every reference has that the extraction lacks (dropped)."""
+    result = {}
+    for kind, count in (("numbers", numbers), ("units", units)):
+        mine = count(extracted)
+        theirs = [count(ref) for ref in references]
+        unsupported = collections.Counter(
+            {k: v - max(t[k] for t in theirs) for k, v in mine.items()}
+        )
+        dropped = collections.Counter(
+            {k: min(t[k] for t in theirs) - mine[k] for k in set().union(*theirs)}
+        )
+        result[kind] = sum(mine.values())
+        result[f"{kind}_unsupported"] = sorted((+unsupported).elements())
+        result[f"{kind}_dropped"] = sorted((+dropped).elements())
+    return result
+
+
+def math_spans(text: str) -> tuple[list[str], bool]:
+    """The $…$ and $$…$$ spans as the app's parseMathText reads them, and
+    whether a $ is left unpaired (it then shows as a $ sign)."""
+    found, stray, i = [], False, 0
+    while i < len(text):
+        if text.startswith("\\$", i):
+            i += 2
+            continue
+        if text[i] != "$":
+            i += 1
+            continue
+        delim = "$$" if text.startswith("$$", i) else "$"
+        end = i + len(delim)
+        while end < len(text):
+            if text[end] == "\\":
+                end += 2
+                continue
+            if text.startswith(delim, end) and (
+                delim == "$$"
+                or (text[end + 1 : end + 2] != "$" and text[end - 1] != "$")
+            ):
+                break
+            end += 1
+        if end >= len(text) or end == i + len(delim):
+            stray = True
+            i += len(delim)
+            continue
+        found.append(text[i + len(delim) : end])
+        i = end + len(delim)
+    return found, stray
+
+
+_KATEX = """const katex = require(process.argv[1]); let data = '';
+process.stdin.on('data', (d) => (data += d)).on('end', () => {
+  const out = [];
+  JSON.parse(data).forEach((tex, i) => {
+    try { katex.renderToString(tex, { throwOnError: true, strict: 'ignore' }); }
+    catch (e) { out.push([i, String(e.message).slice(0, 140)]); }
+  });
+  console.log(JSON.stringify(out));
+});"""
+
+
+def katex_errors(spans: list[str]) -> list[tuple[int, str]]:
+    proc = subprocess.run(
+        ["node", "-e", _KATEX, str(ROOT / "node_modules" / "katex")],
+        input=json.dumps(spans),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return [tuple(item) for item in json.loads(proc.stdout)]
+
+
+def learner_texts(question: dict) -> list[str]:
+    """Every text a learner may see: the question, its solutions, marking
+    points and model answers."""
+    texts = [question_text(question)]
+    for part in question["parts"]:
+        texts += [b["text"] for b in part.get("solution") or [] if b["type"] == "text"]
+        texts += [item["text"] for item in part.get("markscheme") or []]
+        texts += [str(v) for v in part["answer"].get("accepted") or []]
+    return texts
+
+
+def _cell(value: str) -> str:
+    value = re.sub(r"\\text\s*\{([^{}]*)\}", r"\1", str(value))
+    return (
+        re.sub(r"[\s$]", "", value)
+        .replace("−", "-")
+        .replace("–", "-")
+        .replace("—", "-")
+        .lower()
+    )
+
+
+def table_scores(question: dict, gold_tables: list[dict]) -> list[dict]:
+    """Each gold table against the question's best-matching table block:
+    shape, header flag, cells in place, and cells found anywhere in it."""
+    found = [
+        b
+        for blocks in [question["stem"], *(p["blocks"] for p in question["parts"])]
+        for b in blocks
+        if b["type"] == "table"
+    ]
+    out = []
+    for table in gold_tables:
+        gold = [[_cell(c) for c in row] for row in table["rows"]]
+        cells = sum(len(row) for row in gold)
+        best = None
+        for block in found:
+            rows = [[_cell(c) for c in row] for row in block.get("rows") or []]
+            in_place = sum(
+                1
+                for i, row in enumerate(gold)
+                for j, cell in enumerate(row)
+                if i < len(rows) and j < len(rows[i]) and rows[i][j] == cell
+            )
+            anywhere = sum(
+                (
+                    collections.Counter(c for row in gold for c in row)
+                    & collections.Counter(c for row in rows for c in row)
+                ).values()
+            )
+            score = {
+                "shape": f"{len(rows)}x{max((len(r) for r in rows), default=0)}",
+                "gold_shape": f"{len(gold)}x{len(gold[0])}",
+                "header": bool(block.get("header")) == table["header"],
+                "cells_in_place": f"{in_place}/{cells}",
+                "cells_anywhere": f"{anywhere}/{cells}",
+                "_rank": (anywhere, in_place),
+            }
+            if best is None or score["_rank"] > best["_rank"]:
+                best = score
+        if best:
+            best.pop("_rank")
+        out.append(
+            best or {"missing": True, "gold_shape": f"{len(gold)}x{len(gold[0])}"}
+        )
+    return [dict(t, tables_in_question=len(found)) for t in out]
+
+
+def _area(box: list[float]) -> float:
+    return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
+
+
+def box_scores(result: dict, gold: dict, key: str = "box") -> dict:
+    """Each crop against its gold figure box on the page grid: the share of
+    the figure inside the crop (below 1 is clipped) and the share of the crop
+    that is figure (below 1 is loose)."""
+    from pipeline.retrieval.extraction import label_key
+
+    golds = {
+        (label_key(g["label"]), g["page"]): g["box"]
+        for g in gold.get("figure_boxes", [])
+    }
+    rows = []
+    for figure in result.get("figures") or []:
+        box = golds.get((label_key(figure["label"]), figure["page"]))
+        if box is None:
+            rows.append(
+                {"label": figure["label"], "page": figure["page"], "gold": None}
+            )
+            continue
+        crop = figure.get(key)
+        if crop is None:
+            continue
+        inter = _area(
+            [
+                max(box[0], crop[0]),
+                max(box[1], crop[1]),
+                min(box[2], crop[2]),
+                min(box[3], crop[3]),
+            ]
+        )
+        rows.append(
+            {
+                "label": figure["label"],
+                "page": figure["page"],
+                "covered": round(inter / _area(box), 3),
+                "figure_share": round(inter / _area(crop), 3) if _area(crop) else 0,
+                "edges": [round(c - b) for c, b in zip(crop, box)],
+            }
+        )
+    matched = [r for r in rows if r.get("gold", True) is not None and "covered" in r]
+    return {
+        "crops": len(rows),
+        "matched_gold": len(matched),
+        # Whole: at most 2% of the figure outside the crop.
+        "whole": sum(1 for r in matched if r["covered"] >= 0.98),
+        # Tight: at least 70% of the crop is the figure.
+        "tight": sum(1 for r in matched if r["figure_share"] >= 0.7),
+        "rows": rows,
+    }
+
+
+def fidelity(result: dict, gold: dict, refs: Path) -> dict:
+    from pipeline.retrieval.extraction import label_key
+
+    labels = result["report"]["recorded"]
+    pages = reference_pages(refs, gold["pdf"], gold["pages"])
+    by_ref = {name: spans(texts, labels) for name, texts in pages.items()}
+    rows, unsegmented = [], []
+    for label, question in zip(labels, result["questions"]):
+        references = [by_ref[name].get(label) for name in by_ref]
+        if any(ref is None for ref in references):
+            unsegmented.append(label)
+            continue
+        rows.append({"label": label, **_diff(question_text(question), references)})
+
+    def total(key: str) -> int:
+        return sum(len(r[key]) for r in rows)
+
+    worst = sorted(
+        rows,
+        key=lambda r: (
+            -(
+                len(r["numbers_unsupported"])
+                + len(r["numbers_dropped"])
+                + len(r["units_unsupported"])
+                + len(r["units_dropped"])
+            )
+        ),
+    )
+    out = {
+        "questions_compared": len(rows),
+        "unsegmented": unsegmented,
+        "numbers": sum(r["numbers"] for r in rows),
+        "numbers_unsupported": total("numbers_unsupported"),
+        "numbers_dropped": total("numbers_dropped"),
+        "units": sum(r["units"] for r in rows),
+        "units_unsupported": total("units_unsupported"),
+        "units_dropped": total("units_dropped"),
+        "questions_exact": sum(
+            1
+            for r in rows
+            if not (
+                r["numbers_unsupported"]
+                or r["numbers_dropped"]
+                or r["units_unsupported"]
+                or r["units_dropped"]
+            )
+        ),
+        "worst": [
+            {k: v for k, v in r.items() if k not in ("numbers", "units")}
+            for r in worst[:6]
+            if r["numbers_unsupported"]
+            or r["numbers_dropped"]
+            or r["units_unsupported"]
+            or r["units_dropped"]
+        ],
+    }
+    # The scheme entries as parsed, against the scheme's own text: only
+    # unsupported numbers, since alternatives and comments are left out on
+    # purpose.
+    answers = gold["answers"]
+    if "pdf" in answers and result.get("scheme_entries"):
+        import pymupdf
+
+        with pymupdf.open(refs / answers["pdf"]) as doc:
+            count = len(doc)
+        scheme = reference_pages(refs, answers["pdf"], list(range(1, count + 1)))
+        # The solutions start on the first page with the Solution / Marks /
+        # Remarks table; the numbered general instructions before it are not
+        # questions.
+        for name, texts in scheme.items():
+            first = min(
+                (n for n, t in texts.items() if re.search(r"(?i)\bremarks\b", t)),
+                default=1,
+            )
+            scheme[name] = {n: t for n, t in texts.items() if n >= first}
+        entries: dict[str, list[str]] = collections.defaultdict(list)
+        for entry in result["scheme_entries"]:
+            entries[entry["question"]].extend(
+                [
+                    entry["answer"],
+                    entry["solution"],
+                    *(p["text"] for p in entry["points"]),
+                ]
+            )
+        scheme_spans = {
+            name: spans(texts, sorted(entries, key=lambda l: (len(l), l)))
+            for name, texts in scheme.items()
+        }
+        srows = []
+        for label, texts in entries.items():
+            references = [scheme_spans[name].get(label) for name in scheme_spans]
+            if any(ref is None for ref in references):
+                continue
+            mine = _MARK_CODES.sub(" ", "\n".join(texts))
+            diff = _diff(mine, [_MARK_CODES.sub(" ", ref) for ref in references])
+            srows.append(
+                {
+                    "label": label,
+                    "numbers": diff["numbers"],
+                    "unsupported": diff["numbers_unsupported"],
+                }
+            )
+        out["scheme"] = {
+            "questions_compared": len(srows),
+            "numbers": sum(r["numbers"] for r in srows),
+            "numbers_unsupported": sum(len(r["unsupported"]) for r in srows),
+            "worst": sorted(
+                [r for r in srows if r["unsupported"]],
+                key=lambda r: -len(r["unsupported"]),
+            )[:5],
+        }
+    texts = [t for q in result["questions"] for t in learner_texts(q)]
+    found = [(t, math_spans(t)) for t in texts]
+    tex = [span for _, (spans_, _) in found for span in spans_]
+    errors = katex_errors(tex)
+    out["latex"] = {
+        "spans": len(tex),
+        "katex_errors": len(errors),
+        "examples": [(tex[i][:120], message) for i, message in errors[:8]],
+        "texts_with_a_stray_dollar": sum(1 for _, (_, stray) in found if stray),
+    }
+    gold_q = {label_key(q["label"]): q for q in gold["questions"]}
+    tables = {}
+    for label, question in zip(labels, result["questions"]):
+        g = gold_q.get(label_key(label))
+        if g and g.get("tables"):
+            tables[label] = table_scores(question, g["tables"])
+    if tables:
+        out["tables"] = tables
+    return out
 
 
 # ------------------------------------------------------------------ scoring
@@ -345,7 +859,7 @@ def signature(text: str) -> str:
     return " ".join(_TOKEN.findall(text))
 
 
-def score(result: dict, gold: dict) -> dict:
+def score(result: dict, gold: dict, refs: Path) -> dict:
     from pipeline.retrieval.extraction import label_key
 
     gold_q = {label_key(q["label"]): q for q in gold["questions"]}
@@ -438,10 +952,21 @@ def score(result: dict, gold: dict) -> dict:
         "scheme_refused": result["report"]["schemeRefused"],
         "marks_differ": result["report"]["marksDiffer"],
         "unpaired_scheme_labels": len(result["report"]["unpaired"]),
+        "scheme_repeats": result["report"].get("schemeRepeats"),
         "outline_expected": len(result["report"]["expected"]),
         "outline_missing": result["report"]["missing"],
         "figures_gold": figure_gold,
         "figures_boxed_on_gold_figure_questions": figure_found,
+        "figures_extra_questions": [
+            label
+            for label in result["report"]["figures"]
+            if not gold_q.get(label_key(label), {}).get("figure")
+        ],
+        "boxes": box_scores(result, gold),
+        "window_boxes": box_scores(result, gold, "window_box"),
+        "crops": len(result.get("figures") or []),
+        "crop_bytes": sorted(f["bytes"] for f in result.get("figures") or []),
+        "fidelity": fidelity(result, gold, refs),
     }
 
 
@@ -474,7 +999,7 @@ def main() -> None:
         load_env(args.env_file)
         result = asyncio.run(run(args))
     gold = json.loads((GOLD / f"{args.paper}.json").read_text())
-    result["scores"] = score(result, gold)
+    result["scores"] = score(result, gold, Path(args.refs))
     out.write_text(json.dumps(result, indent=1, ensure_ascii=False))
     summary = {
         k: result.get(k)

@@ -47,9 +47,9 @@ EXTRACT_SYSTEM = f"""You copy the questions printed on exam or worksheet pages i
 Record each question that starts on these pages with its own record_question call, in printed order; one reply may hold several calls. When the first page carries on the open question from the previous page (more parts, or more of its last part's text), add that with continue_question first.
 
 Copying:
-- Keep the wording, numbers, symbols and language exactly as printed. Write math as LaTeX between $ signs ($\\frac{{7(x-2)}}{{5}}$, $x^2$, $\\angle ABC$); never simplify or reword the printed text.
+- Keep the wording, numbers, symbols and language exactly as printed. Write math as LaTeX between $ signs ($\\frac{{7(x-2)}}{{5}}$, $x^2$, $\\angle ABC$), and a printed dollar sign for money as \\$ ($\\$78$ or \\$78); never simplify or reword the printed text.
 - A table becomes a table block. Leave out answer lines, boxes for working, "Answers written in the margins will not be marked", page headers and footers.
-- A question's parts follow its printed labels (a), (b), (b)(i). The quiz holds parts in one flat list, so (b)(i) and (b)(ii) are two parts labelled "b(i)" and "b(ii)", and text printed under (b) before (i) goes at the start of b(i)'s blocks. A question without parts has an empty stem and one part labelled "".
+- A question's parts follow its printed labels (a), (b), (b)(i). The quiz holds parts in one flat list, so (b)(i) and (b)(ii) are two parts labelled "b(i)" and "b(ii)". Text printed under (b) before (i), such as the data the sub-parts use, is never left out: it is b(i)'s first block. A question without parts has an empty stem and one part labelled "".
 - At most {limits.QUIZ_QUESTION_PARTS_MAX} parts a question.
 
 Answers:
@@ -60,7 +60,7 @@ Answers:
 - The answer: mcq "correct" (zero-based indexes of the right options); short "accepted"; open "points", the marking points with their marks, at most {limits.QUIZ_MARKSCHEME_MAX} adding up to the part's marks, and "accepted", a short model answer.
 - marks: the part's printed marks. When only the question's total is printed ("(3 marks)" after (a) and (b)), split it across the parts as the work suggests and give the printed total in total_marks. An item printed without marks has 1.
 
-Figures: for each diagram, graph, chart or photo a question needs, give the page image it is on (1 or 2, in the order shown), its box [left, top, right, bottom] on a 0-1000 grid of that page holding the whole figure with its labels and nothing of the text around it, the part whose text it follows ("" for the text shared by every part), and a few words on what it shows. The quiz shows the figure itself, so the blocks never describe it.
+Figures: for each diagram, graph, chart or photo a question needs, give the page image it is on (1 or 2, in the order shown), the part whose text it follows ("" for the text shared by every part), and a few words on what it shows, enough to find it on the page. The figure is cropped from the page into the quiz, so the blocks never describe it.
 
 Each recorded question is checked at once. Fix what a result names and record that question again with the same label; an accepted question needs no second call. When every question on these pages is recorded, reply with the single word DONE.
 {SOURCE_RULE}"""
@@ -164,13 +164,6 @@ _FIGURE = {
             "maximum": 2,
             "description": "The page image it is on: 1 for the first shown, 2 for the second.",
         },
-        "box": {
-            "type": "array",
-            "items": {"type": "number"},
-            "minItems": 4,
-            "maxItems": 4,
-            "description": "[left, top, right, bottom] on a 0-1000 grid of that page, around the whole figure.",
-        },
         "part": {
             "type": "string",
             "description": 'The label of the part whose text the figure follows; "" for the text shared by every part.',
@@ -180,7 +173,7 @@ _FIGURE = {
             "description": f"A few words on what the figure shows, at most {limits.QUESTION_DESCRIPTION_MAX} characters.",
         },
     },
-    "required": ["image", "box", "part"],
+    "required": ["image", "part", "description"],
 }
 
 _QUESTION = {
@@ -284,6 +277,36 @@ def window_messages(intro: str, pages: list[tuple[str, str]]) -> list[dict[str, 
     return [
         {"role": "system", "content": EXTRACT_SYSTEM},
         {"role": "user", "content": content},
+    ]
+
+
+# ------------------------------------------------------------------ figures
+
+LOCATE_SYSTEM = (
+    "You find figures on a printed exam or worksheet page. Answer with JSON "
+    'only: {"boxes": [[left, top, right, bottom], ...]}, one box for each '
+    "figure listed, in the order listed, on a 0-1000 grid of the page image "
+    "(0, 0 is the top left corner, 1000, 1000 the bottom right). A box holds "
+    "the whole figure with its labels, title, axis labels and caption, and "
+    "nothing of the question text, options or answer lines around it."
+)
+
+
+def locate_messages(image: str, figures: list[tuple[str, str]]) -> list[dict[str, Any]]:
+    """``figures`` are (question label, what the figure shows) on one page."""
+    listed = "\n".join(
+        f"{n}. Question {label}: {what or 'its figure'}"
+        for n, (label, what) in enumerate(figures, 1)
+    )
+    return [
+        {"role": "system", "content": LOCATE_SYSTEM},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": f"The figures on this page:\n{listed}"},
+                {"type": "image_url", "image_url": {"url": image}},
+            ],
+        },
     ]
 
 

@@ -1802,6 +1802,7 @@ export const GetExtractionResponse = zod.object({
   "pages": zod.int(),
   "recorded": zod.array(zod.string()),
   "schemeRefused": zod.array(zod.string()),
+  "schemeRepeats": zod.array(zod.string()),
   "stopped": zod.enum(['', 'quiz_full', 'credits', 'output_limit']),
   "unpaired": zod.array(zod.string()),
   "windows": zod.int()
@@ -7211,6 +7212,7 @@ export const CreateExtractionResponse = zod.object({
   "pages": zod.int(),
   "recorded": zod.array(zod.string()),
   "schemeRefused": zod.array(zod.string()),
+  "schemeRepeats": zod.array(zod.string()),
   "stopped": zod.enum(['', 'quiz_full', 'credits', 'output_limit']),
   "unpaired": zod.array(zod.string()),
   "windows": zod.int()

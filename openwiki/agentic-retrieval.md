@@ -5698,7 +5698,7 @@ later).
      which may run onto the next page), with the tools `record_question` (one
      question a call, several calls a reply: label, stem, parts with printed
      labels, blocks, answer, marks, `key_source` and a short worked solution,
-     a printed total and figure boxes) and `continue_question` (the open
+     a printed total and figures) and `continue_question` (the open
      question's next parts or more of its last part). Every part carries its
      key: mcq `correct`, short `accepted`, open marking `points` with marks
      and a short model answer. The model copies a key the page prints
@@ -5711,7 +5711,10 @@ later).
      or arguments that are not JSON (the tool result names the parse error)
      go back to the model, which sends that call again, up to six calls a
      window. A reply cut off at the 24,000-token output cap is asked again
-     for fewer questions a reply. Printed option order is kept. Sub-parts
+     for fewer questions a reply. Printed option order is kept, and lettered
+     option lines the model also copied into a part's text are taken out in
+     code when they match the options (a one-part question whose part held
+     only them takes its stem as its text). Sub-parts
      flatten: (b)(i) and (b)(ii) are two parts, the (b) lead-in text starting
      the first. Recorded questions leave the conversation: the next window
      carries labels and the open question only.
@@ -5734,6 +5737,21 @@ later).
      `label`, "AI-written" or "AI 撰写" by the starter's locale) and its
      question is named in `keysWorkedOut`. A saved question whose part marks
      do not add up to the total printed on the page is named in `marksDiffer`.
+  5. Figures. Each figure a call names gives its page image in the window
+     (1 or 2), the part whose text it follows ("" for the stem) and a few
+     words on what it shows; a page image or part the call cannot have goes
+     back to the model. After pairing, one call a page with figures, reasoning
+     off, sees that page alone with its figures listed (question label and
+     description) and answers a box on a 0-1000 grid for each
+     (`locate_figures`, purpose `extraction_figures`; a reply that is not one
+     box a figure is a failed attempt, as for the scheme parse). The window's
+     own boxes were too far off to crop from (2022 Paper 2: 3 of 10 whole, 3
+     missing the figure; bench report 2026-11-04). Each figure is then
+     cropped from its page (`capture.render_file` with `page_edge`
+     `FIGURE_PAGE_EDGE`: the page's long side at 2,200 px, so labels read and
+     a small figure stays small) and placed after that part's text as an
+     image block whose asset is `figure:<id>` and whose description is the
+     model's words; the `done` event carries the JPEGs (`figures`).
 - **Models.** The `extraction` slot's default pin (`extractionLLM`;
   migration `0138`), which needs vision: OpenRouter's
   `deepseek/deepseek-v4.1-flash-1017` on the extraction slot's own route,
@@ -5755,15 +5773,24 @@ later).
   fails what was running (`FailOrphanedExtractions` at boot, code
   `interrupted`). On `done` the gateway creates the quiz under the run's title
   ("Title 2" when a quiz took it meanwhile) as the starter's material, hidden
-  from members (the paper and answer files are hidden when the run starts; see
-  [Hidden from members](authorization-permissions-lifecycles.md#hidden-from-members)),
-  records the quiz id and report, settles the session and sends `{type:
+  from members, with its figures as the quiz's own editor assets, charged to
+  the starter like images it uploads (`finishExtraction`; see
+  [backend-storage-quota.md](backend-storage-quota.md)). The run changes no
+  file's visibility: a picked file keeps its setting and a file uploaded in
+  the Make a quiz dialog is uploaded hidden (Epo 2026-11-04; see
+  [Hidden from members](authorization-permissions-lifecycles.md#hidden-from-members)).
+  It then records the quiz id and report, settles the session and sends `{type:
   extraction, extractionId, status}` on the starter's event stream. No
   question saved is `extraction_empty`. `GET /api/extractions/{id}` reads a
   run its starter began: status, the questions recorded so far (`recorded`),
   the quiz and the report (`expected`, `missing`, `recorded`, `keysWorkedOut`,
-  `keyDisagreements`, `schemeRefused`, `marksDiffer`, `unpaired`, `figures`,
-  `stopped`, `pages`, `windows`).
+  `keyDisagreements`, `schemeRefused`, `marksDiffer`, `unpaired`,
+  `schemeRepeats`, `figures`, `stopped`, `pages`, `windows`). `figures` names
+  the questions saved with cropped figures, for the starter to check.
+  `schemeRepeats` names scheme entries left out because an earlier entry had
+  their label and they were not its continuation across two scheme pieces
+  (the bench saw a later question's solution named 2021 Q8(b)(ii), which
+  merged in had doubled the part's marks).
 - **Attempts.** The server retries a failed step once, silently (Epo
   2026-11-03): the outline, each window and each scheme piece get a second
   attempt 20 s after a busy, failing or silent provider (a scheme reply cut
@@ -5783,13 +5810,12 @@ later).
   question, the quiz or the run to the files, pages or regions it was read
   from (Epo 2026-11-02, §8 item 7): they travel only in the request to the
   retrieval service. Account purge deletes a user's runs.
-- **Left out.** Figures are boxed by the model but not cropped: the
-  questions are saved without them and the report lists them (`figures`).
-  Office pages, Markdown sections and the page picker's cost estimate come
-  with the UI.
+- **Left out.** Office pages, Markdown sections and the page picker's cost
+  estimate come with the UI.
 - **Bench.** `bench/extraction`, with findings in
-  [`2026-11-03-first-cut.md`](../bench/extraction/reports/2026-11-03-first-cut.md)
-  and [`2026-11-03-keys-in-one-prompt.md`](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md).
+  [`2026-11-03-first-cut.md`](../bench/extraction/reports/2026-11-03-first-cut.md),
+  [`2026-11-03-keys-in-one-prompt.md`](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md)
+  and [`2026-11-04-figures-and-fidelity.md`](../bench/extraction/reports/2026-11-04-figures-and-fidelity.md).
 
 ## Citations and the frontend
 

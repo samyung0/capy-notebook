@@ -162,7 +162,9 @@ Make a quiz reads questions printed in an uploaded paper into this format: in
 paper layout, printed option order kept, sub-parts flattened into parts, keys,
 marking items and worked solutions filled from a separate mark scheme or answer
 file paired by printed label, each question checked by this validator as it is
-recorded (see [agentic-retrieval.md](agentic-retrieval.md), Make a quiz).
+recorded, and each figure the page shows cropped into an image block whose
+asset is the quiz's own, like an uploaded quiz image (see
+[agentic-retrieval.md](agentic-retrieval.md), Make a quiz).
 
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part

@@ -152,29 +152,31 @@ def test_pairing_replaces_worked_out_keys_keeps_printed_ones_and_names_disagreem
     worked = extraction.record(_mcq("12", ["a", "b", "c", "d"], 0), AI)
     printed = extraction.record(_mcq("13", ["a", "b"], 0, "printed"), AI)
     long = extraction.record(_open("3", [("a", 1), ("b(i)", 2)]), AI)
-    entries = extraction._merged(
-        extraction.entries_from(
-            {
-                "entries": [
-                    {"question": "12", "part": "", "answer": "C", "solution": "C."},
-                    {"question": "13", "part": "", "answer": "B"},
-                    {
-                        "question": "3",
-                        "part": "(a)",
-                        "answer": "x = 2",
-                        "points": [{"text": "1A", "marks": 1}],
-                    },
-                    {
-                        "question": "Q3",
-                        "part": "b(i)",
-                        "points": [
-                            {"text": "1M", "marks": 1},
-                            {"text": "1A", "marks": 2},
-                        ],
-                    },
-                ]
-            }
-        )
+    entries, _ = extraction._merged(
+        [
+            extraction.entries_from(
+                {
+                    "entries": [
+                        {"question": "12", "part": "", "answer": "C", "solution": "C."},
+                        {"question": "13", "part": "", "answer": "B"},
+                        {
+                            "question": "3",
+                            "part": "(a)",
+                            "answer": "x = 2",
+                            "points": [{"text": "1A", "marks": 1}],
+                        },
+                        {
+                            "question": "Q3",
+                            "part": "b(i)",
+                            "points": [
+                                {"text": "1M", "marks": 1},
+                                {"text": "1A", "marks": 2},
+                            ],
+                        },
+                    ]
+                }
+            )
+        ]
     )
     first = extraction.pair(worked, entries)
     assert first.held.question["parts"][0]["answer"]["correct"] == [2]
@@ -192,6 +194,30 @@ def test_pairing_replaces_worked_out_keys_keeps_printed_ones_and_names_disagreem
     assert b["marks"] == 3 and third.disagreed == ["3(b(i))"]
     # The recorded question itself is left as it was.
     assert worked.question["parts"][0]["answer"]["correct"] == [0]
+
+
+def test_a_scheme_entry_split_across_pieces_merges_and_another_repeat_is_named():
+    """The last entry of one scheme piece and the first of the next under the
+    same label are one entry; a later entry named like an earlier one is
+    another question's (2021 Q8(b)(ii) took a cone question's solution), left
+    out and named."""
+
+    def entry(part: str, marks: int, solution: str) -> extraction.Entry:
+        return extraction.Entry(
+            "8", part, "", [{"text": solution, "marks": marks}], solution
+        )
+
+    entries, repeats = extraction._merged(
+        [
+            [entry("a", 2, "Proof"), entry("b(ii)", 1, "DE = 36")],
+            [entry("b(ii)", 1, "Area 270"), entry("c", 1, "x")],
+            [entry("b(ii)", 2, "Height of Z")],
+        ]
+    )
+    held = entries[("8", "b.ii")]
+    assert [p["text"] for p in held.points] == ["DE = 36", "Area 270"]
+    assert held.solution == "DE = 36\nArea 270"
+    assert repeats == ["8(b(ii))"]
 
 
 def test_marking_points_fit_the_quiz_item_cap():
@@ -244,7 +270,9 @@ async def test_scheme_parse_names_entries_by_the_recorded_labels(monkeypatch):
         labels=[("1", [""]), ("3", ["a", "b"])],
     )
     # A reply cut off mid-JSON is a failed attempt, parsed again.
-    assert [(e.question, e.answer) for e in entries] == [("1", "B")]
+    assert [[(e.question, e.answer) for e in piece] for piece in entries] == [
+        [("1", "B")]
+    ]
     assert "1; 3: a, b" in sent[0]
 
 
@@ -333,24 +361,26 @@ async def test_run_records_keys_continues_pairs_and_reports(monkeypatch):
 
     async def scheme(files, *, model, labels):
         labels_seen.append(labels)
-        return extraction.entries_from(
-            {
-                "entries": [
-                    {"question": "1", "part": "", "answer": "B"},
-                    {
-                        "question": "2",
-                        "part": "a",
-                        "points": [{"text": "1M", "marks": 2}],
-                    },
-                    {
-                        "question": "2",
-                        "part": "b",
-                        "points": [{"text": "1A", "marks": 1}],
-                    },
-                    {"question": "9", "part": "", "answer": "A"},
-                ]
-            }
-        )
+        return [
+            extraction.entries_from(
+                {
+                    "entries": [
+                        {"question": "1", "part": "", "answer": "B"},
+                        {
+                            "question": "2",
+                            "part": "a",
+                            "points": [{"text": "1M", "marks": 2}],
+                        },
+                        {
+                            "question": "2",
+                            "part": "b",
+                            "points": [{"text": "1A", "marks": 1}],
+                        },
+                        {"question": "9", "part": "", "answer": "A"},
+                    ]
+                }
+            )
+        ]
 
     async def validate(question):
         options = question["parts"][0]["answer"].get("options")
@@ -450,23 +480,18 @@ async def test_a_run_past_its_output_budget_stops_and_keeps_what_it_has(monkeypa
 async def test_figures_are_cropped_from_their_page_and_placed_after_their_part(
     monkeypatch,
 ):
-    """A figure names its page image in the window, its box and the part it
-    follows: the done event crops it from that page and places an image block
-    after that part's text (the stem for ""), with the crop beside the
-    questions. A figure naming a part the question lacks goes back to the
-    model."""
+    """A figure names its page image in the window and the part it follows; a
+    call that sees that page alone gives its box, and the done event crops it
+    from that page and places an image block after that part's text (the stem
+    for ""), with the crop beside the questions. A figure naming a part the
+    question lacks goes back to the model."""
     with_figures = _open("8", [("a", 2), ("b", 2)])
     with_figures["figures"] = [
-        {
-            "image": 2,
-            "box": [100, 200, 900, 1004],
-            "part": "",
-            "description": "Triangle ABC",
-        },
-        {"image": 1, "box": [0, 0, 500, 500], "part": "b"},
+        {"image": 2, "part": "", "description": "Triangle ABC"},
+        {"image": 1, "part": "b"},
     ]
     wrong = copy.deepcopy(with_figures)
-    wrong["figures"] = [{"image": 1, "box": [0, 0, 500, 500], "part": "c"}]
+    wrong["figures"] = [{"image": 1, "part": "c"}]
     replies = iter(
         [
             {"tool_calls": [_call("record_question", wrong)]},
@@ -476,8 +501,15 @@ async def test_figures_are_cropped_from_their_page_and_placed_after_their_part(
     )
     results: list[str] = []
 
+    located: list[str] = []
+
     async def complete(messages, **kwargs):
-        return SimpleNamespace(content='{"questions": ["8"]}')
+        if kwargs["call_purpose"] != "extraction_figures":
+            return SimpleNamespace(content='{"questions": ["8"]}')
+        listed = messages[1]["content"][0]["text"]
+        located.append(listed)
+        box = [100, 180, 920, 1005] if "Triangle ABC" in listed else [10, 0, 480, 500]
+        return SimpleNamespace(content=json.dumps({"boxes": [box]}))
 
     async def complete_response(messages, **kwargs):
         results.extend(m["content"] for m in messages if m["role"] == "tool")
@@ -519,8 +551,16 @@ async def test_figures_are_cropped_from_their_page_and_placed_after_their_part(
         "description": "Triangle ABC",
     }
     assert question["parts"][1]["blocks"][-1]["image"] == {"assetId": "figure:q8-2"}
-    # The box is held to the page; each crop is from its own page image.
-    assert crops == [(6, [100.0, 200.0, 900.0, 1000.0]), (5, [0.0, 0.0, 500.0, 500.0])]
+    # One locate call a page, naming its figures; the located box, held to
+    # the page, is cropped from that page.
+    assert sorted(located) == [
+        "The figures on this page:\n1. Question 8: Triangle ABC",
+        "The figures on this page:\n1. Question 8: its figure",
+    ]
+    assert sorted(crops) == [
+        (5, [10.0, 0.0, 480.0, 500.0]),
+        (6, [100.0, 180.0, 920.0, 1000.0]),
+    ]
     assert done["figures"] == [
         {"id": "q8-1", "image": base64.b64encode(b"jpeg 6").decode()},
         {"id": "q8-2", "image": base64.b64encode(b"jpeg 5").decode()},

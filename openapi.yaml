@@ -2314,6 +2314,10 @@ components:
           items:
             type: string
           type: array
+        schemeRepeats:
+          items:
+            type: string
+          type: array
         stopped:
           enum:
             - ""
@@ -2337,6 +2341,7 @@ components:
         - schemeRefused
         - marksDiffer
         - unpaired
+        - schemeRepeats
         - figures
         - stopped
         - pages

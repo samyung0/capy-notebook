@@ -316,11 +316,21 @@ numerals and trig names, hand-read from the page), so the score checks that the
 stored key points at the printed correct option. The model's own keys,
 before the scheme replaces them, are scored too: multiple-choice keys it
 worked out against the official ones, and its part marks against the gold.
+Figures are located and cropped as production does it, the crops written
+under `extraction/.results/crops/` and scored against hand-read gold boxes
+(`figure_boxes`). A fidelity check compares each saved question's text and
+each parsed scheme entry with the page's own text: the PDF text layer, else
+both the refs folder's Tesseract OCR and the cached VLM read, since the HKDSE
+scans have none. It counts numbers and units that neither reading has, or that
+both have and the extraction lacks, KaTeX parse failures and stray `$`, and
+scores 2022 Paper 1's gold tables cell by cell.
 Results land in `extraction/.results/<paper>-<model>-<n>.json`;
 [the first cut](extraction/reports/2026-11-03-first-cut.md) compares DeepSeek
-Flash with GLM-5.3-Flash, and
+Flash with GLM-5.3-Flash,
 [keys in one prompt](extraction/reports/2026-11-03-keys-in-one-prompt.md)
-measures the round-2 prompt that works keys out.
+measures the round-2 prompt that works keys out, and
+[figures and fidelity](extraction/reports/2026-11-04-figures-and-fidelity.md)
+measures figure crops and the content against the page.
 
 ### rag
 

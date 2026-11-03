@@ -13,7 +13,7 @@
  "answers": {
   "pdf": "2024-ans.pdf"
  },
- "note": "Section A(1) and question 10 (pages 2-8), within a quiz's 20 open parts. Labels, parts and per-part marks from the marking scheme.",
+ "note": "Section A(1) and question 10 (pages 2-8), within a quiz's 20 open parts. Labels, parts and per-part marks from the marking scheme. Figure boxes on the 0-1000 page grid (labels and caption included) read by hand from gridded renders, about ±5 (2026-11-04).",
  "questions": [
   {
    "label": "1",
@@ -168,6 +168,18 @@
      "marks": 3,
      "type": "open"
     }
+   ]
+  }
+ ],
+ "figure_boxes": [
+  {
+   "label": "8",
+   "page": 6,
+   "box": [
+    272,
+    150,
+    710,
+    330
    ]
   }
  ]

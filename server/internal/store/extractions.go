@@ -35,7 +35,9 @@ type Extraction struct {
 // (KeyDisagreements, "4(a)"), questions that keep the page's keys because the
 // scheme's were refused (SchemeRefused), saved questions whose part marks
 // differ from the printed total (MarksDiffer), mark scheme entries no question
-// matched (Unpaired), and questions saved with figures cropped from the page
+// matched (Unpaired), scheme entries named like an earlier one that were left
+// out rather than merged into it (SchemeRepeats, "8(b(ii))": another question's
+// entry the parse named wrongly), and questions saved with figures cropped from the page
 // (Figures), for the starter to check. Stopped says why a run ended early:
 // quiz_full, credits, or output_limit (its page windows wrote past the run's
 // output budget).
@@ -48,6 +50,7 @@ type ExtractionReport struct {
 	SchemeRefused    []string `json:"schemeRefused" nullable:"false"`
 	MarksDiffer      []string `json:"marksDiffer" nullable:"false"`
 	Unpaired         []string `json:"unpaired" nullable:"false"`
+	SchemeRepeats    []string `json:"schemeRepeats" nullable:"false"`
 	Figures          []string `json:"figures" nullable:"false"`
 	Stopped          string   `json:"stopped" enum:",quiz_full,credits,output_limit"`
 	Pages            int      `json:"pages"`

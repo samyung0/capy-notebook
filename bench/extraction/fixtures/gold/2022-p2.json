@@ -22,7 +22,7 @@
  "answers": {
   "keys": "Built from the questions' correct letters as a one-line-per-item answer list (1. D)."
  },
- "note": "All 16 pages, cover and blank last page included. Keys from 2022-p2-key.json (HKEAA report via mathseasy.hk); signatures hand-read from the pages.",
+ "note": "All 16 pages, cover and blank last page included. Keys from 2022-p2-key.json (HKEAA report via mathseasy.hk); signatures hand-read from the pages. Figure boxes on the 0-1000 page grid (labels and caption included) read by hand from gridded renders, about ±5 (2026-11-04).",
  "questions": [
   {
    "label": "1",
@@ -652,6 +652,108 @@
      "correct": "D",
      "signature": "II III"
     }
+   ]
+  }
+ ],
+ "figure_boxes": [
+  {
+   "label": "14",
+   "page": 5,
+   "box": [
+    145,
+    402,
+    880,
+    480
+   ]
+  },
+  {
+   "label": "17",
+   "page": 6,
+   "box": [
+    492,
+    388,
+    893,
+    597
+   ]
+  },
+  {
+   "label": "18",
+   "page": 6,
+   "box": [
+    522,
+    690,
+    892,
+    937
+   ]
+  },
+  {
+   "label": "19",
+   "page": 7,
+   "box": [
+    550,
+    103,
+    882,
+    311
+   ]
+  },
+  {
+   "label": "20",
+   "page": 7,
+   "box": [
+    533,
+    398,
+    880,
+    560
+   ]
+  },
+  {
+   "label": "21",
+   "page": 7,
+   "box": [
+    558,
+    642,
+    882,
+    866
+   ]
+  },
+  {
+   "label": "22",
+   "page": 8,
+   "box": [
+    428,
+    130,
+    886,
+    297
+   ]
+  },
+  {
+   "label": "24",
+   "page": 8,
+   "box": [
+    474,
+    670,
+    890,
+    885
+   ]
+  },
+  {
+   "label": "38",
+   "page": 13,
+   "box": [
+    460,
+    423,
+    886,
+    640
+   ]
+  },
+  {
+   "label": "40",
+   "page": 14,
+   "box": [
+    570,
+    135,
+    884,
+    385
    ]
   }
  ]
