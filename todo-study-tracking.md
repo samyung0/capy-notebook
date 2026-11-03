@@ -451,6 +451,20 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 
 **Mock:** X0a and X0b (the dialog), X1 (pick pages), X2 (the saved quiz in its editor).
 
+**After the first cut (Epo, 2026-11-03; branch `claude/study-extraction`, bench `bench/extraction/reports/2026-11-03-first-cut.md`):**
+1. **AI-marked parts:** the cap of 20 open parts a quiz goes up to 100, and the UI calls them "AI-marked parts". The quiz editor shows the count while questions are added or edited, for example "34 of 100 AI-marked parts", so a full past paper fits in one quiz.
+2. **One prompt gets the questions and their answer keys.**
+   - The page-window call records every part's correct answer and a worked solution: copied when printed, otherwise worked out and marked as AI-written.
+   - A mark scheme or answer file, when given, still replaces worked-out keys by label.
+   - No question is left out for lack of a key.
+   - The full prompt and the proposed change are in `todo-study-tracking/R6-extraction-prompt.md`.
+3. **Hidden from members** is decided (see §7 and mocks X0b and X2) and gets built now. The extracted quiz and its source files start hidden.
+4. **Model:** extraction and grading use the pinned DeepSeek V4 Flash 0731 through OpenRouter (`deepseek/deepseek-v4-flash-0731`), the cheaper 07xx model. They don't use the chat's direct DeepSeek (`deepseek-flash`), which costs more. Extraction gets its own model slot. Check that the 0731 pin takes page images.
+5. **Failures, billing and caps:**
+   - The server retries a failed step once, silently, through the existing job queue. The user sees only progress, and a final error if it still fails.
+   - Billed as Generate.
+   - Answer files count toward the 10-file cap.
+
 ## 9. Grading open answers
 
 **Today** (R5 §2, R3 §4):
