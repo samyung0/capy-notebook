@@ -524,7 +524,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 Steps 2, 3 and 7 can run side by side.
 
 **UI matches the mocks (Epo, 2026-11-03).** Built screens copy the mock boards exactly, including where they differ from today's components. Anything a mock doesn't settle goes back to Epo as visual options on the canvas, not a call made in code. Shared pieces change to the mocks' design (canvas page 9, "Toasts and cards"):
-- **Toast:** the centred one-line black pill. The check pops in first and the body opens out of it, like an Xbox achievement. Picks: A (out from the centre) or B (out to the right); L1 or L2 for longer messages; S1 or S2 for several at once.
+- **Toast:** the centred black pill for every kind, taking a second line when needed. It fades in and out with the app's existing motion tokens, with no expanding animation (Epo, 2026-11-03). Pick S1 or S2 for several at once.
 - **Workspace cards:** the half banner from the Home mock (D1). Pick H1 (as in the mock) or H2 (keeps the icon, topics, access and tags).
 - **Quiz and file cards:** the same half banner. Pick Q1 (preview in the banner) or Q2 (kind tint and icon).
 
