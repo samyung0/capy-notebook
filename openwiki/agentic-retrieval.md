@@ -5733,16 +5733,18 @@ later).
      `label`, "AI-written" or "AI 撰写" by the starter's locale) and its
      question is named in `keysWorkedOut`. A saved question whose part marks
      do not add up to the total printed on the page is named in `marksDiffer`.
-- **Models.** The chat slot's default pin (`deepseek/deepseek-flash` today:
-  the slot requires vision and tool calls), with reasoning at mid for the
-  windows, which work keys out as well as copying (Epo 2026-11-03), and off
-  for the outline and the answer files (`extractionLLM`). Epo picked
-  DeepSeek V4 Flash 0731 through OpenRouter in a slot of its own, but 0731
-  reads text only: OpenRouter lists `input_modalities: ["text"]` on all its
-  endpoints and an image request answers 404 "No endpoints found that support
-  image input" (checked 2026-11-03), so the slot is not built and the choice
-  waits on Epo (a TODO in `extractionLLM`). GLM-5.3-Flash is the measured
-  alternative.
+- **Models.** The `extraction` slot's default pin (`extractionLLM`;
+  migration `0138`), which needs vision: OpenRouter's
+  `deepseek/deepseek-v4.1-flash-1017`, held on InferenceNet then Cloudflare
+  with fallbacks off, the same pin that reads pages, captions images and
+  writes ghost text, so one image model serves them all. Never direct
+  DeepSeek, which costs too much (Epo 2026-11-03). Windows reason at mid (sent
+  to OpenRouter as `medium`), and the outline and answer files run with
+  reasoning off. 0731, Epo's first pick, reads text only (OpenRouter lists
+  `input_modalities: ["text"]` on every endpoint and an image request answers
+  404). The bench compared 1017 with the unpinned V4.1 Flash and with direct
+  Flash
+  ([report](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md)).
 - **Progress and the end.** The service streams `questions` (every question
   recorded so far) after each window, which the gateway saves on the row, and
   then `done` with the quiz's questions and the report, or `error`. The relay

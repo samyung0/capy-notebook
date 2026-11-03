@@ -815,7 +815,10 @@ async def _extract_events(
     try:
         accounting_token = _bind_accounting(req.spendSessionId)
         model = models.resolve_query_model(
-            req.providerSlug, req.modelSlug, req.configVersion, slot=registry.Slot.CHAT
+            req.providerSlug,
+            req.modelSlug,
+            req.configVersion,
+            slot=registry.Slot.EXTRACTION,
         )
         async for event in extraction.run(
             pages,

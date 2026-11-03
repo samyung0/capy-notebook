@@ -4548,7 +4548,7 @@ export const SetStudyPreferencesResponse = zod.void()
  */
 export const ListModelSlotsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "slots": zod.array(zod.enum(['chat', 'editor', 'ingest', 'retrieval', 'captioning', 'rerank']))
+  "slots": zod.array(zod.enum(['chat', 'editor', 'ingest', 'extraction', 'retrieval', 'captioning', 'rerank']))
 })
 
 

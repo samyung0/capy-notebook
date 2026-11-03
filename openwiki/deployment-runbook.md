@@ -2865,7 +2865,7 @@ docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # 
 ## 9. Changing models in the registry
 
 Most slots are safe to retarget from the ops dashboard: chat,
-editor, ingest and captioning all resolve a pin per request or per job, so a new
+editor, ingest, extraction and captioning all resolve a pin per request or per job, so a new
 default applies to the next one and everything in flight keeps what it had.
 
 The dashboard deliberately disallows aliases: each grid row is the natural

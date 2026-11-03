@@ -90,19 +90,16 @@ func checkExtractionRequest(req apimodel.CreateExtractionReq) error {
 	return nil
 }
 
-// extractionLLM is the run's model: the chat slot's default pin, whose slot
-// requires vision and tool calls, with reasoning at mid for the page windows,
-// which work keys out as well as copying them (Epo 2026-11-03); outline and
-// scheme calls turn it off. The run's starter pays (Epo 2026-11-03).
-// TODO(study-extraction): Epo picked DeepSeek V4 Flash 0731 through OpenRouter
-// in a slot of its own, but 0731 reads text only (OpenRouter lists no image
-// input on any of its endpoints, 2026-11-03), so the model waits on Epo.
+// extractionLLM is the run's model: the extraction slot's default pin, a vision
+// model on OpenRouter (never direct DeepSeek, Epo 2026-11-03), with reasoning
+// at mid for the page windows, which work keys out as well as copying them;
+// outline and scheme calls turn it off. The run's starter pays.
 func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, error) {
 	var out resolvedLLM
 	if a.modelReg == nil {
 		return out, fmt.Errorf("%w: registry not configured", store.ErrModelUnavailable)
 	}
-	cfg, err := a.modelReg.Default(ctx, models.SlotChat)
+	cfg, err := a.modelReg.Default(ctx, models.SlotExtraction)
 	if err != nil {
 		return out, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
 	}

@@ -251,13 +251,17 @@ def openrouter_reasoning(spec: ModelConfig, thinking: str) -> dict[str, Any]:
     """GLM cannot turn reasoning off, and a request without an effort reasons
     as at max, so every GLM request names its effort (decision 2026-10-21).
     MiniMax reasons at the chat pin's effort too. The DeepSeek pins run with
-    reasoning off."""
+    reasoning off at instant, as captions, page reads, summaries and ghost text
+    ask, and otherwise at the call's effort: Make a quiz's page windows reason
+    at mid on 1017 (Epo 2026-11-03)."""
     if spec.model_slug in MINIMAX_EFFORTS:
         if thinking not in MINIMAX_EFFORTS[spec.model_slug]:
             raise RegistryError("MiniMax supports only low, mid, or high reasoning")
         return {"effort": MINIMAX_EFFORTS[spec.model_slug][thinking]}
     if spec.provider_slug != "zai":
-        return {"enabled": False}
+        if thinking == "instant":
+            return {"enabled": False}
+        return {"effort": _THINKING_TO_OPENAI[thinking]}
     if thinking not in ("low", "high", "max"):
         raise RegistryError("GLM-5.3-Flash supports only low, high, or max reasoning")
     return {"effort": thinking}

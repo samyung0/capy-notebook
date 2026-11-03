@@ -284,6 +284,33 @@ async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
     )
 
 
+def test_1017_reasons_at_the_extraction_windows_effort():
+    """Make a quiz's page windows run on 1017 at mid (Epo 2026-11-03), sent as
+    OpenRouter's medium effort on the same providers."""
+    spec = _spec(
+        provider_slug="openrouter",
+        model_slug="deepseek/deepseek-v4.1-flash-1017",
+        thinking_levels=("instant", "low", "mid"),
+        slots=("captioning", "extraction"),
+    )
+    body = openrouter_request(
+        spec,
+        [{"role": "user", "content": "q"}],
+        temperature=None,
+        tools=None,
+        response_format=None,
+        max_tokens=None,
+        thinking="mid",
+        stream=False,
+        tool_choice=None,
+    )
+    assert body["reasoning"] == {"effort": "medium"}
+    assert body["provider"] == {
+        "order": ["InferenceNet", "Cloudflare"],
+        "allow_fallbacks": False,
+    }
+
+
 def test_minimax_runs_on_together_then_digitalocean_at_the_chat_pins_effort():
     """Q224: MiniMax 3.1 Flash runs on Together, then DigitalOcean (Epo 2026-10-30), and its
     thinking levels map onto OpenRouter's efforts."""

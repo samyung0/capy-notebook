@@ -599,7 +599,10 @@ named provider directly. These exact routing exceptions are allowed:
   certifications stay retired.
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
-  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`, except MiniMax 3.1
+  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}` at `instant` (every
+  caption, page read, summary and ghost-text call) and otherwise at the call's
+  effort (Make a quiz's page windows on 1017 at `mid`, sent as `medium`),
+  except MiniMax 3.1
   Flash (`minimax/minimax-m3.1-flash`, a chat choice since 2026-10-24, Q224,
   migration `0112_chat_sources.sql`), which sends the chat pin's effort
   (`low`, `mid` as `medium`, `high`; `MINIMAX_EFFORTS`) at temperature 0.2 and
@@ -614,8 +617,9 @@ named provider directly. These exact routing exceptions are allowed:
   (decision 2026-10-20, after Relace's endpoint answered 429 for every summary;
   each held 32 summary calls in flight without a 429 when probed that day);
   `deepseek/deepseek-v4.1-flash-1017`, the captioning pin for page reads and
-  image captions (decision 2026-10-19) and the editor slot's ghost-text pin
-  (decision 2026-10-28), goes to InferenceNet, then Cloudflare
+  image captions (decision 2026-10-19), the editor slot's ghost-text pin
+  (decision 2026-10-28) and the extraction slot's pin (Epo 2026-11-03), goes
+  to InferenceNet, then Cloudflare
   (decision 2026-10-21: both read page text as well as DeepInfra did;
   InferenceNet describes non-text visuals such as QR codes less often, which is
   accepted). Default routing is
@@ -636,7 +640,10 @@ A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat and editor also hold a per-user preference. Generate
 workflows run on the chat slot (migration `0044` merged the former `generate`
 slot into it; usage `surface` still records `generate`).
-The slots are `chat`, `editor`, `ingest`, `retrieval`
+The slots are `chat`, `editor`, `ingest`, `extraction` (Make a quiz's page
+windows, outline and answer-file parse, migration `0138`: a vision text slot
+on OpenRouter's DeepSeek V4.1 Flash 1017, never direct DeepSeek, Epo
+2026-11-03), `retrieval`
 (the workspace embedding model, used by ingest indexing and by chat/generate
 query embedding), `captioning` (the vision model used for standalone image
 uploads; embedded figure captioning was retired) and `rerank` (the
@@ -653,8 +660,8 @@ set `capabilities` (`vision`, `pdf`, `embedding`, `rerank`) on the catalog row;
 (`agentic_loop_certs.json`) and can never be set by hand. The only place the
 slot-to-capability policy lives is the map in
 `server/internal/models/slot.go`: chat needs `agentic_loop` and `vision`,
-retrieval needs `embedding`, captioning needs `vision`, rerank needs `rerank`,
-the other slots need nothing. Chat needs `vision` because its tools attach
+retrieval needs `embedding`, captioning and extraction need `vision`, rerank
+needs `rerank`, the other slots need nothing. Chat needs `vision` because its tools attach
 images (`capture_page`, Office pictures from `inspect_office_document`,
 pending Office images); the assignment check is the
 only gate, with no runtime vision check, and both seeded chat rows
