@@ -14,7 +14,7 @@ This page is the accounting contract.
 
 ## Product plan limits
 
-`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`, 2 MiB on every plan since `0114`) is the canonical backend
+`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`, 2 MiB on every plan since `0114`, topics per workspace in `0136`) is the canonical backend
 catalog for every numeric limit that may vary by subscription plan:
 
 | Limit                           |                       Free |                        Pro |
@@ -27,6 +27,7 @@ catalog for every numeric limit that may vary by subscription plan:
 | Files per workspace             |                        100 |                        100 |
 | Files per upload/import request |                         20 |                         20 |
 | One uploaded image              |                      2 MiB |                      2 MiB |
+| Topics per workspace            |                         10 |                         20 |
 
 Files per workspace counts nothing outside a workspace: a standalone file
 (no workspace, its uploader's alone) takes no count cap for now, only the
@@ -1192,7 +1193,8 @@ direction.
 | Field | Runes |
 | --- | ---: |
 | Workspace name / description | 80 / 500 |
-| Chapter name (add, update, upload, import) | 60 |
+| Topic name (add, update, upload, import) | 60 |
+| Topic description (add, update, chat's `create_topic`) | 200 |
 | File name (upload, import, rename, editor asset) | 120 |
 | Material, quiz, flashcard set, generate title | 120 |
 | Conversation title | 60 |
@@ -1213,8 +1215,14 @@ LLM-authored material titles and editor asset names (both
 extension-preserving), workspace clone names (suffix-preserving), and
 auto-derived conversation titles.
 
-A workspace holds at most 20 chapters (`MaxChaptersPerWorkspace` in
-`store/store.go`), checked when a chapter is added and when an upload creates
-one by name; the 21st is refused as 409 `too_many_chapters`. The chat agent
-lists every chapter on each model call, which is what the cap bounds. A clone
-copies its source's chapters as they are.
+A workspace holds at most its owner's plan's topics per workspace (10 on
+Free, 20 on Pro; `plan_limits.topics_per_workspace`, Epo 2026-11-03), checked
+under the workspace row's lock when a topic is added (the Files panel, chat's
+`create_topic`) and when an upload, move, clone into a workspace or bank copy
+creates one by name (`nextTopicPositionTx` in `store/upload_topics.go`); one
+past it is refused as 409 `too_many_topics`. A workspace past the cap after a
+downgrade keeps its topics and adds no more. A workspace clone copies its
+source's topics with their descriptions and is refused with
+`too_many_topics` when they are more than the cloner's plan allows, as it is
+for files. The chat agent lists every topic on each model call, which the cap
+also bounds.

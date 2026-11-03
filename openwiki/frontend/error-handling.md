@@ -102,7 +102,7 @@ Counts are Unicode code points (`textLength`), matching the backend's runes.
   limit is soft: no `maxLength`, so pasting is not cut; the form's zod
   validation marks the field and disables Save.
 - An untitled field with a limit gets a silent `maxLength` (searches, the new
-  chapter name, the AI prompt at 4,000, link URL/text, short and gap answers at
+  topic name, the AI prompt at 4,000, link URL/text, short and gap answers at
   1,000).
 - Long free text without a title shows `CharCount` under the box: chat (5,000,
   send disabled when over), note comments (3,000, enforced by the API on the
@@ -112,7 +112,7 @@ Counts are Unicode code points (`textLength`), matching the backend's runes.
 ## TanStack Query defaults
 
 Queries stay fresh for five minutes by default. Notifications and workspace
-chapter, file, and material lists use five seconds and refetch on window focus
+topic, file, and material lists use five seconds and refetch on window focus
 when stale. The workspace list options also apply to route prefetches.
 Route loaders only prime the cache and never return the prefetch: a returned
 promise makes TanStack Router hold the whole matched branch, app shell
@@ -226,7 +226,7 @@ not offline use: without a service worker the app itself does not load offline.
 - Opt-in per query: a definition spreads `persisted`, whose 7-day `gcTime` keeps
   a restored query until it is used and marks it for storage. Query `meta` cannot
   carry the mark, because hooks replace it with `queryMeta(options)`.
-- Stored: `/me`, workspace lists (not searches), a workspace and its chapters,
+- Stored: `/me`, workspace lists (not searches), a workspace and its topics,
   files, materials, conversations, study states and study plans, file metadata,
   the dashboard recents, notifications and the unread count, learning progress,
   the review overview, quiz attempts (the quiz page resumes its open one from
@@ -533,11 +533,11 @@ each row's workspace and member for its icon; a `chat_turn` event patches a
 conversation's running mark in every cached conversation list,
 [agentic-retrieval.md](../agentic-retrieval.md#following-a-running-turn)), `ingest` (patched into
 the file caches) and `tree` (`{kind: files | materials}`, which invalidates
-that workspace list plus the chapters list after a 300 ms trailing debounce
+that workspace list plus the topics list after a 300 ms trailing debounce
 per kind, so one ingest's several writes cost one refetch; a hidden tab only
 marks them stale and reads them on focus). Neither Redis Pub/Sub nor Postgres
 NOTIFY replays missed events, so every successful connection refetches the
-notification list, the unread count, the file, material and chapter lists,
+notification list, the unread count, the file, material and topic lists,
 and the conversation lists. A connection that succeeds after a failed attempt (a redeploy, a
 dropped network) also refetches every active query in error, so the error
 states above recover without Retry. There is no polling while disconnected; the workspace lists keep only
@@ -832,7 +832,7 @@ another tab) counts as started, and `nothing_to_process` toasts that there
 are no saved changes to process. A queued or processing note shows no action,
 and there is no Cancel for a note. Notes past the list's cap (the owner's
 files per workspace) show as one "Notes not shown" count line under the
-list. The source coverage bar counts files only. Chapter-level quizzes and
+list. The source coverage bar counts files only. Topic-level quizzes and
 flashcard sets are not indexed and not listed; an embedded one's edits show
 under its note.
 

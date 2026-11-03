@@ -38,7 +38,7 @@ provider call uses the platform key (see Configuration surface).
 Public workspace landing pages use a separate live metadata projection from Go
 at `GET /api/public/workspaces/{token}/summary` (the share token, not the bare
 id). It returns workspace metadata and
-chapter/file names for link/public workspaces, with `Cache-Control: no-store`.
+topic/file names for link/public workspaces, with `Cache-Control: no-store`.
 It never calls retrieval or returns source text, material bodies, file-content
 summaries or download URLs. Reading full workspace/study content requires a
 session. There is no summary generation job, KV or R2 cache for this endpoint;
@@ -111,8 +111,8 @@ the list. Both profiles' schemas list each object's arguments in
 2026-10-30, T3a): some OpenRouter routes (Morph and InferenceNet, which served
 DeepSeek Flash on 2026-10-29) generate arguments in the schema's property
 order, so with Go's alphabetical order an optional property before the one the model writes first was left out
-(create_material's content, cards and chapter_id; a question's options,
-correct answer and markscheme; create_chapter's name before it was required;
+(create_material's content, cards and topic_id; a question's options,
+correct answer and markscheme; create_topic's name before it was required;
 capture bbox), and a field the model could not write in place landed in a
 later one. A question's fields follow DeepSeek's own order, measured on
 Cloudflare, which does not constrain. Go's definitions stay alphabetical.
@@ -1249,7 +1249,7 @@ when missing, including for accounts originally linked through login. OAuth
 returns to the current page, where the user can reopen the importer. OneDrive's
 separate MSAL picker authorization remains scoped to opening the picker.
 
-Google Picker and OneDrive Picker accept multiple files and folders. OneDrive preserves selection across folders. Inspection recursively expands provider folders into a flat list of files, including subfolders, with pagination and deduplication; shortcuts are not followed. The workspace file limit bounds each folder selection's file count and total list requests. Empty, over-limit, unreadable or incompletely listed folder selections fail explicitly. The chooser deduplicates overlapping selections across inspection batches and applies the remaining workspace room before showing source details. Folder names do not create chapters. The subsequent import still submits file ids in batches of 20 through the existing quota/reservation gates. OneDrive expansion retains drive ids, deduplicates by drive and item id, and only follows pagination URLs on the same Graph children endpoint. Remote-item shortcuts are rejected. Its existing delegated `Files.Read` permission covers folders in the user's OneDrive. Google folder expansion requires an actual `drive.readonly` or `drive` token grant; per-file grants are asked to reconnect.
+Google Picker and OneDrive Picker accept multiple files and folders. OneDrive preserves selection across folders. Inspection recursively expands provider folders into a flat list of files, including subfolders, with pagination and deduplication; shortcuts are not followed. The workspace file limit bounds each folder selection's file count and total list requests. Empty, over-limit, unreadable or incompletely listed folder selections fail explicitly. The chooser deduplicates overlapping selections across inspection batches and applies the remaining workspace room before showing source details. Folder names do not create topics. The subsequent import still submits file ids in batches of 20 through the existing quota/reservation gates. OneDrive expansion retains drive ids, deduplicates by drive and item id, and only follows pagination URLs on the same Graph children endpoint. Remote-item shortcuts are rejected. Its existing delegated `Files.Read` permission covers folders in the user's OneDrive. Google folder expansion requires an actual `drive.readonly` or `drive` token grant; per-file grants are asked to reconnect.
 
 Google Drive and OneDrive imports keep one durable request row per actor and
 client request id. The gateway establishes that row before reading provider
@@ -1259,7 +1259,7 @@ and pipeline `import` queue jobs. A committed request always replays that stored
 without querying provider metadata again. Replay still checks current
 actor/workspace mutation authorization and the request fingerprint, but it does
 not rerun mutable admission checks for import-worker availability, file room,
-chapter membership, provider access, or credits. A failed response write rolls back
+topic membership, provider access, or credits. A failed response write rolls back
 every job and reservation it would have named.
 
 The same transaction enqueues an `import` job on the pipeline queue. The
@@ -2063,9 +2063,9 @@ exists; the local bundle is gone once the first ingest finished.
   file's alias onto it in one transaction, fenced to the job's file revision;
   the orphan trigger then drops the previous content. A source refresh's
   candidate is only marked ready (Go's publication aliases it).
-6. Stop. There is no concept or entity index, no chapter/workspace content-summary
+6. Stop. There is no concept or entity index, no topic/workspace content-summary
    tree and no rollup job. The public metadata outline described above is read
-   directly from workspace/chapter/file rows and is separate from this pipeline. Cross-document reasoning happens at query time,
+   directly from workspace/topic/file rows and is separate from this pipeline. Cross-document reasoning happens at query time,
    conditioned on the question: the agent reads the first hits and searches
    again for the names it finds there. Concept extraction (one LLM call per
    ~12 chunks, names only, rendered as a footer on every search result) was
@@ -2196,8 +2196,8 @@ publishes their notifications to `notif:{userId}`.
 
 ### File descriptors (no tree)
 
-Descriptors are shared by identical files. Moving a file between chapters
-does **not** re-describe it. There is no chapter or workspace rollup: at a
+Descriptors are shared by identical files. Moving a file between topics
+does **not** re-describe it. There is no topic or workspace rollup: at a
 100-file workspace cap, `list_sources` can put every name and ~50-word
 descriptor into one tool result (~7k tokens), and the model has the question
 that an embedding index would not. There is no detailed tier; the model reads
@@ -3046,7 +3046,7 @@ without appending a failed tool result. Its optional `sources` (also on
 plain strings, at most 20 of at most 200 characters (`fieldlimits.MaterialSources`
 and `MaterialSource`), sent as written. Go (`resolveSources` in
 `internal_materials.go`) stores each as a name in `scope_file_names`: the id or
-exact name of an untrashed file, a top-level material of any kind or a chapter
+exact name of an untrashed file, a top-level material of any kind or a topic
 of the same workspace becomes its current name, anything else (a lecture, a
 handout, a web address, an id from another workspace or of a trashed item)
 stays as written, trimmed, duplicates once (Epo 2026-10-21). A blank source
@@ -3641,10 +3641,10 @@ materials are sources.
   request lacks the learning scope or the learner's level, as "I want to learn
   physics" lacks both, offering a default, and outline the new files before
   building once the learner goes ahead, following the study preferences: Epo
-  2026-10-14, moved here from the prompt 2026-10-21, outline 2026-10-29; survey; search where the need is), the output rules (one main explainer per chapter, a note or a deck
+  2026-10-14, moved here from the prompt 2026-10-21, outline 2026-10-29; survey; search where the need is), the output rules (one main explainer per topic, a note or a deck
   as the output-files preference says; quizzes and flashcards standalone in
-  the chapter they practise; other materials as the study preferences and the
-  chapter's teaching need say), an example the sources lack labelled as
+  the topic they practise; other materials as the study preferences and the
+  topic's teaching need say), an example the sources lack labelled as
   illustrative, which question tool writes what (Question tools, below;
   options are shown shuffled, so never name one by its letter or position,
   "all of the above" included), and the flashcards, mindmap and
@@ -3656,7 +3656,7 @@ materials are sources.
   excerpt, figure placement and exercise reuse. Skill texts are the same in
   both modes.
   `read_skill`'s catalog (`skills.catalog`) words the building skill of the
-  output-files preference as the one for the chapters and the other as "only
+  output-files preference as the one for the topics and the other as "only
   when the request asks for" its format. A write is refused until the skills
   it needs are in the request (`skills.REQUIRES`, checked in `tools.run`):
   every write needs `editing`; `create_material` of a note and an
@@ -3713,16 +3713,16 @@ materials are sources.
   terminal call drops the tools, to make room. A copy not yet followed by a step is
   replaced; a turn note drops the stale copies (`compact._fold_turn`), and none
   reaches the stored conversation. It names the open item
-  (`Open: <title> (<kind> <id>), in chapter <name> [<chapter id>].` or
+  (`Open: <title> (<kind> <id>), in topic <name> [<topic id>].` or
   `Open: nothing.`) followed by the learner's workspace role (Go's `role`: "The
   learner owns / can edit / can only view this workspace."), and with a file
   open `OPEN_CAUTION`: the file may have nothing to do with the request, so the
   agent acts on the learner's message and the conversation (Epo 2026-10-25). It lists no
-  chapters (Epo 2026-10-25): the model reads them and their ids through
-  `list_sources`; the turn still loads them (`store.workspace_chapters`, at
-  most 20, `MaxChaptersPerWorkspace` in Go) for the open item's chapter and the
-  `chapter_id` checks. It lists the study preferences (`prompts/preferences.py`: output files (a note
-  or a deck per chapter), writing style (brief by default since Epo 2026-10-26, normal or story, a narrated explainer from
+  topics (Epo 2026-10-25): the model reads them and their ids through
+  `list_sources`; the turn still loads them (`store.workspace_topics`, at
+  most the owner's plan's topics per workspace, 20 on Pro) for the open item's topic and the
+  `topic_id` checks. It lists the study preferences (`prompts/preferences.py`: output files (a note
+  or a deck per topic), writing style (brief by default since Epo 2026-10-26, normal or story, a narrated explainer from
   three science-documentary transcripts, Epo 2026-10-25), quiz more (5 questions), less (2)
   or off and flashcards more (10), less (5) or off (Epo 2026-10-25), visual
   aids (more: images wherever possible; fewer: charts, plots and interactive
@@ -3781,7 +3781,7 @@ materials are sources.
   (`LOOP_LOG_AT`) it is logged; from 3 (`LOOP_REFUSE_AT`) the call is refused
   as a `limit_reached` result ("Not run: you called … with these same
   arguments …", which says to call it again only with different arguments,
-  passing any it needs such as a `create_chapter` name; Epo 2026-10-29,
+  passing any it needs such as a `create_topic` name; Epo 2026-10-29,
   Q582), which still counts as an errored write for the stall guard;
   at 6 (`LOOP_STOP_AT`) every result of that response ends with
   `agent.LOOP_NOTICE` and the next response runs with tools off, reported as
@@ -3846,7 +3846,7 @@ materials are sources.
   secret, account access, any workspace role, and progress on for that user in
   that workspace, else 403), which answers with
   `store.AgentStudyProgress`: items marked done, started or removed, recent
-  quiz results, and the chapters whose rated questions and cards are least
+  quiz results, and the topics whose rated questions and cards are least
   retained. `tools.render_progress` turns it into the text the model reads.
 - **Question bank.** The chat agent has no bank tools (contract v26, Epo
   2026-10-14): it listed, read and copied bank questions from contract v11 to
@@ -4065,19 +4065,19 @@ materials are sources.
 | Tool | Side effects | Notes |
 | --- | --- | --- |
 | `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; `file_ids` take any workspace item id, and any invalid supplied id rejects the call, naming it |
-| `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; the rest last, under "Not in a chapter" and "Study materials not in a chapter", the words the agent sees wherever it once read unfiled, Epo 2026-10-30), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are indexed); sources retain passage counts, status and short descriptors; notes show their summaries the same way. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
+| `list_sources` | none | Scoped source files and workspace study materials grouped by topic, each topic header carrying its `topic_id` (materials Go lists with their `topicId`; the rest last, under "Not in a topic" and "Study materials not in a topic", the words the agent sees wherever it once read unfiled, Epo 2026-10-30), so the model sees which topics already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are indexed); sources retain passage counts, status and short descriptors; notes show their summaries the same way. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading; a material other than a note is refused ("… is a quiz, which has no passages to read; inspect_document reads it.") |
 | `search_library` | full | Offered when the library answered its subject list; answers as not available while Workspace only is on. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Its hits are kept between messages (Epo 2026-10-28) |
 | `read_library` | none | As `search_library`. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes The page comes back as one numbered passage of kind `library` (Epo 2026-10-30): the model reads `[n] Library: <book> › pp.` and cites it like a file's passage, and the answer's citation carries `kind: library`, the excerpt id, the book's title and the excerpt's pages, shown under the answer as a book badge that opens nothing. Excerpt ids read `excerpt_id=<id>` everywhere, never bracketed, so none passes for a citation. Retained reads match on the page's own text, not the numbered tool output |
 | `search_web` | none | DeepSeek's web search (`retrieval/websearch.py`, `POST https://api.deepseek.com/v1/tools/search` on the platform `DEEPSEEK_API_KEY`): one focused query of at most 128 characters, 5 results, no retry; only the query is sent (never the learner's question or IP), and the description asks for it in the model's own words rather than copied from the learner's files (Epo 2026-10-24, Q289). Each result is a `Passage(kind="web")` (`chunk_id` `web:<url>`, the link in `file_id`, title, site, the date parsed from DeepSeek's RFC 3339 value to YYYY-MM-DD and left out when it does not parse, DeepSeek's summary as the text and its snippet for display) in one source block, numbered like passages, with a data-not-instructions note and the searches left. A user message gets 3 searches: an empty one counts and is free, a failed one (an error, a timeout, a non-2xx answer or a body without a results list) is free and the first 2 failures do not count, so at most 5 calls run (Epo 2026-10-24); results that miss the point are an ordinary search the model judges, since DeepSeek answers even a nonsense query with 5 results (2026-10-24 probe); the parser keeps only title, url, snippet, summary, site_name and date; calls of one response hold their places while they run. The same query again in one message (compared without case or extra spaces) reuses that message's answer, neither charged nor counted; a search whose settlement fails keeps its results and is neither charged nor counted, its call row left to the receipt sweep (Editor 2026-10-24). A search with results costs 1.8 credits ([observability-metering.md](observability-metering.md)). Answers as not available while Workspace only is on. Retains cited results, which replay from their saved copy |
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
-| `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
+| `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained topics |
 | `search_images` | full | As `search_library` (Epo 2026-10-30). Images by what they show: the library's excerpt search (ten excerpts deep) runs underneath and lists the shown, described figures of those excerpts in rank order, at most eight, each with its id, label, description, book, page and credit. The result names no excerpt or library tool: the model learns only that it can place one by id in its answer, a note or a quiz question. A listed figure may be placed this turn without a `read_library`, credited with the excerpt that lists it (`ToolContext.shown_figures`). A chat answer's `![caption](figure:<id>)` line draws it through `GET /api/library/figures/{id}` (Go → pipeline `POST /library/figure`, `tools.answer_figure`): the JPEG of its box as base64 with its label and printed credit, 404 for a figure the library does not show; any signed-in user may read it. The learner's own images join as a second group once their pictures carry descriptions |
 | `capture_library_page` | none | As `search_library`, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF, or an uploaded image as its single page 1, as a JPEG for the model; a Word, Excel or PowerPoint file is refused first, naming `inspect_office_document` (`unsupported_format`; Q283); refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_library_page` and `resolve_source_change`; adds no citation |
-| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes and flashcard sets (a quiz is created by `add_questions`; the agent makes no mindmap or diagram since 2026-10-25, Epo, though it can still rewrite a Mermaid block a learner added). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. Blank `content` (empty or whitespace) is not converted: Go stores the blank note a user's new note starts as (`materialdoc.Empty`, one empty paragraph; `MaterialDraft.Blank` lets it past the store's no-text check) and answers with the receipt plus a `notice` the result prints, "The note was created blank because content was empty; add its content with edit_document." (Epo 2026-10-29). Any other note left with no text, as one of only fences or figures, is still refused "The material has no content." `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes and flashcard sets (a quiz is created by `add_questions`; the agent makes no mindmap or diagram since 2026-10-25, Epo, though it can still rewrite a Mermaid block a learner added). Optional `topic_id` files the material in that topic (Go refuses a topic of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. Blank `content` (empty or whitespace) is not converted: Go stores the blank note a user's new note starts as (`materialdoc.Empty`, one empty paragraph; `MaterialDraft.Blank` lets it past the store's no-text check) and answers with the receipt plus a `notice` the result prints, "The note was created blank because content was empty; add its content with edit_document." (Epo 2026-10-29). Any other note left with no text, as one of only fences or figures, is still refused "The material has no content." `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it); a chart, plot or graph prints its block as compact JSON without a graph's drawn SVG, summed up past 1,500 characters as its type, kind, title, first 12 labels and series names (`tools._figure_view`), an interactive block its caption, a Mermaid block its source as its text and its caption apart (Epo 2026-10-22), and a flashcard its sides as `{"back":…,"front":…}` (`edit::card_text`; Epo 2026-10-21) |
-| `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
+| `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `topic_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, as notes place one) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref and payload when its Undo fits (see Undo chain). A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
 | `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, its head saying a command copies an `[id]` whole (UAT 2026-10-22), a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block; the turn's first read of the file appends its unindexed changes, as the other reads do (Q526): edits outside the page, slide or range read and the cells outside the range, account chat loading them first. Reads also list pictures, charts, equations and drawn shapes, and `ids` (any format, at most 4) returns each picture as an image and each chart with every point (Pictures and charts, below) |
@@ -4086,7 +4086,7 @@ materials are sources.
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
-| `create_deck` | turn only | Needs `material.create` and ppt-master in the image. Outlines a deck (1 to 30 slides, optional `chapter_id` and `sources`, the latter stored with the PPTX as `files.scope_file_names`) on the turn; nothing is stored yet. The material `excerpt_ids` rule ([decks.md](decks.md)) |
+| `create_deck` | turn only | Needs `material.create` and ppt-master in the image. Outlines a deck (1 to 30 slides, optional `topic_id` and `sources`, the latter stored with the PPTX as `files.scope_file_names`) on the turn; nothing is stored yet. The material `excerpt_ids` rule ([decks.md](decks.md)) |
 | `write_slide` | yes | Checks one SVG slide alone with ppt-master's checker (figures only this turn's bbox captures and Office pictures) and keeps it; once every slide is written, adds the Sources slide, exports the PPTX and stores it as a workspace file through `/api/internal/files` ([decks.md](decks.md)) |
 
 Read tools hit Postgres directly. Every mutation goes through the gateway with
@@ -4369,8 +4369,8 @@ service did not answer in time` or `the service could not be reached`. A
 refusal (400, 401, 403, 404, 409, 422, Q456's `saves_failing`) keeps its own
 message. The POST makes at most 3 attempts, 0.25 s and 0.5 s apart (parts
 design Q12).
-A `chapter_id` naming no chapter of the workspace is refused in the pipeline
-before anything is built (`tools.unknown_chapter`, for notes, decks and new
+A `topic_id` naming no topic of the workspace is refused in the pipeline
+before anything is built (`tools.unknown_topic`, for notes, decks and new
 quizzes).
 
 **Question tools.** The agent never writes the question format (Epo
@@ -4464,7 +4464,7 @@ while it vanishes from a multiple-choice question. A short answer's accepted
 answer written with its unit (`"5%"` or `"5 percent"` with unit `%`) keeps
 the number, a Unicode minus becomes `-` and thousands commas go (`"129,400"`;
 `"1,5"` stays refused), and a
-`chapter_id` beside `quiz_id` is ignored with a result line (`quiz_id` with
+`topic_id` beside `quiz_id` is ignored with a result line (`quiz_id` with
 `title` stays refused: it may mean a new quiz). In note markdown
 (`questions.note_fences`, for `create_material` and `insert_markdown` /
 `replace_block`), a ```` ```chart ```` or ```` ```plot ```` body that is not
@@ -4988,7 +4988,7 @@ names into `NumberFormatMutation` tags and any other text into a custom
 pattern; borders are not offered yet). A `create` goes to
 `/api/internal/documents/office/create` with the call's other commands: Go
 checks the actor, replays a receipt as `/api/internal/files` does and checks
-`chapterId`, then asks the collaboration server's `/internal/documents/create`
+`topicId`, then asks the collaboration server's `/internal/documents/create`
 for the file's bytes and stores them as the agent's deck is stored
 (`storeAgentFile`: the upload's size check, the blob, the files row, the parse
 job and a receipt whose Undo trashes the file); the file is named from the
@@ -5530,10 +5530,10 @@ for life so the provider prompt cache holds.
   `_workspace_id`, and without one the item lands in No workspace (or
   `list_sources` lists the files with no workspace). A create (an
   `add_questions` without `quiz_id`, an `edit_office_document` without
-  `file_id`, `create_chapter` too) naming a workspace outside the turn's
+  `file_id`, `create_topic` too) naming a workspace outside the turn's
   list is refused there before anything is sent (`NOT_A_DESTINATION`:
   nothing was created; `list_workspaces`, `create_workspace` or, except for
-  `create_chapter`, leaving `workspace_id` out for No workspace; Epo
+  `create_topic`, leaving `workspace_id` out for No workspace; Epo
   2026-10-29, Q578), as `list_sources` refuses one (`NOT_A_SCOPE_WORKSPACE`);
   a workspace `create_workspace` made this turn is in the list, and Go still
   refuses a view-only one. Go's definitions stay
@@ -5545,7 +5545,7 @@ for life so the provider prompt cache holds.
   and the summaries' `search` column (option B); `search_files_content` runs
   one hybrid search per embedding space over the scope's workspace files and
   the caller's no-workspace files, labelling each passage with its workspace,
-  chapter and whether the user can edit it (a PDF passage reads view only),
+  topic and whether the user can edit it (a PDF passage reads view only),
   and a passage of an item with unindexed edits carries workspace chat's
   "N edits not indexed yet" line (Q527): each passage's item is loaded
   through `POST /api/internal/changes`, one call per item at once, as its
@@ -5555,7 +5555,7 @@ for life so the provider prompt cache holds.
   the outdated-source notice; the search still answers. One call per item,
   not one for all: Go refuses a whole `/changes` call when any one item is
   unreadable. The hints stay off.
-  `list_sources` lists one workspace by chapter, or the newest 100 items with
+  `list_sources` lists one workspace by topic, or the newest 100 items with
   no workspace. Both search tools keep their full result between messages.
 - **Per-call checks.** Every read, inspect, capture, change read and resolve
   asks Go first: `POST /api/internal/documents/access` (`AccountDocumentAccess`,
@@ -5568,23 +5568,28 @@ for life so the provider prompt cache holds.
   destination must be No workspace or a scope workspace the actor edits.
   `POST /api/internal/workspaces` is `create_workspace` (a receipt, no Undo,
   under the combined workspace cap).
-- **Chapters.** `create_chapter` (both scopes, operation `material.create`)
-  appends a chapter named as asked or `Chapter (n)` with the lowest free n, an
-  over-limit name cut and said; `POST /api/internal/chapters` records a
-  receipt and no Undo, and the chapter's id is its operation id under `ch_`
-  (`store.ChatChapterID`, `tools.chapter_id`) so a recovered receipt names it.
+- **Topics.** Chapters became topics (Epo 2026-11-03, contract v47): one
+  flat list per workspace that groups files, later the unit questions are
+  tagged with. `create_topic` (both scopes, operation `material.create`)
+  appends a topic named as asked or `Topic (n)` with the lowest free n and an
+  optional one-line `description` (what the topic covers, for tagging later),
+  an over-limit name or description cut and said, under the owner's plan's
+  topic cap (`too_many_topics`); `POST /api/internal/topics` records a
+  receipt and no Undo, and the topic's id is its operation id under `tp_`
+  (`store.ChatTopicID`, `tools.topic_id`) so a recovered receipt names it.
   The schema both chats show the model (`tools.schemas_for`) requires `name`
-  and drops the Chapter (n) sentence; Go's definition keeps `name` optional
+  and drops the Topic (n) sentence; Go's definition keeps `name` optional
   and calls are checked against it, so a nameless call still lands as
-  `Chapter (n)` (Epo 2026-10-29, Q582).
+  `Topic (n)` (Epo 2026-10-29, Q582).
   Account chat's copy takes a required `workspace_id` of a workspace the user
-  edits; workspace chat's adds the chapter to the turn's chapters at once.
+  edits; workspace chat's adds the topic to the turn's topics at once.
   The editing skill shows, with scope and level, a brief outline of what it
-  will create: each new file and its chapter, new chapters made with
-  `create_chapter` once the learner proceeds; account chat's also offers where
+  will create: each new file and its topic, new topics made with
+  `create_topic` once the learner proceeds; account chat's also offers where
   new files go (a workspace they edit, a new one or No workspace). The plan
-  stays short (Epo 2026-10-29). `list_sources` names empty chapters too, so a build
-  reuses them, and the playground creates chapters locally (Epo 2026-10-29).
+  stays short (Epo 2026-10-29). `list_sources` names empty topics too, so a build
+  reuses them, with a topic's description on the line under its header, and
+  the playground creates topics locally (Epo 2026-10-29).
 - **Refusals in account words.** An unreadable item:
   "No file you can read has the id …: it may have been deleted, moved to trash
   or be outside your workspaces. list_sources shows a workspace's current ids;
@@ -5617,13 +5622,13 @@ for life so the provider prompt cache holds.
 `/generate` is **not** an agent loop. Scope is already known, the output shape
 is fixed, and the gateway must persist a parseable artifact.
 
-1. The gateway resolves item and chapter ids atomically (`resolveScope`
+1. The gateway resolves item and topic ids atomically (`resolveScope`
    over `store.SourceItems`). An item id may name any untrashed file or
-   top-level material, notes, quizzes and flashcard sets included; a chapter
+   top-level material, notes, quizzes and flashcard sets included; a topic
    adds every item filed in it; omitted ids expand to every item in the
    workspace (Epo 2026-10-21). One invalid id rejects the request, naming it
    ("No workspace item has the id …: it may have been deleted or moved to
-   trash." or "No chapter has the id …: it may have been deleted."). Items
+   trash." or "No topic has the id …: it may have been deleted."). Items
    without indexed text contribute none, and a scope with none at all fails
    before a model call as `scope_has_no_indexed_content`: "None of the chosen
    sources has any text to generate from yet: they are still being indexed,
@@ -5863,7 +5868,7 @@ The workspace stats (`noteChanges`) list every workspace note whose index is
 behind its content, as the Indexing tab shows them beside the file changes
 (Epo 2026-10-21): waiting (dirty), queued (its `ingest` job not yet claimed:
 pending with no attempts), processing, or failed (parked with `index_error`).
-Embedded quizzes and flashcard sets index inside their note and chapter-level
+Embedded quizzes and flashcard sets index inside their note and topic-level
 ones are not indexed, so only notes are listed. The list takes the cap that
 bounds the file list, the workspace owner's files per workspace (100 on both
 plans today; notes do not count toward it): notes with a job come first, then
@@ -6529,7 +6534,7 @@ test suite.
   passages for anything more. Cross-document reasoning is query-time, not
   a precomputed rollup that cannot see the question.
 - **Scope is SQL, not a prompt hint.** The agent cannot search outside the
-  user's chapter/file selection.
+  user's topic/file selection.
 - **Generate is deterministic; chat is agentic.** Mixing them would make
   material JSON unreliable and chat latency unpredictable.
 - **Materials persist in Go.** The retrieval service holds DB credentials but

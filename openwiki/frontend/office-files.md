@@ -22,7 +22,7 @@ formats may be uploaded within the plan byte limit, but remain store-only.
 Create cards open `/materials/:id` and Files cards open `/files/:id` through SPA router Links, as do dashboard recent rows and workspace file/material rows. Each item remembers its own View/Edit mode in localStorage (`capy.document.mode.<kind>.<id>`); an explicit URL mode wins, followed by the saved mode, then View.
 Both routes use the workspace's `CenterContent` header and renderers, with
 the app sidebar and a back icon. They omit workspace navigation and Move to
-chapter; a file's payer still gets Move to…. `FileModeControl` portals the file View/Edit toggle (the note's
+topic; a file's payer still gets Move to…. `FileModeControl` portals the file View/Edit toggle (the note's
 `MaterialModeToggle`, labelled from lg) into that shared header while each
 runtime retains its save and collaboration lifecycle. Text files have no Save
 button: the room saves edits after a second idle, and Ctrl+S or leaving Edit
@@ -2215,7 +2215,7 @@ reason in the row and is final. A warning toast after the upload names how many 
 were removed. Cloud imports get the same treatment in the import worker before
 the file is stored, and the import status carries the same count.
 
-The same dialog submits each cloud row with its own chapter and parse mode;
+The same dialog submits each cloud row with its own topic and parse mode;
 there is no caption toggle, because embedded figure captioning was retired.
 Browser analysis is advisory and does not replace ingest or decide whether a
 source is searchable.
