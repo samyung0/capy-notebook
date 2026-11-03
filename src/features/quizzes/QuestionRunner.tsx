@@ -36,7 +36,7 @@ import {
   type LearnerQuestion,
   type TextBlock,
 } from '@/features/questions/types';
-import { getLocale, m } from '@/i18n';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import { type Answer, type Answers, emptyAnswer, quantityValue } from './grade';
@@ -254,32 +254,10 @@ function gapValues(
 /** "Your answer" / "Correct answer" over a checked part's two lists. */
 const SUBHEAD = 't-meta mb-1.5 font-bold text-fg-muted';
 
-/** "you put it 3rd": the learner's place for an item, as an ordinal. */
-function youPutIt(position: number) {
-  const place = { position: String(position) };
-  switch (
-    new Intl.PluralRules(getLocale(), { type: 'ordinal' }).select(position)
-  ) {
-    case 'one':
-      return m.question_ui_you_put_one(place);
-    case 'two':
-      return m.question_ui_you_put_two(place);
-    case 'few':
-      return m.question_ui_you_put_few(place);
-    default:
-      return m.question_ui_you_put_other(place);
-  }
-}
-
 /** The correct answer under a checked part's own boxes (O4, R4): plain
  * lines 4px apart, no boxes, one column even on paper questions; the label
- * muted and bold, the text semibold, then an optional note ("you put it
- * 3rd") in the meta style. */
-function PlainList({
-  rows,
-}: {
-  rows: { label: string; text: string; note?: string }[];
-}) {
+ * muted and bold, then the text semibold. */
+function PlainList({ rows }: { rows: { label: string; text: string }[] }) {
   return (
     <ol className="grid gap-1 font-semibold text-sm">
       {rows.map((row) => (
@@ -288,11 +266,6 @@ function PlainList({
             {row.label}
           </span>
           <TextView className="min-w-0" text={row.text} />
-          {row.note && (
-            <span className="t-meta shrink-0 whitespace-nowrap font-medium text-fg-muted">
-              {row.note}
-            </span>
-          )}
         </li>
       ))}
     </ol>
@@ -976,7 +949,6 @@ function PartRunner({
             <PlainList
               rows={answer.items.map((item, i) => ({
                 label: String(i + 1),
-                note: youPutIt(current.indexOf(item) + 1),
                 text: item,
               }))}
             />

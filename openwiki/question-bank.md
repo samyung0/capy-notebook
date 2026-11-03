@@ -613,8 +613,8 @@ learner's choices filled green (✓ Right) or red (✗ Wrong) and the rest
 plain, then "Correct answer" listing the correct options; its label adds
 the counts ("0 / 2 marks · 1 right, 1 wrong"). A checked ordering (O4) shows
 "Your order", each item green in its right place and red elsewhere, and when
-any is misplaced "Correct order", each item saying where the learner put it
-("you put it 3rd"). Both correct-answer lists are plain text lines, not boxes
+any is misplaced "Correct order" (number and text only). Both correct-answer
+lists are plain text lines, not boxes
 (`PlainList`: the letter or number muted and bold, the text semibold, 4px
 apart, one column even on paper questions); a skipped
 ordering shows the key's order unmarked. Once checked, a label above a

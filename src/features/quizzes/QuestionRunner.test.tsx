@@ -90,7 +90,7 @@ it('reviews an ordering answered by item text against the stored order', () => {
       review
     />
   );
-  // Your order first, then the correct order with where each item was put.
+  // Your order first, then the correct order.
   expect(html.indexOf('Your order')).toBeLessThan(html.indexOf('Second event'));
   expect(html.indexOf('Second event')).toBeLessThan(
     html.indexOf('First event')
@@ -98,9 +98,6 @@ it('reviews an ordering answered by item text against the stored order', () => {
   expect(html.indexOf('First event')).toBeLessThan(
     html.indexOf('Correct order')
   );
-  expect(html).toContain('you put it 2nd');
-  expect(html).toContain('you put it 1st');
-  expect(html).toContain('you put it 3rd');
 });
 
 it('shows an open part with its marks and a verdict over its marking points', () => {
