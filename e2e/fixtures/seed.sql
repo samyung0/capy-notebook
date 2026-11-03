@@ -5,6 +5,7 @@ BEGIN;
 
 DELETE FROM attempts WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM review_log WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
+DELETE FROM answer_events WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM review_states WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM study_progress WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM study_plans WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');

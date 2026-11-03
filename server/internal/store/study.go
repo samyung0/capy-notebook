@@ -495,6 +495,10 @@ type Rating struct {
 	Session *SessionAnswer
 	// Attempt records a card's rating in its flashcard attempt, when it has one.
 	Attempt *FlashcardAttemptRef
+	// Graded and Answers are a question check's graded copy and the learner's
+	// answers, logged as answer events.
+	Graded  map[string]any
+	Answers map[string]any
 }
 
 // FlashcardAttemptRef is the flashcard attempt a rating belongs to, minted by
@@ -541,15 +545,22 @@ func (s *Store) RateItem(ctx context.Context, userID string, in Rating, now time
 		return ErrStudyRating
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		// Writing attempt history takes the account lock first, as a quiz
-		// attempt does, so a suspended or purged account records none.
-		if in.Attempt != nil {
+		// Writing attempt history or answer events takes the account lock
+		// first, as a quiz attempt does, so a suspended or purged account
+		// records none.
+		if in.Attempt != nil || in.Graded != nil {
 			if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 				return err
 			}
 		}
 		if err := lockRating(ctx, tx, userID, mt.ID); err != nil {
 			return err
+		}
+		// Before the rating, which would count as the key seen.
+		if in.Graded != nil {
+			if err := logAnswerTx(ctx, tx, userID, mt, in.Graded, in.Answers, answerSourceReview, "", now); err != nil {
+				return err
+			}
 		}
 		prev, err := reviewStates(ctx, tx, userID, mt.ID)
 		if err != nil {
@@ -1017,9 +1028,9 @@ func recordCardTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, ca
 			ref.ID, encoded, good, total, pct, now)
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, kind, quiz_name, workspace_name, chapters, correct, total, pct, started_at, taken_at, answers, questions)
-		VALUES ($1,$2,$3,'flashcards',$4,$5,'{}',$6,$7,$8,$9,$10,'{}',$11)`,
-		ref.ID, mt.ID, userID, mt.Title, mt.WorkspaceName, good, total, pct, startedBefore(&ref.StartedAt, now), now, encoded)
+	_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, workspace_id, user_id, kind, quiz_name, workspace_name, chapters, correct, total, pct, started_at, taken_at, answers, questions)
+		VALUES ($1,$2,$3,$4,'flashcards',$5,$6,'{}',$7,$8,$9,$10,$11,'{}',$12)`,
+		ref.ID, mt.ID, mt.WorkspaceID, userID, mt.Title, mt.WorkspaceName, good, total, pct, startedBefore(&ref.StartedAt, now), now, encoded)
 	return err
 }
 

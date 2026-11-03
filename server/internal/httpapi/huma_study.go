@@ -498,6 +498,7 @@ func (a *api) checkReviewItem(ctx context.Context, in *reviewCheckInput) (*grade
 	}
 	if err := a.s.RateItem(ctx, userID(ctx), store.Rating{
 		MaterialID: in.Body.MaterialID, ItemID: in.Body.ItemID, Score: &score, Session: session,
+		Graded: graded[0], Answers: in.Body.Answers,
 	}, time.Now()); errors.Is(err, store.ErrStudyEmbedded) || errors.Is(err, store.ErrReviewSession) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	} else if err != nil {
