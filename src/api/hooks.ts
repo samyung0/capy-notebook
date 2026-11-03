@@ -78,6 +78,7 @@ import type {
   Flashcard,
   FlashcardSet,
   GenerateOptions,
+  HiddenBody,
   IngestSlots,
   InspectSourceImportsReq,
   InspectSourceImportsResponse,
@@ -2245,6 +2246,32 @@ export function useUpdateMaterialSharing() {
     onSuccess: (material) => {
       qc.setQueryData<Material>(qk.material(material.id), material);
       invalidateOwnedMaterials(qc);
+    },
+  });
+}
+
+/** Hide a workspace file or material from the workspace's members, or show
+ * it again (Epo 2026-11-03): owners and editors, from the item's menu. */
+export function useSetHidden(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      type,
+      hidden,
+    }: HiddenBody & { id: string; type: 'file' | 'material' }) =>
+      api.put<HiddenBody>(
+        `/${type === 'file' ? 'files' : 'materials'}/${id}/hidden`,
+        { hidden }
+      ),
+    onSuccess: (_result, { id, type }) => {
+      if (type === 'file') {
+        qc.invalidateQueries({ queryKey: qk.files(wsId) });
+        qc.invalidateQueries({ queryKey: qk.file(id) });
+      } else {
+        qc.invalidateQueries({ queryKey: qk.materials(wsId) });
+        qc.invalidateQueries({ queryKey: qk.material(id) });
+      }
     },
   });
 }

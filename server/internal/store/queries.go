@@ -120,6 +120,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		WHERE (f.workspace_id IN (`+visibleWorkspacesSQL("$2")+`) OR (f.workspace_id IS NULL AND f.user_id=$2))
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND f.trashed_at IS NULL AND lower(f.name) LIKE $1
+			AND workspace_item_visible(f.hidden, f.workspace_id, $2)
 		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
 	if err != nil {
 		return nil, err
@@ -160,6 +161,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		WHERE m.trashed_at IS NULL AND (owner.id=$2 OR m.workspace_id IN (`+visibleWorkspacesSQL("$2")+`))
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND m.kind='flashcards' AND m.parent_material_id IS NULL AND lower(m.title) LIKE $1
+			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
 		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
 	if err != nil {
 		return nil, err
@@ -982,18 +984,18 @@ func (s *Store) DeleteChapter(ctx context.Context, actorID, id string) error {
 const fileCols = `id, COALESCE(workspace_id, ''), chapter_id, position, name, kind, size_bytes, added_at, status, indexed, COALESCE(blob_path, '') <> '',
 	CASE WHEN status='ready' AND (kind='pdf' AND blob_path IS NOT NULL)
 		THEN '/api/files/' || id || '/preview' END,
-	revision, provenance, index_limit, COALESCE(thumbnail_key, ''), preview, user_id`
+	revision, provenance, index_limit, COALESCE(thumbnail_key, ''), preview, user_id, hidden`
 
 // fileListCols is fileCols qualified for joins.
 const fileListCols = `f.id, COALESCE(f.workspace_id, ''), f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, COALESCE(f.blob_path, '') <> '',
 	CASE WHEN f.status='ready' AND (f.kind='pdf' AND f.blob_path IS NOT NULL)
 		THEN '/api/files/' || f.id || '/preview' END,
-	f.revision, f.provenance, f.index_limit, COALESCE(f.thumbnail_key, ''), f.preview, f.user_id`
+	f.revision, f.provenance, f.index_limit, COALESCE(f.thumbnail_key, ''), f.preview, f.user_id, f.hidden`
 
 func scanFile(row pgx.Row) (File, error) {
 	var f File
 	var provenance []byte
-	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.HasBytes, &f.PreviewURL, &f.Revision, &provenance, &f.IndexLimit, &f.ThumbnailKey, &f.Preview, &f.PayerID)
+	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.HasBytes, &f.PreviewURL, &f.Revision, &provenance, &f.IndexLimit, &f.ThumbnailKey, &f.Preview, &f.PayerID, &f.Hidden)
 	if err == nil {
 		f.Provenance, err = decodeProvenance(provenance)
 	}
@@ -1027,8 +1029,9 @@ func (s *Store) ListFiles(ctx context.Context, userID, wsID string) ([]File, err
 	q := `SELECT ` + cols + ` FROM files f WHERE f.trashed_at IS NULL`
 	args := []any{errorIDs}
 	if wsID != "" {
-		q += ` AND f.workspace_id=$2`
-		args = append(args, wsID)
+		// Hidden files are listed only to the workspace's owners and editors.
+		q += ` AND f.workspace_id=$2 AND workspace_item_visible(f.hidden, f.workspace_id, $3)`
+		args = append(args, wsID, userID)
 	} else if userID != "" {
 		q = `SELECT ` + cols + ` FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$2 AND f.trashed_at IS NULL`
 		args = append(args, userID)
@@ -1182,13 +1185,13 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 
 /* ------------------------------------------------------------- materials */
 
-const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance, COALESCE(parent_material_id,'')`
-const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance, COALESCE(m.parent_material_id,'')`
+const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance, COALESCE(parent_material_id,''), hidden`
+const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance, COALESCE(m.parent_material_id,''), m.hidden`
 
 func scanMaterial(row pgx.Row) (Material, error) {
 	var mt Material
 	var provenance []byte
-	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance, &mt.ParentMaterialID)
+	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance, &mt.ParentMaterialID, &mt.Hidden)
 	if mt.ScopeChapters == nil {
 		mt.ScopeChapters = []string{}
 	}
@@ -1322,12 +1325,12 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	_, err = tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 		 chapter_id, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_by, provenance,
-		 parent_material_id, index_dirty_at, preview)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+		 parent_material_id, index_dirty_at, preview, hidden)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
 		mt.ID, creatorID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind,
 		mt.Title, json.RawMessage(mt.Content), mt.ChapterID, mt.ScopeChapters,
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID,
-		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview)
+		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview, mt.Hidden)
 	if err != nil {
 		if uniqueConstraintName(err) == "materials_pkey" {
 			return "", ErrMaterialIDTaken
@@ -1388,6 +1391,9 @@ type MaterialDraft struct {
 	ScopeChapters  []string
 	ScopeFileNames []string
 	Color          UserColor
+	// Hidden from the workspace's members from the start (a quiz made from
+	// files, Epo 2026-11-03).
+	Hidden bool
 	// Library attribution; nil for a material built from workspace sources.
 	Provenance *Provenance
 }
@@ -1401,6 +1407,7 @@ func (d MaterialDraft) material() (Material, error) {
 		ID: d.ID, CreatedBy: d.ActorUserID, WorkspaceID: d.WorkspaceID, WorkspaceName: d.WorkspaceName,
 		Kind: d.Kind, Title: d.Title, ScopeChapters: d.ScopeChapters, ScopeFileNames: d.ScopeFileNames,
 		Privacy: "private", Color: d.Color, Provenance: d.Provenance, ChapterID: d.ChapterID,
+		Hidden: d.Hidden,
 	}
 	switch d.Kind {
 	case "quiz":
@@ -1918,11 +1925,14 @@ func (s *Store) MaterialWorkspaceID(ctx context.Context, id string) (string, err
 
 // ListMaterialRefs returns the unified, workspace-scoped list of versioned
 // Plate materials, newest first.
-func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRef, error) {
+// ListMaterialRefs lists the workspace's top-level materials userID may see:
+// hidden ones only for its owners and editors.
+func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
-	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, size_bytes, node_count, max_depth, provenance
+	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, size_bytes, node_count, max_depth, provenance, hidden
 		FROM materials WHERE workspace_id=$1 AND parent_material_id IS NULL AND trashed_at IS NULL
-		ORDER BY position, created_at DESC`, wsID)
+			AND workspace_item_visible(hidden, workspace_id, $2)
+		ORDER BY position, created_at DESC`, wsID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1942,6 +1952,7 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 			&r.NodeCount,
 			&r.MaxDepth,
 			&provenance,
+			&r.Hidden,
 		); err != nil {
 			return nil, err
 		}

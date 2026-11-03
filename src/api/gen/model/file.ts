@@ -19,6 +19,7 @@ export interface File {
   chapterId: string | null;
   errorId?: string;
   hasBytes: boolean;
+  hidden?: boolean;
   id: string;
   indexLimit?: FileIndexLimit;
   indexed: boolean;

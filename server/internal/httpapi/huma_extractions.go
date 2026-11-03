@@ -13,6 +13,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -225,6 +226,16 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 	if err != nil {
 		stream.Close()
 		charge.release(ctx)
+	// Once the service has accepted the run, the files the quiz is made from
+	// are hidden from members, as the quiz will be (Epo 2026-11-03): a mark
+	// scheme must not reach the students. A refused request hides nothing.
+	for _, file := range append(append([]extractionFile{}, paper...), answers...) {
+		if err := a.s.SetItemHidden(runCtx, actor, agenttools.KindSourceFile, file.FileID, true); err != nil {
+			stream.Close()
+			charge.release(ctx)
+			return nil, hErr(err)
+		}
+	}
 		return nil, hErr(err)
 	}
 	go a.relayExtraction(runCtx, stream, charge, run, actor, ws.Name)
@@ -335,12 +346,10 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 	if err != nil {
 		return fail("extraction_failed", "The quiz could not be saved.")
 	}
-	// TODO(study-extraction): the plan (§8) starts the quiz "Hidden from
-	// members", but materials have no hidden flag yet; visibility is its own
-	// step, so the quiz is visible to members like any other for now.
+	// The quiz starts hidden from members (Epo 2026-11-03).
 	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
 		ActorUserID: actor, WorkspaceID: run.WorkspaceID, WorkspaceName: wsName,
-		Kind: store.MaterialQuiz, Title: title, Questions: ev.Questions,
+		Kind: store.MaterialQuiz, Title: title, Questions: ev.Questions, Hidden: true,
 	})
 	if errors.Is(err, materialdoc.ErrInvalid) {
 		return fail("quiz_invalid", err.Error())

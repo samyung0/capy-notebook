@@ -27,6 +27,7 @@ export interface Material {
   contentBytes: number;
   createdAt: string;
   embedCredits?: MaterialEmbedCredits;
+  hidden?: boolean;
   id: string;
   imageMaxBytes: number;
   isOwner: boolean;

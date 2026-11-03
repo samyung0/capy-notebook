@@ -194,7 +194,7 @@ pub async fn live_access<C: GenericClient>(
     // charged to (uploader pays): its frozen, locked or full state makes the
     // material read-only (Go's canEditMaterial).
     let sql = format!(
-        "SELECT m.owner_user_id, m.privacy, m.workspace_id, owner.id AS owner_id,
+        "SELECT m.owner_user_id, m.privacy, m.workspace_id, m.hidden, owner.id AS owner_id,
            (owner.deleted_at IS NOT NULL OR owner.deletion_requested_at IS NOT NULL) AS owner_gone,
            (owner.suspended_at IS NOT NULL) AS owner_suspended,
            (actor.deleted_at IS NOT NULL OR actor.deletion_requested_at IS NOT NULL
@@ -267,8 +267,12 @@ pub async fn live_access<C: GenericClient>(
             shared
         }
     };
-    // Viewers hold read channels only; anyone else holds nothing.
-    if rank(&role) < rank("viewer") {
+    // Viewers hold read channels only; anyone else holds nothing. A material
+    // hidden from members is the owners' and editors' alone (Go's
+    // materialEffectiveAccess, Epo 2026-11-03).
+    if rank(&role) < rank("viewer")
+        || (row.get::<_, bool>("hidden") && rank(&role) < rank("editor"))
+    {
         return Err(AccessError::Forbidden("material access was revoked".into()));
     }
     Ok(LiveAccess {

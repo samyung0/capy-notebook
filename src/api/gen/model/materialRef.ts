@@ -11,6 +11,7 @@ export interface MaterialRef {
   /** @nullable */
   chapterId: string | null;
   createdAt: string;
+  hidden?: boolean;
   id: string;
   maxDepth: number;
   nodeCount: number;

@@ -500,6 +500,16 @@ async def _chat_events(req: ChatStreamReq):
     turn_id = req.assistantMessageId or ""
     if turn_id:
         _running[turn_id] = client
+    # Hidden from members (Epo 2026-11-03): the turn reads hidden items only
+    # in the workspaces its user edits.
+    readers = (
+        [w.id for w in req.scope.workspaces if w.canEdit]
+        if req.account
+        else [req.workspaceId]
+        if req.role in ("owner", "editor")
+        else []
+    )
+    hidden_token = store.bind_hidden_readers(readers)
     try:
         accounting_token = accounting.bind(req.spendSessionId)
         if req.account:
@@ -527,6 +537,7 @@ async def _chat_events(req: ChatStreamReq):
                 yield _sse(frame)
             yield _sse(with_turn_state(event, ctx))
     finally:
+        store.reset_hidden_readers(hidden_token)
         if _running.get(turn_id) is client:
             del _running[turn_id]
         if accounting_token is not None:
@@ -638,6 +649,8 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
     _take_turn_slot()
     # Its one model call answers provider_busy at once past the call slots too.
     slots_token = limits.bind_call_slots(limits.CallSlotPolicy(wait_s=0))
+    # Only the workspace's editors generate (Go), so hidden items are theirs.
+    hidden_token = store.bind_hidden_readers([req.workspaceId])
     try:
         accounting_token = _bind_accounting(req.spendSessionId)
         try:
@@ -649,6 +662,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
         finally:
             _reset_accounting(accounting_token)
     finally:
+        store.reset_hidden_readers(hidden_token)
         limits.reset_call_slots(slots_token)
         limits.TURN_SLOTS.release()
 
@@ -763,11 +777,17 @@ async def extract(req: ExtractReq):
     is a 400 before the stream starts. The run holds a turn slot from then on
     (provider_busy at once when there is none, as for /generate); its model
     calls wait for a call slot as a chat's do."""
-    pages, schemes = await extraction.prepare(
-        req.workspaceId,
-        [f.model_dump() for f in req.paper],
-        [f.model_dump() for f in req.answerFiles],
-    )
+    # Only the workspace's editors make a quiz from files (Go), so the files,
+    # hidden from members as they are, are theirs to read.
+    hidden_token = store.bind_hidden_readers([req.workspaceId])
+    try:
+        pages, schemes = await extraction.prepare(
+            req.workspaceId,
+            [f.model_dump() for f in req.paper],
+            [f.model_dump() for f in req.answerFiles],
+        )
+    finally:
+        store.reset_hidden_readers(hidden_token)
     _take_turn_slot()
     slot = _ChatSlot()
     slot.held = True
@@ -790,6 +810,7 @@ async def _extract_events(
     )
     accounting_token = None
     try:
+    hidden_token = store.bind_hidden_readers([req.workspaceId])
         accounting_token = _bind_accounting(req.spendSessionId)
         model = models.resolve_query_model(
             req.providerSlug, req.modelSlug, req.configVersion, slot=registry.Slot.CHAT
@@ -818,3 +839,4 @@ async def _extract_events(
     finally:
         _reset_accounting(accounting_token)
         limits.reset_call_slots(slots_token)
+        store.reset_hidden_readers(hidden_token)

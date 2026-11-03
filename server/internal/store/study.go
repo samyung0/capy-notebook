@@ -674,6 +674,7 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 		JOIN review_states rs ON rs.material_id=m.id AND rs.user_id=$1
 		WHERE m.workspace_id=$2 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL
+			AND workspace_item_visible(m.hidden, m.workspace_id, $1)
 			AND NOT EXISTS (SELECT 1 FROM study_progress sp
 				WHERE sp.user_id=$1 AND sp.material_id=m.id AND sp.state='removed')
 		ORDER BY m.position, m.created_at, m.id`, userID, wsID)
@@ -777,6 +778,7 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string, only []string)
 		LEFT JOIN chapters c ON c.id=m.chapter_id
 		WHERE m.workspace_id=$2 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL AND ($3::text[] IS NULL OR m.id = ANY($3))
+			AND workspace_item_visible(m.hidden, m.workspace_id, $1)
 			AND NOT EXISTS (SELECT 1 FROM study_progress sp
 				WHERE sp.user_id=$1 AND sp.material_id=m.id AND sp.state='removed')
 		ORDER BY m.chapter_id IS NULL, c.position, m.position, m.created_at DESC, m.id`, userID, wsID, only)
@@ -1040,7 +1042,7 @@ const itemRecentAttempts = 3
 // WorkspaceAttempts returns every quiz and set of the workspace that is
 // neither trashed nor embedded, with the user's attempts of it.
 func (s *Store) WorkspaceAttempts(ctx context.Context, userID, wsID string) ([]ItemAttempts, error) {
-	sizes, err := s.itemCounts(ctx, wsID)
+	sizes, err := s.itemCounts(ctx, userID, wsID)
 	if err != nil {
 		return nil, err
 	}
@@ -1082,10 +1084,11 @@ func (s *Store) WorkspaceAttempts(ctx context.Context, userID, wsID string) ([]I
 
 // itemCounts is each untrashed, non-embedded quiz's and set's question or
 // card count, parsing only documents whose revision
-// the item cache does not hold.
-func (s *Store) itemCounts(ctx context.Context, wsID string) ([]ItemAttempts, error) {
+// the item cache does not hold; hidden ones only for owners and editors.
+func (s *Store) itemCounts(ctx context.Context, userID, wsID string) ([]ItemAttempts, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id, revision FROM materials
-		WHERE workspace_id=$1 AND kind IN ('quiz','flashcards') AND trashed_at IS NULL AND parent_material_id IS NULL`, wsID)
+		WHERE workspace_id=$1 AND kind IN ('quiz','flashcards') AND trashed_at IS NULL AND parent_material_id IS NULL
+			AND workspace_item_visible(hidden, workspace_id, $2)`, wsID, userID)
 	if err != nil {
 		return nil, err
 	}

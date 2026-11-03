@@ -160,6 +160,7 @@ export * from './gradeAnonymousQuizReq.ts';
 export * from './gradeAnonymousQuizReqAnswers.ts';
 export * from './gradedQuestion.ts';
 export * from './gradedQuestionQuestion.ts';
+export * from './hiddenBody.ts';
 export * from './importSourcesAccepted.ts';
 export * from './importSourcesReq.ts';
 export * from './importSourcesReqParseMode.ts';

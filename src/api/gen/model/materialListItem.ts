@@ -14,6 +14,7 @@ export interface MaterialListItem {
   chapterId: string | null;
   chapterName: string;
   createdAt: string;
+  hidden?: boolean;
   id: string;
   kind: MaterialKind;
   /** The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it */

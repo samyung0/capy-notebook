@@ -10,6 +10,7 @@ import {
   useDeleteMaterial,
   useMoveFile,
   useMoveMaterial,
+  useSetHidden,
   useUpdateFile,
   useUpdateMaterial,
 } from '@/api/hooks';
@@ -156,6 +157,7 @@ export function ContentActions({
   const { mutateAsync: updateMaterial } = useUpdateMaterial(workspaceId);
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: deleteMaterial } = useDeleteMaterial(workspaceId);
+  const { mutate: setHidden } = useSetHidden(workspaceId);
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
@@ -171,7 +173,8 @@ export function ContentActions({
     : [];
 
   // One order on every item menu (cards, rows, the open item's header):
-  // open or view, Rename, Share, Move, Clone, Download, Properties, Delete.
+  // open or view, Rename, Share, Move, Hide from members, Clone, Download,
+  // Properties, Delete.
   const items: MenuItem[] = [
     ...leadingItems,
     ...(!readOnly && canRename && content
@@ -199,6 +202,35 @@ export function ContentActions({
                 label: m.content_move_file(),
                 onClick: () => setMoveOpen(true),
               },
+        ]
+      : []),
+    // Hide from members (Epo 2026-11-03): a workspace item's owners and
+    // editors only; a standalone item has no members.
+    ...(!readOnly && content && workspaceId
+      ? [
+          {
+            icon: content.hidden
+              ? ('view' as const)
+              : ('viewOffSlash' as const),
+            label: content.hidden
+              ? m.content_show_to_members()
+              : m.content_hide_from_members(),
+            onClick: () =>
+              setHidden(
+                {
+                  hidden: !content.hidden,
+                  id: content.id,
+                  type: content.type,
+                },
+                {
+                  onError: (error) =>
+                    userToast({
+                      title: errorCopy(error, m.source_try_again()),
+                      variant: 'error',
+                    }),
+                }
+              ),
+          },
         ]
       : []),
     ...(canClone && content

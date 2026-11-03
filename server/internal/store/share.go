@@ -211,7 +211,9 @@ func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 //   - signed-in nonmember of a link/public workspace: the share role
 //   - standalone link/public material: viewer
 //
-// The owner's lifecycle hides it as workspaceRoles does.
+// The owner's lifecycle hides it as workspaceRoles does. A workspace material
+// hidden from members is not found for a viewer (Epo 2026-11-03); an embedded
+// one follows its note.
 func materialEffectiveAccess(
 	ctx context.Context,
 	q rowQueryer,
@@ -225,10 +227,10 @@ func materialEffectiveAccess(
 	var workspacePrivacy *Privacy
 	var shareRole *ShareRole
 	var memberRole WorkspaceRole
-	var linkGranted bool
+	var linkGranted, hidden bool
 	err := q.QueryRow(ctx, `
 		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
-			COALESCE(wm.role, ''), m.parent_material_id,
+			COALESCE(wm.role, ''), m.parent_material_id, m.hidden,
 			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
 				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
 		FROM materials m
@@ -247,6 +249,7 @@ func materialEffectiveAccess(
 		&shareRole,
 		&memberRole,
 		&parentID,
+		&hidden,
 		&linkGranted,
 	)
 	if isNoRows(err) {
@@ -282,7 +285,7 @@ func materialEffectiveAccess(
 		sharedRole = RoleViewer
 	}
 	role := MaxRole(memberRole, sharedRole)
-	if role == "" {
+	if role == "" || (hidden && !RoleCanEdit(role)) {
 		return "", ErrNotFound
 	}
 	return role, nil
@@ -338,27 +341,38 @@ func (s *Store) AssertMaterialEditor(ctx context.Context, userID, matID string) 
 // FileWorkspaceID resolves the owning workspace of a file (for access checks);
 // "" for a standalone file, whose access is FileEffectiveRole's.
 func (s *Store) FileWorkspaceID(ctx context.Context, fileID string) (string, error) {
-	var wsID string
-	err := s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, '') FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID)
-	if isNoRows(err) {
-		return "", ErrNotFound
-	}
+	wsID, _, err := s.fileWorkspace(ctx, fileID)
 	return wsID, err
+}
+
+// fileWorkspace is a file's workspace ("" when standalone) and whether it is
+// hidden from members.
+func (s *Store) fileWorkspace(ctx context.Context, fileID string) (wsID string, hidden bool, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), hidden FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID, &hidden)
+	if isNoRows(err) {
+		return "", false, ErrNotFound
+	}
+	return wsID, hidden, err
 }
 
 // FileEffectiveRole is the caller's role on a file: its workspace role, or
 // for a standalone file owner to its payer alone (never shared, Epo
 // 2026-10-27), hidden by the owner's lifecycle as a standalone material is.
+// A file hidden from members is not found for a viewer (Epo 2026-11-03).
 func (s *Store) FileEffectiveRole(ctx context.Context, userID, fileID string) (WorkspaceRole, error) {
 	if userID == "" {
 		return "", ErrNotFound
 	}
-	wsID, err := s.FileWorkspaceID(ctx, fileID)
+	wsID, hidden, err := s.fileWorkspace(ctx, fileID)
 	if err != nil {
 		return "", err
 	}
 	if wsID != "" {
-		return s.WorkspaceEffectiveRole(ctx, userID, wsID)
+		role, err := s.WorkspaceEffectiveRole(ctx, userID, wsID)
+		if err == nil && hidden && !RoleCanEdit(role) {
+			return "", ErrNotFound
+		}
+		return role, err
 	}
 	var owned bool
 	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (
@@ -926,6 +940,13 @@ func (s *Store) snapshotWorkspaceForClone(
 	workspaceID, actorID string,
 ) (workspaceCloneSnapshot, error) {
 	var snapshot workspaceCloneSnapshot
+	// A viewer's clone leaves out what is hidden from members (Epo
+	// 2026-11-03); an owner's or editor's takes everything.
+	_, role, err := workspaceRoles(ctx, tx, actorID, workspaceID)
+	if err != nil {
+		return workspaceCloneSnapshot{}, err
+	}
+	seeHidden := RoleCanEdit(role)
 	rows, err := tx.Query(ctx,
 		`SELECT id, name, position FROM chapters
 		 WHERE workspace_id=$1 ORDER BY position`,
@@ -954,9 +975,10 @@ func (s *Store) snapshotWorkspaceForClone(
 			status, COALESCE(etag,''), created_at, completed_at
 		 FROM editor_assets a
 		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL AND (material_id IS NULL OR EXISTS (
-			SELECT 1 FROM materials m WHERE m.id=a.material_id AND m.trashed_at IS NULL))
+			SELECT 1 FROM materials m LEFT JOIN materials p ON p.id=m.parent_material_id
+			WHERE m.id=a.material_id AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))))
 		 ORDER BY created_at`,
-		workspaceID,
+		workspaceID, seeHidden,
 	)
 	if err != nil {
 		return workspaceCloneSnapshot{}, err
@@ -989,8 +1011,12 @@ func (s *Store) snapshotWorkspaceForClone(
 	}
 	rows.Close()
 
+	hiddenFiles := ` AND NOT f.hidden`
+	if seeHidden {
+		hiddenFiles = ""
+	}
 	if snapshot.files, err = snapshotCloneFilesTx(ctx, tx,
-		`f.workspace_id=$1 ORDER BY f.added_at`, workspaceID); err != nil {
+		`f.workspace_id=$1`+hiddenFiles+` ORDER BY f.added_at`, workspaceID); err != nil {
 		return workspaceCloneSnapshot{}, err
 	}
 	for _, file := range snapshot.files {
@@ -998,9 +1024,11 @@ func (s *Store) snapshotWorkspaceForClone(
 	}
 
 	rows, err = tx.Query(ctx,
-		`SELECT `+materialCols+`
-		 FROM materials WHERE workspace_id=$1 AND trashed_at IS NULL ORDER BY created_at`,
-		workspaceID,
+		`SELECT `+materialColsM+`
+		 FROM materials m LEFT JOIN materials p ON p.id=m.parent_material_id
+		 WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))
+		 ORDER BY m.created_at`,
+		workspaceID, seeHidden,
 	)
 	if err != nil {
 		return workspaceCloneSnapshot{}, err

@@ -174,6 +174,7 @@ import {
   UserAdd01Icon,
   ViewIcon,
   ViewOffIcon,
+  ViewOffSlashIcon,
   WaveIcon,
   WifiError02Icon,
   WifiOff02Icon,
@@ -457,6 +458,8 @@ const HugeIcons = {
   userAdd: UserAdd01Icon,
   view: ViewIcon,
   viewOff: ViewOffIcon,
+  // Hidden from members (X2): the eye struck through.
+  viewOffSlash: ViewOffSlashIcon,
   wand: MagicWand01Icon,
   wave: WaveIcon,
   width: ArrowHorizontalIcon,

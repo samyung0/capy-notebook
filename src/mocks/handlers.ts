@@ -17,6 +17,7 @@ import type {
   EditableQuiz,
   FlashcardSet,
   GenerateOptions,
+  HiddenBody,
   Material,
   MaterialDiscussion,
   MaterialRef,
@@ -2235,6 +2236,7 @@ export const handlers = [
       .map((mt) => ({
         chapterId: mt.chapterId,
         createdAt: mt.createdAt,
+        hidden: mt.hidden,
         id: mt.id,
         maxDepth: mt.maxDepth,
         nodeCount: mt.nodeCount,
@@ -2413,6 +2415,22 @@ export const handlers = [
     const body = (await request.json()) as Pick<Material, 'privacy'>;
     material.privacy = body.privacy;
     return HttpResponse.json(material);
+  }),
+  // Hidden from members: owners and editors switch a workspace item from its
+  // menu.
+  http.put('/api/files/:id/hidden', async ({ params, request }) => {
+    const file = db.files.find((item) => item.id === params.id);
+    if (!file?.workspaceId) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as HiddenBody;
+    file.hidden = body.hidden;
+    return HttpResponse.json(body);
+  }),
+  http.put('/api/materials/:id/hidden', async ({ params, request }) => {
+    const material = db.materials.find((item) => item.id === params.id);
+    if (!material?.workspaceId) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as HiddenBody;
+    material.hidden = body.hidden;
+    return HttpResponse.json(body);
   }),
   http.delete('/api/materials/:id', async ({ params }) => {
     trashMaterial(String(params.id));

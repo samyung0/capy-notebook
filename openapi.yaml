@@ -2360,6 +2360,8 @@ components:
         indexLimit:
           $ref: "#/components/schemas/FileIndexLimit"
         indexed:
+        hidden:
+          type: boolean
           type: boolean
         isPayer:
           type: boolean
@@ -2763,6 +2765,20 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
+    HiddenBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/HiddenBody.json
+          format: uri
+          readOnly: true
+          type: string
+        hidden:
+          type: boolean
+      required:
+        - hidden
+      type: object
           example: https://example.com/schemas/ImportSourcesAccepted.json
           format: uri
           readOnly: true
@@ -3179,6 +3195,8 @@ components:
         imageMaxBytes:
           format: int64
           type: integer
+        hidden:
+          type: boolean
         isOwner:
           type: boolean
         kind:
@@ -3387,6 +3405,8 @@ components:
         kind:
           $ref: "#/components/schemas/MaterialKind"
         lostAccess:
+        hidden:
+          type: boolean
           description: The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it
           type: boolean
         preview:
@@ -3457,6 +3477,8 @@ components:
         maxDepth:
           format: int64
           type: integer
+        hidden:
+          type: boolean
         nodeCount:
           format: int64
           type: integer
@@ -9732,6 +9754,37 @@ paths:
       operationId: getFileLinks
       parameters:
         - in: path
+  /api/files/{id}/hidden:
+    put:
+      operationId: setFileHidden
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HiddenBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HiddenBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Hide a workspace file from members, or show it again
+      tags:
+        - Content
           name: id
           required: true
           schema:
@@ -10599,6 +10652,37 @@ paths:
       operationId: updateMaterial
       parameters:
         - in: path
+  /api/materials/{id}/hidden:
+    put:
+      operationId: setMaterialHidden
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HiddenBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HiddenBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Hide a workspace material from members, or show it again
+      tags:
+        - Content
           name: id
           required: true
           schema:

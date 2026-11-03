@@ -2631,5 +2631,8 @@
   "action_download": "下载",
   "action_download_markdown": "下载 Markdown",
   "action_download_docx": "下载 Word",
+  "content_hide_from_members": "对成员隐藏",
+  "content_show_to_members": "向成员显示",
+  "content_hidden_from_members": "已对成员隐藏",
   "quiz_ai_marked_count": "AI 评分小题 {count} / {max}"
 }

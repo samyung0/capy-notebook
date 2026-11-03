@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import { createPresenceStore } from '@/features/collaboration/presence';
+import { m } from '@/i18n';
 import { createEditorStatusStore, Header } from './CenterContentHeader';
 
 const HIDDEN = /\bhidden\b/;
@@ -9,6 +10,7 @@ const HIDDEN = /\bhidden\b/;
 // The ⋮'s props, and where the header sends the reader.
 const header = vi.hoisted(() => ({
   actions: [] as Record<string, unknown>[],
+  hidden: false,
   isPayer: false,
   navigate: vi.fn(),
 }));
@@ -23,6 +25,7 @@ vi.mock('@/api/hooks', () => ({
   }),
   useFile: () => ({
     data: {
+      hidden: header.hidden,
       id: 'f1',
       isPayer: header.isPayer,
       kind: 'office',
@@ -130,4 +133,14 @@ it('offers the payer Move to… and opens the moved file in its new workspace', 
   header.actions.length = 0;
   render(true, true);
   expect(header.actions[0]?.canMoveTo).toBe(true);
+});
+
+/** An item hidden from members says so after its name (X2, Epo 2026-11-03). */
+it('marks an item hidden from members beside its name', () => {
+  const label = m.content_hidden_from_members();
+  header.hidden = true;
+  const html = render(true);
+  header.hidden = false;
+  expect(html).toContain(label);
+  expect(html.indexOf('Deck.pptx')).toBeLessThan(html.indexOf(label));
 });

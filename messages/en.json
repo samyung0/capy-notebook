@@ -2631,5 +2631,8 @@
   "action_download": "Download",
   "action_download_markdown": "Download Markdown",
   "action_download_docx": "Download Word",
+  "content_hide_from_members": "Hide from members",
+  "content_show_to_members": "Show to members",
+  "content_hidden_from_members": "Hidden from members",
   "quiz_ai_marked_count": "{count} of {max} AI-marked parts"
 }

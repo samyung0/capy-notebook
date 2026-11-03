@@ -84,12 +84,15 @@ func (s *Store) LearningProgress(ctx context.Context, userID, leadID string, sho
 			(SELECT count(*) FROM study_progress sp
 				LEFT JOIN files f ON f.id=sp.file_id LEFT JOIN materials m ON m.id=sp.material_id
 				WHERE sp.user_id=$1 AND sp.workspace_id=w.id AND sp.state='done'
-					AND f.trashed_at IS NULL AND m.trashed_at IS NULL),
+					AND f.trashed_at IS NULL AND m.trashed_at IS NULL
+					AND (f.id IS NULL OR workspace_item_visible(f.hidden, f.workspace_id, $1))
+					AND (m.id IS NULL OR workspace_item_visible(m.hidden, m.workspace_id, $1))),
 			(SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL
+				AND workspace_item_visible(f.hidden, f.workspace_id, $1)
 				AND NOT EXISTS (SELECT 1 FROM study_progress sp
 					WHERE sp.user_id=$1 AND sp.file_id=f.id AND sp.state='removed'))
 				+ (SELECT count(*) FROM materials m WHERE m.workspace_id=w.id AND m.trashed_at IS NULL
-					AND m.parent_material_id IS NULL
+					AND m.parent_material_id IS NULL AND workspace_item_visible(m.hidden, m.workspace_id, $1)
 					AND NOT EXISTS (SELECT 1 FROM study_progress sp
 						WHERE sp.user_id=$1 AND sp.material_id=m.id AND sp.state='removed')),
 			last.at
@@ -204,12 +207,14 @@ func (s *Store) progressMap(ctx context.Context, userID, wsID string) (ProgressM
 				CASE WHEN sp.state='done' THEN sp.updated_at END
 			FROM files f LEFT JOIN study_progress sp ON sp.user_id=$1 AND sp.file_id=f.id
 			WHERE f.workspace_id=$2 AND f.trashed_at IS NULL AND coalesce(sp.state, '') <> 'removed'
+				AND workspace_item_visible(f.hidden, f.workspace_id, $1)
 		UNION ALL
 		SELECT m.id, 'material', m.kind, m.title, m.chapter_id, m.position, m.created_at, coalesce(sp.state, ''),
 				CASE WHEN sp.state='done' THEN sp.updated_at END
 			FROM materials m LEFT JOIN study_progress sp ON sp.user_id=$1 AND sp.material_id=m.id
 			WHERE m.workspace_id=$2 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-				AND coalesce(sp.state, '') <> 'removed'`, userID, wsID)
+				AND coalesce(sp.state, '') <> 'removed'
+				AND workspace_item_visible(m.hidden, m.workspace_id, $1)`, userID, wsID)
 	if err != nil {
 		return out, err
 	}
