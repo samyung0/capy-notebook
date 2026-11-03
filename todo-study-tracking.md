@@ -517,7 +517,7 @@ Epo asked whether to allow drawings as answers, for graphs and diagrams, and as 
 
 **Agreed:** a `drawing` answer type beside `open`. Drawing happens on a full-screen board that copies BlockSuite/AFFiNE's edgeless mode (Epo): the dotted canvas, the floating toolbar with the pen and eraser that rise when picked, the pen menu (pen or highlighter, line widths, colours), straight line, text, undo and redo, and zoom in the corner. The answer is the sheet in the middle, the question stays pinned at the top left, and Done returns to the question with a preview and "Edit drawing". On phones the same board fills the screen.
 - **Background:** the part sets it to blank, squared grid, axes (with x and y ranges) or a figure from the question to label.
-- **Tools:** AFFiNE's toolbar as in the playground: select and hand, the pen, eraser and shapes illustrations, the connector (curves), text, undo and redo. The pen menu is AFFiNE's one-row tab on top of the toolbar (pen or highlighter, line widths, colours), never wider than the toolbar, scrolling with its round arrow buttons. Reuse the vendored BlockSuite edgeless tools where that helps.
+- **Tools (Epo, 2026-11-03), in AFFiNE's order from the playground:** one select/hand toggle (one button, as in BlockSuite), the curve connector left of the pen, then the illustrated tools: note (text, heading and link cards), pen, eraser and AFFiNE's filled shapes. Capy's presets for formulas and graphs come right after the shapes. Undo and redo sit at the end on desktop; on phones the illustrated tools scroll behind AFFiNE's arrow. The pen menu is AFFiNE's one-row tab on top of the toolbar (pen or highlighter, line widths, colours), never wider than the toolbar, scrolling with its round arrow buttons. Reuse the vendored BlockSuite edgeless tools where that helps.
 - **Storage:** the answer is stored as strokes and rendered to an image for marking.
 - **Marking:** the same marking points as an open answer, marked by a vision model. It goes through the same owner approval and credits rules, and stays "Not marked" when credits are empty. Shared pages can't mark it.
 
@@ -536,6 +536,8 @@ Epo asked whether to allow drawings as answers, for graphs and diagrams, and as 
 - a few drawing items in the grading bench.
 
 **Later, if needed:** exact graph answers using Capy's graph editor, checked in code.
+
+**Text and headings on the board (Epo wants them):** the note tool is BlockSuite's note block, a rich-text editor on the canvas. It is bigger work and needs its own planning round together with the AFFiNE canvas (below), since both use the same edgeless editor.
 
 ## 10. Order of work
 
@@ -559,6 +561,10 @@ Steps 2, 3 and 7 can run side by side.
 - **Toast:** the centred black pill for every kind, taking a second line when needed. It fades in and out with the app's existing motion tokens, with no expanding animation (Epo, 2026-11-03). One at a time (S1, Epo); the same toast again counts up (×2, ×3) and restarts its timer instead of queueing.
 - **Workspace cards:** the half banner from the Home mock (D1), H2 (Epo, 2026-11-03): the icon on the banner's edge, ⋮ on the banner, topics in the line under the name, then access and tags. File cards stay as they are; they're thumbnails.
 - **Quiz options:** full boxes as in the mocks (F1b) instead of today's underlined rows, for options, true/false and ordering items; open answers keep their ruled lines (Epo, 2026-11-03). A right choice fills green with a tick and "Right"; a wrong choice fills red with "Your answer". Once checked, a label above the options says Right or Wrong with the marks, as in Results (A5); a skipped question says "Not answered" and counts as wrong. The correct answer you didn't choose gets a green outline with no fill and "Correct answer" (M1, Epo, 2026-11-03), so green fill only ever means you chose it and it's right.
+
+**Next after this rework's mocks (Epo, 2026-11-03): the AFFiNE canvas** (`todo-canvas-workspace.md`, on hold since 2026-11-02). Drawing answers and the note tool build on the same BlockSuite edgeless editor, so they are planned with it.
+
+**Later (Epo, 2026-11-03): the app-wide Learning page.** The workspace's centre Study page goes (the Study tab's pages replace it). The app's Learning page stays in the sidebar for now and is redesigned later, perhaps to show the AI suggestions across workspaces.
 
 **Later (Epo, 2026-11-03): AI insights.** Labels and rule-based reasons ("Missed 3 of 4 questions on osmosis", the report's common wrong answers) come first. A short AI summary waits until there is real data and the DeepSeek bench: most likely a weekly class snapshot on Members with links to the evidence, plus a member summary on the profile. Others: Khan Academy's Class Snapshot (a 7-day summary of learning time, assignments and mastery, with suggested follow-up questions); Google Classroom's Analytics tab (flags for missing work and changing grades) and Gemini summaries of who submitted and where students need support; Canvas's paid Intelligent Insights ("Students in need of attention") and IgniteAI discussion insights.
 
