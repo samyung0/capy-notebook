@@ -150,6 +150,12 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - **Assignment:** quiz work the owner sets, with a due date, an optional time limit and set attempts. AI marks wait for the owner's approval unless that is switched off. It counts in Overall.
   - **Practice:** any quiz done any time, marked at once, not counted. **No time limit (Epo, 2026-11-03),** as quizzes work today; a topic session shows only an estimate ("about 12 minutes"). Only assignments have time limits.
   - **Icons (Epo, 2026-11-03):** practice keeps the quiz's Catppuccin bolt (`stackblitz`, blue). An assignment gets a book and quill. Catppuccin has no quill, so we draw it in the set's style: 16px grid, 1px round strokes, a teal book and a yellow quill (colours no other material icon uses). The icon shows on assignment chips in Tasks and in activity rows.
+    ```svg
+    <symbol id="assignment" viewBox="0 0 16 16"><g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path stroke="var(--ctp-teal)" d="M1.5 5.5a1 1 0 0 1 1-1h7v11h-7a1 1 0 0 1-1-1zM3.5 4.5v11M9.5 15.5h1a1 1 0 0 0 1-1v-3"/>
+      <path stroke="var(--ctp-yellow)" d="M9.5 11.5 15 .5M15 .5c-2.5 1-4 3-4.3 6.2l1.8.6C14.2 5.8 15 3.5 15 .5z"/>
+    </g></symbol>
+    ```
   - "Test" and "Homework" are no longer kinds. A timed assignment is still an assignment. Categories with weights can come later if owners ask (Classroom, Canvas, Teams).
 - **What each Study tab shows:**
 
