@@ -108,6 +108,18 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
   - Owners and editors rename, merge and move topics. AI merges stay suggestions.
 - **Until topics exist,** weaknesses show per question.
 
+**Round 3 proposal (2026-11-03, page 8 of the mocks: T1–T3):**
+- **Topics come from a source, not one by one (T1).** "Set up topics" offers three sources:
+  - a syllabus or curriculum file, picked from Files or uploaded;
+  - an exam's topic tree in the question bank;
+  - this workspace's own files and quizzes.
+  The AI proposes one flat list. Owners can still add, rename and merge topics by hand.
+- **Review before saving (T2).** Each topic keeps one line from the syllabus, which helps the AI tag questions. Saving tags the questions already in the workspace, and new questions get a topic as they are extracted or written. The quiz editor shows each question's topic as a dropdown (X2).
+- **Topics replace folders (T3).** Files groups by topic, and dragging a file to another topic moves it. A file has at most one topic. Past papers and admin files sit in "Other files", while their questions keep their own topics. Topics with no questions don't show in Topics or results.
+  - This changes §1: chapters become **topics**, not folders.
+  - Others: Google Classroom's Topics are the only grouping on Classwork (one per item, no mastery). Canvas keeps Modules for organising and Outcomes for mastery, as Moodle and Schoology do. Capy takes Classroom's single grouping for files and Canvas's per-question tags, from one list.
+  - Waiting on Epo's yes.
+
 ## 4. Views
 
 **How others do it** (R1 §1, §9.2):
@@ -404,6 +416,14 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - **Practice:** members see AI marks at once.
   - **Assignments:** an AI mark reaches the member only after the owner approves it. Questions with one right answer are still marked at once, so Submitted shows the mark so far, and results show "Waiting for Ms Wong" on the held answers.
   - **Where approval lives:** Study → Assignments → the assignment → the **Approve AI marks** tab (A3). The Assignments list row says "5 AI marks to approve" (W2), and "Check the AI's marks" under each question in the report opens the tab.
+  - **Links (Epo, 2026-11-03).** Every view of a report has a link:
+    - `/workspaces/{workspace}/study/assignments/{assignment}`: the report, Questions tab;
+    - `?tab=members`: the Members tab;
+    - `?tab=approve`: Approve AI marks, at the first waiting answer;
+    - `?tab=approve&question={question}`: one question's answers;
+    - `?tab=approve&question={question}&member={member}`: one answer;
+    - `?tab=approve&member={member}`: one member's waiting answers (A3b). The tab's dropdown lists members as well as questions, and the Members tab's "2 to approve" opens this.
+    - Unknown ids fall back to the first waiting answer, as `parseWorkspaceOpenSearch` clears bad keys today. Approve on Home, on the Dashboard task and in notifications all use these links.
   - **In the tab:** pick the question, then go through the members. Rows waiting show "AI 3 / 6"; approved rows show just the mark. Approve moves to the next one, Approve all clears the question, and changing a mark approves it too.
   - **Words (Epo, 2026-11-03):** the tab is named for what the owner does there, **"Approve AI marks"** (it was "Open answers", then "Marked by AI"). "Open answer" stays only as a question type.
   - **Switch (Epo, 2026-11-03):** New assignment has "Approve AI marks before members see them", on by default, under Published (A1). Turned off, AI marks reach members at once, as in practice, and the assignment never shows marks to approve.
@@ -432,6 +452,8 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 8. **Grading switch,** after the DeepSeek bench; self-marking on shared pages.
 
 Steps 2, 3 and 7 can run side by side.
+
+**Later (Epo, 2026-11-03): scanned submissions.** Members submit an assignment as a scan or photos of handwritten answers. This needs its own design round: capture on phone and desktop, matching pages to questions, reading handwriting (the GLM page read exists), AI marks with the owner's approval, and what Results shows for paper answers.
 
 ## 11. Questions for Epo
 
