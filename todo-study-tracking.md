@@ -334,13 +334,16 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **The best review pattern** is Microsoft's three flag groups (missing content, uncertain conversion, unsupported type), each with "Resolved".
 
 **Suggestion (R3 §2):**
-1. **Page picker (Epo, 2026-11-02).** Pages are shown large. One click selects a page for extraction, and pages left unclicked are skipped. There are no per-page tags or buttons. A mark scheme comes as a separate file, shown as one removable chip. The footer shows the page count and the credit cost. Cap at about 30 pages. PDF first, since Office page renders were removed in Q283.
+0. **The Make a quiz dialog (Epo, 2026-11-03; X0a, X0b).**
+   - **Question paper:** picked from the workspace's files or uploaded new. An upload takes the normal upload and reading path and is saved to Files. The page picker opens once its pages are ready.
+   - **Mark scheme or answers (optional):** any number of files, from Files or uploaded the same way. They aren't page-picked.
+1. **Page picker (Epo, 2026-11-02).** Pages are shown large. One click selects a page for extraction, and pages left unclicked are skipped. There are no per-page tags or buttons. The extra files chosen in the dialog show as one chip ("With a mark scheme and an answers file"). The footer shows the page count and the credit cost. Cap at about 30 pages. PDF first, since Office page renders were removed in Q283.
 2. **Outline** from the already indexed text. The expected question labels give a completeness check.
 3. **Extract** with a vision model and tool calls (`record_question`, `continue_question`) over windows of up to two pages.
    - The Go validator checks each call straight away, and problems go back to the model.
    - Printed option order is kept.
    - Figures snap to the parser's image boxes and become crops.
-4. **Pair the mark scheme by label in code;** the model only parses its lines.
+4. **Pair the mark scheme and answer files by question label in code;** the model only parses their lines. They fill correct answers, marking points and worked solutions.
 5. **Blind-solve** to write worked solutions only where the paper has none. These are labelled AI-written.
 6. **Saved straight away as a quiz (Epo, 2026-11-02).** There is no separate review screen. Extraction ends by opening the new quiz in its editor (X2). The editor is today's question edit dialog laid out as a page, with a plain question list on the left, and has no source panel. Problems show as the quiz's normal issues (`IssueSummary` / `IssueIcon`, e.g. "Image: choose an image file"), never as extraction flags.
 7. **No source is stored (Epo, 2026-11-02).** A saved question keeps no link to its file, page, region or mark-scheme page, and generated questions keep no "written from" file. The page is shown only while reviewing, read from the uploaded file. This drops R3's "save with provenance" and R2's `question_origins` table.
@@ -357,7 +360,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 
 **Formats Capy can't hold yet:** level-based marking, "any n of m", and method/accuracy marks.
 
-**Mock:** X1 (pick pages), X2 (review).
+**Mock:** X0a and X0b (the dialog), X1 (pick pages), X2 (the saved quiz in its editor).
 
 ## 9. Grading open answers
 
@@ -392,7 +395,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - **In the tab:** pick the question, then go through the members. Rows waiting show "AI 3 / 6"; approved rows show just the mark. Approve moves to the next one, Approve all clears the question, and changing a mark approves it too.
   - **Words:** the tab is named after who marked the answers ("Marked by AI"), not the question type; "Open answer" stays only as a question type.
   - **Switch (Epo, 2026-11-03):** New assignment has "Approve AI marks before members see them", on by default, under Published (A1). Turned off, AI marks reach members at once, as in practice, and the assignment never shows marks to approve.
-  - **Reminders (2026-11-03 proposal, D1 and H3 on page 3):** besides the Assignments row, waiting marks show in three places, each only while something waits:
+  - **Reminders (Epo, 2026-11-03, D1 and H3 on page 3):** besides the Assignments row, waiting marks show in three places, each only while something waits:
     - the app's Home gets a **To approve** list across workspaces, one row per assignment with Approve (Canvas lists "Grade …" in the To Do on its Dashboard; Classroom has a To review list across classes);
     - the workspace Dashboard's Tasks start with an owner-only task, "Approve AI marks on [assignment]", that ticks itself once nothing waits;
     - the bell gets one notification per assignment, not one per answer (Teams posts submissions to the activity feed).
