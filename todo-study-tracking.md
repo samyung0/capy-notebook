@@ -434,7 +434,8 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
     - `?tab=approve`: Approve AI marks, at the first waiting answer;
     - `?tab=approve&question={question}`: one question's answers;
     - `?tab=approve&question={question}&member={member}`: one answer;
-    - `?tab=approve&member={member}`: one member's waiting answers (A3b). The tab's dropdown lists members as well as questions, and the Members tab's "2 to approve" opens this.
+    - `?tab=approve&member={member}`: that member's first waiting answer. Approve then steps through their waiting answers, switching question as needed. The Members tab's "2 to approve" opens this.
+    - **One layout for all of these (Epo, 2026-11-03):** A3, the question dropdown with the member list. There is no separate by-member design.
     - Unknown ids fall back to the first waiting answer, as `parseWorkspaceOpenSearch` clears bad keys today. Approve on Home, on the Dashboard task and in notifications all use these links.
   - **In the tab:** pick the question, then go through the members. Rows waiting show "AI 3 / 6"; approved rows show just the mark. Approve moves to the next one, Approve all clears the question, and changing a mark approves it too.
   - **Words (Epo, 2026-11-03):** the tab is named for what the owner does there, **"Approve AI marks"** (it was "Open answers", then "Marked by AI"). "Open answer" stays only as a question type.
