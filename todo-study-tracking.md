@@ -181,7 +181,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   |---|---|---|
   | Members | One line per member: Overall on assignments, x of y done, missing, practice this week, focus topics. A row opens the member's profile (no accordion, Epo 2026-11-03: it only repeated part of the profile). Rows are 52 px; the By topic grid has 64 px rows. | (not shown) |
   | Assignments | Every assignment with its due date and submitted count; drafts are labelled. Each opens its report, and its open answers for changing marks. | Their own: to do and results. |
-  | Members → By topic | How the group does per topic (members × topics). Topics are edited in Files. | Their own labels sit in My results. |
+  | Members → By topic | How the group does per topic (members × topics), with a pinned "All members" row of counts at the top, like Classroom's Class average row (Epo, 2026-11-03). Topics are edited in Files. | Their own labels sit in My results. |
   | My results | Their own study, if they study too. | To do, results, practice, topics, and "What the owner sees". |
 
 - **The mocks are now user flows,** one canvas page each:
@@ -339,6 +339,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - **Picking names** fixes the list. The task and the notice reach only those members, and "x of y done" and the report count only them.
   - **Owners and editors are left out** unless they tick themselves ("You" at the bottom of the list). The same goes for plain tasks.
 - **The owner's To do shows what is for her (Epo, 2026-11-03; H1, H3):** approvals and anything she assigned herself. Like Classroom's To review and Canvas's teacher To Do, a teacher's own list holds review work, not the class's work.
+- **Profile lists share one grid (Epo, 2026-11-03):** Assignments and Topics on a member's profile are flush left, with the same row height and columns.
 - **Section titles vs column headers (Epo, 2026-11-03).** When a table sits right under a section title that repeats its first column ("Assignments" over "Assignment"), drop the header row and let the cells say what they are ("14 / 20", "Submitted 28 Oct"), as on Cara's profile (G2). Gmail, Linear and the Notion list view have no header row at all. Where the columns need names, the first column header can be dropped or made generic.
 - **The report's Members tab (G3m).** One row per member the assignment went to: when they submitted, how long they took, their mark, and how many marks still wait for approval. Members who haven't submitted say Missing. A row opens that member's answers, laid out like their Results, where the owner can change any mark.
   - Lists show no status for published assignments, only a "Draft" label on drafts. There is no Scheduled, Open, To review or Released status, and no separate "Open for submissions" step: A6 is removed.
