@@ -149,7 +149,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - **Every screen links to the next one in its flow (Epo, 2026-11-03).**
   - The assignment report has three tabs: Questions, Members and **Approve AI marks**. The marking screen is that tab, with a question dropdown above the member list, not a separate page. "Check the AI's marks" under a question goes to the same tab.
   - Submitted links to Home and to **See results**.
-  - My results gives each Needs practice topic a **Practise** button, which opens the topic session.
+  - My results gives each Attempted topic a **Practise** button, which opens the topic session.
   - My results shows the same topic labels the owner sees on the member's profile.
 - **Getting back to the app (Epo, 2026-11-02): N1.**
   - A Home item with a back arrow sits at the top of the rail on every workspace page.
@@ -264,16 +264,17 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - **Repeats on the same day** after seeing the key count 0. A repeat a day or more later counts 0.5.
   - **Question difficulty** is pooled across members.
   - **Why not a plain percentage:** once follow-up adapts, weaker members get easier items, and percentages drift to the target rate. In a synthetic check, raw percent found 71% of truly weak topics and the model found 92%. The data was model-generated, so this shows the mechanism, not real-world accuracy.
-- **Labels, shown with counts ("1 of 4 right"), never a raw number:**
+- **Labels, shown with counts ("1 of 4 right"), never a raw number. Khan Academy's exact names (Epo, 2026-11-03), replacing Too early to tell / Needs practice / Getting there / Strong:**
 
 | Label | When |
 |---|---|
 | Not started | No answers yet |
-| Too early to tell | Fewer than 3 different questions answered |
-| Needs practice (was "Focus next", renamed 2026-11-02 because it was unclear) | 80% sure success is under 60%; clears only below 50%, so it doesn't flicker |
-| Getting there | Between the other two |
-| Strong | 80% sure success is over 70% |
+| Attempted | Fewer than 3 different questions answered, or 80% sure success is under 60% (clears only below 50%, so it doesn't flicker) |
+| Familiar | Between Attempted and Proficient |
+| Proficient | 80% sure success is over 70% |
+| Mastered | Proficient, and still right on a later check (a question days afterwards) |
 
+  - Colours: Attempted amber, Familiar blue, Proficient green tint, Mastered solid green. Practise buttons and the Members "To work on" column follow Attempted.
 - **Memory** stays FSRS recall, shown apart from mastery. Self-rated flashcards feed memory only.
 - **Tables:**
   - `workspace_topics`, `question_topics`;
@@ -486,7 +487,7 @@ Steps 2, 3 and 7 can run side by side.
 **Topics and mastery**
 
 4. A flat list per workspace, 5–20 topics, capped at 30, one per question? Can owners and editors edit them? AI merges only as suggestions?
-5. Labels and thresholds: Too early to tell under 3 questions; Needs practice under 60%; Strong over 70%; 80% sureness.
+5. Thresholds for the Khan labels: Attempted under 3 questions or under 60%; Proficient over 70%; Mastered after a later check; 80% sureness.
 6. Should flashcards stay out of mastery (memory only)?
 7. Topics replace chapters in suggestions, sessions and the agent's `read_study_progress`?
 
