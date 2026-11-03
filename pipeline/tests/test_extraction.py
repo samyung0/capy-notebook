@@ -42,9 +42,10 @@ def _mcq(label: str, options: list[str]) -> dict:
     }
 
 
-def _open(label: str, parts: list[tuple[str, int]]) -> dict:
+def _open(label: str, parts: list[tuple[str, int]], total: int | None = None) -> dict:
     return {
         "label": label,
+        **({"total_marks": total} if total else {}),
         "stem": _text("Given f(x)."),
         "parts": [
             {
@@ -192,7 +193,7 @@ async def test_run_validates_continues_pairs_and_reports(monkeypatch):
                 "tool_calls": [
                     _call(
                         "record_question",
-                        {"questions": [_mcq("1", []), _open("2", [("a", 2)])]},
+                        {"questions": [_mcq("1", []), _open("2", [("a", 2)], total=4)]},
                     )
                 ],
             },
@@ -284,6 +285,8 @@ async def test_run_validates_continues_pairs_and_reports(monkeypatch):
     assert report["missing"] == ["3"]
     assert report["unanswered"] == ["4"]
     assert report["unpaired"] == ["9"]
+    # Question 2 prints 4 marks in all; the scheme's parts add up to 3.
+    assert report["marksDiffer"] == ["2"]
     first, second = done["questions"]
     assert first["parts"][0]["answer"]["correct"] == [1]
     assert [p["markscheme"] for p in second["parts"]] == [

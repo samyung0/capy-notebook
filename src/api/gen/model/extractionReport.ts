@@ -10,6 +10,7 @@ export interface ExtractionReport {
   expected: string[];
   figures: string[];
   invalid: string[];
+  marksDiffer: string[];
   missing: string[];
   pages: number;
   recorded: string[];

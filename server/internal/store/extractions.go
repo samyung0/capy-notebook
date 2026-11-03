@@ -40,11 +40,14 @@ type ExtractionReport struct {
 	Recorded   []string `json:"recorded" nullable:"false"`
 	Unanswered []string `json:"unanswered" nullable:"false"`
 	Invalid    []string `json:"invalid" nullable:"false"`
-	Unpaired   []string `json:"unpaired" nullable:"false"`
-	Figures    []string `json:"figures" nullable:"false"`
-	Stopped    string   `json:"stopped" enum:",quiz_full,credits"`
-	Pages      int      `json:"pages"`
-	Windows    int      `json:"windows"`
+	// Saved questions whose part marks, as paired, differ from the printed
+	// total.
+	MarksDiffer []string `json:"marksDiffer" nullable:"false"`
+	Unpaired    []string `json:"unpaired" nullable:"false"`
+	Figures     []string `json:"figures" nullable:"false"`
+	Stopped     string   `json:"stopped" enum:",quiz_full,credits"`
+	Pages       int      `json:"pages"`
+	Windows     int      `json:"windows"`
 }
 
 const (

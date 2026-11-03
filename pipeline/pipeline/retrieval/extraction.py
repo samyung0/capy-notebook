@@ -107,6 +107,8 @@ class Recorded:
     question: dict[str, Any]
     part_labels: list[str]
     figures: int = 0
+    # The question's printed total, when the page prints only a total.
+    total: int | None = None
 
 
 @dataclass
@@ -204,6 +206,7 @@ def record(item: Any) -> Recorded:
         },
         part_labels=labels,
         figures=len(item.get("figures") or []),
+        total=_whole(item.get("total_marks")),
     )
 
 
@@ -677,6 +680,7 @@ async def run(
     saved: list[dict[str, Any]] = []
     unanswered: list[str] = []
     invalid: list[str] = []
+    marks_differ: list[str] = []
     figures: list[str] = []
     for held in current.held():
         if pair(held, entries):
@@ -691,6 +695,9 @@ async def run(
             invalid.append(held.label)
             continue
         saved.append(held.question)
+        parts_total = sum(part["marks"] for part in held.question["parts"])
+        if held.total is not None and parts_total != held.total:
+            marks_differ.append(held.label)
         if held.figures:
             figures.append(held.label)
     recorded = {label_key(label) for label in current.labels()}
@@ -705,6 +712,9 @@ async def run(
             "recorded": current.labels(),
             "unanswered": unanswered,
             "invalid": invalid,
+            # Saved questions whose part marks, as paired, do not add up to
+            # the total printed on the page.
+            "marksDiffer": marks_differ,
             "unpaired": sorted(
                 {entries[key].question for key in entries if key not in used},
                 key=lambda label: (len(label), label),
