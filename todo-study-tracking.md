@@ -119,7 +119,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
   - This changes §1: chapters become **topics**, not folders.
   - Others: Google Classroom's Topics are the only grouping on Classwork (one per item, no mastery). Canvas keeps Modules for organising and Outcomes for mastery, as Moodle and Schoology do. Capy takes Classroom's single grouping for files and Canvas's per-question tags, from one list.
   - **Decided (Epo, 2026-11-03).**
-- **Where topics live (Epo, 2026-11-03).** Topics live in Files: set up, add, rename and remove happen there, and each topic row in the Files panel carries a tag icon. There are no merge suggestions, and no action menu on the topic title; rename works by editing the title.
+- **Where topics live (Epo, 2026-11-03).** Topics live in Files: set up, add, rename and remove happen there, and topic rows in the Files panel are plain group rows, with no tag icon. There are no merge suggestions, and no action menu on the topic title; rename works by editing the title.
   - **Uploading asks for the topic** (T4), starting from the topic that is open; nothing is filed automatically. Dragging a file to another topic in the tree moves it.
   - **A topic's page (T3) shows what the tree doesn't,** not its files again:
     - the assignments and practice with questions on the topic, how many of their questions are on it, and the group's score on those questions;
@@ -143,7 +143,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 **Workspace shell (Epo, 2026-11-02): S2 from the canvas mocks.** The labelled icon rail is picked over a single sidebar.
 - **Rail:** the workspace badge, then Dashboard, Files, Agent and Study, each icon with its label below. Your avatar sits at the bottom.
 - **Panel:** beside the rail, it lists the current section's own pages.
-  - Study lists Members, Assignments and My results for owners, and My results and Assignments for members (Topics moved to Files, 2026-11-03). These replace the tabs.
+  - Study lists Members, Assignments, Practice and My results for owners, and My results, Assignments and Practice for members (Topics moved to Files and Practice added, 2026-11-03). These replace the tabs.
   - Files shows the folder tree, and Agent the chats. Dashboard has no panel.
 - **The rail stays on every workspace page (Epo, 2026-11-02),** focused pages included: page picking, the quiz editor, the report, grading, the timed assignment, Submitted and topic practice. Dialogs open over a page that still shows it.
 - **The Study panel stays open too (Epo, 2026-11-03).** Opening an assignment, its report, its open answers, the timed assignment, Submitted, results or a topic session keeps Members/Assignments/Topics/My results beside the page, with the matching item highlighted.
@@ -168,7 +168,12 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 **Round 2 (Epo, 2026-11-02): the Members tab is a summary, and work has two words.**
 - **Two words.**
   - **Assignment:** quiz work the owner sets, with a due date, an optional time limit and set attempts. AI marks wait for the owner's approval unless that is switched off. It counts in Overall.
-  - **Practice:** any quiz done any time, marked at once, not counted. **No time limit (Epo, 2026-11-03),** as quizzes work today; a topic session shows only an estimate ("about 12 minutes"). Only assignments have time limits.
+  - **Practice:** any quiz done any time, marked at once, not counted.
+  - **Every quiz members can see is practice (Epo, 2026-11-03);** hidden quizzes aren't (assignment sources, drafts). A quiz is just a file. Assigning it makes an assignment from a frozen copy; showing it to members makes it practice.
+  - **Practice page (P1, P2).** Study gets a Practice page beside Assignments. Plain tasks stay on the Dashboard.
+    - The owner sees every practice quiz with its topic, question count, how many members tried it, and the group average, but never anyone's practice answers. Add practice shows a hidden quiz to members, for example an assignment's quiz after its due date. A row opens the quiz's question-by-question results.
+    - Members see the same list with their best score and Practise. Topic sessions still start from My results.
+    - Others: Canvas has an Assignments page and a separate Quizzes page whose quizzes can be practice quizzes (ungraded, outside the gradebook). Wayground lets any quiz be assigned or played as practice. Classroom's Classwork mixes everything under topics. **No time limit (Epo, 2026-11-03),** as quizzes work today; a topic session shows only an estimate ("about 12 minutes"). Only assignments have time limits.
   - **Icons (Epo, 2026-11-03):** practice keeps the quiz's Catppuccin bolt (`stackblitz`, blue). An assignment uses Hugeicons' `QuillWrite01Icon` (the app's UI icon set), tinted Catppuccin teal where file icons are coloured. It shows on assignment chips in Tasks and in activity rows.
   - "Test" and "Homework" are no longer kinds. A timed assignment is still an assignment. Categories with weights can come later if owners ask (Classroom, Canvas, Teams).
 - **What each Study tab shows:**
