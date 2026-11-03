@@ -225,8 +225,11 @@ keeps partial credit, which `review_log`'s ratings drop.
   the key in the editor does not count.
 - **Indexes:** (workspace, user, created_at) for member views and a
   workspace's replay; (material, question) for per-question statistics.
-- **Lifecycle:** cascades with its material and its workspace; `PurgeUser`
-  deletes the user's rows; clones copy nothing.
+- **Lifecycle:** a deleted quiz leaves its events with no material (Epo,
+  2026-11-03), as attempts outlive their quiz; they cascade with their
+  workspace; `PurgeUser` deletes the user's rows; clones copy nothing.
+  An event names no topic yet, so one whose quiz is gone counts toward a
+  topic only once the topics step stores the question's topic on it.
 
 `attempts.workspace_id` (same migration) is the workspace a quiz or flashcard
 attempt was taken in, null for a standalone quiz, and set null when the
@@ -844,7 +847,7 @@ tab use the same colour.
 | Review session opened and left unanswered | Nothing is written. |
 | Chapter deleted | Its sessions keep their answers with no chapter. |
 | File or material trashed | Rows stay; every read skips trashed items and marking one is 404; restore brings them back. |
-| File or material purged | `study_progress`, `review_states`, `review_log` and `answer_events` cascade. |
+| File or material purged | `study_progress`, `review_states` and `review_log` cascade; `answer_events` stay with no material. |
 | Item removed from a document | Its `review_states` row is ignored until the item returns. |
 | Question prompt or card face edited | That item's state resets on its next rating; until then it is out of the practised pool and comes back in a manual review as a new item. |
 | Workspace deleted | All four workspace-scoped tables and `answer_events` go by cascade, and so do the plans kept there and every step in it; attempts stay with no workspace. |

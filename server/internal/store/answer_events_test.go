@@ -22,7 +22,7 @@ const answerEventQuestions = `[
 
 // Every graded part of a checked question is logged with its marks, grader,
 // source, attempt and workspace. A wholly blank question logs nothing, but a
-// later check of it knows its key was shown.
+// later check of it knows its key was shown. Deleting the quiz keeps them.
 func TestAnswerEventsLogGradedParts(t *testing.T) {
 	f := newStudyFixture(t, "u_answer_events")
 	ctx := context.Background()
@@ -123,6 +123,14 @@ func TestAnswerEventsLogGradedParts(t *testing.T) {
 	}
 	if n := f.count(t, `SELECT count(*) FROM attempts WHERE id=$1 AND workspace_id IS NULL`, alone.ID); n != 1 {
 		t.Fatalf("standalone attempt with a workspace")
+	}
+
+	// Deleting the quiz keeps its events, with no material.
+	if _, err := f.s.pool.Exec(ctx, `DELETE FROM materials WHERE id=$1`, quiz.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM answer_events WHERE user_id=$1 AND material_id IS NULL`, f.user); n != 5 {
+		t.Fatalf("events after the quiz is deleted = %d, want 5", n)
 	}
 
 	// An account purge deletes them.

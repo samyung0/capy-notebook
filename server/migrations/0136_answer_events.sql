@@ -8,7 +8,9 @@ CREATE TABLE answer_events (
   user_id      text NOT NULL REFERENCES users(id),
   -- The quiz's workspace when answered; null for a standalone quiz.
   workspace_id text REFERENCES workspaces(id) ON DELETE CASCADE,
-  material_id  text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+  -- Set null when the quiz is deleted: the log outlives its quiz, as
+  -- attempts do, so deleting a quiz keeps everyone's history.
+  material_id  text REFERENCES materials(id) ON DELETE SET NULL,
   question_id  text NOT NULL,
   part_id      text NOT NULL,
   -- review.QuestionHash, as in review_states: a new hash is a new item.
