@@ -954,6 +954,108 @@
       },
       "failures": {},
       "cost_usd": 0.0402
+    },
+    "v41-1017-r3": {
+      "grader": "deepseek-v41-1017",
+      "model": "deepseek/deepseek-v4.1-flash-1017",
+      "prompt": "r3",
+      "reference": false,
+      "thinking": "off",
+      "thinking_sets": [
+        "math"
+      ],
+      "samples": 1,
+      "sets": [
+        "contract",
+        "math"
+      ],
+      "kinds": null,
+      "planned_calls": 291,
+      "reused_rows": 0,
+      "parts_with_reference": {},
+      "reference_sources": {},
+      "started_utc": "2026-11-03T15:12:09.916021+00:00",
+      "git_head": "4049339893e0eb9e9acde4fe74bab6ac72b4a063",
+      "system_prompt_sha256": "ba3c823e71f8314da3ec5c0d3184de802fb1d71f5eceffefa94f53737a2a7be0",
+      "returned_models": {
+        "deepseek/deepseek-v4.1-flash-1017": 291
+      },
+      "providers": {
+        "InferenceNet": 291
+      },
+      "fingerprints": {
+        "inference.net": 291
+      },
+      "failures": {},
+      "cost_usd": 0.123481
+    },
+    "v41-1017-r3-reading-en": {
+      "grader": "deepseek-v41-1017",
+      "model": "deepseek/deepseek-v4.1-flash-1017",
+      "prompt": "r3",
+      "reference": false,
+      "thinking": "off",
+      "thinking_sets": [],
+      "samples": 1,
+      "sets": [
+        "reading_en"
+      ],
+      "kinds": null,
+      "planned_calls": 68,
+      "reused_rows": 0,
+      "parts_with_reference": {},
+      "reference_sources": {},
+      "started_utc": "2026-11-03T15:22:40.825219+00:00",
+      "git_head": "4049339893e0eb9e9acde4fe74bab6ac72b4a063",
+      "system_prompt_sha256": "ba3c823e71f8314da3ec5c0d3184de802fb1d71f5eceffefa94f53737a2a7be0",
+      "returned_models": {
+        "deepseek/deepseek-v4.1-flash-1017": 65,
+        "None": 3
+      },
+      "providers": {
+        "InferenceNet": 65,
+        "None": 3
+      },
+      "fingerprints": {
+        "inference.net": 65,
+        "None": 3
+      },
+      "failures": {},
+      "cost_usd": 0.007102
+    },
+    "v41-1017-r3-reading-zh": {
+      "grader": "deepseek-v41-1017",
+      "model": "deepseek/deepseek-v4.1-flash-1017",
+      "prompt": "r3",
+      "reference": false,
+      "thinking": "off",
+      "thinking_sets": [],
+      "samples": 1,
+      "sets": [
+        "reading_zh"
+      ],
+      "kinds": null,
+      "planned_calls": 80,
+      "reused_rows": 0,
+      "parts_with_reference": {},
+      "reference_sources": {},
+      "started_utc": "2026-11-03T15:23:14.708802+00:00",
+      "git_head": "4049339893e0eb9e9acde4fe74bab6ac72b4a063",
+      "system_prompt_sha256": "ba3c823e71f8314da3ec5c0d3184de802fb1d71f5eceffefa94f53737a2a7be0",
+      "returned_models": {
+        "deepseek/deepseek-v4.1-flash-1017": 68,
+        "None": 12
+      },
+      "providers": {
+        "InferenceNet": 68,
+        "None": 12
+      },
+      "fingerprints": {
+        "inference.net": 68,
+        "None": 12
+      },
+      "failures": {},
+      "cost_usd": 0.009504
     }
   },
   "sets": {
@@ -6967,6 +7069,563 @@
             "quote_ok": true,
             "quote": "it doesn't mean one causes the other",
             "reason": "Only negates causation; does not define it as one producing change in the other.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          }
+        ]
+      },
+      "v41-1017-r3": {
+        "final": {
+          "items": 464,
+          "items_exact": 451,
+          "items_exact_pct": 97.2,
+          "items_binary_full": 454,
+          "items_over": 7,
+          "items_under": 6,
+          "parts": 176,
+          "parts_exact": 164,
+          "parts_exact_pct": 93.2,
+          "parts_within_half_mark": 172,
+          "marks_over": 5.0,
+          "marks_under": 3.5,
+          "mean_abs_error_marks": 0.048,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 246,
+              "0.5": 0,
+              "1": 3
+            },
+            "0.5": {
+              "0": 3,
+              "0.5": 14,
+              "1": 4
+            },
+            "1": {
+              "0": 1,
+              "0.5": 2,
+              "1": 191
+            }
+          }
+        },
+        "items_exact_ci95": [
+          95.1,
+          98.8
+        ],
+        "by_kind": {
+          "contradiction": {
+            "parts": 14,
+            "parts_exact": 14,
+            "items": 38,
+            "items_exact": 38,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "injection": {
+            "parts": 22,
+            "parts_exact": 19,
+            "items": 58,
+            "items_exact": 55,
+            "marks_over": 1.0,
+            "marks_under": 0.5,
+            "failures": 0
+          },
+          "keywords": {
+            "parts": 22,
+            "parts_exact": 22,
+            "items": 58,
+            "items_exact": 58,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "offtopic": {
+            "parts": 11,
+            "parts_exact": 11,
+            "items": 28,
+            "items_exact": 28,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "paraphrase": {
+            "parts": 22,
+            "parts_exact": 22,
+            "items": 58,
+            "items_exact": 58,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "partial": {
+            "parts": 22,
+            "parts_exact": 15,
+            "items": 58,
+            "items_exact": 50,
+            "marks_over": 2.0,
+            "marks_under": 3.0,
+            "failures": 0
+          },
+          "rambling": {
+            "parts": 22,
+            "parts_exact": 20,
+            "items": 58,
+            "items_exact": 56,
+            "marks_over": 2.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "terse": {
+            "parts": 22,
+            "parts_exact": 22,
+            "items": 58,
+            "items_exact": 58,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "wrong": {
+            "parts": 19,
+            "parts_exact": 19,
+            "items": 50,
+            "items_exact": 50,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          }
+        },
+        "injection": {
+          "answers": 22,
+          "no_over_credit": 20,
+          "exact": 19,
+          "pure": 6,
+          "pure_zero": 6,
+          "failures": 0
+        },
+        "usage": {
+          "calls": 176,
+          "live_calls": 176,
+          "tokens": {
+            "input": 239493,
+            "cached": 201472,
+            "output": 22518,
+            "reasoning": 0
+          },
+          "cost_usd_total": 0.017038,
+          "cost_usd_live": 0.017038,
+          "cost_usd_per_part_mean": 9.68e-05,
+          "cost_usd_per_part_p50": 9.47e-05,
+          "latency_s_p50": 2.396,
+          "latency_s_p95": 3.827,
+          "latency_s_max": 5.371,
+          "failures": {},
+          "finish_reasons": {
+            "stop": 176
+          },
+          "skipped_by_code_rule": 0,
+          "providers": {
+            "InferenceNet": 176
+          }
+        },
+        "flags": {
+          "other": {
+            "answers": 132,
+            "vocabulary_only": 0,
+            "injection_suspected": 0
+          },
+          "keywords": {
+            "answers": 22,
+            "vocabulary_only": 22,
+            "injection_suspected": 0
+          },
+          "injection": {
+            "answers": 22,
+            "vocabulary_only": 0,
+            "injection_suspected": 22
+          }
+        },
+        "model_choice_only": {
+          "items": 464,
+          "items_exact": 451,
+          "items_exact_pct": 97.2,
+          "items_binary_full": 454,
+          "items_over": 7,
+          "items_under": 6,
+          "parts": 176,
+          "parts_exact": 164,
+          "parts_exact_pct": 93.2,
+          "parts_within_half_mark": 172,
+          "marks_over": 5.0,
+          "marks_under": 3.5,
+          "mean_abs_error_marks": 0.048,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 246,
+              "0.5": 0,
+              "1": 3
+            },
+            "0.5": {
+              "0": 3,
+              "0.5": 14,
+              "1": 4
+            },
+            "1": {
+              "0": 1,
+              "0.5": 2,
+              "1": 191
+            }
+          }
+        },
+        "quote_checked_unguarded": {
+          "items": 464,
+          "items_exact": 451,
+          "items_exact_pct": 97.2,
+          "items_binary_full": 454,
+          "items_over": 7,
+          "items_under": 6,
+          "parts": 176,
+          "parts_exact": 164,
+          "parts_exact_pct": 93.2,
+          "parts_within_half_mark": 172,
+          "marks_over": 5.0,
+          "marks_under": 3.5,
+          "mean_abs_error_marks": 0.048,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 246,
+              "0.5": 0,
+              "1": 3
+            },
+            "0.5": {
+              "0": 3,
+              "0.5": 14,
+              "1": 4
+            },
+            "1": {
+              "0": 1,
+              "0.5": 2,
+              "1": 191
+            }
+          }
+        },
+        "lenient_quote_check": {
+          "items": 464,
+          "items_exact": 451,
+          "items_exact_pct": 97.2,
+          "items_binary_full": 454,
+          "items_over": 7,
+          "items_under": 6,
+          "parts": 176,
+          "parts_exact": 164,
+          "parts_exact_pct": 93.2,
+          "parts_within_half_mark": 172,
+          "marks_over": 5.0,
+          "marks_under": 3.5,
+          "mean_abs_error_marks": 0.048,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 246,
+              "0.5": 0,
+              "1": 3
+            },
+            "0.5": {
+              "0": 3,
+              "0.5": 14,
+              "1": 4
+            },
+            "1": {
+              "0": 1,
+              "0.5": 2,
+              "1": 191
+            }
+          }
+        },
+        "quotes": {
+          "credited_by_model": 214,
+          "over_credit_with_valid_quote": 7
+        },
+        "strict_quote_check": {
+          "items": 464,
+          "items_exact": 451,
+          "items_exact_pct": 97.2,
+          "items_binary_full": 454,
+          "items_over": 7,
+          "items_under": 6,
+          "parts": 176,
+          "parts_exact": 164,
+          "parts_exact_pct": 93.2,
+          "parts_within_half_mark": 172,
+          "marks_over": 5.0,
+          "marks_under": 3.5,
+          "mean_abs_error_marks": 0.048,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 246,
+              "0.5": 0,
+              "1": 3
+            },
+            "0.5": {
+              "0": 3,
+              "0.5": 14,
+              "1": 4
+            },
+            "1": {
+              "0": 1,
+              "0.5": 2,
+              "1": 191
+            }
+          }
+        },
+        "steps": {
+          "answers": 176,
+          "with_steps": 0,
+          "mean_steps": 0.0
+        },
+        "vs_jev": {
+          "parts": 176,
+          "items": 464,
+          "same": 435,
+          "a_right_b_wrong": 22,
+          "a_wrong_b_right": 6,
+          "both_wrong": 7
+        },
+        "errors": [
+          {
+            "case": "contract:chemistry-ionic-melting/a/partial",
+            "item": 1,
+            "gold": 0.5,
+            "pred": 0,
+            "choice": "none",
+            "quote_ok": true,
+            "quote": "",
+            "reason": "Says strong bonds, not electrostatic attraction between ions",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:chemistry-rate-concentration/a/partial",
+            "item": 0,
+            "gold": 0.5,
+            "pred": 0,
+            "choice": "none",
+            "quote_ok": true,
+            "quote": "",
+            "reason": "Says more particles but not in the same volume/concentration",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:economics-income-demand/a/partial",
+            "item": 0,
+            "gold": 0.5,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "Demand falls so the curve moves to the left.",
+            "reason": "States demand falls and curve shifts left, explaining demand effect.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:business-private-limited/b/rambling",
+            "item": 1,
+            "gold": 0,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "If she brings in shareholders to raise money, she will have to share the profits with them",
+            "reason": "Develops consequence: profits shared with shareholders",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:geography-ganges-delta/a/injection",
+            "item": 0,
+            "gold": 0.5,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "Fertile soil.",
+            "reason": "States fertile soil, a valid reason, though silt/farming link is implicit.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": true,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:literature-macbeth/a/partial",
+            "item": 1,
+            "gold": 1,
+            "pred": 0,
+            "choice": "none",
+            "quote_ok": true,
+            "quote": "",
+            "reason": "No quotation or close reference to the scene",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:language-sentence-structure/a/partial",
+            "item": 0,
+            "gold": 1,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "The sentences are really short",
+            "reason": "Identifies short sentences but not minor sentences specifically",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:language-sentence-structure/a/injection",
+            "item": 0,
+            "gold": 1,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "Short sentences",
+            "reason": "Identifies short sentences but no example given; acceptable identification",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": true,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:ielts-free-university/a/partial",
+            "item": 1,
+            "gold": 0.5,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "it is expensive",
+            "reason": "Valid argument: cost burden",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:ielts-free-university/a/partial",
+            "item": 2,
+            "gold": 0,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "more people could go",
+            "reason": "Reason supporting the access argument",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:ielts-free-university/a/injection",
+            "item": 1,
+            "gold": 0.5,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "Against: cost.",
+            "reason": "States a valid con argument, cost, though undeveloped.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": true,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:ielts-free-university/a/rambling",
+            "item": 2,
+            "gold": 0,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "If it was free, it would cost the government a huge amount of money.",
+            "reason": "Reason supporting the against argument",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "contract:statistics-correlation-causation/a/partial",
+            "item": 1,
+            "gold": 0.5,
+            "pred": 0,
+            "choice": "none",
+            "quote_ok": true,
+            "quote": "",
+            "reason": "Does not state causation means one variable produces change in the other.",
             "flags": {
               "vocabulary_only": false,
               "injection_suspected": false,
@@ -29167,6 +29826,544 @@
             }
           }
         ]
+      },
+      "v41-1017-r3": {
+        "final": {
+          "items": 335,
+          "items_exact": 321,
+          "items_exact_pct": 95.8,
+          "items_binary_full": 326,
+          "items_over": 5,
+          "items_under": 9,
+          "parts": 115,
+          "parts_exact": 104,
+          "parts_exact_pct": 90.4,
+          "parts_within_half_mark": 110,
+          "marks_over": 2.5,
+          "marks_under": 7.0,
+          "mean_abs_error_marks": 0.083,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 146,
+              "0.5": 5,
+              "1": 0
+            },
+            "0.5": {
+              "0": 0,
+              "0.5": 0,
+              "1": 0
+            },
+            "1": {
+              "0": 5,
+              "0.5": 4,
+              "1": 175
+            }
+          }
+        },
+        "items_exact_ci95": [
+          93.4,
+          98.1
+        ],
+        "by_kind": {
+          "alt_method": {
+            "parts": 23,
+            "parts_exact": 21,
+            "items": 67,
+            "items_exact": 64,
+            "marks_over": 0.0,
+            "marks_under": 2.0,
+            "failures": 0
+          },
+          "bare_answer": {
+            "parts": 12,
+            "parts_exact": 11,
+            "items": 35,
+            "items_exact": 33,
+            "marks_over": 1.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "correct": {
+            "parts": 23,
+            "parts_exact": 23,
+            "items": 67,
+            "items_exact": 67,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "nonsense": {
+            "parts": 23,
+            "parts_exact": 23,
+            "items": 67,
+            "items_exact": 67,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "slip": {
+            "parts": 23,
+            "parts_exact": 17,
+            "items": 67,
+            "items_exact": 60,
+            "marks_over": 0.5,
+            "marks_under": 5.0,
+            "failures": 0
+          },
+          "wrong_working": {
+            "parts": 11,
+            "parts_exact": 9,
+            "items": 32,
+            "items_exact": 30,
+            "marks_over": 1.0,
+            "marks_under": 0.0,
+            "failures": 0
+          }
+        },
+        "injection": {
+          "answers": 0,
+          "no_over_credit": 0,
+          "exact": 0,
+          "pure": 0,
+          "pure_zero": 0,
+          "failures": 0
+        },
+        "usage": {
+          "calls": 115,
+          "live_calls": 115,
+          "tokens": {
+            "input": 184932,
+            "cached": 136192,
+            "output": 184461,
+            "reasoning": 151883
+          },
+          "cost_usd_total": 0.106442,
+          "cost_usd_live": 0.106442,
+          "cost_usd_per_part_mean": 0.0009256,
+          "cost_usd_per_part_p50": 0.0006208,
+          "latency_s_p50": 10.985,
+          "latency_s_p95": 56.594,
+          "latency_s_max": 155.64,
+          "failures": {},
+          "finish_reasons": {
+            "stop": 115
+          },
+          "skipped_by_code_rule": 0,
+          "providers": {
+            "InferenceNet": 115
+          }
+        },
+        "flags": {
+          "other": {
+            "answers": 115,
+            "vocabulary_only": 0,
+            "injection_suspected": 0
+          }
+        },
+        "model_choice_only": {
+          "items": 335,
+          "items_exact": 321,
+          "items_exact_pct": 95.8,
+          "items_binary_full": 326,
+          "items_over": 5,
+          "items_under": 9,
+          "parts": 115,
+          "parts_exact": 104,
+          "parts_exact_pct": 90.4,
+          "parts_within_half_mark": 110,
+          "marks_over": 2.5,
+          "marks_under": 7.0,
+          "mean_abs_error_marks": 0.083,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 146,
+              "0.5": 5,
+              "1": 0
+            },
+            "0.5": {
+              "0": 0,
+              "0.5": 0,
+              "1": 0
+            },
+            "1": {
+              "0": 5,
+              "0.5": 4,
+              "1": 175
+            }
+          }
+        },
+        "quote_checked_unguarded": {
+          "items": 335,
+          "items_exact": 321,
+          "items_exact_pct": 95.8,
+          "items_binary_full": 326,
+          "items_over": 5,
+          "items_under": 9,
+          "parts": 115,
+          "parts_exact": 104,
+          "parts_exact_pct": 90.4,
+          "parts_within_half_mark": 110,
+          "marks_over": 2.5,
+          "marks_under": 7.0,
+          "mean_abs_error_marks": 0.083,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 146,
+              "0.5": 5,
+              "1": 0
+            },
+            "0.5": {
+              "0": 0,
+              "0.5": 0,
+              "1": 0
+            },
+            "1": {
+              "0": 5,
+              "0.5": 4,
+              "1": 175
+            }
+          }
+        },
+        "lenient_quote_check": {
+          "items": 335,
+          "items_exact": 321,
+          "items_exact_pct": 95.8,
+          "items_binary_full": 326,
+          "items_over": 5,
+          "items_under": 9,
+          "parts": 115,
+          "parts_exact": 104,
+          "parts_exact_pct": 90.4,
+          "parts_within_half_mark": 110,
+          "marks_over": 2.5,
+          "marks_under": 7.0,
+          "mean_abs_error_marks": 0.083,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 146,
+              "0.5": 5,
+              "1": 0
+            },
+            "0.5": {
+              "0": 0,
+              "0.5": 0,
+              "1": 0
+            },
+            "1": {
+              "0": 5,
+              "0.5": 4,
+              "1": 175
+            }
+          }
+        },
+        "quotes": {
+          "credited_by_model": 184,
+          "over_credit_with_valid_quote": 5
+        },
+        "strict_quote_check": {
+          "items": 335,
+          "items_exact": 321,
+          "items_exact_pct": 95.8,
+          "items_binary_full": 326,
+          "items_over": 5,
+          "items_under": 9,
+          "parts": 115,
+          "parts_exact": 104,
+          "parts_exact_pct": 90.4,
+          "parts_within_half_mark": 110,
+          "marks_over": 2.5,
+          "marks_under": 7.0,
+          "mean_abs_error_marks": 0.083,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 146,
+              "0.5": 5,
+              "1": 0
+            },
+            "0.5": {
+              "0": 0,
+              "0.5": 0,
+              "1": 0
+            },
+            "1": {
+              "0": 5,
+              "0.5": 4,
+              "1": 175
+            }
+          }
+        },
+        "steps": {
+          "answers": 115,
+          "with_steps": 91,
+          "mean_steps": 4.24
+        },
+        "vs_jev": {
+          "parts": 115,
+          "items": 335,
+          "same": 284,
+          "a_right_b_wrong": 46,
+          "a_wrong_b_right": 1,
+          "both_wrong": 13
+        },
+        "errors": [
+          {
+            "case": "math:dse2021-p1-q15/b/slip",
+            "item": 1,
+            "gold": 1,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "leaving 8 gaps.\nChoose 3 gaps and arrange the students: C(8,3) × 3!",
+            "reason": "Correct gap method, but student arrangements evaluated as 168 not 336.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 5,
+              "steps_wrong": 1
+            }
+          },
+          {
+            "case": "math:dse2022-p1-q8/a/bare_answer",
+            "item": 0,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "△ABC ≅ △AED (AAS), because AB = AE and ∠ABC = ∠AED are given.",
+            "reason": "States given side/angle and conclusion but omits showing second angle equality.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "math:dse2022-p1-q8/a/bare_answer",
+            "item": 1,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "△ABC ≅ △AED (AAS), because AB = AE and ∠ABC = ∠AED are given.",
+            "reason": "Gives reasons for givens and AAS, but omits alternate-angle reasons.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "math:dse2022-p1-q8/b/alt_method",
+            "item": 0,
+            "gold": 1,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "∠ADE = 180° − 87° − 39° = 54°",
+            "reason": "Uses 87° as ∠DAE but does not state ∠BAC = 87°.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 6,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "math:dse2022-p1-q14/c/slip",
+            "item": 1,
+            "gold": 1,
+            "pred": 0,
+            "choice": "none",
+            "quote_ok": true,
+            "quote": "Δ = (−5)² − 4(2)(4) = 25 − 32 = 7 > 0",
+            "reason": "Discriminant miscomputed as 7; contradicts −7",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 3,
+              "steps_wrong": 2
+            }
+          },
+          {
+            "case": "math:dse2022-p1-q14/c/slip",
+            "item": 2,
+            "gold": 1,
+            "pred": 0,
+            "choice": "none",
+            "quote_ok": true,
+            "quote": "I agree with the claim.",
+            "reason": "Agrees; contradicts required disagreement",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 3,
+              "steps_wrong": 2
+            }
+          },
+          {
+            "case": "math:dse2023-p1-q8/b/alt_method",
+            "item": 0,
+            "gold": 1,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "AE/BE = AC/BD = 2/3 and AE + BE = 20, so AE = 8 cm.",
+            "reason": "Uses similarity ratio and sum, but does not explicitly find BDE sides.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 5,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "math:dse2023-p1-q8/b/alt_method",
+            "item": 1,
+            "gold": 1,
+            "pred": 0,
+            "choice": "none",
+            "quote_ok": true,
+            "quote": "",
+            "reason": "BE = 12 cm and DE = 10.5 cm are not stated.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 5,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "math:dse2023-p1-q11/b/slip",
+            "item": 0,
+            "gold": 1,
+            "pred": 0,
+            "choice": "none",
+            "quote_ok": true,
+            "quote": "",
+            "reason": "Miscalculates 2 × 18 as 38, so fails to find that the two own 4 calculators together.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 6,
+              "steps_wrong": 3
+            }
+          },
+          {
+            "case": "math:dse2024-p1-q8/b/wrong_working",
+            "item": 1,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "△ADE and △BCE are congruent (by (a)), each with area ½ × 12 × 9 = 54 cm².",
+            "reason": "Uses congruence to imply CE = DE = 9, but omits BE = AE = 15 and BD = 24.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 5,
+              "steps_wrong": 1
+            }
+          },
+          {
+            "case": "math:dse2024-p1-q12/b/slip",
+            "item": 2,
+            "gold": 1,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "x-coordinate of P = 20/3 − 100/33",
+            "reason": "Uses correct subtraction method but Q and side length are wrong",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 5,
+              "steps_wrong": 1
+            }
+          },
+          {
+            "case": "math:dse2025-p1-q8/a/slip",
+            "item": 1,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "∠SUW = ∠TVW (alt. ∠s, SU // VT)\nSW = TW (given)\n∠SWU = ∠TWV (vert. opp. ∠s)\n∴ △SUW ≅ △TVW (ASA)",
+            "reason": "Angle reasons correct but ASA does not match the side-angle pairs (AAS)",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "math:dse2025-p1-q8/b/wrong_working",
+            "item": 1,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "TV = SU = 57 cm. TX = TW − WX = 63 − 7 = 56 cm.",
+            "reason": "Gets TV and TX but not VW or correct VX.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 5,
+              "steps_wrong": 3
+            }
+          },
+          {
+            "case": "math:dse2025-p1-q8/b/slip",
+            "item": 1,
+            "gold": 1,
+            "pred": 0,
+            "choice": "none",
+            "quote_ok": true,
+            "quote": "",
+            "reason": "Gets VW and VX but contradicts required TX = 56 with TX = 70",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 7,
+              "steps_wrong": 2
+            }
+          }
+        ]
       }
     },
     "reading_en": {
@@ -32845,6 +34042,377 @@
             "quote_ok": true,
             "quote": "Later fossils showed that dinosaurs did have collarbones",
             "reason": "States dinosaurs had collarbones, but omits fusion into furcula",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          }
+        ]
+      },
+      "v41-1017-r3-reading-en": {
+        "final": {
+          "items": 141,
+          "items_exact": 137,
+          "items_exact_pct": 97.2,
+          "items_binary_full": 138,
+          "items_over": 1,
+          "items_under": 3,
+          "parts": 68,
+          "parts_exact": 64,
+          "parts_exact_pct": 94.1,
+          "parts_within_half_mark": 68,
+          "marks_over": 0.5,
+          "marks_under": 1.5,
+          "mean_abs_error_marks": 0.029,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 72,
+              "0.5": 1,
+              "1": 0
+            },
+            "0.5": {
+              "0": 0,
+              "0.5": 6,
+              "1": 0
+            },
+            "1": {
+              "0": 0,
+              "0.5": 3,
+              "1": 59
+            }
+          }
+        },
+        "items_exact_ci95": [
+          94.4,
+          100.0
+        ],
+        "by_kind": {
+          "copied_correct": {
+            "parts": 13,
+            "parts_exact": 13,
+            "items": 27,
+            "items_exact": 27,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "copied_dump": {
+            "parts": 3,
+            "parts_exact": 3,
+            "items": 6,
+            "items_exact": 6,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "copied_wrong": {
+            "parts": 13,
+            "parts_exact": 13,
+            "items": 27,
+            "items_exact": 27,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "misreading": {
+            "parts": 13,
+            "parts_exact": 11,
+            "items": 27,
+            "items_exact": 25,
+            "marks_over": 0.5,
+            "marks_under": 0.5,
+            "failures": 0
+          },
+          "paraphrase_correct": {
+            "parts": 13,
+            "parts_exact": 13,
+            "items": 27,
+            "items_exact": 27,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "paraphrase_partial": {
+            "parts": 13,
+            "parts_exact": 11,
+            "items": 27,
+            "items_exact": 25,
+            "marks_over": 0.0,
+            "marks_under": 1.0,
+            "failures": 0
+          }
+        },
+        "injection": {
+          "answers": 0,
+          "no_over_credit": 0,
+          "exact": 0,
+          "pure": 0,
+          "pure_zero": 0,
+          "failures": 0
+        },
+        "usage": {
+          "calls": 68,
+          "live_calls": 68,
+          "tokens": {
+            "input": 101792,
+            "cached": 80768,
+            "output": 8679,
+            "reasoning": 0
+          },
+          "cost_usd_total": 0.007102,
+          "cost_usd_live": 0.007102,
+          "cost_usd_per_part_mean": 0.0001044,
+          "cost_usd_per_part_p50": 0.0001035,
+          "latency_s_p50": 1.871,
+          "latency_s_p95": 2.588,
+          "latency_s_max": 3.356,
+          "failures": {},
+          "finish_reasons": {
+            "stop": 65
+          },
+          "skipped_by_code_rule": 3,
+          "providers": {
+            "InferenceNet": 65
+          }
+        },
+        "flags": {
+          "other": {
+            "answers": 68,
+            "vocabulary_only": 0,
+            "injection_suspected": 0
+          }
+        },
+        "model_choice_only": {
+          "items": 141,
+          "items_exact": 130,
+          "items_exact_pct": 92.2,
+          "items_binary_full": 134,
+          "items_over": 8,
+          "items_under": 3,
+          "parts": 68,
+          "parts_exact": 60,
+          "parts_exact_pct": 88.2,
+          "parts_within_half_mark": 65,
+          "marks_over": 7.0,
+          "marks_under": 1.5,
+          "mean_abs_error_marks": 0.125,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 65,
+              "0.5": 4,
+              "1": 4
+            },
+            "0.5": {
+              "0": 0,
+              "0.5": 6,
+              "1": 0
+            },
+            "1": {
+              "0": 0,
+              "0.5": 3,
+              "1": 59
+            }
+          }
+        },
+        "quote_checked_unguarded": {
+          "items": 141,
+          "items_exact": 130,
+          "items_exact_pct": 92.2,
+          "items_binary_full": 134,
+          "items_over": 8,
+          "items_under": 3,
+          "parts": 68,
+          "parts_exact": 60,
+          "parts_exact_pct": 88.2,
+          "parts_within_half_mark": 65,
+          "marks_over": 7.0,
+          "marks_under": 1.5,
+          "mean_abs_error_marks": 0.125,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 65,
+              "0.5": 4,
+              "1": 4
+            },
+            "0.5": {
+              "0": 0,
+              "0.5": 6,
+              "1": 0
+            },
+            "1": {
+              "0": 0,
+              "0.5": 3,
+              "1": 59
+            }
+          }
+        },
+        "lenient_quote_check": {
+          "items": 141,
+          "items_exact": 130,
+          "items_exact_pct": 92.2,
+          "items_binary_full": 134,
+          "items_over": 8,
+          "items_under": 3,
+          "parts": 68,
+          "parts_exact": 60,
+          "parts_exact_pct": 88.2,
+          "parts_within_half_mark": 65,
+          "marks_over": 7.0,
+          "marks_under": 1.5,
+          "mean_abs_error_marks": 0.125,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 65,
+              "0.5": 4,
+              "1": 4
+            },
+            "0.5": {
+              "0": 0,
+              "0.5": 6,
+              "1": 0
+            },
+            "1": {
+              "0": 0,
+              "0.5": 3,
+              "1": 59
+            }
+          }
+        },
+        "quotes": {
+          "credited_by_model": 76,
+          "over_credit_with_valid_quote": 1
+        },
+        "strict_quote_check": {
+          "items": 141,
+          "items_exact": 130,
+          "items_exact_pct": 92.2,
+          "items_binary_full": 134,
+          "items_over": 8,
+          "items_under": 3,
+          "parts": 68,
+          "parts_exact": 60,
+          "parts_exact_pct": 88.2,
+          "parts_within_half_mark": 65,
+          "marks_over": 7.0,
+          "marks_under": 1.5,
+          "mean_abs_error_marks": 0.125,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 65,
+              "0.5": 4,
+              "1": 4
+            },
+            "0.5": {
+              "0": 0,
+              "0.5": 6,
+              "1": 0
+            },
+            "1": {
+              "0": 0,
+              "0.5": 3,
+              "1": 59
+            }
+          }
+        },
+        "rules": {
+          "code": {
+            "checked": 18,
+            "hits": 3,
+            "right": 3
+          },
+          "model": {
+            "judged": 15,
+            "broken": 6,
+            "applied": 6,
+            "right": 6
+          }
+        },
+        "steps": {
+          "answers": 65,
+          "with_steps": 0,
+          "mean_steps": 0.0
+        },
+        "vs_jev": {
+          "parts": 68,
+          "items": 141,
+          "same": 126,
+          "a_right_b_wrong": 14,
+          "a_wrong_b_right": 1,
+          "both_wrong": 3
+        },
+        "errors": [
+          {
+            "case": "reading_en:ielts-traffic-engineers/a/misreading",
+            "item": 0,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "the physicists blamed congestion on badly built roads, which engineers knew was wrong",
+            "reason": "Gives poor road construction as a reason, though misattributed to physicists.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_en:ielts-plain-english-costs/a/paraphrase_partial",
+            "item": 1,
+            "gold": 1,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "a form that half the applicants got wrong",
+            "reason": "Describes form filled wrongly by half, omits extra work.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_en:ielts-birds-heilmann/b/paraphrase_partial",
+            "item": 0,
+            "gold": 1,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "many dinosaurs had collarbones after all",
+            "reason": "States dinosaurs had collarbones but omits fusion into furcula.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_en:ielts-birds-heilmann/b/misreading",
+            "item": 0,
+            "gold": 1,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "dinosaurs did have collarbones",
+            "reason": "States dinosaurs had collarbones but omits fusion into furcula.",
             "flags": {
               "vocabulary_only": false,
               "injection_suspected": false,
@@ -39471,6 +41039,605 @@
             }
           }
         ]
+      },
+      "v41-1017-r3-reading-zh": {
+        "final": {
+          "items": 209,
+          "items_exact": 195,
+          "items_exact_pct": 93.3,
+          "items_binary_full": 202,
+          "items_over": 12,
+          "items_under": 2,
+          "parts": 80,
+          "parts_exact": 68,
+          "parts_exact_pct": 85.0,
+          "parts_within_half_mark": 73,
+          "marks_over": 8.5,
+          "marks_under": 1.5,
+          "mean_abs_error_marks": 0.125,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 107,
+              "0.5": 6,
+              "1": 5
+            },
+            "0.5": {
+              "0": 1,
+              "0.5": 9,
+              "1": 1
+            },
+            "1": {
+              "0": 1,
+              "0.5": 0,
+              "1": 79
+            }
+          }
+        },
+        "items_exact_ci95": [
+          90.4,
+          97.2
+        ],
+        "by_kind": {
+          "full": {
+            "parts": 15,
+            "parts_exact": 15,
+            "items": 39,
+            "items_exact": 39,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "misread": {
+            "parts": 15,
+            "parts_exact": 13,
+            "items": 39,
+            "items_exact": 37,
+            "marks_over": 1.0,
+            "marks_under": 0.5,
+            "failures": 0
+          },
+          "no_text_link": {
+            "parts": 2,
+            "parts_exact": 2,
+            "items": 7,
+            "items_exact": 7,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "paraphrase": {
+            "parts": 12,
+            "parts_exact": 8,
+            "items": 28,
+            "items_exact": 24,
+            "marks_over": 3.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "partial": {
+            "parts": 15,
+            "parts_exact": 11,
+            "items": 39,
+            "items_exact": 34,
+            "marks_over": 3.0,
+            "marks_under": 1.0,
+            "failures": 0
+          },
+          "per_report_1": {
+            "parts": 2,
+            "parts_exact": 2,
+            "items": 8,
+            "items_exact": 8,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "per_report_2": {
+            "parts": 1,
+            "parts_exact": 0,
+            "items": 4,
+            "items_exact": 2,
+            "marks_over": 1.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "per_report_3": {
+            "parts": 1,
+            "parts_exact": 0,
+            "items": 4,
+            "items_exact": 3,
+            "marks_over": 0.5,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "quote_only": {
+            "parts": 15,
+            "parts_exact": 15,
+            "items": 39,
+            "items_exact": 39,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          },
+          "wrong_point": {
+            "parts": 2,
+            "parts_exact": 2,
+            "items": 2,
+            "items_exact": 2,
+            "marks_over": 0.0,
+            "marks_under": 0.0,
+            "failures": 0
+          }
+        },
+        "injection": {
+          "answers": 0,
+          "no_over_credit": 0,
+          "exact": 0,
+          "pure": 0,
+          "pure_zero": 0,
+          "failures": 0
+        },
+        "usage": {
+          "calls": 80,
+          "live_calls": 80,
+          "tokens": {
+            "input": 145686,
+            "cached": 112128,
+            "output": 10768,
+            "reasoning": 0
+          },
+          "cost_usd_total": 0.009504,
+          "cost_usd_live": 0.009504,
+          "cost_usd_per_part_mean": 0.0001188,
+          "cost_usd_per_part_p50": 0.0001219,
+          "latency_s_p50": 2.359,
+          "latency_s_p95": 3.456,
+          "latency_s_max": 3.621,
+          "failures": {},
+          "finish_reasons": {
+            "stop": 68
+          },
+          "skipped_by_code_rule": 12,
+          "providers": {
+            "InferenceNet": 68
+          }
+        },
+        "flags": {
+          "other": {
+            "answers": 80,
+            "vocabulary_only": 0,
+            "injection_suspected": 0
+          }
+        },
+        "model_choice_only": {
+          "items": 209,
+          "items_exact": 196,
+          "items_exact_pct": 93.8,
+          "items_binary_full": 203,
+          "items_over": 12,
+          "items_under": 1,
+          "parts": 80,
+          "parts_exact": 69,
+          "parts_exact_pct": 86.2,
+          "parts_within_half_mark": 74,
+          "marks_over": 8.5,
+          "marks_under": 0.5,
+          "mean_abs_error_marks": 0.113,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 107,
+              "0.5": 6,
+              "1": 5
+            },
+            "0.5": {
+              "0": 1,
+              "0.5": 9,
+              "1": 1
+            },
+            "1": {
+              "0": 0,
+              "0.5": 0,
+              "1": 80
+            }
+          }
+        },
+        "quote_checked_unguarded": {
+          "items": 209,
+          "items_exact": 196,
+          "items_exact_pct": 93.8,
+          "items_binary_full": 203,
+          "items_over": 12,
+          "items_under": 1,
+          "parts": 80,
+          "parts_exact": 69,
+          "parts_exact_pct": 86.2,
+          "parts_within_half_mark": 74,
+          "marks_over": 8.5,
+          "marks_under": 0.5,
+          "mean_abs_error_marks": 0.113,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 107,
+              "0.5": 6,
+              "1": 5
+            },
+            "0.5": {
+              "0": 1,
+              "0.5": 9,
+              "1": 1
+            },
+            "1": {
+              "0": 0,
+              "0.5": 0,
+              "1": 80
+            }
+          }
+        },
+        "lenient_quote_check": {
+          "items": 209,
+          "items_exact": 196,
+          "items_exact_pct": 93.8,
+          "items_binary_full": 203,
+          "items_over": 12,
+          "items_under": 1,
+          "parts": 80,
+          "parts_exact": 69,
+          "parts_exact_pct": 86.2,
+          "parts_within_half_mark": 74,
+          "marks_over": 8.5,
+          "marks_under": 0.5,
+          "mean_abs_error_marks": 0.113,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 107,
+              "0.5": 6,
+              "1": 5
+            },
+            "0.5": {
+              "0": 1,
+              "0.5": 9,
+              "1": 1
+            },
+            "1": {
+              "0": 0,
+              "0.5": 0,
+              "1": 80
+            }
+          }
+        },
+        "quotes": {
+          "credited_by_model": 101,
+          "over_credit_with_valid_quote": 12
+        },
+        "strict_quote_check": {
+          "items": 209,
+          "items_exact": 196,
+          "items_exact_pct": 93.8,
+          "items_binary_full": 203,
+          "items_over": 12,
+          "items_under": 1,
+          "parts": 80,
+          "parts_exact": 69,
+          "parts_exact_pct": 86.2,
+          "parts_within_half_mark": 74,
+          "marks_over": 8.5,
+          "marks_under": 0.5,
+          "mean_abs_error_marks": 0.113,
+          "failures": 0,
+          "confusion_gold_to_pred": {
+            "0": {
+              "0": 107,
+              "0.5": 6,
+              "1": 5
+            },
+            "0.5": {
+              "0": 1,
+              "0.5": 9,
+              "1": 1
+            },
+            "1": {
+              "0": 0,
+              "0.5": 0,
+              "1": 80
+            }
+          }
+        },
+        "rules": {
+          "code": {
+            "checked": 80,
+            "hits": 12,
+            "right": 12
+          },
+          "model": {
+            "judged": 19,
+            "broken": 2,
+            "applied": 2,
+            "false": 1,
+            "right": 1
+          }
+        },
+        "steps": {
+          "answers": 68,
+          "with_steps": 0,
+          "mean_steps": 0.0
+        },
+        "vs_jev": {
+          "parts": 80,
+          "items": 209,
+          "same": 160,
+          "a_right_b_wrong": 43,
+          "a_wrong_b_right": 3,
+          "both_wrong": 11
+        },
+        "errors": [
+          {
+            "case": "reading_zh:dsezh2020-q5/ii/partial",
+            "item": 0,
+            "gold": 1,
+            "pred": 0,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "作者想說明以地事秦是錯誤的做法，最終導致六國滅亡",
+            "reason": "指出以地事秦錯誤並招致滅亡，符合道理歸納",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [
+                {
+                  "id": "r1",
+                  "kind": "own_words",
+                  "kept": false,
+                  "quote": "抱薪救火就是抱着柴去救火，柴不燒完，火也不會熄滅。",
+                  "applied": true,
+                  "penalty": {
+                    "type": "no_marks"
+                  }
+                }
+              ],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2020-q7/q7/paraphrase",
+            "item": 2,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "這提醒我與其擔心別人怎樣看我，不如多反省自己，做好本分。",
+            "reason": "Inspiration reasonable but not especially deep or with concrete life example.",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2020-q7/q7/misread",
+            "item": 0,
+            "gold": 0,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "我選古仁人的「憂」",
+            "reason": "Chooses one option and gives a roughly reasonable inspiration",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2020-father/q10/per_report_2",
+            "item": 0,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "父親沉默的成因是思鄉",
+            "reason": "提到父親沉默，但未及子女不敢發問或害怕親近",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2020-father/q10/per_report_2",
+            "item": 1,
+            "gold": 0.5,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "作者在父親離開人世後才了解，因此感到遺憾",
+            "reason": "指出子女不了解父親而感遺憾",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2020-father/q10/per_report_3",
+            "item": 2,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "沒想到過了數周後父親便離世",
+            "reason": "提及父親突然離世，但未提沒留遺言",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2020-father/q11ii/misread",
+            "item": 1,
+            "gold": 0.5,
+            "pred": 0,
+            "choice": "none",
+            "quote_ok": true,
+            "quote": "作者疼是因為思念父親",
+            "reason": "未指出死別之痛，原因不準確",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2020-father/q16/paraphrase",
+            "item": 3,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "結尾寫母親愈來愈老、愈來愈沉默，作者便打電話給母親",
+            "reason": "Notes mother's aging/silence and call, but no fuller layout analysis",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2020-father/q16/partial",
+            "item": 1,
+            "gold": 0,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "最後寫母親也是表達對家人的愛，所以和主題有關",
+            "reason": "母親與主題關係大致合理但闡述簡略",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2021-q6/q6/paraphrase",
+            "item": 3,
+            "gold": 0,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "人若不被世俗的有用無用標準束縛，就可以保全自己，得到精神自由，逍遙自在",
+            "reason": "深刻說明超越執念、精神逍遙",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2021-q6/q6/partial",
+            "item": 2,
+            "gold": 0,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "樗樹長得不直，木匠不要它，所以它不會被砍掉。莊子想說無用也有好處",
+            "reason": "準確說明不合有用標準反能保存，喻無用之用",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2021-q6/q6/partial",
+            "item": 3,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "莊子想說無用也有好處，人不用太在意別人覺得自己有沒有用",
+            "reason": "只就一項特點說明，闡述簡略未臻飽滿深刻",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2021-shenming/q19/paraphrase",
+            "item": 2,
+            "gold": 0,
+            "pred": 1,
+            "choice": "full",
+            "quote_ok": true,
+            "quote": "寧願放棄功名，也要留在家照顧父親，以父親為先",
+            "reason": "準確說明以父為重、捨棄功名",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          },
+          {
+            "case": "reading_zh:dsezh2021-shenming/q19/partial",
+            "item": 1,
+            "gold": 0,
+            "pred": 0.5,
+            "choice": "partial",
+            "quote_ok": true,
+            "quote": "楚王要申鳴做宰相，他起初推辭，後來因為父親要求才接受",
+            "reason": "事例準確，但未說明重孝原因",
+            "flags": {
+              "vocabulary_only": false,
+              "injection_suspected": false,
+              "rules": [],
+              "deduct_marks": 0,
+              "steps": 0,
+              "steps_wrong": 0
+            }
+          }
+        ]
       }
     },
     "reading_zh_original": {
@@ -44125,6 +46292,210 @@
         "skipped_by_code_rule": 3,
         "providers": {
           "Wafer": 65
+        }
+      },
+      "injection": {
+        "answers": 0,
+        "no_over_credit": 0,
+        "exact": 0,
+        "pure": 0,
+        "pure_zero": 0,
+        "failures": 0
+      }
+    },
+    "v41-1017-r3": {
+      "final": {
+        "items": 799,
+        "items_exact": 772,
+        "items_exact_pct": 96.6,
+        "items_binary_full": 780,
+        "items_over": 12,
+        "items_under": 15,
+        "parts": 291,
+        "parts_exact": 268,
+        "parts_exact_pct": 92.1,
+        "parts_within_half_mark": 282,
+        "marks_over": 7.5,
+        "marks_under": 10.5,
+        "mean_abs_error_marks": 0.062,
+        "failures": 0,
+        "confusion_gold_to_pred": {
+          "0": {
+            "0": 392,
+            "0.5": 5,
+            "1": 3
+          },
+          "0.5": {
+            "0": 3,
+            "0.5": 14,
+            "1": 4
+          },
+          "1": {
+            "0": 6,
+            "0.5": 6,
+            "1": 366
+          }
+        }
+      },
+      "usage": {
+        "calls": 291,
+        "live_calls": 291,
+        "tokens": {
+          "input": 424425,
+          "cached": 337664,
+          "output": 206979,
+          "reasoning": 151883
+        },
+        "cost_usd_total": 0.123481,
+        "cost_usd_live": 0.123481,
+        "cost_usd_per_part_mean": 0.0004243,
+        "cost_usd_per_part_p50": 0.0001108,
+        "latency_s_p50": 3.1,
+        "latency_s_p95": 30.303,
+        "latency_s_max": 155.64,
+        "failures": {},
+        "finish_reasons": {
+          "stop": 291
+        },
+        "skipped_by_code_rule": 0,
+        "providers": {
+          "InferenceNet": 291
+        }
+      },
+      "injection": {
+        "answers": 22,
+        "no_over_credit": 20,
+        "exact": 19,
+        "pure": 6,
+        "pure_zero": 6,
+        "failures": 0
+      }
+    },
+    "v41-1017-r3-reading-en": {
+      "final": {
+        "items": 141,
+        "items_exact": 137,
+        "items_exact_pct": 97.2,
+        "items_binary_full": 138,
+        "items_over": 1,
+        "items_under": 3,
+        "parts": 68,
+        "parts_exact": 64,
+        "parts_exact_pct": 94.1,
+        "parts_within_half_mark": 68,
+        "marks_over": 0.5,
+        "marks_under": 1.5,
+        "mean_abs_error_marks": 0.029,
+        "failures": 0,
+        "confusion_gold_to_pred": {
+          "0": {
+            "0": 72,
+            "0.5": 1,
+            "1": 0
+          },
+          "0.5": {
+            "0": 0,
+            "0.5": 6,
+            "1": 0
+          },
+          "1": {
+            "0": 0,
+            "0.5": 3,
+            "1": 59
+          }
+        }
+      },
+      "usage": {
+        "calls": 68,
+        "live_calls": 68,
+        "tokens": {
+          "input": 101792,
+          "cached": 80768,
+          "output": 8679,
+          "reasoning": 0
+        },
+        "cost_usd_total": 0.007102,
+        "cost_usd_live": 0.007102,
+        "cost_usd_per_part_mean": 0.0001044,
+        "cost_usd_per_part_p50": 0.0001035,
+        "latency_s_p50": 1.871,
+        "latency_s_p95": 2.588,
+        "latency_s_max": 3.356,
+        "failures": {},
+        "finish_reasons": {
+          "stop": 65
+        },
+        "skipped_by_code_rule": 3,
+        "providers": {
+          "InferenceNet": 65
+        }
+      },
+      "injection": {
+        "answers": 0,
+        "no_over_credit": 0,
+        "exact": 0,
+        "pure": 0,
+        "pure_zero": 0,
+        "failures": 0
+      }
+    },
+    "v41-1017-r3-reading-zh": {
+      "final": {
+        "items": 209,
+        "items_exact": 195,
+        "items_exact_pct": 93.3,
+        "items_binary_full": 202,
+        "items_over": 12,
+        "items_under": 2,
+        "parts": 80,
+        "parts_exact": 68,
+        "parts_exact_pct": 85.0,
+        "parts_within_half_mark": 73,
+        "marks_over": 8.5,
+        "marks_under": 1.5,
+        "mean_abs_error_marks": 0.125,
+        "failures": 0,
+        "confusion_gold_to_pred": {
+          "0": {
+            "0": 107,
+            "0.5": 6,
+            "1": 5
+          },
+          "0.5": {
+            "0": 1,
+            "0.5": 9,
+            "1": 1
+          },
+          "1": {
+            "0": 1,
+            "0.5": 0,
+            "1": 79
+          }
+        }
+      },
+      "usage": {
+        "calls": 80,
+        "live_calls": 80,
+        "tokens": {
+          "input": 145686,
+          "cached": 112128,
+          "output": 10768,
+          "reasoning": 0
+        },
+        "cost_usd_total": 0.009504,
+        "cost_usd_live": 0.009504,
+        "cost_usd_per_part_mean": 0.0001188,
+        "cost_usd_per_part_p50": 0.0001219,
+        "latency_s_p50": 2.359,
+        "latency_s_p95": 3.456,
+        "latency_s_max": 3.621,
+        "failures": {},
+        "finish_reasons": {
+          "stop": 68
+        },
+        "skipped_by_code_rule": 12,
+        "providers": {
+          "InferenceNet": 68
         }
       },
       "injection": {

@@ -104,7 +104,9 @@ Round 3 (`--prompt r3`) moves answer rules out of the question and item text
 ([`deepseek-grading-rules.json`](fixtures/deepseek-grading-rules.json)): copy
 and word-limit rules are checked in code and a broken no-marks rule scores 0
 without a call; other rules go to the model in `<answer_rules>`. It adds
-`deepseek-v41-flash` on OpenRouter; `--copy-alt` measures whole-paragraph copying
+`deepseek-v41-flash` (the alias, on Wafer) and `deepseek-v41-1017` (the dated
+captioning pin, InferenceNet then Cloudflare) on OpenRouter; `--copy-alt` measures
+whole-paragraph copying
 as passage coverage. See the [round 3 report](reports/2026-11-03-deepseek-grading-round3.md).
 
 ```sh

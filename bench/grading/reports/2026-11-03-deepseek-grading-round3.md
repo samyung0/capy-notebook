@@ -68,11 +68,20 @@ sample on flagged parts. It changes in three ways:
   - 0731: $0.00020 a part, p50 2.2 s, p95 21.5 s.
   - The 58 parts the copy check scored cost nothing and return at once.
 
-Recommendation, in full [below](#recommendation): grade with V4.1 Flash on
-OpenRouter, using the round-3 prompt, answer rules and the code copy check with the
-two measures, without a cascade. Pin its slug and an fp8 fallback provider first.
+- **The dated pin `deepseek/deepseek-v4.1-flash-1017` matches as well.** This is the
+  captioning and extraction pin, on the pipeline's InferenceNet → Cloudflare order.
+  - On the contract, maths, IELTS and HKDSE Chinese sets it matched 1,104 of 1,149
+    items, the same as V4.1 Flash on Wafer. It gave 16.5 unearned marks against
+    Wafer's 15, and direct Flash round 2 gave 22.
+  - It is slower: maths p50 11 s, p95 57 s, and a 156 s tail.
 
-Round 3 cost $0.43 for 1,932 model calls. All three rounds together cost $2.22.
+Recommendation, in full [below](#recommendation): grade with 1017 on the pipeline's
+route, using the round-3 prompt, answer rules and the code copy check with the two
+measures, without a cascade. One model then serves grading, extraction and captions.
+Set the maths timeout for InferenceNet's tail.
+
+Round 3 cost $0.57 for 2,356 model calls, including the 1017 check. All three
+rounds together cost $2.36.
 
 ## What changed
 
@@ -324,6 +333,60 @@ screen in board R1 shows.
   (real content beside the injection, e.g. "Fertile soil." given full credit). Pure
   injections still scored 0.
 
+## The dated pin: `deepseek/deepseek-v4.1-flash-1017`
+
+After the first round-3 runs, the same setup ran on the captioning and extraction
+pin.
+- **Setup:** the round-3 prompt and rules, thinking at low effort on maths, no
+  cascade.
+- **Routing:** the pipeline's provider order (`OPENROUTER_ROUTING`: InferenceNet,
+  then Cloudflare, fallbacks off). InferenceNet (fp8) served all 424 calls.
+- **Sets:** the contract, maths, IELTS (with the passage-coverage copy check) and
+  HKDSE Chinese.
+
+Items exact, then marks over-credited / under-credited:
+
+| Set (items) | Direct Flash r2 | V4.1 Flash, Wafer | **1017, InferenceNet** | 0731 r3 |
+| --- | --- | --- | --- | --- |
+| Contract (464) | 445 · +5/−6.5 | 449 · +6/−3.5 | 451 · +5/−3.5 | 433 · +14/−5 |
+| HKDSE maths (335) | 312 · +4/−6.5 | 319 · +3.5/−8 | 321 · +2.5/−7 | 316 · +6/−8.5 |
+| IELTS, passage-coverage copy check (141) | 135 · +1/−3 | 137 · +0.5/−1.5 | 137 · +0.5/−1.5 | 137 · +1.5/−1 |
+| HKDSE Chinese reading (209) | 191 · +12/−0.5 | 199 · +5/−1 | 195 · +8.5/−1.5 | 182 · +17/−1 |
+| **Four sets (1,149)** | **1,083 · +22/−16.5** | **1,104 · +15/−14** | **1,104 · +16.5/−13.5** | **1,068 · +38.5/−15.5** |
+| Parts exact (of 439) | 387 | 400 | 400 | 374 |
+| Cost per part, these sets | $0.00069 | $0.00031 | $0.00032 | $0.00027 |
+| Latency p50 / p95, contract | 1.5 / 1.8 s | 1.1 / 1.6 s | 2.4 / 3.8 s | 1.9 / 3.6 s |
+| Latency p50 / p95, maths | 5.4 / 30.1 s | 5.0 / 33.1 s | 11.0 / 56.6 s | 11.7 / 67.2 s |
+| Failures | 2 | 0 | 0 | 0 |
+
+Direct Flash round 2 had no answer rules; its IELTS figure is its round-2 score. Cost
+per part is higher here than over all ten sets because maths is a quarter of these
+parts.
+
+- **1017 matches V4.1 Flash on Wafer.**
+  - Both matched 1,104 of 1,149 items. 1017 gave 1.5 more unearned marks and 0.5
+    fewer missed ones.
+  - The two agree on 1,122 items. Where they disagree, each is right on 13.
+  - Against direct Flash round 2, 1017 is 21 items better with 5.5 fewer unearned
+    marks, at under half the cost.
+- **Where 1017 is weaker than Wafer:**
+  - **HKDSE Chinese partial and paraphrase answers:** +6 marks over, against +3.
+  - **One wrong own-words penalty:** it zeroed a partial 2020 Q5(ii) answer that
+    restates the 抱薪救火 analogy in modern Chinese (gold 1 mark).
+  - **Contract injection answers:** two over-credited by half a mark, on their real
+    content. All 6 pure contract injections scored 0.
+- **The copy check behaved the same.** It caught the 3 pasted IELTS paragraphs and 12
+  DSE quote-only answers, all rightly.
+- **InferenceNet is about twice as slow as Wafer.**
+  - Contract: p50 2.4 s against 1.1 s.
+  - Maths: p50 11 s against 5 s, p95 57 s against 33 s.
+  - Its slowest maths part took 156 s, and 4 of 115 took over 60 s.
+  - Maths reasoning averaged 1,321 tokens, about the same as on Wafer, so the time
+    is the provider's.
+  - Cloudflare, the fallback, was never used.
+- **Spend:** $0.14 for 424 model calls; the copy check scored the other 15 of
+  the 439 parts.
+
 ## Cost and latency
 
 | Per part | Jev | Direct Flash r2 | 0731 r3 | V4.1 Flash r3 |
@@ -369,19 +432,27 @@ screen in board R1 shows.
 
 ## Recommendation
 
-1. **Model: V4.1 Flash through OpenRouter, the round-3 prompt, without a cascade.**
+1. **Model: `deepseek/deepseek-v4.1-flash-1017`, the round-3 prompt, without a
+   cascade.**
+   - Route: the pipeline's existing order, InferenceNet then Cloudflare, fallbacks
+     off.
    - Thinking at low effort on maths with a 16k limit; no thinking elsewhere.
-   - It matches or beats direct Flash on every measure here:
-     - 1,877 items, 21.5 unearned marks;
-     - about a third of direct Flash's cost with its cascade;
-     - p50 1.1 s.
-   - It shares a vendor route with the captioning pin.
+   - **It matches the alias on Wafer:** 1,104 items on the four sets each.
+   - **It beats direct Flash:** 1,104 items against 1,083, with 16.5 unearned marks
+     against 22, at under half the cost.
+   - **One model for everything:** it is already the captioning and extraction pin,
+     so grading, extraction and captions run on one model.
    - Before switching:
-     - **Pin the slug:** pin the dated slug, if `-1017` serves the same model.
-       Rerun this bench's contract and maths sets on it, about $0.15.
-     - **Add a fallback:** add an fp8 fallback provider after Wafer, e.g.
-       InferenceNet then DeepInfra (fp8), with fallbacks off.
-     - **Record the provider** on every usage row, as for the other pins.
+     - **Timeout:** set the maths grading timeout for InferenceNet's tail (p95 57 s,
+       slowest 156 s), or cap reasoning for grading. Other parts answer in under
+       4 s at p95.
+     - **Capacity:** give grading its own share of the 1017 gate. Today it holds 40
+       calls in flight with 20 reserved for interactive use, shared by captions and
+       ghost text (`deploy/model-capacities.sql`).
+     - **Usage rows:** record the provider on every one, as for the other pins.
+   - **Faster alternative:** the undated alias on Wafer's `wafer/us` endpoint is
+     about twice as fast at the same accuracy. It is a second route and a small
+     mxfp4 provider, so take it only if latency matters more than one pin.
 2. **Answer rules, as in board R1, with the copy check in code:**
    - **"Don't just copy without explaining" (DSE 只抄原文):** answer share ≥ 0.7,
      no marks, no model call.
@@ -414,7 +485,10 @@ threshold sweep).
 | `v41-flash-r3-copy-alt` | deepseek/deepseek-v4.1-flash | 68 | 65 | 101,792 / 83,840 / 8,770 / 0 | $0.006 | 15:04 |
 | `v41-flash-r3-cascade` | deepseek/deepseek-v4.1-flash | 168 | 168 | 247,572 / 189,440 / 70,621 / 53,989 | $0.040 | 15:05 |
 | pilots (rules, 20 answers × 2) | both | 40 | 32 | 53,336 / 13,056 / 5,367 / 0 | $0.005 | 14:36 |
-| **Total** | | **1,990** | **1,932** | **2,928,323 / 2,067,200 / 805,309 / 522,574** | **$0.43** | |
+| `v41-1017-r3` (contract, maths) | deepseek/deepseek-v4.1-flash-1017 | 291 | 291 | 424,425 / 337,664 / 206,979 / 151,883 | $0.124 | 15:12 |
+| `v41-1017-r3-reading-en` (copy-alt) | deepseek/deepseek-v4.1-flash-1017 | 68 | 65 | 101,792 / 80,768 / 8,679 / 0 | $0.007 | 15:22 |
+| `v41-1017-r3-reading-zh` | deepseek/deepseek-v4.1-flash-1017 | 80 | 68 | 145,686 / 112,128 / 10,768 / 0 | $0.010 | 15:23 |
+| **Total** | | **2,429** | **2,356** | **3,600,226 / 2,597,760 / 1,031,735 / 674,457** | **$0.57** | |
 
 Keys were read from `deploy/.env.uat` into memory, as in rounds 1–2. A search of
 the run directories, the committed records and the fixtures for each key's first
@@ -431,6 +505,10 @@ for g in 0731 v41-flash; do
   python $S run --grader deepseek-$g --sets reading_en --prompt r3 --copy-alt --label $g-r3-copy-alt --env $E --output $D/$g-r3-copy-alt
   python $S run --grader deepseek-$g --sets all --prompt r3 --thinking low --samples 1 --borderline-from $D/$g-r3 --label $g-r3-cascade --env $E --output $D/$g-r3-cascade
 done
+# the dated pin, on the pipeline's InferenceNet -> Cloudflare order
+python $S run --grader deepseek-v41-1017 --sets contract,math --prompt r3 --thinking-sets math --label v41-1017-r3 --env $E --output $D/v41-1017-r3
+python $S run --grader deepseek-v41-1017 --sets reading_en --prompt r3 --copy-alt --label v41-1017-r3-reading-en --env $E --output $D/v41-1017-r3-reading-en
+python $S run --grader deepseek-v41-1017 --sets reading_zh --prompt r3 --label v41-1017-r3-reading-zh --env $E --output $D/v41-1017-r3-reading-zh
 python $S report --runs <round 1 and 2 runs> $D/0731-r3 $D/v41-flash-r3 $D/0731-r3-copy-alt $D/v41-flash-r3-copy-alt $D/0731-r3-cascade $D/v41-flash-r3-cascade --output $D/summary.json
 ```
 

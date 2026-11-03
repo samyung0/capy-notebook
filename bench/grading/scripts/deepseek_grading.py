@@ -98,6 +98,15 @@ GRADERS = {
         "key_vars": ("OPENROUTER_API_KEY",),
         "routing": {"order": ["wafer/us", "inference-net/fp8"], "allow_fallbacks": False},
     },
+    # The dated pin used for captions and extraction, on the pipeline's own provider
+    # order (OPENROUTER_ROUTING in pipeline/pipeline/elitellm/client.py).
+    "deepseek-v41-1017": {
+        "host": "openrouter.ai",
+        "path": "/api/v1/chat/completions",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "key_vars": ("OPENROUTER_API_KEY",),
+        "routing": {"order": ["InferenceNet", "Cloudflare"], "allow_fallbacks": False},
+    },
     "jev": {"model": "jev-1.13.0", "key_vars": ("TYPESAFE_API_KEY", "JEV_TYPESAFE_API_KEY")},
 }
 # USD per million tokens: (input, cached input, output). DeepSeek Flash at its peak
@@ -108,6 +117,7 @@ PRICES = {
     "deepseek-flash": (0.30, 0.006, 1.20),
     "deepseek-0731": (0.021, 0.0056, 0.528),
     "deepseek-v41-flash": (0.045, 0.012, 0.50),
+    "deepseek-v41-1017": (0.08, 0.008, 0.55),
     "jev": (0.009 / 0.204089, 0.009 / 0.204089, 0.0),
 }
 
@@ -1694,6 +1704,7 @@ def check():
     assert score([deducted])["marks_under"] == 1.5
     assert request_body("deepseek-v41-flash", case, "low", "r3")["max_tokens"] == 16000
     assert request_body("deepseek-v41-flash", case)["provider"]["order"][0] == "wafer/us"
+    assert request_body("deepseek-v41-1017", case)["provider"] == {"order": ["InferenceNet", "Cloudflare"], "allow_fallbacks": False}
     assert median3([0, 1, 0.5]) == 0.5 and quantile([1, 2, 3, 4], 0.95) == 4
     flash = request_body("deepseek-flash", case)
     assert flash["thinking"] == {"type": "disabled"} and flash["temperature"] == 0
