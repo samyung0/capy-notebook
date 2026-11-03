@@ -1,5 +1,7 @@
 import { type ReactNode, useContext, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { QUIZ_OPEN_PARTS_MAX } from '@/api/limits.generated';
+import type { Question } from '@/api/types';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { FileBanner } from '@/components/banners/FileBanner';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
@@ -21,6 +23,18 @@ import { m } from '@/i18n';
 import { useQuizQuestions, useQuizRooms } from './liveQuizRooms';
 import { QuizForm, QuizRecovery } from './QuizForm';
 import { QuizQuestionList } from './QuizPage';
+
+/** The quiz's questions and its AI-marked (open) parts against the cap, so
+ * a whole past paper is seen to fit (Epo 2026-11-03). */
+export function quizCounts(questions: Question[]): string {
+  const open = questions
+    .flatMap((question) => question.parts)
+    .filter((part) => part.answer.type === 'open').length;
+  return [
+    m.question_ui_question_count({ count: questions.length }),
+    m.quiz_ai_marked_count({ count: open, max: QUIZ_OPEN_PARTS_MAX }),
+  ].join(' · ');
+}
 
 /**
  * A quiz edited on its material page, live (Epo 2026-10-10): questions edit
@@ -69,9 +83,14 @@ export function QuizEditor({
           <UndoButtons header manager={rooms.undo} />,
           headerActions
         )}
-      <div className="flex items-center gap-4">
-        <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
-        {action}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-4">
+          <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
+          {action}
+        </div>
+        {rooms.ready && (
+          <p className="t-meta text-fg-muted">{quizCounts(questions)}</p>
+        )}
       </div>
       {rooms.recovery ? (
         <QuizRecovery recovery={rooms.recovery} rooms={rooms} />

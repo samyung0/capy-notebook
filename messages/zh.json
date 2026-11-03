@@ -2307,7 +2307,7 @@
   "question_validation_quiz_markscheme": "每个小题最多有 {max} 个评分要点。",
   "question_validation_open_answer_length": "参考答案最多 {max} 个字符。",
   "question_validation_quiz_parts": "每份测验最多有 {max} 个小题。",
-  "question_validation_quiz_open_parts": "每份测验最多有 {max} 个开放式小题。",
+  "question_validation_quiz_open_parts": "每份测验最多有 {max} 个 AI 评分小题。",
   "chat_workspace_only": "仅限工作区",
   "chat_workspace_only_hint": "本条消息只使用本工作区的文件和资料。",
   "chat_all_sources": "全部来源",
@@ -2630,5 +2630,6 @@
   "source_transfer_download_failed": "未能下载",
   "action_download": "下载",
   "action_download_markdown": "下载 Markdown",
-  "action_download_docx": "下载 Word"
+  "action_download_docx": "下载 Word",
+  "quiz_ai_marked_count": "AI 评分小题 {count} / {max}"
 }

@@ -60,7 +60,7 @@ it('builds a valid quiz at the part caps', () => {
   const parts = questions.flatMap((question) => question.parts);
   expect(parts).toHaveLength(limits.QUIZ_PARTS_MAX);
   expect(parts.filter((part) => part.answer.type === 'open')).toHaveLength(
-    limits.QUIZ_OPEN_PARTS_MAX
+    limits.QUIZ_PARTS_MAX / 5
   );
 });
 

@@ -92,12 +92,13 @@ const (
 	QuestionSVGBytes       = 256 << 10
 	QuestionImageDimension = 10_000
 	QuestionAssetURL       = 4_096
-	// User quizzes (not the question bank) are bounded tighter, so one
-	// attempt's open parts fit a single grading request: at most 20 open parts
-	// of at most 5 marking items each.
+	// User quizzes (not the question bank) are bounded tighter: 100 parts,
+	// all of which may be AI-marked (open) parts, so a whole past paper fits
+	// one quiz (Epo 2026-11-03; it was 20), each with at most 5 marking items.
+	// Each open part is graded in its own request.
 	QuizParts         = 100
 	QuizQuestionParts = 7
-	QuizOpenParts     = 20
+	QuizOpenParts     = 100
 	QuizMarkscheme    = 5
 	QuizOpenAnswer    = 5_000
 	// A Make a quiz run reads at most ExtractionPages selected pages from at

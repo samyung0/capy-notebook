@@ -2307,7 +2307,7 @@
   "question_validation_quiz_markscheme": "A part has at most {max} marking items.",
   "question_validation_open_answer_length": "Sample answers are limited to {max} characters.",
   "question_validation_quiz_parts": "A quiz has at most {max} parts.",
-  "question_validation_quiz_open_parts": "A quiz has at most {max} open-answer parts.",
+  "question_validation_quiz_open_parts": "A quiz has at most {max} AI-marked parts.",
   "chat_workspace_only": "Workspace only",
   "chat_workspace_only_hint": "Use only this workspace's files and materials for this message.",
   "chat_all_sources": "All sources",
@@ -2630,5 +2630,6 @@
   "source_transfer_download_failed": "Not downloaded",
   "action_download": "Download",
   "action_download_markdown": "Download Markdown",
-  "action_download_docx": "Download Word"
+  "action_download_docx": "Download Word",
+  "quiz_ai_marked_count": "{count} of {max} AI-marked parts"
 }
