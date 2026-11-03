@@ -8,7 +8,7 @@ worked out (`key_source: worked_out`), with a short worked solution, at
 thinking `mid`. A given mark scheme or answer list still replaces worked-out
 keys by label in code, so this bench measures the model's own keys before that
 replacement against the official answers. Same papers, gold and stand-ins as
-[the first cut](2026-11-03-first-cut.md). Mac, 2026-11-03, 19:30–21:15 JST.
+[the first cut](2026-11-03-first-cut.md). Mac, 2026-11-03, 19:30–23:50 JST.
 
 ## The model: 0731 is text-only
 
@@ -20,7 +20,7 @@ page image answers 404 "No endpoints found that support image input". So the
 slot was not built and no run used 0731; the numbers below are
 `deepseek/deepseek-flash` on DeepSeek's own API (the chat slot's pin, which
 the first cut used), windows at `mid`, outline and scheme parse with
-reasoning off. The model choice is back with Epo.
+reasoning off. The OpenRouter vision models are compared at the end.
 
 ## What changed since the first cut
 
@@ -104,9 +104,61 @@ equivalent forms of the same answer).
    on 2021 Q4 (4 marks over (a) and (b)): the report's `marksDiffer` names it,
    as in the first cut.
 
+## OpenRouter vision models (evening, 2026-11-03)
+
+Epo then ruled out direct DeepSeek for extraction (too expensive) and asked
+for the DeepSeek models on OpenRouter that take images: the dated pin
+`deepseek/deepseek-v4.1-flash-1017` and the unpinned
+`deepseek/deepseek-v4.1-flash`. Same three papers, same prompt, scoring and
+`mid` windows, two runs per paper per model (runs 51-52). Each model was held
+on named providers with fallbacks off, as the production pins are: 1017 on
+InferenceNet then Cloudflare (production's captioning pin), V4.1 Flash on
+InferenceNet then DeepInfra.
+
+**Reasoning on 1017 is our setting, not the model's.** elitellm sent every
+DeepSeek pin on OpenRouter `reasoning: {enabled: false}`
+(`openrouter_reasoning`), because captions, page reads, summaries and ghost
+text all run with reasoning off. A probe window (2022 P2 pages 4-5, tools on)
+on 1017 through InferenceNet reasoned at `low`, `medium` and `high` alike:
+545-1,006 reasoning tokens, 7 questions recorded, 7/7 keys right. The effort
+barely changes how much it reasons. Cloudflare answered 429 ("temporarily
+rate-limited upstream") during the probe. The unpinned V4.1 Flash read the
+image and called the tools at both efforts on InferenceNet, DeepInfra, Wafer,
+Baidu and StreamLake. Baidu and StreamLake each sent one call that was not
+valid JSON.
+
+| | Direct Flash (round 2) | 1017, OpenRouter | V4.1 Flash, OpenRouter |
+|---|---|---|---|
+| Runs per paper | 4 / 3 / 3 | 2 / 2 / 2 | 2 / 2 / 2 |
+| Labels found, questions saved | all | all | all |
+| MCQ keys worked out = official (2022 P2) | 175/180 (97%) | 87/90 (97%) | 87/90 (97%) |
+| Paper 1 final answers equivalent to the scheme | 107/108 | 69/72 (three proof parts left without a model answer) | 72/72 |
+| Part marks the model gave = the paper's (P1) | 99/108 | 66/72 | 67/72 |
+| 2022 P2: credits a run, seconds | 108-145, 199-278 | 52-53, 294-300 | 56-90, 237-450 |
+| 2021 P1: credits, seconds | 32-44, 64-87 | 15-16, 87-90 | 22-28, 94-134 |
+| 2024 P1: credits, seconds | 38-67, 70-109 | 17-21, 107-119 | 25-27, 113-116 |
+| Calls not valid JSON, retries, failures | 6 resent, 0, 0 | 0, 0, 0 | 0, 0, 0 |
+| Served by | DeepSeek | InferenceNet, every call | InferenceNet, every call |
+
+Credits for the OpenRouter runs are what OpenRouter billed (`usage.cost`;
+1 credit is $0.0005). They match our rates at InferenceNet's list price. Direct
+Flash is priced at its catalog rate. All 12 OpenRouter runs together cost
+$0.21; the probes cost about $0.02.
+
+**Pick: 1017.** It matches direct Flash on labels, questions, multiple-choice
+keys and part marks at about half the credits. It is the cheapest of the
+three, a dated pin that will not move under us, and the pin that already
+reads pages, captions images and writes ghost text. It is slower than direct
+Flash on 2022 P2 (about 300 s against 200-280 s). Its one miss is
+three open proof parts (2021 Q8(a) and Q8(b)(i), 2024 Q8(a)) saved without a
+model answer. The worked solution is still there, and a given scheme fills
+the answer in. The unpinned V4.1 Flash wrote every answer but cost more and
+varied more (56 to 90 credits on 2022 P2). Epo's follow-up made 1017 the
+extraction slot's pin (migration 0138).
+
 ## Left out
 
-- 0731 (text-only, above). No other model was benched this round.
+- 0731 (text-only, above).
 - Figure crops (boxes only), Office pages and Markdown sections, as before.
 - No run went through the gateway, retrieval service and database end to end
   (Docker was not running); the bench calls the pipeline in-process.
@@ -114,8 +166,9 @@ equivalent forms of the same answer).
 ## Reproduce
 
 ```sh
-python bench/extraction/scripts/run.py --paper 2022-p2 --model deepseek --repeat 1 \
+python bench/extraction/scripts/run.py --paper 2022-p2 --model v41-1017 --repeat 1 \
   --refs data/question-bank/references/hkdse-math-compulsory --env-file <keys file>
 ```
 
-Spend this round, every run and probe included: about 1,900 credits, $1.
+(`--model deepseek` for direct Flash, `v41` for the unpinned V4.1 Flash.)
+Spend this round, every run and probe included: about $1.25.
