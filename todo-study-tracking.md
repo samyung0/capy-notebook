@@ -205,6 +205,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - **Topics on Assignments and Practice (Epo, 2026-11-03; W2, P1, P2).** There's no grouping into sections, because a quiz often spans topics. Each row shows its main topic (most questions) with "+n" for the rest, and a "Topic" filter keeps any row with questions on that topic. A general assignment takes its files' topics. Others: Classroom files each item under one topic (teachers make catch-alls like "Revision"); Canvas lets one item sit in several modules; Wayground tags quizzes and filters by tag; Khan groups by unit and lists a unit test under its unit.
   - **What the owner sees of practice:** counts only. That's "Practice this week: 24 questions" on Members and "Organelles practice · 10 questions" in a profile's activity, never practice scores per member. Practice quizzes show group averages.
   - **Flow 5 is complete (F1b):** My results → Practise → the session list → Start → one question at a time, marked as she answers, with why → Next → Session done. Practice's own Practise starts the same kind of session on that quiz.
+  - **Practise on a topic is a review of that topic (Epo, 2026-11-03; F1).** It's the existing review-session engine scoped to the topic: questions already in the workspace, missed and fading ones ranked as today, plus some not seen yet. It has no AI-written, "mixed in" or "challenge" items. New questions come only from Make my own practice (and the owner's Generate questions), whose "Mix in questions I've answered" switch is off by default.
   - **Members make their own practice (Epo, 2026-11-03; P2, P3).** "Make my own practice" on the member's Practice page generates a session from topics or the workspace's files (count and question types). It's private ("Only you"), isn't saved as a file in the class (so it uses none of the owner's storage), stays in her Practice list to redo, and feeds her topic labels like any practice; the owner sees only counts. Quizzes she wants to keep belong in her own workspace (a "Copy to my workspace" is a later idea), and an owner setting to share member practice with the class is left out for now. Others: Khan Academy and IXL let students practise any skill; Quizlet and Kahoot let students make their own sets and kahoots; school LMSs (Classroom, Canvas, Teams) don't let students add to a class.
   - **A closed assignment becomes practice (Epo, 2026-11-03).** Once an assignment closes (its due date passes), its quiz shows up in Practice by itself; Practice notes "Assignment, closed 24 Oct". It happens at closing, not when each member submits, so nobody sees it early. The owner can hide it again.
   - **Study → Assignments is a table (Epo, 2026-11-03; W1, W2):** Assignment, Kind, Posted, Due, Progress and Average, with open ones sorted by due date. Closed ones (past due) hide behind "Show closed". There's no ⋮ per row; a row opens the assignment.
@@ -266,9 +267,15 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Mastery per topic.** A Rasch-type rating with priors, updated after every graded part (R2 §5):
   - **Formula:** `P = c + (1−c)·σ(a_member + d_member,topic − b_question)`.
   - **Partial credit:** `awarded/marks` enters directly.
-  - **AI-graded parts** count at 0.8 weight.
-  - **Repeats on the same day** after seeing the key count 0. A repeat a day or more later counts 0.5.
-  - **Question difficulty** is pooled across members.
+  - **Weight per answer** `w = r_repeat × r_parts × r_source` (R2 §5):
+    - `r_repeat`: 1 for a first answer, 0.5 for a repeat a day or more later, 0 for a repeat the same day after seeing the key.
+    - `r_parts = min(1, 3 / parts)`, so a long multi-part question counts like at most 3 parts.
+    - `r_source` (Epo, 2026-11-03): 0.5 for questions written for one member (Make my own practice), because nobody else answers them, so their difficulty can't be pooled. Otherwise 1.
+    - **No AI-marking discount (Epo, 2026-11-03).** R2's 0.8 came from Jev's measured agreement (87.5%) and is dropped: approval covers assignments, and no app found discounts AI marks in mastery. An answer counts 0 while the member has reported the question.
+  - **Excluded:** wholly blank questions, as in today's reviews. An explicit "I don't know" counts as 0.
+  - **Guessing floor:** 1/k for a single-answer MCQ, 0.5 for true/false.
+  - **Older evidence fades:** uncertainty grows 0.01 logit² a day, the counterpart of the reviews' 0.9^k weighting of the last 8 answers.
+  - **Question difficulty** is pooled across members, starting from features (answer type, level, generator difficulty, marks).
   - **Why not a plain percentage:** once follow-up adapts, weaker members get easier items, and percentages drift to the target rate. In a synthetic check, raw percent found 71% of truly weak topics and the model found 92%. The data was model-generated, so this shows the mechanism, not real-world accuracy.
 - **Labels, shown with counts ("1 of 4 right"), never a raw number (Epo, 2026-11-03):** Khan Academy's names, except that "Needs practice" stays.
 
