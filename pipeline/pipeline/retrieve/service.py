@@ -29,6 +29,7 @@ from ..retrieval import (
     accounting,
     compact,
     contract,
+    extraction,
     library,
     limits,
     models,
@@ -180,6 +181,13 @@ async def generate_no_content_handler(
         {"code": "scope_has_no_indexed_content", "message": str(exc)},
         status_code=400,
     )
+
+
+@app.exception_handler(extraction.ExtractionRefused)
+async def extraction_refused_handler(
+    _request: Request, exc: extraction.ExtractionRefused
+):
+    return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=400)
 
 
 @app.exception_handler(elitellm.ProviderBusy)
@@ -727,3 +735,86 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         "chapters": chapters,
         "questions": questions,
     }
+
+
+# ----------------------------------------------------------------- extraction
+
+
+class ExtractFile(BaseModel):
+    fileId: str = Field(min_length=1)
+    name: str
+    # A question paper's selected pages, counted from 1; empty for an answer file.
+    pages: list[int] = Field(default_factory=list)
+
+
+class ExtractReq(LLMPin):
+    workspaceId: str = Field(min_length=1)
+    paper: list[ExtractFile] = Field(min_length=1)
+    answerFiles: list[ExtractFile]
+    spendSessionId: str = Field(min_length=1)
+
+
+@app.post("/extract")
+async def extract(req: ExtractReq):
+    """Make a quiz (todo-study-tracking.md §8): read the selected pages into
+    questions and pair the answer files with them, as events: ``questions``
+    after each page window, then ``done`` with the quiz and its report, or
+    ``error``. The request is checked first, so a page past its file's end
+    is a 400 before the stream starts. The run holds a turn slot from then on
+    (provider_busy at once when there is none, as for /generate); its model
+    calls wait for a call slot as a chat's do."""
+    pages, schemes = await extraction.prepare(
+        req.workspaceId,
+        [f.model_dump() for f in req.paper],
+        [f.model_dump() for f in req.answerFiles],
+    )
+    _take_turn_slot()
+    slot = _ChatSlot()
+    slot.held = True
+    return _SlotStream(
+        _extract_events(req, pages, schemes),
+        slot,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _extract_events(
+    req: ExtractReq,
+    pages: list[extraction.Page],
+    schemes: list[extraction.SchemeFile],
+):
+    _bind_llm(req)
+    slots_token = limits.bind_call_slots(
+        limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S)
+    )
+    accounting_token = None
+    try:
+        accounting_token = _bind_accounting(req.spendSessionId)
+        model = models.resolve_query_model(
+            req.providerSlug, req.modelSlug, req.configVersion, slot=registry.Slot.CHAT
+        )
+        async for event in extraction.run(
+            pages, schemes, model=model, validate=extraction.gateway_validate
+        ):
+            yield _sse(event)
+    except elitellm.ProviderBusy:
+        yield _sse(
+            {
+                "type": "error",
+                "code": models.BUSY_ERROR_CODE,
+                "message": models.BUSY_ERROR,
+            }
+        )
+    except Exception:
+        log.exception("extraction failed")
+        yield _sse(
+            {
+                "type": "error",
+                "code": "extraction_failed",
+                "message": "Reading the questions failed.",
+            }
+        )
+    finally:
+        _reset_accounting(accounting_token)
+        limits.reset_call_slots(slots_token)

@@ -1874,6 +1874,25 @@ async def history_passages(
         return [dict(row) for row in await cur.fetchall()]
 
 
+async def file_passages(workspace_id: str, file_id: str) -> list[dict[str, Any]]:
+    """A workspace file's indexed passages in order, with their pages (None
+    on an image's caption), for Make a quiz's page text and scheme text."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT c.text, c.page_start, c.page_end
+            FROM rag_file_contents fc
+            JOIN files f ON f.id = fc.file_id
+            JOIN rag_chunks c ON c.content_id = fc.content_id
+            WHERE f.workspace_id = %s AND fc.file_id = %s AND f.trashed_at IS NULL
+            ORDER BY c.chunk_idx
+            """,
+            (workspace_id, file_id),
+        )
+        return [dict(row) for row in await cur.fetchall()]
+
+
 async def read_file_range(
     *, workspace_id: str | None, file_id: str, start: int, count: int
 ) -> list[dict[str, Any]]:
