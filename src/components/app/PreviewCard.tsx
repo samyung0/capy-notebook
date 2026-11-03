@@ -12,7 +12,9 @@ import { cn } from '@/lib/cn';
  * title, with no hint line or pill. The workspace's Recent Files wraps a link
  * in it (`asChild`); the Add file dialog's Create and Your files tabs use it
  * as a toggle, where `selected` rings the preview (and with `check`, for a
- * multiple pick, marks its corner). `subtitle` is a line under the title. */
+ * multiple pick, marks its corner). `subtitle` is a line under the title.
+ * `bordered` outlines the preview (the workspace Dashboard's Recent files,
+ * boards H1 and H2). */
 export function PreviewCard({
   icon,
   title,
@@ -21,6 +23,7 @@ export function PreviewCard({
   check = false,
   subtitle,
   asChild = false,
+  bordered = false,
   className,
   children,
   ...rest
@@ -32,6 +35,7 @@ export function PreviewCard({
   check?: boolean;
   subtitle?: ReactNode;
   asChild?: boolean;
+  bordered?: boolean;
 }) {
   const Component = asChild ? Slot : 'button';
   return (
@@ -54,6 +58,8 @@ export function PreviewCard({
             <div
               className={cn(
                 'relative rounded-[calc(var(--radius-tile)-1px)]',
+                bordered &&
+                  'overflow-hidden border border-divider bg-(--surface-canvas)',
                 selected && 'ring-2 ring-solid-accent-1'
               )}
             >

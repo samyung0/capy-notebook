@@ -101,3 +101,30 @@ func TestWorkspacePractice(t *testing.T) {
 		t.Fatalf("average = %v", q.Average)
 	}
 }
+
+// The Dashboard names the owner and counts members (the owner included); its
+// Activity lists files and materials newest first with who added them,
+// leaving trashed ones out.
+func TestWorkspaceDashboard(t *testing.T) {
+	f := newStudyFixture(t, "u_dashboard")
+	ctx := context.Background()
+	member := newBlobTestUser(t, f.s, "u_dashboard_member")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, member); err != nil {
+		t.Fatal(err)
+	}
+	quiz := f.quiz(t)
+	trashed := f.set(t, [2]string{"Golgi", "Ships proteins"})
+	if _, err := f.s.TrashMaterial(ctx, f.user, trashed[0].MaterialID, "", AgentOperation{}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.s.WorkspaceDashboard(ctx, member, f.ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OwnerName == "" || got.Members != 2 {
+		t.Fatalf("dashboard header = %+v", got)
+	}
+	if len(got.Activity) != 1 || got.Activity[0].Kind != ActivityAdded || *got.Activity[0].MaterialID != quiz.ID || got.Activity[0].ActorID != f.user {
+		t.Fatalf("activity = %+v", got.Activity)
+	}
+}

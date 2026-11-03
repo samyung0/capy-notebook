@@ -32,10 +32,6 @@ vi.mock('@/api/hooks', () => ({
   useMaterials: () => ({ data: [], isPending: false }),
   useWorkspace: () => ({ data: undefined }),
 }));
-vi.mock('@/features/study/studyItems', () => ({
-  useStudyActions: () => ({ menuItems: () => [], set: () => undefined }),
-  useStudyStates: () => ({ enabled: false, states: new Map() }),
-}));
 vi.mock('@/features/workspace/ContentActions', () => ({
   ContentActions: (props: Record<string, unknown>) => {
     header.actions.push(props);

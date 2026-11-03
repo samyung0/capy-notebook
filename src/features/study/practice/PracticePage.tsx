@@ -112,8 +112,8 @@ function PracticeList({
     ws?.name,
     staff && members !== undefined
       ? members === 1
-        ? m.practice_members_one()
-        : m.practice_members({ count: members })
+        ? m.workspace_members_one()
+        : m.workspace_members_count({ count: members })
       : null,
   ]
     .filter(Boolean)
@@ -121,11 +121,15 @@ function PracticeList({
 
   return (
     <PracticeFrame>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h1 className="t-page-title">{m.study_panel_practice()}</h1>
-        <span className="t-meta mt-1.5 text-fg-muted">{meta}</span>
+      {/* Spread apart on one line; wrapped, the action starts its own line
+          at the left. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3">
+          <h1 className="t-page-title">{m.study_panel_practice()}</h1>
+          <span className="t-meta mt-1.5 text-fg-muted">{meta}</span>
+        </div>
         {/* Not built yet (Make my own practice, P3; Add practice, P1). */}
-        <span className="ml-auto" title={m.study_panel_soon()}>
+        <span title={m.study_panel_soon()}>
           <Button disabled iconLeft="plus">
             {staff ? m.practice_add() : m.practice_make_own()}
           </Button>

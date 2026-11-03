@@ -836,13 +836,12 @@ would leave the map's top edge).
 
 Answering a topic's last unanswered question raises a success toast, "Topic
 finished" with Go check, which opens `/qb?finished=<topic>`. The toast comes
-from `useFinishToasts` (`src/features/study/finishToasts.ts`, mounted in
+from `useFinishToasts` (`src/features/questions/finishToasts.ts`, mounted in
 `AppShell` so the progress route stays observed on every signed-in page): each
 refetch of the route is compared with the one before, and a topic finished now
 but not before toasts (answering any question refetches it). The first time a
 finished topic leads the landing in a browser, the map celebrates
-(`src/features/questions/trailMap/finish.tsx`, shared with Learning's railway
-map): the page scrolls the map into view, the last stop pops filled, the line
+(`src/features/questions/trailMap/finish.tsx`): the page scrolls the map into view, the last stop pops filled, the line
 runs on to the flag with a dot at its head, the flag waves while four sketched
 fireworks (drawn-out rays with falling sparks, no rocket trails) open in turn in
 the sky beside it, clear of the Finished tag and kept inside the map's width, in

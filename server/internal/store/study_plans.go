@@ -12,9 +12,7 @@ import (
 )
 
 // Study plans: a user's private ordered steps from any workspace they can
-// read, kept in a parent workspace. Progress is the one study_progress the
-// workspace uses, so the browser counts each step from the workspaces' tracked
-// items (the Learning map's shape) and puts them in reading order itself.
+// read, kept in a parent workspace.
 
 const (
 	// studyPlanCap bounds one user's plans in one parent workspace.
@@ -34,8 +32,7 @@ var (
 
 type StudyPlans struct {
 	Plans []StudyPlan `json:"plans" nullable:"false"`
-	// Workspaces holds every readable workspace a step or parent names, with
-	// its tracked items, once.
+	// Workspaces holds every readable workspace a step or parent names, once.
 	Workspaces []PlanWorkspace `json:"workspaces" nullable:"false"`
 }
 
@@ -64,10 +61,6 @@ type PlanWorkspace struct {
 	Name        string       `json:"name"`
 	IconID      string       `json:"iconId"`
 	Cover       *cover.Cover `json:"cover,omitempty"`
-	// Hidden is the user's Hide study progress in this workspace.
-	Hidden bool            `json:"hidden"`
-	Topics []ProgressTopic `json:"topics" nullable:"false"`
-	Items  []ProgressItem  `json:"items" nullable:"false"`
 }
 
 type PlanStepInput struct {
@@ -168,16 +161,6 @@ func (s *Store) studyPlans(ctx context.Context, userID, query string, args ...an
 			Scan(&pw.Name, &pw.IconID, &pw.Cover); err != nil {
 			return out, err
 		}
-		on, err := s.StudyEnabled(ctx, userID, wsID)
-		if err != nil {
-			return out, err
-		}
-		pw.Hidden = !on
-		m, err := s.progressMap(ctx, userID, wsID)
-		if err != nil {
-			return out, err
-		}
-		pw.Topics, pw.Items = m.Topics, m.Items
 		out.Workspaces = append(out.Workspaces, pw)
 	}
 	return out, nil
@@ -296,19 +279,15 @@ type stepKey struct{ kind, ws, target string }
 
 // planGroups counts the groups the Study page shows: runs of consecutive steps
 // in one topic (or outside topics) of one workspace. A step in a workspace
-// the user can no longer read groups by workspace alone; a trashed or
-// untracked step shows nowhere and joins the run around it.
+// the user can no longer read groups by workspace alone; a trashed step
+// shows nowhere and joins the run around it.
 func (s *Store) planGroups(ctx context.Context, tx pgx.Tx, userID string, steps []PlanStepInput) (int, error) {
 	ids := make([]string, len(steps))
 	for i, st := range steps {
 		ids[i] = st.TargetID
 	}
-	rows, err := tx.Query(ctx, `SELECT f.id, coalesce(f.topic_id, ''), f.trashed_at IS NULL AND NOT EXISTS (
-			SELECT 1 FROM study_progress sp WHERE sp.user_id=$2 AND sp.file_id=f.id AND sp.state='removed')
-		FROM files f WHERE f.id = ANY($1)
-		UNION ALL SELECT m.id, coalesce(m.topic_id, ''), m.trashed_at IS NULL AND NOT EXISTS (
-			SELECT 1 FROM study_progress sp WHERE sp.user_id=$2 AND sp.material_id=m.id AND sp.state='removed')
-		FROM materials m WHERE m.id = ANY($1)`, ids, userID)
+	rows, err := tx.Query(ctx, `SELECT f.id, coalesce(f.topic_id, ''), f.trashed_at IS NULL FROM files f WHERE f.id = ANY($1)
+		UNION ALL SELECT m.id, coalesce(m.topic_id, ''), m.trashed_at IS NULL FROM materials m WHERE m.id = ANY($1)`, ids)
 	if err != nil {
 		return 0, err
 	}

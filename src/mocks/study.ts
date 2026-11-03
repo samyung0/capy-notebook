@@ -5,7 +5,6 @@ import type {
   PlanStep,
   Practice,
   PracticeReview,
-  ProgressWorkspace,
   ReviewAnswer,
   ReviewItem,
   ReviewMode,
@@ -28,53 +27,24 @@ import * as db from './db';
  * rating is remembered with its lapses; there is no FSRS here, so "least
  * retained" is most lapses, then oldest. */
 
-type State = 'started' | 'done' | 'removed';
 type Rated = { lapses: number; at: number };
 
-const progress = new Map<
-  string,
-  Map<string, { kind: 'file' | 'material'; state: State; at: number }>
->();
+/** Practised quizzes and sets per workspace, as study_progress rows. */
+const progress = new Map<string, Set<string>>();
 const enabled = new Map<string, boolean>();
-/** The last progress write per workspace, for Learning's Progress order. */
-const studiedAt = new Map<string, number>();
 const rated = new Map<string, Rated>(); // `${materialId}/${itemId}`
 
 function items(wsId: string) {
   let map = progress.get(wsId);
   if (!map) {
-    map = new Map();
+    map = new Set();
     progress.set(wsId, map);
   }
   return map;
 }
 
 // Biology 101 opens with some history, as in the mocks.
-items('ws_bio').set('f_1', {
-  at: Date.now() - 9 * 86_400_000,
-  kind: 'file',
-  state: 'done',
-});
-items('ws_bio').set('f_2', {
-  at: Date.now() - 9 * 86_400_000,
-  kind: 'file',
-  state: 'done',
-});
-items('ws_bio').set('qz_1', {
-  at: Date.now() - 5 * 86_400_000,
-  kind: 'material',
-  state: 'done',
-});
-items('ws_bio').set('qz_2', {
-  at: Date.now() - 7 * 86_400_000,
-  kind: 'material',
-  state: 'started',
-});
-items('ws_bio').set('dk_1', {
-  at: Date.now() - 1 * 86_400_000,
-  kind: 'material',
-  state: 'started',
-});
+for (const id of ['qz_1', 'qz_2', 'dk_1']) items('ws_bio').add(id);
 for (const [card, lapses] of [
   ['c_4', 2],
   ['c_7', 1],
@@ -88,23 +58,10 @@ rated.set('qz_1/q15', { at: Date.now() - 5_400_000, lapses: 1 });
 rated.set('qz_1/q12', { at: Date.now() - 3_600_000, lapses: 1 });
 // Genetics practised once a week ago, so Practice suggests it as fading.
 rated.set('qz_2/q7', { at: Date.now() - 7 * 86_400_000, lapses: 0 });
-// Calculus started yesterday; World History is finished on first read (below).
-items('ws_calc').set('f_6', {
-  at: Date.now() - 1 * 86_400_000,
-  kind: 'file',
-  state: 'done',
-});
-// A twice-missed ordering question: Calculus has a review but no Quick review.
-items('ws_calc').set('qz_3', {
-  at: Date.now() - 1 * 86_400_000,
-  kind: 'material',
-  state: 'started',
-});
+// A twice-missed ordering question from yesterday: Calculus has a review
+// but no Quick review.
+items('ws_calc').add('qz_3');
 rated.set('qz_3/q29', { at: Date.now() - 86_400_000, lapses: 2 });
-studiedAt.set('ws_bio', Date.now() - 3_600_000);
-studiedAt.set('ws_calc', Date.now() - 86_400_000);
-studiedAt.set('ws_hist', Date.now() - 3 * 86_400_000);
-let historyFinished = false;
 
 /** Adds a card's rating to its flashcard attempt, as the server does: cards
  * in first-rated order with every rating, scored by first ratings of Good or
@@ -177,164 +134,22 @@ function recordCard(
   }
 }
 
-/** A workspace's tracked items for Learning's map: untrashed files and
- * non-embedded materials, minus the ones the user stopped tracking. */
-function tracked(wsId: string) {
-  const states = items(wsId);
-  return [
-    ...db.files
-      .filter((f) => f.workspaceId === wsId)
-      .map((f) => ({
-        createdAt: f.addedAt,
-        id: f.id,
-        kind: f.kind as string,
-        position: f.position,
-        title: f.name,
-        topicId: f.topicId,
-        type: 'file' as const,
-      })),
-    ...db.materials
-      .filter((mt) => mt.workspaceId === wsId && !mt.parentMaterialId)
-      .map((mt) => ({
-        createdAt: mt.createdAt,
-        id: mt.id,
-        kind: mt.kind as string,
-        position: mt.position,
-        title: mt.title,
-        topicId: mt.topicId ?? null,
-        type: 'material' as const,
-      })),
-  ]
-    .map((it) => {
-      const st = states.get(it.id);
-      return {
-        ...it,
-        doneAt:
-          st?.state === 'done' ? new Date(st.at).toISOString() : undefined,
-        state: st?.state,
-      };
-    })
-    .filter((it) => it.state !== 'removed');
-}
-
 const daysAgo = (days: number) =>
   new Date(Date.now() - days * 86_400_000).toISOString();
-/** Progress rows only, so Learning's lists show a realistic spread: no items
- * behind them (Organic Chemistry and English Literature open their real,
- * empty workspaces; the others have no workspace in the mock). */
-const SHOWCASE: ProgressWorkspace[] = [
+/** Workspaces with progress but no items in the mock, so Learning's Review
+ * overview lists a realistic spread (Organic Chemistry and English Literature
+ * open their real, empty workspaces). */
+const SHOWCASE = [
+  { iconId: 'waves-04', name: 'Organic Chemistry', workspaceId: 'ws_chem' },
+  { iconId: 'waves-05', name: 'English Literature', workspaceId: 'ws_eng' },
   {
-    cover: { color: '#eb6834', pattern: 'hexagons', style: 'geo' },
-    done: 2,
-    iconId: 'waves-04',
-    lastStudiedAt: daysAgo(2),
-    name: 'Organic Chemistry',
-    total: 26,
-    workspaceId: 'ws_chem',
-  },
-  {
-    cover: {
-      color: '#f8efc9',
-      kind: 'latin',
-      style: 'paper',
-    },
-    done: 8,
-    iconId: 'waves-05',
-    lastStudiedAt: daysAgo(4),
-    name: 'English Literature',
-    total: 12,
-    workspaceId: 'ws_eng',
-  },
-  {
-    cover: {
-      color: '#d0505e',
-      kind: 'math',
-      style: 'symbols',
-    },
-    done: 11,
     iconId: 'waves-06',
-    lastStudiedAt: daysAgo(6),
     name: 'Physics: mechanics',
-    total: 20,
     workspaceId: 'ws_demo_physics',
   },
-  {
-    done: 3,
-    iconId: 'waves-07',
-    lastStudiedAt: daysAgo(9),
-    name: 'Spanish A2',
-    total: 30,
-    workspaceId: 'ws_demo_spanish2',
-  },
-  {
-    cover: {
-      color: '#c48a00',
-      kind: 'math',
-      style: 'doodles',
-    },
-    done: 14,
-    iconId: 'waves-08',
-    lastStudiedAt: daysAgo(12),
-    name: 'Statistics',
-    total: 18,
-    workspaceId: 'ws_demo_stats',
-  },
-  {
-    cover: { color: '#1b9e6f', pattern: 'xes', style: 'geo' },
-    done: 15,
-    iconId: 'waves-09',
-    lastStudiedAt: daysAgo(9),
-    name: 'Chemistry basics',
-    total: 15,
-    workspaceId: 'ws_demo_chem0',
-  },
-  {
-    cover: {
-      color: '#d0505e',
-      kind: 'kana',
-      style: 'symbols',
-    },
-    done: 20,
-    iconId: 'waves-10',
-    lastStudiedAt: daysAgo(30),
-    name: 'Spanish A1',
-    total: 20,
-    workspaceId: 'ws_demo_spanish1',
-  },
-  {
-    cover: {
-      color: '#2a78d6',
-      kind: 'math',
-      style: 'symbols',
-    },
-    done: 24,
-    iconId: 'waves-11',
-    lastStudiedAt: daysAgo(40),
-    name: 'Linear algebra',
-    total: 24,
-    workspaceId: 'ws_demo_linalg',
-  },
-  {
-    cover: { color: '#fbf9f3', kind: 'kana', style: 'paper' },
-    done: 8,
-    iconId: 'waves-02',
-    lastStudiedAt: daysAgo(60),
-    name: 'Essay writing',
-    total: 8,
-    workspaceId: 'ws_demo_essay',
-  },
-  {
-    done: 12,
-    iconId: 'waves-03',
-    lastStudiedAt: daysAgo(75),
-    name: 'Art history',
-    total: 12,
-    workspaceId: 'ws_demo_art',
-  },
+  { iconId: 'waves-07', name: 'Spanish A2', workspaceId: 'ws_demo_spanish2' },
 ];
 
-/** As the server: `lead` (a listed workspace) leads the map, else the first
- * in progress, else the first finished; showcase rows have no items to map. */
 type MockPlanStep = {
   kind: PlanStep['kind'];
   workspaceId: string;
@@ -428,80 +243,11 @@ function studyPlans(list: MockPlan[]) {
       const ws = db.workspaces.find((w) => w.id === wsId);
       return {
         cover: ws?.cover,
-        hidden: !(enabled.get(wsId) ?? true),
         iconId: ws?.iconId ?? '',
-        items: tracked(wsId).map(({ state, ...it }) => ({
-          ...it,
-          ...(state ? { state } : {}),
-        })),
         name: ws?.name ?? wsId,
-        topics: db.topics
-          .filter((ch) => ch.workspaceId === wsId)
-          .map((ch) => ({ id: ch.id, name: ch.name, order: ch.order })),
         workspaceId: wsId,
       };
     }),
-  };
-}
-
-function learningProgress(leadId: string | null, all = false) {
-  if (!historyFinished) {
-    historyFinished = true;
-    for (const it of tracked('ws_hist'))
-      items('ws_hist').set(it.id, {
-        at: Date.now() - 3 * 86_400_000,
-        kind: it.type,
-        state: 'done',
-      });
-  }
-  const rows: ProgressWorkspace[] = [...progress.keys()]
-    .filter((wsId) =>
-      [...items(wsId).values()].some((it) => it.state !== 'removed')
-    )
-    .map((wsId) => {
-      const ws = db.workspaces.find((w) => w.id === wsId);
-      const list = tracked(wsId);
-      return {
-        cover: ws?.cover,
-        done: list.filter((it) => it.state === 'done').length,
-        hidden: !(enabled.get(wsId) ?? true),
-        iconId: ws?.iconId ?? '',
-        lastStudiedAt: new Date(studiedAt.get(wsId) ?? 0).toISOString(),
-        name: ws?.name ?? wsId,
-        total: list.length,
-        workspaceId: wsId,
-      };
-    })
-    .filter((ws) => ws.total > 0);
-  rows.push(
-    ...SHOWCASE.filter(
-      (ws) => !rows.some((r) => r.workspaceId === ws.workspaceId)
-    ).map((ws) => ({ ...ws, hidden: !(enabled.get(ws.workspaceId) ?? true) }))
-  );
-  rows.sort((a, b) => b.lastStudiedAt.localeCompare(a.lastStudiedAt));
-  // Hidden ones are counted either way and listed only with `all`.
-  const listed = all ? rows : rows.filter((ws) => !ws.hidden);
-  const active = listed.filter((ws) => ws.done < ws.total).slice(0, 10);
-  const finished = listed.filter((ws) => ws.done >= ws.total).slice(0, 10);
-  const mapped = [...active, ...finished]
-    .filter((ws) => !ws.hidden)
-    .map((ws) => ws.workspaceId)
-    .filter((id) => progress.has(id));
-  const lead = mapped.find((id) => id === leadId) ?? mapped[0];
-  return {
-    active,
-    finished,
-    hiddenCount: rows.filter((ws) => ws.hidden).length,
-    lead: lead && {
-      items: tracked(lead).map(({ state, ...it }) => ({
-        ...it,
-        ...(state ? { state } : {}),
-      })),
-      topics: db.topics
-        .filter((ch) => ch.workspaceId === lead)
-        .map((ch) => ({ id: ch.id, name: ch.name, order: ch.order })),
-      workspaceId: lead,
-    },
   };
 }
 
@@ -520,8 +266,7 @@ function cardsOf(materialId: string) {
 /** Rated items of the quizzes and sets in progress, least retained first. */
 function pool(wsId: string): ReviewItem[] {
   const out: (ReviewItem & { rank: Rated })[] = [];
-  for (const [id, it] of items(wsId)) {
-    if (it.kind !== 'material' || it.state === 'removed') continue;
+  for (const id of items(wsId)) {
     const mt = db.materials.find((x) => x.id === id);
     if (!mt) continue;
     if (mt.kind === 'flashcards')
@@ -581,11 +326,6 @@ function summary(wsId: string): StudySummary {
   const ws = db.workspaces.find((w) => w.id === wsId);
   return {
     enabled: enabled.get(wsId) ?? true,
-    items: [...items(wsId)].map(([id, it]) => ({
-      ...(it.kind === 'file' ? { fileId: id } : { materialId: id }),
-      state: it.state,
-      updatedAt: new Date(it.at).toISOString(),
-    })),
     quickReview: quickReview(all),
     recentAttempts: db.attempts
       .filter((a) => a.kind === 'quiz' && a.workspaceName === ws?.name)
@@ -638,16 +378,7 @@ function rate(materialId: string, itemId: string, missed: boolean) {
     lapses: (rated.get(key)?.lapses ?? 0) + (missed ? 1 : 0),
   });
   const wsId = workspaceOf(materialId);
-  if (wsId) {
-    studiedAt.set(wsId, Date.now());
-    const map = items(wsId);
-    if (map.get(materialId)?.state !== 'done')
-      map.set(materialId, {
-        at: Date.now(),
-        kind: 'material',
-        state: 'started',
-      });
-  }
+  if (wsId) items(wsId).add(materialId);
 }
 
 /* Review sessions: recorded with their first answer, finished once every
@@ -1374,25 +1105,6 @@ export const studyHandlers = [
     enabled.set(String(params.id), body.enabled);
     return new HttpResponse(null, { status: 204 });
   }),
-  http.put('/api/workspaces/:id/study/items', async ({ params, request }) => {
-    const body = (await request.json()) as {
-      fileId?: string;
-      materialId?: string;
-      state?: 'done' | 'removed';
-    };
-    const id = body.fileId ?? body.materialId;
-    if (!id) return new HttpResponse(null, { status: 422 });
-    const map = items(String(params.id));
-    studiedAt.set(String(params.id), Date.now());
-    if (body.state)
-      map.set(id, {
-        at: Date.now(),
-        kind: body.fileId ? 'file' : 'material',
-        state: body.state,
-      });
-    else map.delete(id);
-    return new HttpResponse(null, { status: 204 });
-  }),
   http.post('/api/workspaces/:id/study/reset', ({ params }) => {
     const wsId = String(params.id);
     progress.delete(wsId);
@@ -1450,12 +1162,6 @@ export const studyHandlers = [
       topicId,
       total: list.length,
     });
-  }),
-  http.get('/api/learning/progress', ({ request }) => {
-    const search = new URL(request.url).searchParams;
-    return HttpResponse.json(
-      learningProgress(search.get('lead'), search.get('all') === 'true')
-    );
   }),
   http.get('/api/workspaces/:id/study/plans', ({ params }) => {
     const wsId = String(params.id);

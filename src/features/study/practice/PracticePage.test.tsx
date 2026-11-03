@@ -89,7 +89,7 @@ it('shows owners how members use each quiz', () => {
   page.role = 'owner';
   page.data = practice(6);
   const html = render();
-  expect(html).toContain(m.practice_members({ count: 6 }));
+  expect(html).toContain(m.workspace_members_count({ count: 6 }));
   expect(html).toContain(m.practice_tried_of({ members: 6, tried: 5 }));
   expect(html).toContain('62%');
   expect(html).not.toContain(m.practice_suggested());

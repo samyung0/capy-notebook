@@ -342,12 +342,7 @@ func TestFrozenAccountsRecordStudyProgress(t *testing.T) {
 		h     http.Handler
 		actor string
 	}{{f.owner, ""}, {f.member, "u_editor"}} {
-		rec := doReq(t, side.h, http.MethodPut, "/api/workspaces/"+f.workspaceID+"/study/items", side.actor,
-			map[string]any{"materialId": f.material.ID, "state": "done"})
-		if rec.Code != http.StatusNoContent {
-			t.Fatalf("%q mark as read = %d body=%s", side.actor, rec.Code, rec.Body.String())
-		}
-		rec = doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/study/reset", side.actor, nil)
+		rec := doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/study/reset", side.actor, nil)
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("%q reset = %d body=%s", side.actor, rec.Code, rec.Body.String())
 		}

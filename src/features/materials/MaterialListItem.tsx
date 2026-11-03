@@ -3,7 +3,6 @@ import type { MouseEventHandler } from 'react';
 import type { MaterialRef, Topic, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Spinner } from '@/components/ui/feedback';
-import type { StudyRow } from '@/features/study/studyItems';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toMaterialActionTarget } from '@/features/workspace/contentActionTarget';
 import { m } from '@/i18n';
@@ -22,7 +21,6 @@ export function MaterialListItem({
   generating = false,
   readOnly = false,
   canClone = false,
-  study,
   menu = true,
   indent = false,
 }: {
@@ -41,7 +39,6 @@ export function MaterialListItem({
   /** Members and editors may copy the material elsewhere (workspace.canClone). */
   canClone?: boolean;
   /** The reader's own progress on this material, while progress is on. */
-  study?: StudyRow;
   /** The hover ⋮; touch lists (the top Files drawer) leave it out. */
   menu?: boolean;
   /** Inside a topic or Other files: the icon starts under the group's name. */
@@ -71,12 +68,7 @@ export function MaterialListItem({
         to="/workspaces/$workspaceId"
       >
         <FileIcon className="size-4" name={materialIconName(matRef.type)} />
-        <span
-          className={cn(
-            'min-w-0 flex-1 translate-y-px truncate',
-            study?.state === 'removed' && 'text-fg-muted'
-          )}
-        >
+        <span className="min-w-0 flex-1 translate-y-px truncate">
           {matRef.type === 'quiz'
             ? m.files_quiz_row({ title: matRef.title })
             : matRef.title}
@@ -95,7 +87,6 @@ export function MaterialListItem({
             active && 'bg-surface-hover-bg'
           )}
           hoverIconContainerClassName="p-1 focus-visible:ring-inset"
-          leadingItems={readOnly ? [] : study?.menuItems}
           onDeleted={onDeleted}
           onMove={(topicId) => onMove?.(topicId)}
           readOnly={readOnly}

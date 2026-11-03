@@ -37,6 +37,8 @@ import type {
   TrashItem,
   UpdateConversationReq,
   Workspace,
+  WorkspaceActivity,
+  WorkspaceDashboard,
   WorkspaceMember,
 } from '@/api/types';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
@@ -2026,6 +2028,63 @@ export const handlers = [
   http.get('/api/workspaces/:id/files', async ({ params }) =>
     HttpResponse.json(db.files.filter((f) => f.workspaceId === params.id))
   ),
+  // The Dashboard: the owner, the roster's size and the newest files and
+  // materials; the mock credits them to the roster in turn and its first
+  // flashcard set to the agent.
+  http.get('/api/workspaces/:id/dashboard', async ({ params }) => {
+    const ws = db.workspaces.find((w) => w.id === params.id);
+    if (!ws) return new HttpResponse(null, { status: 404 });
+    const roster = [
+      { avatarUrl: db.user.avatarUrl, name: db.user.name, userId: db.user.id },
+      ...mockWorkspaceMembers.filter((mb) => mb.workspaceId === ws.id),
+    ];
+    const all: WorkspaceActivity[] = [
+      ...db.files
+        .filter((f) => f.workspaceId === ws.id)
+        .map(
+          (f): WorkspaceActivity => ({
+            at: f.addedAt,
+            fileId: f.id,
+            kind: 'uploaded',
+            title: f.name,
+          })
+        ),
+      ...db.materials
+        .filter((mt) => mt.workspaceId === ws.id && !mt.parentMaterialId)
+        .map(
+          (mt): WorkspaceActivity => ({
+            at: mt.createdAt,
+            kind: mt.kind === 'flashcards' ? 'agent' : 'added',
+            materialId: mt.id,
+            title: mt.title,
+          })
+        ),
+    ].sort(sortBy((row) => row.at, false));
+    // The newest four, plus the newest agent-made set so its row shows as on
+    // the boards (H2); the server takes the newest five.
+    const agent = all.find((row) => row.kind === 'agent');
+    const rows = [
+      ...all.filter((row) => row !== agent).slice(0, agent ? 4 : 5),
+      ...(agent ? [agent] : []),
+    ]
+      .sort(sortBy((row) => row.at, false))
+      .map((row, i) => {
+        const actor =
+          row.kind === 'agent' ? roster[0] : roster[i % roster.length];
+        return {
+          ...row,
+          actorAvatarUrl: actor.avatarUrl,
+          actorId: actor.userId,
+          actorName: actor.name,
+        };
+      });
+    return HttpResponse.json({
+      activity: rows,
+      members: roster.length,
+      ownerName:
+        ws.role === 'owner' ? db.user.name : (roster[1]?.name ?? db.user.name),
+    } satisfies WorkspaceDashboard);
+  }),
   http.get('/api/workspaces/:id/recent', async ({ params }) =>
     HttpResponse.json({
       files: db.files

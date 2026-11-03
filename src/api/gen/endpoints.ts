@@ -79,7 +79,6 @@ import type {
   FlashcardSet,
   Generate200,
   GenerateReq,
-  GetLearningProgressParams,
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
   GetWorkspaceReviewParams,
@@ -94,7 +93,6 @@ import type {
   IntegrationsStatus,
   InvoiceList,
   Label,
-  LearningProgress,
   LibraryFigure,
   ListAccountConversationsParams,
   ListAttemptsParams,
@@ -155,7 +153,6 @@ import type {
   SetChatPrefsReq,
   SetModelPrefsReq,
   SetStudyEnabledReq,
-  SetStudyItemReq,
   ShareRedemption,
   SourceCandidateReadOutputBody,
   SourceCandidateResponse,
@@ -215,6 +212,7 @@ import type {
   Workspace,
   WorkspaceAttemptsOutputBody,
   WorkspaceCollaborator,
+  WorkspaceDashboard,
   WorkspaceMember,
   WorkspaceRecent,
   WorkspaceStats,
@@ -4883,63 +4881,6 @@ export const listLearningPlans = async ( options?: RequestInit): Promise<listLea
 
   const data: listLearningPlansResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listLearningPlansResponse
-}
-
-
-
-export type getLearningProgressResponse200 = {
-  data: LearningProgress
-  status: 200
-}
-
-export type getLearningProgressResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type getLearningProgressResponseSuccess = (getLearningProgressResponse200) & {
-  headers: Headers;
-};
-export type getLearningProgressResponseError = (getLearningProgressResponseDefault) & {
-  headers: Headers;
-};
-
-export type getLearningProgressResponse = (getLearningProgressResponseSuccess | getLearningProgressResponseError)
-
-export const getGetLearningProgressUrl = (params?: GetLearningProgressParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/learning/progress?${stringifiedParams}` : `/api/learning/progress`
-}
-
-/**
- * @summary Learning's Progress tab: workspaces in progress and finished, the leading one's items
- */
-export const getLearningProgress = async (params?: GetLearningProgressParams, options?: RequestInit): Promise<getLearningProgressResponse> => {
-
-  const res = await fetch(getGetLearningProgressUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getLearningProgressResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getLearningProgressResponse
 }
 
 
@@ -10109,6 +10050,56 @@ export const unarchiveConversations = async (id: string, options?: RequestInit):
 
 
 
+export type getWorkspaceDashboardResponse200 = {
+  data: WorkspaceDashboard
+  status: 200
+}
+
+export type getWorkspaceDashboardResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getWorkspaceDashboardResponseSuccess = (getWorkspaceDashboardResponse200) & {
+  headers: Headers;
+};
+export type getWorkspaceDashboardResponseError = (getWorkspaceDashboardResponseDefault) & {
+  headers: Headers;
+};
+
+export type getWorkspaceDashboardResponse = (getWorkspaceDashboardResponseSuccess | getWorkspaceDashboardResponseError)
+
+export const getGetWorkspaceDashboardUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/dashboard`
+}
+
+/**
+ * @summary The workspace's Dashboard: its owner, member count and latest activity
+ */
+export const getWorkspaceDashboard = async (id: string, options?: RequestInit): Promise<getWorkspaceDashboardResponse> => {
+
+  const res = await fetch(getGetWorkspaceDashboardUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getWorkspaceDashboardResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspaceDashboardResponse
+}
+
+
+
 export type listWorkspaceFilesResponse200 = {
   data: File[]
   status: 200
@@ -11366,71 +11357,6 @@ const res = await fetch(getSetWorkspaceStudyUrl(id),
 
   const data: setWorkspaceStudyResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as setWorkspaceStudyResponse
-}
-
-
-
-export type setStudyItemResponse204 = {
-  data: void
-  status: 204
-}
-
-export type setStudyItemResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type setStudyItemResponseSuccess = (setStudyItemResponse204) & {
-  headers: Headers;
-};
-export type setStudyItemResponseError = (setStudyItemResponseDefault) & {
-  headers: Headers;
-};
-
-export type setStudyItemResponse = (setStudyItemResponseSuccess | setStudyItemResponseError)
-
-export const getSetStudyItemUrl = (id: string,) => {
-
-
-
-
-  return `/api/workspaces/${id}/study/items`
-}
-
-/**
- * @summary Mark a file or material read, unread or removed
- */
-export const setStudyItem = async (id: string,
-    setStudyItemReq: NonReadonly<SetStudyItemReq>, options?: RequestInit): Promise<setStudyItemResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getSetStudyItemUrl(id),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(setStudyItemReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: setStudyItemResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as setStudyItemResponse
 }
 
 

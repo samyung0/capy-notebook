@@ -10,7 +10,6 @@ import (
 func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 	f := newStudyFixture(t, "u_study_plans")
 	ctx := context.Background()
-	done := "done"
 	other, err := f.s.CreateWorkspace(ctx, f.user, WorkspaceCreate{Name: "Chemistry", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
@@ -21,9 +20,6 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 	}
 	note, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Kind: "note", Title: "Cells", Content: materialTestContent(t, "# Cells")})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.s.SetStudyItem(ctx, f.user, f.ws.ID, nil, &note.ID, &done); err != nil {
 		t.Fatal(err)
 	}
 
@@ -64,13 +60,6 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 			t.Fatalf("step titles = %+v", st)
 		}
 	}
-	got, err := f.s.WorkspacePlans(ctx, f.user, f.ws.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if items := got.Workspaces[0].Items; len(items) != 1 || items[0].State != "done" || items[0].Kind != "note" {
-		t.Fatalf("parent's tracked items = %+v", items)
-	}
 
 	// A step twice, or in a workspace the user cannot read, is refused.
 	stranger := newBlobTestUser(t, f.s, "u_study_plans_stranger")
@@ -110,14 +99,6 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 	if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &alternating); !errors.Is(err, ErrStudyPlanSize) {
 		t.Fatalf("21 groups: %v", err)
 	}
-	// An untracked note shows nowhere, so the notes around it make one group.
-	removed := "removed"
-	if err := f.s.SetStudyItem(ctx, f.user, f.ws.ID, nil, &alternating[1].TargetID, &removed); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &alternating); err != nil {
-		t.Fatalf("19 groups shown: %v", err)
-	}
 	if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &steps); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +107,7 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 	if _, err := f.s.pool.Exec(ctx, `INSERT INTO study_plan_steps (plan_id, position, kind, workspace_id, material_id) VALUES ($1, 9, 'material', $2, $3)`, plan.ID, theirs.ID, theirNote.ID); err != nil {
 		t.Fatal(err)
 	}
-	got, err = f.s.WorkspacePlans(ctx, f.user, f.ws.ID)
+	got, err := f.s.WorkspacePlans(ctx, f.user, f.ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

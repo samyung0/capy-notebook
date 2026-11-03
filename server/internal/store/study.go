@@ -20,19 +20,9 @@ import (
 // read the workspace records their own, frozen accounts included. Nothing here
 // is copied by clone or charged to storage.
 
-// StudyItem is one touched file or material; untouched items have no row.
-type StudyItem struct {
-	FileID     *string `json:"fileId,omitempty"`
-	MaterialID *string `json:"materialId,omitempty"`
-	State      string  `json:"state" enum:"started,done,removed"`
-	// UpdatedAt is the state's last change, e.g. when it was marked read.
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
 type StudySummary struct {
-	Enabled        bool        `json:"enabled"`
-	Items          []StudyItem `json:"items" nullable:"false"`
-	RecentAttempts []Attempt   `json:"recentAttempts" nullable:"false"`
+	Enabled        bool      `json:"enabled"`
+	RecentAttempts []Attempt `json:"recentAttempts" nullable:"false"`
 	// Reviewable counts the rated questions and cards a review session draws on.
 	Reviewable int `json:"reviewable"`
 	// QuickReview is the Study tab's short practice (quickReview): up to
@@ -245,10 +235,9 @@ func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.
 	return s.studySummary(ctx, userID, wsID, nil, now)
 }
 
-// PlanStudySummary is one of the user's plans kept in the workspace as the
-// Study page reads it: Enabled and the review parts (Reviewable, QuickReview,
-// Unfinished) drawn from the plan, Items and RecentAttempts left empty (the
-// workspace's own summary has them); ErrReviewGroup for any other plan.
+// PlanStudySummary is one of the user's plans kept in the workspace: Enabled
+// and the review parts (Reviewable, QuickReview, Unfinished) drawn from the
+// plan, RecentAttempts left empty; ErrReviewGroup for any other plan.
 func (s *Store) PlanStudySummary(ctx context.Context, userID, wsID, planID string, now time.Time) (StudySummary, error) {
 	plan, err := s.workspacePlan(ctx, userID, wsID, &planID)
 	if err != nil {
@@ -258,15 +247,14 @@ func (s *Store) PlanStudySummary(ctx context.Context, userID, wsID, planID strin
 }
 
 func (s *Store) studySummary(ctx context.Context, userID, wsID string, plan *PlanScope, now time.Time) (StudySummary, error) {
-	out := StudySummary{Items: []StudyItem{}, RecentAttempts: []Attempt{}, QuickReview: []ReviewItem{}}
+	out := StudySummary{RecentAttempts: []Attempt{}, QuickReview: []ReviewItem{}}
 	var err error
 	if out.Enabled, err = s.StudyEnabled(ctx, userID, wsID); err != nil {
 		return out, err
 	}
-	// A plan's summary carries only its review parts; the page reads the
-	// workspace's marks and attempts from the workspace's own summary.
+	// A plan's summary carries only its review parts.
 	if plan == nil {
-		if err := s.studyMarks(ctx, userID, wsID, &out); err != nil {
+		if err := s.recentAttempts(ctx, userID, wsID, &out); err != nil {
 			return out, err
 		}
 	}
@@ -317,27 +305,9 @@ func (s *Store) studySummary(ctx context.Context, userID, wsID string, plan *Pla
 	return out, nil
 }
 
-// studyMarks fills the summary's per-item states and recent quiz attempts.
-func (s *Store) studyMarks(ctx context.Context, userID, wsID string, out *StudySummary) error {
-	rows, err := s.pool.Query(ctx, `SELECT sp.file_id, sp.material_id, sp.state, sp.updated_at FROM study_progress sp
-		LEFT JOIN files f ON f.id=sp.file_id LEFT JOIN materials m ON m.id=sp.material_id
-		WHERE sp.user_id=$1 AND sp.workspace_id=$2 AND f.trashed_at IS NULL AND m.trashed_at IS NULL`, userID, wsID)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var it StudyItem
-		if err := rows.Scan(&it.FileID, &it.MaterialID, &it.State, &it.UpdatedAt); err != nil {
-			rows.Close()
-			return err
-		}
-		out.Items = append(out.Items, it)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	rows, err = s.pool.Query(ctx, `SELECT `+attemptCols+`
+// recentAttempts fills the summary's latest quiz attempts.
+func (s *Store) recentAttempts(ctx context.Context, userID, wsID string, out *StudySummary) error {
+	rows, err := s.pool.Query(ctx, `SELECT `+attemptCols+`
 		FROM attempts a JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
 		WHERE a.user_id=$1 AND m.workspace_id=$2 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND a.kind='quiz'
 		ORDER BY a.taken_at DESC LIMIT 5`, userID, wsID)
@@ -411,41 +381,6 @@ func questionText(q map[string]any) string {
 	return ""
 }
 
-// ErrStudyTarget means the file or material is not a trackable item of the
-// workspace: missing, trashed, or embedded in a note.
-var ErrStudyTarget = errors.New("not a study item in this workspace")
-
-// SetStudyItem marks a file or material done or removed; a nil state deletes
-// the row (Mark as unread).
-func (s *Store) SetStudyItem(ctx context.Context, userID, wsID string, fileID, materialID *string, state *string) error {
-	var ok bool
-	var err error
-	if fileID != nil {
-		err = s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM files WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL)`, *fileID, wsID).Scan(&ok)
-	} else {
-		err = s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM materials WHERE id=$1 AND workspace_id=$2
-			AND trashed_at IS NULL AND parent_material_id IS NULL)`, *materialID, wsID).Scan(&ok)
-	}
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return ErrStudyTarget
-	}
-	col, id := "material_id", materialID
-	if fileID != nil {
-		col, id = "file_id", fileID
-	}
-	if state == nil {
-		_, err = s.pool.Exec(ctx, `DELETE FROM study_progress WHERE user_id=$1 AND `+col+`=$2`, userID, *id)
-		return err
-	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO study_progress (user_id, workspace_id, `+col+`, state) VALUES ($1,$2,$3,$4)
-		ON CONFLICT (user_id, `+col+`) WHERE `+col+` IS NOT NULL
-		DO UPDATE SET state=EXCLUDED.state, updated_at=now()`, userID, wsID, *id, *state)
-	return err
-}
-
 // ResetStudy clears done marks and review state for the workspace; attempts
 // and the review log stay.
 func (s *Store) ResetStudy(ctx context.Context, userID, wsID string) error {
@@ -460,7 +395,7 @@ func (s *Store) ResetStudy(ctx context.Context, userID, wsID string) error {
 }
 
 // markProgressTx records practice on a workspace material that is not
-// embedded. A done set stays done, and a removed one comes back.
+// embedded. A done set stays done.
 func markProgressTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, state string) error {
 	if mt.WorkspaceID == "" || mt.ParentMaterialID != "" {
 		return nil
@@ -673,10 +608,8 @@ type ranked struct {
 	topicID *string
 }
 
-// reviewPool is every rated item of the quizzes and sets not removed,
-// trashed or embedded (Mark as unread keeps them) whose content still matches
-// what was rated,
-// least retained first. Only rated materials are read, in one query, and a
+// reviewPool is every rated item of the quizzes and sets not trashed or
+// embedded whose content still matches what was rated, least retained first. Only rated materials are read, in one query, and a
 // document is loaded and parsed only when the cache misses its revision.
 func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Time) ([]ranked, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, m.topic_id, rs.item_id, rs.item_hash,
@@ -685,8 +618,6 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 		JOIN review_states rs ON rs.material_id=m.id AND rs.user_id=$1
 		WHERE m.workspace_id=$2 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL
-			AND NOT EXISTS (SELECT 1 FROM study_progress sp
-				WHERE sp.user_id=$1 AND sp.material_id=m.id AND sp.state='removed')
 		ORDER BY m.position, m.created_at, m.id`, userID, wsID)
 	if err != nil {
 		return nil, err
@@ -771,8 +702,8 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 	return all, nil
 }
 
-// newPool is every item of the workspace's quizzes and sets (not removed,
-// trashed or embedded; among only when it is not nil) the user has never
+// newPool is every item of the workspace's quizzes and sets (not trashed or
+// embedded; among only when it is not nil) the user has never
 // rated, or whose content changed since its rating, in reading order:
 // topics in order, then unfiled, each by position, newest first on ties.
 // Only a new manual session reads it: it parses every quiz and set in scope
@@ -786,11 +717,9 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string, only []string)
 	}
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, m.topic_id FROM materials m
 		LEFT JOIN topics c ON c.id=m.topic_id
-		WHERE m.workspace_id=$2 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
-			AND m.parent_material_id IS NULL AND ($3::text[] IS NULL OR m.id = ANY($3))
-			AND NOT EXISTS (SELECT 1 FROM study_progress sp
-				WHERE sp.user_id=$1 AND sp.material_id=m.id AND sp.state='removed')
-		ORDER BY m.topic_id IS NULL, c.position, m.position, m.created_at DESC, m.id`, userID, wsID, only)
+		WHERE m.workspace_id=$1 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
+			AND m.parent_material_id IS NULL AND ($2::text[] IS NULL OR m.id = ANY($2))
+		ORDER BY m.topic_id IS NULL, c.position, m.position, m.created_at DESC, m.id`, wsID, only)
 	if err != nil {
 		return nil, err
 	}

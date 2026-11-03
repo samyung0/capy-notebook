@@ -96,6 +96,7 @@ import {
   type PanelView,
 } from '@/features/workspace/PanelTitleMenu';
 import type { SettingsTab } from '@/features/workspace/settingsTabs';
+import { WorkspaceDashboard } from '@/features/workspace/WorkspaceDashboard';
 import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
 import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
 import {
@@ -969,13 +970,22 @@ function WorkspaceOpen() {
       />
     </Suspense>
   );
+  // The landing is the workspace's Dashboard (boards H1, H2).
+  const pageContent =
+    studyContent ||
+    (!openItem && (
+      <WorkspaceDashboard
+        onUpload={() => setAddSource('upload')}
+        workspace={ws}
+      />
+    ));
   const viewer = (
     <Panel className="w-full" frost="center" sectionClassName="h-full gap-0">
       <h1 className="sr-only">{ws.name}</h1>
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
-        {lg && studyContent ? (
-          studyContent
+        {lg && pageContent ? (
+          pageContent
         ) : (
           <CenterContent
             color="purple"
@@ -991,7 +1001,6 @@ function WorkspaceOpen() {
                 </ToolbarButton>
               ) : null
             }
-            onAddFile={readOnly ? undefined : () => setAddSource('upload')}
             onDeleted={() => setOpenItem(null)}
             oneColumn={oneColumn}
             onModeChange={(mode) => {
@@ -1003,9 +1012,7 @@ function WorkspaceOpen() {
                 to: '.',
               });
             }}
-            onOpenPractice={openPractice}
-            onOpenSettings={rowProps.onOpenSettings}
-            page={studyContent || undefined}
+            page={pageContent || undefined}
             readOnly={readOnly}
             requestedMode={search.mode ?? null}
             topics={topics ?? []}

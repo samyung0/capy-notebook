@@ -369,7 +369,6 @@ export type {
   BankSummaryOutputBody as BankTopicSummary,
   BankSummaryQuestion,
   Cover as CoverConfig,
-  LearningProgress,
   PastReview,
   PlanStep,
   PlanStepInput,
@@ -377,9 +376,6 @@ export type {
   Practice,
   PracticeQuiz,
   PracticeReview,
-  ProgressItem,
-  ProgressMap,
-  ProgressWorkspace,
   RateReviewItemReq,
   ReviewEvidence,
   ReviewOverview,
@@ -389,12 +385,12 @@ export type {
   Row as BankListRow,
   SessionScore,
   SetStudyEnabledReq,
-  SetStudyItemReq,
-  StudyItem,
   StudyPlan,
   StudyPlans,
   TopicProgress as BankTopicProgress,
   UnfinishedSession,
+  WorkspaceActivity,
+  WorkspaceDashboard,
 } from './gen/model';
 
 /** A suggested review's leading mode. */

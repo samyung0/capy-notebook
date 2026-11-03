@@ -42,7 +42,6 @@ import {
   type NoteEditorStatus,
   noteEditorStatusLabel,
 } from '@/features/notes/editorMode';
-import { useStudyActions, useStudyStates } from '@/features/study/studyItems';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import {
   toFileActionTarget,
@@ -350,35 +349,6 @@ function useHeader(
   };
 }
 
-/** Mark as read, right of the view/edit toggle: an open book with a check, a
- * closed one in the marks' green once read; clicking again marks it unread. */
-function ReadToggle({
-  item,
-  workspaceId,
-}: {
-  item: OpenItem;
-  workspaceId: string;
-}) {
-  const { enabled, states } = useStudyStates(workspaceId);
-  const { set } = useStudyActions(workspaceId);
-  if (!enabled) return null;
-  const done = states.get(item.id) === 'done';
-  return (
-    <ToolbarButton
-      label={done ? m.study_mark_unread() : m.study_mark_read()}
-      onClick={() =>
-        set({ id: item.id, kind: item.kind }, done ? null : 'done')
-      }
-    >
-      {/* Lifted 1px, level with the title, the ⋮ and the cloud beside it. */}
-      <Icon
-        className={cn(done && 'text-tint-success-fg')}
-        name={done ? 'bookCheck' : 'bookOpenCheck'}
-      />
-    </ToolbarButton>
-  );
-}
-
 export function Header({
   topics,
   color,
@@ -453,10 +423,6 @@ export function Header({
   const navigate = useNavigate();
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
-  const { enabled: studying, states: studyStates } = useStudyStates(
-    standalone ? '' : workspaceId
-  );
-  const { menuItems: studyMenu } = useStudyActions(workspaceId);
   const office = !!file && !!officeFormatOf(file);
   // A standalone material's owner shares it from here as from its card.
   const shareable =
@@ -522,13 +488,10 @@ export function Header({
       )}
     </>
   );
-  // Mark as read and the file's ⋮ follow its name, the status icons after
-  // them; phones drop the read toggle and keep ⋮ at the row's end.
+  // The file's ⋮ follows its name, the status icons after it; phones keep
+  // ⋮ at the row's end.
   const menu = (
     <div className="flex items-center gap-0">
-      {!(standalone || compact) && (
-        <ReadToggle item={item} workspaceId={workspaceId} />
-      )}
       <ContentActions
         beforeDeleteItems={oneColumn?.settingsItems}
         canClone={canClone}
@@ -545,12 +508,6 @@ export function Header({
         key={`${item.kind}:${item.id}`}
         leadingItems={[
           ...(oneColumn?.addItems ?? []),
-          ...(studying && !standalone
-            ? studyMenu(
-                { id: item.id, kind: item.kind },
-                studyStates.get(item.id)
-              )
-            : []),
           ...(sm
             ? [
                 {

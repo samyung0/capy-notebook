@@ -1,11 +1,9 @@
 import { expect, it } from 'vitest';
-import type { BankProgress, LearningProgress } from '@/api/types';
-import { newlyFinishedTopics, newlyFinishedWorkspaces } from './finishToasts';
+import type { BankProgress } from '@/api/types';
+import { newlyFinishedTopics } from './finishToasts';
 
 const topic = (topicId: string, next: string | null) =>
   ({ nextQuestionId: next, topicId }) as BankProgress['topics'][number];
-const workspace = (workspaceId: string) =>
-  ({ workspaceId }) as LearningProgress['finished'][number];
 
 it('toasts a topic finished by the refetch, not one finished before', () => {
   const prev = { topics: [topic('a', 'q3'), topic('b', null)] };
@@ -24,20 +22,4 @@ it('toasts a topic finished by the refetch, not one finished before', () => {
     'b',
     'c',
   ]);
-});
-
-it('toasts a workspace that moved into finished', () => {
-  const prev = {
-    active: [workspace('w1')],
-    finished: [workspace('w2')],
-    hiddenCount: 0,
-  } as LearningProgress;
-  const next = {
-    active: [],
-    finished: [workspace('w1'), workspace('w2')],
-    hiddenCount: 0,
-  } as LearningProgress;
-  expect(newlyFinishedWorkspaces(prev, next).map((w) => w.workspaceId)).toEqual(
-    ['w1']
-  );
 });

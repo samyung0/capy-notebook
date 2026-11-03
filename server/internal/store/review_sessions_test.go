@@ -370,7 +370,7 @@ func TestPlanReviewSession(t *testing.T) {
 	if resumed.Group != GroupPlan || resumed.PlanID == nil || *resumed.PlanID != plan.ID || len(resumed.Done) != 2 || len(resumed.Items) != 2 {
 		t.Fatalf("resumed = %+v", resumed)
 	}
-	if summary, err := f.s.PlanStudySummary(ctx, f.user, f.ws.ID, plan.ID, later); err != nil || summary.Unfinished == nil || summary.Unfinished.ID != a.ID || summary.Unfinished.TopicName != "Winter exams" || len(summary.Items) != 0 {
+	if summary, err := f.s.PlanStudySummary(ctx, f.user, f.ws.ID, plan.ID, later); err != nil || summary.Unfinished == nil || summary.Unfinished.ID != a.ID || summary.Unfinished.TopicName != "Winter exams" {
 		t.Fatalf("plan unfinished = %+v, %v", summary.Unfinished, err)
 	}
 	if summary, err := f.s.StudySummary(ctx, f.user, f.ws.ID, later); err != nil || summary.Unfinished != nil {
@@ -471,14 +471,11 @@ func TestReviewPoolsOrderAndUnread(t *testing.T) {
 	}
 
 	f.rate(t, loose[0], 3)
-	if err := f.s.SetStudyItem(ctx, f.user, f.ws.ID, nil, &loose[0].MaterialID, nil); err != nil {
-		t.Fatal(err)
-	}
 	pool, err := f.s.reviewPool(ctx, f.user, f.ws.ID, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(pool) != 1 || pool[0].ItemID != loose[0].ID {
-		t.Fatalf("practised pool after Mark as unread = %+v", pool)
+		t.Fatalf("practised pool = %+v", pool)
 	}
 }

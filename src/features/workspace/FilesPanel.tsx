@@ -24,12 +24,6 @@ import { FileListItem } from '@/features/files/FileListItem';
 import { fileCanMoveTo, fileIsIngesting } from '@/features/files/fileUtils';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
 import type { OpenItem } from '@/features/materials/openItem';
-import {
-  type StudyRow,
-  type StudyTarget,
-  useStudyActions,
-  useStudyStates,
-} from '@/features/study/studyItems';
 import type { GenerateMode } from '@/features/workspace/GenerateForm';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -353,14 +347,6 @@ export function FilesPanel({
   function onFileDeleted(id: string) {
     if (isFileActive(id)) onOpenItem(null);
   }
-  // The reader's own progress marks and menu items, while progress is on.
-  const { enabled: studying, states } = useStudyStates(workspaceId);
-  const { menuItems: studyMenu } = useStudyActions(workspaceId);
-  function studyRow(target: StudyTarget): StudyRow | undefined {
-    if (!studying) return;
-    const state = states.get(target.id);
-    return { menuItems: studyMenu(target, state), state };
-  }
   function renderMaterial(mt: MaterialRef) {
     return (
       <MaterialListItem
@@ -383,7 +369,6 @@ export function FilesPanel({
         onMove={(topicId) => moveMaterial({ id: mt.id, topicId })}
         onOpen={openLink}
         readOnly={readOnly}
-        study={studyRow({ id: mt.id, kind: 'material' })}
         topics={topics ?? []}
         workspaceId={workspaceId}
       />
@@ -438,7 +423,6 @@ export function FilesPanel({
             readOnly={readOnly}
             retry={workspace?.isOwner ? retryProcessing : undefined}
             retryPending={retryingIds.includes(item.id)}
-            study={studyRow({ id: item.id, kind: 'file' })}
             topics={topics}
             workspaceId={workspaceId}
           />

@@ -20,7 +20,6 @@ import {
   filesQuery,
   flashcardSetQuery,
   labelsQuery,
-  learningProgressQuery,
   materialQuery,
   materialsQuery,
   meQuery,
@@ -318,14 +317,14 @@ const appRoutes = [
       const saved =
         search.tab === 'results'
           ? savedSort('results', RESULT_SORTS, RESULT_SORT_DEFAULT, search)
-          : search.tab === 'review'
-            ? savedSort(
+          : search.tab === 'plans'
+            ? undefined
+            : savedSort(
                 'pastReviews',
                 PAST_REVIEW_SORTS,
                 PAST_REVIEW_SORT_DEFAULT,
                 search
-              )
-            : undefined;
+              );
       if (saved)
         throw redirect({
           replace: true,
@@ -337,7 +336,6 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       void qc.prefetchInfiniteQuery(attemptsQuery());
-      void qc.prefetchQuery(learningProgressQuery());
       void qc.prefetchQuery(reviewOverviewQuery());
     },
     path: '/learning',
@@ -348,10 +346,6 @@ const appRoutes = [
         ...(tab.tab === 'results'
           ? parseResultsSearch(search)
           : parsePastReviewsSearch(search)),
-        // The workspace a finish toast's Go check leads Progress's map with.
-        ...(typeof search.finished === 'string' && search.finished
-          ? { finished: search.finished }
-          : {}),
       };
     },
   }),

@@ -63,21 +63,6 @@ function treeOrder(a: Ordered, b: Ordered) {
   return +new Date(b.createdAt) - +new Date(a.createdAt);
 }
 
-/**
- * readingOrder for items that carry their topic (Learning's progress map):
- * topics by order, then unfiled; items of an unknown topic are left out,
- * as the tree leaves them out.
- */
-export function inReadingOrder<T extends Ordered & { topicId: string | null }>(
-  topics: readonly { id: string; order: number }[],
-  items: readonly T[]
-): T[] {
-  return [
-    ...[...topics].sort((a, b) => a.order - b.order).map((ch) => ch.id),
-    null,
-  ].flatMap((id) => items.filter((it) => it.topicId === id).sort(treeOrder));
-}
-
 /** Every item in reading order: topics by position, then unfiled. */
 export function readingOrder(
   topics: Topic[] | undefined,

@@ -2910,33 +2910,6 @@ components:
         - name
         - color
       type: object
-    LearningProgress:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/LearningProgress.json
-          format: uri
-          readOnly: true
-          type: string
-        active:
-          items:
-            $ref: "#/components/schemas/ProgressWorkspace"
-          type: array
-        finished:
-          items:
-            $ref: "#/components/schemas/ProgressWorkspace"
-          type: array
-        hiddenCount:
-          format: int64
-          type: integer
-        lead:
-          $ref: "#/components/schemas/ProgressMap"
-      required:
-        - active
-        - finished
-        - hiddenCount
-      type: object
     LibraryFigure:
       additionalProperties: false
       properties:
@@ -4038,29 +4011,16 @@ components:
       properties:
         cover:
           $ref: "#/components/schemas/Cover"
-        hidden:
-          type: boolean
         iconId:
           type: string
-        items:
-          items:
-            $ref: "#/components/schemas/ProgressItem"
-          type: array
         name:
           type: string
-        topics:
-          items:
-            $ref: "#/components/schemas/ProgressTopic"
-          type: array
         workspaceId:
           type: string
       required:
         - workspaceId
         - name
         - iconId
-        - hidden
-        - topics
-        - items
       type: object
     Practice:
       additionalProperties: false
@@ -4163,109 +4123,6 @@ components:
         - public
         - link
       type: string
-    ProgressItem:
-      additionalProperties: false
-      properties:
-        createdAt:
-          format: date-time
-          type: string
-        doneAt:
-          format: date-time
-          type: string
-        id:
-          type: string
-        kind:
-          type: string
-        position:
-          format: int64
-          type: integer
-        state:
-          enum:
-            - started
-            - done
-          type: string
-        title:
-          type: string
-        topicId:
-          nullable: true
-          type: string
-        type:
-          enum:
-            - file
-            - material
-          type: string
-      required:
-        - id
-        - type
-        - kind
-        - title
-        - topicId
-        - position
-        - createdAt
-      type: object
-    ProgressMap:
-      additionalProperties: false
-      properties:
-        items:
-          items:
-            $ref: "#/components/schemas/ProgressItem"
-          type: array
-        topics:
-          items:
-            $ref: "#/components/schemas/ProgressTopic"
-          type: array
-        workspaceId:
-          type: string
-      required:
-        - workspaceId
-        - topics
-        - items
-      type: object
-    ProgressTopic:
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        order:
-          format: int64
-          type: integer
-      required:
-        - id
-        - name
-        - order
-      type: object
-    ProgressWorkspace:
-      additionalProperties: false
-      properties:
-        cover:
-          $ref: "#/components/schemas/Cover"
-        done:
-          format: int64
-          type: integer
-        hidden:
-          type: boolean
-        iconId:
-          type: string
-        lastStudiedAt:
-          format: date-time
-          type: string
-        name:
-          type: string
-        total:
-          format: int64
-          type: integer
-        workspaceId:
-          type: string
-      required:
-        - workspaceId
-        - name
-        - iconId
-        - done
-        - total
-        - lastStudiedAt
-      type: object
     ProjectMaterialReq:
       additionalProperties: false
       properties:
@@ -5544,26 +5401,6 @@ components:
       required:
         - enabled
       type: object
-    SetStudyItemReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SetStudyItemReq.json
-          format: uri
-          readOnly: true
-          type: string
-        fileId:
-          type: string
-        materialId:
-          type: string
-        state:
-          description: Omitted marks the item unread
-          enum:
-            - done
-            - removed
-          type: string
-      type: object
     ShareRedemption:
       additionalProperties: false
       properties:
@@ -6397,26 +6234,6 @@ components:
         - near_limit
         - full
       type: string
-    StudyItem:
-      additionalProperties: false
-      properties:
-        fileId:
-          type: string
-        materialId:
-          type: string
-        state:
-          enum:
-            - started
-            - done
-            - removed
-          type: string
-        updatedAt:
-          format: date-time
-          type: string
-      required:
-        - state
-        - updatedAt
-      type: object
     StudyPlan:
       additionalProperties: false
       properties:
@@ -6543,10 +6360,6 @@ components:
           type: string
         enabled:
           type: boolean
-        items:
-          items:
-            $ref: "#/components/schemas/StudyItem"
-          type: array
         quickReview:
           items:
             $ref: "#/components/schemas/ReviewItem"
@@ -6562,7 +6375,6 @@ components:
           $ref: "#/components/schemas/UnfinishedSession"
       required:
         - enabled
-        - items
         - recentAttempts
         - reviewable
         - quickReview
@@ -7633,6 +7445,35 @@ components:
         - capabilities
         - canClone
       type: object
+    WorkspaceActivity:
+      additionalProperties: false
+      properties:
+        actorAvatarUrl:
+          type: string
+        actorId:
+          type: string
+        actorName:
+          type: string
+        at:
+          format: date-time
+          type: string
+        fileId:
+          type: string
+        kind:
+          enum:
+            - uploaded
+            - added
+            - agent
+          type: string
+        materialId:
+          type: string
+        title:
+          type: string
+      required:
+        - kind
+        - title
+        - at
+      type: object
     WorkspaceAttemptsOutputBody:
       additionalProperties: false
       properties:
@@ -7661,6 +7502,29 @@ components:
       required:
         - userId
         - name
+      type: object
+    WorkspaceDashboard:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/WorkspaceDashboard.json
+          format: uri
+          readOnly: true
+          type: string
+        activity:
+          items:
+            $ref: "#/components/schemas/WorkspaceActivity"
+          type: array
+        members:
+          format: int64
+          type: integer
+        ownerName:
+          type: string
+      required:
+        - ownerName
+        - members
+        - activity
       type: object
     WorkspaceMember:
       additionalProperties: false
@@ -10093,40 +9957,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Every study plan of the user
-      tags:
-        - Study
-  /api/learning/progress:
-    get:
-      operationId: getLearningProgress
-      parameters:
-        - description: A listed workspace whose map to return instead of the most recently studied one
-          explode: false
-          in: query
-          name: lead
-          schema:
-            description: A listed workspace whose map to return instead of the most recently studied one
-            type: string
-        - description: Also list workspaces hiding study progress, marked hidden
-          explode: false
-          in: query
-          name: all
-          schema:
-            description: Also list workspaces hiding study progress, marked hidden
-            type: boolean
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LearningProgress"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: "Learning's Progress tab: workspaces in progress and finished, the leading one's items"
       tags:
         - Study
   /api/library/figures/{id}:
@@ -12692,6 +12522,31 @@ paths:
       summary: Put every archived conversation back in the list
       tags:
         - Chat
+  /api/workspaces/{id}/dashboard:
+    get:
+      operationId: getWorkspaceDashboard
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceDashboard"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "The workspace's Dashboard: its owner, member count and latest activity"
+      tags:
+        - Study
   /api/workspaces/{id}/files:
     get:
       operationId: listWorkspaceFiles
@@ -13352,33 +13207,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Show or hide study progress in a workspace
-      tags:
-        - Study
-  /api/workspaces/{id}/study/items:
-    put:
-      operationId: setStudyItem
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetStudyItemReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Mark a file or material read, unread or removed
       tags:
         - Study
   /api/workspaces/{id}/study/plans:

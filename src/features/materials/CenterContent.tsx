@@ -3,12 +3,7 @@ import {
   type QueryClient,
   useQueryClient,
 } from '@tanstack/react-query';
-import {
-  Link,
-  useNavigate,
-  useRouter,
-  useSearch,
-} from '@tanstack/react-router';
+import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
 import {
   type ComponentProps,
   lazy,
@@ -22,13 +17,7 @@ import {
   useState,
 } from 'react';
 import { isMaterialContentUnreadable, qk } from '@/api/client';
-import {
-  useFile,
-  useMaterial,
-  useMaterials,
-  useRecordOpen,
-  useWorkspaceRecent,
-} from '@/api/hooks';
+import { useFile, useMaterial, useMaterials, useRecordOpen } from '@/api/hooks';
 import type {
   Material,
   MaterialListItem,
@@ -39,7 +28,6 @@ import type {
   UserColor,
 } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
-import { PreviewCard } from '@/components/app/PreviewCard';
 import { TabContent } from '@/components/app/tabPanel';
 import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
 import { Button } from '@/components/ui/Button';
@@ -74,8 +62,6 @@ import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
-import { recentIcon, recentThumbnail } from '@/features/home/RecentItemsCard';
-import { mergeRecentItems, type RecentItem } from '@/features/home/recentItems';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
@@ -167,10 +153,7 @@ export function CenterContent({
   readOnly = false,
   color,
   onDeleted,
-  onAddFile,
   onModeChange,
-  onOpenSettings,
-  onOpenPractice,
   page,
   requestedMode = null,
   workspaceId,
@@ -179,10 +162,9 @@ export function CenterContent({
   oneColumn,
   standalone = false,
 }: {
-  /** Opens Study → Practice; a quick action when no file is open. */
-  onOpenPractice?: () => void;
-  /** A Study page shown under the header while no file is open (one
-   * column; from lg the workspace draws it without the header). */
+  /** The page shown under the header while no file is open: the
+   * workspace's Dashboard or a Study page (one column; from lg the
+   * workspace draws it without the header). */
   page?: ReactNode;
   /** Below lg: the title opens Files and ⋮ carries the workspace actions. */
   oneColumn?: OneColumnChrome;
@@ -198,10 +180,6 @@ export function CenterContent({
   onDeleted: () => void;
   requestedMode?: MaterialMode | null;
   onModeChange: (mode: MaterialMode) => void;
-  /** Opens the add file dialog; an empty workspace shows it as a card. */
-  onAddFile?: () => void;
-  /** Opens workspace settings; shown as a quick action when no file is open. */
-  onOpenSettings?: () => void;
   workspaceId: string;
 }) {
   const [fileHeader, setFileHeader] = useState<HTMLSpanElement | null>(null);
@@ -295,10 +273,7 @@ export function CenterContent({
     return (
       <EmptyCenter
         leading={leading}
-        onAddFile={onAddFile}
         oneColumn={oneColumn}
-        onOpenPractice={onOpenPractice}
-        onOpenSettings={onOpenSettings}
         page={page}
         trailing={trailing}
         workspaceId={standalone ? '' : workspaceId}
@@ -977,18 +952,12 @@ function EmptyCenter({
   leading,
   trailing,
   oneColumn,
-  onAddFile,
-  onOpenPractice,
-  onOpenSettings,
   page,
   workspaceId,
 }: {
   leading?: ReactNode;
   trailing?: ReactNode;
   oneColumn?: OneColumnChrome;
-  onAddFile?: () => void;
-  onOpenPractice?: () => void;
-  onOpenSettings?: () => void;
   page?: ReactNode;
   workspaceId: string;
 }) {
@@ -1060,161 +1029,19 @@ function EmptyCenter({
         page
       ) : (
         <div className="grid flex-1 place-items-center p-4 sm:p-6">
-          {workspaceId ? (
-            <RecentInWorkspace
-              actions={
-                <QuickActions
-                  onOpenPractice={onOpenPractice}
-                  onOpenSettings={onOpenSettings}
-                />
-              }
-              onAddFile={onAddFile}
-              workspaceId={workspaceId}
-            />
-          ) : (
-            <PickAFile />
-          )}
+          <PickAFile />
         </div>
       )}
     </>
   );
 }
 
-function PickAFile({ actions }: { actions?: ReactNode }) {
+function PickAFile() {
   return (
     <div className="flex flex-col items-center gap-3">
       <Icon className="non-scaling-svg size-8" name="files" />
       <p>{m.material_select()}</p>
-      {actions && <div className="mt-6">{actions}</div>}
     </div>
-  );
-}
-
-/** Workspace shortcuts under the recent files: as tall as a file tree row,
- * muted until hovered. */
-function QuickActions({
-  onOpenPractice,
-  onOpenSettings,
-}: {
-  onOpenPractice?: () => void;
-  onOpenSettings?: () => void;
-}) {
-  return (
-    <div className="flex flex-col items-start">
-      {onOpenSettings && (
-        <Button
-          className="h-8 px-3 text-xs"
-          iconLeft="settings"
-          onClick={onOpenSettings}
-          size="sm"
-          variant="ghost-muted"
-        >
-          {m.workspace_settings()}
-        </Button>
-      )}
-      {onOpenPractice && (
-        <Button
-          className="h-8 px-3 text-xs"
-          iconLeft="quiz"
-          onClick={onOpenPractice}
-          size="sm"
-          variant="ghost-muted"
-        >
-          {m.study_panel_practice()}
-        </Button>
-      )}
-    </div>
-  );
-}
-
-/** The workspace's four newest files and materials as cards for a quick
- * open. Blank while loading; an empty workspace gets a dashed add file card
- * instead, or the plain prompt when the viewer cannot add. */
-function RecentInWorkspace({
-  actions,
-  onAddFile,
-  workspaceId,
-}: {
-  actions: ReactNode;
-  onAddFile?: () => void;
-  workspaceId: string;
-}) {
-  const { data, isLoading } = useWorkspaceRecent(workspaceId);
-  if (isLoading) return null;
-  const items = mergeRecentItems(
-    data?.files ?? [],
-    data?.materials ?? [],
-    [],
-    4
-  );
-  if (!items.length && !onAddFile) return <PickAFile actions={actions} />;
-  const single = items.length <= 1;
-  return (
-    // Lifted by half the subtitle row so the grid, not the block, sits centred.
-    <div className="flex w-full max-w-[400px] -translate-y-4 flex-col gap-2.5">
-      <h3 className="t-subtitle px-1">{m.home_recent()}</h3>
-      <div
-        className={cn(
-          'grid gap-1',
-          // A lone card keeps its two-column width, centred.
-          single ? 'grid-cols-[calc(50%-2px)] justify-center' : 'grid-cols-2'
-        )}
-      >
-        {items.map((item) => (
-          <QuickOpenCard
-            item={item}
-            key={`${item.kind}-${item.id}`}
-            workspaceId={workspaceId}
-          />
-        ))}
-        {!items.length && onAddFile && <AddFileCard onClick={onAddFile} />}
-      </div>
-      <div className="mt-6">{actions}</div>
-    </div>
-  );
-}
-
-/** The empty workspace's only card: a dashed tile the size of a preview,
- * as the dashed new workspace card on Workspaces. */
-function AddFileCard({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      className="cursor-pointer rounded-[calc(var(--radius-tile)+1px)] p-1 outline-none focus-visible:ring-2 focus-visible:ring-action"
-      onClick={onClick}
-      type="button"
-    >
-      <span className="flex aspect-[16/10] flex-col items-center justify-center gap-2 rounded-[calc(var(--radius-tile)-1px)] text-fg-muted transition-colors hover:bg-surface-hover-bg">
-        <Icon name="plus" size={20} />
-        <span className="t-meta">{m.action_add_file()}</span>
-      </span>
-    </button>
-  );
-}
-
-/** A Recent Files card: the shared preview card as a link to the item. */
-function QuickOpenCard({
-  item,
-  workspaceId,
-}: {
-  item: RecentItem;
-  workspaceId: string;
-}) {
-  return (
-    <PreviewCard
-      asChild
-      icon={recentIcon(item)}
-      thumbnail={recentThumbnail(item)}
-      title={item.title}
-    >
-      <Link
-        params={{ workspaceId }}
-        preload="intent"
-        search={
-          item.kind === 'material' ? { material: item.id } : { file: item.id }
-        }
-        to="/workspaces/$workspaceId"
-      />
-    </PreviewCard>
   );
 }
 

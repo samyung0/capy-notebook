@@ -3,7 +3,6 @@ import { type MouseEventHandler, useState } from 'react';
 import type { SourceFile, Topic, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import type { StudyRow } from '@/features/study/studyItems';
 import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
@@ -18,7 +17,7 @@ import { fileCanClone, fileIsIngesting } from './fileUtils';
 
 /** A file row in the workspace Files panel (board T3). Opens the file in the
  * center pane, shows ingest progress, and exposes a hover action menu (rename /
- * properties / delete); progress marks stay on the Study page. */
+ * properties / delete). */
 export function FileListItem({
   file,
   active,
@@ -32,7 +31,6 @@ export function FileListItem({
   canMoveTo = false,
   retry,
   retryPending = false,
-  study,
   menu = true,
   indent = false,
 }: {
@@ -57,7 +55,6 @@ export function FileListItem({
   /** This file's Retry processing is still running (useRetryingFileIds). */
   retryPending?: boolean;
   /** The reader's own progress on this file, while progress is on. */
-  study?: StudyRow;
   /** The hover ⋮; touch lists (the top Files drawer) leave it out and act
    * from the open file's header instead. */
   menu?: boolean;
@@ -100,7 +97,6 @@ export function FileListItem({
           <span
             className={cn(
               'min-w-0 flex-1 translate-y-px truncate',
-              study?.state === 'removed' && 'text-fg-muted',
               failed && 'text-solid-error'
             )}
           >
@@ -138,7 +134,6 @@ export function FileListItem({
                           },
                         ]
                       : []),
-                    ...(study?.menuItems ?? []),
                   ]
             }
             onDeleted={() => onDeleted?.(file.id)}

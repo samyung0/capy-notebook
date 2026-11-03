@@ -3053,110 +3053,10 @@ export const ListLearningPlansResponse = zod.object({
   "seed": zod.string().max(listLearningPlansResponseWorkspacesItemCoverSeedMax).regex(listLearningPlansResponseWorkspacesItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
   "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
 }).optional(),
-  "hidden": zod.boolean(),
   "iconId": zod.string(),
-  "items": zod.array(zod.object({
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "doneAt": zod.iso.datetime({"offset":true}).optional(),
-  "id": zod.string(),
-  "kind": zod.string(),
-  "position": zod.int(),
-  "state": zod.enum(['started', 'done']).optional(),
-  "title": zod.string(),
-  "topicId": zod.string().nullable(),
-  "type": zod.enum(['file', 'material'])
-})),
   "name": zod.string(),
-  "topics": zod.array(zod.object({
-  "id": zod.string(),
-  "name": zod.string(),
-  "order": zod.int()
-})),
   "workspaceId": zod.string()
 }))
-})
-
-
-/**
- * @summary Learning's Progress tab: workspaces in progress and finished, the leading one's items
- */
-export const GetLearningProgressQueryParams = zod.object({
-  "lead": zod.string().optional().describe('A listed workspace whose map to return instead of the most recently studied one'),
-  "all": zod.boolean().optional().describe('Also list workspaces hiding study progress, marked hidden')
-})
-
-export const getLearningProgressResponseActiveItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
-export const getLearningProgressResponseActiveItemCoverLineMax = 40;
-
-export const getLearningProgressResponseActiveItemCoverSeedMax = 16;
-
-
-export const getLearningProgressResponseActiveItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
-export const getLearningProgressResponseFinishedItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
-export const getLearningProgressResponseFinishedItemCoverLineMax = 40;
-
-export const getLearningProgressResponseFinishedItemCoverSeedMax = 16;
-
-
-export const getLearningProgressResponseFinishedItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
-
-
-export const GetLearningProgressResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "active": zod.array(zod.object({
-  "cover": zod.object({
-  "color": zod.string().regex(getLearningProgressResponseActiveItemCoverColorRegExp),
-  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
-  "line": zod.string().max(getLearningProgressResponseActiveItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
-  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
-  "seed": zod.string().max(getLearningProgressResponseActiveItemCoverSeedMax).regex(getLearningProgressResponseActiveItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
-  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
-}).optional(),
-  "done": zod.int(),
-  "hidden": zod.boolean().optional(),
-  "iconId": zod.string(),
-  "lastStudiedAt": zod.iso.datetime({"offset":true}),
-  "name": zod.string(),
-  "total": zod.int(),
-  "workspaceId": zod.string()
-})),
-  "finished": zod.array(zod.object({
-  "cover": zod.object({
-  "color": zod.string().regex(getLearningProgressResponseFinishedItemCoverColorRegExp),
-  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
-  "line": zod.string().max(getLearningProgressResponseFinishedItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
-  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
-  "seed": zod.string().max(getLearningProgressResponseFinishedItemCoverSeedMax).regex(getLearningProgressResponseFinishedItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
-  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
-}).optional(),
-  "done": zod.int(),
-  "hidden": zod.boolean().optional(),
-  "iconId": zod.string(),
-  "lastStudiedAt": zod.iso.datetime({"offset":true}),
-  "name": zod.string(),
-  "total": zod.int(),
-  "workspaceId": zod.string()
-})),
-  "hiddenCount": zod.int(),
-  "lead": zod.object({
-  "items": zod.array(zod.object({
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "doneAt": zod.iso.datetime({"offset":true}).optional(),
-  "id": zod.string(),
-  "kind": zod.string(),
-  "position": zod.int(),
-  "state": zod.enum(['started', 'done']).optional(),
-  "title": zod.string(),
-  "topicId": zod.string().nullable(),
-  "type": zod.enum(['file', 'material'])
-})),
-  "topics": zod.array(zod.object({
-  "id": zod.string(),
-  "name": zod.string(),
-  "order": zod.int()
-})),
-  "workspaceId": zod.string()
-}).optional()
 })
 
 
@@ -7035,6 +6935,30 @@ export const UnarchiveConversationsResponse = zod.void()
 
 
 /**
+ * @summary The workspace's Dashboard: its owner, member count and latest activity
+ */
+export const GetWorkspaceDashboardParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetWorkspaceDashboardResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "activity": zod.array(zod.object({
+  "actorAvatarUrl": zod.string().optional(),
+  "actorId": zod.string().optional(),
+  "actorName": zod.string().optional(),
+  "at": zod.iso.datetime({"offset":true}),
+  "fileId": zod.string().optional(),
+  "kind": zod.enum(['uploaded', 'added', 'agent']),
+  "materialId": zod.string().optional(),
+  "title": zod.string()
+})),
+  "members": zod.int(),
+  "ownerName": zod.string()
+})
+
+
+/**
  * @summary List workspace files
  */
 export const ListWorkspaceFilesParams = zod.object({
@@ -8002,12 +7926,6 @@ export const GetWorkspaceStudyQueryParams = zod.object({
 export const GetWorkspaceStudyResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "enabled": zod.boolean(),
-  "items": zod.array(zod.object({
-  "fileId": zod.string().optional(),
-  "materialId": zod.string().optional(),
-  "state": zod.enum(['started', 'done', 'removed']),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})),
   "quickReview": zod.array(zod.object({
   "back": zod.string().optional(),
   "front": zod.string().optional(),
@@ -8098,22 +8016,6 @@ export const SetWorkspaceStudyResponse = zod.void()
 
 
 /**
- * @summary Mark a file or material read, unread or removed
- */
-export const SetStudyItemParams = zod.object({
-  "id": zod.string()
-})
-
-export const SetStudyItemBody = zod.object({
-  "fileId": zod.string().optional(),
-  "materialId": zod.string().optional(),
-  "state": zod.enum(['done', 'removed']).optional().describe('Omitted marks the item unread')
-})
-
-export const SetStudyItemResponse = zod.void()
-
-
-/**
  * @summary Plans kept in a workspace, then plans elsewhere with a step in it
  */
 export const ListWorkspacePlansParams = zod.object({
@@ -8155,25 +8057,8 @@ export const ListWorkspacePlansResponse = zod.object({
   "seed": zod.string().max(listWorkspacePlansResponseWorkspacesItemCoverSeedMax).regex(listWorkspacePlansResponseWorkspacesItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
   "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
 }).optional(),
-  "hidden": zod.boolean(),
   "iconId": zod.string(),
-  "items": zod.array(zod.object({
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "doneAt": zod.iso.datetime({"offset":true}).optional(),
-  "id": zod.string(),
-  "kind": zod.string(),
-  "position": zod.int(),
-  "state": zod.enum(['started', 'done']).optional(),
-  "title": zod.string(),
-  "topicId": zod.string().nullable(),
-  "type": zod.enum(['file', 'material'])
-})),
   "name": zod.string(),
-  "topics": zod.array(zod.object({
-  "id": zod.string(),
-  "name": zod.string(),
-  "order": zod.int()
-})),
   "workspaceId": zod.string()
 }))
 })

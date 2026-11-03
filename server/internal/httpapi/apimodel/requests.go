@@ -567,13 +567,6 @@ type UpdateStudyPlanReq struct {
 	Steps *[]store.PlanStepInput `json:"steps,omitempty" maxItems:"200"`
 }
 
-// SetStudyItemReq marks one file or material; an omitted state marks it unread.
-type SetStudyItemReq struct {
-	FileID     *string `json:"fileId,omitempty"`
-	MaterialID *string `json:"materialId,omitempty"`
-	State      *string `json:"state,omitempty" enum:"done,removed" doc:"Omitted marks the item unread"`
-}
-
 // RateReviewItemReq rates a flashcard (rating) or a question answered in
 // review (score).
 type RateReviewItemReq struct {

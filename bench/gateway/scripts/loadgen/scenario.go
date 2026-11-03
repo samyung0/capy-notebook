@@ -74,7 +74,6 @@ func (u *user) shell(ctx context.Context) {
 			_ = u.get(ctx, "/api/notifications/unread-count", "/api/notifications/unread-count", false, nil)
 		},
 		func() { _ = u.get(ctx, "/api/bank/progress", "/api/bank/progress", false, nil) },
-		func() { _ = u.get(ctx, "/api/learning/progress", "/api/learning/progress", false, nil) },
 	)
 }
 
@@ -255,7 +254,7 @@ func (u *user) takeQuiz(ctx context.Context, sp *space) {
 	per := 60 * time.Second / time.Duration(max(1, len(quiz.Questions)))
 	if quiz.check(ctx, u, id, started, func() { u.think(ctx, per) }) == nil {
 		all(
-			func() { _ = u.get(ctx, "/api/learning/progress", "/api/learning/progress", true, nil) },
+			func() { _ = u.get(ctx, "/api/workspaces/"+sp.id+"/practice", "/api/workspaces/{id}/practice", true, nil) },
 			func() { _ = u.get(ctx, "/api/workspaces/"+sp.id+"/study", "/api/workspaces/{id}/study", true, nil) },
 		)
 	}
@@ -285,11 +284,9 @@ func (u *user) studyCards(ctx context.Context, sp *space) {
 		if ctx.Err() != nil {
 			return
 		}
-		if u.call(ctx, http.MethodPost, "/api/review/ratings", "/api/review/ratings", map[string]any{
+		_ = u.call(ctx, http.MethodPost, "/api/review/ratings", "/api/review/ratings", map[string]any{
 			"itemId": card.ID, "materialId": id, "rating": 1 + u.rng.IntN(4), "attempt": attempt,
-		}, nil, http.StatusNoContent) == nil {
-			_ = u.get(ctx, "/api/learning/progress", "/api/learning/progress", true, nil)
-		}
+		}, nil, http.StatusNoContent)
 	}
 	u.think(ctx, 10*time.Second)
 }
@@ -301,7 +298,6 @@ func (u *user) learning(ctx context.Context, sp *space) {
 	u.openStream(ctx, "")
 	all(
 		func() { _ = u.get(ctx, "/api/attempts?limit=30", "/api/attempts p1", false, nil) },
-		func() { _ = u.get(ctx, "/api/learning/progress", "/api/learning/progress", false, nil) },
 		func() { _ = u.get(ctx, "/api/review/overview", "/api/review/overview", false, nil) },
 		func() { _ = u.get(ctx, "/api/learning/plans", "/api/learning/plans", false, nil) },
 	)

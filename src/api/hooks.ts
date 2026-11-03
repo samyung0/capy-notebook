@@ -83,7 +83,6 @@ import type {
   IntegrationsStatus,
   InvoiceList,
   Label,
-  LearningProgress,
   LibraryFigure,
   Material,
   MaterialCollaborationToken,
@@ -120,7 +119,6 @@ import type {
   ReviewStart,
   SearchResult,
   SetModelPrefsReq,
-  SetStudyItemReq,
   SourceFile,
   SourceUploadPolicy,
   SpendingLimitReq,
@@ -159,6 +157,7 @@ import type {
   WireMessage,
   Workspace,
   WorkspaceCollaborator,
+  WorkspaceDashboard,
   WorkspaceMember,
   WorkspaceRecent,
   WorkspaceStats,
@@ -1278,6 +1277,14 @@ export const useFiles = (wsId: string, options?: QueryUiOptions) =>
 
 /** The empty viewer's quick-open grid: the workspace's four newest files and
  * materials with thumbnails and previews, for members and link readers alike. */
+/** The workspace Dashboard's header and Activity (boards H1, H2). */
+export const useWorkspaceDashboard = (wsId: string) =>
+  useQuery({
+    meta: queryMeta({ errorBoundary: false }),
+    queryFn: () => api.get<WorkspaceDashboard>(`/workspaces/${wsId}/dashboard`),
+    queryKey: qk.workspaceDashboard(wsId),
+  });
+
 export const useWorkspaceRecent = (wsId: string) =>
   useQuery({
     meta: queryMeta({ errorBoundary: false }),
@@ -2832,7 +2839,8 @@ export const workspaceStudyQuery = (workspaceId: string) =>
     queryFn: () => api.get<StudySummary>(`/workspaces/${workspaceId}/study`),
     queryKey: qk.study(workspaceId),
   });
-/** The requester's own progress in a workspace: marks, Study tab, Continue. */
+/** The requester's own progress in a workspace; Workspace settings → Study
+ * reads `enabled` (Hide study progress). */
 export const useWorkspaceStudy = (
   workspaceId: string,
   options?: QueryUiOptions
@@ -2849,7 +2857,7 @@ export const practiceQuery = (workspaceId: string) =>
 export const usePractice = (workspaceId: string, options?: QueryUiOptions) =>
   useQuery({ ...practiceQuery(workspaceId), meta: queryMeta(options) });
 
-/** Refreshes Practice, marks, review and Learning after practice in
+/** Refreshes Practice, review and Learning after practice in
  * `workspaceId`, or in every workspace when the caller does not know which. */
 export function invalidateStudy(
   qc: ReturnType<typeof useQueryClient>,
@@ -2867,43 +2875,6 @@ export function invalidateStudy(
     qc.invalidateQueries({ queryKey: qk.reviewRoot }),
     qc.invalidateQueries({ queryKey: qk.learningRoot }),
   ]);
-}
-
-/** Mark as read (done), Stop tracking (removed), or untouched again (null). */
-export function useSetStudyItem(workspaceId: string) {
-  const qc = useQueryClient();
-  return useMutation<void, Error, SetStudyItemReq, { prev?: StudySummary }>({
-    mutationFn: (body) =>
-      api.put<void>(`/workspaces/${workspaceId}/study/items`, body),
-    mutationKey: qk.study(workspaceId),
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(qk.study(workspaceId), ctx.prev);
-    },
-    // The read toggle and row marks flip at once; the refetch settles it.
-    onMutate: async ({ fileId, materialId, state }) => {
-      await qc.cancelQueries({ queryKey: qk.study(workspaceId) });
-      const prev = qc.getQueryData<StudySummary>(qk.study(workspaceId));
-      qc.setQueryData<StudySummary>(qk.study(workspaceId), (summary) => {
-        if (!summary) return summary;
-        const items = summary.items.filter((it) =>
-          fileId ? it.fileId !== fileId : it.materialId !== materialId
-        );
-        if (state)
-          items.push({
-            fileId,
-            materialId,
-            state,
-            updatedAt: new Date().toISOString(),
-          });
-        return { ...summary, items };
-      });
-      return { prev };
-    },
-    onSettled: () =>
-      refetchIfLast(qc, qk.study(workspaceId), () =>
-        invalidateStudy(qc, workspaceId)
-      ),
-  });
 }
 
 export function useSetWorkspaceStudyEnabled(workspaceId: string) {
@@ -3009,29 +2980,6 @@ export const pastReviewsQuery = (params: PastReviewParams = {}) => ({
 export const usePastReviews = (params: PastReviewParams = {}) =>
   useInfiniteQuery({
     ...pastReviewsQuery(params),
-    placeholderData: keepPreviousData,
-  });
-
-/** Learning → Progress: workspaces in progress and finished, the leading
- * one's items; `lead` asks for that listed workspace's map instead. */
-export const learningProgressQuery = (lead?: string, all = false) =>
-  queryOptions({
-    ...persisted,
-    queryFn: () =>
-      api.get<LearningProgress>(
-        `/learning/progress${listSearch({ all: all ? 'true' : undefined, lead }, '')}`
-      ),
-    queryKey: [...qk.learningProgress, lead ?? null, all],
-  });
-/** `all` (Show all) also lists workspaces hiding study progress. */
-export const useLearningProgress = (
-  lead?: string,
-  all = false,
-  options?: QueryUiOptions
-) =>
-  useQuery({
-    ...learningProgressQuery(lead, all),
-    meta: queryMeta(options),
     placeholderData: keepPreviousData,
   });
 

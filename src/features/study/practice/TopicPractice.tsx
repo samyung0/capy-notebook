@@ -184,21 +184,21 @@ export function TopicPractice({
     <>
       {behind}
       <Dialog onOpenChange={(open) => !open && onClose()} open>
+        {/* The title stays the content's first child: phones make it the
+            sticky header row and drop the content's top padding for it. */}
         <DialogContent
           aria-describedby={undefined}
-          cardScrollContainerClassName="px-0 sm:px-0 pb-0 sm:pb-0"
+          cardScrollContainerClassName="sm:px-7 sm:pb-0"
           className="sm:max-w-[790px]"
         >
-          <div className="px-4 sm:px-7">
-            <DialogTitle action={startButton} className="pb-0">
-              {title}
-            </DialogTitle>
-            {running && count > 0 && (
-              <p className="t-meta mt-0.5 font-semibold text-fg-muted">
-                {`${questionsLabel(count)} · ${minutesLabel(count)}`}
-              </p>
-            )}
-          </div>
+          <DialogTitle action={startButton} className="pb-0">
+            {title}
+          </DialogTitle>
+          {running && count > 0 && (
+            <p className="t-meta mt-0.5 font-semibold text-fg-muted">
+              {`${questionsLabel(count)} · ${minutesLabel(count)}`}
+            </p>
+          )}
           {isError ? (
             <ErrorState
               action={
@@ -213,11 +213,11 @@ export function TopicPractice({
             />
           ) : running ? (
             count === 0 ? (
-              <p className="t-meta my-8 px-4 text-fg-muted sm:px-7">
+              <p className="t-meta my-8 text-fg-muted">
                 {m.practice_nothing()}
               </p>
             ) : (
-              <ol className="mt-4.5 px-4 sm:px-7">
+              <ol className="mt-4.5">
                 {running.items.map((item, i) => (
                   <li
                     className="flex h-9.5 items-center gap-3 border-divider border-b last:border-b-0"
@@ -238,9 +238,9 @@ export function TopicPractice({
               </ol>
             )
           ) : (
-            <SkeletonList className="mt-4.5 px-7" count={6} rowHeight={38} />
+            <SkeletonList className="mt-4.5" count={6} rowHeight={38} />
           )}
-          <DialogFooter className="mx-0 mt-2.5 border-divider border-t px-5 py-4 max-sm:hidden sm:pl-7">
+          <DialogFooter className="mt-2.5 border-divider border-t max-sm:hidden sm:-mx-7 sm:mb-0 sm:py-4 sm:pr-5 sm:pl-7">
             {startButton}
           </DialogFooter>
         </DialogContent>

@@ -32,6 +32,18 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   `nav_home`, the house icon) is **Home**; a workspace's front page, its
   landing with no file open, is its **Dashboard**. "Home" always means the
   app's own home.
+- **Dashboard (Epo 2026-11-03, boards H1 owner, H2 member, H3):**
+  `WorkspaceDashboard.tsx`, the centre with nothing open (from lg without a
+  file header; one column keeps it). The workspace's name with "owner · N
+  members", Upload and a disabled "Make a quiz from a file" ("Coming soon")
+  for those who may add; **Recent files**, the newest four as bordered
+  preview cards with the name under each (`PreviewCard bordered`); and
+  **Activity**, the five newest uploads and added materials with who and
+  when, the agent's own rows under the AI icon
+  (`GET /api/workspaces/{id}/dashboard`, see
+  [study-progress.md](../study-progress.md#endpoints)). An empty section does
+  not show, so To do (assignments, not built) never does yet. The old
+  landing's Add file, Quick open, Workspace settings and Practice cards went.
 
 ## Workspace rail
 
@@ -138,11 +150,15 @@ strength, frosted }`:
 - **Frosted:** which panels frost over the frame, any of Left, Centre and
   Right (a toggle row under Strength). Left is the default; an empty list
   frosts none. A frame stored before the field existed takes the default.
-- **Default:** a device with no stored frame draws Arc in Mist with the left
-  panel frosted. A frame the user stored or synced, None included, wins.
-  The pre-paint scripts only copy a stored frame; `ThemeProvider` applies
-  the frame in a layout effect, so a brand new device still shows it with
-  the shell's first paint.
+- **Default (Epo, 2026-11-03):** None. It lives in one place,
+  `DEFAULT_PAGE_FRAME` in `pageFrame.ts`, which also stands in for any
+  invalid stored field. A device with no stored frame, and an account that
+  never synced (`users.customization` NULL; the server keeps no default of
+  its own), shows the page colour with opaque panels. Picking a pattern
+  from there starts on Mist with the left panel frosted. A frame the user
+  stored or synced wins. The pre-paint scripts only copy a stored frame's
+  paint (`capy.pageFrameCss`), so with nothing stored they paint nothing,
+  which is the default.
 - **Shuffle** (right of Sync) moves every dot and Strength to random values,
   as custom colours.
 

@@ -362,8 +362,7 @@ export const qk = {
   invoices: ['billing', 'invoices'] as const,
   labels: ['labels'] as const,
   learningPlans: ['learning', 'plans'] as const,
-  learningProgress: ['learning', 'progress'] as const,
-  /** Everything under Learning: progress and plans. */
+  /** Everything under Learning: its plans. */
   learningRoot: ['learning'] as const,
   libraryFigure: (id: string) => ['library-figure', id] as const,
   material: (id: string) => ['material', id] as const,
@@ -406,6 +405,10 @@ export const qk = {
   workspace: (id: string) => ['workspace', id] as const,
   workspaceCollaborators: (id: string) =>
     ['workspace', id, 'collaborators'] as const,
+  /** The Dashboard's owner, members and Activity; under `files` like
+   * Recent files, so a file list invalidation refetches it too. */
+  workspaceDashboard: (wsId: string) =>
+    ['workspace', wsId, 'files', 'dashboard'] as const,
   workspaceInvites: (id: string) => ['workspace', id, 'invites'] as const,
   workspaceMembers: (id: string) => ['workspace', id, 'members'] as const,
   workspaceReview: (wsId: string, params?: unknown) =>

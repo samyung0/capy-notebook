@@ -32,6 +32,9 @@ type reviewOverviewOutput struct {
 type practiceOutput struct {
 	Body store.Practice
 }
+type workspaceDashboardOutput struct {
+	Body store.WorkspaceDashboard
+}
 type workspaceReviewInput struct {
 	ID      string `path:"id"`
 	Group   string `query:"group" enum:"topic,others,workspace,plan" default:"workspace"`
@@ -61,9 +64,6 @@ type pastReviewsOutput struct {
 		More  bool               `json:"more"`
 	}
 }
-type learningProgressOutput struct {
-	Body store.LearningProgress
-}
 type studyPlansOutput struct {
 	Body store.StudyPlans
 }
@@ -84,10 +84,6 @@ type updateStudyPlanInput struct {
 type studyEnabledInput struct {
 	ID   string `path:"id"`
 	Body apimodel.SetStudyEnabledReq
-}
-type studyItemInput struct {
-	ID   string `path:"id"`
-	Body apimodel.SetStudyItemReq
 }
 type reviewRatingInput struct {
 	Body apimodel.RateReviewItemReq
@@ -112,8 +108,8 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodPatch, "/api/study/plans/{id}", "updateStudyPlan", tag, "Rename a study plan or replace its steps", http.StatusNoContent, a.updateStudyPlan)
 	reg(api, http.MethodDelete, "/api/study/plans/{id}", "deleteStudyPlan", tag, "Delete a study plan", http.StatusNoContent, a.deleteStudyPlan)
 	reg(api, http.MethodGet, "/api/learning/plans", "listLearningPlans", tag, "Every study plan of the user", http.StatusOK, a.listLearningPlans)
-	reg(api, http.MethodPut, "/api/workspaces/{id}/study/items", "setStudyItem", tag, "Mark a file or material read, unread or removed", http.StatusNoContent, a.setStudyItem)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/study/reset", "resetWorkspaceStudy", tag, "Clear study progress in a workspace", http.StatusNoContent, a.resetWorkspaceStudy)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/dashboard", "getWorkspaceDashboard", tag, "The workspace's Dashboard: its owner, member count and latest activity", http.StatusOK, a.getWorkspaceDashboard)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/practice", "getWorkspacePractice", tag, "The workspace's Practice page: suggestions, quizzes and the caller's topic reviews", http.StatusOK, a.getWorkspacePractice)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/review", "getWorkspaceReview", tag, "A new review session: a suggestion's items, or the whole workspace's", http.StatusOK, a.getWorkspaceReview)
 	reg(api, http.MethodGet, "/api/review/sessions/{id}", "resumeReviewSession", tag, "An unfinished review session's items still to answer", http.StatusOK, a.resumeReviewSession)
@@ -123,7 +119,6 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodPost, "/api/review/ratings", "rateReviewItem", tag, "Record a flashcard's review rating", http.StatusNoContent, a.rateReviewItem)
 	regWithMaxBody(api, http.MethodPost, "/api/review/check", "checkReviewItem", tag, "Grade and rate one question of a review session", http.StatusOK, answersMaxBytes, a.checkReviewItem)
 	reg(api, http.MethodGet, "/api/review/overview", "getReviewOverview", tag, "Learning's Review tab: suggested reviews, sessions to continue, every workspace", http.StatusOK, a.getReviewOverview)
-	reg(api, http.MethodGet, "/api/learning/progress", "getLearningProgress", tag, "Learning's Progress tab: workspaces in progress and finished, the leading one's items", http.StatusOK, a.getLearningProgress)
 	reg(api, http.MethodPatch, "/api/me/study-preferences", "setStudyPreferences", tag, "Save study preferences", http.StatusNoContent, a.setStudyPreferences)
 }
 
@@ -179,25 +174,25 @@ func (a *api) setWorkspaceStudy(ctx context.Context, in *studyEnabledInput) (*Em
 	return &Empty{}, hErr(a.s.SetWorkspaceStudy(ctx, userID(ctx), in.ID, in.Body.Enabled))
 }
 
-func (a *api) setStudyItem(ctx context.Context, in *studyItemInput) (*Empty, error) {
-	if (in.Body.FileID == nil) == (in.Body.MaterialID == nil) {
-		return nil, huma.Error422UnprocessableEntity("send exactly one of fileId and materialId")
-	}
-	if err := a.requireStudyWrite(ctx, in.ID); err != nil {
-		return nil, err
-	}
-	err := a.s.SetStudyItem(ctx, userID(ctx), in.ID, in.Body.FileID, in.Body.MaterialID, in.Body.State)
-	if errors.Is(err, store.ErrStudyTarget) {
-		return nil, huma.Error404NotFound(err.Error())
-	}
-	return &Empty{}, hErr(err)
-}
-
 func (a *api) resetWorkspaceStudy(ctx context.Context, in *workspaceIDInput) (*Empty, error) {
 	if err := a.requireStudyWrite(ctx, in.ID); err != nil {
 		return nil, err
 	}
 	return &Empty{}, hErr(a.s.ResetStudy(ctx, userID(ctx), in.ID))
+}
+
+// getWorkspaceDashboard is any reader's Dashboard header and Activity: files
+// and materials every reader of the workspace can already list, with who
+// added them.
+func (a *api) getWorkspaceDashboard(ctx context.Context, in *workspaceIDInput) (*workspaceDashboardOutput, error) {
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.WorkspaceDashboard(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &workspaceDashboardOutput{Body: res}, nil
 }
 
 // getWorkspacePractice is any reader's Practice page; owner and editor
@@ -378,19 +373,6 @@ func (a *api) sessionAnswer(ctx context.Context, ref *apimodel.ReviewSessionRef)
 	}
 	out.Plan = &plan
 	return out, nil
-}
-
-type learningProgressInput struct {
-	Lead string `query:"lead" doc:"A listed workspace whose map to return instead of the most recently studied one"`
-	All  bool   `query:"all" doc:"Also list workspaces hiding study progress, marked hidden"`
-}
-
-func (a *api) getLearningProgress(ctx context.Context, in *learningProgressInput) (*learningProgressOutput, error) {
-	res, err := a.s.LearningProgress(ctx, userID(ctx), in.Lead, in.All)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &learningProgressOutput{Body: res}, nil
 }
 
 func (a *api) listWorkspacePlans(ctx context.Context, in *workspaceIDInput) (*studyPlansOutput, error) {

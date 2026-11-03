@@ -28,16 +28,10 @@ test('the title opens Files from the top and ⋮ carries the workspace actions',
   const header = page.getByTestId('content-header');
   const title = header.getByRole('button', { name: TITLE });
   await expect(title).toBeVisible({ timeout: 60_000 });
-  // Phones keep the header to the title, view/edit and ⋮.
-  await expect(
-    header.getByRole('button', { name: m.study_mark_read() })
-  ).toHaveCount(0);
-
   await header.getByRole('button', { name: m.a11y_open_menu() }).click();
   for (const item of [
     m.action_add_file(),
     m.action_add_topic(),
-    m.study_mark_read(),
     m.workspace_settings(),
   ])
     await expect(page.getByRole('menuitem', { name: item })).toBeVisible();

@@ -979,15 +979,15 @@ type reviewableWorkspace struct {
 	lastReviewed     *time.Time
 }
 
-// reviewableWorkspaces are the workspaces the user tracks progress in, can
-// still read and has progress on, by name.
+// reviewableWorkspaces are the workspaces the user can still read and has
+// progress on (a checked quiz or rated set), by name.
 func (s *Store) reviewableWorkspaces(ctx context.Context, userID string) ([]reviewableWorkspace, error) {
 	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id,
 			(SELECT max(sp.updated_at) FROM study_progress sp
-				WHERE sp.user_id=$1 AND sp.workspace_id=w.id AND sp.state <> 'removed'),
+				WHERE sp.user_id=$1 AND sp.workspace_id=w.id),
 			(SELECT max(rs.last_answer_at) FROM review_sessions rs WHERE rs.user_id=$1 AND rs.workspace_id=w.id)
 		FROM workspaces w
-		WHERE EXISTS (SELECT 1 FROM study_progress sp WHERE sp.user_id=$1 AND sp.workspace_id=w.id AND sp.state <> 'removed')
+		WHERE EXISTS (SELECT 1 FROM study_progress sp WHERE sp.user_id=$1 AND sp.workspace_id=w.id)
 		ORDER BY w.name, w.id`, userID)
 	if err != nil {
 		return nil, err
@@ -1051,7 +1051,7 @@ func (s *Store) ReviewOverview(ctx context.Context, userID string, now time.Time
 		pools[ws.id] = items
 		can := len(items) > 0
 		if !can {
-			if can, err = s.hasQuizzes(ctx, userID, ws.id, prefs.kinds(), nil); err != nil {
+			if can, err = s.hasQuizzes(ctx, ws.id, prefs.kinds(), nil); err != nil {
 				return out, err
 			}
 		}
@@ -1170,7 +1170,7 @@ func (s *Store) reviewPlans(ctx context.Context, userID string, prefs ReviewPref
 				break
 			}
 			if steps := scope.materials(ws); len(steps) > 0 {
-				if p.CanReview, err = s.hasQuizzes(ctx, userID, ws, prefs.kinds(), steps); err != nil {
+				if p.CanReview, err = s.hasQuizzes(ctx, ws, prefs.kinds(), steps); err != nil {
 					return nil, err
 				}
 			}
@@ -1180,15 +1180,13 @@ func (s *Store) reviewPlans(ctx context.Context, userID string, prefs ReviewPref
 	return out, nil
 }
 
-// hasQuizzes reports whether the workspace holds a quiz or set of kinds the
-// user still tracks, among only (a plan's material steps) when it is not nil.
-func (s *Store) hasQuizzes(ctx context.Context, userID, wsID string, kinds, only []string) (bool, error) {
+// hasQuizzes reports whether the workspace holds a quiz or set of kinds,
+// among only (a plan's material steps) when it is not nil.
+func (s *Store) hasQuizzes(ctx context.Context, wsID string, kinds, only []string) (bool, error) {
 	var ok bool
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM materials m
-		WHERE m.workspace_id=$2 AND m.kind = ANY($3) AND m.trashed_at IS NULL
-			AND m.parent_material_id IS NULL AND ($4::text[] IS NULL OR m.id = ANY($4))
-			AND NOT EXISTS (SELECT 1 FROM study_progress sp
-				WHERE sp.user_id=$1 AND sp.material_id=m.id AND sp.state='removed'))`, userID, wsID, kinds, only).Scan(&ok)
+		WHERE m.workspace_id=$1 AND m.kind = ANY($2) AND m.trashed_at IS NULL
+			AND m.parent_material_id IS NULL AND ($3::text[] IS NULL OR m.id = ANY($3)))`, wsID, kinds, only).Scan(&ok)
 	return ok, err
 }
 
