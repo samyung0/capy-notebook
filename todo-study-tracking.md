@@ -122,10 +122,10 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - **Many columns:** gradebooks pin the student and total columns and scroll the rest sideways, filtered by grading period (Canvas, Classroom, Moodle).
 
 **Workspace shell (Epo, 2026-11-02): S2 from the canvas mocks.** The labelled icon rail is picked over a single sidebar.
-- **Rail:** the workspace badge, then Home, Files, Agent and Study, each icon with its label below. Your avatar sits at the bottom.
+- **Rail:** the workspace badge, then Dashboard, Files, Agent and Study, each icon with its label below. Your avatar sits at the bottom.
 - **Panel:** beside the rail, it lists the current section's own pages.
   - Study lists Members, Assignments, Topics and My results for owners, and My results, Assignments and Topics for members. These replace the tabs.
-  - Files shows the folder tree, and Agent the chats. Home has no panel.
+  - Files shows the folder tree, and Agent the chats. Dashboard has no panel.
 - **The rail stays on every workspace page (Epo, 2026-11-02),** focused pages included: page picking, the quiz editor, the report, grading, the timed assignment, Submitted and topic practice. Dialogs open over a page that still shows it.
 - **The Study panel stays open too (Epo, 2026-11-03).** Opening an assignment, its report, its open answers, the timed assignment, Submitted, results or a topic session keeps Members/Assignments/Topics/My results beside the page, with the matching item highlighted.
 - **Every screen links to the next one in its flow (Epo, 2026-11-03).**
@@ -134,7 +134,8 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
   - My results gives each Needs practice topic a **Practise** button, which opens the topic session.
   - My results shows the same topic labels the owner sees on the member's profile.
 - **Getting back to the app (Epo, 2026-11-02): N1.**
-  - A Dashboard item with a back arrow sits at the top of the rail on every workspace page.
+  - A Home item with a back arrow sits at the top of the rail on every workspace page.
+- **Names (Epo, 2026-11-03):** the app's front page is **Home** (it was Dashboard: sidebar item, `/`, `nav_dashboard`), and a workspace's front page is **Dashboard** (it was Home), with Hugeicons' `DashboardSquare01Icon` in the rail. "Home" now always means the app's own home.
   - Top-level navigation is never hidden in a menu (Epo: "do not hide top level navigation inside some random popups"). The workspace badge only shows which workspace you are in.
   - Others: Canvas LMS keeps its global rail visible beside the course sidebar; Teams has an app bar. Capy today: a back arrow in the file header goes to Workspaces.
 
@@ -149,13 +150,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Two words.**
   - **Assignment:** quiz work the owner sets, with a due date, an optional time limit and set attempts. AI marks wait for the owner's approval unless that is switched off. It counts in Overall.
   - **Practice:** any quiz done any time, marked at once, not counted. **No time limit (Epo, 2026-11-03),** as quizzes work today; a topic session shows only an estimate ("about 12 minutes"). Only assignments have time limits.
-  - **Icons (Epo, 2026-11-03):** practice keeps the quiz's Catppuccin bolt (`stackblitz`, blue). An assignment gets a book and quill. Catppuccin has no quill, so we draw it in the set's style: 16px grid, 1px round strokes, a teal book and a yellow quill (colours no other material icon uses). The icon shows on assignment chips in Tasks and in activity rows.
-    ```svg
-    <symbol id="assignment" viewBox="0 0 16 16"><g fill="none" stroke-linecap="round" stroke-linejoin="round">
-      <path stroke="var(--ctp-teal)" d="M1.5 5.5a1 1 0 0 1 1-1h7v11h-7a1 1 0 0 1-1-1zM3.5 4.5v11M9.5 15.5h1a1 1 0 0 0 1-1v-3"/>
-      <path stroke="var(--ctp-yellow)" d="M9.5 11.5 15 .5M15 .5c-2.5 1-4 3-4.3 6.2l1.8.6C14.2 5.8 15 3.5 15 .5z"/>
-    </g></symbol>
-    ```
+  - **Icons (Epo, 2026-11-03):** practice keeps the quiz's Catppuccin bolt (`stackblitz`, blue). An assignment uses Hugeicons' `QuillWrite01Icon` (the app's UI icon set), tinted Catppuccin teal where file icons are coloured. It shows on assignment chips in Tasks and in activity rows.
   - "Test" and "Homework" are no longer kinds. A timed assignment is still an assignment. Categories with weights can come later if owners ask (Classroom, Canvas, Teams).
 - **What each Study tab shows:**
 
@@ -175,7 +170,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   6. joining, shared pages and phones.
 - The full gradebook (G1c, grouped like Canvas assignment groups) is kept under "Earlier versions". It could return inside the Assignments tab if owners ask for it.
 
-**Workspace Home (Epo, 2026-11-02): a Tasks table, then Recent files and Activity.**
+**Workspace Dashboard (was Home; Epo, 2026-11-02): a Tasks table, then Recent files and Activity.**
 - **Tasks** is the plan task list Epo described earlier: one line per task, with @ chips linking files and quizzes (`todo-canvas-workspace.md` §4.3).
   - Shown as a table: Task, Due, and either members done (owner) or a tick (member).
   - An assignment appears as a task and ticks itself on submit. Other tasks are ticked by hand, by each member for themselves.
@@ -296,7 +291,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 **Suggestion (MVP; later items in R4 §2):**
 - **No exam kind.** "Before you start" appears only because an assignment has a time limit: starting starts the timer. Untimed assignments open straight away. The dialog shows just the time limit, large with a clock, and "12 questions · 40 marks". Attempts, due date, saving and marks are left out because they don't help at that moment.
 - **Written answers** on the timed page use today's quiz style: ruled lines, as on exam paper (`ruled-lines`), not a boxed textarea.
-- **"Come back later"** (bookmark icon; it was "Flag", which read like reporting a question) only marks a question for the member to return to. It's shown on the question's square and isn't recorded anywhere else.
+- **"Bookmark"** (Epo, 2026-11-03; it was "Come back later", and before that "Flag", which read like reporting a question) only marks a question for the member to return to. It's shown on the question's square and isn't recorded anywhere else.
 - **Submitted** shows the mark so far ("Your mark so far: 27 / 30") and how many answers marked by AI wait for the owner, with links to Home and See results. **Results** keeps the mark at the top right. Below the title, after a gap, one row has the right/partly/wrong counts on the left and "Practise again" on the right.
 - **Roles stay owner, editor and viewer.**
   - Members who only study are viewers: no Upload and no Make a quiz from a file.
@@ -397,7 +392,10 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - **In the tab:** pick the question, then go through the members. Rows waiting show "AI 3 / 6"; approved rows show just the mark. Approve moves to the next one, Approve all clears the question, and changing a mark approves it too.
   - **Words:** the tab is named after who marked the answers ("Marked by AI"), not the question type; "Open answer" stays only as a question type.
   - **Switch (Epo, 2026-11-03):** New assignment has "Approve AI marks before members see them", on by default, under Published (A1). Turned off, AI marks reach members at once, as in practice, and the assignment never shows marks to approve.
-  - Not decided: whether the owner hears about waiting marks anywhere besides the Assignments list.
+  - **Reminders (2026-11-03 proposal, D1 and H3 on page 3):** besides the Assignments row, waiting marks show in three places, each only while something waits:
+    - the app's Home gets a **To approve** list across workspaces, one row per assignment with Approve (Canvas lists "Grade …" in the To Do on its Dashboard; Classroom has a To review list across classes);
+    - the workspace Dashboard's Tasks start with an owner-only task, "Approve AI marks on [assignment]", that ticks itself once nothing waits;
+    - the bell gets one notification per assignment, not one per answer (Teams posts submissions to the activity feed).
 - **Shared pages:** closed parts are still graded. Open parts show the marking points with "Mark it yourself: Yes, Partly, No", labelled self-marked in the score (F2). The anonymous grading caps and their table go.
 
 ---
