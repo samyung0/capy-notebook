@@ -78,6 +78,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - The owner sees tests and assignments in full.
 - From practice, the owner sees only a per-topic summary (label, questions tried, last active), never the answers. Epo's "strengths and weaknesses" mostly come from practice, so A alone would hide them.
 - Members are told once, when they join (and existing members once). "What the owner sees" previews their own page (G5).
+  - **The join notice (Epo, 2026-11-03; V1):** "You are sharing the following data:" with the list of what is shared. It doesn't name the owner and has no "doesn't see" list.
 - Peers see their own results only. Aggregates such as a question's percent correct need at least 5 members with results. Leaderboards are not built.
 - Editors see what members see, until a teacher or co-owner role exists.
 - **Hide study progress** keeps hiding the member's own view. It cannot hide data from the owner.
@@ -448,7 +449,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
     - the app's Home gets a **To approve** list across workspaces, one row per assignment with Approve (Canvas lists "Grade …" in the To Do on its Dashboard; Classroom has a To review list across classes);
     - the workspace Dashboard's Tasks start with an owner-only task, "Approve AI marks on [assignment]", that ticks itself once nothing waits;
     - the bell gets one notification per assignment, not one per answer (Teams posts submissions to the activity feed).
-- **Shared pages:** closed parts are still graded. Open parts show the marking points with "Mark it yourself: Yes, Partly, No", labelled self-marked in the score (F2). The anonymous grading caps and their table go.
+- **Shared pages (Epo, 2026-11-03):** nothing on a shared page counts. Questions with one right answer are marked automatically. Open answers stay unmarked: a "Not marked" chip, with the marking points and worked solution to compare (F2). There's no self-marking and no AI marking there, so the anonymous grading caps and their table go.
 
 ---
 
