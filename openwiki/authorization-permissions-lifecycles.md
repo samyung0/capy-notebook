@@ -476,7 +476,9 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   200 runes; set through the API and chat's `create_topic`, no field in the UI
   yet), and a file or material has at most one (`topic_id`). The Files panel
   groups by topic in order, then Other files (no topic), as plain group rows
-  (no icon) that only open and close, with a count; there is no topic page.
+  that only open and close (mock T3: 32px rows, a 16px chevron, the name in
+  bold, the count muted at the end, items indented under the name, 1px between
+  rows); there is no topic page.
   Dragging an item onto another topic moves it there. The Add file dialog's
   rows (upload, import, Your files) start in the open item's topic, else
   Other files, and each row's picker changes it; nothing files itself. The

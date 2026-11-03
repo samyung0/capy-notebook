@@ -509,8 +509,8 @@ export function FilesPanel({
           </p>
         )}
         {topics && shownTopics && (
-          <div className="flex flex-col">
-            <div className="flex flex-col empty:hidden">
+          <div className="flex flex-col gap-px">
+            <div className="flex flex-col gap-px empty:hidden">
               {shownTopics.map((ch) => {
                 const idx = topics.indexOf(ch);
                 const expanded = searching || (openTopics[ch.id] ?? true);
@@ -526,7 +526,7 @@ export function FilesPanel({
                   >
                     {insertionLine(`topic:${ch.id}`)}
                     <div
-                      className="group relative flex items-center rounded-button py-1.5 pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!"
+                      className="group relative flex min-h-8 items-center rounded-button hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!"
                       draggable={!readOnly}
                       onDragEnd={clearDragState}
                       onDragStart={(e) => {
@@ -584,7 +584,7 @@ export function FilesPanel({
                       )}
                     </div>
                     {expanded && (
-                      <div className="flex flex-col pl-3">
+                      <div className="mt-px flex flex-col gap-px pl-5">
                         {shownFor(ch).map((item) =>
                           renderContentItem(item, ch.id)
                         )}
@@ -607,7 +607,7 @@ export function FilesPanel({
                 generating) && (
               <div className="rounded-button" data-workspace-other-files>
                 {topics.length > 0 && (
-                  <div className="flex items-center rounded-button py-1.5 pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!">
+                  <div className="flex min-h-8 items-center rounded-button hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!">
                     <GroupToggle
                       count={contentFor(null).length}
                       expanded={othersExpanded}
@@ -622,7 +622,11 @@ export function FilesPanel({
                   </div>
                 )}
                 {othersExpanded && (
-                  <div className={cn(topics.length > 0 && 'pl-3')}>
+                  <div
+                    className={cn(
+                      topics.length > 0 && 'mt-px flex flex-col gap-px pl-5'
+                    )}
+                  >
                     {shownUnfiled.map((item) => renderContentItem(item, null))}
                     {generating && (
                       <MaterialListItem
@@ -657,9 +661,10 @@ export function FilesPanel({
   );
 }
 
-/** A group row's toggle (a topic or Other files): a plain row with no icon
- * (Epo 2026-11-03, mock T3), the turning chevron, the name and its count. A
- * topic row only opens and closes; there is no topic page. */
+/** A group row's toggle (a topic or Other files) as mock T3 draws it (Epo
+ * 2026-11-03): no icon, a 16px chevron, the name in bold and its count; its
+ * items start under the name. A topic row only opens and closes; there is no
+ * topic page. */
 function GroupToggle({
   count,
   expanded,
@@ -674,18 +679,17 @@ function GroupToggle({
   return (
     <button
       aria-expanded={expanded}
-      className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 text-left"
+      className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch px-1.5 text-left font-bold text-fg"
       onClick={onToggle}
       type="button"
     >
       <Icon
-        className="shrink-0 -translate-y-px text-fg-muted"
+        className="shrink-0"
         name={expanded ? 'chevronDown' : 'chevronRight'}
+        size={16}
       />
-      <span className="line-clamp-1 translate-y-px truncate font-semibold">
-        {name}
-      </span>
-      <span className="ml-auto pr-1 font-semibold text-fg-muted text-xs">
+      <span className="line-clamp-1 translate-y-px truncate">{name}</span>
+      <span className="ml-auto translate-y-px font-semibold text-fg-muted text-xs">
         {count}
       </span>
     </button>
