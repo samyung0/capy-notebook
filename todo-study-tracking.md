@@ -600,6 +600,7 @@ Jev scored 1,730 (88.9%), +89.
 - **1017 confirmation (5d4c9b3e7).** On contract, maths, IELTS and DSE Chinese (1,149 items), the dated pin through InferenceNet scored 1,104 items with +16.5 unearned marks. That equals V4.1 on Wafer (1,104, +15) and beats direct Flash (1,083, +22) at $0.00032 a part.
   - **The cost is maths latency:** p50 11 s and p95 57 s, slowest 156 s, against Wafer's 5 s and 33 s.
   - **Decided (Epo, 2026-11-04):** 1017 is the one model for grading, extraction and captions, routed Wafer (`wafer/us`) → InferenceNet → Cloudflare with no other fallbacks. Never DeepInfra, except the Qwen embedding pin. Never direct DeepSeek.
+  - **Then (Epo, 2026-11-04):** extraction gets its own route, InferenceNet → Cloudflare → `wafer/us`. In the Wafer check, extraction with thinking was worse on Wafer and one run ran away to 17× the cost. Captions, page reads and ghost text keep Wafer first; grading waits on the concurrency test. The credits price for 1017 is 200 / 20 / 1200 (input / cached / output micros per token, the highest of the three providers) for every use. Extraction also gets a guard against runaway output.
 
 ### Built-in grading rules (Epo, 2026-11-04; supersedes the per-question answer rules below)
 
