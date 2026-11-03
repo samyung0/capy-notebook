@@ -511,6 +511,40 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
     - the app's Home gets a **To approve** list across workspaces, one row per assignment with Approve (Canvas lists "Grade …" in the To Do on its Dashboard; Classroom has a To review list across classes);
     - the workspace Dashboard's Tasks start with an owner-only task, "Approve AI marks on [assignment]", that ticks itself once nothing waits;
     - the bell gets one notification per assignment, not one per answer (Teams posts submissions to the activity feed).
+### Grading prompt, round 2 (2026-11-03, after the DeepSeek bench)
+
+**Bench round 1** (`claude/bench-deepseek-grading-4a344d`, `bench/grading/reports/2026-11-03-deepseek-grading.md`). Share of 1,946 items marked right:
+- Jev: 88.9%
+- 0731: 91.6%
+- direct Flash: 93.7%, or 95.0% with a thinking second sample on flagged parts.
+
+0731 is too lenient: 88 unearned marks against Flash's 49.5. That comes mostly from maths (right answers with wrong working), DSE Chinese (answers that only quote the passage) and IELTS (pasted paragraphs).
+
+**What round 1 sent:** the question text, the marking-scheme lines with their marks, and the answer, with no reasoning before the choice. Today's Jev request sends the same. Neither sends the part's correct answers (`accepted`) or its worked solution.
+
+**What others do:**
+- RefGrader builds rubrics from reference solutions and grades in several steps; its single-step grading flagged wrong answers but couldn't calibrate partial credit.
+- Handwritten-maths pipelines use solution keys, several scoring passes, consistency checks and a final human check.
+- Graide learns each teacher's marking and checks the working line by line, not just the final answer.
+- Gradescope's AI only groups similar answers for the teacher.
+- Step-error research: models struggle to find a student's first wrong step even with a reference solution. Comparing step by step against a solution that follows the student's own route helps most.
+- Exam boards: M marks for method, A marks for accuracy that need their M mark ("M0 A1 is impossible"), B marks on their own, and follow-through (ft). HKEAA uses M, A and ft.
+
+**Round 2 prompt changes:**
+1. **Send the reference:** the part's correct answers and its worked solution, labelled "for the marker; a different valid method earns the same credit".
+2. **Maths and working:**
+   - Check every step of the working, not only the final answer.
+   - Find the first wrong step. Items before it stand, and later steps done correctly from a wrong value earn method marks but not accuracy marks, unless the scheme says ft.
+   - An accuracy item needs its method item.
+   - A right final answer with missing or wrong working earns no method marks.
+   - A valid different method is checked on its own mathematics.
+   - Maths parts always get thinking on (low), not only in the second sample.
+3. **Reading:** an "explain" item is not earned by copying the passage without explaining it (DSE 只抄原文不給分). Copied or pasted text earns nothing where the scheme asks for own words.
+4. **Keep:** quoted evidence, now matched tolerantly so LaTeX and punctuation differences don't zero right answers; the injection rules; one item at a time.
+5. **Later:** an owner's approved or adjusted marks become examples for the same question.
+
+**Bench round 2:** the same sets on 0731 and Flash, with and without thinking on maths, against round 1. Then pick the model.
+
 ### Switching from Jev
 
 - **Bench:** add DeepSeek adapters to `bench/grading` (the cheaper 07xx model and the larger one). Rerun the Jev contract fixtures, plus held-out, prompt-injection and Traditional Chinese answers. Compare item agreement, cost and latency with Jev.
