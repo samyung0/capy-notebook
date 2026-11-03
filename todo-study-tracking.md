@@ -119,8 +119,12 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
   - This changes §1: chapters become **topics**, not folders.
   - Others: Google Classroom's Topics are the only grouping on Classwork (one per item, no mastery). Canvas keeps Modules for organising and Outcomes for mastery, as Moodle and Schoology do. Capy takes Classroom's single grouping for files and Canvas's per-question tags, from one list.
   - **Decided (Epo, 2026-11-03).**
-- **Where topics live (Epo, 2026-11-03).** Topics live in Files: set up, add, rename, merge and remove all happen there. Each topic row in the Files panel carries a tag icon. A topic's page lists its files, a "How members are doing" line and merge suggestions.
-  - A new upload is filed under a topic by the AI, with Change in the toast. Dragging a file to another topic moves it.
+- **Where topics live (Epo, 2026-11-03).** Topics live in Files: set up, add, rename and remove happen there, and each topic row in the Files panel carries a tag icon. There are no merge suggestions, and no action menu on the topic title; rename works by editing the title.
+  - **Uploading asks for the topic** (T4), starting from the topic that is open; nothing is filed automatically. Dragging a file to another topic in the tree moves it.
+  - **A topic's page (T3) shows what the tree doesn't,** not its files again:
+    - the assignments and practice with questions on the topic, how many of their questions are on it, and the group's score on those questions;
+    - each member's label on the topic, with right counts and last answers, sorted by who needs practice.
+    - This is the Canvas outcome and Schoology mastery pattern: a topic lists its aligned work and each student's level. Google Classroom's Topics only list classwork.
   - Study keeps only results. The Topics page is gone, and its members × topics grid is now a view of Members ("Show: Summary" or "Show: By topic", G4). This follows Canvas, where Modules organise content and mastery is a view of the gradebook (Learning Mastery Gradebook).
 
 ## 4. Views
