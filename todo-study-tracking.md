@@ -176,10 +176,8 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - An assignment appears as a task and ticks itself on submit. Other tasks are ticked by hand, by each member for themselves.
   - Owners add tasks under the table.
 - **Anything empty is not shown.** No tasks means no Tasks section.
-- **Your own tasks (2026-11-03 proposal, H2c and H2d on page 2).** Members can add tasks for themselves with Add a task. These are private: the owner never sees them, and they don't count in "x of 6 done".
-  - **Option A:** every row carries the avatar of who set it.
-  - **Option B (recommended):** only your own rows are marked, with a lock and "Only you". Everything else comes from the owner, so marking the exception is quieter. Canvas's student planner does the same: personal to-dos carry a "To Do" label, and course items show their course.
-  - Waiting on Epo's pick.
+- **Who adds tasks (Epo, 2026-11-03):** owners only (editors too, as co-teachers). Members don't add tasks; they only tick plain ones. Personal to-dos belong on the app-level Tasks page, not in a workspace's shared list, so a workspace task never needs a "who set it" marker. This matches Classroom, Teams Assignments, Canvas and Moodle, where class work is teacher-only and personal to-dos live in a private planner.
+- **Add a task offers Task or Assignment (Epo, 2026-11-03; H1m).** Assignment opens New assignment with a quiz picker (A1c). The picker ends with "Make a quiz from a file". Study → Assignments → New assignment opens the same dialog, and the quiz editor's New assignment fills the quiz in (A1).
 - **Ticks (Epo, 2026-11-03).**
   - Members mark plain tasks ("Read …", "Make notes on …") done themselves. Nothing tries to detect reading: read progress is gone, and opening a file proves little (Canvas's "view" rule only means the page was opened).
   - Assignment tasks have no tick box: they complete when the member submits.
@@ -303,6 +301,10 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - In a classroom, students are viewers.
 - **Two states only, Draft or published (Epo, 2026-11-02).**
   - "New assignment" (A1) has a **"Draft only"** switch, off by default (Epo, 2026-11-03), so the assignment can be submitted as soon as it is created. With the switch on it is a draft.
+- **Quizzes for assignments are hidden from members (Epo, 2026-11-03).** A quiz made from files, and the mark scheme and answer files uploaded with it, start **Hidden from members**: only owners and editors see them. Members meet only the assignment's frozen copy, during their attempt and in their results. The owner can show the quiz to members later, for example as practice after the due date.
+  - Shown as a "Hidden from members" chip in the quiz editor (X2), a footnote in the Make a quiz dialog (X0b), and an eye-off mark on the owner's file cards. Members' Dashboards don't list hidden files.
+  - Others: Canvas quizzes stay unpublished and question banks are teacher-only; Moodle activities stay hidden until opened; Classroom's Forms quizzes belong to the teacher until assigned.
+  - **Needs an authorization change:** today a workspace material has no visibility of its own and follows the workspace (`authorization-permissions-lifecycles.md`). This adds one per-material flag that hides it from viewer members.
 - **Assign to (Epo, 2026-11-03; A1, A1b).** New assignment has an Assign to field, beside Attempts.
   - **All members** is the default, and it includes anyone who joins later (as Classroom's "All students" and Teams' "All students" do). It covers viewers only; editors aren't assigned.
   - **Picking names** fixes the list. The task and the notice reach only those members, and "x of y done" and the report count only them.
