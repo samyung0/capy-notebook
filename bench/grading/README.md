@@ -95,6 +95,11 @@ fixtures (prompt injection, Traditional Chinese, HKDSE maths with working, IELTS
 reading, HKDSE Chinese reading from the 2020–2021 papers, and original DSE-style
 Chinese passages). Keys come from an explicit `--env` file; at most four workers, no
 retries. See the [2026-11-03 report](reports/2026-11-03-deepseek-grading.md).
+Round 2 (`--prompt r2`) sends the part's reference to the marker, adds rules for
+working and for reading answers, asks for `steps` before the choices and matches
+quotes on letters and digits; `--thinking-sets math` grades maths with thinking,
+`--no-reference` drops the reference block. See the
+[round 2 report](reports/2026-11-03-deepseek-grading-round2.md).
 
 ```sh
 S=bench/grading/scripts/deepseek_grading.py; D=data/grading-benchmark/deepseek-grading-<fresh>; E=deploy/.env.uat
