@@ -468,6 +468,16 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
     - the app's Home gets a **To approve** list across workspaces, one row per assignment with Approve (Canvas lists "Grade …" in the To Do on its Dashboard; Classroom has a To review list across classes);
     - the workspace Dashboard's Tasks start with an owner-only task, "Approve AI marks on [assignment]", that ticks itself once nothing waits;
     - the bell gets one notification per assignment, not one per answer (Teams posts submissions to the activity feed).
+### Switching from Jev
+
+- **Bench:** add DeepSeek adapters to `bench/grading` (the cheaper 07xx model and the larger one). Rerun the Jev contract fixtures, plus held-out, prompt-injection and Traditional Chinese answers. Compare item agreement, cost and latency with Jev.
+- **Grader:** JSON per marking item (none, partial, full) with a quote that must appear in the answer, checked in code. Temperature 0, cached per answer and scheme, a second sample only on borderline items, marks computed on the server (`itemAwards` kept).
+- **Wiring:** replace the Jev call in `quiz_grading.go`. DeepSeek is OpenAI-compatible and already used through the pipeline's model registry (`deepseek-flash` is the chat default), so either call it from Go directly or through that registry.
+- **Approval:** new AI marks on assignments start as waiting; "Mark with AI" covers failures and empty credits.
+- **Metering:** a usage event per graded part, charged to the owner for assignments and the member for their own practice, with the monthly cap.
+- **Removals:** Jev, the editor's "needs a calculation" check (replace it or drop it), public open grading on shared pages, Turnstile and the anonymous caps.
+- **Docs and tests:** question-bank.md, observability-metering.md, test-catalog.md.
+
 - **Shared pages (Epo, 2026-11-03):** nothing on a shared page counts. Questions with one right answer are marked automatically. Open answers stay unmarked: a "Not marked" chip, with the marking points and worked solution to compare (F2). There's no self-marking and no AI marking there, so the anonymous grading caps and their table go.
 
 ---
@@ -498,18 +508,23 @@ Steps 2, 3 and 7 can run side by side.
 
 Updated 2026-11-03. Decided this round, no longer open: the join notice (not an opt-in); later joiners get open assignments ("All members"); members see their overall; shared pages mark only automatic questions; topics replace folders and come from a syllabus; approval of AI marks; Marked/Unmarked assignments.
 
-**Needed before building**
+**Answered by Epo, 2026-11-03**
 
-1. **Editors:** can editors (co-teachers) create assignments, see member results and approve AI marks, like owners? (Suggestion: yes.)
-2. **Who pays credits:** extraction, Generate questions, Make my own practice, and DeepSeek grading of members' answers. (Suggestion: whoever starts it pays; grading of an assignment is the owner's, with a monthly cap.)
-3. **DeepSeek:** switch only after the bench? Is sending minors' answers to a China-based provider acceptable for schools, or do schools need another model?
-4. **Mastery thresholds** (§5): Attempted under 3 questions; Needs practice under 60%; Proficient over 70%; Mastered after a later check; 80% sureness; self-made questions at half weight.
-5. **Missing and late work:** does missing work count 0 in Overall after the due date? Are late submissions accepted (labelled Late) until the owner closes the assignment? Attempts default to 1?
-6. **Reviews:** do marked-assignment questions join a member's FSRS reviews, and only after the assignment closes (so nobody sees them early)? Do flashcards stay out of mastery (memory only)?
-7. **Topics in today's study features:** do topics replace chapters in suggested reviews, sessions and the agent's `read_study_progress`? Cap at 30 topics per workspace?
-8. **Aggregates:** at least 5 members before group averages and question percentages show? No leaderboards?
-9. **Extraction:** PDF and images only at first, a 30-page cap?
-10. **Shared pages:** with open answers unmarked there, drop Turnstile and the anonymous grading caps?
+1. **Editors** act like owners: they create assignments, see member results and approve AI marks.
+2. **Credits:** whoever starts a job pays; AI marking of an assignment's answers is the owner's, with a monthly cap.
+   - **Running out never blocks a member.** Submissions always go through. Open answers stay "Not marked", and the owner gets "Mark with AI" on the assignment to run them once credits are back. There's no automatic retry.
+   - **Only open parts ever use AI.** Multiple choice, short answers, quantities and gap fills stay deterministic Go grading, as today (`/api/quizzes/{id}/check`: closed parts in Go, open parts by the model).
+   - **Model:** bench the cheaper DeepSeek model (the 07xx one) beside the larger one, and pick on the bench.
+3. **The DeepSeek switch** needs the steps under §9 "Switching from Jev". Whether minors' answers may go to a China-based provider stays open until schools.
+4. **Mastery thresholds** as in §5, including half weight for self-made questions.
+5. **Missing and late work:** missing counts 0 in Overall after the due date; late submissions are accepted, labelled Late, until the owner closes the assignment; Attempts defaults to 1.
+6. **Reviews:** marked-assignment questions join FSRS reviews once the assignment closes (when they also become practice). Flashcards stay out of mastery.
+7. **Topics** replace chapters in suggested reviews, sessions and the agent's `read_study_progress`. Caps: 10 topics per workspace on Free, 20 on Pro.
+8. **Aggregates** need at least 5 members. No leaderboards.
+9. **Extraction has no page cap on the file.** Only the selected pages go to the model, and credits pay per page.
+   - **Office files too.** The client sends the selected page numbers, and the backend captures those pages without a full publish. Saved edits go in as text in the prompt; whether that helps is checked later.
+   - **Check first:** PPTX slides are stable pages, but DOCX pagination depends on the renderer. The pages the backend captures must match what the member saw in the browser (BetterOffice). If they can't, the client sends its rendered page images instead.
+10. **Shared pages:** Turnstile and the anonymous grading caps go, since open answers aren't marked there.
 
 **Can wait**
 
