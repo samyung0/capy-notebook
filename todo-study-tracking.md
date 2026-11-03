@@ -511,7 +511,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 2. **Chapters → topics,** with the chapter-driven study pieces removed. Files groups by topic, and the `chapters` table becomes `topics`.
 3. **Record:**
    - `attempts.workspace_id`;
-   - an `answer_events` log on every graded part;
+   - an `answer_events` log on every graded part (done: branch `claude/study-answer-events-91b7cd`). Events outlive their quiz, as attempts do (Epo, 2026-11-03), so once topics land each event also stores its question's topic, or a deleted quiz's events can't count toward one;
    - the topic tables;
    - `topic` in `add_questions`;
    - the background tagger.
