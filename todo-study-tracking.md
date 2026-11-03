@@ -588,6 +588,27 @@ Jev scored 1,730 (88.9%), +89.
   - raise the thinking limit.
 - **Recommendation (bench):** direct Flash with the round-2 prompt, thinking on maths and the second sample, with 0731 as the fallback when DeepSeek's API fails (needs Epo's sign-off).
 
+### Answer rules apart from the marking points (proposal, Epo 2026-11-03; canvas page 11, board R1)
+
+**Why:** 0731 credited a pasted IELTS paragraph that the question forbade ("copying out whole paragraphs earns no marks"). The passage was in the request, but the instruction sat inside the question text.
+
+**Proposal:** each part gets **Answer rules**, its own section under the marking points.
+- **A rule has three things:** what it is (don't copy whole sentences from the passage, a word limit, own words, show working, or custom text), how it's checked, and what breaking it costs (no marks, or deduct N marks).
+- **Checked in code, never reaching the AI:** word or character limits, and copying from the passage (the share of the answer found word for word in the stem).
+- **Judged by AI:** other rules, in their own `<answer_rules>` block before the marking points. The model reports each rule as kept or broken, with a quote.
+- **Learners see them** as chips under the question.
+- **Results** say which rule was broken and how it was checked. "No marks" skips the marking points; a deduction applies after them.
+- **Extraction** fills rules from printed instructions ("NO MORE THAN TWO WORDS", "in your own words").
+
+**Needs:**
+- the rule list in the question format, with the Go validator, TS types and bank format;
+- the editor section;
+- the copy check, scoring against the stem's passage text;
+- the grading prompt block;
+- bench round 3 on 0731 and v4.1 Flash with the rules block and copy check.
+
+**Captioning:** image captions already use the 1017 pin (`deepseek/deepseek-v4.1-flash-1017` via OpenRouter, providers InferenceNet and Cloudflare). If the extraction test picks 1017, extraction and captioning share one image model.
+
 ### Switching from Jev
 
 - **Bench:** add DeepSeek adapters to `bench/grading` (the cheaper 07xx model and the larger one). Rerun the Jev contract fixtures, plus held-out, prompt-injection and Traditional Chinese answers. Compare item agreement, cost and latency with Jev.
