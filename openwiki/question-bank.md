@@ -158,6 +158,12 @@ service expands each into one paper-layout question with one part, 1 mark
 for a simple one and the explanation as its solution (see
 [agentic-retrieval.md](agentic-retrieval.md), Question tools).
 
+Make a quiz reads questions printed in an uploaded paper into this format: in
+paper layout, printed option order kept, sub-parts flattened into parts, keys,
+marking items and worked solutions filled from a separate mark scheme or answer
+file paired by printed label, each question checked by this validator as it is
+recorded (see [agentic-retrieval.md](agentic-retrieval.md), Make a quiz).
+
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part
 IDs are unique within the material. Note chart/plot/graph voids store their validated

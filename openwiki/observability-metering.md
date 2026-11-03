@@ -1673,7 +1673,7 @@ orders of magnitude. Listing workspaces touches one index. A chat turn gets
 12 responses before its first write, 4 tool calls per response and 160 per
 turn (`pipeline/pipeline/retrieval/limits.py`). Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
-(`/chat/stream`, `/generate`, question checks (`/check`: a
+(`/chat/stream`, `/generate`, Make a quiz's start (`/extractions`), question checks (`/check`: a
 quiz's, a review session's, the bank's, one question each; Epo 2026-10-25
 keeps them here, since a learner does not check 15 questions a minute) and
 `/computation-check`) are 200/hour with burst 15, plus

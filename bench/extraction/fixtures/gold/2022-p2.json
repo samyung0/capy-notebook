@@ -1,0 +1,658 @@
+{
+ "paper": "2022-p2",
+ "pdf": "2022-p2.pdf",
+ "pages": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16
+ ],
+ "answers": {
+  "keys": "Built from the questions' correct letters as a one-line-per-item answer list (1. D)."
+ },
+ "note": "All 16 pages, cover and blank last page included. Keys from 2022-p2-key.json (HKEAA report via mathseasy.hk); signatures hand-read from the pages.",
+ "questions": [
+  {
+   "label": "1",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "D",
+     "signature": "- + - 1"
+    }
+   ]
+  },
+  {
+   "label": "2",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "3 2 + 6"
+    }
+   ]
+  },
+  {
+   "label": "3",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "A",
+     "signature": "- 14"
+    }
+   ]
+  },
+  {
+   "label": "4",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "D",
+     "signature": "= 2 = 4"
+    }
+   ]
+  },
+  {
+   "label": "5",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "A",
+     "signature": "2 4 - 3"
+    }
+   ]
+  },
+  {
+   "label": "6",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "345 ≤ < 346"
+    }
+   ]
+  },
+  {
+   "label": "7",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "A",
+     "signature": "- 3 < ≤ 2"
+    }
+   ]
+  },
+  {
+   "label": "8",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "= 1 -"
+    }
+   ]
+  },
+  {
+   "label": "9",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "D",
+     "signature": "4 2"
+    }
+   ]
+  },
+  {
+   "label": "10",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "A",
+     "signature": "I II"
+    }
+   ]
+  },
+  {
+   "label": "11",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "C",
+     "signature": "23803"
+    }
+   ]
+  },
+  {
+   "label": "12",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "C",
+     "signature": "20 31"
+    }
+   ]
+  },
+  {
+   "label": "13",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "I III"
+    }
+   ]
+  },
+  {
+   "label": "14",
+   "total": 1,
+   "figure": true,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "C",
+     "signature": "86"
+    }
+   ]
+  },
+  {
+   "label": "15",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "A",
+     "signature": "1 2"
+    }
+   ]
+  },
+  {
+   "label": "16",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "D",
+     "signature": "67 2"
+    }
+   ]
+  },
+  {
+   "label": "17",
+   "total": 1,
+   "figure": true,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "18 2"
+    }
+   ]
+  },
+  {
+   "label": "18",
+   "total": 1,
+   "figure": true,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "C",
+     "signature": "61"
+    }
+   ]
+  },
+  {
+   "label": "19",
+   "total": 1,
+   "figure": true,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "D",
+     "signature": "82"
+    }
+   ]
+  },
+  {
+   "label": "20",
+   "total": 1,
+   "figure": true,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "I III"
+    }
+   ]
+  },
+  {
+   "label": "21",
+   "total": 1,
+   "figure": true,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "46"
+    }
+   ]
+  },
+  {
+   "label": "22",
+   "total": 1,
+   "figure": true,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "C",
+     "signature": "728"
+    }
+   ]
+  },
+  {
+   "label": "23",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "C",
+     "signature": "1 sin"
+    }
+   ]
+  },
+  {
+   "label": "24",
+   "total": 1,
+   "figure": true,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "A",
+     "signature": "I II"
+    }
+   ]
+  },
+  {
+   "label": "25",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "D",
+     "signature": "8 240"
+    }
+   ]
+  },
+  {
+   "label": "26",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "A",
+     "signature": "10 + 24 + 119 = 0"
+    }
+   ]
+  },
+  {
+   "label": "27",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "C",
+     "signature": "16 - 9"
+    }
+   ]
+  },
+  {
+   "label": "28",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "D",
+     "signature": "1 10"
+    }
+   ]
+  },
+  {
+   "label": "29",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "A",
+     "signature": "48"
+    }
+   ]
+  },
+  {
+   "label": "30",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "II"
+    }
+   ]
+  },
+  {
+   "label": "31",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "C",
+     "signature": "1 435 867"
+    }
+   ]
+  },
+  {
+   "label": "32",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "C",
+     "signature": "I III"
+    }
+   ]
+  },
+  {
+   "label": "33",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "D",
+     "signature": "6 14"
+    }
+   ]
+  },
+  {
+   "label": "34",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "A",
+     "signature": "299 4 22 + 205 4 14 + 14"
+    }
+   ]
+  },
+  {
+   "label": "35",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "13"
+    }
+   ]
+  },
+  {
+   "label": "36",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "38"
+    }
+   ]
+  },
+  {
+   "label": "37",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "D",
+     "signature": "81 4"
+    }
+   ]
+  },
+  {
+   "label": "38",
+   "total": 1,
+   "figure": true,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "D",
+     "signature": "82"
+    }
+   ]
+  },
+  {
+   "label": "39",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "C",
+     "signature": "4"
+    }
+   ]
+  },
+  {
+   "label": "40",
+   "total": 1,
+   "figure": true,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "A",
+     "signature": "< 60 <"
+    }
+   ]
+  },
+  {
+   "label": "41",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "A",
+     "signature": "8 15"
+    }
+   ]
+  },
+  {
+   "label": "42",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "240"
+    }
+   ]
+  },
+  {
+   "label": "43",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "B",
+     "signature": "3 20"
+    }
+   ]
+  },
+  {
+   "label": "44",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "C",
+     "signature": "= 53 = - 2"
+    }
+   ]
+  },
+  {
+   "label": "45",
+   "total": 1,
+   "figure": false,
+   "parts": [
+    {
+     "label": "",
+     "marks": 1,
+     "type": "mcq",
+     "correct": "D",
+     "signature": "II III"
+    }
+   ]
+  }
+ ]
+}

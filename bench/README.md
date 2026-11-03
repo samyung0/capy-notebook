@@ -31,6 +31,7 @@ place (Epo 2026-10-10).
 | [`parity/`](parity/)       | Office feature parity per format against Google Docs, Sheets and Slides: hand-assigned view, edit, save and collab statuses, each Y backed by a test on the pin; ranked remaining work | `python3 bench/parity/scripts/parity.py` (CI: `--check`) |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
+| [`extraction/`](extraction/) | Make a quiz: questions read from HKDSE past papers' pages and paired with their mark schemes, against hand-built gold; labels, parts, marks, printed option order, pairing, cost, time per model | `python bench/extraction/scripts/run.py --paper … --model …` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus six frozen experiments                    | see below                                   |
 
 ### editor
@@ -294,6 +295,28 @@ The [production contract report](grading/reports/2026-10-02-jev-production-contr
 runs [`jev_contract.py`](grading/scripts/jev_contract.py) on new held-out fixtures
 to choose the Jev request for open quiz parts (question type, batching, state
 fields) and the author-side computation warning, with a small LaTeX check.
+
+### extraction
+
+`extraction/scripts/run.py` runs the production Make a quiz pipeline
+(`pipeline/retrieval/extraction.py`, see
+[agentic-retrieval.md](../openwiki/agentic-retrieval.md), Make a quiz) over one
+past paper from the ignored `data/question-bank/references/hkdse-math-compulsory/`
+(`--refs`), with the model calls going to the providers (`--env-file` names a
+file with `DEEPSEEK_API_KEY` and `OPENROUTER_API_KEY`; nothing is printed) and
+every recorded question through Go's `quizcheck`. Pages are rendered by the
+capture renderer; each page's indexed text is its PDF text layer, or the
+production VLM page read on the captioning pin for a scanned page, cached in the
+gitignored `extraction/.results/text/` and not counted in the run's cost. The
+answers come from the paper's marking-scheme PDF read the same way, or from an
+answer list built from the gold keys. `fixtures/gold/` holds the hand-built gold
+per paper: labels, parts, per-part marks, answer types, and for multiple choice
+the key and the keyed option's signature (its numbers, signs, relations, roman
+numerals and trig names, hand-read from the page), so the score checks that the
+stored key points at the printed correct option. Results land in
+`extraction/.results/<paper>-<model>-<n>.json`;
+[the first cut](extraction/reports/2026-11-03-first-cut.md) compares DeepSeek
+Flash with GLM-5.3-Flash.
 
 ### rag
 
