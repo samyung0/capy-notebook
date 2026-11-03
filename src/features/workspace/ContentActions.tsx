@@ -10,7 +10,6 @@ import {
   useDeleteMaterial,
   useMoveFile,
   useMoveMaterial,
-  useSetHidden,
   useUpdateFile,
   useUpdateMaterial,
 } from '@/api/hooks';
@@ -29,6 +28,7 @@ import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { CloneItemDialog } from './CloneItemDialog';
 import type { ContentActionTarget } from './contentActionTarget';
+import { useToggleHidden } from './hiddenFromMembers';
 import { MoveFileDialog } from './MoveFileDialog';
 
 /** Why the server refused to trash a file, as the trash dialog shows it. */
@@ -157,7 +157,7 @@ export function ContentActions({
   const { mutateAsync: updateMaterial } = useUpdateMaterial(workspaceId);
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: deleteMaterial } = useDeleteMaterial(workspaceId);
-  const { mutate: setHidden } = useSetHidden(workspaceId);
+  const toggleHidden = useToggleHidden(workspaceId);
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
@@ -215,21 +215,7 @@ export function ContentActions({
             label: content.hidden
               ? m.content_show_to_members()
               : m.content_hide_from_members(),
-            onClick: () =>
-              setHidden(
-                {
-                  hidden: !content.hidden,
-                  id: content.id,
-                  type: content.type,
-                },
-                {
-                  onError: (error) =>
-                    userToast({
-                      title: errorCopy(error, m.source_try_again()),
-                      variant: 'error',
-                    }),
-                }
-              ),
+            onClick: () => toggleHidden(content, !content.hidden),
           },
         ]
       : []),

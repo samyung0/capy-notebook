@@ -6,6 +6,8 @@ import { m } from '@/i18n';
 import { createEditorStatusStore, Header } from './CenterContentHeader';
 
 const HIDDEN = /\bhidden\b/;
+// The hidden chip as a button the keyboard reaches.
+const CHIP_BUTTON = /<button[^>]*data-testid="hidden-chip"[^>]*type="button"/;
 
 // The ⋮'s props, and where the header sends the reader.
 const header = vi.hoisted(() => ({
@@ -13,7 +15,20 @@ const header = vi.hoisted(() => ({
   hidden: false,
   isPayer: false,
   navigate: vi.fn(),
+  setHidden: vi.fn(),
 }));
+// The hidden chip's props, from the real chip.
+const chips = vi.hoisted(() => [] as { onShow?: () => void }[]);
+vi.mock('@/features/workspace/HiddenChip', async (original) => {
+  const real =
+    await original<typeof import('@/features/workspace/HiddenChip')>();
+  return {
+    HiddenChip: (props: { onShow?: () => void }) => {
+      chips.push(props);
+      return real.HiddenChip(props);
+    },
+  };
+});
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => header.navigate,
 }));
@@ -33,6 +48,7 @@ vi.mock('@/api/hooks', () => ({
     },
   }),
   useMaterials: () => ({ data: [], isPending: false }),
+  useSetHidden: () => ({ mutate: header.setHidden }),
   useWorkspace: () => ({ data: undefined }),
 }));
 vi.mock('@/features/study/studyItems', () => ({
@@ -143,4 +159,21 @@ it('marks an item hidden from members beside its name', () => {
   header.hidden = false;
   expect(html).toContain(label);
   expect(html.indexOf('Deck.pptx')).toBeLessThan(html.indexOf(label));
+});
+
+/** Its owners and editors show it to members from the chip, as from the ⋮
+ * menu's Show to members (Epo 2026-11-03): a button, so the keyboard reaches
+ * it, that says what it does. */
+it('shows a hidden item to members from its chip', () => {
+  header.hidden = true;
+  chips.length = 0;
+  const html = render(true);
+  header.hidden = false;
+  expect(html).toMatch(CHIP_BUTTON);
+  expect(html).toContain(m.content_show_to_members());
+  chips[0]?.onShow?.();
+  expect(header.setHidden).toHaveBeenCalledWith(
+    { hidden: false, id: 'f1', type: 'file' },
+    { onError: expect.any(Function) }
+  );
 });

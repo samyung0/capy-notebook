@@ -378,7 +378,7 @@ unchanged.
   the same two.
 - **Switching it.** `PUT /api/files/{id}/hidden` and `PUT
   /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu ("Hide
-  from members" / "Show to members"). Owners and editors may switch it: the
+  from members" / "Show to members") or, to show it, its header chip. Owners and editors may switch it: the
   write locks the workspace and re-reads the actor's effective role like any
   content write (`lockWorkspaceEditorMutationTx`); a frozen account is refused
   and a standalone or embedded item answers 404. Hiding drains the item's live
@@ -398,8 +398,13 @@ unchanged.
   members should see them); see
   [agentic-retrieval.md](agentic-retrieval.md#make-a-quiz-questions-from-uploaded-files).
 
-The quiz editor shows a "Hidden from members" chip beside the title. Files
-rows have no mark yet (they are being rebuilt on the study topics branch).
+An open hidden item's header shows a "Hidden from members" chip after its
+name (X2; the icon alone on phones). For owners and editors who may change the
+item the chip is a button ("Show to members" in its tooltip) that shows it to
+members, as the ⋮ menu does (`useToggleHidden`, same request and error toast);
+hiding again stays in the menu, and a read-only editor's chip is a plain
+label. Files rows have no mark yet (they are being rebuilt on the study topics
+branch).
 
 Sources: [migration](../server/migrations/0137_hidden_from_members.sql),
 [routes](../server/internal/httpapi/huma_hidden.go),

@@ -48,6 +48,8 @@ import {
   toFileActionTarget,
   toMaterialActionTarget,
 } from '@/features/workspace/contentActionTarget';
+import { HiddenChip } from '@/features/workspace/HiddenChip';
+import { useToggleHidden } from '@/features/workspace/hiddenFromMembers';
 import {
   OfflineStatus,
   WorkspaceStatusButton,
@@ -350,20 +352,6 @@ function useHeader(
   };
 }
 
-/** "Hidden from members" after the title (X2, Epo 2026-11-03): an item only
- * the workspace's owners and editors see. Phones keep the icon alone. */
-function HiddenChip() {
-  return (
-    <span
-      className="inline-flex h-5.5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-page-hover px-1.75 font-semibold text-[12.5px] text-fg-muted"
-      title={m.content_hidden_from_members()}
-    >
-      <Icon name="viewOffSlash" size={16} />
-      <span className="max-sm:sr-only">{m.content_hidden_from_members()}</span>
-    </span>
-  );
-}
-
 /** Mark as read, right of the view/edit toggle: an open book with a check, a
  * closed one in the marks' green once read; clicking again marks it unread. */
 function ReadToggle({
@@ -490,7 +478,21 @@ export function Header({
     'min-w-0 truncate',
     leading ? 't-body font-semibold' : 't-subtitle'
   );
-  const hidden = !!(file?.hidden || material?.hidden);
+  // Owners and editors who may change the item show it to members from its
+  // chip as from the ⋮ menu; viewers never see a hidden item.
+  const itemReadOnly =
+    readOnly || (materialCapabilities ? !materialCapabilities.canEdit : false);
+  const toggleHidden = useToggleHidden(workspaceId);
+  const hiddenChip =
+    file?.hidden || material?.hidden ? (
+      <HiddenChip
+        onShow={
+          itemReadOnly || !workspaceId
+            ? undefined
+            : () => toggleHidden({ id: item.id, type: item.kind }, false)
+        }
+      />
+    ) : null;
   const name = oneColumn ? (
     <>
       <h2 className="min-w-0">
@@ -499,13 +501,13 @@ export function Header({
           <span className={nameClassName}>{title ?? '--'}</span>
         </FilesTitleButton>
       </h2>
-      {hidden && <HiddenChip />}
+      {hiddenChip}
     </>
   ) : (
     <>
       {fileIcon}
       <h2 className={nameClassName}>{title ?? '--'}</h2>
-      {hidden && <HiddenChip />}
+      {hiddenChip}
     </>
   );
   const right = (
@@ -599,10 +601,7 @@ export function Header({
           })
         }
         onShare={shareable?.sharePath ? () => setSharing(true) : undefined}
-        readOnly={
-          readOnly ||
-          (materialCapabilities ? !materialCapabilities.canEdit : false)
-        }
+        readOnly={itemReadOnly}
         renameFieldLabel={m.files_file_name()}
         showMove={!standalone}
         workspaceId={workspaceId}
@@ -730,7 +729,7 @@ export function Header({
           <>
             {fileIcon}
             <h2 className={cn(nameClassName, 'flex-1')}>{title ?? '--'}</h2>
-            {hidden && <HiddenChip />}
+            {hiddenChip}
           </>
         )}
         {statusRow}
