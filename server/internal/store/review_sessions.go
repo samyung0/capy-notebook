@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -449,8 +450,9 @@ func (s *Store) workspacePlan(ctx context.Context, userID, wsID string, planID *
 }
 
 // WorkspaceReview is a new session: a suggestion's items (mode set) or, from
-// the workspace list, the whole workspace's.
-func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info ReviewSessionInfo, now time.Time) (ReviewSession, error) {
+// the workspace list, the whole workspace's. questionsOnly serves questions
+// whatever the review items preference (Practice's topic sessions).
+func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info ReviewSessionInfo, questionsOnly bool, now time.Time) (ReviewSession, error) {
 	out := ReviewSession{ReviewSessionInfo: info, Items: []ReviewItem{}, Done: []ReviewAnswer{}}
 	if info.Group == GroupPlan {
 		return s.planReview(ctx, userID, wsID, out, now)
@@ -475,6 +477,9 @@ func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info R
 		return out, err
 	}
 	prefs := reviewPrefsOf(prefsRaw)
+	if questionsOnly {
+		prefs.Items = "quiz"
+	}
 	items, history, err := s.scoredWorkspace(ctx, userID, wsID, prefs, now)
 	if err != nil {
 		return out, err
@@ -491,17 +496,38 @@ func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info R
 	} else {
 		out.Evidence = nil
 	}
+	var fresh []ranked
 	if info.Mode != nil {
 		out.Items = pickItems(items, g, true, prefs.Size)
 	} else {
-		fresh, err := s.newPool(ctx, userID, wsID, nil)
-		if err != nil {
+		if fresh, err = s.newPool(ctx, userID, wsID, nil); err != nil {
 			return out, err
 		}
 		out.Items = withNew(items, fresh, g, prefs)
 	}
+	withReasons(out.Items, fresh, history)
 	out.Total = len(out.Items)
 	return out, nil
+}
+
+// withReasons names why each served item came: new when it is in the new
+// pool, missed when a miss is among its latest answers, else fading.
+func withReasons(items []ReviewItem, fresh []ranked, history map[string][]review.Rating) {
+	isNew := make(map[string]bool, len(fresh))
+	for _, it := range fresh {
+		isNew[it.MaterialID+"/"+it.ItemID] = true
+	}
+	for i, it := range items {
+		key := it.MaterialID + "/" + it.ItemID
+		switch {
+		case isNew[key]:
+			items[i].Reason = ReasonNew
+		case slices.Contains(history[key], review.Again):
+			items[i].Reason = ReasonMissed
+		default:
+			items[i].Reason = ReasonFading
+		}
+	}
 }
 
 // planReview is a new session of a whole plan: its items as a whole-workspace
@@ -611,6 +637,9 @@ type SessionAnswer struct {
 type SessionItem struct {
 	MaterialID string `json:"materialId" minLength:"1"`
 	ItemID     string `json:"itemId" minLength:"1"`
+	// Reason is the served item's ReviewItem.Reason, kept for Continue and
+	// the result.
+	Reason string `json:"reason,omitempty" enum:"new,missed,fading"`
 }
 
 // ErrReviewSession refuses an answer for someone else's session or for an
@@ -770,6 +799,10 @@ func (s *Store) ResumeReviewSession(ctx context.Context, userID, id string) (Rev
 	if err := json.Unmarshal(raw, &served); err != nil {
 		return out, err
 	}
+	reasons := make(map[string]string, len(served))
+	for _, it := range served {
+		reasons[it.MaterialID+"/"+it.ItemID] = it.Reason
+	}
 	// A plan session's items may sit in any workspace the user still reads.
 	readable := map[string]bool{wsID: true}
 	inSession := func(itemWS string) (bool, error) {
@@ -854,6 +887,7 @@ func (s *Store) ResumeReviewSession(ctx context.Context, userID, id string) (Rev
 		}
 		done := r.ReviewAnswer
 		done.ReviewItem = it.ReviewItem
+		done.Reason = reasons[r.MaterialID+"/"+r.ItemID]
 		// A question shows as it was graded, key included, with its answers.
 		if it.Kind == "question" && len(r.graded) > 0 {
 			if err := json.Unmarshal(r.graded, &done.Question); err != nil {
@@ -876,7 +910,9 @@ func (s *Store) ResumeReviewSession(ctx context.Context, userID, id string) (Rev
 			return out, err
 		}
 		if ok {
-			out.Items = append(out.Items, p.ReviewItem)
+			item := p.ReviewItem
+			item.Reason = it.Reason
+			out.Items = append(out.Items, item)
 		}
 	}
 	return out, nil

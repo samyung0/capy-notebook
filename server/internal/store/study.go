@@ -55,7 +55,18 @@ type ReviewItem struct {
 	// Image is a card's image, shown under the front text as in study.
 	Image    *materialdoc.CardImage `json:"image,omitempty"`
 	Question map[string]any         `json:"question,omitempty"`
+	// Reason is why a workspace or topic session served the item (Practice,
+	// board F1): never rated or changed since (new), a miss among its latest
+	// answers (missed), else fading. Kept with the session's served items.
+	Reason string `json:"reason,omitempty" enum:"new,missed,fading"`
 }
+
+// Why a session served an item (ReviewItem.Reason).
+const (
+	ReasonNew    = "new"
+	ReasonMissed = "missed"
+	ReasonFading = "fading"
+)
 
 // quickReviewItems caps a quick review.
 const quickReviewItems = 4

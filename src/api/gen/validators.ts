@@ -5610,7 +5610,8 @@ export const CheckReviewItemBody = zod.object({
   "id": zod.uuid().describe('Minted by the browser when the session starts'),
   "items": zod.array(zod.object({
   "itemId": zod.string().min(1),
-  "materialId": zod.string().min(1)
+  "materialId": zod.string().min(1),
+  "reason": zod.enum(['new', 'missed', 'fading']).optional()
 })).min(1).max(checkReviewItemBodySessionItemsMax),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
   "planId": zod.string().optional().describe('The plan of a plan group'),
@@ -5715,7 +5716,8 @@ export const RateReviewItemBody = zod.object({
   "id": zod.uuid().describe('Minted by the browser when the session starts'),
   "items": zod.array(zod.object({
   "itemId": zod.string().min(1),
-  "materialId": zod.string().min(1)
+  "materialId": zod.string().min(1),
+  "reason": zod.enum(['new', 'missed', 'fading']).optional()
 })).min(1).max(rateReviewItemBodySessionItemsMax),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
   "planId": zod.string().optional().describe('The plan of a plan group'),
@@ -5805,6 +5807,7 @@ export const ResumeReviewSessionResponse = zod.object({
   "materialTitle": zod.string(),
   "question": zod.record(zod.string(), zod.unknown()).optional(),
   "rating": zod.int().min(1).max(resumeReviewSessionResponseDoneItemRatingMax),
+  "reason": zod.enum(['new', 'missed', 'fading']).optional(),
   "total": zod.number().optional()
 })),
   "evidence": zod.object({
@@ -5825,7 +5828,8 @@ export const ResumeReviewSessionResponse = zod.object({
   "kind": zod.enum(['card', 'question']),
   "materialId": zod.string(),
   "materialTitle": zod.string(),
-  "question": zod.record(zod.string(), zod.unknown()).optional()
+  "question": zod.record(zod.string(), zod.unknown()).optional(),
+  "reason": zod.enum(['new', 'missed', 'fading']).optional()
 })),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
   "planId": zod.string().optional().describe('The plan of a plan group'),
@@ -5873,6 +5877,7 @@ export const GetReviewResultResponse = zod.object({
   "materialTitle": zod.string(),
   "question": zod.record(zod.string(), zod.unknown()).optional(),
   "rating": zod.int().min(1).max(getReviewResultResponseItemsItemRatingMax),
+  "reason": zod.enum(['new', 'missed', 'fading']).optional(),
   "total": zod.number().optional()
 })),
   "session": zod.object({
@@ -7556,6 +7561,58 @@ export const UpdateWorkspaceMemberResponse = zod.void()
 
 
 /**
+ * @summary The workspace's Practice page: suggestions, quizzes and the caller's topic reviews
+ */
+export const GetWorkspacePracticeParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetWorkspacePracticeResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "members": zod.int().optional(),
+  "quizzes": zod.array(zod.object({
+  "average": zod.number().optional(),
+  "best": zod.object({
+  "correct": zod.number(),
+  "total": zod.number()
+}).optional(),
+  "id": zod.string(),
+  "questions": zod.int(),
+  "title": zod.string(),
+  "topicId": zod.string().optional(),
+  "triedBy": zod.int().optional()
+})),
+  "reviews": zod.array(zod.object({
+  "best": zod.object({
+  "correct": zod.number(),
+  "total": zod.number()
+}),
+  "group": zod.enum(['topic', 'others']),
+  "lastAt": zod.iso.datetime({"offset":true}),
+  "questions": zod.int(),
+  "topicId": zod.string().optional()
+})),
+  "suggestions": zod.array(zod.object({
+  "evidence": zod.object({
+  "forgotten": zod.int(),
+  "lastPractisedAt": zod.iso.datetime({"offset":true}),
+  "missed": zod.int(),
+  "repeated": zod.int(),
+  "young": zod.int()
+}),
+  "group": zod.enum(['topic', 'others', 'workspace']),
+  "iconId": zod.string(),
+  "items": zod.int(),
+  "mode": zod.enum(['tricky', 'fading', 'learned']),
+  "topicId": zod.string().optional(),
+  "topicName": zod.string().optional(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+}))
+})
+
+
+/**
  * @summary List a workspace's newest files and materials
  */
 export const ListWorkspaceRecentParams = zod.object({
@@ -7675,7 +7732,8 @@ export const GetWorkspaceReviewQueryParams = zod.object({
   "group": zod.enum(['topic', 'others', 'workspace', 'plan']).default(getWorkspaceReviewQueryGroupDefault),
   "topicId": zod.string().optional().describe('The topic of a topic group'),
   "planId": zod.string().optional().describe('The plan of a plan group, one of the user\'s plans kept in this workspace'),
-  "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('A suggestion\'s mode; omitted for a review from the workspace list')
+  "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('A suggestion\'s mode; omitted for a review from the workspace list'),
+  "items": zod.enum(['quiz']).optional().describe('quiz serves questions only, whatever the review items preference (Practice\'s topic sessions)')
 })
 
 export const getWorkspaceReviewResponseDoneItemRatingMax = 4;
@@ -7699,6 +7757,7 @@ export const GetWorkspaceReviewResponse = zod.object({
   "materialTitle": zod.string(),
   "question": zod.record(zod.string(), zod.unknown()).optional(),
   "rating": zod.int().min(1).max(getWorkspaceReviewResponseDoneItemRatingMax),
+  "reason": zod.enum(['new', 'missed', 'fading']).optional(),
   "total": zod.number().optional()
 })),
   "evidence": zod.object({
@@ -7719,7 +7778,8 @@ export const GetWorkspaceReviewResponse = zod.object({
   "kind": zod.enum(['card', 'question']),
   "materialId": zod.string(),
   "materialTitle": zod.string(),
-  "question": zod.record(zod.string(), zod.unknown()).optional()
+  "question": zod.record(zod.string(), zod.unknown()).optional(),
+  "reason": zod.enum(['new', 'missed', 'fading']).optional()
 })),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
   "planId": zod.string().optional().describe('The plan of a plan group'),
@@ -7958,7 +8018,8 @@ export const GetWorkspaceStudyResponse = zod.object({
   "kind": zod.enum(['card', 'question']),
   "materialId": zod.string(),
   "materialTitle": zod.string(),
-  "question": zod.record(zod.string(), zod.unknown()).optional()
+  "question": zod.record(zod.string(), zod.unknown()).optional(),
+  "reason": zod.enum(['new', 'missed', 'fading']).optional()
 })),
   "recentAttempts": zod.array(zod.object({
   "correct": zod.number(),

@@ -309,7 +309,7 @@ func TestPlanReviewSession(t *testing.T) {
 	if got := keys(summary.QuickReview); summary.Reviewable != 3 || !got[elsewhere[0].ID] || got[outside[0].ID] {
 		t.Fatalf("plan summary = %d %+v", summary.Reviewable, summary.QuickReview)
 	}
-	review, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupPlan, PlanID: &plan.ID}, later)
+	review, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupPlan, PlanID: &plan.ID}, false, later)
 	if err != nil {
 		t.Fatal(err)
 	}

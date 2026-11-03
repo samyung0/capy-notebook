@@ -131,6 +131,7 @@ import type {
   PDFAnnotationBody,
   PastReviewsOutputBody,
   PendingWorkspaceInvite,
+  Practice,
   ProjectMaterialReq,
   PublicFlashcardSetPage,
   PublicQuizPage,
@@ -10735,6 +10736,56 @@ const res = await fetch(getUpdateWorkspaceMemberUrl(id,memberId),
 
   const data: updateWorkspaceMemberResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as updateWorkspaceMemberResponse
+}
+
+
+
+export type getWorkspacePracticeResponse200 = {
+  data: Practice
+  status: 200
+}
+
+export type getWorkspacePracticeResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getWorkspacePracticeResponseSuccess = (getWorkspacePracticeResponse200) & {
+  headers: Headers;
+};
+export type getWorkspacePracticeResponseError = (getWorkspacePracticeResponseDefault) & {
+  headers: Headers;
+};
+
+export type getWorkspacePracticeResponse = (getWorkspacePracticeResponseSuccess | getWorkspacePracticeResponseError)
+
+export const getGetWorkspacePracticeUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/practice`
+}
+
+/**
+ * @summary The workspace's Practice page: suggestions, quizzes and the caller's topic reviews
+ */
+export const getWorkspacePractice = async (id: string, options?: RequestInit): Promise<getWorkspacePracticeResponse> => {
+
+  const res = await fetch(getGetWorkspacePracticeUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getWorkspacePracticeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspacePracticeResponse
 }
 
 

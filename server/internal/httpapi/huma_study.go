@@ -29,12 +29,16 @@ type reviewResultOutput struct {
 type reviewOverviewOutput struct {
 	Body store.ReviewOverview
 }
+type practiceOutput struct {
+	Body store.Practice
+}
 type workspaceReviewInput struct {
 	ID      string `path:"id"`
 	Group   string `query:"group" enum:"topic,others,workspace,plan" default:"workspace"`
 	TopicID string `query:"topicId" doc:"The topic of a topic group"`
 	PlanID  string `query:"planId" doc:"The plan of a plan group, one of the user's plans kept in this workspace"`
 	Mode    string `query:"mode" enum:"tricky,fading,learned" doc:"A suggestion's mode; omitted for a review from the workspace list"`
+	Items   string `query:"items" enum:"quiz" doc:"quiz serves questions only, whatever the review items preference (Practice's topic sessions)"`
 }
 type workspaceStudyInput struct {
 	ID     string `path:"id"`
@@ -110,6 +114,7 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodGet, "/api/learning/plans", "listLearningPlans", tag, "Every study plan of the user", http.StatusOK, a.listLearningPlans)
 	reg(api, http.MethodPut, "/api/workspaces/{id}/study/items", "setStudyItem", tag, "Mark a file or material read, unread or removed", http.StatusNoContent, a.setStudyItem)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/study/reset", "resetWorkspaceStudy", tag, "Clear study progress in a workspace", http.StatusNoContent, a.resetWorkspaceStudy)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/practice", "getWorkspacePractice", tag, "The workspace's Practice page: suggestions, quizzes and the caller's topic reviews", http.StatusOK, a.getWorkspacePractice)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/review", "getWorkspaceReview", tag, "A new review session: a suggestion's items, or the whole workspace's", http.StatusOK, a.getWorkspaceReview)
 	reg(api, http.MethodGet, "/api/review/sessions/{id}", "resumeReviewSession", tag, "An unfinished review session's items still to answer", http.StatusOK, a.resumeReviewSession)
 	reg(api, http.MethodGet, "/api/review/sessions/{id}/result", "getReviewResult", tag, "A review session's result: its scores and every answered item", http.StatusOK, a.getReviewResult)
@@ -195,6 +200,23 @@ func (a *api) resetWorkspaceStudy(ctx context.Context, in *workspaceIDInput) (*E
 	return &Empty{}, hErr(a.s.ResetStudy(ctx, userID(ctx), in.ID))
 }
 
+// getWorkspacePractice is any reader's Practice page; owner and editor
+// members also get how members use each quiz (counts and averages only).
+func (a *api) getWorkspacePractice(ctx context.Context, in *workspaceIDInput) (*practiceOutput, error) {
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	role, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.WorkspacePractice(ctx, userID(ctx), in.ID, store.RoleCanEdit(role), time.Now())
+	if err != nil {
+		return nil, storedContentError(ctx, "", err)
+	}
+	return &practiceOutput{Body: res}, nil
+}
+
 func (a *api) getWorkspaceReview(ctx context.Context, in *workspaceReviewInput) (*reviewOutput, error) {
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
@@ -209,7 +231,7 @@ func (a *api) getWorkspaceReview(ctx context.Context, in *workspaceReviewInput) 
 	if in.PlanID != "" {
 		info.PlanID = &in.PlanID
 	}
-	res, err := a.s.WorkspaceReview(ctx, userID(ctx), in.ID, info, time.Now())
+	res, err := a.s.WorkspaceReview(ctx, userID(ctx), in.ID, info, in.Items == "quiz", time.Now())
 	if errors.Is(err, store.ErrReviewGroup) {
 		return nil, huma.Error404NotFound(err.Error())
 	}

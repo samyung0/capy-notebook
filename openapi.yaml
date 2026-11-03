@@ -4062,6 +4062,84 @@ components:
         - topics
         - items
       type: object
+    Practice:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Practice.json
+          format: uri
+          readOnly: true
+          type: string
+        members:
+          format: int64
+          type: integer
+        quizzes:
+          items:
+            $ref: "#/components/schemas/PracticeQuiz"
+          type: array
+        reviews:
+          items:
+            $ref: "#/components/schemas/PracticeReview"
+          type: array
+        suggestions:
+          items:
+            $ref: "#/components/schemas/ReviewSuggestion"
+          type: array
+      required:
+        - suggestions
+        - quizzes
+        - reviews
+      type: object
+    PracticeQuiz:
+      additionalProperties: false
+      properties:
+        average:
+          format: double
+          type: number
+        best:
+          $ref: "#/components/schemas/SessionScore"
+        id:
+          type: string
+        questions:
+          format: int64
+          type: integer
+        title:
+          type: string
+        topicId:
+          type: string
+        triedBy:
+          format: int64
+          type: integer
+      required:
+        - id
+        - title
+        - questions
+      type: object
+    PracticeReview:
+      additionalProperties: false
+      properties:
+        best:
+          $ref: "#/components/schemas/SessionScore"
+        group:
+          enum:
+            - topic
+            - others
+          type: string
+        lastAt:
+          format: date-time
+          type: string
+        questions:
+          format: int64
+          type: integer
+        topicId:
+          type: string
+      required:
+        - group
+        - questions
+        - best
+        - lastAt
+      type: object
     PreviousAttempt:
       additionalProperties: false
       properties:
@@ -4981,6 +5059,12 @@ components:
           maximum: 4
           minimum: 1
           type: integer
+        reason:
+          enum:
+            - new
+            - missed
+            - fading
+          type: string
         total:
           format: double
           type: number
@@ -5039,6 +5123,12 @@ components:
         question:
           additionalProperties: {}
           type: object
+        reason:
+          enum:
+            - new
+            - missed
+            - fading
+          type: string
       required:
         - materialId
         - materialTitle
@@ -5378,6 +5468,12 @@ components:
           type: string
         materialId:
           minLength: 1
+          type: string
+        reason:
+          enum:
+            - new
+            - missed
+            - fading
           type: string
       required:
         - materialId
@@ -12906,6 +13002,31 @@ paths:
       summary: Change a workspace member role
       tags:
         - Workspace collaboration
+  /api/workspaces/{id}/practice:
+    get:
+      operationId: getWorkspacePractice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Practice"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "The workspace's Practice page: suggestions, quizzes and the caller's topic reviews"
+      tags:
+        - Study
   /api/workspaces/{id}/recent:
     get:
       operationId: listWorkspaceRecent
@@ -12975,6 +13096,15 @@ paths:
               - tricky
               - fading
               - learned
+            type: string
+        - description: quiz serves questions only, whatever the review items preference (Practice's topic sessions)
+          explode: false
+          in: query
+          name: items
+          schema:
+            description: quiz serves questions only, whatever the review items preference (Practice's topic sessions)
+            enum:
+              - quiz
             type: string
       responses:
         "200":

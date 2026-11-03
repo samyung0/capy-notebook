@@ -258,7 +258,7 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 
 	// A manual review takes the practised card and the new ones (the edited
 	// card and the never-rated set), not the removed or trashed sets.
-	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, time.Now())
+	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +477,7 @@ func TestReviewSkipsEmbeddedOrphanedAndEditedItems(t *testing.T) {
 
 	removeCard(t, f.s, f.user, cards[0].MaterialID, cards[1].ID)
 	editCardFront(t, f.s, f.user, cards[0].MaterialID, cards[2].ID, "Nucleus envelope")
-	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, time.Now())
+	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
