@@ -311,6 +311,23 @@ type GenerateReq struct {
 	Title       MaterialTitle                `json:"title" minLength:"1"`
 }
 
+// CreateExtractionReq starts a Make a quiz run (todo-study-tracking.md §8):
+// the question paper's files with their selected pages (counted from 1; an
+// image is page 1), and the mark scheme or answer files, read whole. The
+// handler holds the run to fieldlimits.ExtractionPages selected pages and
+// fieldlimits.ExtractionFiles files in all.
+type CreateExtractionReq struct {
+	Title         MaterialTitle         `json:"title" minLength:"1"`
+	Paper         []ExtractionPaperFile `json:"paper" minItems:"1"`
+	AnswerFileIDs []string              `json:"answerFileIds,omitempty" nullable:"false"`
+}
+
+// ExtractionPaperFile is one question-paper file and the pages selected in it.
+type ExtractionPaperFile struct {
+	FileID string `json:"fileId" minLength:"1"`
+	Pages  []int  `json:"pages" minItems:"1"`
+}
+
 // CreateSourceUploadReq is a streamed source upload's metadata part (see
 // uploadSource); the schema bounds are checked there. Empty kind and parseMode
 // are inferred from name, then validated. That inference is not a product default.

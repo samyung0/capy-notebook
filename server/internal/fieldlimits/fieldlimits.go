@@ -100,6 +100,11 @@ const (
 	QuizOpenParts     = 20
 	QuizMarkscheme    = 5
 	QuizOpenAnswer    = 5_000
+	// A Make a quiz run reads at most ExtractionPages selected pages from at
+	// most ExtractionFiles files, mark scheme and answer files included
+	// (todo-study-tracking.md §8, Epo 2026-11-03).
+	ExtractionPages = 40
+	ExtractionFiles = 10
 	// AnonymousLocalID bounds the reporting id a signed-out browser sends.
 	AnonymousLocalID = 64
 	// A flashcard's front and back (human/frontend/plate-editor.md for the
@@ -176,6 +181,7 @@ var Columns = map[string]int{
 	"materials.workspace_name":         WorkspaceName,
 	"materials.title":                  MaterialTitle,
 	"attempts.quiz_name":               MaterialTitle,
+	"question_extractions.title":       MaterialTitle,
 	"attempts.workspace_name":          WorkspaceName,
 	"tags.name":                        TagValue,
 	"labels.name":                      LabelName,

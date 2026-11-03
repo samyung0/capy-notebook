@@ -1777,6 +1777,40 @@ export const ExploreWorkspacesResponse = zod.object({
 
 
 /**
+ * @summary A Make a quiz run its starter began
+ */
+export const GetExtractionParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetExtractionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "error": zod.string().optional(),
+  "errorCode": zod.string().optional(),
+  "finishedAt": zod.iso.datetime({"offset":true}).optional(),
+  "id": zod.string(),
+  "quizId": zod.string().optional(),
+  "recorded": zod.int(),
+  "report": zod.object({
+  "expected": zod.array(zod.string()),
+  "figures": zod.array(zod.string()),
+  "invalid": zod.array(zod.string()),
+  "missing": zod.array(zod.string()),
+  "pages": zod.int(),
+  "recorded": zod.array(zod.string()),
+  "stopped": zod.enum(['', 'quiz_full', 'credits']),
+  "unanswered": zod.array(zod.string()),
+  "unpaired": zod.array(zod.string()),
+  "windows": zod.int()
+}).optional(),
+  "status": zod.enum(['running', 'done', 'failed']),
+  "title": zod.string(),
+  "workspaceId": zod.string()
+})
+
+
+/**
  * @summary List the files the caller pays for, or can open (scope=member)
  */
 export const listOwnedFilesQueryQMax = 120;
@@ -7083,6 +7117,56 @@ export const UnarchiveConversationsParams = zod.object({
 })
 
 export const UnarchiveConversationsResponse = zod.void()
+
+
+/**
+ * @summary Start reading the questions on selected pages into a new quiz
+ */
+export const CreateExtractionParams = zod.object({
+  "id": zod.string()
+})
+
+
+
+
+export const createExtractionBodyTitleMax = 120;
+
+
+
+export const CreateExtractionBody = zod.object({
+  "answerFileIds": zod.array(zod.string()).optional(),
+  "paper": zod.array(zod.object({
+  "fileId": zod.string().min(1),
+  "pages": zod.array(zod.int()).min(1).nullable()
+})).min(1).nullable(),
+  "title": zod.string().min(1).max(createExtractionBodyTitleMax)
+})
+
+export const CreateExtractionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "error": zod.string().optional(),
+  "errorCode": zod.string().optional(),
+  "finishedAt": zod.iso.datetime({"offset":true}).optional(),
+  "id": zod.string(),
+  "quizId": zod.string().optional(),
+  "recorded": zod.int(),
+  "report": zod.object({
+  "expected": zod.array(zod.string()),
+  "figures": zod.array(zod.string()),
+  "invalid": zod.array(zod.string()),
+  "missing": zod.array(zod.string()),
+  "pages": zod.int(),
+  "recorded": zod.array(zod.string()),
+  "stopped": zod.enum(['', 'quiz_full', 'credits']),
+  "unanswered": zod.array(zod.string()),
+  "unpaired": zod.array(zod.string()),
+  "windows": zod.int()
+}).optional(),
+  "status": zod.enum(['running', 'done', 'failed']),
+  "title": zod.string(),
+  "workspaceId": zod.string()
+})
 
 
 /**

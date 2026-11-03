@@ -1,0 +1,379 @@
+package httpapi
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"slices"
+	"strings"
+
+	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+)
+
+// Make a quiz (todo-study-tracking.md §8): the retrieval service reads the
+// selected pages of a paper into questions, two pages a call, and pairs the
+// mark scheme and answer files with them by label; this gateway starts the
+// run, keeps the questions as each window ends and saves the quiz at the end.
+// The run outlives the request, like a chat turn: it relays on a detached
+// context in this process, and FailOrphanedExtractions fails what a restart
+// cut short.
+
+type createExtractionInput struct {
+	ID   string `path:"id"`
+	Body apimodel.CreateExtractionReq
+}
+
+type extractionOutput struct {
+	Body store.Extraction
+}
+
+type getExtractionInput struct {
+	ID string `path:"id"`
+}
+
+func (a *api) registerExtractions(api huma.API) {
+	reg(api, http.MethodPost, "/api/workspaces/{id}/extractions", "createExtraction", "Generate",
+		"Start reading the questions on selected pages into a new quiz", http.StatusAccepted, a.createExtraction)
+	reg(api, http.MethodGet, "/api/extractions/{id}", "getExtraction", "Generate",
+		"A Make a quiz run its starter began", http.StatusOK, a.getExtraction)
+}
+
+// checkExtractionRequest holds a run to its caps (Epo 2026-11-03): at most
+// ExtractionPages selected pages and ExtractionFiles files, mark scheme and
+// answer files included; each file once, each page once and counted from 1.
+func checkExtractionRequest(req apimodel.CreateExtractionReq) error {
+	files := len(req.Paper) + len(req.AnswerFileIDs)
+	if files > fieldlimits.ExtractionFiles {
+		return fmt.Errorf("a run reads at most %d files, mark scheme and answer files included; this one has %d", fieldlimits.ExtractionFiles, files)
+	}
+	seen := map[string]bool{}
+	pages := 0
+	for _, paper := range req.Paper {
+		if seen[paper.FileID] {
+			return fmt.Errorf("file %q is listed twice", paper.FileID)
+		}
+		seen[paper.FileID] = true
+		picked := map[int]bool{}
+		for _, page := range paper.Pages {
+			if page < 1 {
+				return fmt.Errorf("file %q: pages are counted from 1", paper.FileID)
+			}
+			if picked[page] {
+				return fmt.Errorf("file %q: page %d is selected twice", paper.FileID, page)
+			}
+			picked[page] = true
+		}
+		pages += len(paper.Pages)
+	}
+	if pages > fieldlimits.ExtractionPages {
+		return fmt.Errorf("a run reads at most %d selected pages; %d are selected", fieldlimits.ExtractionPages, pages)
+	}
+	for _, id := range req.AnswerFileIDs {
+		if seen[id] {
+			return fmt.Errorf("file %q is listed twice", id)
+		}
+		seen[id] = true
+	}
+	return nil
+}
+
+// extractionLLM is the run's model: the chat slot's default pin, whose slot
+// requires vision and tool calls, with reasoning at low for the page windows
+// (Epo's preference, research R3); outline and scheme calls turn it off. The
+// run's starter pays (Epo 2026-11-03).
+func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, error) {
+	var out resolvedLLM
+	if a.modelReg == nil {
+		return out, fmt.Errorf("%w: registry not configured", store.ErrModelUnavailable)
+	}
+	cfg, err := a.modelReg.Default(ctx, models.SlotChat)
+	if err != nil {
+		return out, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
+	}
+	if !slices.Contains(cfg.ThinkingLevels, models.ThinkingLow) {
+		return out, fmt.Errorf("%w: %s has no low thinking", store.ErrModelUnavailable, cfg.Ref())
+	}
+	out.Cfg, out.Rates, out.UserID, out.Thinking = cfg, store.RatesFromConfig(cfg), userID, models.ThinkingLow
+	return out, nil
+}
+
+// extractionFile is a file as the retrieval service reads it.
+type extractionFile struct {
+	FileID string `json:"fileId"`
+	Name   string `json:"name"`
+	Pages  []int  `json:"pages,omitempty"`
+}
+
+// extractionFiles checks each file is the workspace's, untrashed and indexed;
+// a paper is a PDF or an image (Office files come later, §8).
+func (a *api) extractionFiles(ctx context.Context, wsID string, req apimodel.CreateExtractionReq) (paper, answers []extractionFile, err error) {
+	paper, answers = []extractionFile{}, []extractionFile{}
+	read := func(id string) (store.File, error) {
+		f, err := a.s.GetFile(ctx, id)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && f.WorkspaceID != wsID) {
+			return f, huma.Error400BadRequest(fmt.Sprintf("No workspace file has the id %q: it may have been deleted or moved to trash.", id))
+		}
+		if err != nil {
+			return f, err
+		}
+		if !f.Indexed {
+			return f, huma.Error400BadRequest(fmt.Sprintf("%s has no indexed text yet: wait until it has been read, or process it.", f.Name))
+		}
+		return f, nil
+	}
+	for _, p := range req.Paper {
+		f, err := read(p.FileID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if f.Kind != store.FilePDF && f.Kind != store.FileImage {
+			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s: questions are read from PDF files and images for now.", f.Name))
+		}
+		if f.Kind == store.FileImage && !slices.Equal(p.Pages, []int{1}) {
+			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s is an image: its one page is page 1.", f.Name))
+		}
+		paper = append(paper, extractionFile{FileID: f.ID, Name: f.Name, Pages: p.Pages})
+	}
+	for _, id := range req.AnswerFileIDs {
+		f, err := read(id)
+		if err != nil {
+			return nil, nil, err
+		}
+		answers = append(answers, extractionFile{FileID: f.ID, Name: f.Name})
+	}
+	return paper, answers, nil
+}
+
+func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (*extractionOutput, error) {
+	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	// The quiz is the starter's material in the workspace: refuse a frozen
+	// account or a full one before credits are reserved.
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	actor, wsID := userID(ctx), in.ID
+	if err := a.s.StorageFullErr(ctx, actor); err != nil {
+		return nil, hErr(err)
+	}
+	title, err := normalizeGenerateTitle(string(in.Body.Title))
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if err := checkExtractionRequest(in.Body); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if taken, err := a.s.MaterialTitleTaken(ctx, wsID, title); err != nil {
+		return nil, hErr(err)
+	} else if taken {
+		return nil, hErr(store.ErrTitleTaken)
+	}
+	paper, answers, err := a.extractionFiles(ctx, wsID, in.Body)
+	var refused huma.StatusError
+	if errors.As(err, &refused) {
+		return nil, err
+	}
+	if err != nil {
+		return nil, hErr(err)
+	}
+	ws, err := a.s.GetWorkspaceShared(ctx, wsID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if a.pipe == nil {
+		return nil, hErr(errAIUnavailable)
+	}
+	llm, err := a.extractionLLM(ctx, actor)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	charge, err := a.beginProviderSession(ctx, actor, wsID, store.SurfaceGenerate, llm.Rates, store.TokenRates{}, llm.Thinking)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	body := map[string]any{
+		"workspaceId": wsID, "paper": paper, "answerFiles": answers, "spendSessionId": charge.id,
+	}
+	llm.attach(body)
+	// The run goes on after this request returns.
+	runCtx := context.WithoutCancel(ctx)
+	stream, err := a.pipe.PostStream(runCtx, "/extract", body)
+	if err != nil {
+		charge.release(ctx)
+		if mapped := pipelineExtractionError(err); mapped != nil {
+			return nil, mapped
+		}
+		if mapped := pipelineLLMError(err); mapped != nil {
+			return nil, hErr(mapped)
+		}
+		return nil, hErr(&aiServiceError{cause: err})
+	}
+	run, err := a.s.CreateExtraction(runCtx, wsID, actor, title)
+	if err != nil {
+		stream.Close()
+		charge.release(ctx)
+		return nil, hErr(err)
+	}
+	go a.relayExtraction(runCtx, stream, charge, run, actor, ws.Name)
+	return &extractionOutput{Body: run}, nil
+}
+
+func (a *api) getExtraction(ctx context.Context, in *getExtractionInput) (*extractionOutput, error) {
+	run, err := a.s.GetExtraction(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &extractionOutput{Body: run}, nil
+}
+
+// pipelineExtractionError maps the retrieval service's refusal of a request it
+// cannot read (a page past the file's end, a file with no page view) to a 400
+// carrying its code and message.
+func pipelineExtractionError(err error) error {
+	var pe *pipeline.Error
+	if !errors.As(err, &pe) || pe.Status != http.StatusBadRequest {
+		return nil
+	}
+	body := pe.Decode()
+	if body.Code == "" || body.Message == "" {
+		return nil
+	}
+	return &huma.ErrorModel{
+		Status: http.StatusBadRequest,
+		Title:  http.StatusText(http.StatusBadRequest),
+		Detail: body.Message,
+		Errors: []*huma.ErrorDetail{{Message: body.Code}},
+	}
+}
+
+// extractionEvent is one event of the retrieval service's /extract stream.
+type extractionEvent struct {
+	Type      string          `json:"type"`
+	Questions json.RawMessage `json:"questions"`
+	Report    json.RawMessage `json:"report"`
+	Code      string          `json:"code"`
+	Message   string          `json:"message"`
+}
+
+// relayExtraction follows a run to its end: it keeps the recorded questions
+// after each page window, then saves the quiz, or fails the run. Credits were
+// charged per model call, so the session closes as settled either way.
+func (a *api) relayExtraction(ctx context.Context, stream io.ReadCloser, charge *spend, run store.Extraction, actor, wsName string) {
+	defer stream.Close()
+	defer charge.settle(ctx)
+	ended := a.followExtraction(ctx, stream, run, actor, wsName)
+	if ended.Status == store.ExtractionRunning {
+		ended, _ = a.s.FailExtraction(ctx, run.ID, "extraction_failed",
+			"Reading the questions stopped before it finished.", nil)
+	}
+	a.publishNotificationEvent(ctx, actor, notificationEvent{
+		Type: "extraction", ExtractionID: run.ID, Status: ended.Status,
+	})
+}
+
+func (a *api) followExtraction(ctx context.Context, stream io.Reader, run store.Extraction, actor, wsName string) store.Extraction {
+	reader := bufio.NewReader(stream)
+	for {
+		line, err := reader.ReadString('\n')
+		if payload, ok := strings.CutPrefix(strings.TrimRight(line, "\r\n"), "data:"); ok && strings.TrimSpace(payload) != "" {
+			var ev extractionEvent
+			if json.Unmarshal([]byte(payload), &ev) != nil {
+				continue
+			}
+			switch ev.Type {
+			case "questions":
+				if err := a.s.SaveExtractionQuestions(ctx, run.ID, ev.Questions); err != nil {
+					obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_save"})
+				}
+			case "done":
+				return a.finishExtraction(ctx, run, actor, wsName, ev)
+			case "error":
+				ended, failErr := a.s.FailExtraction(ctx, run.ID, ev.Code, ev.Message, ev.Report)
+				if failErr != nil {
+					obs.CaptureErr(ctx, failErr, map[string]string{"stage": "extraction_fail"})
+				}
+				return ended
+			}
+		}
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_stream"})
+			}
+			return store.Extraction{Status: store.ExtractionRunning}
+		}
+	}
+}
+
+// finishExtraction saves the run's questions as a new quiz in the workspace.
+// The title was free when the run started; a quiz made since under it moves
+// this one to "Title 2".
+func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor, wsName string, ev extractionEvent) store.Extraction {
+	fail := func(code, message string) store.Extraction {
+		ended, err := a.s.FailExtraction(ctx, run.ID, code, message, ev.Report)
+		if err != nil {
+			obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_fail"})
+		}
+		return ended
+	}
+	if qs := strings.TrimSpace(string(ev.Questions)); qs == "" || qs == "[]" || qs == "null" {
+		return fail("extraction_empty", "No question could be saved with its answer from the selected pages.")
+	}
+	title, err := a.s.DisambiguateMaterialTitle(ctx, run.WorkspaceID, run.Title)
+	if err != nil {
+		return fail("extraction_failed", "The quiz could not be saved.")
+	}
+	// TODO(study-extraction): the plan (§8) starts the quiz "Hidden from
+	// members", but materials have no hidden flag yet; visibility is its own
+	// step, so the quiz is visible to members like any other for now.
+	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
+		ActorUserID: actor, WorkspaceID: run.WorkspaceID, WorkspaceName: wsName,
+		Kind: store.MaterialQuiz, Title: title, Questions: ev.Questions,
+	})
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		return fail("quiz_invalid", err.Error())
+	}
+	if err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_quiz"})
+		return fail("extraction_failed", "The quiz could not be saved.")
+	}
+	ended, err := a.s.FinishExtraction(ctx, run.ID, mt.ID, ev.Report)
+	if err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_finish"})
+	}
+	return ended
+}
+
+// internalCheckQuestion validates one extracted question the way a quiz's
+// creation does, for the retrieval service's page windows: 200 with the
+// refusal in "problem", or with none.
+func (a *api) internalCheckQuestion(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Question json.RawMessage `json:"question"`
+	}
+	if err := decodeBoundedJSON(w, r, &req, internalQuestionMaxBytes); err != nil || len(req.Question) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid question check"})
+		return
+	}
+	problem := ""
+	if _, err := materialdoc.QuizDocument(json.RawMessage("["+string(req.Question)+"]"), nil); err != nil {
+		problem = err.Error()
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"problem": problem})
+}
+
+// internalQuestionMaxBytes bounds one question: its blocks, parts and figures
+// are bounded by the validator, so this only stops an oversized body early.
+const internalQuestionMaxBytes = 4 << 20

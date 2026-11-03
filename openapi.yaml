@@ -1628,6 +1628,33 @@ components:
         - start
         - end
       type: object
+    CreateExtractionReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CreateExtractionReq.json
+          format: uri
+          readOnly: true
+          type: string
+        answerFileIds:
+          items:
+            type: string
+          type: array
+        paper:
+          items:
+            $ref: "#/components/schemas/ExtractionPaperFile"
+          minItems: 1
+          nullable: true
+          type: array
+        title:
+          maxLength: 120
+          minLength: 1
+          type: string
+      required:
+        - title
+        - paper
+      type: object
     CreateFlashcardSetReq:
       additionalProperties: false
       properties:
@@ -2185,6 +2212,124 @@ components:
         - description
         - cover
         - subjects
+      type: object
+    Extraction:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Extraction.json
+          format: uri
+          readOnly: true
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        error:
+          type: string
+        errorCode:
+          type: string
+        finishedAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        quizId:
+          type: string
+        recorded:
+          format: int64
+          type: integer
+        report:
+          $ref: "#/components/schemas/ExtractionReport"
+        status:
+          enum:
+            - running
+            - done
+            - failed
+          type: string
+        title:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - id
+        - workspaceId
+        - title
+        - status
+        - recorded
+        - createdAt
+      type: object
+    ExtractionPaperFile:
+      additionalProperties: false
+      properties:
+        fileId:
+          minLength: 1
+          type: string
+        pages:
+          items:
+            format: int64
+            type: integer
+          minItems: 1
+          nullable: true
+          type: array
+      required:
+        - fileId
+        - pages
+      type: object
+    ExtractionReport:
+      additionalProperties: false
+      properties:
+        expected:
+          items:
+            type: string
+          type: array
+        figures:
+          items:
+            type: string
+          type: array
+        invalid:
+          items:
+            type: string
+          type: array
+        missing:
+          items:
+            type: string
+          type: array
+        pages:
+          format: int64
+          type: integer
+        recorded:
+          items:
+            type: string
+          type: array
+        stopped:
+          enum:
+            - ""
+            - quiz_full
+            - credits
+          type: string
+        unanswered:
+          items:
+            type: string
+          type: array
+        unpaired:
+          items:
+            type: string
+          type: array
+        windows:
+          format: int64
+          type: integer
+      required:
+        - expected
+        - missing
+        - recorded
+        - unanswered
+        - invalid
+        - unpaired
+        - figures
+        - stopped
+        - pages
+        - windows
       type: object
     File:
       additionalProperties: false
@@ -9164,6 +9309,31 @@ paths:
       summary: Public workspaces
       tags:
         - Explore
+  /api/extractions/{id}:
+    get:
+      operationId: getExtraction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extraction"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A Make a quiz run its starter began
+      tags:
+        - Generate
   /api/files:
     get:
       operationId: listOwnedFiles
@@ -12669,6 +12839,37 @@ paths:
       summary: Put every archived conversation back in the list
       tags:
         - Chat
+  /api/workspaces/{id}/extractions:
+    post:
+      operationId: createExtraction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateExtractionReq"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extraction"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Start reading the questions on selected pages into a new quiz
+      tags:
+        - Generate
   /api/workspaces/{id}/files:
     get:
       operationId: listWorkspaceFiles
