@@ -559,6 +559,26 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 
 ---
 
+**Open choices from the build (2026-11-03, canvas page 10, boards Q1–Q4).** The toast, card and quiz-option branch (`claude/study-ui-pieces`, 24a1f8e03) settled these one way; Epo picks one option per row:
+- **Toasts (Q1):**
+  - T: dark mode;
+  - E: an open error and the next toast;
+  - A: where the action goes on a two-line toast;
+  - I: the plain toast's icon;
+  - S: working spinner, ring or the app's leapfrog dots;
+  - P: phone position.
+- **Icons and cards (Q2):**
+  - Z: 16px icons in the toast × and card ⋮, or the 18px minimum;
+  - V: the card ⋮ always shown or on hover;
+  - N: a workspace with no cover;
+  - L: long names.
+- **Quiz options (Q3):**
+  - D: marks shown twice on one-part questions;
+  - B: true/false alignment;
+  - O: how a checked ordering looks;
+  - R: right choices in a wrong all-or-nothing part.
+- **AI icon (Q4, Epo 2026-11-03):** not the chat bubble but a curvy four-point star. The options are an outline star, a filled star, or a star with a small one. The shell branch uses the outline star until Epo picks.
+
 ### Drawing answers (agreed, Epo 2026-11-03; canvas boards K6–K8)
 
 Epo asked whether to allow drawings as answers, for graphs and diagrams, and as a path toward scanned answers.
