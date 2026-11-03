@@ -129,7 +129,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - **The rail stays on every workspace page (Epo, 2026-11-02),** focused pages included: page picking, the quiz editor, the report, grading, the timed assignment, Submitted and topic practice. Dialogs open over a page that still shows it.
 - **The Study panel stays open too (Epo, 2026-11-03).** Opening an assignment, its report, its open answers, the timed assignment, Submitted, results or a topic session keeps Members/Assignments/Topics/My results beside the page, with the matching item highlighted.
 - **Every screen links to the next one in its flow (Epo, 2026-11-03).**
-  - The assignment report has three tabs: Questions, Members and **Marked by AI**. The marking screen is that tab, with a question dropdown above the member list, not a separate page. "Check the AI's marks" under a question goes to the same tab.
+  - The assignment report has three tabs: Questions, Members and **Approve AI marks**. The marking screen is that tab, with a question dropdown above the member list, not a separate page. "Check the AI's marks" under a question goes to the same tab.
   - Submitted links to Home and to **See results**.
   - My results gives each Needs practice topic a **Practise** button, which opens the topic session.
   - My results shows the same topic labels the owner sees on the member's profile.
@@ -308,6 +308,9 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Assign to (Epo, 2026-11-03; A1, A1b).** New assignment has an Assign to field, beside Attempts.
   - **All members** is the default, and it includes anyone who joins later (as Classroom's "All students" and Teams' "All students" do). It covers viewers only; editors aren't assigned.
   - **Picking names** fixes the list. The task and the notice reach only those members, and "x of y done" and the report count only them.
+  - **Owners and editors are left out** unless they tick themselves ("You" at the bottom of the list). The same goes for plain tasks.
+- **The owner's Tasks show what is for her (Epo, 2026-11-03; H3).** "Show: For me" is the default: approval tasks, and anything she assigned herself. Work set for members ("Do Past paper 2025 P1") isn't there. "Show: Set for members" lists what she set, with how many are done (H1). Like Classroom's To review and Canvas's teacher To Do, a teacher's own list holds review work, not the class's work.
+- **The report's Members tab (G3m).** One row per member the assignment went to: when they submitted, how long they took, their mark, and how many marks still wait for approval. Members who haven't submitted say Missing. A row opens that member's answers, laid out like their Results, where the owner can change any mark.
   - Lists show no status for published assignments, only a "Draft" label on drafts. There is no Scheduled, Open, To review or Released status, and no separate "Open for submissions" step: A6 is removed.
   - Rows carry plain facts ("Due Fri 7 Nov", "5 of 6 submitted", "4 open answers to review") and actions (Review).
   - The Study header button is "New assignment".
@@ -329,7 +332,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Mock:**
   - A1, the Assign dialog;
   - A2, taking a timed test;
-  - A3, the report's Marked by AI tab, where the owner approves or changes AI marks.
+  - A3, the report's Approve AI marks tab, where the owner approves or changes AI marks.
 
 ## 8. Questions from uploaded files
 
@@ -400,9 +403,9 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Grading (Epo, 2026-11-02; approval brought back 2026-11-03): DeepSeek marks open answers on submit.**
   - **Practice:** members see AI marks at once.
   - **Assignments:** an AI mark reaches the member only after the owner approves it. Questions with one right answer are still marked at once, so Submitted shows the mark so far, and results show "Waiting for Ms Wong" on the held answers.
-  - **Where approval lives:** Study → Assignments → the assignment → the **Marked by AI** tab (A3). The Assignments list row says "5 AI marks to approve" (W2), and "Check the AI's marks" under each question in the report opens the tab.
+  - **Where approval lives:** Study → Assignments → the assignment → the **Approve AI marks** tab (A3). The Assignments list row says "5 AI marks to approve" (W2), and "Check the AI's marks" under each question in the report opens the tab.
   - **In the tab:** pick the question, then go through the members. Rows waiting show "AI 3 / 6"; approved rows show just the mark. Approve moves to the next one, Approve all clears the question, and changing a mark approves it too.
-  - **Words:** the tab is named after who marked the answers ("Marked by AI"), not the question type; "Open answer" stays only as a question type.
+  - **Words (Epo, 2026-11-03):** the tab is named for what the owner does there, **"Approve AI marks"** (it was "Open answers", then "Marked by AI"). "Open answer" stays only as a question type.
   - **Switch (Epo, 2026-11-03):** New assignment has "Approve AI marks before members see them", on by default, under Published (A1). Turned off, AI marks reach members at once, as in practice, and the assignment never shows marks to approve.
   - **Reminders (Epo, 2026-11-03, D1 and H3 on page 3):** besides the Assignments row, waiting marks show in three places, each only while something waits:
     - the app's Home gets a **To approve** list across workspaces, one row per assignment with Approve (Canvas lists "Grade …" in the To Do on its Dashboard; Classroom has a To review list across classes);
