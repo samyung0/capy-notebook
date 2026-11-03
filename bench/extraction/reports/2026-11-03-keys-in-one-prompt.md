@@ -156,6 +156,43 @@ the answer in. The unpinned V4.1 Flash wrote every answer but cost more and
 varied more (56 to 90 credits on 2022 P2). Epo's follow-up made 1017 the
 extraction slot's pin (migration 0138).
 
+## Wafer first (2026-11-04)
+
+Epo then routed 1017 to Wafer, then InferenceNet, then Cloudflare, with
+fallbacks off, for every call it serves. A quick check on that route cost
+about $0.15.
+
+- **`order` takes an endpoint tag.** OpenRouter's billed cost shows which
+  endpoint served a call. `wafer/us` and `wafer/mxfp4` each reached their
+  own endpoint ($0.038 and $0.16 input per million). The name `Wafer` (or
+  `wafer`) took `wafer/us` in five calls of five, and `Wafer/us` found no
+  endpoint. The route names `wafer/us`.
+- **Captions, five images** (two textbook pages, a photo, an abstract figure
+  and half an HKDSE page), each on the new route and on InferenceNet alone.
+  Wafer served every call on the new route. It was faster (0.8-3.2 s against
+  1.9-8.6 s) and 20-40% cheaper, and wrote the same text and numbers. Wafer
+  keeps the page layout's runs of spaces in its transcriptions.
+- **Extraction, 2021 Paper 1, two runs.** Wafer served every call.
+
+| | InferenceNet (runs 51-52) | Wafer (run 61) | Wafer (run 62) |
+|---|---|---|---|
+| Labels found, questions saved | 10/10, 10/10 | 10/10, 10/10 | 7/10, 7/10 (5-7 lost) |
+| Part marks = the paper's | 18/19, 16/19 | 14/19 | 14/14 |
+| Open parts without a model answer | 2 of 15, 0 of 16 | 14 of 14 | 8 of 12 |
+| Seconds, billed | 87-90 s, $0.0076-0.0078 | 42 s, $0.0062 | 528 s, $0.133 |
+| Output tokens | 10-12k | 9k | 152k over 16 calls |
+
+Run 62 ran away: its replies filled the 24,000-token output cap again and
+again, the window holding questions 5-7 recorded nothing, and the run cost 17
+times InferenceNet's. In both runs Wafer left the open parts' short model
+answer out. The worked solution and marking points still held the answer.
+Wafer also reports every output token as reasoning (`reasoning_tokens` equals
+`completion_tokens` in a probe at instant as at medium), so usage rows on Wafer
+overstate reasoning. Billing is not affected. For calls with reasoning off
+(captions, page reads, ghost text), Wafer looks like a gain. For Make a quiz
+at mid, two runs are too few to settle it, but both runs were worse than
+InferenceNet's.
+
 ## Left out
 
 - 0731 (text-only, above).
@@ -171,4 +208,4 @@ python bench/extraction/scripts/run.py --paper 2022-p2 --model v41-1017 --repeat
 ```
 
 (`--model deepseek` for direct Flash, `v41` for the unpinned V4.1 Flash.)
-Spend this round, every run and probe included: about $1.25.
+Spend this round, every run and probe included: about $1.40.

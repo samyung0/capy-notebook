@@ -27,11 +27,18 @@ DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
 # OpenRouter models, each held on vetted providers with fallbacks off
 # (OpenRouter tries `order` in turn and nothing outside it). Default routing
 # moves between providers that differ on image input, so a model with no entry
-# is refused, never routed. 0731 is the ingest descriptor model (decision
-# 2026-10-15), off Relace since its endpoint answered 429 for every summary
-# (decision 2026-10-20); 1017 reads pages and images for captioning (decisions
-# 2026-10-19 and 2026-10-21); GLM-5.3-Flash serves chat (decision 2026-10-21,
-# replacing Z.AI's own endpoint). OpenRouter bills each provider's listed price.
+# is refused, never routed. DeepInfra is never on a chat or vision route (Epo
+# 2026-11-04); only the Qwen embedding pin uses it, on DeepInfra's own API.
+# 0731 is the ingest descriptor model (decision 2026-10-15), off Relace since
+# its endpoint answered 429 for every summary (decision 2026-10-20); 1017
+# reads pages, captions images, writes ghost text and runs Make a quiz
+# (decisions 2026-10-19, 2026-10-21, 2026-10-28, 2026-11-03) on Wafer's US
+# endpoint, then InferenceNet, then Cloudflare (Epo 2026-11-04). `order` takes
+# an endpoint tag: "wafer/us" ($0.038 / $0.50 per million input / output) is
+# named so OpenRouter cannot pick Wafer's dearer "wafer/mxfp4" ($0.16 in); by
+# name alone it took wafer/us in five calls of five (2026-11-04 probe).
+# GLM-5.3-Flash serves chat (decision 2026-10-21, replacing Z.AI's own
+# endpoint). OpenRouter bills each provider's listed price.
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
     "deepseek/deepseek-v4-flash-0731": {
@@ -39,7 +46,7 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
         "allow_fallbacks": False,
     },
     "deepseek/deepseek-v4.1-flash-1017": {
-        "order": ["InferenceNet", "Cloudflare"],
+        "order": ["wafer/us", "InferenceNet", "Cloudflare"],
         "allow_fallbacks": False,
     },
     "z-ai/glm-5.3-flash": {

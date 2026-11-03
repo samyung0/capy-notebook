@@ -1669,10 +1669,11 @@ three attempts, a transient error retries, and a definitive client error (400,
 401, 403, 404, 422) ends the call; with no caption the job's retry runs.
 
 Caption calls never inherit a user's chat reasoning level. The captioning
-default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on InferenceNet
-then Cloudflare with fallbacks outside them and reasoning off (decision
-2026-10-19, after GLM-5.3-Flash on Relace stopped reading its input; DeepInfra
-until 2026-10-21; the provider pin is described in
+default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on Wafer's US
+endpoint, then InferenceNet, then Cloudflare, with fallbacks outside them and
+reasoning off (decision 2026-10-19, after GLM-5.3-Flash on Relace stopped
+reading its input; DeepInfra until 2026-10-21; Wafer first since 2026-11-04;
+the provider pin is described in
 [Model registry and pinning](observability-metering.md#model-registry-and-pinning)).
 Its catalog and capacity rows
 are UAT data. The caption prompt rides as the system message and the image as
@@ -5735,8 +5736,9 @@ later).
      do not add up to the total printed on the page is named in `marksDiffer`.
 - **Models.** The `extraction` slot's default pin (`extractionLLM`;
   migration `0138`), which needs vision: OpenRouter's
-  `deepseek/deepseek-v4.1-flash-1017`, held on InferenceNet then Cloudflare
-  with fallbacks off, the same pin that reads pages, captions images and
+  `deepseek/deepseek-v4.1-flash-1017`, held on Wafer's US endpoint, then
+  InferenceNet, then Cloudflare with fallbacks off (Epo 2026-11-04), the same
+  pin that reads pages, captions images and
   writes ghost text, so one image model serves them all. Never direct
   DeepSeek, which costs too much (Epo 2026-11-03). Windows reason at mid (sent
   to OpenRouter as `medium`), and the outline and answer files run with
@@ -6637,7 +6639,7 @@ chunk, with full coverage in the large-document reduction path.
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, 16 images per user message |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on InferenceNet then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
+| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on Wafer's US endpoint, then InferenceNet, then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
 | VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 40 and 40 (64 overall until 2026-10-29; a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION`, `ALIBABA_MODELSTUDIO_KEY`, `ALIBABA_MODELSTUDIO_URL` | Image decoding is capped at 100M pixels. Audio transcription needs both Alibaba values (all or none, and the URL ending in `/compatible-mode/v1`, checked at startup by the pipeline and the API; unset fails an audio ingest terminally); its two-hour cap, 12-task gate, hour-long task hold and ten-minute source link are code constants. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |

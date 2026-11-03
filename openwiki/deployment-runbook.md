@@ -2048,7 +2048,7 @@ those services start.
    worker. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
    embedding route, `OPENROUTER_API_KEY` for the file-descriptor pin
    (DeepSeek V4 Flash 0731 on Reka, DigitalOcean or StreamLake), the captioning pin (DeepSeek
-   V4.1 Flash 1017 on InferenceNet, then Cloudflare: standalone-image captions
+   V4.1 Flash 1017 on Wafer's US endpoint, then InferenceNet, then Cloudflare: standalone-image captions
    and the VLM read of text-less document pages) and GLM-5.3-Flash, the same
    key the app host's `retrieval` and `ops` containers carry (Ops reads it too,
    to flag a missing credential). No Z.AI key is read since 2026-10-21. The

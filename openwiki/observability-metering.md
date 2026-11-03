@@ -619,10 +619,17 @@ named provider directly. These exact routing exceptions are allowed:
   `deepseek/deepseek-v4.1-flash-1017`, the captioning pin for page reads and
   image captions (decision 2026-10-19), the editor slot's ghost-text pin
   (decision 2026-10-28) and the extraction slot's pin (Epo 2026-11-03), goes
-  to InferenceNet, then Cloudflare
-  (decision 2026-10-21: both read page text as well as DeepInfra did;
-  InferenceNet describes non-text visuals such as QR codes less often, which is
-  accepted). Default routing is
+  to Wafer's US endpoint, then InferenceNet, then Cloudflare (Epo
+  2026-11-04; InferenceNet and Cloudflare since decision 2026-10-21, when both
+  read page text as well as DeepInfra did and InferenceNet described non-text
+  visuals such as QR codes less often, which was accepted). `order` takes an
+  endpoint tag as well as a provider name: `wafer/us` ($0.038 / $0.010 /
+  $0.50 per million input / cached / output tokens) is named so OpenRouter
+  never picks Wafer's `wafer/mxfp4` ($0.16 input); by name alone it took
+  `wafer/us` in five calls of five, and a tag's case matters (`Wafer/us` finds
+  no endpoint; 2026-11-04 probe). DeepInfra is on no chat or vision route
+  (Epo 2026-11-04); it serves only the Qwen embedding pin, on its own API.
+  Default routing is
   never used: providers behind one slug differ on images (one drops them
   silently, others take none), so a slug with no pin fails when its request is
   built, naming the slug. The allowlist in

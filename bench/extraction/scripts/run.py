@@ -57,11 +57,12 @@ CAPTIONING = ("openrouter", "deepseek/deepseek-v4.1-flash-1017", (160, 16, 1000)
 TEXT_LAYER_MIN = 40
 # OpenRouter candidates for the extraction slot (2026-11-03, after 0731 proved
 # text-only): each held on the providers named here with fallbacks off, as
-# elitellm's production pins are (OPENROUTER_ROUTING; 1017's is production's).
-# Rates are the first provider's listed prices.
+# elitellm's production pins are (1017's is production's, OPENROUTER_ROUTING).
+# Never DeepInfra (Epo 2026-11-04; runs 51-52 had it second for V4.1 Flash,
+# and InferenceNet served every call). Rates are InferenceNet's list prices.
 OPENROUTER = {
-    "v41-1017": ["InferenceNet", "Cloudflare"],
-    "v41": ["InferenceNet", "DeepInfra"],
+    "v41-1017": ["wafer/us", "InferenceNet", "Cloudflare"],
+    "v41": ["InferenceNet"],
 }
 MODELS |= {
     "v41-1017": (

@@ -419,7 +419,7 @@ async def test_captioning_on_openrouter_keeps_reasoning_off(
     [body] = bodies
     assert body["model"] == "deepseek/deepseek-v4.1-flash-1017"
     assert body["provider"] == {
-        "order": ["InferenceNet", "Cloudflare"],
+        "order": ["wafer/us", "InferenceNet", "Cloudflare"],
         "allow_fallbacks": False,
     }
     assert body["reasoning"] == {"enabled": False}

@@ -239,7 +239,10 @@ async def test_glm_complete_posts_to_openrouter_with_its_key(
     ("model_slug", "providers"),
     [
         ("deepseek/deepseek-v4-flash-0731", ["Reka", "DigitalOcean", "StreamLake"]),
-        ("deepseek/deepseek-v4.1-flash-1017", ["InferenceNet", "Cloudflare"]),
+        (
+            "deepseek/deepseek-v4.1-flash-1017",
+            ["wafer/us", "InferenceNet", "Cloudflare"],
+        ),
     ],
 )
 async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
@@ -306,7 +309,7 @@ def test_1017_reasons_at_the_extraction_windows_effort():
     )
     assert body["reasoning"] == {"effort": "medium"}
     assert body["provider"] == {
-        "order": ["InferenceNet", "Cloudflare"],
+        "order": ["wafer/us", "InferenceNet", "Cloudflare"],
         "allow_fallbacks": False,
     }
 
