@@ -16,7 +16,6 @@ export interface PublicWorkspace {
   autoProcess: boolean;
   canClone: boolean;
   capabilities: AccessCapabilities;
-  chapterCount: number;
   clones: number;
   /** The card's cover art; absent means none */
   cover?: Cover;
@@ -33,4 +32,5 @@ export interface PublicWorkspace {
   sharePath: string;
   shareRole: ShareRole;
   tags: Tag[];
+  topicCount: number;
 }

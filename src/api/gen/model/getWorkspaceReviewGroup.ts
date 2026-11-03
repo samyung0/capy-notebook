@@ -9,7 +9,7 @@ export type GetWorkspaceReviewGroup = typeof GetWorkspaceReviewGroup[keyof typeo
 
 
 export const GetWorkspaceReviewGroup = {
-  chapter: 'chapter',
+  topic: 'topic',
   others: 'others',
   workspace: 'workspace',
   plan: 'plan',

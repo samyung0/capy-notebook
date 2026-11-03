@@ -15,6 +15,6 @@ export const ListPastReviewsSort = {
   time: 'time',
   workspace: 'workspace',
   plan: 'plan',
-  chapter: 'chapter',
+  topic: 'topic',
   status: 'status',
 } as const;

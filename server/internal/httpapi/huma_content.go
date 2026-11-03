@@ -15,26 +15,26 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-type chaptersOutput struct {
-	Body []apimodel.Chapter `nullable:"false"`
+type topicsOutput struct {
+	Body []apimodel.Topic `nullable:"false"`
 }
-type chapterOutput struct {
-	Body apimodel.Chapter
+type topicOutput struct {
+	Body apimodel.Topic
 }
-type addChapterInput struct {
+type addTopicInput struct {
 	ID   string `path:"id"`
-	Body apimodel.AddChapterReq
+	Body apimodel.AddTopicReq
 }
-type chapterIDInput struct {
+type topicIDInput struct {
 	ID string `path:"id"`
 }
-type updateChapterInput struct {
+type updateTopicInput struct {
 	ID   string `path:"id"`
-	Body apimodel.UpdateChapterReq
+	Body apimodel.UpdateTopicReq
 }
-type reorderChaptersInput struct {
+type reorderTopicsInput struct {
 	ID   string `path:"id"`
-	Body apimodel.ReorderChaptersReq
+	Body apimodel.ReorderTopicsReq
 }
 type reorderContentInput struct {
 	ID   string `path:"id"`
@@ -77,12 +77,12 @@ type updateFileInput struct {
 
 func (a *api) registerContent(api huma.API) {
 	const tag = "Content"
-	reg(api, http.MethodGet, "/api/workspaces/{id}/chapters", "listChapters", tag, "List chapters", http.StatusOK, a.listChapters)
-	reg(api, http.MethodPost, "/api/workspaces/{id}/chapters", "addChapter", tag, "Add a chapter", http.StatusCreated, a.addChapter)
-	reg(api, http.MethodPost, "/api/workspaces/{id}/chapters/reorder", "reorderChapters", tag, "Reorder chapters", http.StatusNoContent, a.reorderChapters)
-	reg(api, http.MethodPost, "/api/workspaces/{id}/content/reorder", "reorderContent", tag, "Move and reorder chapter content", http.StatusNoContent, a.reorderContent)
-	reg(api, http.MethodPatch, "/api/chapters/{id}", "updateChapter", tag, "Update a chapter", http.StatusOK, a.updateChapter)
-	reg(api, http.MethodDelete, "/api/chapters/{id}", "deleteChapter", tag, "Delete a chapter", http.StatusNoContent, a.deleteChapter)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/topics", "listTopics", tag, "List topics", http.StatusOK, a.listTopics)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/topics", "addTopic", tag, "Add a topic", http.StatusCreated, a.addTopic)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/topics/reorder", "reorderTopics", tag, "Reorder topics", http.StatusNoContent, a.reorderTopics)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/content/reorder", "reorderContent", tag, "Move and reorder topic content", http.StatusNoContent, a.reorderContent)
+	reg(api, http.MethodPatch, "/api/topics/{id}", "updateTopic", tag, "Update a topic", http.StatusOK, a.updateTopic)
+	reg(api, http.MethodDelete, "/api/topics/{id}", "deleteTopic", tag, "Delete a topic", http.StatusNoContent, a.deleteTopic)
 
 	reg(api, http.MethodGet, "/api/files", "listOwnedFiles", tag, "List the files the caller pays for, or can open (scope=member)", http.StatusOK, a.listOwnedFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/files", "listWorkspaceFiles", tag, "List workspace files", http.StatusOK, a.listWorkspaceFiles)
@@ -103,44 +103,50 @@ func (a *api) assertWorkspaceEditor(ctx context.Context, wsID string) error {
 	return err
 }
 
-func (a *api) listChapters(ctx context.Context, in *workspaceIDInput) (*chaptersOutput, error) {
+func (a *api) listTopics(ctx context.Context, in *workspaceIDInput) (*topicsOutput, error) {
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.ListChapters(ctx, in.ID)
+	res, err := a.s.ListTopics(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &chaptersOutput{Body: res}, nil
+	return &topicsOutput{Body: res}, nil
 }
 
-func (a *api) addChapter(ctx context.Context, in *addChapterInput) (*chapterOutput, error) {
+func (a *api) addTopic(ctx context.Context, in *addTopicInput) (*topicOutput, error) {
 	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.AddChapter(ctx, in.ID, userID(ctx), string(in.Body.Name))
+	res, err := a.s.AddTopic(ctx, in.ID, userID(ctx), string(in.Body.Name),
+		strings.TrimSpace(string(in.Body.Description)))
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &chapterOutput{Body: res}, nil
+	return &topicOutput{Body: res}, nil
 }
 
-func (a *api) updateChapter(ctx context.Context, in *updateChapterInput) (*chapterOutput, error) {
-	if err := a.assertChapterEditor(ctx, in.ID); err != nil {
+func (a *api) updateTopic(ctx context.Context, in *updateTopicInput) (*topicOutput, error) {
+	if err := a.assertTopicEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.UpdateChapter(ctx, userID(ctx), in.ID, store.ChapterPatch{Name: apimodel.Str(in.Body.Name), Order: in.Body.Order})
+	patch := store.TopicPatch{Name: apimodel.Str(in.Body.Name), Order: in.Body.Order}
+	if in.Body.Description != nil {
+		description := strings.TrimSpace(string(*in.Body.Description))
+		patch.Description = &description
+	}
+	res, err := a.s.UpdateTopic(ctx, userID(ctx), in.ID, patch)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &chapterOutput{Body: res}, nil
+	return &topicOutput{Body: res}, nil
 }
 
-func (a *api) reorderChapters(ctx context.Context, in *reorderChaptersInput) (*Empty, error) {
+func (a *api) reorderTopics(ctx context.Context, in *reorderTopicsInput) (*Empty, error) {
 	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	if err := a.s.ReorderChapters(ctx, userID(ctx), in.ID, in.Body.IDs); err != nil {
+	if err := a.s.ReorderTopics(ctx, userID(ctx), in.ID, in.Body.IDs); err != nil {
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil
@@ -154,17 +160,17 @@ func (a *api) reorderContent(ctx context.Context, in *reorderContentInput) (*Emp
 	for i, item := range in.Body.Items {
 		items[i] = store.ContentOrderItem{ID: item.ID, Type: item.Type}
 	}
-	if err := a.s.ReorderContent(ctx, in.ID, userID(ctx), in.Body.ChapterID, items); err != nil {
+	if err := a.s.ReorderContent(ctx, in.ID, userID(ctx), in.Body.TopicID, items); err != nil {
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil
 }
 
-func (a *api) deleteChapter(ctx context.Context, in *chapterIDInput) (*Empty, error) {
-	if err := a.assertChapterEditor(ctx, in.ID); err != nil {
+func (a *api) deleteTopic(ctx context.Context, in *topicIDInput) (*Empty, error) {
+	if err := a.assertTopicEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	if err := a.s.DeleteChapter(ctx, userID(ctx), in.ID); err != nil {
+	if err := a.s.DeleteTopic(ctx, userID(ctx), in.ID); err != nil {
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil
@@ -340,15 +346,15 @@ func (a *api) updateFile(ctx context.Context, in *updateFileInput) (*fileOutput,
 			}
 		}
 	}
-	// chapterId: "" unfiles (NULL), a real id files it, omitted leaves it.
-	if in.Body.ChapterID != nil {
-		if *in.Body.ChapterID == "" {
+	// topicId: "" unfiles (NULL), a real id files it, omitted leaves it.
+	if in.Body.TopicID != nil {
+		if *in.Body.TopicID == "" {
 			var none *string
-			patch.ChapterID = &none
+			patch.TopicID = &none
 		} else {
-			cid := *in.Body.ChapterID
+			cid := *in.Body.TopicID
 			p := &cid
-			patch.ChapterID = &p
+			patch.TopicID = &p
 		}
 	}
 	res, err := a.s.UpdateFile(ctx, userID(ctx), in.ID, patch)
@@ -368,12 +374,12 @@ type filesOutputBody struct {
 
 func (a *api) moveFiles(ctx context.Context, in *moveFilesInput) (*filesOutputBody, error) {
 	b := in.Body
-	target := store.MoveTarget{WorkspaceID: b.WorkspaceID, ChapterName: strings.TrimSpace(string(b.ChapterName))}
-	if b.ChapterID != "" {
-		if target.ChapterName != "" {
-			return nil, huma.Error422UnprocessableEntity("give at most one of chapterId or chapterName")
+	target := store.MoveTarget{WorkspaceID: b.WorkspaceID, TopicName: strings.TrimSpace(string(b.TopicName))}
+	if b.TopicID != "" {
+		if target.TopicName != "" {
+			return nil, huma.Error422UnprocessableEntity("give at most one of topicId or topicName")
 		}
-		target.ChapterID = &b.ChapterID
+		target.TopicID = &b.TopicID
 	}
 	files, err := a.s.MoveFiles(ctx, userID(ctx), b.FileIDs, target, b.ConfirmProgressLoss)
 	var loss *store.ProgressLossError

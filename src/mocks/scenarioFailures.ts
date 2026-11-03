@@ -139,17 +139,17 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    id: 'chapters-load',
-    label: 'Chapters GET 500',
+    id: 'topics-load',
+    label: 'Topics GET 500',
     method: 'get',
-    paths: ['/api/workspaces/:id/chapters'],
+    paths: ['/api/workspaces/:id/topics'],
     status: 500,
   },
   {
-    id: 'chapter-save',
-    label: 'Chapter create 500',
+    id: 'topic-save',
+    label: 'Topic create 500',
     method: 'post',
-    paths: ['/api/workspaces/:id/chapters'],
+    paths: ['/api/workspaces/:id/topics'],
     status: 500,
   },
   {

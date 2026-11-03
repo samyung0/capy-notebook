@@ -41,7 +41,7 @@ export function planProgress(
   const orderedIn = (ws: PlanWorkspace) => {
     let items = ordered.get(ws.workspaceId);
     if (!items) {
-      items = inReadingOrder(ws.chapters, ws.items);
+      items = inReadingOrder(ws.topics, ws.items);
       ordered.set(ws.workspaceId, items);
     }
     return items;

@@ -39,25 +39,25 @@ const limits = { imageMaxBytes: 2 << 20, maxBytes: 10 << 20 };
 
 // Store-only PDFs skip ingest, so the runner does not wait on the files cache.
 const request = (name: string): LocalTransferRequest => ({
-  chapterId: null,
-  chapterName: null,
   estimatedCreditMicros: 0,
   file: new File(['x'], name),
   key: name,
   kind: 'pdf',
   name,
   parseMode: 'none',
+  topicId: null,
+  topicName: null,
 });
 
 const remote = (name: string): RemoteTransferRequest => ({
-  chapterId: null,
-  chapterName: null,
   fileId: `drive_${name}`,
   key: name,
   kind: 'pdf',
   name,
   parseMode: 'none',
   provider: 'google',
+  topicId: null,
+  topicName: null,
 });
 
 afterEach(() => {

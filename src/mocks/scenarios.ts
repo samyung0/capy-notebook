@@ -821,7 +821,7 @@ const keptWhenFrozen = [
 ];
 // A frozen owner's content (for a healthy member only these writes fail).
 const ownerContent =
-  /^\/api\/(workspaces\/[^/]+|materials\/[^/]+|files|quizzes\/[^/]+|flashcards\/[^/]+|chapters|comments|discussions|trash)(\/|$)/;
+  /^\/api\/(workspaces\/[^/]+|materials\/[^/]+|files|quizzes\/[^/]+|flashcards\/[^/]+|topics|comments|discussions|trash)(\/|$)/;
 
 /** The server's `account_over_quota` for every write it refuses: anything a
  * frozen `account` does apart from what it keeps, or writes into a frozen

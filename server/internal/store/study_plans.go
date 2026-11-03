@@ -29,7 +29,7 @@ const (
 var (
 	ErrStudyPlanCap  = errors.New("this workspace already has 10 plans")
 	ErrStudyPlanStep = errors.New("a step is not in a workspace you can read, or is in the plan twice")
-	ErrStudyPlanSize = errors.New("a plan holds at most 20 chapter groups and 200 files")
+	ErrStudyPlanSize = errors.New("a plan holds at most 20 topic groups and 200 files")
 )
 
 type StudyPlans struct {
@@ -65,9 +65,9 @@ type PlanWorkspace struct {
 	IconID      string       `json:"iconId"`
 	Cover       *cover.Cover `json:"cover,omitempty"`
 	// Hidden is the user's Hide study progress in this workspace.
-	Hidden   bool              `json:"hidden"`
-	Chapters []ProgressChapter `json:"chapters" nullable:"false"`
-	Items    []ProgressItem    `json:"items" nullable:"false"`
+	Hidden bool            `json:"hidden"`
+	Topics []ProgressTopic `json:"topics" nullable:"false"`
+	Items  []ProgressItem  `json:"items" nullable:"false"`
 }
 
 type PlanStepInput struct {
@@ -177,7 +177,7 @@ func (s *Store) studyPlans(ctx context.Context, userID, query string, args ...an
 		if err != nil {
 			return out, err
 		}
-		pw.Chapters, pw.Items = m.Chapters, m.Items
+		pw.Topics, pw.Items = m.Topics, m.Items
 		out.Workspaces = append(out.Workspaces, pw)
 	}
 	return out, nil
@@ -295,7 +295,7 @@ func (s *Store) UpdateStudyPlan(ctx context.Context, userID, planID string, name
 type stepKey struct{ kind, ws, target string }
 
 // planGroups counts the groups the Study page shows: runs of consecutive steps
-// in one chapter (or outside chapters) of one workspace. A step in a workspace
+// in one topic (or outside topics) of one workspace. A step in a workspace
 // the user can no longer read groups by workspace alone; a trashed or
 // untracked step shows nowhere and joins the run around it.
 func (s *Store) planGroups(ctx context.Context, tx pgx.Tx, userID string, steps []PlanStepInput) (int, error) {
@@ -303,16 +303,16 @@ func (s *Store) planGroups(ctx context.Context, tx pgx.Tx, userID string, steps 
 	for i, st := range steps {
 		ids[i] = st.TargetID
 	}
-	rows, err := tx.Query(ctx, `SELECT f.id, coalesce(f.chapter_id, ''), f.trashed_at IS NULL AND NOT EXISTS (
+	rows, err := tx.Query(ctx, `SELECT f.id, coalesce(f.topic_id, ''), f.trashed_at IS NULL AND NOT EXISTS (
 			SELECT 1 FROM study_progress sp WHERE sp.user_id=$2 AND sp.file_id=f.id AND sp.state='removed')
 		FROM files f WHERE f.id = ANY($1)
-		UNION ALL SELECT m.id, coalesce(m.chapter_id, ''), m.trashed_at IS NULL AND NOT EXISTS (
+		UNION ALL SELECT m.id, coalesce(m.topic_id, ''), m.trashed_at IS NULL AND NOT EXISTS (
 			SELECT 1 FROM study_progress sp WHERE sp.user_id=$2 AND sp.material_id=m.id AND sp.state='removed')
 		FROM materials m WHERE m.id = ANY($1)`, ids, userID)
 	if err != nil {
 		return 0, err
 	}
-	chapter := map[string]string{}
+	topic := map[string]string{}
 	for rows.Next() {
 		var id, ch string
 		var shown bool
@@ -321,7 +321,7 @@ func (s *Store) planGroups(ctx context.Context, tx pgx.Tx, userID string, steps 
 			return 0, err
 		}
 		if shown {
-			chapter[id] = ch
+			topic[id] = ch
 		}
 	}
 	rows.Close()
@@ -341,7 +341,7 @@ func (s *Store) planGroups(ctx context.Context, tx pgx.Tx, userID string, steps 
 		}
 		at := [2]string{st.WorkspaceID, "\x00locked"}
 		if ok {
-			ch, shown := chapter[st.TargetID]
+			ch, shown := topic[st.TargetID]
 			if !shown {
 				continue
 			}

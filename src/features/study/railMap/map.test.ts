@@ -11,30 +11,30 @@ import {
 
 const svg = (map: ReturnType<typeof buildRailMap>, before: number) =>
   [...map.under, ...map.over].filter((p) => p.b < before).map((p) => p.svg);
-const chapters = ['Cells', 'Membranes', 'Genetics'];
+const topics = ['Cells', 'Membranes', 'Genetics'];
 const items = (count: number) =>
   Array.from({ length: count }, (_, i) => Math.min(2, Math.floor(i / 8)));
 
 describe('rail map', () => {
   it('draws the same map for a workspace, a different one for another, and keeps it when items are added', () => {
-    const a = buildRailMap('ws-a', chapters, items(20));
+    const a = buildRailMap('ws-a', topics, items(20));
     const all = Number.POSITIVE_INFINITY;
-    expect(svg(buildRailMap('ws-a', chapters, items(20)), all)).toEqual(
+    expect(svg(buildRailMap('ws-a', topics, items(20)), all)).toEqual(
       svg(a, all)
     );
-    expect(svg(buildRailMap('ws-b', chapters, items(20)), all)).not.toEqual(
+    expect(svg(buildRailMap('ws-b', topics, items(20)), all)).not.toEqual(
       svg(a, all)
     );
     // Only the stretch near the old terminus may change.
     const cut = (a.stops.at(-1)?.[0] ?? 0) - 300;
-    expect(svg(buildRailMap('ws-a', chapters, items(26)), cut)).toEqual(
+    expect(svg(buildRailMap('ws-a', topics, items(26)), cut)).toEqual(
       svg(a, cut)
     );
   });
 
   it('keeps dense biomes apart and never borders a city on open country', () => {
     for (let k = 0; k < 50; k++) {
-      const { segments } = buildRailMap(`ws-${k}`, chapters, items(60));
+      const { segments } = buildRailMap(`ws-${k}`, topics, items(60));
       segments.forEach(({ biome }, i) => {
         if (i === 0) return;
         const prev = segments[i - 1].biome;
@@ -51,7 +51,7 @@ describe('rail map', () => {
   it('fills a panel wider than a short workspace and stays under 120 elements per desktop view', () => {
     expect(buildRailMap('ws-short', [], [null, null], 1400).width).toBe(1400);
     for (let k = 0; k < 20; k++) {
-      const { placed, width } = buildRailMap(`ws-${k}`, chapters, items(40));
+      const { placed, width } = buildRailMap(`ws-${k}`, topics, items(40));
       for (let a = 0; a < width; a += 30)
         expect(
           placed.filter((x) => x >= a && x < a + 780).length

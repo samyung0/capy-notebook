@@ -12,7 +12,6 @@ const workspace = {
 function file(id: string, addedAt: string, workspaceId = 'ws_1'): SourceFile {
   return {
     addedAt,
-    chapterId: null,
     hasBytes: true,
     id,
     indexed: true,
@@ -23,6 +22,7 @@ function file(id: string, addedAt: string, workspaceId = 'ws_1'): SourceFile {
     revision: 1,
     sizeBytes: 1,
     status: 'ready',
+    topicId: null,
     workspaceId,
   };
 }
@@ -33,14 +33,14 @@ function material(
   workspaceId = 'ws_1'
 ): MaterialListItem {
   return {
-    chapterId: null,
-    chapterName: '',
     createdAt,
     id,
     kind: 'note',
     privacy: 'private',
     sizeBytes: 1,
     title: id,
+    topicId: null,
+    topicName: '',
     updatedAt: createdAt,
     workspaceId,
     workspaceName: workspaceId ? 'Biology' : '',

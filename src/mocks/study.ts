@@ -112,7 +112,6 @@ function recordCard(
   if (!attempt) {
     attempt = {
       cards: [],
-      chapters: [],
       correct: 0,
       id: ref.id,
       kind: 'flashcards',
@@ -121,6 +120,7 @@ function recordCard(
       quizName: mt.title,
       startedAt: ref.startedAt,
       takenAt: at,
+      topics: [],
       total: 0,
       workspaceId: mt.workspaceId,
       workspaceName: mt.workspaceName ?? '',
@@ -175,23 +175,23 @@ function tracked(wsId: string) {
     ...db.files
       .filter((f) => f.workspaceId === wsId)
       .map((f) => ({
-        chapterId: f.chapterId,
         createdAt: f.addedAt,
         id: f.id,
         kind: f.kind as string,
         position: f.position,
         title: f.name,
+        topicId: f.topicId,
         type: 'file' as const,
       })),
     ...db.materials
       .filter((mt) => mt.workspaceId === wsId && !mt.parentMaterialId)
       .map((mt) => ({
-        chapterId: mt.chapterId ?? null,
         createdAt: mt.createdAt,
         id: mt.id,
         kind: mt.kind as string,
         position: mt.position,
         title: mt.title,
+        topicId: mt.topicId ?? null,
         type: 'material' as const,
       })),
   ]
@@ -346,27 +346,27 @@ const plans: MockPlan[] = [
     id: 'plan_winter',
     name: 'Winter exams',
     steps: [
-      ...db.chapters
+      ...db.topics
         .filter((ch) => ch.workspaceId === 'ws_bio')
         .sort((a, b) => a.order - b.order)
         .slice(0, 2)
-        .flatMap((ch) => chapterSteps('ws_bio', ch.id)),
-      ...db.chapters
+        .flatMap((ch) => topicSteps('ws_bio', ch.id)),
+      ...db.topics
         .filter((ch) => ch.workspaceId === 'ws_calc')
         .sort((a, b) => a.order - b.order)
         .slice(0, 1)
-        .flatMap((ch) => chapterSteps('ws_calc', ch.id)),
+        .flatMap((ch) => topicSteps('ws_calc', ch.id)),
     ],
     updatedAt: daysAgo(1),
     workspaceId: 'ws_bio',
   },
 ];
 
-/** A chapter's files and materials as plan steps, in reading order. */
-function chapterSteps(wsId: string, chapterId: string): MockPlanStep[] {
+/** A topic's files and materials as plan steps, in reading order. */
+function topicSteps(wsId: string, topicId: string): MockPlanStep[] {
   return [
     ...db.files
-      .filter((f) => f.workspaceId === wsId && f.chapterId === chapterId)
+      .filter((f) => f.workspaceId === wsId && f.topicId === topicId)
       .map((f) => ({
         kind: 'file' as const,
         position: f.position,
@@ -377,7 +377,7 @@ function chapterSteps(wsId: string, chapterId: string): MockPlanStep[] {
         (mt) =>
           mt.workspaceId === wsId &&
           !mt.parentMaterialId &&
-          mt.chapterId === chapterId
+          mt.topicId === topicId
       )
       .map((mt) => ({
         kind: 'material' as const,
@@ -417,9 +417,6 @@ function studyPlans(list: MockPlan[]) {
     workspaces: ids.map((wsId) => {
       const ws = db.workspaces.find((w) => w.id === wsId);
       return {
-        chapters: db.chapters
-          .filter((ch) => ch.workspaceId === wsId)
-          .map((ch) => ({ id: ch.id, name: ch.name, order: ch.order })),
         cover: ws?.cover,
         hidden: !(enabled.get(wsId) ?? true),
         iconId: ws?.iconId ?? '',
@@ -428,6 +425,9 @@ function studyPlans(list: MockPlan[]) {
           ...(state ? { state } : {}),
         })),
         name: ws?.name ?? wsId,
+        topics: db.topics
+          .filter((ch) => ch.workspaceId === wsId)
+          .map((ch) => ({ id: ch.id, name: ch.name, order: ch.order })),
         workspaceId: wsId,
       };
     }),
@@ -483,13 +483,13 @@ function learningProgress(leadId: string | null, all = false) {
     finished,
     hiddenCount: rows.filter((ws) => ws.hidden).length,
     lead: lead && {
-      chapters: db.chapters
-        .filter((ch) => ch.workspaceId === lead)
-        .map((ch) => ({ id: ch.id, name: ch.name, order: ch.order })),
       items: tracked(lead).map(({ state, ...it }) => ({
         ...it,
         ...(state ? { state } : {}),
       })),
+      topics: db.topics
+        .filter((ch) => ch.workspaceId === lead)
+        .map((ch) => ({ id: ch.id, name: ch.name, order: ch.order })),
       workspaceId: lead,
     },
   };
@@ -657,7 +657,7 @@ type Answer =
 type Session = {
   workspaceId: string;
   group: ReviewSessionRef['group'];
-  chapterId?: string;
+  topicId?: string;
   planId?: string;
   mode?: ReviewMode;
   items: { materialId: string; itemId: string }[];
@@ -691,13 +691,13 @@ function answer(
   if (!session) {
     session = {
       answers: new Map(),
-      chapterId: ref.chapterId,
       group: ref.group,
       items: ref.items,
       lastAnswerAt: Date.now(),
       mode: ref.mode,
       planId: ref.planId,
       startedAt: Date.now(),
+      topicId: ref.topicId,
       workspaceId: ref.workspaceId,
     };
     sessions.set(ref.id, session);
@@ -708,20 +708,20 @@ function answer(
     session.finishedAt ??= Date.now();
 }
 
-function chapterOf(materialId: string) {
-  return db.materials.find((x) => x.id === materialId)?.chapterId ?? null;
+function topicOf(materialId: string) {
+  return db.materials.find((x) => x.id === materialId)?.topicId ?? null;
 }
 
 function inGroup(
   wsId: string,
   group: ReviewSuggestion['group'],
-  chapterId?: string
+  topicId?: string
 ) {
   return pool(wsId).filter((it) =>
-    group === 'chapter'
-      ? chapterOf(it.materialId) === chapterId
+    group === 'topic'
+      ? topicOf(it.materialId) === topicId
       : group === 'others'
-        ? !chapterOf(it.materialId)
+        ? !topicOf(it.materialId)
         : true
   );
 }
@@ -780,8 +780,6 @@ const SHOWCASE_SUGGESTIONS: ReviewSuggestion[] = [
     workspaceName: 'Spanish A2',
   },
   {
-    chapterId: 'ch_demo_ibp',
-    chapterName: 'Integration by parts',
     evidence: {
       forgotten: 3,
       lastPractisedAt: daysAgo(2),
@@ -789,10 +787,12 @@ const SHOWCASE_SUGGESTIONS: ReviewSuggestion[] = [
       repeated: 0,
       young: 8,
     },
-    group: 'chapter',
+    group: 'topic',
     iconId: 'waves-05',
     items: 9,
     mode: 'learned',
+    topicId: 'ch_demo_ibp',
+    topicName: 'Integration by parts',
     workspaceId: 'ws_calc',
     workspaceName: 'Calculus II',
   },
@@ -822,14 +822,14 @@ function unfinished() {
       const ws = db.workspaces.find((w) => w.id === s.workspaceId);
       return {
         answered: s.answers.size,
-        chapterName:
-          s.group === 'plan'
-            ? plans.find((p) => p.id === s.planId)?.name
-            : db.chapters.find((ch) => ch.id === s.chapterId)?.name,
         group: s.group,
         iconId: ws?.iconId ?? '',
         id,
         lastAnswerAt: new Date(s.lastAnswerAt).toISOString(),
+        topicName:
+          s.group === 'plan'
+            ? plans.find((p) => p.id === s.planId)?.name
+            : db.topics.find((ch) => ch.id === s.topicId)?.name,
         total: s.items.length,
         workspaceId: s.workspaceId,
         workspaceName: ws?.name ?? s.workspaceId,
@@ -921,30 +921,30 @@ const SHOWCASE_PAST: PastReview[] = [
   {
     answered: 18,
     cards: { correct: 6, total: 7 },
-    chapterName: 'Membranes & transport',
     finishedAt: daysAgo(1),
-    group: 'chapter',
+    group: 'topic',
     iconId: 'waves-04',
     id: 'past_1',
     lastAnswerAt: daysAgo(1),
     mode: 'tricky',
     quiz: { correct: 7.5, total: 11 },
     startedAt: new Date(Date.now() - 86_400_000 - 660_000).toISOString(),
+    topicName: 'Membranes & transport',
     total: 18,
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
   },
   {
     answered: 9,
-    chapterName: 'Integration by parts',
     finishedAt: daysAgo(2),
-    group: 'chapter',
+    group: 'topic',
     iconId: 'waves-05',
     id: 'past_2',
     lastAnswerAt: daysAgo(2),
     mode: 'learned',
     quiz: { correct: 6, total: 9 },
     startedAt: new Date(Date.now() - 2 * 86_400_000 - 360_000).toISOString(),
+    topicName: 'Integration by parts',
     total: 9,
     workspaceId: 'ws_calc',
     workspaceName: 'Calculus II',
@@ -993,9 +993,9 @@ function pastSortKey(r: PastReview, sort: string | null) {
     case 'workspace':
       return r.workspaceName.toLowerCase();
     case 'plan':
-      return r.group === 'plan' ? (r.chapterName ?? '').toLowerCase() : null;
-    case 'chapter':
-      return r.group === 'chapter' ? (r.chapterName ?? '').toLowerCase() : null;
+      return r.group === 'plan' ? (r.topicName ?? '').toLowerCase() : null;
+    case 'topic':
+      return r.group === 'topic' ? (r.topicName ?? '').toLowerCase() : null;
     case 'status':
       return r.answered < r.total ? 1 : 0;
     default:
@@ -1108,11 +1108,6 @@ function pastRow(id: string, s: Session): PastReview {
           total: cards.length,
         }
       : undefined,
-    chapterId: s.chapterId,
-    chapterName:
-      s.group === 'plan'
-        ? plans.find((p) => p.id === s.planId)?.name
-        : db.chapters.find((ch) => ch.id === s.chapterId)?.name,
     finishedAt: s.finishedAt ? new Date(s.finishedAt).toISOString() : undefined,
     group: s.group,
     iconId: ws?.iconId ?? '',
@@ -1126,6 +1121,11 @@ function pastRow(id: string, s: Session): PastReview {
         }
       : undefined,
     startedAt: new Date(s.startedAt).toISOString(),
+    topicId: s.topicId,
+    topicName:
+      s.group === 'plan'
+        ? plans.find((p) => p.id === s.planId)?.name
+        : db.topics.find((ch) => ch.id === s.topicId)?.name,
     total: s.items.length,
     workspaceId: s.workspaceId,
     workspaceName: ws?.name ?? s.workspaceId,
@@ -1202,7 +1202,7 @@ export const studyHandlers = [
     const url = new URL(request.url);
     const group = (url.searchParams.get('group') ??
       'workspace') as ReviewSessionRef['group'];
-    const chapterId = url.searchParams.get('chapterId') ?? undefined;
+    const topicId = url.searchParams.get('topicId') ?? undefined;
     const planId = url.searchParams.get('planId') ?? undefined;
     const mode = (url.searchParams.get('mode') ?? undefined) as
       | ReviewMode
@@ -1213,12 +1213,11 @@ export const studyHandlers = [
         : inGroup(
             String(params.id),
             group as ReviewSuggestion['group'],
-            chapterId
+            topicId
           )
     ).slice(0, 20);
     return HttpResponse.json({
       answered: 0,
-      chapterId,
       done: [],
       evidence: mode
         ? suggestionsOf(String(params.id)).find((sg) => sg.group === group)
@@ -1228,6 +1227,7 @@ export const studyHandlers = [
       items: list,
       mode,
       planId,
+      topicId,
       total: list.length,
     });
   }),
@@ -1311,13 +1311,13 @@ export const studyHandlers = [
     const done = answeredItems(session, current);
     return HttpResponse.json({
       answered: session.answers.size,
-      chapterId: session.chapterId,
       done,
       group: session.group,
       items: left
         .map((it) => current(it.materialId, it.itemId))
         .filter(Boolean),
       mode: session.mode,
+      topicId: session.topicId,
       total: session.items.length,
     });
   }),

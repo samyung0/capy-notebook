@@ -9,7 +9,7 @@ export type PastReviewGroup = typeof PastReviewGroup[keyof typeof PastReviewGrou
 
 
 export const PastReviewGroup = {
-  chapter: 'chapter',
+  topic: 'topic',
   others: 'others',
   workspace: 'workspace',
   plan: 'plan',

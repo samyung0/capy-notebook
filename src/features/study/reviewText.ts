@@ -49,13 +49,13 @@ export function reviewReason(s: ReviewSuggestion): string {
   return m.review_reason_fading({ when });
 }
 
-/** The group a suggestion or session names: its chapter, Others, its plan,
+/** The group a suggestion or session names: its topic, Others, its plan,
  * or the workspace itself. */
 export function groupName(
   group: ReviewSuggestion['group'] | 'plan',
-  chapter?: string
+  topic?: string
 ) {
   if (group === 'others') return m.study_others();
-  if (group === 'chapter' || group === 'plan') return chapter ?? '';
+  if (group === 'topic' || group === 'plan') return topic ?? '';
   return '';
 }

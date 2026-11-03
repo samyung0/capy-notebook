@@ -127,8 +127,8 @@ vi.mock('@/features/flashcards/liveReads', () => ({
 vi.mock('@/features/workspace/WorkspaceHealth', () => ({
   useAccountFrozen: () => false,
 }));
-vi.mock('@/features/study/useChapterNames', () => ({
-  useChapterNames: () => () => undefined,
+vi.mock('@/features/study/useTopicNames', () => ({
+  useTopicNames: () => () => undefined,
 }));
 const { default: QuizAttempt } = await import('./QuizAttempt');
 const { default: FlashcardStudy } = await import('./FlashcardStudy');

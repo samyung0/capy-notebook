@@ -14,8 +14,8 @@ import (
 )
 
 // item is a scored pool item: r is its recall, misses its latest answers
-// (true a miss, newest first), chapter "" outside chapters.
-func item(id, chapter string, r float64, misses ...bool) (scored, []review.Rating) {
+// (true a miss, newest first), topic "" outside topics.
+func item(id, topic string, r float64, misses ...bool) (scored, []review.Rating) {
 	var history []review.Rating
 	for _, m := range misses {
 		if m {
@@ -25,8 +25,8 @@ func item(id, chapter string, r float64, misses ...bool) (scored, []review.Ratin
 		}
 	}
 	it := ranked{studyItem: studyItem{ReviewItem: ReviewItem{MaterialID: "m", ItemID: id, Kind: "card"}}, r: r, reps: len(history)}
-	if chapter != "" {
-		it.chapterID = &chapter
+	if topic != "" {
+		it.topicID = &topic
 	}
 	return scoreItems([]ranked{it}, map[string][]review.Rating{"m/" + id: history}, ReviewPrefs{Items: "both", Focus: "balanced"})[0], history
 }
@@ -42,12 +42,12 @@ func pool(items ...func() (scored, []review.Rating)) ([]scored, map[string][]rev
 	return out, history
 }
 
-func mk(id, chapter string, r float64, misses ...bool) func() (scored, []review.Rating) {
-	return func() (scored, []review.Rating) { return item(id, chapter, r, misses...) }
+func mk(id, topic string, r float64, misses ...bool) func() (scored, []review.Rating) {
+	return func() (scored, []review.Rating) { return item(id, topic, r, misses...) }
 }
 
 func TestGroupSuggestions(t *testing.T) {
-	// Chapter A has four missed items, chapter B two faded ones that pass
+	// Topic A has four missed items, topic B two faded ones that pass
 	// nothing alone, and an item the learner still recalls counts for nothing.
 	items, history := pool(
 		mk("a1", "A", 0.4, true), mk("a2", "A", 0.4, true), mk("a3", "A", 0.4, true), mk("a4", "A", 0.4, true),
@@ -55,7 +55,7 @@ func TestGroupSuggestions(t *testing.T) {
 		mk("b3", "B", 0.95, true),
 	)
 	got := groupSuggestions(items, history, 1)
-	if len(got) != 1 || got[0].Group != GroupChapter || *got[0].ChapterID != "A" || got[0].Items != 4 {
+	if len(got) != 1 || got[0].Group != GroupTopic || *got[0].TopicID != "A" || got[0].Items != 4 {
 		t.Fatalf("suggestions = %+v", got)
 	}
 	if ev := got[0].Evidence; ev.Missed != 4 || ev.Young != 4 {
@@ -66,14 +66,14 @@ func TestGroupSuggestions(t *testing.T) {
 		t.Fatalf("an old workspace suggested %+v", got)
 	}
 
-	// No chapter passes alone, the workspace does: one whole-workspace group.
+	// No topic passes alone, the workspace does: one whole-workspace group.
 	spread, history := pool(mk("a1", "A", 0.3, false, false), mk("b1", "B", 0.3, false, false),
 		mk("c1", "C", 0.3, false, false), mk("o1", "", 0.3, false, false))
 	if got := groupSuggestions(spread, history, 1); len(got) != 1 || got[0].Group != GroupWorkspace || got[0].Mode != ModeFading {
 		t.Fatalf("spread suggestions = %+v", got)
 	}
 
-	// A workspace without chapters is always one group.
+	// A workspace without topics is always one group.
 	flat, history := pool(mk("1", "", 0.6, false), mk("2", "", 0.6, true), mk("3", "", 0.6, false), mk("4", "", 0.6, false), mk("5", "", 0.6, true))
 	if got := groupSuggestions(flat, history, 1); len(got) != 1 || got[0].Group != GroupWorkspace || got[0].Mode != ModeFading {
 		t.Fatalf("flat suggestions = %+v", got)
@@ -370,7 +370,7 @@ func TestPlanReviewSession(t *testing.T) {
 	if resumed.Group != GroupPlan || resumed.PlanID == nil || *resumed.PlanID != plan.ID || len(resumed.Done) != 2 || len(resumed.Items) != 2 {
 		t.Fatalf("resumed = %+v", resumed)
 	}
-	if summary, err := f.s.PlanStudySummary(ctx, f.user, f.ws.ID, plan.ID, later); err != nil || summary.Unfinished == nil || summary.Unfinished.ID != a.ID || summary.Unfinished.ChapterName != "Winter exams" || len(summary.Items) != 0 {
+	if summary, err := f.s.PlanStudySummary(ctx, f.user, f.ws.ID, plan.ID, later); err != nil || summary.Unfinished == nil || summary.Unfinished.ID != a.ID || summary.Unfinished.TopicName != "Winter exams" || len(summary.Items) != 0 {
 		t.Fatalf("plan unfinished = %+v, %v", summary.Unfinished, err)
 	}
 	if summary, err := f.s.StudySummary(ctx, f.user, f.ws.ID, later); err != nil || summary.Unfinished != nil {
@@ -401,7 +401,7 @@ func TestPlanReviewSession(t *testing.T) {
 		t.Fatalf("answer after the plan's deletion: %v", err)
 	}
 	rows, _, err := f.s.PastReviews(ctx, f.user, PastReviewParams{ID: a.ID, Limit: 1})
-	if err != nil || len(rows) != 1 || rows[0].Group != GroupPlan || rows[0].ChapterName != "Winter exams" {
+	if err != nil || len(rows) != 1 || rows[0].Group != GroupPlan || rows[0].TopicName != "Winter exams" {
 		t.Fatalf("deleted plan's session = %+v, %v", rows, err)
 	}
 }
@@ -441,24 +441,24 @@ func TestWithNewShares(t *testing.T) {
 	}
 }
 
-// New items come in reading order (chapters in order, then unfiled); a set
+// New items come in reading order (topics in order, then unfiled); a set
 // marked unread keeps its rated cards in the practised pool.
 func TestReviewPoolsOrderAndUnread(t *testing.T) {
 	f := newStudyFixture(t, "u_review_pools")
 	ctx := context.Background()
-	first, err := f.s.AddChapter(ctx, f.ws.ID, f.user, "First")
+	first, err := f.s.AddTopic(ctx, f.ws.ID, f.user, "First", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := f.s.AddChapter(ctx, f.ws.ID, f.user, "Second")
+	second, err := f.s.AddTopic(ctx, f.ws.ID, f.user, "Second", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	late := f.set(t, [2]string{"Late", "In the second chapter"})
-	early := f.set(t, [2]string{"Early", "In the first chapter"})
-	loose := f.set(t, [2]string{"Loose", "Outside chapters"})
+	late := f.set(t, [2]string{"Late", "In the second topic"})
+	early := f.set(t, [2]string{"Early", "In the first topic"})
+	loose := f.set(t, [2]string{"Loose", "Outside topics"})
 	for ch, set := range map[string][]Flashcard{second.ID: late, first.ID: early} {
-		if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET chapter_id=$1 WHERE id=$2`, ch, set[0].MaterialID); err != nil {
+		if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET topic_id=$1 WHERE id=$2`, ch, set[0].MaterialID); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -1,6 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { type MouseEventHandler, useState } from 'react';
-import type { Chapter, SourceFile, UserColor } from '@/api/types';
+import type { SourceFile, Topic, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { StudyMark, type StudyRow } from '@/features/study/studyItems';
@@ -18,14 +18,14 @@ import { fileCanClone, fileIsIngesting } from './fileUtils';
 
 /** A file row in the workspace sidebar. Opens the file in the center pane, shows
  * ingest progress, and exposes a hover action menu (rename / properties /
- * delete) mirroring the chapter row pattern. */
+ * delete) mirroring the topic row pattern. */
 export function FileListItem({
   file,
   active,
   onOpen,
   workspaceId,
   color,
-  chapters = [],
+  topics = [],
   onDeleted,
   readOnly = false,
   canClone = false,
@@ -39,16 +39,16 @@ export function FileListItem({
   active: boolean;
   onOpen: MouseEventHandler<HTMLAnchorElement>;
   workspaceId: string;
-  /** Workspace chapters, for the "Move to chapter…" picker. */
-  chapters?: Chapter[];
+  /** Workspace topics, for the "Move to topic…" picker. */
+  topics?: Topic[];
   color?: UserColor;
   onDeleted?: (id: string) => void;
   /** Shared workspace viewers can open files but cannot mutate them. */
   readOnly?: boolean;
   /** Members and editors may copy the file elsewhere (workspace.canClone). */
   canClone?: boolean;
-  /** Move to… into another workspace or chapter (fileCanMoveTo); others get
-   * the chapter-only Move. */
+  /** Move to… into another workspace or topic (fileCanMoveTo); others get
+   * the topic-only Move. */
   canMoveTo?: boolean;
   /** The owner's Retry processing for a failed file, one mutation for the
    * whole list; absent when the reader may not retry. */
@@ -106,7 +106,6 @@ export function FileListItem({
           <ContentActions
             canClone={canClone && fileCanClone(file)}
             canMoveTo={canMoveTo}
-            chapters={chapters}
             color={color}
             confirmInMenu
             content={toFileActionTarget(file)}
@@ -154,6 +153,7 @@ export function FileListItem({
             propertyLabelClassName="text-fg-secondary"
             readOnly={readOnly}
             renameTitle={m.files_rename()}
+            topics={topics}
             workspaceId={workspaceId}
           />
         )}

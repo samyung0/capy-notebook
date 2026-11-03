@@ -205,7 +205,7 @@ function ActiveFiles({
       value: 'size',
     },
     {
-      icon: 'chapter',
+      icon: 'topic',
       label: m.files_sort_kind(),
       value: 'kind',
     },
@@ -529,12 +529,12 @@ const FileItem = memo(function FileItem({
                 },
               ]}
               canClone
-              chapters={[]}
               content={toFileActionTarget(file)}
               display="menu"
               menuAlign="end"
               menuTriggerIcon={itemMenuIcon(view)}
               readOnly
+              topics={[]}
               workspaceId={file.workspaceId}
               workspaceName={file.workspaceName}
             />
@@ -542,7 +542,6 @@ const FileItem = memo(function FileItem({
             // The server reads what the caller may do with each row.
             <ContentActions
               {...fileRowActions(file)}
-              chapters={[]}
               content={toFileActionTarget(file)}
               display="menu"
               leadingItems={
@@ -564,6 +563,7 @@ const FileItem = memo(function FileItem({
               renameFieldLabel={m.files_file_name()}
               renameTitle={m.files_rename()}
               showMove={false}
+              topics={[]}
               workspaceId={file.workspaceId}
               workspaceName={workspace?.name ?? file.workspaceName}
             />

@@ -1,5 +1,5 @@
 {
-  "version": 46,
+  "version": 47,
   "operations": [
     "source.read",
     "material.read",
@@ -80,7 +80,7 @@
     {
       "name": "list_sources",
       "version": 1,
-      "description": "List the workspace's source files and study materials by chapter, with ids, kinds, editability and passage counts.",
+      "description": "List the workspace's source files and study materials by topic, with ids, kinds, editability and passage counts.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -128,7 +128,7 @@
     {
       "name": "search_files_summary",
       "version": 1,
-      "description": "Find the user's files and materials by their names and summaries, in their workspaces and outside them. Each hit gives its id, workspace and chapter (or outside workspaces), whether the user can edit it, and its summary when it has one. Use it before search_files_content.",
+      "description": "Find the user's files and materials by their names and summaries, in their workspaces and outside them. Each hit gives its id, workspace and topic (or outside workspaces), whether the user can edit it, and its summary when it has one. Use it before search_files_content.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -160,7 +160,7 @@
     {
       "name": "search_files_content",
       "version": 1,
-      "description": "Search the content of the user's files, in their workspaces and outside them, for passages matching one focused query. Each passage names its file's workspace and chapter and whether the user can edit it.",
+      "description": "Search the content of the user's files, in their workspaces and outside them, for passages matching one focused query. Each passage names its file's workspace and topic and whether the user can edit it.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -237,12 +237,17 @@
       "retention": "full"
     },
     {
-      "name": "create_chapter",
+      "name": "create_topic",
       "version": 1,
-      "description": "Add a chapter at the end of the workspace's chapters, for files to be filed in by the chapter_id it returns. Without a name it is Chapter (n). A name over its limit is cut to it and saved.",
+      "description": "Add a topic at the end of the workspace's topics, for files to be filed in by the topic_id it returns. Without a name it is Topic (n). A name or description over its limit is cut to it and saved.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "description": {
+            "description": "One line on what the topic covers.",
+            "minLength": 1,
+            "type": "string"
+          },
           "name": {
             "minLength": 1,
             "type": "string"
@@ -359,7 +364,7 @@
     {
       "name": "read_study_progress",
       "version": 1,
-      "description": "Read the learner's study progress in this workspace: files and materials done or started, recent quiz results, and the chapters they retain least.",
+      "description": "Read the learner's study progress in this workspace: files and materials done or started, recent quiz results, and the topics they retain least.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -653,11 +658,6 @@
             },
             "type": "array"
           },
-          "chapter_id": {
-            "description": "The chapter to put it in; omit it to not put it in a chapter.",
-            "minLength": 1,
-            "type": "string"
-          },
           "content": {
             "description": "note only: markdown.",
             "type": "string"
@@ -690,6 +690,11 @@
           "title": {
             "maxLength": 120,
             "type": "string"
+          },
+          "topic_id": {
+            "description": "The topic to put it in; omit it to not put it in a topic.",
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": [
@@ -721,11 +726,6 @@
         "properties": {
           "after_question_id": {
             "description": "Add after this question, not at the end.",
-            "minLength": 1,
-            "type": "string"
-          },
-          "chapter_id": {
-            "description": "With title: the new quiz's chapter.",
             "minLength": 1,
             "type": "string"
           },
@@ -849,6 +849,11 @@
             "description": "Instead of quiz_id: create a quiz with this title.",
             "minLength": 1,
             "type": "string"
+          },
+          "topic_id": {
+            "description": "With title: the new quiz's topic.",
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": [
@@ -930,11 +935,6 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "chapter_id": {
-            "description": "The chapter to put the PowerPoint in; omit it to not put it in a chapter.",
-            "minLength": 1,
-            "type": "string"
-          },
           "excerpt_ids": {
             "description": "Library excerpts this was written from; they become the PowerPoint's Sources slide. Optional; omitted, the excerpts read since your last write are credited.",
             "items": {
@@ -980,6 +980,11 @@
           },
           "title": {
             "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "topic_id": {
+            "description": "The topic to put the PowerPoint in; omit it to not put it in a topic.",
             "minLength": 1,
             "type": "string"
           }
@@ -1641,11 +1646,6 @@
                   "additionalProperties": false,
                   "description": "First command only, without file_id: makes a new file; the call's other commands then apply to it.",
                   "properties": {
-                    "chapter_id": {
-                      "description": "The chapter to put it in; omit it to not put it in a chapter.",
-                      "minLength": 1,
-                      "type": "string"
-                    },
                     "format": {
                       "enum": [
                         "xlsx",
@@ -1656,6 +1656,11 @@
                     "title": {
                       "description": "The file's name, without its extension.",
                       "maxLength": 120,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "topic_id": {
+                      "description": "The topic to put it in; omit it to not put it in a topic.",
                       "minLength": 1,
                       "type": "string"
                     },

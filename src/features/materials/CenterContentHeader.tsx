@@ -10,10 +10,10 @@ import {
 } from '@/api/hooks';
 import type {
   AccessCapabilities,
-  Chapter,
   Material,
   MaterialRef,
   SourceFile,
+  Topic,
   UserColor,
 } from '@/api/types';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
@@ -103,7 +103,7 @@ function measureHeader(header: HTMLDivElement | null) {
 /** The workspace below lg has no side panels: the title opens Files from the
  * top, and ⋮ carries the workspace actions the panels held. */
 export interface OneColumnChrome {
-  /** Add file and Add chapter, first in ⋮. */
+  /** Add file and Add topic, first in ⋮. */
   addItems: MenuItem[];
   filesOpen: boolean;
   onOpenFiles: () => void;
@@ -380,7 +380,7 @@ function ReadToggle({
 }
 
 export function Header({
-  chapters,
+  topics,
   color,
   item,
   imageZoom,
@@ -419,7 +419,7 @@ export function Header({
   leading?: ReactNode;
   /** Workspace chrome at the header's right end: the right panel toggle. */
   trailing?: ReactNode;
-  chapters: Chapter[];
+  topics: Topic[];
   color?: UserColor;
   item: OpenItem;
   imageZoom: number;
@@ -533,7 +533,6 @@ export function Header({
         beforeDeleteItems={oneColumn?.settingsItems}
         canClone={canClone}
         canMoveTo={canMoveTo}
-        chapters={chapters}
         color={color}
         content={
           file
@@ -586,6 +585,7 @@ export function Header({
         }
         renameFieldLabel={m.files_file_name()}
         showMove={!standalone}
+        topics={topics}
         workspaceId={workspaceId}
       />
       {sharing && shareable && (

@@ -22,15 +22,13 @@ vi.mock('@/lib/useProviderConnect', () => ({
   useMicrosoftLoginHint: () => null,
   useProviderConnect: () => vi.fn(),
 }));
-vi.mock('./ChapterSelect', async (original) => ({
-  ...(await original<typeof import('./ChapterSelect')>()),
-  ChapterSelect: () => <span data-chapter-select="" />,
+vi.mock('./TopicSelect', async (original) => ({
+  ...(await original<typeof import('./TopicSelect')>()),
+  TopicSelect: () => <span data-topic-select="" />,
 }));
 
 const row: PendingSource = {
   analysisStatus: 'idle',
-  chapterId: null,
-  chapterName: null,
   contentType: 'application/pdf',
   file: new File(['x'], 'notes.pdf'),
   key: 'local-notes',
@@ -40,6 +38,8 @@ const row: PendingSource = {
   parseMode: 'none',
   sizeBytes: 2048,
   sizeEstimate: false,
+  topicId: null,
+  topicName: null,
 };
 
 function render(workspaceId: string | null) {
@@ -66,19 +66,19 @@ function render(workspaceId: string | null) {
 }
 
 // No workspace (P2, 2026-10-27): Upload and Import only, rows without a
-// chapter, and no workspace file room.
-it('leaves chapters, the file room and Create out for No workspace', () => {
+// topic, and no workspace file room.
+it('leaves topics, the file room and Create out for No workspace', () => {
   const room = m.source_workspace_file_capacity({ limit: 50, used: 3 });
   const workspace = render('ws_1');
   expect(workspace).toContain('data-tab="create"');
-  expect(workspace).toContain('data-chapter-select');
+  expect(workspace).toContain('data-topic-select');
   expect(workspace).toContain(room);
 
   const standalone = render(null);
   expect(standalone).toContain('data-tab="upload"');
   expect(standalone).toContain('data-tab="import"');
   expect(standalone).not.toContain('data-tab="create"');
-  expect(standalone).not.toContain('data-chapter-select');
+  expect(standalone).not.toContain('data-topic-select');
   expect(standalone).not.toContain(room);
   expect(standalone).toContain('notes.pdf');
 });

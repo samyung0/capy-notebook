@@ -27,8 +27,8 @@ type UploadSession struct {
 	// uploader, which may be a collaborator rather than the workspace owner.
 	UserID       string
 	CreatedBy    *string
-	ChapterID    *string
-	ChapterName  string
+	TopicID      *string
+	TopicName    string
 	ObjectPath   string
 	FinalPath    string
 	Name         string
@@ -45,8 +45,8 @@ type NewUploadSession struct {
 	ID           string
 	WorkspaceID  string
 	CreatedBy    string
-	ChapterID    *string
-	ChapterName  string
+	TopicID      *string
+	TopicName    string
 	ObjectPath   string
 	FinalPath    string
 	Name         string
@@ -138,11 +138,11 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 		}
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
-		(id, target, workspace_id, user_id, created_by, chapter_id, chapter_name,
+		(id, target, workspace_id, user_id, created_by, topic_id, topic_name,
 		 object_path, final_path, name, kind, content_type, declared_size, reserved_size, parse_mode,
 		 expires_at, batch_id)
 		VALUES ($1,'source',NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
-		in.ID, in.WorkspaceID, in.CreatedBy, nullStr(in.CreatedBy), in.ChapterID, in.ChapterName,
+		in.ID, in.WorkspaceID, in.CreatedBy, nullStr(in.CreatedBy), in.TopicID, in.TopicName,
 		in.ObjectPath, in.FinalPath,
 		in.Name, in.Kind, in.ContentType, in.DeclaredSize, in.ParseMode,
 		in.ExpiresAt, nullStr(in.BatchID))
@@ -157,13 +157,13 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 
 func scanUploadSession(row interface{ Scan(...any) error }) (UploadSession, error) {
 	var u UploadSession
-	err := row.Scan(&u.ID, &u.WorkspaceID, &u.UserID, &u.CreatedBy, &u.ChapterID, &u.ChapterName, &u.ObjectPath, &u.FinalPath,
+	err := row.Scan(&u.ID, &u.WorkspaceID, &u.UserID, &u.CreatedBy, &u.TopicID, &u.TopicName, &u.ObjectPath, &u.FinalPath,
 		&u.Name, &u.Kind, &u.ContentType, &u.DeclaredSize, &u.ParseMode,
 		&u.Status, &u.FileID, &u.ExpiresAt)
 	return u, err
 }
 
-const uploadSessionCols = `id, COALESCE(workspace_id, ''), user_id, created_by, chapter_id, chapter_name, object_path, final_path,
+const uploadSessionCols = `id, COALESCE(workspace_id, ''), user_id, created_by, topic_id, topic_name, object_path, final_path,
 	name, kind, content_type, declared_size, parse_mode, status, file_id, expires_at`
 
 // uploadSessionFrom restricts the shared table to the source flow, so an
@@ -253,7 +253,7 @@ func (s *Store) finalizeUploadSessionTx(
 		return File{}, ErrUploadExpired
 	}
 
-	chapterID, err := resolveUploadChapterID(ctx, tx, u.WorkspaceID, u.ChapterID, u.ChapterName)
+	topicID, err := s.resolveUploadTopicID(ctx, tx, u.WorkspaceID, u.TopicID, u.TopicName)
 	if err != nil {
 		return File{}, err
 	}
@@ -271,10 +271,10 @@ func (s *Store) finalizeUploadSessionTx(
 	// The SHA-256 every source session names from the first open (Epo
 	// 2026-10-17); ingest and the first save write the same value.
 	_, err = tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, source_etag, parse_mode, batch_id, source_sha256)
+		(id, workspace_id, user_id, created_by, topic_id, name, kind, size_bytes, added_at, status, parser, blob_path, source_etag, parse_mode, batch_id, source_sha256)
 		VALUES ($1,NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
 			(SELECT batch_id FROM upload_sessions WHERE id=$15),NULLIF($16,''))`,
-		fileID, u.WorkspaceID, u.UserID, u.CreatedBy, chapterID, u.Name, u.Kind, u.DeclaredSize,
+		fileID, u.WorkspaceID, u.UserID, u.CreatedBy, topicID, u.Name, u.Kind, u.DeclaredSize,
 		now, status, parser, u.FinalPath, sourceETag, u.ParseMode, u.ID, sourceSHA256)
 	if err != nil {
 		return File{}, err
@@ -320,7 +320,7 @@ func (s *Store) finalizeUploadSessionTx(
 		return File{}, err
 	}
 	file := File{
-		ID: fileID, WorkspaceID: u.WorkspaceID, ChapterID: chapterID,
+		ID: fileID, WorkspaceID: u.WorkspaceID, TopicID: topicID,
 		Name: u.Name, Kind: FileKind(u.Kind), SizeBytes: u.DeclaredSize,
 		AddedAt: now, Status: FileStatus(status), Indexed: false, HasBytes: u.FinalPath != "", Revision: 1,
 	}

@@ -190,7 +190,7 @@ export function WorkspaceCardSkeleton({ className }: { className?: string }) {
 /** The fields a card shows; the settings cover picker previews them too. */
 export type WorkspaceCardFields = Pick<
   Workspace,
-  'chapterCount' | 'fileCount' | 'iconId' | 'name' | 'privacy'
+  'topicCount' | 'fileCount' | 'iconId' | 'name' | 'privacy'
 > & { tags: { value: string }[] };
 
 /**
@@ -257,8 +257,8 @@ export function WorkspaceCardFace({
           )}
         >
           {m.workspace_card_meta({
-            chapters: String(workspace.chapterCount),
             files: String(workspace.fileCount),
+            topics: String(workspace.topicCount),
           })}
         </p>
         {/* One badge high, so every card and the skeleton share a height:

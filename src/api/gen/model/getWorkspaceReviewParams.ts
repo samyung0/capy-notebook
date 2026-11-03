@@ -10,9 +10,9 @@ import type { GetWorkspaceReviewMode } from './getWorkspaceReviewMode.ts';
 export type GetWorkspaceReviewParams = {
 group?: GetWorkspaceReviewGroup;
 /**
- * The chapter of a chapter group
+ * The topic of a topic group
  */
-chapterId?: string;
+topicId?: string;
 /**
  * The plan of a plan group, one of the user's plans kept in this workspace
  */

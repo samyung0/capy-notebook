@@ -53,7 +53,6 @@ function render(menuShown: boolean, standalone = false) {
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <Header
-        chapters={[]}
         editorStatus={editorStatus}
         imageZoom={1}
         isFullscreen={false}
@@ -76,6 +75,7 @@ function render(menuShown: boolean, standalone = false) {
         presence={createPresenceStore()}
         readOnly={false}
         standalone={standalone}
+        topics={[]}
         workspaceId="ws_1"
       />
     </QueryClientProvider>
@@ -120,7 +120,7 @@ it('offers the payer Move to… and opens the moved file in its new workspace', 
     search: { file: 'f1' },
     to: '/workspaces/$workspaceId',
   });
-  // Another editor keeps the chapter-only Move.
+  // Another editor keeps the topic-only Move.
   header.isPayer = false;
   header.actions.length = 0;
   render(true);

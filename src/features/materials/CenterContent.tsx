@@ -30,12 +30,12 @@ import {
   useWorkspaceRecent,
 } from '@/api/hooks';
 import type {
-  Chapter,
   Material,
   MaterialListItem,
   MaterialPage,
   Provenance,
   Region,
+  Topic,
   UserColor,
 } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
@@ -173,7 +173,7 @@ type PreviewComponent =
  * flashcards materials get view actions in the header; mindmaps/diagrams render inline.
  * User-authored notes take over the whole pane with the editable Plate editor. */
 export function CenterContent({
-  chapters,
+  topics,
   item,
   readOnly = false,
   color,
@@ -207,7 +207,7 @@ export function CenterContent({
   leading?: ReactNode;
   /** Workspace chrome at the header's right end. */
   trailing?: ReactNode;
-  chapters: Chapter[];
+  topics: Topic[];
   item: OpenItem | null;
   readOnly?: boolean;
   color?: UserColor;
@@ -347,7 +347,6 @@ export function CenterContent({
                        * into the header's slots. */}
                       <div className={isFullscreen ? 'hidden' : 'contents'}>
                         <Header
-                          chapters={chapters}
                           color={color}
                           editorStatus={editorStatus}
                           fileActions={
@@ -384,6 +383,7 @@ export function CenterContent({
                           presence={presence}
                           readOnly={readOnly}
                           standalone={standalone}
+                          topics={topics}
                           trailing={trailing}
                           workspaceId={workspaceId}
                         />

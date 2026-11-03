@@ -40,7 +40,7 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chapter, err := st.AddChapter(ctx, workspace.ID, actor, "Selected")
+	topic, err := st.AddTopic(ctx, workspace.ID, actor, "Selected", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,13 +61,13 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	fingerprintBody, err := json.Marshal(struct {
-		ChapterID   *string
-		ChapterName string
-		ParseMode   string
-		Provider    string
-		Refs        []integrations.ImportRef
+		TopicID   *string
+		TopicName string
+		ParseMode string
+		Provider  string
+		Refs      []integrations.ImportRef
 	}{
-		ChapterID: &chapter.ID,
+		TopicID:   &topic.ID,
 		ParseMode: "none",
 		Provider:  integrations.ProviderGoogle,
 		Refs:      refs,
@@ -92,7 +92,7 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 			JobID: jobID,
 			Upload: store.NewUploadSession{
 				ID: uploadID, WorkspaceID: workspace.ID, CreatedBy: actor,
-				ChapterID:  &chapter.ID,
+				TopicID:    &topic.ID,
 				ObjectPath: "incoming/" + uploadID + "/file.txt",
 				FinalPath:  "sources/" + uploadID + ".txt",
 				Name:       name, Kind: "txt", ContentType: "text/plain",
@@ -125,7 +125,7 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 	body := map[string]any{
 		"provider":   integrations.ProviderGoogle,
 		"fileIds":    fileIDs,
-		"chapterId":  chapter.ID,
+		"topicId":    topic.ID,
 		"parseMode":  "none",
 		"requestId":  requestID,
 		"batchId":    requestID,
@@ -148,15 +148,15 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 		t.Fatalf("full-room replay body=%#v want=%#v", got, want)
 	}
 
-	if err := st.DeleteChapter(ctx, actor, chapter.ID); err != nil {
+	if err := st.DeleteTopic(ctx, actor, topic.ID); err != nil {
 		t.Fatal(err)
 	}
-	withoutChapter := doReq(t, configured, http.MethodPost,
+	withoutTopic := doReq(t, configured, http.MethodPost,
 		"/api/workspaces/"+workspace.ID+"/sources/import", "", body)
-	if withoutChapter.Code != http.StatusAccepted ||
-		withoutChapter.Body.String() != first.Body.String() {
-		t.Fatalf("deleted-chapter replay status=%d body=%s want=%s",
-			withoutChapter.Code, withoutChapter.Body.String(), first.Body.String())
+	if withoutTopic.Code != http.StatusAccepted ||
+		withoutTopic.Body.String() != first.Body.String() {
+		t.Fatalf("deleted-topic replay status=%d body=%s want=%s",
+			withoutTopic.Code, withoutTopic.Body.String(), first.Body.String())
 	}
 
 	unavailable := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{

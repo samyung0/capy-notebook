@@ -136,7 +136,7 @@ func (u *user) refetchTree(ctx context.Context, ws string) {
 		func() {
 			_ = u.get(ctx, "/api/workspaces/"+ws+"/materials", "/api/workspaces/{id}/materials", true, nil)
 		},
-		func() { _ = u.get(ctx, "/api/workspaces/"+ws+"/chapters", "/api/workspaces/{id}/chapters", true, nil) },
+		func() { _ = u.get(ctx, "/api/workspaces/"+ws+"/topics", "/api/workspaces/{id}/topics", true, nil) },
 	)
 }
 
@@ -145,7 +145,7 @@ func (u *user) openWorkspace(ctx context.Context, ws string) *space {
 	var items []material
 	all(
 		func() { _ = u.get(ctx, "/api/workspaces/"+ws, "/api/workspaces/{id}", true, nil) },
-		func() { _ = u.get(ctx, "/api/workspaces/"+ws+"/chapters", "/api/workspaces/{id}/chapters", false, nil) },
+		func() { _ = u.get(ctx, "/api/workspaces/"+ws+"/topics", "/api/workspaces/{id}/topics", false, nil) },
 		func() { u.workspaceFileList(ctx, ws, false) },
 		func() {
 			_ = u.get(ctx, "/api/workspaces/"+ws+"/materials", "/api/workspaces/{id}/materials", true, &items)
@@ -464,7 +464,7 @@ func (u *user) createNote(ctx context.Context, sp *space) {
 			_ = u.get(ctx, "/api/workspaces/"+sp.id+"/materials", "/api/workspaces/{id}/materials", true, nil)
 		},
 		func() {
-			_ = u.get(ctx, "/api/workspaces/"+sp.id+"/chapters", "/api/workspaces/{id}/chapters", true, nil)
+			_ = u.get(ctx, "/api/workspaces/"+sp.id+"/topics", "/api/workspaces/{id}/topics", true, nil)
 		},
 		func() {
 			_ = u.call(ctx, http.MethodPost, "/api/materials/"+created.ID+"/collaboration-token",

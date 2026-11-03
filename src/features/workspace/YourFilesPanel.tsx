@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
-  useChapters,
   useOwnedFiles,
+  useTopics,
   useWorkspace,
   useWorkspaces,
 } from '@/api/hooks';
@@ -20,8 +20,8 @@ import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 import { useDebounced } from '@/lib/useDebounced';
-import { ChapterSelect, chapterByName, NewChapterInput } from './ChapterSelect';
 import { moveErrorMessage, useMoveFilesFlow } from './MoveFileDialog';
+import { NewTopicInput, TopicSelect, topicByName } from './TopicSelect';
 
 /** POST /files/move takes at most this many files at once. */
 const MOVE_MAX = 20;
@@ -30,7 +30,7 @@ const MOVE_MAX = 20;
  * The Add file dialog's Your files tab: the files the user pays for (lost
  * access left out), searched by name on the server, as the shared cards with
  * each file's workspace. A pick of several moves them into this workspace
- * and the chapter in the footer; files already here are dimmed and cannot be
+ * and the topic in the footer; files already here are dimmed and cannot be
  * picked.
  */
 export function YourFilesPanel({
@@ -55,14 +55,14 @@ export function YourFilesPanel({
     .filter((file) => !file.lostAccess);
   const { data: workspaces } = useWorkspaces();
   const { data: workspace } = useWorkspace(workspaceId);
-  const { data: chapters } = useChapters(workspaceId);
+  const { data: topics } = useTopics(workspaceId);
   const { confirm, move } = useMoveFilesFlow(workspace?.name ?? '');
   const [picked, setPicked] = useState<Map<string, SourceFile>>(new Map());
-  const [chapter, setChapter] = useState<{
-    chapterId: string | null;
-    chapterName: string | null;
-  }>({ chapterId: null, chapterName: null });
-  const [newChapter, setNewChapter] = useState<string | null>(null);
+  const [topic, setTopic] = useState<{
+    topicId: string | null;
+    topicName: string | null;
+  }>({ topicId: null, topicName: null });
+  const [newTopic, setNewTopic] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [formError, setFormError] = useState<{
     errorId: string | null;
@@ -85,18 +85,16 @@ export function YourFilesPanel({
     if (moving || selected.length === 0) return;
     setFormError(null);
     setMoving(true);
-    // A chapter name still being typed counts, so Move never drops it.
-    const typed = newChapter?.trim();
-    const { chapterId, chapterName } = typed
-      ? chapterByName(chapters, typed)
-      : chapter;
+    // A topic name still being typed counts, so Move never drops it.
+    const typed = newTopic?.trim();
+    const { topicId, topicName } = typed ? topicByName(topics, typed) : topic;
     const only = selected.length === 1 ? selected[0] : undefined;
     try {
       const moved = await move(
         {
-          chapterId: chapterId ?? undefined,
-          chapterName: chapterName ?? undefined,
           fileIds: selected.map((file) => file.id),
+          topicId: topicId ?? undefined,
+          topicName: topicName ?? undefined,
           workspaceId,
         },
         selected.map((file) => file.workspaceId),
@@ -202,30 +200,28 @@ export function YourFilesPanel({
       />
       <DialogFooter className="shrink-0">
         <div className="mr-auto">
-          {newChapter === null ? (
-            <ChapterSelect
-              chapterName={chapter.chapterName}
-              chapters={chapters ?? []}
+          {newTopic === null ? (
+            <TopicSelect
               disabled={moving}
               field
-              onChange={(chapterId) =>
-                setChapter({ chapterId, chapterName: null })
-              }
-              onCreateRequest={() => setNewChapter('')}
-              value={chapter.chapterId}
+              onChange={(topicId) => setTopic({ topicId, topicName: null })}
+              onCreateRequest={() => setNewTopic('')}
+              topicName={topic.topicName}
+              topics={topics ?? []}
+              value={topic.topicId}
             />
           ) : (
-            <NewChapterInput
+            <NewTopicInput
               field
-              onCancel={() => setNewChapter(null)}
-              onChange={setNewChapter}
+              onCancel={() => setNewTopic(null)}
+              onChange={setNewTopic}
               onConfirm={() => {
-                const name = newChapter.trim();
+                const name = newTopic.trim();
                 if (!name) return;
-                setChapter(chapterByName(chapters, name));
-                setNewChapter(null);
+                setTopic(topicByName(topics, name));
+                setNewTopic(null);
               }}
-              value={newChapter}
+              value={newTopic}
             />
           )}
         </div>

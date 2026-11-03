@@ -70,7 +70,7 @@ type User struct {
    avoiding pointless copy structs. */
 
 type (
-	Chapter            = store.Chapter
+	Topic              = store.Topic
 	File               = store.File
 	FilePage           = store.FilePage
 	MaterialListItem   = store.MaterialListItem
@@ -174,9 +174,9 @@ type Material struct {
 	ContentBytes   int                      `json:"contentBytes" doc:"UTF-8 byte length of persisted content JSON"`
 	NodeCount      int                      `json:"nodeCount"`
 	MaxDepth       int                      `json:"maxDepth"`
-	ChapterID      *string                  `json:"chapterId"`
+	TopicID        *string                  `json:"topicId"`
 	Position       int64                    `json:"position"`
-	ScopeChapters  []string                 `json:"scopeChapters" nullable:"false"`
+	ScopeTopics    []string                 `json:"scopeTopics" nullable:"false"`
 	ScopeFileNames []string                 `json:"scopeFileNames" nullable:"false"`
 	Privacy        store.Privacy            `json:"privacy"`
 	Color          store.UserColor          `json:"color,omitempty"`
@@ -239,9 +239,9 @@ func FromMaterial(m store.Material) (Material, error) {
 	return Material{
 		ID: m.ID, WorkspaceID: m.WorkspaceID, WorkspaceName: m.WorkspaceName,
 		Kind: m.Kind, Title: m.Title, Content: content, ContentBytes: len(m.Content),
-		NodeCount: m.NodeCount, MaxDepth: m.MaxDepth, ChapterID: m.ChapterID,
-		Position:      m.Position,
-		ScopeChapters: m.ScopeChapters, ScopeFileNames: m.ScopeFileNames,
+		NodeCount: m.NodeCount, MaxDepth: m.MaxDepth, TopicID: m.TopicID,
+		Position:    m.Position,
+		ScopeTopics: m.ScopeTopics, ScopeFileNames: m.ScopeFileNames,
 		Privacy: m.Privacy, Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 		Revision: m.Revision,
 		IsOwner:  m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
@@ -271,7 +271,7 @@ type Workspace struct {
 	ShareRole    store.ShareRole          `json:"shareRole"`
 	SharePath    string                   `json:"sharePath"`
 	Tags         []Tag                    `json:"tags" nullable:"false"`
-	ChapterCount int                      `json:"chapterCount"`
+	TopicCount   int                      `json:"topicCount"`
 	FileCount    int                      `json:"fileCount"`
 	FilesLimit   int                      `json:"filesLimit"`
 	CreatedAt    time.Time                `json:"createdAt"`
@@ -293,7 +293,7 @@ func FromWorkspace(w store.Workspace) Workspace {
 		AutoProcess: w.AutoProcess,
 		ID:          w.ID, Name: w.Name, Description: w.Description, IconID: w.IconID, Cover: w.Cover, Privacy: w.Privacy, ShareRole: w.ShareRole,
 		SharePath: w.SharePath,
-		Tags:      WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
+		Tags:      WrapTags(w.Tags), TopicCount: w.TopicCount, FileCount: w.FileCount,
 		FilesLimit: w.FilesLimit,
 		CreatedAt:  w.CreatedAt, IsOwner: true,
 		Role: &role, Capabilities: store.CapabilitiesForRole(role, true), CanClone: true,
@@ -380,7 +380,7 @@ type Quiz struct {
 	Name          string           `json:"name"`
 	WorkspaceID   string           `json:"workspaceId"`
 	WorkspaceName string           `json:"workspaceName"`
-	Chapters      []string         `json:"chapters" nullable:"false"`
+	Topics        []string         `json:"topics" nullable:"false"`
 	Questions     []map[string]any `json:"questions" nullable:"false"`
 	CreatedAt     time.Time        `json:"createdAt"`
 	Privacy       store.Privacy    `json:"privacy"`
@@ -405,12 +405,12 @@ func FromQuiz(q store.Quiz) Quiz {
 	out := Quiz{
 		Revision: q.Revision,
 		ID:       q.ID, Name: q.Name, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName,
-		Chapters: q.Chapters, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
+		Topics: q.Topics, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
 		Privacy: q.Privacy, SharePath: q.SharePath, ParentMaterialID: q.ParentMaterialID, Provenance: q.Provenance,
 		IsOwner: q.IsOwner, CanEdit: q.CanEdit, CanEditContent: q.CanEditContent,
 	}
-	if out.Chapters == nil {
-		out.Chapters = []string{}
+	if out.Topics == nil {
+		out.Topics = []string{}
 	}
 	return out
 }

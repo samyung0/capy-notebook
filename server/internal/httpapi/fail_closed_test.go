@@ -105,13 +105,13 @@ func TestGenerateRejectsUnknownScopeIDs(t *testing.T) {
 		t.Fatalf("foreign file = %d body=%s, missing body=%s", foreign.Code, foreign.Body.String(), rec.Body.String())
 	}
 
-	unknownChapter := generateBody("quiz", "Unknown chapter")
-	unknownChapter["chapters"] = []string{"ch_does_not_exist"}
+	unknownTopic := generateBody("quiz", "Unknown topic")
+	unknownTopic["topics"] = []string{"ch_does_not_exist"}
 	rec = doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-		"u_editor", unknownChapter)
+		"u_editor", unknownTopic)
 	if rec.Code != http.StatusBadRequest ||
-		!strings.Contains(rec.Body.String(), `No chapter has the id \"ch_does_not_exist\"`) {
-		t.Fatalf("unknown chapter = %d body=%s", rec.Code, rec.Body.String())
+		!strings.Contains(rec.Body.String(), `No topic has the id \"ch_does_not_exist\"`) {
+		t.Fatalf("unknown topic = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

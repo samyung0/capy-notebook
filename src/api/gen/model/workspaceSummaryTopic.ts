@@ -6,7 +6,7 @@
  */
 import type { WorkspaceSummaryFile } from './workspaceSummaryFile.ts';
 
-export interface WorkspaceSummaryChapter {
+export interface WorkspaceSummaryTopic {
   files: WorkspaceSummaryFile[];
   name: string;
 }

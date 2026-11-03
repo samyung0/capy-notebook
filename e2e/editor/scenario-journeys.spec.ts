@@ -51,7 +51,7 @@ test('a material cloned into a workspace opens there, not on the standalone page
     .getByRole('dialog', { name: m.action_clone_note() })
     .getByRole('button', { exact: true, name: m.action_clone() })
     .click();
-  // The copy lands in the source's workspace, with no chapter by default.
+  // The copy lands in the source's workspace, with no topic by default.
   await expect(page).toHaveURL(
     /\/workspaces\/ws_bio\?material=(?!mat_note_1\b)\w+$/
   );

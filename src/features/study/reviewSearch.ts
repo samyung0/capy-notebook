@@ -13,7 +13,7 @@ import { commaList } from '@/lib/listSearch';
 /** Where a review session was started from, so Back returns there. */
 export type ReviewFrom = 'workspace' | 'review';
 
-/** A review session's URL: a new session (group, chapter, mode) or an
+/** A review session's URL: a new session (group, topic, mode) or an
  * unfinished one to continue (session). */
 export type ReviewSearch = Omit<Partial<ReviewStart>, 'mode'> & {
   from?: ReviewFrom;
@@ -22,7 +22,7 @@ export type ReviewSearch = Omit<Partial<ReviewStart>, 'mode'> & {
   session?: string;
 };
 
-const GROUPS = ['chapter', 'others', 'workspace', 'plan'] as const;
+const GROUPS = ['topic', 'others', 'workspace', 'plan'] as const;
 const MODES: readonly ReviewMode[] = ['tricky', 'fading', 'learned'];
 const text = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 
@@ -36,7 +36,7 @@ export function parseReviewSearch(
   if (group) out.group = group;
   const mode = MODES.find((md) => md === search.reviewMode);
   if (mode) out.reviewMode = mode;
-  out.chapterId = text(search.chapterId);
+  out.topicId = text(search.topicId);
   out.planId = text(search.planId);
   out.session = text(search.session);
   return out;
@@ -51,7 +51,7 @@ export const PAST_REVIEW_SORTS: readonly PastReviewSort[] = [
   'time',
   'workspace',
   'plan',
-  'chapter',
+  'topic',
   'status',
 ];
 export const PAST_REVIEW_SORT_DEFAULT: PastReviewSort = 'date';

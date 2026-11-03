@@ -1950,7 +1950,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
       .locator('..')
       .getByRole('button', {
         exact: true,
-        name: m.action_new_file_or_chapter(),
+        name: m.action_new_file_or_topic(),
       })
       .first()
       .click();

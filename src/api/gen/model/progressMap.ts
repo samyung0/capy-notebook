@@ -4,11 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { ProgressChapter } from './progressChapter.ts';
 import type { ProgressItem } from './progressItem.ts';
+import type { ProgressTopic } from './progressTopic.ts';
 
 export interface ProgressMap {
-  chapters: ProgressChapter[];
   items: ProgressItem[];
+  topics: ProgressTopic[];
   workspaceId: string;
 }

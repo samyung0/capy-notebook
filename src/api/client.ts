@@ -333,7 +333,6 @@ export const qk = {
   billing: ['billing'] as const,
   cards: (flashcardSetId: string) =>
     ['flashcardSet', flashcardSetId, 'cards'] as const,
-  chapters: (wsId: string) => ['workspace', wsId, 'chapters'] as const,
   /** One workspace's chats, or with null the account chat's. */
   conversations: (wsId: string | null) =>
     wsId
@@ -403,6 +402,7 @@ export const qk = {
   studyPlans: (wsId: string) => ['workspace', wsId, 'study', 'plans'] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
+  topics: (wsId: string) => ['workspace', wsId, 'topics'] as const,
   trash: (wsId?: string) => ['trash', wsId ?? 'all'] as const,
   usage: ['usage'] as const,
   usageEvents: (params?: unknown) =>

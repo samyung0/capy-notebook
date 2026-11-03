@@ -124,7 +124,7 @@ it("shows the tour's sample result without fetching it", () => {
   page.sessionId = TOUR_SAMPLE_SESSION;
   page.tour = { workspaceId: 'ws' };
   const html = render(<ReviewResult />);
-  expect(html).toContain(m.tour_sample_chapter());
+  expect(html).toContain(m.tour_sample_topic());
   expect(html).toContain(m.tour_sample_question_spacing());
   expect(useReviewResult).toHaveBeenCalledWith(
     TOUR_SAMPLE_SESSION,

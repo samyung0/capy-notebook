@@ -1,26 +1,26 @@
-import type { Chapter, UserColor } from '@/api/types';
+import type { Topic, UserColor } from '@/api/types';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
 
-/** Chapter picker for moving a file or material into a chapter (membership).
- * Selecting a row calls onSelect and closes; "No chapter" unfiles (null). */
-export function MoveToChapterDialog({
+/** Topic picker for moving a file or material into a topic (membership).
+ * Selecting a row calls onSelect and closes; "No topic" unfiles (null). */
+export function MoveToTopicDialog({
   open,
   onClose,
-  chapters,
-  currentChapterId,
+  topics,
+  currentTopicId,
   onSelect,
   color,
   title,
 }: {
   open: boolean;
   onClose: () => void;
-  chapters: Chapter[];
-  currentChapterId: string | null;
-  onSelect: (chapterId: string | null) => void;
+  topics: Topic[];
+  currentTopicId: string | null;
+  onSelect: (topicId: string | null) => void;
   color?: UserColor;
   title?: string;
 }) {
@@ -41,35 +41,35 @@ export function MoveToChapterDialog({
     <SimpleDialog
       onClose={onClose}
       open={open}
-      title={title ?? m.move_to_chapter()}
+      title={title ?? m.move_to_topic()}
     >
       <div className="flex max-h-[60vh] flex-col gap-0.5 overflow-auto">
-        {chapters.length > 0 && (
+        {topics.length > 0 && (
           <>
             <button
               className="flex h-9 w-full items-center gap-2.5 rounded-button px-2.5 py-2 text-left transition-colors hover:bg-surface-hover-bg"
               onClick={() => choose(null)}
-              style={styleCls(currentChapterId === null)}
+              style={styleCls(currentTopicId === null)}
               type="button"
             >
               <Icon
                 className="shrink-0 -translate-y-px"
-                name="removeFromChapter"
+                name="removeFromTopic"
               />
               <span
                 className={cn(
                   'flex-1 truncate',
-                  currentChapterId === null && 'font-bold'
+                  currentTopicId === null && 'font-bold'
                 )}
               >
-                {m.move_remove_chapters()}
+                {m.move_remove_topics()}
               </span>
-              {currentChapterId === null && (
+              {currentTopicId === null && (
                 <Icon className="shrink-0" name="check" />
               )}
             </button>
-            {chapters.map((c) => {
-              const active = c.id === currentChapterId;
+            {topics.map((c) => {
+              const active = c.id === currentTopicId;
               return (
                 <button
                   className="flex h-9 w-full items-center gap-2.5 rounded-button px-2.5 py-2 text-left transition-colors hover:bg-surface-hover-bg"
@@ -78,7 +78,7 @@ export function MoveToChapterDialog({
                   style={styleCls(active)}
                   type="button"
                 >
-                  <Icon className="shrink-0 -translate-y-px" name="chapter" />
+                  <Icon className="shrink-0 -translate-y-px" name="topic" />
                   <span
                     className={cn('flex-1 truncate', active && 'font-bold')}
                   >
@@ -90,8 +90,8 @@ export function MoveToChapterDialog({
             })}
           </>
         )}
-        {chapters.length === 0 && (
-          <div className="px-2.5 py-3">{m.move_no_chapters()}</div>
+        {topics.length === 0 && (
+          <div className="px-2.5 py-3">{m.move_no_topics()}</div>
         )}
       </div>
     </SimpleDialog>

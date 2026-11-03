@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { isApiError } from '@/api/client';
 import {
-  useChapters,
   useFiles,
   useGenerate,
   useMaterials,
+  useTopics,
   useWorkspace,
 } from '@/api/hooks';
 import type { GenerateOptions } from '@/api/types';
@@ -44,7 +44,7 @@ export function GenerateFilePanel({
   // null until the user changes Sources: the whole workspace, whatever loads.
   const [picked, setPicked] = useState<ReadonlySet<string> | null>(null);
   const { data: workspace } = useWorkspace(workspaceId);
-  const { data: chapters } = useChapters(workspaceId);
+  const { data: topics } = useTopics(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const { data: materials } = useMaterials(workspaceId);
   const { isPending, mutateAsync: generate } = useGenerate(workspaceId, {
@@ -92,7 +92,6 @@ export function GenerateFilePanel({
         ))}
       </FileKindGrid>
       <GenerateForm
-        chapters={chapters ?? []}
         existingTitles={(materials ?? []).map((mt) => mt.title)}
         files={files ?? []}
         key={mode}
@@ -102,6 +101,7 @@ export function GenerateFilePanel({
         onPickedChange={setPicked}
         pending={isPending}
         picked={picked}
+        topics={topics ?? []}
         workspaceName={workspace?.name ?? ''}
       />
     </div>

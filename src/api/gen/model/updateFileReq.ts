@@ -8,10 +8,10 @@
 export interface UpdateFileReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  chapterId?: string;
   /**
      * @minLength 1
      * @maxLength 120
      */
   name?: string;
+  topicId?: string;
 }

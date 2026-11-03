@@ -124,7 +124,7 @@ export function MaterialsTab({
       value: 'title',
     },
     {
-      icon: 'chapter',
+      icon: 'topic',
       label: m.create_sort_kind(),
       value: 'kind',
     },

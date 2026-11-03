@@ -5,15 +5,15 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Cover } from './cover.ts';
-import type { ProgressChapter } from './progressChapter.ts';
 import type { ProgressItem } from './progressItem.ts';
+import type { ProgressTopic } from './progressTopic.ts';
 
 export interface PlanWorkspace {
-  chapters: ProgressChapter[];
   cover?: Cover;
   hidden: boolean;
   iconId: string;
   items: ProgressItem[];
   name: string;
+  topics: ProgressTopic[];
   workspaceId: string;
 }

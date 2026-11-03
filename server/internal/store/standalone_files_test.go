@@ -242,12 +242,12 @@ func TestStandaloneFileMovesIntoAWorkspaceWithItsIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	moved, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: ws.ID, ChapterName: "Imported"}, false)
+	moved, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: ws.ID, TopicName: "Imported"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(moved) != 1 || moved[0].ID != file.ID || moved[0].WorkspaceID != ws.ID || moved[0].ChapterID == nil {
-		t.Fatalf("moved = %+v, want the same file in a new chapter of the workspace", moved)
+	if len(moved) != 1 || moved[0].ID != file.ID || moved[0].WorkspaceID != ws.ID || moved[0].TopicID == nil {
+		t.Fatalf("moved = %+v, want the same file in a new topic of the workspace", moved)
 	}
 	// The owner-scoped content row itself moves into the workspace
 	// (migration 0126): nothing is copied.

@@ -153,17 +153,21 @@ components:
         - bbox
         - bytes
       type: object
-    AddChapterReq:
+    AddTopicReq:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/AddChapterReq.json
+          example: https://example.com/schemas/AddTopicReq.json
           format: uri
           readOnly: true
           type: string
+        description:
+          description: One optional line on what the topic covers
+          maxLength: 200
+          type: string
         name:
-          description: Chapter name
+          description: Topic name
           maxLength: 60
           minLength: 1
           type: string
@@ -370,10 +374,6 @@ components:
     Attempt:
       additionalProperties: false
       properties:
-        chapters:
-          items:
-            type: string
-          type: array
         correct:
           format: double
           type: number
@@ -401,6 +401,10 @@ components:
         takenAt:
           format: date-time
           type: string
+        topics:
+          items:
+            type: string
+          type: array
         total:
           format: double
           type: number
@@ -416,7 +420,7 @@ components:
         - kind
         - quizName
         - workspaceName
-        - chapters
+        - topics
         - correct
         - total
         - pct
@@ -461,10 +465,6 @@ components:
           items:
             $ref: "#/components/schemas/AttemptCard"
           type: array
-        chapters:
-          items:
-            type: string
-          type: array
         correct:
           format: double
           type: number
@@ -499,6 +499,10 @@ components:
         takenAt:
           format: date-time
           type: string
+        topics:
+          items:
+            type: string
+          type: array
         total:
           format: double
           type: number
@@ -517,7 +521,7 @@ components:
         - kind
         - quizName
         - workspaceName
-        - chapters
+        - topics
         - correct
         - total
         - pct
@@ -639,13 +643,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: Where a new quiz is filed; goes with quizName
-          type: string
-        chapterName:
-          description: Files a new quiz in the chapter of this name (any case), created when missing; goes with quizName, exclusive with chapterId
-          maxLength: 60
-          type: string
         questionIds:
           description: Bank questions to copy, in this order
           items:
@@ -660,6 +657,13 @@ components:
         quizName:
           description: Name of a new quiz; exclusive with quizId
           maxLength: 120
+          type: string
+        topicId:
+          description: Where a new quiz is filed; goes with quizName
+          type: string
+        topicName:
+          description: Files a new quiz in the topic of this name (any case), created when missing; goes with quizName, exclusive with topicId
+          maxLength: 60
           type: string
         workspaceId:
           minLength: 1
@@ -806,6 +810,25 @@ components:
         - answerTypes
         - score
         - reviewedAt
+      type: object
+    BankTopic:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        reviewed:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+      required:
+        - id
+        - label
+        - total
+        - reviewed
       type: object
     BillingCheckoutReq:
       additionalProperties: false
@@ -1021,35 +1044,6 @@ components:
       required:
         - assetId
       type: object
-    Chapter:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/Chapter.json
-          format: uri
-          readOnly: true
-          type: string
-        fileIds:
-          items:
-            type: string
-          type: array
-        id:
-          type: string
-        name:
-          type: string
-        order:
-          format: int64
-          type: integer
-        workspaceId:
-          type: string
-      required:
-        - id
-        - workspaceId
-        - name
-        - order
-        - fileIds
-      type: object
     CheckBankQuestionReq:
       additionalProperties: false
       properties:
@@ -1203,17 +1197,17 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: A chapter of the workspace; exclusive with chapterName
-          type: string
-        chapterName:
-          description: A chapter of this name (any case), created when missing
-          maxLength: 60
-          type: string
         name:
           description: The copy's name
           maxLength: 120
           minLength: 1
+          type: string
+        topicId:
+          description: A topic of the workspace; exclusive with topicName
+          type: string
+        topicName:
+          description: A topic of this name (any case), created when missing
+          maxLength: 60
           type: string
         workspaceId:
           description: Omitted for a standalone copy
@@ -1230,17 +1224,17 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: A chapter of the workspace; exclusive with chapterName
-          type: string
-        chapterName:
-          description: A chapter of this name (any case), created when missing
-          maxLength: 60
-          type: string
         title:
           description: The copy's title, unique in its workspace
           maxLength: 120
           minLength: 1
+          type: string
+        topicId:
+          description: A topic of the workspace; exclusive with topicName
+          type: string
+        topicName:
+          description: A topic of this name (any case), created when missing
+          maxLength: 60
           type: string
         workspaceId:
           description: Omitted for a standalone copy
@@ -1482,9 +1476,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: A chapter of the workspace
-          type: string
         format:
           enum:
             - docx
@@ -1494,6 +1485,9 @@ components:
           description: The file's name without its extension
           maxLength: 120
           minLength: 1
+          type: string
+        topicId:
+          description: A topic of the workspace
           type: string
       required:
         - format
@@ -1661,12 +1655,12 @@ components:
         kind:
           $ref: "#/components/schemas/MaterialKind"
           description: Material kind
-        scopeChapters:
+        scopeFileNames:
           items:
             type: string
           nullable: true
           type: array
-        scopeFileNames:
+        scopeTopics:
           items:
             type: string
           nullable: true
@@ -1686,11 +1680,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapters:
-          items:
-            type: string
-          nullable: true
-          type: array
         name:
           maxLength: 120
           type: string
@@ -1700,6 +1689,11 @@ components:
           items:
             additionalProperties: {}
             type: object
+          nullable: true
+          type: array
+        topics:
+          items:
+            type: string
           nullable: true
           type: array
         workspaceId:
@@ -2198,9 +2192,6 @@ components:
         addedAt:
           format: date-time
           type: string
-        chapterId:
-          nullable: true
-          type: string
         errorId:
           type: string
         hasBytes:
@@ -2248,6 +2239,9 @@ components:
         thumbnailUrl:
           description: Hour-stable presigned GET of the page-1 thumbnail; list rows only
           type: string
+        topicId:
+          nullable: true
+          type: string
         workspaceId:
           type: string
         workspaceName:
@@ -2255,7 +2249,7 @@ components:
       required:
         - id
         - workspaceId
-        - chapterId
+        - topicId
         - position
         - name
         - kind
@@ -2518,10 +2512,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapters:
-          items:
-            type: string
-          type: array
         count:
           format: int64
           maximum: 50
@@ -2547,6 +2537,10 @@ components:
           maxLength: 120
           minLength: 1
           type: string
+        topics:
+          items:
+            type: string
+          type: array
         types:
           default:
             - mcq
@@ -2648,11 +2642,6 @@ components:
           maximum: 10000
           minimum: 1
           type: integer
-        chapterId:
-          type: string
-        chapterName:
-          maxLength: 60
-          type: string
         driveIds:
           items:
             type: string
@@ -2675,6 +2664,11 @@ components:
           type: string
         requestId:
           maxLength: 128
+          type: string
+        topicId:
+          type: string
+        topicName:
+          maxLength: 60
           type: string
       required:
         - provider
@@ -3006,9 +3000,6 @@ components:
           type: integer
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
-        chapterId:
-          nullable: true
-          type: string
         color:
           $ref: "#/components/schemas/UserColor"
         content:
@@ -3058,11 +3049,11 @@ components:
           type: integer
         role:
           $ref: "#/components/schemas/WorkspaceRole"
-        scopeChapters:
+        scopeFileNames:
           items:
             type: string
           type: array
-        scopeFileNames:
+        scopeTopics:
           items:
             type: string
           type: array
@@ -3071,6 +3062,9 @@ components:
         storageFull:
           $ref: "#/components/schemas/StorageFullBy"
         title:
+          type: string
+        topicId:
+          nullable: true
           type: string
         updatedAt:
           format: date-time
@@ -3089,9 +3083,9 @@ components:
         - contentBytes
         - nodeCount
         - maxDepth
-        - chapterId
+        - topicId
         - position
-        - scopeChapters
+        - scopeTopics
         - scopeFileNames
         - privacy
         - createdAt
@@ -3224,11 +3218,6 @@ components:
         cardCount:
           format: int64
           type: integer
-        chapterId:
-          nullable: true
-          type: string
-        chapterName:
-          type: string
         createdAt:
           format: date-time
           type: string
@@ -3255,6 +3244,11 @@ components:
           type: integer
         title:
           type: string
+        topicId:
+          nullable: true
+          type: string
+        topicName:
+          type: string
         updatedAt:
           format: date-time
           type: string
@@ -3268,8 +3262,8 @@ components:
         - title
         - workspaceId
         - workspaceName
-        - chapterId
-        - chapterName
+        - topicId
+        - topicName
         - privacy
         - createdAt
         - updatedAt
@@ -3296,9 +3290,6 @@ components:
     MaterialRef:
       additionalProperties: false
       properties:
-        chapterId:
-          nullable: true
-          type: string
         createdAt:
           format: date-time
           type: string
@@ -3320,13 +3311,16 @@ components:
           type: integer
         title:
           type: string
+        topicId:
+          nullable: true
+          type: string
         type:
           $ref: "#/components/schemas/MaterialRefType"
       required:
         - id
         - type
         - title
-        - chapterId
+        - topicId
         - position
         - createdAt
         - sizeBytes
@@ -3526,13 +3520,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: A chapter of the workspace; exclusive with chapterName
-          type: string
-        chapterName:
-          description: A chapter of this name (any case), created when missing
-          maxLength: 60
-          type: string
         confirmProgressLoss:
           description: Drop the left workspaces' study progress and plan steps for these files
           type: boolean
@@ -3543,6 +3530,13 @@ components:
           minItems: 1
           nullable: true
           type: array
+        topicId:
+          description: A topic of the workspace; exclusive with topicName
+          type: string
+        topicName:
+          description: A topic of this name (any case), created when missing
+          maxLength: 60
+          type: string
         workspaceId:
           minLength: 1
           type: string
@@ -3884,17 +3878,13 @@ components:
           type: integer
         cards:
           $ref: "#/components/schemas/SessionScore"
-        chapterId:
-          type: string
-        chapterName:
-          type: string
         finishedAt:
           description: Omitted on the result page of a session not finished yet
           format: date-time
           type: string
         group:
           enum:
-            - chapter
+            - topic
             - others
             - workspace
             - plan
@@ -3916,6 +3906,10 @@ components:
           $ref: "#/components/schemas/SessionScore"
         startedAt:
           format: date-time
+          type: string
+        topicId:
+          type: string
+        topicName:
           type: string
         total:
           format: int64
@@ -4042,10 +4036,6 @@ components:
     PlanWorkspace:
       additionalProperties: false
       properties:
-        chapters:
-          items:
-            $ref: "#/components/schemas/ProgressChapter"
-          type: array
         cover:
           $ref: "#/components/schemas/Cover"
         hidden:
@@ -4058,6 +4048,10 @@ components:
           type: array
         name:
           type: string
+        topics:
+          items:
+            $ref: "#/components/schemas/ProgressTopic"
+          type: array
         workspaceId:
           type: string
       required:
@@ -4065,7 +4059,7 @@ components:
         - name
         - iconId
         - hidden
-        - chapters
+        - topics
         - items
       type: object
     PreviousAttempt:
@@ -4091,27 +4085,9 @@ components:
         - public
         - link
       type: string
-    ProgressChapter:
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        order:
-          format: int64
-          type: integer
-      required:
-        - id
-        - name
-        - order
-      type: object
     ProgressItem:
       additionalProperties: false
       properties:
-        chapterId:
-          nullable: true
-          type: string
         createdAt:
           format: date-time
           type: string
@@ -4132,6 +4108,9 @@ components:
           type: string
         title:
           type: string
+        topicId:
+          nullable: true
+          type: string
         type:
           enum:
             - file
@@ -4142,27 +4121,42 @@ components:
         - type
         - kind
         - title
-        - chapterId
+        - topicId
         - position
         - createdAt
       type: object
     ProgressMap:
       additionalProperties: false
       properties:
-        chapters:
-          items:
-            $ref: "#/components/schemas/ProgressChapter"
-          type: array
         items:
           items:
             $ref: "#/components/schemas/ProgressItem"
+          type: array
+        topics:
+          items:
+            $ref: "#/components/schemas/ProgressTopic"
           type: array
         workspaceId:
           type: string
       required:
         - workspaceId
-        - chapters
+        - topics
         - items
+      type: object
+    ProgressTopic:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        order:
+          format: int64
+          type: integer
+      required:
+        - id
+        - name
+        - order
       type: object
     ProgressWorkspace:
       additionalProperties: false
@@ -4433,9 +4427,6 @@ components:
           type: boolean
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
-        chapterCount:
-          format: int64
-          type: integer
         clones:
           format: int64
           type: integer
@@ -4473,6 +4464,9 @@ components:
           items:
             $ref: "#/components/schemas/Tag"
           type: array
+        topicCount:
+          format: int64
+          type: integer
       required:
         - author
         - clones
@@ -4485,7 +4479,7 @@ components:
         - shareRole
         - sharePath
         - tags
-        - chapterCount
+        - topicCount
         - fileCount
         - filesLimit
         - createdAt
@@ -4543,10 +4537,6 @@ components:
           type: boolean
         canEditContent:
           type: boolean
-        chapters:
-          items:
-            type: string
-          type: array
         createdAt:
           format: date-time
           type: string
@@ -4577,6 +4567,10 @@ components:
           type: integer
         sharePath:
           type: string
+        topics:
+          items:
+            type: string
+          type: array
         workspaceId:
           type: string
         workspaceName:
@@ -4587,7 +4581,7 @@ components:
         - name
         - workspaceId
         - workspaceName
-        - chapters
+        - topics
         - questions
         - createdAt
         - privacy
@@ -4751,25 +4745,6 @@ components:
         - after
         - end
       type: object
-    ReorderChaptersReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/ReorderChaptersReq.json
-          format: uri
-          readOnly: true
-          type: string
-        ids:
-          description: Chapter ids in the desired order
-          items:
-            type: string
-          minItems: 1
-          nullable: true
-          type: array
-      required:
-        - ids
-      type: object
     ReorderContentReq:
       additionalProperties: false
       properties:
@@ -4779,10 +4754,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: Destination chapter; null means the unfiled bucket
-          nullable: true
-          type: string
         items:
           description: Destination content in the desired mixed order
           items:
@@ -4790,9 +4761,32 @@ components:
           minItems: 1
           nullable: true
           type: array
+        topicId:
+          description: Destination topic; null means the unfiled bucket
+          nullable: true
+          type: string
       required:
-        - chapterId
+        - topicId
         - items
+      type: object
+    ReorderTopicsReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ReorderTopicsReq.json
+          format: uri
+          readOnly: true
+          type: string
+        ids:
+          description: Topic ids in the desired order
+          items:
+            type: string
+          minItems: 1
+          nullable: true
+          type: array
+      required:
+        - ids
       type: object
     ReportEditIncidentReq:
       additionalProperties: false
@@ -5147,8 +5141,6 @@ components:
         answered:
           format: int64
           type: integer
-        chapterId:
-          type: string
         done:
           items:
             $ref: "#/components/schemas/ReviewAnswer"
@@ -5157,7 +5149,7 @@ components:
           $ref: "#/components/schemas/ReviewEvidence"
         group:
           enum:
-            - chapter
+            - topic
             - others
             - workspace
             - plan
@@ -5181,6 +5173,8 @@ components:
             type: string
           nullable: true
           type: array
+        topicId:
+          type: string
         total:
           format: int64
           type: integer
@@ -5194,13 +5188,11 @@ components:
     ReviewSessionRef:
       additionalProperties: false
       properties:
-        chapterId:
-          type: string
         evidence:
           $ref: "#/components/schemas/ReviewEvidence"
         group:
           enum:
-            - chapter
+            - topic
             - others
             - workspace
             - plan
@@ -5225,6 +5217,8 @@ components:
         planId:
           description: The plan of a plan group
           type: string
+        topicId:
+          type: string
         workspaceId:
           minLength: 1
           type: string
@@ -5237,15 +5231,11 @@ components:
     ReviewSuggestion:
       additionalProperties: false
       properties:
-        chapterId:
-          type: string
-        chapterName:
-          type: string
         evidence:
           $ref: "#/components/schemas/ReviewEvidence"
         group:
           enum:
-            - chapter
+            - topic
             - others
             - workspace
           type: string
@@ -5259,6 +5249,10 @@ components:
             - tricky
             - fading
             - learned
+          type: string
+        topicId:
+          type: string
+        topicName:
           type: string
         workspaceId:
           type: string
@@ -6486,7 +6480,7 @@ components:
           type: string
         topics:
           items:
-            $ref: "#/components/schemas/Topic"
+            $ref: "#/components/schemas/BankTopic"
           nullable: true
           type: array
       required:
@@ -6620,21 +6614,34 @@ components:
     Topic:
       additionalProperties: false
       properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Topic.json
+          format: uri
+          readOnly: true
+          type: string
+        description:
+          type: string
+        fileIds:
+          items:
+            type: string
+          type: array
         id:
           type: string
-        label:
+        name:
           type: string
-        reviewed:
+        order:
           format: int64
           type: integer
-        total:
-          format: int64
-          type: integer
+        workspaceId:
+          type: string
       required:
         - id
-        - label
-        - total
-        - reviewed
+        - workspaceId
+        - name
+        - description
+        - order
+        - fileIds
       type: object
     TopicPage:
       additionalProperties: false
@@ -6929,11 +6936,9 @@ components:
         answered:
           format: int64
           type: integer
-        chapterName:
-          type: string
         group:
           enum:
-            - chapter
+            - topic
             - others
             - workspace
             - plan
@@ -6944,6 +6949,8 @@ components:
           type: string
         lastAnswerAt:
           format: date-time
+          type: string
+        topicName:
           type: string
         total:
           format: int64
@@ -6961,23 +6968,6 @@ components:
         - answered
         - total
         - lastAnswerAt
-      type: object
-    UpdateChapterReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpdateChapterReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 60
-          minLength: 1
-          type: string
-        order:
-          format: int64
-          type: integer
       type: object
     UpdateCommentReq:
       additionalProperties: false
@@ -7053,11 +7043,11 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          type: string
         name:
           maxLength: 120
           minLength: 1
+          type: string
+        topicId:
           type: string
       type: object
     UpdateFlashcardSetReq:
@@ -7101,20 +7091,20 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: Chapter to file under; empty string unfiles; omit to leave unchanged
-          type: string
-        scopeChapters:
+        scopeFileNames:
           items:
             type: string
           type: array
-        scopeFileNames:
+        scopeTopics:
           items:
             type: string
           type: array
         title:
           maxLength: 120
           minLength: 1
+          type: string
+        topicId:
+          description: Topic to file under; empty string unfiles; omit to leave unchanged
           type: string
       type: object
     UpdateMeReq:
@@ -7147,14 +7137,14 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapters:
-          items:
-            type: string
-          type: array
         name:
           maxLength: 120
           minLength: 1
           type: string
+        topics:
+          items:
+            type: string
+          type: array
       type: object
     UpdateStandaloneSharingReq:
       additionalProperties: false
@@ -7208,6 +7198,27 @@ components:
           maxLength: 80
           minLength: 1
           type: string
+      type: object
+    UpdateTopicReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateTopicReq.json
+          format: uri
+          readOnly: true
+          type: string
+        description:
+          description: One line on what the topic covers; empty clears it
+          maxLength: 200
+          type: string
+        name:
+          maxLength: 60
+          minLength: 1
+          type: string
+        order:
+          format: int64
+          type: integer
       type: object
     UpdateWorkspaceMemberReq:
       additionalProperties: false
@@ -7471,9 +7482,6 @@ components:
           type: boolean
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
-        chapterCount:
-          format: int64
-          type: integer
         cover:
           $ref: "#/components/schemas/Cover"
           description: The card's cover art; absent means none
@@ -7508,6 +7516,9 @@ components:
           items:
             $ref: "#/components/schemas/Tag"
           type: array
+        topicCount:
+          format: int64
+          type: integer
       required:
         - autoProcess
         - description
@@ -7518,7 +7529,7 @@ components:
         - shareRole
         - sharePath
         - tags
-        - chapterCount
+        - topicCount
         - fileCount
         - filesLimit
         - createdAt
@@ -7626,9 +7637,6 @@ components:
         avgScore:
           format: int64
           type: integer
-        chapters:
-          format: int64
-          type: integer
         fileChanges:
           items:
             $ref: "#/components/schemas/FileChange"
@@ -7655,6 +7663,9 @@ components:
         quizzes:
           format: int64
           type: integer
+        topics:
+          format: int64
+          type: integer
       required:
         - indexed
         - notIndexed
@@ -7662,7 +7673,7 @@ components:
         - fileChanges
         - noteChanges
         - moreNoteChanges
-        - chapters
+        - topics
         - files
         - quizzes
         - attempts
@@ -7681,10 +7692,6 @@ components:
           type: string
         authorAvatarUrl:
           type: string
-        chapters:
-          items:
-            $ref: "#/components/schemas/WorkspaceSummaryChapter"
-          type: array
         description:
           type: string
         files:
@@ -7702,6 +7709,10 @@ components:
           items:
             type: string
           type: array
+        topics:
+          items:
+            $ref: "#/components/schemas/WorkspaceSummaryTopic"
+          type: array
       required:
         - name
         - iconId
@@ -7709,20 +7720,7 @@ components:
         - description
         - privacy
         - tags
-        - chapters
-        - files
-      type: object
-    WorkspaceSummaryChapter:
-      additionalProperties: false
-      properties:
-        files:
-          items:
-            $ref: "#/components/schemas/WorkspaceSummaryFile"
-          type: array
-        name:
-          type: string
-      required:
-        - name
+        - topics
         - files
       type: object
     WorkspaceSummaryFile:
@@ -7740,6 +7738,19 @@ components:
         - name
         - sizeBytes
         - addedAt
+      type: object
+    WorkspaceSummaryTopic:
+      additionalProperties: false
+      properties:
+        files:
+          items:
+            $ref: "#/components/schemas/WorkspaceSummaryFile"
+          type: array
+        name:
+          type: string
+      required:
+        - name
+        - files
       type: object
 info:
   title: Capy Notebook API
@@ -8518,57 +8529,6 @@ paths:
       summary: Start a credit top-up checkout
       tags:
         - Billing & integrations
-  /api/chapters/{id}:
-    delete:
-      operationId: deleteChapter
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Delete a chapter
-      tags:
-        - Content
-    patch:
-      operationId: updateChapter
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateChapterReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Chapter"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update a chapter
-      tags:
-        - Content
   /api/chat/edit-operations/{operationId}/undo:
     post:
       operationId: undoEditOperation
@@ -11512,7 +11472,7 @@ paths:
               - time
               - workspace
               - plan
-              - chapter
+              - topic
               - status
             type: string
         - explode: false
@@ -11983,6 +11943,57 @@ paths:
       summary: Update a task
       tags:
         - Schedule
+  /api/topics/{id}:
+    delete:
+      operationId: deleteTopic
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a topic
+      tags:
+        - Content
+    patch:
+      operationId: updateTopic
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTopicReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Topic"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update a topic
+      tags:
+        - Content
   /api/trash:
     get:
       operationId: listTrash
@@ -12386,90 +12397,6 @@ paths:
       summary: Update a workspace
       tags:
         - Workspaces
-  /api/workspaces/{id}/chapters:
-    get:
-      operationId: listChapters
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/Chapter"
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List chapters
-      tags:
-        - Content
-    post:
-      operationId: addChapter
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AddChapterReq"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Chapter"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Add a chapter
-      tags:
-        - Content
-  /api/workspaces/{id}/chapters/reorder:
-    post:
-      operationId: reorderChapters
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ReorderChaptersReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Reorder chapters
-      tags:
-        - Content
   /api/workspaces/{id}/clone:
     post:
       operationId: cloneWorkspace
@@ -12552,7 +12479,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Move and reorder chapter content
+      summary: Move and reorder topic content
       tags:
         - Content
   /api/workspaces/{id}/conversations:
@@ -13019,17 +12946,17 @@ paths:
           schema:
             default: workspace
             enum:
-              - chapter
+              - topic
               - others
               - workspace
               - plan
             type: string
-        - description: The chapter of a chapter group
+        - description: The topic of a topic group
           explode: false
           in: query
-          name: chapterId
+          name: topicId
           schema:
-            description: The chapter of a chapter group
+            description: The topic of a topic group
             type: string
         - description: The plan of a plan group, one of the user's plans kept in this workspace
           explode: false
@@ -13400,6 +13327,90 @@ paths:
       summary: Clear study progress in a workspace
       tags:
         - Study
+  /api/workspaces/{id}/topics:
+    get:
+      operationId: listTopics
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Topic"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List topics
+      tags:
+        - Content
+    post:
+      operationId: addTopic
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddTopicReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Topic"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Add a topic
+      tags:
+        - Content
+  /api/workspaces/{id}/topics/reorder:
+    post:
+      operationId: reorderTopics
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderTopicsReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Reorder topics
+      tags:
+        - Content
   /api/workspaces/{id}/transfer:
     post:
       operationId: transferWorkspace

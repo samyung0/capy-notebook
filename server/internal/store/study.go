@@ -271,7 +271,7 @@ func (s *Store) studySummary(ctx context.Context, userID, wsID string, plan *Pla
 		FROM review_sessions rs JOIN workspaces w ON w.id=rs.workspace_id
 		WHERE rs.user_id=$1 AND rs.workspace_id=$2 AND rs.group_kind=$3 AND ($4 = '' OR rs.plan_id=$4) AND rs.finished_at IS NULL
 		ORDER BY rs.last_answer_at DESC LIMIT 1`, userID, wsID, group, planID).
-		Scan(&u.ID, &u.WorkspaceID, &u.WorkspaceName, &u.IconID, &u.Group, &u.ChapterName, &u.Answered, &u.Total, &u.LastAnswerAt)
+		Scan(&u.ID, &u.WorkspaceID, &u.WorkspaceName, &u.IconID, &u.Group, &u.TopicName, &u.Answered, &u.Total, &u.LastAnswerAt)
 	if err == nil {
 		out.Unfinished = &u
 	} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -339,8 +339,8 @@ func (s *Store) studyMarks(ctx context.Context, userID, wsID string, out *StudyS
 			rows.Close()
 			return err
 		}
-		if a.Chapters == nil {
-			a.Chapters = []string{}
+		if a.Topics == nil {
+			a.Topics = []string{}
 		}
 		out.RecentAttempts = append(out.RecentAttempts, a)
 	}
@@ -658,8 +658,8 @@ type ranked struct {
 	lapses     int
 	reps       int
 	lastReview time.Time
-	// chapterID is the material's chapter, nil outside chapters.
-	chapterID *string
+	// topicID is the material's topic, nil outside topics.
+	topicID *string
 }
 
 // reviewPool is every rated item of the quizzes and sets not removed,
@@ -668,7 +668,7 @@ type ranked struct {
 // least retained first. Only rated materials are read, in one query, and a
 // document is loaded and parsed only when the cache misses its revision.
 func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Time) ([]ranked, error) {
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, m.chapter_id, rs.item_id, rs.item_hash,
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, m.topic_id, rs.item_id, rs.item_hash,
 			rs.stability, rs.difficulty, rs.reps, rs.lapses, rs.fsrs_state, rs.last_review
 		FROM materials m
 		JOIN review_states rs ON rs.material_id=m.id AND rs.user_id=$1
@@ -681,26 +681,26 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 		return nil, err
 	}
 	type ratedMaterial struct {
-		title     string
-		revision  int64
-		chapterID *string
-		states    map[string]storedState
-		items     []studyItem
+		title    string
+		revision int64
+		topicID  *string
+		states   map[string]storedState
+		items    []studyItem
 	}
 	var order []*ratedMaterial
 	byID := map[string]*ratedMaterial{}
 	for rows.Next() {
 		var id, title, itemID string
 		var revision int64
-		var chapterID *string
+		var topicID *string
 		var st storedState
-		if err := rows.Scan(&id, &title, &revision, &chapterID, &itemID, &st.hash, &st.Stability, &st.Difficulty, &st.Reps, &st.Lapses, &st.FSRSState, &st.LastReview); err != nil {
+		if err := rows.Scan(&id, &title, &revision, &topicID, &itemID, &st.hash, &st.Stability, &st.Difficulty, &st.Reps, &st.Lapses, &st.FSRSState, &st.LastReview); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		rm := byID[id]
 		if rm == nil {
-			rm = &ratedMaterial{title: title, revision: revision, chapterID: chapterID, states: map[string]storedState{}}
+			rm = &ratedMaterial{title: title, revision: revision, topicID: topicID, states: map[string]storedState{}}
 			byID[id] = rm
 			order = append(order, rm)
 		}
@@ -752,7 +752,7 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 		for _, it := range rm.items {
 			if st, ok := rm.states[it.ItemID]; ok && st.hash == it.hash {
 				it.MaterialTitle = rm.title
-				all = append(all, ranked{studyItem: it, r: review.Retrievability(st.State, now), lapses: st.Lapses, reps: st.Reps, lastReview: st.LastReview, chapterID: rm.chapterID})
+				all = append(all, ranked{studyItem: it, r: review.Retrievability(st.State, now), lapses: st.Lapses, reps: st.Reps, lastReview: st.LastReview, topicID: rm.topicID})
 			}
 		}
 	}
@@ -763,23 +763,23 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 // newPool is every item of the workspace's quizzes and sets (not removed,
 // trashed or embedded; among only when it is not nil) the user has never
 // rated, or whose content changed since its rating, in reading order:
-// chapters in order, then unfiled, each by position, newest first on ties.
+// topics in order, then unfiled, each by position, newest first on ties.
 // Only a new manual session reads it: it parses every quiz and set in scope
 // (through the cache), which the overview and the Study page never do.
 func (s *Store) newPool(ctx context.Context, userID, wsID string, only []string) ([]ranked, error) {
 	type quizMaterial struct {
 		id, title string
 		revision  int64
-		chapterID *string
+		topicID   *string
 		items     []studyItem
 	}
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, m.chapter_id FROM materials m
-		LEFT JOIN chapters c ON c.id=m.chapter_id
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, m.topic_id FROM materials m
+		LEFT JOIN topics c ON c.id=m.topic_id
 		WHERE m.workspace_id=$2 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL AND ($3::text[] IS NULL OR m.id = ANY($3))
 			AND NOT EXISTS (SELECT 1 FROM study_progress sp
 				WHERE sp.user_id=$1 AND sp.material_id=m.id AND sp.state='removed')
-		ORDER BY m.chapter_id IS NULL, c.position, m.position, m.created_at DESC, m.id`, userID, wsID, only)
+		ORDER BY m.topic_id IS NULL, c.position, m.position, m.created_at DESC, m.id`, userID, wsID, only)
 	if err != nil {
 		return nil, err
 	}
@@ -787,7 +787,7 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string, only []string)
 	byID := map[string]*quizMaterial{}
 	for rows.Next() {
 		qm := &quizMaterial{}
-		if err := rows.Scan(&qm.id, &qm.title, &qm.revision, &qm.chapterID); err != nil {
+		if err := rows.Scan(&qm.id, &qm.title, &qm.revision, &qm.topicID); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -866,7 +866,7 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string, only []string)
 				continue
 			}
 			it.MaterialTitle = qm.title
-			out = append(out, ranked{studyItem: it, chapterID: qm.chapterID})
+			out = append(out, ranked{studyItem: it, topicID: qm.topicID})
 		}
 	}
 	return out, nil
@@ -880,7 +880,7 @@ type AgentProgress struct {
 	Enabled        bool                `json:"enabled"`
 	Items          []AgentProgressItem `json:"items"`
 	RecentAttempts []Attempt           `json:"recentAttempts"`
-	WeakChapters   []WeakChapter       `json:"weakChapters"`
+	WeakTopics     []WeakTopic         `json:"weakTopics"`
 }
 
 type AgentProgressItem struct {
@@ -890,9 +890,9 @@ type AgentProgressItem struct {
 	State string `json:"state"`
 }
 
-// WeakChapter is a chapter whose rated questions and cards are least retained.
-type WeakChapter struct {
-	Chapter   string  `json:"chapter"`
+// WeakTopic is a topic whose rated questions and cards are least retained.
+type WeakTopic struct {
+	Topic     string  `json:"topic"`
 	Retention float64 `json:"retention"`
 	Items     int     `json:"items"`
 }
@@ -902,7 +902,7 @@ func (s *Store) AgentStudyProgress(ctx context.Context, userID, wsID string, now
 	if err != nil {
 		return AgentProgress{}, err
 	}
-	out := AgentProgress{Enabled: summary.Enabled, Items: []AgentProgressItem{}, RecentAttempts: summary.RecentAttempts, WeakChapters: []WeakChapter{}}
+	out := AgentProgress{Enabled: summary.Enabled, Items: []AgentProgressItem{}, RecentAttempts: summary.RecentAttempts, WeakTopics: []WeakTopic{}}
 	rows, err := s.pool.Query(ctx, `SELECT COALESCE(sp.file_id, sp.material_id),
 			CASE WHEN sp.file_id IS NULL THEN 'material' ELSE 'file' END,
 			COALESCE(f.name, m.title, ''), sp.state
@@ -930,23 +930,23 @@ func (s *Store) AgentStudyProgress(ctx context.Context, userID, wsID string, now
 	// the ranking ever needs to be exact.
 	rows, err = s.pool.Query(ctx, `SELECT COALESCE(c.name, ''), rs.stability, rs.difficulty, rs.reps, rs.lapses, rs.fsrs_state, rs.last_review
 		FROM review_states rs JOIN materials m ON m.id=rs.material_id
-		LEFT JOIN chapters c ON c.id=m.chapter_id
+		LEFT JOIN topics c ON c.id=m.topic_id
 		WHERE rs.user_id=$1 AND m.workspace_id=$2 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL`, userID, wsID)
 	if err != nil {
 		return out, err
 	}
-	sums := map[string]*WeakChapter{}
+	sums := map[string]*WeakTopic{}
 	for rows.Next() {
-		var chapter string
+		var topic string
 		var st review.State
-		if err := rows.Scan(&chapter, &st.Stability, &st.Difficulty, &st.Reps, &st.Lapses, &st.FSRSState, &st.LastReview); err != nil {
+		if err := rows.Scan(&topic, &st.Stability, &st.Difficulty, &st.Reps, &st.Lapses, &st.FSRSState, &st.LastReview); err != nil {
 			rows.Close()
 			return out, err
 		}
-		w := sums[chapter]
+		w := sums[topic]
 		if w == nil {
-			w = &WeakChapter{Chapter: chapter}
-			sums[chapter] = w
+			w = &WeakTopic{Topic: topic}
+			sums[topic] = w
 		}
 		w.Retention += review.Retrievability(st, now)
 		w.Items++
@@ -957,11 +957,11 @@ func (s *Store) AgentStudyProgress(ctx context.Context, userID, wsID string, now
 	}
 	for _, w := range sums {
 		w.Retention /= float64(w.Items)
-		out.WeakChapters = append(out.WeakChapters, *w)
+		out.WeakTopics = append(out.WeakTopics, *w)
 	}
-	sort.Slice(out.WeakChapters, func(i, j int) bool { return out.WeakChapters[i].Retention < out.WeakChapters[j].Retention })
-	if len(out.WeakChapters) > 3 {
-		out.WeakChapters = out.WeakChapters[:3]
+	sort.Slice(out.WeakTopics, func(i, j int) bool { return out.WeakTopics[i].Retention < out.WeakTopics[j].Retention })
+	if len(out.WeakTopics) > 3 {
+		out.WeakTopics = out.WeakTopics[:3]
 	}
 	return out, nil
 }
@@ -1017,7 +1017,7 @@ func recordCardTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, ca
 			ref.ID, encoded, good, total, pct, now)
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, kind, quiz_name, workspace_name, chapters, correct, total, pct, started_at, taken_at, answers, questions)
+	_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, kind, quiz_name, workspace_name, topics, correct, total, pct, started_at, taken_at, answers, questions)
 		VALUES ($1,$2,$3,'flashcards',$4,$5,'{}',$6,$7,$8,$9,$10,'{}',$11)`,
 		ref.ID, mt.ID, userID, mt.Title, mt.WorkspaceName, good, total, pct, startedBefore(&ref.StartedAt, now), now, encoded)
 	return err
@@ -1071,8 +1071,8 @@ func (s *Store) WorkspaceAttempts(ctx context.Context, userID, wsID string) ([]I
 		if !ok {
 			continue // trashed or embedded
 		}
-		if a.Chapters == nil {
-			a.Chapters = []string{}
+		if a.Topics == nil {
+			a.Topics = []string{}
 		}
 		out[i].Count = n
 		out[i].Recent = append(out[i].Recent, a)

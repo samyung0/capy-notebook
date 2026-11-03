@@ -101,16 +101,17 @@ func dbError(err error) error {
 	return nil
 }
 
-type Topic struct {
+// BankTopic is a bank syllabus topic, named apart from a workspace's topics.
+type BankTopic struct {
 	ID       string `json:"id"`
 	Label    string `json:"label"`
 	Total    int    `json:"total"`
 	Reviewed int    `json:"reviewed"`
 }
 type Subject struct {
-	ID     string  `json:"id"`
-	Label  string  `json:"label"`
-	Topics []Topic `json:"topics"`
+	ID     string      `json:"id"`
+	Label  string      `json:"label"`
+	Topics []BankTopic `json:"topics"`
 }
 type Exam struct {
 	ID          string    `json:"id"`
@@ -159,11 +160,11 @@ func (s *Store) Syllabus(ctx context.Context) (Syllabus, error) {
 			continue
 		}
 		if len(e.Subjects) == 0 || e.Subjects[len(e.Subjects)-1].ID != *sid {
-			e.Subjects = append(e.Subjects, Subject{ID: *sid, Label: *sl, Topics: []Topic{}})
+			e.Subjects = append(e.Subjects, Subject{ID: *sid, Label: *sl, Topics: []BankTopic{}})
 		}
 		if tid != nil {
 			subject := &e.Subjects[len(e.Subjects)-1]
-			subject.Topics = append(subject.Topics, Topic{ID: *tid, Label: *tl, Total: total, Reviewed: reviewed})
+			subject.Topics = append(subject.Topics, BankTopic{ID: *tid, Label: *tl, Total: total, Reviewed: reviewed})
 		}
 	}
 	return out, dbError(rows.Err())

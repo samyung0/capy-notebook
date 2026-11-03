@@ -273,8 +273,8 @@ function LeadWorkspace({
   map: ProgressMap;
 }) {
   const navigate = useNavigate();
-  const chapters = [...map.chapters].sort((a, b) => a.order - b.order);
-  const items = inReadingOrder(chapters, map.items);
+  const topics = [...map.topics].sort((a, b) => a.order - b.order);
+  const items = inReadingOrder(topics, map.items);
   const next = items.find((it) => it.state !== 'done');
   const open = (id: string) => {
     const item = items.find((it) => it.id === id);
@@ -298,10 +298,10 @@ function LeadWorkspace({
         )}
       </div>
       <WorkspaceRailMap
-        chapters={chapters}
         cover={workspace.cover}
         items={items}
         onOpen={open}
+        topics={topics}
         workspaceId={workspace.workspaceId}
       />
       <div className="mt-6 flex min-w-0 items-center gap-2.5">

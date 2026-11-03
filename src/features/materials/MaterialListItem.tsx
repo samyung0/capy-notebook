@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import type { MouseEventHandler } from 'react';
-import type { Chapter, MaterialRef, UserColor } from '@/api/types';
+import type { MaterialRef, Topic, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Spinner } from '@/components/ui/feedback';
 import { StudyMark, type StudyRow } from '@/features/study/studyItems';
@@ -15,7 +15,7 @@ export function MaterialListItem({
   active,
   onOpen,
   onDeleted,
-  chapters,
+  topics,
   color,
   onMove,
   workspaceId,
@@ -29,11 +29,11 @@ export function MaterialListItem({
   active: boolean;
   onOpen?: MouseEventHandler<HTMLAnchorElement>;
   onDeleted?: () => void;
-  /** All workspace chapters, for the "Move to…" menu. */
-  chapters: Chapter[];
+  /** All workspace topics, for the "Move to…" menu. */
+  topics: Topic[];
   color?: UserColor;
-  /** File this material under a chapter (null = unfile). */
-  onMove?: (chapterId: string | null) => void;
+  /** File this material under a topic (null = unfile). */
+  onMove?: (topicId: string | null) => void;
   workspaceId: string;
   generating?: boolean;
   readOnly?: boolean;
@@ -80,7 +80,6 @@ export function MaterialListItem({
       {hoverMenu && (
         <ContentActions
           canClone={canClone}
-          chapters={chapters}
           color={color}
           confirmInMenu
           content={toMaterialActionTarget(matRef)}
@@ -92,9 +91,10 @@ export function MaterialListItem({
           hoverIconContainerClassName="p-1 focus-visible:ring-inset"
           leadingItems={readOnly ? [] : study?.menuItems}
           onDeleted={onDeleted}
-          onMove={(chapterId) => onMove?.(chapterId)}
+          onMove={(topicId) => onMove?.(topicId)}
           readOnly={readOnly}
           renameTitle={m.material_rename()}
+          topics={topics}
           workspaceId={workspaceId}
         />
       )}

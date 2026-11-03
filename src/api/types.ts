@@ -11,7 +11,7 @@
        `{ [k]: unknown }` on the wire — the frontend owns the polymorphism).
      - a couple of client-only fields (e.g. `SourceFile.ingestPct`).
 
-   Array fields (tags, chapters, fileIds, labelIds, questions) are
+   Array fields (tags, topics, fileIds, labelIds, questions) are
    non-nullable on the wire: the backend pins them with `nullable:"false"`
    and always emits `[]`, so no null narrowing is needed here.
 
@@ -83,13 +83,12 @@ export type ModelSlot = GeneratedModelSlot;
 export type {
   AccessCapabilities,
   AccountStatus,
-  AddChapterReq,
+  AddTopicReq,
   Attempt,
   AutoReloadReq,
   AutoReloadResp,
   BillingCheckoutReq,
   BillingInfo,
-  Chapter,
   CloneFileReq,
   CloneMaterialReq,
   CloneWorkspaceResp as CloneWorkspaceResult,
@@ -140,8 +139,8 @@ export type {
   Ref as ModelRef,
   Region,
   ReloadState,
-  ReorderChaptersReq,
   ReorderContentReq,
+  ReorderTopicsReq,
   ReportEditIncidentReq,
   RequestAccountDeletionReq,
   RetryProcessingInputBody as RetryProcessingReq,
@@ -155,9 +154,9 @@ export type {
   Tag,
   TagInput,
   Task,
+  Topic,
   TopUpReq,
   TransferWorkspaceReq,
-  UpdateChapterReq,
   UpdateConversationReq,
   UpdateEventReq,
   UpdateFileReq,
@@ -168,6 +167,7 @@ export type {
   UpdateQuizMetadataReq,
   UpdateStandaloneSharingReq,
   UpdateTaskReq,
+  UpdateTopicReq,
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
   URLResp,
@@ -399,11 +399,11 @@ export type ReviewMode = NonNullable<GenReviewSession['mode']>;
 /** What a new review session draws from: a suggestion's group and mode, or
  * the whole workspace without a mode. */
 export interface ReviewStart {
-  chapterId?: string;
   group: GenReviewSession['group'];
   mode?: ReviewMode;
   /** A plan group's plan, kept in the session's workspace. */
   planId?: string;
+  topicId?: string;
 }
 export type AttemptSort = ListAttemptsSort;
 export type AttemptKind = import('./gen/model').Attempt['kind'];
@@ -616,17 +616,17 @@ import type {
 } from './gen/model';
 
 /* ---------------- Generate (request options, not wire response types) ----------------
-   Every generation is scoped: `chapters` (ids) and/or `fileIds` narrow the
-   source material. The backend resolves chapter ids to their member files (for
+   Every generation is scoped: `topics` (ids) and/or `fileIds` narrow the
+   source material. The backend resolves topic ids to their member files (for
    retrieval) and to names (for display + the LLM scope hint). Empty scope means
    the whole workspace. */
 export type GenerateKind = Exclude<MaterialKind, 'note'>;
 
 export interface GenerateScope {
-  chapters: string[]; // chapter ids
   fileIds: string[]; // file ids
   levels?: CognitiveLevel[];
   title: string;
+  topics: string[]; // topic ids
 }
 /** The panel's More (10) or Less (5); never the study preferences. */
 export interface GenerateFlashcardsOptions extends GenerateScope {
@@ -660,7 +660,7 @@ export type GenerateOptions =
   | GenerateDiagramOptions;
 
 /* ---------------- Study materials ----------------
-   Persisted, workspace-scoped (not chapter-scoped) study artifacts rendered
+   Persisted, workspace-scoped (not topic-scoped) study artifacts rendered
    in-pane. Mindmaps and diagrams are markdown documents (mermaid fences);
    quizzes and flashcardSets are referenced by the unified materials index. */
 /** `content` is the rich Plate document; the wire keeps its nodes opaque. */
@@ -731,8 +731,8 @@ export type {
   SourceCollaborationToken,
   SourceProcessResult,
   WorkspaceSummary,
-  WorkspaceSummaryChapter,
   WorkspaceSummaryFile,
+  WorkspaceSummaryTopic,
 } from './gen/model';
 export type PDFAnnotationBody = Omit<
   import('./gen/model').PDFAnnotationBody,

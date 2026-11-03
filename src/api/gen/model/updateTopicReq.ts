@@ -5,9 +5,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface UpdateChapterReq {
+export interface UpdateTopicReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /**
+     * One line on what the topic covers; empty clears it
+     * @maxLength 200
+     */
+  description?: string;
   /**
      * @minLength 1
      * @maxLength 60

@@ -10,23 +10,25 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// internalChapterReq is chat's create_chapter call (Epo 2026-10-29), in a
+// internalTopicReq is chat's create_topic call (Epo 2026-10-29), in a
 // workspace chat's workspace or a workspace an account chat names. The
-// pipeline cuts an over-limit name and says so; here the limit is only checked.
-type internalChapterReq struct {
+// pipeline cuts an over-limit name or description and says so; here the limits
+// are only checked.
+type internalTopicReq struct {
 	Scope              string `json:"scope"`
 	UserID             string `json:"userId"`
 	WorkspaceID        string `json:"workspaceId"`
 	AssistantMessageID string `json:"assistantMessageId"`
 	ToolCallID         string `json:"toolCallId"`
 	Name               string `json:"name"`
+	Description        string `json:"description"`
 }
 
-// internalCreateChapter appends a chapter named as asked or "Chapter (n)",
+// internalCreateTopic appends a topic named as asked or "Topic (n)",
 // with its receipt so a replayed call creates nothing twice. It answers the
-// receipt with the chapter's id and name.
-func (a *api) internalCreateChapter(w http.ResponseWriter, r *http.Request) {
-	var req internalChapterReq
+// receipt with the topic's id and name.
+func (a *api) internalCreateTopic(w http.ResponseWriter, r *http.Request) {
+	var req internalTopicReq
 	if err := decode(r, &req); err != nil {
 		a.fail(w, err)
 		return
@@ -42,8 +44,13 @@ func (a *api) internalCreateChapter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
-	if utf8.RuneCountInString(req.Name) > fieldlimits.ChapterName {
+	if utf8.RuneCountInString(req.Name) > fieldlimits.TopicName {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "name over its limit"})
+		return
+	}
+	req.Description = strings.TrimSpace(req.Description)
+	if utf8.RuneCountInString(req.Description) > fieldlimits.TopicDescription {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "description over its limit"})
 		return
 	}
 	if !a.internalAccountActor(w, r, req.UserID) {
@@ -67,7 +74,9 @@ func (a *api) internalCreateChapter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opID := store.ChatOperationID(req.AssistantMessageID, req.ToolCallID)
-	hash, err := store.RequestHash(map[string]any{"workspaceId": req.WorkspaceID, "name": req.Name})
+	hash, err := store.RequestHash(map[string]any{
+		"workspaceId": req.WorkspaceID, "name": req.Name, "description": req.Description,
+	})
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -75,7 +84,7 @@ func (a *api) internalCreateChapter(w http.ResponseWriter, r *http.Request) {
 	op, err := a.s.ReplayAgentOperation(ctx, opID, hash)
 	if errors.Is(err, store.ErrNotFound) {
 		var created store.AgentOperation
-		created, err = a.s.CreateChapterOperation(ctx, req.UserID, req.WorkspaceID, req.Name, store.AgentOperation{
+		created, err = a.s.CreateTopicOperation(ctx, req.UserID, req.WorkspaceID, req.Name, req.Description, store.AgentOperation{
 			ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: req.UserID,
 			ConversationID: convID, MessageID: req.AssistantMessageID, CallID: req.ToolCallID,
 		})
@@ -85,14 +94,14 @@ func (a *api) internalCreateChapter(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	chapterID := store.ChatChapterID(req.AssistantMessageID, req.ToolCallID)
-	name, err := a.s.ChapterName(ctx, chapterID)
+	topicID := store.ChatTopicID(req.AssistantMessageID, req.ToolCallID)
+	name, err := a.s.TopicName(ctx, topicID)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"operationId": op.ID, "kind": op.Kind, "outcome": op.Outcome,
-		"workspaceId": op.WorkspaceID, "chapterId": chapterID, "name": name,
+		"workspaceId": op.WorkspaceID, "topicId": topicID, "name": name,
 	})
 }

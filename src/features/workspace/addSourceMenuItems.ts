@@ -4,7 +4,7 @@ import type { AddSourceMode } from './AddSourceDialog';
 
 export function addSourceMenuItems(
   onAddSource: (mode: AddSourceMode) => void,
-  onAddChapter?: () => void
+  onAddTopic?: () => void
 ): MenuItem[] {
   return [
     {
@@ -18,12 +18,12 @@ export function addSourceMenuItems(
       onClick: () => onAddSource('create'),
     },
     // TODO: refine with agentic harness. AI generate is hidden until then.
-    ...(onAddChapter
+    ...(onAddTopic
       ? [
           {
-            icon: 'chapter' as const,
-            label: m.action_add_chapter(),
-            onClick: onAddChapter,
+            icon: 'topic' as const,
+            label: m.action_add_topic(),
+            onClick: onAddTopic,
           },
         ]
       : []),

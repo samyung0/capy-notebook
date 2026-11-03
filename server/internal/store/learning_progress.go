@@ -45,12 +45,12 @@ type ProgressWorkspace struct {
 // ProgressMap is one workspace's tracked items with what the browser needs to
 // put them in reading order (the Study tab's order) and draw them.
 type ProgressMap struct {
-	WorkspaceID string            `json:"workspaceId"`
-	Chapters    []ProgressChapter `json:"chapters" nullable:"false"`
-	Items       []ProgressItem    `json:"items" nullable:"false"`
+	WorkspaceID string          `json:"workspaceId"`
+	Topics      []ProgressTopic `json:"topics" nullable:"false"`
+	Items       []ProgressItem  `json:"items" nullable:"false"`
 }
 
-type ProgressChapter struct {
+type ProgressTopic struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
 	Order int    `json:"order"`
@@ -62,7 +62,7 @@ type ProgressItem struct {
 	// Kind is the file's kind or the material's type, for its icon.
 	Kind      string    `json:"kind"`
 	Title     string    `json:"title"`
-	ChapterID *string   `json:"chapterId"`
+	TopicID   *string   `json:"topicId"`
 	Position  int64     `json:"position"`
 	CreatedAt time.Time `json:"createdAt"`
 	// State is empty for an untouched item.
@@ -179,33 +179,33 @@ func (s *Store) LearningProgress(ctx context.Context, userID, leadID string, sho
 	return out, nil
 }
 
-// progressMap reads one workspace's chapters and tracked items: untrashed
+// progressMap reads one workspace's topics and tracked items: untrashed
 // files and untrashed, non-embedded materials the user has not stopped
 // tracking.
 func (s *Store) progressMap(ctx context.Context, userID, wsID string) (ProgressMap, error) {
-	out := ProgressMap{WorkspaceID: wsID, Chapters: []ProgressChapter{}, Items: []ProgressItem{}}
-	rows, err := s.pool.Query(ctx, `SELECT id, name, position FROM chapters WHERE workspace_id=$1 ORDER BY position, id`, wsID)
+	out := ProgressMap{WorkspaceID: wsID, Topics: []ProgressTopic{}, Items: []ProgressItem{}}
+	rows, err := s.pool.Query(ctx, `SELECT id, name, position FROM topics WHERE workspace_id=$1 ORDER BY position, id`, wsID)
 	if err != nil {
 		return out, err
 	}
 	for rows.Next() {
-		var ch ProgressChapter
+		var ch ProgressTopic
 		if err := rows.Scan(&ch.ID, &ch.Name, &ch.Order); err != nil {
 			rows.Close()
 			return out, err
 		}
-		out.Chapters = append(out.Chapters, ch)
+		out.Topics = append(out.Topics, ch)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
-	rows, err = s.pool.Query(ctx, `SELECT f.id, 'file', f.kind, f.name, f.chapter_id, f.position, f.added_at, coalesce(sp.state, ''),
+	rows, err = s.pool.Query(ctx, `SELECT f.id, 'file', f.kind, f.name, f.topic_id, f.position, f.added_at, coalesce(sp.state, ''),
 				CASE WHEN sp.state='done' THEN sp.updated_at END
 			FROM files f LEFT JOIN study_progress sp ON sp.user_id=$1 AND sp.file_id=f.id
 			WHERE f.workspace_id=$2 AND f.trashed_at IS NULL AND coalesce(sp.state, '') <> 'removed'
 		UNION ALL
-		SELECT m.id, 'material', m.kind, m.title, m.chapter_id, m.position, m.created_at, coalesce(sp.state, ''),
+		SELECT m.id, 'material', m.kind, m.title, m.topic_id, m.position, m.created_at, coalesce(sp.state, ''),
 				CASE WHEN sp.state='done' THEN sp.updated_at END
 			FROM materials m LEFT JOIN study_progress sp ON sp.user_id=$1 AND sp.material_id=m.id
 			WHERE m.workspace_id=$2 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
@@ -216,7 +216,7 @@ func (s *Store) progressMap(ctx context.Context, userID, wsID string) (ProgressM
 	defer rows.Close()
 	for rows.Next() {
 		var it ProgressItem
-		if err := rows.Scan(&it.ID, &it.Type, &it.Kind, &it.Title, &it.ChapterID, &it.Position, &it.CreatedAt, &it.State, &it.DoneAt); err != nil {
+		if err := rows.Scan(&it.ID, &it.Type, &it.Kind, &it.Title, &it.TopicID, &it.Position, &it.CreatedAt, &it.State, &it.DoneAt); err != nil {
 			return out, err
 		}
 		out.Items = append(out.Items, it)

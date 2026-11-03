@@ -105,7 +105,7 @@ export default function ReviewSession() {
         workspaceId,
         search.session,
         search.group,
-        search.chapterId,
+        search.topicId,
         search.planId,
         search.reviewMode,
       ].join('|')}
@@ -137,10 +137,10 @@ function Session({
       ? { resume: search.session }
       : {
           start: {
-            chapterId: search.chapterId,
             group: search.group ?? 'workspace',
             mode: search.reviewMode,
             planId: search.planId,
+            topicId: search.topicId,
           },
         }
   );
@@ -179,7 +179,6 @@ function Session({
       live,
       order: [...done.keys(), ...live.keys()],
       ref: {
-        chapterId: data.chapterId,
         evidence: data.evidence,
         group: data.group,
         id: 'resume' in source ? source.resume : crypto.randomUUID(),
@@ -189,6 +188,7 @@ function Session({
         })),
         mode: data.mode,
         planId: data.planId,
+        topicId: data.topicId,
         workspaceId,
       },
     });
@@ -238,7 +238,7 @@ function Session({
       !(
         s.workspaceId === workspaceId &&
         s.group === session?.ref.group &&
-        s.chapterId === session?.ref.chapterId
+        s.topicId === session?.ref.topicId
       )
   );
 
@@ -280,10 +280,10 @@ function Session({
       if (session)
         setSource({
           start: {
-            chapterId: session.ref.chapterId,
             group: session.ref.group,
             mode: session.ref.mode,
             planId: session.ref.planId,
+            topicId: session.ref.topicId,
           },
         });
       setSession(null);
@@ -426,10 +426,10 @@ function Session({
                 navigate({
                   params: { workspaceId: s.workspaceId },
                   search: {
-                    chapterId: s.chapterId,
                     from: search.from,
                     group: s.group,
                     reviewMode: s.mode,
+                    topicId: s.topicId,
                   },
                   to: '/learning/review/$workspaceId',
                 })
@@ -502,10 +502,7 @@ function SessionResult({
               <div className="flex items-center justify-between gap-4 border-divider border-y py-3">
                 <div className="min-w-0">
                   <div className="truncate font-semibold">
-                    {[
-                      next.workspaceName,
-                      groupName(next.group, next.chapterName),
-                    ]
+                    {[next.workspaceName, groupName(next.group, next.topicName)]
                       .filter(Boolean)
                       .join(' · ')}
                   </div>

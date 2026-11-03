@@ -1,6 +1,6 @@
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { isApiError } from '@/api/client';
-import { useAddChapter, useMoveFile, useMoveFiles } from '@/api/hooks';
+import { useAddTopic, useMoveFile, useMoveFiles } from '@/api/hooks';
 import type { MoveFilesReq, SourceFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
@@ -12,9 +12,9 @@ import { DestinationFields, useItemDestination } from './ItemDestination';
 
 /** A file Move to… acts on; an empty workspaceId is a standalone file. */
 export interface MoveFileItem {
-  chapterId: string | null;
   id: string;
   name: string;
+  topicId: string | null;
   workspaceId: string;
   /** Names the left workspace in the progress confirmation. */
   workspaceName?: string;
@@ -129,10 +129,10 @@ function ProgressLossBody({
 }
 
 /**
- * Move to…: the clone dialog's workspace and chapter dropdowns, with the
- * file's own workspace and chapter preselected and tagged Current, and no No
- * workspace (a move never takes a file out of one). Another chapter of the
- * same workspace is a chapter move (PATCH); another workspace goes through
+ * Move to…: the clone dialog's workspace and topic dropdowns, with the
+ * file's own workspace and topic preselected and tagged Current, and no No
+ * workspace (a move never takes a file out of one). Another topic of the
+ * same workspace is a topic move (PATCH); another workspace goes through
  * POST /files/move.
  */
 export function MoveFileDialog({
@@ -146,15 +146,15 @@ export function MoveFileDialog({
   onMoved?: (file: SourceFile) => void;
 }) {
   const dest = useItemDestination({
-    chapterId: file.chapterId,
     standalone: false,
+    topicId: file.topicId,
     workspaceId: file.workspaceId,
   });
   const { workspaceId } = dest;
   const target = dest.editable.find((ws) => ws.id === workspaceId);
   const { confirm, move } = useMoveFilesFlow(target?.name ?? '');
-  const { mutateAsync: moveToChapter } = useMoveFile(file.workspaceId);
-  const { mutateAsync: addChapter } = useAddChapter(file.workspaceId);
+  const { mutateAsync: moveToTopic } = useMoveFile(file.workspaceId);
+  const { mutateAsync: addTopic } = useAddTopic(file.workspaceId);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<{
     errorId: string | null;
@@ -163,29 +163,29 @@ export function MoveFileDialog({
   const same = workspaceId === file.workspaceId;
   const unchanged =
     same &&
-    dest.newChapter === null &&
-    dest.chapter.chapterName === null &&
-    dest.chapter.chapterId === file.chapterId;
+    dest.newTopic === null &&
+    dest.topic.topicName === null &&
+    dest.topic.topicId === file.topicId;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (submitting || !workspaceId || unchanged) return;
     setFormError(null);
     setSubmitting(true);
-    // A chapter name still being typed counts, so Move never drops it.
-    const { chapterId, chapterName } = dest.resolve();
+    // A topic name still being typed counts, so Move never drops it.
+    const { topicId, topicName } = dest.resolve();
     try {
       if (same) {
-        const id = chapterName ? (await addChapter(chapterName)).id : chapterId;
-        await moveToChapter({ chapterId: id, id: file.id });
+        const id = topicName ? (await addTopic(topicName)).id : topicId;
+        await moveToTopic({ id: file.id, topicId: id });
         onClose();
         return;
       }
       const moved = await move(
         {
-          chapterId: chapterId ?? undefined,
-          chapterName: chapterName ?? undefined,
           fileIds: [file.id],
+          topicId: topicId ?? undefined,
+          topicName: topicName ?? undefined,
           workspaceId,
         },
         [file.workspaceId],

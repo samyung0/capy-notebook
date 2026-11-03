@@ -44,7 +44,8 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # required in the chat copy without its Chapter (n) sentence (Epo 2026-10-29,
 # Q582; the owner schemas keys alone), the chapter_id descriptions saying "not
 # in a chapter" instead of "unfiled" (Epo 2026-10-30; the owner schemas keys
-# alone),
+# alone), chapters renamed topics with create_topic's description (Epo
+# 2026-11-03; the schemas, skills and turn_context keys alone),
 # the owner schemas and skills/editing keys alone.
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 
@@ -142,9 +143,9 @@ def test_the_workspace_profile_shows_the_model_what_it_did_before():
             "id": "f_1",
             "kind": "file",
             "title": "Cells",
-            "chapter_id": "ch_1",
+            "topic_id": "ch_1",
         },
-        chapters=[{"id": "ch_1", "name": "Biology"}],
+        topics=[{"id": "ch_1", "name": "Biology"}],
     )
     snapshot = {
         "schemas": {k: profile.schemas(c) for k, c in contexts.items()},
@@ -194,7 +195,7 @@ def test_the_account_profile_offers_the_account_tools():
         "list_sources",
         "list_workspaces",
         "create_workspace",
-        "create_chapter",
+        "create_topic",
         "resolve_source_change",
         "read_document",
         "capture_page",
@@ -229,12 +230,12 @@ def test_the_account_profile_offers_the_account_tools():
             "workspace_id"
             not in contract.DEFINITIONS[name]["inputSchema"]["properties"]
         )
-    # create_chapter names its workspace here; outside workspaces has no chapters.
-    chapter = by_name["create_chapter"]["parameters"]
-    assert "workspace_id" in chapter["properties"]
+    # create_topic names its workspace here; outside workspaces has no topics.
+    topic = by_name["create_topic"]["parameters"]
+    assert "workspace_id" in topic["properties"]
     # name is required in the chat copies only (Q582).
-    assert chapter["required"] == ["name", "workspace_id"]
-    assert "required" not in contract.DEFINITIONS["create_chapter"]["inputSchema"]
+    assert topic["required"] == ["name", "workspace_id"]
+    assert "required" not in contract.DEFINITIONS["create_topic"]["inputSchema"]
     # Workspace chat's list_sources, listing by workspace here (Q523).
     listing = by_name["list_sources"]
     assert listing["description"] == profiles.account.LIST_SOURCES
@@ -271,7 +272,7 @@ def test_the_account_prompt_turn_context_and_skills_name_the_users_files():
     editing = skills.text(skills.EDITING, account=True)
     # The outline also picks where new files go (Epo 2026-10-29).
     assert "Identify which workspace you should work in" in editing
-    assert "create_chapter" in editing and "create_workspace" in editing
+    assert "create_topic" in editing and "create_workspace" in editing
     assert "outside workspaces" in skills.text(skills.DECK_BUILDING, account=True)
 
 
@@ -491,14 +492,14 @@ async def test_search_files_content_labels_hits_from_the_turns_scope(monkeypatch
         return found
 
     async def item_places(file_ids, material_ids):
-        place = {"chapter_id": None, "chapter_name": None, "owner_id": "u_other"}
+        place = {"topic_id": None, "topic_name": None, "owner_id": "u_other"}
         return {
             "f_mine": {**place, "workspace_id": None, "owner_id": "u_1"},
             "f_chem": {
                 **place,
                 "workspace_id": "ws_1",
-                "chapter_id": "ch_1",
-                "chapter_name": "Acids",
+                "topic_id": "ch_1",
+                "topic_name": "Acids",
             },
             "f_out": {**place, "workspace_id": "ws_9"},
             "f_theirs": {**place, "workspace_id": None},
@@ -520,7 +521,7 @@ async def test_search_files_content_labels_hits_from_the_turns_scope(monkeypatch
     text = tools.render_result(result, list(enumerate(result.passages, 1)))
     assert "[1] file_id=f_mine, start=0, view and edit" in text
     assert (
-        "[2] file_id=f_chem, start=0, workspace_id=ws_1, chapter_id=ch_1, "
+        "[2] file_id=f_chem, start=0, workspace_id=ws_1, topic_id=ch_1, "
         "view and edit" in text
     )
 
@@ -558,13 +559,13 @@ async def test_list_sources_lists_one_workspace_or_the_files_with_none(monkeypat
 
     async def workspace_outline(workspace_id):
         return {
-            "chapters": [{"id": "ch_1", "name": "Cells"}],
+            "topics": [{"id": "ch_1", "name": "Cells"}],
             "files": [
                 {
                     "id": "f_2",
                     "name": "cells.pdf",
                     "kind": "file",
-                    "chapter_id": "ch_1",
+                    "topic_id": "ch_1",
                     "chunks": 3,
                     "status": "ready",
                 }
@@ -583,7 +584,7 @@ async def test_list_sources_lists_one_workspace_or_the_files_with_none(monkeypat
     assert "- My note (id=mat_1, kind=material" in loose
     assert tools.MORE_UNLISTED.format(count=1) in loose
     assert biology.startswith("The Biology workspace (workspace_id=ws_2):")
-    assert "## Cells (chapter_id=ch_1)" in biology
+    assert "## Cells (topic_id=ch_1)" in biology
     assert "cells.pdf (file_id=f_2" in biology
     assert outside.refused and len(posts) == 2
 
@@ -759,8 +760,8 @@ async def test_account_search_passages_say_their_edits_are_not_indexed(monkeypat
         return {
             rid: {
                 "workspace_id": "ws_1",
-                "chapter_id": None,
-                "chapter_name": None,
+                "topic_id": None,
+                "topic_name": None,
                 "owner_id": "u_1",
             }
             for rid in [*file_ids, *material_ids]
@@ -894,9 +895,9 @@ async def test_an_account_office_create_lands_where_the_user_named(monkeypatch):
         pending_sources=pending.PendingSources.for_account("u_1"),
     )
 
-    # Q580: the create command's chapter_id is checked against the call's
+    # Q580: the create command's topic_id is checked against the call's
     # workspace_id, not refused as if none were named.
-    create = {"type": "create", "format": "docx", "title": "Plan", "chapter_id": "ch_1"}
+    create = {"type": "create", "format": "docx", "title": "Plan", "topic_id": "ch_1"}
     result = await tools.run(
         "edit_office_document",
         {"commands": [create], "workspace_id": "ws_1", "_tool_call_id": "call_doc"},
@@ -905,7 +906,7 @@ async def test_an_account_office_create_lands_where_the_user_named(monkeypatch):
 
     assert not result.refused, result.text()
     assert sent["path"] == "/api/internal/documents/office/create"
-    assert (sent["scope"], sent["workspaceId"], sent["chapterId"]) == (
+    assert (sent["scope"], sent["workspaceId"], sent["topicId"]) == (
         "account",
         "ws_1",
         "ch_1",
@@ -976,7 +977,7 @@ async def test_create_workspace_cuts_what_is_over_its_limit(monkeypatch):
     assert tools.TAGS_CUT_NOTE.format(limit=tools.WORKSPACE_TAGS_MAX, left=2) in text
 
 
-async def test_create_chapter_cuts_its_name_and_names_its_workspace(monkeypatch):
+async def test_create_topic_cuts_its_name_and_names_its_workspace(monkeypatch):
     sent = {}
 
     async def post(path, payload, op_id, ctx, **_kwargs):
@@ -984,7 +985,7 @@ async def test_create_chapter_cuts_its_name_and_names_its_workspace(monkeypatch)
         return tools._receipt_result(
             {
                 "operationId": op_id,
-                "kind": "create_chapter",
+                "kind": "create_topic",
                 "outcome": "succeeded",
                 "workspaceId": payload["workspaceId"],
                 "name": payload["name"],
@@ -993,42 +994,42 @@ async def test_create_chapter_cuts_its_name_and_names_its_workspace(monkeypatch)
         )
 
     monkeypatch.setattr(tools, "_post_operation", post)
-    name = "N" * (tools.CHAPTER_NAME_MAX + 5)
+    name = "N" * (tools.TOPIC_NAME_MAX + 5)
 
     result = await tools.run(
-        "create_chapter",
+        "create_topic",
         {"name": name, "workspace_id": "ws_1", "_tool_call_id": "call_1"},
         _account(),
     )
-    missing = await tools.run("create_chapter", {"_tool_call_id": "call_2"}, _account())
+    missing = await tools.run("create_topic", {"_tool_call_id": "call_2"}, _account())
 
-    assert sent["path"] == "/api/internal/chapters"
+    assert sent["path"] == "/api/internal/topics"
     assert sent["scope"] == "account" and sent["workspaceId"] == "ws_1"
-    assert sent["name"] == name[: tools.CHAPTER_NAME_MAX]
+    assert sent["name"] == name[: tools.TOPIC_NAME_MAX]
     text = result.text()
     assert not result.refused, text
-    assert f"chapter_id={tools.chapter_id(tools.operation_id('m_1', 'call_1'))}" in text
-    assert tools.CUT_NOTE.format(what="name", limit=tools.CHAPTER_NAME_MAX) in text
+    assert f"topic_id={tools.topic_id(tools.operation_id('m_1', 'call_1'))}" in text
+    assert tools.CUT_NOTE.format(what="name", limit=tools.TOPIC_NAME_MAX) in text
     assert missing.refused
-    assert tools.CHAPTER_NEEDS_ITS_WORKSPACE in missing.text()
+    assert tools.TOPIC_NEEDS_ITS_WORKSPACE in missing.text()
 
 
-def test_list_sources_names_empty_chapters():
-    # Review F2: a build reuses a chapter with nothing in it yet.
-    outline = {"chapters": [{"id": "ch_1", "name": "Kinematics"}], "files": []}
+def test_list_sources_names_empty_topics():
+    # Review F2: a build reuses a topic with nothing in it yet.
+    outline = {"topics": [{"id": "ch_1", "name": "Kinematics"}], "files": []}
 
     text = tools._source_listing(outline, [], None).text()
 
-    assert "## Kinematics (chapter_id=ch_1)" in text
+    assert "## Kinematics (topic_id=ch_1)" in text
 
 
-async def test_a_chapter_the_turn_creates_takes_its_items(monkeypatch):
-    # Workspace chat checks chapter_id against the turn's chapters before Go.
+async def test_a_topic_the_turn_creates_takes_its_items(monkeypatch):
+    # Workspace chat checks topic_id against the turn's topics before Go.
     def post(url, **kwargs):
         return _Resp(
             {
                 "operationId": "op_abc",
-                "kind": "create_chapter",
+                "kind": "create_topic",
                 "outcome": "succeeded",
                 "workspaceId": "ws_1",
                 "name": "Kinematics",
@@ -1038,13 +1039,13 @@ async def test_a_chapter_the_turn_creates_takes_its_items(monkeypatch):
     monkeypatch.setattr(tools.requests, "post", post)
     ctx = _ctx(assistant_message_id="m_1")
 
-    created = await tools._create_chapter(
+    created = await tools._create_topic(
         {"name": "Kinematics", "_tool_call_id": "call_1"}, ctx
     )
 
     assert not created.refused, created.text()
-    assert ctx.chapters == [{"id": "ch_abc", "name": "Kinematics"}]
-    assert tools.unknown_chapter(ctx, {"chapter_id": "ch_abc"}) is None
+    assert ctx.topics == [{"id": "tp_abc", "name": "Kinematics"}]
+    assert tools.unknown_topic(ctx, {"topic_id": "tp_abc"}) is None
 
 
 @pytest.mark.parametrize("named", ["ws_2", None])
@@ -1109,7 +1110,7 @@ async def test_an_account_create_lands_where_the_user_named(monkeypatch, named, 
         assert f"It is now in {where}." in result.text()
 
 
-async def test_an_account_chapter_names_its_workspace(monkeypatch):
+async def test_an_account_topic_names_its_workspace(monkeypatch):
     class _Resp:
         status_code = 400
 
@@ -1118,7 +1119,7 @@ async def test_an_account_chapter_names_its_workspace(monkeypatch):
             return {}
 
         def json(self):
-            return {"code": "unknown_chapter", "message": "not there"}
+            return {"code": "unknown_topic", "message": "not there"}
 
     monkeypatch.setattr(tools.requests, "post", lambda *_a, **_k: _Resp())
     ctx = _account(skills_read={skills.EDITING, skills.NOTE_BUILDING})
@@ -1126,7 +1127,7 @@ async def test_an_account_chapter_names_its_workspace(monkeypatch):
         "kind": "note",
         "title": "N",
         "content": "body",
-        "chapter_id": "ch_1",
+        "topic_id": "ch_1",
         "_tool_call_id": "c",
     }
 
@@ -1135,9 +1136,9 @@ async def test_an_account_chapter_names_its_workspace(monkeypatch):
         "create_material", {**note, "workspace_id": "ws_1"}, ctx
     )
 
-    assert alone.refused and tools.CHAPTER_NEEDS_WORKSPACE in alone.text()
+    assert alone.refused and tools.TOPIC_NEEDS_WORKSPACE in alone.text()
     assert elsewhere.refused
-    assert tools.CHAPTERS_LISTED[True] in elsewhere.detail
+    assert tools.TOPICS_LISTED[True] in elsewhere.detail
 
 
 async def test_search_account_ranks_each_pins_files_together_and_merges_pins(
@@ -1309,7 +1310,7 @@ async def test_a_workspace_the_turn_creates_joins_its_list(monkeypatch):
         return {"items": []}
 
     async def workspace_outline(workspace_id):
-        return {"chapters": [], "files": []}
+        return {"topics": [], "files": []}
 
     monkeypatch.setattr(tools.requests, "post", post)
     monkeypatch.setattr(tools, "_gateway_read", read)
@@ -1342,7 +1343,7 @@ async def test_a_workspace_the_turn_creates_joins_its_list(monkeypatch):
             "edit_office_document",
             {"commands": [{"type": "create", "format": "docx", "title": "Plan"}]},
         ),
-        ("create_chapter", {"name": "Kinematics"}),
+        ("create_topic", {"name": "Kinematics"}),
     ],
 )
 async def test_an_account_create_refuses_a_workspace_that_is_not_the_users(
@@ -1363,7 +1364,7 @@ async def test_an_account_create_refuses_a_workspace_that_is_not_the_users(
         "was created. list_workspaces lists them, create_workspace makes a new one"
         + (
             "."
-            if tool == "create_chapter"
+            if tool == "create_topic"
             else ", or leave workspace_id out to create it outside workspaces."
         )
     )
@@ -1423,7 +1424,7 @@ def test_chat_schemas_list_what_a_call_needs_before_what_it_may_add(account):
     """(Epo 2026-10-30, T3a) DeepSeek Flash's routes write arguments in schema
     order, so an optional property listed before the one the model writes
     first is dropped: Go's alphabetical create_material lost content, cards
-    and chapter_id on Morph in 3 of 3 calls, the order below lost none."""
+    and topic_id on Morph in 3 of 3 calls, the order below lost none."""
     ctx = (_account if account else _ctx)(library_catalog=CATALOG, edit_tools=True)
     profile = profiles.account.PROFILE if account else profiles.workspace.PROFILE
     schemas = {
@@ -1439,7 +1440,7 @@ def test_chat_schemas_list_what_a_call_needs_before_what_it_may_add(account):
         "kind",
         "title",
         *(["workspace_id"] if account else []),
-        "chapter_id",
+        "topic_id",
         "content",
         "cards",
     ]
@@ -1461,35 +1462,35 @@ def test_chat_schemas_list_what_a_call_needs_before_what_it_may_add(account):
 
 
 @pytest.mark.parametrize("account", [False, True])
-async def test_chat_schemas_require_a_chapter_name_and_a_nameless_one_still_posts(
+async def test_chat_schemas_require_a_topic_name_and_a_nameless_one_still_posts(
     monkeypatch, account
 ):
     # Q582: the models see name as required; Go keeps its optional name and
-    # names a nameless chapter Chapter (n), so nothing refuses one.
+    # names a nameless topic Topic (n), so nothing refuses one.
     sent: dict[str, Any] = {}
 
     def post(url, **kwargs):
         sent.update(json.loads(kwargs["data"]))
-        return _Resp({"kind": "create_chapter", "outcome": "succeeded"})
+        return _Resp({"kind": "create_topic", "outcome": "succeeded"})
 
     monkeypatch.setattr(tools.requests, "post", post)
     kw = {"assistant_message_id": "m_1", "skills_read": {skills.EDITING}}
     ctx = _account(**kw) if account else _ctx(**kw)
     profile = profiles.account.PROFILE if account else profiles.workspace.PROFILE
-    chapter = next(
+    topic = next(
         s["function"]
         for s in profile.schemas(ctx)
-        if s["function"]["name"] == "create_chapter"
+        if s["function"]["name"] == "create_topic"
     )
 
     result = await tools.run(
-        "create_chapter",
+        "create_topic",
         {"_tool_call_id": "c", **({"workspace_id": "ws_1"} if account else {})},
         ctx,
     )
 
-    assert "name" in chapter["parameters"]["required"]
-    assert "Chapter (n)" not in chapter["description"]
+    assert "name" in topic["parameters"]["required"]
+    assert "Topic (n)" not in topic["description"]
     assert not result.refused, result.text()
     assert sent["toolCallId"] == "c" and not sent["name"]
 

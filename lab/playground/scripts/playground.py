@@ -437,7 +437,7 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
     from pipeline.retrieval import store, tools
 
     outline = await store.workspace_outline(ctx.workspace_id)
-    outline = {**outline, "chapters": [*outline["chapters"], *state.get("chapters", [])]}
+    outline = {**outline, "topics": [*outline["topics"], *state.get("topics", [])]}
     # Office files are edited in the run (office.py); other sources are not.
     documents = [
         {
@@ -451,7 +451,7 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
     pool = await store.pool()
     async with pool.connection() as conn:
         cursor = await conn.execute(
-            "SELECT id, title, kind, chapter_id FROM materials WHERE workspace_id = %s "
+            "SELECT id, title, kind, topic_id FROM materials WHERE workspace_id = %s "
             "AND trashed_at IS NULL AND parent_material_id IS NULL ORDER BY position, created_at",
             (ctx.workspace_id,),
         )
@@ -463,7 +463,7 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
                 "title": m["title"],
                 "kind": "material",
                 "materialKind": m["kind"],
-                "chapterId": m.get("chapter_id"),
+                "topicId": m.get("topic_id"),
                 "editable": editable,
             }
             for m in items
@@ -471,31 +471,41 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
     return tools._source_listing(outline, documents, ctx.file_ids)
 
 
-async def create_chapter_locally(
+async def create_topic_locally(
     args: dict[str, Any], ctx, state: dict[str, Any], message_id: str
 ):
-    """create_chapter without a gateway: the chapter lives in the run's state,
-    named and given its id as Go would, and joins the turn's chapters (in
+    """create_topic without a gateway: the topic lives in the run's state,
+    named and given its id as Go would, and joins the turn's topics (in
     account chat, those of the workspace the call names)."""
     from pipeline.retrieval import store, tools
 
     workspace = args.get("_workspace_id") or ctx.workspace_id
     if not workspace:
-        return tools._refused(tools.CHAPTER_NEEDS_ITS_WORKSPACE)
+        return tools._refused(tools.TOPIC_NEEDS_ITS_WORKSPACE)
     outline = await store.workspace_outline(workspace)
-    chapters = state.setdefault("chapters", [])
+    topics = state.setdefault("topics", [])
     notes: list[str] = []
-    name = tools._cut(args.get("name"), tools.CHAPTER_NAME_MAX, "name", notes)
+    name = tools._cut(args.get("name"), tools.TOPIC_NAME_MAX, "name", notes)
     if not name:
-        taken = {c["name"] for c in [*outline["chapters"], *chapters]}
+        taken = {c["name"] for c in [*outline["topics"], *topics]}
         n = 1
-        while f"Chapter ({n})" in taken:
+        while f"Topic ({n})" in taken:
             n += 1
-        name = f"Chapter ({n})"
+        name = f"Topic ({n})"
+    description = tools._cut(
+        args.get("description"), tools.TOPIC_DESCRIPTION_MAX, "description", notes
+    )
     op = tools.operation_id(message_id, str(args.get("_tool_call_id") or ""))
-    chapters.append({"id": tools.chapter_id(op), "name": name, "workspace_id": workspace})
+    topics.append(
+        {
+            "id": tools.topic_id(op),
+            "name": name,
+            "description": description,
+            "workspace_id": workspace,
+        }
+    )
     result = tools._receipt_result(
-        {"operationId": op, "kind": "create_chapter", "outcome": "succeeded", "name": name},
+        {"operationId": op, "kind": "create_topic", "outcome": "succeeded", "name": name},
         ctx,
     )
     result.text_parts.extend(notes)
@@ -516,9 +526,9 @@ async def create_material_locally(
 
     kind, call_id = str(args.get("kind") or ""), str(args.get("_tool_call_id") or "")
     unknown = (
-        await account.chapter_refusal(ctx, args, state)
+        await account.topic_refusal(ctx, args, state)
         if ctx.account
-        else tools.unknown_chapter(ctx, args)
+        else tools.unknown_topic(ctx, args)
     )
     if unknown is not None:
         return unknown
@@ -557,7 +567,7 @@ async def create_material_locally(
         "excerpt_ids": credited,
         "provenance": {"books": books} if books else None,
         "figures": saved,
-        "chapter_id": args.get("chapter_id") or None,
+        "topic_id": args.get("topic_id") or None,
         "size": material_size(kind, args),
         "edits": [],
     }
@@ -986,13 +996,13 @@ async def deck_locally(
     if problem:
         return tools._refused(problem)
     if name == "create_deck":
-        chapter = str(clean.get("chapter_id") or "")
+        topic = str(clean.get("topic_id") or "")
         if ctx.account:
-            if (refused := await account.chapter_refusal(ctx, args, state)) is not None:
+            if (refused := await account.topic_refusal(ctx, args, state)) is not None:
                 return refused
-        elif chapter and chapter not in {c["id"] for c in ctx.chapters}:
+        elif topic and topic not in {c["id"] for c in ctx.topics}:
             return tools._refused(
-                "chapter_id is not a chapter of this workspace; the turn context lists them."
+                "topic_id is not a topic of this workspace; the turn context lists them."
             )
         prepared = await tools.write_sources(ctx, "create_deck", clean)
         if isinstance(prepared, tools.ToolResult):
@@ -1179,7 +1189,7 @@ async def questions_locally(
             "questions": written,
             "excerpt_ids": [str(e) for e in (clean.get("excerpt_ids") or [])],
             "provenance": {"books": books} if books else None,
-            "chapter_id": clean.get("chapter_id") or None,
+            "topic_id": clean.get("topic_id") or None,
             "edits": [],
         }
         record["size"] = material_size("quiz", record)
@@ -1619,8 +1629,8 @@ class Turn:
                 result = local
             elif name == "create_material":
                 result = await create_material_locally(args, ctx_, state, self.id)
-            elif name == "create_chapter":
-                result = await create_chapter_locally(args, ctx_, state, self.id)
+            elif name == "create_topic":
+                result = await create_topic_locally(args, ctx_, state, self.id)
             elif name == "edit_document":
                 result = await edit_material_locally(args, ctx_, state)
             else:
@@ -1905,7 +1915,7 @@ class Turn:
                     tool_call.arguments or ""
                 )
             state["provider_calls"][-1]["output_split"] = written
-            # The turn context this call carried: open file, chapters,
+            # The turn context this call carried: open file, topics,
             # preferences, library reads. It is last in the request.
             turn_context = next(
                 (

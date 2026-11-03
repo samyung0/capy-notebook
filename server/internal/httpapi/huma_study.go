@@ -30,11 +30,11 @@ type reviewOverviewOutput struct {
 	Body store.ReviewOverview
 }
 type workspaceReviewInput struct {
-	ID        string `path:"id"`
-	Group     string `query:"group" enum:"chapter,others,workspace,plan" default:"workspace"`
-	ChapterID string `query:"chapterId" doc:"The chapter of a chapter group"`
-	PlanID    string `query:"planId" doc:"The plan of a plan group, one of the user's plans kept in this workspace"`
-	Mode      string `query:"mode" enum:"tricky,fading,learned" doc:"A suggestion's mode; omitted for a review from the workspace list"`
+	ID      string `path:"id"`
+	Group   string `query:"group" enum:"topic,others,workspace,plan" default:"workspace"`
+	TopicID string `query:"topicId" doc:"The topic of a topic group"`
+	PlanID  string `query:"planId" doc:"The plan of a plan group, one of the user's plans kept in this workspace"`
+	Mode    string `query:"mode" enum:"tricky,fading,learned" doc:"A suggestion's mode; omitted for a review from the workspace list"`
 }
 type workspaceStudyInput struct {
 	ID     string `path:"id"`
@@ -44,7 +44,7 @@ type reviewSessionIDInput struct {
 	ID string `path:"id" format:"uuid"`
 }
 type pastReviewsInput struct {
-	Sort        string `query:"sort" enum:"date,quiz,cards,time,workspace,plan,chapter,status" default:"date"`
+	Sort        string `query:"sort" enum:"date,quiz,cards,time,workspace,plan,topic,status" default:"date"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
 	Has         string `query:"has" doc:"Comma-separated: quiz, flashcards; a session with either passes"`
@@ -200,8 +200,8 @@ func (a *api) getWorkspaceReview(ctx context.Context, in *workspaceReviewInput) 
 		return nil, hErr(err)
 	}
 	info := store.ReviewSessionInfo{Group: in.Group}
-	if in.ChapterID != "" {
-		info.ChapterID = &in.ChapterID
+	if in.TopicID != "" {
+		info.TopicID = &in.TopicID
 	}
 	if in.Mode != "" {
 		info.Mode = &in.Mode

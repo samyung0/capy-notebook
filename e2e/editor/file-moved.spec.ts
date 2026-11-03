@@ -23,7 +23,7 @@ async function moveRow(page: Page, workspaceId: string) {
       const db = await import(path);
       const file = db.files.find((row: { id: string }) => row.id === id);
       file.workspaceId = to;
-      file.chapterId = null;
+      file.topicId = null;
     },
     { id: FILE, to: workspaceId }
   );

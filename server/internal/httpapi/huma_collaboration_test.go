@@ -83,7 +83,7 @@ func TestMaterialResponseIncludesDecodedContent(t *testing.T) {
 	}
 	material, err := apimodel.FromMaterial(store.Material{
 		ID: "mat_1", Kind: "note", Content: raw,
-		ScopeChapters: []string{}, ScopeFileNames: []string{},
+		ScopeTopics: []string{}, ScopeFileNames: []string{},
 	})
 	if err != nil {
 		t.Fatal(err)

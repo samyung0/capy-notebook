@@ -125,7 +125,7 @@ def inject() -> None:
             "name": name,
             "kind": kind,
             "blob_path": f"pg-fixture/{name}",
-            "chapter_id": None,
+            "topic_id": None,
             "parse_mode": "standard",
             "ever_parsed_successfully": True,
         }
@@ -141,14 +141,14 @@ def inject() -> None:
             {
                 "id": fid,
                 "name": row["name"],
-                "chapter_id": None,
+                "topic_id": None,
                 "status": "ready",
                 "descriptor": "",
                 "chunks": 0,
             }
             for fid, row in rows.items()
         ]
-        return {"chapters": [], "files": files}
+        return {"topics": [], "files": files}
 
     async def file_page_source(workspace_id: str, file_id: str):
         if workspace_id == WORKSPACE:

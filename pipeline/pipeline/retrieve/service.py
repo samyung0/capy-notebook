@@ -337,7 +337,7 @@ class GenerateReq(LLMPin):
     types: list[str] = Field(min_length=1)
     detail: str
     diagramType: str
-    chapters: list[str] | None = None
+    topics: list[str] | None = None
     fileIds: list[str] | None = None
     # The names of fileIds, for the prompt's scope line.
     fileNames: list[str] | None = None
@@ -653,7 +653,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         req.configVersion,
         slot=registry.Slot.CHAT,
     )
-    chapters = req.chapters or []
+    topics = req.topics or []
     file_ids = req.fileIds or []
     if req.kind == "flashcards":
         instruction = generate_prompts.flashcards_instruction(_count(req))
@@ -667,7 +667,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         )
     else:
         raise ValueError(f"unsupported generate kind {req.kind!r}")
-    scope = workflows.scope_label(chapters, req.fileNames or [])
+    scope = workflows.scope_label(topics, req.fileNames or [])
     context, _passages, changes = await workflows.generation_context(
         workspace_id=req.workspaceId,
         file_ids=file_ids or None,
@@ -724,6 +724,6 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
     return {
         "kind": "quiz",
         "name": "Workspace quiz",
-        "chapters": chapters,
+        "topics": topics,
         "questions": questions,
     }

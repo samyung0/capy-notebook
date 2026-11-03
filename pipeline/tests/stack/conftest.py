@@ -148,7 +148,7 @@ class Stack:
 
     def workspace(self, owner: str = "u_owner", members: tuple = ("u_editor",)):
         """A workspace of its own for one test, the editor a member, with one
-        chapter (id ch_<workspace id>, name "Chapter <workspace id>")."""
+        topic (id ch_<workspace id>, name "Topic <workspace id>")."""
         ws = f"ws_vis_{secrets.token_hex(4)}"
         self.sql(
             "INSERT INTO workspaces (id, user_id, name, privacy, share_role)"
@@ -156,9 +156,9 @@ class Stack:
             (ws, owner, f"Visibility {ws}"),
         )
         self.sql(
-            "INSERT INTO chapters (id, workspace_id, name, position)"
+            "INSERT INTO topics (id, workspace_id, name, position)"
             " VALUES (%s, %s, %s, 0)",
-            (f"ch_{ws}", ws, f"Chapter {ws}"),
+            (f"ch_{ws}", ws, f"Topic {ws}"),
         )
         for user in (owner, *members):
             self.sql(

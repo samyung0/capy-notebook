@@ -46,9 +46,9 @@ export default function Workspaces() {
       value: 'created',
     },
     {
-      icon: 'chapter',
-      label: m.workspaces_sort_chapters(),
-      value: 'chapters',
+      icon: 'topic',
+      label: m.workspaces_sort_topics(),
+      value: 'topics',
     },
     {
       icon: 'files',

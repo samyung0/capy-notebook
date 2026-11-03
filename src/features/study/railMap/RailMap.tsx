@@ -50,16 +50,16 @@ const AHEAD = 6;
 const WIDTH_STEP = 240;
 
 export interface RailMapItem {
-  /** Index into chapters; null when unfiled. */
-  chapter: number | null;
   id: string;
   state: 'started' | 'done' | undefined;
   title: string;
+  /** Index into topics; null when unfiled. */
+  topic: number | null;
 }
 
 /**
  * One workspace's progress as a railway line: its tracked items in reading
- * order as stops, a station at each chapter start, done stops filled, started
+ * order as stops, a station at each topic start, done stops filled, started
  * ones half filled, the line solid up to the next item and the map faint a
  * few items further on. Each stop opens its item (mouse only: Continue is the
  * keyboard path). Only pieces near the visible stretch are rendered.
@@ -69,7 +69,7 @@ export interface RailMapItem {
  */
 export function RailMap({
   workspaceId,
-  chapters,
+  topics,
   items,
   color,
   onOpen,
@@ -77,7 +77,7 @@ export function RailMap({
   finishKey,
 }: {
   workspaceId: string;
-  chapters: string[];
+  topics: string[];
   items: RailMapItem[];
   /** The workspace cover's colour; the theme's link colour without one. */
   color?: string;
@@ -100,12 +100,12 @@ export function RailMap({
     resize.observe(el);
     return () => resize.disconnect();
   }, []);
-  const layout = items.map((it) => it.chapter);
+  const layout = items.map((it) => it.topic);
   const layoutKey = layout.join(',');
-  // The map depends on the chapter layout, not each item's state.
+  // The map depends on the topic layout, not each item's state.
   const map = useMemo(
-    () => buildRailMap(workspaceId, chapters, layout, minWidth),
-    [workspaceId, chapters.join('\n'), layoutKey, minWidth]
+    () => buildRailMap(workspaceId, topics, layout, minWidth),
+    [workspaceId, topics.join('\n'), layoutKey, minWidth]
   );
 
   const nextIndex = items.findIndex((it) => it.state !== 'done');
@@ -173,7 +173,7 @@ export function RailMap({
   const tag = finished
     ? m.learning_finished()
     : m.learning_map_next({ title: items[nextIndex].title });
-  // Over a station the tag rises above its roof, so the chapter name stays readable.
+  // Over a station the tag rises above its roof, so the topic name stays readable.
   const tagHalf = (tag.length * 7 + 18) / SCALE / 2;
   // Over a station the Next tag rises above its roof; the Finished tag sits
   // left of the terminus flag, as on the bank's summit.
@@ -333,19 +333,19 @@ export function PlaceholderRailMap({
   board?: { title: string; text: string };
 }) {
   const [items] = useState(() =>
-    PLACEHOLDER_CHAPTERS.flatMap((_, chapter) =>
+    PLACEHOLDER_TOPICS.flatMap((_, topic) =>
       Array.from(
-        // The first chapter holds the board above its stops, before the next station.
+        // The first topic holds the board above its stops, before the next station.
         {
-          length: chapter
+          length: topic
             ? 2 + Math.floor(Math.random() * 5)
             : 5 + Math.floor(Math.random() * 2),
         },
         (_, i): RailMapItem => ({
-          chapter,
-          id: `${chapter}-${i}`,
+          id: `${topic}-${i}`,
           state: undefined,
           title: '',
+          topic,
         })
       )
     )
@@ -353,13 +353,13 @@ export function PlaceholderRailMap({
   return (
     <RailMap
       board={board}
-      chapters={PLACEHOLDER_CHAPTERS}
       items={items}
+      topics={PLACEHOLDER_TOPICS}
       workspaceId="placeholder"
     />
   );
 }
-const PLACEHOLDER_CHAPTERS = ['', '', '', ''];
+const PLACEHOLDER_TOPICS = ['', '', '', ''];
 
 /** Done filled, started half filled, untouched hollow. */
 function Stop({ at: [x, y], state }: { at: Pt; state: RailMapItem['state'] }) {

@@ -14,7 +14,6 @@ export interface ReviewSession {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   answered: number;
-  chapterId?: string;
   done: ReviewAnswer[];
   evidence?: ReviewEvidence;
   group: ReviewSessionGroup;
@@ -25,5 +24,6 @@ export interface ReviewSession {
   planId?: string;
   /** @nullable */
   removedAssetIds?: string[] | null;
+  topicId?: string;
   total: number;
 }

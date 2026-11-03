@@ -3,12 +3,12 @@ import { useState } from 'react';
 import { createStudyPlanBodyNameMax } from '@/api/gen/validators';
 import {
   stepKey,
-  useChapters,
   useDeleteStudyPlan,
   useFiles,
   useMaterials,
   usePlanStudy,
   useResetWorkspaceStudy,
+  useTopics,
   useUpdateStudyPlan,
   useWorkspace,
   useWorkspaceAttempts,
@@ -84,9 +84,9 @@ const titleOf = (item: WorkspaceContentItem) =>
 
 /** A workspace's Study page in the centre pane (human/study-progress.md
  * 2026-10-19, 2026-10-22, 2026-10-25): one plan at a time, picked at the
- * title's right, Default Plan being the workspace's chapter order. The plan
+ * title's right, Default Plan being the workspace's topic order. The plan
  * leads the railway map, Continue, Quick review and Quick actions, then its
- * chapters with each file's read state and each quiz's and set's attempts.
+ * topics with each file's read state and each quiz's and set's attempts.
  * With study progress hidden (workspace settings → Study) only the plan
  * select, a line pointing there and the settings rows stay. */
 export function StudyPage({
@@ -142,7 +142,7 @@ export function StudyPage({
       {planId && plans && !plan ? (
         <p className="mt-6 text-fg-muted">{m.plan_missing()}</p>
       ) : (
-        // A new plan starts with its own open chapters and Quick review.
+        // A new plan starts with its own open topics and Quick review.
         <StudyBody
           key={planId ?? ''}
           onOpenItem={onOpenItem}
@@ -176,7 +176,7 @@ function StudyBody({
   const navigate = useNavigate();
   const { data: workspace } = useWorkspace(workspaceId);
   const { data: study } = useWorkspaceStudy(workspaceId);
-  const { data: chapters } = useChapters(workspaceId);
+  const { data: topics } = useTopics(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const { data: materials } = useMaterials(workspaceId);
   const { data: attempts } = useWorkspaceAttempts(workspaceId);
@@ -192,12 +192,12 @@ function StudyBody({
   const [deleting, setDeleting] = useState(false);
   const [kinds, setKinds] = useState<string[]>([]);
   const [show, setShow] = useState<Show>('all');
-  // Open chapters: the next item's once loaded, every one a filter shows
+  // Open topics: the next item's once loaded, every one a filter shows
   // ('all'), none once no filter runs, then by hand.
-  const [openChapters, setOpenChapters] = useState<Set<string> | 'all'>();
+  const [openTopics, setOpenTopics] = useState<Set<string> | 'all'>();
 
   if (
-    !(study && chapters && files && materials && attempts) ||
+    !(study && topics && files && materials && attempts) ||
     (planId && !(plan && plans && planStudy))
   )
     return (
@@ -215,7 +215,7 @@ function StudyBody({
     study.items.map((it) => [it.fileId ?? it.materialId, it.updatedAt])
   );
   const byMaterial = new Map(attempts.items.map((it) => [it.materialId, it]));
-  const ordered = readingOrder(chapters, files, materials);
+  const ordered = readingOrder(topics, files, materials);
   const contentById = new Map(ordered.map((it) => [it.id, it]));
 
   // This workspace's items with their full data; a plan step elsewhere has
@@ -256,24 +256,24 @@ function StudyBody({
   };
   const openRow = (row: StudyRow) => links.openItem(row, row.workspaceId);
 
-  // Default Plan: chapters in order, then Others. A plan: its steps.
+  // Default Plan: topics in order, then Others. A plan: its steps.
   const progress =
     plan && plans ? planProgress(plan, workspaceMap(plans.workspaces)) : null;
   const inputs = plan ? stepInputs(plan.steps) : [];
-  // Added files join their chapter's group (set with the groups below).
+  // Added files join their topic's group (set with the groups below).
   let addSteps: (added: PlanStepInput[]) => void = () => {};
   let sections: (StudySection & { all: StudyRow[] })[];
   let nextRow: StudyRow | undefined;
   let nextKey: string | undefined;
   if (progress && plans && plan) {
     const spaces = workspaceMap(plans.workspaces);
-    // Steps are files; the list groups consecutive ones of one chapter (or
-    // Others) of one workspace under that chapter's row. A locked step groups
+    // Steps are files; the list groups consecutive ones of one topic (or
+    // Others) of one workspace under that topic's row. A locked step groups
     // by workspace; an untracked one shows nowhere and rides along with the
     // group around it, leaving with it on Remove from plan.
     type Group = {
       ws: string;
-      chapter: string | null;
+      topic: string | null;
       /** The step that opened the group, its identity. */
       head: number;
       steps: number[];
@@ -287,33 +287,33 @@ function StudyBody({
         else waiting.push(i);
         return;
       }
-      const chapter = s.step.locked ? LOCKED : (item?.chapterId ?? null);
+      const topic = s.step.locked ? LOCKED : (item?.topicId ?? null);
       const last = groups.at(-1);
-      if (last && last.ws === s.step.workspaceId && last.chapter === chapter)
+      if (last && last.ws === s.step.workspaceId && last.topic === topic)
         last.steps.push(i);
       else {
         groups.push({
-          chapter,
           head: i,
           steps: [...waiting, i],
+          topic,
           ws: s.step.workspaceId,
         });
         waiting = [];
       }
     });
-    // A new file goes after the last one shown of its chapter, else at the end.
-    const chapterOf = (st: PlanStepInput) =>
+    // A new file goes after the last one shown of its topic, else at the end.
+    const topicOf = (st: PlanStepInput) =>
       spaces
         .get(st.workspaceId)
         ?.items.find((it) => it.type === st.kind && it.id === st.targetId)
-        ?.chapterId;
+        ?.topicId;
     addSteps = (added) => {
       const next = [...inputs];
       for (const st of added) {
-        const chapter = chapterOf(st) ?? null;
+        const topic = topicOf(st) ?? null;
         let at = next.length;
         next.forEach((o, i) => {
-          if (o.workspaceId === st.workspaceId && chapterOf(o) === chapter)
+          if (o.workspaceId === st.workspaceId && topicOf(o) === topic)
             at = i + 1;
         });
         next.splice(at, 0, st);
@@ -347,20 +347,20 @@ function StudyBody({
           };
         })
       );
-      const chapterName =
-        g.chapter === LOCKED
+      const topicName =
+        g.topic === LOCKED
           ? m.plan_step_locked()
-          : g.chapter
-            ? (space?.chapters.find((ch) => ch.id === g.chapter)?.name ?? '')
+          : g.topic
+            ? (space?.topics.find((ch) => ch.id === g.topic)?.name ?? '')
             : m.study_others();
       return {
         all,
         aside: g.ws === workspaceId ? undefined : space?.name,
         done: all.filter((row) => row.state === 'done').length,
         key: stepKey(inputs[g.head]),
-        locked: g.chapter === LOCKED,
+        locked: g.topic === LOCKED,
         menu: [{ ...removeItem(-1), onClick: () => remove(g.steps) }],
-        name: chapterName,
+        name: topicName,
         rows: all,
         total: all.length,
       };
@@ -373,14 +373,12 @@ function StudyBody({
     }
   } else {
     sections = [
-      ...[...chapters]
+      ...[...topics]
         .sort((a, b) => a.order - b.order)
         .map((ch) => ({ id: ch.id, name: ch.name })),
       { id: null, name: m.study_others() },
     ].map((ch) => {
-      const items = ordered.filter(
-        (it) => (it.data.chapterId ?? null) === ch.id
-      );
+      const items = ordered.filter((it) => (it.data.topicId ?? null) === ch.id);
       const all = items.map(contentRow);
       const mine = all.filter((row) => row.state !== 'removed');
       return {
@@ -397,7 +395,7 @@ function StudyBody({
     );
     if (next) {
       nextRow = contentRow(next);
-      nextKey = next.data.chapterId ?? 'others';
+      nextKey = next.data.topicId ?? 'others';
     }
   }
 
@@ -421,15 +419,15 @@ function StudyBody({
     // A plan keeps its locked groups on show until a filter runs.
     .filter((s) => s.rows.length > 0 || (progress && !filtering && s.locked));
 
-  if (!openChapters) {
+  if (!openTopics) {
     const keys = shown.map((s) => s.key);
     const first = nextKey && keys.includes(nextKey) ? nextKey : keys[0];
-    setOpenChapters(new Set(first ? [first] : []));
+    setOpenTopics(new Set(first ? [first] : []));
   }
   const isOpen = (key: string) =>
-    openChapters === 'all' || !!openChapters?.has(key);
-  const toggleChapter = (key: string) =>
-    setOpenChapters((prev) => {
+    openTopics === 'all' || !!openTopics?.has(key);
+  const toggleTopic = (key: string) =>
+    setOpenTopics((prev) => {
       const next = new Set(
         prev === 'all' ? shown.map((s) => s.key) : (prev ?? [])
       );
@@ -439,7 +437,7 @@ function StudyBody({
 
   // The map draws the plan's tracked items, each once, its groups as stations.
   // Stations come from every group, so a filter never moves the map.
-  const mapChapters = sections
+  const mapTopics = sections
     .filter((s) => !s.locked)
     .map((s) => ({ id: s.key, name: s.name }));
   const seen = new Set<string>();
@@ -451,13 +449,13 @@ function StudyBody({
           .map((row) => {
             seen.add(row.id);
             return {
-              chapterId: progress
-                ? s.key
-                : (contentById.get(row.id)?.data.chapterId ?? null),
               id: row.id,
               row,
               state: row.state,
               title: row.title,
+              topicId: progress
+                ? s.key
+                : (contentById.get(row.id)?.data.topicId ?? null),
             };
           })
   );
@@ -490,22 +488,22 @@ function StudyBody({
           {mapItems.length > 0 && (
             <div className="mt-2">
               <WorkspaceRailMap
-                chapters={
-                  progress
-                    ? mapChapters
-                    : [...chapters].sort((a, b) => a.order - b.order)
-                }
                 cover={workspace?.cover}
                 items={mapItems}
                 onOpen={(id) => {
                   const item = mapItems.find((it) => it.id === id);
                   if (item) openRow(item.row);
                 }}
+                topics={
+                  progress
+                    ? mapTopics
+                    : [...topics].sort((a, b) => a.order - b.order)
+                }
                 workspaceId={plan ? `plan:${plan.id}` : workspaceId}
               />
             </div>
           )}
-          {/* Sections spaced like Chapters below. */}
+          {/* Sections spaced like Topics below. */}
           <div className="mt-4 flex flex-col gap-8">
             {nextRow && (
               <div className="flex items-center gap-3">
@@ -546,7 +544,7 @@ function StudyBody({
           </div>
         </>
       )}
-      {/* Hidden study progress takes the chapters too. */}
+      {/* Hidden study progress takes the topics too. */}
       {!hidden && (
         <>
           <div className="mt-8 flex flex-wrap items-center gap-2">
@@ -566,7 +564,7 @@ function StudyBody({
                   onToggle: (value) => {
                     const next = toggleValue(kinds, value);
                     setKinds(next);
-                    setOpenChapters(
+                    setOpenTopics(
                       next.length || show !== 'all' ? 'all' : new Set()
                     );
                   },
@@ -580,7 +578,7 @@ function StudyBody({
                   onToggle: (value: string) => {
                     const next = show === value ? 'all' : (value as Show);
                     setShow(next);
-                    setOpenChapters(
+                    setOpenTopics(
                       kinds.length || next !== 'all' ? 'all' : new Set()
                     );
                   },
@@ -596,7 +594,7 @@ function StudyBody({
               onResetFilters={() => {
                 setKinds([]);
                 setShow('all');
-                setOpenChapters(new Set());
+                setOpenTopics(new Set());
               }}
             />
           </div>
@@ -618,7 +616,7 @@ function StudyBody({
             <SectionList
               isOpen={isOpen}
               onOpenRow={openRow}
-              onToggle={toggleChapter}
+              onToggle={toggleTopic}
               sections={shown}
               workspaceId={workspaceId}
             />

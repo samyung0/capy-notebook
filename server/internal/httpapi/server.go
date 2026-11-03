@@ -342,7 +342,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/documents/list", a.internalListDocuments)
 		r.Post("/api/internal/documents/access", a.internalDocumentAccess)
 		r.Post("/api/internal/workspaces", a.internalCreateWorkspace)
-		r.Post("/api/internal/chapters", a.internalCreateChapter)
+		r.Post("/api/internal/topics", a.internalCreateTopic)
 		r.Post("/api/internal/changes", a.internalChanges)
 		r.Post("/api/internal/changes/resolve", a.internalResolveChange)
 		r.Post("/api/internal/documents/inspect", a.internalInspectDocument)
@@ -520,10 +520,10 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
-	if errors.Is(err, store.ErrTooManyChapters) {
+	if errors.Is(err, store.ErrTooManyTopics) {
 		writeJSON(w, http.StatusConflict, map[string]string{
-			"code":    "too_many_chapters",
-			"message": "this workspace already has the maximum number of chapters",
+			"code":    "too_many_topics",
+			"message": "this workspace already has the maximum number of topics",
 		})
 		return
 	}

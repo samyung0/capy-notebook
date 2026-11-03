@@ -17,7 +17,7 @@ import (
 // Review sessions, suggested reviews and their records (human/study-progress.md,
 // 2026-10-10). Every item is scored (1 - R) x (1 + tricky + learned): fading is
 // the base, tricky and learned come from the item's latest answers
-// (review.HistoryWeights). Groups (a chapter, the items outside chapters, or
+// (review.HistoryWeights). Groups (a topic, the items outside topics, or
 // the whole workspace) sum their items' parts, so more practised content
 // ranks higher, and the largest part names the suggestion's mode.
 
@@ -26,7 +26,7 @@ const (
 	ModeFading  = "fading"
 	ModeLearned = "learned"
 
-	GroupChapter   = "chapter"
+	GroupTopic     = "topic"
 	GroupOthers    = "others"
 	GroupWorkspace = "workspace"
 	// GroupPlan is a whole study plan's review, across its workspaces.
@@ -176,9 +176,9 @@ type ReviewSuggestion struct {
 	WorkspaceID   string  `json:"workspaceId"`
 	WorkspaceName string  `json:"workspaceName"`
 	IconID        string  `json:"iconId"`
-	Group         string  `json:"group" enum:"chapter,others,workspace"`
-	ChapterID     *string `json:"chapterId,omitempty"`
-	ChapterName   string  `json:"chapterName,omitempty"`
+	Group         string  `json:"group" enum:"topic,others,workspace"`
+	TopicID       *string `json:"topicId,omitempty"`
+	TopicName     string  `json:"topicName,omitempty"`
 	Mode          string  `json:"mode" enum:"tricky,fading,learned"`
 	// Items counts the items a session of this suggestion draws from.
 	Items    int            `json:"items"`
@@ -187,35 +187,35 @@ type ReviewSuggestion struct {
 }
 
 type reviewGroup struct {
-	kind      string
-	chapterID *string
+	kind    string
+	topicID *string
 }
 
 func (g reviewGroup) has(it ranked) bool {
 	switch g.kind {
-	case GroupChapter:
-		return it.chapterID != nil && g.chapterID != nil && *it.chapterID == *g.chapterID
+	case GroupTopic:
+		return it.topicID != nil && g.topicID != nil && *it.topicID == *g.topicID
 	case GroupOthers:
-		return it.chapterID == nil
+		return it.topicID == nil
 	}
 	return true
 }
 
 // groupSuggestions forms a workspace's suggestions from its scored items:
-// each chapter (and the items outside chapters) passing the threshold, or the
+// each topic (and the items outside topics) passing the threshold, or the
 // whole workspace when none does but all of it together does. A workspace
-// without chapters is one group. history feeds the evidence.
+// without topics is one group. history feeds the evidence.
 func groupSuggestions(items []scored, history map[string][]review.Rating, weight float64) []ReviewSuggestion {
 	var due []scored
-	chaptered := false
+	hasTopic := false
 	for _, it := range items {
 		if it.r <= suggestedRecall {
 			due = append(due, it)
-			chaptered = chaptered || it.chapterID != nil
+			hasTopic = hasTopic || it.topicID != nil
 		}
 	}
 	build := func(g reviewGroup) (ReviewSuggestion, bool) {
-		out := ReviewSuggestion{Group: g.kind, ChapterID: g.chapterID}
+		out := ReviewSuggestion{Group: g.kind, TopicID: g.topicID}
 		var parts, labels [3]float64
 		var forgotten float64
 		for _, it := range due {
@@ -252,7 +252,7 @@ func groupSuggestions(items []scored, history map[string][]review.Rating, weight
 		out.score = (parts[0] + parts[1] + parts[2]) * weight
 		return out, out.Items > 0 && out.score >= suggestionThreshold
 	}
-	if !chaptered {
+	if !hasTopic {
 		if s, ok := build(reviewGroup{kind: GroupWorkspace}); ok {
 			return []ReviewSuggestion{s}
 		}
@@ -261,14 +261,14 @@ func groupSuggestions(items []scored, history map[string][]review.Rating, weight
 	var groups []reviewGroup
 	seen := map[string]bool{}
 	for _, it := range due {
-		if it.chapterID == nil {
+		if it.topicID == nil {
 			if !seen[""] {
 				groups = append(groups, reviewGroup{kind: GroupOthers})
 			}
 			seen[""] = true
-		} else if !seen[*it.chapterID] {
-			seen[*it.chapterID] = true
-			groups = append(groups, reviewGroup{kind: GroupChapter, chapterID: it.chapterID})
+		} else if !seen[*it.topicID] {
+			seen[*it.topicID] = true
+			groups = append(groups, reviewGroup{kind: GroupTopic, topicID: it.topicID})
 		}
 	}
 	var out []ReviewSuggestion
@@ -398,11 +398,11 @@ func (s *Store) scoredPlan(ctx context.Context, userID string, plan PlanScope, p
 // ReviewSessionInfo describes what a session draws from; the browser sends it
 // back with each answer, and the first answer records it.
 type ReviewSessionInfo struct {
-	Group     string          `json:"group" enum:"chapter,others,workspace,plan"`
-	ChapterID *string         `json:"chapterId,omitempty"`
-	PlanID    *string         `json:"planId,omitempty" doc:"The plan of a plan group"`
-	Mode      *string         `json:"mode,omitempty" enum:"tricky,fading,learned" doc:"Omitted for a review started from the workspace list"`
-	Evidence  *ReviewEvidence `json:"evidence,omitempty"`
+	Group    string          `json:"group" enum:"topic,others,workspace,plan"`
+	TopicID  *string         `json:"topicId,omitempty"`
+	PlanID   *string         `json:"planId,omitempty" doc:"The plan of a plan group"`
+	Mode     *string         `json:"mode,omitempty" enum:"tricky,fading,learned" doc:"Omitted for a review started from the workspace list"`
+	Evidence *ReviewEvidence `json:"evidence,omitempty"`
 }
 
 type ReviewSession struct {
@@ -432,7 +432,7 @@ type ReviewAnswer struct {
 	Answers map[string]any `json:"answers,omitempty"`
 }
 
-// ErrReviewGroup refuses a session of a chapter that is not the workspace's,
+// ErrReviewGroup refuses a session of a topic that is not the workspace's,
 // or of a plan not kept in it.
 var ErrReviewGroup = errors.New("no such review group in this workspace")
 
@@ -456,19 +456,19 @@ func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info R
 		return s.planReview(ctx, userID, wsID, out, now)
 	}
 	out.PlanID = nil
-	if info.Group == GroupChapter {
+	if info.Group == GroupTopic {
 		var ok bool
-		if info.ChapterID == nil {
+		if info.TopicID == nil {
 			return out, ErrReviewGroup
 		}
-		if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM chapters WHERE id=$1 AND workspace_id=$2)`, *info.ChapterID, wsID).Scan(&ok); err != nil {
+		if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM topics WHERE id=$1 AND workspace_id=$2)`, *info.TopicID, wsID).Scan(&ok); err != nil {
 			return out, err
 		}
 		if !ok {
 			return out, ErrReviewGroup
 		}
 	} else {
-		out.ChapterID = nil
+		out.TopicID = nil
 	}
 	prefsRaw, err := s.StudyPreferencesOf(ctx, userID)
 	if err != nil {
@@ -479,11 +479,11 @@ func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info R
 	if err != nil {
 		return out, err
 	}
-	g := reviewGroup{kind: info.Group, chapterID: out.ChapterID}
+	g := reviewGroup{kind: info.Group, topicID: out.TopicID}
 	if info.Mode != nil {
 		// The evidence the session started from, for its record.
 		for _, sg := range groupSuggestions(items, history, 1) {
-			if sg.Group == g.kind && (g.chapterID == nil) == (sg.ChapterID == nil) && (g.chapterID == nil || *g.chapterID == *sg.ChapterID) {
+			if sg.Group == g.kind && (g.topicID == nil) == (sg.TopicID == nil) && (g.topicID == nil || *g.topicID == *sg.TopicID) {
 				ev := sg.Evidence
 				out.Evidence = &ev
 			}
@@ -511,7 +511,7 @@ func (s *Store) planReview(ctx context.Context, userID, wsID string, out ReviewS
 	if err != nil {
 		return out, err
 	}
-	out.ChapterID, out.Mode, out.Evidence = nil, nil, nil
+	out.TopicID, out.Mode, out.Evidence = nil, nil, nil
 	prefsRaw, err := s.StudyPreferencesOf(ctx, userID)
 	if err != nil {
 		return out, err
@@ -666,16 +666,16 @@ func insertSessionTx(ctx context.Context, tx pgx.Tx, userID string, mt Material,
 	if a.Info.Evidence != nil {
 		evidence = a.Info.Evidence
 	}
-	chapterID := a.Info.ChapterID
-	if a.Info.Group != GroupChapter {
-		chapterID = nil
+	topicID := a.Info.TopicID
+	if a.Info.Group != GroupTopic {
+		topicID = nil
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO review_sessions
-		(id, user_id, workspace_id, chapter_id, group_kind, mode, evidence, items, started_at, last_answer_at, plan_id, plan_name)
+		(id, user_id, workspace_id, topic_id, group_kind, mode, evidence, items, started_at, last_answer_at, plan_id, plan_name)
 		SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10,$11
-		WHERE $4::text IS NULL OR EXISTS (SELECT 1 FROM chapters WHERE id=$4 AND workspace_id=$3)
+		WHERE $4::text IS NULL OR EXISTS (SELECT 1 FROM topics WHERE id=$4 AND workspace_id=$3)
 		ON CONFLICT (id) DO NOTHING`,
-		a.ID, userID, a.WorkspaceID, chapterID, a.Info.Group, a.Info.Mode, evidence, items, now, planID, planName)
+		a.ID, userID, a.WorkspaceID, topicID, a.Info.Group, a.Info.Mode, evidence, items, now, planID, planName)
 	return err
 }
 
@@ -757,9 +757,9 @@ func (s *Store) ResumeReviewSession(ctx context.Context, userID, id string) (Rev
 	out := ReviewSession{Items: []ReviewItem{}, Done: []ReviewAnswer{}}
 	var wsID string
 	var raw []byte
-	err := s.pool.QueryRow(ctx, `SELECT workspace_id, group_kind, chapter_id, plan_id, mode, evidence, items FROM review_sessions
+	err := s.pool.QueryRow(ctx, `SELECT workspace_id, group_kind, topic_id, plan_id, mode, evidence, items FROM review_sessions
 		WHERE id=$1 AND user_id=$2`, id, userID).
-		Scan(&wsID, &out.Group, &out.ChapterID, &out.PlanID, &out.Mode, &out.Evidence, &raw)
+		Scan(&wsID, &out.Group, &out.TopicID, &out.PlanID, &out.Mode, &out.Evidence, &raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, ErrNotFound
 	}
@@ -890,9 +890,9 @@ type UnfinishedSession struct {
 	WorkspaceID   string `json:"workspaceId"`
 	WorkspaceName string `json:"workspaceName"`
 	IconID        string `json:"iconId"`
-	Group         string `json:"group" enum:"chapter,others,workspace,plan"`
-	// ChapterName is a chapter session's chapter, or a plan session's plan.
-	ChapterName  string    `json:"chapterName,omitempty"`
+	Group         string `json:"group" enum:"topic,others,workspace,plan"`
+	// TopicName is a topic session's topic, or a plan session's plan.
+	TopicName    string    `json:"topicName,omitempty"`
 	Answered     int       `json:"answered"`
 	Total        int       `json:"total"`
 	LastAnswerAt time.Time `json:"lastAnswerAt"`
@@ -1040,7 +1040,7 @@ func (s *Store) ReviewOverview(ctx context.Context, userID string, now time.Time
 		perWS[sg.WorkspaceID]++
 		out.Suggestions = append(out.Suggestions, sg)
 	}
-	if err := s.nameChapters(ctx, out.Suggestions); err != nil {
+	if err := s.nameTopics(ctx, out.Suggestions); err != nil {
 		return out, err
 	}
 	if out.Plans, err = s.reviewPlans(ctx, userID, prefs, readable, pools, now); err != nil {
@@ -1048,7 +1048,7 @@ func (s *Store) ReviewOverview(ctx context.Context, userID string, now time.Time
 	}
 	rows, err := s.pool.Query(ctx, `SELECT rs.id, rs.workspace_id, rs.group_kind, COALESCE(c.name, p.name, rs.plan_name, ''),
 			(SELECT count(*) FROM review_answers ra WHERE ra.session_id=rs.id), jsonb_array_length(rs.items), rs.last_answer_at
-		FROM review_sessions rs LEFT JOIN chapters c ON c.id=rs.chapter_id LEFT JOIN study_plans p ON p.id=rs.plan_id
+		FROM review_sessions rs LEFT JOIN topics c ON c.id=rs.topic_id LEFT JOIN study_plans p ON p.id=rs.plan_id
 		WHERE rs.user_id=$1 AND rs.finished_at IS NULL ORDER BY rs.last_answer_at DESC`, userID)
 	if err != nil {
 		return out, err
@@ -1056,7 +1056,7 @@ func (s *Store) ReviewOverview(ctx context.Context, userID string, now time.Time
 	defer rows.Close()
 	for rows.Next() {
 		var u UnfinishedSession
-		if err := rows.Scan(&u.ID, &u.WorkspaceID, &u.Group, &u.ChapterName, &u.Answered, &u.Total, &u.LastAnswerAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.WorkspaceID, &u.Group, &u.TopicName, &u.Answered, &u.Total, &u.LastAnswerAt); err != nil {
 			return out, err
 		}
 		ws, ok := readable[u.WorkspaceID]
@@ -1156,18 +1156,18 @@ func (s *Store) hasQuizzes(ctx context.Context, userID, wsID string, kinds, only
 	return ok, err
 }
 
-// nameChapters fills in the chapter names of chapter suggestions.
-func (s *Store) nameChapters(ctx context.Context, list []ReviewSuggestion) error {
+// nameTopics fills in the topic names of topic suggestions.
+func (s *Store) nameTopics(ctx context.Context, list []ReviewSuggestion) error {
 	var ids []string
 	for _, sg := range list {
-		if sg.ChapterID != nil {
-			ids = append(ids, *sg.ChapterID)
+		if sg.TopicID != nil {
+			ids = append(ids, *sg.TopicID)
 		}
 	}
 	if len(ids) == 0 {
 		return nil
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id, name FROM chapters WHERE id = ANY($1)`, ids)
+	rows, err := s.pool.Query(ctx, `SELECT id, name FROM topics WHERE id = ANY($1)`, ids)
 	if err != nil {
 		return err
 	}
@@ -1181,8 +1181,8 @@ func (s *Store) nameChapters(ctx context.Context, list []ReviewSuggestion) error
 		names[id] = name
 	}
 	for i, sg := range list {
-		if sg.ChapterID != nil {
-			list[i].ChapterName = names[*sg.ChapterID]
+		if sg.TopicID != nil {
+			list[i].TopicName = names[*sg.TopicID]
 		}
 	}
 	return rows.Err()
@@ -1202,10 +1202,10 @@ type PastReview struct {
 	WorkspaceID   string  `json:"workspaceId"`
 	WorkspaceName string  `json:"workspaceName"`
 	IconID        string  `json:"iconId"`
-	Group         string  `json:"group" enum:"chapter,others,workspace,plan"`
-	ChapterID     *string `json:"chapterId,omitempty"`
-	// ChapterName is a chapter session's chapter, or a plan session's plan.
-	ChapterName  string        `json:"chapterName,omitempty"`
+	Group         string  `json:"group" enum:"topic,others,workspace,plan"`
+	TopicID       *string `json:"topicId,omitempty"`
+	// TopicName is a topic session's topic, or a plan session's plan.
+	TopicName    string        `json:"topicName,omitempty"`
 	Mode         *string       `json:"mode,omitempty" enum:"tricky,fading,learned"`
 	StartedAt    time.Time     `json:"startedAt"`
 	FinishedAt   *time.Time    `json:"finishedAt,omitempty" doc:"Omitted on the result page of a session not finished yet"`
@@ -1217,7 +1217,7 @@ type PastReview struct {
 }
 
 type PastReviewParams struct {
-	Sort       string // date, quiz, cards, time, workspace, plan, chapter, status
+	Sort       string // date, quiz, cards, time, workspace, plan, topic, status
 	Ascending  bool
 	Workspaces []string
 	Has        []string // quiz, flashcards
@@ -1237,9 +1237,9 @@ func (s *Store) PastReviews(ctx context.Context, userID string, p PastReviewPara
 		"time":      "s.last_answer_at - s.started_at",
 		"workspace": "lower(s.name)",
 		// Plan sessions by plan name; Default Plan ones (every other) last.
-		"plan": "CASE WHEN s.group_kind = 'plan' THEN lower(s.chapter) END",
-		// Chapter sessions by name; Others, whole-workspace and plan ones last.
-		"chapter": "CASE WHEN s.group_kind = 'chapter' THEN lower(s.chapter) END",
+		"plan": "CASE WHEN s.group_kind = 'plan' THEN lower(s.topic) END",
+		// Topic sessions by name; Others, whole-workspace and plan ones last.
+		"topic": "CASE WHEN s.group_kind = 'topic' THEN lower(s.topic) END",
 		// Completed (every served item answered) before stopped, ascending.
 		"status": "s.answered < s.served",
 	}[p.Sort]
@@ -1268,17 +1268,17 @@ func (s *Store) PastReviews(ctx context.Context, userID string, p PastReviewPara
 	q := `WITH s AS (SELECT rs.id, rs.workspace_id,
 			CASE WHEN ` + lost + ` THEN '' ELSE w.name END AS name,
 			CASE WHEN ` + lost + ` THEN '' ELSE w.icon_id END AS icon_id,
-			rs.group_kind, CASE WHEN ` + lost + ` THEN '' ELSE COALESCE(c.name, p.name, rs.plan_name, '') END AS chapter,
-			rs.mode, rs.chapter_id, rs.started_at, rs.finished_at, rs.last_answer_at, jsonb_array_length(rs.items) AS served,
+			rs.group_kind, CASE WHEN ` + lost + ` THEN '' ELSE COALESCE(c.name, p.name, rs.plan_name, '') END AS topic,
+			rs.mode, rs.topic_id, rs.started_at, rs.finished_at, rs.last_answer_at, jsonb_array_length(rs.items) AS served,
 			(SELECT count(*) FROM review_answers WHERE session_id=rs.id) AS answered,
 			(SELECT sum(correct) FROM review_answers WHERE session_id=rs.id AND kind='question') AS qc,
 			(SELECT sum(total) FROM review_answers WHERE session_id=rs.id AND kind='question') AS qt,
 			(SELECT count(*) FILTER (WHERE rating >= 3) FROM review_answers WHERE session_id=rs.id AND kind='card') AS kc,
 			(SELECT count(*) FROM review_answers WHERE session_id=rs.id AND kind='card') AS kt
-		FROM review_sessions rs JOIN workspaces w ON w.id=rs.workspace_id LEFT JOIN chapters c ON c.id=rs.chapter_id
+		FROM review_sessions rs JOIN workspaces w ON w.id=rs.workspace_id LEFT JOIN topics c ON c.id=rs.topic_id
 			LEFT JOIN study_plans p ON p.id=rs.plan_id
 		WHERE ` + strings.Join(where, " AND ") + `)
-		SELECT s.id, s.workspace_id, s.name, s.icon_id, s.group_kind, s.chapter_id, s.chapter, s.mode, s.started_at, s.finished_at,
+		SELECT s.id, s.workspace_id, s.name, s.icon_id, s.group_kind, s.topic_id, s.topic, s.mode, s.started_at, s.finished_at,
 			s.last_answer_at, s.answered, s.served, s.qc, s.qt, s.kc, s.kt
 		FROM s`
 	var filters []string
@@ -1306,7 +1306,7 @@ func (s *Store) PastReviews(ctx context.Context, userID string, p PastReviewPara
 		var r PastReview
 		var qc, qt *float64
 		var kc, kt *int64
-		if err := rows.Scan(&r.ID, &r.WorkspaceID, &r.WorkspaceName, &r.IconID, &r.Group, &r.ChapterID, &r.ChapterName, &r.Mode,
+		if err := rows.Scan(&r.ID, &r.WorkspaceID, &r.WorkspaceName, &r.IconID, &r.Group, &r.TopicID, &r.TopicName, &r.Mode,
 			&r.StartedAt, &r.FinishedAt, &r.LastAnswerAt, &r.Answered, &r.Total, &qc, &qt, &kc, &kt); err != nil {
 			return nil, false, err
 		}

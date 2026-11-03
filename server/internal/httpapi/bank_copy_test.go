@@ -86,16 +86,16 @@ func TestBankCopiesWithCredits(t *testing.T) {
 		_ = json.Unmarshal(rec.Body.Bytes(), &out)
 		return rec.Code, out
 	}
-	newQuiz := map[string]any{"questionIds": []string{"bq3", "bq2"}, "workspaceId": "ws_e2e_private", "chapterId": "ch_e2e_private", "quizName": "From the bank"}
+	newQuiz := map[string]any{"questionIds": []string{"bq3", "bq2"}, "workspaceId": "ws_e2e_private", "topicId": "ch_e2e_private", "quizName": "From the bank"}
 	if code, _ := pageCopy("u_viewer", newQuiz); code != 404 {
 		t.Fatalf("viewer copy: %d", code)
 	}
 	for _, refused := range []map[string]any{
 		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizName": "T", "quizId": "q_unused"},
 		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private"},
-		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizId": "q_unused", "chapterId": "ch_e2e_private"},
-		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizId": "q_unused", "chapterName": "New"},
-		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizName": "T", "chapterId": "ch_e2e_private", "chapterName": "New"},
+		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizId": "q_unused", "topicId": "ch_e2e_private"},
+		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizId": "q_unused", "topicName": "New"},
+		{"questionIds": []string{"bq3"}, "workspaceId": "ws_e2e_private", "quizName": "T", "topicId": "ch_e2e_private", "topicName": "New"},
 	} {
 		if code, _ := pageCopy("u_editor", refused); code != 422 {
 			t.Fatalf("page copy should refuse %v: %d", refused, code)
@@ -115,7 +115,7 @@ func TestBankCopiesWithCredits(t *testing.T) {
 	}
 	var copied []map[string]any
 	if err := json.Unmarshal(raw, &copied); err != nil || len(copied) != 2 || copied[0]["id"] != "bq3" ||
-		quiz.Title != "From the bank" || quiz.ChapterID == nil || *quiz.ChapterID != "ch_e2e_private" {
+		quiz.Title != "From the bank" || quiz.TopicID == nil || *quiz.TopicID != "ch_e2e_private" {
 		t.Fatalf("page copy: %s %+v", raw, quiz)
 	}
 	if credits := quiz.Provenance.Questions; len(credits) != 1 || credits["bq3"].License != "CC BY-SA 4.0" {
@@ -141,28 +141,28 @@ func TestBankCopiesWithCredits(t *testing.T) {
 	if merged := sent.Provenance.Questions; len(merged) != 2 || merged["bq1"].Web == nil || merged["bq3"].Web == nil {
 		t.Fatalf("page copy merged credits: %#v", sent.Provenance)
 	}
-	// A typed chapter is created with the new quiz, then reused in any case.
-	chapterOf := func(name, chapterName string) string {
+	// A typed topic is created with the new quiz, then reused in any case.
+	topicOf := func(name, topicName string) string {
 		t.Helper()
 		code, made := pageCopy("u_editor", map[string]any{"questionIds": []string{"bq2"}, "workspaceId": "ws_e2e_private",
-			"quizName": name, "chapterName": chapterName})
+			"quizName": name, "topicName": topicName})
 		if code != 200 {
-			t.Fatalf("page copy with chapter %q: %d %v", chapterName, code, made)
+			t.Fatalf("page copy with topic %q: %d %v", topicName, code, made)
 		}
 		quiz, err := st.GetMaterial(context.Background(), made["quizId"].(string))
-		if err != nil || quiz.ChapterID == nil {
-			t.Fatalf("quiz filed in %q: %v %+v", chapterName, err, quiz)
+		if err != nil || quiz.TopicID == nil {
+			t.Fatalf("quiz filed in %q: %v %+v", topicName, err, quiz)
 		}
-		return *quiz.ChapterID
+		return *quiz.TopicID
 	}
-	created := chapterOf("Named chapter", "  Bank picks ")
-	var chapterName string
-	if err := st.Pool().QueryRow(context.Background(), `SELECT name FROM chapters WHERE id=$1 AND workspace_id='ws_e2e_private'`, created).
-		Scan(&chapterName); err != nil || chapterName != "Bank picks" {
-		t.Fatalf("created chapter: %q %v", chapterName, err)
+	created := topicOf("Named topic", "  Bank picks ")
+	var topicName string
+	if err := st.Pool().QueryRow(context.Background(), `SELECT name FROM topics WHERE id=$1 AND workspace_id='ws_e2e_private'`, created).
+		Scan(&topicName); err != nil || topicName != "Bank picks" {
+		t.Fatalf("created topic: %q %v", topicName, err)
 	}
-	if reused := chapterOf("Same chapter", "BANK PICKS"); reused != created {
-		t.Fatalf("same-named chapter: %s, want %s", reused, created)
+	if reused := topicOf("Same topic", "BANK PICKS"); reused != created {
+		t.Fatalf("same-named topic: %s, want %s", reused, created)
 	}
 
 	// Copied into a quiz a note embeds, the credits join that quiz's own record

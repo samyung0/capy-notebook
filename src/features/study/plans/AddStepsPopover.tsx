@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import {
   stepKey,
-  useChapters,
   useFiles,
   useMaterials,
+  useTopics,
   useWorkspaces,
 } from '@/api/hooks';
 import type { PlanStep, PlanStepInput } from '@/api/types';
@@ -31,7 +31,7 @@ import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 
-/** A row to tick: a whole workspace, a chapter, Others or one file, each
+/** A row to tick: a whole workspace, a topic, Others or one file, each
  * standing for its tracked files. */
 type Option = {
   key: string;
@@ -42,8 +42,8 @@ type Option = {
 
 /** The plan's Add steps, an accent button left of the Study page's Filter
  * (human/study-progress.md 2026-10-22, 2026-10-25): pick a workspace,
- * then tick its whole workspace, chapters, Others or single files. A tick
- * picks the row's tracked files, so the workspace ticks every chapter and a
+ * then tick its whole workspace, topics, Others or single files. A tick
+ * picks the row's tracked files, so the workspace ticks every topic and a
  * row with only some of its files picked (or in the plan) shows a dash; a row
  * whose files are all in the plan shows ticked and disabled. The page places
  * the new steps. */
@@ -103,20 +103,20 @@ function AddSteps({
 }) {
   const { data: workspaces } = useWorkspaces();
   const [workspaceId, setWorkspaceId] = useState(defaultWorkspaceId);
-  const { data: chapters } = useChapters(workspaceId);
+  const { data: topics } = useTopics(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const { data: materials } = useMaterials(workspaceId);
   const { states } = useStudyStates(workspaceId);
   // Ticked files by id: every row reads its tick from them, so the whole
-  // workspace, its chapters and single files stay in step.
+  // workspace, its topics and single files stay in step.
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
   const [singles, setSingles] = useState(false);
   const held = new Set(steps.map(stepKey));
   const workspace = workspaces?.find((ws) => ws.id === workspaceId);
 
-  // Steps are files: a chapter (or Others, or the workspace) adds its tracked
+  // Steps are files: a topic (or Others, or the workspace) adds its tracked
   // files in reading order; the plan does not follow it afterwards.
-  const tracked = readingOrder(chapters, files, materials).filter(
+  const tracked = readingOrder(topics, files, materials).filter(
     (it) => states.get(it.id) !== 'removed'
   );
   const inputOf = (it: (typeof tracked)[number]): PlanStepInput => ({
@@ -130,17 +130,15 @@ function AddSteps({
       key: 'workspace',
       label: m.plan_whole_workspace(),
     },
-    ...[...(chapters ?? [])]
+    ...[...(topics ?? [])]
       .sort((a, b) => a.order - b.order)
       .map((ch) => ({
-        inputs: tracked
-          .filter((it) => it.data.chapterId === ch.id)
-          .map(inputOf),
-        key: `chapter:${ch.id}`,
+        inputs: tracked.filter((it) => it.data.topicId === ch.id).map(inputOf),
+        key: `topic:${ch.id}`,
         label: ch.name,
       })),
     {
-      inputs: tracked.filter((it) => !it.data.chapterId).map(inputOf),
+      inputs: tracked.filter((it) => !it.data.topicId).map(inputOf),
       key: 'others',
       label: m.study_others(),
     },

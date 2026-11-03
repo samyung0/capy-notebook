@@ -6,12 +6,12 @@ import { api } from '@/api/client';
 // A typed name has the file name limit, as a rename has it.
 import { updateFileBodyNameMax as fileNameMax } from '@/api/gen/validators';
 import {
-  useChapters,
   useImportSources,
   useInspectSourceImports,
   useIntegrations,
   useRetryFileProcessing,
   useSourceUploadPolicy,
+  useTopics,
   useUploadSource,
   useWorkspace,
 } from '@/api/hooks';
@@ -79,12 +79,6 @@ import {
   useProviderConnect,
 } from '@/lib/useProviderConnect';
 import { audioLengthOrRefuse } from './audioDuration';
-import {
-  ChapterSelect,
-  chapterByName,
-  NewChapterInput,
-  RowPickerTrigger,
-} from './ChapterSelect';
 import { CreateFilePanel } from './CreateFilePanel';
 import { GenerateFilePanel } from './GenerateFilePanel';
 import type { GenerateMode } from './GenerateForm';
@@ -133,6 +127,12 @@ import {
   type ParseMode,
   parseModeIssues,
 } from './sourceUpload';
+import {
+  NewTopicInput,
+  RowPickerTrigger,
+  TopicSelect,
+  topicByName,
+} from './TopicSelect';
 import { YourFilesPanel } from './YourFilesPanel';
 
 function reportPickerFailure(
@@ -156,8 +156,6 @@ export interface PendingSource {
   audioDurationPending?: boolean;
   /** The length the browser read. A file it cannot read is refused. */
   audioDurationSeconds?: number;
-  chapterId: string | null;
-  chapterName: string | null;
   contentType: string;
   driveId?: string;
   file?: File;
@@ -170,6 +168,8 @@ export interface PendingSource {
   provider?: Provider;
   sizeBytes: number;
   sizeEstimate: boolean;
+  topicId: string | null;
+  topicName: string | null;
 }
 
 function formatSize(bytes: number, estimated = false) {
@@ -335,8 +335,6 @@ function localRows(
         policy
       ),
       audioDurationPending: kind === 'audio',
-      chapterId: null,
-      chapterName: null,
       contentType: file.type || 'application/octet-stream',
       file,
       key,
@@ -346,6 +344,8 @@ function localRows(
       parseMode: defaultParseMode(file, kind, policy),
       sizeBytes: file.size,
       sizeEstimate: false,
+      topicId: null,
+      topicName: null,
     };
   });
 }
@@ -618,25 +618,25 @@ function SourceList({
   workspaceId,
 }: {
   batch: SourceBatch;
-  /** A stored file being retried: its chapter stays and it can't be removed. */
+  /** A stored file being retried: its topic stays and it can't be removed. */
   fixed?: boolean;
   uploadPolicy: SourceUploadPolicy;
-  /** null: standalone files, which have no chapter. */
+  /** null: standalone files, which have no topic. */
   workspaceId: string | null;
 }) {
-  const { data: chapters } = useChapters(workspaceId ?? '', {
+  const { data: topics } = useTopics(workspaceId ?? '', {
     errorBoundary: false,
   });
-  const pickChapter = !fixed && !!workspaceId;
+  const pickTopic = !fixed && !!workspaceId;
   const [creatingKey, setCreatingKey] = useState<string | null>(null);
-  const [newChapterName, setNewChapterName] = useState('');
+  const [newTopicName, setNewTopicName] = useState('');
 
-  function confirmCreateChapter(key: string) {
-    const name = newChapterName.trim();
+  function confirmCreateTopic(key: string) {
+    const name = newTopicName.trim();
     if (!name) return;
-    batch.patchSource(key, chapterByName(chapters, name));
+    batch.patchSource(key, topicByName(topics, name));
     setCreatingKey(null);
-    setNewChapterName('');
+    setNewTopicName('');
   }
 
   return (
@@ -705,35 +705,35 @@ function SourceList({
                 </span>
               )}
               <div className="ml-auto flex items-center">
-                {pickChapter ? (
+                {pickTopic ? (
                   creatingKey === source.key ? (
-                    <NewChapterInput
+                    <NewTopicInput
                       onCancel={() => setCreatingKey(null)}
-                      onChange={setNewChapterName}
-                      onConfirm={() => confirmCreateChapter(source.key)}
-                      value={newChapterName}
+                      onChange={setNewTopicName}
+                      onConfirm={() => confirmCreateTopic(source.key)}
+                      value={newTopicName}
                     />
                   ) : (
-                    <ChapterSelect
-                      chapterName={source.chapterName}
-                      chapters={chapters ?? []}
-                      onChange={(chapterId) =>
+                    <TopicSelect
+                      onChange={(topicId) =>
                         batch.patchSource(source.key, {
-                          chapterId,
-                          chapterName: null,
+                          topicId,
+                          topicName: null,
                         })
                       }
                       onCreateRequest={() => {
                         setCreatingKey(source.key);
-                        setNewChapterName('');
+                        setNewTopicName('');
                       }}
-                      value={source.chapterId}
+                      topicName={source.topicName}
+                      topics={topics ?? []}
+                      value={source.topicId}
                     />
                   )
                 ) : null}
                 {hasParseModes(source, uploadPolicy) && (
                   <>
-                    {pickChapter && (
+                    {pickTopic && (
                       <span
                         aria-hidden
                         className="size-0.75 shrink-0 translate-y-px rounded-full bg-fg-muted"
@@ -866,7 +866,7 @@ export function AddSourceDialog({
   open: boolean;
   onClose: () => void;
   /** The destination; null adds standalone files (No workspace): no
-   * chapters, no workspace file room and no Create tab. */
+   * topics, no workspace file room and no Create tab. */
   workspaceId: string | null;
   /** Opens what the Create tab made. */
   onOpenItem?: (item: OpenItem) => void;
@@ -993,8 +993,6 @@ export function AddSourceDialog({
               analysisInput,
               uploadPolicy
             ),
-            chapterId: retryFile.chapterId ?? null,
-            chapterName: null,
             contentType: '',
             fileId: retryFile.id,
             key: `retry-${retryFile.id}`,
@@ -1008,6 +1006,8 @@ export function AddSourceDialog({
             ),
             sizeBytes: retryFile.sizeBytes,
             sizeEstimate: false,
+            topicId: retryFile.topicId ?? null,
+            topicName: null,
           },
         ]);
       })
@@ -1043,8 +1043,6 @@ export function AddSourceDialog({
           source.file
             ? [
                 {
-                  chapterId: source.chapterId,
-                  chapterName: source.chapterName,
                   durationSeconds:
                     source.audioDurationSeconds == null
                       ? undefined
@@ -1062,6 +1060,8 @@ export function AddSourceDialog({
                       ? source.analysisResult?.pageCount
                       : undefined,
                   parseMode: source.parseMode,
+                  topicId: source.topicId,
+                  topicName: source.topicName,
                 },
               ]
             : []
@@ -1076,8 +1076,6 @@ export function AddSourceDialog({
           source.fileId && source.provider
             ? [
                 {
-                  chapterId: source.chapterId,
-                  chapterName: source.chapterName,
                   driveId: source.driveId,
                   fileId: source.fileId,
                   key: source.key,
@@ -1085,6 +1083,8 @@ export function AddSourceDialog({
                   name: source.name,
                   parseMode: source.parseMode,
                   provider: source.provider,
+                  topicId: source.topicId,
+                  topicName: source.topicName,
                 },
               ]
             : []
@@ -1205,8 +1205,6 @@ export function AddSourceDialog({
             analysisInput,
             uploadPolicy
           ),
-          chapterId: null,
-          chapterName: null,
           contentType: item.contentType,
           driveId: item.driveId,
           fileId: item.fileId,
@@ -1222,6 +1220,8 @@ export function AddSourceDialog({
           provider,
           sizeBytes: item.sizeBytes,
           sizeEstimate: item.sizeEstimate,
+          topicId: null,
+          topicName: null,
         };
       });
       if (!isCurrent()) return;

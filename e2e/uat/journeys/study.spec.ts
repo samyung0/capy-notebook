@@ -146,10 +146,10 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   const set = await cards(run, workspaceId);
   const nextTitle = 'Next quiz';
   const nextQuiz = await quiz(run, workspaceId, nextTitle);
-  const chapter = object(
+  const topic = object(
     await api(
       run.owner,
-      `/api/workspaces/${workspaceId}/chapters`,
+      `/api/workspaces/${workspaceId}/topics`,
       'POST',
       { name: 'Week 1' },
       201
@@ -160,13 +160,13 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     `/api/workspaces/${workspaceId}/content/reorder`,
     'POST',
     {
-      chapterId: string(chapter.id),
       items: [
         { id: file, type: 'file' },
         { id: finishedQuiz, type: 'material' },
         { id: set, type: 'material' },
         { id: nextQuiz, type: 'material' },
       ],
+      topicId: string(topic.id),
     },
     204
   );

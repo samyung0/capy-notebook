@@ -15,7 +15,7 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ch, err := f.s.AddChapter(ctx, other.ID, f.user, "Alkanes")
+	ch, err := f.s.AddTopic(ctx, other.ID, f.user, "Alkanes", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,14 +27,14 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Two notes in the other workspace's chapter, one outside it.
-	var inChapter []Material
+	// Two notes in the other workspace's topic, one outside it.
+	var inTopic []Material
 	for _, title := range []string{"Methane", "Ethane"} {
-		mt, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: other.ID, WorkspaceName: other.Name, Kind: "note", Title: title, ChapterID: &ch.ID, Content: materialTestContent(t, "# "+title)})
+		mt, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: other.ID, WorkspaceName: other.Name, Kind: "note", Title: title, TopicID: &ch.ID, Content: materialTestContent(t, "# "+title)})
 		if err != nil {
 			t.Fatal(err)
 		}
-		inChapter = append(inChapter, mt)
+		inTopic = append(inTopic, mt)
 	}
 
 	plan, err := f.s.CreateStudyPlan(ctx, f.user, f.ws.ID, "Winter exams")
@@ -43,8 +43,8 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 	}
 	steps := []PlanStepInput{
 		{Kind: "material", WorkspaceID: f.ws.ID, TargetID: note.ID},
-		{Kind: "material", WorkspaceID: other.ID, TargetID: inChapter[0].ID},
-		{Kind: "material", WorkspaceID: other.ID, TargetID: inChapter[1].ID},
+		{Kind: "material", WorkspaceID: other.ID, TargetID: inTopic[0].ID},
+		{Kind: "material", WorkspaceID: other.ID, TargetID: inTopic[1].ID},
 	}
 	if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &steps); err != nil {
 		t.Fatal(err)
@@ -89,9 +89,9 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 		}
 	}
 
-	// Notes alternating between a chapter and Others make one group each:
+	// Notes alternating between a topic and Others make one group each:
 	// 21 groups is refused.
-	cells, err := f.s.AddChapter(ctx, f.ws.ID, f.user, "Cells")
+	cells, err := f.s.AddTopic(ctx, f.ws.ID, f.user, "Cells", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 	for i := 0; i < studyPlanGroupCap+1; i++ {
 		mt := Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Kind: "note", Title: fmt.Sprintf("Part %d", i), Content: materialTestContent(t, "# Part")}
 		if i%2 == 0 {
-			mt.ChapterID = &cells.ID
+			mt.TopicID = &cells.ID
 		}
 		created, err := f.s.CreateMaterial(ctx, mt)
 		if err != nil {

@@ -36,7 +36,7 @@ test('the title opens Files from the top and ⋮ carries the workspace actions',
   await header.getByRole('button', { name: m.a11y_open_menu() }).click();
   for (const item of [
     m.action_add_file(),
-    m.action_add_chapter(),
+    m.action_add_topic(),
     m.study_mark_read(),
     m.workspace_settings(),
   ])

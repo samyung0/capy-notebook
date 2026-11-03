@@ -14,14 +14,14 @@ const { document, window } = parseHTML(
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 const ui = vi.hoisted(() => ({
-  pickChapter: (_id: string | null) => undefined as void,
+  pickTopic: (_id: string | null) => undefined as void,
   pickWorkspace: (_id: string) => undefined as void,
 }));
 const workspace = (id: string, name: string, canEdit: boolean) =>
   ({ capabilities: { canEdit }, iconId: 'books', id, name }) as Workspace;
 vi.mock('@/api/hooks', async (original) => ({
   ...(await original<typeof import('@/api/hooks')>()),
-  useChapters: () => ({ data: [] }),
+  useTopics: () => ({ data: [] }),
   useWorkspaces: () => ({
     data: [
       workspace('ws_a', 'Biology', true),
@@ -60,16 +60,16 @@ vi.mock('@/components/ui/Select', () => ({
   SelectTrigger: ({ children }: { children: ReactNode }) => children,
   SelectValue: () => null,
 }));
-vi.mock('./ChapterSelect', async (original) => ({
-  ...(await original<typeof import('./ChapterSelect')>()),
-  ChapterSelect: ({
+vi.mock('./TopicSelect', async (original) => ({
+  ...(await original<typeof import('./TopicSelect')>()),
+  TopicSelect: ({
     current,
     onChange,
   }: {
     current?: string | null;
     onChange: (id: string | null) => void;
   }) => {
-    ui.pickChapter = onChange;
+    ui.pickTopic = onChange;
     return <span data-current={String(current)} />;
   },
 }));
@@ -136,9 +136,9 @@ async function render() {
       <QueryClientProvider client={new QueryClient()}>
         <MoveFileDialog
           file={{
-            chapterId: 'ch_1',
             id: 'f_1',
             name: 'Cells.pdf',
+            topicId: 'ch_1',
             workspaceId: 'ws_a',
           }}
           onClose={onClose}
@@ -169,7 +169,7 @@ it('offers the workspaces the user edits, the current one marked, never No works
     m.destination_current(),
     '',
   ]);
-  // The file's chapter is preselected and marked too.
+  // The file's topic is preselected and marked too.
   expect(
     document.querySelector('[data-current]')?.getAttribute('data-current')
   ).toBe('ch_1');
@@ -215,13 +215,13 @@ it('asks before dropping study progress, then moves with the confirmation', asyn
   act(() => root.unmount());
 });
 
-it('moves to another chapter of the same workspace as a chapter move', async () => {
-  stubApi(() => Response.json({ chapterId: 'ch_2', id: 'f_1' }));
+it('moves to another topic of the same workspace as a topic move', async () => {
+  stubApi(() => Response.json({ id: 'f_1', topicId: 'ch_2' }));
   const { onClose, root } = await render();
-  await act(async () => ui.pickChapter('ch_2'));
+  await act(async () => ui.pickTopic('ch_2'));
   await submit();
   expect(calls.map((call) => [call.method, call.url, call.body])).toEqual([
-    ['PATCH', '/api/files/f_1', { chapterId: 'ch_2' }],
+    ['PATCH', '/api/files/f_1', { topicId: 'ch_2' }],
   ]);
   expect(onClose).toHaveBeenCalled();
   act(() => root.unmount());

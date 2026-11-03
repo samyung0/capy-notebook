@@ -53,7 +53,7 @@ export function PastReviews() {
   const rows = data?.pages.flatMap((page) => page.items) ?? [];
   const sorting: ColumnSort<PastReviewSort> = {
     ascending: params.dir === 'asc',
-    ascendingFirst: ['workspace', 'plan', 'chapter', 'status'],
+    ascendingFirst: ['workspace', 'plan', 'topic', 'status'],
     onSortChange: (next, asc) =>
       setSearch(sortSearch('pastReviews', next, asc, PAST_REVIEW_SORT_DEFAULT)),
     sort,
@@ -129,9 +129,9 @@ export function PastReviews() {
               },
               {
                 clamp: true,
-                id: 'chapter',
-                label: m.past_col_chapter(),
-                sort: 'chapter',
+                id: 'topic',
+                label: m.past_col_topic(),
+                sort: 'topic',
               },
               { id: 'quiz', label: m.past_col_quiz(), sort: 'quiz' },
               { id: 'cards', label: m.past_col_cards(), sort: 'cards' },
@@ -151,9 +151,6 @@ export function PastReviews() {
             rows={rows.map((r) => ({
               cells: {
                 cards: <ScoreText score={r.cards} />,
-                // A plan session's name is its plan, not a chapter.
-                chapter:
-                  r.group === 'plan' ? '' : groupName(r.group, r.chapterName),
                 date: (
                   <Link
                     className="after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
@@ -163,10 +160,13 @@ export function PastReviews() {
                     {formatDate(r.startedAt)}
                   </Link>
                 ),
-                plan: r.group === 'plan' ? r.chapterName : m.plan_default(),
+                plan: r.group === 'plan' ? r.topicName : m.plan_default(),
                 quiz: <ScoreText score={r.quiz} />,
                 status: <Status review={r} />,
                 time: m.past_minutes({ count: minutes(r) }),
+                // A plan session's name is its plan, not a topic.
+                topic:
+                  r.group === 'plan' ? '' : groupName(r.group, r.topicName),
                 workspace: (
                   <WorkspaceCell iconId={r.iconId} name={r.workspaceName} />
                 ),

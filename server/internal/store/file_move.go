@@ -12,11 +12,11 @@ import (
 )
 
 // MoveTarget is where MoveFiles puts files: a workspace and an optional
-// chapter, existing or new by name.
+// topic, existing or new by name.
 type MoveTarget struct {
 	WorkspaceID string
-	ChapterID   *string
-	ChapterName string
+	TopicID     *string
+	TopicName   string
 }
 
 // ProgressLossError refuses a move that would drop someone's started or
@@ -121,7 +121,7 @@ func (s *Store) MoveFiles(ctx context.Context, actorID string, fileIDs []string,
 	if err := s.gateWorkspaceFilesTx(ctx, tx, target.WorkspaceID, len(files)); err != nil {
 		return nil, err
 	}
-	chapterID, err := resolveUploadChapterID(ctx, tx, target.WorkspaceID, target.ChapterID, target.ChapterName)
+	topicID, err := s.resolveUploadTopicID(ctx, tx, target.WorkspaceID, target.TopicID, target.TopicName)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func (s *Store) MoveFiles(ctx context.Context, actorID string, fileIDs []string,
 	}
 
 	for _, f := range files {
-		if err := s.moveFileTx(ctx, tx, actorID, f.id, target.WorkspaceID, chapterID); err != nil {
+		if err := s.moveFileTx(ctx, tx, actorID, f.id, target.WorkspaceID, topicID); err != nil {
 			return nil, err
 		}
 	}
@@ -209,7 +209,7 @@ func readMovingFilesTx(ctx context.Context, tx pgx.Tx, ids []string, lock bool) 
 // building that content, the file is ingested there, paid by the mover as a
 // cross-space clone is. The alias is dropped before the file row changes (its
 // composite key names the old workspace) and after the copy read it.
-func (s *Store) moveFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID, workspaceID string, chapterID *string) error {
+func (s *Store) moveFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID, workspaceID string, topicID *string) error {
 	var contentID, contentHash string
 	var src models.Pin
 	var srcDim *int
@@ -284,12 +284,12 @@ func (s *Store) moveFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID, work
 		// The orphan trigger drops the old content once nothing holds it.
 		return err
 	}
-	position, err := nextContentPosition(ctx, tx, workspaceID, chapterID)
+	position, err := nextContentPosition(ctx, tx, workspaceID, topicID)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE files SET workspace_id=$2, chapter_id=$3, position=$4 WHERE id=$1`,
-		fileID, workspaceID, chapterID, position); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE files SET workspace_id=$2, topic_id=$3, position=$4 WHERE id=$1`,
+		fileID, workspaceID, topicID, position); err != nil {
 		return err
 	}
 	// A key borrowed from another file names that file's workspace, and a key

@@ -4,11 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { Topic } from './topic.ts';
+import type { BankTopic } from './bankTopic.ts';
 
 export interface Subject {
   id: string;
   label: string;
   /** @nullable */
-  topics: Topic[] | null;
+  topics: BankTopic[] | null;
 }

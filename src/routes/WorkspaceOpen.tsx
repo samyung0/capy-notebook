@@ -19,13 +19,13 @@ import {
 } from 'react-resizable-panels';
 import { createStore, type StoreApi, useStore } from 'zustand';
 import { isApiError } from '@/api/client';
-import { addChapterBodyNameMax } from '@/api/gen/validators';
+import { addTopicBodyNameMax } from '@/api/gen/validators';
 import {
-  useAddChapter,
-  useChapters,
+  useAddTopic,
   useFile,
   useFiles,
-  useUpdateChapter,
+  useTopics,
+  useUpdateTopic,
   useVisitWorkspace,
   useWorkspace,
   workspaceQuery,
@@ -391,12 +391,12 @@ function WorkspaceOpen() {
   useEffect(() => {
     if (loaded) visit({ id: workspaceId, visitor });
   }, [loaded, visit, visitor, workspaceId]);
-  const { data: chapters } = useChapters(workspaceId);
+  const { data: topics } = useTopics(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const readOnly = isWorkspaceReadOnly(ws?.capabilities);
   const canClone = !!ws?.canClone;
-  const { mutateAsync: addChapter } = useAddChapter(workspaceId);
-  const { mutateAsync: updateChapter } = useUpdateChapter(workspaceId);
+  const { mutateAsync: addTopic } = useAddTopic(workspaceId);
+  const { mutateAsync: updateTopic } = useUpdateTopic(workspaceId);
   const [cloneOpen, setCloneOpen] = useState(false);
 
   // Breakpoints: one column below 1260px, side panels from there, the left
@@ -553,7 +553,7 @@ function WorkspaceOpen() {
   }
 
   const [generating, setGenerating] = useState<GenerateMode | null>(null);
-  const [chapterForm, setChapterForm] = useState<
+  const [topicForm, setTopicForm] = useState<
     { mode: 'add' } | { mode: 'rename'; id: string; name: string } | null
   >(null);
   const [resumeProvider] = useState(() => resumedConnect(workspaceId));
@@ -691,9 +691,9 @@ function WorkspaceOpen() {
           onClick: () => setAddSource('upload'),
         },
         {
-          icon: 'chapter',
-          label: m.action_add_chapter(),
-          onClick: () => setChapterForm({ mode: 'add' }),
+          icon: 'topic',
+          label: m.action_add_topic(),
+          onClick: () => setTopicForm({ mode: 'add' }),
         },
       ];
   const settingsItems: MenuItem[] = [
@@ -776,14 +776,12 @@ function WorkspaceOpen() {
     <FilesPanel
       generating={generating}
       header={picker}
-      onAddChapter={
-        readOnly ? undefined : () => setChapterForm({ mode: 'add' })
-      }
       onAddSource={readOnly ? undefined : setAddSource}
+      onAddTopic={readOnly ? undefined : () => setTopicForm({ mode: 'add' })}
       onNavigate={() => setCitationTarget(null)}
       onOpenItem={setOpenItem}
-      onRenameChapter={(ch) =>
-        setChapterForm({ id: ch.id, mode: 'rename', name: ch.name })
+      onRenameTopic={(ch) =>
+        setTopicForm({ id: ch.id, mode: 'rename', name: ch.name })
       }
       openItem={openItem}
       readOnly={readOnly}
@@ -797,7 +795,7 @@ function WorkspaceOpen() {
   const noRow = () => null;
   // The Files dropdown's tree: the workspace as a plain row the size of a file
   // row (no switcher; Back leaves the workspace), Add file, Workspace settings
-  // and Study pinned under it; Add chapter stays in the header's ⋮.
+  // and Study pinned under it; Add topic stays in the header's ⋮.
   const filesDropdown = (
     <FilesPanel
       className="h-auto flex-1"
@@ -849,8 +847,8 @@ function WorkspaceOpen() {
         setFilesOpen(false);
       }}
       onOpenItem={setOpenItem}
-      onRenameChapter={(ch) =>
-        setChapterForm({ id: ch.id, mode: 'rename', name: ch.name })
+      onRenameTopic={(ch) =>
+        setTopicForm({ id: ch.id, mode: 'rename', name: ch.name })
       }
       openItem={openItem}
       readOnly={readOnly}
@@ -889,7 +887,6 @@ function WorkspaceOpen() {
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
         <CenterContent
-          chapters={chapters ?? []}
           color="purple"
           item={openItem}
           leading={
@@ -935,6 +932,7 @@ function WorkspaceOpen() {
           readOnly={readOnly}
           requestedMode={search.mode ?? null}
           study={!!search.study}
+          topics={topics ?? []}
           trailing={
             lg && (
               <ToolbarButton
@@ -1101,7 +1099,7 @@ function WorkspaceOpen() {
                     canReprocess={ws.isOwner}
                     color="purple"
                     dock={{
-                      // The page's ⋮ keeps Add file, not Add chapter.
+                      // The page's ⋮ keeps Add file, not Add topic.
                       menuItems: [...addItems.slice(0, 1), ...settingsItems],
                       office: officeOpen,
                     }}
@@ -1179,30 +1177,26 @@ function WorkspaceOpen() {
           workspace={ws}
         />
       )}
-      {chapterForm && (
+      {topicForm && (
         <NameFormDialog
-          defaultName={chapterForm.mode === 'rename' ? chapterForm.name : ''}
+          defaultName={topicForm.mode === 'rename' ? topicForm.name : ''}
           key={
-            chapterForm.mode === 'rename'
-              ? `rename-${chapterForm.id}`
-              : 'add-chapter'
+            topicForm.mode === 'rename' ? `rename-${topicForm.id}` : 'add-topic'
           }
-          maxLength={addChapterBodyNameMax}
-          onClose={() => setChapterForm(null)}
+          maxLength={addTopicBodyNameMax}
+          onClose={() => setTopicForm(null)}
           onSubmit={async (name) => {
-            if (chapterForm.mode === 'rename') {
-              await updateChapter({ id: chapterForm.id, name });
+            if (topicForm.mode === 'rename') {
+              await updateTopic({ id: topicForm.id, name });
             } else {
-              await addChapter(name);
+              await addTopic(name);
             }
           }}
           open
           submitLabel={
-            chapterForm.mode === 'add' ? m.action_create() : m.action_save()
+            topicForm.mode === 'add' ? m.action_create() : m.action_save()
           }
-          title={
-            chapterForm.mode === 'add' ? m.chapter_new() : m.chapter_rename()
-          }
+          title={topicForm.mode === 'add' ? m.topic_new() : m.topic_rename()}
         />
       )}
       {addSource && (

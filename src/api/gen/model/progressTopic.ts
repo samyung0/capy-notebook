@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ProgressChapter {
+export interface ProgressTopic {
   id: string;
   name: string;
   order: number;

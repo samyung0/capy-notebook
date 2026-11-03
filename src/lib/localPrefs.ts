@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 /**
  * Display preferences one viewer keeps in this browser: list or grid views,
- * list sorts, the workspace's side panels, which chapters are open. localStorage rather than
+ * list sorts, the workspace's side panels, which topics are open. localStorage rather than
  * IndexedDB because the first render reads them synchronously, so nothing
  * flashes from the default. Values are JSON. Storage can be blocked (private
  * windows); reads then give the fallback and writes are dropped.
@@ -27,13 +27,13 @@ export const PREF_KEYS = {
   mapFinishPlayed: 'capy.map.finishPlayed',
   /** A note's toolbar is shown in Edit (Q461; no key: hidden). */
   noteToolbar: 'capy.note.toolbar',
-  openChapters: (workspaceId: string) =>
-    `capy.workspace.openChapters.${workspaceId}`,
   /** The conversation a mounted chat panel shows, per workspace or for the
    * account chat (null), so a reload or a reopened tab comes back to it (Epo
    * 2026-10-27, T19). */
   openChat: (workspaceId: string | null) =>
     `capy.chat.open.${workspaceId ?? 'account'}`,
+  openTopics: (workspaceId: string) =>
+    `capy.workspace.openTopics.${workspaceId}`,
   /** A Quick review batch: its items, when it began, which are done; per
    * workspace, or `plan-<id>` per plan. */
   quickReview: (scope: string) => `capy.quickReview.${scope}`,

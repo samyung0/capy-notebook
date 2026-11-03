@@ -31,7 +31,7 @@ def run(monkeypatch, tmp_path):
     import office
 
     async def outline(_workspace_id):
-        return {"chapters": [], "files": []}
+        return {"topics": [], "files": []}
 
     async def reload_pending(_ctx, _file_id):
         return None
@@ -196,7 +196,7 @@ async def test_a_deck_reads_by_slide_and_a_stale_shape_write_shows_its_text(run)
         "id": "f_local_deck",
         "name": "lesson.pptx",
         "format": "pptx",
-        "chapter_id": None,
+        "topic_id": None,
         "base": deck,
         "checkpoint": await office.call("seedOffice", "pptx", office.wire(deck)),
         "edits": [],

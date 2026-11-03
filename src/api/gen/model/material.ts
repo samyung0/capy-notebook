@@ -19,8 +19,6 @@ export interface Material {
   readonly $schema?: string;
   audioMaxBytes: number;
   capabilities: AccessCapabilities;
-  /** @nullable */
-  chapterId: string | null;
   color?: UserColor;
   content: Envelope;
   /** UTF-8 byte length of persisted content JSON */
@@ -41,11 +39,13 @@ export interface Material {
   removedAssetIds?: string[] | null;
   revision: number;
   role?: WorkspaceRole;
-  scopeChapters: string[];
   scopeFileNames: string[];
+  scopeTopics: string[];
   sharePath?: string;
   storageFull?: StorageFullBy;
   title: string;
+  /** @nullable */
+  topicId: string | null;
   updatedAt: string;
   workspaceId: string;
   workspaceName: string;

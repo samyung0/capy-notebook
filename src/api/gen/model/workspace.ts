@@ -17,7 +17,6 @@ export interface Workspace {
   autoProcess: boolean;
   canClone: boolean;
   capabilities: AccessCapabilities;
-  chapterCount: number;
   /** The card's cover art; absent means none */
   cover?: Cover;
   createdAt: string;
@@ -33,4 +32,5 @@ export interface Workspace {
   sharePath: string;
   shareRole: ShareRole;
   tags: Tag[];
+  topicCount: number;
 }

@@ -14,7 +14,8 @@ import (
 type (
 	WorkspaceName        string
 	WorkspaceDescription string
-	ChapterName          string
+	TopicName            string
+	TopicDescription     string
 	StudyPlanName        string
 	FileName             string
 	MaterialTitle        string
@@ -40,8 +41,11 @@ func (WorkspaceName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Sche
 func (WorkspaceDescription) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	return withMax(s, fieldlimits.WorkspaceDescription)
 }
-func (ChapterName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
-	return withMax(s, fieldlimits.ChapterName)
+func (TopicName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+	return withMax(s, fieldlimits.TopicName)
+}
+func (TopicDescription) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+	return withMax(s, fieldlimits.TopicDescription)
 }
 func (StudyPlanName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	return withMax(s, fieldlimits.StudyPlanName)

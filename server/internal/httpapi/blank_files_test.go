@@ -27,21 +27,21 @@ func openBlankFiles(t *testing.T) (deckFileFixture, *officeAuthority) {
 }
 
 // An editor's blank DOCX is the engine's starter, stored as a ready source it
-// pays for and that is not processed, in the chapter it named, under the
+// pays for and that is not processed, in the topic it named, under the
 // trimmed name with one extension.
 func TestCreateBlankFileStoresTheStarter(t *testing.T) {
 	fx, authority := openBlankFiles(t)
 
 	rec := doAsUser(t, fx.h, http.MethodPost, "/api/workspaces/"+fx.ws+"/files/blank", fx.editor,
-		map[string]any{"format": "docx", "name": " Untitled  document 1.DOCX ", "chapterId": fx.ch})
+		map[string]any{"format": "docx", "name": " Untitled  document 1.DOCX ", "topicId": fx.ch})
 	var file struct {
 		ID, Name, Kind, Status string
-		ChapterID              *string `json:"chapterId"`
+		TopicID                *string `json:"topicId"`
 		Indexed                bool
 	}
 	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &file) != nil ||
 		file.Name != "Untitled document 1.docx" || file.Kind != "doc" || file.Status != "ready" ||
-		file.Indexed || file.ChapterID == nil || *file.ChapterID != fx.ch {
+		file.Indexed || file.TopicID == nil || *file.TopicID != fx.ch {
 		t.Fatalf("create = %d %s", rec.Code, rec.Body.String())
 	}
 	if sent := authority.sent("/internal/documents/create"); len(sent) != 1 ||

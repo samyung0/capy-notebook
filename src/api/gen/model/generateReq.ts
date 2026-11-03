@@ -13,7 +13,6 @@ import type { GenerateQuestionType } from './generateQuestionType.ts';
 export interface GenerateReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  chapters?: string[];
   /**
      * @minimum 1
      * @maximum 50
@@ -29,6 +28,7 @@ export interface GenerateReq {
      * @maxLength 120
      */
   title: string;
+  topics?: string[];
   /** @minItems 1 */
   types?: GenerateQuestionType[];
 }

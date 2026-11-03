@@ -11,7 +11,6 @@ import {
   attemptsQuery,
   billingQuery,
   cardsQuery,
-  chaptersQuery,
   conversationsQuery,
   eventsQuery,
   exploreFlashcardSetsQuery,
@@ -33,6 +32,7 @@ import {
   recentQuery,
   reviewOverviewQuery,
   tasksQuery,
+  topicsQuery,
   usageQuery,
   workspaceQuery,
   workspacesQuery,
@@ -271,7 +271,7 @@ const appRoutes = [
       const id = params.workspaceId;
       qc.prefetchQuery(workspaceQuery(id));
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
-      qc.prefetchQuery(chaptersQuery(id));
+      qc.prefetchQuery(topicsQuery(id));
       qc.prefetchQuery(filesQuery(id));
       qc.prefetchQuery(materialsQuery(id));
       qc.prefetchQuery(conversationsQuery(id));

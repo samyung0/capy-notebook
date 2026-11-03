@@ -232,8 +232,8 @@ type MaterialListItem struct {
 	Title         string       `json:"title"`
 	WorkspaceID   string       `json:"workspaceId"`
 	WorkspaceName string       `json:"workspaceName"`
-	ChapterID     *string      `json:"chapterId"`
-	ChapterName   string       `json:"chapterName"`
+	TopicID       *string      `json:"topicId"`
+	TopicName     string       `json:"topicName"`
 	Privacy       Privacy      `json:"privacy"`
 	// SharePath is the signed share link of a standalone quiz or flashcard set.
 	SharePath     string          `json:"sharePath,omitempty"`
@@ -304,14 +304,14 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, COALESCE(m.workspace_id,''), `+materialWorkspaceNameSQL+`,
-			m.chapter_id, COALESCE(c.name,''),
+			m.topic_id, COALESCE(c.name,''),
 			m.privacy, m.created_at, m.updated_at, m.size_bytes,
 			CASE WHEN m.kind='quiz' THEN (SELECT (SELECT count(*) FROM jsonb_array_elements(elem->'children') child WHERE child->>'type'='quiz_question')
 				FROM jsonb_array_elements(m.content->'value') elem WHERE elem->>'type'='quiz' LIMIT 1) END,
 			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id) END,
 			m.preview, `+lostMaterialSQL+`
 		FROM materials m
-		LEFT JOIN chapters c ON c.id=m.chapter_id`+where+
+		LEFT JOIN topics c ON c.id=m.topic_id`+where+
 		orderClause(sort, "m.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return MaterialPage{}, err
@@ -321,7 +321,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	for rows.Next() {
 		var item MaterialListItem
 		if err := rows.Scan(&item.ID, &item.Kind, &item.Title, &item.WorkspaceID, &item.WorkspaceName,
-			&item.ChapterID, &item.ChapterName,
+			&item.TopicID, &item.TopicName,
 			&item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes,
 			&item.QuestionCount, &item.CardCount, &item.Preview, &item.LostAccess); err != nil {
 			return MaterialPage{}, err
@@ -357,7 +357,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 
 // lostMaterialItem keeps what a payer needs to recognise and delete a row it
 // can no longer open: its name and size, where it sits, and when it was
-// created (Sam 2026-10-19). Chapter, counts, preview, share link and later
+// created (Sam 2026-10-19). Topic, counts, preview, share link and later
 // activity stay hidden.
 func lostMaterialItem(item MaterialListItem) MaterialListItem {
 	return MaterialListItem{
@@ -550,7 +550,7 @@ func (s *Store) ListWorkspaceRecent(ctx context.Context, wsID string, limit int)
 		return out, err
 	}
 	rows, err = s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, m.workspace_id, m.workspace_name,
-			m.chapter_id, m.privacy, m.created_at, m.updated_at, m.size_bytes, m.preview
+			m.topic_id, m.privacy, m.created_at, m.updated_at, m.size_bytes, m.preview
 		FROM materials m
 		WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 		ORDER BY m.created_at DESC, m.id LIMIT $2`, wsID, limit)
@@ -561,7 +561,7 @@ func (s *Store) ListWorkspaceRecent(ctx context.Context, wsID string, limit int)
 	for rows.Next() {
 		var item MaterialListItem
 		if err := rows.Scan(&item.ID, &item.Kind, &item.Title, &item.WorkspaceID, &item.WorkspaceName,
-			&item.ChapterID, &item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes, &item.Preview); err != nil {
+			&item.TopicID, &item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes, &item.Preview); err != nil {
 			return out, err
 		}
 		out.Materials = append(out.Materials, item)

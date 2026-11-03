@@ -9,7 +9,7 @@ export type ReviewSuggestionGroup = typeof ReviewSuggestionGroup[keyof typeof Re
 
 
 export const ReviewSuggestionGroup = {
-  chapter: 'chapter',
+  topic: 'topic',
   others: 'others',
   workspace: 'workspace',
 } as const;

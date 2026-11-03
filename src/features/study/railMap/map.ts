@@ -1,6 +1,6 @@
 /**
  * Learning's progress map: a workspace's tracked items as stops on a railway
- * line, a station at each chapter start, scenery from seeded biomes in between
+ * line, a station at each topic start, scenery from seeded biomes in between
  * (city and industry through town and farms to open country). Same rules as
  * the question bank's map: measured density labels, rhythm, a per
  * question-width budget, and the same workspace always draws the same map.
@@ -437,7 +437,7 @@ const smooth = (t: number) => {
   return c * c * (3 - 2 * c);
 };
 
-/** A chapter name on at most two board lines; longer names end in an ellipsis. */
+/** A topic name on at most two board lines; longer names end in an ellipsis. */
 export function wrapName(name: string) {
   const lines: string[] = [];
   let cur = '';
@@ -501,21 +501,21 @@ class Builder {
 
   constructor(
     id: string,
-    chapters: readonly string[],
+    topics: readonly string[],
     items: readonly (number | null)[],
     minWidth: number,
     only?: BiomeName
   ) {
     this.id = id;
     this.only = only;
-    // Each chapter opens with its station and the first item comes a little
+    // Each topic opens with its station and the first item comes a little
     // after the platform; unfiled items have no station and just follow on.
     let x = 20;
-    items.forEach((chapter, i) => {
-      if (chapter === null) x += i === 0 ? 60 : STEP;
-      else if (i === 0 || chapter !== items[i - 1]) {
+    items.forEach((topic, i) => {
+      if (topic === null) x += i === 0 ? 60 : STEP;
+      else if (i === 0 || topic !== items[i - 1]) {
         const sx = x + (i === 0 ? 40 : 56);
-        const lines = wrapName(chapters[chapter]);
+        const lines = wrapName(topics[topic]);
         const right = sx + B.stationWidth(lines);
         this.starts.push({ lines, right, sx });
         x = right + 52;
@@ -1147,16 +1147,16 @@ class Builder {
 }
 
 /**
- * The map for one workspace: chapter names, and each tracked item's chapter
+ * The map for one workspace: topic names, and each tracked item's topic
  * index in reading order (null when unfiled). Same input, same map; more items
  * only extend it. minWidth (map units) lets a short workspace fill its panel.
  */
 export const buildRailMap = (
   workspaceId: string,
-  chapters: readonly string[],
+  topics: readonly string[],
   items: readonly (number | null)[],
   minWidth = 0
-) => new Builder(workspaceId, chapters, items, minWidth).build();
+) => new Builder(workspaceId, topics, items, minWidth).build();
 
 /** Mean visual weight per question-width of each biome on its own, over many seeds. */
 export function measure(seeds = 20, total = 20) {
@@ -1166,7 +1166,7 @@ export function measure(seeds = 20, total = 20) {
     for (let k = 0; k < seeds; k++) {
       const builder = new Builder(
         `measure-${name}-${k}`,
-        ['Chapter'],
+        ['Topic'],
         Array.from({ length: total }, () => 0),
         0,
         name

@@ -19,41 +19,41 @@ type UpdateMeReq struct {
 }
 
 // CloneFileReq is the body for POST /api/files/{id}/clone: a file is copied
-// into a workspace the caller edits, optionally into one of its chapters or a
-// chapter by name (created when missing).
+// into a workspace the caller edits, optionally into one of its topics or a
+// topic by name (created when missing).
 type CloneFileReq struct {
-	WorkspaceID string      `json:"workspaceId,omitempty" doc:"Omitted for a standalone copy"`
-	ChapterID   string      `json:"chapterId,omitempty" doc:"A chapter of the workspace; exclusive with chapterName"`
-	ChapterName ChapterName `json:"chapterName,omitempty" doc:"A chapter of this name (any case), created when missing"`
-	Name        FileName    `json:"name" minLength:"1" doc:"The copy's name"`
+	WorkspaceID string    `json:"workspaceId,omitempty" doc:"Omitted for a standalone copy"`
+	TopicID     string    `json:"topicId,omitempty" doc:"A topic of the workspace; exclusive with topicName"`
+	TopicName   TopicName `json:"topicName,omitempty" doc:"A topic of this name (any case), created when missing"`
+	Name        FileName  `json:"name" minLength:"1" doc:"The copy's name"`
 }
 
 // MoveFilesReq is the body for POST /api/files/move: files put into a
 // workspace (Epo 2026-10-27), refused with progress_loss until confirmed when
 // the workspaces they leave hold study progress or plan steps for them.
 type MoveFilesReq struct {
-	FileIDs             []string    `json:"fileIds" minItems:"1" maxItems:"20"`
-	WorkspaceID         string      `json:"workspaceId" minLength:"1"`
-	ChapterID           string      `json:"chapterId,omitempty" doc:"A chapter of the workspace; exclusive with chapterName"`
-	ChapterName         ChapterName `json:"chapterName,omitempty" doc:"A chapter of this name (any case), created when missing"`
-	ConfirmProgressLoss bool        `json:"confirmProgressLoss,omitempty" doc:"Drop the left workspaces' study progress and plan steps for these files"`
+	FileIDs             []string  `json:"fileIds" minItems:"1" maxItems:"20"`
+	WorkspaceID         string    `json:"workspaceId" minLength:"1"`
+	TopicID             string    `json:"topicId,omitempty" doc:"A topic of the workspace; exclusive with topicName"`
+	TopicName           TopicName `json:"topicName,omitempty" doc:"A topic of this name (any case), created when missing"`
+	ConfirmProgressLoss bool      `json:"confirmProgressLoss,omitempty" doc:"Drop the left workspaces' study progress and plan steps for these files"`
 }
 
 // CreateBlankFileReq is the body for POST /api/workspaces/{id}/files/blank:
 // a blank Word or Excel file from the Office engine's starter, named without
 // its extension.
 type CreateBlankFileReq struct {
-	Format    string   `json:"format" enum:"docx,xlsx"`
-	Name      FileName `json:"name" minLength:"1" doc:"The file's name without its extension"`
-	ChapterID string   `json:"chapterId,omitempty" doc:"A chapter of the workspace"`
+	Format  string   `json:"format" enum:"docx,xlsx"`
+	Name    FileName `json:"name" minLength:"1" doc:"The file's name without its extension"`
+	TopicID string   `json:"topicId,omitempty" doc:"A topic of the workspace"`
 }
 
 // CloneMaterialReq is the body for POST /api/materials/{id}/clone: like
 // CloneFileReq, but without a workspace the copy is a private standalone item.
 type CloneMaterialReq struct {
 	WorkspaceID string        `json:"workspaceId,omitempty" doc:"Omitted for a standalone copy"`
-	ChapterID   string        `json:"chapterId,omitempty" doc:"A chapter of the workspace; exclusive with chapterName"`
-	ChapterName ChapterName   `json:"chapterName,omitempty" doc:"A chapter of this name (any case), created when missing"`
+	TopicID     string        `json:"topicId,omitempty" doc:"A topic of the workspace; exclusive with topicName"`
+	TopicName   TopicName     `json:"topicName,omitempty" doc:"A topic of this name (any case), created when missing"`
 	Title       MaterialTitle `json:"title" minLength:"1" doc:"The copy's title, unique in its workspace"`
 }
 
@@ -93,17 +93,19 @@ type UpdateWorkspaceSharingReq struct {
 	ShareRole *store.ShareRole `json:"shareRole,omitempty"`
 }
 
-type AddChapterReq struct {
-	Name ChapterName `json:"name" minLength:"1" doc:"Chapter name"`
+type AddTopicReq struct {
+	Name        TopicName        `json:"name" minLength:"1" doc:"Topic name"`
+	Description TopicDescription `json:"description,omitempty" doc:"One optional line on what the topic covers"`
 }
 
-type UpdateChapterReq struct {
-	Name  *ChapterName `json:"name,omitempty" minLength:"1"`
-	Order *int         `json:"order,omitempty"`
+type UpdateTopicReq struct {
+	Name        *TopicName        `json:"name,omitempty" minLength:"1"`
+	Description *TopicDescription `json:"description,omitempty" doc:"One line on what the topic covers; empty clears it"`
+	Order       *int              `json:"order,omitempty"`
 }
 
-type ReorderChaptersReq struct {
-	IDs []string `json:"ids" minItems:"1" doc:"Chapter ids in the desired order"`
+type ReorderTopicsReq struct {
+	IDs []string `json:"ids" minItems:"1" doc:"Topic ids in the desired order"`
 }
 
 type ContentOrderItem struct {
@@ -112,15 +114,15 @@ type ContentOrderItem struct {
 }
 
 type ReorderContentReq struct {
-	ChapterID *string            `json:"chapterId" doc:"Destination chapter; null means the unfiled bucket"`
-	Items     []ContentOrderItem `json:"items" minItems:"1" doc:"Destination content in the desired mixed order"`
+	TopicID *string            `json:"topicId" doc:"Destination topic; null means the unfiled bucket"`
+	Items   []ContentOrderItem `json:"items" minItems:"1" doc:"Destination content in the desired mixed order"`
 }
 
 // UpdateFileReq is the (partial) body for PATCH /api/files/{id} — rename and/or
-// move to a chapter.
+// move to a topic.
 type UpdateFileReq struct {
-	Name      *FileName `json:"name,omitempty" minLength:"1"`
-	ChapterID *string   `json:"chapterId,omitempty"`
+	Name    *FileName `json:"name,omitempty" minLength:"1"`
+	TopicID *string   `json:"topicId,omitempty"`
 }
 
 // TrashActionReq identifies one restore of one trash episode. The request id
@@ -144,7 +146,7 @@ type CreateMaterialReq struct {
 	Kind           store.MaterialKind    `json:"kind" doc:"Material kind"`
 	Title          MaterialTitle         `json:"title,omitempty"`
 	Content        *materialdoc.Envelope `json:"content,omitempty" doc:"Versioned Plate document"`
-	ScopeChapters  []string              `json:"scopeChapters,omitempty"`
+	ScopeTopics    []string              `json:"scopeTopics,omitempty"`
 	ScopeFileNames []string              `json:"scopeFileNames,omitempty"`
 }
 
@@ -165,14 +167,14 @@ type CardContent struct {
 
 // UpdateMaterialReq is the (partial) body for PATCH /api/materials/{id}/metadata.
 //
-// ChapterID files the material under a chapter (membership): omit to leave it
-// unchanged, send an empty string to unfile it, or a chapter id to file it. The
+// TopicID files the material under a topic (membership): omit to leave it
+// unchanged, send an empty string to unfile it, or a topic id to file it. The
 // empty-string sentinel is needed because JSON null is indistinguishable from
 // an omitted field with a single pointer.
 type UpdateMaterialReq struct {
 	Title          *MaterialTitle `json:"title,omitempty" minLength:"1"`
-	ChapterID      *string        `json:"chapterId,omitempty" doc:"Chapter to file under; empty string unfiles; omit to leave unchanged"`
-	ScopeChapters  *[]string      `json:"scopeChapters,omitempty"`
+	TopicID        *string        `json:"topicId,omitempty" doc:"Topic to file under; empty string unfiles; omit to leave unchanged"`
+	ScopeTopics    *[]string      `json:"scopeTopics,omitempty"`
 	ScopeFileNames *[]string      `json:"scopeFileNames,omitempty"`
 }
 
@@ -219,14 +221,14 @@ type UpdateCommentReq struct {
 type CreateQuizReq struct {
 	Name        MaterialTitle    `json:"name,omitempty"`
 	WorkspaceID string           `json:"workspaceId,omitempty"`
-	Chapters    []string         `json:"chapters,omitempty"`
+	Topics      []string         `json:"topics,omitempty"`
 	Questions   []map[string]any `json:"questions,omitempty"`
 	Privacy     store.Privacy    `json:"privacy,omitempty"`
 }
 
 type UpdateQuizMetadataReq struct {
-	Name     *MaterialTitle `json:"name,omitempty" minLength:"1"`
-	Chapters *[]string      `json:"chapters,omitempty"`
+	Name   *MaterialTitle `json:"name,omitempty" minLength:"1"`
+	Topics *[]string      `json:"topics,omitempty"`
 }
 
 // Answers maps part ids to a learner's answers; questions.ScorePart documents
@@ -306,7 +308,7 @@ type GenerateReq struct {
 	Types       []store.GenerateQuestionType `json:"types,omitempty" minItems:"1" default:"[\"mcq\"]" nullable:"false"`
 	Detail      store.GenerateDetail         `json:"detail,omitempty" default:"standard"`
 	DiagramType store.GenerateDiagramType    `json:"diagramType,omitempty" default:"auto"`
-	Chapters    []string                     `json:"chapters,omitempty" nullable:"false"`
+	Topics      []string                     `json:"topics,omitempty" nullable:"false"`
 	FileIds     []string                     `json:"fileIds,omitempty" nullable:"false"`
 	Title       MaterialTitle                `json:"title" minLength:"1"`
 }
@@ -315,13 +317,13 @@ type GenerateReq struct {
 // uploadSource); the schema bounds are checked there. Empty kind and parseMode
 // are inferred from name, then validated. That inference is not a product default.
 type CreateSourceUploadReq struct {
-	Name        FileName    `json:"name" minLength:"1"`
-	Kind        string      `json:"kind,omitempty"`
-	ChapterID   *string     `json:"chapterId,omitempty"`
-	ChapterName ChapterName `json:"chapterName,omitempty"`
-	ParseMode   string      `json:"parseMode,omitempty"`
-	SizeBytes   int64       `json:"sizeBytes"`
-	ContentType string      `json:"contentType,omitempty"`
+	Name        FileName  `json:"name" minLength:"1"`
+	Kind        string    `json:"kind,omitempty"`
+	TopicID     *string   `json:"topicId,omitempty"`
+	TopicName   TopicName `json:"topicName,omitempty"`
+	ParseMode   string    `json:"parseMode,omitempty"`
+	SizeBytes   int64     `json:"sizeBytes"`
+	ContentType string    `json:"contentType,omitempty"`
 	// EstimatedCreditMicros is the browser's page/duration estimate at the
 	// upload policy rates. It only gates admission headroom; the parser
 	// receipt bills the measured pages.
@@ -341,13 +343,13 @@ type CreateSourceUploadReq struct {
 
 // ImportSourcesReq pulls files from a connected Drive/OneDrive account.
 type ImportSourcesReq struct {
-	Provider    string      `json:"provider" enum:"google,microsoft"`
-	FileIds     []string    `json:"fileIds" minItems:"1" maxItems:"20" nullable:"false"`
-	DriveIds    []string    `json:"driveIds,omitempty" nullable:"false"`
-	ChapterID   *string     `json:"chapterId,omitempty"`
-	ChapterName ChapterName `json:"chapterName,omitempty"`
-	ParseMode   string      `json:"parseMode,omitempty" enum:"fast,none"`
-	RequestID   string      `json:"requestId,omitempty" maxLength:"128"`
+	Provider  string    `json:"provider" enum:"google,microsoft"`
+	FileIds   []string  `json:"fileIds" minItems:"1" maxItems:"20" nullable:"false"`
+	DriveIds  []string  `json:"driveIds,omitempty" nullable:"false"`
+	TopicID   *string   `json:"topicId,omitempty"`
+	TopicName TopicName `json:"topicName,omitempty"`
+	ParseMode string    `json:"parseMode,omitempty" enum:"fast,none"`
+	RequestID string    `json:"requestId,omitempty" maxLength:"128"`
 	// BatchID names the import submission; BatchTotal is its picked items.
 	// Each request then counts its own files in the batch.
 	BatchID    string `json:"batchId" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9_-]+$"`

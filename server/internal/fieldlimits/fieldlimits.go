@@ -20,10 +20,12 @@ const (
 	// WorkspaceTags is a workspace's tag count (CreateWorkspaceReq's
 	// maxItems), a count rather than characters.
 	WorkspaceTags = 5
-	ChapterName   = 60
-	StudyPlanName = 60
-	FileName      = 120
-	MaterialTitle = FileName
+	TopicName     = 60
+	// TopicDescription is a topic's optional one line on what it covers.
+	TopicDescription = 200
+	StudyPlanName    = 60
+	FileName         = 120
+	MaterialTitle    = FileName
 	// An agent-made material's or file's made-from line: at most
 	// MaterialSources entries of at most MaterialSource characters.
 	MaterialSources   = 20
@@ -170,7 +172,8 @@ var Columns = map[string]int{
 	"users.email":                      Email,
 	"workspaces.name":                  WorkspaceName,
 	"workspaces.description":           WorkspaceDescription,
-	"chapters.name":                    ChapterName,
+	"topics.name":                      TopicName,
+	"topics.description":               TopicDescription,
 	"study_plans.name":                 StudyPlanName,
 	"files.name":                       FileName,
 	"materials.workspace_name":         WorkspaceName,
@@ -185,7 +188,7 @@ var Columns = map[string]int{
 	"workspace_invites.email":          Email,
 	"conversations.title":              ConversationTitle,
 	"editor_assets.name":               FileName,
-	"upload_sessions.chapter_name":     ChapterName,
+	"upload_sessions.topic_name":       TopicName,
 	"upload_sessions.name":             FileName,
 	"anonymous_grading_usage.local_id": AnonymousLocalID,
 	"reconcile_runs.requested_by_name": UserName,

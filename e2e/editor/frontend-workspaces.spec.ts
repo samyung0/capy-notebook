@@ -155,7 +155,7 @@ test('workspace cards open settings and statistics without entering the workspac
   ).toBeVisible();
   // The five statistics, each a label followed by its number.
   await expect(settings).toMatchAriaSnapshot(`
-    - paragraph: ${JSON.stringify(m.quiz_col_chapters())}
+    - paragraph: ${JSON.stringify(m.quiz_col_topics())}
     - paragraph: /^\\d+$/
     - paragraph: ${JSON.stringify(m.nav_files())}
     - paragraph: /^\\d+$/
@@ -280,7 +280,7 @@ test('workspace sorting picks an order and reverses it from the active option', 
   for (const [sort, label] of [
     ['created', m.workspaces_sort_created()],
     ['accessed', m.workspaces_sort_accessed()],
-    ['chapters', m.workspaces_sort_chapters()],
+    ['topics', m.workspaces_sort_topics()],
     ['files', m.workspaces_sort_files()],
   ] as const) {
     if (sort !== 'created') await choose(label);

@@ -55,12 +55,12 @@ export function ReviewTab() {
           </div>
           {data.suggestions.map((s) => (
             <SuggestionRow
-              key={`${s.workspaceId}/${s.group}/${s.chapterId ?? ''}`}
+              key={`${s.workspaceId}/${s.group}/${s.topicId ?? ''}`}
               onStart={() =>
                 review(s.workspaceId, {
-                  chapterId: s.chapterId,
                   group: s.group,
                   reviewMode: s.mode,
+                  topicId: s.topicId,
                 })
               }
               suggestion={s}
@@ -74,7 +74,7 @@ export function ReviewTab() {
             {m.learning_continue_review()}
           </h3>
           {data.unfinished.map((u) => {
-            const group = groupName(u.group, u.chapterName);
+            const group = groupName(u.group, u.topicName);
             return (
               <Row
                 iconId={u.iconId}
@@ -182,7 +182,7 @@ function SuggestionRow({
         </UnderlineLink>
       }
       iconId={s.iconId}
-      title={groupName(s.group, s.chapterName) || s.workspaceName}
+      title={groupName(s.group, s.topicName) || s.workspaceName}
       titleSub={s.group === 'workspace' ? undefined : s.workspaceName}
     >
       <p className="text-fg-secondary text-sm">{reviewReason(s)}</p>

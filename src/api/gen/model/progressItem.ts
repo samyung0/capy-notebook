@@ -8,8 +8,6 @@ import type { ProgressItemState } from './progressItemState.ts';
 import type { ProgressItemType } from './progressItemType.ts';
 
 export interface ProgressItem {
-  /** @nullable */
-  chapterId: string | null;
   createdAt: string;
   doneAt?: string;
   id: string;
@@ -17,5 +15,7 @@ export interface ProgressItem {
   position: number;
   state?: ProgressItemState;
   title: string;
+  /** @nullable */
+  topicId: string | null;
   type: ProgressItemType;
 }

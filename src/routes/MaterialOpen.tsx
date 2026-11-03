@@ -55,7 +55,6 @@ export default function MaterialOpen() {
           <FileError />
         ) : (
           <CenterContent
-            chapters={[]}
             item={item}
             key={`${item?.kind}:${item?.id}`}
             leading={
@@ -82,6 +81,7 @@ export default function MaterialOpen() {
             readOnly={fileId ? fileReadOnly : false}
             requestedMode={'mode' in search ? search.mode : null}
             standalone
+            topics={[]}
             workspaceId={workspaceId}
           />
         )}

@@ -135,4 +135,4 @@ exposed to that.
 
 ## Fixtures
 
-- `workspace` — a throwaway workspace with `add_chapter` / `add_file` / `scalar`.
+- `workspace` — a throwaway workspace with `add_topic` / `add_file` / `scalar`.

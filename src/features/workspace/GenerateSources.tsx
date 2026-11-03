@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Chapter, MaterialRef, SourceFile } from '@/api/types';
+import type { MaterialRef, SourceFile, Topic } from '@/api/types';
 import { checkboxVariants } from '@/components/ui/Checkbox';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
@@ -15,29 +15,29 @@ type SourceItem = {
   icon: ReturnType<typeof fileIconName>;
 };
 
-/** A chapter (id) or the unfiled items (null) with the items it offers. */
+/** A topic (id) or the unfiled items (null) with the items it offers. */
 export type SourceGroup = {
   id: string | null;
   name: string;
   items: SourceItem[];
 };
 
-/** The pickable sources by chapter in reading order: indexed files and notes,
+/** The pickable sources by topic in reading order: indexed files and notes,
  * the items a generate run can read (the server also accepts other materials
- * but they hold no source text). Chapters with none are left out. */
+ * but they hold no source text). Topics with none are left out. */
 export function sourceGroups(
-  chapters: Chapter[],
+  topics: Topic[],
   files: SourceFile[],
   materials: MaterialRef[]
 ): SourceGroup[] {
   const items = readingOrder(
-    chapters,
+    topics,
     files.filter((f) => f.indexed),
     materials.filter((mt) => mt.type === 'note')
   );
-  const groupOf = (chapterId: string | null) =>
+  const groupOf = (topicId: string | null) =>
     items
-      .filter((it) => it.data.chapterId === chapterId)
+      .filter((it) => it.data.topicId === topicId)
       .map(
         (it): SourceItem =>
           it.type === 'file'
@@ -49,7 +49,7 @@ export function sourceGroups(
               }
       );
   return [
-    ...[...chapters]
+    ...[...topics]
       .sort((a, b) => a.order - b.order)
       .map((ch) => ({ id: ch.id, items: groupOf(ch.id), name: ch.name })),
     { id: null, items: groupOf(null), name: m.nav_section_others() },
@@ -57,23 +57,22 @@ export function sourceGroups(
 }
 
 /** The generate request's scope for a pick: nothing for the whole workspace,
- * fully ticked chapters by id and every other ticked item by id (the server
+ * fully ticked topics by id and every other ticked item by id (the server
  * takes their union). */
 export function scopeOf(groups: SourceGroup[], picked: ReadonlySet<string>) {
   const all = groups.flatMap((g) => g.items);
-  if (all.every((it) => picked.has(it.id)))
-    return { chapters: [], fileIds: [] };
-  const chapters: string[] = [];
+  if (all.every((it) => picked.has(it.id))) return { fileIds: [], topics: [] };
+  const topics: string[] = [];
   const fileIds: string[] = [];
   for (const g of groups) {
-    if (g.id && g.items.every((it) => picked.has(it.id))) chapters.push(g.id);
+    if (g.id && g.items.every((it) => picked.has(it.id))) topics.push(g.id);
     else for (const it of g.items) if (picked.has(it.id)) fileIds.push(it.id);
   }
-  return { chapters, fileIds };
+  return { fileIds, topics };
 }
 
-/** AI generate's Sources: Whole workspace, each chapter and Others as tick
- * rows, a chapter's items under its chevron. A tick covers the row's items,
+/** AI generate's Sources: Whole workspace, each topic and Others as tick
+ * rows, a topic's items under its chevron. A tick covers the row's items,
  * and a row with only some of them ticked shows a dash. */
 export function GenerateSources({
   groups,
@@ -161,7 +160,7 @@ export function GenerateSources({
                     icon: g.id && (
                       <Icon
                         className="shrink-0 text-fg-secondary"
-                        name="chapter"
+                        name="topic"
                         size={15}
                       />
                     ),
@@ -170,8 +169,8 @@ export function GenerateSources({
                 )}
                 <button
                   aria-expanded={expanded}
-                  aria-label={m.generate_show_chapter_items({
-                    chapter: g.name,
+                  aria-label={m.generate_show_topic_items({
+                    topic: g.name,
                   })}
                   className="grid size-7 shrink-0 place-items-center rounded-button text-fg-muted hover:bg-surface-hover-bg"
                   onClick={() => {

@@ -36,7 +36,7 @@ type documentListItem struct {
 	Title        string                  `json:"title"`
 	Format       string                  `json:"format"`
 	MaterialKind string                  `json:"materialKind"`
-	ChapterID    *string                 `json:"chapterId,omitempty"`
+	TopicID      *string                 `json:"topicId,omitempty"`
 	Editable     bool                    `json:"editable"`
 	Reason       string                  `json:"reason,omitempty"`
 }
@@ -124,7 +124,7 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 	for _, m := range refs {
 		items = append(items, documentListItem{
 			Kind: agenttools.KindMaterial, ID: m.ID, Title: m.Title, Format: "plate",
-			MaterialKind: string(m.Type), ChapterID: m.ChapterID, Editable: true,
+			MaterialKind: string(m.Type), TopicID: m.TopicID, Editable: true,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})

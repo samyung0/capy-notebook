@@ -166,7 +166,7 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `open_resource` | What the learner has open, `{"id", "kind", "title"}` or `null`; the turn context names it |
 | `study_preferences` | The learner's saved preferences; missing fields take the defaults in `pipeline/prompts/preferences.py` |
 | `preference_text` | `field=value` (`writingStyle=brief`, `mainFormat=note`, `visualAids=more`, `knowledgeChecks=questions`, `=cards` or `=off`) to the line that value adds to the turn context, in place of `pipeline/prompts/preferences.py`'s; edited in the Preference wording panel. The study preferences carry the style of notes and decks (Epo 2026-10-14), so this is where that style is tuned. A turn sends only the lines of its own `study_preferences` values. |
-| `study_progress` | `null` leaves `read_study_progress` unoffered; a dict is the fixture it returns, shaped like `/api/internal/study-progress` (`items`, `recentAttempts`, `weakChapters`) |
+| `study_progress` | `null` leaves `read_study_progress` unoffered; a dict is the fixture it returns, shaped like `/api/internal/study-progress` (`items`, `recentAttempts`, `weakTopics`) |
 | `history_mode` | `"evidence"` (default) is production: earlier turns replay their messages and packed evidence. `"full"` replays the previous turn's last request and final response verbatim (`local/runs/<id>/full_history.json`, with its numbered passages, so old citation numbers keep their meaning), every tool exchange kept until compaction folds it; the page sends the conversation's last run as `prior_run` (2026-10-25 experiment) |
 | `tools` | `null` (default) offers what production offers for an editor; a list of tool names narrows it for an experiment. Limits are production's (`pipeline/retrieval/limits.py`) |
 | `search` | `top_k`, `per_file_cap` |
@@ -197,7 +197,7 @@ Every turn runs the production prompt and loop: it answers a question or builds
 materials. The Library checkbox, the Open picker and the preference controls
 write `library`, `open_resource` and `study_preferences` into the config, and
 the turn context message shows them to the model, with the workspace's
-chapters in order. Library tools require the header to show a configured
+topics in order. Library tools require the header to show a configured
 library; a library that is down leaves the turn on the workspace. Build
 instructions are skills the model reads with `read_skill` (`editing`,
 `note_building` and `deck_building`, all production's); the write tools are refused until the
@@ -257,8 +257,8 @@ tool editors show the account text. Go's account routes are answered by
 `scripts/account.py` from the target database with Go's own SQL
 (`server/internal/store/account_scope.go`), read-only: `documents/access`
 (every account read and search) and `documents/list` (`list_sources`), with
-the run's own materials added. `create_workspace` and `create_chapter` make a
-workspace or chapter that exists only in the run; later listings and chapter
+the run's own materials added. `create_workspace` and `create_topic` make a
+workspace or topic that exists only in the run; later listings and topic
 checks see it. Other gateway reads are unreachable here, as in workspace
 mode: `inspect_document` and `inspect_office_document` of an item the
 database holds fail (Go reads its document); the run's own materials inspect.
@@ -297,7 +297,7 @@ model text as `answer_raw` and any repair output as `repair_raw`.
 
 ## Context, compaction and checkpoints
 
-Every model call's line also shows its output: the provider's total and reasoning tokens, and the visible part by where it went (the answer text and each tool call's arguments, estimated from their text); `done` sums them for the turn, and `run.json` keeps it per call as `output_split`. Each call's line also opens its turn context (open file and its chapter, the workspace chapters, preferences, library reads, budget left), kept per call in `run.json` as `turn_context`. Its **full context** button opens the whole request as sent to the provider, every message in order with its role and kind plus the tool schemas and `tool_choice` (images replaced by placeholders); the playground writes each request to `requests/<call>.json` in the run directory, served at `/api/runs/<run>/requests/<call>.json`. A finished answer is drawn below it crudely (`/api/openui` parses the OpenUI Lang; Markdown answers get headings, emphasis, lists and tables). Every model call emits a `context` line: the provider-reported input tokens
+Every model call's line also shows its output: the provider's total and reasoning tokens, and the visible part by where it went (the answer text and each tool call's arguments, estimated from their text); `done` sums them for the turn, and `run.json` keeps it per call as `output_split`. Each call's line also opens its turn context (open file and its topic, the workspace topics, preferences, library reads, budget left), kept per call in `run.json` as `turn_context`. Its **full context** button opens the whole request as sent to the provider, every message in order with its role and kind plus the tool schemas and `tool_choice` (images replaced by placeholders); the playground writes each request to `requests/<call>.json` in the run directory, served at `/api/runs/<run>/requests/<call>.json`. A finished answer is drawn below it crudely (`/api/openui` parses the OpenUI Lang; Markdown answers get headings, emphasis, lists and tables). Every model call emits a `context` line: the provider-reported input tokens
 (and cached reads), the production estimator's total against the limit the
 compactor enforces, and a breakdown by part: system prompt, tool schemas,
 memory (folded checkpoint), prior history, the query, this turn's assistant
@@ -390,7 +390,7 @@ The deck tools are always offered, as in production (Epo 2026-10-14; the
 Decks checkbox and `decks.offer` are gone). Main writes
 `study_preferences.mainFormat` (`note` or `deck`), which reaches the model in
 the turn context's study preferences and picks which building skill
-`read_skill` offers for the chapters, as in production. Mocks:
+`read_skill` offers for the topics, as in production. Mocks:
 `artifacts/2026-10-04-deck-layouts.html`.
 
 When the agent withholds a response for carrying tool-call markup (reported as
@@ -453,13 +453,13 @@ judged against the saved runs.
 | Request | Set | A good run |
 |---|---|---|
 | Help me study. | | Asks what to study and proposes a default before building |
-| Build me a study set for the whole document: an explainer and practice for each chapter. | | Proposes chapters, then builds them |
+| Build me a study set for the whole document: an explainer and practice for each topic. | | Proposes topics, then builds them |
 | Explain the file I have open, briefly. | Open a file | Builds one explainer directly |
 | What is the main argument of the document, and where is it stated? | | Answers with citations and builds nothing |
-| Make me a quiz on the first chapter. | Library off | Uses the workspace only |
-| Make notes for the first chapter. | Explainer brief, then detailed | Short note, key points first; then a full note with worked examples |
-| Make a short lecture deck on the first chapter. | Decks on | Outlines, then fills a deck |
-| Write a note on the first chapter with a diagram, a mini check and an interactive where it helps. | Visuals more, mini checks on | Mermaid, quiz or flashcards and html-embed fences pass the note checker |
+| Make me a quiz on the first topic. | Library off | Uses the workspace only |
+| Make notes for the first topic. | Explainer brief, then detailed | Short note, key points first; then a full note with worked examples |
+| Make a short lecture deck on the first topic. | Decks on | Outlines, then fills a deck |
+| Write a note on the first topic with a diagram, a mini check and an interactive where it helps. | Visuals more, mini checks on | Mermaid, quiz or flashcards and html-embed fences pass the note checker |
 
 ## Intake comparison
 
@@ -506,7 +506,7 @@ book PDF (excerpt ids resolved through the arm's library); `pairwise` is the
 blind A versus B and A versus C preference per request, and with
 `--model claude-sonnet-5-5 --sample 0.2` a second rater on a seeded fifth of
 the pairs; `locator` asks whether the first place a run read is on topic;
-`chapters` judges a generic request's notes as a set (chapters completed,
+`topics` judges a generic request's notes as a set (topics completed,
 notation, repeats) and records the run's mechanical counts; `summary` prints
 the tallies the report uses; `check` validates every written verdict against
 its schema and lists null ones. Every command resumes. `--eval <dir> --arms base,x,y` points it at another run folder whose arms are subfolders named by config, the first the baseline of every pair (for example `bench/rag/reports/local/2026-10-14-library-flow` with `intake-a,flow-search-subject`); runs since the ledger removal count no todos. With `--pack` (protocol

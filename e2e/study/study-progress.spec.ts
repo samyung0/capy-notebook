@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { APIRequestContext, Page } from '@playwright/test';
-import type { Chapter, SourceFile, StudySummary } from '../../src/api/types';
+import type { SourceFile, StudySummary, Topic } from '../../src/api/types';
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
 import { showPanelView } from '../helpers/panelView';
@@ -9,28 +9,28 @@ import { m } from '../i18n';
 // Study progress is per user, so each test either works in its own workspace
 // or acts as a user no other spec records progress for.
 
-async function addChapter(
+async function addTopic(
   api: APIRequestContext,
   workspaceId: string,
   name: string
 ) {
-  const res = await api.post(`/api/workspaces/${workspaceId}/chapters`, {
+  const res = await api.post(`/api/workspaces/${workspaceId}/topics`, {
     data: { name },
   });
   expect(res.status()).toBe(201);
-  return (await res.json()) as Chapter;
+  return (await res.json()) as Topic;
 }
 
-async function placeInChapter(
+async function placeInTopic(
   api: APIRequestContext,
   workspaceId: string,
-  chapterId: string,
+  topicId: string,
   materialIds: string[]
 ) {
   const res = await api.post(`/api/workspaces/${workspaceId}/content/reorder`, {
     data: {
-      chapterId,
       items: materialIds.map((id) => ({ id, type: 'material' })),
+      topicId,
     },
   });
   expect(res.status()).toBe(204);
@@ -255,14 +255,14 @@ test.describe('study progress', () => {
         title,
         workspaceId: ws.id,
       });
-    const one = await addChapter(ownerApi, ws.id, 'Chapter one');
-    const two = await addChapter(ownerApi, ws.id, 'Chapter two');
+    const one = await addTopic(ownerApi, ws.id, 'Topic one');
+    const two = await addTopic(ownerApi, ws.id, 'Topic two');
     const read = await note('Read note');
     const skipped = await note('Skipped note');
     const next = await note('Next note');
     const later = await note('Later note');
-    await placeInChapter(ownerApi, ws.id, one.id, [read.id, skipped.id]);
-    await placeInChapter(ownerApi, ws.id, two.id, [next.id, later.id]);
+    await placeInTopic(ownerApi, ws.id, one.id, [read.id, skipped.id]);
+    await placeInTopic(ownerApi, ws.id, two.id, [next.id, later.id]);
     await setStudyItem(ownerApi, ws.id, { materialId: read.id }, 'done');
     await setStudyItem(ownerApi, ws.id, { materialId: skipped.id }, 'removed');
 
@@ -319,13 +319,13 @@ test.describe('study progress', () => {
     const startedQuiz = await quiz('Started quiz');
     const startedSet = await set('Started cards');
     // Week 1 is finished by the steps below; Week 2 is only started.
-    const one = await addChapter(ownerApi, ws.id, 'Week 1');
-    const two = await addChapter(ownerApi, ws.id, 'Week 2');
-    await placeInChapter(ownerApi, ws.id, one.id, [
+    const one = await addTopic(ownerApi, ws.id, 'Week 1');
+    const two = await addTopic(ownerApi, ws.id, 'Week 2');
+    await placeInTopic(ownerApi, ws.id, one.id, [
       finishedQuiz.id,
       finishedSet.id,
     ]);
-    await placeInChapter(ownerApi, ws.id, two.id, [
+    await placeInTopic(ownerApi, ws.id, two.id, [
       startedQuiz.id,
       startedSet.id,
     ]);

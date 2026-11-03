@@ -39,7 +39,6 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 const attempt = (id: string, kind: 'quiz' | 'flashcards', takenAt: string) => ({
-  chapters: [],
   correct: 3,
   id,
   kind,
@@ -48,6 +47,7 @@ const attempt = (id: string, kind: 'quiz' | 'flashcards', takenAt: string) => ({
   quizName: '',
   startedAt: null,
   takenAt,
+  topics: [],
   total: 4,
   workspaceId: 'ws',
   workspaceName: 'Bio',
@@ -56,7 +56,6 @@ const attempt = (id: string, kind: 'quiz' | 'flashcards', takenAt: string) => ({
 vi.mock('@/api/hooks', () => ({
   stepKey: (st: { kind: string; targetId: string; workspaceId: string }) =>
     `${st.kind}:${st.workspaceId}:${st.targetId}`,
-  useChapters: () => ({ data: [] }),
   useCreateStudyPlan: () => ({ mutateAsync: vi.fn() }),
   useDeleteStudyPlan: () => ({ mutate: vi.fn() }),
   useFiles: () => ({
@@ -65,11 +64,11 @@ vi.mock('@/api/hooks', () => ({
       : [
           {
             addedAt: '',
-            chapterId: null,
             id: 'f1',
             kind: 'pdf',
             name: 'Cells.pdf',
             position: 0,
+            topicId: null,
           },
         ],
   }),
@@ -78,19 +77,19 @@ vi.mock('@/api/hooks', () => ({
       ? []
       : [
           {
-            chapterId: null,
             createdAt: '',
             id: 'qz',
             position: 1,
             title: 'Quiz',
+            topicId: null,
             type: 'quiz',
           },
           {
-            chapterId: null,
             createdAt: '',
             id: 'set',
             position: 2,
             title: 'Cards',
+            topicId: null,
             type: 'flashcards',
           },
         ],
@@ -109,6 +108,7 @@ vi.mock('@/api/hooks', () => ({
   useRateReviewItem: () => ({ mutateAsync: vi.fn() }),
   useResetWorkspaceStudy: () => ({ mutate: vi.fn() }),
   useSetStudyItem: () => ({ mutate: vi.fn() }),
+  useTopics: () => ({ data: [] }),
   useUpdateStudyPlan: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
   useWorkspace: () => ({ data: undefined }),
   useWorkspaceAttempts: () => ({
@@ -161,29 +161,29 @@ vi.mock('@/api/hooks', () => ({
       ],
       workspaces: [
         {
-          chapters: [],
           hidden: false,
           iconId: 'i',
           items: [
             {
-              chapterId: null,
               createdAt: '',
               id: 'f1',
               position: 0,
               state: 'done',
               title: 'Cells.pdf',
+              topicId: null,
               type: 'file',
             },
             {
-              chapterId: null,
               createdAt: '',
               id: 'qz',
               position: 1,
               title: 'Quiz',
+              topicId: null,
               type: 'material',
             },
           ],
           name: 'Bio',
+          topics: [],
           workspaceId: 'ws',
         },
       ],
@@ -285,7 +285,7 @@ it('points to settings and keeps the settings rows while study progress is hidde
   }
 });
 
-it('says there is nothing to study yet in an empty workspace, and lists unchaptered items under Others', () => {
+it('says there is nothing to study yet in an empty workspace, and lists items without a topic under Others', () => {
   expect(render()).toContain(m.study_others());
   content.empty = true;
   try {

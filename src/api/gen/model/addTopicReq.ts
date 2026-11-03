@@ -5,11 +5,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AddChapterReq {
+export interface AddTopicReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   /**
-     * Chapter name
+     * One optional line on what the topic covers
+     * @maxLength 200
+     */
+  description?: string;
+  /**
+     * Topic name
      * @minLength 1
      * @maxLength 60
      */

@@ -48,7 +48,6 @@ import type {
   BillingCheckoutReq,
   BillingInfo,
   CalendarEvent,
-  Chapter,
   ChatPrefs,
   ChatStatus,
   CheckQuizQuestionReq,
@@ -132,13 +131,13 @@ import type {
   StudySummary,
   Tag,
   Task,
+  Topic,
   TopUpReq,
   TrashActionReq,
   TrashItem,
   TrashPage,
   UndoEditReq,
   UndoPayload,
-  UpdateChapterReq,
   UpdateCommentReq,
   UpdateConversationReq,
   UpdateEventReq,
@@ -149,6 +148,7 @@ import type {
   UpdateMeReq,
   UpdateStandaloneSharingReq,
   UpdateTaskReq,
+  UpdateTopicReq,
   UpdateWorkspaceMemberReq,
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
@@ -198,7 +198,7 @@ function refetchIfLast(
   return qc.isMutating({ mutationKey }) === 1 ? refetch() : undefined;
 }
 
-/** Shared key for optimistic file, material and chapter ordering writes. */
+/** Shared key for optimistic file, material and topic ordering writes. */
 const contentMutationKey = (wsId: string) =>
   ['workspace', wsId, 'content'] as const;
 
@@ -207,7 +207,7 @@ function refetchContentIfLast(qc: QueryClient, wsId: string) {
     Promise.all([
       qc.invalidateQueries({ queryKey: qk.files(wsId) }),
       qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
-      qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
+      qc.invalidateQueries({ queryKey: qk.topics(wsId) }),
     ])
   );
 }
@@ -536,7 +536,7 @@ export function useEventStream(wsId: string) {
         qk.ownedFilesRoot,
       ];
       if (wsId) {
-        keys.push(qk.files(wsId), qk.materials(wsId), qk.chapters(wsId));
+        keys.push(qk.files(wsId), qk.materials(wsId), qk.topics(wsId));
       }
       for (const queryKey of keys) {
         void qc.refetchQueries({ queryKey, type: 'active' });
@@ -546,14 +546,14 @@ export function useEventStream(wsId: string) {
     };
     // One ingest raises several tree events seconds apart and a bulk write
     // raises one per transaction, so a trailing debounce per kind collapses a
-    // burst into one refetch. Chapters ride along: a row that arrives in a
-    // chapter this tab has not loaded would otherwise render nowhere. A
+    // burst into one refetch. Topics ride along: a row that arrives in a
+    // topic this tab has not loaded would otherwise render nowhere. A
     // hidden tab only marks the lists stale; refetch-on-focus reads them when
     // it comes back.
     const refetchTree = (kind: 'files' | 'materials') => {
       const keys: QueryKey[] = [
         kind === 'files' ? qk.files(wsId) : qk.materials(wsId),
-        qk.chapters(wsId),
+        qk.topics(wsId),
       ];
       for (const queryKey of keys) {
         void qc.invalidateQueries({
@@ -955,8 +955,8 @@ export function useImportSources(
       /** The submission and its picked-item count; one notification for all. */
       batchId: string;
       batchTotal: number;
-      chapterId?: string | null;
-      chapterName?: string | null;
+      topicId?: string | null;
+      topicName?: string | null;
       driveIds?: string[];
       fileIds: string[];
       parseMode?: 'fast' | 'none';
@@ -964,11 +964,11 @@ export function useImportSources(
       requestId?: string;
       signal?: AbortSignal;
     }) => {
-      const { signal, chapterId, chapterName, ...request } = body;
+      const { signal, topicId, topicName, ...request } = body;
       return api.post<unknown>(
         `${sourcesPath(workspaceId)}/import`,
-        // A standalone file has no chapter.
-        workspaceId ? { ...request, chapterId, chapterName } : request,
+        // A standalone file has no topic.
+        workspaceId ? { ...request, topicId, topicName } : request,
         { signal }
       );
     },
@@ -1191,7 +1191,7 @@ export function useRecordOpen() {
   );
 }
 
-/* ---------------- chapters & files ---------------- */
+/* ---------------- topics & files ---------------- */
 /** A presigned pair is read once, at fetch time, by whichever consumer mounts
  * it: nothing tracks expiresAt, nothing invalidates it, and neither focus nor
  * reconnect refetches, so a mounted view never sees a changed URL. gcTime 0
@@ -1226,16 +1226,16 @@ export const useSourceUploadPolicy = (
   options?: QueryUiOptions
 ) => useQuery({ ...sourceUploadPolicyQuery(wsId), meta: queryMeta(options) });
 
-export const chaptersQuery = (wsId: string) =>
+export const topicsQuery = (wsId: string) =>
   queryOptions({
     ...persisted,
     enabled: !!wsId,
-    queryFn: () => api.get<Chapter[]>(`/workspaces/${wsId}/chapters`),
-    queryKey: qk.chapters(wsId),
+    queryFn: () => api.get<Topic[]>(`/workspaces/${wsId}/topics`),
+    queryKey: qk.topics(wsId),
   });
-export const useChapters = (wsId: string, options?: QueryUiOptions) =>
+export const useTopics = (wsId: string, options?: QueryUiOptions) =>
   useQuery({
-    ...chaptersQuery(wsId),
+    ...topicsQuery(wsId),
     meta: queryMeta(options),
     refetchOnWindowFocus: true,
   });
@@ -1389,33 +1389,33 @@ export function useUpdateFile(wsId: string) {
       qc.invalidateQueries({ queryKey: qk.files(wsId) });
       qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       qc.invalidateQueries({ queryKey: qk.file(file.id) });
-      qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+      qc.invalidateQueries({ queryKey: qk.topics(wsId) });
     },
   });
 }
-/** File a source under a chapter (membership), or unfile it (chapterId=null).
+/** File a source under a topic (membership), or unfile it (topicId=null).
  * The API uses an empty-string sentinel to unfile; null maps to "". Optimistic:
- * patches the files cache, rolls back on error, reconciles chapters on settle. */
+ * patches the files cache, rolls back on error, reconciles topics on settle. */
 export function useMoveFile(wsId: string) {
   const qc = useQueryClient();
   return useMutation<
     SourceFile,
     Error,
-    { id: string; chapterId: string | null },
+    { id: string; topicId: string | null },
     { prev?: SourceFile[] }
   >({
     meta: { errorToast: false },
-    mutationFn: ({ id, chapterId }: { id: string; chapterId: string | null }) =>
-      api.patch<SourceFile>(`/files/${id}`, { chapterId: chapterId ?? '' }),
+    mutationFn: ({ id, topicId }: { id: string; topicId: string | null }) =>
+      api.patch<SourceFile>(`/files/${id}`, { topicId: topicId ?? '' }),
     mutationKey: contentMutationKey(wsId),
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.files(wsId), ctx.prev);
     },
-    onMutate: async ({ id, chapterId }) => {
+    onMutate: async ({ id, topicId }) => {
       await qc.cancelQueries({ queryKey: qk.files(wsId) });
       const prev = qc.getQueryData<SourceFile[]>(qk.files(wsId));
       qc.setQueryData<SourceFile[]>(qk.files(wsId), (list) =>
-        list?.map((f) => (f.id === id ? { ...f, chapterId } : f))
+        list?.map((f) => (f.id === id ? { ...f, topicId } : f))
       );
       return { prev };
     },
@@ -1423,7 +1423,7 @@ export function useMoveFile(wsId: string) {
   });
 }
 /** Move files into a workspace the caller edits (never out of one). `from`
- * holds the workspaces they leave, whose lists, chapters, stats and study
+ * holds the workspaces they leave, whose lists, topics, stats and study
  * progress change too. A 409 `progress_loss` asks before dropping study
  * progress: resend with `confirmProgressLoss`. */
 export function useMoveFiles(options?: MutationUiOptions) {
@@ -1447,7 +1447,7 @@ export function useMoveFiles(options?: MutationUiOptions) {
 function invalidateAfterFileDelete(qc: QueryClient, wsId: string) {
   qc.invalidateQueries({ queryKey: qk.files(wsId) });
   qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
-  qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+  qc.invalidateQueries({ queryKey: qk.topics(wsId) });
   qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
   qc.invalidateQueries({ queryKey: qk.trash() });
 }
@@ -1572,7 +1572,7 @@ function invalidateAfterTrashChange(qc: QueryClient, item: TrashItem) {
   if (item.workspaceId) {
     qc.invalidateQueries({ queryKey: qk.files(item.workspaceId) });
     qc.invalidateQueries({ queryKey: qk.materials(item.workspaceId) });
-    qc.invalidateQueries({ queryKey: qk.chapters(item.workspaceId) });
+    qc.invalidateQueries({ queryKey: qk.topics(item.workspaceId) });
     qc.invalidateQueries({ queryKey: qk.workspaceStats(item.workspaceId) });
     qc.invalidateQueries({ queryKey: qk.workspace(item.workspaceId) });
   }
@@ -1607,40 +1607,40 @@ export function usePurgeTrashed() {
   });
 }
 
-export function useAddChapter(wsId: string) {
+export function useAddTopic(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (name: string) =>
-      api.post<Chapter>(`/workspaces/${wsId}/chapters`, { name }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
+      api.post<Topic>(`/workspaces/${wsId}/topics`, { name }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.topics(wsId) }),
   });
 }
-export function useUpdateChapter(wsId: string) {
+export function useUpdateTopic(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: UpdateChapterReq & { id: string }) =>
-      api.patch<Chapter>(`/chapters/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
+    mutationFn: ({ id, ...body }: UpdateTopicReq & { id: string }) =>
+      api.patch<Topic>(`/topics/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.topics(wsId) }),
   });
 }
-export function useReorderChapters(wsId: string) {
+export function useReorderTopics(wsId: string) {
   const qc = useQueryClient();
-  return useMutation<void, Error, string[], { prev?: Chapter[] }>({
+  return useMutation<void, Error, string[], { prev?: Topic[] }>({
     mutationFn: (ids) =>
-      api.post<void>(`/workspaces/${wsId}/chapters/reorder`, { ids }),
+      api.post<void>(`/workspaces/${wsId}/topics/reorder`, { ids }),
     mutationKey: contentMutationKey(wsId),
     onError: (_error, _ids, context) => {
-      if (context?.prev) qc.setQueryData(qk.chapters(wsId), context.prev);
+      if (context?.prev) qc.setQueryData(qk.topics(wsId), context.prev);
     },
     onMutate: async (ids) => {
-      await qc.cancelQueries({ queryKey: qk.chapters(wsId) });
-      const prev = qc.getQueryData<Chapter[]>(qk.chapters(wsId));
+      await qc.cancelQueries({ queryKey: qk.topics(wsId) });
+      const prev = qc.getQueryData<Topic[]>(qk.topics(wsId));
       const positions = new Map(ids.map((id, order) => [id, order]));
-      qc.setQueryData<Chapter[]>(qk.chapters(wsId), (list) =>
+      qc.setQueryData<Topic[]>(qk.topics(wsId), (list) =>
         list
-          ?.map((chapter) => {
-            const order = positions.get(chapter.id);
-            return order === undefined ? chapter : { ...chapter, order };
+          ?.map((topic) => {
+            const order = positions.get(topic.id);
+            return order === undefined ? topic : { ...topic, order };
           })
           .sort((a, b) => a.order - b.order)
       );
@@ -1656,20 +1656,20 @@ export function useReorderContent(wsId: string) {
   return useMutation<
     void,
     Error,
-    { chapterId: string | null; items: ContentOrderItem[] },
+    { topicId: string | null; items: ContentOrderItem[] },
     { prevFiles?: SourceFile[]; prevMaterials?: MaterialRef[] }
   >({
     meta: { errorToast: false },
     mutationFn: ({
-      chapterId,
+      topicId,
       items,
     }: {
-      chapterId: string | null;
+      topicId: string | null;
       items: ContentOrderItem[];
     }) =>
       api.post<void>(`/workspaces/${wsId}/content/reorder`, {
-        chapterId,
         items,
+        topicId,
       }),
     mutationKey: contentMutationKey(wsId),
     onError: (_error, _variables, context) => {
@@ -1678,7 +1678,7 @@ export function useReorderContent(wsId: string) {
       if (context?.prevMaterials)
         qc.setQueryData(qk.materials(wsId), context.prevMaterials);
     },
-    onMutate: async ({ chapterId, items }) => {
+    onMutate: async ({ topicId, items }) => {
       await Promise.all([
         qc.cancelQueries({ queryKey: qk.files(wsId) }),
         qc.cancelQueries({ queryKey: qk.materials(wsId) }),
@@ -1691,9 +1691,7 @@ export function useReorderContent(wsId: string) {
       qc.setQueryData<SourceFile[]>(qk.files(wsId), (list) =>
         list?.map((file) => {
           const position = positions.get(`file:${file.id}`);
-          return position === undefined
-            ? file
-            : { ...file, chapterId, position };
+          return position === undefined ? file : { ...file, position, topicId };
         })
       );
       qc.setQueryData<MaterialRef[]>(qk.materials(wsId), (list) =>
@@ -1701,7 +1699,7 @@ export function useReorderContent(wsId: string) {
           const position = positions.get(`material:${material.id}`);
           return position === undefined
             ? material
-            : { ...material, chapterId, position };
+            : { ...material, position, topicId };
         })
       );
       return { prevFiles, prevMaterials };
@@ -1710,12 +1708,12 @@ export function useReorderContent(wsId: string) {
   });
 }
 
-export function useDeleteChapter(wsId: string) {
+export function useDeleteTopic(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/chapters/${id}`),
+    mutationFn: (id: string) => api.del<void>(`/topics/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+      qc.invalidateQueries({ queryKey: qk.topics(wsId) });
       qc.invalidateQueries({ queryKey: qk.files(wsId) });
     },
   });
@@ -1828,8 +1826,8 @@ export function useUploadSource(wsId: string | null) {
     mutationFn: async ({
       file,
       kind,
-      chapterId,
-      chapterName,
+      topicId,
+      topicName,
       parseMode,
       estimatedCreditMicros,
       pageCount,
@@ -1846,8 +1844,8 @@ export function useUploadSource(wsId: string | null) {
        * sends one notification once every file of the batch settles. */
       batchId: string;
       batchTotal: number;
-      chapterId?: string | null;
-      chapterName?: string | null;
+      topicId?: string | null;
+      topicName?: string | null;
       /** fast = OpenDataLoader, with OCR on text-less pages; none = store-only
        * for non-text kinds (no parse, not indexed). Text kinds (txt/md/json)
        * still index under none — there is no parse route to pick. */
@@ -1871,9 +1869,9 @@ export function useUploadSource(wsId: string | null) {
       const metadata = {
         batchId,
         batchTotal,
-        // A standalone file has no chapter: the fields stay out.
+        // A standalone file has no topic: the fields stay out.
         ...(wsId
-          ? { chapterId: chapterId ?? null, chapterName: chapterName ?? null }
+          ? { topicId: topicId ?? null, topicName: topicName ?? null }
           : {}),
         contentType: file.type || 'application/octet-stream',
         durationSeconds: durationSeconds || undefined,
@@ -1915,7 +1913,7 @@ export function useUploadSource(wsId: string | null) {
           if (!next.some((f) => f.id === file.id)) next.push(added);
           return next;
         });
-        qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+        qc.invalidateQueries({ queryKey: qk.topics(wsId) });
         // The file counts against the workspace from upload, not from ingest.
         qc.invalidateQueries({ queryKey: qk.workspace(wsId) });
         qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
@@ -2110,7 +2108,7 @@ export function useGenerate(wsId: string, options?: MutationUiOptions) {
 
 /* ---------------- study materials ---------------- */
 /** Unified, workspace-scoped list of study materials (mindmaps, diagrams,
- * quizzes, flashcardSets) for the left panel. Not chapter-scoped. */
+ * quizzes, flashcardSets) for the left panel. Not topic-scoped. */
 export const materialsQuery = (wsId: string) =>
   queryOptions({
     ...persisted,
@@ -2176,7 +2174,7 @@ export function useCreateStandaloneNote() {
   });
 }
 
-/** Copy a material into a workspace the caller edits (in a chapter, an
+/** Copy a material into a workspace the caller edits (in a topic, an
  * existing one or one named), or with no workspace into a private copy. */
 export function useCloneMaterial(options?: MutationUiOptions) {
   const qc = useQueryClient();
@@ -2194,13 +2192,13 @@ export function useCloneMaterial(options?: MutationUiOptions) {
       // Explore lists clone counts.
       qc.invalidateQueries({ queryKey: qk.exploreQuizzes });
       qc.invalidateQueries({ queryKey: qk.exploreFlashcardSets });
-      if (body.chapterName && material.workspaceId)
-        qc.invalidateQueries({ queryKey: qk.chapters(material.workspaceId) });
+      if (body.topicName && material.workspaceId)
+        qc.invalidateQueries({ queryKey: qk.topics(material.workspaceId) });
     },
   });
 }
 
-/** Copy a file into a workspace the caller edits, in a chapter or none, or
+/** Copy a file into a workspace the caller edits, in a topic or none, or
  * into No workspace (no workspaceId). */
 export function useCloneFile(options?: MutationUiOptions) {
   const qc = useQueryClient();
@@ -2213,8 +2211,8 @@ export function useCloneFile(options?: MutationUiOptions) {
       if (file.workspaceId)
         qc.invalidateQueries({ queryKey: qk.files(file.workspaceId) });
       qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
-      if (body.chapterName)
-        qc.invalidateQueries({ queryKey: qk.chapters(file.workspaceId) });
+      if (body.topicName)
+        qc.invalidateQueries({ queryKey: qk.topics(file.workspaceId) });
     },
   });
 }
@@ -2322,9 +2320,9 @@ export function useUpdateMaterial(wsId: string) {
           ? {
               ...current,
               ...(patch.title === undefined ? {} : { title: patch.title }),
-              ...(patch.scopeChapters === undefined
+              ...(patch.scopeTopics === undefined
                 ? {}
-                : { scopeChapters: patch.scopeChapters }),
+                : { scopeTopics: patch.scopeTopics }),
               ...(patch.scopeFileNames === undefined
                 ? {}
                 : { scopeFileNames: patch.scopeFileNames }),
@@ -2336,7 +2334,7 @@ export function useUpdateMaterial(wsId: string) {
       );
       if (
         patch.title !== undefined ||
-        patch.scopeChapters !== undefined ||
+        patch.scopeTopics !== undefined ||
         patch.scopeFileNames !== undefined
       ) {
         qc.invalidateQueries({ queryKey: qk.materials(wsId) });
@@ -2604,7 +2602,7 @@ export function useMaterialCollaborationToken(
   });
 }
 
-/** File a material under a chapter (membership), or unfile it (chapterId=null).
+/** File a material under a topic (membership), or unfile it (topicId=null).
  * The API uses an empty-string sentinel to unfile; null maps to "". Optimistic:
  * patches the materials list + single-material caches, rolls back on error. */
 export function useMoveMaterial(wsId: string) {
@@ -2612,28 +2610,28 @@ export function useMoveMaterial(wsId: string) {
   return useMutation<
     MaterialUpdateResult,
     Error,
-    { id: string; chapterId: string | null },
+    { id: string; topicId: string | null },
     { prevList?: MaterialRef[]; prevMaterial?: Material }
   >({
     meta: { errorToast: false },
-    mutationFn: ({ id, chapterId }: { id: string; chapterId: string | null }) =>
+    mutationFn: ({ id, topicId }: { id: string; topicId: string | null }) =>
       api.patch<MaterialUpdateResult>(`/materials/${id}/metadata`, {
-        chapterId: chapterId ?? '',
+        topicId: topicId ?? '',
       }),
     mutationKey: contentMutationKey(wsId),
     onError: (_e, { id }, ctx) => {
       if (ctx?.prevList) qc.setQueryData(qk.materials(wsId), ctx.prevList);
       if (ctx?.prevMaterial) qc.setQueryData(qk.material(id), ctx.prevMaterial);
     },
-    onMutate: async ({ id, chapterId }) => {
+    onMutate: async ({ id, topicId }) => {
       await qc.cancelQueries({ queryKey: qk.materials(wsId) });
       const prevList = qc.getQueryData<MaterialRef[]>(qk.materials(wsId));
       const prevMaterial = qc.getQueryData<Material>(qk.material(id));
       qc.setQueryData<MaterialRef[]>(qk.materials(wsId), (prev) =>
-        prev?.map((r) => (r.id === id ? { ...r, chapterId } : r))
+        prev?.map((r) => (r.id === id ? { ...r, topicId } : r))
       );
       qc.setQueryData<Material>(qk.material(id), (prev) =>
-        prev ? { ...prev, chapterId } : prev
+        prev ? { ...prev, topicId } : prev
       );
       return { prevList, prevMaterial };
     },
@@ -3400,7 +3398,7 @@ export const useExploreFlashcardSets = () =>
 
 /* ---------------- sharing & cloning ---------------- */
 
-/** Deep-copy a shared workspace (chapters, files, materials and — via the
+/** Deep-copy a shared workspace (topics, files, materials and — via the
  * pipeline — the parsed knowledge graph) into the caller's account, under the
  * name, description, icon, tags and cover in `body`. */
 export function useCloneWorkspace(options?: MutationUiOptions) {

@@ -8,10 +8,10 @@
 export interface UpdateQuizMetadataReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  chapters?: string[];
   /**
      * @minLength 1
      * @maxLength 120
      */
   name?: string;
+  topics?: string[];
 }

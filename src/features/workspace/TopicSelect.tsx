@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { addChapterBodyNameMax } from '@/api/gen/validators';
-import type { Chapter } from '@/api/types';
+import { addTopicBodyNameMax } from '@/api/gen/validators';
+import type { Topic } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
@@ -16,9 +16,9 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
-const NO_CHAPTER = '__none__';
-const CREATE_CHAPTER = '__create__';
-const TYPED_CHAPTER = '__typed__';
+const NO_TOPIC = '__none__';
+const CREATE_TOPIC = '__create__';
+const TYPED_TOPIC = '__typed__';
 
 // Row pickers copy the code block language trigger: ghost, muted, no chevron.
 export function RowPickerTrigger({ children }: { children: ReactNode }) {
@@ -39,24 +39,24 @@ export function RowPickerTrigger({ children }: { children: ReactNode }) {
  * dropdown matches it. */
 export const FIELD_WIDTH = 'w-52 sm:w-72';
 
-/** A row's chapter: an existing one, none, or (with onCreateRequest) New
- * chapter, which the caller swaps for NewChapterInput. chapterName shows a
- * typed chapter the server creates later. `field` draws a form dropdown
+/** A row's topic: an existing one, none, or (with onCreateRequest) New
+ * topic, which the caller swaps for NewTopicInput. topicName shows a
+ * typed topic the server creates later. `field` draws a form dropdown
  * instead of the ghost row picker. */
-export function ChapterSelect({
-  chapters,
+export function TopicSelect({
+  topics,
   value,
-  chapterName,
+  topicName,
   current,
   disabled,
   field,
   onChange,
   onCreateRequest,
 }: {
-  chapters: Chapter[];
+  topics: Topic[];
   value: string | null;
-  chapterName?: string | null;
-  /** Tags the item's own chapter (null: No chapter) "Current" in the list. */
+  topicName?: string | null;
+  /** Tags the item's own topic (null: No topic) "Current" in the list. */
   current?: string | null;
   disabled?: boolean;
   field?: boolean;
@@ -64,26 +64,26 @@ export function ChapterSelect({
   onCreateRequest?: () => void;
 }) {
   const label = (
-    // Plain text for "No chapter": SelectValue would copy the option's muted
+    // Plain text for "No topic": SelectValue would copy the option's muted
     // colour and cancel the trigger's hover colour.
     <span className={cn('line-clamp-1', !field && 'max-w-36')}>
-      {chapterName ?? (value ? <SelectValue /> : m.source_no_chapter())}
+      {topicName ?? (value ? <SelectValue /> : m.source_no_topic())}
     </span>
   );
   return (
     <Select
       disabled={disabled}
       onValueChange={(value) => {
-        if (value === CREATE_CHAPTER) {
+        if (value === CREATE_TOPIC) {
           onCreateRequest?.();
           return;
         }
-        if (value === TYPED_CHAPTER) return;
-        onChange(value === NO_CHAPTER ? null : value);
+        if (value === TYPED_TOPIC) return;
+        onChange(value === NO_TOPIC ? null : value);
       }}
-      // A typed chapter has no id yet; it gets its own item so the list
-      // points at it rather than at No chapter.
-      value={chapterName ? TYPED_CHAPTER : (value ?? NO_CHAPTER)}
+      // A typed topic has no id yet; it gets its own item so the list
+      // points at it rather than at No topic.
+      value={topicName ? TYPED_TOPIC : (value ?? NO_TOPIC)}
     >
       {field ? (
         <SelectTrigger className={FIELD_WIDTH} layout="row">
@@ -97,25 +97,23 @@ export function ChapterSelect({
           <SelectItem
             hint={current === null ? m.destination_current() : null}
             size="sm"
-            value={NO_CHAPTER}
+            value={NO_TOPIC}
           >
-            <span className="text-fg-muted">{m.source_no_chapter()}</span>
+            <span className="text-fg-muted">{m.source_no_topic()}</span>
           </SelectItem>
-          {chapterName && (
-            <SelectItem size="sm" value={TYPED_CHAPTER}>
-              <span className="line-clamp-1 translate-y-px">{chapterName}</span>
+          {topicName && (
+            <SelectItem size="sm" value={TYPED_TOPIC}>
+              <span className="line-clamp-1 translate-y-px">{topicName}</span>
             </SelectItem>
           )}
-          {chapters.map((chapter) => (
+          {topics.map((topic) => (
             <SelectItem
-              hint={current === chapter.id ? m.destination_current() : null}
-              key={chapter.id}
+              hint={current === topic.id ? m.destination_current() : null}
+              key={topic.id}
               size="sm"
-              value={chapter.id}
+              value={topic.id}
             >
-              <span className="line-clamp-1 translate-y-px">
-                {chapter.name}
-              </span>
+              <span className="line-clamp-1 translate-y-px">{topic.name}</span>
             </SelectItem>
           ))}
         </SelectGroup>
@@ -123,10 +121,10 @@ export function ChapterSelect({
           <>
             <SelectSeparator />
             <SelectGroup className="scroll-my-0">
-              <SelectItem size="sm" value={CREATE_CHAPTER}>
+              <SelectItem size="sm" value={CREATE_TOPIC}>
                 <span className="flex items-center gap-1.5">
                   <Icon className="-translate-y-px" name="plus" size={12} />
-                  {m.source_new_chapter()}
+                  {m.source_new_topic()}
                 </span>
               </SelectItem>
             </SelectGroup>
@@ -137,16 +135,16 @@ export function ChapterSelect({
   );
 }
 
-/** The name field New chapter opens: Enter or the check confirms a non-blank
+/** The name field New topic opens: Enter or the check confirms a non-blank
  * name, Escape cancels. */
-export function NewChapterInput({
+export function NewTopicInput({
   field,
   value,
   onChange,
   onConfirm,
   onCancel,
 }: {
-  /** Full-size input matching ChapterSelect's `field` dropdown. */
+  /** Full-size input matching TopicSelect's `field` dropdown. */
   field?: boolean;
   value: string;
   onChange: (value: string) => void;
@@ -157,17 +155,17 @@ export function NewChapterInput({
     <div className={cn('flex items-center', field && [FIELD_WIDTH, 'gap-1'])}>
       <Input
         autoFocus
-        maxLength={addChapterBodyNameMax}
+        maxLength={addTopicBodyNameMax}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
-            // Inside a form dialog, Enter names the chapter, not submits.
+            // Inside a form dialog, Enter names the topic, not submits.
             event.preventDefault();
             onConfirm();
           }
           if (event.key === 'Escape') onCancel();
         }}
-        placeholder={m.source_new_chapter_name()}
+        placeholder={m.source_new_topic_name()}
         size={field ? 'md' : 'sm'}
         value={value}
         variant={field ? 'light' : 'underline'}
@@ -176,7 +174,7 @@ export function NewChapterInput({
       <IconButton
         disabled={!value.trim()}
         icon="check"
-        label={m.source_create_chapter()}
+        label={m.source_create_topic()}
         onClick={onConfirm}
         size={field ? 'sm' : 'xs'}
         variant="ghost-hover"
@@ -185,14 +183,14 @@ export function NewChapterInput({
   );
 }
 
-/** A typed chapter name as the server files it: an existing chapter of that
+/** A typed topic name as the server files it: an existing topic of that
  * name in any case, else a new one created with the item. */
-export function chapterByName(chapters: Chapter[] | undefined, name: string) {
-  const existing = chapters?.find(
-    (chapter) => chapter.name.toLowerCase() === name.toLowerCase()
+export function topicByName(topics: Topic[] | undefined, name: string) {
+  const existing = topics?.find(
+    (topic) => topic.name.toLowerCase() === name.toLowerCase()
   );
   return {
-    chapterId: existing?.id ?? null,
-    chapterName: existing ? null : name,
+    topicId: existing?.id ?? null,
+    topicName: existing ? null : name,
   };
 }

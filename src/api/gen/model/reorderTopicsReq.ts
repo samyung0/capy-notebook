@@ -5,11 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ReorderChaptersReq {
+export interface ReorderTopicsReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   /**
-     * Chapter ids in the desired order
+     * Topic ids in the desired order
      * @minItems 1
      * @nullable
      */

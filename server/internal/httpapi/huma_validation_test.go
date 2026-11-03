@@ -101,9 +101,9 @@ func TestRequestBodyValidation(t *testing.T) {
 			body:   `{"tags":[{"value":"a"},{"value":"b"},{"value":"c"},{"value":"d"},{"value":"e"},{"value":"f"}]}`,
 		},
 		{
-			name:   "add chapter empty name",
+			name:   "add topic empty name",
 			method: http.MethodPost,
-			path:   "/api/workspaces/ws_1/chapters",
+			path:   "/api/workspaces/ws_1/topics",
 			body:   `{"name":""}`,
 		},
 		{

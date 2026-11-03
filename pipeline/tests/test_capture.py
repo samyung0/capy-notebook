@@ -35,10 +35,10 @@ def _passage(page: int, **kwargs) -> Passage:
 def _ctx(*pages: int) -> ToolContext:
     ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
-            {"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 1},
-            {"id": "f_2", "name": "other.pdf", "chapter_id": None, "chunks": 1},
+            {"id": "f_1", "name": "bio.pdf", "topic_id": None, "chunks": 1},
+            {"id": "f_2", "name": "other.pdf", "topic_id": None, "chunks": 1},
         ],
     }
     tools.assign_citations(ctx, [_passage(p) for p in pages])
@@ -998,8 +998,8 @@ async def test_image_source_is_its_own_page_one(monkeypatch):
     monkeypatch.setattr(tools.cfg, "capture_max_edge", 200)
     ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "photo.png", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "photo.png", "topic_id": None, "chunks": 1}],
     }
     # The caption chunk carries no page: it cites the image as a whole.
     tools.assign_citations(ctx, [_passage(None)])
@@ -1045,8 +1045,8 @@ async def test_text_source_still_refuses_through_the_renderer(monkeypatch):
     monkeypatch.setattr(capture.store, "file_page_source", _source)
     ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "notes.txt", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "notes.txt", "topic_id": None, "chunks": 1}],
     }
     tools.assign_citations(ctx, [_passage(None)])
     result = await tools._capture_page(
@@ -1059,12 +1059,12 @@ async def test_text_source_still_refuses_through_the_renderer(monkeypatch):
 async def test_capture_refuses_a_note_as_a_note():
     ctx = ToolContext(workspace_id="ws_1")
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
             {
                 "id": "mat_1",
                 "name": "Notes",
-                "chapter_id": None,
+                "topic_id": None,
                 "chunks": 1,
                 "kind": "material",
                 "material_kind": "note",

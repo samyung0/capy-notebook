@@ -60,8 +60,8 @@ export function recentThumbnail(item: RecentItem): Thumbnail {
       };
 }
 
-/** The chapter-only Move is left out: the list spans workspaces, so there is
- * no single chapter list to move within. Move to… picks its own. */
+/** The topic-only Move is left out: the list spans workspaces, so there is
+ * no single topic list to move within. Move to… picks its own. */
 function RecentActions({
   item,
   display,
@@ -73,7 +73,6 @@ function RecentActions({
     <ContentActions
       canClone={item.canClone}
       canMoveTo={item.kind === 'file' && item.canMoveTo}
-      chapters={[]}
       content={
         item.kind === 'file'
           ? toFileActionTarget(item.file)
@@ -86,6 +85,7 @@ function RecentActions({
       menuTriggerIcon="moreVertical"
       readOnly={!item.canEdit}
       showMove={false}
+      topics={[]}
       workspaceId={item.workspaceId}
     />
   );

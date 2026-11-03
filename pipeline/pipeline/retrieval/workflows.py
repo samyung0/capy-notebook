@@ -1,7 +1,7 @@
 """Deterministic generation workflows for /generate.
 
 Material generation is not a conversation. The scope is already known (the user
-picked chapters or files), the output shape is fixed, and the caller wants the
+picked topics or files), the output shape is fixed, and the caller wants the
 whole artifact or nothing. So these are fixed pipelines — gather, then produce —
 rather than agent loops: no tool budget to blow, no chance of the model deciding
 to answer in prose instead of returning the JSON the gateway must persist.
@@ -165,10 +165,10 @@ async def gather_context(
     return "\n\n".join(body), passages[: len(body)]
 
 
-def scope_label(chapters: list[str], file_names: list[str]) -> str:
+def scope_label(topics: list[str], file_names: list[str]) -> str:
     parts = []
-    if chapters:
-        parts.append("chapters " + ", ".join(chapters))
+    if topics:
+        parts.append("topics " + ", ".join(topics))
     if file_names:
         parts.append("documents " + ", ".join(file_names[:12]))
     return "; ".join(parts)

@@ -2017,9 +2017,9 @@ async def test_reindexing_removes_the_tail_of_the_previous_run(workspace):
 # --------------------------------------------------------- structure & tree
 
 
-async def test_workspace_outline_groups_files_under_chapters(workspace):
-    chapter = workspace.add_chapter("Biology")
-    filed = workspace.add_file("filed.txt", chapter)
+async def test_workspace_outline_groups_files_under_topics(workspace):
+    topic = workspace.add_topic("Biology")
+    filed = workspace.add_file("filed.txt", topic)
     unfiled = workspace.add_file("unfiled.txt")
     await _write(workspace, filed, ["alpha"])
     content_id = workspace.scalar(
@@ -2034,11 +2034,11 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
 
     outline = await store.workspace_outline(workspace.id)
 
-    assert [c["name"] for c in outline["chapters"]] == ["Biology"]
+    assert [c["name"] for c in outline["topics"]] == ["Biology"]
     by_id = {f["id"]: f for f in outline["files"]}
-    assert by_id[filed]["chapter_id"] == chapter and by_id[filed]["chunks"] == 1
+    assert by_id[filed]["topic_id"] == topic and by_id[filed]["chunks"] == 1
     assert by_id[filed]["descriptor"] == "A short descriptor."
-    assert by_id[unfiled]["chapter_id"] is None and by_id[unfiled]["chunks"] == 0
+    assert by_id[unfiled]["topic_id"] is None and by_id[unfiled]["chunks"] == 0
 
 
 def _material(ws, kind: str, title: str) -> str:
@@ -2095,17 +2095,16 @@ async def test_any_top_level_material_is_a_scope_item(workspace):
     assert "Mitosis has four phases." in context
 
 
-async def test_deleting_a_chapter_does_not_break_its_files(workspace):
-    """The chapter FK is ON DELETE SET NULL, so deleting a chapter unfiles its
+async def test_deleting_a_topic_does_not_break_its_files(workspace):
+    """The topic FK is ON DELETE SET NULL, so deleting a topic unfiles its
     files rather than deleting them."""
-    chapter = workspace.add_chapter("Doomed")
-    file_id = workspace.add_file("a.txt", chapter)
+    topic = workspace.add_topic("Doomed")
+    file_id = workspace.add_file("a.txt", topic)
 
-    workspace.scalar("DELETE FROM chapters WHERE id = %s RETURNING id", (chapter,))
+    workspace.scalar("DELETE FROM topics WHERE id = %s RETURNING id", (topic,))
 
     assert (
-        workspace.scalar("SELECT chapter_id FROM files WHERE id = %s", (file_id,))
-        is None
+        workspace.scalar("SELECT topic_id FROM files WHERE id = %s", (file_id,)) is None
     )
 
 

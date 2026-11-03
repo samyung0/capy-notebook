@@ -225,13 +225,13 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 	}
 
 	// What the chat agent reads: the quiz and the set, the one workspace quiz
-	// attempt, and the unfiled chapter holding all four rated items.
+	// attempt, and the unfiled topic holding all four rated items.
 	progress, err := f.s.AgentStudyProgress(ctx, f.user, f.ws.ID, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !progress.Enabled || len(progress.Items) != 2 || len(progress.RecentAttempts) != 1 ||
-		len(progress.WeakChapters) != 1 || progress.WeakChapters[0].Items != 4 {
+		len(progress.WeakTopics) != 1 || progress.WeakTopics[0].Items != 4 {
 		t.Fatalf("agent progress = %+v", progress)
 	}
 }

@@ -12,7 +12,7 @@ import { attemptMinutes, resultLink, scoreText } from './attempts';
 import { StudyMark, type StudyState } from './studyItems';
 
 /* The Study page's list (human/study-progress.md 2026-10-25): sections of
-   rows, a workspace's chapters on Default Plan or a plan's chapter groups,
+   rows, a workspace's topics on Default Plan or a plan's topic groups,
    each an accordion of its files and materials. */
 
 /** One file or material as the list shows it, from this workspace's own
@@ -77,7 +77,7 @@ export function SectionList({
         return (
           <section className="border-divider border-t" key={s.key}>
             <div className="group relative flex items-center gap-3 px-1.5 py-3 hover:bg-surface-hover-bg">
-              {!s.locked && <ChapterMark done={s.done} total={s.total} />}
+              {!s.locked && <TopicMark done={s.done} total={s.total} />}
               <button
                 aria-expanded={s.locked ? undefined : expanded}
                 className="flex min-w-0 flex-1 items-baseline gap-2 text-left after:absolute after:inset-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset disabled:cursor-default"
@@ -154,9 +154,9 @@ export function SectionList({
   );
 }
 
-/** A chapter's progress: a check once every tracked item is done, else a
+/** A topic's progress: a check once every tracked item is done, else a
  * ring filled by the share done, dashed while nothing is. */
-function ChapterMark({ done, total }: { done: number; total: number }) {
+function TopicMark({ done, total }: { done: number; total: number }) {
   if (total > 0 && done === total)
     return (
       <Icon
@@ -211,7 +211,7 @@ function ProgressRow({
 }: {
   row: StudyRow;
   expanded: boolean;
-  /** Inside a chapter: the icon under the chapter's name. */
+  /** Inside a topic: the icon under the topic's name. */
   indent?: boolean;
   onOpen: () => void;
   onToggle: () => void;

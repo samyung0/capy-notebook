@@ -9,7 +9,7 @@ export type ReviewSessionRefGroup = typeof ReviewSessionRefGroup[keyof typeof Re
 
 
 export const ReviewSessionRefGroup = {
-  chapter: 'chapter',
+  topic: 'topic',
   others: 'others',
   workspace: 'workspace',
   plan: 'plan',
