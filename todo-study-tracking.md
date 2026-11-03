@@ -465,6 +465,23 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
    - Billed as Generate.
    - Answer files count toward the 10-file cap.
 
+**Round 2 result (2026-11-03; `claude/study-extraction` 88eafcda7, f3965ce54, 8da4c2ad1; `bench/extraction/reports/2026-11-03-keys-in-one-prompt.md`):**
+- **Built:**
+  - AI-marked parts are capped at 100, with the count shown under the editor title.
+  - Hidden from members: lists, opening, live rooms, retrieval and clone all respect it, the ⋮ menu toggles it, and the chip shows in the item header.
+  - One prompt records questions and their keys, one call per question.
+  - One silent retry, in-process, because the retrieval service has no job queue.
+- **0731 can't read images:** OpenRouter lists it as text-only, and an image request returns 404. So extraction stays on the direct `deepseek-flash` until Epo picks a vision model. The 1017 pin reads images but forces reasoning off.
+- **Keys worked out by the model:** Paper 2 MCQ 175/180 (97%) match the official keys. Paper 1 final answers match in 107/108 (checked by hand). Part marks match in 99/108. Every label is found and every question saved.
+- **Cost:** mid thinking costs 2–3× the first cut. Paper 2 is 108–145 credits and 200–280 s; a 40-page run is about 250–350 credits, more than a Free month (200).
+- **Open for Epo:**
+  - Pre-existing files used in a run get hidden too. The plan said only files uploaded with the quiz.
+  - 1-mark parts are typed short (auto-marked) where the paper's gold has open.
+  - An editor's clone copies hidden items as visible.
+  - A full 100-part submission makes 100 grading calls, 5 at a time.
+  - Migration renumbering and figure crops are still to do.
+
+
 ## 9. Grading open answers
 
 **Today** (R5 §2, R3 §4):
