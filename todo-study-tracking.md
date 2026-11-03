@@ -238,6 +238,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - list rows about 20% shorter.
 - **No cards that repeat Study.** To review and Needs attention were removed. Practise next and Coming up were folded into Tasks or left to My results.
 - **The Continue card is removed.** It resumed reading position, which is read progress, and that is gone.
+- **Read-progress UI goes everywhere (Epo, 2026-11-03).** That covers Mark as read/unread, Stop/Start tracking, the header's read button, read marks, and done counts that come only from reading, Learning's included. Branch `claude/study-shell`. Whatever the review pool still reads from `study_progress` stays, and is listed.
 
 **Mock (in build order):**
 - **Members tab (Main):** the summary described above, sorted by who needs attention, with rows that open.
