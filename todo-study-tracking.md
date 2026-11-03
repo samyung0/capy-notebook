@@ -493,7 +493,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 **Upload: everyone or hidden from members (Epo, 2026-11-04; canvas page 10, board U1).**
 - **Scope:** owners and editors choose, when uploading, whether members see the file. Hidden works as the ⋮ menu's Hide from members does: viewers don't see the file in Files, search, the agent, Activity or any notification; owners and editors see it with the eye mark.
 - **Default:** everyone, as today. Uploads inside Make a quiz start hidden.
-- **Options:** V1 a "Who can see it" dropdown under Topic, V2 two buttons under Topic, V3 a "Hide from members" switch left of Cancel. Awaiting Epo's pick.
+- **Picked V1 (Epo, 2026-11-04):** a "Who can see it" dropdown under Topic, "Everyone in the workspace" or "Hidden from members" (V2 two buttons and V3 a footer switch not chosen). The file row is created hidden, one upload flag shared with Make a quiz. Being built on `claude/study-extraction`.
 - **Leak paths checked:**
   - The Dashboard's Activity query (`store/dashboard.go` on `claude/study-shell`) doesn't filter hidden items yet. The shell branch predates the `hidden` column, so whichever branch lands second adds `workspace_item_visible` there.
   - There are no upload notifications today (only invites, role changes and removals). Assignment notifications, when added, skip hidden items.
@@ -662,7 +662,7 @@ No per-question rules section. Built-in rules apply to every open answer, and a 
   - A 120 s timeout for maths parts; other parts keep 30 s.
   - Keep each part's result and re-grade only failed parts, instead of failing the check.
   - Grade assignment submissions in the background with the progress status. Thirty students handing in one paper together take about 15 minutes on Wafer alone.
-  - **Total for 1017:** Wafer's latency doubles from about 60 calls in flight, and it starts handing calls on between 100 and 200. The bench suggested a separate 40-call grading limit, but that is a per-use cap, which Epo ruled out. In line with Epo's round-robin rule, raise 1017's one gate from 40 to about 100 instead, with every caller round-robin in the same line, so a grading burst can't starve ghost text or captions. Needs Epo's OK.
+  - **Total for 1017:** Wafer's latency doubles from about 60 calls in flight, and it starts handing calls on between 100 and 200. The bench suggested a separate 40-call grading limit, but that is a per-use cap, which Epo ruled out. In line with Epo's round-robin rule, raise 1017's one gate from 40 to about 100 instead, with every caller round-robin in the same line, so a grading burst can't starve ghost text or captions. **Approved (Epo, 2026-11-04):** one line per model, round-robin by requester, every caller waits (bounded as chat is) instead of failing at once, no interactive reserve, 1017 at 100, grading 10 parts at once per submission. Being built on `claude/model-queue-round-robin` from main. Timeouts, per-part re-grading and background grading come with the grading switch (§10 step 8).
 
 **1017 capacity:** ghost text has run on 1017 since 2026-10-28; 0731 is the ingest descriptor model. The 40-in-flight gate (20 reserved for interactive calls) is our own setting from 2026-10-29, not a provider limit. InferenceNet answered 128 page reads at once and Cloudflare 64 without errors, but Wafer took 100 grading calls at once without an error (2026-11-04, above).
 
