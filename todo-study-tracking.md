@@ -41,7 +41,7 @@ Every suggestion first says how other apps do it, as Epo asked.
 | 4 | Views in this order: members grid (G1), quiz report (G3), member profile (G2), topic grid (G4) | Every LMS starts with a students × work grid | G1–G5 |
 | 5 | Two separate numbers: a grade (points over released work) and per-topic mastery from a small rating model, plus FSRS recall for memory | Canvas gradebook vs mastery gradebook; Elo/Rasch in Lichess, Math Garden, Duolingo | Labels and thresholds |
 | 6 | Follow-up practice: a topic session (70% focus, 30% interleaved), new variants only when the pool runs short | Sparx 60/40, IXL, Century, Kahoot's "from difficult questions" | Approval and credits |
-| 7 | Assignments: a frozen copy of a quiz with a due date, a server timer and a Published switch; marks show on submit, owners change any mark | Canvas, Moodle, Classroom, Gradescope | Settings and roll-up |
+| 7 | Assignments: a frozen copy of a quiz with a due date, a server timer, a "Draft only" switch and Assign to; AI marks wait for the owner's approval unless switched off | Canvas, Moodle, Classroom, Gradescope | Settings and roll-up |
 | 8 | Extraction: click the pages to read, two pages at a time with tool calls, pair the mark scheme by label, review beside the page; no source stored | Formative, Microsoft Forms' flags, Gradescope regions | Limits and credits |
 | 9 | Grading with DeepSeek only after a bench run. Marks must quote the answer. Shared pages self-mark open parts. | Gradescope, CoGrader, Markit (teacher in the loop); Save My Exams | Provider, charging |
 
@@ -176,6 +176,10 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - An assignment appears as a task and ticks itself on submit. Other tasks are ticked by hand, by each member for themselves.
   - Owners add tasks under the table.
 - **Anything empty is not shown.** No tasks means no Tasks section.
+- **Your own tasks (2026-11-03 proposal, H2c and H2d on page 2).** Members can add tasks for themselves with Add a task. These are private: the owner never sees them, and they don't count in "x of 6 done".
+  - **Option A:** every row carries the avatar of who set it.
+  - **Option B (recommended):** only your own rows are marked, with a lock and "Only you". Everything else comes from the owner, so marking the exception is quieter. Canvas's student planner does the same: personal to-dos carry a "To Do" label, and course items show their course.
+  - Waiting on Epo's pick.
 - **Ticks (Epo, 2026-11-03).**
   - Members mark plain tasks ("Read …", "Make notes on …") done themselves. Nothing tries to detect reading: read progress is gone, and opening a file proves little (Canvas's "view" rule only means the page was opened).
   - Assignment tasks have no tick box: they complete when the member submits.
@@ -298,7 +302,10 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - Editors get the same Upload and extraction as the owner.
   - In a classroom, students are viewers.
 - **Two states only, Draft or published (Epo, 2026-11-02).**
-  - "New assignment" (A1) has a Published switch that is on by default, so the assignment can be submitted as soon as it is created. With the switch off it is a draft.
+  - "New assignment" (A1) has a **"Draft only"** switch, off by default (Epo, 2026-11-03), so the assignment can be submitted as soon as it is created. With the switch on it is a draft.
+- **Assign to (Epo, 2026-11-03; A1, A1b).** New assignment has an Assign to field, beside Attempts.
+  - **All members** is the default, and it includes anyone who joins later (as Classroom's "All students" and Teams' "All students" do). It covers viewers only; editors aren't assigned.
+  - **Picking names** fixes the list. The task and the notice reach only those members, and "x of y done" and the report count only them.
   - Lists show no status for published assignments, only a "Draft" label on drafts. There is no Scheduled, Open, To review or Released status, and no separate "Open for submissions" step: A6 is removed.
   - Rows carry plain facts ("Due Fri 7 Nov", "5 of 6 submitted", "4 open answers to review") and actions (Review).
   - The Study header button is "New assignment".
