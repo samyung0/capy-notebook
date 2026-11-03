@@ -496,35 +496,22 @@ Steps 2, 3 and 7 can run side by side.
 
 ## 11. Questions for Epo
 
-**Visibility**
+Updated 2026-11-03. Decided this round, no longer open: the join notice (not an opt-in); later joiners get open assignments ("All members"); members see their overall; shared pages mark only automatic questions; topics replace folders and come from a syllabus; approval of AI marks; Marked/Unmarked assignments.
 
-1. A plus topic summary (§2)? Who sees results: owners only, or editors too? Do members get a notice when they join, or an opt-in?
-2. Is the minimum group size for aggregates 5? No leaderboards?
-3. Before schools: an age policy, and what happens to results when a member leaves.
+**Needed before building**
 
-**Topics and mastery**
+1. **Editors:** can editors (co-teachers) create assignments, see member results and approve AI marks, like owners? (Suggestion: yes.)
+2. **Who pays credits:** extraction, Generate questions, Make my own practice, and DeepSeek grading of members' answers. (Suggestion: whoever starts it pays; grading of an assignment is the owner's, with a monthly cap.)
+3. **DeepSeek:** switch only after the bench? Is sending minors' answers to a China-based provider acceptable for schools, or do schools need another model?
+4. **Mastery thresholds** (§5): Attempted under 3 questions; Needs practice under 60%; Proficient over 70%; Mastered after a later check; 80% sureness; self-made questions at half weight.
+5. **Missing and late work:** does missing work count 0 in Overall after the due date? Are late submissions accepted (labelled Late) until the owner closes the assignment? Attempts default to 1?
+6. **Reviews:** do marked-assignment questions join a member's FSRS reviews, and only after the assignment closes (so nobody sees them early)? Do flashcards stay out of mastery (memory only)?
+7. **Topics in today's study features:** do topics replace chapters in suggested reviews, sessions and the agent's `read_study_progress`? Cap at 30 topics per workspace?
+8. **Aggregates:** at least 5 members before group averages and question percentages show? No leaderboards?
+9. **Extraction:** PDF and images only at first, a 30-page cap?
+10. **Shared pages:** with open answers unmarked there, drop Turnstile and the anonymous grading caps?
 
-4. A flat list per workspace, 5–20 topics, capped at 30, one per question? Can owners and editors edit them? AI merges only as suggestions?
-5. Thresholds: Attempted under 3 questions; Needs practice under 60%; Proficient over 70%; Mastered after a later check; 80% sureness.
-6. Should flashcards stay out of mastery (memory only)?
-7. Topics replace chapters in suggestions, sessions and the agent's `read_study_progress`?
+**Can wait**
 
-**Follow-up**
-
-8. Who pays generation credits for personal variants? No approval for your own practice, but owner approval for class-wide follow-ups?
-
-**Assignments**
-
-9. One word, "assignment", with an optional time limit, and no Test/Homework kinds? One attempt? Does missing become 0 after the due date? Does no close date accept late work forever?
-10. Overall score: total points now, and categories with weights only later?
-11. Do test answers feed FSRS? Do students see their overall?
-12. Do members who join later get open assignments?
-
-**Extraction**
-
-13. PDF only at first? A 30-page cap? Credit prices for extraction and solving?
-
-**Grading**
-
-14. Switch to DeepSeek only after the bench? Charge grading or cap it? Check that sending minors' answers to DeepSeek is acceptable for schools.
-15. Shared pages: self-marking for open parts, and drop Turnstile and the anonymous caps?
+11. Before schools: an age policy, and what happens to results when a member leaves.
+12. Later work, already queued: scanned submissions, AI insights (class snapshot, member summary), "Copy to my workspace" for self-made practice, letting members share practice with the class, and **gamification** such as a topic map on My results reusing the question bank's TrailMap (Epo, 2026-11-03: think about it after this).
