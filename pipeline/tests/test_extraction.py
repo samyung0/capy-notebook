@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import extraction
 
@@ -140,6 +142,28 @@ def test_marking_points_fit_the_quiz_item_cap():
     items = extraction._items(points)
     assert len(items) == extraction.limits.QUIZ_MARKSCHEME_MAX
     assert sum(item["marks"] for item in items) == 8
+
+
+async def test_a_failing_provider_costs_an_attempt_not_the_run(monkeypatch):
+    monkeypatch.setattr(extraction, "ATTEMPT_WAIT_S", 0)
+    calls = []
+
+    async def busy_once():
+        calls.append("call")
+        if len(calls) == 1:
+            raise extraction.elitellm.ProviderBusy("too busy")
+        return "read"
+
+    assert await extraction._attempted(busy_once) == "read"
+    assert len(calls) == 2
+
+    async def refused():
+        calls.append("refused")
+        raise TimeoutError("silent")
+
+    with pytest.raises(TimeoutError):
+        await extraction._attempted(refused)
+    assert calls.count("refused") == extraction.ATTEMPTS
 
 
 def test_page_texts_spread_passages_over_their_pages():

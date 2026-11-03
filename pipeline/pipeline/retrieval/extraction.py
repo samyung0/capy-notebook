@@ -66,6 +66,13 @@ SCHEME_CHUNK_CHARS = 12_000
 # a longer one is refused rather than cut.
 SCHEME_TEXT_CHARS = 200_000
 
+# A run is a background job the user cannot retry piece by piece, so a busy,
+# failing or silent provider costs a window or a scheme piece another attempt
+# rather than the run (AGENTS.md: background jobs such as parsing and ingest
+# retry), as ingest's three calls; a definitive client error does not retry.
+ATTEMPTS = 3
+ATTEMPT_WAIT_S = 20.0
+
 # Validator stand-ins for keys the scheme fills later, used only for the
 # validation call; the stored question never carries them.
 _STAND_IN_MARK = "(from the mark scheme)"
@@ -240,6 +247,15 @@ def _text(value: Any, limit: int) -> str:
     return str(value or "").strip()[:limit].strip()
 
 
+def _whole(value: Any) -> int | None:
+    """A mark count the model wrote as 2, 2.0 or "2"."""
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return value if type(value) is int else None
+
+
 def entries_from(data: Any) -> list[Entry]:
     entries: list[Entry] = []
     rows = data.get("entries") if isinstance(data, dict) else None
@@ -250,8 +266,8 @@ def entries_from(data: Any) -> list[Entry]:
         for point in row.get("points") or []:
             if not isinstance(point, dict):
                 continue
-            marks, text = point.get("marks"), _text(point.get("text"), 1_000)
-            if type(marks) is int and marks >= 1 and text:
+            marks, text = _whole(point.get("marks")), _text(point.get("text"), 1_000)
+            if marks is not None and marks >= 1 and text:
                 points.append({"text": text, "marks": marks})
         entries.append(
             Entry(
@@ -520,8 +536,27 @@ async def parse_schemes(files: list[SchemeFile], *, model: ModelConfig) -> list[
         )
         return entries_from(extract_json(getattr(message, "content", "") or ""))
 
-    calls = [one(f.name, piece) for f in files for piece in _chunks(f.text)]
+    calls = [
+        _attempted(functools.partial(one, f.name, piece))
+        for f in files
+        for piece in _chunks(f.text)
+    ]
     return [entry for found in await asyncio.gather(*calls) for entry in found]
+
+
+async def _attempted(call: Callable[[], Awaitable[Any]]) -> Any:
+    for attempt in range(ATTEMPTS):
+        try:
+            return await call()
+        except (elitellm.ProviderError, TimeoutError) as exc:
+            definitive = (
+                accounting.provider_status(exc) in models.DEFINITIVE_CLIENT_ERRORS
+            )
+            if definitive or attempt == ATTEMPTS - 1:
+                raise
+            log.warning("extraction call failed, attempt %d: %s", attempt + 1, exc)
+            await asyncio.sleep(ATTEMPT_WAIT_S * (attempt + 1))
+    raise AssertionError("the attempts loop returns or raises")
 
 
 def _call_args(call: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
@@ -608,14 +643,21 @@ async def run(
     )
     try:
         current = Run(validate=validate)
-        current.expected = await outline(pages, model=model)
+        current.expected = await _attempted(
+            functools.partial(outline, pages, model=model)
+        )
         stopped = ""
         windows = 0
         for start in range(0, len(pages), WINDOW_PAGES):
             if _credits_out():
                 stopped = "credits"
                 break
-            await _window(current, pages[start : start + WINDOW_PAGES], model=model)
+            # A retried window records again over what it recorded before.
+            await _attempted(
+                functools.partial(
+                    _window, current, pages[start : start + WINDOW_PAGES], model=model
+                )
+            )
             windows += 1
             yield {
                 "type": "questions",
@@ -628,6 +670,9 @@ async def run(
     finally:
         if scheme_task is not None and not scheme_task.done():
             scheme_task.cancel()
+        elif scheme_task is not None and not scheme_task.cancelled():
+            # Retrieved, so a window's failure is the one reported.
+            scheme_task.exception()
     used: set[tuple[str, str]] = set()
     saved: list[dict[str, Any]] = []
     unanswered: list[str] = []
