@@ -122,6 +122,12 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
   - **Decided (Epo, 2026-11-03).**
 - **Where topics live (Epo, 2026-11-03).** Topics live in Files: set up, add, rename and remove happen there, and topic rows in the Files panel are plain group rows, with no tag icon. There are no merge suggestions, and no action menu on the topic title; rename works by editing the title.
   - **Uploading asks for the topic** (T4), starting from the topic that is open; nothing is filed automatically. Dragging a file to another topic in the tree moves it.
+  - **The upload dialog looks like T4 (Epo, 2026-11-03):**
+    - one Topic dropdown for the whole upload;
+    - a plain file list (name, size, ×);
+    - no per-file parse settings, so every file uses the default parsing.
+    - When the payer is out of AI credits, a hint line says files won't be processed and some features may not work.
+  - **Files rows look like T3 (Epo):** 30px rows with no progress mark; the open file shows by its row highlight.
   - **No topic page (Epo, 2026-11-03).** A topic row only opens and closes in the tree, and the main area shows the open file (T3). Results by topic stay in Study: Members, Show: By topic.
     - Others: Drive, OneDrive and Dropbox show a folder's contents because their tree only navigates; Notion, Obsidian and VS Code have no folder page. Classroom's topics filter Classwork, and a Canvas module is just its item list. Results by topic sit with grades (Canvas's Learning Mastery Gradebook). Capy's tree already lists every file, so it follows Notion.
   - Study keeps only results. The Topics page is gone, and its members × topics grid is now a view of Members ("Show: Summary" or "Show: By topic", G4). This follows Canvas, where Modules organise content and mastery is a view of the gradebook (Learning Mastery Gradebook).
