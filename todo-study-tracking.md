@@ -511,7 +511,7 @@ Epo asked whether to allow drawings as answers, for graphs and diagrams, and as 
 
 **Agreed:** a `drawing` answer type beside `open`. Drawing happens on a full-screen board that copies BlockSuite/AFFiNE's edgeless mode (Epo): the dotted canvas, the floating toolbar with the pen and eraser that rise when picked, the pen menu (pen or highlighter, line widths, colours), straight line, text, undo and redo, and zoom in the corner. The answer is the sheet in the middle, the question stays pinned at the top left, and Done returns to the question with a preview and "Edit drawing". On phones the same board fills the screen.
 - **Background:** the part sets it to blank, squared grid, axes (with x and y ranges) or a figure from the question to label.
-- **Tools:** AFFiNE's: pen and highlighter with line widths and its colour palette, eraser, straight line, text, undo and redo. Reuse the vendored BlockSuite edgeless tools where that helps.
+- **Tools:** AFFiNE's toolbar as in the playground: select and hand, the pen, eraser and shapes illustrations, the connector (curves), text, undo and redo. The pen menu is AFFiNE's one-row tab on top of the toolbar (pen or highlighter, line widths, colours), never wider than the toolbar, scrolling with its round arrow buttons. Reuse the vendored BlockSuite edgeless tools where that helps.
 - **Storage:** the answer is stored as strokes and rendered to an image for marking.
 - **Marking:** the same marking points as an open answer, marked by a vision model. It goes through the same owner approval and credits rules, and stays "Not marked" when credits are empty. Shared pages can't mark it.
 
@@ -550,7 +550,7 @@ Epo asked whether to allow drawings as answers, for graphs and diagrams, and as 
 Steps 2, 3 and 7 can run side by side.
 
 **UI matches the mocks (Epo, 2026-11-03).** Built screens copy the mock boards exactly, including where they differ from today's components. Anything a mock doesn't settle goes back to Epo as visual options on the canvas, not a call made in code. Shared pieces change to the mocks' design (canvas page 9, "Toasts and cards"):
-- **Toast:** the centred black pill for every kind, taking a second line when needed. It fades in and out with the app's existing motion tokens, with no expanding animation (Epo, 2026-11-03). Pick S1 or S2 for several at once.
+- **Toast:** the centred black pill for every kind, taking a second line when needed. It fades in and out with the app's existing motion tokens, with no expanding animation (Epo, 2026-11-03). One at a time (S1, Epo); the same toast again counts up (×2, ×3) and restarts its timer instead of queueing.
 - **Workspace cards:** the half banner from the Home mock (D1), H2 (Epo, 2026-11-03): the icon on the banner's edge, ⋮ on the banner, topics in the line under the name, then access and tags. File cards stay as they are; they're thumbnails.
 - **Quiz options:** full boxes as in the mocks (F1b) instead of today's underlined rows, for options, true/false and ordering items; open answers keep their ruled lines (Epo, 2026-11-03). A right choice fills green with a tick and "Right"; a wrong choice fills red with "Your answer". Once checked, a label above the options says Right or Wrong with the marks, as in Results (A5); a skipped question says "Not answered" and counts as wrong. The correct answer you didn't choose gets a green outline with no fill and "Correct answer" (M1, Epo, 2026-11-03), so green fill only ever means you chose it and it's right.
 
