@@ -505,6 +505,32 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 
 ---
 
+### Drawing answers (proposal, 2026-11-03, canvas board K6)
+
+Epo asked whether to allow drawings as answers, for graphs and diagrams, and as a path toward scanned answers.
+
+**Proposal:** a `drawing` answer type beside `open`.
+- **Background:** the part sets it to blank, squared grid, axes (with x and y ranges) or a figure from the question to label.
+- **Tools:** pen, straight line, text, eraser, three colours, undo and redo.
+- **Storage:** the answer is stored as strokes and rendered to an image for marking.
+- **Marking:** the same marking points as an open answer, marked by a vision model. It goes through the same owner approval and credits rules, and stays "Not marked" when credits are empty. Shared pages can't mark it.
+
+**Why:** the "picture checked against marking points" path is the one scanned submissions need later.
+
+**Others:**
+- Formative has drawing responses.
+- Desmos Classroom has sketch responses.
+- Pear Assessment has drawing and graphing question types.
+- Google and Microsoft Forms only take file uploads.
+
+**Needs:**
+- the answer type in the shared format (Go validator, TS types, bank format);
+- a canvas with pen input that works on phones;
+- a vision grader: whether `deepseek-flash` takes images is still to be checked, and GLM-5.3-Flash is the fallback;
+- a few drawing items in the grading bench.
+
+**Later, if needed:** exact graph answers using Capy's graph editor, checked in code.
+
 ## 10. Order of work
 
 1. **Decisions:** §11.
@@ -526,7 +552,7 @@ Steps 2, 3 and 7 can run side by side.
 **UI matches the mocks (Epo, 2026-11-03).** Built screens copy the mock boards exactly, including where they differ from today's components. Anything a mock doesn't settle goes back to Epo as visual options on the canvas, not a call made in code. Shared pieces change to the mocks' design (canvas page 9, "Toasts and cards"):
 - **Toast:** the centred black pill for every kind, taking a second line when needed. It fades in and out with the app's existing motion tokens, with no expanding animation (Epo, 2026-11-03). Pick S1 or S2 for several at once.
 - **Workspace cards:** the half banner from the Home mock (D1), H2 (Epo, 2026-11-03): the icon on the banner's edge, ⋮ on the banner, topics in the line under the name, then access and tags. File cards stay as they are; they're thumbnails.
-- **Quiz options:** full boxes as in the mocks (F1b) instead of today's underlined rows, for options, true/false and ordering items; open answers keep their ruled lines (Epo, 2026-11-03). A right choice fills green with a tick and "Right"; a wrong choice fills red with "Your answer". Today a skipped question's correct answer looks like one you got right, so it gets its own look: pick M1 (green outline), M2 (dashed outline) or M3 (label only).
+- **Quiz options:** full boxes as in the mocks (F1b) instead of today's underlined rows, for options, true/false and ordering items; open answers keep their ruled lines (Epo, 2026-11-03). A right choice fills green with a tick and "Right"; a wrong choice fills red with "Your answer". Once checked, a label above the options says Right or Wrong with the marks, as in Results (A5); a skipped question says "Not answered" and counts as wrong. The correct answer you didn't choose gets a green outline with no fill and "Correct answer" (M1, Epo, 2026-11-03), so green fill only ever means you chose it and it's right.
 
 **Later (Epo, 2026-11-03): AI insights.** Labels and rule-based reasons ("Missed 3 of 4 questions on osmosis", the report's common wrong answers) come first. A short AI summary waits until there is real data and the DeepSeek bench: most likely a weekly class snapshot on Members with links to the evidence, plus a member summary on the profile. Others: Khan Academy's Class Snapshot (a 7-day summary of learning time, assignments and mastery, with suggested follow-up questions); Google Classroom's Analytics tab (flags for missing work and changing grades) and Gemini summaries of who submitted and where students need support; Canvas's paid Intelligent Insights ("Students in need of attention") and IgniteAI discussion insights.
 
