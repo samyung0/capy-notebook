@@ -26,11 +26,11 @@ function formatDate(iso?: string) {
 }
 
 /**
- * The dashboard's banner slot, empty unless the viewer's own account or
+ * Home's banner slot, empty unless the viewer's own account or
  * connection has a problem, shown one at a time (frozen, grace, full, near
  * the limit, offline, reconnecting).
  */
-export default function DashboardBanner() {
+export default function HomeBanner() {
   const { data: me } = useMe({ errorBoundary: false });
   const online = useOnlineStatus();
   const { data: stream } = useQuery<EventStreamState>({

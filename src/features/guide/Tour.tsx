@@ -135,18 +135,12 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
       absent: () => !!tourPanels() && !find('#files'),
       at: inWorkspacePage,
       body: m.tour_chats_body,
-      // The left panel's view menu opens as a press on its title would.
+      // The rail's Agent section shows its chats beside it.
       prepare: () => {
         const panels = tourPanels();
         if (!panels) return false;
         if (once('chats')) panels.showChats();
-        const title = find('[data-workspace-left-panel] [data-panel-title]');
-        if (!title) return false;
-        if (once('menu'))
-          title.dispatchEvent(
-            new PointerEvent('pointerdown', { bubbles: true, button: 0 })
-          );
-        return title.getAttribute('data-state') === 'open';
+        return !!find('[data-workspace-left-panel]');
       },
       spot: leftPanel,
       title: m.tour_chats_title,
@@ -200,7 +194,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
     {
       at: inWorkspacePage,
       body: m.tour_study_body,
-      go: () => inWorkspace({ study: true }),
+      go: () => inWorkspace({ study: 'practice' }),
       spot: centrePanel,
       title: m.tour_study_title,
     },

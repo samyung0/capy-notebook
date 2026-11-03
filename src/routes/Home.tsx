@@ -6,7 +6,7 @@ import { CloneLinkDialog } from '@/components/app/CloneLinkDialog';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import DashboardBanner from '@/components/banners/DashboardBanner';
+import HomeBanner from '@/components/banners/HomeBanner';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import {
@@ -17,7 +17,7 @@ import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
 import {
   RecentItemsCard,
   useRecentItems,
-} from '@/features/dashboard/RecentItemsCard';
+} from '@/features/home/RecentItemsCard';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { waitsForConnection } from '@/lib/online';
@@ -41,7 +41,7 @@ function WorkspacesSection() {
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="t-large-card-title">{m.dashboard_workspaces()}</h2>
+        <h2 className="t-large-card-title">{m.home_workspaces()}</h2>
         <Button
           asChild
           className="underline"
@@ -66,7 +66,7 @@ function WorkspacesSection() {
         <InlineErrorState
           className="pt-10 pb-6"
           errorId={unexpectedErrorId(error)}
-          message={m.dashboard_recent_workspaces_error()}
+          message={m.home_recent_workspaces_error()}
           onRetry={() => void refetch()}
         />
       ) : (
@@ -94,9 +94,9 @@ function WorkspacesSection() {
   );
 }
 
-/** A new account's dashboard: both lists are empty, so neither section
+/** A new account's Home: both lists are empty, so neither section
  * shows, and this sits in the middle of the page instead. */
-function DashboardEmpty() {
+function HomeEmpty() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
       <p className="t-subtitle">{m.workspaces_empty()}</p>
@@ -108,14 +108,14 @@ function DashboardEmpty() {
         variant="ghost-link"
       >
         <Link preload="intent" to="/workspaces">
-          {m.dashboard_empty_cta()}
+          {m.home_empty_cta()}
         </Link>
       </Button>
     </div>
   );
 }
 
-export default function Dashboard() {
+export default function Home() {
   const recent = useRecentItems();
   // Only loaded, empty lists hide: loading, paused and failed lists keep
   // their section so the skeleton or error still shows.
@@ -130,16 +130,16 @@ export default function Dashboard() {
       <PagePanel
         header={
           <PageHeader
-            subtitle={m.dashboard_empty_intro()}
-            title={m.dashboard_learn_today()}
+            subtitle={m.home_empty_intro()}
+            title={m.home_learn_today()}
           />
         }
       >
         <PageBody className="flex flex-col gap-6 sm:gap-8">
           {/* <CloudConnectBanner /> */}
-          <DashboardBanner />
+          <HomeBanner />
           {workspacesEmpty && recentEmpty ? (
-            <DashboardEmpty />
+            <HomeEmpty />
           ) : (
             <>
               {!workspacesEmpty && <WorkspacesSection />}

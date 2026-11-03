@@ -3456,8 +3456,8 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
   above the field, which grows to fit it.
 - **From the sidebar** (`features/voice/`). A "Use your mic" card above
   Settings in the app sidebar (its mic alone in its turning rainbow ring on
-  the 70px rail, in the phone drawer too) and a mic in the workspace left
-  panel's foot, in Search's old place, open a page-wide voice dialog
+  the 70px rail, in the phone drawer too) and a mic on the title row of the
+  workspace's Agent panel open a page-wide voice dialog
   (`VoiceOverlay`): the page dims and blurs behind one box titled New chat.
   Opening starts a recording (the same `useVoiceInput`, the stop button a
   flowing gradient that does not follow the voice; if a clip from an earlier

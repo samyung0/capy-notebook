@@ -382,9 +382,8 @@ export const qk = {
   ownedMaterialsRoot: ['materials', 'owned'] as const,
   pastReviews: (params?: unknown) =>
     ['review', 'past', params ?? null] as const,
-  /** A plan's review parts on its workspace's Study page. */
-  planStudy: (wsId: string, planId: string) =>
-    ['workspace', wsId, 'study', 'plan', planId] as const,
+  /** The workspace's Practice page; refreshed with the rest of study. */
+  practice: (wsId: string) => ['workspace', wsId, 'study', 'practice'] as const,
   quiz: (id: string) => ['quiz', id] as const,
   /** GET /recent: Recent Files and the quick open share it. */
   recent: ['recent'] as const,
@@ -397,9 +396,6 @@ export const qk = {
   sourceUploadPolicy: (wsId?: string) =>
     ['source-upload-policy', wsId ?? null] as const,
   study: (wsId: string) => ['workspace', wsId, 'study'] as const,
-  studyAttempts: (wsId: string) =>
-    ['workspace', wsId, 'study', 'attempts'] as const,
-  studyPlans: (wsId: string) => ['workspace', wsId, 'study', 'plans'] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
   topics: (wsId: string) => ['workspace', wsId, 'topics'] as const,

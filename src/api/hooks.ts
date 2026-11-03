@@ -82,7 +82,6 @@ import type {
   InspectSourceImportsResponse,
   IntegrationsStatus,
   InvoiceList,
-  ItemAttempts,
   Label,
   LearningProgress,
   LibraryFigure,
@@ -105,7 +104,7 @@ import type {
   PastReview,
   PastReviewParams,
   PendingWorkspaceInvite,
-  PlanStepInput,
+  Practice,
   Privacy,
   PublicFlashcardSetPage,
   PublicQuizPage,
@@ -125,7 +124,6 @@ import type {
   SourceFile,
   SourceUploadPolicy,
   SpendingLimitReq,
-  StudyPlan,
   StudyPlans,
   StudyPreferences,
   StudySummary,
@@ -2841,59 +2839,30 @@ export const useWorkspaceStudy = (
 ) =>
   useQuery({ ...workspaceStudyQuery(workspaceId), meta: queryMeta(options) });
 
-/** The workspace's summary with its review parts (Reviewable, Quick review,
- * Continue review) drawn from one of the user's plans kept in it. */
-export const usePlanStudy = (
-  workspaceId: string,
-  planId: string | undefined,
-  options?: QueryUiOptions
-) =>
-  useQuery({
-    ...persisted,
-    enabled: !!planId,
-    meta: queryMeta(options),
-    queryFn: () =>
-      api.get<StudySummary>(
-        `/workspaces/${workspaceId}/study${listSearch({ planId }, '')}`
-      ),
-    queryKey: qk.planStudy(workspaceId, planId ?? ''),
-  });
-
-/** Each quiz's and set's attempt count and latest attempts in a workspace,
- * for the Study progress page; refreshed with the Study tab. */
-export const workspaceAttemptsQuery = (workspaceId: string) =>
+/** The workspace's Practice page: suggestions, every quiz members can see
+ * and the caller's own topic reviews; owners and editors also get counts. */
+export const practiceQuery = (workspaceId: string) =>
   queryOptions({
-    queryFn: () =>
-      api.get<{ items: ItemAttempts[] }>(
-        `/workspaces/${workspaceId}/study/attempts`
-      ),
-    queryKey: qk.studyAttempts(workspaceId),
+    queryFn: () => api.get<Practice>(`/workspaces/${workspaceId}/practice`),
+    queryKey: qk.practice(workspaceId),
   });
-export const useWorkspaceAttempts = (
-  workspaceId: string,
-  options?: QueryUiOptions
-) =>
-  useQuery({
-    ...workspaceAttemptsQuery(workspaceId),
-    meta: queryMeta(options),
-  });
+export const usePractice = (workspaceId: string, options?: QueryUiOptions) =>
+  useQuery({ ...practiceQuery(workspaceId), meta: queryMeta(options) });
 
-/** Refreshes the Study tab, marks, review and Learning after practice in
+/** Refreshes Practice, marks, review and Learning after practice in
  * `workspaceId`, or in every workspace when the caller does not know which. */
 export function invalidateStudy(
   qc: ReturnType<typeof useQueryClient>,
   workspaceId?: string
 ) {
-  // qk.study and qk.workspaceReview: ['workspace', id, 'study' | 'review'];
-  // every workspace's plans and plan summaries, since a plan counts steps
-  // and draws review items from other workspaces.
+  // qk.study, qk.practice and qk.workspaceReview: ['workspace', id,
+  // 'study' | 'review', ...]. Learning's plans sit under learningRoot.
   return Promise.all([
     qc.invalidateQueries({
-      predicate: ({ queryKey: [scope, id, kind, part] }) =>
+      predicate: ({ queryKey: [scope, id, kind] }) =>
         scope === 'workspace' &&
-        (((!workspaceId || id === workspaceId) &&
-          (kind === 'study' || kind === 'review')) ||
-          (kind === 'study' && (part === 'plans' || part === 'plan'))),
+        (!workspaceId || id === workspaceId) &&
+        (kind === 'study' || kind === 'review'),
     }),
     qc.invalidateQueries({ queryKey: qk.reviewRoot }),
     qc.invalidateQueries({ queryKey: qk.learningRoot }),
@@ -2942,14 +2911,6 @@ export function useSetWorkspaceStudyEnabled(workspaceId: string) {
   return useMutation({
     mutationFn: (enabled: boolean) =>
       api.put<void>(`/workspaces/${workspaceId}/study/enabled`, { enabled }),
-    onSuccess: () => invalidateStudy(qc, workspaceId),
-  });
-}
-
-export function useResetWorkspaceStudy(workspaceId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.post<void>(`/workspaces/${workspaceId}/study/reset`),
     onSuccess: () => invalidateStudy(qc, workspaceId),
   });
 }
@@ -3075,20 +3036,6 @@ export const useLearningProgress = (
   });
 
 /* ---------------- study plans ---------------- */
-/** Plans kept in a workspace, then the user's plans elsewhere with a step in it. */
-export const workspacePlansQuery = (workspaceId: string) =>
-  queryOptions({
-    ...persisted,
-    queryFn: () =>
-      api.get<StudyPlans>(`/workspaces/${workspaceId}/study/plans`),
-    queryKey: qk.studyPlans(workspaceId),
-  });
-export const useWorkspacePlans = (
-  workspaceId: string,
-  options?: QueryUiOptions
-) =>
-  useQuery({ ...workspacePlansQuery(workspaceId), meta: queryMeta(options) });
-
 /** Every plan of the user, for Learning → Progress. */
 export const useLearningPlans = (options?: QueryUiOptions) =>
   useQuery({
@@ -3098,79 +3045,7 @@ export const useLearningPlans = (options?: QueryUiOptions) =>
   });
 
 const invalidatePlans = (qc: QueryClient) =>
-  Promise.all([
-    qc.invalidateQueries({
-      // The plans, and each plan's review parts its steps feed.
-      predicate: ({ queryKey: [scope, , kind, part] }) =>
-        scope === 'workspace' &&
-        kind === 'study' &&
-        (part === 'plans' || part === 'plan'),
-    }),
-    qc.invalidateQueries({ queryKey: qk.learningPlans }),
-  ]);
-
-export function useCreateStudyPlan(workspaceId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) =>
-      api.post<StudyPlan>(`/workspaces/${workspaceId}/study/plans`, { name }),
-    onSettled: () => invalidatePlans(qc),
-  });
-}
-
-/** Renames a plan and/or replaces its steps. Optimistic in the workspace's
- * list, so a dragged row lands at once; the refetch settles it. */
-export function useUpdateStudyPlan(workspaceId: string) {
-  const qc = useQueryClient();
-  type Patch = { id: string; name?: string; steps?: PlanStepInput[] };
-  return useMutation<void, Error, Patch, { prev?: StudyPlans }>({
-    mutationFn: ({ id, ...body }) =>
-      api.patch<void>(`/study/plans/${id}`, body),
-    mutationKey: qk.studyPlans(workspaceId),
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(qk.studyPlans(workspaceId), ctx.prev);
-    },
-    onMutate: async ({ id, name, steps }) => {
-      await qc.cancelQueries({ queryKey: qk.studyPlans(workspaceId) });
-      const prev = qc.getQueryData<StudyPlans>(qk.studyPlans(workspaceId));
-      qc.setQueryData<StudyPlans>(qk.studyPlans(workspaceId), (list) => {
-        if (!list) return list;
-        return {
-          ...list,
-          plans: list.plans.map((p) => {
-            if (p.id !== id) return p;
-            // Held steps keep their titles; new ones are in the list at once
-            // (a save before the refetch must keep them) and get theirs then.
-            const held = new Map(
-              p.steps.map((st) => [stepKey(st), st] as const)
-            );
-            return {
-              ...p,
-              name: name ?? p.name,
-              steps: steps
-                ? steps.map(
-                    (st) =>
-                      held.get(stepKey(st)) ?? {
-                        ...st,
-                        locked: false,
-                        title: '',
-                      }
-                  )
-                : p.steps,
-            };
-          }),
-        };
-      });
-      return { prev };
-    },
-    onSettled: () =>
-      refetchIfLast(qc, qk.studyPlans(workspaceId), () => invalidatePlans(qc)),
-  });
-}
-
-/** One identity per step target, the server's uniqueness. */
-export const stepKey = (st: PlanStepInput) =>
-  `${st.kind}:${st.workspaceId}:${st.targetId}`;
+  qc.invalidateQueries({ queryKey: qk.learningPlans });
 
 export function useDeleteStudyPlan() {
   const qc = useQueryClient();

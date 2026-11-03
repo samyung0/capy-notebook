@@ -9,6 +9,14 @@ async function openWorkspace(page: Page, width: number) {
   await page.goto('/workspaces/ws_bio');
 }
 
+/** Picks a section in the workspace rail; the landing shows the Dashboard. */
+async function openSection(page: Page, name: string) {
+  await page
+    .getByRole('navigation', { name: m.workspace_rail_label() })
+    .getByRole('button', { exact: true, name })
+    .click({ timeout: 60_000 });
+}
+
 test.describe('with the default layout', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -16,6 +24,7 @@ test.describe('with the default layout', () => {
     page,
   }) => {
     await openWorkspace(page, 1600);
+    await openSection(page, m.workspace_section_agent());
     const left = leftPanel(page);
     await expect(left.getByText(m.chat_group_pinned())).toBeVisible({
       timeout: 60_000,
@@ -39,9 +48,12 @@ test.describe('with the default layout', () => {
     await expect(page.locator('#rail')).toBeHidden();
   });
 
-  test('the members menu invites from the Sharing tab', async ({ page }) => {
+  test('the rail avatar menu invites from the Sharing tab', async ({
+    page,
+  }) => {
     await openWorkspace(page, 1600);
-    await leftPanel(page)
+    await page
+      .getByRole('navigation', { name: m.workspace_rail_label() })
       .getByRole('button', { name: m.workspace_account_menu() })
       .click({ timeout: 60_000 });
     await page
@@ -56,10 +68,11 @@ test.describe('with the default layout', () => {
   });
 });
 
-test('the left panel lists chats, opens them in the right panel and archives them', async ({
+test('Agent lists chats, opens them in the right panel and archives them', async ({
   page,
 }) => {
   await openWorkspace(page, 1600);
+  await openSection(page, m.workspace_section_agent());
   const left = leftPanel(page);
   await expect(left.getByText(m.chat_group_pinned())).toBeVisible({
     timeout: 60_000,
@@ -105,32 +118,46 @@ test('the left panel lists chats, opens them in the right panel and archives the
   await expect(target).toHaveCount(0);
 });
 
-test('the Files view searches the tree by name', async ({ page }) => {
+test('Files shows the one tree beside the rail; closed, the right panel has Files with its search', async ({
+  page,
+}) => {
   await openWorkspace(page, 1600);
+  await openSection(page, m.workspace_tab_files());
   const left = leftPanel(page);
-  await left.locator('[data-panel-title]').click();
-  await page
-    .getByRole('menuitem', { exact: true, name: m.workspace_tab_files() })
-    .click();
-  await left.getByPlaceholder(m.workspace_search_files()).fill('mendel');
-  const tree = left.locator('[data-workspace-file-tree]');
+  await expect(
+    left.locator('[data-workspace-file-tree]').getByText('Cell structure.pdf')
+  ).toBeVisible();
+  // One Files tree at a time: the right panel offers Chat alone meanwhile.
+  await expect(page.locator('[data-workspace-file-tree]')).toHaveCount(1);
+  // Pressing the shown section again closes its panel; the right panel's
+  // Files view, with its search, comes back.
+  await openSection(page, m.workspace_tab_files());
+  await expect(left).toHaveCount(0);
+  const open = page.getByRole('button', {
+    exact: true,
+    name: m.workspace_open_right_panel(),
+  });
+  if (await open.isVisible()) await open.click();
+  const right = page.locator('#rail');
+  const title = right.locator('[data-panel-title]');
+  if ((await title.textContent())?.trim() !== m.workspace_tab_files()) {
+    await title.click();
+    await page
+      .getByRole('menuitem', { exact: true, name: m.workspace_tab_files() })
+      .click();
+  }
+  await right.getByPlaceholder(m.workspace_search_files()).fill('mendel');
+  const tree = right.locator('[data-workspace-file-tree]');
   await expect(tree.getByText('Mendelian genetics.pdf')).toBeVisible();
   await expect(tree.getByText('Cell structure.pdf')).toHaveCount(0);
-  // The right panel keeps its own Files view while the left panel is open.
-  await showPanelView(page, m.workspace_tab_files());
-  await expect(page.locator('[data-workspace-file-tree]')).toHaveCount(2);
 });
 
-test('the panel starts open; closed, history lists archived chats', async ({
+test('the Dashboard has no panel; there, history lists archived chats', async ({
   page,
 }) => {
   await openWorkspace(page, 1366);
   await showPanelView(page, m.workspace_tab_chat());
-  await expect(leftPanel(page)).toBeVisible();
-  // The rail offers Chat history only while the left panel is closed.
-  await page
-    .getByRole('button', { name: m.workspace_close_side_panel() })
-    .click();
+  // The right panel's chat offers history only while no section panel shows.
   await expect(leftPanel(page)).toHaveCount(0);
   await page.getByRole('button', { name: m.chat_history() }).click();
   const history = page.getByRole('dialog', { name: m.chat_history() });
@@ -149,6 +176,7 @@ test('a side panel handle trades width with the viewer alone, collapsing and res
   page,
 }) => {
   await openWorkspace(page, 1440);
+  await openSection(page, m.workspace_section_agent());
   const left = leftPanel(page);
   await left.getByRole('button', { name: 'What is a cell?' }).click({
     timeout: 60_000,

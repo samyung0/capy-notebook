@@ -9,7 +9,7 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
 
 - The page panel (`PagePanel`, `src/components/app/layout.tsx`) has no notch.
   Its header and body scroll together at every width.
-- There is no top bar. From `lg`, the sidebar (`Sidebar account`) carries
+- There is no top bar. From `lg`, the app sidebar (`Sidebar account`) carries
   Search and Notifications under the app name. Its foot is your profile row,
   which opens the profile menu upwards: Settings, Billing & usage, Theme and
   Log out (`ProfileMenu trigger="row"`).
@@ -26,8 +26,50 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   `[data-frosted]`), so the frost shows through. A row's hover ⋮
   (`HoverActions`) drops its fill there and the row's label fades out under
   it instead.
-- The opened workspace has no app sidebar. Its 1-2-3 panels sit straight on
-  the shell, so the frame shows around and between them.
+- The opened workspace has no app sidebar. Its panels sit straight on the
+  shell, 8px apart, so the frame shows around and between them.
+- **Names (Epo, 2026-11-03):** the app's front page (`/`, `src/routes/Home.tsx`,
+  `nav_home`, the house icon) is **Home**; a workspace's front page, its
+  landing with no file open, is its **Dashboard**. "Home" always means the
+  app's own home.
+
+## Workspace rail
+
+From lg (1260px) every workspace page leads with a labelled icon rail
+(`WorkspaceRail.tsx`, board N1 and S2): a 68px card, frosted as the left
+panel, with ← Home (to `/`), the workspace's icon as a 34px badge that only
+says where you are, then Dashboard (Hugeicons' `DashboardSquare01Icon`),
+Files (a folder), Agent (the AI icon) and Study (an open book), each icon
+over its 11px label in a 58px item that fills `page-hover` while current.
+Your avatar sits at its foot and opens the profile menu upwards, headed by
+the workspace's part: Invite member (owners and editors), Workspace
+settings, and Clone for readers who may.
+
+Each section but the Dashboard shows its panel beside the rail (248px by
+default, resizable from 220px, collapsing on a drag like the right panel):
+
+- **Files:** the topic tree with a "+" for New file or topic (board T3); the
+  right panel keeps its own Files view with the search and the workspace
+  picker.
+- **Agent:** the chats, with voice and Archived chats on the title row; a
+  chat opens in the right panel.
+- **Study:** Study's pages (`StudyPanel`), see
+  [study-progress.md](../study-progress.md#practice).
+
+The section starts from the URL (a Study page shows Study, an open item
+Files, else the Dashboard), an item opened from the Dashboard or Study moves
+it to Files, and leaving Study for the landing shows the Dashboard. Pressing
+the current section closes or reopens its panel; Dashboard opens the landing
+and Study opens Practice. With the rail the centre header has no back arrow
+or left-panel toggle; Study's pages fill the centre without a header. Below
+lg the one-column layout stays as before: the header's title opens the Files
+dropdown and its ⋮ (and the dropdown's foot) carry Dashboard, Study and
+Workspace settings.
+
+The AI icon (`ai` in `Icon.tsx`, a curved four-point star stroked like the
+rest; Epo picks the final shape from a mock) marks the agent: the rail's
+Agent, the sidebar's Chat, the right panel's Chat view, the chat panel's
+title and empty state, and Generate in the AI generate form.
 
 ## Styles
 

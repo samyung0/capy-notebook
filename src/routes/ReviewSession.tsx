@@ -254,16 +254,11 @@ function Session({
     );
   }
 
-  // A plan's review returns to its Study page with the plan picked.
-  const planId = search.planId ?? session?.ref.planId;
-  const studySearch = {
-    study: true as const,
-    ...(planId ? { plan: planId } : {}),
-  };
+  // A review started in a workspace returns to its Practice page.
+  const studySearch = { study: 'practice' as const };
   function back() {
     if (search.from === 'review')
       navigate({ search: { tab: 'review' }, to: '/learning' });
-    // A workspace review starts on its Study page and returns there.
     else
       navigate({
         params: { workspaceId },

@@ -221,7 +221,7 @@ const blocksRedirect = <const T extends string>(path: T) =>
 
 const appRoutes = [
   createRoute({
-    component: lazyPage(() => import('@/routes/Dashboard')),
+    component: lazyPage(() => import('@/routes/Home')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));

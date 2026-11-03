@@ -33,9 +33,9 @@ describe('gettingStarted', () => {
 
   it('keeps the list when the same account starts again', () => {
     startGettingStarted('u_1');
-    markGettingStarted('plan');
+    markGettingStarted('practice');
     startGettingStarted('u_1');
-    expect(stored().done).toEqual(['plan']);
+    expect(stored().done).toEqual(['practice']);
   });
 
   it('closes the list', () => {

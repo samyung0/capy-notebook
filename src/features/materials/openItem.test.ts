@@ -111,18 +111,42 @@ describe('document mode cache', () => {
     expect(() => saveDocumentMode(item, 'edit')).not.toThrow();
   });
 
-  it('opens settings at a tab, the Study page and a plan from the URL, ignoring other values', () => {
+  it('opens settings at a tab and Practice with its session or result from the URL, ignoring other values', () => {
     expect(
-      parseWorkspaceOpenSearch({ settings: 'others', study: true })
-    ).toMatchObject({ settings: 'others', study: true });
-    expect(parseWorkspaceOpenSearch({ plan: 'p1' })).toMatchObject({
-      plan: 'p1',
+      parseWorkspaceOpenSearch({ settings: 'others', study: 'practice' })
+    ).toMatchObject({ settings: 'others', study: 'practice' });
+    expect(
+      parseWorkspaceOpenSearch({
+        group: 'topic',
+        reviewMode: 'fading',
+        study: 'practice',
+        topicId: 't1',
+      })
+    ).toMatchObject({
+      group: 'topic',
+      reviewMode: 'fading',
+      study: 'practice',
+      topicId: 't1',
     });
+    expect(
+      parseWorkspaceOpenSearch({ review: 's1', study: 'practice' })
+    ).toMatchObject({ review: 's1', study: 'practice' });
     expect(
       parseWorkspaceOpenSearch({ file: 'f1', settings: 'danger' })
     ).toMatchObject({ file: 'f1', settings: 'danger' });
     expect(
-      parseWorkspaceOpenSearch({ settings: 'bogus', study: 'yes' })
-    ).toEqual({ plan: undefined, settings: undefined, study: undefined });
+      parseWorkspaceOpenSearch({
+        group: 'topic',
+        settings: 'bogus',
+        study: 'yes',
+      })
+    ).toEqual({
+      group: undefined,
+      review: undefined,
+      reviewMode: undefined,
+      settings: undefined,
+      study: undefined,
+      topicId: undefined,
+    });
   });
 });

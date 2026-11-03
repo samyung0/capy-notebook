@@ -19,10 +19,6 @@ export const PREF_KEYS = {
   /** The Get started list, written only by the browser that ran onboarding
    * (gettingStarted.ts). */
   gettingStarted: 'capy.gettingStarted',
-  /** The opened workspace's left panel (chats and files) is open. */
-  leftPanel: 'capy.workspace.leftPanel',
-  /** The view the left panel shows: Chats, Files or Study. */
-  leftView: 'capy.workspace.leftView',
   /** Progress maps whose finish animation has played: `topic:<id>:<count>`, `workspace:<id>:<count>`. */
   mapFinishPlayed: 'capy.map.finishPlayed',
   /** A note's toolbar is shown in Edit (Q461; no key: hidden). */
@@ -34,9 +30,6 @@ export const PREF_KEYS = {
     `capy.chat.open.${workspaceId ?? 'account'}`,
   openTopics: (workspaceId: string) =>
     `capy.workspace.openTopics.${workspaceId}`,
-  /** A Quick review batch: its items, when it began, which are done; per
-   * workspace, or `plan-<id>` per plan. */
-  quickReview: (scope: string) => `capy.quickReview.${scope}`,
   /** The quiz attempt this browser continues, by its id: the account's
    * (`account`) or, signed out on a shared quiz, this browser's (`local`). */
   quizAttempt: (owner: 'account' | 'local', quizId: string) =>

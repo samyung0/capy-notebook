@@ -6,7 +6,7 @@ import {
   useLearningProgress,
   useSetWorkspaceStudyEnabled,
 } from '@/api/hooks';
-import type { ProgressMap, ProgressWorkspace } from '@/api/types';
+import type { ProgressMap, ProgressWorkspace, StudyPlan } from '@/api/types';
 import { PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TabContent } from '@/components/app/tabPanel';
@@ -18,7 +18,6 @@ import { Tabs } from '@/components/ui/Tabs';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { AllResults } from '@/features/study/AllResults';
-import { usePlanLinks } from '@/features/study/plans/planLinks';
 import {
   planFinishedAt,
   planProgress,
@@ -51,8 +50,15 @@ function Progress({ finished }: { finished?: string }) {
   const { data: plans } = useLearningPlans({ errorBoundary: false });
   const revealRef = useLoadingReveal(isLoading);
   const navigate = useNavigate();
-  const links = usePlanLinks(undefined);
   const { mutate: deletePlan } = useDeleteStudyPlan();
+  // A plan has no page of its own since the workspace Study page went: it
+  // opens its workspace's Practice.
+  const openPlan = (plan: StudyPlan) =>
+    navigate({
+      params: { workspaceId: plan.workspaceId },
+      search: { study: 'practice' },
+      to: '/workspaces/$workspaceId',
+    });
   if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
   if (isLoading) return <ProgressSkeleton />;
   // Show hidden (count), only while something hides; Hide hidden once on.
@@ -124,7 +130,7 @@ function Progress({ finished }: { finished?: string }) {
                   : m.progress_not_studied()
             }
             name={plan.name}
-            onOpen={() => links.openPlan(plan)}
+            onOpen={() => openPlan(plan)}
           />
         );
       })}
@@ -153,7 +159,7 @@ function Progress({ finished }: { finished?: string }) {
                 end: <span className="w-9" />,
                 hidden,
                 key: plan.id,
-                open: () => links.openPlan(plan),
+                open: () => openPlan(plan),
                 planName: plan.name,
                 workspace: parent,
               },

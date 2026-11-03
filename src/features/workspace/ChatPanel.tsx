@@ -676,10 +676,7 @@ export function ChatPanel({
         )}
         {!(messages.length || opening) && (
           <div className="m-auto max-w-[80%] text-center">
-            <Icon
-              className="non-scaling-svg mx-auto mb-2 size-6.5"
-              name="message"
-            />
+            <Icon className="non-scaling-svg mx-auto mb-2 size-6.5" name="ai" />
             {missingThread ? (
               <>
                 <p className="font-medium">{m.error_not_found_title()}</p>
@@ -940,7 +937,7 @@ export function ChatPanel({
           </ToolbarButton>
           <Icon
             className="size-4 shrink-0 -translate-y-px text-solid-accent-1 md:size-5"
-            name="message"
+            name="ai"
           />
           <h2 className="t-body min-w-0 flex-1 truncate font-semibold">
             {title}

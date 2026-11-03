@@ -1,4 +1,4 @@
-import type { Region } from '@/api/types';
+import type { Region, ReviewMode } from '@/api/types';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import {
   isSettingsTab,
@@ -45,11 +45,16 @@ export type WorkspaceOpenSearch = {
   /** The open item fills the page, header and side panels hidden. In the URL
    * so the back gesture leaves it. */
   fullscreen?: true;
-  /** The workspace's Study page, shown while nothing is open. */
-  study?: true;
-  /** The Study page's picked plan, kept in this workspace (the Study page
-   * shows while nothing is open). */
-  plan?: string;
+  /** A Study page in the centre while nothing is open; Practice is the one
+   * built so far. */
+  study?: 'practice';
+  /** Practice's topic session to start: its group, topic and, from a
+   * suggestion, its mode. */
+  group?: 'topic' | 'others' | 'workspace';
+  topicId?: string;
+  reviewMode?: ReviewMode;
+  /** Practice's result of a finished topic session. */
+  review?: string;
   /** Workspace settings open at this tab, over whatever the page shows. */
   settings?: SettingsTab;
   /** One-shot actions from the Get started list, dropped once taken: open the
@@ -99,8 +104,11 @@ export function parseWorkspaceOpenSearch(
   // Invalid values are cleared explicitly: the router keeps raw keys the
   // parser leaves out.
   return {
-    plan: undefined,
+    group: undefined,
+    review: undefined,
+    reviewMode: undefined,
     study: undefined,
+    topicId: undefined,
     ...parseOpenPage(search),
     add: search.add === 'upload' ? 'upload' : undefined,
     chat: search.chat === 'new' ? 'new' : undefined,
@@ -130,11 +138,28 @@ function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
       ...(item ? { item } : {}),
     };
   }
-  if (typeof search.plan === 'string' && search.plan)
-    return { plan: search.plan };
-  return search.study === true || search.study === 'true'
-    ? { study: true }
-    : {};
+  return search.study === 'practice' ? parsePractice(search) : {};
+}
+
+const text = (value: unknown) =>
+  typeof value === 'string' && value ? value : undefined;
+const GROUPS = ['topic', 'others', 'workspace'] as const;
+const MODES: readonly ReviewMode[] = ['tricky', 'fading', 'learned'];
+
+/** Practice, a topic session to start on it, or a session's result. */
+function parsePractice(search: Record<string, unknown>): WorkspaceOpenSearch {
+  const review = text(search.review);
+  if (review) return { review, study: 'practice' };
+  const group = GROUPS.find((g) => g === search.group);
+  const topicId = text(search.topicId);
+  if (!group || (group === 'topic' && !topicId)) return { study: 'practice' };
+  const reviewMode = MODES.find((md) => md === search.reviewMode);
+  return {
+    group,
+    study: 'practice',
+    ...(group === 'topic' ? { topicId } : {}),
+    ...(reviewMode ? { reviewMode } : {}),
+  };
 }
 
 export function openItemFromSearch(

@@ -330,7 +330,7 @@ export function GenerateForm({
         <DialogPrimary pending={pending}>
           <Button
             disabled={pending || !ready}
-            iconLeft={pending ? undefined : 'sparkles'}
+            iconLeft={pending ? undefined : 'ai'}
             onClick={run}
             size="lg"
             variant="accent"

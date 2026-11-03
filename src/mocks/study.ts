@@ -3,10 +3,13 @@ import type {
   ItemAttempts,
   PastReview,
   PlanStep,
+  Practice,
+  PracticeReview,
   ProgressWorkspace,
   ReviewAnswer,
   ReviewItem,
   ReviewMode,
+  ReviewReason,
   ReviewSessionRef,
   ReviewSuggestion,
   StudySummary,
@@ -62,6 +65,11 @@ items('ws_bio').set('qz_1', {
   kind: 'material',
   state: 'done',
 });
+items('ws_bio').set('qz_2', {
+  at: Date.now() - 7 * 86_400_000,
+  kind: 'material',
+  state: 'started',
+});
 items('ws_bio').set('dk_1', {
   at: Date.now() - 1 * 86_400_000,
   kind: 'material',
@@ -78,6 +86,8 @@ for (const [card, lapses] of [
 rated.set('qz_1/q4', { at: Date.now() - 7_200_000, lapses: 1 });
 rated.set('qz_1/q15', { at: Date.now() - 5_400_000, lapses: 1 });
 rated.set('qz_1/q12', { at: Date.now() - 3_600_000, lapses: 1 });
+// Genetics practised once a week ago, so Practice suggests it as fading.
+rated.set('qz_2/q7', { at: Date.now() - 7 * 86_400_000, lapses: 0 });
 // Calculus started yesterday; World History is finished on first read (below).
 items('ws_calc').set('f_6', {
   at: Date.now() - 1 * 86_400_000,
@@ -660,7 +670,7 @@ type Session = {
   topicId?: string;
   planId?: string;
   mode?: ReviewMode;
-  items: { materialId: string; itemId: string }[];
+  items: { materialId: string; itemId: string; reason?: ReviewReason }[];
   answers: Map<string, Answer>;
   startedAt: number;
   lastAnswerAt: number;
@@ -723,6 +733,56 @@ function inGroup(
       : group === 'others'
         ? !topicOf(it.materialId)
         : true
+  );
+}
+
+/** Why a session serves an item: never rated, missed, or fading. */
+function reasonOf(it: { materialId: string; itemId: string }): ReviewReason {
+  const rank = rated.get(`${it.materialId}/${it.itemId}`);
+  if (!rank) return 'new';
+  return rank.lapses > 0 ? 'missed' : 'fading';
+}
+
+/** The group's quizzes in reading order, top-level and untrashed. */
+function groupQuizzes(
+  wsId: string,
+  group: ReviewSuggestion['group'],
+  topicId?: string
+) {
+  const order = (id?: string | null) =>
+    db.topics.find((t) => t.id === id)?.order ?? Number.MAX_SAFE_INTEGER;
+  return db.materials
+    .filter(
+      (mt) =>
+        mt.workspaceId === wsId &&
+        mt.kind === 'quiz' &&
+        !mt.parentMaterialId &&
+        (group === 'topic'
+          ? mt.topicId === topicId
+          : group === 'others'
+            ? !mt.topicId
+            : true)
+    )
+    .sort((a, b) => order(a.topicId) - order(b.topicId));
+}
+
+/** Questions of the group's quizzes never rated, for a manual session. */
+function newQuestions(
+  wsId: string,
+  group: ReviewSuggestion['group'],
+  topicId?: string
+): ReviewItem[] {
+  return groupQuizzes(wsId, group, topicId).flatMap((mt) =>
+    db
+      .quizFromMaterial(mt)
+      .questions.filter((q) => !rated.has(`${mt.id}/${q.id}`))
+      .map((question) => ({
+        itemId: question.id,
+        kind: 'question' as const,
+        materialId: mt.id,
+        materialTitle: mt.title,
+        question: learnerView(question),
+      }))
   );
 }
 
@@ -1009,12 +1069,16 @@ function answeredItems(
   session: Session,
   current: (materialId: string, itemId: string) => ReviewItem | undefined
 ) {
+  const reasons = new Map(
+    session.items.map((it) => [`${it.materialId}/${it.itemId}`, it.reason])
+  );
   return [...session.answers].flatMap(([key, a]): ReviewAnswer[] => {
     const [materialId, itemId] = key.split('/');
     const found = current(materialId, itemId);
     if (!found) return [];
     // The learner view's question gives way to the graded one.
-    const { question: _learner, ...item } = found;
+    const { question: _learner, ...rest } = found;
+    const item = { ...rest, reason: reasons.get(key) };
     return a.kind === 'card'
       ? [{ ...item, rating: a.rating }]
       : [
@@ -1158,6 +1222,144 @@ function pastReviews(params: URLSearchParams) {
   return { items: list, more: false };
 }
 
+// Biology 101's Membranes & transport was reviewed once (Practice's "Only
+// you" row): two of three questions right.
+{
+  const quiz = db.materials.find((x) => x.id === 'qz_1');
+  const questions = quiz ? db.quizFromMaterial(quiz).questions : [];
+  const picked = ['q4', 'q12', 'q15'].flatMap(
+    (id) => questions.find((q) => q.id === id) ?? []
+  );
+  const at = Date.now() - 2 * 86_400_000;
+  sessions.set('5f0c2a41-7c3e-4c55-9d2b-1e8a9c4b6d02', {
+    answers: new Map(
+      picked.map((question, i): [string, Answer] => {
+        const graded = gradeQuestions([question], {});
+        return [
+          `qz_1/${question.id}`,
+          {
+            answers: {},
+            correct: i === 1 ? 0 : graded.max,
+            graded: graded.questions[0],
+            kind: 'question',
+            rating: i === 1 ? 1 : 3,
+            total: graded.max,
+          },
+        ];
+      })
+    ),
+    finishedAt: at,
+    group: 'topic',
+    items: picked.map((question, i) => ({
+      itemId: question.id,
+      materialId: 'qz_1',
+      reason: i === 2 ? 'new' : 'missed',
+    })),
+    lastAnswerAt: at,
+    startedAt: at - 6 * 60_000,
+    topicId: 'ch_2',
+    workspaceId: 'ws_bio',
+  });
+}
+
+/** Practice as the server reads it: this workspace's suggestions over its
+ * questions, every quiz in reading order with the best attempt, the
+ * caller's topic reviews; staff also get member counts (the mock's are
+ * fixed: six members, a group average once five tried). */
+export function practiceBody(wsId: string, staff: boolean): Practice {
+  // One suggestion per topic with rated questions: tricky when missed.
+  const groups = new Map<string, ReviewItem[]>();
+  for (const it of pool(wsId))
+    if (it.kind === 'question') {
+      const key = topicOf(it.materialId) ?? '';
+      groups.set(key, [...(groups.get(key) ?? []), it]);
+    }
+  const ws = db.workspaces.find((w) => w.id === wsId);
+  const suggestions: ReviewSuggestion[] = [...groups]
+    .map(([topicId, list]): ReviewSuggestion => {
+      const ranks = list.map(
+        (it) =>
+          rated.get(`${it.materialId}/${it.itemId}`) ?? { at: 0, lapses: 0 }
+      );
+      const missed = ranks.filter((r) => r.lapses > 0).length;
+      return {
+        evidence: {
+          forgotten: Math.ceil(list.length / 2),
+          lastPractisedAt: new Date(
+            Math.max(...ranks.map((r) => r.at))
+          ).toISOString(),
+          missed,
+          repeated: ranks.filter((r) => r.lapses > 1).length,
+          young: list.length,
+        },
+        group: topicId ? 'topic' : 'others',
+        iconId: ws?.iconId ?? '',
+        items: list.length,
+        mode: missed ? 'tricky' : 'fading',
+        topicId: topicId || undefined,
+        topicName: db.topics.find((t) => t.id === topicId)?.name,
+        workspaceId: wsId,
+        workspaceName: ws?.name ?? wsId,
+      };
+    })
+    .sort((a, b) => b.items - a.items)
+    .slice(0, 3);
+  const TRIED = [5, 2, 6, 0];
+  const AVERAGE = [0.74, 0, 0.81, 0];
+  const quizzes = groupQuizzes(wsId, 'workspace').map((mt, i) => {
+    const best = db.attempts
+      .filter((a) => a.materialId === mt.id && a.kind === 'quiz' && a.total > 0)
+      .sort((a, b) => b.correct / b.total - a.correct / a.total)[0];
+    const tried = TRIED[i % TRIED.length];
+    return {
+      best: best ? { correct: best.correct, total: best.total } : undefined,
+      id: mt.id,
+      questions: db.quizFromMaterial(mt).questions.length,
+      title: mt.title,
+      topicId: mt.topicId ?? undefined,
+      ...(staff
+        ? {
+            average: tried >= 5 ? AVERAGE[i % AVERAGE.length] : undefined,
+            triedBy: tried,
+          }
+        : {}),
+    };
+  });
+  const reviews = new Map<string, PracticeReview>();
+  for (const [, session] of [...sessions].sort(
+    (a, b) => b[1].lastAnswerAt - a[1].lastAnswerAt
+  )) {
+    if (session.workspaceId !== wsId) continue;
+    if (session.group !== 'topic' && session.group !== 'others') continue;
+    const marks = [...session.answers.values()].flatMap((a) =>
+      a.kind === 'question' ? [a] : []
+    );
+    if (!marks.length) continue;
+    const best = {
+      correct: marks.reduce((n, a) => n + a.correct, 0),
+      total: marks.reduce((n, a) => n + a.total, 0),
+    };
+    const key = `${session.group}:${session.topicId ?? ''}`;
+    const seen = reviews.get(key);
+    if (!seen)
+      reviews.set(key, {
+        best,
+        group: session.group,
+        lastAt: new Date(session.lastAnswerAt).toISOString(),
+        questions: session.items.length,
+        topicId: session.topicId,
+      });
+    else if (best.correct / best.total > seen.best.correct / seen.best.total)
+      seen.best = best;
+  }
+  return {
+    quizzes,
+    reviews: [...reviews.values()],
+    suggestions: items(wsId).size > 0 ? suggestions : [],
+    ...(staff ? { members: 6 } : {}),
+  };
+}
+
 export const studyHandlers = [
   http.get('/api/workspaces/:id/study', ({ params, request }) => {
     const planId = new URL(request.url).searchParams.get('planId');
@@ -1207,15 +1409,33 @@ export const studyHandlers = [
     const mode = (url.searchParams.get('mode') ?? undefined) as
       | ReviewMode
       | undefined;
-    const list = (
+    // Practice's topic sessions serve questions only; without a mode they
+    // mix in questions not seen yet, alternating with practised ones.
+    const questionsOnly = url.searchParams.get('items') === 'quiz';
+    let practised =
       group === 'plan' && planId
         ? planPool(planId)
         : inGroup(
             String(params.id),
             group as ReviewSuggestion['group'],
             topicId
+          );
+    if (questionsOnly)
+      practised = practised.filter((it) => it.kind === 'question');
+    const fresh =
+      questionsOnly && !mode && group !== 'plan'
+        ? newQuestions(
+            String(params.id),
+            group as ReviewSuggestion['group'],
+            topicId
           )
-    ).slice(0, 20);
+        : [];
+    const mixed: ReviewItem[] = [];
+    for (let i = 0; i < Math.max(practised.length, fresh.length); i++)
+      mixed.push(...[practised[i], fresh[i]].filter((it) => !!it));
+    const list = mixed
+      .slice(0, questionsOnly ? 10 : 20)
+      .map((it) => ({ ...it, reason: reasonOf(it) }));
     return HttpResponse.json({
       answered: 0,
       done: [],
@@ -1313,9 +1533,10 @@ export const studyHandlers = [
       answered: session.answers.size,
       done,
       group: session.group,
-      items: left
-        .map((it) => current(it.materialId, it.itemId))
-        .filter(Boolean),
+      items: left.flatMap((it) => {
+        const found = current(it.materialId, it.itemId);
+        return found ? [{ ...found, reason: it.reason }] : [];
+      }),
       mode: session.mode,
       topicId: session.topicId,
       total: session.items.length,
@@ -1348,6 +1569,13 @@ export const studyHandlers = [
     if (!session) return new HttpResponse(null, { status: 404 });
     session.finishedAt ??= Date.now();
     return new HttpResponse(null, { status: 204 });
+  }),
+  http.get('/api/workspaces/:id/practice', ({ params }) => {
+    const wsId = String(params.id);
+    const ws = db.workspaces.find((w) => w.id === wsId);
+    return HttpResponse.json(
+      practiceBody(wsId, ws?.role === 'owner' || ws?.role === 'editor')
+    );
   }),
   http.get('/api/workspaces/:id/study/attempts', ({ params }) => {
     const items: ItemAttempts[] = db.materials

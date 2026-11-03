@@ -54,14 +54,6 @@ import {
   type PresenceConnection,
 } from '@/features/collaboration/presence';
 import {
-  recentIcon,
-  recentThumbnail,
-} from '@/features/dashboard/RecentItemsCard';
-import {
-  mergeRecentItems,
-  type RecentItem,
-} from '@/features/dashboard/recentItems';
-import {
   FileError,
   FileLoading,
   FileNotIndexedBanner,
@@ -82,6 +74,8 @@ import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
+import { recentIcon, recentThumbnail } from '@/features/home/RecentItemsCard';
+import { mergeRecentItems, type RecentItem } from '@/features/home/recentItems';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
@@ -159,11 +153,6 @@ const loadPreview = () =>
 const LazyMaterialPreview = lazy(() =>
   loadPreview().then((m) => ({ default: m.MaterialPreview }))
 );
-const StudyPage = lazy(() =>
-  import('@/features/study/StudyPage').then((mod) => ({
-    default: mod.StudyPage,
-  }))
-);
 type PreviewComponent =
   | typeof LazyMaterialPreview
   | typeof import('./MaterialPreview').MaterialPreview;
@@ -181,10 +170,8 @@ export function CenterContent({
   onAddFile,
   onModeChange,
   onOpenSettings,
-  onOpenItem,
-  onOpenProgress,
-  plan,
-  study = false,
+  onOpenPractice,
+  page,
   requestedMode = null,
   workspaceId,
   leading,
@@ -192,14 +179,11 @@ export function CenterContent({
   oneColumn,
   standalone = false,
 }: {
-  /** Opens an item from the Study page or a plan. */
-  onOpenItem?: (item: OpenItem) => void;
-  /** Opens the Study page; a quick action when no file is open. */
-  onOpenProgress?: () => void;
-  /** The Study page's picked plan. */
-  plan?: string;
-  /** Shows the Study page while no file is open. */
-  study?: boolean;
+  /** Opens Study → Practice; a quick action when no file is open. */
+  onOpenPractice?: () => void;
+  /** A Study page shown under the header while no file is open (one
+   * column; from lg the workspace draws it without the header). */
+  page?: ReactNode;
   /** Below lg: the title opens Files and ⋮ carries the workspace actions. */
   oneColumn?: OneColumnChrome;
   standalone?: boolean;
@@ -313,11 +297,9 @@ export function CenterContent({
         leading={leading}
         onAddFile={onAddFile}
         oneColumn={oneColumn}
-        onOpenItem={onOpenItem}
-        onOpenProgress={onOpenProgress}
+        onOpenPractice={onOpenPractice}
         onOpenSettings={onOpenSettings}
-        plan={plan}
-        study={study}
+        page={page}
         trailing={trailing}
         workspaceId={standalone ? '' : workspaceId}
       />
@@ -989,28 +971,25 @@ function StudyButton({
 }
 
 /** No file open: the header row keeps the workspace picker, then the offline
- * and workspace status icons. No strip renders, since strips belong to a file. */
+ * and workspace status icons. No strip renders, since strips belong to a file.
+ * `leading` null leaves the row's start empty (the rail carries Home). */
 function EmptyCenter({
   leading,
   trailing,
   oneColumn,
   onAddFile,
-  onOpenItem,
-  onOpenProgress,
+  onOpenPractice,
   onOpenSettings,
-  plan,
-  study,
+  page,
   workspaceId,
 }: {
   leading?: ReactNode;
   trailing?: ReactNode;
   oneColumn?: OneColumnChrome;
   onAddFile?: () => void;
-  onOpenItem?: (item: OpenItem) => void;
-  onOpenProgress?: () => void;
+  onOpenPractice?: () => void;
   onOpenSettings?: () => void;
-  plan?: string;
-  study?: boolean;
+  page?: ReactNode;
   workspaceId: string;
 }) {
   const sm = useMediaQuery('(min-width: 640px)');
@@ -1029,11 +1008,13 @@ function EmptyCenter({
         )}
         data-slot="center-header"
       >
-        {leading ?? (
+        {leading === undefined ? (
           <>
             <Icon className="size-5.5" name="files" />
             <h2 className="t-subtitle translate-y-px truncate">--</h2>
           </>
+        ) : (
+          leading
         )}
         {oneColumn && (
           // Pulled in to a 10px ink gap after the back arrow, as in a file's.
@@ -1075,23 +1056,15 @@ function EmptyCenter({
           </div>
         )}
       </div>
-      {(plan || study) && workspaceId && onOpenItem ? (
-        <div className="min-h-0 flex-1 overflow-auto">
-          <Suspense fallback={null}>
-            <StudyPage
-              onOpenItem={onOpenItem}
-              planId={plan}
-              workspaceId={workspaceId}
-            />
-          </Suspense>
-        </div>
+      {page && workspaceId ? (
+        page
       ) : (
         <div className="grid flex-1 place-items-center p-4 sm:p-6">
           {workspaceId ? (
             <RecentInWorkspace
               actions={
                 <QuickActions
-                  onOpenProgress={onOpenProgress}
+                  onOpenPractice={onOpenPractice}
                   onOpenSettings={onOpenSettings}
                 />
               }
@@ -1120,10 +1093,10 @@ function PickAFile({ actions }: { actions?: ReactNode }) {
 /** Workspace shortcuts under the recent files: as tall as a file tree row,
  * muted until hovered. */
 function QuickActions({
-  onOpenProgress,
+  onOpenPractice,
   onOpenSettings,
 }: {
-  onOpenProgress?: () => void;
+  onOpenPractice?: () => void;
   onOpenSettings?: () => void;
 }) {
   return (
@@ -1139,15 +1112,17 @@ function QuickActions({
           {m.workspace_settings()}
         </Button>
       )}
-      <Button
-        className="h-8 px-3 text-xs"
-        iconLeft="knowledge"
-        onClick={onOpenProgress}
-        size="sm"
-        variant="ghost-muted"
-      >
-        {m.workspace_study_plan()}
-      </Button>
+      {onOpenPractice && (
+        <Button
+          className="h-8 px-3 text-xs"
+          iconLeft="quiz"
+          onClick={onOpenPractice}
+          size="sm"
+          variant="ghost-muted"
+        >
+          {m.study_panel_practice()}
+        </Button>
+      )}
     </div>
   );
 }
@@ -1177,7 +1152,7 @@ function RecentInWorkspace({
   return (
     // Lifted by half the subtitle row so the grid, not the block, sits centred.
     <div className="flex w-full max-w-[400px] -translate-y-4 flex-col gap-2.5">
-      <h3 className="t-subtitle px-1">{m.dashboard_recent()}</h3>
+      <h3 className="t-subtitle px-1">{m.home_recent()}</h3>
       <div
         className={cn(
           'grid gap-1',

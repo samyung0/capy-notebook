@@ -12,7 +12,7 @@ import {
   recentLink,
   recentThumbnail,
   useRecentItems,
-} from '@/features/dashboard/RecentItemsCard';
+} from '@/features/home/RecentItemsCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -45,7 +45,7 @@ export function RecentQuickOpen({ onClose }: { onClose: () => void }) {
                 .map(([, , , error]) => unexpectedErrorId(error))
                 .find(Boolean) ?? null
             }
-            message={m.dashboard_recent_error()}
+            message={m.home_recent_error()}
             onRetry={() => {
               for (const [, , refetch] of missing) void refetch();
             }}

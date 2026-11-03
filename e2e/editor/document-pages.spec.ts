@@ -659,19 +659,15 @@ test.fixme('Blocks, Files and recent links use saved modes without reloading the
   await page.getByRole('link', { exact: true, name: m.nav_files() }).click();
   await openItem(page, 'Cell structure.pdf');
   await expect(mode).toHaveAttribute('aria-pressed', 'true');
-  await page
-    .getByRole('link', { exact: true, name: m.nav_dashboard() })
-    .click();
+  await page.getByRole('link', { exact: true, name: m.nav_home() }).click();
   const recent = page
-    .getByRole('heading', { name: m.dashboard_recent() })
+    .getByRole('heading', { name: m.home_recent() })
     .locator('xpath=../..');
   await recent.getByRole('link', { name: /Cell structure.pdf/ }).click();
   await expect(page).toHaveURL('/workspaces/ws_bio?file=f_1');
   await expect(mode).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('button', { name: m.workspace_back_to() }).click();
-  await page
-    .getByRole('link', { exact: true, name: m.nav_dashboard() })
-    .click();
+  // The workspace rail's Home goes back to the app's Home.
+  await page.getByRole('link', { exact: true, name: m.nav_home() }).click();
   await recent.getByRole('link', { name: /Editor matrix note/ }).click();
   await expect(page).toHaveURL('/workspaces/ws_bio?material=mat_e2e_editor');
   await expect(mode).toHaveAttribute('aria-pressed', 'true');

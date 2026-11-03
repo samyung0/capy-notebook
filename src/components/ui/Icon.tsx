@@ -71,6 +71,7 @@ import {
   FitToScreenIcon,
   FlashIcon,
   Flowchart01Icon,
+  Folder01Icon,
   FunctionSquareIcon,
   GeometricShapes01Icon,
   Globe02Icon,
@@ -85,6 +86,7 @@ import {
   Heading06Icon,
   HelpCircleIcon,
   HighlighterIcon,
+  Home01Icon,
   Image01Icon,
   InformationCircleIcon,
   Key01Icon,
@@ -130,6 +132,7 @@ import {
   Redo03Icon,
   RefreshCcwIcon,
   RotateClockwiseIcon,
+  RotateCwIcon,
   Route01Icon,
   ScissorIcon,
   Search01Icon,
@@ -172,6 +175,7 @@ import {
   Upload01Icon,
   User02Icon,
   UserAdd01Icon,
+  UserGroupIcon,
   ViewIcon,
   ViewOffIcon,
   WaveIcon,
@@ -266,6 +270,12 @@ const PanelRightOpenIcon = [
 ] satisfies IconSvgElement;
 
 const HugeIcons = {
+  /** What marks AI and the agent (Epo 2026-11-03): a curved four-point
+   * star, stroked like the rest. Epo picks the final variant from a mock, so
+   * every caller uses this name. */
+  ai: [
+    'M12 2.5C12.6 7.6 16.4 11.4 21.5 12C16.4 12.6 12.6 16.4 12 21.5C11.4 16.4 7.6 12.6 2.5 12C7.6 11.4 11.4 7.6 12 2.5Z',
+  ],
   alert: Alert02Icon,
   alignCenter: TextAlignCenterIcon,
   alignJustify: TextAlignJustifyIcon,
@@ -342,6 +352,7 @@ const HugeIcons = {
     'M5 7h11a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2z',
     'M8 4h11a2 2 0 012 2v8',
   ],
+  folder: Folder01Icon,
   folderCollapse: ListChevronsDownUpIcon,
   folderExpand: ListChevronsUpDownIcon,
   globe: Globe02Icon,
@@ -357,6 +368,7 @@ const HugeIcons = {
   heading6: Heading06Icon,
   help: HelpCircleIcon,
   highlighter: HighlighterIcon,
+  home: Home01Icon,
   image: Image01Icon,
   indentDecrease: ListIndentDecreaseIcon,
   indentIncrease: ListIndentIncreaseIcon,
@@ -420,6 +432,8 @@ const HugeIcons = {
   removeFromTopic: Eraser01Icon,
   retry: Undo02Icon,
   rotate: RotateClockwiseIcon,
+  /** A topic review to redo (Practice's own reviews, board P2). */
+  rotateCw: RotateCwIcon,
   route: Route01Icon,
   schedule: Calendar04Icon,
   scissors: ScissorIcon,
@@ -455,6 +469,7 @@ const HugeIcons = {
   unpin: PinOffIcon,
   upload: Upload01Icon,
   userAdd: UserAdd01Icon,
+  userGroup: UserGroupIcon,
   view: ViewIcon,
   viewOff: ViewOffIcon,
   wand: MagicWand01Icon,

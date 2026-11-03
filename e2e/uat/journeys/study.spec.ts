@@ -228,32 +228,27 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     page.getByRole('button', { name: m.flashcards_study_again() })
   ).toBeVisible();
 
-  // Continue opens the first item that is not done: the quiz not yet taken.
-  // The tab first paints the last visit's progress (the persisted query
-  // cache) while it refetches, so wait for the row to name that quiz.
-  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}?study=true`);
-  const continueButton = page.getByRole('button', {
-    exact: true,
-    name: m.study_continue(),
-  });
-  await expect(
-    continueButton.locator('xpath=..').getByText(nextTitle, { exact: true })
-  ).toBeVisible();
-  await continueButton.click();
+  // Learning's Continue opens the first item that is not done: the quiz not
+  // yet taken. The tab first paints the last visit's progress (the persisted
+  // query cache) while it refetches, so wait for the button to name it.
+  await page.goto(`${run.env.appUrl}/learning`);
+  await page
+    .getByRole('button', {
+      exact: true,
+      name: m.learning_continue_item({ title: nextTitle }),
+    })
+    .click();
   await expect(page).toHaveURL(new RegExp(`[?&]material=${nextQuiz}(&|$)`));
 
-  // A workspace review from the Study tab. A manual session gives 60% of its
-  // places (12 of a new account's 20) to never-rated items and the rest to
-  // practised ones, each side filling what the other leaves
-  // (store.withNew): here the quiz not yet taken's one question, served
-  // first, then the card and the question already practised.
+  // A whole-workspace review, as Learning's Default plans row opens one. A
+  // manual session gives 60% of its places (12 of a new account's 20) to
+  // never-rated items and the rest to practised ones, each side filling
+  // what the other leaves (store.withNew): here the quiz not yet taken's one
+  // question, served first, then the card and the question already
+  // practised.
   const reviewTotal = 3;
-  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}?study=true`);
-  await page
-    .getByRole('link', { name: m.study_start_workspace_review() })
-    .click();
-  await expect(page).toHaveURL(
-    new RegExp(`/learning/review/${workspaceId}\\?.*from=workspace`)
+  await page.goto(
+    `${run.env.appUrl}/learning/review/${workspaceId}?group=workspace&from=workspace`
   );
   await expect(
     page.getByRole('progressbar', {

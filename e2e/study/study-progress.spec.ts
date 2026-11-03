@@ -269,16 +269,14 @@ test.describe('study progress', () => {
     await setStudyItem(ownerApi, ws.id, { materialId: read.id }, 'done');
     await setStudyItem(ownerApi, ws.id, { materialId: skipped.id }, 'removed');
 
-    await ownerPage.goto(`/workspaces/${ws.id}?study=true`);
-    // Up next is the row holding Continue; the Files panel lists the same
-    // titles, so match inside that row only.
-    const continueButton = ownerPage.getByRole('button', {
-      exact: true,
-      name: m.study_continue(),
-    });
-    const upNext = continueButton.locator('xpath=..');
-    await expect(upNext.getByText(next.title, { exact: true })).toBeVisible();
-    await continueButton.click();
+    // Learning → Progress leads with this workspace and its Continue.
+    await ownerPage.goto('/learning');
+    await ownerPage
+      .getByRole('button', {
+        exact: true,
+        name: m.learning_continue_item({ title: next.title }),
+      })
+      .click();
     await expect(ownerPage).toHaveURL(
       new RegExp(`[?&]material=${next.id}(&|$)`)
     );
@@ -286,14 +284,18 @@ test.describe('study progress', () => {
       ownerPage.getByRole('heading', { exact: true, name: next.title })
     ).toBeVisible();
 
-    // Reading it moves Continue on to the item after it, back on the Study
-    // page the open note took the centre from.
+    // Reading it moves Continue on to the item after it.
     await ownerPage.getByRole('button', { name: m.study_mark_read() }).click();
     await expect(
       ownerPage.getByRole('button', { name: m.study_mark_unread() })
     ).toBeVisible();
-    await ownerPage.goto(`/workspaces/${ws.id}?study=true`);
-    await expect(upNext.getByText(later.title, { exact: true })).toBeVisible();
+    await ownerPage.goto('/learning');
+    await expect(
+      ownerPage.getByRole('button', {
+        exact: true,
+        name: m.learning_continue_item({ title: later.title }),
+      })
+    ).toBeVisible();
   });
 
   test('quizzes and flashcard sets go started and done, Continue skips the done ones, and Learning counts them', async ({
@@ -413,20 +415,6 @@ test.describe('study progress', () => {
     ).toEqual([{ correct: 1, materialId: finishedQuiz.id, total: 2 }]);
     // Both questions of the attempt, both finished cards, one started card.
     expect(study.reviewable).toBe(5);
-
-    // Continue passes Week 1 and opens the quiz that was only started.
-    await ownerPage.goto(`/workspaces/${ws.id}?study=true`);
-    const continueButton = ownerPage.getByRole('button', {
-      exact: true,
-      name: m.study_continue(),
-    });
-    await expect(
-      continueButton.locator('xpath=..').getByText(startedQuiz.title)
-    ).toBeVisible();
-    await continueButton.click();
-    await expect(ownerPage).toHaveURL(
-      new RegExp(`[?&]material=${startedQuiz.id}(&|$)`)
-    );
 
     // Learning → Progress leads with this workspace: its map and Continue
     // on the quiz that was only started.
@@ -560,16 +548,9 @@ test.describe('study progress', () => {
     });
     expect(cardRating.status()).toBe(204);
 
-    await ownerPage.goto(`/workspaces/${ws.id}?study=true`);
-    await ownerPage
-      .getByRole('link', { name: m.study_start_workspace_review() })
-      .click();
-    // Both items were rated a moment ago, so nothing is suggested and
-    // Review opens the whole workspace.
-    await expect(ownerPage).toHaveURL(
-      new RegExp(
-        `/learning/review/${ws.id}\\?(?=.*group=workspace)(?=.*from=workspace)`
-      )
+    // A whole-workspace review, as Learning's Default plans row opens one.
+    await ownerPage.goto(
+      `/learning/review/${ws.id}?group=workspace&from=workspace`
     );
     await expect(
       ownerPage.getByRole('progressbar', {
@@ -658,12 +639,12 @@ test.describe('study progress', () => {
       session: { id: checkBody.session.id },
     });
 
-    // Back returns to where the session started.
+    // Back from a workspace review opens the workspace's Practice.
     await ownerPage
       .getByRole('button', { exact: true, name: m.action_back() })
       .click();
     await expect(ownerPage).toHaveURL(
-      new RegExp(`/workspaces/${ws.id}[?]study=true$`)
+      new RegExp(`/workspaces/${ws.id}[?]study=practice$`)
     );
 
     // The finished session is in Past reviews with one card and one question.
@@ -680,7 +661,66 @@ test.describe('study progress', () => {
     });
   });
 
-  test('hidden progress: the Study page points to settings, whose Study switch brings it back, and settings stay in the URL', async ({
+  test("Practice: a topic session serves the topic's questions with why, marks each and keeps the result", async ({
+    ownerApi,
+    ownerPage,
+    workspaceFactory,
+  }) => {
+    const ws = await workspaceFactory.create({
+      name: `E2E Practice ${randomUUID()}`,
+    });
+    const topic = await addTopic(ownerApi, ws.id, 'Osmosis');
+    const quiz = await createMaterial(
+      ownerApi,
+      ws.id,
+      'quiz',
+      'Osmosis check',
+      quizValue([{ correct: true, prompt: 'Water moves by osmosis.' }])
+    );
+    await placeInTopic(ownerApi, ws.id, topic.id, [quiz.id]);
+
+    // Every quiz members can see is practice; the owner sees its use.
+    await ownerPage.goto(`/workspaces/${ws.id}?study=practice`);
+    await expect(ownerPage.getByText('Osmosis check').first()).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.practice_col_tried()).first()
+    ).toBeVisible();
+
+    // Practise on the topic: its question not seen yet, then marked.
+    await ownerPage.goto(
+      `/workspaces/${ws.id}?study=practice&group=topic&topicId=${topic.id}`
+    );
+    const dialog = ownerPage.getByRole('dialog', {
+      name: m.practice_session_title({ topic: 'Osmosis' }),
+    });
+    await expect(dialog.getByText(m.practice_reason_new())).toBeVisible();
+    await dialog
+      .getByRole('button', { exact: true, name: m.review_start() })
+      .locator('visible=true')
+      .click();
+    await ownerPage
+      .getByRole('button', { exact: true, name: m.question_ui_true() })
+      .click();
+    await ownerPage
+      .getByRole('button', { exact: true, name: m.review_check() })
+      .click();
+    await ownerPage
+      .getByRole('button', { exact: true, name: m.action_next() })
+      .click();
+    await expect(ownerPage).toHaveURL(/[?&]review=/);
+    await expect(
+      ownerPage.getByText(m.practice_right_of({ correct: 1, total: 1 }))
+    ).toBeVisible();
+
+    // The session is kept as the learner's own review of the topic.
+    const practice = await ownerApi.get(`/api/workspaces/${ws.id}/practice`);
+    expect(practice.status()).toBe(200);
+    expect((await practice.json()).reviews).toMatchObject([
+      { best: { correct: 1, total: 1 }, group: 'topic', topicId: topic.id },
+    ]);
+  });
+
+  test('hidden progress: the Study switch in workspace settings, and settings stay in the URL', async ({
     ownerApi,
     ownerPage,
     workspaceFactory,
@@ -696,20 +736,18 @@ test.describe('study progress', () => {
     const errors: string[] = [];
     ownerPage.on('pageerror', (error) => errors.push(error.message));
 
-    await ownerPage.goto(`/workspaces/${workspace.id}?study=true`);
-    await expect(ownerPage.getByText(m.study_hidden_here())).toBeVisible();
-    // The notice's own link: the left panel and the rail carry gears of the
-    // same name.
-    await ownerPage
-      .locator('p', { hasText: m.study_hidden_here() })
-      .getByRole('button', { exact: true, name: m.workspace_settings() })
-      .click();
-    await expect(ownerPage).toHaveURL(/settings=study/);
-    await ownerPage
-      .getByRole('switch', { name: m.study_hide_progress() })
-      .click();
+    await ownerPage.goto(`/workspaces/${workspace.id}?settings=study`);
+    const hide = ownerPage.getByRole('switch', {
+      name: m.study_hide_progress(),
+    });
+    await expect(hide).toBeChecked();
+    const shown = waitForApi(
+      ownerPage,
+      apiEndsWith(`/api/workspaces/${workspace.id}/study/enabled`, 'PUT')
+    );
+    await hide.click();
+    expect((await shown).status()).toBe(204);
     await ownerPage.keyboard.press('Escape');
-    await expect(ownerPage.getByText(m.study_hidden_here())).toHaveCount(0);
 
     // Back with settings open leaves in-app (a goto would leave the
     // document, so the router never runs) and closes the dialog once.

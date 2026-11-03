@@ -2817,6 +2817,9 @@ export const editIncidents: ReportEditIncidentReq[] = [];
 export const flashcardCards: Record<string, { materialId: string }> = {};
 for (const c of seedCards) flashcardCards[c.id] = { materialId: c.materialId };
 
+// Biology's quizzes sit in its topics, so Practice can filter and practise
+// by topic.
+const QUIZ_TOPICS: Record<string, string> = { qz_1: 'ch_2', qz_2: 'ch_3' };
 seedQuizzes.forEach((q) => {
   materials.push(
     makeMaterial({
@@ -2832,7 +2835,7 @@ seedQuizzes.forEach((q) => {
       scopeFileNames: [],
       scopeTopics: q.topics,
       title: q.name,
-      topicId: null,
+      topicId: QUIZ_TOPICS[q.id] ?? null,
       workspaceId: q.workspaceId,
       workspaceName: q.workspaceName,
     })

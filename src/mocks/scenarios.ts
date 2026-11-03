@@ -16,6 +16,7 @@ import {
   workspaces,
 } from './db';
 import { failureHandlers, failureScenarios } from './scenarioFailures';
+import { practiceBody } from './study';
 
 export const authScenarios = [
   {
@@ -146,6 +147,7 @@ export const mockScenarioOptions = [
   { id: 'workspace-owner-full', label: "Member: owner's storage full" },
   { id: 'workspace-owner-grace', label: "Member: owner's grace period" },
   { id: 'workspace-owner-frozen', label: "Member: owner's account frozen" },
+  { id: 'workspace-member', label: 'Member: a viewer studying here' },
   { id: 'account-deleted', label: 'Account deleted' },
   { id: 'account-deletion-pending', label: 'Account deletion pending' },
   { id: 'import-rejected', label: 'Cloud selection rejected' },
@@ -177,6 +179,7 @@ export const LAST_SCENARIO = 'capy.scenario.last';
 export const scenarioUploadName = 'Scenario upload.txt';
 export const permanentScenarios: readonly string[] = [
   'new-account',
+  'workspace-member',
   'file-list-forbidden',
   'account-locked',
   'workspace-401',
@@ -510,6 +513,29 @@ export function getMockScenarioHandlers(
         ...(storageUsage === 'full' ? viewOnlyContent('own') : []),
       ];
     }
+    case 'workspace-member':
+      // The viewer as a viewer member: Study shows a member's pages and
+      // Practice their own suggestions and best scores.
+      return [
+        http.get('/api/workspaces/:id', ({ params }) => {
+          const workspace = workspaces.find((row) => row.id === params.id);
+          if (!workspace) return new HttpResponse(null, { status: 404 });
+          return HttpResponse.json({
+            ...workspace,
+            capabilities: {
+              canEdit: false,
+              canEditContent: false,
+              canManageMembers: false,
+              canView: true,
+            },
+            isOwner: false,
+            role: 'viewer',
+          });
+        }),
+        http.get('/api/workspaces/:id/practice', ({ params }) =>
+          HttpResponse.json(practiceBody(String(params.id), false))
+        ),
+      ];
     case 'workspace-owner-full':
     case 'workspace-owner-grace':
     case 'workspace-owner-frozen': {

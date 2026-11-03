@@ -8,6 +8,7 @@ import { collaborationLink } from '../helpers/collaboration';
 import { expectEditorLive } from '../helpers/editor';
 import { type OfficeFormat, officeEditMenu } from '../helpers/office';
 import { openWorkspaceMaterial } from '../helpers/workspace';
+import { m } from '../i18n';
 
 /*
  * The chat agent's writes, end to end on the stack: each test replays a tool
@@ -1229,6 +1230,11 @@ async function openOffice(page: Page, fileId: string, format: OfficeFormat) {
     `/workspaces/${workspaceId}?file=${encodeURIComponent(fileId)}&mode=edit`
   );
   await expect(officeEditMenu(page, format)).toBeVisible({ timeout: 120_000 });
+  // The open file shows the rail's Files panel; pressing Files closes it.
+  await page
+    .getByRole('navigation', { name: m.workspace_rail_label() })
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
   return page.frameLocator('iframe[src*="office-runtime"]');
 }
 
@@ -1310,8 +1316,8 @@ async function readShows(
 test.describe('agent writes to Office sources', () => {
   test.describe.configure({ timeout: 300_000 });
   // The XLSX check finds the typed cell in the first editor's grid, which
-  // renders only the columns in view: the viewer at 1280px with the left
-  // panel closed, as before the workspace opened it by default.
+  // renders only the columns in view: the viewer at 1280px with the rail's
+  // Files panel closed (openOffice).
   test.use({
     storageState: async ({ baseURL }, use) =>
       use({
@@ -1320,7 +1326,6 @@ test.describe('agent writes to Office sources', () => {
           {
             localStorage: [
               { name: 'capy.workspace.rightPanel', value: 'true' },
-              { name: 'capy.workspace.leftPanel', value: 'false' },
             ],
             origin: baseURL!,
           },

@@ -374,6 +374,9 @@ export type {
   PlanStep,
   PlanStepInput,
   PlanWorkspace,
+  Practice,
+  PracticeQuiz,
+  PracticeReview,
   ProgressItem,
   ProgressMap,
   ProgressWorkspace,
@@ -396,10 +399,14 @@ export type {
 
 /** A suggested review's leading mode. */
 export type ReviewMode = NonNullable<GenReviewSession['mode']>;
+/** Why a session served an item: never rated, missed before, or fading. */
+export type ReviewReason = NonNullable<GenReviewItem['reason']>;
 /** What a new review session draws from: a suggestion's group and mode, or
  * the whole workspace without a mode. */
 export interface ReviewStart {
   group: GenReviewSession['group'];
+  /** `quiz` serves questions only (Practice's topic sessions). */
+  items?: 'quiz';
   mode?: ReviewMode;
   /** A plan group's plan, kept in the session's workspace. */
   planId?: string;

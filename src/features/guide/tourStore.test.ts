@@ -5,7 +5,7 @@ import { registerTourPanels, startTour, stopTour } from './tourStore';
 afterEach(() => vi.unstubAllGlobals());
 
 it('puts the workspace panels back as they were before the tour', () => {
-  const values = new Map<string, string>([[PREF_KEYS.leftView, '"files"']]);
+  const values = new Map<string, string>([[PREF_KEYS.rightView, '"chat"']]);
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => values.get(key) ?? null,
     removeItem: (key: string) => values.delete(key),
@@ -17,16 +17,14 @@ it('puts the workspace panels back as they were before the tour', () => {
   });
 
   startTour('ws_1');
-  // The Files and Chats steps open both panels on their views.
+  // The Files step opens the right panel on Files.
   values.set(PREF_KEYS.rightPanel, 'true');
   values.set(PREF_KEYS.rightView, '"files"');
-  values.set(PREF_KEYS.leftView, '"chats"');
   stopTour();
 
-  // The right panel was never opened: it stays hidden by default.
+  // The right panel was never opened: it stays hidden by default, on its view.
   expect(values.has(PREF_KEYS.rightPanel)).toBe(false);
-  expect(values.has(PREF_KEYS.rightView)).toBe(false);
-  expect(values.get(PREF_KEYS.leftView)).toBe('"files"');
+  expect(values.get(PREF_KEYS.rightView)).toBe('"chat"');
   expect(restore).toHaveBeenCalledOnce();
   unregister();
 });

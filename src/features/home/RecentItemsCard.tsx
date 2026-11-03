@@ -151,14 +151,14 @@ export function useRecentItems() {
 
 export type RecentItems = ReturnType<typeof useRecentItems>;
 
-/** The dashboard leaves it out while `recent.items` is empty and loaded. */
+/** Home leaves it out while `recent.items` is empty and loaded. */
 export function RecentItemsCard({ recent }: { recent: RecentItems }) {
   const [view, setView] = useListView(PREF_KEYS.recentsView);
   const { isLoading, items, missing, paused, workspaces } = recent;
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h2 className="t-large-card-title">{m.dashboard_recent()}</h2>
+        <h2 className="t-large-card-title">{m.home_recent()}</h2>
         <ListViewToggle onViewChange={setView} view={view} />
       </div>
       {paused ? (
@@ -182,7 +182,7 @@ export function RecentItemsCard({ recent }: { recent: RecentItems }) {
               .map(([, , , error]) => unexpectedErrorId(error))
               .find(Boolean) ?? null
           }
-          message={m.dashboard_recent_error()}
+          message={m.home_recent_error()}
           onRetry={() => {
             for (const [, , refetch] of missing) void refetch();
           }}
