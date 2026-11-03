@@ -1,6 +1,6 @@
 # Study and member tracking plan
 
-Status 2026-11-02: round 1. Only the folder rename (§1) is decided.
+Status 2026-11-03: chapters become topics, which replace folders (§1, §3). Round-by-round decisions are recorded inline.
 
 - The canvas plan (`todo-canvas-workspace.md`) is on hold.
 - Research: one report per area in `todo-study-tracking/`, each claim with a URL or a file path:
@@ -28,7 +28,7 @@ Every suggestion first says how other apps do it, as Epo asked.
   - A workspace becomes a classroom and members become students.
   - Teachers see student profiles and track assignments.
   - For teaching, they drop in Word or PowerPoint files and present, which mostly exists already.
-- **Decided 2026-11-02: chapters become one-level flat folders, "just as a rename".** Folders only organise. Results add up across the whole workspace.
+- **Decided 2026-11-02, changed 2026-11-03: chapters become topics,** one flat list that groups files and tags questions (§3). The earlier plan was one-level folders, "just as a rename".
 - **Epo's main ask:** "dig more into how tracking members score/performance can work better."
 
 ## At a glance
@@ -47,7 +47,7 @@ Every suggestion first says how other apps do it, as Epo asked.
 
 ---
 
-## 1. Folders (decided)
+## 1. Folders (superseded 2026-11-03: chapters become topics, §3)
 
 Chapters are already one flat level, so the tree, drag and drop, and upload-into-a-folder stay as they are. Under no legacy data (no-legacy rule):
 - The rename goes all the way: the `chapters` table and columns, API fields, agent tools (`create_chapter` → `create_folder`, `chapter_id` → `folder_id`) and the UI strings.
@@ -118,7 +118,10 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - **Topics replace folders (T3).** Files groups by topic, and dragging a file to another topic moves it. A file has at most one topic. Past papers and admin files sit in "Other files", while their questions keep their own topics. Topics with no questions don't show in Topics or results.
   - This changes §1: chapters become **topics**, not folders.
   - Others: Google Classroom's Topics are the only grouping on Classwork (one per item, no mastery). Canvas keeps Modules for organising and Outcomes for mastery, as Moodle and Schoology do. Capy takes Classroom's single grouping for files and Canvas's per-question tags, from one list.
-  - Waiting on Epo's yes.
+  - **Decided (Epo, 2026-11-03).**
+- **Where topics live (Epo, 2026-11-03).** Topics live in Files: set up, add, rename, merge and remove all happen there. Each topic row in the Files panel carries a tag icon. A topic's page lists its files, a "How members are doing" line and merge suggestions.
+  - A new upload is filed under a topic by the AI, with Change in the toast. Dragging a file to another topic moves it.
+  - Study keeps only results. The Topics page is gone, and its members × topics grid is now a view of Members ("Show: Summary" or "Show: By topic", G4). This follows Canvas, where Modules organise content and mastery is a view of the gradebook (Learning Mastery Gradebook).
 
 ## 4. Views
 
@@ -136,7 +139,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 **Workspace shell (Epo, 2026-11-02): S2 from the canvas mocks.** The labelled icon rail is picked over a single sidebar.
 - **Rail:** the workspace badge, then Dashboard, Files, Agent and Study, each icon with its label below. Your avatar sits at the bottom.
 - **Panel:** beside the rail, it lists the current section's own pages.
-  - Study lists Members, Assignments, Topics and My results for owners, and My results, Assignments and Topics for members. These replace the tabs.
+  - Study lists Members, Assignments and My results for owners, and My results and Assignments for members (Topics moved to Files, 2026-11-03). These replace the tabs.
   - Files shows the folder tree, and Agent the chats. Dashboard has no panel.
 - **The rail stays on every workspace page (Epo, 2026-11-02),** focused pages included: page picking, the quiz editor, the report, grading, the timed assignment, Submitted and topic practice. Dialogs open over a page that still shows it.
 - **The Study panel stays open too (Epo, 2026-11-03).** Opening an assignment, its report, its open answers, the timed assignment, Submitted, results or a topic session keeps Members/Assignments/Topics/My results beside the page, with the matching item highlighted.
@@ -170,7 +173,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   |---|---|---|
   | Members | One line per member: Overall on assignments, x of y done, missing, practice this week, focus topics. A row opens to show recent assignments and topics, with "See profile" and "Draft a follow-up quiz". | (not shown) |
   | Assignments | Every assignment with its due date and submitted count; drafts are labelled. Each opens its report, and its open answers for changing marks. | Their own: to do and results. |
-  | Topics | How the group does per topic (members × topics); rename and merge topics. | Their own labels per topic. |
+  | Members → By topic | How the group does per topic (members × topics). Topics are edited in Files. | Their own labels sit in My results. |
   | My results | Their own study, if they study too. | To do, results, practice, topics, and "What the owner sees". |
 
 - **The mocks are now user flows,** one canvas page each:
@@ -438,7 +441,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 ## 10. Order of work
 
 1. **Decisions:** §11.
-2. **Folders rename,** with the chapter-driven study pieces removed. Independent of the rest.
+2. **Chapters → topics,** with the chapter-driven study pieces removed. Files groups by topic, and the `chapters` table becomes `topics`.
 3. **Record:**
    - `attempts.workspace_id`;
    - an `answer_events` log on every graded part;
