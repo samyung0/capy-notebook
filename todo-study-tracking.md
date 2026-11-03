@@ -397,7 +397,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 0. **The Make a quiz dialog (Epo, 2026-11-03; X0a, X0b).**
    - **Question paper:** picked from the workspace's files or uploaded new. An upload takes the normal upload and reading path and is saved to Files. The page picker opens once its pages are ready.
    - **Mark scheme or answers (optional):** any number of files, from Files or uploaded the same way. They aren't page-picked.
-1. **Page picker (Epo, 2026-11-02).** Pages are shown large. One click selects a page for extraction, and pages left unclicked are skipped. There are no per-page tags or buttons. The extra files chosen in the dialog show as one chip ("With a mark scheme and an answers file"). The footer shows the page count and the credit cost. Cap at about 30 pages. PDF first, since Office page renders were removed in Q283.
+1. **Page picker (Epo, 2026-11-02).** Pages are shown large. One click selects a page for extraction, and pages left unclicked are skipped. There are no per-page tags or buttons. The extra files chosen in the dialog show as one chip ("With a mark scheme and an answers file"). The footer shows the page count and the credit cost. The number of selected pages per run is capped (see "Context and the page cap" below). PDF and Office files, the latter through captured page images.
 2. **Outline** from the already indexed text. The expected question labels give a completeness check.
 3. **Extract** with a vision model and tool calls (`record_question`, `continue_question`) over windows of up to two pages.
    - The Go validator checks each call straight away, and problems go back to the model.
@@ -407,6 +407,13 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 5. **Blind-solve** to write worked solutions only where the paper has none. These are labelled AI-written.
 6. **Saved straight away as a quiz (Epo, 2026-11-02).** There is no separate review screen. Extraction ends by opening the new quiz in its editor (X2). The editor is today's question edit dialog laid out as a page, with a plain question list on the left, and has no source panel. Problems show as the quiz's normal issues (`IssueSummary` / `IssueIcon`, e.g. "Image: choose an image file"), never as extraction flags.
 7. **No source is stored (Epo, 2026-11-02).** A saved question keeps no link to its file, page, region or mark-scheme page, and generated questions keep no "written from" file. The page is shown only while reviewing, read from the uploaded file. This drops R3's "save with provenance" and R2's `question_origins` table.
+
+**Context and the page cap (Epo, 2026-11-03: cap the selected pages, and plan for the context window):**
+- **Each model call sees a small window,** not the whole selection: two pages as images, the outline (expected question labels from the indexed text), the question it is in the middle of (for questions that run across pages, `continue_question`), and the tool schema. With page images at a few thousand tokens each, a window stays far under the context limit however many pages are selected.
+- **What grows with the page count** is time, cost and the carried state: the outline and the list of questions recorded so far. Questions are saved as they come, so the state carried into each window is labels and the open question only, never the earlier pages.
+- **Mark schemes and answer files don't go through the windows.** They are parsed on their own as text and paired with questions by label in code (step 4), so they never sit in the same context as the pages.
+- **So the cap is about one run's time and cost.** A past paper is usually 12–32 pages. Proposal: up to 40 selected pages per run, roughly 3–6 minutes as a background job. A longer file is done in another run into the same quiz, and the page picker shows the count against the cap.
+- **Office files:** windows use the page images captured on the server (or rendered by the client, if DOCX pagination can't match). Saved edits go in as text, the same way.
 
 **Cost and time:**
 - **Estimates:** about 90–180 credits for a 12-page paper with an 8-page scheme, and about 140 for a 3-page worksheet that needs solving.
@@ -475,7 +482,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Wiring:** replace the Jev call in `quiz_grading.go`. DeepSeek is OpenAI-compatible and already used through the pipeline's model registry (`deepseek-flash` is the chat default), so either call it from Go directly or through that registry.
 - **Approval:** new AI marks on assignments start as waiting; "Mark with AI" covers failures and empty credits.
 - **Metering:** a usage event per graded part, charged to the owner for assignments and the member for their own practice, with the monthly cap.
-- **Removals:** Jev, the editor's "needs a calculation" check (replace it or drop it), public open grading on shared pages, Turnstile and the anonymous caps.
+- **Removals (Epo, 2026-11-03):** only quiz grading moves off Jev. The Jev client and its contract stay in the code for later use; the editor's "needs a calculation" check can stay on Jev until replaced. Public open grading on shared pages, Turnstile and the anonymous caps go.
 - **Docs and tests:** question-bank.md, observability-metering.md, test-catalog.md.
 
 - **Shared pages (Epo, 2026-11-03):** nothing on a shared page counts. Questions with one right answer are marked automatically. Open answers stay unmarked: a "Not marked" chip, with the marking points and worked solution to compare (F2). There's no self-marking and no AI marking there, so the anonymous grading caps and their table go.
@@ -515,13 +522,13 @@ Updated 2026-11-03. Decided this round, no longer open: the join notice (not an 
    - **Running out never blocks a member.** Submissions always go through. Open answers stay "Not marked", and the owner gets "Mark with AI" on the assignment to run them once credits are back. There's no automatic retry.
    - **Only open parts ever use AI.** Multiple choice, short answers, quantities and gap fills stay deterministic Go grading, as today (`/api/quizzes/{id}/check`: closed parts in Go, open parts by the model).
    - **Model:** bench the cheaper DeepSeek model (the 07xx one) beside the larger one, and pick on the bench.
-3. **The DeepSeek switch** needs the steps under §9 "Switching from Jev". Whether minors' answers may go to a China-based provider stays open until schools.
+3. **The DeepSeek switch** needs the steps under §9 "Switching from Jev". Only quiz grading leaves Jev; Jev itself stays in the code (Epo). Whether minors' answers may go to a China-based provider stays open until schools.
 4. **Mastery thresholds** as in §5, including half weight for self-made questions.
 5. **Missing and late work:** missing counts 0 in Overall after the due date; late submissions are accepted, labelled Late, until the owner closes the assignment; Attempts defaults to 1.
 6. **Reviews:** marked-assignment questions join FSRS reviews once the assignment closes (when they also become practice). Flashcards stay out of mastery.
 7. **Topics** replace chapters in suggested reviews, sessions and the agent's `read_study_progress`. Caps: 10 topics per workspace on Free, 20 on Pro.
 8. **Aggregates** need at least 5 members. No leaderboards.
-9. **Extraction has no page cap on the file.** Only the selected pages go to the model, and credits pay per page.
+9. **Extraction caps the selected pages, not the file (Epo, 2026-11-03).** Only selected pages go to the model and credits pay per page, but one run still needs a bound for time and context (see §8 "Context and the page cap"). The number is waiting on Epo.
    - **Office files too.** The client sends the selected page numbers, and the backend captures those pages without a full publish. Saved edits go in as text in the prompt; whether that helps is checked later.
    - **Check first:** PPTX slides are stable pages, but DOCX pagination depends on the renderer. The pages the backend captures must match what the member saw in the browser (BetterOffice). If they can't, the client sends its rendered page images instead.
 10. **Shared pages:** Turnstile and the anonymous grading caps go, since open answers aren't marked there.
