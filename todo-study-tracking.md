@@ -149,7 +149,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - **Every screen links to the next one in its flow (Epo, 2026-11-03).**
   - The assignment report has three tabs: Questions, Members and **Approve AI marks**. The marking screen is that tab, with a question dropdown above the member list, not a separate page. "Check the AI's marks" under a question goes to the same tab.
   - Submitted links to Home and to **See results**.
-  - My results gives each Attempted topic a **Practise** button, which opens the topic session.
+  - My results gives each Needs practice topic a **Practise** button, which opens the topic session.
   - My results shows the same topic labels the owner sees on the member's profile.
 - **Getting back to the app (Epo, 2026-11-02): N1.**
   - A Home item with a back arrow sits at the top of the rail on every workspace page.
@@ -201,6 +201,8 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Anything empty is not shown.** No tasks means no Tasks section.
 - **Tasks fold into assignments (Epo, 2026-11-03).** Other apps have no separate task: Classroom uses an assignment with no points, Canvas a page with a to-do date, and Moodle "Mark as done". So Capy has three words: a **quiz** is a file, an **assignment** is anything the owner gives with a due date, and **practice** is quizzes members use on their own.
   - **New assignment starts with Kind** (A1c, A1d). **Quiz:** pick a quiz or make one from a file; members submit, it's marked and it counts. **General** (Epo, 2026-11-03; it was "To do"): a title plus an optional Files field (picked from Files or uploaded), not @ links in the text. Members mark it done, and it's never marked. From the quiz editor the kind is Quiz and the quiz is filled in (A1). Only owners (and editors) create assignments.
+  - **Making the quiz on the spot (Epo, 2026-11-03; A1c, A1e).** The quiz picker in New assignment (and in Add practice) lists the existing quizzes, then New quiz (a blank quiz in the editor), Make a quiz from a file, and Generate questions (from topics or files: count and question types). A new quiz opens in the editor to check, then comes back picked. This matches Classroom's "Quiz assignment" and Teams' "New Forms quiz", while keeping the quiz a file, as in Wayground and Kahoot's library.
+  - **A closed assignment becomes practice (Epo, 2026-11-03).** Once an assignment closes (its due date passes), its quiz shows up in Practice by itself; Practice notes "Assignment, closed 24 Oct". It happens at closing, not when each member submits, so nobody sees it early. The owner can hide it again.
   - **Study → Assignments is a table (Epo, 2026-11-03; W1, W2):** Assignment, Kind, Posted, Due, Progress and Average, with open ones sorted by due date. Closed ones (past due) hide behind "Show closed". There's no ⋮ per row; a row opens the assignment.
   - **Members' Assignments (W3) and an assignment's page (W4):** members see what's assigned to them (Posted, Due, then Start or Mark done), with "Show done" bringing back finished ones and their marks. A row, or a To do row on the Dashboard, opens the assignment's page. A general assignment shows its files and Mark as done; a quiz goes to Before you start, and after submitting to its Results.
   - **My results is results only (Epo, 2026-11-03):** the overall on marked assignments, topics, and what the owner sees. The To do and Done lists moved to Assignments, as Canvas and Classroom list assigned work on their assignments pages. Results go back to Assignments.
@@ -264,17 +266,18 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - **Repeats on the same day** after seeing the key count 0. A repeat a day or more later counts 0.5.
   - **Question difficulty** is pooled across members.
   - **Why not a plain percentage:** once follow-up adapts, weaker members get easier items, and percentages drift to the target rate. In a synthetic check, raw percent found 71% of truly weak topics and the model found 92%. The data was model-generated, so this shows the mechanism, not real-world accuracy.
-- **Labels, shown with counts ("1 of 4 right"), never a raw number. Khan Academy's exact names (Epo, 2026-11-03), replacing Too early to tell / Needs practice / Getting there / Strong:**
+- **Labels, shown with counts ("1 of 4 right"), never a raw number (Epo, 2026-11-03):** Khan Academy's names, except that "Needs practice" stays.
 
 | Label | When |
 |---|---|
 | Not started | No answers yet |
-| Attempted | Fewer than 3 different questions answered, or 80% sure success is under 60% (clears only below 50%, so it doesn't flicker) |
-| Familiar | Between Attempted and Proficient |
-| Proficient | 80% sure success is over 70% |
+| Attempted | Fewer than 3 different questions answered (was "Too early to tell") |
+| Needs practice | 80% sure success is under 60%; clears only below 50%, so it doesn't flicker |
+| Familiar | Between Needs practice and Proficient (was "Getting there") |
+| Proficient | 80% sure success is over 70% (was "Strong") |
 | Mastered | Proficient, and still right on a later check (a question days afterwards) |
 
-  - Colours: Attempted amber, Familiar blue, Proficient green tint, Mastered solid green. Practise buttons and the Members "To work on" column follow Attempted.
+  - Colours: Attempted outlined, Needs practice amber, Familiar blue, Proficient green tint, Mastered solid green. Practise buttons and the Members "Needs practice" column follow Needs practice.
 - **Memory** stays FSRS recall, shown apart from mastery. Self-rated flashcards feed memory only.
 - **Tables:**
   - `workspace_topics`, `question_topics`;
@@ -487,7 +490,7 @@ Steps 2, 3 and 7 can run side by side.
 **Topics and mastery**
 
 4. A flat list per workspace, 5–20 topics, capped at 30, one per question? Can owners and editors edit them? AI merges only as suggestions?
-5. Thresholds for the Khan labels: Attempted under 3 questions or under 60%; Proficient over 70%; Mastered after a later check; 80% sureness.
+5. Thresholds: Attempted under 3 questions; Needs practice under 60%; Proficient over 70%; Mastered after a later check; 80% sureness.
 6. Should flashcards stay out of mastery (memory only)?
 7. Topics replace chapters in suggestions, sessions and the agent's `read_study_progress`?
 
