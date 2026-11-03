@@ -164,7 +164,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - H1 is the workspace Home.
 
 **Round 2 (Epo, 2026-11-02): the Members tab is a summary, and work has two words.**
-- **Two words.**
+- **Two words** (a third, "task", was folded into assignments on 2026-11-03; see below).
   - **Assignment:** quiz work the owner sets, with a due date, an optional time limit and set attempts. AI marks wait for the owner's approval unless that is switched off. It counts in Overall.
   - **Practice:** any quiz done any time, marked at once, not counted.
   - **Every quiz members can see is practice (Epo, 2026-11-03);** hidden quizzes aren't (assignment sources, drafts). A quiz is just a file. Assigning it makes an assignment from a frozen copy; showing it to members makes it practice.
@@ -192,14 +192,17 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   6. joining, shared pages and phones.
 - The full gradebook (G1c, grouped like Canvas assignment groups) is kept under "Earlier versions". It could return inside the Assignments tab if owners ask for it.
 
-**Workspace Dashboard (was Home; Epo, 2026-11-02): a Tasks table, then Recent files and Activity.**
+**Workspace Dashboard (was Home; Epo, 2026-11-02): To do (was Tasks), then Recent files and Activity.**
 - **Tasks** is the plan task list Epo described earlier: one line per task, with @ chips linking files and quizzes (`todo-canvas-workspace.md` §4.3).
   - Shown as a table: Task, Due, and either members done (owner) or a tick (member).
   - An assignment appears as a task and ticks itself on submit. Other tasks are ticked by hand, by each member for themselves.
   - Owners add tasks under the table.
 - **Anything empty is not shown.** No tasks means no Tasks section.
-- **Who adds tasks (Epo, 2026-11-03):** owners only (editors too, as co-teachers). Members don't add tasks; they only tick plain ones. Personal to-dos belong on the app-level Tasks page, not in a workspace's shared list, so a workspace task never needs a "who set it" marker. This matches Classroom, Teams Assignments, Canvas and Moodle, where class work is teacher-only and personal to-dos live in a private planner.
-- **Add a task offers Task or Assignment (Epo, 2026-11-03; H1m).** Assignment opens New assignment with a quiz picker (A1c). The picker ends with "Make a quiz from a file". Study → Assignments → New assignment opens the same dialog, and the quiz editor's New assignment fills the quiz in (A1).
+- **Tasks fold into assignments (Epo, 2026-11-03).** Other apps have no separate task: Classroom uses an assignment with no points, Canvas a page with a to-do date, and Moodle "Mark as done". So Capy has three words: a **quiz** is a file, an **assignment** is anything the owner gives with a due date, and **practice** is quizzes members use on their own.
+  - **New assignment starts with Kind** (A1c, A1d). **Quiz:** pick a quiz or make one from a file; members submit, it's marked and it counts. **To do:** one line with @ links to files ("Read [Lecture 2] before the worksheet"); members tick it off, and it's never marked. From the quiz editor the kind is Quiz and the quiz is filled in (A1). Only owners (and editors) create assignments.
+  - **Study → Assignments lists both kinds:** quizzes with how many submitted and the average, to-dos with how many are done. A member's "x of y done" counts both; only quizzes count toward their score.
+  - **The Dashboard's list is "To do".** For a member, it holds everything assigned to them: quizzes have Start, and to-dos have a tick box. For the owner, it holds only what is for her (approvals, anything she assigned herself), with New assignment at its top right. What she gave members lives in Study → Assignments, so there is no "Show: Set for members". Personal to-dos belong on the app-level Tasks page.
+- (Superseded 2026-11-03: "Add a task" with Task or Assignment became New assignment with a Kind.)
 - **Ticks (Epo, 2026-11-03).**
   - Members mark plain tasks ("Read …", "Make notes on …") done themselves. Nothing tries to detect reading: read progress is gone, and opening a file proves little (Canvas's "view" rule only means the page was opened).
   - Assignment tasks have no tick box: they complete when the member submits.
@@ -331,7 +334,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - **All members** is the default, and it includes anyone who joins later (as Classroom's "All students" and Teams' "All students" do). It covers viewers only; editors aren't assigned.
   - **Picking names** fixes the list. The task and the notice reach only those members, and "x of y done" and the report count only them.
   - **Owners and editors are left out** unless they tick themselves ("You" at the bottom of the list). The same goes for plain tasks.
-- **The owner's Tasks show what is for her (Epo, 2026-11-03; H3).** "Show: For me" is the default: approval tasks, and anything she assigned herself. Work set for members ("Do Past paper 2025 P1") isn't there. "Show: Set for members" lists what she set, with how many are done (H1). Like Classroom's To review and Canvas's teacher To Do, a teacher's own list holds review work, not the class's work.
+- **The owner's To do shows what is for her (Epo, 2026-11-03; H1, H3):** approvals and anything she assigned herself. Like Classroom's To review and Canvas's teacher To Do, a teacher's own list holds review work, not the class's work.
 - **The report's Members tab (G3m).** One row per member the assignment went to: when they submitted, how long they took, their mark, and how many marks still wait for approval. Members who haven't submitted say Missing. A row opens that member's answers, laid out like their Results, where the owner can change any mark.
   - Lists show no status for published assignments, only a "Draft" label on drafts. There is no Scheduled, Open, To review or Released status, and no separate "Open for submissions" step: A6 is removed.
   - Rows carry plain facts ("Due Fri 7 Nov", "5 of 6 submitted", "4 open answers to review") and actions (Review).
