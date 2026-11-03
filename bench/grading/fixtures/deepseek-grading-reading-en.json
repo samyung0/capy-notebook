@@ -1,0 +1,1494 @@
+{
+  "provenance": {
+    "author": "Claude Code agent (Opus 5.5); passages excerpted from public IELTS Academic Reading samples, items, schemes, answers and labels synthetic",
+    "date": "2026-11-03",
+    "human_certified": false,
+    "labels_written_before_inference": true,
+    "sources": [
+      "ieltsorg-mlp-full-test-text-booklet.txt",
+      "ieltsorg-cd-academic-reading-familiarisation-test-player.txt",
+      "ieltsorg-academic-reading-sample-tasks-2023.txt"
+    ],
+    "scope": "Open English reading-comprehension parts a teacher would set on IELTS Academic Reading passages, graded against per-item marking schemes. Each part contrasts answers in the student's own words with answers copied from the passage; three parts require own words, the rest accept correctly selected copied text.",
+    "excerpts": "Each stem holds only the passage text its parts need (at most two blocks, 106-179 words in all), copied verbatim from the .txt extractions with whitespace normalised. Two extraction artefacts were fixed in ielts-birds-heilmann (a stray space in 'Y'-shaped and a missing final full stop); one sentence was left out between the two rocket blocks.",
+    "copyright": "Passage excerpts come from public sample material published by IELTS (ielts.org: British Council, IDP IELTS, Cambridge University Press & Assessment); the underlying texts carry their own copyrights (e.g. Encyclopaedia Britannica, The Atlantic, The Economist, Scientific American, David Crystal / Cambridge University Press). Short excerpts for internal benchmarking only: do not publish, ship to users or add to the question bank. Nothing comes from the purchased Cambridge IELTS 19 and 20 books."
+  },
+  "labeling_rules": [
+    "Each marking item is judged on its own: 1 when everything the item requires is conveyed (paraphrase and terse wording are fine), 0.5 when a meaningful part is conveyed but a required component is missing (one of two required points, or a vague version a teacher would half-credit), 0 when nothing meaningful is conveyed. The award is a fraction of the item's marks, so 0.5 on a 2-mark item is 1 mark.",
+    "Text in parentheses or after 'e.g.' in an item lists acceptable examples or details, not extra requirements.",
+    "Content anywhere in the answer counts for any item.",
+    "Copied correct words earn credit unless the item requires own words: lifting the sentence or phrase that answers the item, verbatim or nearly, is acceptable evidence of understanding.",
+    "Own-words items (\"Explains in own words, not copied from the passage, ...\"): an answer that reproduces the passage's sentence or clause carrying the point, verbatim or with trivial changes, earns 0 for that item even when the content is right. Keeping single unavoidable terms (names, figures, technical nouns such as Skill Team or furcula) is still own words.",
+    "Copied wrong text earns 0: a lifted sentence that does not answer the item earns nothing, even when it shares the question's key words or names the right topic.",
+    "Restating the question or the claim to be supported, without the reason or example asked for, earns 0.",
+    "Indiscriminate lifting: where the part says copying out whole paragraphs earns no marks, an answer that reproduces one or more whole paragraphs of the excerpt (or the whole excerpt) without selecting earns 0 on every item, even though the right words are inside it.",
+    "A statement that contradicts the content an item requires, or attributes it to the wrong person or group, earns 0 for that item. Other items are unaffected.",
+    "Claims not supported by the excerpt (general knowledge, other parts of the source text) earn nothing, even when true in the real world.",
+    "Irrelevant material neither adds nor subtracts unless it contradicts an item.",
+    "Gold assumes the grader sees the question text (stem with the excerpt, earlier parts, the part graded), the item texts with marks, and the answer."
+  ],
+  "answer_kinds": {
+    "paraphrase_correct": "right content in the student's own words; full credit",
+    "copied_correct": "lifts the right sentence or phrase from the excerpt verbatim or nearly, with no explanation; full credit unless the item requires own words, then 0",
+    "copied_wrong": "lifts a nearby, plausible-looking sentence from the excerpt that does not answer the item; 0",
+    "paraphrase_partial": "own words, gets one required point but misses another or stays vague; mixed 1/0.5/0",
+    "misreading": "fluent, confident answer that misreads the excerpt (says the opposite, confuses who did what) or answers from general knowledge; mostly 0, credit only for an item it still gets right",
+    "copied_dump": "copies a whole paragraph or the whole excerpt without selecting the answer, on parts that say copying whole paragraphs earns no marks; 0 on every item"
+  },
+  "questions": [
+    {
+      "id": "ielts-ragworm-zinc",
+      "subject": "english_reading",
+      "language": "en",
+      "source": "ieltsorg-mlp-full-test-text-booklet.txt, Reading Passage 1 'Rags to riches', paragraphs 3-4",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "Passage excerpt (paragraphs 3 and 4)",
+            "text": "In the 1980s, ecologists looking for organisms that could be used as indicators of oceanic pollution took a keen interest in ragworms. These ecologists found that the worms’ jaws contained a lot of zinc, a metal that is toxic in large doses. Their initial suggestion was that the worms were dumping excess zinc into their jaws, where it could do no harm, as a way of keeping their bodies free of poison. Measuring the zinc in ragworm jaws was thus thought of as a way of monitoring zinc pollution. That suggestion, however, fell apart when it became clear that the jaws of worms from clean water, too, were stuffed with similar quantities of zinc. At this point, the ecologists lost interest. But engineers were intrigued. Eventually, Dr Broomell and Dr Waite decided to have a closer look at what was really going on."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "According to the passage, why did ecologists in the 1980s think the zinc in ragworm jaws could be used to monitor pollution, and why was this idea abandoned?"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "Gives the ecologists' original reasoning: the worms were thought to move excess (toxic) zinc into their jaws, where it could do no harm, to keep their bodies free of poison.",
+                "marks": 1
+              },
+              {
+                "text": "Gives the reason the idea was abandoned: worms from clean water also had similar amounts of zinc in their jaws.",
+                "marks": 1
+              }
+            ]
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "They believed the worms protected themselves by pushing extra zinc, which is poisonous in large amounts, into their jaws where it was harmless, so the zinc level in the jaws would show how polluted the water was. The idea was dropped once they found that worms living in unpolluted water had just as much zinc in their jaws.",
+            "labels": [
+              [
+                1,
+                "Extra poisonous zinc moved to the jaws where it is harmless."
+              ],
+              [
+                1,
+                "Worms from unpolluted water had just as much zinc."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "Their initial suggestion was that the worms were dumping excess zinc into their jaws, where it could do no harm, as a way of keeping their bodies free of poison. That suggestion, however, fell apart when it became clear that the jaws of worms from clean water, too, were stuffed with similar quantities of zinc.",
+            "labels": [
+              [
+                1,
+                "Copied sentence gives the dumping explanation; copying is allowed here."
+              ],
+              [
+                1,
+                "Copied sentence gives the clean-water evidence."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "Measuring the zinc in ragworm jaws was thus thought of as a way of monitoring zinc pollution. At this point, the ecologists lost interest. But engineers were intrigued.",
+            "labels": [
+              [
+                0,
+                "Restates the question's claim; no reason why jaw zinc would track pollution."
+              ],
+              [
+                0,
+                "Says interest was lost but not why."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "The ecologists thought ragworms stored extra zinc in their jaws so it would not poison the rest of their body. Later they realised this theory was wrong, so they stopped studying the worms.",
+            "labels": [
+              [
+                1,
+                "Storing extra zinc away from the body conveys the reasoning."
+              ],
+              [
+                0,
+                "Says the theory was wrong without the clean-water evidence."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "Dr Broomell and Dr Waite suggested that ragworms used zinc from polluted water to make their jaws harder, so jaw zinc would work as a pollution gauge. The idea was abandoned because worms from dirty water had much less zinc than expected.",
+            "labels": [
+              [
+                0,
+                "Wrong people and wrong mechanism: hardening, not storing excess zinc safely."
+              ],
+              [
+                0,
+                "Misstates the evidence: clean-water worms had similar zinc."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ielts-archaeology-evidence",
+      "subject": "english_reading",
+      "language": "en",
+      "source": "ieltsorg-mlp-full-test-text-booklet.txt, Reading Passage 2 'The nature and aims of archaeology', final paragraph",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "Passage excerpt (final paragraph)",
+            "text": "Since the aim of archaeology is the understanding of humankind, it is a humanistic study, and since it deals with the human past, it is a historical discipline. But it differs from the study of written history in a fundamental way. The material the archaeologist finds does not tell us directly what to think. Historical records make statements, offer opinions and pass judgements. The objects the archaeologists discover, on the other hand, tell us nothing directly in themselves. In this respect, the practice of the archaeologist is rather like that of the scientist who collects data, conducts experiments, formulates a hypothesis, tests the hypothesis against more data, and then, in conclusion, devises a model that seems best to summarise the pattern observed in the data. The archaeologist has to develop a picture of the past, just as the scientist has to develop a coherent view of the natural world."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Explain in your own words how the material archaeologists study differs from written historical records. Do not copy phrases from the passage."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "Explains in own words, not copied from the passage, that written records give their writers' statements, opinions or judgements directly to the reader.",
+                "marks": 1
+              },
+              {
+                "text": "Explains in own words, not copied from the passage, that the objects archaeologists find say nothing by themselves, so their meaning has to be worked out (interpreted) by the archaeologist.",
+                "marks": 1
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "What does the writer compare the archaeologist's work to, and which steps of that work does the writer list?"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "States that the archaeologist's work is compared to that of a scientist.",
+                "marks": 1
+              },
+              {
+                "text": "Lists at least three of the scientist's steps: collecting data, doing experiments, forming a hypothesis, testing it against more data, devising a model of the pattern in the data.",
+                "marks": 1
+              }
+            ]
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "History books and documents openly tell you what their writers believed and what they thought was right or wrong. The things archaeologists dig up are silent: a pot or a tool explains nothing about itself, so the archaeologist has to work out what it means.",
+            "labels": [
+              [
+                1,
+                "Documents openly give their writers' beliefs and verdicts, in own words."
+              ],
+              [
+                1,
+                "Objects are silent and must be interpreted, in own words."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "Historical records make statements, offer opinions and pass judgements. The objects the archaeologists discover, on the other hand, tell us nothing directly in themselves.",
+            "labels": [
+              [
+                0,
+                "Right point but copied word for word; the item requires own words."
+              ],
+              [
+                0,
+                "Right point but copied word for word; the item requires own words."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "Since the aim of archaeology is the understanding of humankind, it is a humanistic study, and since it deals with the human past, it is a historical discipline.",
+            "labels": [
+              [
+                0,
+                "Copied, and describes what kind of study archaeology is, not how records differ."
+              ],
+              [
+                0,
+                "Copied; nothing about objects saying nothing by themselves."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "Written history gives you the opinions of the people who wrote it. Archaeology is different because the objects are harder to understand than books.",
+            "labels": [
+              [
+                1,
+                "Written records give their writers' opinions, in own words."
+              ],
+              [
+                0.5,
+                "'Harder to understand' hints at interpretation but not that objects state nothing themselves."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "Archaeological objects are more reliable than written records because they show us exactly what happened, while historians have to guess what old documents mean.",
+            "labels": [
+              [
+                0,
+                "Reverses the contrast: records are the ones that state things directly."
+              ],
+              [
+                0,
+                "Claims objects show exactly what happened, the opposite of the passage."
+              ]
+            ]
+          }
+        ],
+        "b": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "The writer compares it to a scientist's work. A scientist gathers data and runs experiments, comes up with a hypothesis, checks it against further data and finally builds a model that best explains the pattern.",
+            "labels": [
+              [
+                1,
+                "Comparison with a scientist."
+              ],
+              [
+                1,
+                "All five steps given."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "In this respect, the practice of the archaeologist is rather like that of the scientist who collects data, conducts experiments, formulates a hypothesis, tests the hypothesis against more data, and then, in conclusion, devises a model that seems best to summarise the pattern observed in the data.",
+            "labels": [
+              [
+                1,
+                "Copied comparison with the scientist; copying is allowed in this part."
+              ],
+              [
+                1,
+                "Copied list gives all the steps."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "But it differs from the study of written history in a fundamental way. Historical records make statements, offer opinions and pass judgements.",
+            "labels": [
+              [
+                0,
+                "Contrasts archaeology with history; no comparison with a scientist."
+              ],
+              [
+                0,
+                "No steps of the scientist's work."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "It is compared to science, because archaeologists also gather evidence and test their ideas.",
+            "labels": [
+              [
+                1,
+                "Comparison with science given."
+              ],
+              [
+                0.5,
+                "Only two steps (gathering data, testing) of the required three."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "The writer compares the archaeologist to a detective, who looks for clues at the scene, questions witnesses and then names the guilty person.",
+            "labels": [
+              [
+                0,
+                "The excerpt compares archaeologists with scientists, not detectives."
+              ],
+              [
+                0,
+                "Invented detective steps, not the scientist's steps."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ielts-motivation-two-types",
+      "subject": "english_reading",
+      "language": "en",
+      "source": "ieltsorg-mlp-full-test-text-booklet.txt, Reading Passage 3 'Winning with our minds', paragraphs B (second half) and C",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "Passage excerpt (paragraph B, second half)",
+            "text": "Freeman believes that we all fall into one of two categories: those motivated to succeed and those motivated to avoid failure. The type we are has a profound impact on how we approach challenges and our chances of success. 'The individual who's motivated to succeed will see any mishap as a step towards success,' he says. 'Australian skier Alisa Camplin tore a knee ligament four months before the Winter Olympics: rather than give up, she redirected her amazing ability to concentrate on \"What do I need to do so I CAN land a jump?\"'"
+          },
+          {
+            "type": "text",
+            "label": "Passage excerpt (paragraph C)",
+            "text": "By contrast, those motivated to avoid failure will bypass negative evaluation. Either they won't try hard – and then they'll have a built-in excuse – or they'll put themselves in non-challenging situations where they're guaranteed success. 'Individual athletes might enter competitions at a lower level,' Freeman says, 'while team-based athletes might accept mediocrity rather than achieving their full potential.'"
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "According to Gavin Freeman, how do people who are motivated to succeed and people who are motivated to avoid failure deal with challenges differently? Select the relevant details; copying out whole paragraphs earns no marks."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "States that people motivated to succeed treat a setback or mishap as a step towards success (they keep going rather than give up).",
+                "marks": 1
+              },
+              {
+                "text": "States both ways people motivated to avoid failure escape being judged: not trying hard, so they have a ready excuse, and choosing unchallenging situations where success is guaranteed (e.g. lower-level competitions, accepting mediocrity).",
+                "marks": 2
+              }
+            ]
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "People driven to succeed see any setback as just another step on the way to success, like the skier who hurt her knee and kept training. People driven to avoid failure protect themselves from being judged: either they don't put in real effort, so they have an excuse ready, or they only take on easy challenges they know they will win, such as entering lower-level competitions.",
+            "labels": [
+              [
+                1,
+                "Setback seen as a step towards success."
+              ],
+              [
+                1,
+                "Both ways: no real effort with an excuse, and only easy challenges."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "The individual who's motivated to succeed will see any mishap as a step towards success. By contrast, those motivated to avoid failure will bypass negative evaluation. Either they won't try hard – and then they'll have a built-in excuse – or they'll put themselves in non-challenging situations where they're guaranteed success.",
+            "labels": [
+              [
+                1,
+                "Selected copied quote gives the mishap-as-a-step view; copying is fine."
+              ],
+              [
+                1,
+                "Selected copied sentence gives both ways."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "Freeman believes that we all fall into one of two categories: those motivated to succeed and those motivated to avoid failure. The type we are has a profound impact on how we approach challenges and our chances of success.",
+            "labels": [
+              [
+                0,
+                "Names the two types but not how they respond."
+              ],
+              [
+                0,
+                "No behaviour of the avoid-failure type."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "People who want to succeed don't give up when something goes wrong. People who are scared of failing don't try very hard, so they can make excuses afterwards.",
+            "labels": [
+              [
+                1,
+                "Not giving up after a setback matches the item's example."
+              ],
+              [
+                0.5,
+                "Gives not trying hard with an excuse; misses choosing easy situations."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "Freeman says people motivated to avoid failure are the ones who succeed most, because fear makes them prepare carefully, while people motivated to succeed often take on too much and give up after their first injury, like Alisa Camplin.",
+            "labels": [
+              [
+                0,
+                "Reverses it: Camplin, motivated to succeed, did not give up."
+              ],
+              [
+                0,
+                "Wrong: avoiders dodge effort or challenge; they do not prepare carefully."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_dump",
+            "text": "Freeman believes that we all fall into one of two categories: those motivated to succeed and those motivated to avoid failure. The type we are has a profound impact on how we approach challenges and our chances of success. 'The individual who's motivated to succeed will see any mishap as a step towards success,' he says. 'Australian skier Alisa Camplin tore a knee ligament four months before the Winter Olympics: rather than give up, she redirected her amazing ability to concentrate on \"What do I need to do so I CAN land a jump?\"' By contrast, those motivated to avoid failure will bypass negative evaluation. Either they won't try hard – and then they'll have a built-in excuse – or they'll put themselves in non-challenging situations where they're guaranteed success. 'Individual athletes might enter competitions at a lower level,' Freeman says, 'while team-based athletes might accept mediocrity rather than achieving their full potential.'",
+            "labels": [
+              [
+                0,
+                "Whole excerpt copied without selecting; the part says this earns no marks."
+              ],
+              [
+                0,
+                "Whole excerpt copied without selecting; the part says this earns no marks."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ielts-curie-sorbonne",
+      "subject": "english_reading",
+      "language": "en",
+      "source": "ieltsorg-cd-academic-reading-familiarisation-test-player.txt, Part 1 'The life and work of Marie Curie', paragraphs 2-3 (same text in ieltsorg-academic-reading-sample-tasks-2023.txt, True/False/Not Given sample)",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "Passage excerpt (paragraphs 2 and 3)",
+            "text": "From childhood, Marie was remarkable for her prodigious memory, and at the age of 16 won a gold medal on completion of her secondary education. Because her father lost his savings through bad investment, she then had to take work as a teacher. From her earnings she was able to finance her sister Bronia’s medical studies in Paris, on the understanding that Bronia would, in turn, later help her to get an education. In 1891 this promise was fulfilled and Marie went to Paris and began to study at the Sorbonne (the University of Paris). She often worked far into the night and lived on little more than bread and butter and tea. She came first in the examination in the physical sciences in 1893, and in 1894 was placed second in the examination in mathematical sciences. It was not until the spring of that year that she was introduced to Pierre Curie."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Explain in your own words how Marie Curie was able to go to study at the Sorbonne. Do not copy phrases from the passage."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "Explains in own words, not copied from the passage, that Marie worked (as a teacher) and used her wages to pay for her sister Bronia's medical studies in Paris.",
+                "marks": 1
+              },
+              {
+                "text": "Explains in own words, not copied from the passage, that this was an agreement: Bronia would support Marie's education in return later, and she did (Marie went to Paris in 1891).",
+                "marks": 1
+              }
+            ]
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "After her father lost his money, Marie got a teaching job and sent what she earned to pay for her sister Bronia to train as a doctor in Paris. The two sisters had agreed that Bronia would help Marie with her own studies afterwards, and in 1891 Bronia kept her word, so Marie could go to Paris and enrol at the Sorbonne.",
+            "labels": [
+              [
+                1,
+                "Teaching wages paid for Bronia's medical training, in own words."
+              ],
+              [
+                1,
+                "The sisters' deal and Bronia keeping her word, in own words."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "From her earnings she was able to finance her sister Bronia’s medical studies in Paris, on the understanding that Bronia would, in turn, later help her to get an education. In 1891 this promise was fulfilled and Marie went to Paris and began to study at the Sorbonne.",
+            "labels": [
+              [
+                0,
+                "Correct content but copied word for word; the item requires own words."
+              ],
+              [
+                0,
+                "The agreement is copied verbatim; the item requires own words."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "Because her father lost his savings through bad investment, she then had to take work as a teacher. She often worked far into the night and lived on little more than bread and butter and tea.",
+            "labels": [
+              [
+                0,
+                "Copied; gives why she worked, not that she paid for Bronia."
+              ],
+              [
+                0,
+                "Copied; nothing about Bronia's help in return."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "She took a job as a teacher and used her salary to pay for her sister Bronia's training as a doctor in Paris.",
+            "labels": [
+              [
+                1,
+                "Teaching salary paid for Bronia's medical training, in own words."
+              ],
+              [
+                0,
+                "No mention that Bronia helped her in return."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "Marie won a gold medal at 16, and this prize gave her enough money to pay for her studies at the Sorbonne, where her sister Bronia was already teaching medicine.",
+            "labels": [
+              [
+                0,
+                "The medal was not money; Marie paid for Bronia, not for herself."
+              ],
+              [
+                0,
+                "Bronia was the student Marie paid for, not a teacher at the Sorbonne."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ielts-traffic-engineers",
+      "subject": "english_reading",
+      "language": "en",
+      "source": "ieltsorg-cd-academic-reading-familiarisation-test-player.txt, Part 2 'The Physics of Traffic Behavior', section D (same text in ieltsorg-academic-reading-sample-tasks-2023.txt, Matching Headings sample)",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "Passage excerpt (section D)",
+            "text": "However, research into traffic control is generally centered in civil engineering departments and here the theories of the physicists have been greeted with some skepticism. Civil engineers favor a practical approach to problems and believe traffic congestion is the result of poor road construction (two lanes becoming one lane or dangerous curves), which constricts the flow of traffic. Engineers questioned how well the physicists’ theoretical results relate to traffic in the real world. Indeed, some engineering researchers questioned whether elaborate chaos-theory interpretations are needed at all, since at least some of the traffic phenomena the physicists’ theories predicted seemed to be similar to observations that had been appearing in traffic engineering literature under other names for years; observations which had straightforward cause-and-effect explanations."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "According to the passage, give two reasons why civil engineers were sceptical about the physicists' theories of traffic."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "Gives one of the engineers' reasons: they think congestion comes from poor road construction (lanes merging, dangerous curves); they doubt the theory applies to real traffic; or some predicted effects had already been described in engineering literature with simple cause-and-effect explanations.",
+                "marks": 1
+              },
+              {
+                "text": "Gives a second, different reason from the same list.",
+                "marks": 1
+              }
+            ]
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "First, the engineers think jams are caused by badly designed roads, for example where two lanes narrow into one or there are dangerous bends. Second, they doubt the physicists' models match what really happens on roads, and some say engineers had already described the same effects years ago with simple explanations, so chaos theory isn't needed.",
+            "labels": [
+              [
+                1,
+                "Badly designed roads cause jams."
+              ],
+              [
+                1,
+                "Doubt the models fit real roads; effects already explained simply."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "Civil engineers favor a practical approach to problems and believe traffic congestion is the result of poor road construction (two lanes becoming one lane or dangerous curves), which constricts the flow of traffic. Engineers questioned how well the physicists’ theoretical results relate to traffic in the real world.",
+            "labels": [
+              [
+                1,
+                "Copied road-construction reason; copying is allowed here."
+              ],
+              [
+                1,
+                "Copied real-world doubt is a second reason."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "However, research into traffic control is generally centered in civil engineering departments and here the theories of the physicists have been greeted with some skepticism.",
+            "labels": [
+              [
+                0,
+                "Only says engineers were sceptical; gives no reason."
+              ],
+              [
+                0,
+                "No second reason."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "The engineers think traffic jams happen because roads are badly built.",
+            "labels": [
+              [
+                1,
+                "Poor road construction given."
+              ],
+              [
+                0,
+                "Only one reason given."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "Civil engineers rejected the theories because the physicists had ignored chaos theory, and because the physicists blamed congestion on badly built roads, which engineers knew was wrong.",
+            "labels": [
+              [
+                0,
+                "Confuses who said what: engineers, not physicists, blame poor roads."
+              ],
+              [
+                0,
+                "Wrong: the physicists' theories drew on chaos theory."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ielts-plain-english-costs",
+      "subject": "english_reading",
+      "language": "en",
+      "source": "ieltsorg-cd-academic-reading-familiarisation-test-player.txt, Part 3 'Plain English', paragraph 5",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "Passage excerpt (paragraph 5)",
+            "text": "In these cost-conscious days, it is stressed that clear language not only avoids anxiety on the part of the recipient, it also saves time and money. The campaigns have large dossiers of problem cases. In one case, an official government letter provoked so many complaints and questions that a second letter had to be sent to explain the first. In another, an application form was wrongly filled in by 50% of the applicants, which resulted in a considerable outlay of effort in returning and reprocessing the form. In contrast, there are cases of businesses revising their literature to avoid legal jargon, and benefiting from increased sales."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "How does the writer support the claim that clear language saves time and money? Refer to the examples in the paragraph."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "Describes the government letter that caused so many complaints and questions that a second letter was needed to explain it.",
+                "marks": 1
+              },
+              {
+                "text": "Describes the application form that half of the applicants filled in wrongly (causing extra work returning and reprocessing it).",
+                "marks": 1
+              },
+              {
+                "text": "Describes the positive case: businesses that rewrote their documents without legal jargon and sold more.",
+                "marks": 1
+              }
+            ]
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "The writer gives two costly failures and one success. A government letter was so confusing that people complained and asked questions, and a second letter had to go out explaining the first. An application form was filled in incorrectly by half the people who used it, so it all had to be sent back and handled again. On the other hand, some companies that took the legal jargon out of their documents saw their sales go up.",
+            "labels": [
+              [
+                1,
+                "Second letter needed to explain the first."
+              ],
+              [
+                1,
+                "Half filled the form in wrongly; it was sent back and redone."
+              ],
+              [
+                1,
+                "Removing legal jargon raised sales."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "In one case, an official government letter provoked so many complaints and questions that a second letter had to be sent to explain the first. In another, an application form was wrongly filled in by 50% of the applicants, which resulted in a considerable outlay of effort in returning and reprocessing the form. In contrast, there are cases of businesses revising their literature to avoid legal jargon, and benefiting from increased sales.",
+            "labels": [
+              [
+                1,
+                "Copied letter example; copying is allowed here."
+              ],
+              [
+                1,
+                "Copied form example."
+              ],
+              [
+                1,
+                "Copied business example."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "In these cost-conscious days, it is stressed that clear language not only avoids anxiety on the part of the recipient, it also saves time and money. The campaigns have large dossiers of problem cases.",
+            "labels": [
+              [
+                0,
+                "Restates the claim; no example."
+              ],
+              [
+                0,
+                "No example."
+              ],
+              [
+                0,
+                "No example."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "The writer mentions an official letter that confused people so much that another letter had to be sent to explain it, and a form that half the applicants got wrong.",
+            "labels": [
+              [
+                1,
+                "Letter example given."
+              ],
+              [
+                1,
+                "Form example with half the applicants."
+              ],
+              [
+                0,
+                "Misses the business example."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "Clear language saves money because shorter documents use less paper and printing ink, and office staff can write them much faster than long legal documents.",
+            "labels": [
+              [
+                0,
+                "General knowledge, not the passage's examples."
+              ],
+              [
+                0,
+                "Not in the passage."
+              ],
+              [
+                0,
+                "Not in the passage."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ielts-rockets-india",
+      "subject": "english_reading",
+      "language": "en",
+      "source": "ieltsorg-academic-reading-sample-tasks-2023.txt, Matching Features sample (development of rockets), paragraph 2 of the extract; one sentence on early British experiments left out to keep the excerpt short",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "Passage excerpt (paragraph 2, opening sentences)",
+            "text": "It was not until the eighteenth century that Europe became seriously interested in the possibilities of using the rocket itself as a weapon of war and not just to propel other weapons. Prior to this, rockets were used only in pyrotechnic displays. The incentive for the more aggressive use of rockets came not from within the European continent but from far-away India, whose leaders had built up a corps of rocketeers and used rockets successfully against the British in the late eighteenth century. The Indian rockets used against the British were described by a British Captain serving in India as ‘an iron envelope about 200 millimetres long and 40 millimetres in diameter with sharp points at the top and a 3m-long bamboo guiding stick’."
+          },
+          {
+            "type": "text",
+            "label": "Passage excerpt (paragraph 2, last sentence)",
+            "text": "The British rocket differed from the Indian version in that it was completely encased in a stout, iron cylinder, terminating in a conical head, measuring one metre in diameter and having a stick almost five metres long and constructed in such a way that it could be firmly attached to the body of the rocket."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "According to the passage, what made Europeans take a serious interest in rockets as weapons of war in the eighteenth century? Select the relevant details; copying out whole paragraphs earns no marks."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "States that the incentive came from outside Europe, from India (whose leaders had built up a corps of rocketeers).",
+                "marks": 1
+              },
+              {
+                "text": "States that Indian forces had used rockets successfully against the British.",
+                "marks": 1
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "How did the British rocket differ from the Indian rocket described by the British captain?"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "States that the British rocket was completely enclosed in a strong iron cylinder with a cone-shaped head.",
+                "marks": 1
+              },
+              {
+                "text": "States that the British rocket had a much longer stick (almost five metres, against the Indian three metres) that was built to be firmly attached to the rocket's body.",
+                "marks": 1
+              }
+            ]
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "The idea came from India rather than from Europe itself. Indian rulers had trained special rocket troops, and in the late 1700s these troops used rockets effectively against the British.",
+            "labels": [
+              [
+                1,
+                "India, outside Europe, named as the source."
+              ],
+              [
+                1,
+                "Indian rockets used effectively against the British."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "The incentive for the more aggressive use of rockets came not from within the European continent but from far-away India, whose leaders had built up a corps of rocketeers and used rockets successfully against the British in the late eighteenth century.",
+            "labels": [
+              [
+                1,
+                "Selected copied sentence names India; copying is allowed."
+              ],
+              [
+                1,
+                "Same sentence gives the success against the British."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "It was not until the eighteenth century that Europe became seriously interested in the possibilities of using the rocket itself as a weapon of war and not just to propel other weapons. Prior to this, rockets were used only in pyrotechnic displays.",
+            "labels": [
+              [
+                0,
+                "Says when interest began and earlier uses, not what caused it."
+              ],
+              [
+                0,
+                "No mention of Indian success against the British."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "The interest came from India, because Indian leaders had a large group of soldiers trained to use rockets.",
+            "labels": [
+              [
+                1,
+                "India named as the source."
+              ],
+              [
+                0,
+                "No mention that the rockets were used successfully against the British."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "Europeans became interested after British rockets defeated Indian armies in the late eighteenth century, which showed how powerful the new weapon was.",
+            "labels": [
+              [
+                0,
+                "Treats Britain, not India, as the source of the idea."
+              ],
+              [
+                0,
+                "Reverses who used rockets successfully against whom."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_dump",
+            "text": "It was not until the eighteenth century that Europe became seriously interested in the possibilities of using the rocket itself as a weapon of war and not just to propel other weapons. Prior to this, rockets were used only in pyrotechnic displays. The incentive for the more aggressive use of rockets came not from within the European continent but from far-away India, whose leaders had built up a corps of rocketeers and used rockets successfully against the British in the late eighteenth century. The Indian rockets used against the British were described by a British Captain serving in India as ‘an iron envelope about 200 millimetres long and 40 millimetres in diameter with sharp points at the top and a 3m-long bamboo guiding stick’. The British rocket differed from the Indian version in that it was completely encased in a stout, iron cylinder, terminating in a conical head, measuring one metre in diameter and having a stick almost five metres long and constructed in such a way that it could be firmly attached to the body of the rocket.",
+            "labels": [
+              [
+                0,
+                "Whole paragraph copied without selecting; the part says this earns no marks."
+              ],
+              [
+                0,
+                "Whole paragraph copied without selecting; the part says this earns no marks."
+              ]
+            ]
+          }
+        ],
+        "b": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "The British rocket was fully closed inside a thick iron tube that ended in a pointed cone, whereas the Indian one was an iron case with sharp points on top. The British version also had a guide stick nearly five metres long, compared with the Indian 3 m bamboo stick, and it was designed to fix tightly onto the rocket's body.",
+            "labels": [
+              [
+                1,
+                "Fully enclosed in a thick iron tube with a cone."
+              ],
+              [
+                1,
+                "Stick nearly five metres, fixed tightly to the body."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "The British rocket differed from the Indian version in that it was completely encased in a stout, iron cylinder, terminating in a conical head, measuring one metre in diameter and having a stick almost five metres long and constructed in such a way that it could be firmly attached to the body of the rocket.",
+            "labels": [
+              [
+                1,
+                "Copied sentence gives the iron cylinder and conical head."
+              ],
+              [
+                1,
+                "Copied sentence gives the five-metre stick, firmly attached."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "‘an iron envelope about 200 millimetres long and 40 millimetres in diameter with sharp points at the top and a 3m-long bamboo guiding stick’",
+            "labels": [
+              [
+                0,
+                "Describes the Indian rocket, not how the British one differed."
+              ],
+              [
+                0,
+                "Gives only the Indian three-metre stick."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "The British rocket was bigger and had a much longer stick than the Indian one.",
+            "labels": [
+              [
+                0,
+                "Size alone; no closed iron cylinder or cone-shaped head."
+              ],
+              [
+                0.5,
+                "Longer stick given; not that it was firmly attached."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "The British rocket was made of bamboo instead of iron, so it was lighter and could fly further than the Indian rocket.",
+            "labels": [
+              [
+                0,
+                "Contradicts the passage: the British rocket was encased in iron."
+              ],
+              [
+                0,
+                "No stick difference; the bamboo stick belongs to the Indian rocket."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ielts-skill-team",
+      "subject": "english_reading",
+      "language": "en",
+      "source": "ieltsorg-academic-reading-sample-tasks-2023.txt, Multiple Choice (one answer) sample (older people in the workforce), paragraph 2 of the extract",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "Passage excerpt (paragraph 2)",
+            "text": "One innovation was devised by IBM Belgium. Faced with the need to cut staff costs, and having decided to concentrate cuts on 55 to 60-year olds, IBM set up a separate company called Skill Team, which re-employed any of the early retired who wanted to go on working up to the age of 60. An employee who joined Skill Team at the age of 55 on a five-year contract would work for 58% of his time, over the full period, for 88% of his last IBM salary. The company offered services to IBM, thus allowing it to retain access to some of the intellectual capital it would otherwise have lost."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Explain in your own words how IBM Belgium's Skill Team scheme worked and what IBM gained from it. Do not copy phrases from the passage."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "Explains in own words, not copied from the passage, both parts of how the scheme worked: (i) a separate company took back early-retired IBM staff who wanted to keep working until 60, and (ii) they worked part of the time for most of their old pay (58% of the time for 88% of the salary).",
+                "marks": 2
+              },
+              {
+                "text": "Explains in own words, not copied from the passage, that IBM kept access to these workers' knowledge and skills, which it would otherwise have lost.",
+                "marks": 1
+              }
+            ]
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "To cut costs, IBM pushed workers aged 55 to 60 into early retirement but created a separate firm, Skill Team, that hired back any of them who still wanted a job until they turned 60. They worked a bit over half the usual hours but still got paid most of their old IBM salary. Because Skill Team did work for IBM, the company did not lose the know-how and experience of these older staff.",
+            "labels": [
+              [
+                1,
+                "Separate firm re-hiring early retirees; over half the hours for most of the pay."
+              ],
+              [
+                1,
+                "IBM kept the staff's know-how, in own words."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "IBM set up a separate company called Skill Team, which re-employed any of the early retired who wanted to go on working up to the age of 60. An employee who joined Skill Team at the age of 55 on a five-year contract would work for 58% of his time, over the full period, for 88% of his last IBM salary. The company offered services to IBM, thus allowing it to retain access to some of the intellectual capital it would otherwise have lost.",
+            "labels": [
+              [
+                0,
+                "Content right but copied verbatim; the item requires own words."
+              ],
+              [
+                0,
+                "Copied verbatim; the item requires own words."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "One innovation was devised by IBM Belgium. Faced with the need to cut staff costs, and having decided to concentrate cuts on 55 to 60-year olds.",
+            "labels": [
+              [
+                0,
+                "Copied background on cost cuts; not how Skill Team worked."
+              ],
+              [
+                0,
+                "Nothing on what IBM gained."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "IBM made a new company that gave jobs back to people who had retired early. This helped IBM because it still had their experience.",
+            "labels": [
+              [
+                0.5,
+                "Re-hiring early retirees via a new company; misses the reduced hours for most of the pay."
+              ],
+              [
+                1,
+                "Keeping their experience conveys the gain, in own words."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "Under Skill Team, workers over 55 had to keep working full-time until 60 but for only 58% of their pay, which saved IBM money because older workers are expensive.",
+            "labels": [
+              [
+                0,
+                "Misreads the terms: voluntary, part-time work for 88% of the salary."
+              ],
+              [
+                0,
+                "Gives cost saving as the gain; the passage's gain is keeping their expertise."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ielts-caloric-two-theories",
+      "subject": "english_reading",
+      "language": "en",
+      "source": "ieltsorg-academic-reading-sample-tasks-2023.txt, Flow-chart Completion sample (anti-aging pill), paragraph 3 of the extract",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "Passage excerpt (paragraph 3)",
+            "text": "Cells use the glucose from food to generate ATP (adenosine triphosphate), the molecule that powers many activities in the body. By limiting food intake, caloric restriction minimizes the amount of glucose entering cells and decreases ATP generation. When 2DG is administered to animals that eat normally, glucose reaches cells in abundance but the drug prevents most of it from being processed and thus reduces ATP synthesis. Researchers have proposed several explanations for why interruption of glucose processing and ATP production might retard aging. One possibility relates to the ATP-making machinery’s emission of free radicals, which are thought to contribute to aging and to such age-related diseases as cancer by damaging cells. Reduced operation of the machinery should limit their production and thereby constrain the damage. Another hypothesis suggests that decreased processing of glucose could indicate to cells that food is scarce (even if it isn’t) and induce them to shift into an anti-aging mode that emphasizes preservation of the organism over such ‘luxuries’ as growth and reproduction."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "According to the passage, what two explanations have researchers proposed for why reducing glucose processing and ATP production might slow down aging?"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "Explains the free-radical idea: the ATP-making machinery gives off free radicals that damage cells, so running it less means fewer free radicals and less damage.",
+                "marks": 1
+              },
+              {
+                "text": "Explains the scarcity-signal idea: less glucose processing tells cells that food is scarce, so they switch to an anti-aging mode that puts preserving the body ahead of growth and reproduction.",
+                "marks": 1
+              }
+            ]
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "One idea is that the machinery that makes ATP also releases free radicals, which harm cells and are linked to aging and diseases like cancer; if this machinery works less, fewer free radicals are made and cells suffer less damage. The other idea is that when cells process less glucose they 'think' food is in short supply, so they go into a survival mode that protects the body instead of spending energy on growing and reproducing.",
+            "labels": [
+              [
+                1,
+                "Less ATP machinery, fewer free radicals, less cell damage."
+              ],
+              [
+                1,
+                "Cells sense scarcity and switch to protecting the body."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "One possibility relates to the ATP-making machinery’s emission of free radicals, which are thought to contribute to aging and to such age-related diseases as cancer by damaging cells. Reduced operation of the machinery should limit their production and thereby constrain the damage. Another hypothesis suggests that decreased processing of glucose could indicate to cells that food is scarce (even if it isn’t) and induce them to shift into an anti-aging mode that emphasizes preservation of the organism over such ‘luxuries’ as growth and reproduction.",
+            "labels": [
+              [
+                1,
+                "Copied free-radical explanation; copying is allowed here."
+              ],
+              [
+                1,
+                "Copied scarcity explanation."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "By limiting food intake, caloric restriction minimizes the amount of glucose entering cells and decreases ATP generation. When 2DG is administered to animals that eat normally, glucose reaches cells in abundance but the drug prevents most of it from being processed and thus reduces ATP synthesis.",
+            "labels": [
+              [
+                0,
+                "Describes how ATP production is reduced, not why that slows aging."
+              ],
+              [
+                0,
+                "No scarcity explanation."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "First, making less ATP means fewer harmful free radicals are produced, so cells are damaged less. Second, the cells react as if there were a famine.",
+            "labels": [
+              [
+                1,
+                "Fewer free radicals, less damage."
+              ],
+              [
+                0.5,
+                "Scarcity signal given; misses the switch to preserving the body over growth."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "Eating less makes people lose weight, and slimmer people have lower blood pressure and less heart disease, so they live longer. Also, 2DG kills cancer cells directly.",
+            "labels": [
+              [
+                0,
+                "General knowledge; no free-radical explanation."
+              ],
+              [
+                0,
+                "Not in the passage; no scarcity signal."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ielts-birds-heilmann",
+      "subject": "english_reading",
+      "language": "en",
+      "source": "ieltsorg-academic-reading-sample-tasks-2023.txt, Sentence Completion sample (origins of birds), paragraph 3 and end of paragraph 4 of the extract",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "Passage excerpt (paragraph 3)",
+            "text": "Huxley’s idea fell out of favour for fifty years following the 1916 publication of The Origin of Birds by the Danish doctor Gerhard Heilmann. During this time, Heilmann’s theory was widely accepted. Heilmann had noted that two-legged, meat-eating dinosaurs lacked collarbones. In later evolutionary stages these bones fuse together to form the distinctive ‘Y’-shaped bone in a bird’s neck, known as the furcula. Heilmann proposed the notion that such a feature could not be lost and then re-evolve at a later date, so dinosaurs could not be the ancestors of birds."
+          },
+          {
+            "type": "text",
+            "label": "Passage excerpt (end of paragraph 4)",
+            "text": "But what of Heilmann’s missing bones? It turns out that not only did many dinosaurs have collarbones, these were also fused together into a furcula. Unfortunately for Heilmann, the fossil evidence was somewhat lacking in his day, and the few furculae that had been found were misidentified, usually as belly ribs."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Why did Heilmann reject the idea that birds evolved from dinosaurs? Select the relevant details; copying out whole paragraphs earns no marks."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "States Heilmann's observation: two-legged, meat-eating dinosaurs appeared to have no collarbones (the bones that fuse into the furcula, or wishbone, in birds).",
+                "marks": 1
+              },
+              {
+                "text": "States his reasoning: a feature that has been lost cannot evolve again later, so dinosaurs could not be the ancestors of birds.",
+                "marks": 1
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Why was Heilmann's argument later shown to be wrong, and why had he made this mistake?"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "States that many dinosaurs did in fact have collarbones, fused into a furcula.",
+                "marks": 1
+              },
+              {
+                "text": "Explains his mistake with both points: there was little fossil evidence in his time, and the few furculae found had been wrongly identified (usually as belly ribs).",
+                "marks": 1
+              }
+            ]
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "Heilmann saw that the two-legged meat-eating dinosaurs had no collarbones, the bones that join to make the Y-shaped wishbone in birds. He believed that once a body part has disappeared in evolution it cannot come back, so these dinosaurs could not have given rise to birds.",
+            "labels": [
+              [
+                1,
+                "No collarbones in two-legged meat-eating dinosaurs."
+              ],
+              [
+                1,
+                "A lost part cannot come back, so no descent."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "Heilmann had noted that two-legged, meat-eating dinosaurs lacked collarbones. Heilmann proposed the notion that such a feature could not be lost and then re-evolve at a later date, so dinosaurs could not be the ancestors of birds.",
+            "labels": [
+              [
+                1,
+                "Selected copied sentence gives the missing collarbones."
+              ],
+              [
+                1,
+                "Selected copied sentence gives the cannot-re-evolve reasoning."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "Huxley’s idea fell out of favour for fifty years following the 1916 publication of The Origin of Birds by the Danish doctor Gerhard Heilmann. During this time, Heilmann’s theory was widely accepted.",
+            "labels": [
+              [
+                0,
+                "Says when his book won out, not why he rejected the idea."
+              ],
+              [
+                0,
+                "No reasoning given."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "Because the dinosaurs he looked at did not have collarbones, which birds have.",
+            "labels": [
+              [
+                1,
+                "Missing collarbones given."
+              ],
+              [
+                0,
+                "No reasoning that a lost feature cannot re-evolve."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "Heilmann rejected it because he found that dinosaurs had a furcula but birds did not, which showed that birds had lost a dinosaur bone and so must be a separate group.",
+            "labels": [
+              [
+                0,
+                "Reverses it: dinosaurs seemed to lack collarbones; birds have the furcula."
+              ],
+              [
+                0,
+                "Garbles the reasoning; never says a lost feature cannot return."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_dump",
+            "text": "Huxley’s idea fell out of favour for fifty years following the 1916 publication of The Origin of Birds by the Danish doctor Gerhard Heilmann. During this time, Heilmann’s theory was widely accepted. Heilmann had noted that two-legged, meat-eating dinosaurs lacked collarbones. In later evolutionary stages these bones fuse together to form the distinctive ‘Y’-shaped bone in a bird’s neck, known as the furcula. Heilmann proposed the notion that such a feature could not be lost and then re-evolve at a later date, so dinosaurs could not be the ancestors of birds.",
+            "labels": [
+              [
+                0,
+                "Whole paragraph copied without selecting; the part says this earns no marks."
+              ],
+              [
+                0,
+                "Whole paragraph copied without selecting; the part says this earns no marks."
+              ]
+            ]
+          }
+        ],
+        "b": [
+          {
+            "kind": "paraphrase_correct",
+            "text": "Later finds showed that lots of dinosaurs did have collarbones, and that they were even joined into a wishbone. Heilmann got it wrong because very few fossils had been found in his time, and the few wishbones that had turned up were mistaken for other bones, mostly belly ribs.",
+            "labels": [
+              [
+                1,
+                "Many dinosaurs had collarbones joined into a wishbone."
+              ],
+              [
+                1,
+                "Few fossils then, and wishbones mistaken for belly ribs."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_correct",
+            "text": "It turns out that not only did many dinosaurs have collarbones, these were also fused together into a furcula. Unfortunately for Heilmann, the fossil evidence was somewhat lacking in his day, and the few furculae that had been found were misidentified, usually as belly ribs.",
+            "labels": [
+              [
+                1,
+                "Copied sentence: many dinosaurs had fused collarbones."
+              ],
+              [
+                1,
+                "Copied sentence gives both causes of the mistake."
+              ]
+            ]
+          },
+          {
+            "kind": "copied_wrong",
+            "text": "In later evolutionary stages these bones fuse together to form the distinctive ‘Y’-shaped bone in a bird’s neck, known as the furcula.",
+            "labels": [
+              [
+                0,
+                "Describes the bird furcula, not that dinosaurs had collarbones."
+              ],
+              [
+                0,
+                "No reason for his mistake."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase_partial",
+            "text": "Scientists later discovered that many dinosaurs had collarbones after all, so he was wrong.",
+            "labels": [
+              [
+                1,
+                "Many dinosaurs had collarbones."
+              ],
+              [
+                0,
+                "No reason for his mistake."
+              ]
+            ]
+          },
+          {
+            "kind": "misreading",
+            "text": "Later fossils showed that dinosaurs did have collarbones, but Heilmann had simply ignored the furculae he found because he wanted his own theory to win.",
+            "labels": [
+              [
+                1,
+                "Dinosaurs did have collarbones."
+              ],
+              [
+                0,
+                "Misreads the cause: evidence was scarce and misidentified, not ignored."
+              ]
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

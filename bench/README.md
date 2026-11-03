@@ -294,6 +294,11 @@ The [production contract report](grading/reports/2026-10-02-jev-production-contr
 runs [`jev_contract.py`](grading/scripts/jev_contract.py) on new held-out fixtures
 to choose the Jev request for open quiz parts (question type, batching, state
 fields) and the author-side computation warning, with a small LaTeX check.
+The [DeepSeek grading report](grading/reports/2026-11-03-deepseek-grading.md) runs
+[`deepseek_grading.py`](grading/scripts/deepseek_grading.py) (DeepSeek Flash and the
+0731 descriptor model, quote-checked JSON per marking item) against Jev on the contract
+fixtures, held-out, injection and Traditional Chinese answers, HKDSE maths with
+working, IELTS reading and HKDSE Chinese reading.
 
 ### rag
 

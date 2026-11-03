@@ -79,6 +79,34 @@ request format, control cases, coverage and results.
 python bench/grading/scripts/alibaba_decision.py --dataset data/grading-benchmark/laya-20260927/requests.jsonl --output data/grading-benchmark/alibaba-reproduction/pilot.jsonl --env .env.local --key-var ALIBABA_BEIJING_KEY --url-var ALIBABA_BEIJING_URL --parallel 8 --suite rubric --pilot
 ```
 
+## DeepSeek grader against Jev
+
+[`scripts/deepseek_grading.py`](scripts/deepseek_grading.py) grades open parts with
+DeepSeek: one request per part, JSON per marking item (none, partial or full plus a
+quote), temperature 0 with thinking off. Code checks that each partial or full quote
+appears in the answer after whitespace normalisation (otherwise the item scores none),
+applies the answer-level `vocabulary_only` flag and computes marks from the choices.
+It runs `deepseek-flash` on DeepSeek's API and the ingest descriptor pin
+`deepseek/deepseek-v4-flash-0731` on OpenRouter, and Jev's production request pinned
+to `jev-1.13.0`; the contract and LaTeX sets reuse Jev's saved 2026-10-02 runs.
+Sets: the Jev contract and LaTeX fixtures, `jev-partial-credit.json` and
+`typesafe_rubric_cases.json` as held-out sets, and the `deepseek-grading-*.json`
+fixtures (prompt injection, Traditional Chinese, HKDSE maths with working, IELTS
+reading, HKDSE Chinese reading from the 2020–2021 papers, and original DSE-style
+Chinese passages). Keys come from an explicit `--env` file; at most four workers, no
+retries. See the [2026-11-03 report](reports/2026-11-03-deepseek-grading.md).
+
+```sh
+S=bench/grading/scripts/deepseek_grading.py; D=data/grading-benchmark/deepseek-grading-<fresh>; E=deploy/.env.uat
+python $S --check
+python $S run --grader deepseek-flash --sets all --env $E --output $D/flash
+python $S run --grader deepseek-0731 --sets all --env $E --output $D/0731
+python $S run --grader jev --sets all --env $E --jev-saved data/grading-benchmark/jev-contract-20261002 --output $D/jev
+python $S run --grader deepseek-flash --sets contract --kinds keywords,partial --label flash-repeat --env $E --output $D/flash-repeat
+python $S run --grader deepseek-flash --sets all --thinking low --samples 2 --borderline-from $D/flash --label flash-think-low --env $E --output $D/flash-think-low
+python $S report --runs $D/* --output $D/summary.json --compact bench/grading/reports/2026-11-03-mac
+```
+
 ## Reproduce a run
 
 The bounded Jev context comparison in

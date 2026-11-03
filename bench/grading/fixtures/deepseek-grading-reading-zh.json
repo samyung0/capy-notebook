@@ -1,0 +1,1910 @@
+{
+  "provenance": {
+    "author": "Claude Code agent (Opus 5.5); questions, passage excerpts and marking points from HKDSE Chinese Language Paper 1 and its 評卷參考; candidate answers transcribed from 考生表現 where marked per_*; other answers and all labels synthetic",
+    "date": "2026-11-03",
+    "human_certified": false,
+    "labels_written_before_inference": true,
+    "sources": [
+      "2020/p1.pdf pp. 2-4 (閱讀能力考材: 《夢中的父親》, 《試筆說》), pp. 7-15 (試題答題簿: Q5, Q6-7, Q8-11, Q16, Q19-22)",
+      "2020/ans.pdf pp. 7-15 (評卷參考 試卷一: Q5, Q7, Q10, Q11, Q16, Q19, Q21, Q22)",
+      "2020/per.pdf pp. 6-13 (考生表現 試卷一: per-question comments; candidate answers quoted for Q10 and Q11(ii))",
+      "2021/p1.pdf pp. 2-3, 5-6, 9 (試題答題簿: Q6, Q7, Q10, Q19-21), pp. 14, 17 (閱讀能力考材: 《橘子》第4段, 《說苑‧立節》)",
+      "2021/ans.pdf pp. 1-7, 13-14 (評卷參考 試卷一: Q6, Q7(i), Q10(ii), Q19-21)",
+      "指定篇章 text not printed in the papers (《論語》司馬牛問君子, 《岳陽樓記》, 《逍遙遊》樗樹, 《念奴嬌‧赤壁懷古》): standard 通行本 wording, checked against the lines the 評卷參考 quotes"
+    ],
+    "scope": "15 open parts from HKDSE 2020 and 2021 Chinese Paper 1 (2-4 marks each): 文言 (指定篇章 六國論, 論君子/岳陽樓記, 逍遙遊, 念奴嬌; 課外 試筆說, 說苑 申鳴) and 白話 (夢中的父親, 橘子). Point-marked and level-marked (入品) schemes. Not used: 2019 and 2022 (2019/ans.pdf is Paper 3 only; 2022/p1.pdf holds only the reading-material booklet, no questions); 2021/per.pdf is the Paper 3 report and 2022/per.pdf is the English Language report. No per.pdf in the folder contains candidate scripts for Paper 1; the only real candidate answers are the four quoted verbatim in the 2020 report.",
+    "copyright": "HKEAA past papers, private reference; minimal excerpts only"
+  },
+  "labeling_rules": [
+    "Each label is a fraction of its item's marks: 1 full, 0.5 half, 0 none. Point items follow the 評卷參考 points; parenthesised or slash-separated wording in an item lists accepted answers, not extra requirements.",
+    "Single 2-mark items (2020 Q19(i), Q19(ii), Q21; 2021 Q20, Q21) use 0.5 for the scheme's 1-mark 不完備 answer: one required half missing (e.g. 等待任用 without 做好可勝任的), the dilemma named without its content, a slightly misread key word such as 甚久 read as 擺放了很久.",
+    "Point items split from a scheme line worth 2 marks with two bullet points (2020 Q5(ii) 說明, 2020 Q10 each 姿態 line) are encoded as two 1-mark items, one per bullet. 2021 Q10(ii)'s 闡述 is one 2-mark item: 平穩 1, 概略 0.5, none 0, as the scheme gives 2/1/0.",
+    "Level-marked (入品) questions are encoded as cumulative 1-mark items, one per level step (下品, then 中下品/中品, then 中上品, then 上品). Each level item is 1 only if the answer meets that level's descriptor and every lower item is 1; 0.5 is never used on level items. The sum equals the 品 mark; 不入品 is all 0.",
+    "Pure quotation earns 0 on every item: an answer, or the part of it, that only copies passage or classical sentences with no statement of the student's own. Several of these schemes say 只引錄原文而未有解釋，不給分 or 摘錄原文不加解釋，不給分, and every picked question asks the candidate to 說明, 指出 or 以自己的文句; the rule is applied to all parts for consistency. A sentence in the student's own words that reuses a few passage words is not pure quotation.",
+    "Classical passages: content must be rendered in modern written Chinese; copying classical wording without rendering earns nothing.",
+    "A misreading that the scheme or the 考生表現 report names as wrong (e.g. 待人如己, 落葉歸根 as the theme, 如真似幻 as the 姿態, 羞愧自己不懂用筆, 捨忠取孝) earns 0 on the item it contradicts; where the scheme says 整題不給分 or 不入品, every item of the part is 0.",
+    "2020 Q11(ii): 比較意識 is required. An answer for ① or ② that speaks of only one of the two people earns 0 on both items of that sub-answer; if both are compared and one person's cause is wrong, the other person's item can still score.",
+    "2021 Q19: a wrong example, an example not from paragraph 1, or quotation without explanation earns 0 on the whole part, as the scheme says.",
+    "2021 Q21: the scheme lets markers read Q21 together with the candidate's Q20 answer. Graders here see only the Q21 answer, so it is judged on its own: both 取 and 捨 stated earns 1, one side only 0.5.",
+    "Choose-one questions (2020 Q7): if both options are answered only the first is marked.",
+    "Language: Cantonese colloquialisms, minor typos and plain wording are not penalised; the 一般原則 deduction for 文句不通 does not apply to any answer here.",
+    "per_report_* answers: the 2020 report gives no level or marks for them, so official_marks is null; their labels follow the scheme and are consistent with the report's comment on that answer type.",
+    "Labels were decided from the passage, question and scheme alone, before any model output existed."
+  ],
+  "answer_kinds": {
+    "per_report_1": "candidate answer quoted verbatim in the HKEAA 2020 考生表現 report (2020/per.pdf, Paper 1 section) as an example of a common answer; no level or marks given (official_marks null); where the report quotes only part of an answer, the unquoted sub-answer is left unanswered",
+    "per_report_2": "a second candidate answer quoted verbatim in the 2020 考生表現 report for the same question",
+    "per_report_3": "a third candidate answer quoted verbatim in the 2020 考生表現 report for the same question",
+    "full": "complete answer meeting every item or the top level",
+    "paraphrase": "right content in own words; earns most items, on level questions usually one level below the top",
+    "partial": "some points right, others missing or vague",
+    "no_text_link": "states the right idea but does not tie it to the passage evidence the question asks for (level questions: lowest level only)",
+    "quote_only": "only copies passage or classical sentences without explaining or rendering them; 0 on every item",
+    "misread": "fluent answer built on a misreading, mostly ones the 2020 考生表現 report or the scheme names as common errors",
+    "wrong_point": "answers a different point from the one asked (e.g. gives the 遭遇 instead of the 結果, or advice to rulers instead of to the worthy)"
+  },
+  "questions": [
+    {
+      "id": "dsezh2020-q5",
+      "subject": "chinese_reading",
+      "language": "zh-Hant",
+      "source": "HKDSE 2020 中國語文 卷一 甲部 第5題（指定文言篇章《六國論》引文）",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "然則諸侯之地有限，暴秦之欲無厭，奉之彌繁，侵之愈急，故不戰而強弱勝負已判矣。至於顛覆，理固宜然。古人云：「以地事秦，猶抱薪救火，薪不盡，火不滅。」此言得之。",
+            "label": "5. 試根據以下《六國論》引文，回答所附問題。"
+          }
+        ],
+        "parts": [
+          {
+            "id": "ii",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "(ii) 作者以「抱薪救火」說明什麼道理？試以自己的文句說明。(3分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "歸納「抱薪救火」的道理：「以地事秦」／賂秦招致惡果（亡國），屬不智之舉；或賂秦導致國力損耗，是亡國的原因（只摘引「賂秦而力虧，破滅之道也」不給分）（1分）",
+                "marks": 1
+              },
+              {
+                "text": "說明「抱薪救火」如何帶出道理（之一）：以土地賂秦（薪），只會助長秦國（火）的野心和實力。只從喻體（抱柴救火）作說明，未見與本體（以地事秦）的關係，不給分（1分）",
+                "marks": 1
+              },
+              {
+                "text": "說明「抱薪救火」如何帶出道理（之二）：土地割讓殆盡（薪盡），秦國的野心方會休止（火滅），即割地永遠滿足不了秦國。只從喻體作說明，未見與本體的關係，不給分（1分）",
+                "marks": 1
+              }
+            ],
+            "reference_answer": "作者以「抱薪救火」比喻「以地事秦」的惡果。抱着柴薪救火，柴薪尚未燒盡，火也不會熄滅；比喻六國以地事秦，只會助長秦國的野心，未把所有的土地割讓，秦國的野心也不會消滅，結果自招滅亡。"
+          }
+        ]
+      },
+      "answers": {
+        "ii": [
+          {
+            "kind": "full",
+            "text": "作者以「抱薪救火」比喻六國用土地侍奉秦國，結果只會自取滅亡，是不智的做法。抱着柴去救火，柴越多火越旺；六國割地給秦國，秦國得到土地後實力和野心都增長，侵略得更急。而且柴未燒完火不會熄，就如六國的土地未割盡之前，秦國貪得無厭的野心也不會停止，最終六國只能滅亡。",
+            "labels": [
+              [
+                1,
+                "States that ceding land to Qin brings ruin and is unwise."
+              ],
+              [
+                1,
+                "Ceded land strengthens Qin's power and ambition, mapped to firewood feeding fire."
+              ],
+              [
+                1,
+                "Qin's greed stops only when all land is gone, mapped to fire dying when firewood runs out."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "這個比喻說明用割地去討好秦國只會招致滅亡。六國每次送地，秦國便更強大，胃口更大，就像把柴丟進火裏令火更猛；除非六國的土地全部送光，否則秦國的貪念不會停，到時六國也就亡了。",
+            "labels": [
+              [
+                1,
+                "Ceding land to please Qin leads to destruction."
+              ],
+              [
+                1,
+                "Each cession makes Qin stronger and greedier, tied to the fire image."
+              ],
+              [
+                1,
+                "Greed only ends when all land is gone, i.e. at the states' fall."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "作者想說明以地事秦是錯誤的做法，最終導致六國滅亡。抱薪救火就是抱着柴去救火，柴不燒完，火也不會熄滅。",
+            "labels": [
+              [
+                1,
+                "States the moral: ceding land to Qin is wrong and led to the fall."
+              ],
+              [
+                0,
+                "Does not say ceding land strengthens Qin's ambition or power."
+              ],
+              [
+                0,
+                "Explains only the vehicle (firewood and fire) with no link to land and Qin's greed."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "古人云：「以地事秦，猶抱薪救火，薪不盡，火不滅。」此言得之。諸侯之地有限，暴秦之欲無厭，奉之彌繁，侵之愈急。",
+            "labels": [
+              [
+                0,
+                "Copies the classical lines; states no moral in own words as the question requires."
+              ],
+              [
+                0,
+                "Quotation without explanation of how ceding land feeds Qin."
+              ],
+              [
+                0,
+                "Quotation without explanation; classical wording not rendered."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "作者以「抱薪救火」說明六國要團結起來，好像大家一起抱柴去救火一樣，只要合力就能把秦國這場大火撲滅，保住國家。",
+            "labels": [
+              [
+                0,
+                "Misreads the moral as unity against Qin."
+              ],
+              [
+                0,
+                "Treats firewood as a means of saving, not as land feeding Qin."
+              ],
+              [
+                0,
+                "No point that Qin's greed persists until land runs out."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dsezh2020-q7",
+      "subject": "chinese_reading",
+      "language": "zh-Hant",
+      "source": "HKDSE 2020 中國語文 卷一 甲部 第7題（指定文言篇章《論仁、論孝、論君子》「論君子」及《岳陽樓記》）",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "司馬牛問君子。子曰：「君子不憂不懼。」曰：「不憂不懼，斯謂之君子已乎？」子曰：「內省不疚，夫何憂何懼？」",
+            "label": "指定篇章節錄（試卷不附原文；據通行本）：《論語‧顏淵》（「論君子」章節）"
+          },
+          {
+            "type": "text",
+            "text": "嗟夫！予嘗求古仁人之心，或異二者之為，何哉？不以物喜，不以己悲。居廟堂之高，則憂其民；處江湖之遠，則憂其君。是進亦憂，退亦憂。然則何時而樂耶？其必曰：「先天下之憂而憂，後天下之樂而樂」歟！",
+            "label": "指定篇章節錄（試卷不附原文；據通行本）：范仲淹《岳陽樓記》"
+          },
+          {
+            "type": "text",
+            "text": "6. 試根據《論仁、論孝、論君子》中「論君子」的章節及《岳陽樓記》回答所附問題。\n(i) 《岳陽樓記》中，范仲淹認為古仁人「進亦憂，退亦憂」。「憂」的對象是：(2分)\nA. 「進」則憂人民，「退」則憂君主。B. 「進」則憂君主，「退」則憂人民。C. 「進」則憂人民，「退」則憂自己。D. 「進」則憂自己，「退」則憂人民。\n(ii) 在「論君子」的章節中，孔子認為君子「不憂不懼」。「不憂」的對象是：(2分)"
+          }
+        ],
+        "parts": [
+          {
+            "id": "q7",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "7. 承上題，君子的「不憂」與古仁人的「憂」對象各有不同，試任擇其一，說明對你的啟發。(3分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "達到下品：擇其一（君子的「不憂」或古仁人的「憂」）作答，啟發大致合理；即使未能針對「對象」解說、理解浮泛／模糊、闡述粗疏，亦達此品（若多答一項，只評改第一項）（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到中品（須先達到下品）：能針對「對象」準確解說——君子的「不憂」：君子經常反省自己的過失（內省不疚），努力遷善，便不必憂慮，對象是自己；或古仁人的「憂」：無論在朝或在野，憂樂均繫於天下百姓（居廟堂之高則憂其民，處江湖之遠則憂其君）——並就此說明合理的個人啟發（重視自己／個人／內在修養，或重視天下百姓／他人／社會責任），闡述一般（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到上品（須先達到中品）：啟發合理深刻，闡述清晰（例如結合具體生活例子或處世態度加以闡發）（1分）",
+                "marks": 1
+              }
+            ],
+            "reference_answer": "孔子說君子「不憂」，對象是指自己。因為君子能做到「內省不疚」，即經常反省自己的過失，努力遷善，便不必憂慮。我認為我們無法取悅所有人，也無法控制際遇，最重要是成為一個堂堂正正的人，只要經常反省自身，盡力改過，提升道德，便能問心無愧，不論窮達得失都能以不憂慮的心境處事。／范仲淹說古仁人「進亦憂，退亦憂」，古仁人憂樂的對象是人民、君主。我認為身為知識份子，不能只獨善其身，須對社會負上一定的責任，運用自己的能力幫助別人。小至賣旗籌款、擔任義工；大至放棄高薪厚職，加入無國界醫生或到山區義教等。只有擁有古仁人的心胸，為別人而憂，最後亦因為別人而樂，這種快樂才是長久的。"
+          }
+        ]
+      },
+      "answers": {
+        "q7": [
+          {
+            "kind": "full",
+            "text": "我選古仁人的「憂」。范仲淹說古仁人「居廟堂之高，則憂其民；處江湖之遠，則憂其君」，無論做官與否，他們憂慮的對象都是人民和君主，而不是個人得失。這啟發我不應只顧自己的成績和前途，也要對社會負責任。例如我現在可以參加義工服務、關心社區的長者；將來工作時，即使身處高位，也要想着自己的決定如何影響別人。能夠為他人而憂，才是有胸懷的人。",
+            "labels": [
+              [
+                1,
+                "Chooses one object and gives a reasonable insight."
+              ],
+              [
+                1,
+                "Correctly names the object (people and ruler, in or out of office) and links a sensible insight."
+              ],
+              [
+                1,
+                "Insight developed with concrete examples and a clear stance; meets 上品."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "君子不憂是因為他常常反省自己，覺得自己沒有做錯事，問心無愧，所以不用擔心。他憂慮的對象只是自己的德行。這提醒我與其擔心別人怎樣看我，不如多反省自己，做好本分。",
+            "labels": [
+              [
+                1,
+                "Chooses 君子不憂 with a reasonable insight."
+              ],
+              [
+                1,
+                "Object (oneself, self-examination) explained accurately; insight reasonable."
+              ],
+              [
+                0,
+                "Insight brief and general; not deep or fully developed, so 中品 only."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "古仁人很值得我們尊敬，因為他們關心他人，先人後己，這種人現在很難找到。我們應該學習他們。",
+            "labels": [
+              [
+                1,
+                "Vague understanding and a broadly reasonable insight: 下品."
+              ],
+              [
+                0,
+                "Does not identify the object (people and ruler, in and out of office); report cites such vague answers."
+              ],
+              [
+                0,
+                "No 上品 without 中品."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "我選古仁人的「憂」。古仁人進也憂、退也憂，就像父母任何時候都憂心子女一樣。這啟發我要體諒父母的擔憂，多與父母溝通，不要令他們擔心。",
+            "labels": [
+              [
+                0,
+                "Misidentifies the object as children (parents' worry); report says such answers 偏離題旨."
+              ],
+              [
+                0,
+                "Wrong object."
+              ],
+              [
+                0,
+                "No higher level."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "子曰：「內省不疚，夫何憂何懼？」君子不憂不懼。",
+            "labels": [
+              [
+                0,
+                "Copies the Analects line; gives no explanation or insight at all."
+              ],
+              [
+                0,
+                "No explanation of the object."
+              ],
+              [
+                0,
+                "No insight."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dsezh2020-father",
+      "subject": "chinese_reading",
+      "language": "zh-Hant",
+      "source": "HKDSE 2020 中國語文 卷一 乙部 第一篇（白話）利格拉樂・阿𡠄《夢中的父親》第10、11(ii)、16題",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "(1) 最近半年，常常與父親相遇，在夢境裏；如真似幻，讓我好幾次自夢境中醒來，卻又分不清楚那是做夢還是回憶？夢裏的他，還是一如十數年前他離世的樣貌，巍峨的白髮，水腫的身軀，和一臉嚴肅的表情，十足是個讓人會害怕的長者之貌。\n\n……\n\n(3) 父親是個寡言的人，從小，只要見着他點起一根長壽①，接下來便可以看到父親陷入沉思的表情，那表情常常以一種令人敬畏的方式呈現，即便是再得寵的長女如我，也不敢輕易地在此時前去打擾他。後來，我隨着父親的蒼老逐漸長大，這才慢慢地自他的口中得知，那些年來點着菸的沉默時光裏，是離家多年的父親憶起遠離許久的大陸老家，那種思念像極了戰爭時受傷的傷口，總在不經意間就襲上胸口，足以讓他久久無法喘氣。\n\n(4) 我不懂，至少當年的我無法感受；直到，我自己也成為離家的遊子之後，才了解父親口中所敘述的那種疼痛感，而無法喘氣竟直逼窒息的程度。原來，思念是一種這麼折磨人的感覺，然而，我離家再怎麼遠，也總有方法可以抵達，那麼父親呢？尚未解嚴的時代，他要如何處理椎心刺骨的思鄉感？因為有家歸不得啊！\n\n(5) 我為父親點了一根菸，那大概是我少數對於父親還有的生活印象之一，因為，這種時光出現的頻率，隨着父親老去的速度愈來愈高，尤其在他即將離世的前二年，當時，他已經預知自己的死亡即將到訪嗎？我依稀記得，就在父親離世前幾週，他拉着我的手說着：「ㄚ頭，我就快要可以見到你的姥姥了，我想她啊！」那一年我十七歲，也知道不過幾年前，透過香港的親友來信轉達姥姥的死訊，父親怎麼就快要見到已然過世的姥姥呢？\n\n(6) 過於年輕的我，沒將父親那一席話放在心上，直覺認為那是他過於思念老家的緣故，沒想到，就過了幾週而已，父親因為中風倒在家裏的浴室中，再也沒醒來過，並且，走得極快，沒有任何痛苦，甚至，快得連隻字片語都沒留下；這種遺憾，在往後幾年不斷地折磨着我，此刻才終於理解父親有家歸不得的疼，因為，無論我回家幾次，都再也看不到父親沉默的身影了。\n\n(7) 自此，每當思及父親時，我也總愛點起一根菸，陷入當年與父親相處的點滴時光中，甚至開始慢慢地也抽起菸來，在煙霧瀰漫中，似乎可以遇見父親出現在縹緲裏，什麼也不說的只是望着我，一如他在世的時候，一如他離世的時候；或許，這就是父親存在的一種姿態。\n\n(8) 第一根菸就快燒完了，父親如真似幻的身影依然沒出現；這半年，他不斷出現在我與妹妹的夢境中所為何來呢？我開始認真地想着關於父親種種的日子，是冥誕嗎？父親的生日早已過去，那是牛郎織女相會的前一日；是忌日嗎？時序尚未到達，那該在農曆年過後、極冷的季節；那麼，還會有什麼？這才驚覺，原來現世的生活裏，與父親相關的紀念日只剩下二個。\n\n……\n\n(13) 第二根菸突然熄了，無風、無故，熄了！還剩好大一截，就在我思及母親的時候。父親來夢中，為的是母親嗎？這些年來母親急速蒼老，變化就如當年的父親一樣，頭髮白了、身軀腫了、愈來愈沉默了，唯一的差別是她不抽菸，父親掛心的是愈來愈老的妻子嗎？我拿起了電話，按下再熟悉不過的電話號碼，給遠在南方部落裏逐漸老去的母親，那頭有人接了話筒，是母親沙啞的聲音傳來，我鼻頭酸酸地回答：「媽，是我啦！」\n\n利格拉樂・阿𡠄《夢中的父親》\n【註釋】① 長壽：香菸牌子；香菸，即香煙。",
+            "label": "閱讀以下文章節錄（全文13段，只錄答題所需段落），然後回答問題。"
+          },
+          {
+            "type": "text",
+            "text": "8. 第一篇共有13個段落，如按內容大意可分成四個部分。（試題表格已列出的內容大意：）\n第二部分：記述父親的身影，抒發因不了解父親而感到的遺憾。\n第三部分（至第12段）：記述父親歸葬一事，說明「那些和父親一樣的遊子」內心都懷着有家歸不得的苦。",
+            "label": "試題第8題所列各部分大意（供參考）"
+          },
+          {
+            "type": "text",
+            "text": "9. 以下是作者對父親的描述，試根據引文回答問題。\n甲　夢裏的他，還是一如十數年前他離世的樣貌，巍峨的白髮，水腫的身軀，和一臉嚴肅的表情，十足是個讓人會害怕的長者之貌。(第1段)\n乙　父親是個寡言的人，從小，只要見着他點起一根長壽，接下來便可以看到父親陷入沉思的表情，那表情常常以一種令人敬畏的方式呈現……(第3段)\n丙　……在煙霧瀰漫中，似乎可以遇見父親出現在縹緲裏，什麼也不說的只是望着我，一如他在世的時候，一如他離世的時候；或許，這就是父親存在的一種姿態。(第7段)\n(ii) 在第7段，作者說：「這就是父親存在的一種姿態。」綜合引文，試指出以下哪一項最能描述這種「姿態」？(2分)\nA. 如真似幻　B. 臃腫蒼老　C. 嚴厲可怕　D. 沉默寡言",
+            "label": "試題第9題（供第10題參考）"
+          }
+        ],
+        "parts": [
+          {
+            "id": "q10",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "10. 在第6段，作者強調自己感到「遺憾」。承第9.(ii)題，試說明父親的「姿態」跟作者感到遺憾的關係。(4分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "父親在世時的「姿態」：由於父親沉默寡言，做子女的又不敢發問，且害怕親近他（1分）",
+                "marks": 1
+              },
+              {
+                "text": "父親在世時的「姿態」造成的遺憾：造成兩代隔閡／子女不理解父親而感遺憾（1分）",
+                "marks": 1
+              },
+              {
+                "text": "父親離世時的「姿態」：父親突然離世，沒留下遺言／連夢中的父親仍是不說話（1分）",
+                "marks": 1
+              },
+              {
+                "text": "父親離世時的「姿態」造成的遺憾：能夠理解父親的機會也沒了，這遺憾更是沒法彌補（1分）",
+                "marks": 1
+              }
+            ],
+            "reference_answer": "由於父親寡言，做子女的又不敢發問，且害怕親近他，造成兩代隔閡的遺憾。父親突然離世，沒留下遺言，連夢中的父親仍是不說話，以致能夠理解父親的機會也沒了，這遺憾更是沒法彌補。"
+          },
+          {
+            "id": "q11ii",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "11. 在第4段和第6段，作者都提到「疼」。試就父親和作者的經歷，回答問題。\n(ii) 父親和作者的「疼」雖有不同原因，但卻有相同感覺，試略加說明。(4分)\n① 原因不同：\n② 感覺相同："
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "① 具比較意識，準確指出父親「疼」的原因：生離之痛——因戰火跟母親分離，今生再也沒法見到母親／時刻憶起遠離許久的大陸老家，卻因戰火（尚未解嚴）今生未能還鄉。欠比較意識，僅指出父親或作者其中一人「疼」的原因，①全題不給分；具比較意識而另一人的原因不準確／錯誤，本項仍可給分（1分）",
+                "marks": 1
+              },
+              {
+                "text": "① 具比較意識，準確指出作者「疼」的原因：死別之痛——因父親突然離世，以後再也沒法見到父親。欠比較意識，①全題不給分；具比較意識而另一人的原因不準確／錯誤，本項仍可給分（1分）",
+                "marks": 1
+              },
+              {
+                "text": "② 具比較意識，準確指出父親和作者「疼」的感覺歷久仍在：不斷／總在不經意間就襲上胸口。欠比較意識，僅指出父親或作者其中一人「疼」的感覺，②全題不給分；未能對舉父親和作者「疼」的持久，本項不給分（1分）",
+                "marks": 1
+              },
+              {
+                "text": "② 具比較意識，準確指出父親和作者「疼」的感覺難受：折磨人／令人無法喘氣／令人窒息／椎心刺骨。欠比較意識，②全題不給分；未能對舉父親和作者「疼」的難受，本項不給分（1分）",
+                "marks": 1
+              }
+            ],
+            "reference_answer": "① 父親害的是生離之痛，作者遭受的是死別之痛。② 不斷折磨人，令人無法喘氣。"
+          },
+          {
+            "id": "q16",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "16. 本篇題為「夢中的父親」，卻在最後一段寫到母親種種，這是否偏離主題？試說明你的看法。(4分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "達到下品：對本篇主題有所理解（即使浮泛／模糊，如對父親／父母的愛或思念），並嘗試說明母親與主題的關係（回應／突出／深化／延伸／偏離主題），即使關係模糊、闡述粗疏。主題理解錯誤（如落葉歸根、溝通是愛的基礎）則不入品，各項皆不給分（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到中下品（須先達到下品）：母親與主題的關係大致合理，闡述簡略亦可（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到中上品（須先達到中下品）：準確理解主題——作者對父親／父母的遺憾與愧疚之情，或對父母的愛需及時、需珍惜父母，免生遺憾；並明確合理地說明母親與主題的關係（如母親亦已蒼老沉默，作者察覺自己忽略母親，不欲重蹈覆轍，回應／深化主題），闡述一般（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到上品（須先達到中上品）：闡述完備，例如能就全文的內容重點或布局具體說明母親與父親的對應、結尾致電母親如何深化主題（1分）",
+                "marks": 1
+              }
+            ],
+            "reference_answer": "這並不是偏離主題。本文主題在於作者為沒有關懷並好好與父親交流而感到後悔，悔不當初錯失盡孝的機會。而母親現在也變得蒼老，她是父親重視的人，更是自己的至親，作者不希望重蹈覆轍，希望以父親在世的經歷為鑒，好好孝順母親。作者寫到母親正符合主題所述的珍惜親情和盡孝。"
+          }
+        ]
+      },
+      "answers": {
+        "q10": [
+          {
+            "kind": "full",
+            "text": "父親生前沉默寡言，抽菸沉思時神情令人敬畏，作者小時候不敢打擾他，也不敢問他在想什麼，所以父女之間有隔閡，作者一直不了解父親思鄉的痛苦，這是第一重遺憾。後來父親中風突然離世，連一句遺言都沒有留下；即使在夢中和煙霧裏，父親也只是望着她甚麼也不說，作者再也沒有機會問清楚、了解父親，這份遺憾永遠無法彌補。",
+            "labels": [
+              [
+                1,
+                "Silent, awe-inspiring father; she dared not disturb or ask him."
+              ],
+              [
+                1,
+                "Resulting distance; she did not understand his homesickness."
+              ],
+              [
+                1,
+                "Sudden death without last words; silent even in dreams."
+              ],
+              [
+                1,
+                "Lost any chance to understand him; regret beyond repair."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "父親生前很少說話，作者又怕他，所以兩父女很少溝通，作者不了解父親的心事，感到遺憾。",
+            "labels": [
+              [
+                1,
+                "Father rarely spoke and she feared him."
+              ],
+              [
+                1,
+                "Little communication, did not understand him, hence regret."
+              ],
+              [
+                0,
+                "Nothing on his sudden, wordless death or silence in dreams."
+              ],
+              [
+                0,
+                "No point that the chance to understand him is gone for good."
+              ]
+            ]
+          },
+          {
+            "kind": "per_report_1",
+            "text": "父親一邊點煙，一邊沉思，敬畏的樣子令作者不敢輕易打擾他，後來才知道父親在思鄉。",
+            "official_marks": null,
+            "labels": [
+              [
+                1,
+                "Silent brooding and awe kept her from disturbing him, in her own sentence."
+              ],
+              [
+                0,
+                "No link to distance or regret; report: copies text without relating 姿態 to 遺憾."
+              ],
+              [
+                0,
+                "Nothing on his death."
+              ],
+              [
+                0,
+                "Nothing on the irreparable regret."
+              ]
+            ]
+          },
+          {
+            "kind": "per_report_2",
+            "text": "父親沉默的成因是思鄉，作者在父親離開人世後才了解，因此感到遺憾。",
+            "official_marks": null,
+            "labels": [
+              [
+                0,
+                "Explains why he was silent, not that his silence kept her from asking or approaching."
+              ],
+              [
+                0.5,
+                "Late understanding causing regret is stated, but not tied to his silent posture; report: 偏離了「姿態」."
+              ],
+              [
+                0,
+                "No sudden, wordless death."
+              ],
+              [
+                0,
+                "No lost chance to understand him."
+              ]
+            ]
+          },
+          {
+            "kind": "per_report_3",
+            "text": "父親感到自己離大去之期不遠，跟作者說到他即將見到已過身的姥姥，惟作者卻沒有把這席話放在心上，沒想到過了數周後父親便離世。",
+            "official_marks": null,
+            "labels": [
+              [
+                0,
+                "Retells paragraph 5; nothing about his silence; report says it is unrelated to 姿態."
+              ],
+              [
+                0,
+                "No distance or misunderstanding point."
+              ],
+              [
+                0,
+                "Stresses that he did speak; no wordless death or silent dream figure."
+              ],
+              [
+                0,
+                "No irreparable-regret point."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "「過於年輕的我，沒將父親那一席話放在心上……快得連隻字片語都沒留下；這種遺憾，在往後幾年不斷地折磨着我」，「什麼也不說的只是望着我，一如他在世的時候，一如他離世的時候」。",
+            "labels": [
+              [
+                0,
+                "Pure quotation; no statement of the relation asked for."
+              ],
+              [
+                0,
+                "Pure quotation."
+              ],
+              [
+                0,
+                "Quotes the wordless death but does not explain it."
+              ],
+              [
+                0,
+                "Pure quotation."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "父親的姿態是如真似幻，常常在夢中出現，令作者分不清是夢還是回憶，所以作者感到遺憾，因為她不能在現實中再見到父親。",
+            "labels": [
+              [
+                0,
+                "Misreads the posture as 如真似幻 (wrong 9(ii) option) instead of silence."
+              ],
+              [
+                0,
+                "No distance or misunderstanding point."
+              ],
+              [
+                0,
+                "No sudden, wordless death."
+              ],
+              [
+                0,
+                "Regret attributed to not seeing him in reality, not to the lost chance to understand him."
+              ]
+            ]
+          }
+        ],
+        "q11ii": [
+          {
+            "kind": "full",
+            "text": "① 原因不同：父親的疼是生離之痛，因為戰亂和未解嚴，他離開大陸老家後有家歸不得，至死都見不到母親；作者的疼是死別之痛，父親突然中風離世，她以後再也見不到父親。\n② 感覺相同：兩人的疼都歷久不散，總在不經意間就襲上心頭；而且都十分難受，折磨人，痛得令人無法喘氣，甚至窒息。",
+            "labels": [
+              [
+                1,
+                "Father: separation from home and mother he could never return to, contrasted with author."
+              ],
+              [
+                1,
+                "Author: bereavement, never seeing father again."
+              ],
+              [
+                1,
+                "Both pains recur unbidden over time, stated for both."
+              ],
+              [
+                1,
+                "Both torment, breathless, suffocating, stated for both."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "① 原因不同：父親因為戰亂離開大陸，有家歸不得；作者則是因為父親去世，再也見不到他。\n② 感覺相同：父親的思鄉之情像傷口一樣，令他無法喘氣。",
+            "labels": [
+              [
+                1,
+                "Father cannot return home because of war, contrasted with author."
+              ],
+              [
+                1,
+                "Author can never see her dead father again."
+              ],
+              [
+                0,
+                "② speaks only of the father; no comparison, so ② scores nothing."
+              ],
+              [
+                0,
+                "② only about the father; 欠比較意識."
+              ]
+            ]
+          },
+          {
+            "kind": "per_report_1",
+            "text": "① 原因不同：父親思念故鄉，作者思念父親。",
+            "official_marks": null,
+            "labels": [
+              [
+                0.5,
+                "Contrasts the two, but 'misses home' omits that he could never return; report: 內容欠完備."
+              ],
+              [
+                0.5,
+                "'Misses father' omits that he died and can never be seen again."
+              ],
+              [
+                0,
+                "② not answered."
+              ],
+              [
+                0,
+                "② not answered."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "① 原因不同：「尚未解嚴的時代，他要如何處理椎心刺骨的思鄉感？因為有家歸不得啊！」「此刻才終於理解父親有家歸不得的疼，因為，無論我回家幾次，都再也看不到父親沉默的身影了。」\n② 感覺相同：「那種思念像極了戰爭時受傷的傷口，總在不經意間就襲上胸口，足以讓他久久無法喘氣。」",
+            "labels": [
+              [
+                0,
+                "Juxtaposed quotations; neither cause stated nor contrasted in own words."
+              ],
+              [
+                0,
+                "Quotation only; no statement of the author's cause."
+              ],
+              [
+                0,
+                "Quotes only the father's feeling; no comparison."
+              ],
+              [
+                0,
+                "Quotation about the father only; no comparison."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "① 原因不同：父親疼是因為身體有病，常常抽菸，肺部受損；作者疼是因為思念父親。\n② 感覺相同：兩人都覺得很痛。",
+            "labels": [
+              [
+                0,
+                "Misreads the father's pain as physical illness from smoking."
+              ],
+              [
+                0.5,
+                "Comparative; 'misses father' is incomplete, lacking bereavement."
+              ],
+              [
+                0,
+                "No lasting or recurring quality."
+              ],
+              [
+                0,
+                "'Very painful' restates 疼 without the torment or breathlessness the item needs."
+              ]
+            ]
+          }
+        ],
+        "q16": [
+          {
+            "kind": "full",
+            "text": "沒有偏離主題。本文寫作者夢見父親，回想父親生前沉默寡言，自己年輕時沒有了解他，父親突然離世後只剩遺憾，主題是對父親的遺憾與愧疚，以及要及時珍惜父母。最後一段第二根菸熄了，作者想到母親：這些年母親急速蒼老，頭髮白了、身軀腫了、愈來愈沉默，就像當年的父親一樣。作者由此驚覺自己也忽略了母親，於是立即打電話給她。寫母親正好延伸和深化主題：作者不想對母親重蹈覆轍，要珍惜眼前人，免得再留遺憾。",
+            "labels": [
+              [
+                1,
+                "Takes a stance and relates the mother to the theme."
+              ],
+              [
+                1,
+                "Relation broadly reasonable."
+              ],
+              [
+                1,
+                "Theme accurate (regret, guilt, cherish parents); relation clear (mother ageing and silent like father)."
+              ],
+              [
+                1,
+                "Full development: mother-father parallel, the phone call deepening the theme."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "這不算偏離主題。全文主題是作者後悔沒有趁父親在世時了解他、陪伴他。結尾寫母親愈來愈老、愈來愈沉默，作者便打電話給母親，表示她從父親的事學到要珍惜眼前人，不想再後悔，所以寫母親是回應主題。",
+            "labels": [
+              [
+                1,
+                "Stance plus relation."
+              ],
+              [
+                1,
+                "Relation reasonable."
+              ],
+              [
+                1,
+                "Accurate theme (regret, cherish the living) and clear relation."
+              ],
+              [
+                0,
+                "Explanation adequate but brief; not 闡述完備."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "沒有偏離主題，因為文章是講作者對父母的愛和思念，最後寫母親也是表達對家人的愛，所以和主題有關。",
+            "labels": [
+              [
+                1,
+                "Vague theme (love for parents) with a vague relation: 下品."
+              ],
+              [
+                0,
+                "Relation only asserted ('also love for family'), not reasonably explained."
+              ],
+              [
+                0,
+                "Theme not accurate (no regret or cherishing)."
+              ],
+              [
+                0,
+                "No 上品."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "沒有偏離。「父親來夢中，為的是母親嗎？這些年來母親急速蒼老，變化就如當年的父親一樣，頭髮白了、身軀腫了、愈來愈沉默了」「父親掛心的是愈來愈老的妻子嗎？」",
+            "labels": [
+              [
+                0,
+                "Verdict plus quotations; no theme stated and no relation explained."
+              ],
+              [
+                0,
+                "No explanation."
+              ],
+              [
+                0,
+                "No theme."
+              ],
+              [
+                0,
+                "No explanation."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "沒有偏離主題。本文主題是落葉歸根，遊子死後一定要回到故鄉。最後寫母親，是說明母親將來也要和父親一樣回鄉安葬，所以與主題一致。",
+            "labels": [
+              [
+                0,
+                "Theme misread as 落葉歸根, which the scheme lists as wrong; 不入品."
+              ],
+              [
+                0,
+                "Wrong theme."
+              ],
+              [
+                0,
+                "Wrong theme."
+              ],
+              [
+                0,
+                "Wrong theme."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dsezh2020-brush",
+      "subject": "chinese_reading",
+      "language": "zh-Hant",
+      "source": "HKDSE 2020 中國語文 卷一 乙部 第二篇（文言）方孝孺《試筆說》第19、21、22題",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "吾居乎鄉，客遺善筆二。分其一於友人，而用其一。銳而端，圓而勁，以摹畫，咸與心稱，愛之不忍妄用，遇佳紙墨洎文辭則以書，書畢，滌而藏之。恣意率手有所作，則用其次者，是以雖甚久而猶新焉。他日友人至，問其所得，則曰弊而棄之矣。詰其用，則紀錢粟貨利卑猥事，不稍惜，視之與里巷所為偏欹軟惡者等，不知其為美也。吾聞而歎之。友人曰：「子何歎之細也，以余用斯筆也，而違其任，余則有過矣。雖然，世之用人者，得無有甚於余之用筆者乎？筆易為也，美者易得也，用久必敝，固其職也。今夫所謂賢士君子者，天之生也難，生而不夭死，不疾病，獲全其美也尤難。然而用之者，不任之以立政教，修紀法，居廟朝，治海內，而卑位冗職是命。一不快於意，不待其敝而棄之。且加不勝之法焉者，亦眾矣。不彼之歎，而於筆焉惜，是尚為知類也哉？」吾愧乎其言，謂之曰：「筆吾所任也，故吾知愛而歎之。任人非吾事也，吾其敢僭而歎乎？若姑修其可任者，以待人之任己，何暇乎世之歎，而吾之疑邪！」\n\n方孝孺《試筆說》",
+            "label": "閱讀以下文章，然後回答問題。"
+          }
+        ],
+        "parts": [
+          {
+            "id": "q19i",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "19. 文中提及兩枝筆，二者的遭遇和結果各有不同。試據文意以自己的文句完成下表。(4分)\n作者的筆｜遭遇：作者非常珍惜，只有遇到好的紙和墨，或替文章潤色時，才用以書寫。｜結果：(i) ＿＿＿\n友人的筆｜遭遇：(ii) ＿＿＿｜結果：已經因破舊而被丟棄。\n本分題：(i) 作者的筆的「結果」。(2分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "以自己的文句指出「作者的筆」的結果：經過很長時間（用了很久），仍然如新的一樣。只引錄原文「雖甚久而猶新焉」而未有解釋，不給分；欠「歷時甚久」或把「甚久」誤解為「擺放了很久」等，屬不完備答案（2分）",
+                "marks": 2
+              }
+            ],
+            "reference_answer": "經過很長時間，仍然如新的一樣。"
+          },
+          {
+            "id": "q19ii",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "19. 文中提及兩枝筆，二者的遭遇和結果各有不同。試據文意以自己的文句完成下表。(4分)\n作者的筆｜遭遇：作者非常珍惜，只有遇到好的紙和墨，或替文章潤色時，才用以書寫。｜結果：(i) ＿＿＿\n友人的筆｜遭遇：(ii) ＿＿＿｜結果：已經因破舊而被丟棄。\n本分題：(ii) 友人的筆的「遭遇」。(2分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "以自己的文句指出「友人的筆」的遭遇：友人不愛惜，用以記錄買賣等無關緊要的事。只引錄原文「則紀錢粟貨利卑猥事，不稍惜，視之與里巷所為偏欹軟惡者等」而未有解釋，不給分；只答其中一點（不愛惜／記錄瑣事）屬不完備答案（2分）",
+                "marks": 2
+              }
+            ],
+            "reference_answer": "友人不愛惜，用以記錄買賣等無關緊要的事。"
+          },
+          {
+            "id": "q21",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "20. 友人提到的「賢士君子」有什麼遭遇？(2分)\n(1) 未被委以重任　(2) 君主隨意棄用　(3) 受到讒言誣陷　(4) 較一般人短命\nA. (1)、(2)　B. (3)、(4)　C. (1)、(2)、(3)　D. (1)、(3)、(4)",
+                "label": "試題第20題（選擇題，供參考）"
+              },
+              {
+                "type": "text",
+                "text": "21. 承上題，就「賢士君子」的遭遇，作者提出什麼建議？試以自己的文句略加說明。(2分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "以自己的文句指出作者就「賢士君子」的遭遇而提出的建議：努力做好自己能勝任的工作，等待別人任用自己。只引錄原文「若姑修其可任者，以待人之任己」而未有解釋，不給分；只答其中一半（做好可勝任的／等待任用）屬不完備答案（2分）",
+                "marks": 2
+              }
+            ],
+            "reference_answer": "努力做好自己能勝任的工作，等待別人任用自己。"
+          },
+          {
+            "id": "q22",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "22. 作者聽到友人的話後「愧乎其言」。你認為作者「愧」的原因何在？試抒己見。(4分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "達到下品：以白話說明，對作者「愧」的原因理解大致準確（如作者只為筆感歎，卻沒有想到賢士君子的遭遇），闡述粗疏亦可。只引錄原文而未有解釋，或誤以為作者因不懂用筆、為友人、或因過分珍惜筆而羞愧，不入品（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到中下品（須先達到下品）：對「愧」的原因理解準確——作者只見筆的不幸，卻未有留意賢士君子同樣被君主糟蹋（「不彼之歎，而於筆焉惜，是尚為知類也哉？」），闡述簡略（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到中上品（須先達到中下品）：理解準確、具體，略具文本依據，例如：筆易得，而賢士君子難求，作者卻未知痛惜更可貴者；或筆用舊了而被棄，尚且盡其本分，但賢士君子則不為世所用而遭拋棄，更令人痛惜感歎。闡述一般（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到上品（須先達到中上品）：理解深刻，闡述完備，例如能指出真正原因：賢士君子不為世所用而遭拋棄，作者不在其位，卻無力改變（「任人非吾事也，吾其敢僭而歎乎？」）（1分）",
+                "marks": 1
+              }
+            ],
+            "reference_answer": "作者因為得知友人糟蹋了一枝好筆而生感歎。當友人提及「賢士君子」的遭遇後，作者為自己只見筆的不幸，卻未有留意「賢士君子」同樣被君主糟蹋而感到慚愧。加上筆易得，而賢士君子難求。且筆用舊了而被棄，尚且盡其本分；但賢士君子則不為世所用而遭誣害或拋棄，更令人痛惜感歎。作者不在其位，無力改變這現象，故更感慚愧。"
+          }
+        ]
+      },
+      "answers": {
+        "q19i": [
+          {
+            "kind": "full",
+            "text": "經過很長時間，筆仍然像新的一樣。",
+            "labels": [
+              [
+                1,
+                "Long use, still like new, in own words."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "作者的筆雖然用了好多年，看起來還是嶄新的。",
+            "labels": [
+              [
+                1,
+                "Used for years yet still new."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "筆仍然保持完好。",
+            "labels": [
+              [
+                0.5,
+                "Still in good condition, but omits that a long time had passed."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "筆擺放了很久，但仍然像新的一樣。",
+            "labels": [
+              [
+                0.5,
+                "Reads 甚久 as 'stored for long'; report calls this 理解稍有偏差, so incomplete."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "雖甚久而猶新焉。",
+            "labels": [
+              [
+                0,
+                "Copies 「雖甚久而猶新焉」 without explanation; scheme gives 0."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_point",
+            "text": "作者用完筆後洗乾淨收藏起來。",
+            "labels": [
+              [
+                0,
+                "Gives how the author treated the brush (遭遇), not the result."
+              ]
+            ]
+          }
+        ],
+        "q19ii": [
+          {
+            "kind": "full",
+            "text": "友人一點也不愛惜它，只用來記錄錢財、糧食買賣這類瑣碎卑下的事。",
+            "labels": [
+              [
+                1,
+                "Not cherished; used to record trivial money and grain matters."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "友人隨便亂用，把它當作普通劣筆，拿來記帳。",
+            "labels": [
+              [
+                1,
+                "Careless use, treated as a poor brush, used for bookkeeping."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "友人用它來記錄買賣等日常瑣事。",
+            "labels": [
+              [
+                0.5,
+                "Trivial records stated; omits that the friend did not cherish it."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "則紀錢粟貨利卑猥事，不稍惜，視之與里巷所為偏欹軟惡者等。",
+            "labels": [
+              [
+                0,
+                "Copies the classical sentence without explanation; scheme gives 0."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "友人把筆送給了里巷中的惡人，任由壞人使用。",
+            "labels": [
+              [
+                0,
+                "Misreads 里巷所為偏欹軟惡者 as wicked people; report notes this error."
+              ]
+            ]
+          }
+        ],
+        "q21": [
+          {
+            "kind": "full",
+            "text": "作者建議賢士君子先努力做好自己能夠勝任的事，修養好自己，然後等待別人來任用自己。",
+            "labels": [
+              [
+                1,
+                "Do well what one is capable of and wait to be employed."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "與其埋怨君主不重用，不如先把自己做得到的本分做好，等有人賞識時再出來做事。",
+            "labels": [
+              [
+                1,
+                "Do one's capable duties well and wait for someone to employ one."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "作者建議賢士君子不要埋怨，要耐心等待君主任用自己。",
+            "labels": [
+              [
+                0.5,
+                "Only the waiting half; omits cultivating what one can do."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "若姑修其可任者，以待人之任己。",
+            "labels": [
+              [
+                0,
+                "Copies 「若姑修其可任者，以待人之任己」 without explanation; scheme gives 0."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "作者建議賢士君子要待人如己，用對待自己的方式去對待別人。",
+            "labels": [
+              [
+                0,
+                "Misreads 待人之任己 as 待人如己; report names this error."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_point",
+            "text": "作者建議君主要像愛惜好筆一樣珍惜人才，給他們重要的職位。",
+            "labels": [
+              [
+                0,
+                "Advice addressed to rulers; report says this is not the author's advice."
+              ]
+            ]
+          }
+        ],
+        "q22": [
+          {
+            "kind": "full",
+            "text": "作者聽到友人糟蹋好筆而感歎，友人卻指出世上的當權者對待賢士君子比他用筆更差：賢士君子難得，卻只被派去做卑微的閒職，稍不合意便被拋棄，甚至被加上罪名。作者慚愧自己只懂得為一枝筆惋惜，卻沒有想到更可貴的人才也遭到同樣甚至更壞的對待——筆易得，而且筆用舊了被棄是盡了本分，賢士君子卻未被重用就被棄。更深一層，作者說「任人非吾事也」，他不在其位，無權任用人才，明知賢士君子不幸也無力改變，所以更感慚愧。",
+            "labels": [
+              [
+                1,
+                "Understands the cause of shame broadly."
+              ],
+              [
+                1,
+                "Accurate: grieved for the brush, overlooked worthy men mistreated."
+              ],
+              [
+                1,
+                "Specific with textual support: brush easy to get, worthies rare; brush fulfilled its duty."
+              ],
+              [
+                1,
+                "Deeper cause: not in office, powerless to change it; well developed."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "作者慚愧，是因為他只為一枝被亂用的筆感歎，卻沒留意賢士君子也像這枝筆一樣被君主糟蹋。而且筆很容易得到，賢士君子卻很難得，作者竟只痛惜不重要的東西。",
+            "labels": [
+              [
+                1,
+                "Cause broadly understood."
+              ],
+              [
+                1,
+                "Accurate core cause."
+              ],
+              [
+                1,
+                "Specific: brush easy to get, worthies hard to find."
+              ],
+              [
+                0,
+                "No deeper cause (powerlessness) and not fully developed."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "因為他只顧可惜一枝筆，卻沒有替被君主拋棄的賢士君子感歎。",
+            "labels": [
+              [
+                1,
+                "Cause broadly understood."
+              ],
+              [
+                1,
+                "Accurate core cause, briefly stated."
+              ],
+              [
+                0,
+                "No specific comparison or textual support."
+              ],
+              [
+                0,
+                "No higher level."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "友人說：「不彼之歎，而於筆焉惜，是尚為知類也哉？」作者回答：「任人非吾事也，吾其敢僭而歎乎？」所以作者感到慚愧。",
+            "labels": [
+              [
+                0,
+                "Classical lines copied without rendering or explanation."
+              ],
+              [
+                0,
+                "No explanation."
+              ],
+              [
+                0,
+                "No explanation."
+              ],
+              [
+                0,
+                "No explanation."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "作者羞愧自己不懂得怎樣用筆，把好筆收起來不用，令筆不能發揮作用，比不上友人懂得物盡其用。",
+            "labels": [
+              [
+                0,
+                "Misreads the shame as not knowing how to use a brush; report names this error."
+              ],
+              [
+                0,
+                "Wrong cause."
+              ],
+              [
+                0,
+                "Wrong cause."
+              ],
+              [
+                0,
+                "Wrong cause."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dsezh2021-q6",
+      "subject": "chinese_reading",
+      "language": "zh-Hant",
+      "source": "HKDSE 2021 中國語文 卷一 甲部 第6題（指定文言篇章《逍遙遊》節錄）",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "惠子謂莊子曰：「吾有大樹，人謂之樗。其大本擁腫而不中繩墨，其小枝卷曲而不中規矩。立之塗，匠者不顧。今子之言，大而無用，眾所同去也。」莊子曰：「……今子有大樹，患其無用，何不樹之於無何有之鄉，廣莫之野，彷徨乎無為其側，逍遙乎寢臥其下。不夭斤斧，物無害者。無所可用，安所困苦哉？」",
+            "label": "指定篇章節錄（試卷不附原文；據評卷參考所引及通行本）：《莊子‧逍遙遊》"
+          }
+        ],
+        "parts": [
+          {
+            "id": "q6",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "6. 《逍遙遊》(節錄)一文，莊子如何以樗樹為喻抒發對人生的感悟？試綜合有關內容說明。(4分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "達到下品：尚能指出莊子的嚮往（精神自由，逍遙自在；無待於外物，超越世俗「有用」「無用」的相對觀念，破除執念），惟未能就樗樹的特點說明；或尚能說明樗樹的特點（大本擁腫不中繩墨、小枝卷曲不中規矩，立之塗匠者不顧；樹之於無何有之鄉、廣莫之野，不夭斤斧），惟未有指出莊子的感悟。闡述粗疏亦可。錯誤理解莊子對人生的感悟，不入品（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到中下品（須先達到下品）：尚能就樗樹一項特點，概略說明莊子的感悟，闡述一般（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到中上品（須先達到中下品）：能就樗樹一項或兩項特點，準確說明莊子的感悟，闡述平穩。例如：樗樹不合匠人「有用」之標準，匠者不顧，反令樗樹不夭斤斧而能保存，喻超越相對的執念，精神免於桎梏；樹於無何有之鄉、廣莫之野，人可彷徨其側、寢臥其下，不怕斧頭砍伐，喻無用之妙用，精神不被桎梏，逍遙自在（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到上品（須先達到中上品）：能就樗樹一項特點準確說明莊子的感悟而理解深刻，或就樗樹兩項特點準確說明莊子的感悟，闡述飽滿（1分）",
+                "marks": 1
+              }
+            ],
+            "reference_answer": "世人困於名利得失而精神困苦，莊子遂以樗樹為喻抒述對人生的感悟。樗樹本幹擁腫，小枝彎曲，不合匠人「有用」之標準反能得以保存，正比喻惟有超越世俗相對的標準，才可突破精神的牢籠而自適；且樗樹種在杳無人煙的曠野，讓人們在樹下休憩生息，而「無何有」正寓意「無用」之用，無待外物而逍遙自在。"
+          }
+        ]
+      },
+      "answers": {
+        "q6": [
+          {
+            "kind": "full",
+            "text": "樗樹樹幹臃腫、小枝彎曲，不合木匠的繩墨規矩，種在路旁木匠也不看一眼，在世人眼中是「無用」之材。但正因為無用，它不會被斧頭砍伐，得以保全。莊子更建議把它種在「無何有之鄉，廣莫之野」，人可以在樹旁悠閒徘徊、在樹下逍遙躺臥，它也不受任何傷害。莊子藉此說明世人執着於世俗「有用」「無用」的標準，為了被認為有用而營役，精神困苦；只要超越這種相對的觀念，不依賴外物，便能像樗樹一樣得到精神上的自由，逍遙自在，這就是無用之用。",
+            "labels": [
+              [
+                1,
+                "Tree features and Zhuangzi's ideal both present."
+              ],
+              [
+                1,
+                "Insight explained through a tree feature."
+              ],
+              [
+                1,
+                "Accurate: rejected as useless yet preserved; transcending useful/useless frees the spirit."
+              ],
+              [
+                1,
+                "Both features (shape, planted in the wilds) accurately explained; full development."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "樗樹因為長得歪歪曲曲，不合規矩，木匠覺得它沒用，反而沒有人砍它，可以長久生存。莊子藉此說明世俗所謂「有用」未必是好事，人若不被世俗的有用無用標準束縛，就可以保全自己，得到精神自由，逍遙自在。",
+            "labels": [
+              [
+                1,
+                "Feature and insight present."
+              ],
+              [
+                1,
+                "One feature used to explain the insight."
+              ],
+              [
+                1,
+                "Accurate insight (transcend worldly useful/useless, spiritual freedom) from one feature; steady."
+              ],
+              [
+                0,
+                "One feature, adequately but not deeply or fully developed: 中上品."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "樗樹長得不直，木匠不要它，所以它不會被砍掉。莊子想說無用也有好處，人不用太在意別人覺得自己有沒有用。",
+            "labels": [
+              [
+                1,
+                "Feature and a rough insight present."
+              ],
+              [
+                1,
+                "One feature with a rough insight: 中下品."
+              ],
+              [
+                0,
+                "Insight vague; no spiritual freedom or transcending worldly standards stated accurately."
+              ],
+              [
+                0,
+                "No 上品."
+              ]
+            ]
+          },
+          {
+            "kind": "no_text_link",
+            "text": "莊子嚮往逍遙自在的生活，不想被世俗名利束縛。",
+            "labels": [
+              [
+                1,
+                "States Zhuangzi's ideal without using the tree: 下品."
+              ],
+              [
+                0,
+                "No tree feature used."
+              ],
+              [
+                0,
+                "No tree feature used."
+              ],
+              [
+                0,
+                "No 上品."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "惠子說：「吾有大樹，人謂之樗。其大本擁腫而不中繩墨，其小枝卷曲而不中規矩。」莊子說：「何不樹之於無何有之鄉，廣莫之野，彷徨乎無為其側，逍遙乎寢臥其下。不夭斤斧，物無害者，無所可用，安所困苦哉！」",
+            "labels": [
+              [
+                0,
+                "Copies the classical text without rendering; no feature explained, no insight stated."
+              ],
+              [
+                0,
+                "No explanation."
+              ],
+              [
+                0,
+                "No explanation."
+              ],
+              [
+                0,
+                "No explanation."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "莊子以樗樹為喻，說明人要像木匠一樣懂得選擇有用的材料，把沒有用的東西丟掉，才能做出成就，不要浪費時間在無用的事情上。",
+            "labels": [
+              [
+                0,
+                "Inverts the insight (prize usefulness); 錯誤理解, 不入品."
+              ],
+              [
+                0,
+                "Wrong insight."
+              ],
+              [
+                0,
+                "Wrong insight."
+              ],
+              [
+                0,
+                "Wrong insight."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dsezh2021-q7",
+      "subject": "chinese_reading",
+      "language": "zh-Hant",
+      "source": "HKDSE 2021 中國語文 卷一 甲部 第7(i)題（指定文言篇章《念奴嬌‧赤壁懷古》）",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "大江東去，浪淘盡、千古風流人物。故壘西邊，人道是、三國周郎赤壁。亂石穿空，驚濤拍岸，捲起千堆雪。江山如畫，一時多少豪傑。\n遙想公瑾當年，小喬初嫁了，雄姿英發。羽扇綸巾，談笑間、檣櫓灰飛煙滅。故國神遊，多情應笑我，早生華髮。人間如夢，一尊還酹江月。\n\n蘇軾《念奴嬌‧赤壁懷古》",
+            "label": "指定篇章（試卷不附原文；據通行本）"
+          }
+        ],
+        "parts": [
+          {
+            "id": "i",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "7. 試根據《念奴嬌‧赤壁懷古》回答下列問題。\n(i) 作者藉「大江東去」抒發對人生的感慨。試就江水的意象說明。(3分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "達到下品：尚能就江水的意象概略說明作者的感慨（意象粗略，感慨稍欠準確）；或未有就江水的意象說明，惟尚能準確指出作者的感慨（人間如夢：個體生命短暫渺小、虛空無奈；早生華髮：年華老去，功業未成）。未有就江水意象說明，亦未有指出作者的感慨，或錯誤理解，不入品（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到中品（須先達到下品）：能就江水的意象（大江東去，浪淘盡千古風流人物；驚濤拍岸，捲起千堆雪等）概略說明作者準確的感慨，闡述一般。如沒有說明「人間如夢」，只就「早生華髮」一項分析，最高只給中品（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到上品（須先達到中品）：能具體說明江水的意象（如江水滾滾東流象徵時間流逝、一去不返，或宇宙／歷史的宏大，把千古風流人物淘盡、湮沒於歷史長流），藉宇宙／歷史之宏大永恆對比個體之渺小短暫，準確說明「人間如夢」的感慨，闡述清晰飽滿（只說明「人間如夢」而沒有說明「早生華髮」，也可以給上品）（1分）",
+                "marks": 1
+              }
+            ],
+            "reference_answer": "作者在赤壁看見滾滾東逝的江水，遙想起周瑜雖曾在赤壁大破曹軍，建立不世之功業，如今只餘滔滔江水仍東流，故人生短暫虛空之感油然而生。作者以江水滾滾東流比喻歷史流逝，而江水洶湧澎湃，驚濤拍岸，捲起千重如雪般的浪花，正象徵宇宙的宏大和時間的無情，把萬物淘歸於虛空，藉以凸顯個體生命的渺小和無奈。"
+          }
+        ]
+      },
+      "answers": {
+        "i": [
+          {
+            "kind": "full",
+            "text": "「大江東去，浪淘盡、千古風流人物」，滾滾東流的江水一去不返，象徵時間流逝和歷史的洪流，連周瑜這樣的千古英雄也被浪花淘盡、灰飛煙滅。江水洶湧澎湃，驚濤拍岸，捲起千堆雪，也顯出宇宙之宏大。以宇宙歷史的永恆宏大對比個人生命的短暫渺小，英雄尚且如此，何況自己？作者由此感到人生如夢，虛空無奈；再想到自己早生華髮而功業未成，更添感慨。",
+            "labels": [
+              [
+                1,
+                "Imagery and lament present."
+              ],
+              [
+                1,
+                "River imagery linked to an accurate lament."
+              ],
+              [
+                1,
+                "Concrete imagery (time, history sweeping heroes away) contrasted with individual brevity; 人間如夢 explained fully."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "江水向東流，象徵時間一去不返。作者看見江水，想到周瑜年少已建功立業，自己卻已經頭髮斑白，功業未成，感到年華老去的悲哀。",
+            "labels": [
+              [
+                1,
+                "Imagery with a lament."
+              ],
+              [
+                1,
+                "River as passing time linked to 早生華髮."
+              ],
+              [
+                0,
+                "Only 早生華髮, no 人間如夢: capped at 中品."
+              ]
+            ]
+          },
+          {
+            "kind": "no_text_link",
+            "text": "作者感到人生如夢，生命短暫，英雄也會消逝，自己更加渺小，十分無奈。",
+            "labels": [
+              [
+                1,
+                "Accurate lament (人間如夢) without river imagery: 下品."
+              ],
+              [
+                0,
+                "No river imagery explained."
+              ],
+              [
+                0,
+                "No 上品."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "大江東去，浪淘盡、千古風流人物。亂石穿空，驚濤拍岸，捲起千堆雪。人間如夢。",
+            "labels": [
+              [
+                0,
+                "Copies lines of the poem; no imagery explained, no lament stated in own words."
+              ],
+              [
+                0,
+                "No explanation."
+              ],
+              [
+                0,
+                "No explanation."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "作者看見大江東去，江山如畫，感到祖國河山壯麗，心情豪邁，激勵自己要像周瑜一樣建功立業。",
+            "labels": [
+              [
+                0,
+                "Misreads the lament as heroic inspiration; wrong understanding, 不入品."
+              ],
+              [
+                0,
+                "Wrong lament."
+              ],
+              [
+                0,
+                "Wrong lament."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dsezh2021-q10",
+      "subject": "chinese_reading",
+      "language": "zh-Hant",
+      "source": "HKDSE 2021 中國語文 卷一 乙部 第一篇（白話）《橘子》第10(ii)題",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "(4) 在燈光映照下，我溜了一眼晚報，上面刊登的淨是人世間一些平凡的事情，例如外遇問題啦，新婚夫婦啦，瀆職事件啦，訃聞等等，這些新聞都解不了悶兒 —— 進入隧道的那一瞬間，我產生了一種錯覺，彷彿火車在倒着開似的，同時，近乎機械地瀏覽着這一條條索然無味的消息。然而，這期間，我不得不始終意識到那姑娘正端坐在我面前，臉上的神氣儼然是這卑俗的現實的人格化。正在隧道裏穿行着的火車，以及這個鄉下姑娘，還有這份滿是平凡消息的晚報 —— 這又象徵着什麼呢？不正是這不可思議的、庸碌而無聊的人生嗎？我對一切都感到心灰意懶，就將還沒讀完的晚報撇在一邊，又把頭靠在窗框上，像死人一般闔上眼睛，打起盹兒來。",
+            "label": "閱讀以下文章節錄（第一篇《橘子》第4段），然後回答問題。"
+          }
+        ],
+        "parts": [
+          {
+            "id": "ii",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "10. 《橘子》一文，作者藉不同的景物寓意。試根據有關內容回答以下問題。\n(ii) 綜合第4段內容，「我」對人生有何看法？試根據報紙報道的內容說明。(3分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "準確指出「我」對人生的看法：不可思議的、庸碌而無聊的人生；人生是可悲的／沒有意義的／庸俗和無聊的／難以理解的／灰暗的。錯誤理解作者對人生的看法，整題不給分（1分）",
+                "marks": 1
+              },
+              {
+                "text": "能就報紙報道的內容（外遇問題、新婚夫婦、瀆職事件、訃聞等）說明作者的看法：人性醜陋——從「外遇問題」、「瀆職」看到人性的不忠、貪婪、懶惰，由此說明作者對人生／人性十分悲觀；或人生是無聊的——從「新婚」、「瀆職」、「訃聞」看到人生不外結婚、工作、死亡，十分瑣碎，千篇一律，沒有意義。闡述平穩給2分；只指出人性的醜陋或人生的瑣碎無聊，闡述概略，給1分；未有就報紙的內容說明或分析，或報紙報道的內容錯誤，不給分（2分）",
+                "marks": 2
+              }
+            ],
+            "reference_answer": "人生是由一串串無意義的事件組成，可報道的也離不開反映夫妻不忠的外遇問題、反映人性貪婪懶惰的瀆職事件，和人們必然死去的訃聞，從報紙的內容可見作者認為人生既無理可喻，也庸碌無聊，他對人生十分悲觀。"
+          }
+        ]
+      },
+      "answers": {
+        "ii": [
+          {
+            "kind": "full",
+            "text": "「我」認為人生是不可思議的、庸碌而無聊的，態度十分悲觀。晚報上刊登的只是外遇、新婚夫婦、瀆職和訃聞之類的新聞：外遇反映人的不忠，瀆職反映人的貪婪和懶惰，可見人性醜陋；而結婚、工作、死亡這些事千篇一律，人人如此，毫無新意。所以他覺得人生既卑俗又沒有意義。",
+            "labels": [
+              [
+                1,
+                "View stated: inexplicable, mediocre, dull; pessimistic."
+              ],
+              [
+                1,
+                "Analyses the reports: infidelity and dereliction show ugly human nature; marriage, work, death repetitive."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "他覺得人生很可悲。報上寫的不是有人對伴侶不忠，就是官員失職貪污，可見人性多麼醜惡；其餘不過是結婚和死人的消息，人生就是這樣平凡地重複，沒有意義。",
+            "labels": [
+              [
+                1,
+                "View stated: life is pitiful."
+              ],
+              [
+                1,
+                "Analyses specific reports: infidelity, dereliction, weddings and deaths."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "「我」覺得人生很無聊，因為報紙上都是一些平凡的事情，沒有甚麼特別。",
+            "labels": [
+              [
+                1,
+                "View stated: life is dull."
+              ],
+              [
+                0.5,
+                "Mentions the newspaper only generally ('ordinary things'); no analysis of the specific reports: 概略."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "「上面刊登的淨是人世間一些平凡的事情，例如外遇問題啦，新婚夫婦啦，瀆職事件啦，訃聞等等」，「不正是這不可思議的、庸碌而無聊的人生嗎？」",
+            "labels": [
+              [
+                0,
+                "Pure quotation; the view is not stated in the student's own words."
+              ],
+              [
+                0,
+                "Quotes the news items without any analysis."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "「我」認為人生充滿希望，報紙上有新婚夫婦的喜訊，說明人生總有值得高興的事。",
+            "labels": [
+              [
+                0,
+                "Misreads the view as hopeful; scheme gives 0 for the whole question."
+              ],
+              [
+                0,
+                "Wrong view, so no marks for the explanation."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dsezh2021-shenming",
+      "subject": "chinese_reading",
+      "language": "zh-Hant",
+      "source": "HKDSE 2021 中國語文 卷一 乙部 第三篇（文言）《說苑‧立節》節錄（申鳴）第19、20、21題",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "(1) 楚有士申鳴者，在家而養其父，孝聞於楚國。王欲授之相，申鳴辭不受。其父曰：「王欲相汝，汝何不受乎？」申鳴對曰：「舍父之孝子而為王之忠臣，何也？」其父曰：「使有祿於國，立義於庭，汝樂吾無憂矣，吾欲汝之相也。」申鳴曰：「諾。」遂入朝，楚王因授之相。\n\n(2) 居三年，白公為亂，殺司馬子期，申鳴將往死之。父止之曰：「棄父而死，其可乎？」申鳴曰：「聞夫仕者，身歸於君而祿歸於親。今既去子事君，得無死其難乎？」遂辭而往，因以兵圍之。\n\n(3) 白公謂石乞曰：「申鳴者，天下之勇士也，今以兵圍我，吾為之奈何？」石乞曰：「申鳴者，天下之孝子也。往劫其父以兵，申鳴聞之必來，因與之語。」白公曰：「善。」則往取其父，持之以兵，告申鳴曰：「子與吾，吾與子分楚國；子不與吾，子父則死矣。」申鳴流涕而應之曰：「始吾父之孝子也，今吾君之忠臣也。吾聞之也，食其食者死其事，受其祿者畢其能。今吾已不得為父之孝子矣，乃君之忠臣也，吾何得以全身？」援桴鼓之，遂殺白公，其父亦死。\n\n(4) 王賞之金百斤。申鳴曰：「食君之食，避君之難，非忠臣也；定君之國，殺臣之父，非孝子也。名不可兩立，行不可兩全也。如是而生，何面目立於天下？」遂自殺也。\n\n《說苑‧立節》節錄",
+            "label": "閱讀以下文章，然後回答問題。"
+          }
+        ],
+        "parts": [
+          {
+            "id": "q19",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "19. 申鳴以孝聞名於楚國。試在首段中舉出一例，並說明為什麼從這件事可見他重孝。(3分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "達到下品：所舉事例屬第一段且正確（楚王授以相位，申鳴推辭／聽從父親的意見出仕），事例較概略而尚能概略說明重孝，或事例準確卻沒有說明重孝。所舉事例錯誤、事例並非第一段內容、或只摘錄原文不加解釋，全題不給分（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到中品（須先達到下品）：事例準確（楚王授以相位，申鳴推辭了，及後聽從父親的意見才出仕）並尚能概略說明申鳴重孝；或事例較為概略，但能準確說明申鳴重孝（1分）",
+                "marks": 1
+              },
+              {
+                "text": "達到上品（須先達到中品）：事例準確，並能準確說明申鳴重孝——不出仕是要留在父親身旁侍奉，以父親為重，不考慮個人得失／甘願捨棄功名利祿；出仕是順從父親意願／不考慮個人意願，令父親生活無憂。闡述飽滿（1分）",
+                "marks": 1
+              }
+            ],
+            "reference_answer": "申鳴本無意於仕途，一心留在父親身旁侍奉，父親想他當官好讓自己生活無憂，他不計較個人得失，只顧念父親的意願和福祉而出任楚相，可見其孝義。"
+          },
+          {
+            "id": "q20",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "20. 在白公作亂一事中，申鳴面對什麼困境？(2分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "準確指出申鳴面對兩難的困境：忠孝兩難全／孝義兩難全／拯救父親便須背棄道義（職責）／國家與父親二者之間難作取捨，如白公以申鳴父親作人質威脅申鳴叛國，若為了救父而答應白公，是不忠；若不順從，父親便會死，就是不孝。只指出困境，兩難不明確，或只指出面對兩難而未說明具體內容，給1分。以第二段「父親雖反對，申鳴仍冒死出兵平定白公作亂」一事說明忠孝兩難，即使明確指出兩難的對立面，只給1分；只指出該事而沒有點明兩難，不給分（2分）",
+                "marks": 2
+              }
+            ],
+            "reference_answer": "白公以申鳴父親作人質威脅申鳴叛國，若為了救父而答應白公，是不忠；若不順從，父親便會死，就是「不孝」，申鳴難以取捨（忠孝兩難全）。"
+          },
+          {
+            "id": "q21",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "21. 承上題，申鳴面對困境又如何取捨？(2分)"
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "明確指出申鳴的取和捨：捨孝取忠／為道義而犧牲父親／選擇了國家，放棄父親，給2分；只指出其中一面（如捨孝／取忠／堅守道義／犧牲父親／選擇了國家），給1分。摘錄原文不加解釋，給0分；捨忠取孝／取孝／捨忠／選擇了利益，放棄父親，給0分（2分）",
+                "marks": 2
+              }
+            ],
+            "reference_answer": "捨孝取忠：為了盡忠職守而犧牲父親（選擇了國家，放棄父親）。"
+          }
+        ]
+      },
+      "answers": {
+        "q19": [
+          {
+            "kind": "full",
+            "text": "楚王想任命申鳴為相，他推辭不受，因為他要留在家中奉養父親，寧可放棄高官厚祿也不願離開父親；後來父親說希望他做官，在朝廷立義、讓自己生活無憂，他便答應入朝當相。不論推辭還是出仕，他都以父親為重，不計個人得失，只顧父親的意願和福祉，可見他重孝。",
+            "labels": [
+              [
+                1,
+                "Correct first-paragraph example."
+              ],
+              [
+                1,
+                "Accurate example with explanation."
+              ],
+              [
+                1,
+                "Both refusal and later acceptance explained (father first, gives up rank; obeys father for his ease); full."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "申鳴推辭了楚王給他的相位，因為他寧願放棄功名，也要留在家照顧父親，以父親為先，所以可見他重孝。",
+            "labels": [
+              [
+                1,
+                "Correct example from paragraph 1."
+              ],
+              [
+                1,
+                "Example brief (refusal only) but reason explained accurately: 中品."
+              ],
+              [
+                0,
+                "Example not complete (omits accepting at father's wish), so not 上品."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "楚王要申鳴做宰相，他起初推辭，後來因為父親要求才接受。",
+            "labels": [
+              [
+                1,
+                "Accurate example without explaining filial piety: 下品."
+              ],
+              [
+                0,
+                "No explanation of why it shows filial piety."
+              ],
+              [
+                0,
+                "No 上品."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "王欲授之相，申鳴辭不受。其父曰：「王欲相汝，汝何不受乎？」申鳴對曰：「舍父之孝子而為王之忠臣，何也？」",
+            "labels": [
+              [
+                0,
+                "摘錄原文不加解釋: scheme gives 0 for the whole question."
+              ],
+              [
+                0,
+                "Quotation only."
+              ],
+              [
+                0,
+                "Quotation only."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "申鳴在白公作亂時，父親勸他不要去送死，他仍然出兵，最後父親被殺，他也自殺，可見他重孝。",
+            "labels": [
+              [
+                0,
+                "Example not from the first paragraph (and shows filial duty sacrificed): whole question 0."
+              ],
+              [
+                0,
+                "Wrong example."
+              ],
+              [
+                0,
+                "Wrong example."
+              ]
+            ]
+          }
+        ],
+        "q20": [
+          {
+            "kind": "full",
+            "text": "白公捉住申鳴的父親作人質，要他投降：如果申鳴為了救父親而依從白公，便是背叛楚王，不忠；如果不依從，父親就會被殺，便是不孝。他陷入忠孝不能兩全的困境。",
+            "labels": [
+              [
+                1,
+                "Hostage father: obeying is disloyal, refusing is unfilial; loyalty and filial piety cannot both be kept."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "要救父親就要背棄對國家的職責，要盡忠就要犧牲父親，孝和忠只能選一樣。",
+            "labels": [
+              [
+                1,
+                "States both sides of the dilemma: saving father betrays duty, loyalty sacrifices father."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "他面對兩難的局面，不知怎樣選擇。",
+            "labels": [
+              [
+                0.5,
+                "Names a dilemma without its content: scheme gives 1 mark."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "子與吾，吾與子分楚國；子不與吾，子父則死矣。",
+            "labels": [
+              [
+                0,
+                "Copies Bai Gong's threat without explanation; no dilemma stated."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "父親反對他出兵，但他仍然冒死出兵平定白公作亂。",
+            "labels": [
+              [
+                0,
+                "Gives the paragraph 2 event without naming any dilemma: scheme gives 0."
+              ]
+            ]
+          }
+        ],
+        "q21": [
+          {
+            "kind": "full",
+            "text": "他選擇了盡忠，放棄了孝：擊鼓進攻，殺死白公，父親也因此被殺。",
+            "labels": [
+              [
+                1,
+                "Takes loyalty, gives up filial piety; both sides stated."
+              ]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "為了對國家的職責，他寧願犧牲父親的性命，捨孝而取忠。",
+            "labels": [
+              [
+                1,
+                "Sacrifices father for duty; 捨孝取忠."
+              ]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "他選擇做忠臣。",
+            "labels": [
+              [
+                0.5,
+                "Only one side (取忠) stated."
+              ]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "始吾父之孝子也，今吾君之忠臣也……援桴鼓之，遂殺白公，其父亦死。",
+            "labels": [
+              [
+                0,
+                "摘錄原文不加解釋: scheme gives 0."
+              ]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "他選擇救父親，答應白公的要求，放棄忠於楚王。",
+            "labels": [
+              [
+                0,
+                "Misreads the choice as 捨忠取孝: scheme gives 0."
+              ]
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

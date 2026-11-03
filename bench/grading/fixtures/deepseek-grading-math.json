@@ -1,0 +1,3177 @@
+{
+  "provenance": {
+    "author": "Claude Code agent (Opus 5.5); questions from HKDSE Mathematics Compulsory Part Paper 1 2021–2025, schemes written from the HKEAA answers, student answers and labels synthetic",
+    "date": "2026-11-03",
+    "human_certified": false,
+    "labels_written_before_inference": true,
+    "sources": [
+      "data/question-bank/references/hkdse-math-compulsory/2021-p1.txt and 2021-ans.txt (HKEAA marking scheme), page renders for Q15",
+      "data/question-bank/references/hkdse-math-compulsory/2022-p1.txt and 2022-ans.txt (HKEAA marking scheme), page render for Q8",
+      "data/question-bank/references/hkdse-math-compulsory/2024-p1.txt and 2024-ans.txt (HKEAA marking scheme and examination report), page renders for Q12, Q13, Q15",
+      "data/question-bank/references/hkdse-math-compulsory/2023-p1.txt (no HKEAA scheme; items and mark splits written by the agent in the HKEAA style; the unofficial 2023-solution images were not used)",
+      "data/question-bank/references/hkdse-math-compulsory/2025-p1.txt and page render for Q8 (no HKEAA scheme; items and mark splits written by the agent in the HKEAA style; the unofficial 2025-solution images were not used)"
+    ],
+    "scope": "Open, long-answer HKDSE Maths Paper 1 parts that need working: geometric proofs and deductions from Section A(1) Q8, and Section A(2)/B parts on polynomials, sequences, logarithms, coordinate geometry, mensuration, 3-D trigonometry, statistics reasoning and probability. English, app Question shape with {text, marks} markscheme items; every item is a 1-mark HKEAA M/A mark (2-mark proofs split into a statement item and a reasons item).",
+    "copyright": "HKEAA past-paper question text, private reference; minimal extracts only (stem and part text, figures as short descriptions); no marking-scheme pages or examiner reports reproduced"
+  },
+  "labeling_rules": [
+    "Each item is labelled with the fraction of its marks earned. Every item here is a single 1-mark HKEAA M or A mark, so only 0 or 1 is used.",
+    "M items (method): earned when the answer visibly uses the method the item names. A step may be implicit when the working shows the concept was used (HKEAA general instruction 3). An arithmetic or algebra slip in carrying out a correct method does not lose the M mark.",
+    "A items (accuracy): earned only when the value or statement is correct and every M item it says it depends on is earned. A correct value written without its method (bare answer), or reached by wrong working, earns no M marks and no dependent A marks.",
+    "A items marked ft (follow through) are earned when the conclusion follows correctly from the candidate's own earlier values, even when those contain a slip, provided the M items it depends on are earned. A items without ft need the correct value.",
+    "Results of earlier parts may be quoted. M marks are earned for correct methods applied to earlier results, even wrong ones (HKEAA general instruction 2); non-ft A marks are not.",
+    "Alternative methods: a complete, correct method that the scheme does not list earns every item, each item being credited for the step that plays the same role (HKEAA general instruction 1: a correct answer by an alternative method merits all the marks unless the question specifies the method). A partly correct alternative earns the items whose equivalent steps are correct.",
+    "Proofs follow HKEAA's 'Case 1: any correct proof with correct reasons, 2 marks; Case 2: any correct proof without reasons, 1 mark'. The first item needs a complete chain of correct statements reaching the conclusion, with or without reasons. The second item needs a correct reason on every step and depends on the first. One wrong or missing reason, or a congruence condition that does not match the pairs used (ASA for AAS), loses only the second item. A proof that relies on a false or unproved statement, or on an invalid condition, earns neither.",
+    "Show-that (prove) items earn nothing for restating the result, working backwards from it, or asserting it after wrong or unrelated working. The completion mark needs a valid derivation that ends at the given result.",
+    "Verdicts ('not similar', 'the claim is not correct', 'no change') earn their mark only with the supporting comparison or argument that the item names; a verdict alone earns 0.",
+    "Numerical answers must be exact or correct to 3 significant figures; the r.t. values in items are accepted. Fractions must be simplified (HKEAA general instruction 5). No presentation penalty is applied for units.",
+    "Benefit of doubt goes to the candidate when the working is ambiguous but indicates the right concept (HKEAA general instruction 4). Content anywhere in the answer counts, and items are judged independently apart from the dependencies stated in their text."
+  ],
+  "answer_kinds": {
+    "correct": "fully correct with complete working along the scheme's route, typed in plain Unicode maths",
+    "bare_answer": "the correct final answer or statement with the working missing",
+    "wrong_working": "the correct final answer or statement with working that is wrong or does not lead to it",
+    "slip": "the scheme's method with one arithmetic, algebra or reason slip, carried through honestly",
+    "alt_method": "a different valid method, not the scheme's route, fully correct",
+    "nonsense": "confident, fluent, mathematical-looking nonsense (wrong theorems, made-up steps) reaching a wrong or right-looking result"
+  },
+  "questions": [
+    {
+      "id": "dse2021-p1-q8",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2021 Paper 1 Q8(a); HKEAA marking scheme (proof: Case 1 with reasons 2 marks, Case 2 without reasons 1 mark)",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "In Figure 1, AB produced and CD produced meet at the point E. It is given that ∠CAE = ∠BDE."
+          },
+          {
+            "type": "image",
+            "description": "Figure 1: A, B and E lie on one straight line with B between A and E; C, D and E lie on another straight line with D between C and E. Segments AC and BD are drawn, giving △ACE and the smaller △DBE that share the vertex E. The angles ∠CAE (at A) and ∠BDE (at D) are marked equal."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Prove that △ACE ~ △DBE."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "Correct proof: ∠CAE = ∠BDE and ∠AEC = ∠DEB (the angle at E is common to both triangles), concluding △ACE ~ △DBE (AA / equiangular), or any other complete and correct proof. Award with or without reasons.",
+                "marks": 1
+              },
+              {
+                "text": "Correct reasons on every step: (given) for ∠CAE = ∠BDE, (common ∠) for the angle at E, and (AA), (AAA) or (equiangular) for the similarity, or the correct reasons of an equivalent proof. Depends on the item above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "∠CAE = ∠BDE (given); ∠AEC = ∠DEB (common ∠); △ACE ~ △DBE (AA). 2 marks with correct reasons, 1 mark without."
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "correct",
+            "text": "In △ACE and △DBE:\n∠CAE = ∠BDE (given)\n∠AEC = ∠DEB (common ∠)\n∴ △ACE ~ △DBE (AA)",
+            "labels": [
+              [
+                1,
+                "Both angle pairs stated and similarity concluded."
+              ],
+              [
+                1,
+                "Given, common ∠ and AA are all correct reasons."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "△ACE ~ △DBE (AA).",
+            "labels": [
+              [
+                0,
+                "Only the conclusion; no equal angles are stated."
+              ],
+              [
+                0,
+                "No proof to attach reasons to."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "∠CAE = ∠BDE (given)\n∠AEC = ∠DEB (vert. opp. ∠s)\n∴ △ACE ~ △DBE (AA)",
+            "labels": [
+              [
+                1,
+                "Correct chain of statements reaching the similarity."
+              ],
+              [
+                0,
+                "The angle at E is common, not vertically opposite: one reason is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "In △ACE and △DBE:\n∠CAE = ∠BDE (given)\n∠AEC = ∠DEB (common ∠)\n∠ACE = 180° − ∠CAE − ∠AEC (∠ sum of △)\n= 180° − ∠BDE − ∠DEB\n= ∠DBE (∠ sum of △)\n∴ △ACE ~ △DBE (AAA)",
+            "labels": [
+              [
+                1,
+                "All three angle pairs shown equal; valid equiangular proof."
+              ],
+              [
+                1,
+                "Every step carries a correct reason."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "Since AB is produced to E and CD is produced to E, the lines AC and BD must be parallel (two lines produced to the same point are parallel).\nTherefore AC/BD = AE/DE = CE/BE (intercept theorem),\nand ∴ △ACE ~ △DBE (3 sides proportional).",
+            "labels": [
+              [
+                0,
+                "AC // BD is neither given nor true in general; the ratios are unproved."
+              ],
+              [
+                0,
+                "The reasons cited are invalid."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2021-p1-q11",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2021 Paper 1 Q11(b); HKEAA marking scheme",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "The table below shows the distribution of the numbers of tokens got by a group of children in a game."
+          },
+          {
+            "type": "table",
+            "rows": [
+              [
+                "Number of tokens got",
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7"
+              ],
+              [
+                "Number of children",
+                "15",
+                "9",
+                "2",
+                "5",
+                "4",
+                "2",
+                "5"
+              ]
+            ]
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Find the mean of the distribution."
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Are the median and the mode of the distribution equal? Explain your answer."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Finds either the median (2 tokens) or the mode (1 token) of the distribution correctly (either one).",
+                "marks": 1
+              },
+              {
+                "text": "A1 (ft): Concludes that the median and the mode are not equal, consistent with the median and mode found. Depends on the M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "42 children; the 21st and 22nd values are both 2, so the median is 2; the mode is 1. Not equal."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "Number of children = 15 + 9 + 2 + 5 + 4 + 2 + 5 = 42.\nThe median is the mean of the 21st and 22nd values. The first 15 children got 1 token and the 16th to 24th children got 2 tokens, so the 21st and 22nd values are both 2.\nMedian = 2 tokens.\nThe greatest frequency is 15, for 1 token, so mode = 1 token.\nSince 2 ≠ 1, the median and the mode are not equal.",
+            "labels": [
+              [
+                1,
+                "Median 2 and mode 1 both found."
+              ],
+              [
+                1,
+                "Not equal, with both values shown."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_working",
+            "text": "They are not equal. The median is the middle of the values 1, 2, 3, 4, 5, 6, 7, which is 4, and the mode is the largest frequency, 15. Since 4 ≠ 15, the median and the mode are not equal.",
+            "labels": [
+              [
+                0,
+                "Median 4 and mode 15 are both wrong."
+              ],
+              [
+                0,
+                "The conclusion rests on wrong values; M1 not earned."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "There are 42 children, so the median is the mean of the 21st and 22nd values.\nCumulative frequencies: 15, 15 + 9 = 21, 23, 28, 32, 34, 39.\nSo the 21st value is 2 and the 22nd value is 3, median = (2 + 3)/2 = 2.5.\nMode = 1 (frequency 15 is the greatest).\nSince 2.5 ≠ 1, the median and the mode are not equal.",
+            "labels": [
+              [
+                1,
+                "The mode 1 is correct; either one earns M1 (median slipped to 2.5)."
+              ],
+              [
+                1,
+                "ft: not equal follows from 2.5 and 1."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "Mode = 1, since 15 children (the greatest frequency) got 1 token.\nThere are 42 children, so the median is decided by the 21st and 22nd values. Only 15 children got 1 token, fewer than 21, so the 21st and 22nd values are both greater than 1.\nHence the median is greater than 1 = mode, so the median and the mode are not equal.",
+            "labels": [
+              [
+                1,
+                "Mode 1 found correctly; the median need not be evaluated."
+              ],
+              [
+                1,
+                "Valid argument that the median exceeds 1, so not equal."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "By the empirical relation for distributions, median = (mean + mode)/2. The mean is 3 and the mode is the middle frequency, 5, so median = (3 + 5)/2 = 4. Since 4 ≠ 5, the median and the mode are not equal.",
+            "labels": [
+              [
+                0,
+                "Mode 5 and median 4 come from invented rules."
+              ],
+              [
+                0,
+                "No valid values to conclude from."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2021-p1-q15",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2021 Paper 1 Q15(b); HKEAA marking scheme",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "A queue is randomly formed by 7 teachers and 3 students."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "How many different queues can be formed?"
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Find the probability that no students are next to each other in the queue."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1 (denominator): uses the number of all possible queues, 10! = 3 628 800.",
+                "marks": 1
+              },
+              {
+                "text": "M1 (numerator): counts the queues with no two students next to each other as 7! × C(8,3) × 3! = 1 693 440 (arrange the teachers, choose 3 of the 8 gaps, arrange the students).",
+                "marks": 1
+              },
+              {
+                "text": "A1: Probability = 7/15 (r.t. 0.467). Depends on both M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "7! C(8,3) 3! / 10! = 1 693 440 / 3 628 800 = 7/15."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "Total number of queues = 10! = 3 628 800.\nArrange the 7 teachers first: 7! ways. This leaves 8 gaps (including both ends). Choose 3 of the gaps for the students and arrange the students: C(8,3) × 3! = 56 × 6 = 336 ways.\nFavourable queues = 7! × 336 = 5040 × 336 = 1 693 440.\nP(no students next to each other) = 1 693 440 / 3 628 800 = 7/15.",
+            "labels": [
+              [
+                1,
+                "Denominator 10!."
+              ],
+              [
+                1,
+                "Numerator 7! × C(8,3) × 3!."
+              ],
+              [
+                1,
+                "7/15."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "7/15",
+            "labels": [
+              [
+                0,
+                "No denominator shown."
+              ],
+              [
+                0,
+                "No numerator shown."
+              ],
+              [
+                0,
+                "Bare answer; method marks missing."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "Total = 10! = 3 628 800.\nTeachers first: 7! = 5040 ways, leaving 8 gaps.\nChoose 3 gaps and arrange the students: C(8,3) × 3! = 56 × 3 = 168.\nFavourable = 5040 × 168 = 846 720.\nP = 846 720 / 3 628 800 = 7/30.",
+            "labels": [
+              [
+                1,
+                "Denominator 10!."
+              ],
+              [
+                1,
+                "Correct counting expression; only 3! was evaluated wrongly."
+              ],
+              [
+                0,
+                "7/30 is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "Only the positions taken by the students matter, and every set of 3 positions out of 10 is equally likely: C(10,3) = 120 sets.\nA set with no two adjacent positions corresponds to choosing 3 of the 8 gaps around the 7 teachers: C(8,3) = 56 sets.\nP = 56/120 = 7/15.",
+            "labels": [
+              [
+                1,
+                "Equivalent sample space: C(10,3) equally likely position sets."
+              ],
+              [
+                1,
+                "Equivalent favourable count C(8,3)."
+              ],
+              [
+                1,
+                "7/15."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "Each student has a probability 7/10 of standing next to a teacher instead of a student, because 7 of the 10 people are teachers. The three students are independent, so P = (7/10)³ = 343/1000 = 0.343.",
+            "labels": [
+              [
+                0,
+                "No valid sample space."
+              ],
+              [
+                0,
+                "Invented independent factors; no valid count."
+              ],
+              [
+                0,
+                "Wrong answer."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2021-p1-q17",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2021 Paper 1 Q17(b); HKEAA marking scheme",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "Let A(n) be the nth term of an arithmetic sequence. It is given that A(5) = 26 and A(12) = 61."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Find A(1)."
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Suppose that log₂ G(n) = A(n) for any positive integer n. Find the greatest value of k such that log₈(G(1)G(2)G(3)⋯G(k)) < 999."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Changes the base: log₈(G(1)G(2)⋯G(k)) = log₂(G(1)G(2)⋯G(k)) / log₂ 8, giving log₂(G(1)G(2)⋯G(k)) < 2997 (or an equivalent conversion between bases 2 and 8).",
+                "marks": 1
+              },
+              {
+                "text": "M1: Uses the log of a product as a sum: log₂G(1) + log₂G(2) + ⋯ + log₂G(k) = A(1) + A(2) + ⋯ + A(k).",
+                "marks": 1
+              },
+              {
+                "text": "M1: Uses the sum of the arithmetic sequence with first term 6 and common difference 5: (k/2)[2(6) + (k − 1)(5)] (ft from the candidate's first term and common difference).",
+                "marks": 1
+              },
+              {
+                "text": "M1: Solves the resulting quadratic inequality, e.g. 5k² + 7k − 5994 < 0 by the quadratic formula giving −35.33 < k < 33.93 (ft from the candidate's inequality).",
+                "marks": 1
+              },
+              {
+                "text": "A1: Greatest k = 33. Depends on all M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "A(n) = 5n + 1; log₂(product) < 2997 ⇒ k(5k + 7)/2 < 2997 ⇒ 5k² + 7k − 5994 < 0 ⇒ k < 33.93, so k = 33."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "From (a), A(1) = 6 and d = 5, so A(n) = 5n + 1.\nlog₈(G(1)⋯G(k)) < 999\n⇒ log₂(G(1)⋯G(k)) / log₂ 8 < 999\n⇒ log₂(G(1)⋯G(k)) < 2997\n⇒ log₂G(1) + log₂G(2) + ⋯ + log₂G(k) < 2997\n⇒ A(1) + A(2) + ⋯ + A(k) < 2997\n⇒ (k/2)[2(6) + 5(k − 1)] < 2997\n⇒ k(5k + 7) < 5994\n⇒ 5k² + 7k − 5994 < 0\nk = [−7 ± √(49 + 119 880)]/10 = (−7 ± √119 929)/10, so −35.33 < k < 33.93.\n∴ the greatest value of k is 33.",
+            "labels": [
+              [
+                1,
+                "Change of base to log₂ with bound 2997."
+              ],
+              [
+                1,
+                "Log of product written as sum of A(n)."
+              ],
+              [
+                1,
+                "AP sum (k/2)[12 + 5(k − 1)]."
+              ],
+              [
+                1,
+                "Quadratic inequality solved."
+              ],
+              [
+                1,
+                "k = 33."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_working",
+            "text": "A(n) = 5n + 1.\nlog₈(G(1)⋯G(k)) = 3[log₂G(1) + ⋯ + log₂G(k)] = 3[A(1) + ⋯ + A(k)] < 999\n⇒ A(1) + ⋯ + A(k) < 333\n⇒ (k/2)(5k + 7) < 333\nTry k = 33: (33/2)(172) = 2838. Try k = 34: (34/2)(177) = 3009.\n∴ the greatest value of k is 33.",
+            "labels": [
+              [
+                0,
+                "Multiplies by 3 instead of dividing; bound 333 is wrong."
+              ],
+              [
+                1,
+                "Log of the product is written as the sum of logs."
+              ],
+              [
+                1,
+                "AP sum (k/2)(5k + 7) is correct."
+              ],
+              [
+                0,
+                "Trials are never compared with their bound 333; nothing is solved."
+              ],
+              [
+                0,
+                "33 does not follow from this working."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "A(n) = 5n + 1.\nlog₈(G(1)⋯G(k)) < 999 ⇒ log₂(G(1)⋯G(k)) / log₂ 8 < 999 ⇒ log₂(G(1)⋯G(k)) < 2997.\nlog₂G(1) + ⋯ + log₂G(k) < 2997 ⇒ A(1) + ⋯ + A(k) < 2997.\n(k/2)[2(6) + 5(k − 1)] < 2997 ⇒ (k/2)(5k + 17) < 2997 ⇒ 5k² + 17k − 5994 < 0.\nk = [−17 ± √(289 + 119 880)]/10 = (−17 ± √120 169)/10, so −36.37 < k < 32.97.\n∴ the greatest value of k is 32.",
+            "labels": [
+              [
+                1,
+                "Change of base correct."
+              ],
+              [
+                1,
+                "Sum of logs used."
+              ],
+              [
+                1,
+                "AP sum formula set up correctly; simplification slip 12 − 5 = 17."
+              ],
+              [
+                1,
+                "ft: their quadratic inequality solved correctly."
+              ],
+              [
+                0,
+                "32 is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "From (a), A(n) = 5n + 1, so G(n) = 2^A(n) = 2^(5n + 1).\nG(1)G(2)⋯G(k) = 2^(A(1) + A(2) + ⋯ + A(k)) = 2^(k(5k + 7)/2), since A(1) + ⋯ + A(k) = (k/2)[12 + 5(k − 1)] = k(5k + 7)/2.\n8 = 2³, so log₈(2^m) = m/3. Hence log₈(G(1)⋯G(k)) = k(5k + 7)/6.\nk(5k + 7)/6 < 999 ⇒ k(5k + 7) < 5994.\nk(5k + 7) increases for positive k. k = 33: 33 × 172 = 5676 < 5994. k = 34: 34 × 177 = 6018 > 5994.\n∴ the greatest value of k is 33.",
+            "labels": [
+              [
+                1,
+                "Equivalent base conversion via 8 = 2³."
+              ],
+              [
+                1,
+                "Equivalent: product of powers gives sum of exponents A(n)."
+              ],
+              [
+                1,
+                "AP sum k(5k + 7)/2."
+              ],
+              [
+                1,
+                "Equivalent solving: increasing function tested at 33 and 34."
+              ],
+              [
+                1,
+                "k = 33."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "log₈ of a product is the product of the log₈ values, and log₈ G(n) = A(n)/4 because 8 is 2 squared twice. The terms grow geometrically, so the condition becomes (A(1)/4)^k < 999, i.e. (6/4)^k < 999.\nk < log 999 / log 1.5 = 17.03.\n∴ the greatest value of k is 17.",
+            "labels": [
+              [
+                0,
+                "Wrong base conversion (8 is not 2⁴)."
+              ],
+              [
+                0,
+                "Log of a product is not a product of logs."
+              ],
+              [
+                0,
+                "No arithmetic-sequence sum."
+              ],
+              [
+                0,
+                "No valid inequality solved."
+              ],
+              [
+                0,
+                "17 is wrong."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2022-p1-q8",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2022 Paper 1 Q8(a)(b); HKEAA marking scheme",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "In Figure 1, A is a point lying inside the quadrilateral BCDE such that AC // ED and AD // BC. It is given that ∠ABC = ∠AED and AB = AE."
+          },
+          {
+            "type": "image",
+            "description": "Figure 1: Quadrilateral BCDE with B at the upper right, C at the lower right, D at the lower left and E at the upper left. The point A is inside the quadrilateral, and the segments AB, AC, AD and AE are drawn. AC is parallel to ED and AD is parallel to BC."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Prove that △ABC ≅ △AED."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "Correct proof: shows ∠ACB = ∠ADE (∠ACB = ∠CAD and ∠CAD = ∠ADE), and with ∠ABC = ∠AED and AB = AE concludes △ABC ≅ △AED (AAS), or any other complete and correct proof. Award with or without reasons.",
+                "marks": 1
+              },
+              {
+                "text": "Correct reasons on every step: (alt. ∠s, AD // BC), (alt. ∠s, AC // ED), (given), (given) and (AAS), or the correct reasons of an equivalent proof. Depends on the item above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "∠ACB = ∠CAD (alt. ∠s, AD // BC) = ∠ADE (alt. ∠s, AC // ED); ∠ABC = ∠AED, AB = AE (given); △ABC ≅ △AED (AAS). 2 marks with reasons, 1 without."
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "If ∠ABC = 39° and ∠DAE = 87°, find ∠ACD."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: ∠BAC = ∠DAE = 87° (corresponding angles of the congruent triangles in (a)).",
+                "marks": 1
+              },
+              {
+                "text": "M1: Uses AC = AD (corresponding sides of the congruent triangles) to write ∠ACD = ∠ADC = (180° − ∠CAD)/2, where ∠CAD = ∠ACB = 180° − 87° − 39° = 54°.",
+                "marks": 1
+              },
+              {
+                "text": "A1: ∠ACD = 63°. Depends on both M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "∠BAC = 87°, ∠ACB = 54° = ∠CAD (alt. ∠s); AC = AD, so ∠ACD = (180° − 54°)/2 = 63°."
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "correct",
+            "text": "∠ACB = ∠CAD (alt. ∠s, AD // BC)\n∠CAD = ∠ADE (alt. ∠s, AC // ED)\n∴ ∠ACB = ∠ADE\n∠ABC = ∠AED (given)\nAB = AE (given)\n∴ △ABC ≅ △AED (AAS)",
+            "labels": [
+              [
+                1,
+                "Complete AAS chain."
+              ],
+              [
+                1,
+                "All reasons correct."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "△ABC ≅ △AED (AAS), because AB = AE and ∠ABC = ∠AED are given.",
+            "labels": [
+              [
+                0,
+                "Only two givens; the third pair ∠ACB = ∠ADE is never shown."
+              ],
+              [
+                0,
+                "No complete proof to attach reasons to."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "∠ACB = ∠CAD (alt. ∠s, AC // ED)\n∠CAD = ∠ADE (alt. ∠s, AD // BC)\n∴ ∠ACB = ∠ADE\n∠ABC = ∠AED (given)\nAB = AE (given)\n∴ △ABC ≅ △AED (AAS)",
+            "labels": [
+              [
+                1,
+                "Complete and correct chain of statements."
+              ],
+              [
+                0,
+                "The parallel lines in both alt. ∠s reasons are swapped."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "∠ACB = ∠CAD (alt. ∠s, AD // BC)\n∠CAD = ∠ADE (alt. ∠s, AC // ED)\nSo ∠ACB = ∠ADE.\nIn △ABC, ∠BAC = 180° − ∠ABC − ∠ACB (∠ sum of △).\nIn △AED, ∠EAD = 180° − ∠AED − ∠ADE (∠ sum of △).\nSince ∠ABC = ∠AED (given), ∠BAC = ∠EAD.\nAB = AE (given)\n∴ △ABC ≅ △AED (ASA)",
+            "labels": [
+              [
+                1,
+                "Valid ASA proof with the included side AB = AE."
+              ],
+              [
+                1,
+                "Every step has a correct reason."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "AB = AE (given), so A is equidistant from B and E and is therefore the centre of the quadrilateral BCDE. Hence AC = AD (radii).\n∠ABC = ∠AED (given)\n∴ △ABC ≅ △AED (SAS)",
+            "labels": [
+              [
+                0,
+                "AC = AD is unproved and the angle is not included: not SAS."
+              ],
+              [
+                0,
+                "Reasons are invalid."
+              ]
+            ]
+          }
+        ],
+        "b": [
+          {
+            "kind": "correct",
+            "text": "By (a), ∠BAC = ∠DAE = 87° (corr. ∠s, ≅△).\nIn △ABC, ∠ACB = 180° − 87° − 39° = 54° (∠ sum of △).\n∠CAD = ∠ACB = 54° (alt. ∠s, AD // BC).\nBy (a), AC = AD (corr. sides, ≅△), so ∠ACD = ∠ADC (base ∠s, isos. △).\n∠ACD = (180° − 54°)/2 = 63°.",
+            "labels": [
+              [
+                1,
+                "∠BAC = 87° from (a)."
+              ],
+              [
+                1,
+                "AC = AD used with ∠CAD = 54°."
+              ],
+              [
+                1,
+                "63°."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_working",
+            "text": "Because AC // ED and AD // BC, ∠ACD is half the sum of the opposite angles ∠ABC and ∠DAE (property of the parallelogram formed by the two pairs of parallel lines).\n∠ACD = (39° + 87°)/2 = 63°.",
+            "labels": [
+              [
+                0,
+                "∠BAC = 87° is never used; invented property."
+              ],
+              [
+                0,
+                "AC = AD is not used."
+              ],
+              [
+                0,
+                "63° does not follow from valid working."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "By (a), ∠BAC = ∠DAE = 87° (corr. ∠s, ≅△).\n∠ACB = 180° − 87° − 39° = 64° (∠ sum of △).\n∠CAD = ∠ACB = 64° (alt. ∠s, AD // BC).\nAC = AD (corr. sides, ≅△), so ∠ACD = (180° − 64°)/2 = 58°.",
+            "labels": [
+              [
+                1,
+                "∠BAC = 87° from (a)."
+              ],
+              [
+                1,
+                "Isosceles method with AC = AD; 54° slipped to 64°."
+              ],
+              [
+                0,
+                "58° is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "In △AED, ∠AED = ∠ABC = 39° (given), so ∠ADE = 180° − 87° − 39° = 54° (∠ sum of △).\nBy (a), AC = AD (corr. sides, ≅△), so ∠ADC = ∠ACD (base ∠s, isos. △).\n∠ACD + ∠CDE = 180° (int. ∠s, AC // ED).\n∠CDE = ∠ADC + ∠ADE = ∠ACD + 54°.\nSo 2∠ACD + 54° = 180°, giving ∠ACD = 63°.",
+            "labels": [
+              [
+                1,
+                "Equivalent step: ∠ADE = 54° found directly in △AED."
+              ],
+              [
+                1,
+                "AC = AD used with co-interior angles."
+              ],
+              [
+                1,
+                "63°."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "Since AC // ED and AD // BC, both ACDE and ABCD are parallelograms, so ∠ACD = ∠DAE (opp. ∠s of //gram) = 87°.",
+            "labels": [
+              [
+                0,
+                "Neither quadrilateral is shown to be a parallelogram."
+              ],
+              [
+                0,
+                "No isosceles argument."
+              ],
+              [
+                0,
+                "87° is wrong."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2022-p1-q14",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2022 Paper 1 Q14(a)(c); HKEAA marking scheme",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "Let p(x) = 2x³ + ax² + bx − 20, where a and b are constants. When p(x) is divided by x² − 2x + 3, the remainder is x + 13."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Find a and b."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Writes p(x) = (mx + n)(x² − 2x + 3) + x + 13 (a linear quotient times the divisor plus the remainder).",
+                "marks": 1
+              },
+              {
+                "text": "M1: Compares coefficients to get m = 2 or 3n + 13 = −20 (either one).",
+                "marks": 1
+              },
+              {
+                "text": "A1: a = −15 and b = 29 (both correct). Depends on both M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "p(x) = (2x − 11)(x² − 2x + 3) + x + 13 = 2x³ − 15x² + 29x − 20, so a = −15, b = 29."
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Is x − 5 a factor of p(x)? Explain your answer."
+              }
+            ]
+          },
+          {
+            "id": "c",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Someone claims that the equation p(x) = 0 has two irrational roots. Do you agree? Explain your answer."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Factorizes p(x) = (x − 5)(2x² − 5x + 4).",
+                "marks": 1
+              },
+              {
+                "text": "M1: Considers the discriminant of 2x² − 5x + 4 = 0: (−5)² − 4(2)(4) = −7 < 0, so this quadratic has no real roots.",
+                "marks": 1
+              },
+              {
+                "text": "A1 (ft): Disagrees: the quadratic factor has no real (hence no irrational) roots and the only real root 5 is rational, so p(x) = 0 has no irrational roots. ft from the candidate's discriminant; depends on both M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "p(x) = (x − 5)(2x² − 5x + 4); Δ = −7 < 0, so the only real root is 5 (rational). The claim is disagreed."
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "correct",
+            "text": "Let p(x) = (mx + n)(x² − 2x + 3) + x + 13.\nExpanding: p(x) = mx³ + (n − 2m)x² + (3m − 2n + 1)x + 3n + 13.\nComparing with 2x³ + ax² + bx − 20: m = 2 and 3n + 13 = −20, so n = −11.\na = n − 2m = −11 − 4 = −15\nb = 3m − 2n + 1 = 6 + 22 + 1 = 29\n∴ a = −15, b = 29.",
+            "labels": [
+              [
+                1,
+                "Quotient-times-divisor-plus-remainder identity."
+              ],
+              [
+                1,
+                "m = 2 and 3n + 13 = −20."
+              ],
+              [
+                1,
+                "a = −15, b = 29."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "a = −15, b = 29",
+            "labels": [
+              [
+                0,
+                "No identity set up."
+              ],
+              [
+                0,
+                "No coefficient comparison."
+              ],
+              [
+                0,
+                "Bare answer; method marks missing."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "Let p(x) = (mx + n)(x² − 2x + 3) + x + 13 = mx³ + (n − 2m)x² + (3m − 2n + 1)x + 3n + 13.\nm = 2, and 3n + 13 = −20 ⇒ n = −11.\na = n − 2m = −11 − 4 = −15\nb = 3m − 2n + 1 = 6 − 22 + 1 = −15",
+            "labels": [
+              [
+                1,
+                "Identity set up."
+              ],
+              [
+                1,
+                "m = 2 and n = −11."
+              ],
+              [
+                0,
+                "b = −15 is wrong (sign slip with −2n)."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "Long division of 2x³ + ax² + bx − 20 by x² − 2x + 3:\nFirst quotient term 2x: subtract 2x(x² − 2x + 3) = 2x³ − 4x² + 6x, leaving (a + 4)x² + (b − 6)x − 20.\nNext quotient term (a + 4): subtract (a + 4)(x² − 2x + 3), leaving [b − 6 + 2(a + 4)]x − 20 − 3(a + 4) = (2a + b + 2)x − 3a − 32.\nThe remainder is x + 13, so 2a + b + 2 = 1 and −3a − 32 = 13.\n⇒ a = −15 and b = 1 − 2 − 2(−15) = 29.",
+            "labels": [
+              [
+                1,
+                "Equivalent: long division sets up the remainder in a and b."
+              ],
+              [
+                1,
+                "Equivalent: equates remainder coefficients."
+              ],
+              [
+                1,
+                "a = −15, b = 29."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "By the remainder theorem, the remainder x + 13 equals p evaluated at the root of x² − 2x + 3, which is x = 1. So p(1) = 1 + 13 = 14, i.e. 2 + a + b − 20 = 14, so a + b = 32. Also the constant terms must match: −20 = 13 + 33, so a = 33 and b = −1.",
+            "labels": [
+              [
+                0,
+                "x = 1 is not a root of the divisor; no valid identity."
+              ],
+              [
+                0,
+                "No valid coefficient comparison."
+              ],
+              [
+                0,
+                "Wrong values."
+              ]
+            ]
+          }
+        ],
+        "c": [
+          {
+            "kind": "correct",
+            "text": "From (a), p(x) = 2x³ − 15x² + 29x − 20, and by (b) x − 5 is a factor.\np(x) = (x − 5)(2x² − 5x + 4).\np(x) = 0 ⇒ x = 5 or 2x² − 5x + 4 = 0.\nΔ = (−5)² − 4(2)(4) = 25 − 32 = −7 < 0, so 2x² − 5x + 4 = 0 has no real roots, hence no irrational roots.\n5 is rational, so p(x) = 0 has no irrational roots. I do not agree with the claim.",
+            "labels": [
+              [
+                1,
+                "Correct factorization."
+              ],
+              [
+                1,
+                "Discriminant −7 < 0."
+              ],
+              [
+                1,
+                "Disagrees with the correct reason."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_working",
+            "text": "I disagree. A cubic equation always has three real roots, and since the coefficients 2, −15, 29 and −20 are all integers, every root must be rational by the rational root theorem. So p(x) = 0 has no irrational roots.",
+            "labels": [
+              [
+                0,
+                "No factorization."
+              ],
+              [
+                0,
+                "No discriminant."
+              ],
+              [
+                0,
+                "Verdict rests on two false statements."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "p(x) = 2x³ − 15x² + 29x − 20 = (x − 5)(2x² − 5x + 4).\nFor 2x² − 5x + 4 = 0: Δ = (−5)² − 4(2)(4) = 25 − 32 = 7 > 0, and 7 is not a perfect square, so the roots x = (5 ± √7)/4 are irrational.\n5 is rational, so p(x) = 0 has exactly two irrational roots. I agree with the claim.",
+            "labels": [
+              [
+                1,
+                "Correct factorization."
+              ],
+              [
+                1,
+                "Discriminant method correct; arithmetic slip 25 − 32 = 7."
+              ],
+              [
+                1,
+                "ft: agreeing follows correctly from their Δ = 7."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "From (a), p(x) = 2x³ − 15x² + 29x − 20. p(5) = 250 − 375 + 145 − 20 = 0.\nSynthetic division by x − 5: coefficients 2, −15, 29, −20 → 2, −5, 4, remainder 0.\nSo p(x) = (x − 5)(2x² − 5x + 4).\n2x² − 5x + 4 = 2(x − 5/4)² − 25/8 + 4 = 2(x − 5/4)² + 7/8 ≥ 7/8 > 0 for all real x, so it has no real roots.\nThe only real root of p(x) = 0 is 5, which is rational. So there are no irrational roots: I disagree.",
+            "labels": [
+              [
+                1,
+                "Equivalent factorization by synthetic division."
+              ],
+              [
+                1,
+                "Equivalent: completing the square shows no real roots."
+              ],
+              [
+                1,
+                "Disagrees with the correct reason."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "I agree. The product of the roots is 20/2 = 10, which is not a perfect square, so two of the roots must be √10 and −√10, which are irrational.",
+            "labels": [
+              [
+                0,
+                "No factorization."
+              ],
+              [
+                0,
+                "No discriminant."
+              ],
+              [
+                0,
+                "Wrong verdict from an invented rule."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2022-p1-q16",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2022 Paper 1 Q16(b); HKEAA marking scheme",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "Let g(x) = 3x² + 12kx + 16k² + 8, where k is a non-zero real constant."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Using the method of completing the square, express, in terms of k, the coordinates of the vertex of the graph of y = g(x)."
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "On the same rectangular coordinate system, denote the vertex of the graph of y = g(x) and the vertex of the graph of y = 2g(−x) by A and B respectively. Let M be a point lying on AB such that the area of △OBM is triple the area of △OAM, where O is the origin. Express, in terms of k, the coordinates of M."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Finds B = (2k, 8k² + 16), the vertex of y = 2g(−x).",
+                "marks": 1
+              },
+              {
+                "text": "M1: Uses AM : MB = 1 : 3 (the triangles share the height from O to AB) with the section formula: M = ((3(−2k) + 2k)/4, (3(4k² + 8) + (8k² + 16))/4), where A = (−2k, 4k² + 8).",
+                "marks": 1
+              },
+              {
+                "text": "A1: M = (−k, 5k² + 10). Depends on both M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "A = (−2k, 4k² + 8), B = (2k, 8k² + 16); AM : MB = 1 : 3, so M = (−k, 5k² + 10)."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "From (a), g(x) = 3(x + 2k)² + 4k² + 8, so A = (−2k, 4k² + 8).\n2g(−x) = 2[3(−x + 2k)² + 4k² + 8] = 6(x − 2k)² + 8k² + 16, so B = (2k, 8k² + 16).\n△OAM and △OBM have the same height from O to AB, so AM : MB = area of △OAM : area of △OBM = 1 : 3.\nM = ((3(−2k) + 1(2k))/(1 + 3), (3(4k² + 8) + 1(8k² + 16))/(1 + 3)) = (−4k/4, (20k² + 40)/4) = (−k, 5k² + 10).",
+            "labels": [
+              [
+                1,
+                "B = (2k, 8k² + 16)."
+              ],
+              [
+                1,
+                "Ratio 1 : 3 with the section formula."
+              ],
+              [
+                1,
+                "M = (−k, 5k² + 10)."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "M = (−k, 5k² + 10)",
+            "labels": [
+              [
+                0,
+                "B not found."
+              ],
+              [
+                0,
+                "No ratio or section formula."
+              ],
+              [
+                0,
+                "Bare answer; method marks missing."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "A = (−2k, 4k² + 8) from (a).\n2g(−x) = 6(x − 2k)² + 8k² + 16, so B = (2k, 8k² + 16).\nSame height from O, so AM : MB = 1 : 3.\nM = ((3(−2k) + 2k)/4, (3(4k² + 8) + 8k² + 16)/4) = (−k, (12k² + 8 + 8k² + 16)/4) = (−k, (20k² + 24)/4) = (−k, 5k² + 6).",
+            "labels": [
+              [
+                1,
+                "B correct."
+              ],
+              [
+                1,
+                "Ratio and section formula correct; expansion slip 3(4k² + 8)."
+              ],
+              [
+                0,
+                "5k² + 6 is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "From (a), A = (−2k, 4k² + 8).\ny = 2g(−x) = 2(3x² − 12kx + 16k² + 8) = 6x² − 24kx + 32k² + 16.\nIts vertex has x = 24k/(2 × 6) = 2k and y = 6(2k)² − 24k(2k) + 32k² + 16 = 8k² + 16, so B = (2k, 8k² + 16).\nTriangles with apex O and bases on the line AB have areas in the ratio of their bases, so AM = ¼AB.\nM = A + ¼(B − A) = (−2k, 4k² + 8) + ¼(4k, 4k² + 8) = (−2k + k, 4k² + 8 + k² + 2) = (−k, 5k² + 10).",
+            "labels": [
+              [
+                1,
+                "Equivalent: B from x = −b/2a."
+              ],
+              [
+                1,
+                "Equivalent: AM = ¼AB in vector form."
+              ],
+              [
+                1,
+                "M = (−k, 5k² + 10)."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "y = 2g(−x) is g reflected in both axes and stretched, so B = (2k, −2(4k² + 8)) = (2k, −8k² − 16).\nSince the area of △OBM is triple that of △OAM, OM trisects ∠AOB, so M divides AB in the ratio 3 : 1 from A:\nM = ((−2k + 3(2k))/4, (4k² + 8 + 3(−8k² − 16))/4) = (k, −5k² − 10).",
+            "labels": [
+              [
+                0,
+                "B is wrong: g(−x) is not a reflection in the x-axis."
+              ],
+              [
+                0,
+                "Ratio reversed and justified by an invented trisection."
+              ],
+              [
+                0,
+                "Wrong coordinates."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2022-p1-q18",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2022 Paper 1 Q18(b); HKEAA marking scheme",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "In Figure 2, the triangular paper card PQR is held such that PQ lies on the horizontal ground. It is given that PQ = 30 cm, PR = 25 cm and ∠QPR = 95°."
+          },
+          {
+            "type": "image",
+            "description": "Figure 2: A flat triangular card PQR. P and Q are on the horizontal ground; the card is tilted so that the vertex R is raised above the ground. No other lengths are marked."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Find (i) the length of QR, (ii) ∠PQR."
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Let M be the mid-point of QR. A craftsman finds that the angle between PR and the horizontal ground is 70°. The craftsman claims that the angle between PM and the horizontal ground exceeds 40°. Is the claim correct? Explain your answer."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Finds PM, e.g. by the cosine rule in △PQM with QM = ½QR ≈ 20.35 cm and ∠PQR ≈ 37.74° from (a): PM² = 30² + 20.35² − 2(30)(20.35) cos 37.74°, PM ≈ 18.67 cm.",
+                "marks": 1
+              },
+              {
+                "text": "M1: Finds the height of M above the ground as half the height of R: ½(25 sin 70°) ≈ 11.75 cm.",
+                "marks": 1
+              },
+              {
+                "text": "A1 (ft): sin θ = 11.75/18.67 gives θ ≈ 39.0° < 40°, so the claim is not correct. ft from the candidate's PM and height; depends on both M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "QR ≈ 40.69, ∠PQR ≈ 37.74°; PM ≈ 18.67 cm; height of M = ½(25 sin 70°) ≈ 11.75 cm; angle ≈ 39.0° < 40°, claim not correct."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "From (a), QR ≈ 40.69 cm and ∠PQR ≈ 37.74°.\nQM = ½QR ≈ 20.35 cm.\nIn △PQM: PM² = 30² + 20.35² − 2(30)(20.35) cos 37.74° ≈ 348.6, so PM ≈ 18.67 cm.\nLet D be the projection of R on the ground. RD = 25 sin 70° ≈ 23.49 cm. Q is on the ground and M is the mid-point of QR, so the height of M above the ground is ½RD ≈ 11.75 cm.\nLet θ be the angle between PM and the ground: sin θ = 11.75/18.67 ≈ 0.6292, so θ ≈ 39.0°.\nSince 39.0° < 40°, the claim is not correct.",
+            "labels": [
+              [
+                1,
+                "PM ≈ 18.67 cm by the cosine rule."
+              ],
+              [
+                1,
+                "Height of M = ½(25 sin 70°)."
+              ],
+              [
+                1,
+                "39.0° < 40°, not correct."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_working",
+            "text": "The claim is not correct. The angle between PR and the ground is 70°, and M is the mid-point of QR, so the angle between PM and the ground is half of 70°, which is 35°. Since 35° < 40°, the angle does not exceed 40°.",
+            "labels": [
+              [
+                0,
+                "PM never found."
+              ],
+              [
+                0,
+                "Height of M never found."
+              ],
+              [
+                0,
+                "Verdict based on an invalid halving of the angle."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "From (a), QR ≈ 40.69 cm and ∠PQR ≈ 37.74°, so QM ≈ 20.35 cm.\nPM² = 30² + 20.35² − 2(30)(20.35) cos 37.74° ≈ 900 + 414.1 − 865.6 = 448.5, so PM ≈ 21.18 cm.\nHeight of R = 25 sin 70° ≈ 23.49 cm, so the height of M = 11.75 cm.\nsin θ = 11.75/21.18 ≈ 0.5548, θ ≈ 33.7° < 40°.\nThe claim is not correct.",
+            "labels": [
+              [
+                1,
+                "Cosine rule set up correctly; product evaluated as 865.6 instead of 965.6."
+              ],
+              [
+                1,
+                "Height of M correct."
+              ],
+              [
+                1,
+                "ft: 33.7° < 40° gives not correct."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "PM is the median from P, so as vectors PM = ½(PQ + PR).\n|PM|² = ¼(PQ² + PR² + 2(PQ)(PR) cos 95°) = ¼(900 + 625 + 1500 cos 95°) ≈ ¼(1525 − 130.73) ≈ 348.6, so PM ≈ 18.67 cm.\nThe height of R above the ground is 25 sin 70° ≈ 23.49 cm. Q has height 0 and M is the mid-point of QR, so M is at height ≈ 11.75 cm.\nsin θ = 11.75/18.67 ⇒ θ ≈ 39.0°, which is less than 40°.\nThe claim is not correct.",
+            "labels": [
+              [
+                1,
+                "Equivalent: PM from the median vector formula."
+              ],
+              [
+                1,
+                "Height of M = 11.75 cm."
+              ],
+              [
+                1,
+                "39.0° < 40°, not correct."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "The angle between PM and the ground equals the angle between PR and the ground scaled by PM/PR. By Apollonius' theorem PM = (PQ + PR)/2 = 27.5 cm, so the angle is 70° × 27.5/25 = 77°. Since 77° > 40°, the claim is correct.",
+            "labels": [
+              [
+                0,
+                "Apollonius misapplied; PM wrong."
+              ],
+              [
+                0,
+                "No height of M."
+              ],
+              [
+                0,
+                "Invented scaling; wrong verdict."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2023-p1-q8",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2023 Paper 1 Q8(b); no HKEAA marking scheme was published for 2023; items written by the agent in the HKEAA style (the 5 marks of Q8 split as (a) 2, (b) 3 by estimate)",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "In Figure 2, AB and CD intersect at the point E. It is given that AC // DB."
+          },
+          {
+            "type": "image",
+            "description": "Figure 2: Segments AB and CD cross at E. A and C are on one side of E with AC drawn; B and D are on the other side with DB drawn. AC is parallel to DB, so △ACE and △BDE are on opposite sides of E with vertically opposite angles at E."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Prove that △ACE ~ △BDE."
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Suppose that AB = 20 cm, AC = 10 cm, BD = 15 cm and CE = 7 cm. Is △BDE a right-angled triangle? Explain your answer."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Uses the similar triangles of (a), AE : BE = CE : DE = AC : BD = 10 : 15, to find the sides of △BDE.",
+                "marks": 1
+              },
+              {
+                "text": "A1: BE = 12 cm and DE = 10.5 cm (both). Depends on the M1 above.",
+                "marks": 1
+              },
+              {
+                "text": "A1 (ft): Tests the converse of Pythagoras' theorem on the longest side (BE² + DE² = 254.25 ≠ BD² = 225) and concludes that △BDE is not right-angled. ft from the candidate's sides; depends on the M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "AE : BE = 2 : 3 with AE + BE = 20 gives BE = 12, DE = 10.5; 12² + 10.5² = 254.25 ≠ 15² = 225, so not right-angled."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "By (a), △ACE ~ △BDE, so AE/BE = CE/DE = AC/BD = 10/15 = 2/3.\nAE + BE = AB = 20, so BE = 20 × 3/5 = 12 cm.\nDE = CE × 3/2 = 7 × 1.5 = 10.5 cm.\nIn △BDE the longest side is BD = 15 cm.\nBE² + DE² = 12² + 10.5² = 144 + 110.25 = 254.25\nBD² = 15² = 225\nSince BE² + DE² ≠ BD², △BDE is not a right-angled triangle.",
+            "labels": [
+              [
+                1,
+                "Ratio 2 : 3 from the similar triangles."
+              ],
+              [
+                1,
+                "BE = 12, DE = 10.5."
+              ],
+              [
+                1,
+                "Converse of Pythagoras fails; not right-angled."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "No, △BDE is not a right-angled triangle.",
+            "labels": [
+              [
+                0,
+                "No sides found."
+              ],
+              [
+                0,
+                "No sides found."
+              ],
+              [
+                0,
+                "Verdict without the Pythagoras test."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "By (a), AE/BE = AC/BD = 10/15 = 2/3 and CE/DE = 2/3.\nAE + BE = 20, so BE = 20 × 2/5 = 8 cm.\nDE = 7 × 15/10 = 10.5 cm.\nThe longest side is BD = 15 cm.\nBE² + DE² = 64 + 110.25 = 174.25 ≠ 225 = BD².\nSo △BDE is not a right-angled triangle.",
+            "labels": [
+              [
+                1,
+                "Similarity ratio used correctly."
+              ],
+              [
+                0,
+                "BE = 8 is AE's share, not BE."
+              ],
+              [
+                1,
+                "ft: Pythagoras test with their sides, not right-angled."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "By (a), △ACE ~ △BDE, so their corresponding angles are equal; △BDE is right-angled exactly when △ACE is.\nAE/BE = AC/BD = 2/3 and AE + BE = 20, so AE = 8 cm.\nIn △ACE the longest side is AC = 10 cm.\nAE² + CE² = 64 + 49 = 113 ≠ 100 = AC².\nSo △ACE is not right-angled, hence △BDE is not a right-angled triangle.",
+            "labels": [
+              [
+                1,
+                "Similarity ratio used."
+              ],
+              [
+                1,
+                "Equivalent accuracy: AE = 8 cm for the similar △ACE."
+              ],
+              [
+                1,
+                "Pythagoras test on △ACE transferred by similarity."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "Since AC // DB, ∠ACE + ∠BDE = 180° (int. ∠s, AC // DB). As the triangles are similar, these two angles are equal, so each is 90°. Hence △BDE is right-angled at D, with BE = √(BD² + DE²) = √(225 + 49) ≈ 16.6 cm.",
+            "labels": [
+              [
+                0,
+                "Alternate angles called co-interior; no valid ratio."
+              ],
+              [
+                0,
+                "No correct sides."
+              ],
+              [
+                0,
+                "Wrong verdict from false angle facts."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2023-p1-q11",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2023 Paper 1 Q11(b); no HKEAA marking scheme was published for 2023; items written by the agent in the HKEAA style",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "The table below shows the distribution of the numbers of calculators owned by a class of students. The mean of the distribution is 2."
+          },
+          {
+            "type": "table",
+            "rows": [
+              [
+                "Number of calculators owned",
+                "1",
+                "2",
+                "3",
+                "4"
+              ],
+              [
+                "Number of students",
+                "8",
+                "5",
+                "n",
+                "1"
+              ]
+            ]
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Find the median, the inter-quartile range and the variance of the distribution."
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Two students now withdraw from the class. It is found that the mean of the distribution remains unchanged. Is there any change in the range of the distribution due to the withdrawal of the two students? Explain your answer."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Uses the unchanged mean to find what the two students own: together 2 × 2 = 4 calculators (with n = 6: 40 calculators for 20 students before, 36 for 18 after).",
+                "marks": 1
+              },
+              {
+                "text": "A1: Correct argument: the two students own 1 and 3, or 2 and 2, calculators (4 and 0 is impossible), so the student owning 4 and some students owning 1 remain; the range stays 4 − 1 = 3, so there is no change. Depends on the M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "n = 6; the two who leave own 4 in total, i.e. (1, 3) or (2, 2); max 4 and min 1 remain, so the range stays 3: no change."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "8(1) + 5(2) + 3n + 4 = 2(14 + n) ⇒ 22 + 3n = 28 + 2n ⇒ n = 6.\nSo 20 students own 40 calculators.\nAfter two students withdraw the mean is still 2, so the other 18 own 36 calculators, and the two who left own 4 calculators in total.\nThe possible pairs are 1 and 3, or 2 and 2 (4 and 0 is impossible since nobody owns 0).\nSo the student owning 4 calculators stays, and at least 7 students owning 1 calculator stay.\nRange = 4 − 1 = 3 before and after, so there is no change in the range.",
+            "labels": [
+              [
+                1,
+                "The two students own 4 in total."
+              ],
+              [
+                1,
+                "Pairs (1, 3) or (2, 2); max and min remain."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_working",
+            "text": "No change. The range depends only on the number of different values, 1, 2, 3 and 4, and withdrawing two students does not remove any category, so the range is still 4.",
+            "labels": [
+              [
+                0,
+                "The unchanged mean is never used."
+              ],
+              [
+                0,
+                "Invalid reasoning; the range is 3, not 4."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "8 + 10 + 3n + 4 = 2(14 + n) ⇒ n = 6, so 20 students own 40 calculators.\nThe mean stays 2, so the remaining 18 students own 2 × 18 = 38 calculators and the two who left own 40 − 38 = 2 calculators, so both own 1 calculator.\nThe student owning 4 stays and 6 students owning 1 stay, so the range is still 4 − 1 = 3. There is no change.",
+            "labels": [
+              [
+                1,
+                "Unchanged-mean method; 2 × 18 slipped to 38."
+              ],
+              [
+                0,
+                "Pairs wrong (both own 1), so the required argument is not correct."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "If removing two values leaves the mean unchanged, the two removed values must themselves have mean 2, i.e. they add up to 4.\nEvery value is between 1 and 4. If the student owning 4 calculators left, the other student would own 0, which is impossible, so the maximum 4 remains.\nThere are 8 students owning 1 calculator and at most 2 can leave, so the minimum 1 remains.\nThe range stays 4 − 1 = 3: no change.",
+            "labels": [
+              [
+                1,
+                "Equivalent: removed values have mean 2, total 4."
+              ],
+              [
+                1,
+                "Maximum and minimum both shown to remain."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "When students withdraw, the range always decreases by the number of students who leave divided by the mean, here 2 ÷ 2 = 1. The original range is 4 − 1 = 3, so the new range is 2. There is a change.",
+            "labels": [
+              [
+                0,
+                "Invented rule; the mean condition is not used."
+              ],
+              [
+                0,
+                "Wrong verdict."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2023-p1-q12",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2023 Paper 1 Q12(b); no HKEAA marking scheme was published for 2023; items written by the agent in the HKEAA style",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "It is given that f(x) is partly constant and partly varies as x². Suppose that f(10) = 62 and f(15) = 122."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Find f(5)."
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Suppose that U(0, u) and V(5, v) are points lying on the graph of y = f(x). The horizontal line passing through V cuts the y-axis at the point W. Denote the circle which passes through U, V and W by C. Express the circumference of C in terms of π."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Uses f(x) = 14 + (12/25)x² to get u = 14 and v = 26, so U = (0, 14), V = (5, 26) and W = (0, 26).",
+                "marks": 1
+              },
+              {
+                "text": "M1: Recognizes that ∠UWV = 90° (UW is vertical, WV is horizontal), so UV is a diameter of C.",
+                "marks": 1
+              },
+              {
+                "text": "M1: Finds UV = √(5² + 12²) = 13.",
+                "marks": 1
+              },
+              {
+                "text": "A1: Circumference = 13π. Depends on the M1 marks above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "f(x) = 14 + 0.48x²; U(0, 14), V(5, 26), W(0, 26); ∠UWV = 90° so UV = 13 is a diameter; circumference 13π."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "Let f(x) = a + bx². Then a + 100b = 62 and a + 225b = 122, so b = 12/25 and a = 14.\nu = f(0) = 14 and v = f(5) = 14 + 12 = 26, so U = (0, 14), V = (5, 26) and W = (0, 26).\nUW is vertical and WV is horizontal, so ∠UWV = 90°. Hence UV is a diameter of C (converse of ∠ in semi-circle).\nUV = √((5 − 0)² + (26 − 14)²) = √(25 + 144) = 13.\nCircumference of C = 13π.",
+            "labels": [
+              [
+                1,
+                "U, V, W found."
+              ],
+              [
+                1,
+                "Right angle at W, UV diameter."
+              ],
+              [
+                1,
+                "UV = 13."
+              ],
+              [
+                1,
+                "13π."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "The circumference of C is 13π.",
+            "labels": [
+              [
+                0,
+                "U and V not found."
+              ],
+              [
+                0,
+                "No diameter argument."
+              ],
+              [
+                0,
+                "UV not computed."
+              ],
+              [
+                0,
+                "Bare answer; method marks missing."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "f(x) = 14 + 0.48x², so U = (0, 14), V = (5, 26) and W = (0, 26).\n∠UWV = 90° since UW is vertical and WV is horizontal, so UV is a diameter of C.\nUV = √(5² + 12²) = √(25 + 144) = √149.\nCircumference = √149 π.",
+            "labels": [
+              [
+                1,
+                "U, V, W found."
+              ],
+              [
+                1,
+                "UV recognised as a diameter."
+              ],
+              [
+                1,
+                "Distance formula correct; 25 + 144 slipped to 149."
+              ],
+              [
+                0,
+                "√149 π is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "f(x) = 14 + (12/25)x², so U = (0, 14), V = (5, 26) and W = (0, 26).\nLet C: x² + y² + Dx + Ey + F = 0.\nU: 196 + 14E + F = 0\nW: 676 + 26E + F = 0\nSubtracting: 480 + 12E = 0 ⇒ E = −40, F = 364.\nV: 25 + 676 + 5D − 1040 + 364 = 0 ⇒ 5D = −25 ⇒ D = −5.\nCentre (5/2, 20), radius = √(25/4 + 400 − 364) = √(169/4) = 13/2.\nCircumference = 2π(13/2) = 13π.",
+            "labels": [
+              [
+                1,
+                "U, V, W found."
+              ],
+              [
+                1,
+                "Equivalent: circle found from the general equation."
+              ],
+              [
+                1,
+                "Equivalent: radius 13/2."
+              ],
+              [
+                1,
+                "13π."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "U, V and W all lie on a parabola, so C is its circle of curvature, whose radius equals the focal length 1/(4b) of y = 14 + (12/25)x², i.e. 25/48. Circumference = 2π(25/48) = 25π/24.",
+            "labels": [
+              [
+                0,
+                "U, V, W never found."
+              ],
+              [
+                0,
+                "No diameter argument; W is not on the parabola anyway."
+              ],
+              [
+                0,
+                "No valid length."
+              ],
+              [
+                0,
+                "Wrong answer."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2023-p1-q16",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2023 Paper 1 Q16(a)(b); no HKEAA marking scheme was published for 2023; items written by the agent in the HKEAA style",
+      "question": {
+        "stem": [],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Let a and b be real constants. If the roots of the equation x² + ax + b = 0 are p and 5p, prove that 5a² = 36b."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Uses the sum and product of roots: p + 5p = −a and (p)(5p) = b.",
+                "marks": 1
+              },
+              {
+                "text": "Completes the proof: eliminates p correctly (e.g. p = −a/6, so b = 5a²/36) to reach 5a² = 36b. Depends on the M1 above; no credit for restating or assuming the result.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "6p = −a and 5p² = b, so b = 5(a/6)² = 5a²/36, i.e. 5a² = 36b."
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Denote the circle x² + y² − 6x − 12y + 20 = 0 by C. Find the constant m such that the straight line y = mx cuts C at the points Q and R with OQ : QR = 1 : 4, where O is the origin."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Substitutes y = mx into the equation of C: (1 + m²)x² − (6 + 12m)x + 20 = 0.",
+                "marks": 1
+              },
+              {
+                "text": "M1: Uses OQ : QR = 1 : 4, so OQ : OR = 1 : 5 and the x-coordinates of Q and R are p and 5p, and applies (a): 5(6 + 12m)²/(1 + m²)² = 36 × 20/(1 + m²).",
+                "marks": 1
+              },
+              {
+                "text": "A1: m = 3/4. Depends on both M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "(1 + m²)x² − (6 + 12m)x + 20 = 0 with roots p, 5p; by (a) 5(6 + 12m)² = 720(1 + m²), so 144m = 108, m = 3/4."
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "correct",
+            "text": "Sum of roots: p + 5p = −a ⇒ p = −a/6.\nProduct of roots: p(5p) = b ⇒ 5p² = b.\nSo b = 5(−a/6)² = 5a²/36, i.e. 5a² = 36b.",
+            "labels": [
+              [
+                1,
+                "Sum and product of roots."
+              ],
+              [
+                1,
+                "p eliminated to reach the result."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_working",
+            "text": "Since p and 5p are the roots, the sum of roots is b and the product is a, so 6p = b and 5p² = a.\nThen a = 5p² = 5(b/6)² = 5b²/36, so 36a = 5b², which is the same as 5a² = 36b.",
+            "labels": [
+              [
+                0,
+                "Sum and product of roots stated wrongly."
+              ],
+              [
+                0,
+                "Derives 36a = 5b², then falsely equates it with the result."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "Sum of roots: 6p = −a ⇒ p = −a/6.\nProduct of roots: 5p² = b.\nb = 5(−a/6)² = 5a²/12, so 5a² = 12b.",
+            "labels": [
+              [
+                1,
+                "Sum and product of roots."
+              ],
+              [
+                0,
+                "Squaring slip; the result 5a² = 36b is not reached."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "By the quadratic formula the roots are (−a ± √D)/2 with D = a² − 4b.\nOne root is 5 times the other.\nIf (−a + √D)/2 = 5(−a − √D)/2, then 6√D = −4a; if (−a − √D)/2 = 5(−a + √D)/2, then 6√D = 4a.\nEither way 36D = 16a², so D = 4a²/9.\na² − 4b = 4a²/9 ⇒ 4b = 5a²/9 ⇒ 5a² = 36b.",
+            "labels": [
+              [
+                1,
+                "Equivalent: relates the roots via the quadratic formula."
+              ],
+              [
+                1,
+                "Valid elimination reaching 5a² = 36b."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "Since 5p is a root, substituting into the derivative 2x + a = 0 gives a = −10p. Since p is a root, substituting into the second derivative gives 2 = b/p², so b = 2p².\nThen 5a² = 500p² and 36b = 72p², and since both are multiples of p², 5a² = 36b.",
+            "labels": [
+              [
+                0,
+                "Derivatives are irrelevant; no sum or product of roots."
+              ],
+              [
+                0,
+                "500p² ≠ 72p²; the result is merely asserted."
+              ]
+            ]
+          }
+        ],
+        "b": [
+          {
+            "kind": "correct",
+            "text": "Substitute y = mx into x² + y² − 6x − 12y + 20 = 0:\nx² + m²x² − 6x − 12mx + 20 = 0\n(1 + m²)x² − (6 + 12m)x + 20 = 0.\nO, Q and R are collinear with OQ : QR = 1 : 4, so OQ : OR = 1 : 5, hence the x-coordinates of Q and R are p and 5p for some p.\nDividing by 1 + m², the equation is x² + ax + b = 0 with a = −(6 + 12m)/(1 + m²) and b = 20/(1 + m²).\nBy (a), 5a² = 36b:\n5(6 + 12m)²/(1 + m²)² = 720/(1 + m²)\n5(6 + 12m)² = 720(1 + m²)\n(6 + 12m)² = 144 + 144m²\n36 + 144m + 144m² = 144 + 144m²\n144m = 108\nm = 3/4",
+            "labels": [
+              [
+                1,
+                "Substitution gives the quadratic in x."
+              ],
+              [
+                1,
+                "Roots p and 5p with (a) applied."
+              ],
+              [
+                1,
+                "m = 3/4."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "m = 3/4",
+            "labels": [
+              [
+                0,
+                "No substitution shown."
+              ],
+              [
+                0,
+                "No use of the ratio or of (a)."
+              ],
+              [
+                0,
+                "Bare answer; method marks missing."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "(1 + m²)x² − (6 + 12m)x + 20 = 0. OQ : OR = 1 : 5, so the roots are p and 5p.\nBy (a): 5(6 + 12m)²/(1 + m²)² = 36 × 20/(1 + m²)\n5(6 + 12m)² = 720(1 + m²)\n(6 + 12m)² = 144(1 + m²)\n36 + 72m + 144m² = 144 + 144m²\n72m = 108\nm = 3/2",
+            "labels": [
+              [
+                1,
+                "Substitution correct."
+              ],
+              [
+                1,
+                "Ratio and (a) applied; expansion slip 72m for 144m."
+              ],
+              [
+                0,
+                "m = 3/2 is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "Points of y = mx have the form (t, mt). Since OQ : OR = 1 : 5 on the same ray from O, let Q = (p, mp) and R = (5p, 5mp).\nBoth lie on C:\np²(1 + m²) − p(6 + 12m) + 20 = 0 … (1)\n25p²(1 + m²) − 5p(6 + 12m) + 20 = 0 … (2)\n(2) − 5 × (1): 20p²(1 + m²) − 80 = 0 ⇒ p²(1 + m²) = 4.\nThen (1): 4 − p(6 + 12m) + 20 = 0 ⇒ p = 24/(6 + 12m) = 4/(1 + 2m).\n16(1 + m²)/(1 + 2m)² = 4 ⇒ 4 + 4m² = 1 + 4m + 4m² ⇒ m = 3/4.",
+            "labels": [
+              [
+                1,
+                "Points of the line substituted into C."
+              ],
+              [
+                1,
+                "Equivalent: OR = 5OQ used directly without (a)."
+              ],
+              [
+                1,
+                "m = 3/4."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "OQ : QR = 1 : 4 happens exactly when the line passes through the centre (3, 6) of C, because a diameter is then divided in the golden ratio by the circle. So m = 6/3 = 2.",
+            "labels": [
+              [
+                0,
+                "No substitution."
+              ],
+              [
+                0,
+                "Invented condition; the ratio is not used."
+              ],
+              [
+                0,
+                "m = 2 is wrong."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2024-p1-q8",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2024 Paper 1 Q8(b); HKEAA marking scheme",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "In Figure 1, E is the point of intersection of AC and BD. It is given that ∠ACB = ∠ADB = 90° and AD = BC."
+          },
+          {
+            "type": "image",
+            "description": "Figure 1: A at the lower left and B at the lower right, with AB as the common base. D is above the base, nearer A; C is above the base, nearer B. The diagonals AC and BD cross at E. Right angles are marked at D (∠ADB) and at C (∠ACB). The pentagon ABCED has vertices A, B, C, E, D in order."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Prove that △ABC ≅ △BAD."
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "If AD = 12 cm and DE = 9 cm, find the area of the pentagon ABCED."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: AE = √(AD² + DE²) = √(12² + 9²) = 15 cm (Pythagoras' theorem in △ADE).",
+                "marks": 1
+              },
+              {
+                "text": "M1: Uses (a): ∠ABE = ∠BAE (corresponding angles of the congruent triangles), so BE = AE = 15 cm; hence CE = DE = 9 cm and BD = 24 cm.",
+                "marks": 1
+              },
+              {
+                "text": "A1: Area = ½(AD)(BD) + ½(BC)(CE) = ½(12)(24) + ½(12)(9) = 198 cm². Depends on both M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "AE = 15; by (a) BE = AE = 15, CE = 9; area = ½(12)(24) + ½(12)(9) = 198 cm²."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "In △ADE, ∠ADE = 90°, so AE = √(12² + 9²) = 15 cm (Pyth. theorem).\nBy (a), △ABC ≅ △BAD, so ∠BAC = ∠ABD (corr. ∠s, ≅△), i.e. ∠BAE = ∠ABE. Hence BE = AE = 15 cm (sides opp. equal ∠s).\nBD = BE + DE = 15 + 9 = 24 cm, and BC = AD = 12 cm.\nIn △BCE, ∠BCE = 90°, so CE = √(15² − 12²) = 9 cm.\nArea of ABCED = area of △ABD + area of △BCE = ½(12)(24) + ½(12)(9) = 144 + 54 = 198 cm².",
+            "labels": [
+              [
+                1,
+                "AE = 15 cm."
+              ],
+              [
+                1,
+                "BE = AE from (a)."
+              ],
+              [
+                1,
+                "198 cm²."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_working",
+            "text": "The pentagon is made of △ADE, △BCE and △ABE.\n△ADE and △BCE are congruent (by (a)), each with area ½ × 12 × 9 = 54 cm².\n△ABE has area AD × DE − 18 = 108 − 18 = 90 cm².\nTotal = 54 + 54 + 90 = 198 cm².",
+            "labels": [
+              [
+                0,
+                "AE is never found."
+              ],
+              [
+                0,
+                "BE = AE is never established."
+              ],
+              [
+                0,
+                "Area of △ABE is invented; 198 is not supported."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "AE = √(12² + 9²) = 15 cm.\nBy (a), ∠ABE = ∠BAE, so BE = AE = 15 cm.\nBD = 15 + 9 = 24 cm. CE = √(15² − 12²) = 9 cm.\nArea = ½(12)(24) + ½(12)(9) = 144 + 45 = 189 cm².",
+            "labels": [
+              [
+                1,
+                "AE = 15 cm."
+              ],
+              [
+                1,
+                "BE = AE from (a)."
+              ],
+              [
+                0,
+                "½(12)(9) slipped to 45; 189 is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "AE = √(12² + 9²) = 15 cm (Pyth. theorem).\nIn △ADE and △BCE: ∠ADE = ∠BCE = 90° (given), ∠AED = ∠BEC (vert. opp. ∠s), AD = BC (given), so △ADE ≅ △BCE (AAS).\nHence BE = AE = 15 cm and CE = DE = 9 cm (corr. sides, ≅△).\nArea of △ABE = ½ × BE × AD = ½ × 15 × 12 = 90 cm² (AD ⊥ BE).\nArea of △ADE = area of △BCE = ½ × 12 × 9 = 54 cm².\nArea of ABCED = 90 + 54 + 54 = 198 cm².",
+            "labels": [
+              [
+                1,
+                "AE = 15 cm."
+              ],
+              [
+                1,
+                "Equivalent: BE = AE from △ADE ≅ △BCE instead of (a)."
+              ],
+              [
+                1,
+                "198 cm²."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "By (a), the pentagon is symmetric about AB, so its area is twice the kite ADEB. The kite has diagonals AB = AD + DE = 21 cm and DE = 9 cm, so its area is ½ × 21 × 9 = 94.5 cm². Pentagon = 2 × 94.5 = 189 cm².",
+            "labels": [
+              [
+                0,
+                "No Pythagoras; AB = AD + DE is false."
+              ],
+              [
+                0,
+                "BE = AE not found."
+              ],
+              [
+                0,
+                "Invented symmetry; wrong area."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2024-p1-q12",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2024 Paper 1 Q12(b); HKEAA marking scheme",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "Denote the origin by O."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "A and B are points lying on the positive x-axis such that the x-coordinate of A is greater than the x-coordinate of B. A vertical line which passes through B cuts the straight line y = mx at the point C such that AB = BC, where m is a positive constant. Let D be a point such that ABCD is a square. Express the slope of OD in terms of m."
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "The coordinates of the points M and N are (6, 5) and (10, 0) respectively. Let P and Q be points lying on OM and MN respectively while R and S be points lying on the x-axis. If the quadrilateral PQRS is a square, find the x-coordinate of P."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Uses (a) with m = slope of OM = 5/6: slope of OQ = (5/6)/(5/6 + 1) = 5/11, so OQ is y = 5x/11.",
+                "marks": 1
+              },
+              {
+                "text": "M1: Equation of MN: y = −(5/4)(x − 10), i.e. y = −5x/4 + 25/2.",
+                "marks": 1
+              },
+              {
+                "text": "M1: Solves for Q = (22/3, 10/3) and takes the x-coordinate of P as 22/3 − 10/3 (x-coordinate of Q minus the side of the square, which equals the y-coordinate of Q).",
+                "marks": 1
+              },
+              {
+                "text": "A1: The x-coordinate of P is 4. Depends on the M1 marks above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "Slope of OQ = 5/11 by (a); MN: y = −5x/4 + 25/2; Q = (22/3, 10/3); x-coordinate of P = 22/3 − 10/3 = 4."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "Slope of OM = 5/6. In (a) with m = 5/6, P plays the role of C and Q the role of D, so the slope of OQ = (5/6)/(5/6 + 1) = 5/11, and OQ is y = 5x/11.\nMN: slope = (5 − 0)/(6 − 10) = −5/4, so y = −5/4 (x − 10) = −5x/4 + 25/2.\nSolving 5x/11 = −5x/4 + 25/2: multiply by 44: 20x = −55x + 550 ⇒ x = 22/3, y = 10/3. So Q = (22/3, 10/3).\nThe side of the square = 10/3, so the x-coordinate of P = 22/3 − 10/3 = 4.",
+            "labels": [
+              [
+                1,
+                "Slope of OQ = 5/11 from (a)."
+              ],
+              [
+                1,
+                "Equation of MN."
+              ],
+              [
+                1,
+                "Q found; x_P = x_Q − side."
+              ],
+              [
+                1,
+                "4."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "The x-coordinate of P is 4.",
+            "labels": [
+              [
+                0,
+                "No use of (a)."
+              ],
+              [
+                0,
+                "No equation of MN."
+              ],
+              [
+                0,
+                "Q not found."
+              ],
+              [
+                0,
+                "Bare answer; method marks missing."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "Slope of OM = 5/6, so by (a) the slope of OQ = (5/6)/(11/6) = 5/11: y = 5x/11.\nMN: y = −5/4 (x − 10) = −5x/4 + 25/2.\n5x/11 = −5x/4 + 25/2 ⇒ (× 44) 20x = −55x + 500 ⇒ 75x = 500 ⇒ x = 20/3, y = 100/33.\nx-coordinate of P = 20/3 − 100/33 = 120/33 = 40/11.",
+            "labels": [
+              [
+                1,
+                "Slope of OQ from (a)."
+              ],
+              [
+                1,
+                "Equation of MN."
+              ],
+              [
+                1,
+                "Method for Q and x_P right; 550 slipped to 500."
+              ],
+              [
+                0,
+                "40/11 is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "OM is y = 5x/6. Let P = (p, 5p/6). The square has side s = 5p/6, with S = (p, 0), R = (p + s, 0) and Q = (p + s, s) = (11p/6, 5p/6).\nMN: y = −5/4 (x − 10).\nQ lies on MN: 5p/6 = −5/4 (11p/6 − 10).\nMultiply by 24: 20p = −30(11p/6 − 10) = −55p + 300 ⇒ 75p = 300 ⇒ p = 4.\nThe x-coordinate of P is 4.",
+            "labels": [
+              [
+                1,
+                "Equivalent: Q = (11p/6, 5p/6) written directly instead of using (a)."
+              ],
+              [
+                1,
+                "Equation of MN."
+              ],
+              [
+                1,
+                "Equivalent: Q substituted into MN and solved."
+              ],
+              [
+                1,
+                "4."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "A square inscribed in a triangle with two vertices on the base always touches the other two sides at their mid-points, so P is the mid-point of OM: P = (3, 2.5). The x-coordinate of P is 3.",
+            "labels": [
+              [
+                0,
+                "Invented property; (a) not used."
+              ],
+              [
+                0,
+                "No equation of MN."
+              ],
+              [
+                0,
+                "Q not found."
+              ],
+              [
+                0,
+                "3 is wrong."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2024-p1-q13",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2024 Paper 1 Q13(b); HKEAA marking scheme",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "The base of a solid right pyramid is a square of side 64 cm. The height of the pyramid is 24 cm. The pyramid is divided into a frustum X and a pyramid Y by a plane which is parallel to its base. It is given that the height of Y is 18 cm."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Find the volume of X."
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "The base of another solid right pyramid is a square. This pyramid is divided into a frustum Z and a pyramid by a plane which is parallel to its base. The height and the total surface area of Z are 3 cm and 960 cm² respectively. Are X and Z similar? Explain your answer."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Area of each lateral face of X: the top side is (18/24)(64) = 48 cm and the slant height of the face is √(6² + 8²) = 10 cm, so the area is ½(64 + 48)(10) = 560 cm².",
+                "marks": 1
+              },
+              {
+                "text": "M1: Total surface area of X = 4(560) + 64² + 48² = 8640 cm².",
+                "marks": 1
+              },
+              {
+                "text": "M1: Compares the ratio of the total surface areas, 8640/960 = 9, with the square of the ratio of the heights, (6/3)² = 4.",
+                "marks": 1
+              },
+              {
+                "text": "A1 (ft): Since 9 ≠ 4, X and Z are not similar. ft from the candidate's surface area; depends on the M1 marks above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "Lateral face 560 cm², TSA of X = 8640 cm²; 8640/960 = 9 ≠ (6/3)² = 4, so not similar."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "Height of X = 24 − 18 = 6 cm. Top side of X = 64 × 18/24 = 48 cm.\nSlant height of each lateral face = √(6² + ((64 − 48)/2)²) = √(36 + 64) = 10 cm.\nArea of each lateral face = ½(64 + 48)(10) = 560 cm².\nTotal surface area of X = 4(560) + 64² + 48² = 2240 + 4096 + 2304 = 8640 cm².\n(Total surface area of X)/(Total surface area of Z) = 8640/960 = 9.\n(Height of X/Height of Z)² = (6/3)² = 4.\nSince 9 ≠ 4, X and Z are not similar.",
+            "labels": [
+              [
+                1,
+                "Lateral face 560 cm²."
+              ],
+              [
+                1,
+                "TSA 8640 cm²."
+              ],
+              [
+                1,
+                "9 compared with 4."
+              ],
+              [
+                1,
+                "Not similar."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_working",
+            "text": "Not similar. For similar solids the ratio of the volumes equals the ratio of the heights. The volume of X is 18 944 cm³ and the height ratio is 6 : 3 = 2, so a similar Z would have volume 9472 cm³; but Z has a total surface area of only 960 cm², too small for that volume. So X and Z are not similar.",
+            "labels": [
+              [
+                0,
+                "No lateral face area."
+              ],
+              [
+                0,
+                "No total surface area of X."
+              ],
+              [
+                0,
+                "Wrong similarity rule; no valid comparison."
+              ],
+              [
+                0,
+                "Verdict not supported by a valid comparison."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "Top side of X = 48 cm, slant height of each face = √(6² + 8²) = 10 cm.\nEach lateral face = ½(64 + 48)(10) = 560 cm².\nTotal surface area of X = 4(560) + 64² + 48² = 2240 + 4096 + 2304 = 8460 cm².\n8460/960 = 8.8125 and (6/3)² = 4.\n8.8125 ≠ 4, so X and Z are not similar.",
+            "labels": [
+              [
+                1,
+                "Lateral face 560 cm²."
+              ],
+              [
+                1,
+                "Correct TSA expression; addition slip 8460."
+              ],
+              [
+                1,
+                "Ratio compared with (6/3)²."
+              ],
+              [
+                1,
+                "ft: not similar follows."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "Slant height of a face of the whole pyramid = √(24² + 32²) = 40 cm. Y is similar to the whole pyramid with ratio 18/24 = 3/4, so its base side is 48 cm and its face slant height is 30 cm.\nEach lateral face of X = ½(64)(40) − ½(48)(30) = 1280 − 720 = 560 cm².\nTotal surface area of X = 4(560) + 64² + 48² = 8640 cm².\nIf X and Z were similar, the linear ratio would be 6/3 = 2. But the area ratio 8640/960 = 9 gives a linear ratio √9 = 3 ≠ 2.\nSo X and Z are not similar.",
+            "labels": [
+              [
+                1,
+                "Equivalent: face area as a difference of similar triangles."
+              ],
+              [
+                1,
+                "TSA 8640 cm²."
+              ],
+              [
+                1,
+                "Equivalent comparison of linear ratios 3 and 2."
+              ],
+              [
+                1,
+                "Not similar."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "X and Z are both frustums of right pyramids with square bases, and all square pyramids are similar because all squares are similar. Therefore X and Z are similar.",
+            "labels": [
+              [
+                0,
+                "No lateral face area."
+              ],
+              [
+                0,
+                "No total surface area."
+              ],
+              [
+                0,
+                "No comparison."
+              ],
+              [
+                0,
+                "Wrong verdict from a false claim."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2024-p1-q15",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2024 Paper 1 Q15 (single part); HKEAA marking scheme",
+      "question": {
+        "stem": [],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "It is given that log₉ y is a linear function of log₃ x. Denote the graph of the linear function by L. The slope of L is 4 and L passes through the point (5, 22). Express y in terms of x."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Equation of L: log₉ y − 22 = 4(log₃ x − 5), i.e. log₉ y = 4 log₃ x + 2.",
+                "marks": 1
+              },
+              {
+                "text": "M1: Uses log laws or change of base correctly, e.g. log₉ y = log₃ x⁴ + 2, log₉ y = log₃ 9x⁴, or log₃ y / log₃ 9 = log₃ 9x⁴ (any one).",
+                "marks": 1
+              },
+              {
+                "text": "A1: y = 81x⁸. Depends on both M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "log₉ y = 4 log₃ x + 2 ⇒ log₃ y = 8 log₃ x + 4 ⇒ y = 81x⁸."
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "correct",
+            "text": "Equation of L: log₉ y − 22 = 4(log₃ x − 5)\nlog₉ y = 4 log₃ x + 2\nlog₃ y / log₃ 9 = 4 log₃ x + 2\nlog₃ y = 2(4 log₃ x + 2) = 8 log₃ x + 4\nlog₃ y = log₃ x⁸ + log₃ 81 = log₃(81x⁸)\ny = 81x⁸",
+            "labels": [
+              [
+                1,
+                "Equation of L."
+              ],
+              [
+                1,
+                "Change of base and log laws."
+              ],
+              [
+                1,
+                "y = 81x⁸."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "y = 81x⁸",
+            "labels": [
+              [
+                0,
+                "No equation of L."
+              ],
+              [
+                0,
+                "No log laws shown."
+              ],
+              [
+                0,
+                "Bare answer; method marks missing."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "log₉ y − 22 = 4(log₃ x − 5)\nlog₉ y = 4 log₃ x − 2\nlog₃ y / 2 = 4 log₃ x − 2\nlog₃ y = 8 log₃ x − 4 = log₃(x⁸/81)\ny = x⁸/81",
+            "labels": [
+              [
+                1,
+                "Equation of L written correctly."
+              ],
+              [
+                1,
+                "Change of base correct; −20 + 22 slipped to −2."
+              ],
+              [
+                0,
+                "y = x⁸/81 is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "Let X = log₃ x and Y = log₉ y. L: Y = 4X + c, and 22 = 4(5) + c gives c = 2.\nSo log₉ y = 4 log₃ x + 2.\ny = 9^(4 log₃ x + 2) = 81 × 9^(4 log₃ x) = 81 × (3²)^(4 log₃ x) = 81 × 3^(8 log₃ x) = 81 × (3^(log₃ x))⁸ = 81x⁸.",
+            "labels": [
+              [
+                1,
+                "Equation of L."
+              ],
+              [
+                1,
+                "Equivalent: index laws instead of log laws."
+              ],
+              [
+                1,
+                "y = 81x⁸."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "Since log₉ y is a linear function of log₃ x, y is a linear function of x with the same slope, so y = 4x + c. L passes through (5, 22), so 22 = 20 + c, c = 2. Hence y = 4x + 2.",
+            "labels": [
+              [
+                0,
+                "The log equation of L is never written."
+              ],
+              [
+                0,
+                "Logs simply dropped; no valid log law."
+              ],
+              [
+                0,
+                "Wrong expression."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2024-p1-q16",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2024 Paper 1 Q16(b); HKEAA marking scheme",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "In a bag, there are 16 red cups and 4 white cups. If 5 cups are randomly drawn from the bag at the same time, find"
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "the probability that exactly 1 white cup is drawn;"
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "the probability that at most 3 red cups are drawn."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Uses 1 − P(5 red) − P(4 red) = 1 − C(16,5)/C(20,5) − C(16,4)C(4,1)/C(20,5), where P(4 red) is the result of (a).",
+                "marks": 1
+              },
+              {
+                "text": "A1: 241/969 (r.t. 0.249). Depends on the M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "1 − 4368/15 504 − 7280/15 504 = 3856/15 504 = 241/969."
+          }
+        ]
+      },
+      "answers": {
+        "b": [
+          {
+            "kind": "correct",
+            "text": "Total number of ways = C(20,5) = 15 504.\nP(5 red) = C(16,5)/C(20,5) = 4368/15 504.\nP(4 red) = C(16,4)C(4,1)/C(20,5) = 7280/15 504 (this is (a)).\nP(at most 3 red) = 1 − (4368 + 7280)/15 504 = 3856/15 504 = 241/969.",
+            "labels": [
+              [
+                1,
+                "1 − P(5 red) − P(4 red)."
+              ],
+              [
+                1,
+                "241/969."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_working",
+            "text": "P(at most 3 red) = 1 − P(at least 3 red)\n= 1 − [C(16,3)C(4,2) + C(16,4)C(4,1) + C(16,5)]/C(20,5)\n= 241/969",
+            "labels": [
+              [
+                0,
+                "Wrong complement: 3 red is subtracted as well."
+              ],
+              [
+                0,
+                "This working gives 31/969, not 241/969."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "P(at most 3 red) = 1 − C(16,5)/C(20,5) − C(16,4)C(4,1)/C(20,5)\nC(16,5) = 4368, C(16,4)C(4,1) = 7280, C(20,5) = 15 540.\n= 1 − 11 648/15 540 = 3892/15 540 = 139/555 ≈ 0.250",
+            "labels": [
+              [
+                1,
+                "Correct complementary expression."
+              ],
+              [
+                0,
+                "C(20,5) slipped to 15 540; 0.250 is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "At most 3 red means 1, 2 or 3 red (0 red is impossible, as there are only 4 white cups).\nP(1 red) = C(16,1)C(4,4)/C(20,5) = 16/15 504\nP(2 red) = C(16,2)C(4,3)/C(20,5) = 480/15 504\nP(3 red) = C(16,3)C(4,2)/C(20,5) = 3360/15 504\nSum = 3856/15 504 = 241/969.",
+            "labels": [
+              [
+                1,
+                "Equivalent: direct sum of the 1, 2 and 3 red cases."
+              ],
+              [
+                1,
+                "241/969."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "The expected number of red cups is 5 × 16/20 = 4, and the hypergeometric distribution is symmetric about its mean, so P(at most 3 red) = P(at least 5 red) = C(16,5)/C(20,5) = 4368/15 504 = 91/323.",
+            "labels": [
+              [
+                0,
+                "Invented symmetry; no valid complement or sum."
+              ],
+              [
+                0,
+                "Wrong answer."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2025-p1-q8",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2025 Paper 1 Q8(a)(b); no HKEAA marking scheme in the references for 2025; items written by the agent in the HKEAA style (the 5 marks of Q8 split as (a) 2, (b) 3 by estimate)",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "In the figure, ST and UV intersect at the point W. It is given that SU // VT and W is the mid-point of ST."
+          },
+          {
+            "type": "image",
+            "description": "Figure: Segments ST and UV cross at W. S is at the top right and T at the bottom left; V is at the upper left and U at the lower right. SU (on the right) and VT (on the left) are drawn, and SU is parallel to VT, so △SUW and △TVW lie on opposite sides of W."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Prove that △SUW ≅ △TVW."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "Correct proof: ∠USW = ∠VTW (from SU // VT), SW = TW (W is the mid-point of ST) and ∠SWU = ∠TWV (vertically opposite), concluding △SUW ≅ △TVW (ASA), or any other complete and correct proof. Award with or without reasons.",
+                "marks": 1
+              },
+              {
+                "text": "Correct reasons on every step: (alt. ∠s, SU // VT), (given) or (W is the mid-point of ST), (vert. opp. ∠s) and (ASA), or the correct reasons of an equivalent proof, with a congruence condition that matches the pairs used. Depends on the item above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "∠USW = ∠VTW (alt. ∠s, SU // VT); SW = TW (given); ∠SWU = ∠TWV (vert. opp. ∠s); △SUW ≅ △TVW (ASA)."
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Let X be a point lying on TW such that △SUW ~ △VXW. If SU = 57 cm, SW = 63 cm and WX = 7 cm, find the perimeter of △TVX."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Uses △SUW ~ △VXW: UW/XW = SW/VW (equivalently SU/VX = SW/VW = UW/XW).",
+                "marks": 1
+              },
+              {
+                "text": "M1: Uses (a): UW = VW, TV = SU = 57 cm and TW = SW = 63 cm, to get VW² = 63 × 7 = 441, VW = 21 cm, then VX = 57 × 21/63 = 19 cm and TX = 63 − 7 = 56 cm.",
+                "marks": 1
+              },
+              {
+                "text": "A1: Perimeter of △TVX = 57 + 19 + 56 = 132 cm. Depends on both M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "UW/XW = SW/VW with UW = VW gives VW = 21; VX = 19, TV = 57, TX = 56; perimeter 132 cm."
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "correct",
+            "text": "∠USW = ∠VTW (alt. ∠s, SU // VT)\nSW = TW (given, W is the mid-point of ST)\n∠SWU = ∠TWV (vert. opp. ∠s)\n∴ △SUW ≅ △TVW (ASA)",
+            "labels": [
+              [
+                1,
+                "Complete ASA chain."
+              ],
+              [
+                1,
+                "All reasons correct."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "△SUW ≅ △TVW (ASA)",
+            "labels": [
+              [
+                0,
+                "Only the conclusion."
+              ],
+              [
+                0,
+                "No proof to attach reasons to."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "∠SUW = ∠TVW (alt. ∠s, SU // VT)\nSW = TW (given)\n∠SWU = ∠TWV (vert. opp. ∠s)\n∴ △SUW ≅ △TVW (ASA)",
+            "labels": [
+              [
+                1,
+                "Three correct pairs establish congruence (AAS)."
+              ],
+              [
+                0,
+                "SW is not between the angles at U and W: AAS, not ASA."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "Since SU // VT:\n∠USW = ∠VTW (alt. ∠s, SU // VT)\n∠SUW = ∠TVW (alt. ∠s, SU // VT)\nSW = TW (W is the mid-point of ST)\n∴ △SUW ≅ △TVW (AAS)",
+            "labels": [
+              [
+                1,
+                "Valid AAS proof with two alternate-angle pairs."
+              ],
+              [
+                1,
+                "All reasons correct."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "Since W is the mid-point of ST, W is also the mid-point of UV (the diagonals of a quadrilateral bisect each other). So SW = TW and UW = VW. Also SU = VT, because parallel lines are equal in length.\n∴ △SUW ≅ △TVW (SSS)",
+            "labels": [
+              [
+                0,
+                "UW = VW and SU = VT rest on false claims."
+              ],
+              [
+                0,
+                "Reasons are invalid."
+              ]
+            ]
+          }
+        ],
+        "b": [
+          {
+            "kind": "correct",
+            "text": "By (a), TV = SU = 57 cm, TW = SW = 63 cm and VW = UW (corr. sides, ≅△).\nSince △SUW ~ △VXW, UW/XW = SW/VW (corr. sides, ~△).\nSo UW × VW = SW × XW = 63 × 7 = 441, and since UW = VW, VW = 21 cm.\nSU/VX = SW/VW ⇒ VX = 57 × 21/63 = 19 cm.\nTX = TW − WX = 63 − 7 = 56 cm.\nPerimeter of △TVX = TV + VX + TX = 57 + 19 + 56 = 132 cm.",
+            "labels": [
+              [
+                1,
+                "Similarity ratio UW/XW = SW/VW."
+              ],
+              [
+                1,
+                "VW = 21, VX = 19, TX = 56 using (a)."
+              ],
+              [
+                1,
+                "132 cm."
+              ]
+            ]
+          },
+          {
+            "kind": "wrong_working",
+            "text": "By (a), TV = SU = 57 cm. TX = TW − WX = 63 − 7 = 56 cm.\nSince △SUW ~ △VXW, VX/SU = WX/SW = 7/63, so VX = 57 × 7/63 ≈ 6.33 cm.\nPerimeter of △TVX = 57 + 56 + 19 = 132 cm.",
+            "labels": [
+              [
+                0,
+                "Wrong correspondence: WX matches UW, not SW."
+              ],
+              [
+                0,
+                "UW = VW never used; VW and VX not found."
+              ],
+              [
+                0,
+                "19 appears from nowhere; 132 does not follow."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "UW/XW = SW/VW (corr. sides, ~△) and UW = VW (by (a)), so VW² = 63 × 7 = 441, VW = 21 cm.\nVX = 57 × 21/63 = 19 cm. TV = SU = 57 cm.\nTX = 63 + 7 = 70 cm.\nPerimeter = 57 + 19 + 70 = 146 cm.",
+            "labels": [
+              [
+                1,
+                "Similarity ratio."
+              ],
+              [
+                1,
+                "VW, VX via (a); TX slipped to 63 + 7."
+              ],
+              [
+                0,
+                "146 cm is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "By (a), TV = 57 cm, TW = 63 cm and ∠VTW = ∠USW (corr. ∠s, ≅△).\nFrom △SUW ~ △VXW, ∠USW = ∠XVW, so ∠VTW = ∠XVW.\nIn △TVW and △VXW, ∠VTW = ∠XVW and ∠TWV = ∠VWX (common ∠), so △TVW ~ △VXW (AA).\nVW/XW = TW/VW ⇒ VW² = 63 × 7 = 441 ⇒ VW = 21 cm.\nVX/TV = XW/VW ⇒ VX = 57 × 7/21 = 19 cm.\nTX = 63 − 7 = 56 cm.\nPerimeter = 57 + 19 + 56 = 132 cm.",
+            "labels": [
+              [
+                1,
+                "Equivalent: similarity △TVW ~ △VXW gives the ratio."
+              ],
+              [
+                1,
+                "VW = 21, VX = 19, TX = 56."
+              ],
+              [
+                1,
+                "132 cm."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "Since X lies on TW and △SUW ~ △VXW, X must be the mid-point of TW, so TX = 31.5 cm. By the mid-point theorem VX = ½VT = 28.5 cm. Perimeter = 57 + 31.5 + 28.5 = 117 cm.",
+            "labels": [
+              [
+                0,
+                "No valid similarity ratio."
+              ],
+              [
+                0,
+                "X is not the mid-point; invented lengths."
+              ],
+              [
+                0,
+                "Wrong perimeter."
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dse2025-p1-q17",
+      "subject": "mathematics",
+      "language": "en",
+      "source": "HKDSE 2025 Paper 1 Q17(a); no HKEAA marking scheme in the references for 2025; items written by the agent in the HKEAA style",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "text": "Let T(n) be the nth term of an arithmetic sequence such that T(1) ≠ T(2) and T(47) = 456. It is given that T(9), T(47), T(199) is a geometric sequence."
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "Find T(1)."
+              }
+            ],
+            "markscheme": [
+              {
+                "text": "M1: Uses the geometric condition T(9) × T(199) = T(47)² (or T(47)/T(9) = T(199)/T(47)) with the terms written in the common difference d, e.g. T(9) = 456 − 38d and T(199) = 456 + 152d.",
+                "marks": 1
+              },
+              {
+                "text": "M1: Solves the resulting equation, rejecting d = 0 because T(1) ≠ T(2): (456 − 38d)(456 + 152d) = 456² gives d = 9.",
+                "marks": 1
+              },
+              {
+                "text": "A1: T(1) = 456 − 46 × 9 = 42. Depends on both M1 above.",
+                "marks": 1
+              }
+            ],
+            "solution_summary": "(456 − 38d)(456 + 152d) = 456² ⇒ 51 984d = 5776d² ⇒ d = 9; T(1) = 456 − 414 = 42."
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "correct",
+            "text": "Let d be the common difference; d ≠ 0 since T(1) ≠ T(2).\nT(9) = 456 − 38d and T(199) = 456 + 152d.\nT(9), T(47), T(199) is geometric, so T(9) × T(199) = T(47)²:\n(456 − 38d)(456 + 152d) = 456²\n456² + 456(152 − 38)d − 5776d² = 456²\n51 984d − 5776d² = 0\nd(51 984 − 5776d) = 0 ⇒ d = 9 (d = 0 rejected).\nT(1) = T(47) − 46d = 456 − 414 = 42.",
+            "labels": [
+              [
+                1,
+                "Geometric condition in d."
+              ],
+              [
+                1,
+                "d = 9 with d = 0 rejected."
+              ],
+              [
+                1,
+                "T(1) = 42."
+              ]
+            ]
+          },
+          {
+            "kind": "bare_answer",
+            "text": "T(1) = 42",
+            "labels": [
+              [
+                0,
+                "No geometric condition."
+              ],
+              [
+                0,
+                "No equation solved."
+              ],
+              [
+                0,
+                "Bare answer; method marks missing."
+              ]
+            ]
+          },
+          {
+            "kind": "slip",
+            "text": "Let d be the common difference (d ≠ 0).\n(456 − 38d)(456 + 152d) = 456²\n456 × 114d = 5776d²\nd = 51 984/5776 = 9.\nT(1) = 456 − 47 × 9 = 456 − 423 = 33.",
+            "labels": [
+              [
+                1,
+                "Geometric condition in d."
+              ],
+              [
+                1,
+                "d = 9."
+              ],
+              [
+                0,
+                "Off-by-one slip: 47d instead of 46d; 33 is wrong."
+              ]
+            ]
+          },
+          {
+            "kind": "alt_method",
+            "text": "Let r be the common ratio, so T(9) = 456/r and T(199) = 456r.\nIn the arithmetic sequence, T(199) − T(47) = 152d and T(47) − T(9) = 38d, so T(199) − T(47) = 4[T(47) − T(9)].\n456r − 456 = 4(456 − 456/r) ⇒ r − 1 = 4(r − 1)/r.\nr ≠ 1, since r = 1 would give d = 0 but T(1) ≠ T(2). So r = 4.\nT(9) = 456/4 = 114, d = (456 − 114)/38 = 9.\nT(1) = T(9) − 8d = 114 − 72 = 42.",
+            "labels": [
+              [
+                1,
+                "Equivalent geometric condition via the ratio r."
+              ],
+              [
+                1,
+                "Equivalent: r = 4 with r = 1 rejected, giving d = 9."
+              ],
+              [
+                1,
+                "T(1) = 42."
+              ]
+            ]
+          },
+          {
+            "kind": "nonsense",
+            "text": "In a geometric sequence the middle term is the arithmetic mean of the other two, so T(47) = [T(9) + T(199)]/2, i.e. 456 = T(1) + 103d. Also T(47) = T(1) + 46d = 456, so 57d = 0 and d = 0. Hence every term is equal to the average of the first two, and T(1) = 456/2 = 228.",
+            "labels": [
+              [
+                0,
+                "Wrong condition: the arithmetic mean instead of the geometric mean."
+              ],
+              [
+                0,
+                "d = 0 contradicts T(1) ≠ T(2); nothing valid solved."
+              ],
+              [
+                0,
+                "228 is wrong."
+              ]
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
