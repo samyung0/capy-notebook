@@ -601,7 +601,27 @@ Jev scored 1,730 (88.9%), +89.
   - **The cost is maths latency:** p50 11 s and p95 57 s, slowest 156 s, against Wafer's 5 s and 33 s.
   - **Decided (Epo, 2026-11-04):** 1017 is the one model for grading, extraction and captions, routed Wafer (`wafer/us`) → InferenceNet → Cloudflare with no other fallbacks. Never DeepInfra, except the Qwen embedding pin. Never direct DeepSeek.
 
-### Answer rules apart from the marking points (proposal, Epo 2026-11-03; canvas page 11, board R1)
+### Built-in grading rules (Epo, 2026-11-04; supersedes the per-question answer rules below)
+
+No per-question rules section. Built-in rules apply to every open answer, and a word or character limit is a cap on the answer box (set on the part, enforced as the learner types), not a grading rule.
+
+**Proposed built-in rules.** "Code" means checked before any model call; the rest go in the grading prompt.
+1. **Copying (code):** an answer that is mostly the passage or question text, copied without selecting or explaining, earns nothing. Round 3: passage coverage for pasted paragraphs, the share of the answer copied for quote-only.
+2. **First N answers (new):** when a part asks for N things ("give two reasons"), only the first N are marked. Extra answers neither add marks nor cancel a wrong one. This is the usual exam convention and stops listing everything.
+3. **Contradiction (in the prompt today):** a point contradicted elsewhere in the answer earns nothing for that point.
+4. **Restating (in the prompt today):** restating the question, or the result in a "show that", earns nothing.
+5. **Bare lists (in the prompt today):** a list of terms with no statement earns nothing.
+6. **Hedging (new):** offering alternatives for one point ("A or B") earns nothing for that point.
+7. **Working (in the prompt today):** no method marks without working, and no accuracy mark without its method mark.
+8. **Language (new):** in language subjects (English, Chinese reading) the answer must be in that language. Elsewhere any language is accepted, as today.
+9. **Spelling (new):** minor misspellings are fine when the meaning is clear, unless the item tests spelling or vocabulary.
+10. **Instructions to the marker (in the prompt today):** text asking for marks earns nothing and is flagged.
+
+**Grading time:** each open part is one call. Parts run 5 at a time today (`gradeOpenParts`, `SetLimit(5)`). One maths part with thinking takes about 5 s typically and up to about 33 s at p95 on Wafer (11 s / 57 s on InferenceNet). So 10 open maths parts take about 10–20 s typically and up to a minute; 40 take about 40–90 s. Raising the per-submission limit cuts that. Epo, 2026-11-04: a grading progress status ("Marking 12 of 40 answers…") is fine.
+
+**1017 capacity:** ghost text has run on 1017 since 2026-10-28; 0731 is the ingest descriptor model. The 40-in-flight gate (20 reserved for interactive calls) is our own setting from 2026-10-29, not a provider limit. InferenceNet answered 128 page reads at once and Cloudflare 64 without errors, but Wafer isn't measured yet. Ramp it before raising the gate and giving grading its own share.
+
+### Answer rules apart from the marking points (superseded 2026-11-04 by built-in rules; proposal, Epo 2026-11-03; canvas page 11, board R1)
 
 **Why:** 0731 credited a pasted IELTS paragraph that the question forbade ("copying out whole paragraphs earns no marks"). The passage was in the request, but the instruction sat inside the question text.
 
