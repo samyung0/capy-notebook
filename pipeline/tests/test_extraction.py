@@ -167,6 +167,25 @@ async def test_a_failing_provider_costs_an_attempt_not_the_run(monkeypatch):
     assert calls.count("refused") == extraction.ATTEMPTS
 
 
+async def test_an_unreadable_scheme_reply_is_a_failed_attempt(monkeypatch):
+    monkeypatch.setattr(extraction, "ATTEMPT_WAIT_S", 0)
+    replies = iter(
+        [
+            SimpleNamespace(content='{"entries": [{"question": "1", "answ'),
+            SimpleNamespace(content='{"entries": [{"question": "1", "answer": "B"}]}'),
+        ]
+    )
+
+    async def complete(messages, **kwargs):
+        return next(replies)
+
+    monkeypatch.setattr(extraction.models, "complete", complete)
+    entries = await extraction.parse_schemes(
+        [extraction.SchemeFile("answers.txt", "1. B")], model=MODEL
+    )
+    assert [(e.question, e.answer) for e in entries] == [("1", "B")]
+
+
 def test_page_texts_spread_passages_over_their_pages():
     texts = extraction.page_texts(
         [

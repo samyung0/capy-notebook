@@ -537,7 +537,14 @@ async def parse_schemes(files: list[SchemeFile], *, model: ModelConfig) -> list[
             reasoning=False,
             call_purpose="extraction_scheme",
         )
-        return entries_from(extract_json(getattr(message, "content", "") or ""))
+        data = extract_json(getattr(message, "content", "") or "")
+        if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
+            # A reply cut off at the cap or not JSON is a failed attempt, not
+            # a scheme without answers.
+            raise elitellm.ProviderError(
+                "the mark scheme reply was cut off or not JSON"
+            )
+        return entries_from(data)
 
     calls = [
         _attempted(functools.partial(one, f.name, piece))
