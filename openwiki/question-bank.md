@@ -610,11 +610,13 @@ correct answer the learner did not choose gets a green outline with no fill
 and "Correct answer" (M1), so a green fill only ever means chosen and right.
 A multi-answer part marked wrong (R4) shows "Your answer" on top, the
 learner's choices filled green (✓ Right) or red (✗ Wrong) and the rest
-plain, then "Correct answer" as its own plain list of the correct options;
-its label adds the counts ("0 / 2 marks · 1 right, 1 wrong"). A checked
-ordering (O4) shows "Your order", each item green in its right place and red
-elsewhere, and when any is misplaced "Correct order" as its own plain list,
-each item saying where the learner put it ("you put it 3rd"); a skipped
+plain, then "Correct answer" listing the correct options; its label adds
+the counts ("0 / 2 marks · 1 right, 1 wrong"). A checked ordering (O4) shows
+"Your order", each item green in its right place and red elsewhere, and when
+any is misplaced "Correct order", each item saying where the learner put it
+("you put it 3rd"). Both correct-answer lists are plain text lines, not boxes
+(`PlainList`: the letter or number muted and bold, the text semibold, 4px
+apart, one column even on paper questions); a skipped
 ordering shows the key's order unmarked. Once checked, a label above a
 choice, True / False or ordering part says Right or Wrong with its marks, as
 in Results ("Wrong · 0 / 1 mark"); a skipped part says "Not answered" and

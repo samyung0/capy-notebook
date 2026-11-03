@@ -271,6 +271,34 @@ function youPutIt(position: number) {
   }
 }
 
+/** The correct answer under a checked part's own boxes (O4, R4): plain
+ * lines 4px apart, no boxes, one column even on paper questions; the label
+ * muted and bold, the text semibold, then an optional note ("you put it
+ * 3rd") in the meta style. */
+function PlainList({
+  rows,
+}: {
+  rows: { label: string; text: string; note?: string }[];
+}) {
+  return (
+    <ol className="grid gap-1 font-semibold text-sm">
+      {rows.map((row) => (
+        <li className="flex items-baseline gap-2.5" key={row.label}>
+          <span className="w-4 shrink-0 font-bold text-fg-muted">
+            {row.label}
+          </span>
+          <TextView className="min-w-0" text={row.text} />
+          {row.note && (
+            <span className="t-meta shrink-0 whitespace-nowrap font-medium text-fg-muted">
+              {row.note}
+            </span>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 /** A checked choice's tag at the box's end. */
 const RESULT_TAG = {
   missed: { icon: null, label: m.question_ui_correct_answer },
@@ -565,22 +593,14 @@ function PartRunner({
         </div>
         {apart && (
           <>
-            <h4 className={cn(SUBHEAD, 'mt-3')}>
+            <h4 className={cn(SUBHEAD, 'mt-3.5')}>
               {m.question_ui_correct_answer()}
             </h4>
-            <div className={answerBoxesClass(twoColumns)}>
-              {answer.options.map(
-                (option, i) =>
-                  correct(i) && (
-                    <div className={answerBoxClass()} key={i}>
-                      <span className={answerLetterClass()}>
-                        {optionLetter(i)}
-                      </span>
-                      <TextView className="min-w-0" text={option} />
-                    </div>
-                  )
+            <PlainList
+              rows={answer.options.flatMap((option, i) =>
+                correct(i) ? [{ label: optionLetter(i), text: option }] : []
               )}
-            </div>
+            />
           </>
         )}
       </div>
@@ -950,20 +970,16 @@ function PartRunner({
         </div>
         {misplaced && (
           <>
-            <h4 className={cn(SUBHEAD, 'mt-3')}>
+            <h4 className={cn(SUBHEAD, 'mt-3.5')}>
               {m.question_ui_correct_order()}
             </h4>
-            <div className={answerBoxesClass()}>
-              {answer.items.map((item, i) => (
-                <div className={answerBoxClass()} key={i}>
-                  <span className={answerLetterClass()}>{i + 1}</span>
-                  <TextView className="min-w-0 flex-1" text={item} />
-                  <span className="t-meta ml-auto shrink-0 whitespace-nowrap pl-1 font-medium text-fg-muted">
-                    {youPutIt(current.indexOf(item) + 1)}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <PlainList
+              rows={answer.items.map((item, i) => ({
+                label: String(i + 1),
+                note: youPutIt(current.indexOf(item) + 1),
+                text: item,
+              }))}
+            />
           </>
         )}
       </div>
