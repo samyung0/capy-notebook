@@ -200,6 +200,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - The full gradebook (G1c, grouped like Canvas assignment groups) is kept under "Earlier versions". It could return inside the Assignments tab if owners ask for it.
 
 **Workspace Dashboard (was Home; Epo, 2026-11-02): To do (was Tasks), then Recent files and Activity.**
+- **Build (Epo, 2026-11-03):** the Dashboard is built from the mocks (H1, H2, H2b) on `claude/study-shell`, using today's data where assignments and approvals don't exist yet. Page header actions that wrap onto their own line sit at the left. The painted page frame now defaults to none.
 - **Tasks** is the plan task list Epo described earlier: one line per task, with @ chips linking files and quizzes (`todo-canvas-workspace.md` §4.3).
   - Shown as a table: Task, Due, and either members done (owner) or a tick (member).
   - An assignment appears as a task and ticks itself on submit. Other tasks are ticked by hand, by each member for themselves.
