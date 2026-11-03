@@ -63,6 +63,9 @@ const isTopicMap = (value: unknown): value is Record<string, boolean> =>
 
 const DND_TYPES = ['application/x-capy-material', 'application/x-capy-file'];
 
+/** Other files' key in the open-groups map; topic ids never take it. */
+const OTHER_FILES = 'other-files';
+
 /** The topic tree with its files and materials. Lives in the right panel's
  * Files tab, as its own column when pinned, or in the header's dropdown below lg;
  * `renderTabRow` draws whichever header that placement needs. */
@@ -438,7 +441,11 @@ export function FilesPanel({
     reorder(ids);
   }
 
-  // Collapses all topics, or expands them all once every one is collapsed.
+  // Other files opens and closes like a topic (Epo 2026-11-03), keyed
+  // apart from topic ids in the same map.
+  const othersExpanded =
+    searching || !topics?.length || (openTopics[OTHER_FILES] ?? true);
+  // Collapses all groups, or expands them all once every topic is collapsed.
   const allCollapsed =
     !!topics?.length && topics.every((c) => openTopics[c.id] === false);
   const actions: TabAction[] = [
@@ -449,7 +456,12 @@ export function FilesPanel({
         : m.workspace_collapse_topics(),
       onClick: () =>
         setOpenTopics(
-          Object.fromEntries((topics ?? []).map((c) => [c.id, allCollapsed]))
+          Object.fromEntries(
+            [...(topics ?? []).map((c) => c.id), OTHER_FILES].map((id) => [
+              id,
+              allCollapsed,
+            ])
+          )
         ),
     },
   ];
@@ -497,7 +509,7 @@ export function FilesPanel({
           </p>
         )}
         {topics && shownTopics && (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col">
             <div className="flex flex-col empty:hidden">
               {shownTopics.map((ch) => {
                 const idx = topics.indexOf(ch);
@@ -532,36 +544,14 @@ export function FilesPanel({
                         e.dataTransfer.effectAllowed = 'move';
                       }}
                     >
-                      <button
-                        aria-expanded={expanded}
-                        className="flex min-w-0 flex-1 items-center gap-2 px-1.5 text-left"
-                        onClick={() =>
-                          setOpenTopics({
-                            ...openTopics,
-                            [ch.id]: !expanded,
-                          })
+                      <GroupToggle
+                        count={contentFor(ch.id).length}
+                        expanded={expanded}
+                        name={ch.name}
+                        onToggle={() =>
+                          setOpenTopics({ ...openTopics, [ch.id]: !expanded })
                         }
-                        type="button"
-                      >
-                        <Icon
-                          className="shrink-0 text-fg-secondary"
-                          name="topic"
-                          size={15}
-                        />
-                        <span className="line-clamp-1 translate-y-px truncate font-semibold">
-                          {ch.name}
-                        </span>
-                        {/* Drawn like the workspace picker's chevron above. */}
-                        <Icon
-                          className="shrink-0 -translate-y-px text-fg-muted"
-                          name={expanded ? 'chevronDown' : 'chevronRight'}
-                        />
-                        {!expanded && (
-                          <span className="ml-auto pr-1 font-semibold text-fg-muted text-xs">
-                            {contentFor(ch.id).length}
-                          </span>
-                        )}
-                      </button>
+                      />
                       {!readOnly && (
                         <HoverActions
                           className="absolute top-1/2 right-1 -translate-y-1/2"
@@ -615,36 +605,48 @@ export function FilesPanel({
               : unfiled.length > 0 ||
                 unfiledMaterials.length > 0 ||
                 generating) && (
-              <div className="rounded-button">
+              <div className="rounded-button" data-workspace-other-files>
                 {topics.length > 0 && (
-                  <div className="t-label px-1.5 py-1.5 text-fg-muted">
-                    {m.nav_section_others()}
+                  <div className="flex items-center rounded-button py-1.5 pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!">
+                    <GroupToggle
+                      count={contentFor(null).length}
+                      expanded={othersExpanded}
+                      name={m.topic_other_files()}
+                      onToggle={() =>
+                        setOpenTopics({
+                          ...openTopics,
+                          [OTHER_FILES]: !othersExpanded,
+                        })
+                      }
+                    />
                   </div>
                 )}
-                <div>
-                  {shownUnfiled.map((item) => renderContentItem(item, null))}
-                  {generating && (
-                    <MaterialListItem
-                      active={false}
-                      color="purple"
-                      data={{
-                        createdAt: new Date().toISOString(),
-                        id: '__generating__',
-                        maxDepth: 0,
-                        nodeCount: 0,
-                        position: Number.MAX_SAFE_INTEGER,
-                        sizeBytes: 0,
-                        title: GENERATING_MATERIAL[generating].title(),
-                        topicId: null,
-                        type: GENERATING_MATERIAL[generating].type,
-                      }}
-                      generating
-                      readOnly
-                      topics={topics}
-                      workspaceId={workspaceId}
-                    />
-                  )}
-                </div>
+                {othersExpanded && (
+                  <div className={cn(topics.length > 0 && 'pl-3')}>
+                    {shownUnfiled.map((item) => renderContentItem(item, null))}
+                    {generating && (
+                      <MaterialListItem
+                        active={false}
+                        color="purple"
+                        data={{
+                          createdAt: new Date().toISOString(),
+                          id: '__generating__',
+                          maxDepth: 0,
+                          nodeCount: 0,
+                          position: Number.MAX_SAFE_INTEGER,
+                          sizeBytes: 0,
+                          title: GENERATING_MATERIAL[generating].title(),
+                          topicId: null,
+                          type: GENERATING_MATERIAL[generating].type,
+                        }}
+                        generating
+                        readOnly
+                        topics={topics}
+                        workspaceId={workspaceId}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -652,5 +654,40 @@ export function FilesPanel({
       </div>
       {footer}
     </div>
+  );
+}
+
+/** A group row's toggle (a topic or Other files): a plain row with no icon
+ * (Epo 2026-11-03, mock T3), the turning chevron, the name and its count. A
+ * topic row only opens and closes; there is no topic page. */
+function GroupToggle({
+  count,
+  expanded,
+  name,
+  onToggle,
+}: {
+  count: number;
+  expanded: boolean;
+  name: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      aria-expanded={expanded}
+      className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 text-left"
+      onClick={onToggle}
+      type="button"
+    >
+      <Icon
+        className="shrink-0 -translate-y-px text-fg-muted"
+        name={expanded ? 'chevronDown' : 'chevronRight'}
+      />
+      <span className="line-clamp-1 translate-y-px truncate font-semibold">
+        {name}
+      </span>
+      <span className="ml-auto pr-1 font-semibold text-fg-muted text-xs">
+        {count}
+      </span>
+    </button>
   );
 }

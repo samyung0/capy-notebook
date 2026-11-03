@@ -6,7 +6,8 @@ import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
 
 /** Topic picker for moving a file or material into a topic (membership).
- * Selecting a row calls onSelect and closes; "No topic" unfiles (null). */
+ * Selecting a row calls onSelect and closes; "Remove from all topics" unfiles
+ * (null), into Other files. */
 export function MoveToTopicDialog({
   open,
   onClose,

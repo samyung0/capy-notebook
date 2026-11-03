@@ -39,8 +39,8 @@ export function RowPickerTrigger({ children }: { children: ReactNode }) {
  * dropdown matches it. */
 export const FIELD_WIDTH = 'w-52 sm:w-72';
 
-/** A row's topic: an existing one, none, or (with onCreateRequest) New
- * topic, which the caller swaps for NewTopicInput. topicName shows a
+/** A row's topic: an existing one, none (Other files), or (with
+ * onCreateRequest) New topic, which the caller swaps for NewTopicInput. topicName shows a
  * typed topic the server creates later. `field` draws a form dropdown
  * instead of the ghost row picker. */
 export function TopicSelect({
@@ -56,7 +56,7 @@ export function TopicSelect({
   topics: Topic[];
   value: string | null;
   topicName?: string | null;
-  /** Tags the item's own topic (null: No topic) "Current" in the list. */
+  /** Tags the item's own topic (null: Other files) "Current" in the list. */
   current?: string | null;
   disabled?: boolean;
   field?: boolean;
@@ -64,10 +64,10 @@ export function TopicSelect({
   onCreateRequest?: () => void;
 }) {
   const label = (
-    // Plain text for "No topic": SelectValue would copy the option's muted
+    // Plain text for Other files: SelectValue would copy the option's muted
     // colour and cancel the trigger's hover colour.
     <span className={cn('line-clamp-1', !field && 'max-w-36')}>
-      {topicName ?? (value ? <SelectValue /> : m.source_no_topic())}
+      {topicName ?? (value ? <SelectValue /> : m.topic_other_files())}
     </span>
   );
   return (
@@ -82,7 +82,7 @@ export function TopicSelect({
         onChange(value === NO_TOPIC ? null : value);
       }}
       // A typed topic has no id yet; it gets its own item so the list
-      // points at it rather than at No topic.
+      // points at it rather than at Other files.
       value={topicName ? TYPED_TOPIC : (value ?? NO_TOPIC)}
     >
       {field ? (
@@ -94,13 +94,6 @@ export function TopicSelect({
       )}
       <SelectContent align="end" className={field ? undefined : 'max-w-47'}>
         <SelectGroup>
-          <SelectItem
-            hint={current === null ? m.destination_current() : null}
-            size="sm"
-            value={NO_TOPIC}
-          >
-            <span className="text-fg-muted">{m.source_no_topic()}</span>
-          </SelectItem>
           {topicName && (
             <SelectItem size="sm" value={TYPED_TOPIC}>
               <span className="line-clamp-1 translate-y-px">{topicName}</span>
@@ -116,6 +109,14 @@ export function TopicSelect({
               <span className="line-clamp-1 translate-y-px">{topic.name}</span>
             </SelectItem>
           ))}
+          {/* Other files last, as the Files panel lists it (mock T4). */}
+          <SelectItem
+            hint={current === null ? m.destination_current() : null}
+            size="sm"
+            value={NO_TOPIC}
+          >
+            <span className="text-fg-muted">{m.topic_other_files()}</span>
+          </SelectItem>
         </SelectGroup>
         {onCreateRequest && (
           <>

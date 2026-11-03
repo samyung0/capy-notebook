@@ -34,9 +34,12 @@ const MOVE_MAX = 20;
  * picked.
  */
 export function YourFilesPanel({
+  defaultTopicId = null,
   onMoved,
   workspaceId,
 }: {
+  /** The topic the footer starts on: the open one. */
+  defaultTopicId?: string | null;
   onMoved: () => void;
   workspaceId: string;
 }) {
@@ -61,7 +64,7 @@ export function YourFilesPanel({
   const [topic, setTopic] = useState<{
     topicId: string | null;
     topicName: string | null;
-  }>({ topicId: null, topicName: null });
+  }>({ topicId: defaultTopicId, topicName: null });
   const [newTopic, setNewTopic] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [formError, setFormError] = useState<{

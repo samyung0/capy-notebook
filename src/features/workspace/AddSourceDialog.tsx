@@ -319,7 +319,8 @@ function SourceAnalysisNote({
 
 function localRows(
   selections: ReturnType<typeof validateLocalSourceSelection>['accepted'],
-  policy: SourceUploadPolicy
+  policy: SourceUploadPolicy,
+  topicId: string | null
 ): PendingSource[] {
   const now = Date.now();
   return selections.map(({ file, kind }, index) => {
@@ -344,7 +345,7 @@ function localRows(
       parseMode: defaultParseMode(file, kind, policy),
       sizeBytes: file.size,
       sizeEstimate: false,
-      topicId: null,
+      topicId,
       topicName: null,
     };
   });
@@ -862,6 +863,7 @@ export function AddSourceDialog({
   onGeneratingChange,
   resumeProvider,
   retryFile,
+  defaultTopicId = null,
 }: {
   open: boolean;
   onClose: () => void;
@@ -881,6 +883,9 @@ export function AddSourceDialog({
   /** A failed file to process again: the dialog shows only its row, read
    * from the stored bytes, and submits Retry processing. */
   retryFile?: SourceFile;
+  /** The open topic, which each added file starts in and the user can change
+   * (Epo 2026-11-03); null starts them in Other files. */
+  defaultTopicId?: string | null;
 }) {
   const { data: workspace } = useWorkspace(workspaceId ?? '', {
     errorBoundary: false,
@@ -1129,7 +1134,7 @@ export function AddSourceDialog({
     );
     if (capped.rejected > 0) workspaceRoomToast(workspaceRoom, filesLimit);
     if (capped.accepted.length > 0) {
-      uploads.add(localRows(capped.accepted, uploadPolicy));
+      uploads.add(localRows(capped.accepted, uploadPolicy, defaultTopicId));
     }
     if (inputRef.current) inputRef.current.value = '';
   }
@@ -1220,7 +1225,7 @@ export function AddSourceDialog({
           provider,
           sizeBytes: item.sizeBytes,
           sizeEstimate: item.sizeEstimate,
-          topicId: null,
+          topicId: defaultTopicId,
           topicName: null,
         };
       });
@@ -1641,7 +1646,11 @@ export function AddSourceDialog({
             workspaceId={workspaceId}
           />
         ) : workspaceId && mode === 'files' ? (
-          <YourFilesPanel onMoved={onClose} workspaceId={workspaceId} />
+          <YourFilesPanel
+            defaultTopicId={defaultTopicId}
+            onMoved={onClose}
+            workspaceId={workspaceId}
+          />
         ) : workspaceId && mode === 'create' ? (
           <CreateFilePanel
             onCreated={(item) => {

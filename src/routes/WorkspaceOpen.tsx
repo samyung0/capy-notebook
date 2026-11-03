@@ -24,6 +24,7 @@ import {
   useAddTopic,
   useFile,
   useFiles,
+  useMaterials,
   useTopics,
   useUpdateTopic,
   useVisitWorkspace,
@@ -393,6 +394,9 @@ function WorkspaceOpen() {
   }, [loaded, visit, visitor, workspaceId]);
   const { data: topics } = useTopics(workspaceId);
   const { data: files } = useFiles(workspaceId);
+  const { data: materials } = useMaterials(workspaceId, {
+    errorBoundary: false,
+  });
   const readOnly = isWorkspaceReadOnly(ws?.capabilities);
   const canClone = !!ws?.canClone;
   const { mutateAsync: addTopic } = useAddTopic(workspaceId);
@@ -679,6 +683,13 @@ function WorkspaceOpen() {
       ? files?.find((file) => file.id === openItem.id)
       : undefined;
   const officeOpen = !!openFile && !!officeFormatOf(openFile);
+  // Added files start in the open item's topic (Epo 2026-11-03).
+  const openTopicId =
+    (openItem?.kind === 'file'
+      ? openFile?.topicId
+      : openItem?.kind === 'material'
+        ? materials?.find((mt) => mt.id === openItem.id)?.topicId
+        : null) ?? null;
 
   // One column has no panels: the header title opens Files, and ⋮ carries
   // the workspace actions their tab rows held.
@@ -1201,6 +1212,7 @@ function WorkspaceOpen() {
       )}
       {addSource && (
         <AddSourceDialog
+          defaultTopicId={openTopicId}
           initialMode={addSource}
           onClose={() => setAddSource(null)}
           onGeneratingChange={setGenerating}
