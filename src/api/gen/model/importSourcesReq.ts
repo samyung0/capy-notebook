@@ -30,6 +30,8 @@ export interface ImportSourcesReq {
      * @maxItems 20
      */
   fileIds: string[];
+  /** The file starts hidden from members: only the workspace's owners and editors see it. A file outside a workspace has no members, so it is refused there */
+  hidden?: boolean;
   parseMode?: ImportSourcesReqParseMode;
   provider: ImportSourcesReqProvider;
   /** @maxLength 128 */

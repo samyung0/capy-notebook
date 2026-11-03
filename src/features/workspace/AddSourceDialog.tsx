@@ -34,6 +34,7 @@ import {
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
+import { InputTitle } from '@/components/ui/Input';
 import {
   Popover,
   PopoverContent,
@@ -45,6 +46,7 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
 import { Separator } from '@/components/ui/Separator';
@@ -787,6 +789,50 @@ function SourceList({
   );
 }
 
+/** Who can see it (Epo 2026-11-04, V1): the submission's files start visible
+ * to everyone in the workspace or hidden from members, as the file's ⋮ menu
+ * and header chip mark it. The last field of the Upload and Import tabs;
+ * standalone files have no members, so they never show it. */
+function VisibilitySelect({
+  hidden,
+  onChange,
+}: {
+  hidden: boolean;
+  onChange: (hidden: boolean) => void;
+}) {
+  return (
+    <div className="mt-4 flex shrink-0 flex-col gap-1.5">
+      <InputTitle id="source-visibility">{m.source_visibility()}</InputTitle>
+      <Select
+        onValueChange={(value) => onChange(value === 'hidden')}
+        value={hidden ? 'hidden' : 'everyone'}
+      >
+        <SelectTrigger aria-labelledby="source-visibility">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem
+              iconAndValue={{
+                icon: 'members',
+                label: m.source_visibility_everyone(),
+              }}
+              value="everyone"
+            />
+            <SelectItem
+              iconAndValue={{
+                icon: 'viewOffSlash',
+                label: m.content_hidden_from_members(),
+              }}
+              value="hidden"
+            />
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function SourceFooter({
   batch,
   label,
@@ -925,6 +971,8 @@ export function AddSourceDialog({
       ).length
   );
   const [isDragOver, setIsDragOver] = useState(false);
+  // Who can see it, for both tabs' files; everyone until changed.
+  const [hidden, setHidden] = useState(false);
   const [isPicking, setIsPicking] = useState(false);
   const [googlePickerOpen, setGooglePickerOpen] = useState(false);
   const pickerBusy = useRef(false);
@@ -949,6 +997,7 @@ export function AddSourceDialog({
 
   useEffect(() => {
     if (!open) {
+      setHidden(false);
       inspectionGuard.invalidate();
       googlePicker.current?.dispose();
       googlePicker.current = null;
@@ -1054,6 +1103,7 @@ export function AddSourceDialog({
                     uploadPolicy
                   ),
                   file: source.file,
+                  hidden,
                   key: source.key,
                   kind: source.kind,
                   name: source.name,
@@ -1080,6 +1130,7 @@ export function AddSourceDialog({
                   chapterName: source.chapterName,
                   driveId: source.driveId,
                   fileId: source.fileId,
+                  hidden,
                   key: source.key,
                   kind: source.kind,
                   name: source.name,
@@ -1582,6 +1633,9 @@ export function AddSourceDialog({
                 workspaceId={workspaceId}
               />
             )}
+            {workspaceId && uploads.sources.length > 0 && (
+              <VisibilitySelect hidden={hidden} onChange={setHidden} />
+            )}
           </div>
         )}
         {mode === 'import' && (
@@ -1630,6 +1684,9 @@ export function AddSourceDialog({
                 uploadPolicy={uploadPolicy}
                 workspaceId={workspaceId}
               />
+            )}
+            {workspaceId && imports.sources.length > 0 && (
+              <VisibilitySelect hidden={hidden} onChange={setHidden} />
             )}
           </div>
         )}

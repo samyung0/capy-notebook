@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 )
@@ -72,5 +73,48 @@ func TestHiddenFromMembers(t *testing.T) {
 	}
 	if !slices.ContainsFunc(refs, func(r MaterialRef) bool { return r.ID == quiz.ID && !r.Hidden }) {
 		t.Fatal("the viewer does not list the quiz once shown")
+	}
+}
+
+// TestUploadsStartHiddenWhenAsked: an upload sent with "Hidden from members"
+// (Epo 2026-11-04, V1) becomes a file that is hidden from its insert on: the
+// owner opens it and the viewer never can. One sent without it is visible.
+func TestUploadsStartHiddenWhenAsked(t *testing.T) {
+	f := newStudyFixture(t, "upload-hidden")
+	ctx := context.Background()
+	viewer := newBlobTestUser(t, f.s, "upload-hidden-viewer")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
+		VALUES ($1,$2,'viewer')`, f.ws.ID, viewer); err != nil {
+		t.Fatal(err)
+	}
+	upload := func(hidden bool) File {
+		t.Helper()
+		session, err := f.s.CreateUploadSession(ctx, NewUploadSession{
+			ID: uid("up"), WorkspaceID: f.ws.ID, CreatedBy: f.user, Hidden: hidden,
+			ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+			Name: "answers.zip", Kind: "unknown", ContentType: "application/zip",
+			DeclaredSize: 300, ParseMode: "none", ExpiresAt: time.Now().Add(time.Hour),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		file, err := f.s.FinalizeUploadSession(ctx, f.user, session.ID, "etag", "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return file
+	}
+	hidden, shown := upload(true), upload(false)
+	if stored, err := f.s.GetFile(ctx, hidden.ID); err != nil || !stored.Hidden || !hidden.Hidden {
+		t.Fatalf("stored = %+v (%v), want hidden", stored, err)
+	}
+	if _, err := f.s.FileEffectiveRole(ctx, f.user, hidden.ID); err != nil {
+		t.Fatalf("the owner cannot open the hidden upload: %v", err)
+	}
+	if _, err := f.s.FileEffectiveRole(ctx, viewer, hidden.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the viewer opened the hidden upload: %v", err)
+	}
+	if _, err := f.s.FileEffectiveRole(ctx, viewer, shown.ID); err != nil {
+		t.Fatalf("the viewer cannot open the visible upload: %v", err)
 	}
 }

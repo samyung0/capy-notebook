@@ -428,6 +428,7 @@ interface MockSourceImport {
   chapterId: string | null;
   completed: boolean;
   fileId: string;
+  hidden: boolean;
   name: string;
   polls: number;
   sizeBytes: number;
@@ -459,6 +460,7 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
     addedAt: new Date().toISOString(),
     chapterId: sourceImport.chapterId,
     hasBytes: true,
+    hidden: sourceImport.hidden || undefined,
     id: sourceImport.fileId,
     indexed: true,
     ingestPct: 100,
@@ -617,6 +619,7 @@ function advanceChanges<T extends { id: string }>(
 type SourceUploadMetadata = {
   chapterId?: string | null;
   chapterName?: string | null;
+  hidden?: boolean;
   kind: string;
   name: string;
 };
@@ -2637,6 +2640,8 @@ export const handlers = [
         // Mirror the real backend: uploads start 'pending' until a worker
         // claims the ingest job, then the client animates progress.
         hasBytes: true,
+        // Who can see it: hidden from members from the start.
+        hidden: body.hidden || undefined,
         id: uid('f'),
         indexed: false,
         isPayer: true,
@@ -3616,6 +3621,7 @@ export const handlers = [
         chapterName?: string | null;
         driveIds?: string[];
         fileIds: string[];
+        hidden?: boolean;
         parseMode?: 'fast' | 'none';
         provider: string;
         requestId?: string;
@@ -3635,6 +3641,7 @@ export const handlers = [
           chapterId: body.chapterId ?? null,
           completed: false,
           fileId: uid('f'),
+          hidden: body.hidden === true,
           name: `${body.provider}-import-${i + 1}.pdf`,
           polls: 0,
           sizeBytes: 512 * 1024,

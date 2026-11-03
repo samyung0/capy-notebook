@@ -332,12 +332,12 @@ func (s *Store) createSourceImports(
 		if _, err := tx.Exec(ctx, `INSERT INTO upload_sessions
 			(id, target, workspace_id, user_id, created_by, chapter_id, chapter_name,
 			 object_path, final_path, name, kind, content_type, declared_size, reserved_size,
-			 parse_mode, expires_at, batch_id)
-			VALUES ($1,'source',NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
+			 parse_mode, expires_at, batch_id, hidden)
+			VALUES ($1,'source',NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15,$16)`,
 			u.ID, u.WorkspaceID, payerID, nullStr(u.CreatedBy), u.ChapterID,
 			u.ChapterName, u.ObjectPath, u.FinalPath, u.Name, u.Kind,
 			u.ContentType, u.DeclaredSize, u.ParseMode,
-			u.ExpiresAt, nullStr(batchID)); err != nil {
+			u.ExpiresAt, nullStr(batchID), u.Hidden); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO source_import_jobs

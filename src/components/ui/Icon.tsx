@@ -172,6 +172,7 @@ import {
   Upload01Icon,
   User02Icon,
   UserAdd01Icon,
+  UserMultipleIcon,
   ViewIcon,
   ViewOffIcon,
   ViewOffSlashIcon,
@@ -376,6 +377,8 @@ const HugeIcons = {
   lock: SquareLock02Icon,
   logout: LogoutSquare01Icon,
   maximize: ArrowExpand01Icon,
+  // Everyone in the workspace (upload's Who can see it).
+  members: UserMultipleIcon,
   menu: Menu01Icon,
   message: Message01Icon,
   microphone: Mic01Icon,

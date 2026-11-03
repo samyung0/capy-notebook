@@ -364,7 +364,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	_, key := sourceObjectKeys(uploadID, name)
 	if _, err := a.s.CreateUploadSession(ctx, store.NewUploadSession{
 		ID: uploadID, WorkspaceID: wsID, CreatedBy: uid(r),
-		ChapterID: body.ChapterID, ChapterName: chapterName,
+		ChapterID: body.ChapterID, ChapterName: chapterName, Hidden: body.Hidden,
 		ObjectPath: key, FinalPath: key, Name: name, Kind: body.Kind,
 		ContentType: body.ContentType, DeclaredSize: body.SizeBytes,
 		ParseMode: body.ParseMode,
@@ -388,6 +388,12 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	log.Printf("source upload stored upload=%s workspace=%s file=%s bytes=%d",
 		uploadID, wsID, file.ID, body.SizeBytes)
 	return file, nil
+}
+
+// standaloneHidden refuses "Hidden from members" on a file outside a
+// workspace, which has no members to hide it from.
+func standaloneHidden() error {
+	return huma.Error400BadRequest("a file outside a workspace has no members to hide it from")
 }
 
 // checkSourceUpload checks a source upload's metadata for its ticket and
@@ -418,6 +424,9 @@ func (a *api) checkSourceUpload(
 	}
 	if body.ChapterID != nil && chapterName != "" {
 		return "", "", huma.Error400BadRequest("chapterId and chapterName cannot both be set")
+	}
+	if body.Hidden && wsID == "" {
+		return "", "", standaloneHidden()
 	}
 	if body.Kind == "" {
 		body.Kind = kindFromName(name)
@@ -590,6 +599,9 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 	if in.Body.ChapterID != nil && chapterName != "" {
 		return nil, huma.Error400BadRequest("chapterId and chapterName cannot both be set")
 	}
+	if in.Body.Hidden && wsID == "" {
+		return nil, standaloneHidden()
+	}
 	requestID := strings.TrimSpace(in.Body.RequestID)
 	if requestID == "" {
 		requestID = randID("ireq")
@@ -613,12 +625,14 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 	fingerprintBody, err := json.Marshal(struct {
 		ChapterID   *string
 		ChapterName string
+		Hidden      bool
 		ParseMode   string
 		Provider    string
 		Refs        []integrations.ImportRef
 	}{
 		ChapterID:   in.Body.ChapterID,
 		ChapterName: chapterName,
+		Hidden:      in.Body.Hidden,
 		ParseMode:   in.Body.ParseMode,
 		Provider:    in.Body.Provider,
 		Refs:        refs,
@@ -761,7 +775,7 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 			JobID: jobID,
 			Upload: store.NewUploadSession{
 				ID: uploadID, WorkspaceID: wsID, CreatedBy: actor,
-				ChapterID: in.Body.ChapterID, ChapterName: chapterName,
+				ChapterID: in.Body.ChapterID, ChapterName: chapterName, Hidden: in.Body.Hidden,
 				ObjectPath: incoming,
 				FinalPath:  finalPath,
 				Name:       meta.Name, Kind: kind, ContentType: contentType,

@@ -2835,6 +2835,9 @@ components:
           maxItems: 20
           minItems: 1
           type: array
+        hidden:
+          description: "The file starts hidden from members: only the workspace's owners and editors see it. A file outside a workspace has no members, so it is refused there"
+          type: boolean
         parseMode:
           enum:
             - fast

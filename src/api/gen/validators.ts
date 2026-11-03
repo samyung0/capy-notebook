@@ -6145,6 +6145,7 @@ export const ImportStandaloneSourcesBody = zod.object({
   "chapterName": zod.string().max(importStandaloneSourcesBodyChapterNameMax).optional(),
   "driveIds": zod.array(zod.string()).optional(),
   "fileIds": zod.array(zod.string()).min(1).max(importStandaloneSourcesBodyFileIdsMax),
+  "hidden": zod.boolean().optional().describe('The file starts hidden from members: only the workspace\'s owners and editors see it. A file outside a workspace has no members, so it is refused there'),
   "parseMode": zod.enum(['fast', 'none']).optional(),
   "provider": zod.enum(['google', 'microsoft']),
   "requestId": zod.string().max(importStandaloneSourcesBodyRequestIdMax).optional()
@@ -8015,6 +8016,7 @@ export const ImportSourcesBody = zod.object({
   "chapterName": zod.string().max(importSourcesBodyChapterNameMax).optional(),
   "driveIds": zod.array(zod.string()).optional(),
   "fileIds": zod.array(zod.string()).min(1).max(importSourcesBodyFileIdsMax),
+  "hidden": zod.boolean().optional().describe('The file starts hidden from members: only the workspace\'s owners and editors see it. A file outside a workspace has no members, so it is refused there'),
   "parseMode": zod.enum(['fast', 'none']).optional(),
   "provider": zod.enum(['google', 'microsoft']),
   "requestId": zod.string().max(importSourcesBodyRequestIdMax).optional()

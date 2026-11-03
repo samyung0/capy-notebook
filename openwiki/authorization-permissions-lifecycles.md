@@ -369,7 +369,8 @@ its rows. The flag narrows reading only; what editors may do with the item is
 unchanged.
 
 - **Storage.** `files.hidden` and `materials.hidden` (migration 0137), false by
-  default. A standalone item has no members and an embedded quiz or set
+  default; `upload_sessions.hidden` (migration 0139) carries an upload's
+  choice to its file row. A standalone item has no members and an embedded quiz or set
   follows its note, so the flag is read only on a top-level workspace item.
   `workspace_item_visible(hidden, workspace_id, viewer)` is the SQL rule the
   lists and searches call; single-item reads check it in Go
@@ -384,6 +385,21 @@ unchanged.
   and a standalone or embedded item answers 404. Hiding drains the item's live
   collaboration rooms through the eviction outbox, so a viewer with the
   document open is disconnected and cannot reconnect.
+- **Uploading hidden.** The Add file dialog's Upload and Import tabs end with
+  "Who can see it" under the files (Epo 2026-11-04, V1): "Everyone in the
+  workspace" (the default, reset each time the dialog opens) or "Hidden from
+  members", with the chip's eye-off icon. Only owners and editors upload, so
+  viewers never see it, and a standalone upload has no members, so it does
+  not show there. The upload's metadata and the import request carry
+  `hidden` (`CreateSourceUploadReq`, `ImportSourcesReq`; a standalone file
+  sent with it is refused, 400); the upload session keeps it and
+  `finalizeUploadSessionTx` inserts the file row with it, a browser upload's
+  and a Drive import's alike, so the file is never visible for a moment the
+  way hiding it after the upload would leave it. Nothing else names a new
+  file to members: workspace tree events carry no names, ingest events carry
+  only the file id (the list refetch filters it out), and uploads send no
+  notification. The Dashboard's Activity query (on the study shell branch)
+  takes the `workspace_item_visible` filter when it lands.
 - **Retrieval.** The pipeline binds the workspaces whose hidden items a turn
   may read (`bind_hidden_readers`): a workspace chat turn its workspace when
   the caller is an owner or editor, an account chat turn the scope's
@@ -393,9 +409,11 @@ unchanged.
 - **Clone.** A viewer's workspace clone leaves hidden items out (nor can a
   viewer reach one to clone it alone); an editor's clone copies them, and the
   copies start visible in the new workspace.
-- **Make a quiz.** An extracted quiz starts hidden, and its paper and answer
-  files are hidden when the job starts (an editor shows them when the
-  members should see them); see
+- **Make a quiz.** An extracted quiz starts hidden. Files uploaded in the
+  Make a quiz dialog are uploaded hidden, with the same `hidden` flag, so a
+  mark scheme uploaded for the quiz never reaches the students; a file picked
+  from the workspace keeps its setting, and the run changes no file's
+  visibility (Epo 2026-11-04). See
   [agentic-retrieval.md](agentic-retrieval.md#make-a-quiz-questions-from-uploaded-files).
 
 An open hidden item's header shows a "Hidden from members" chip after its

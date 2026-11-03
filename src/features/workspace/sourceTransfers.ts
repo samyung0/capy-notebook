@@ -74,6 +74,8 @@ export interface SourceTransfer {
 interface TransferRequest {
   chapterId: string | null;
   chapterName: string | null;
+  /** Who can see it: hidden from members from the file's first moment. */
+  hidden: boolean;
   key: string;
   kind: FileKind;
   name: string;
@@ -471,6 +473,7 @@ export function startSourceTransfer(start: StartTransfer) {
               durationSeconds: request.durationSeconds,
               estimatedCreditMicros: request.estimatedCreditMicros,
               file: picked,
+              hidden: request.hidden,
               kind: request.kind,
               onQueued: (queuePosition) => {
                 ticketed = true;
@@ -579,6 +582,7 @@ export function startSourceTransfer(start: StartTransfer) {
                         ? { driveIds: [request.driveId] }
                         : {}),
                       fileIds: [request.fileId],
+                      hidden: request.hidden,
                       parseMode: request.parseMode,
                       provider: request.provider,
                       requestId,

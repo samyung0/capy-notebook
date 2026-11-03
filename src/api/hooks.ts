@@ -960,16 +960,20 @@ export function useImportSources(
       chapterName?: string | null;
       driveIds?: string[];
       fileIds: string[];
+      /** The files start hidden from members; a workspace import only. */
+      hidden?: boolean;
       parseMode?: 'fast' | 'none';
       provider: 'google' | 'microsoft';
       requestId?: string;
       signal?: AbortSignal;
     }) => {
-      const { signal, chapterId, chapterName, ...request } = body;
+      const { signal, chapterId, chapterName, hidden, ...request } = body;
       return api.post<unknown>(
         `${sourcesPath(workspaceId)}/import`,
-        // A standalone file has no chapter.
-        workspaceId ? { ...request, chapterId, chapterName } : request,
+        // A standalone file has no chapter or members.
+        workspaceId
+          ? { ...request, chapterId, chapterName, hidden: hidden || undefined }
+          : request,
         { signal }
       );
     },
@@ -1837,6 +1841,7 @@ export function useUploadSource(wsId: string | null) {
       durationSeconds,
       batchId,
       batchTotal,
+      hidden,
       onQueued,
       onUploadProgress,
       signal,
@@ -1849,6 +1854,9 @@ export function useUploadSource(wsId: string | null) {
       batchTotal: number;
       chapterId?: string | null;
       chapterName?: string | null;
+      /** The file starts hidden from members (Who can see it); a workspace
+       * upload only. */
+      hidden?: boolean;
       /** fast = OpenDataLoader, with OCR on text-less pages; none = store-only
        * for non-text kinds (no parse, not indexed). Text kinds (txt/md/json)
        * still index under none — there is no parse route to pick. */
@@ -1872,9 +1880,13 @@ export function useUploadSource(wsId: string | null) {
       const metadata = {
         batchId,
         batchTotal,
-        // A standalone file has no chapter: the fields stay out.
+        // A standalone file has no chapter or members: the fields stay out.
         ...(wsId
-          ? { chapterId: chapterId ?? null, chapterName: chapterName ?? null }
+          ? {
+              chapterId: chapterId ?? null,
+              chapterName: chapterName ?? null,
+              hidden: hidden || undefined,
+            }
           : {}),
         contentType: file.type || 'application/octet-stream',
         durationSeconds: durationSeconds || undefined,
