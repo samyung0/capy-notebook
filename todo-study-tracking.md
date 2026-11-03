@@ -505,13 +505,13 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 
 ---
 
-### Drawing answers (proposal, 2026-11-03, canvas board K6)
+### Drawing answers (agreed, Epo 2026-11-03; canvas boards K6–K8)
 
 Epo asked whether to allow drawings as answers, for graphs and diagrams, and as a path toward scanned answers.
 
-**Proposal:** a `drawing` answer type beside `open`.
+**Agreed:** a `drawing` answer type beside `open`. Drawing happens on a full-screen board that copies BlockSuite/AFFiNE's edgeless mode (Epo): the dotted canvas, the floating toolbar with the pen and eraser that rise when picked, the pen menu (pen or highlighter, line widths, colours), straight line, text, undo and redo, and zoom in the corner. The answer is the sheet in the middle, the question stays pinned at the top left, and Done returns to the question with a preview and "Edit drawing". On phones the same board fills the screen.
 - **Background:** the part sets it to blank, squared grid, axes (with x and y ranges) or a figure from the question to label.
-- **Tools:** pen, straight line, text, eraser, three colours, undo and redo.
+- **Tools:** AFFiNE's: pen and highlighter with line widths and its colour palette, eraser, straight line, text, undo and redo. Reuse the vendored BlockSuite edgeless tools where that helps.
 - **Storage:** the answer is stored as strokes and rendered to an image for marking.
 - **Marking:** the same marking points as an open answer, marked by a vision model. It goes through the same owner approval and credits rules, and stays "Not marked" when credits are empty. Shared pages can't mark it.
 
@@ -526,7 +526,7 @@ Epo asked whether to allow drawings as answers, for graphs and diagrams, and as 
 **Needs:**
 - the answer type in the shared format (Go validator, TS types, bank format);
 - a canvas with pen input that works on phones;
-- a vision grader: whether `deepseek-flash` takes images is still to be checked, and GLM-5.3-Flash is the fallback;
+- a vision grader: DeepSeek reads images (Epo), so the same model marks drawings, with drawing items in its bench;
 - a few drawing items in the grading bench.
 
 **Later, if needed:** exact graph answers using Capy's graph editor, checked in code.
