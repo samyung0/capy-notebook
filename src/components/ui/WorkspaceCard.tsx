@@ -20,9 +20,9 @@ import { type CoverPaint, coverPaint } from '@/lib/coverArt';
 import { iconUrl } from '@/lib/icon-catalog';
 import { Badge } from './Badge';
 import { Card } from './Card';
-import { CardActions } from './CardActions';
-import { CoverArt } from './CoverArt';
+import { coverBackground } from './CoverArt';
 import { Skeleton } from './feedback';
+import { IconButton } from './IconButton';
 
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const qc = useQueryClient();
@@ -41,7 +41,6 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         : null,
     [workspace.id, workspace.name, workspace.cover]
   );
-  const ink = paint && (paint.light ? 'light' : 'dark');
   const canManage = workspace.capabilities.canManageMembers;
   const canSettings = canManageWorkspaceSettings(workspace);
   const menuItems = [
@@ -99,22 +98,23 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         preload="intent"
         to="/workspaces/$workspaceId"
       >
-        <WorkspaceCardFace
-          interactive
-          menuSpace
-          paint={paint}
-          workspace={workspace}
-        />
+        <WorkspaceCardFace interactive paint={paint} workspace={workspace} />
       </Link>
-      {/* Lifts with the card, which rises on hover (Card interactive). Below
-          desktop widths the title clears room for it (menuSpace). */}
-      <CardActions
-        backing="revealed"
-        className="top-3 right-3 z-50 transition-[translate] duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/card:-translate-y-1 group-has-[[data-slot=card]:hover]/card:ease-(--motion-ease-smooth-out)"
-        ink={ink}
-      >
-        <Menu align="start" items={menuItems} />
-      </CardActions>
+      {/* On the banner, always shown (board K3, H2). It lifts with the card,
+          which rises on hover (Card interactive). */}
+      <div className="absolute top-2 right-2 z-50 transition-[translate] duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/card:-translate-y-1 group-has-[[data-slot=card]:hover]/card:ease-(--motion-ease-smooth-out)">
+        <Menu
+          align="start"
+          items={menuItems}
+          trigger={
+            <IconButton
+              className="size-7 rounded-full bg-white/85 p-0 text-[#4b4b4b] hover:bg-white [&>svg]:size-4"
+              icon="moreVertical"
+              label={m.a11y_open_menu()}
+            />
+          }
+        />
+      </div>
       {editOpen && (
         <WorkspaceSettingsDialog
           onClose={() => setEditOpen(false)}
@@ -168,20 +168,19 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   );
 }
 
-/** A loading card built from the face's padding and line heights, so the
+/** A loading card with the face's banner, icon and line heights, so the
  * row keeps its height when cards arrive. */
 export function WorkspaceCardSkeleton({ className }: { className?: string }) {
   return (
     <Skeleton
-      className={cn(
-        'rounded-card border border-transparent p-3.5 xl:p-4.5',
-        className
-      )}
+      className={cn('rounded-card border border-transparent', className)}
     >
       <div aria-hidden className="invisible">
-        <p className="t-card-title h-[2lh] leading-tight" />
-        <p className="t-meta mt-2.5">&nbsp;</p>
-        <div className="mt-2.5 h-5.5" />
+        <div className="h-19" />
+        <div className="-mt-5 ml-3 size-9" />
+        <p className="px-3 pt-1.5 text-sm">&nbsp;</p>
+        <p className="t-meta px-3 pt-0.5">&nbsp;</p>
+        <div className="mx-3 mt-2.5 mb-3 h-5.5" />
       </div>
     </Skeleton>
   );
@@ -190,107 +189,86 @@ export function WorkspaceCardSkeleton({ className }: { className?: string }) {
 /** The fields a card shows; the settings cover picker previews them too. */
 export type WorkspaceCardFields = Pick<
   Workspace,
-  'chapterCount' | 'fileCount' | 'iconId' | 'name' | 'privacy'
+  'chapterCount' | 'iconId' | 'name' | 'privacy'
 > & { tags: { value: string }[] };
 
+/** Access and tags share one look on the card: a small 22px box. */
+const CARD_BADGE = 'h-5.5 rounded-[6px] px-1.75 py-0 font-semibold';
+
 /**
- * The card itself, without its link and menu. A cover fills the card behind
- * the layout, washed so text stays legible; `paint` comes from coverPaint.
+ * The card itself, without its link and menu (board K3, H2): the cover as a
+ * 76px banner, the icon on its bottom edge, then the name, the topic count,
+ * and access and tags. `paint` comes from coverPaint; without a cover the
+ * banner is plain.
  */
 export function WorkspaceCardFace({
   workspace,
   paint,
   interactive = false,
-  menuSpace = false,
 }: {
   workspace: WorkspaceCardFields;
   paint: CoverPaint | null;
   interactive?: boolean;
-  /** The card's ⋮ is always shown (below desktop widths, on touch
-   * screens): the title keeps clear of it. */
-  menuSpace?: boolean;
 }) {
-  const ink = paint && (paint.light ? 'light' : 'dark');
+  const topics = workspace.chapterCount;
   return (
     <Card
       border="solid"
-      className={cn(
-        '@container group relative h-full gap-4 p-3.5 xl:p-4.5',
-        paint && 'overflow-hidden'
-      )}
+      className="group h-full gap-0 overflow-hidden border-divider p-0"
       interactive={interactive}
     >
-      {paint && (
-        <CoverArt
-          className="transition-[filter] group-hover:brightness-105"
-          paint={paint}
-          shade="card"
-        />
-      )}
-      {/* The icon sits beside the name; counts and tags take their own lines. */}
-      <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3">
-        <img
-          alt=""
-          // A step smaller on narrow cards (the dashboard's row, phones).
-          className="@min-[19rem]:size-10 size-9 -translate-y-px rounded-button"
-          height={40}
-          src={iconUrl(workspace.iconId)}
-          width={40}
-        />
-        {/* Always two lines tall, so long names do not grow the card; a
-            one-line name stays centred beside the icon. */}
-        <h3
-          className={cn(
-            't-card-title flex h-[2lh] items-center leading-tight',
-            menuSpace && 'pointer-coarse:pr-7 max-lg:pr-7',
-            ink === 'dark' && 'text-white',
-            ink === 'light' && 'text-[#1d1d1f]'
-          )}
-        >
-          <span className="line-clamp-2">{workspace.name}</span>
-        </h3>
-        <p
-          className={cn(
-            't-meta col-span-2 mt-2.5 text-fg-muted',
-            ink === 'dark' && 'text-white/85',
-            ink === 'light' && 'text-[#4b4b4b]'
-          )}
-        >
-          {m.workspace_card_meta({
-            chapters: String(workspace.chapterCount),
-            files: String(workspace.fileCount),
-          })}
-        </p>
-        {/* One badge high, so every card and the skeleton share a height:
-            badges that do not fit wrap to a hidden second line. Access comes
-            first so it is never the one hidden. */}
-        <div className="col-span-2 mt-2.5 -ml-1 flex h-5.5 flex-wrap gap-1 overflow-hidden">
-          {workspace.privacy !== 'private' && (
-            // Access keeps its colour on covers so it stands apart from tags.
-            <Badge
-              size="sm"
-              tone={workspace.privacy === 'public' ? 'success' : 'info'}
-            >
-              {workspace.privacy === 'public'
-                ? m.share_public()
-                : m.workspace_privacy_shared()}
-            </Badge>
-          )}
-          {workspace.tags.map((t) => (
-            <Badge
-              className={cn(
-                'max-w-full',
-                ink === 'dark' && 'bg-white/18 text-white',
-                ink === 'light' && 'bg-black/8 text-[#1d1d1f]'
-              )}
-              key={t.value}
-              size="sm"
-            >
-              {/* A 35-character tag is wider than a phone card. */}
-              <span className="truncate"># {t.value}</span>
-            </Badge>
-          ))}
-        </div>
+      <div className="relative h-19 shrink-0 bg-page-hover">
+        {paint && (
+          <span
+            aria-hidden
+            className="absolute inset-0 transition-[filter] group-hover:brightness-105"
+            style={coverBackground(paint)}
+          />
+        )}
+      </div>
+      <img
+        alt=""
+        className="relative -mt-5 ml-3 size-9 rounded-button border-2 border-surface bg-surface shadow-[0_1px_3px_rgba(0,0,0,0.12)]"
+        height={36}
+        src={iconUrl(workspace.iconId)}
+        width={36}
+      />
+      <h3 className="truncate px-3 pt-1.5 font-bold text-sm">
+        {workspace.name}
+      </h3>
+      <p className="t-meta px-3 pt-0.5 text-fg-muted">
+        {topics === 1
+          ? m.workspace_card_one_topic()
+          : m.workspace_card_topics({ count: String(topics) })}
+      </p>
+      {/* One badge high, so every card and the skeleton share a height:
+          badges that do not fit wrap to a hidden second line. Access comes
+          first so it is never the one hidden. */}
+      <div className="mx-3 mt-2.5 mb-3 flex h-5.5 flex-wrap gap-1 overflow-hidden">
+        {workspace.privacy !== 'private' && (
+          <Badge
+            className={CARD_BADGE}
+            size="sm"
+            tone={workspace.privacy === 'public' ? 'success' : 'info'}
+          >
+            {workspace.privacy === 'public'
+              ? m.share_public()
+              : m.workspace_privacy_shared()}
+          </Badge>
+        )}
+        {workspace.tags.map((t) => (
+          <Badge
+            className={cn(
+              CARD_BADGE,
+              'max-w-full bg-page-hover text-fg-secondary'
+            )}
+            key={t.value}
+            size="sm"
+          >
+            {/* A 35-character tag is wider than a phone card. */}
+            <span className="truncate"># {t.value}</span>
+          </Badge>
+        ))}
       </div>
     </Card>
   );

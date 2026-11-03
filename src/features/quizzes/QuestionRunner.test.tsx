@@ -129,3 +129,27 @@ it('shows an open part with its marks and a verdict over its marking points', ()
   expect(graded([1, 1], 'Both')).toContain('All 2 points answered correctly');
   expect(graded([0, 0], ' ')).toContain('Question not answered');
 });
+
+it('marks a checked choice in its box and says Right or Wrong with the marks above', () => {
+  const reviewed = (choice: number[]) => {
+    const question = exampleQuestion('mcq');
+    question.parts[0].awarded = choice[0] === 1 ? 1 : 0;
+    return renderToStaticMarkup(
+      <QuestionRunner
+        answers={{ 'mcq-part': choice }}
+        question={question}
+        review
+      />
+    );
+  };
+  const right = reviewed([1]);
+  expect(right).toContain('Right<span class="t-meta');
+  expect(right).toContain('>1 / 1 mark</span>');
+  const wrong = reviewed([0]);
+  expect(wrong).toContain('Wrong<span class="t-meta');
+  expect(wrong).toContain('Your answer');
+  expect(wrong).toContain('Correct answer');
+  const skipped = reviewed([]);
+  expect(skipped).toContain('Not answered · 0 / 1 mark');
+  expect(skipped).toContain('Correct answer');
+});

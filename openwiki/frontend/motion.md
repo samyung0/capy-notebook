@@ -88,9 +88,10 @@ validation clears it, with no timer or delayed removal. Reduced motion disables
 both animations. Repeated submission of an unchanged invalid field does not
 restart the shake.
 
-Sonner still owns its wrapper exit and 200ms removal lifetime. Changing its CSS
-alone to a 350ms exit would truncate the animation; that lifecycle change remains
-separate. Toast copy updates use the same compact swap as other changing text.
+Toasts fade in and out with `motion-fade` (250ms in, 150ms out) and never
+grow or slide. The next toast waits for the shown one's fade-out to finish,
+read from its browser animations, so with reduced motion it swaps at once.
+Toast copy updates use the same compact swap as other changing text.
 
 Browser checks: `pnpm run e2e:msw:editor --workers=1 ui-motion.spec.ts`.
 

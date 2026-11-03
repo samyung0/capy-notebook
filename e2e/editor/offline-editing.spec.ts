@@ -185,7 +185,7 @@ test('offline edits outlive a reload and save once the room is back', async ({
   await shot(page, 'offline');
   // The workspace's offline toast goes after its 12 s; the banner stays.
   const toast = page
-    .locator('[data-sonner-toast]')
+    .locator('[data-toast]')
     .filter({ hasText: m.connection_offline_body() });
   await expect(toast).toBeVisible();
   await expect(toast).toHaveCount(0, { timeout: 14_000 });
@@ -197,7 +197,7 @@ test('offline edits outlive a reload and save once the room is back', async ({
   await setOnline(page, true);
   await expect(
     page
-      .locator('[data-sonner-toast]')
+      .locator('[data-toast]')
       .filter({ hasText: m.connection_online_title() })
   ).toBeVisible();
   await page.reload();

@@ -1,7 +1,7 @@
-import type { ToastProps } from '@/components/ui/Sonner';
+import type { ToastOptions } from '@/components/ui/Toast';
 import { m } from '@/i18n';
 
-type MockToast = Omit<ToastProps, 'id'>;
+type MockToast = ToastOptions;
 
 /** A button preview: clicking it only dismisses the toast. */
 const action = (label: string) => ({ label, onClick: () => {} });
@@ -96,6 +96,26 @@ export const mockToastOptions: {
     toast: () => ({
       description: m.connection_online_body(),
       title: m.connection_online_title(),
+      variant: 'success',
+    }),
+  },
+  // No feature shows a working toast yet; these preview the kind (board K2).
+  {
+    group: 'Success and notices',
+    label: 'Working (dev copy)',
+    toast: () => ({
+      id: 'mock-working',
+      title: 'Marking 12 answers…',
+      variant: 'loading',
+    }),
+  },
+  {
+    group: 'Success and notices',
+    label: 'Working, then done (dev copy)',
+    toast: () => ({
+      button: action('Open'),
+      id: 'mock-working',
+      title: 'Marked 12 answers',
       variant: 'success',
     }),
   },

@@ -96,8 +96,6 @@ function DialogContent({
         )}
         data-slot="dialog-content"
         inert={held}
-        // check github issues for pointer event collisions between dialog and sonner
-        // https://github.com/radix-ui/primitives/issues/2690#issuecomment-1945449832
         onOpenAutoFocus={(event) => {
           onOpenAutoFocus?.(event);
           // Phones: the first tabbable is the header's close, whose focus ring
@@ -108,10 +106,8 @@ function DialogContent({
           (event.currentTarget as HTMLElement).focus();
         }}
         onPointerDownOutside={(e) => {
-          if (
-            e.target instanceof Element &&
-            e.target.closest('[data-sonner-toast]')
-          ) {
+          // A press on a toast (its action or close) is not a press outside.
+          if (e.target instanceof Element && e.target.closest('[data-toast]')) {
             e.preventDefault();
           }
           onPointerDownOutside?.(e);

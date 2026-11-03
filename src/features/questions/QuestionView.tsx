@@ -228,8 +228,8 @@ export const optionLetter = (index: number) => String.fromCharCode(65 + index);
 export const optionColumns = (question: Question | LearnerQuestion) =>
   question.layout === 'paper';
 
-/** Option label column: a letter or number in a small square badge, filled
- * when chosen, or a result icon. */
+/** The label column of matching items and answer keys: a letter or number
+ * in a small square. */
 export function OptionKey({
   className,
   children,
@@ -249,32 +249,39 @@ export function OptionKey({
   );
 }
 
-/** How an answer row reads: chosen while answering, then right, wrong or the
+/** How an answer box reads: chosen while answering, then right, wrong or the
  * correct answer the learner missed once checked. */
 export type RowState = 'selected' | 'right' | 'wrong' | 'missed';
 
-/** Answer item: a row over one bottom rule instead of a box. A state thickens
- * and colours the rule; the row's height stays put. */
-export function answerRowClass(state?: RowState) {
+/** Answer item (an option, True or False, an ordering item): a full box
+ * (board K5). Chosen is a purple tint; once checked a right choice fills
+ * green, a wrong one red, and the correct answer the learner did not choose
+ * gets a green outline only, so green fill always means chosen and right. */
+export function answerBoxClass(state?: RowState) {
   return cn(
-    'flex min-h-11 items-center gap-3 border-b px-0.5 py-2',
-    state ? 'border-b-2 pb-[7px]' : 'border-line',
-    state === 'selected' && 'border-solid-accent-1 text-tint-accent-1-fg',
-    state === 'right' && 'border-solid-success',
-    state === 'wrong' && 'border-solid-error',
-    state === 'missed' && 'border-solid-success'
+    'flex min-h-11.5 items-center gap-2.5 rounded-tile border bg-surface px-3.5 py-2.5 font-semibold text-fg text-sm',
+    !state && 'border-line',
+    state === 'selected' && 'border-solid-accent-1 bg-tint-accent-1',
+    state === 'right' && 'border-tint-success-fg bg-tint-success',
+    state === 'wrong' && 'border-tint-error-fg bg-tint-error',
+    state === 'missed' && 'border-tint-success-fg'
   );
 }
 
-/** A key badge's colours for a row state: filled when chosen or checked. */
-export function optionKeyClass(state?: RowState) {
+/** A box's letter or number, coloured with its state. */
+export function answerLetterClass(state?: RowState) {
   return cn(
-    state === 'selected' && 'bg-solid-accent-1 text-surface',
-    (state === 'right' || state === 'missed') &&
-      'bg-tint-success-fg text-surface',
-    state === 'wrong' && 'bg-tint-error-fg text-surface'
+    'w-5.5 shrink-0 font-bold',
+    !state && 'text-fg-muted',
+    state === 'selected' && 'text-tint-accent-1-fg',
+    (state === 'right' || state === 'missed') && 'text-tint-success-fg',
+    state === 'wrong' && 'text-tint-error-fg'
   );
 }
+
+/** Boxes stack with an 8px gap; paper questions set options two by two. */
+export const answerBoxesClass = (twoColumns = false) =>
+  cn('grid gap-2', twoColumns && '@xl:grid-cols-2');
 
 /** Lettered options above the matching items, side by side once the answer
  * area is 50rem wide. */
@@ -316,10 +323,10 @@ function Choices({
   if (answer.type === 'mcq')
     return (
       <div className="@container col-[2/-1] min-w-0">
-        <ol className={cn('grid', twoColumns && '@xl:grid-cols-2 @xl:gap-x-7')}>
+        <ol className={answerBoxesClass(twoColumns)}>
           {answer.options.map((text, i) => (
-            <li className={answerRowClass()} key={i}>
-              <OptionKey>{optionLetter(i)}</OptionKey>
+            <li className={answerBoxClass()} key={i}>
+              <span className={answerLetterClass()}>{optionLetter(i)}</span>
               <TextView className="min-w-0 flex-1" text={text} />
             </li>
           ))}
@@ -348,10 +355,10 @@ function Choices({
     );
   if (answer.type === 'ordering')
     return (
-      <ol className="col-[2/-1] grid min-w-0">
+      <ol className={cn('col-[2/-1] min-w-0', answerBoxesClass())}>
         {answer.items.map((text, i) => (
-          <li className={answerRowClass()} key={i}>
-            <OptionKey>{i + 1}</OptionKey>
+          <li className={answerBoxClass()} key={i}>
+            <span className={answerLetterClass()}>{i + 1}</span>
             <TextView className="min-w-0 flex-1" text={text} />
           </li>
         ))}

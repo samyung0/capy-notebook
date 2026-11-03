@@ -15,11 +15,12 @@ import {
 import { Textarea } from '@/components/ui/TextArea';
 import {
   AnswerView,
-  answerRowClass,
+  answerBoxClass,
+  answerBoxesClass,
+  answerLetterClass,
   MatchingLayout,
   OptionKey,
   optionColumns,
-  optionKeyClass,
   optionLetter,
   QuestionBlockView,
   QuestionReview,
@@ -250,10 +251,17 @@ function gapValues(
   });
 }
 
-/** A choice as an underlined row: chosen while answering; after checking,
- * right or wrong with a tag, and a correct answer that was not chosen on a
- * green rule with a check. */
-function ChoiceRow({
+/** A checked choice's tag at the box's end. */
+const RESULT_TAG = {
+  missed: { icon: null, label: m.question_ui_correct_answer },
+  right: { icon: 'check', label: m.question_ui_result_right },
+  wrong: { icon: 'x', label: m.question_ui_your_answer },
+} as const;
+
+/** A choice as a box: chosen while answering; after checking, right (green
+ * fill), wrong (red fill) or the correct answer that was not chosen (green
+ * outline), each with its tag. */
+function ChoiceBox({
   label,
   text,
   selected,
@@ -261,6 +269,7 @@ function ChoiceRow({
   review,
   disabled,
   onClick,
+  className,
 }: {
   label: ReactNode;
   text: ReactNode;
@@ -269,6 +278,7 @@ function ChoiceRow({
   review: boolean;
   disabled: boolean;
   onClick?: () => void;
+  className?: string;
 }) {
   const state: RowState | undefined = review
     ? selected
@@ -281,47 +291,73 @@ function ChoiceRow({
     : selected
       ? 'selected'
       : undefined;
-  const checked = state === 'right' || state === 'wrong' || state === 'missed';
+  const tag = state && state !== 'selected' ? RESULT_TAG[state] : null;
   return (
     <button
       aria-pressed={selected}
       className={cn(
-        answerRowClass(state),
+        answerBoxClass(state),
         'w-full text-left disabled:cursor-default',
         !(review || disabled || selected) && 'hover:border-line-strong',
-        review && !state && 'text-fg-muted'
+        className
       )}
       disabled={review || disabled}
       onClick={onClick}
       type="button"
     >
-      {(label !== null || review) && (
-        <OptionKey className={optionKeyClass(state)}>
-          {checked ? (
-            <Icon
-              name={state === 'wrong' ? 'x' : 'check'}
-              size={13}
-              strokeWidth={2.25}
-            />
-          ) : (
-            label
-          )}
-        </OptionKey>
+      {label !== null && (
+        <span className={answerLetterClass(state)}>{label}</span>
       )}
-      <span className="min-w-0 flex-1">{text}</span>
-      {review && (selected || correct) && (
+      <span className="min-w-0">{text}</span>
+      {tag && (
         <span
           className={cn(
-            'shrink-0 whitespace-nowrap font-bold text-xs',
-            correct ? 'text-tint-success-fg' : 'text-tint-error-fg'
+            'ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap pl-1 text-[12.5px]',
+            state === 'wrong' ? 'text-tint-error-fg' : 'text-tint-success-fg'
           )}
         >
-          {selected
-            ? m.question_ui_your_answer()
-            : m.question_ui_correct_answer()}
+          {tag.icon && <Icon name={tag.icon} size={16} />}
+          {tag.label()}
         </span>
       )}
     </button>
+  );
+}
+
+/** A checked choice part's result above its boxes, as in Results: Right or
+ * Wrong with the marks; a skipped part reads Not answered and counts as
+ * wrong. */
+function PartResult({
+  part,
+  answered,
+}: {
+  part: QuestionPart;
+  answered: boolean;
+}) {
+  const { awarded, marks } = part;
+  if (awarded == null) return null;
+  // Choices, True or False and ordering score all or nothing.
+  const right = answered && awarded >= marks;
+  const score =
+    marks === 1
+      ? m.question_ui_result_mark({ awarded: String(awarded) })
+      : m.question_ui_result_marks({
+          awarded: String(awarded),
+          marks: String(marks),
+        });
+  return (
+    <p className="mb-2.5 flex items-center gap-2 font-bold text-sm">
+      <span
+        className={cn(
+          'size-2.5 shrink-0 rounded-[2px]',
+          right ? 'bg-tint-success-fg' : 'bg-tint-error-fg'
+        )}
+      />
+      {right ? m.question_ui_result_right() : m.question_ui_result_wrong()}
+      <span className="t-meta font-semibold text-fg-muted">
+        {answered ? score : m.question_ui_result_skipped({ score })}
+      </span>
+    </p>
   );
 }
 
@@ -445,67 +481,61 @@ function PartRunner({
   const indices = Array.isArray(value)
     ? value.filter((item) => typeof item === 'number')
     : null;
+  const result = (answered: boolean) =>
+    review && isAuthoredPart(part) ? (
+      <PartResult answered={answered} part={part} />
+    ) : null;
   // Several options may be correct: options toggle like checkboxes.
   if (answer.type === 'mcq')
     return (
-      <div className={cn('grid', twoColumns && '@xl:grid-cols-2 @xl:gap-x-7')}>
-        {answer.options.map((option, i) => {
-          const selected = indices?.includes(i) ?? false;
-          return (
-            <ChoiceRow
-              correct={key?.type === answer.type && key.correct.includes(i)}
-              disabled={disabled}
-              key={i}
-              label={optionLetter(i)}
-              onClick={() =>
-                onChange(
-                  selected
-                    ? (indices ?? []).filter((n) => n !== i)
-                    : [...(indices ?? []), i]
-                )
-              }
-              review={review}
-              selected={selected}
-              text={<TextView text={option} />}
-            />
-          );
-        })}
+      <div>
+        {result(Boolean(indices?.length))}
+        <div className={answerBoxesClass(twoColumns)}>
+          {answer.options.map((option, i) => {
+            const selected = indices?.includes(i) ?? false;
+            return (
+              <ChoiceBox
+                correct={key?.type === answer.type && key.correct.includes(i)}
+                disabled={disabled}
+                key={i}
+                label={optionLetter(i)}
+                onClick={() =>
+                  onChange(
+                    selected
+                      ? (indices ?? []).filter((n) => n !== i)
+                      : [...(indices ?? []), i]
+                  )
+                }
+                review={review}
+                selected={selected}
+                text={<TextView text={option} />}
+              />
+            );
+          })}
+        </div>
       </div>
     );
-  // True and False sit side by side, stacked on phones like other choices.
+  // True and False sit side by side, stacked on phones like other choices;
+  // centred while answering, as before the boxes.
   if (answer.type === 'boolean')
-    return review ? (
-      <div className="grid @md:grid-cols-2 @md:gap-x-7">
-        {[true, false].map((option) => (
-          <ChoiceRow
-            correct={key?.type === 'boolean' && key.correct === option}
-            disabled
-            key={String(option)}
-            label={null}
-            review
-            selected={value === option}
-            text={option ? m.question_ui_true() : m.question_ui_false()}
-          />
-        ))}
-      </div>
-    ) : (
-      <div className="grid @md:grid-cols-2 @md:gap-x-7">
-        {[true, false].map((option) => (
-          <button
-            aria-pressed={value === option}
-            className={cn(
-              answerRowClass(value === option ? 'selected' : undefined),
-              '@md:justify-center font-semibold disabled:cursor-default',
-              value !== option && !disabled && 'hover:border-line-strong'
-            )}
-            disabled={disabled}
-            key={String(option)}
-            onClick={() => onChange(option)}
-            type="button"
-          >
-            {option ? m.question_ui_true() : m.question_ui_false()}
-          </button>
-        ))}
+    return (
+      <div>
+        {result(typeof value === 'boolean')}
+        <div className="grid @md:grid-cols-2 gap-2">
+          {[true, false].map((option) => (
+            <ChoiceBox
+              className={cn(!review && '@md:justify-center')}
+              correct={key?.type === 'boolean' && key.correct === option}
+              disabled={disabled}
+              key={String(option)}
+              label={null}
+              onClick={() => onChange(option)}
+              review={review}
+              selected={value === option}
+              text={option ? m.question_ui_true() : m.question_ui_false()}
+            />
+          ))}
+        </div>
       </div>
     );
   // Gap fields sit inside the part's text (GapText); a review with a miss
@@ -800,51 +830,52 @@ function PartRunner({
       ];
       onChange(next);
     }
+    // Checked, each item fills green in its right place and red elsewhere;
+    // the correct order lists under them. A skipped part shows the key's
+    // order unmarked.
+    const state = (item: string, i: number): RowState | undefined =>
+      review && ordered?.length
+        ? right(item, i)
+          ? 'right'
+          : 'wrong'
+        : undefined;
     return (
-      <div className="grid">
-        {current.map((item, i) => (
-          <div
-            className={cn(
-              answerRowClass(
-                review ? (right(item, i) ? 'right' : 'wrong') : undefined
-              ),
-              !review && 'py-1 pr-0'
-            )}
-            key={keys[i]}
-          >
-            <OptionKey
+      <div>
+        {result(Boolean(ordered?.length))}
+        <div className={answerBoxesClass()}>
+          {current.map((item, i) => (
+            <div
               className={cn(
-                review &&
-                  (right(item, i)
-                    ? 'text-tint-success-fg'
-                    : 'text-tint-error-fg')
+                answerBoxClass(state(item, i)),
+                !review && 'py-1 pr-1.5'
               )}
+              key={keys[i]}
             >
-              {i + 1}
-            </OptionKey>
-            <TextView className="min-w-0 flex-1 text-fg" text={item} />
-            {!review && (
-              <span className="flex shrink-0 items-center">
-                <IconButton
-                  disabled={disabled || i === 0}
-                  icon="chevronUp"
-                  label={m.question_ui_move_up()}
-                  onClick={() => move(i, -1)}
-                  size="sm"
-                  variant="ghost-hover"
-                />
-                <IconButton
-                  disabled={disabled || i === current.length - 1}
-                  icon="chevronDown"
-                  label={m.question_ui_move_down()}
-                  onClick={() => move(i, 1)}
-                  size="sm"
-                  variant="ghost-hover"
-                />
-              </span>
-            )}
-          </div>
-        ))}
+              <span className={answerLetterClass(state(item, i))}>{i + 1}</span>
+              <TextView className="min-w-0 flex-1" text={item} />
+              {!review && (
+                <span className="flex shrink-0 items-center">
+                  <IconButton
+                    disabled={disabled || i === 0}
+                    icon="chevronUp"
+                    label={m.question_ui_move_up()}
+                    onClick={() => move(i, -1)}
+                    size="sm"
+                    variant="ghost-hover"
+                  />
+                  <IconButton
+                    disabled={disabled || i === current.length - 1}
+                    icon="chevronDown"
+                    label={m.question_ui_move_down()}
+                    onClick={() => move(i, 1)}
+                    size="sm"
+                    variant="ghost-hover"
+                  />
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
         {review && current.some((item, i) => !right(item, i)) && (
           <KeyList
             rows={answer.items.map((item, i) => {

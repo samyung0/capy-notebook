@@ -123,7 +123,7 @@ test('a failed upload is reported in the panel and toast, and adding it again su
   await expect(
     panel.locator('[data-transfer-status="error"]', { hasText: name })
   ).toBeVisible();
-  await expect(ownerPage.locator('[data-sonner-toast]')).toContainText(name);
+  await expect(ownerPage.locator('[data-toast]')).toContainText(name);
   expect(requests.uploads).toHaveLength(1);
   expect(requests.files).toEqual([]);
 

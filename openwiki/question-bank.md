@@ -21,7 +21,7 @@ missed questions into their quizzes; production Jev grading remains in the centr
 The tree (`TopicTree` in `src/routes/QuestionBank.tsx`) lists every exam as a
 44px cover strip (`ExamStrip` in `src/features/questions/ExamPicker.tsx`): the
 art starts at the left edge and fades out to the right, the name sits on it in
-the cover's text colour as on workspace cards (`paint.light` dark, else white
+the cover's text colour (`paint.light` dark, else white
 over the strip shade; covers look the same in both themes), and the topic count
 and a chevron sit on the panel. A strip opens its subjects in place; several
 exams and subjects may stay open. The open topic's exam and subject, `?exam=`
@@ -600,14 +600,21 @@ score and awards, but its matching letters and ordering rows show as
 unanswered and its gaps as wrong.
 
 Answer areas span the text and marks columns of a part row; phones use 16px
-pane padding and a 1.5rem number column. Answers use the underline variant: no
-boxes, one bottom rule per item (`answerRowClass` in `QuestionView.tsx`), its
-key a letter or number in a small square badge (`OptionKey`, 6px corners). A
-state thickens and colours the rule: chosen is the accent with a filled badge;
-after checking, right is green and wrong red with a ✓/✗ badge and a "Your
-answer" tag, and a correct option not chosen sits on a dashed green rule tagged
-"Correct answer". Choices take two columns on wide paper answer areas; true /
-false sits side by side from a 28rem answer area and stacks below it. Text
+pane padding and a 1.5rem number column. Options, True / False and ordering
+items are full boxes (board K5, Epo 2026-11-03; `answerBoxClass` and
+`answerLetterClass` in `QuestionView.tsx`): 46px tall, `rounded-tile`, the
+letter or number muted before the text. Chosen is a purple tint
+(`tint-accent-1` with the accent border). After checking, a right choice fills
+green with ✓ Right, a wrong choice fills red with ✗ Your answer, and the
+correct answer the learner did not choose gets a green outline with no fill
+and "Correct answer" (M1), so a green fill only ever means chosen and right.
+Ordering items fill green in their right place and red elsewhere, with no tag;
+a skipped ordering shows the key's order unmarked. Once checked, a label above
+a choice, True / False or ordering part says Right or Wrong with its marks, as
+in Results ("Wrong · 0 / 1 mark"); a skipped part says "Not answered" and
+counts as wrong. Boxes stack with an 8px gap; choices sit two by two on wide
+paper answer areas, and True / False sits side by side from a 28rem answer
+area (centred while answering) and stacks below it. Text
 answers are underlined `Input`s, written answers sit on ruled lines
 (`ruled-lines`), and each gap is a blank in the sentence that grows with what is
 typed up to the line (a hidden copy of the value in `data-value` sizes it),
@@ -762,7 +769,7 @@ answer-free (`questions.LearnerView`), editors' View mode included; Check
 answer posts the answers to the check route, which grades and records them and
 returns that question's key and awards only. The question then shows the quiz
 review (`QuestionReview`: part score in the marks column with no question total,
-the answer rows tagged Your answer and Correct answer, accepted answers, the
+the answer boxes tagged Right, Your answer and Correct answer, accepted answers, the
 worked solution collapsed), and the topic's marks and the landing refresh. Open
 parts (none in the bank today) are graded by Jev like a quiz's. Try again
 clears the answers and the key; the next check records a new attempt, and the

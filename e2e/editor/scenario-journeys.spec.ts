@@ -86,7 +86,7 @@ test('one click fails a real source save and retry preserves the mounted editor'
   // editor keeps its edits.
   const banner = page.getByTestId('save-banner');
   await expect(banner.getByText(m.editor_save_delayed())).toBeVisible();
-  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+  await expect(page.locator('[data-toast]')).toHaveCount(0);
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
     'unsaved'
@@ -402,7 +402,7 @@ test('page retry and form retry remain usable after the one-click fault retires'
   ).toBeVisible();
   await expect(
     page
-      .locator('[data-sonner-toast]')
+      .locator('[data-toast]')
       .getByText(m.source_import_failed(), { exact: true })
   ).toBeVisible();
 });

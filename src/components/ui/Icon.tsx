@@ -1,5 +1,6 @@
 import {
   Alert02Icon,
+  AlertCircleIcon,
   Archive01Icon,
   ArchiveRestoreIcon,
   ArrowDown02Icon,
@@ -267,6 +268,7 @@ const PanelRightOpenIcon = [
 
 const HugeIcons = {
   alert: Alert02Icon,
+  alertCircle: AlertCircleIcon,
   alignCenter: TextAlignCenterIcon,
   alignJustify: TextAlignJustifyIcon,
   alignLeft: TextAlignLeftIcon,

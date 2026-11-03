@@ -12,7 +12,7 @@ const MOVED_TO = 'ws_bio';
 const MOVED_TO_NAME = 'Biology 101';
 
 function toast(page: Page, title: string) {
-  return page.locator('[data-sonner-toast]').filter({ hasText: title });
+  return page.locator('[data-toast]').filter({ hasText: title });
 }
 
 /** The mock file row moves to `workspaceId` (no room message). */

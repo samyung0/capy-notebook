@@ -210,12 +210,21 @@ safety limits. `sourceAnalysisIssue` in `sourceDetails.ts` owns the rules; see
 
 Abort errors and account-blocking errors are also excluded from the global
 mutation toast. Toast IDs are derived from the normalized error kind, so repeated
-failures of the same kind update/deduplicate instead of stacking. The global
-Toaster stays at the bottom right and normally displays at most three toasts.
-While an error is present, the shared list expands with no count cap so other
-toasts cannot cover the error.
-Warnings and errors last twelve seconds; other toasts with a button last seven,
-and the rest keep Sonner's four-second duration (`userToast`).
+failures of the same kind count up on one toast instead of stacking.
+
+The toaster (`AppToaster`, `userToast` and `dismissToast` in
+`src/components/ui/userToast.ts`) shows one toast at a time, centred at the
+bottom (S1, Epo 2026-11-03):
+
+- A different toast waits until the shown one has closed.
+- The same toast again (the same id, or the same copy without one) counts up
+  on the shown or waiting toast (×2, ×3) and restarts its timer. A new copy
+  under the same id replaces it in place, so a working toast
+  (`variant: 'loading'`) turns into its done toast.
+- Errors stay until closed with their ×. Warnings last twelve seconds, other
+  toasts with a button seven, the rest four, and a working toast until it is
+  updated. Timers pause while the toast is hovered or the tab is hidden.
+- Its look (board K2) is in `appearance.md` § Shared pieces.
 
 ## Persisted query cache
 
