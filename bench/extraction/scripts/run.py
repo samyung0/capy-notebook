@@ -53,23 +53,24 @@ MODELS = {
     "deepseek": ("deepseek", "deepseek-flash", "Flash", (600, 12, 2400)),
     "glm": ("zai", "glm-5.3-flash", "GLM-5.3-Flash", (300, 60, 1000)),
 }
-CAPTIONING = ("openrouter", "deepseek/deepseek-v4.1-flash-1017", (160, 16, 1000))
+# 1017 at Epo's price for every use: the highest of its three providers' list
+# prices in each column (2026-11-04).
+CAPTIONING = ("openrouter", "deepseek/deepseek-v4.1-flash-1017", (200, 20, 1200))
 TEXT_LAYER_MIN = 40
-# OpenRouter candidates for the extraction slot (2026-11-03, after 0731 proved
-# text-only): each held on the providers named here with fallbacks off, as
-# elitellm's production pins are (1017's is production's, OPENROUTER_ROUTING).
-# Never DeepInfra (Epo 2026-11-04; runs 51-52 had it second for V4.1 Flash,
-# and InferenceNet served every call). Rates are InferenceNet's list prices.
-OPENROUTER = {
-    "v41-1017": ["wafer/us", "InferenceNet", "Cloudflare"],
-    "v41": ["InferenceNet"],
-}
+# OpenRouter models for the extraction slot (2026-11-03, after 0731 proved
+# text-only). 1017 runs on production's routes: the extraction slot's
+# (InferenceNet, Cloudflare, Wafer's US endpoint), bound as the service binds
+# it. The unpinned V4.1 Flash has no production route, so the bench holds it
+# on InferenceNet with fallbacks off (never DeepInfra, Epo 2026-11-04; runs
+# 51-52 had it second, and InferenceNet served every call), at InferenceNet's
+# list price.
+OPENROUTER = {"v41": ["InferenceNet"]}
 MODELS |= {
     "v41-1017": (
         "openrouter",
         "deepseek/deepseek-v4.1-flash-1017",
         "V4.1 Flash 1017",
-        (160, 16, 1100),
+        CAPTIONING[2],
     ),
     "v41": (
         "openrouter",
@@ -90,12 +91,17 @@ def load_env(path: str | None) -> None:
             os.environ.setdefault(key, value.strip().strip('"'))
 
 
-def pin_openrouter(model_slug: str, order: list[str]) -> list[dict]:
-    """Route model_slug to order with fallbacks off; the returned list fills
-    with each of its calls' serving provider and OpenRouter's billed cost."""
+def pin_openrouter(model_slug: str, order: list[str] | None) -> list[dict]:
+    """Route model_slug to order with fallbacks off, when given; the returned
+    list fills with each of its calls' serving provider and OpenRouter's billed
+    cost."""
     from pipeline.elitellm import client
 
-    client.OPENROUTER_ROUTING[model_slug] = {"order": order, "allow_fallbacks": False}
+    if order:
+        client.OPENROUTER_ROUTING[model_slug] = {
+            "order": order,
+            "allow_fallbacks": False,
+        }
     post, stream = client._post_json, client._stream_sse
     served: list[dict] = []
 
@@ -207,7 +213,7 @@ async def page_texts(pdf: Path, pages: list[int], tag: str) -> dict[int, str]:
 
 
 async def run(args) -> dict:
-    from pipeline import obs
+    from pipeline import elitellm, obs
     from pipeline.config import cfg
     from pipeline.registry import bind_request_llm
     from pipeline.retrieval import capture, extraction, limits
@@ -251,10 +257,12 @@ async def run(args) -> dict:
     provider, model_slug, name, rates = MODELS[args.model]
     model = spec(provider, model_slug, name, rates, "low")
     served = (
-        pin_openrouter(model_slug, OPENROUTER[args.model])
-        if args.model in OPENROUTER
+        pin_openrouter(model_slug, OPENROUTER.get(args.model))
+        if provider == "openrouter"
         else []
     )
+    # As the service binds it: the run's calls take the extraction route.
+    elitellm.bind_route_slot("extraction")
     # Windows run at mid, as the gateway pins them (Epo 2026-11-03).
     bind_request_llm(args.effort)
     # As the service binds it: a busy model call waits its turn once.

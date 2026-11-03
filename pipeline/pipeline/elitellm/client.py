@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import os
 import re
@@ -31,12 +32,15 @@ DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
 # 2026-11-04); only the Qwen embedding pin uses it, on DeepInfra's own API.
 # 0731 is the ingest descriptor model (decision 2026-10-15), off Relace since
 # its endpoint answered 429 for every summary (decision 2026-10-20); 1017
-# reads pages, captions images, writes ghost text and runs Make a quiz
-# (decisions 2026-10-19, 2026-10-21, 2026-10-28, 2026-11-03) on Wafer's US
-# endpoint, then InferenceNet, then Cloudflare (Epo 2026-11-04). `order` takes
-# an endpoint tag: "wafer/us" ($0.038 / $0.50 per million input / output) is
-# named so OpenRouter cannot pick Wafer's dearer "wafer/mxfp4" ($0.16 in); by
-# name alone it took wafer/us in five calls of five (2026-11-04 probe).
+# reads pages, captions images and writes ghost text (decisions 2026-10-19,
+# 2026-10-21, 2026-10-28) on Wafer's US endpoint, then InferenceNet, then
+# Cloudflare (Epo 2026-11-04); Make a quiz's calls on it take the extraction
+# slot's route below, InferenceNet first. The catalog prices 1017 at the
+# highest of the three providers' list prices in each column (Epo
+# 2026-11-04). `order` takes an endpoint tag: "wafer/us" ($0.038 /
+# $0.50 per million input / output) is named so OpenRouter cannot pick
+# Wafer's dearer "wafer/mxfp4" ($0.16 in); by name alone it took wafer/us in
+# five calls of five (2026-11-04 probe).
 # GLM-5.3-Flash serves chat (decision 2026-10-21, replacing Z.AI's own
 # endpoint). OpenRouter bills each provider's listed price.
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -61,6 +65,32 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
         "allow_fallbacks": False,
     },
 }
+# A slot's own route on a model that also serves other slots, for the calls a
+# caller binds to that slot (bind_route_slot); every other call on the model
+# takes its route above. Make a quiz on 1017 goes InferenceNet first (Epo
+# 2026-11-04): on Wafer two runs lost every open part's model answer and one
+# ran away (bench/extraction/reports/2026-11-03-keys-in-one-prompt.md).
+OPENROUTER_SLOT_ROUTING: dict[tuple[str, str], dict[str, Any]] = {
+    ("deepseek/deepseek-v4.1-flash-1017", "extraction"): {
+        "order": ["InferenceNet", "Cloudflare", "wafer/us"],
+        "allow_fallbacks": False,
+    },
+}
+_route_slot: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "openrouter_route_slot", default=""
+)
+
+
+def bind_route_slot(slot: str) -> contextvars.Token[str]:
+    """Route this context's OpenRouter calls by the slot's own route, where
+    OPENROUTER_SLOT_ROUTING has one."""
+    return _route_slot.set(slot)
+
+
+def reset_route_slot(token: contextvars.Token[str]) -> None:
+    _route_slot.reset(token)
+
+
 # The zai pin keeps its catalog identity; OpenRouter names the model with an
 # org prefix.
 ZAI_OPENROUTER_MODELS = {"glm-5.3-flash": "z-ai/glm-5.3-flash"}
@@ -496,7 +526,9 @@ def openrouter_request(
         if spec.provider_slug == "zai"
         else spec.model_slug
     )
-    routing = OPENROUTER_ROUTING.get(model or "")
+    routing = OPENROUTER_SLOT_ROUTING.get(
+        (model or "", _route_slot.get())
+    ) or OPENROUTER_ROUTING.get(model or "")
     if routing is None:
         raise RegistryError(
             f"elitellm has no OpenRouter provider pin for {spec.model_slug!r}"

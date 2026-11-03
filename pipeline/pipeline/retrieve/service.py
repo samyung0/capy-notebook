@@ -811,6 +811,8 @@ async def _extract_events(
         limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S)
     )
     hidden_token = store.bind_hidden_readers([req.workspaceId])
+    # The run's OpenRouter calls take the extraction slot's route.
+    route_token = elitellm.bind_route_slot(registry.Slot.EXTRACTION.value)
     accounting_token = None
     try:
         accounting_token = _bind_accounting(req.spendSessionId)
@@ -846,6 +848,7 @@ async def _extract_events(
             }
         )
     finally:
+        elitellm.reset_route_slot(route_token)
         store.reset_hidden_readers(hidden_token)
         _reset_accounting(accounting_token)
         limits.reset_call_slots(slots_token)

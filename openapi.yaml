@@ -2319,6 +2319,7 @@ components:
             - ""
             - quiz_full
             - credits
+            - output_limit
           type: string
         unpaired:
           items:

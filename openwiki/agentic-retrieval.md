@@ -5736,9 +5736,10 @@ later).
      do not add up to the total printed on the page is named in `marksDiffer`.
 - **Models.** The `extraction` slot's default pin (`extractionLLM`;
   migration `0138`), which needs vision: OpenRouter's
-  `deepseek/deepseek-v4.1-flash-1017`, held on Wafer's US endpoint, then
-  InferenceNet, then Cloudflare with fallbacks off (Epo 2026-11-04), the same
-  pin that reads pages, captions images and
+  `deepseek/deepseek-v4.1-flash-1017` on the extraction slot's own route,
+  InferenceNet, then Cloudflare, then Wafer's US endpoint with fallbacks off
+  (Epo 2026-11-04; the model's other calls go Wafer first), the same pin
+  that reads pages, captions images and
   writes ghost text, so one image model serves them all. Never direct
   DeepSeek, which costs too much (Epo 2026-11-03). Windows reason at mid (sent
   to OpenRouter as `medium`), and the outline and answer files run with
@@ -5772,8 +5773,11 @@ later).
   fails the run at once. The starter sees only progress and the final error.
 - **Stops.** A run stops early when the quiz would pass `QUIZ_PARTS_MAX` (100)
   or `QUIZ_OPEN_PARTS_MAX` (100 AI-marked parts, raised from 20 for every quiz,
-  Epo 2026-11-03) (`stopped: quiz_full`) or when the starter's credits run
-  out (`credits`), and saves what it has.
+  Epo 2026-11-03) (`stopped: quiz_full`), when the starter's credits run
+  out (`credits`), or when its page windows have written more than 8,000
+  output tokens per selected page (`output_limit`, `WINDOW_OUTPUT_PER_PAGE`:
+  normal runs wrote at most 3,400 a page, and a runaway on Wafer 21,700 at 17
+  times a normal run's cost; Epo 2026-11-04), and saves what it has.
 - **Stored.** `question_extractions` (migration 0136) keeps the run: starter,
   title, status, the recorded questions, report, quiz, error. Nothing links a
   question, the quiz or the run to the files, pages or regions it was read

@@ -290,7 +290,8 @@ async def test_run_records_keys_continues_pairs_and_reports(monkeypatch):
                 SimpleNamespace(
                     finish_reason=reply.pop("finish", "stop"), message=reply
                 )
-            ]
+            ],
+            usage=SimpleNamespace(output_tokens=100),
         )
 
     labels_seen: list = []
@@ -362,6 +363,53 @@ async def test_run_records_keys_continues_pairs_and_reports(monkeypatch):
     ]
     assert fourth["parts"][0]["answer"]["correct"] == [1]
     assert fourth["parts"][0]["solution"][0]["label"] == AI
+
+
+async def test_a_run_past_its_output_budget_stops_and_keeps_what_it_has(monkeypatch):
+    """A window whose replies run on past the run's output budget (8,000 tokens
+    a selected page) ends the run as output_limit; the questions recorded so far
+    are saved and the rest are missing."""
+    replies = iter(
+        [
+            {"tool_calls": [_call("record_question", _mcq("1", ["p", "q"]))]},
+            {"finish": "length", "tokens": 24_000},
+        ]
+    )
+
+    async def complete(messages, **kwargs):
+        return SimpleNamespace(content='{"questions": ["1", "2"]}')
+
+    async def complete_response(messages, **kwargs):
+        reply = next(replies)
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason=reply.get("finish", "tool_calls"),
+                    message={"role": "assistant", "content": "", **reply},
+                )
+            ],
+            usage=SimpleNamespace(output_tokens=reply.get("tokens", 500)),
+        )
+
+    async def validate(question):
+        return None
+
+    monkeypatch.setattr(extraction.models, "complete", complete)
+    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
+    events = [
+        event
+        async for event in extraction.run(
+            [_page(1, "1. ... 2. ..."), _page(2), _page(3)],
+            [],
+            model=MODEL,
+            validate=validate,
+            locale="en",
+        )
+    ]
+    report = events[-1]["report"]
+    assert report["stopped"] == "output_limit"
+    assert report["recorded"] == ["1"] and report["missing"] == ["2"]
+    assert report["windows"] == 1
 
 
 def test_extract_route_refuses_first_then_streams(monkeypatch):

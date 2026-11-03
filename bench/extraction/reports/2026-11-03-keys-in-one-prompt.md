@@ -193,6 +193,14 @@ overstate reasoning. Billing is not affected. For calls with reasoning off
 at mid, two runs are too few to settle it, but both runs were worse than
 InferenceNet's.
 
+Epo's decisions (2026-11-04): Make a quiz takes a route of its own on the same
+model, InferenceNet, then Cloudflare, then `wafer/us`, while every other 1017
+call keeps Wafer first. 1017 is priced at 200 / 20 / 1200 micros for every
+use, the highest of its three providers' prices in each column. A run now
+stops (`stopped: output_limit`) once its windows have written 8,000 output
+tokens per selected page. That is more than twice the most any normal run
+wrote; run 62 wrote 21,700 a page.
+
 ## Left out
 
 - 0731 (text-only, above).

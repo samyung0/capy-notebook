@@ -1,8 +1,8 @@
 -- Make a quiz gets a model slot of its own, `extraction` (Epo 2026-11-03). It
 -- read page images on the chat slot's direct DeepSeek pin, which costs too
--- much; it now runs on OpenRouter's DeepSeek V4.1 Flash 1017, held on Wafer's
--- US endpoint, then InferenceNet, then Cloudflare with fallbacks off in
--- elitellm (Epo 2026-11-04), the pin that
+-- much; it now runs on OpenRouter's DeepSeek V4.1 Flash 1017 on a route of its
+-- own in elitellm, InferenceNet, then Cloudflare, then Wafer's US endpoint with
+-- fallbacks off (Epo 2026-11-04), the pin that
 -- already reads pages and captions images and writes ghost text, so one image
 -- model serves both (bench/extraction/reports/2026-11-03-keys-in-one-prompt.md:
 -- same labels, questions and keys as direct Flash at about half the credits).
@@ -62,10 +62,10 @@ ALTER TABLE model_configs ADD CONSTRAINT model_configs_llm_window_check CHECK (
 -- levels, as an ops save that changes a row's slots publishes one, and the old
 -- version is disabled; its other slots and defaults move with it. A database
 -- built from migrations has no 1017 row, so one is added for extraction alone
--- at InferenceNet's list price on 2026-11-03 ($0.08 / $0.008 / $0.55 per
--- million input / cached / output tokens, 2,000 micros per dollar per
--- million). Which provider's price the 1017 row should carry now that Wafer
--- serves first is Epo's to decide.
+-- at Epo's 1017 price for every use (2026-11-04): the highest of its three
+-- providers' list prices in each column, Cloudflare's $0.10 input and $0.60
+-- output and Wafer's $0.010 cached input per million tokens, at 2,000 micros
+-- per dollar per million: 200 / 20 / 1200.
 DO $$
 DECLARE
   current_config model_configs%ROWTYPE;
@@ -113,7 +113,7 @@ BEGIN
       'DeepSeek', 'DeepSeek V4.1 Flash 1017', 'openrouter', 'deepseek/deepseek-v4.1-flash-1017',
       true, false, 1000000,
       ARRAY['low','mid'], 'mid', '{}'::jsonb, ARRAY['extraction'], ARRAY['vision'],
-      160, 1100, 16,
+      200, 1200, 20,
       true, ARRAY['extraction'], 'migration:0138', 'migration:0138'
     );
   END IF;

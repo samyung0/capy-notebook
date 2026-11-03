@@ -62,6 +62,11 @@ WINDOW_PAGES = 2
 WINDOW_STEPS = 6
 # Thinking at medium works answers out as well as copying (Epo 2026-11-03).
 WINDOW_MAX_TOKENS = 24_000
+# The windows' output tokens a run may spend per selected page before it stops
+# (stopped: output_limit) and saves what it has. Normal runs wrote at most
+# 3,400 a page; a runaway on Wafer wrote 21,700 and cost 17 times a normal run
+# (bench/extraction/reports/2026-11-03-keys-in-one-prompt.md, Epo 2026-11-04).
+WINDOW_OUTPUT_PER_PAGE = 8_000
 OUTLINE_MAX_TOKENS = 2_000
 SCHEME_MAX_TOKENS = 12_000
 # Indexed text shown per page, and scheme text per parse call.
@@ -449,6 +454,13 @@ class Run:
     order: dict[str, int] = field(default_factory=dict)
     open_label: str | None = None
     full: bool = False
+    # The windows' output budget for the run and what they have spent.
+    output_budget: int = 0
+    output_tokens: int = 0
+
+    @property
+    def over_budget(self) -> bool:
+        return self.output_tokens > self.output_budget
 
     def held(self) -> list[Recorded]:
         return sorted(
@@ -686,6 +698,9 @@ async def _window(run: Run, pages: list[Page], *, model: ModelConfig) -> None:
             max_tokens=WINDOW_MAX_TOKENS,
             call_purpose="extraction_window",
         )
+        run.output_tokens += response.usage.output_tokens
+        if run.over_budget:
+            break
         if response.choices[0].finish_reason == "length":
             # Cut off at the output cap, its calls unfinished (the bench lost
             # two windows of a paper this way): ask again for smaller calls.
@@ -737,7 +752,11 @@ async def run(
     """Events: ``questions`` after each window (every question recorded so
     far, before pairing), then ``done`` with the quiz's questions and the
     report."""
-    current = Run(validate=validate, ai_label=AI_WRITTEN[normalize_locale(locale)])
+    current = Run(
+        validate=validate,
+        ai_label=AI_WRITTEN[normalize_locale(locale)],
+        output_budget=WINDOW_OUTPUT_PER_PAGE * len(pages),
+    )
     current.expected = await _attempted(functools.partial(outline, pages, model=model))
     stopped = ""
     windows = 0
@@ -758,6 +777,9 @@ async def run(
         }
         if current.full:
             stopped = "quiz_full"
+            break
+        if current.over_budget:
+            stopped = "output_limit"
             break
     held = current.held()
     entries = (

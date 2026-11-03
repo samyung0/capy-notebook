@@ -20,6 +20,7 @@ from pipeline.elitellm.client import (
     anthropic_request,
     anthropic_thinking_body,
     assistant_message_from_obj,
+    bind_route_slot,
     deepseek_request,
     deepseek_thinking_body,
     embed_batch,
@@ -30,6 +31,7 @@ from pipeline.elitellm.client import (
     openai_responses_request,
     openrouter_reasoning,
     openrouter_request,
+    reset_route_slot,
     uses_responses,
 )
 from pipeline.elitellm.client import (
@@ -289,27 +291,32 @@ async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
 
 def test_1017_reasons_at_the_extraction_windows_effort():
     """Make a quiz's page windows run on 1017 at mid (Epo 2026-11-03), sent as
-    OpenRouter's medium effort on the same providers."""
+    OpenRouter's medium effort, on the extraction slot's own route,
+    InferenceNet first (Epo 2026-11-04)."""
     spec = _spec(
         provider_slug="openrouter",
         model_slug="deepseek/deepseek-v4.1-flash-1017",
         thinking_levels=("instant", "low", "mid"),
         slots=("captioning", "extraction"),
     )
-    body = openrouter_request(
-        spec,
-        [{"role": "user", "content": "q"}],
-        temperature=None,
-        tools=None,
-        response_format=None,
-        max_tokens=None,
-        thinking="mid",
-        stream=False,
-        tool_choice=None,
-    )
+    token = bind_route_slot("extraction")
+    try:
+        body = openrouter_request(
+            spec,
+            [{"role": "user", "content": "q"}],
+            temperature=None,
+            tools=None,
+            response_format=None,
+            max_tokens=None,
+            thinking="mid",
+            stream=False,
+            tool_choice=None,
+        )
+    finally:
+        reset_route_slot(token)
     assert body["reasoning"] == {"effort": "medium"}
     assert body["provider"] == {
-        "order": ["wafer/us", "InferenceNet", "Cloudflare"],
+        "order": ["InferenceNet", "Cloudflare", "wafer/us"],
         "allow_fallbacks": False,
     }
 

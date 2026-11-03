@@ -620,7 +620,12 @@ named provider directly. These exact routing exceptions are allowed:
   image captions (decision 2026-10-19), the editor slot's ghost-text pin
   (decision 2026-10-28) and the extraction slot's pin (Epo 2026-11-03), goes
   to Wafer's US endpoint, then InferenceNet, then Cloudflare (Epo
-  2026-11-04; InferenceNet and Cloudflare since decision 2026-10-21, when both
+  2026-11-04), except Make a quiz's calls, which take the extraction slot's
+  own route, InferenceNet, then Cloudflare, then `wafer/us`
+  (`OPENROUTER_SLOT_ROUTING`, bound for the run with `bind_route_slot`; on
+  Wafer two runs lost the open parts' model answers and one ran away). One
+  model has two routes, so the catalog row, rates and pins stay one
+  (InferenceNet and Cloudflare since decision 2026-10-21, when both
   read page text as well as DeepInfra did and InferenceNet described non-text
   visuals such as QR codes less often, which was accepted). `order` takes an
   endpoint tag as well as a provider name: `wafer/us` ($0.038 / $0.010 /
@@ -835,8 +840,11 @@ peak price on its own API, $0.30 / $0.006 / $1.20 per million, Epo's rate
 InferenceNet, version 7 at this rate on DeepSeek's API and version 8 at
 300 / 8 / 1400 on the Morph-then-Cloudflare route), OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
-decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
-price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
+decision 2026-10-20), V4.1 Flash 1017 200 / 20 / 1200 for every use (Epo
+2026-11-04: the highest of its providers' list prices in each column,
+Cloudflare's $0.10 input and $0.60 output and Wafer's $0.010 cached input;
+160 / 16 / 1000, InferenceNet's list price, from decision 2026-10-21; migration
+0138 seeds a fresh database's row at it), MiniMax 3.1 Flash 300 / 30 /
 1200 (Together's list price, which DigitalOcean matches, 2026-10-24), embedding 40,
 reranker 200 (Alibaba qwen3-rerank's $0.10, migration 0134).
 While there is no production data these values are set directly in the UAT

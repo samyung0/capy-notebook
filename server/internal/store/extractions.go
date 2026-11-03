@@ -36,7 +36,8 @@ type Extraction struct {
 // scheme's were refused (SchemeRefused), saved questions whose part marks
 // differ from the printed total (MarksDiffer), mark scheme entries no question
 // matched (Unpaired), and questions saved without their figures (Figures, not
-// cropped yet). Stopped says why a run ended early: quiz_full or credits.
+// cropped yet). Stopped says why a run ended early: quiz_full, credits, or
+// output_limit (its page windows wrote past the run's output budget).
 type ExtractionReport struct {
 	Expected         []string `json:"expected" nullable:"false"`
 	Missing          []string `json:"missing" nullable:"false"`
@@ -47,7 +48,7 @@ type ExtractionReport struct {
 	MarksDiffer      []string `json:"marksDiffer" nullable:"false"`
 	Unpaired         []string `json:"unpaired" nullable:"false"`
 	Figures          []string `json:"figures" nullable:"false"`
-	Stopped          string   `json:"stopped" enum:",quiz_full,credits"`
+	Stopped          string   `json:"stopped" enum:",quiz_full,credits,output_limit"`
 	Pages            int      `json:"pages"`
 	Windows          int      `json:"windows"`
 }

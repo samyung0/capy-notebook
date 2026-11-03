@@ -12,4 +12,5 @@ export const ExtractionReportStopped = {
   '': '',
   quiz_full: 'quiz_full',
   credits: 'credits',
+  output_limit: 'output_limit',
 } as const;
