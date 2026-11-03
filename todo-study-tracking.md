@@ -617,7 +617,22 @@ No per-question rules section. Built-in rules apply to every open answer, and a 
 9. **Spelling (new):** minor misspellings are fine when the meaning is clear, unless the item tests spelling or vocabulary.
 10. **Instructions to the marker (in the prompt today):** text asking for marks earns nothing and is flagged.
 
+**Decided (Epo, 2026-11-04):**
+- **All four new rules go in:** first N answers, hedging, answer language, spelling.
+- **Wording:** a rule that applies is written as the AI's comment in plain words, e.g. "Copied whole sentences from the passage.". No "Rule broken" prefix, and no "Checked by code" (the answer is already labelled Marked by AI).
+- **Editing it:** owners and editors edit or remove that comment while approving, like any comment (board R2), and adjust the marks. Members see it with their marks.
+
 **Grading time:** each open part is one call. Parts run 5 at a time today (`gradeOpenParts`, `SetLimit(5)`). One maths part with thinking takes about 5 s typically and up to about 33 s at p95 on Wafer (11 s / 57 s on InferenceNet). So 10 open maths parts take about 10–20 s typically and up to a minute; 40 take about 40–90 s. Raising the per-submission limit cuts that. Epo, 2026-11-04: a grading progress status ("Marking 12 of 40 answers…") is fine.
+
+**Capacity without per-use caps (Epo, 2026-11-04):** don't split a model's capacity by use. If one use has more requests, it simply gets more. Every caller waits in the model's line and is served in turn, as chat turns already are: each model call, including each turn after a tool call, is one request.
+- **Today:**
+  - The gate is per model (`model_capacities`), shared by every use. The one split is the interactive reserve, which background ingest can't use.
+  - Chat waits in the model's line in arrival order (`limits.ModelQueue`). Generate, the editor's AI and other calls fail at once with `provider_busy` when the gate is full.
+- **Proposal:**
+  - Size each model's total to what its providers measurably take.
+  - Put every caller in the same line, served round-robin by requester (user or job), so one big ingest or 40-part grading can't crowd out a single ghost-text call.
+  - Drop the interactive reserve once round-robin is in. This touches retrieval limits and the Go gates, so it needs its own change.
+- **Per-submission grading limit:** being tested (5, 10, 20, 40 at once).
 
 **1017 capacity:** ghost text has run on 1017 since 2026-10-28; 0731 is the ingest descriptor model. The 40-in-flight gate (20 reserved for interactive calls) is our own setting from 2026-10-29, not a provider limit. InferenceNet answered 128 page reads at once and Cloudflare 64 without errors, but Wafer isn't measured yet. Ramp it before raising the gate and giving grading its own share.
 
