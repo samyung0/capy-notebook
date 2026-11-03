@@ -602,6 +602,19 @@ Jev scored 1,730 (88.9%), +89.
   - O: how a checked ordering looks;
   - R: right choices in a wrong all-or-nothing part.
 - **AI icon (Q4, Epo 2026-11-03):** not the chat bubble but a curvy four-point star. The options are an outline star, a filled star, or a star with a small one. The shell branch uses the outline star until Epo picks.
+- **Picked (Epo, 2026-11-03):**
+  - **AI icon:** AI2, the filled curved star.
+  - **Toasts:**
+    - T2 in dark mode.
+    - E2: a new toast shows above an open error.
+    - A1, with more horizontal space around the action (board Q5).
+    - I1 and S1.
+    - On phones the toast stays centred and sits above the chat button.
+  - **Icons and cards:** Z1, V2, N1. L wasn't picked, so it stays as built (one line).
+  - **Quiz options:**
+    - D1 for now.
+    - True/false: B2, left-aligned, with True and False on separate rows.
+    - Checked ordering (O4) and a wrong multi-answer part (R4): your answer on top, keeping its right/wrong marks, then the correct answer as its own list below, as before the change. Shown on Q5 for confirmation.
 
 ### Drawing answers (agreed, Epo 2026-11-03; canvas boards K6–K8)
 
