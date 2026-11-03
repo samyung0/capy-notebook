@@ -56,9 +56,10 @@ function Working() {
 }
 
 /**
- * The pill: icon, copy, then the count, action and close (errors only). One
- * line is a 44px pill; a description or a title that wraps takes more lines
- * with rounder (18px) corners, as wide as 384px.
+ * The pill: icon, copy, then the count, the action 20px on and the close
+ * (errors only) 16px after it. One line is a 44px pill; a description or a
+ * title that wraps takes more lines with rounder (18px) corners, as wide as
+ * 384px.
  */
 function Toast({
   toast,
@@ -129,7 +130,7 @@ function Toast({
       )}
       {button && (
         <button
-          className="ml-3 h-6 shrink-0 cursor-pointer whitespace-nowrap underline decoration-1 underline-offset-3"
+          className="ml-5 h-6 shrink-0 cursor-pointer whitespace-nowrap underline decoration-1 underline-offset-3"
           onClick={() => {
             button.onClick();
             onClose();
@@ -144,7 +145,8 @@ function Toast({
           aria-label={m.action_close()}
           className={cn(
             'relative flex h-6 shrink-0 cursor-pointer items-center text-white/70 after:absolute after:-inset-x-2 after:inset-y-0 hover:text-white dark:text-fg-muted dark:hover:text-fg',
-            tall ? 'ml-auto pl-3' : 'ml-2'
+            // 16px after the action (A1, Epo 2026-11-03), else 12px.
+            button ? 'ml-4' : 'ml-3'
           )}
           onClick={onClose}
           type="button"

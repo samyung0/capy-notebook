@@ -100,9 +100,11 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       >
         <WorkspaceCardFace interactive paint={paint} workspace={workspace} />
       </Link>
-      {/* On the banner, always shown (board K3, H2). It lifts with the card,
-          which rises on hover (Card interactive). */}
-      <div className="absolute top-2 right-2 z-50 transition-[translate] duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/card:-translate-y-1 group-has-[[data-slot=card]:hover]/card:ease-(--motion-ease-smooth-out)">
+      {/* On the banner (board K3, H2). From desktop widths with a mouse it
+          shows on the card's hover, focus or while its menu is open; below
+          them and on touch screens it always shows (V2). It lifts with the
+          card, which rises on hover (Card interactive). */}
+      <div className="absolute top-2 right-2 z-50 transition-[translate] duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/card:-translate-y-1 group-has-[[data-slot=card]:hover]/card:ease-(--motion-ease-smooth-out) lg:[&_button]:opacity-0 lg:pointer-coarse:[&_button]:opacity-100 lg:has-data-[state=open]:[&_button]:opacity-100 lg:group-hover/card:[&_button]:opacity-100 lg:focus-within:[&_button]:opacity-100">
         <Menu
           align="start"
           items={menuItems}

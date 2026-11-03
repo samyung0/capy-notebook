@@ -72,20 +72,25 @@ to Epo as visual options, not a call made in code.
   is the same pill: `#222`, white 14px semibold text, 44px tall with a 44px
   icon slot, 22px corners, 20px right padding, `0 8px 24px` shadow. Only the
   icon and its colour change: done is a check (`#86d6a8`), plain is info or
-  the caller's `icon` (white), working a ring spinner (white), warning a
-  triangle (`#f2c46d`), error a circled ! (`#ff9b9b`). An action is an
-  underlined link after the copy; errors end with a 16px ×; a repeat shows
-  `×2` in a white 16% capsule. A description or a title that wraps takes more
+  the caller's `icon` (white, I1), working a ring spinner (white, S1),
+  warning a triangle (`#f2c46d`), error a circled ! (`#ff9b9b`). An action
+  is an underlined link 20px after the copy; errors end with a 16px × (Z1),
+  16px after the action (A1) or 12px after the copy; a repeat shows `×2` in
+  a white 16% capsule. An open error sits at the bottom with the other toast
+  8px above it (E2), centred on phones too and drawn over the chat button
+  (P3). A description or a title that wraps takes more
   lines in the same pill, 384px wide (less on phones), with 18px corners and
   the description at 13px, white 72%. Dark themes draw it as an overlay
   surface (`--surface-overlay-bg` with an `--border-overlay` ring and
-  `text-fg`), so it stands apart from the dark page. Behaviour (one at a
+  `text-fg`), so it stands apart from the dark page (T2). Behaviour (one at a
   time, counts, timers) is in `error-handling.md`; motion in `motion.md`.
 - **Workspace card** (`WorkspaceCardFace` in `src/components/ui/WorkspaceCard.tsx`,
   board K3 row H2): the cover is a 76px banner across the top (plain
-  `--surface-page-hover` without one), the 36px icon sits on its bottom-left
-  edge in a 2px card-coloured ring, and the ⋮ is a 28px white circle on the
-  banner, always shown. Below: the name (14px bold, one line), the topic
+  `--surface-page-hover` without one, N1), the 36px icon sits on its
+  bottom-left edge in a 2px card-coloured ring, and the ⋮ is a 28px white
+  circle on the banner: from desktop widths with a mouse it shows on the
+  card's hover, focus or open menu, and below them and on touch screens it
+  always shows (V2). Below: the name (14px bold, one line, L1), the topic
   count (`chapterCount` until chapters become topics), then access and tags as
   22px boxes with 6px corners. The card border is `--divider`. The settings
   cover picker previews the same face; covers and the picker are unchanged.

@@ -6,18 +6,20 @@ import {
   finishToast,
   type QueuedToast,
   toastDuration,
-  useShownToast,
+  useShownToasts,
 } from '../ui/userToast';
 
-/** The one toast on screen, centred at the bottom. It portals to <body>, so
- * it paints over dialogs and drawers rather than in `#root`'s stacking
- * context. */
+/** The toasts on screen, centred at the bottom: an open error at the
+ * bottom, the other toast just above it. It portals to <body>, so it paints
+ * over dialogs, drawers and the phone chat button rather than in `#root`'s
+ * stacking context. */
 export function AppToaster() {
-  const toast = useShownToast();
-  if (!toast) return null;
+  const { error, other } = useShownToasts();
+  if (!error && !other) return null;
   return createPortal(
-    <div className="pointer-events-none fixed inset-x-4 bottom-[calc(20px+env(safe-area-inset-bottom))] z-9999 flex justify-center">
-      <ShownToast key={toast.id} toast={toast} />
+    <div className="pointer-events-none fixed inset-x-4 bottom-[calc(20px+env(safe-area-inset-bottom))] z-9999 flex flex-col items-center gap-2">
+      {other && <ShownToast key={other.id} toast={other} />}
+      {error && <ShownToast key={error.id} toast={error} />}
     </div>,
     document.body
   );

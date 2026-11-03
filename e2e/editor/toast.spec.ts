@@ -43,7 +43,7 @@ for (const inDialog of [false, true]) {
   });
 }
 
-test('one toast at a time: the same toast counts up, another waits its turn', async ({
+test('an open error stays at the bottom; other toasts show above it one at a time', async ({
   page,
 }) => {
   await page.goto('/workspaces/ws_bio');
@@ -51,14 +51,23 @@ test('one toast at a time: the same toast counts up, another waits its turn', as
     page.getByRole('heading', { exact: true, name: 'Biology 101' })
   ).toBeVisible({ timeout: 30_000 });
   const toasts = page.locator('[data-toast]');
+  const error = page.locator('[data-toast="error"]');
 
   await showToast(page, { title: 'Could not save', variant: 'error' });
   await showToast(page, { title: 'Could not save', variant: 'error' });
   await showToast(page, { title: 'Saved', variant: 'success' });
-  await expect(toasts).toHaveCount(1);
-  await expect(toasts).toContainText('Could not save');
-  await expect(toasts).toContainText('×2');
+  await showToast(page, { title: 'Copied', variant: 'success' });
+  await expect(toasts).toHaveCount(2);
+  await expect(error).toContainText('×2');
+  await expect(page.locator('[data-toast="success"]')).toHaveText('Saved');
+  // Above the error.
+  const [saved, failed] = await Promise.all([
+    page.locator('[data-toast="success"]').boundingBox(),
+    error.boundingBox(),
+  ]);
+  expect(saved!.y).toBeLessThan(failed!.y);
 
-  await toasts.getByRole('button', { name: m.action_close() }).click();
-  await expect(toasts).toHaveText('Saved');
+  await error.getByRole('button', { name: m.action_close() }).click();
+  await expect(error).toHaveCount(0);
+  await expect(page.locator('[data-toast="success"]')).toHaveText('Saved');
 });

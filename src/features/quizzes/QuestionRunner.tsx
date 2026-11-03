@@ -36,7 +36,7 @@ import {
   type LearnerQuestion,
   type TextBlock,
 } from '@/features/questions/types';
-import { m } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import { type Answer, type Answers, emptyAnswer, quantityValue } from './grade';
@@ -251,6 +251,26 @@ function gapValues(
   });
 }
 
+/** "Your answer" / "Correct answer" over a checked part's two lists. */
+const SUBHEAD = 't-meta mb-1.5 font-bold text-fg-muted';
+
+/** "you put it 3rd": the learner's place for an item, as an ordinal. */
+function youPutIt(position: number) {
+  const place = { position: String(position) };
+  switch (
+    new Intl.PluralRules(getLocale(), { type: 'ordinal' }).select(position)
+  ) {
+    case 'one':
+      return m.question_ui_you_put_one(place);
+    case 'two':
+      return m.question_ui_you_put_two(place);
+    case 'few':
+      return m.question_ui_you_put_few(place);
+    default:
+      return m.question_ui_you_put_other(place);
+  }
+}
+
 /** A checked choice's tag at the box's end. */
 const RESULT_TAG = {
   missed: { icon: null, label: m.question_ui_correct_answer },
@@ -260,7 +280,8 @@ const RESULT_TAG = {
 
 /** A choice as a box: chosen while answering; after checking, right (green
  * fill), wrong (red fill) or the correct answer that was not chosen (green
- * outline), each with its tag. */
+ * outline), each with its tag. `ownOnly` marks only the learner's choices,
+ * right or wrong, for a part whose correct answer lists apart (R4). */
 function ChoiceBox({
   label,
   text,
@@ -269,7 +290,7 @@ function ChoiceBox({
   review,
   disabled,
   onClick,
-  className,
+  ownOnly = false,
 }: {
   label: ReactNode;
   text: ReactNode;
@@ -278,14 +299,14 @@ function ChoiceBox({
   review: boolean;
   disabled: boolean;
   onClick?: () => void;
-  className?: string;
+  ownOnly?: boolean;
 }) {
   const state: RowState | undefined = review
     ? selected
       ? correct
         ? 'right'
         : 'wrong'
-      : correct
+      : correct && !ownOnly
         ? 'missed'
         : undefined
     : selected
@@ -298,8 +319,7 @@ function ChoiceBox({
       className={cn(
         answerBoxClass(state),
         'w-full text-left disabled:cursor-default',
-        !(review || disabled || selected) && 'hover:border-line-strong',
-        className
+        !(review || disabled || selected) && 'hover:border-line-strong'
       )}
       disabled={review || disabled}
       onClick={onClick}
@@ -317,7 +337,9 @@ function ChoiceBox({
           )}
         >
           {tag.icon && <Icon name={tag.icon} size={16} />}
-          {tag.label()}
+          {ownOnly && state === 'wrong'
+            ? m.question_ui_result_wrong()
+            : tag.label()}
         </span>
       )}
     </button>
@@ -330,9 +352,12 @@ function ChoiceBox({
 function PartResult({
   part,
   answered,
+  detail,
 }: {
   part: QuestionPart;
   answered: boolean;
+  /** After the marks: "1 right, 1 wrong" on a multi-answer part. */
+  detail?: string;
 }) {
   const { awarded, marks } = part;
   if (awarded == null) return null;
@@ -355,15 +380,19 @@ function PartResult({
       />
       {right ? m.question_ui_result_right() : m.question_ui_result_wrong()}
       <span className="t-meta font-semibold text-fg-muted">
-        {answered ? score : m.question_ui_result_skipped({ score })}
+        {answered
+          ? detail
+            ? `${score} · ${detail}`
+            : score
+          : m.question_ui_result_skipped({ score })}
       </span>
     </p>
   );
 }
 
-/** The answer key under a checked gaps or ordering part, apart from the
- * learner's own answer so it reads plainly: the title in green, each entry
- * with a note where the learner differed. */
+/** The answer key under a checked gaps part, apart from the learner's own
+ * answer so it reads plainly: the title in green, each entry with a note
+ * where the learner differed. */
 function KeyList({
   title,
   rows,
@@ -481,31 +510,52 @@ function PartRunner({
   const indices = Array.isArray(value)
     ? value.filter((item) => typeof item === 'number')
     : null;
-  const result = (answered: boolean) =>
+  const result = (answered: boolean, detail?: string) =>
     review && isAuthoredPart(part) ? (
-      <PartResult answered={answered} part={part} />
+      <PartResult answered={answered} detail={detail} part={part} />
     ) : null;
   // Several options may be correct: options toggle like checkboxes.
-  if (answer.type === 'mcq')
+  if (answer.type === 'mcq') {
+    const correct = (i: number) =>
+      key?.type === 'mcq' && key.correct.includes(i);
+    const chosen = indices ?? [];
+    // A multi-answer part marked wrong (R4): the learner's choices on top,
+    // each right or wrong, then the correct answer as its own plain list.
+    // Single-answer parts outline the correct option instead (M1).
+    const apart =
+      review &&
+      key?.type === 'mcq' &&
+      key.correct.length > 1 &&
+      isAuthoredPart(part) &&
+      (part.awarded ?? 0) < part.marks;
+    const right = chosen.filter(correct).length;
     return (
       <div>
-        {result(Boolean(indices?.length))}
+        {result(
+          chosen.length > 0,
+          apart
+            ? m.question_ui_result_choices({
+                right: String(right),
+                wrong: String(chosen.length - right),
+              })
+            : undefined
+        )}
+        {apart && <h4 className={SUBHEAD}>{m.question_ui_your_answer()}</h4>}
         <div className={answerBoxesClass(twoColumns)}>
           {answer.options.map((option, i) => {
-            const selected = indices?.includes(i) ?? false;
+            const selected = chosen.includes(i);
             return (
               <ChoiceBox
-                correct={key?.type === answer.type && key.correct.includes(i)}
+                correct={correct(i)}
                 disabled={disabled}
                 key={i}
                 label={optionLetter(i)}
                 onClick={() =>
                   onChange(
-                    selected
-                      ? (indices ?? []).filter((n) => n !== i)
-                      : [...(indices ?? []), i]
+                    selected ? chosen.filter((n) => n !== i) : [...chosen, i]
                   )
                 }
+                ownOnly={apart}
                 review={review}
                 selected={selected}
                 text={<TextView text={option} />}
@@ -513,18 +563,37 @@ function PartRunner({
             );
           })}
         </div>
+        {apart && (
+          <>
+            <h4 className={cn(SUBHEAD, 'mt-3')}>
+              {m.question_ui_correct_answer()}
+            </h4>
+            <div className={answerBoxesClass(twoColumns)}>
+              {answer.options.map(
+                (option, i) =>
+                  correct(i) && (
+                    <div className={answerBoxClass()} key={i}>
+                      <span className={answerLetterClass()}>
+                        {optionLetter(i)}
+                      </span>
+                      <TextView className="min-w-0" text={option} />
+                    </div>
+                  )
+              )}
+            </div>
+          </>
+        )}
       </div>
     );
-  // True and False sit side by side, stacked on phones like other choices;
-  // centred while answering, as before the boxes.
+  }
+  // True and False stack like other choices, text at the left (B2).
   if (answer.type === 'boolean')
     return (
       <div>
         {result(typeof value === 'boolean')}
-        <div className="grid @md:grid-cols-2 gap-2">
+        <div className={answerBoxesClass()}>
           {[true, false].map((option) => (
             <ChoiceBox
-              className={cn(!review && '@md:justify-center')}
               correct={key?.type === 'boolean' && key.correct === option}
               disabled={disabled}
               key={String(option)}
@@ -830,18 +899,21 @@ function PartRunner({
       ];
       onChange(next);
     }
-    // Checked, each item fills green in its right place and red elsewhere;
-    // the correct order lists under them. A skipped part shows the key's
-    // order unmarked.
+    // Checked (O4): "Your order" fills each item green in its right place
+    // and red elsewhere; when any is misplaced, "Correct order" lists the
+    // key plainly, each item saying where the learner put it. A skipped part
+    // shows the key's order unmarked.
     const state = (item: string, i: number): RowState | undefined =>
       review && ordered?.length
         ? right(item, i)
           ? 'right'
           : 'wrong'
         : undefined;
+    const misplaced = review && current.some((item, i) => !right(item, i));
     return (
       <div>
         {result(Boolean(ordered?.length))}
+        {misplaced && <h4 className={SUBHEAD}>{m.question_ui_your_order()}</h4>}
         <div className={answerBoxesClass()}>
           {current.map((item, i) => (
             <div
@@ -876,21 +948,23 @@ function PartRunner({
             </div>
           ))}
         </div>
-        {review && current.some((item, i) => !right(item, i)) && (
-          <KeyList
-            rows={answer.items.map((item, i) => {
-              const at = current.indexOf(item);
-              return {
-                key: i + 1,
-                note:
-                  at === i
-                    ? undefined
-                    : m.question_ui_you_put({ position: at + 1 }),
-                text: item,
-              };
-            })}
-            title={m.question_ui_correct_order()}
-          />
+        {misplaced && (
+          <>
+            <h4 className={cn(SUBHEAD, 'mt-3')}>
+              {m.question_ui_correct_order()}
+            </h4>
+            <div className={answerBoxesClass()}>
+              {answer.items.map((item, i) => (
+                <div className={answerBoxClass()} key={i}>
+                  <span className={answerLetterClass()}>{i + 1}</span>
+                  <TextView className="min-w-0 flex-1" text={item} />
+                  <span className="t-meta ml-auto shrink-0 whitespace-nowrap pl-1 font-medium text-fg-muted">
+                    {youPutIt(current.indexOf(item) + 1)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     );

@@ -608,23 +608,28 @@ letter or number muted before the text. Chosen is a purple tint
 green with ✓ Right, a wrong choice fills red with ✗ Your answer, and the
 correct answer the learner did not choose gets a green outline with no fill
 and "Correct answer" (M1), so a green fill only ever means chosen and right.
-Ordering items fill green in their right place and red elsewhere, with no tag;
-a skipped ordering shows the key's order unmarked. Once checked, a label above
-a choice, True / False or ordering part says Right or Wrong with its marks, as
+A multi-answer part marked wrong (R4) shows "Your answer" on top, the
+learner's choices filled green (✓ Right) or red (✗ Wrong) and the rest
+plain, then "Correct answer" as its own plain list of the correct options;
+its label adds the counts ("0 / 2 marks · 1 right, 1 wrong"). A checked
+ordering (O4) shows "Your order", each item green in its right place and red
+elsewhere, and when any is misplaced "Correct order" as its own plain list,
+each item saying where the learner put it ("you put it 3rd"); a skipped
+ordering shows the key's order unmarked. Once checked, a label above a
+choice, True / False or ordering part says Right or Wrong with its marks, as
 in Results ("Wrong · 0 / 1 mark"); a skipped part says "Not answered" and
-counts as wrong. Boxes stack with an 8px gap; choices sit two by two on wide
-paper answer areas, and True / False sits side by side from a 28rem answer
-area (centred while answering) and stacks below it. Text
+counts as wrong. The question header keeps its marks too (D1). Boxes stack
+with an 8px gap; choices sit two by two on wide paper answer areas, and True
+and False take a row each, text at the left in every state (B2). Text
 answers are underlined `Input`s, written answers sit on ruled lines
 (`ruled-lines`), and each gap is a blank in the sentence that grows with what is
 typed up to the line (a hidden copy of the value in `data-value` sizes it),
 punctuation after it kept on its line. Matching picks with an underlined
 `Select` letter in a wide answer area and with a row of letter buttons under
 each item below 28rem, the options listed above. After checking, a short answer
-lists every accepted answer with its unit; a gaps part with a miss and an
-ordering part out of order list the key under the learner's own answer
-("Correct answers", "Correct order"), noting what the learner wrote or where
-they put each misplaced item; matching shows the chosen letter and the correct
+lists every accepted answer with its unit; a gaps part with a miss lists the
+key under the learner's own answer ("Correct answers"), noting what the
+learner wrote; matching shows the chosen letter and the correct
 one. A checked open answer opens with a verdict counted over its marking points
 ("Partially correct: 1 of 3 points answered correctly", "Skipped: Question not
 answered").

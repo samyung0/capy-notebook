@@ -213,10 +213,15 @@ mutation toast. Toast IDs are derived from the normalized error kind, so repeate
 failures of the same kind count up on one toast instead of stacking.
 
 The toaster (`AppToaster`, `userToast` and `dismissToast` in
-`src/components/ui/userToast.ts`) shows one toast at a time, centred at the
-bottom (S1, Epo 2026-11-03):
+`src/components/ui/userToast.ts`) shows toasts centred at the bottom, over
+dialogs, drawers and the phone chat button (S1, E2 and P3, Epo 2026-11-03):
 
-- A different toast waits until the shown one has closed.
+- An open error stays at the bottom until closed; other toasts show just
+  above it (8px apart), so an error never holds them up. Each of the two
+  places shows one toast at a time: a different toast waits until the shown
+  one has closed, a second error behind the first.
+- A toast whose update changes it to or from an error (a working toast that
+  failed) moves to the other place.
 - The same toast again (the same id, or the same copy without one) counts up
   on the shown or waiting toast (×2, ×3) and restarts its timer. A new copy
   under the same id replaces it in place, so a working toast

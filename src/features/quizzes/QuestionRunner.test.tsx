@@ -90,15 +90,17 @@ it('reviews an ordering answered by item text against the stored order', () => {
       review
     />
   );
-  // The learner's order first, then the correct order with where each
-  // misplaced item was put.
+  // Your order first, then the correct order with where each item was put.
+  expect(html.indexOf('Your order')).toBeLessThan(html.indexOf('Second event'));
   expect(html.indexOf('Second event')).toBeLessThan(
     html.indexOf('First event')
   );
-  expect(html).toContain('Correct order');
-  expect(html).toContain('you put it at 2');
-  expect(html).toContain('you put it at 1');
-  expect(html).not.toContain('you put it at 3');
+  expect(html.indexOf('First event')).toBeLessThan(
+    html.indexOf('Correct order')
+  );
+  expect(html).toContain('you put it 2nd');
+  expect(html).toContain('you put it 1st');
+  expect(html).toContain('you put it 3rd');
 });
 
 it('shows an open part with its marks and a verdict over its marking points', () => {
@@ -152,4 +154,29 @@ it('marks a checked choice in its box and says Right or Wrong with the marks abo
   const skipped = reviewed([]);
   expect(skipped).toContain('Not answered · 0 / 1 mark');
   expect(skipped).toContain('Correct answer');
+});
+
+it('lists a wrong multi-answer part as your answer, then the correct answer apart', () => {
+  const question = exampleQuestion('multi', {
+    correct: [0, 2],
+    options: ['Nucleus', 'Ribosome', 'Mitochondria'],
+    type: 'mcq',
+  });
+  question.parts[0].marks = 2;
+  question.parts[0].awarded = 0;
+  const html = renderToStaticMarkup(
+    <QuestionRunner
+      answers={{ 'multi-part': [0, 1] }}
+      question={question}
+      review
+    />
+  );
+  expect(html).toContain('0 / 2 marks · 1 right, 1 wrong');
+  expect(html.indexOf('Your answer')).toBeLessThan(
+    html.indexOf('Correct answer')
+  );
+  // The chosen wrong option says Wrong; nothing in your answer is outlined.
+  expect(html).toContain('Wrong</span>');
+  expect(html.slice(html.indexOf('Correct answer'))).toContain('Mitochondria');
+  expect(html.slice(html.indexOf('Correct answer'))).not.toContain('Ribosome');
 });
