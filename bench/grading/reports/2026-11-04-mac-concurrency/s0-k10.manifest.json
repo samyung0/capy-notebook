@@ -1,0 +1,31 @@
+{
+  "label": "s0-k10",
+  "grader": "deepseek-v41-1017-wafer",
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "routing": {
+    "order": [
+      "wafer/us",
+      "InferenceNet",
+      "Cloudflare"
+    ],
+    "allow_fallbacks": false
+  },
+  "submissions": 1,
+  "inflight_per_submission": 10,
+  "inflight_total": 10,
+  "seed": 0,
+  "parts_per_submission": 40,
+  "mix": {
+    "math": 20,
+    "reading_en": 8,
+    "reading_zh": 8,
+    "contract": 4
+  },
+  "prompt": "r3",
+  "copy_alt": true,
+  "timeout_s": 180,
+  "retries": 0,
+  "started_utc": "2026-11-03T16:36:10.953763+00:00",
+  "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+  "finished_utc": "2026-11-03T16:37:37.276244+00:00"
+}

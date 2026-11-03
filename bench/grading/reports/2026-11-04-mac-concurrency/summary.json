@@ -1,0 +1,1390 @@
+{
+  "runs": {
+    "s0-k5": {
+      "manifest": {
+        "label": "s0-k5",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 5,
+        "inflight_total": 5,
+        "seed": 0,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:35:24.024537+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:36:10.757787+00:00"
+      },
+      "submissions": 1,
+      "calls": 40,
+      "skipped_by_code_rule": 0,
+      "wall_s": [
+        46.72
+      ],
+      "wall_s_max": 46.72,
+      "latency_s": {
+        "p50": 1.97,
+        "p95": 7.88,
+        "max": 31.89,
+        "maths_p50": 3.93,
+        "maths_p95": 22.86,
+        "other_p50": 1.06,
+        "other_p95": 1.48,
+        "over_30s": 1,
+        "over_60s": 0
+      },
+      "errors": {},
+      "http_status": {
+        "200": 40
+      },
+      "providers": {
+        "Wafer": 40
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "Wafer": 20
+        },
+        "reading_en": {
+          "Wafer": 8
+        },
+        "reading_zh": {
+          "Wafer": 8
+        }
+      },
+      "submissions_failing_any_part": 0,
+      "items": 109,
+      "items_exact": 107,
+      "marks_over": 1.0,
+      "marks_under": 0.0,
+      "reference_items_exact": 106,
+      "same_award_as_reference": [
+        106,
+        109
+      ],
+      "cost_usd": 0.01447,
+      "cost_usd_per_submission": 0.01447,
+      "tokens": {
+        "input": 68426,
+        "cached": 45952,
+        "output": 26308,
+        "reasoning": 19705
+      }
+    },
+    "s1-k5": {
+      "manifest": {
+        "label": "s1-k5",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 5,
+        "inflight_total": 5,
+        "seed": 1,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:42:02.263294+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:42:42.829911+00:00"
+      },
+      "submissions": 1,
+      "calls": 39,
+      "skipped_by_code_rule": 1,
+      "wall_s": [
+        40.55
+      ],
+      "wall_s_max": 40.55,
+      "latency_s": {
+        "p50": 2.15,
+        "p95": 21.28,
+        "max": 32.52,
+        "maths_p50": 4.81,
+        "maths_p95": 21.28,
+        "other_p50": 1.0,
+        "other_p95": 1.68,
+        "over_30s": 1,
+        "over_60s": 0
+      },
+      "errors": {},
+      "http_status": {
+        "200": 39
+      },
+      "providers": {
+        "Wafer": 39
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "Wafer": 20
+        },
+        "reading_en": {
+          "Wafer": 7
+        },
+        "reading_zh": {
+          "Wafer": 8
+        }
+      },
+      "submissions_failing_any_part": 0,
+      "items": 109,
+      "items_exact": 95,
+      "marks_over": 6.5,
+      "marks_under": 2.5,
+      "reference_items_exact": 99,
+      "same_award_as_reference": [
+        102,
+        109
+      ],
+      "cost_usd": 0.01842,
+      "cost_usd_per_submission": 0.01842,
+      "tokens": {
+        "input": 67425,
+        "cached": 65024,
+        "output": 35365,
+        "reasoning": 28143
+      }
+    },
+    "s2-k5": {
+      "manifest": {
+        "label": "s2-k5",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 5,
+        "inflight_total": 5,
+        "seed": 2,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:43:57.285636+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:44:54.554704+00:00"
+      },
+      "submissions": 1,
+      "calls": 37,
+      "skipped_by_code_rule": 3,
+      "wall_s": [
+        57.25
+      ],
+      "wall_s_max": 57.25,
+      "latency_s": {
+        "p50": 2.3,
+        "p95": 21.85,
+        "max": 40.87,
+        "maths_p50": 6.01,
+        "maths_p95": 21.85,
+        "other_p50": 1.15,
+        "other_p95": 1.68,
+        "over_30s": 1,
+        "over_60s": 0
+      },
+      "errors": {},
+      "http_status": {
+        "200": 37
+      },
+      "providers": {
+        "Wafer": 37
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "Wafer": 20
+        },
+        "reading_en": {
+          "Wafer": 8
+        },
+        "reading_zh": {
+          "Wafer": 5
+        }
+      },
+      "submissions_failing_any_part": 0,
+      "items": 109,
+      "items_exact": 105,
+      "marks_over": 2.0,
+      "marks_under": 1.5,
+      "reference_items_exact": 106,
+      "same_award_as_reference": [
+        108,
+        109
+      ],
+      "cost_usd": 0.0153,
+      "cost_usd_per_submission": 0.0153,
+      "tokens": {
+        "input": 62258,
+        "cached": 60288,
+        "output": 29245,
+        "reasoning": 22722
+      }
+    },
+    "s0-k10": {
+      "manifest": {
+        "label": "s0-k10",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 10,
+        "inflight_total": 10,
+        "seed": 0,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:36:10.953763+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:37:37.276244+00:00"
+      },
+      "submissions": 1,
+      "calls": 40,
+      "skipped_by_code_rule": 0,
+      "wall_s": [
+        86.31
+      ],
+      "wall_s_max": 86.31,
+      "latency_s": {
+        "p50": 3.11,
+        "p95": 15.24,
+        "max": 78.88,
+        "maths_p50": 4.87,
+        "maths_p95": 16.97,
+        "other_p50": 1.25,
+        "other_p95": 3.06,
+        "over_30s": 1,
+        "over_60s": 1
+      },
+      "errors": {},
+      "http_status": {
+        "200": 40
+      },
+      "providers": {
+        "Wafer": 40
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "Wafer": 20
+        },
+        "reading_en": {
+          "Wafer": 8
+        },
+        "reading_zh": {
+          "Wafer": 8
+        }
+      },
+      "submissions_failing_any_part": 0,
+      "items": 109,
+      "items_exact": 108,
+      "marks_over": 0.5,
+      "marks_under": 0.0,
+      "reference_items_exact": 106,
+      "same_award_as_reference": [
+        107,
+        109
+      ],
+      "cost_usd": 0.01663,
+      "cost_usd_per_submission": 0.01663,
+      "tokens": {
+        "input": 68426,
+        "cached": 66048,
+        "output": 31752,
+        "reasoning": 25127
+      }
+    },
+    "s1-k10": {
+      "manifest": {
+        "label": "s1-k10",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 10,
+        "inflight_total": 10,
+        "seed": 1,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:41:18.425770+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:42:02.037048+00:00"
+      },
+      "submissions": 1,
+      "calls": 39,
+      "skipped_by_code_rule": 1,
+      "wall_s": [
+        43.59
+      ],
+      "wall_s_max": 43.59,
+      "latency_s": {
+        "p50": 2.23,
+        "p95": 24.05,
+        "max": 43.59,
+        "maths_p50": 7.61,
+        "maths_p95": 24.05,
+        "other_p50": 1.31,
+        "other_p95": 1.96,
+        "over_30s": 1,
+        "over_60s": 0
+      },
+      "errors": {
+        "Malformed:WrongRuleIds": 1
+      },
+      "http_status": {
+        "200": 39
+      },
+      "providers": {
+        "Wafer": 39
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "Wafer": 20
+        },
+        "reading_en": {
+          "Wafer": 7
+        },
+        "reading_zh": {
+          "Wafer": 8
+        }
+      },
+      "submissions_failing_any_part": 1,
+      "items": 109,
+      "items_exact": 95,
+      "marks_over": 2.5,
+      "marks_under": 5.5,
+      "reference_items_exact": 99,
+      "same_award_as_reference": [
+        101,
+        107
+      ],
+      "cost_usd": 0.01974,
+      "cost_usd_per_submission": 0.01974,
+      "tokens": {
+        "input": 67425,
+        "cached": 65024,
+        "output": 37995,
+        "reasoning": 30898
+      }
+    },
+    "s2-k10": {
+      "manifest": {
+        "label": "s2-k10",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 10,
+        "inflight_total": 10,
+        "seed": 2,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:45:23.172606+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:45:51.458090+00:00"
+      },
+      "submissions": 1,
+      "calls": 37,
+      "skipped_by_code_rule": 3,
+      "wall_s": [
+        28.26
+      ],
+      "wall_s_max": 28.26,
+      "latency_s": {
+        "p50": 2.04,
+        "p95": 18.4,
+        "max": 28.26,
+        "maths_p50": 6.14,
+        "maths_p95": 18.4,
+        "other_p50": 1.1,
+        "other_p95": 1.79,
+        "over_30s": 0,
+        "over_60s": 0
+      },
+      "errors": {},
+      "http_status": {
+        "200": 37
+      },
+      "providers": {
+        "Wafer": 37
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "Wafer": 20
+        },
+        "reading_en": {
+          "Wafer": 8
+        },
+        "reading_zh": {
+          "Wafer": 5
+        }
+      },
+      "submissions_failing_any_part": 0,
+      "items": 109,
+      "items_exact": 106,
+      "marks_over": 2.0,
+      "marks_under": 0.5,
+      "reference_items_exact": 106,
+      "same_award_as_reference": [
+        109,
+        109
+      ],
+      "cost_usd": 0.01568,
+      "cost_usd_per_submission": 0.01568,
+      "tokens": {
+        "input": 62258,
+        "cached": 60288,
+        "output": 30005,
+        "reasoning": 23559
+      }
+    },
+    "s0-k20": {
+      "manifest": {
+        "label": "s0-k20",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 20,
+        "inflight_total": 20,
+        "seed": 0,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:37:37.464983+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:38:50.450839+00:00"
+      },
+      "submissions": 1,
+      "calls": 40,
+      "skipped_by_code_rule": 0,
+      "wall_s": [
+        72.97
+      ],
+      "wall_s_max": 72.97,
+      "latency_s": {
+        "p50": 3.12,
+        "p95": 19.28,
+        "max": 72.97,
+        "maths_p50": 10.56,
+        "maths_p95": 24.08,
+        "other_p50": 1.56,
+        "other_p95": 2.97,
+        "over_30s": 1,
+        "over_60s": 1
+      },
+      "errors": {},
+      "http_status": {
+        "200": 40
+      },
+      "providers": {
+        "Wafer": 40
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "Wafer": 20
+        },
+        "reading_en": {
+          "Wafer": 8
+        },
+        "reading_zh": {
+          "Wafer": 8
+        }
+      },
+      "submissions_failing_any_part": 0,
+      "items": 109,
+      "items_exact": 106,
+      "marks_over": 2.0,
+      "marks_under": 0.0,
+      "reference_items_exact": 106,
+      "same_award_as_reference": [
+        108,
+        109
+      ],
+      "cost_usd": 0.01722,
+      "cost_usd_per_submission": 0.01722,
+      "tokens": {
+        "input": 68426,
+        "cached": 66048,
+        "output": 32929,
+        "reasoning": 26338
+      }
+    },
+    "s1-k20": {
+      "manifest": {
+        "label": "s1-k20",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 20,
+        "inflight_total": 20,
+        "seed": 1,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:40:40.406412+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:41:18.177477+00:00"
+      },
+      "submissions": 1,
+      "calls": 39,
+      "skipped_by_code_rule": 1,
+      "wall_s": [
+        37.75
+      ],
+      "wall_s_max": 37.75,
+      "latency_s": {
+        "p50": 3.87,
+        "p95": 22.14,
+        "max": 37.75,
+        "maths_p50": 10.89,
+        "maths_p95": 22.14,
+        "other_p50": 1.28,
+        "other_p95": 3.87,
+        "over_30s": 1,
+        "over_60s": 0
+      },
+      "errors": {},
+      "http_status": {
+        "200": 39
+      },
+      "providers": {
+        "Wafer": 39
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "Wafer": 20
+        },
+        "reading_en": {
+          "Wafer": 7
+        },
+        "reading_zh": {
+          "Wafer": 8
+        }
+      },
+      "submissions_failing_any_part": 0,
+      "items": 109,
+      "items_exact": 99,
+      "marks_over": 2.5,
+      "marks_under": 3.5,
+      "reference_items_exact": 99,
+      "same_award_as_reference": [
+        106,
+        109
+      ],
+      "cost_usd": 0.01776,
+      "cost_usd_per_submission": 0.01776,
+      "tokens": {
+        "input": 67425,
+        "cached": 65024,
+        "output": 34028,
+        "reasoning": 26830
+      }
+    },
+    "s2-k20": {
+      "manifest": {
+        "label": "s2-k20",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 20,
+        "inflight_total": 20,
+        "seed": 2,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:43:20.912472+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:43:57.001795+00:00"
+      },
+      "submissions": 1,
+      "calls": 37,
+      "skipped_by_code_rule": 3,
+      "wall_s": [
+        36.07
+      ],
+      "wall_s_max": 36.07,
+      "latency_s": {
+        "p50": 5.65,
+        "p95": 23.54,
+        "max": 36.07,
+        "maths_p50": 9.93,
+        "maths_p95": 23.54,
+        "other_p50": 1.27,
+        "other_p95": 2.36,
+        "over_30s": 1,
+        "over_60s": 0
+      },
+      "errors": {},
+      "http_status": {
+        "200": 37
+      },
+      "providers": {
+        "Wafer": 37
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "Wafer": 20
+        },
+        "reading_en": {
+          "Wafer": 8
+        },
+        "reading_zh": {
+          "Wafer": 5
+        }
+      },
+      "submissions_failing_any_part": 0,
+      "items": 109,
+      "items_exact": 105,
+      "marks_over": 2.0,
+      "marks_under": 1.5,
+      "reference_items_exact": 106,
+      "same_award_as_reference": [
+        108,
+        109
+      ],
+      "cost_usd": 0.01379,
+      "cost_usd_per_submission": 0.01379,
+      "tokens": {
+        "input": 62258,
+        "cached": 56832,
+        "output": 26033,
+        "reasoning": 19535
+      }
+    },
+    "s0-k40": {
+      "manifest": {
+        "label": "s0-k40",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 40,
+        "inflight_total": 40,
+        "seed": 0,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:38:50.648398+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:39:50.463599+00:00"
+      },
+      "submissions": 1,
+      "calls": 40,
+      "skipped_by_code_rule": 0,
+      "wall_s": [
+        59.8
+      ],
+      "wall_s_max": 59.8,
+      "latency_s": {
+        "p50": 8.05,
+        "p95": 16.55,
+        "max": 59.8,
+        "maths_p50": 10.41,
+        "maths_p95": 24.81,
+        "other_p50": 5.78,
+        "other_p95": 12.45,
+        "over_30s": 1,
+        "over_60s": 0
+      },
+      "errors": {},
+      "http_status": {
+        "200": 40
+      },
+      "providers": {
+        "Wafer": 40
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "Wafer": 20
+        },
+        "reading_en": {
+          "Wafer": 8
+        },
+        "reading_zh": {
+          "Wafer": 8
+        }
+      },
+      "submissions_failing_any_part": 0,
+      "items": 109,
+      "items_exact": 106,
+      "marks_over": 1.5,
+      "marks_under": 0.0,
+      "reference_items_exact": 106,
+      "same_award_as_reference": [
+        109,
+        109
+      ],
+      "cost_usd": 0.01571,
+      "cost_usd_per_submission": 0.01571,
+      "tokens": {
+        "input": 68426,
+        "cached": 66048,
+        "output": 29921,
+        "reasoning": 23280
+      }
+    },
+    "s1-k40": {
+      "manifest": {
+        "label": "s1-k40",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 40,
+        "inflight_total": 40,
+        "seed": 1,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:39:50.664304+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:40:40.164668+00:00"
+      },
+      "submissions": 1,
+      "calls": 39,
+      "skipped_by_code_rule": 1,
+      "wall_s": [
+        49.48
+      ],
+      "wall_s_max": 49.48,
+      "latency_s": {
+        "p50": 7.66,
+        "p95": 21.82,
+        "max": 49.48,
+        "maths_p50": 11.14,
+        "maths_p95": 49.48,
+        "other_p50": 5.42,
+        "other_p95": 12.85,
+        "over_30s": 1,
+        "over_60s": 0
+      },
+      "errors": {
+        "IncompleteRead": 2,
+        "Malformed:WrongRuleIds": 1
+      },
+      "http_status": {
+        "None": 2,
+        "200": 37
+      },
+      "providers": {
+        "None": 2,
+        "Wafer": 37
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "None": 2,
+          "Wafer": 18
+        },
+        "reading_en": {
+          "Wafer": 7
+        },
+        "reading_zh": {
+          "Wafer": 8
+        }
+      },
+      "submissions_failing_any_part": 1,
+      "items": 109,
+      "items_exact": 92,
+      "marks_over": 3.5,
+      "marks_under": 3.0,
+      "reference_items_exact": 99,
+      "same_award_as_reference": [
+        99,
+        102
+      ],
+      "cost_usd": 0.01551,
+      "cost_usd_per_submission": 0.01551,
+      "tokens": {
+        "input": 64148,
+        "cached": 58752,
+        "output": 29425,
+        "reasoning": 22624
+      }
+    },
+    "s2-k40": {
+      "manifest": {
+        "label": "s2-k40",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 1,
+        "inflight_per_submission": 40,
+        "inflight_total": 40,
+        "seed": 2,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:44:54.819335+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:45:22.913227+00:00"
+      },
+      "submissions": 1,
+      "calls": 37,
+      "skipped_by_code_rule": 3,
+      "wall_s": [
+        28.07
+      ],
+      "wall_s_max": 28.07,
+      "latency_s": {
+        "p50": 8.23,
+        "p95": 22.93,
+        "max": 28.07,
+        "maths_p50": 11.39,
+        "maths_p95": 22.93,
+        "other_p50": 5.25,
+        "other_p95": 12.44,
+        "over_30s": 0,
+        "over_60s": 0
+      },
+      "errors": {},
+      "http_status": {
+        "200": 37
+      },
+      "providers": {
+        "Wafer": 37
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 4
+        },
+        "math": {
+          "Wafer": 20
+        },
+        "reading_en": {
+          "Wafer": 8
+        },
+        "reading_zh": {
+          "Wafer": 5
+        }
+      },
+      "submissions_failing_any_part": 0,
+      "items": 109,
+      "items_exact": 106,
+      "marks_over": 2.0,
+      "marks_under": 0.5,
+      "reference_items_exact": 106,
+      "same_award_as_reference": [
+        109,
+        109
+      ],
+      "cost_usd": 0.01597,
+      "cost_usd_per_submission": 0.01597,
+      "tokens": {
+        "input": 62258,
+        "cached": 60288,
+        "output": 30584,
+        "reasoning": 24128
+      }
+    },
+    "load3-k20": {
+      "manifest": {
+        "label": "load3-k20",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 3,
+        "inflight_per_submission": 20,
+        "inflight_total": 60,
+        "seed": 10,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:46:07.829158+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:47:51.081768+00:00"
+      },
+      "submissions": 3,
+      "calls": 118,
+      "skipped_by_code_rule": 2,
+      "wall_s": [
+        71.72,
+        82.22,
+        103.24
+      ],
+      "wall_s_max": 103.24,
+      "latency_s": {
+        "p50": 3.53,
+        "p95": 71.46,
+        "max": 103.23,
+        "maths_p50": 22.73,
+        "maths_p95": 77.44,
+        "other_p50": 1.51,
+        "other_p95": 2.27,
+        "over_30s": 21,
+        "over_60s": 10
+      },
+      "errors": {},
+      "http_status": {
+        "200": 118
+      },
+      "providers": {
+        "Wafer": 118
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 12
+        },
+        "math": {
+          "Wafer": 60
+        },
+        "reading_en": {
+          "Wafer": 23
+        },
+        "reading_zh": {
+          "Wafer": 23
+        }
+      },
+      "submissions_failing_any_part": 0,
+      "items": 327,
+      "items_exact": 311,
+      "marks_over": 4.5,
+      "marks_under": 6.0,
+      "reference_items_exact": 315,
+      "same_award_as_reference": [
+        320,
+        327
+      ],
+      "cost_usd": 0.04957,
+      "cost_usd_per_submission": 0.01652,
+      "tokens": {
+        "input": 203241,
+        "cached": 195456,
+        "output": 94633,
+        "reasoning": 73958
+      }
+    },
+    "load5-k20": {
+      "manifest": {
+        "label": "load5-k20",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 5,
+        "inflight_per_submission": 20,
+        "inflight_total": 100,
+        "seed": 20,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:47:51.357543+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:50:10.219399+00:00"
+      },
+      "submissions": 5,
+      "calls": 193,
+      "skipped_by_code_rule": 7,
+      "wall_s": [
+        87.15,
+        92.35,
+        96.23,
+        100.03,
+        138.83
+      ],
+      "wall_s_max": 138.83,
+      "latency_s": {
+        "p50": 4.48,
+        "p95": 88.27,
+        "max": 138.82,
+        "maths_p50": 19.74,
+        "maths_p95": 91.22,
+        "other_p50": 1.57,
+        "other_p95": 2.55,
+        "over_30s": 40,
+        "over_60s": 30
+      },
+      "errors": {
+        "Malformed:WrongRuleIds": 2
+      },
+      "http_status": {
+        "200": 193
+      },
+      "providers": {
+        "Wafer": 193
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 20
+        },
+        "math": {
+          "Wafer": 100
+        },
+        "reading_en": {
+          "Wafer": 39
+        },
+        "reading_zh": {
+          "Wafer": 34
+        }
+      },
+      "submissions_failing_any_part": 2,
+      "items": 545,
+      "items_exact": 515,
+      "marks_over": 5.0,
+      "marks_under": 12.0,
+      "reference_items_exact": 522,
+      "same_award_as_reference": [
+        529,
+        541
+      ],
+      "cost_usd": 0.07512,
+      "cost_usd_per_submission": 0.01502,
+      "tokens": {
+        "input": 327955,
+        "cached": 305408,
+        "output": 142416,
+        "reasoning": 109061
+      }
+    },
+    "load10-k20": {
+      "manifest": {
+        "label": "load10-k20",
+        "grader": "deepseek-v41-1017-wafer",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "routing": {
+          "order": [
+            "wafer/us",
+            "InferenceNet",
+            "Cloudflare"
+          ],
+          "allow_fallbacks": false
+        },
+        "submissions": 10,
+        "inflight_per_submission": 20,
+        "inflight_total": 200,
+        "seed": 30,
+        "parts_per_submission": 40,
+        "mix": {
+          "math": 20,
+          "reading_en": 8,
+          "reading_zh": 8,
+          "contract": 4
+        },
+        "prompt": "r3",
+        "copy_alt": true,
+        "timeout_s": 180,
+        "retries": 0,
+        "started_utc": "2026-11-03T16:50:10.538958+00:00",
+        "git_head": "5d4c9b3e76c15fa54c8a67224e33ef0bea85517a",
+        "finished_utc": "2026-11-03T16:52:46.167216+00:00"
+      },
+      "submissions": 10,
+      "calls": 385,
+      "skipped_by_code_rule": 15,
+      "wall_s": [
+        111.28,
+        113.17,
+        126.49,
+        137.34,
+        144.62,
+        150.08,
+        150.2,
+        150.39,
+        150.4,
+        155.6
+      ],
+      "wall_s_max": 155.6,
+      "latency_s": {
+        "p50": 6.82,
+        "p95": 104.41,
+        "max": 155.39,
+        "maths_p50": 28.11,
+        "maths_p95": 118.34,
+        "other_p50": 3.38,
+        "other_p95": 6.74,
+        "over_30s": 87,
+        "over_60s": 67
+      },
+      "errors": {
+        "TimeoutError": 5,
+        "Malformed:WrongRuleIds": 1
+      },
+      "http_status": {
+        "200": 380,
+        "None": 5
+      },
+      "providers": {
+        "Wafer": 298,
+        "InferenceNet": 82,
+        "None": 5
+      },
+      "providers_by_set": {
+        "contract": {
+          "Wafer": 38,
+          "InferenceNet": 2
+        },
+        "math": {
+          "Wafer": 147,
+          "InferenceNet": 48,
+          "None": 5
+        },
+        "reading_en": {
+          "InferenceNet": 24,
+          "Wafer": 53
+        },
+        "reading_zh": {
+          "Wafer": 60,
+          "InferenceNet": 8
+        }
+      },
+      "submissions_failing_any_part": 5,
+      "items": 1090,
+      "items_exact": 1027,
+      "marks_over": 10.5,
+      "marks_under": 21.5,
+      "reference_items_exact": 1044,
+      "same_award_as_reference": [
+        1056,
+        1074
+      ],
+      "cost_usd": 0.16929,
+      "cost_usd_per_submission": 0.01693,
+      "tokens": {
+        "input": 646293,
+        "cached": 572800,
+        "output": 311725,
+        "reasoning": 241760
+      }
+    }
+  }
+}

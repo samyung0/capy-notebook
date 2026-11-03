@@ -107,6 +107,15 @@ GRADERS = {
         "key_vars": ("OPENROUTER_API_KEY",),
         "routing": {"order": ["InferenceNet", "Cloudflare"], "allow_fallbacks": False},
     },
+    # Epo's order for the grading concurrency test (2026-11-04): Wafer's US endpoint
+    # first ($0.038 / $0.50 per million, mxfp4), then the pipeline's two providers.
+    "deepseek-v41-1017-wafer": {
+        "host": "openrouter.ai",
+        "path": "/api/v1/chat/completions",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "key_vars": ("OPENROUTER_API_KEY",),
+        "routing": {"order": ["wafer/us", "InferenceNet", "Cloudflare"], "allow_fallbacks": False},
+    },
     "jev": {"model": "jev-1.13.0", "key_vars": ("TYPESAFE_API_KEY", "JEV_TYPESAFE_API_KEY")},
 }
 # USD per million tokens: (input, cached input, output). DeepSeek Flash at its peak
@@ -118,6 +127,7 @@ PRICES = {
     "deepseek-0731": (0.021, 0.0056, 0.528),
     "deepseek-v41-flash": (0.045, 0.012, 0.50),
     "deepseek-v41-1017": (0.08, 0.008, 0.55),
+    "deepseek-v41-1017-wafer": (0.038, 0.01, 0.50),
     "jev": (0.009 / 0.204089, 0.009 / 0.204089, 0.0),
 }
 

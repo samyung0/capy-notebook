@@ -108,6 +108,10 @@ without a call; other rules go to the model in `<answer_rules>`. It adds
 captioning pin, InferenceNet then Cloudflare) on OpenRouter; `--copy-alt` measures
 whole-paragraph copying
 as passage coverage. See the [round 3 report](reports/2026-11-03-deepseek-grading-round3.md).
+[`scripts/grading_concurrency.py`](scripts/grading_concurrency.py) grades simulated
+40-part submissions on the 1017 pin with N parts in flight and several submissions at
+once: wall time, per-call latency, providers, errors, accuracy and cost. See the
+[concurrency report](reports/2026-11-04-grading-concurrency.md).
 
 ```sh
 S=bench/grading/scripts/deepseek_grading.py; D=data/grading-benchmark/deepseek-grading-<fresh>; E=deploy/.env.uat
