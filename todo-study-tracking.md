@@ -475,13 +475,29 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - One silent retry, in-process, because the retrieval service has no job queue.
 - **0731 can't read images:** OpenRouter lists it as text-only, and an image request returns 404. So extraction stays on the direct `deepseek-flash` until Epo picks a vision model. The 1017 pin reads images but forces reasoning off.
 - **Keys worked out by the model:** Paper 2 MCQ 175/180 (97%) match the official keys. Paper 1 final answers match in 107/108 (checked by hand). Part marks match in 99/108. Every label is found and every question saved.
-- **Cost:** mid thinking costs 2–3× the first cut. Paper 2 is 108–145 credits and 200–280 s; a 40-page run is about 250–350 credits, more than a Free month (200).
+- **Cost:** mid thinking costs 2–3× the first cut. Paper 2 is 108–145 credits and 200–280 s; a 40-page run is about 250–350 credits, about a Free month (300 since 2026-10-30).
 - **Open for Epo:**
-  - Pre-existing files used in a run get hidden too. The plan said only files uploaded with the quiz.
-  - 1-mark parts are typed short (auto-marked) where the paper's gold has open.
+  - Pre-existing files used in a run get hidden too. The plan said only files uploaded with the quiz. **Decided (Epo, 2026-11-04):** only files uploaded in the Make a quiz dialog start hidden; a picked workspace file keeps its setting; the quiz still starts hidden. Being built on `claude/study-extraction`.
+  - 1-mark parts are typed short (auto-marked) where the paper's gold has open. **Fine (Epo, 2026-11-04).**
   - An editor's clone copies hidden items as visible.
   - A full 100-part submission makes 100 grading calls, 5 at a time.
   - Migration renumbering and figure crops are still to do.
+
+**Content check (2026-11-04).** The bench scored labels, keys and marks, not the content itself. Reading the 1017 outputs:
+- **Formulas** come out as LaTeX between $ signs and read right in the samples, but nothing has compared them with the page.
+- **Figures** are found (10/10 gold figure questions on 2022 P2, 2/2 on 2021 P1) but never cropped, so a saved question says "In the figure…" with no figure.
+- **Options twice:** 7 of 45 MCQs in one 2022 P2 run repeat their options as an "A. … B. …" text block as well as the option boxes.
+- **Tables** become table blocks, but none of the three papers has one.
+- **Being built on `claude/study-extraction`:** figure crops saved as the question's image, a check of box accuracy on every crop, a text check of stems, options and schemes against the page's text layer, a paper with a table, and options removed from the text in code. Report: `bench/extraction/reports/2026-11-04-figures-and-fidelity.md`.
+
+**Upload: everyone or hidden from members (Epo, 2026-11-04; canvas page 10, board U1).**
+- **Scope:** owners and editors choose, when uploading, whether members see the file. Hidden works as the ⋮ menu's Hide from members does: viewers don't see the file in Files, search, the agent, Activity or any notification; owners and editors see it with the eye mark.
+- **Default:** everyone, as today. Uploads inside Make a quiz start hidden.
+- **Options:** V1 a "Who can see it" dropdown under Topic, V2 two buttons under Topic, V3 a "Hide from members" switch left of Cancel. Awaiting Epo's pick.
+- **Leak paths checked:**
+  - The Dashboard's Activity query (`store/dashboard.go` on `claude/study-shell`) doesn't filter hidden items yet. The shell branch predates the `hidden` column, so whichever branch lands second adds `workspace_item_visible` there.
+  - There are no upload notifications today (only invites, role changes and removals). Assignment notifications, when added, skip hidden items.
+  - Tree events carry no names. Ingest events carry the file id to every member's stream, which is harmless because the list refetch filters it.
 
 
 ## 9. Grading open answers
@@ -601,6 +617,7 @@ Jev scored 1,730 (88.9%), +89.
   - **The cost is maths latency:** p50 11 s and p95 57 s, slowest 156 s, against Wafer's 5 s and 33 s.
   - **Decided (Epo, 2026-11-04):** 1017 is the one model for grading, extraction and captions, routed Wafer (`wafer/us`) → InferenceNet → Cloudflare with no other fallbacks. Never DeepInfra, except the Qwen embedding pin. Never direct DeepSeek.
   - **Then (Epo, 2026-11-04):** extraction gets its own route, InferenceNet → Cloudflare → `wafer/us`. In the Wafer check, extraction with thinking was worse on Wafer and one run ran away to 17× the cost. Captions, page reads and ghost text keep Wafer first; grading waits on the concurrency test. The credits price for 1017 is 200 / 20 / 1200 (input / cached / output micros per token, the highest of the three providers) for every use. Extraction also gets a guard against runaway output.
+  - **UAT (2026-11-04):** the rate is live as `model_configs` version 4 of the 1017 row (version 3 at 160 / 16 / 1100 disabled; the registry version bumped, so the catalog picks it up within 10 minutes). The provider routes are code and reach UAT with the branch's deploy; the extraction slot needs migration 0138 first.
 
 ### Built-in grading rules (Epo, 2026-11-04; supersedes the per-question answer rules below)
 
@@ -633,9 +650,21 @@ No per-question rules section. Built-in rules apply to every open answer, and a 
   - Size each model's total to what its providers measurably take.
   - Put every caller in the same line, served round-robin by requester (user or job), so one big ingest or 40-part grading can't crowd out a single ghost-text call.
   - Drop the interactive reserve once round-robin is in. This touches retrieval limits and the Go gates, so it needs its own change.
-- **Per-submission grading limit:** being tested (5, 10, 20, 40 at once).
+- **Per-submission grading limit, measured (2026-11-04; `claude/bench-deepseek-grading-4a344d` fb1d1fe61, `bench/grading/reports/2026-11-04-grading-concurrency.md`).** Simulated 40-part papers (20 HKDSE maths with working, 20 reading and short open parts) on 1017, routed Wafer → InferenceNet → Cloudflare.
+  - **One submission:** 5, 10, 20 or 40 parts at once all take 28–86 s. The slowest maths part sets the wall time, and sending more at once only slows each call (call p50 2 s at 5, 8 s at 40).
+  - **Several submissions, 20 parts each:** 3 at once (60 calls) take 72–103 s, 5 (100 calls) 87–139 s, and 10 (200 calls) 111–156 s, with 5 calls getting no answer within 180 s. Wafer served everything up to 100 in flight; at 200, InferenceNet took 22%. Cloudflare never served, and no 429 reached us.
+  - **Accuracy** held at every level (97–100% agreement with round 3). Non-maths parts stayed fast (p95 2–7 s even at 200 in flight).
+  - **Cost:** about $0.016 a 40-part submission, about 32 credits. A Free month (300) covers about nine.
+  - **Malformed replies:** 5 left out a rule's `id`, all on IELTS own-words parts. Matching rules by position would accept them.
+  - **Today's code would fail them:** a 30 s timeout, and one failed part failing the whole check, would fail 28 of the 30 test submissions.
+- **Proposal from the measurement:**
+  - 10 parts at once per submission.
+  - A 120 s timeout for maths parts; other parts keep 30 s.
+  - Keep each part's result and re-grade only failed parts, instead of failing the check.
+  - Grade assignment submissions in the background with the progress status. Thirty students handing in one paper together take about 15 minutes on Wafer alone.
+  - **Total for 1017:** Wafer's latency doubles from about 60 calls in flight, and it starts handing calls on between 100 and 200. The bench suggested a separate 40-call grading limit, but that is a per-use cap, which Epo ruled out. In line with Epo's round-robin rule, raise 1017's one gate from 40 to about 100 instead, with every caller round-robin in the same line, so a grading burst can't starve ghost text or captions. Needs Epo's OK.
 
-**1017 capacity:** ghost text has run on 1017 since 2026-10-28; 0731 is the ingest descriptor model. The 40-in-flight gate (20 reserved for interactive calls) is our own setting from 2026-10-29, not a provider limit. InferenceNet answered 128 page reads at once and Cloudflare 64 without errors, but Wafer isn't measured yet. Ramp it before raising the gate and giving grading its own share.
+**1017 capacity:** ghost text has run on 1017 since 2026-10-28; 0731 is the ingest descriptor model. The 40-in-flight gate (20 reserved for interactive calls) is our own setting from 2026-10-29, not a provider limit. InferenceNet answered 128 page reads at once and Cloudflare 64 without errors, but Wafer took 100 grading calls at once without an error (2026-11-04, above).
 
 ### Answer rules apart from the marking points (superseded 2026-11-04 by built-in rules; proposal, Epo 2026-11-03; canvas page 11, board R1)
 
