@@ -13,7 +13,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -223,16 +222,10 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 		}
 		return nil, hErr(&aiServiceError{cause: err})
 	}
-	// Once the service has accepted the run, the files the quiz is made from
-	// are hidden from members, as the quiz will be (Epo 2026-11-03): a mark
-	// scheme must not reach the students. A refused request hides nothing.
-	for _, file := range append(append([]extractionFile{}, paper...), answers...) {
-		if err := a.s.SetItemHidden(runCtx, actor, agenttools.KindSourceFile, file.FileID, true); err != nil {
-			stream.Close()
-			charge.release(ctx)
-			return nil, hErr(err)
-		}
-	}
+	// The run leaves its files' visibility alone (Epo 2026-11-04): a file
+	// picked from the workspace keeps its setting, and one uploaded in the
+	// Make a quiz dialog was uploaded hidden (CreateSourceUploadReq.Hidden),
+	// so a mark scheme never reaches the students. The quiz starts hidden.
 	run, err := a.s.CreateExtraction(runCtx, wsID, actor, title)
 	if err != nil {
 		stream.Close()
@@ -272,9 +265,12 @@ func pipelineExtractionError(err error) error {
 }
 
 // extractionEvent is one event of the retrieval service's /extract stream.
+// A done event's Figures are the JPEG crops its questions' image blocks name
+// (`figure:<id>`).
 type extractionEvent struct {
 	Type      string          `json:"type"`
 	Questions json.RawMessage `json:"questions"`
+	Figures   []agentFigure   `json:"figures"`
 	Report    json.RawMessage `json:"report"`
 	Code      string          `json:"code"`
 	Message   string          `json:"message"`
@@ -329,9 +325,10 @@ func (a *api) followExtraction(ctx context.Context, stream io.Reader, run store.
 	}
 }
 
-// finishExtraction saves the run's questions as a new quiz in the workspace.
-// The title was free when the run started; a quiz made since under it moves
-// this one to "Title 2".
+// finishExtraction saves the run's questions as a new quiz in the workspace,
+// its figures as the quiz's own editor assets, charged to the starter like
+// images it uploads (M16). The title was free when the run started; a quiz
+// made since under it moves this one to "Title 2".
 func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor, wsName string, ev extractionEvent) store.Extraction {
 	fail := func(code, message string) store.Extraction {
 		ended, err := a.s.FailExtraction(ctx, run.ID, code, message, ev.Report)
@@ -340,6 +337,13 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 		}
 		return ended
 	}
+	failed := func(stage string, err error) store.Extraction {
+		if errors.Is(err, store.ErrStorageQuotaExceeded) {
+			return fail("storage_full", "The quiz and its figures do not fit in your storage.")
+		}
+		obs.CaptureErr(ctx, err, map[string]string{"stage": stage})
+		return fail("extraction_failed", "The quiz could not be saved.")
+	}
 	if qs := strings.TrimSpace(string(ev.Questions)); qs == "" || qs == "[]" || qs == "null" {
 		return fail("extraction_empty", "No questions could be read from the selected pages.")
 	}
@@ -347,17 +351,41 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 	if err != nil {
 		return fail("extraction_failed", "The quiz could not be saved.")
 	}
+	figures := newAgentFigures(run.ID, "extraction", ev.Figures)
+	questions, err := figures.resolveQuestions(ev.Questions)
+	if err != nil {
+		return failed("extraction_figures", err)
+	}
+	var assets []store.AgentAsset
+	if len(figures.used) > 0 {
+		imageMaxBytes, err := a.s.ImageMaxBytes(ctx, actor)
+		if err != nil {
+			return failed("extraction_figures", err)
+		}
+		if assets, err = a.putAgentFigures(ctx, figures, imageMaxBytes); err != nil {
+			return failed("extraction_figures", err)
+		}
+	}
 	// The quiz starts hidden from members (Epo 2026-11-03).
 	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
 		ActorUserID: actor, WorkspaceID: run.WorkspaceID, WorkspaceName: wsName,
-		Kind: store.MaterialQuiz, Title: title, Questions: ev.Questions, Hidden: true,
+		Kind: store.MaterialQuiz, Title: title, Questions: questions, Assets: assets, Hidden: true,
 	})
+	if err != nil {
+		a.deleteAgentAssets(ctx, assets)
+	}
 	if errors.Is(err, materialdoc.ErrInvalid) {
 		return fail("quiz_invalid", err.Error())
 	}
 	if err != nil {
-		obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_quiz"})
-		return fail("extraction_failed", "The quiz could not be saved.")
+		return failed("extraction_quiz", err)
+	}
+	if len(assets) > 0 {
+		ids := make([]string, len(assets))
+		for i, asset := range assets {
+			ids[i] = asset.ID
+		}
+		a.thumbnailFigures(ctx, figures, ids)
 	}
 	ended, err := a.s.FinishExtraction(ctx, run.ID, mt.ID, ev.Report)
 	if err != nil {

@@ -3,6 +3,8 @@ scheme by label, and the run's report (pipeline.retrieval.extraction)."""
 
 from __future__ import annotations
 
+import base64
+import copy
 import json
 from types import SimpleNamespace
 
@@ -79,11 +81,16 @@ def _call(name: str, args: dict, n: int = 0) -> dict:
     }
 
 
-def _page(number: int, text: str = "") -> extraction.Page:
+def _page(number: int, text: str = "", crops: list | None = None) -> extraction.Page:
     async def image() -> str:
         return "data:image/jpeg;base64,AA=="
 
-    return extraction.Page(number, "paper.pdf", text, image)
+    async def crop(box: list[float]) -> tuple[bytes, tuple[int, int]]:
+        if crops is not None:
+            crops.append((number, box))
+        return b"jpeg %d" % number, (400, 300)
+
+    return extraction.Page(number, "paper.pdf", text, image, crop)
 
 
 def test_label_key_compares_printed_labels():
@@ -105,6 +112,34 @@ def test_record_keeps_printed_options_keys_and_ai_written_solutions():
     assert "label" not in printed.question["parts"][0]["solution"][0]
     long = extraction.record(_open("3", [("a", 2)]), AI)
     assert long.question["parts"][0]["markscheme"] == [{"text": "1A for a", "marks": 2}]
+
+
+def test_option_lines_copied_into_the_text_are_taken_out():
+    """Options the model wrote into the part's text as well as into the
+    answer are shown once: lettered lines in a block, two to a line, or a
+    part holding only them (its stem becomes its text). Lines that differ
+    from the options stay."""
+    options = ["$3$ .", "$3^{2n+6}$", "9", "$\\frac{1}{2}$"]
+    item = _mcq("2", options)
+    item["parts"][0]["blocks"] = _text(
+        "Simplify $9^n$.\nA.  $3$ .\nB.  $3^{2n+6}$ .\nC. 9    D. $\\frac{1}{2}$"
+    )
+    part = extraction.record(item, AI).question["parts"][0]
+    assert part["blocks"] == _text("Simplify $9^n$.")
+    assert part["answer"]["options"] == options
+
+    only = _mcq("3", ["52", "68"])
+    only["stem"] = _text("Find the number of dots.")
+    only["parts"][0]["blocks"] = _text("A. 52\nB. 68")
+    question = extraction.record(only, AI).question
+    assert question["stem"] == []
+    assert question["parts"][0]["blocks"] == _text("Find the number of dots.")
+
+    other = _mcq("4", ["52", "68"])
+    other["parts"][0]["blocks"] = _text("A. 52 apples\nB. 68")
+    assert extraction.record(other, AI).question["parts"][0]["blocks"] == _text(
+        "A. 52 apples\nB. 68"
+    )
 
 
 def test_a_part_must_say_where_its_key_came_from():
@@ -410,6 +445,87 @@ async def test_a_run_past_its_output_budget_stops_and_keeps_what_it_has(monkeypa
     assert report["stopped"] == "output_limit"
     assert report["recorded"] == ["1"] and report["missing"] == ["2"]
     assert report["windows"] == 1
+
+
+async def test_figures_are_cropped_from_their_page_and_placed_after_their_part(
+    monkeypatch,
+):
+    """A figure names its page image in the window, its box and the part it
+    follows: the done event crops it from that page and places an image block
+    after that part's text (the stem for ""), with the crop beside the
+    questions. A figure naming a part the question lacks goes back to the
+    model."""
+    with_figures = _open("8", [("a", 2), ("b", 2)])
+    with_figures["figures"] = [
+        {
+            "image": 2,
+            "box": [100, 200, 900, 1004],
+            "part": "",
+            "description": "Triangle ABC",
+        },
+        {"image": 1, "box": [0, 0, 500, 500], "part": "b"},
+    ]
+    wrong = copy.deepcopy(with_figures)
+    wrong["figures"] = [{"image": 1, "box": [0, 0, 500, 500], "part": "c"}]
+    replies = iter(
+        [
+            {"tool_calls": [_call("record_question", wrong)]},
+            {"tool_calls": [_call("record_question", with_figures, 1)]},
+            {"content": "DONE"},
+        ]
+    )
+    results: list[str] = []
+
+    async def complete(messages, **kwargs):
+        return SimpleNamespace(content='{"questions": ["8"]}')
+
+    async def complete_response(messages, **kwargs):
+        results.extend(m["content"] for m in messages if m["role"] == "tool")
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message={"role": "assistant", "content": "", **next(replies)},
+                )
+            ],
+            usage=SimpleNamespace(output_tokens=100),
+        )
+
+    async def validate(question):
+        return None
+
+    monkeypatch.setattr(extraction.models, "complete", complete)
+    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
+    crops: list = []
+    events = [
+        event
+        async for event in extraction.run(
+            [_page(5, crops=crops), _page(6, crops=crops)],
+            [],
+            model=MODEL,
+            validate=validate,
+            locale="en",
+        )
+    ]
+    assert any("figures[0].part: the question has no part c" in r for r in results)
+    done = events[-1]
+    [question] = done["questions"]
+    stem_figure = question["stem"][-1]
+    assert stem_figure == {
+        "type": "image",
+        "image": {"assetId": "figure:q8-1"},
+        "width": 400,
+        "height": 300,
+        "description": "Triangle ABC",
+    }
+    assert question["parts"][1]["blocks"][-1]["image"] == {"assetId": "figure:q8-2"}
+    # The box is held to the page; each crop is from its own page image.
+    assert crops == [(6, [100.0, 200.0, 900.0, 1000.0]), (5, [0.0, 0.0, 500.0, 500.0])]
+    assert done["figures"] == [
+        {"id": "q8-1", "image": base64.b64encode(b"jpeg 6").decode()},
+        {"id": "q8-2", "image": base64.b64encode(b"jpeg 5").decode()},
+    ]
+    assert done["report"]["figures"] == ["8"]
 
 
 def test_extract_route_refuses_first_then_streams(monkeypatch):

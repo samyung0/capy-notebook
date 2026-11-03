@@ -35,9 +35,10 @@ type Extraction struct {
 // (KeyDisagreements, "4(a)"), questions that keep the page's keys because the
 // scheme's were refused (SchemeRefused), saved questions whose part marks
 // differ from the printed total (MarksDiffer), mark scheme entries no question
-// matched (Unpaired), and questions saved without their figures (Figures, not
-// cropped yet). Stopped says why a run ended early: quiz_full, credits, or
-// output_limit (its page windows wrote past the run's output budget).
+// matched (Unpaired), and questions saved with figures cropped from the page
+// (Figures), for the starter to check. Stopped says why a run ended early:
+// quiz_full, credits, or output_limit (its page windows wrote past the run's
+// output budget).
 type ExtractionReport struct {
 	Expected         []string `json:"expected" nullable:"false"`
 	Missing          []string `json:"missing" nullable:"false"`

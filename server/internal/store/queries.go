@@ -1385,8 +1385,9 @@ type MaterialDraft struct {
 	// A note's embedded quizzes and flashcard sets, created with it; their
 	// references in Content already point at the draft ids.
 	Embedded []EmbeddedDraft
-	// A note's images an agent placed (library figures), stored before the
-	// transaction and inserted with the note as its ready editor assets.
+	// A note's images an agent placed (library figures), or a quiz's figures
+	// cropped from the paper it was read from (Make a quiz), stored before the
+	// transaction and inserted with the material as its ready editor assets.
 	Assets         []AgentAsset
 	ScopeChapters  []string
 	ScopeFileNames []string
@@ -1475,7 +1476,7 @@ func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (M
 	if err != nil {
 		return Material{}, err
 	}
-	if draft.ChapterName == "" && len(draft.Embedded) == 0 {
+	if draft.ChapterName == "" && len(draft.Embedded) == 0 && len(draft.Assets) == 0 {
 		return s.CreateMaterial(ctx, mt)
 	}
 	if draft.ChapterName != "" && mt.ChapterID != nil {
@@ -1498,6 +1499,13 @@ func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (M
 	mt.ID = id
 	if err := s.createEmbeddedTx(ctx, tx, mt, draft.Embedded); err != nil {
 		return Material{}, err
+	}
+	if len(draft.Assets) > 0 {
+		// createMaterialTx locked the material's scope; the actor pays for
+		// the images, as for the material.
+		if err := s.insertAgentAssetsTx(ctx, tx, mt.WorkspaceID, id, draft.ActorUserID, draft.ActorUserID, draft.Assets); err != nil {
+			return Material{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Material{}, err

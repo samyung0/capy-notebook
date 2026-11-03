@@ -53,14 +53,14 @@ Copying:
 - At most {limits.QUIZ_QUESTION_PARTS_MAX} parts a question.
 
 Answers:
-- mcq: the options' text in printed order, without their letters A, B, C, D. Keep that order.
+- mcq: the options' text in printed order, without their letters A, B, C, D. Keep that order, and leave the options out of the part's blocks.
 - short: a single final value or word the learner types, for a part worth 1 mark with no working to show.
 - open: anything answered with working, a proof, an explanation or a drawing, and any part marked for its method or worth more than 1 mark.
 - Give every part its correct answer and a short worked solution. Copy them when the page prints them and set key_source to printed; otherwise work them out, set key_source to worked_out, and never change the printed question.
 - The answer: mcq "correct" (zero-based indexes of the right options); short "accepted"; open "points", the marking points with their marks, at most {limits.QUIZ_MARKSCHEME_MAX} adding up to the part's marks, and "accepted", a short model answer.
 - marks: the part's printed marks. When only the question's total is printed ("(3 marks)" after (a) and (b)), split it across the parts as the work suggests and give the printed total in total_marks. An item printed without marks has 1.
 
-Figures: for each diagram, graph, chart or photo a question needs, give its page number and box [left, top, right, bottom] on a 0-1000 grid of that page.
+Figures: for each diagram, graph, chart or photo a question needs, give the page image it is on (1 or 2, in the order shown), its box [left, top, right, bottom] on a 0-1000 grid of that page holding the whole figure with its labels and nothing of the text around it, the part whose text it follows ("" for the text shared by every part), and a few words on what it shows. The quiz shows the figure itself, so the blocks never describe it.
 
 Each recorded question is checked at once. Fix what a result names and record that question again with the same label; an accepted question needs no second call. When every question on these pages is recorded, reply with the single word DONE.
 {SOURCE_RULE}"""
@@ -158,16 +158,29 @@ _PART = {
 _FIGURE = {
     "type": "object",
     "properties": {
-        "page": {"type": "integer", "description": "The page number it is on."},
+        "image": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2,
+            "description": "The page image it is on: 1 for the first shown, 2 for the second.",
+        },
         "box": {
             "type": "array",
             "items": {"type": "number"},
             "minItems": 4,
             "maxItems": 4,
-            "description": "[left, top, right, bottom] on a 0-1000 grid.",
+            "description": "[left, top, right, bottom] on a 0-1000 grid of that page, around the whole figure.",
+        },
+        "part": {
+            "type": "string",
+            "description": 'The label of the part whose text the figure follows; "" for the text shared by every part.',
+        },
+        "description": {
+            "type": "string",
+            "description": f"A few words on what the figure shows, at most {limits.QUESTION_DESCRIPTION_MAX} characters.",
         },
     },
-    "required": ["page", "box"],
+    "required": ["image", "box", "part"],
 }
 
 _QUESTION = {
@@ -254,8 +267,9 @@ def page_heading(number: int, file_name: str) -> str:
     return f"Page {number} of {file_name}"
 
 
-def page_text(number: int, file_name: str, text: str) -> str:
-    heading = page_heading(number, file_name)
+def page_text(image: int, number: int, file_name: str, text: str) -> str:
+    """A window page's heading, numbered as figures name their page image."""
+    heading = f"Page image {image}: page {number} of {file_name}"
     if not text.strip():
         return f"{heading}. It has no indexed text."
     return f"{heading}. Its indexed text:\n{source_block(text)}"

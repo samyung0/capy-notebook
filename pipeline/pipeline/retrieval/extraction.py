@@ -21,20 +21,25 @@ A fixed pipeline, like /generate, not the chat agent:
    their keys, marking points and solutions replace worked-out ones, a printed
    key stays, and any disagreement is named in the report.
 
-The printed option order is kept (``add_questions`` shuffles; this does not).
-No question is left out for want of a key. A worked-out solution carries an
-"AI-written" label. Figures are boxed by the model but not cropped yet
-(``report.figures``). Nothing links a question to its file, page or region
-(§8 item 7).
+The printed option order is kept (``add_questions`` shuffles; this does not),
+and option lines the model also copied into a part's text are taken out. No
+question is left out for want of a key. A worked-out solution carries an
+"AI-written" label. Each figure the model boxes is cropped from its page at the
+end and placed after the text of the part it names, as an image block whose
+asset is ``figure:<id>``; the ``done`` event carries the crops and Go stores
+them as the quiz's own editor assets. Nothing links a question to its file,
+page or region (§8 item 7).
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import copy
 import functools
 import json
 import logging
+import math
 import re
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -69,6 +74,11 @@ WINDOW_MAX_TOKENS = 24_000
 WINDOW_OUTPUT_PER_PAGE = 8_000
 OUTLINE_MAX_TOKENS = 2_000
 SCHEME_MAX_TOKENS = 12_000
+# A figure is cropped at the scale that gives its page's long side this many
+# pixels (about 190 DPI on A4, against the windows' 1,568), so its labels read
+# and a small figure stays small; the crop's long side is still at most
+# CAPY_CAPTURE_MAX_EDGE.
+FIGURE_PAGE_EDGE = 2_200
 # Indexed text shown per page, and scheme text per parse call.
 PAGE_TEXT_CHARS = 6_000
 SCHEME_CHUNK_CHARS = 12_000
@@ -93,13 +103,29 @@ Validate = Callable[[dict[str, Any]], Awaitable[str | None]]
 @dataclass(frozen=True)
 class Page:
     """One selected page: its number in its file, the file's name, the
-    page's indexed text, and its image as a data URL, rendered when its window
-    runs."""
+    page's indexed text, its image as a data URL, rendered when its window
+    runs, and a box on it as a JPEG with its pixel size, for a figure."""
 
     number: int
     file_name: str
     text: str
     image: Callable[[], Awaitable[str]]
+    crop: Callable[[list[float]], Awaitable[tuple[bytes, tuple[int, int]]]]
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Page:
+        # A recorded question's copies share its figures' pages.
+        return self
+
+
+@dataclass(frozen=True)
+class Figure:
+    """A figure the model boxed: its page, the box on the 0-1000 grid, the
+    part whose text it follows ("" for the stem) and its description."""
+
+    page: Page
+    box: list[float]
+    part: str
+    description: str
 
 
 @dataclass(frozen=True)
@@ -117,7 +143,7 @@ class Recorded:
     question: dict[str, Any]
     part_labels: list[str]
     sources: list[str]
-    figures: int = 0
+    figures: list[Figure] = field(default_factory=list)
     # The question's printed total, when the page prints only a total.
     total: int | None = None
 
@@ -269,26 +295,176 @@ def _part(raw: Any, ai_label: str) -> tuple[str, str, dict[str, Any]]:
     return str(raw.get("label") or ""), source, part
 
 
+# A printed option letter: "A. ", "(B) ", "C) ".
+_OPTION_LETTER = re.compile(r"(?:^|(?<=\s))\(?([A-H])[.)](?=\s)")
+
+
+def _option_text(value: str) -> str:
+    """An option as an option line is compared with it: spacing, $ signs and a
+    closing full stop aside."""
+    return re.sub(r"\s+", " ", value.replace("$", "")).strip().rstrip(".").rstrip()
+
+
+def _without_options(text: str, options: list[str]) -> str:
+    """The text without the lettered lines that repeat ``options``: a run of
+    letters A, B, C… whose texts are the options, in order, one a line or
+    several on a line. Text the run does not match is left as it is."""
+    letters = [chr(ord("A") + i) for i in range(len(options))]
+    wanted = [_option_text(option) for option in options]
+    marks = list(_OPTION_LETTER.finditer(text))
+    for start in range(len(marks) - len(options) + 1):
+        run = marks[start : start + len(options)]
+        if [m.group(1) for m in run] != letters:
+            continue
+        ends = [m.start() for m in run[1:]]
+        line_end = text.find("\n", run[-1].end())
+        # The last option runs to the end of the text, or of its line.
+        for last in dict.fromkeys((len(text), len(text) if line_end < 0 else line_end)):
+            texts = [text[m.end() : end] for m, end in zip(run, [*ends, last])]
+            if [_option_text(t) for t in texts] == wanted:
+                return (text[: run[0].start()] + text[last:]).strip()
+    return text
+
+
+def _blocks_without_options(
+    blocks: list[dict[str, Any]], options: list[str]
+) -> list[dict[str, Any]]:
+    kept = []
+    for block in blocks:
+        if block["type"] == "text":
+            text = _without_options(block["text"], options)
+            if not text:
+                continue
+            block = {**block, "text": text}
+        kept.append(block)
+    return kept
+
+
+def _drop_option_lines(question: dict[str, Any]) -> None:
+    """Take out of an mcq part's text (and a one-part question's stem) the
+    option lines the model copied there as well as into the options, so a
+    learner does not see them twice. A one-part question whose part held only
+    the options takes its stem as the part's text, as the prompt asks."""
+    parts = question["parts"]
+    single = len(parts) == 1
+    for part in parts:
+        options = part["answer"].get("options")
+        if part["answer"]["type"] != "mcq" or not options:
+            continue
+        blocks = _blocks_without_options(part["blocks"], options)
+        stem = (
+            _blocks_without_options(question["stem"], options)
+            if single
+            else question["stem"]
+        )
+        if not blocks and single:
+            blocks, stem = stem, []
+        # A part left with no text at all keeps it.
+        if blocks:
+            part["blocks"], question["stem"] = blocks, stem
+
+
 def record(item: Any, ai_label: str) -> Recorded:
-    """A ``record_question`` item as a quiz question in paper layout."""
+    """A ``record_question`` item as a quiz question in paper layout; its
+    figures are read against the window's pages (``read_figures``)."""
     item = item if isinstance(item, dict) else {}
     parsed = [_part(p, ai_label) for p in item.get("parts") or []]
     labels = [label for label, _, _ in parsed]
     first = next((label for label in labels if label), "")
+    question = {
+        "id": str(uuid.uuid4()),
+        "stem": _blocks(item.get("stem")),
+        "parts": [part for _, _, part in parsed],
+        "layout": "paper",
+        "labels": "numbers" if first[:1].isdigit() else "letters",
+    }
+    _drop_option_lines(question)
     return Recorded(
         label=str(item.get("label") or "").strip(),
-        question={
-            "id": str(uuid.uuid4()),
-            "stem": _blocks(item.get("stem")),
-            "parts": [part for _, _, part in parsed],
-            "layout": "paper",
-            "labels": "numbers" if first[:1].isdigit() else "letters",
-        },
+        question=question,
         part_labels=labels,
         sources=[source for _, source, _ in parsed],
-        figures=len(item.get("figures") or []),
         total=_whole(item.get("total_marks")),
     )
+
+
+def read_figures(
+    raw: Any, pages: list[Page], part_labels: list[str]
+) -> tuple[list[Figure], str | None]:
+    """A call's figures on the window's page images, or the tool-result
+    problem naming the first that cannot be read."""
+    read: list[Figure] = []
+    parts = {label_key(label) for label in part_labels}
+    for index, item in enumerate(raw if isinstance(raw, list) else []):
+        name = f"figures[{index}]"
+        item = item if isinstance(item, dict) else {}
+        image = _whole(item.get("image"))
+        if image is None or not 1 <= image <= len(pages):
+            return (
+                [],
+                f"{name}.image: expected {' or '.join(str(n + 1) for n in range(len(pages)))}, the page image it is on",
+            )
+        box = item.get("box")
+        if not (
+            isinstance(box, list)
+            and len(box) == 4
+            and all(type(v) in (int, float) and math.isfinite(v) for v in box)
+        ):
+            return (
+                [],
+                f"{name}.box: expected [left, top, right, bottom] on a 0-1000 grid",
+            )
+        box = [min(1000.0, max(0.0, float(v))) for v in box]
+        if not (box[0] < box[2] and box[1] < box[3]):
+            return (
+                [],
+                f"{name}.box: left must be less than right and top less than bottom",
+            )
+        part = str(item.get("part") or "").strip()
+        if part and label_key(part) not in parts:
+            return [], (
+                f"{name}.part: the question has no part {part}; its parts are "
+                + ", ".join(label for label in part_labels if label)
+            )
+        description = " ".join(str(item.get("description") or "").split())
+        if len(description) > limits.QUESTION_DESCRIPTION_MAX:
+            return [], (
+                f"{name}.description: expected at most "
+                f"{limits.QUESTION_DESCRIPTION_MAX} characters; sent {len(description)}"
+            )
+        read.append(Figure(pages[image - 1], box, part, description))
+    return read, None
+
+
+async def placed(held: Recorded, crops: dict[str, str]) -> dict[str, Any]:
+    """The question with each figure cropped from its page and placed after
+    the text of the part it names (the stem for ""); the crops go into
+    ``crops`` by figure id, base64, as the done event carries them."""
+    if not held.figures:
+        return held.question
+    question = copy.deepcopy(held.question)
+    for n, figure in enumerate(held.figures, 1):
+        jpeg, (width, height) = await figure.page.crop(figure.box)
+        figure_id = f"q{label_key(held.label)}-{n}"
+        crops[figure_id] = base64.b64encode(jpeg).decode()
+        block: dict[str, Any] = {
+            "type": "image",
+            "image": {"assetId": f"figure:{figure_id}"},
+            "width": width,
+            "height": height,
+        }
+        if figure.description:
+            block["description"] = figure.description
+        blocks = next(
+            (
+                part["blocks"]
+                for label, part in zip(held.part_labels, question["parts"])
+                if label_key(label) == label_key(figure.part)
+            ),
+            question["stem"],
+        )
+        blocks.append(block)
+    return question
 
 
 def _unsourced(held: Recorded) -> str | None:
@@ -483,7 +659,7 @@ class Run:
             and opened + o <= limits.QUIZ_OPEN_PARTS_MAX
         )
 
-    async def add(self, item: Any, window: set[str]) -> str:
+    async def add(self, item: Any, window: set[str], pages: list[Page]) -> str:
         """Record one question; the tool result line for it."""
         new = record(item, self.ai_label)
         if not new.label or not new.question["parts"]:
@@ -504,7 +680,8 @@ class Run:
                 "earlier pages. If this is another question with the same number, "
                 "put its section in the label (B3)."
             )
-        problem = _unsourced(new) or await self.validate(new.question)
+        new.figures, problem = read_figures(item.get("figures"), pages, new.part_labels)
+        problem = problem or _unsourced(new) or await self.validate(new.question)
         if problem:
             return f"Question {new.label}: {problem}. Fix it and record it again."
         if not self._fits(key, new.question):
@@ -520,7 +697,9 @@ class Run:
         window.add(key)
         return f"Question {new.label}: recorded."
 
-    async def extend(self, args: dict[str, Any], window: set[str]) -> str:
+    async def extend(
+        self, args: dict[str, Any], window: set[str], pages: list[Page]
+    ) -> str:
         label = str(args.get("label") or "")
         key = label_key(label)
         if self.open_label is None or key != label_key(self.open_label):
@@ -537,8 +716,12 @@ class Run:
             merged.question["parts"].append(part)
             merged.part_labels.append(part_label)
             merged.sources.append(source)
-        merged.figures += len(args.get("figures") or [])
-        problem = _unsourced(merged) or await self.validate(merged.question)
+        _drop_option_lines(merged.question)
+        more_figures, problem = read_figures(
+            args.get("figures"), pages, merged.part_labels
+        )
+        merged.figures.extend(more_figures)
+        problem = problem or _unsourced(merged) or await self.validate(merged.question)
         if problem:
             return f"Question {label}: {problem}. Fix it and continue it again."
         if not self._fits(key, merged.question):
@@ -683,10 +866,12 @@ async def _window(run: Run, pages: list[Page], *, model: ModelConfig) -> None:
         intro,
         [
             (
-                prompts.page_text(p.number, p.file_name, p.text[:PAGE_TEXT_CHARS]),
+                prompts.page_text(
+                    index, p.number, p.file_name, p.text[:PAGE_TEXT_CHARS]
+                ),
                 await p.image(),
             )
-            for p in pages
+            for index, p in enumerate(pages, 1)
         ],
     )
     window: set[str] = set()
@@ -718,9 +903,9 @@ async def _window(run: Run, pages: list[Page], *, model: ModelConfig) -> None:
             if isinstance(args, str):
                 result = args
             elif name == "record_question":
-                result = await run.add(args, window)
+                result = await run.add(args, window, pages)
             elif name == "continue_question":
-                result = await run.extend(args, window)
+                result = await run.extend(args, window, pages)
             else:
                 result = f"There is no tool {name}."
             messages.append(
@@ -800,6 +985,7 @@ async def run(
     refused: list[str] = []
     marks_differ: list[str] = []
     figures: list[str] = []
+    crops: dict[str, str] = {}
     for question in held:
         paired = pair(question, entries)
         if paired.matched:
@@ -813,7 +999,7 @@ async def run(
                 refused.append(question.label)
             else:
                 question = paired.held
-        saved.append(question.question)
+        saved.append(await placed(question, crops))
         if WORKED_OUT in question.sources:
             worked_out.append(question.label)
         parts_total = sum(part["marks"] for part in question.question["parts"])
@@ -825,6 +1011,8 @@ async def run(
     yield {
         "type": "done",
         "questions": saved,
+        # The crops the questions' image blocks name (figure:<id>), base64.
+        "figures": [{"id": key, "image": image} for key, image in crops.items()],
         "report": {
             "expected": current.expected,
             "missing": [
@@ -846,8 +1034,8 @@ async def run(
                 {entries[key].question for key in entries if key not in used},
                 key=lambda label: (len(label), label),
             ),
-            # Figures are boxed but not cropped yet: these questions are saved
-            # without them.
+            # Questions saved with figures cropped from the page, for the
+            # starter to check.
             "figures": figures,
             "stopped": stopped,
             "pages": len(pages),
@@ -893,6 +1081,15 @@ async def _render(workspace_id: str, file_id: str, number: int) -> str:
     return capture.data_url(jpeg)
 
 
+async def _crop(
+    workspace_id: str, file_id: str, number: int, box: list[float]
+) -> tuple[bytes, tuple[int, int]]:
+    jpeg, _box, size = await capture.render_file(
+        workspace_id, file_id, number, box, cfg.capture_max_edge, FIGURE_PAGE_EDGE
+    )
+    return jpeg, size
+
+
 async def prepare(
     workspace_id: str, paper: list[dict[str, Any]], answers: list[dict[str, Any]]
 ) -> tuple[list[Page], list[SchemeFile]]:
@@ -931,6 +1128,7 @@ async def prepare(
                 name,
                 texts.get(number, ""),
                 functools.partial(_render, workspace_id, file_id, number),
+                functools.partial(_crop, workspace_id, file_id, number),
             )
             for number in numbers
         )

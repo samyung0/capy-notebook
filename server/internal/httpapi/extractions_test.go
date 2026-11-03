@@ -1,18 +1,26 @@
 package httpapi
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 
+	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 func TestCheckExtractionRequestHoldsTheRunCaps(t *testing.T) {
@@ -79,5 +87,53 @@ func TestPipelineExtractionErrorKeepsTheRefusal(t *testing.T) {
 	}
 	if pipelineExtractionError(&pipeline.Error{Path: "/extract", Status: http.StatusServiceUnavailable, Body: []byte(`{"code":"provider_busy","message":"busy"}`)}) != nil {
 		t.Fatal("a busy answer is not a refusal")
+	}
+}
+
+// A finished run's figures become the quiz's own editor assets, charged to
+// the starter like images it uploads (M16), and the quiz's image blocks point
+// at them. Needs Postgres (CI).
+func TestFinishedExtractionStoresItsFiguresAsTheQuizsAssets(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	mem := blob.NewMemory()
+	a := &api{s: st, blob: mem}
+	run, err := st.CreateExtraction(ctx, "ws_e2e_private", "u_editor", "Figures "+uuid.NewString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var crop bytes.Buffer
+	if err := jpeg.Encode(&crop, image.NewGray(image.Rect(0, 0, 40, 30)), nil); err != nil {
+		t.Fatal(err)
+	}
+	question := `[{"id":"q8","stem":[{"type":"text","text":"In the figure, ABC is a triangle."},` +
+		`{"type":"image","image":{"assetId":"figure:q8-1"},"width":40,"height":30,"description":"Triangle ABC"}],` +
+		`"layout":"paper","labels":"letters","parts":[{"id":"p","blocks":[{"type":"text","text":"Find x."}],` +
+		`"answer":{"type":"short","accepted":["3"]},"marks":1,"solution":[]}]}]`
+	ended := a.finishExtraction(ctx, run, "u_editor", "E2E Private Workspace", extractionEvent{
+		Type: "done", Questions: json.RawMessage(question), Report: json.RawMessage(`{}`),
+		Figures: []agentFigure{{ID: "q8-1", Image: crop.Bytes()}},
+	})
+	if ended.Status != store.ExtractionDone || ended.QuizID == nil {
+		t.Fatalf("run = %+v", ended)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM materials WHERE id=$1`, *ended.QuizID)
+	})
+	assetID := store.ChatAssetID(run.ID, "extraction/figure/q8-1")
+	asset, err := st.GetEditorAsset(ctx, assetID)
+	if err != nil || asset.MaterialID != *ended.QuizID || asset.UserID != "u_editor" || asset.SizeBytes != int64(crop.Len()) {
+		t.Fatalf("asset = %+v (%v)", asset, err)
+	}
+	quiz, err := st.GetMaterial(ctx, *ended.QuizID)
+	if err != nil || !strings.Contains(quiz.Content, assetID) || strings.Contains(quiz.Content, "figure:q8-1") {
+		t.Fatalf("quiz content does not point at %s (%v)", assetID, err)
+	}
+	if listing, err := mem.ListObjects(ctx, "editor-assets/"+assetID+"/", "", 10); err != nil || len(listing.Keys) != 1 {
+		t.Fatalf("stored objects = %+v (%v)", listing, err)
 	}
 }

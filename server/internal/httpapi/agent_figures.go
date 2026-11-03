@@ -102,28 +102,13 @@ func (f *agentFigures) resolveQuizCommands(raw []json.RawMessage) ([]json.RawMes
 		if question == nil {
 			continue
 		}
-		ids := questions.AssetIDs(question)
-		idMap := make(map[string]string, len(ids))
-		figures := false
-		for _, id := range ids {
-			ref, ok := strings.CutPrefix(id, materialdoc.FigureRefPrefix)
-			if !ok {
-				idMap[id] = id
-				continue
-			}
-			asset, ok := f.assets[ref]
-			if !ok {
-				return nil, refusal(agenttools.ErrInvalidInput, "figure %s was not rendered for this write", ref)
-			}
-			idMap[id], figures = asset.ID, true
-			if !slices.Contains(f.used, ref) {
-				f.used = append(f.used, ref)
-			}
+		changed, err := f.resolveQuestion(question)
+		if err != nil {
+			return nil, err
 		}
-		if !figures {
+		if !changed {
 			continue
 		}
-		questions.RewriteAssetIDs(question, idMap)
 		encoded, err := json.Marshal(command)
 		if err != nil {
 			return nil, err
@@ -131,6 +116,54 @@ func (f *agentFigures) resolveQuizCommands(raw []json.RawMessage) ([]json.RawMes
 		out[i] = encoded
 	}
 	return out, nil
+}
+
+// resolveQuestions does the same for a list of questions: the quiz a Make a
+// quiz run saves, whose figures are crops of the paper's pages.
+func (f *agentFigures) resolveQuestions(raw json.RawMessage) (json.RawMessage, error) {
+	var list []map[string]any
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, err
+	}
+	changed := false
+	for _, question := range list {
+		c, err := f.resolveQuestion(question)
+		if err != nil {
+			return nil, err
+		}
+		changed = changed || c
+	}
+	if !changed {
+		return raw, nil
+	}
+	return json.Marshal(list)
+}
+
+// resolveQuestion rewrites one question's figure images to their assets and
+// reports whether it held any.
+func (f *agentFigures) resolveQuestion(question map[string]any) (bool, error) {
+	ids := questions.AssetIDs(question)
+	idMap := make(map[string]string, len(ids))
+	figures := false
+	for _, id := range ids {
+		ref, ok := strings.CutPrefix(id, materialdoc.FigureRefPrefix)
+		if !ok {
+			idMap[id] = id
+			continue
+		}
+		asset, ok := f.assets[ref]
+		if !ok {
+			return false, refusal(agenttools.ErrInvalidInput, "figure %s was not rendered for this write", ref)
+		}
+		idMap[id], figures = asset.ID, true
+		if !slices.Contains(f.used, ref) {
+			f.used = append(f.used, ref)
+		}
+	}
+	if figures {
+		questions.RewriteAssetIDs(question, idMap)
+	}
+	return figures, nil
 }
 
 // put checks each used figure against the payer's image cap and writes its
