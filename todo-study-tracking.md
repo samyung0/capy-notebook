@@ -588,6 +588,16 @@ Jev scored 1,730 (88.9%), +89.
   - raise the thinking limit.
 - **Recommendation (bench):** direct Flash with the round-2 prompt, thinking on maths and the second sample, with 0731 as the fallback when DeepSeek's API fails (needs Epo's sign-off).
 
+**Bench round 3 (2026-11-04, `bench/grading/reports/2026-11-03-deepseek-grading-round3.md`, 404933989).** Answer rules ran as their own section: copying checked in code, own-words judged by the model.
+- **Scores (items right of 1,946, unearned marks, cost per part):**
+  - **V4.1 Flash on OpenRouter:** 1,877, +21.5, $0.00022, p50 1.1 s. That beats direct Flash round 2 (1,870, +28.5, $0.00063).
+  - **0731:** 1,857 even with the second pass, still the most lenient, +47.
+- **Copy check:**
+  - Pasted IELTS paragraphs now score 0 for both models.
+  - 12 of 15 DSE quote-only answers score 0 before any model call.
+  - "Don't copy whole paragraphs" needs passage coverage; "don't just copy" needs the share of the answer copied. Thresholds need fresh answers before production.
+- **Recommendation:** V4.1 Flash with the round-3 prompt, thinking on maths, no second pass. Confirm on the dated 1017 pin (running), so grading, extraction and captions share one model. Allow about 60–70 s for a maths check.
+
 ### Answer rules apart from the marking points (proposal, Epo 2026-11-03; canvas page 11, board R1)
 
 **Why:** 0731 credited a pasted IELTS paragraph that the question forbade ("copying out whole paragraphs earns no marks"). The passage was in the request, but the instruction sat inside the question text.
