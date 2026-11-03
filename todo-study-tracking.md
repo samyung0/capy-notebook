@@ -597,6 +597,11 @@ Jev scored 1,730 (88.9%), +89.
   - 12 of 15 DSE quote-only answers score 0 before any model call.
   - "Don't copy whole paragraphs" needs passage coverage; "don't just copy" needs the share of the answer copied. Thresholds need fresh answers before production.
 - **Recommendation:** V4.1 Flash with the round-3 prompt, thinking on maths, no second pass. Confirm on the dated 1017 pin (running), so grading, extraction and captions share one model. Allow about 60–70 s for a maths check.
+- **1017 confirmation (5d4c9b3e7).** On contract, maths, IELTS and DSE Chinese (1,149 items), the dated pin through InferenceNet scored 1,104 items with +16.5 unearned marks. That equals V4.1 on Wafer (1,104, +15) and beats direct Flash (1,083, +22) at $0.00032 a part.
+  - **The cost is maths latency:** p50 11 s and p95 57 s, slowest 156 s, against Wafer's 5 s and 33 s.
+  - **To decide:**
+    - Use 1017 for grading too, giving one model for grading, extraction and captions, with a maths timeout and its own share of 1017's capacity.
+    - Or use the undated V4.1 alias on Wafer for grading, which is faster but can change under us.
 
 ### Answer rules apart from the marking points (proposal, Epo 2026-11-03; canvas page 11, board R1)
 
