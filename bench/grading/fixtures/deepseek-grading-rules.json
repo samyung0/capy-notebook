@@ -1,0 +1,658 @@
+{
+  "provenance": {
+    "author": "Claude Code agent (Opus 5.5)",
+    "date": "2026-11-03",
+    "human_certified": false,
+    "scope": "Round 3 answer rules (todo-study-tracking.md §9, 'Answer rules apart from the marking points'; board R1). Each entry names a part of an existing fixture, moves the instructions about the answer as a whole out of its question text and marking items (replace pairs, applied to the assembled question text and to the item texts), and lists the part's rules. Gold labels are unchanged: the fixtures were labelled with these conventions."
+  },
+  "rule_format": {
+    "kind": "copy_passage | word_limit | own_words | custom",
+    "check": "code (never sent to the model) | model (sent in <answer_rules>; the model reports kept or broken with a quote)",
+    "penalty": "{type: no_marks} skips the marking points; {type: deduct, marks: N} applies after them",
+    "threshold": "copy_passage: share of the answer's letters, digits and CJK characters found in runs of 8+ words or 12+ CJK characters of the stem's passage text",
+    "alt": "copy_passage only, used with --copy-alt: measure 'passage' is the share of the passage's tokens copied into the answer in qualifying runs, for rules about copying whole paragraphs"
+  },
+  "notes": [
+    "IELTS: 'copying out whole paragraphs earns no marks' becomes a code copy rule on 3 parts; 'in your own words / do not copy phrases' becomes a model-judged own-words rule on 3 parts and leaves the items.",
+    "HKDSE Chinese (2020-21 papers): the 只抄錄原文而未有解釋，不給分 convention becomes a code copy rule on all 15 graded parts (the fixture applies pure-quotation-zero to every part, and each asks the candidate to explain or state a point); 以自己的文句 becomes a model-judged own-words rule on 4 parts. The 只引錄 / 摘錄 notes leave the 7 items that carried them.",
+    "Original DSE-style passages: only part (c) of the classical passage carries the convention for the whole part. Part (d)'s note stays in its item, because a quote-only answer still earns that part's 引用 mark.",
+    "No fixture states a word or character limit, so no word_limit rule is present; the code supports it."
+  ],
+  "parts": [
+    {
+      "set": "reading_en",
+      "question_id": "ielts-archaeology-evidence",
+      "part": "a",
+      "replace_question": [
+        [
+          "Explain in your own words how",
+          "Explain how"
+        ],
+        [
+          " Do not copy phrases from the passage.",
+          ""
+        ]
+      ],
+      "replace_items": {
+        "0": [
+          [
+            "Explains in own words, not copied from the passage, ",
+            "Explains "
+          ]
+        ],
+        "1": [
+          [
+            "Explains in own words, not copied from the passage, ",
+            "Explains "
+          ]
+        ]
+      },
+      "rules": [
+        {
+          "kind": "own_words",
+          "check": "model",
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "Answer in your own words. Copying the passage's wording for the point breaks this rule; reusing names, figures and technical terms is fine.",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_en",
+      "question_id": "ielts-curie-sorbonne",
+      "part": "a",
+      "replace_question": [
+        [
+          "Explain in your own words how",
+          "Explain how"
+        ],
+        [
+          " Do not copy phrases from the passage.",
+          ""
+        ]
+      ],
+      "replace_items": {
+        "0": [
+          [
+            "Explains in own words, not copied from the passage, ",
+            "Explains "
+          ]
+        ],
+        "1": [
+          [
+            "Explains in own words, not copied from the passage, ",
+            "Explains "
+          ]
+        ]
+      },
+      "rules": [
+        {
+          "kind": "own_words",
+          "check": "model",
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "Answer in your own words. Copying the passage's wording for the point breaks this rule; reusing names, figures and technical terms is fine.",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_en",
+      "question_id": "ielts-skill-team",
+      "part": "a",
+      "replace_question": [
+        [
+          "Explain in your own words how",
+          "Explain how"
+        ],
+        [
+          " Do not copy phrases from the passage.",
+          ""
+        ]
+      ],
+      "replace_items": {
+        "0": [
+          [
+            "Explains in own words, not copied from the passage, ",
+            "Explains "
+          ]
+        ],
+        "1": [
+          [
+            "Explains in own words, not copied from the passage, ",
+            "Explains "
+          ]
+        ]
+      },
+      "rules": [
+        {
+          "kind": "own_words",
+          "check": "model",
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "Answer in your own words. Copying the passage's wording for the point breaks this rule; reusing names, figures and technical terms is fine.",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_en",
+      "question_id": "ielts-motivation-two-types",
+      "part": "a",
+      "replace_question": [
+        [
+          "; copying out whole paragraphs earns no marks.",
+          "."
+        ]
+      ],
+      "replace_items": {},
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "Copying out whole paragraphs from the passage earns no marks.",
+          "id": "r0",
+          "alt": {
+            "measure": "passage",
+            "threshold": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "set": "reading_en",
+      "question_id": "ielts-rockets-india",
+      "part": "a",
+      "replace_question": [
+        [
+          "; copying out whole paragraphs earns no marks.",
+          "."
+        ]
+      ],
+      "replace_items": {},
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "Copying out whole paragraphs from the passage earns no marks.",
+          "id": "r0",
+          "alt": {
+            "measure": "passage",
+            "threshold": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "set": "reading_en",
+      "question_id": "ielts-birds-heilmann",
+      "part": "a",
+      "replace_question": [
+        [
+          "; copying out whole paragraphs earns no marks.",
+          "."
+        ]
+      ],
+      "replace_items": {},
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "Copying out whole paragraphs from the passage earns no marks.",
+          "id": "r0",
+          "alt": {
+            "measure": "passage",
+            "threshold": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2020-q5",
+      "part": "ii",
+      "replace_question": [
+        [
+          "試以自己的文句說明。",
+          "試加以說明。"
+        ]
+      ],
+      "replace_items": {
+        "0": [
+          [
+            "（只摘引「賂秦而力虧，破滅之道也」不給分）",
+            ""
+          ]
+        ]
+      },
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        },
+        {
+          "kind": "own_words",
+          "check": "model",
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "須以自己的文句作答；只抄錄原文而未加解釋，即違反此規則。",
+          "id": "r1"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2020-q7",
+      "part": "q7",
+      "replace_question": [],
+      "replace_items": {},
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2020-father",
+      "part": "q10",
+      "replace_question": [],
+      "replace_items": {},
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2020-father",
+      "part": "q11ii",
+      "replace_question": [],
+      "replace_items": {},
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2020-father",
+      "part": "q16",
+      "replace_question": [],
+      "replace_items": {},
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2020-brush",
+      "part": "q19i",
+      "replace_question": [
+        [
+          "試據文意以自己的文句完成下表。",
+          "試據文意完成下表。"
+        ]
+      ],
+      "replace_items": {
+        "0": [
+          [
+            "只引錄原文「雖甚久而猶新焉」而未有解釋，不給分；",
+            ""
+          ]
+        ]
+      },
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        },
+        {
+          "kind": "own_words",
+          "check": "model",
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "須以自己的文句作答；只抄錄原文而未加解釋，即違反此規則。",
+          "id": "r1"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2020-brush",
+      "part": "q19ii",
+      "replace_question": [
+        [
+          "試據文意以自己的文句完成下表。",
+          "試據文意完成下表。"
+        ]
+      ],
+      "replace_items": {
+        "0": [
+          [
+            "只引錄原文「則紀錢粟貨利卑猥事，不稍惜，視之與里巷所為偏欹軟惡者等」而未有解釋，不給分；",
+            ""
+          ]
+        ]
+      },
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        },
+        {
+          "kind": "own_words",
+          "check": "model",
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "須以自己的文句作答；只抄錄原文而未加解釋，即違反此規則。",
+          "id": "r1"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2020-brush",
+      "part": "q21",
+      "replace_question": [
+        [
+          "試以自己的文句略加說明。",
+          "試略加說明。"
+        ]
+      ],
+      "replace_items": {
+        "0": [
+          [
+            "只引錄原文「若姑修其可任者，以待人之任己」而未有解釋，不給分；",
+            ""
+          ]
+        ]
+      },
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        },
+        {
+          "kind": "own_words",
+          "check": "model",
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "須以自己的文句作答；只抄錄原文而未加解釋，即違反此規則。",
+          "id": "r1"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2020-brush",
+      "part": "q22",
+      "replace_question": [],
+      "replace_items": {
+        "0": [
+          [
+            "只引錄原文而未有解釋，或誤以為",
+            "誤以為"
+          ]
+        ]
+      },
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2021-q6",
+      "part": "q6",
+      "replace_question": [],
+      "replace_items": {},
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2021-q7",
+      "part": "i",
+      "replace_question": [],
+      "replace_items": {},
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2021-q10",
+      "part": "ii",
+      "replace_question": [],
+      "replace_items": {},
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2021-shenming",
+      "part": "q19",
+      "replace_question": [],
+      "replace_items": {
+        "0": [
+          [
+            "、或只摘錄原文不加解釋，全題不給分",
+            "，全題不給分"
+          ]
+        ]
+      },
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2021-shenming",
+      "part": "q20",
+      "replace_question": [],
+      "replace_items": {},
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh",
+      "question_id": "dsezh2021-shenming",
+      "part": "q21",
+      "replace_question": [],
+      "replace_items": {
+        "0": [
+          [
+            "摘錄原文不加解釋，給0分；",
+            ""
+          ]
+        ]
+      },
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        }
+      ]
+    },
+    {
+      "set": "reading_zh_original",
+      "question_id": "dsezh-classical-old-craftsman",
+      "part": "c",
+      "replace_question": [],
+      "replace_items": {
+        "0": [
+          [
+            "（須以白話說明，只抄錄原文不給分）",
+            ""
+          ]
+        ],
+        "1": [
+          [
+            "（須以白話說明，只抄錄原文不給分）",
+            ""
+          ]
+        ]
+      },
+      "rules": [
+        {
+          "kind": "copy_passage",
+          "check": "code",
+          "threshold": 0.7,
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "只抄錄原文而未有解釋，不給分。",
+          "id": "r0"
+        },
+        {
+          "kind": "own_words",
+          "check": "model",
+          "penalty": {
+            "type": "no_marks"
+          },
+          "text": "須以白話（現代書面語）說明；只抄錄原文而未加解釋，即違反此規則。",
+          "id": "r1"
+        }
+      ]
+    }
+  ]
+}
