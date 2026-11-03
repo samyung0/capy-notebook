@@ -423,11 +423,11 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 | Images (photos, scans) | One page per image; several images can make one paper | The image |
 | PPTX | Slides | The slide image and its text |
 | DOCX | Pages as BetterOffice lays them out in the browser | The page's content range (first and last paragraph) plus a page image (see below) |
-| Markdown, text, Capy notes | Sections by heading, or about every 3,000 characters without headings | The section's text only, no image (cheaper) |
+| Markdown, text, Capy notes | Sections by heading, or about every 3,000 characters without headings (Epo agreed) | The section's text only, no image (cheaper) |
 | XLSX, CSV | Not offered at first | — |
 
 - Every page, slide, image or section counts as one toward the 40 per run.
-- **Files per run:** a paper can be several images (a photographed worksheet); proposal of up to 20 files per run, matching the 20 files per upload request. Mark schemes and answer files sit outside the 40.
+- **Files per run: up to 10 (Epo, 2026-11-03).** A paper can be several images (a photographed worksheet). Mark schemes and answer files sit outside the 40.
 - **Why Word pages can differ:** a DOCX file stores flowing text, not pages. Page breaks are worked out when it is displayed, from fonts, line breaking, tables and section settings, so Word, LibreOffice and BetterOffice can break pages differently, and so can the same engine with different fonts installed. PDF pages and PPTX slides are fixed. If the backend lays the document out differently from the browser, "page 7" can point at different text.
 - **The fix:** the browser sends each selected page as a content range (its first and last paragraph), which doesn't depend on pagination. For the image, the backend uses BetterOffice's own layout and rasteriser (`betteroffice-docx`, the same Rust core as the browser) with the same bundled fonts; if that still drifts, the browser uploads the page images it already drew.
 
