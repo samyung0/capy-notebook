@@ -412,8 +412,24 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Each model call sees a small window,** not the whole selection: two pages as images, the outline (expected question labels from the indexed text), the question it is in the middle of (for questions that run across pages, `continue_question`), and the tool schema. With page images at a few thousand tokens each, a window stays far under the context limit however many pages are selected.
 - **What grows with the page count** is time, cost and the carried state: the outline and the list of questions recorded so far. Questions are saved as they come, so the state carried into each window is labels and the open question only, never the earlier pages.
 - **Mark schemes and answer files don't go through the windows.** They are parsed on their own as text and paired with questions by label in code (step 4), so they never sit in the same context as the pages.
-- **So the cap is about one run's time and cost.** A past paper is usually 12–32 pages. Proposal: up to 40 selected pages per run, roughly 3–6 minutes as a background job. A longer file is done in another run into the same quiz, and the page picker shows the count against the cap.
+- **So the cap is about one run's time and cost.** A past paper is usually 12–32 pages. **Decided (Epo, 2026-11-03): up to 40 selected pages per run,** roughly 3–6 minutes as a background job. A longer file is done in another run into the same quiz, and the page picker shows the count against the cap.
 - **Office files:** windows use the page images captured on the server (or rendered by the client, if DOCX pagination can't match). Saved edits go in as text, the same way.
+
+**Page sources by file type (2026-11-03).** Source files can be 10 MiB (Free) or 30 MiB (Pro), and images 2 MiB, so text files need a length cap as well as a file cap.
+
+| File | What the picker shows | What a selected item sends |
+|---|---|---|
+| PDF | Its pages | The page image and the page's indexed text |
+| Images (photos, scans) | One page per image; several images can make one paper | The image |
+| PPTX | Slides | The slide image and its text |
+| DOCX | Pages as BetterOffice lays them out in the browser | The page's content range (first and last paragraph) plus a page image (see below) |
+| Markdown, text, Capy notes | Sections by heading, or about every 3,000 characters without headings | The section's text only, no image (cheaper) |
+| XLSX, CSV | Not offered at first | — |
+
+- Every page, slide, image or section counts as one toward the 40 per run.
+- **Files per run:** a paper can be several images (a photographed worksheet); proposal of up to 20 files per run, matching the 20 files per upload request. Mark schemes and answer files sit outside the 40.
+- **Why Word pages can differ:** a DOCX file stores flowing text, not pages. Page breaks are worked out when it is displayed, from fonts, line breaking, tables and section settings, so Word, LibreOffice and BetterOffice can break pages differently, and so can the same engine with different fonts installed. PDF pages and PPTX slides are fixed. If the backend lays the document out differently from the browser, "page 7" can point at different text.
+- **The fix:** the browser sends each selected page as a content range (its first and last paragraph), which doesn't depend on pagination. For the image, the backend uses BetterOffice's own layout and rasteriser (`betteroffice-docx`, the same Rust core as the browser) with the same bundled fonts; if that still drifts, the browser uploads the page images it already drew.
 
 **Cost and time:**
 - **Estimates:** about 90–180 credits for a 12-page paper with an 8-page scheme, and about 140 for a 3-page worksheet that needs solving.
@@ -528,7 +544,7 @@ Updated 2026-11-03. Decided this round, no longer open: the join notice (not an 
 6. **Reviews:** marked-assignment questions join FSRS reviews once the assignment closes (when they also become practice). Flashcards stay out of mastery.
 7. **Topics** replace chapters in suggested reviews, sessions and the agent's `read_study_progress`. Caps: 10 topics per workspace on Free, 20 on Pro.
 8. **Aggregates** need at least 5 members. No leaderboards.
-9. **Extraction caps the selected pages, not the file (Epo, 2026-11-03).** Only selected pages go to the model and credits pay per page, but one run still needs a bound for time and context (see §8 "Context and the page cap"). The number is waiting on Epo.
+9. **Extraction caps the selected pages at 40 per run (Epo, 2026-11-03),** not the file. See §8 "Context and the page cap" and "Page sources by file type".
    - **Office files too.** The client sends the selected page numbers, and the backend captures those pages without a full publish. Saved edits go in as text in the prompt; whether that helps is checked later.
    - **Check first:** PPTX slides are stable pages, but DOCX pagination depends on the renderer. The pages the backend captures must match what the member saw in the browser (BetterOffice). If they can't, the client sends its rendered page images instead.
 10. **Shared pages:** Turnstile and the anonymous grading caps go, since open answers aren't marked there.
