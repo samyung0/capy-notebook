@@ -545,6 +545,30 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 
 **Bench round 2:** the same sets on 0731 and Flash, with and without thinking on maths, against round 1. Then pick the model.
 
+**Bench round 2 result (2026-11-03; `bench/grading/reports/2026-11-03-deepseek-grading-round2.md`, commit 5166e1d9d).** Items right out of 1,946, then unearned marks:
+
+| Setup | Flash | 0731 |
+|---|---|---|
+| Round 1 | 1,824 (93.7%), +49.5 | 1,782 (91.6%), +88 |
+| Round 2 | 1,859 (95.5%), +28.5 | 1,824 (93.7%), +60.5 |
+| Round 2 with the second sample | 1,870 (96.1%), +28.5 | 1,859 (95.5%), +49 |
+
+Jev scored 1,730 (88.9%), +89.
+- **Cost per part:** Flash $0.00063, 0731 $0.00024, Jev $0.000064.
+- **Maths:** maths parts with thinking take 5–7 s at the median and 30–43 s at p95. Check needs about 60 s, and the thinking token limit should go up to about 16k.
+- **What moved what:**
+  - The working rules and thinking fixed maths: alternative methods now lose 1.5–2 marks instead of 10–15, and wrong working with a right answer gains 0–1 instead of about 10.
+  - The quote-only rule halved DSE Chinese over-credit.
+  - The reference block (correct answers and worked solution) made no measurable difference.
+  - The tolerant quote match recovered every LaTeX item.
+- **0731's remaining gap** is mostly pasted IELTS paragraphs (7 marks) and DSE Chinese and contract answers.
+- **Tweaks before switching:**
+  - limit the "explain" rule to items asking for explanation or own words;
+  - limit the step rules to calculation and proof working;
+  - drop the reference block unless it's free;
+  - raise the thinking limit.
+- **Recommendation (bench):** direct Flash with the round-2 prompt, thinking on maths and the second sample, with 0731 as the fallback when DeepSeek's API fails (needs Epo's sign-off).
+
 ### Switching from Jev
 
 - **Bench:** add DeepSeek adapters to `bench/grading` (the cheaper 07xx model and the larger one). Rerun the Jev contract fixtures, plus held-out, prompt-injection and Traditional Chinese answers. Compare item agreement, cost and latency with Jev.
