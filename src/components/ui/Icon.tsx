@@ -269,13 +269,21 @@ const PanelRightOpenIcon = [
   ],
 ] satisfies IconSvgElement;
 
-const HugeIcons = {
-  /** What marks AI and the agent (Epo 2026-11-03): a curved four-point
-   * star, stroked like the rest. Epo picks the final variant from a mock, so
-   * every caller uses this name. */
-  ai: [
-    'M12 2.5C12.6 7.6 16.4 11.4 21.5 12C16.4 12.6 12.6 16.4 12 21.5C11.4 16.4 7.6 12.6 2.5 12C7.6 11.4 11.4 7.6 12 2.5Z',
+const AiIcon = [
+  [
+    'path',
+    {
+      d: 'M12 2.5C12.6 7.6 16.4 11.4 21.5 12C16.4 12.6 12.6 16.4 12 21.5C11.4 16.4 7.6 12.6 2.5 12C7.6 11.4 11.4 7.6 12 2.5Z',
+      fill: 'currentColor',
+      key: '0',
+    },
   ],
+] satisfies IconSvgElement;
+
+const HugeIcons = {
+  /** What marks AI and the agent: a filled curved four-point star (Epo
+   * 2026-11-03, AI2). Every caller uses this name. */
+  ai: AiIcon,
   alert: Alert02Icon,
   alignCenter: TextAlignCenterIcon,
   alignJustify: TextAlignJustifyIcon,
