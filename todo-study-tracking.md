@@ -523,6 +523,11 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 
 Steps 2, 3 and 7 can run side by side.
 
+**UI matches the mocks (Epo, 2026-11-03).** Built screens copy the mock boards exactly, including where they differ from today's components. Anything a mock doesn't settle goes back to Epo as visual options on the canvas, not a call made in code. Shared pieces change to the mocks' design (canvas page 9, "Toasts and cards"):
+- **Toast:** the centred one-line black pill. The check pops in first and the body opens out of it, like an Xbox achievement. Picks: A (out from the centre) or B (out to the right); L1 or L2 for longer messages; S1 or S2 for several at once.
+- **Workspace cards:** the half banner from the Home mock (D1). Pick H1 (as in the mock) or H2 (keeps the icon, topics, access and tags).
+- **Quiz and file cards:** the same half banner. Pick Q1 (preview in the banner) or Q2 (kind tint and icon).
+
 **Later (Epo, 2026-11-03): AI insights.** Labels and rule-based reasons ("Missed 3 of 4 questions on osmosis", the report's common wrong answers) come first. A short AI summary waits until there is real data and the DeepSeek bench: most likely a weekly class snapshot on Members with links to the evidence, plus a member summary on the profile. Others: Khan Academy's Class Snapshot (a 7-day summary of learning time, assignments and mastery, with suggested follow-up questions); Google Classroom's Analytics tab (flags for missing work and changing grades) and Gemini summaries of who submitted and where students need support; Canvas's paid Intelligent Insights ("Students in need of attention") and IgniteAI discussion insights.
 
 **Later (Epo, 2026-11-03): scanned submissions.** Members submit an assignment as a scan or photos of handwritten answers. This needs its own design round: capture on phone and desktop, matching pages to questions, reading handwriting (the GLM page read exists), AI marks with the owner's approval, and what Results shows for paper answers.
