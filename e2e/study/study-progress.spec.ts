@@ -141,6 +141,16 @@ async function openRowMenu(page: Page, name: string) {
   await row.getByRole('button', { name: m.a11y_open_menu() }).click();
 }
 
+/** Files rows carry no progress mark (Epo 2026-11-03): the row's ⋮ offers
+ * the opposite of the recorded state. */
+async function expectRowMenuOffers(page: Page, name: string, label: string) {
+  await openRowMenu(page, name);
+  await expect(
+    page.getByRole('menuitem', { exact: true, name: label })
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+}
+
 test.describe('study progress', () => {
   test('a file is marked read and unread from its row menu and its header', async ({
     editorApi,
@@ -158,10 +168,6 @@ test.describe('study progress', () => {
     // A retry starts from an untouched file.
     await setStudyItem(editorApi, workspaceId, { fileId: file.id });
 
-    const doneMark = editorPage
-      .locator('[data-workspace-file-tree]')
-      .getByRole('link', { name: fileName })
-      .getByLabel(m.study_state_done(), { exact: true });
     try {
       await editorPage.goto(`/workspaces/${workspaceId}`);
       await showPanelView(editorPage, m.workspace_tab_files());
@@ -170,7 +176,6 @@ test.describe('study progress', () => {
           .locator('[data-workspace-file-tree]')
           .getByRole('link', { name: fileName })
       ).toBeVisible();
-      await expect(doneMark).toHaveCount(0);
 
       const marked = waitForApi(
         editorPage,
@@ -186,18 +191,18 @@ test.describe('study progress', () => {
         fileId: file.id,
         state: 'done',
       });
-      await expect(doneMark).toBeVisible();
+      await expectRowMenuOffers(editorPage, fileName, m.study_mark_unread());
 
-      // The mark is the server's record, not local state.
+      // The menu reads the server's record, not local state.
       await editorPage.reload();
       await showPanelView(editorPage, m.workspace_tab_files());
-      await expect(doneMark).toBeVisible();
+      await expectRowMenuOffers(editorPage, fileName, m.study_mark_unread());
 
       await openRowMenu(editorPage, fileName);
       await editorPage
         .getByRole('menuitem', { exact: true, name: m.study_mark_unread() })
         .click();
-      await expect(doneMark).toHaveCount(0);
+      await expectRowMenuOffers(editorPage, fileName, m.study_mark_read());
 
       // The open file's header toggles the same record.
       await editorPage
@@ -217,7 +222,6 @@ test.describe('study progress', () => {
       await expect(
         header.getByRole('button', { name: m.study_mark_unread() })
       ).toBeVisible();
-      await expect(doneMark).toBeVisible();
       expect(stateOf(await readStudy(editorApi, workspaceId), file.id)).toBe(
         'done'
       );
@@ -230,7 +234,6 @@ test.describe('study progress', () => {
       await expect(
         header.getByRole('button', { name: m.study_mark_read() })
       ).toBeVisible();
-      await expect(doneMark).toHaveCount(0);
       expect(
         stateOf(await readStudy(editorApi, workspaceId), file.id)
       ).toBeUndefined();

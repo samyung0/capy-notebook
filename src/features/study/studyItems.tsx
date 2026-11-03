@@ -72,16 +72,14 @@ export function useStudyActions(workspaceId: string) {
   return { menuItems, set };
 }
 
-/** A row's progress: a check once done, a half circle once started. With
- * `hoverMenu` it sits where the row's hover ⋮ appears and gives way to it. */
+/** A row's progress on the Study page: a check once done, a half circle once
+ * started (Files rows show none, Epo 2026-11-03). */
 export function StudyMark({
   state,
   className,
-  hoverMenu = false,
 }: {
   state: StudyState | undefined;
   className?: string;
-  hoverMenu?: boolean;
 }) {
   if (state !== 'done' && state !== 'started') return null;
   return (
@@ -92,9 +90,6 @@ export function StudyMark({
       className={cn(
         'shrink-0',
         state === 'done' ? 'text-tint-success-fg' : 'text-fg-muted',
-        // mr centres it under the ⋮ icon.
-        hoverMenu &&
-          'mr-0.75 transition-opacity ease-(--motion-ease-smooth-out) group-hover:opacity-0 group-has-data-[state=open]:opacity-0 group-has-focus-visible:opacity-0',
         className
       )}
       name={state === 'done' ? 'circleCheck' : 'circleDashed'}

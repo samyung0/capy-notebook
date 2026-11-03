@@ -683,7 +683,8 @@ function WorkspaceOpen() {
       ? files?.find((file) => file.id === openItem.id)
       : undefined;
   const officeOpen = !!openFile && !!officeFormatOf(openFile);
-  // Added files start in the open item's topic (Epo 2026-11-03).
+  // Added files start in the open item's topic, else Other files, and Files
+  // highlights that row while the dialog is open (Epo 2026-11-03, board T4).
   const openTopicId =
     (openItem?.kind === 'file'
       ? openFile?.topicId
@@ -798,6 +799,7 @@ function WorkspaceOpen() {
       readOnly={readOnly}
       renderTabRow={renderTabRow}
       searchable
+      uploadTopic={addSource ? openTopicId : undefined}
       workspaceId={workspaceId}
     />
   );
@@ -865,6 +867,7 @@ function WorkspaceOpen() {
       readOnly={readOnly}
       renderTabRow={noRow}
       rowMenus={false}
+      uploadTopic={addSource ? openTopicId : undefined}
       workspaceId={workspaceId}
     />
   );

@@ -85,6 +85,7 @@ export function FilesPanel({
   className,
   rowMenus = true,
   searchable = false,
+  uploadTopic,
 }: {
   workspaceId: string;
   readOnly: boolean;
@@ -107,6 +108,10 @@ export function FilesPanel({
   rowMenus?: boolean;
   /** A search above the tree that filters it by name (the side panels). */
   searchable?: boolean;
+  /** While the Add file dialog is open: the topic its upload starts in (null
+   * for Other files), whose row is highlighted in place of the open item's
+   * (board T4). */
+  uploadTopic?: string | null;
 }) {
   const { data: topics } = useTopics(workspaceId);
   const { data: files } = useFiles(workspaceId);
@@ -327,8 +332,13 @@ export function FilesPanel({
       )
     );
   }
+  // Board T4: while the Add file dialog is open, the upload's topic row is
+  // highlighted and the open item's row is not.
+  const highlighting = uploadTopic !== undefined;
   const isFileActive = (id: string) =>
-    openItem?.kind === 'file' && openItem.id === id;
+    !highlighting && openItem?.kind === 'file' && openItem.id === id;
+  // Rows inside a topic or Other files start under the group's name (T3).
+  const grouped = !!topics?.length;
   function openLink(event: MouseEvent<HTMLAnchorElement>) {
     if (
       event.button !== 0 ||
@@ -354,10 +364,15 @@ export function FilesPanel({
   function renderMaterial(mt: MaterialRef) {
     return (
       <MaterialListItem
-        active={openItem?.kind === 'material' && openItem.id === mt.id}
+        active={
+          !highlighting &&
+          openItem?.kind === 'material' &&
+          openItem.id === mt.id
+        }
         canClone={!!workspace?.canClone}
         color="purple"
         data={mt}
+        indent={grouped}
         key={`${mt.type}:${mt.id}`}
         menu={rowMenus}
         onDeleted={() => {
@@ -416,6 +431,7 @@ export function FilesPanel({
             canMoveTo={fileCanMoveTo(item.data, workspace)}
             color="purple"
             file={item.data}
+            indent={grouped}
             menu={rowMenus}
             onDeleted={onFileDeleted}
             onOpen={openLink}
@@ -526,7 +542,12 @@ export function FilesPanel({
                   >
                     {insertionLine(`topic:${ch.id}`)}
                     <div
-                      className="group relative flex min-h-8 items-center rounded-button hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!"
+                      className={cn(
+                        'group relative flex min-h-8 items-center rounded-button hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+                        highlighting &&
+                          uploadTopic === ch.id &&
+                          'bg-surface-hover-bg'
+                      )}
                       draggable={!readOnly}
                       onDragEnd={clearDragState}
                       onDragStart={(e) => {
@@ -584,12 +605,12 @@ export function FilesPanel({
                       )}
                     </div>
                     {expanded && (
-                      <div className="mt-px flex flex-col gap-px pl-5">
+                      <div className="mt-px flex flex-col gap-px">
                         {shownFor(ch).map((item) =>
                           renderContentItem(item, ch.id)
                         )}
                         {contentFor(ch.id).length === 0 && (
-                          <p className="px-1.5 py-1 pl-2 font-semibold text-fg-muted text-xs">
+                          <p className="py-1 pr-1.5 pl-7 font-semibold text-fg-muted text-xs">
                             {m.common_empty()}
                           </p>
                         )}
@@ -607,7 +628,12 @@ export function FilesPanel({
                 generating) && (
               <div className="rounded-button" data-workspace-other-files>
                 {topics.length > 0 && (
-                  <div className="flex min-h-8 items-center rounded-button hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!">
+                  <div
+                    className={cn(
+                      'flex min-h-8 items-center rounded-button hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+                      uploadTopic === null && 'bg-surface-hover-bg'
+                    )}
+                  >
                     <GroupToggle
                       count={contentFor(null).length}
                       expanded={othersExpanded}
@@ -624,7 +650,7 @@ export function FilesPanel({
                 {othersExpanded && (
                   <div
                     className={cn(
-                      topics.length > 0 && 'mt-px flex flex-col gap-px pl-5'
+                      topics.length > 0 && 'mt-px flex flex-col gap-px'
                     )}
                   >
                     {shownUnfiled.map((item) => renderContentItem(item, null))}
@@ -644,6 +670,7 @@ export function FilesPanel({
                           type: GENERATING_MATERIAL[generating].type,
                         }}
                         generating
+                        indent={grouped}
                         readOnly
                         topics={topics}
                         workspaceId={workspaceId}

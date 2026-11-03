@@ -3,7 +3,7 @@ import type { MouseEventHandler } from 'react';
 import type { MaterialRef, Topic, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Spinner } from '@/components/ui/feedback';
-import { StudyMark, type StudyRow } from '@/features/study/studyItems';
+import type { StudyRow } from '@/features/study/studyItems';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toMaterialActionTarget } from '@/features/workspace/contentActionTarget';
 import { m } from '@/i18n';
@@ -24,6 +24,7 @@ export function MaterialListItem({
   canClone = false,
   study,
   menu = true,
+  indent = false,
 }: {
   data: MaterialRef;
   active: boolean;
@@ -43,19 +44,23 @@ export function MaterialListItem({
   study?: StudyRow;
   /** The hover ⋮; touch lists (the top Files drawer) leave it out. */
   menu?: boolean;
+  /** Inside a topic or Other files: the icon starts under the group's name. */
+  indent?: boolean;
 }) {
   const hoverMenu = menu && (!readOnly || canClone) && !generating;
   return (
     <div
       className={cn(
-        'group relative flex items-center rounded-button px-2 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+        'group relative flex min-h-7.5 items-center rounded-button pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+        indent ? 'pl-7' : 'pl-2',
         active && 'bg-surface-hover-bg'
       )}
     >
+      {/* Board T3's row, as FileListItem's; a quiz reads "<title> · quiz". */}
       <Link
         className={cn(
-          'flex w-full items-center gap-2 rounded-button py-1.5 text-left',
-          active && 'font-bold'
+          'flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-button text-left font-medium text-fg-secondary',
+          active && 'text-fg'
         )}
         disabled={generating}
         draggable={false}
@@ -65,16 +70,17 @@ export function MaterialListItem({
         search={{ material: matRef.id }}
         to="/workspaces/$workspaceId"
       >
-        <FileIcon className="size-3.75" name={materialIconName(matRef.type)} />
+        <FileIcon className="size-4" name={materialIconName(matRef.type)} />
         <span
           className={cn(
-            'line-clamp-2 flex-1 translate-y-px',
+            'min-w-0 flex-1 translate-y-px truncate',
             study?.state === 'removed' && 'text-fg-muted'
           )}
         >
-          {matRef.title}
+          {matRef.type === 'quiz'
+            ? m.files_quiz_row({ title: matRef.title })
+            : matRef.title}
         </span>
-        <StudyMark hoverMenu={hoverMenu} state={study?.state} />
         {generating && <Spinner className="size-4 shrink-0" />}
       </Link>
       {hoverMenu && (

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import type { Locator, Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { strFromU8, unzipSync, zipSync } from 'fflate';
 import { showPanelView } from '../../helpers/panelView';
 import { m } from '../../i18n';
@@ -366,6 +366,25 @@ export async function upload(
   uploader: Actor = run.owner
 ) {
   const page = uploader.page;
+  if (storeOnly) {
+    // Upload has no parse-mode choice since Epo's 2026-11-03 board T4; an
+    // uploader out of AI credits uploads unprocessed, so the page is shown
+    // spent credits and the file stays store-only.
+    await page.route('**/api/billing', async (route) => {
+      const response = await route.fetch();
+      const billing = await response.json();
+      await route.fulfill({
+        json: {
+          ...billing,
+          creditSettings: { ...billing.creditSettings, autoReload: false },
+          creditsPurchasedMicros: 0,
+          creditsReservedMicros: 0,
+          creditsUsedMicros: billing.creditsLimitMicros,
+        },
+        response,
+      });
+    });
+  }
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
   await showPanelView(page, m.workspace_tab_files());
   await page
@@ -386,14 +405,7 @@ export async function upload(
     name,
   });
   if (storeOnly) {
-    // Office files default to parsing; "No parsing" stores the file only.
-    await page
-      .getByRole('combobox')
-      .filter({ hasText: m.source_fast_parsing() })
-      .click();
-    await page
-      .getByRole('option', { exact: true, name: m.source_no_parsing() })
-      .click();
+    await expect(page.getByText(m.source_upload_no_credits())).toBeVisible();
   }
   const path = `/api/workspaces/${workspaceId}/sources/uploads`;
   // One request streams the bytes through the gateway and creates the file:
@@ -410,6 +422,7 @@ export async function upload(
     .getByRole('button', { exact: true, name: m.action_upload() })
     .click();
   const [uploaded] = await Promise.all([upload, clicked]);
+  if (storeOnly) await page.unroute('**/api/billing');
   // The body is read only on a failure: after a large request body Chromium
   // evicts the response from its inspector cache, so the file comes from its
   // upload session instead. A failure's body can be gone too (the page

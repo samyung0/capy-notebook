@@ -8,7 +8,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { FrostedSurface } from '@/theme/theme';
-import { Button } from './Button';
+import { Button, type ButtonVariantProps } from './Button';
 import { Spinner } from './feedback';
 import { IconButton } from './IconButton';
 
@@ -253,16 +253,18 @@ function DialogHeaderAction({ children }: { children: React.ReactNode }) {
 function DialogCancel({
   disabled,
   label,
+  size = 'lg',
 }: {
   disabled?: boolean;
   label?: string;
+  size?: ButtonVariantProps['size'];
 }) {
   return (
     <DialogPrimitive.Close asChild>
       <Button
         className="max-sm:hidden"
         disabled={disabled}
-        size="lg"
+        size={size}
         type="button"
         variant="ghost-hover"
       >
@@ -279,15 +281,18 @@ function DialogCancel({
 function DialogPrimary({
   children,
   pending,
+  cancelSize,
 }: {
   children: React.ReactNode;
   pending?: boolean;
+  /** Cancel's size, matching a primary smaller than lg. */
+  cancelSize?: ButtonVariantProps['size'];
 }) {
   return useIsPhone() ? (
     <DialogHeaderAction>{children}</DialogHeaderAction>
   ) : (
     <>
-      <DialogCancel disabled={pending} />
+      <DialogCancel disabled={pending} size={cancelSize} />
       {children}
     </>
   );

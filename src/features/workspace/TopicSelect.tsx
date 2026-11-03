@@ -59,7 +59,8 @@ export function TopicSelect({
   /** Tags the item's own topic (null: Other files) "Current" in the list. */
   current?: string | null;
   disabled?: boolean;
-  field?: boolean;
+  /** A form dropdown; `full` spans its container (the Upload tab's Topic). */
+  field?: boolean | 'full';
   onChange: (value: string | null) => void;
   onCreateRequest?: () => void;
 }) {
@@ -86,7 +87,10 @@ export function TopicSelect({
       value={topicName ? TYPED_TOPIC : (value ?? NO_TOPIC)}
     >
       {field ? (
-        <SelectTrigger className={FIELD_WIDTH} layout="row">
+        <SelectTrigger
+          className={field === 'full' ? 'w-full' : FIELD_WIDTH}
+          layout={field === 'full' ? undefined : 'row'}
+        >
           {label}
         </SelectTrigger>
       ) : (

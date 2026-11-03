@@ -3,7 +3,7 @@ import { type MouseEventHandler, useState } from 'react';
 import type { SourceFile, Topic, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { StudyMark, type StudyRow } from '@/features/study/studyItems';
+import type { StudyRow } from '@/features/study/studyItems';
 import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
@@ -16,9 +16,9 @@ import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
 import { fileCanClone, fileIsIngesting } from './fileUtils';
 
-/** A file row in the workspace sidebar. Opens the file in the center pane, shows
- * ingest progress, and exposes a hover action menu (rename / properties /
- * delete) mirroring the topic row pattern. */
+/** A file row in the workspace Files panel (board T3). Opens the file in the
+ * center pane, shows ingest progress, and exposes a hover action menu (rename /
+ * properties / delete); progress marks stay on the Study page. */
 export function FileListItem({
   file,
   active,
@@ -34,6 +34,7 @@ export function FileListItem({
   retryPending = false,
   study,
   menu = true,
+  indent = false,
 }: {
   file: SourceFile;
   active: boolean;
@@ -60,6 +61,8 @@ export function FileListItem({
   /** The hover ⋮; touch lists (the top Files drawer) leave it out and act
    * from the open file's header instead. */
   menu?: boolean;
+  /** Inside a topic or Other files: the icon starts under the group's name. */
+  indent?: boolean;
 }) {
   const ingesting = fileIsIngesting(file.status);
   const waitingForBytes = ingesting && !file.hasBytes;
@@ -72,14 +75,17 @@ export function FileListItem({
     <div className="relative flex flex-col">
       <div
         className={cn(
-          'group relative flex items-center rounded-button px-2 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+          'group relative flex min-h-7.5 items-center rounded-button pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+          indent ? 'pl-7' : 'pl-2',
           active && 'bg-surface-hover-bg'
         )}
       >
+        {/* Board T3's row: 30px, a 16px icon, one truncated line; the open
+            file shows by the row's background, not its weight. */}
         <Link
           className={cn(
-            'flex w-full items-center gap-2 rounded-button py-1.5 text-left',
-            active && 'font-bold',
+            'flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-button text-left font-medium text-fg-secondary',
+            active && 'text-fg',
             waitingForBytes && 'cursor-default'
           )}
           disabled={waitingForBytes}
@@ -90,17 +96,16 @@ export function FileListItem({
           search={{ file: file.id }}
           to="/workspaces/$workspaceId"
         >
-          <FileIcon className="size-3.75" name={fileIconName(file)} />
+          <FileIcon className="size-4" name={fileIconName(file)} />
           <span
             className={cn(
-              'line-clamp-2 flex-1 translate-y-px',
+              'min-w-0 flex-1 translate-y-px truncate',
               study?.state === 'removed' && 'text-fg-muted',
               failed && 'text-solid-error'
             )}
           >
             {file.name}
           </span>
-          <StudyMark hoverMenu={hoverMenu} state={study?.state} />
         </Link>
         {hoverMenu && (
           <ContentActions
@@ -167,12 +172,19 @@ export function FileListItem({
         />
       )}
       {failed && (
-        <div className="t-label z-10 -mt-1 mb-0.5 px-2 font-medium text-fg-muted tracking-normal">
+        <div
+          className={cn(
+            't-label z-10 mb-0.5 font-medium text-fg-muted tracking-normal',
+            indent ? 'pr-2 pl-7' : 'px-2'
+          )}
+        >
           {m.files_processing_error()}
         </div>
       )}
       {ingesting && (
-        <div className="z-10 -mt-0.5 mr-1.5 mb-0.5 px-2">
+        <div
+          className={cn('z-10 mr-1.5 mb-0.5', indent ? 'pr-2 pl-7' : 'px-2')}
+        >
           <ProgressBar height={4} tone={color} value={50} />
         </div>
       )}

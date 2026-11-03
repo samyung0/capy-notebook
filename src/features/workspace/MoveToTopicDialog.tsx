@@ -6,8 +6,7 @@ import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
 
 /** Topic picker for moving a file or material into a topic (membership).
- * Selecting a row calls onSelect and closes; "Remove from all topics" unfiles
- * (null), into Other files. */
+ * Selecting a row calls onSelect and closes; Other files unfiles (null). */
 export function MoveToTopicDialog({
   open,
   onClose,
@@ -63,7 +62,7 @@ export function MoveToTopicDialog({
                   currentTopicId === null && 'font-bold'
                 )}
               >
-                {m.move_remove_topics()}
+                {m.topic_other_files()}
               </span>
               {currentTopicId === null && (
                 <Icon className="shrink-0" name="check" />

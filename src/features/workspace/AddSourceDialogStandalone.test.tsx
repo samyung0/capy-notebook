@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import { qk } from '@/api/client';
-import type { Workspace } from '@/api/types';
+import type { BillingInfo, Workspace } from '@/api/types';
 import { m } from '@/i18n';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 import { AddSourceDialog, type PendingSource } from './AddSourceDialog';
@@ -42,8 +42,15 @@ const row: PendingSource = {
   topicName: null,
 };
 
-function render(workspaceId: string | null) {
+function render(
+  workspaceId: string | null,
+  {
+    billing,
+    rows = [row],
+  }: { billing?: BillingInfo; rows?: PendingSource[] } = {}
+) {
   const client = new QueryClient();
+  if (billing) client.setQueryData(qk.billing, billing);
   client.setQueryData(
     qk.sourceUploadPolicy(workspaceId ?? undefined),
     sourceUploadPolicy
@@ -56,7 +63,7 @@ function render(workspaceId: string | null) {
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
       <AddSourceDialog
-        initialSources={[row]}
+        initialSources={rows}
         onClose={() => undefined}
         open
         workspaceId={workspaceId}
@@ -81,4 +88,26 @@ it('leaves topics, the file room and Create out for No workspace', () => {
   expect(standalone).not.toContain('data-topic-select');
   expect(standalone).not.toContain(room);
   expect(standalone).toContain('notes.pdf');
+});
+
+// Board T4 (Epo 2026-11-03): one Topic for the whole upload, and one line
+// when the uploader is out of AI credits.
+it('asks one topic for the whole upload and says when credits ran out', () => {
+  const spent = {
+    creditSettings: { autoReload: false },
+    creditsLimitMicros: 300_000_000,
+    creditsPurchasedMicros: 0,
+    creditsReservedMicros: 0,
+    creditsUsedMicros: 300_000_000,
+  } as BillingInfo;
+  const html = render('ws_1', {
+    billing: spent,
+    rows: [row, { ...row, key: 'local-more', name: 'more.pdf' }],
+  });
+  expect(html.match(/data-topic-select/g)).toHaveLength(1);
+  expect(html).toContain(m.source_upload_topic());
+  // Static markup escapes the apostrophes.
+  expect(html).toContain(
+    m.source_upload_no_credits().replaceAll("'", '&#x27;')
+  );
 });

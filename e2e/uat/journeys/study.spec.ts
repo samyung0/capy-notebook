@@ -195,9 +195,17 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     .getByRole('menuitem', { exact: true, name: m.study_mark_read() })
     .click();
   assert.equal((await marked).status(), 204);
+  // Files rows carry no progress mark (Epo 2026-11-03): the row's ⋮ now
+  // offers Mark as unread.
+  await row.locator('xpath=..').hover();
+  await row
+    .locator('xpath=..')
+    .getByRole('button', { name: m.a11y_open_menu() })
+    .click();
   await expect(
-    row.getByLabel(m.study_state_done(), { exact: true })
+    page.getByRole('menuitem', { exact: true, name: m.study_mark_unread() })
   ).toBeVisible();
+  await page.keyboard.press('Escape');
 
   // The quiz finished, the set studied to its end.
   await page.goto(`${run.env.appUrl}/quizzes/${finishedQuiz}/attempt`);

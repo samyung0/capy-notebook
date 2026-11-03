@@ -140,7 +140,7 @@ function AddSteps({
     {
       inputs: tracked.filter((it) => !it.data.topicId).map(inputOf),
       key: 'others',
-      label: m.study_others(),
+      label: m.topic_other_files(),
     },
   ].filter((option) => option.inputs.length > 0);
   const singleOptions: Option[] = tracked.map((it) => ({
