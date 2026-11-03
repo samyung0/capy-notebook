@@ -31,7 +31,7 @@ place (Epo 2026-10-10).
 | [`parity/`](parity/)       | Office feature parity per format against Google Docs, Sheets and Slides: hand-assigned view, edit, save and collab statuses, each Y backed by a test on the pin; ranked remaining work | `python3 bench/parity/scripts/parity.py` (CI: `--check`) |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
-| [`extraction/`](extraction/) | Make a quiz: questions read from HKDSE past papers' pages and paired with their mark schemes, against hand-built gold; labels, parts, marks, printed option order, pairing, cost, time per model | `python bench/extraction/scripts/run.py --paper … --model …` |
+| [`extraction/`](extraction/) | Make a quiz: questions read from HKDSE past papers' pages with keys worked out where none is printed, paired with their mark schemes, against hand-built gold; labels, parts, marks, printed option order, worked-out key accuracy, pairing, cost, time per model | `python bench/extraction/scripts/run.py --paper … --model …` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus six frozen experiments                    | see below                                   |
 
 ### editor
@@ -313,10 +313,14 @@ answer list built from the gold keys. `fixtures/gold/` holds the hand-built gold
 per paper: labels, parts, per-part marks, answer types, and for multiple choice
 the key and the keyed option's signature (its numbers, signs, relations, roman
 numerals and trig names, hand-read from the page), so the score checks that the
-stored key points at the printed correct option. Results land in
-`extraction/.results/<paper>-<model>-<n>.json`;
+stored key points at the printed correct option. The model's own keys,
+before the scheme replaces them, are scored too: multiple-choice keys it
+worked out against the official ones, and its part marks against the gold.
+Results land in `extraction/.results/<paper>-<model>-<n>.json`;
 [the first cut](extraction/reports/2026-11-03-first-cut.md) compares DeepSeek
-Flash with GLM-5.3-Flash.
+Flash with GLM-5.3-Flash, and
+[keys in one prompt](extraction/reports/2026-11-03-keys-in-one-prompt.md)
+measures the round-2 prompt that works keys out.
 
 ### rag
 

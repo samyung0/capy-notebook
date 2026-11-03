@@ -8,22 +8,24 @@ A fixed pipeline, like /generate, not the chat agent:
 2. Page windows of up to two pages, in selected order. Each call sees the two
    page images and their text, the outline, the labels recorded so far and the
    open question (the last one recorded, which may run onto the next page),
-   and records questions with ``record_question`` / ``continue_question``.
-   Every recorded question goes through the Go validator at once and a
-   problem goes back to the model. Questions are kept outside the
+   and records questions with ``record_question`` / ``continue_question``,
+   each part with its answer key, marking points for an open part and a short
+   worked solution: copied when the page prints them, otherwise worked out
+   (Epo 2026-11-03). Every recorded question goes through the Go validator at
+   once and a problem goes back to the model. Questions are kept outside the
    conversation as they come, so the next window carries labels and the open
    question only.
 3. The mark scheme and answer files are parsed as text, each on its own and
-   never beside the pages, into entries; code pairs them with the questions by
-   label and fills keys, marking points and worked solutions.
+   never beside the pages, after the windows, with the recorded questions'
+   labels to name entries by. Code pairs them with the questions by label:
+   their keys, marking points and solutions replace worked-out ones, a printed
+   key stays, and any disagreement is named in the report.
 
 The printed option order is kept (``add_questions`` shuffles; this does not).
-A page's printed key is used when there is one; otherwise the scheme's. A
-question with a part left without a key is not saved and is named in the
-report, as are expected labels never recorded and a question the validator
-refuses once its keys are paired. Figures are boxed by the model
-but not cropped this round (``report.figures``). Nothing links a question to
-its file, page or region (§8 item 7).
+No question is left out for want of a key. A worked-out solution carries an
+"AI-written" label. Figures are boxed by the model but not cropped yet
+(``report.figures``). Nothing links a question to its file, page or region
+(§8 item 7).
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ from .. import elitellm
 from ..config import cfg
 from ..generated import limits
 from ..prompts import extraction as prompts
+from ..prompts.locale import normalize_locale
 from ..registry import ModelConfig
 from . import accounting, capture, models, store, tools
 from . import limits as slots
@@ -53,10 +56,12 @@ log = logging.getLogger("capy.retrieval.extraction")
 # Two pages a call (Epo 2026-11-03): small enough that a window stays far under
 # any context limit, large enough for a question that runs onto the next page.
 WINDOW_PAGES = 2
-# Model calls per window: the first records, the rest fix what the validator
-# refused.
-WINDOW_STEPS = 4
-WINDOW_MAX_TOKENS = 16_000
+# Model calls per window: the first records (one record_question call a
+# question), the rest send again what the validator refused or what was not
+# valid JSON, or what a reply cut off at the output cap left out.
+WINDOW_STEPS = 6
+# Thinking at medium works answers out as well as copying (Epo 2026-11-03).
+WINDOW_MAX_TOKENS = 24_000
 OUTLINE_MAX_TOKENS = 2_000
 SCHEME_MAX_TOKENS = 12_000
 # Indexed text shown per page, and scheme text per parse call.
@@ -66,16 +71,16 @@ SCHEME_CHUNK_CHARS = 12_000
 # a longer one is refused rather than cut.
 SCHEME_TEXT_CHARS = 200_000
 
-# A run is a background job the user cannot retry piece by piece, so a busy,
-# failing or silent provider costs a window or a scheme piece another attempt
-# rather than the run (AGENTS.md: background jobs such as parsing and ingest
-# retry), as ingest's three calls; a definitive client error does not retry.
-ATTEMPTS = 3
+# A busy, failing or silent provider costs a step one silent retry (Epo
+# 2026-11-03): the outline, a window or a scheme piece runs once more before
+# the run fails. A definitive client error does not retry.
+ATTEMPTS = 2
 ATTEMPT_WAIT_S = 20.0
 
-# Validator stand-ins for keys the scheme fills later, used only for the
-# validation call; the stored question never carries them.
-_STAND_IN_MARK = "(from the mark scheme)"
+PRINTED, WORKED_OUT, SCHEME = "printed", "worked_out", "scheme"
+# The label a worked-out solution carries in the saved quiz, in the starter's
+# language (QuestionView draws a text block's label before its text).
+AI_WRITTEN = {"en": "AI-written", "zh": "AI 撰写"}
 
 Validate = Callable[[dict[str, Any]], Awaitable[str | None]]
 
@@ -100,12 +105,13 @@ class SchemeFile:
 
 @dataclass
 class Recorded:
-    """One question as recorded. Keys the page does not print are empty until
-    pairing: mcq ``correct``, short ``accepted``, open ``markscheme``."""
+    """One question as recorded, every part with its key, and where each
+    part's key came from: printed, worked_out, or scheme once paired."""
 
     label: str
     question: dict[str, Any]
     part_labels: list[str]
+    sources: list[str]
     figures: int = 0
     # The question's printed total, when the page prints only a total.
     total: int | None = None
@@ -132,7 +138,57 @@ def label_key(label: str) -> str:
     return ".".join(tokens)
 
 
+def part_name(label: str, part_label: str) -> str:
+    """A part as the report names it: 4(a), or 12 for a one-part question."""
+    return f"{label}({part_label})" if part_label else label
+
+
 # ------------------------------------------------------- recorded questions
+
+
+def _text(value: Any, limit: int) -> str:
+    return str(value or "").strip()[:limit].strip()
+
+
+def _whole(value: Any) -> int | None:
+    """A mark count the model wrote as 2, 2.0 or "2"."""
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return value if type(value) is int else None
+
+
+def _points(raw: Any) -> list[dict[str, Any]]:
+    points = []
+    for point in raw if isinstance(raw, list) else []:
+        if not isinstance(point, dict):
+            continue
+        marks = _whole(point.get("marks"))
+        text = _text(point.get("text"), limits.QUESTION_MARK_ITEM_MAX)
+        if marks is not None and marks >= 1 and text:
+            points.append({"text": text, "marks": marks})
+    return points
+
+
+def _items(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Marking points as at most QUIZ_MARKSCHEME_MAX items: consecutive points
+    are joined when there are more, keeping every mark."""
+    size = limits.QUIZ_MARKSCHEME_MAX
+    if len(points) <= size:
+        return [dict(point) for point in points]
+    groups: list[list[dict[str, Any]]] = [[] for _ in range(size)]
+    for index, point in enumerate(points):
+        groups[index * size // len(points)].append(point)
+    return [
+        {
+            "text": "; ".join(p["text"] for p in group)[
+                : limits.QUESTION_MARK_ITEM_MAX
+            ],
+            "marks": sum(p["marks"] for p in group),
+        }
+        for group in groups
+    ]
 
 
 def _blocks(raw: Any) -> list[dict[str, Any]]:
@@ -153,89 +209,94 @@ def _blocks(raw: Any) -> list[dict[str, Any]]:
     return blocks
 
 
-def _answer(raw: Any) -> dict[str, Any]:
-    """The answer with the page's printed key, or an empty key."""
+def _answer(raw: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The answer with its key, and an open part's marking items."""
     raw = raw if isinstance(raw, dict) else {}
     kind = raw.get("type")
-    printed = [str(v).strip() for v in raw.get("accepted") or [] if str(v).strip()]
+    accepted = [str(v).strip() for v in raw.get("accepted") or [] if str(v).strip()]
     if kind == "mcq":
         return {
             "type": "mcq",
             "options": [str(v).strip() for v in raw.get("options") or []],
             "correct": [v for v in raw.get("correct") or [] if type(v) is int],
-        }
+        }, []
     if kind == "short":
-        answer: dict[str, Any] = {"type": "short", "accepted": printed}
+        answer: dict[str, Any] = {"type": "short", "accepted": accepted}
         if str(raw.get("unit") or "").strip():
             answer["unit"] = str(raw["unit"]).strip()
-        return answer
+        return answer, []
     if kind == "open":
-        return {"type": "open", "accepted": printed[:1], "hints": []}
-    return {"type": kind}
+        sample = [a[: limits.QUIZ_OPEN_ANSWER_MAX] for a in accepted[:1]]
+        return {"type": "open", "accepted": sample, "hints": []}, _items(
+            _points(raw.get("points"))
+        )
+    return {"type": kind}, []
 
 
-def _part(raw: Any) -> tuple[str, dict[str, Any]]:
+def _solution(text: str, source: str, ai_label: str) -> list[dict[str, Any]]:
+    if not text:
+        return []
+    block: dict[str, Any] = {"type": "text", "text": text}
+    if source == WORKED_OUT:
+        block["label"] = ai_label
+    return [block]
+
+
+def _part(raw: Any, ai_label: str) -> tuple[str, str, dict[str, Any]]:
+    """A recorded part: its printed label, where its key came from (empty when
+    the model named neither), and the part."""
     raw = raw if isinstance(raw, dict) else {}
-    answer = _answer(raw.get("answer"))
+    answer, items = _answer(raw.get("answer"))
+    source = (
+        raw.get("key_source") if raw.get("key_source") in (PRINTED, WORKED_OUT) else ""
+    )
     part: dict[str, Any] = {
         "id": str(uuid.uuid4()),
         "blocks": _blocks(raw.get("blocks")),
         "answer": answer,
         "marks": raw.get("marks"),
-        "solution": [],
+        "solution": _solution(
+            _text(raw.get("solution"), limits.QUESTION_TEXT_MAX), source, ai_label
+        ),
     }
     if answer["type"] == "open":
-        part["markscheme"] = []
-    return str(raw.get("label") or ""), part
+        part["markscheme"] = items
+    return str(raw.get("label") or ""), source, part
 
 
-def record(item: Any) -> Recorded:
+def record(item: Any, ai_label: str) -> Recorded:
     """A ``record_question`` item as a quiz question in paper layout."""
     item = item if isinstance(item, dict) else {}
-    parsed = [_part(p) for p in item.get("parts") or []]
-    labels = [label for label, _ in parsed]
+    parsed = [_part(p, ai_label) for p in item.get("parts") or []]
+    labels = [label for label, _, _ in parsed]
     first = next((label for label in labels if label), "")
     return Recorded(
         label=str(item.get("label") or "").strip(),
         question={
             "id": str(uuid.uuid4()),
             "stem": _blocks(item.get("stem")),
-            "parts": [part for _, part in parsed],
+            "parts": [part for _, _, part in parsed],
             "layout": "paper",
             "labels": "numbers" if first[:1].isdigit() else "letters",
         },
         part_labels=labels,
+        sources=[source for _, source, _ in parsed],
         figures=len(item.get("figures") or []),
         total=_whole(item.get("total_marks")),
     )
 
 
-def _stand_ins(question: dict[str, Any]) -> dict[str, Any]:
-    """The question with every empty key filled, so the validator checks
-    everything but the keys pairing fills."""
-    checked = copy.deepcopy(question)
-    for part in checked["parts"]:
-        answer = part["answer"]
-        if answer.get("type") == "mcq" and not answer.get("correct"):
-            answer["correct"] = [0]
-        elif answer.get("type") == "short" and not answer.get("accepted"):
-            answer["accepted"] = ["1"]
-        elif answer.get("type") == "open" and not part.get("markscheme"):
-            marks = part.get("marks")
-            part["markscheme"] = [{"text": _STAND_IN_MARK, "marks": marks}]
-    return checked
-
-
-def keyless(question: dict[str, Any]) -> bool:
-    for part in question["parts"]:
-        answer = part["answer"]
-        if (
-            (answer["type"] == "mcq" and not answer["correct"])
-            or (answer["type"] == "short" and not answer["accepted"])
-            or (answer["type"] == "open" and not part["markscheme"])
-        ):
-            return True
-    return False
+def _unsourced(held: Recorded) -> str | None:
+    """The tool-result problem for parts that do not say where their key came
+    from."""
+    missing = [
+        part_name(held.label, label)
+        for label, source in zip(held.part_labels, held.sources)
+        if not source
+    ]
+    if not missing:
+        return None
+    return f"{', '.join(missing)}: key_source must be printed or worked_out"
 
 
 def _counts(question: dict[str, Any]) -> tuple[int, int]:
@@ -246,38 +307,18 @@ def _counts(question: dict[str, Any]) -> tuple[int, int]:
 # ------------------------------------------------------------------ pairing
 
 
-def _text(value: Any, limit: int) -> str:
-    return str(value or "").strip()[:limit].strip()
-
-
-def _whole(value: Any) -> int | None:
-    """A mark count the model wrote as 2, 2.0 or "2"."""
-    if isinstance(value, str) and value.strip().isdigit():
-        value = int(value.strip())
-    if isinstance(value, float) and value.is_integer():
-        value = int(value)
-    return value if type(value) is int else None
-
-
 def entries_from(data: Any) -> list[Entry]:
     entries: list[Entry] = []
     rows = data.get("entries") if isinstance(data, dict) else None
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict) or not str(row.get("question") or "").strip():
             continue
-        points = []
-        for point in row.get("points") or []:
-            if not isinstance(point, dict):
-                continue
-            marks, text = _whole(point.get("marks")), _text(point.get("text"), 1_000)
-            if marks is not None and marks >= 1 and text:
-                points.append({"text": text, "marks": marks})
         entries.append(
             Entry(
                 question=str(row["question"]).strip(),
                 part=str(row.get("part") or "").strip(),
                 answer=_text(row.get("answer"), limits.QUIZ_OPEN_ANSWER_MAX),
-                points=points,
+                points=_points(row.get("points")),
                 solution=_text(row.get("solution"), limits.QUESTION_TEXT_MAX),
             )
         )
@@ -311,24 +352,14 @@ def _letters(answer: str, count: int) -> list[int]:
     return indexes if indexes and indexes[-1] < count else []
 
 
-def _items(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Marking points as at most QUIZ_MARKSCHEME_MAX items: consecutive points
-    are joined when there are more, keeping every mark."""
-    size = limits.QUIZ_MARKSCHEME_MAX
-    if len(points) <= size:
-        return [dict(point) for point in points]
-    groups: list[list[dict[str, Any]]] = [[] for _ in range(size)]
-    for index, point in enumerate(points):
-        groups[index * size // len(points)].append(point)
-    return [
-        {
-            "text": "; ".join(p["text"] for p in group)[
-                : limits.QUESTION_MARK_ITEM_MAX
-            ],
-            "marks": sum(p["marks"] for p in group),
-        }
-        for group in groups
-    ]
+def _same(a: str, b: str) -> bool:
+    """Two short answers that differ only in spacing, case, $ signs or a full
+    stop."""
+
+    def norm(value: str) -> str:
+        return re.sub(r"[\s$]", "", value).rstrip(".").lower()
+
+    return norm(a) == norm(b)
 
 
 def _entry_for(
@@ -341,35 +372,65 @@ def _entry_for(
     return found
 
 
-def pair(recorded: Recorded, entries: dict[tuple[str, str], Entry]) -> bool:
-    """Fill the question's empty keys, marking points and worked solutions from
-    its scheme entries. True when an entry matched any part."""
+@dataclass
+class Paired:
+    """A question after pairing: the paired copy, whether any entry matched,
+    and the parts whose key disagreed with the scheme."""
+
+    held: Recorded
+    matched: bool
+    disagreed: list[str]
+
+
+def pair(held: Recorded, entries: dict[tuple[str, str], Entry]) -> Paired:
+    """A copy of the question with its scheme entries applied: a scheme key,
+    marking points and solution replace worked-out ones; a printed key stays.
+    A key that differs from the scheme's is named either way."""
+    out = copy.deepcopy(held)
     matched = False
-    single = len(recorded.part_labels) == 1
-    for part_label, part in zip(recorded.part_labels, recorded.question["parts"]):
-        entry = _entry_for(entries, recorded.label, part_label, single)
+    disagreed: list[str] = []
+    single = len(out.part_labels) == 1
+    for index, (part_label, part) in enumerate(
+        zip(out.part_labels, out.question["parts"])
+    ):
+        entry = _entry_for(entries, out.label, part_label, single)
         if entry is None:
             continue
         matched = True
+        name = part_name(out.label, part_label)
+        replace = out.sources[index] == WORKED_OUT
+        replaced = False
         answer = part["answer"]
-        if answer["type"] == "mcq" and not answer["correct"]:
-            answer["correct"] = _letters(entry.answer, len(answer["options"]))
-        elif answer["type"] == "short" and not answer["accepted"] and entry.answer:
+        if answer["type"] == "mcq":
+            letters = _letters(entry.answer, len(answer["options"]))
+            if letters and letters != sorted(answer["correct"]):
+                disagreed.append(name)
+            if letters and replace:
+                answer["correct"], replaced = letters, True
+        elif answer["type"] == "short" and entry.answer:
             value = entry.answer
             unit = answer.get("unit", "")
             if unit and value.endswith(unit):
                 value = value[: -len(unit)].strip()
-            answer["accepted"] = [value[: limits.QUESTION_TEXT_MAX]]
-        elif answer["type"] == "open" and not part["markscheme"] and entry.points:
+            if not answer["accepted"] or not _same(value, answer["accepted"][0]):
+                disagreed.append(name)
+            if replace:
+                answer["accepted"], replaced = [value[: limits.QUESTION_TEXT_MAX]], True
+        elif answer["type"] == "open" and entry.points:
             items = _items(entry.points)
             marks = sum(item["marks"] for item in items)
             if marks <= limits.QUESTION_MARKS_MAX:
-                part["markscheme"], part["marks"] = items, marks
-                if entry.answer and not answer["accepted"]:
-                    answer["accepted"] = [entry.answer]
-        if entry.solution and not part["solution"]:
-            part["solution"] = [{"type": "text", "text": entry.solution}]
-    return matched
+                if marks != part["marks"]:
+                    disagreed.append(name)
+                if replace:
+                    part["markscheme"], part["marks"], replaced = items, marks, True
+                    if entry.answer:
+                        answer["accepted"] = [entry.answer]
+        if replaced:
+            out.sources[index] = SCHEME
+            if entry.solution:
+                part["solution"] = [{"type": "text", "text": entry.solution}]
+    return Paired(out, matched, disagreed)
 
 
 # --------------------------------------------------------------- the run
@@ -380,6 +441,7 @@ class Run:
     """What one extraction holds between windows."""
 
     validate: Validate
+    ai_label: str
     expected: list[str] = field(default_factory=list)
     recorded: dict[str, Recorded] = field(default_factory=dict)
     # Printed order: a label's place is its first record attempt, so a
@@ -401,11 +463,22 @@ class Run:
                 parts, opened = parts + p, opened + o
         return parts, opened
 
+    def _fits(self, key: str, question: dict[str, Any]) -> bool:
+        parts, opened = self.counts(leaving_out=key)
+        p, o = _counts(question)
+        return (
+            parts + p <= limits.QUIZ_PARTS_MAX
+            and opened + o <= limits.QUIZ_OPEN_PARTS_MAX
+        )
+
     async def add(self, item: Any, window: set[str]) -> str:
         """Record one question; the tool result line for it."""
-        new = record(item)
+        new = record(item, self.ai_label)
         if not new.label or not new.question["parts"]:
-            return "A question needs its printed label and at least one part."
+            return (
+                "A question needs its printed label and at least one part, given "
+                "as the call's arguments themselves."
+            )
         key = label_key(new.label)
         self.order.setdefault(key, len(self.order))
         held = self.recorded.get(key)
@@ -419,17 +492,15 @@ class Run:
                 "earlier pages. If this is another question with the same number, "
                 "put its section in the label (B3)."
             )
-        problem = await self.validate(_stand_ins(new.question))
+        problem = _unsourced(new) or await self.validate(new.question)
         if problem:
             return f"Question {new.label}: {problem}. Fix it and record it again."
-        parts, opened = self.counts(leaving_out=key)
-        p, o = _counts(new.question)
-        if parts + p > limits.QUIZ_PARTS_MAX or opened + o > limits.QUIZ_OPEN_PARTS_MAX:
+        if not self._fits(key, new.question):
             self.full = True
             return (
                 f"Question {new.label} was not recorded: a quiz holds at most "
-                f"{limits.QUIZ_PARTS_MAX} parts and {limits.QUIZ_OPEN_PARTS_MAX} open "
-                "parts. Record nothing more."
+                f"{limits.QUIZ_PARTS_MAX} parts and {limits.QUIZ_OPEN_PARTS_MAX} "
+                "AI-marked parts. Record nothing more."
             )
         if held is not None:
             new.question["id"] = held.question["id"]
@@ -445,22 +516,20 @@ class Run:
                 f"Question {label} is not the open question; record a new question "
                 "with record_question."
             )
-        held = self.recorded[key]
-        merged = copy.deepcopy(held)
+        merged = copy.deepcopy(self.recorded[key])
         more = _blocks(args.get("blocks"))
         if more:
             merged.question["parts"][-1]["blocks"].extend(more)
         for raw in args.get("parts") or []:
-            part_label, part = _part(raw)
+            part_label, source, part = _part(raw, self.ai_label)
             merged.question["parts"].append(part)
             merged.part_labels.append(part_label)
+            merged.sources.append(source)
         merged.figures += len(args.get("figures") or [])
-        problem = await self.validate(_stand_ins(merged.question))
+        problem = _unsourced(merged) or await self.validate(merged.question)
         if problem:
             return f"Question {label}: {problem}. Fix it and continue it again."
-        parts, opened = self.counts(leaving_out=key)
-        p, o = _counts(merged.question)
-        if parts + p > limits.QUIZ_PARTS_MAX or opened + o > limits.QUIZ_OPEN_PARTS_MAX:
+        if not self._fits(key, merged.question):
             self.full = True
             return "The quiz is full: record nothing more."
         self.recorded[key] = merged
@@ -525,12 +594,20 @@ def _chunks(text: str) -> list[str]:
     return pieces
 
 
-async def parse_schemes(files: list[SchemeFile], *, model: ModelConfig) -> list[Entry]:
-    """Every scheme or answer file's entries, one parse call per text piece."""
+async def parse_schemes(
+    files: list[SchemeFile],
+    *,
+    model: ModelConfig,
+    labels: list[tuple[str, list[str]]],
+) -> list[Entry]:
+    """Every scheme or answer file's entries, one parse call per text piece.
+    ``labels`` are the recorded questions' labels with their part labels, so
+    entries are named as the questions are (Epo 2026-11-03: 2024 Q3(b) was
+    read as b(ii))."""
 
     async def one(name: str, text: str) -> list[Entry]:
         message = await models.complete(
-            prompts.scheme_messages(name, text),
+            prompts.scheme_messages(name, text, labels),
             model=model,
             response_format={"type": "json_object"},
             max_tokens=SCHEME_MAX_TOKENS,
@@ -569,13 +646,21 @@ async def _attempted(call: Callable[[], Awaitable[Any]]) -> Any:
     raise AssertionError("the attempts loop returns or raises")
 
 
-def _call_args(call: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
+def _call_args(call: dict[str, Any]) -> tuple[str, dict[str, Any] | str]:
+    """A tool call's name and its arguments, or the tool result naming why
+    they could not be read (the bench saw long calls closed a bracket early)."""
     function = call.get("function") or {}
+    name = str(function.get("name") or "")
     try:
         args = json.loads(function.get("arguments") or "{}")
-    except json.JSONDecodeError:
-        args = None
-    return str(function.get("name") or ""), args if isinstance(args, dict) else None
+    except json.JSONDecodeError as exc:
+        return name, (
+            f"The arguments were not valid JSON ({exc.msg} at character {exc.pos}), "
+            "so nothing was recorded; send this call again."
+        )
+    if not isinstance(args, dict):
+        return name, "The arguments must be a JSON object; send this call again."
+    return name, args
 
 
 async def _window(run: Run, pages: list[Page], *, model: ModelConfig) -> None:
@@ -594,14 +679,20 @@ async def _window(run: Run, pages: list[Page], *, model: ModelConfig) -> None:
     )
     window: set[str] = set()
     for _ in range(WINDOW_STEPS):
+        response = await models.complete_response(
+            messages,
+            model=model,
+            tools=prompts.TOOLS,
+            max_tokens=WINDOW_MAX_TOKENS,
+            call_purpose="extraction_window",
+        )
+        if response.choices[0].finish_reason == "length":
+            # Cut off at the output cap, its calls unfinished (the bench lost
+            # two windows of a paper this way): ask again for smaller calls.
+            messages.append({"role": "user", "content": prompts.CUT_OFF})
+            continue
         reply = elitellm.assistant_message_from_obj(
-            await models.complete(
-                messages,
-                model=model,
-                tools=prompts.TOOLS,
-                max_tokens=WINDOW_MAX_TOKENS,
-                call_purpose="extraction_window",
-            )
+            elitellm.message_from_response(response)
         )
         calls = reply.get("tool_calls") or []
         if not calls:
@@ -609,13 +700,10 @@ async def _window(run: Run, pages: list[Page], *, model: ModelConfig) -> None:
         messages.append(reply)
         for call in calls:
             name, args = _call_args(call)
-            if args is None:
-                result = "The arguments were not valid JSON; send the call again."
+            if isinstance(args, str):
+                result = args
             elif name == "record_question":
-                lines = [
-                    await run.add(item, window) for item in args.get("questions") or []
-                ]
-                result = "\n".join(lines) or "No questions were given."
+                result = await run.add(args, window)
             elif name == "continue_question":
                 result = await run.extend(args, window)
             else:
@@ -644,69 +732,73 @@ async def run(
     *,
     model: ModelConfig,
     validate: Validate,
+    locale: str | None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Events: ``questions`` after each window (every question recorded so
     far, before pairing), then ``done`` with the quiz's questions and the
-    report. The scheme parse runs beside the windows."""
-    scheme_task = (
-        asyncio.create_task(parse_schemes(schemes, model=model)) if schemes else None
-    )
-    try:
-        current = Run(validate=validate)
-        current.expected = await _attempted(
-            functools.partial(outline, pages, model=model)
-        )
-        stopped = ""
-        windows = 0
-        for start in range(0, len(pages), WINDOW_PAGES):
-            if _credits_out():
-                stopped = "credits"
-                break
-            # A retried window records again over what it recorded before.
-            await _attempted(
-                functools.partial(
-                    _window, current, pages[start : start + WINDOW_PAGES], model=model
-                )
+    report."""
+    current = Run(validate=validate, ai_label=AI_WRITTEN[normalize_locale(locale)])
+    current.expected = await _attempted(functools.partial(outline, pages, model=model))
+    stopped = ""
+    windows = 0
+    for start in range(0, len(pages), WINDOW_PAGES):
+        if _credits_out():
+            stopped = "credits"
+            break
+        # A retried window records again over what it recorded before.
+        await _attempted(
+            functools.partial(
+                _window, current, pages[start : start + WINDOW_PAGES], model=model
             )
-            windows += 1
-            yield {
-                "type": "questions",
-                "questions": [held.question for held in current.held()],
-            }
-            if current.full:
-                stopped = "quiz_full"
-                break
-        entries = _merged(await scheme_task) if scheme_task is not None else {}
-    finally:
-        if scheme_task is not None and not scheme_task.done():
-            scheme_task.cancel()
-        elif scheme_task is not None and not scheme_task.cancelled():
-            # Retrieved, so a window's failure is the one reported.
-            scheme_task.exception()
+        )
+        windows += 1
+        yield {
+            "type": "questions",
+            "questions": [held.question for held in current.held()],
+        }
+        if current.full:
+            stopped = "quiz_full"
+            break
+    held = current.held()
+    entries = (
+        _merged(
+            await parse_schemes(
+                schemes,
+                model=model,
+                labels=[(h.label, h.part_labels) for h in held],
+            )
+        )
+        if schemes and held
+        else {}
+    )
     used: set[tuple[str, str]] = set()
     saved: list[dict[str, Any]] = []
-    unanswered: list[str] = []
-    invalid: list[str] = []
+    worked_out: list[str] = []
+    disagreements: list[str] = []
+    refused: list[str] = []
     marks_differ: list[str] = []
     figures: list[str] = []
-    for held in current.held():
-        if pair(held, entries):
-            question = label_key(held.label)
-            used.update(key for key in entries if key[0] == question)
-        if keyless(held.question):
-            unanswered.append(held.label)
-            continue
-        # The paired keys are checked as the quiz's creation will check them;
-        # a refusal leaves that question out rather than the whole quiz.
-        if await validate(held.question):
-            invalid.append(held.label)
-            continue
-        saved.append(held.question)
-        parts_total = sum(part["marks"] for part in held.question["parts"])
-        if held.total is not None and parts_total != held.total:
-            marks_differ.append(held.label)
-        if held.figures:
-            figures.append(held.label)
+    for question in held:
+        paired = pair(question, entries)
+        if paired.matched:
+            key = label_key(question.label)
+            used.update(k for k in entries if k[0] == key)
+            disagreements.extend(paired.disagreed)
+            # The scheme's version is checked as the quiz's creation will
+            # check it; a refusal keeps the page's keys rather than losing the
+            # question.
+            if await validate(paired.held.question):
+                refused.append(question.label)
+            else:
+                question = paired.held
+        saved.append(question.question)
+        if WORKED_OUT in question.sources:
+            worked_out.append(question.label)
+        parts_total = sum(part["marks"] for part in question.question["parts"])
+        if question.total is not None and parts_total != question.total:
+            marks_differ.append(question.label)
+        if question.figures:
+            figures.append(question.label)
     recorded = {label_key(label) for label in current.labels()}
     yield {
         "type": "done",
@@ -717,17 +809,23 @@ async def run(
                 label for label in current.expected if label_key(label) not in recorded
             ],
             "recorded": current.labels(),
-            "unanswered": unanswered,
-            "invalid": invalid,
-            # Saved questions whose part marks, as paired, do not add up to
-            # the total printed on the page.
+            # Questions with a part whose key the model worked out and no
+            # scheme replaced: their solutions carry the AI-written label.
+            "keysWorkedOut": worked_out,
+            # Parts whose printed or worked-out key differs from the scheme's.
+            "keyDisagreements": disagreements,
+            # Questions the validator refused with the scheme's keys; they keep
+            # the page's.
+            "schemeRefused": refused,
+            # Saved questions whose part marks do not add up to the total
+            # printed on the page.
             "marksDiffer": marks_differ,
             "unpaired": sorted(
                 {entries[key].question for key in entries if key not in used},
                 key=lambda label: (len(label), label),
             ),
-            # Figures were boxed but not cropped this round: these questions
-            # are saved without them.
+            # Figures are boxed but not cropped yet: these questions are saved
+            # without them.
             "figures": figures,
             "stopped": stopped,
             "pages": len(pages),

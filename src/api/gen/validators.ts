@@ -1795,13 +1795,14 @@ export const GetExtractionResponse = zod.object({
   "report": zod.object({
   "expected": zod.array(zod.string()),
   "figures": zod.array(zod.string()),
-  "invalid": zod.array(zod.string()),
+  "keyDisagreements": zod.array(zod.string()),
+  "keysWorkedOut": zod.array(zod.string()),
   "marksDiffer": zod.array(zod.string()),
   "missing": zod.array(zod.string()),
   "pages": zod.int(),
   "recorded": zod.array(zod.string()),
+  "schemeRefused": zod.array(zod.string()),
   "stopped": zod.enum(['', 'quiz_full', 'credits']),
-  "unanswered": zod.array(zod.string()),
   "unpaired": zod.array(zod.string()),
   "windows": zod.int()
 }).optional(),
@@ -1844,8 +1845,8 @@ export const ListOwnedFilesResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
@@ -1944,8 +1945,8 @@ export const MoveFilesResponseItem = zod.object({
   "chapterId": zod.string().nullable(),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
@@ -2050,8 +2051,8 @@ export const GetFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
@@ -2146,8 +2147,8 @@ export const UpdateFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
@@ -2441,8 +2442,8 @@ export const CloneFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
@@ -2542,7 +2543,6 @@ export const CreateSourceCollaborationTokenResponse = zod.object({
 
 
 /**
-/**
  * @summary Hide a workspace file from members, or show it again
  */
 export const SetFileHiddenParams = zod.object({
@@ -2559,6 +2559,7 @@ export const SetFileHiddenResponse = zod.object({
 })
 
 
+/**
  * @summary Get presigned file reads
  */
 export const GetFileLinksParams = zod.object({
@@ -3306,8 +3307,8 @@ export const ListOwnedMaterialsResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "chapterName": zod.string(),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),
@@ -3405,8 +3406,8 @@ export const CreateStandaloneMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
@@ -3563,8 +3564,8 @@ export const GetMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
@@ -3716,8 +3717,8 @@ export const CloneMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
@@ -3991,8 +3992,8 @@ export const CreateEmbeddedMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
@@ -4062,7 +4063,6 @@ export const CreateEmbeddedMaterialResponse = zod.object({
 
 
 /**
-/**
  * @summary Hide a workspace material from members, or show it again
  */
 export const SetMaterialHiddenParams = zod.object({
@@ -4079,6 +4079,7 @@ export const SetMaterialHiddenResponse = zod.object({
 })
 
 
+/**
  * @summary Update material metadata
  */
 export const UpdateMaterialParams = zod.object({
@@ -4201,8 +4202,8 @@ export const UpdateMaterialSharingResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
@@ -5604,8 +5605,8 @@ export const ListRecentResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
@@ -5681,8 +5682,8 @@ export const ListRecentResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "chapterName": zod.string(),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
   "hidden": zod.boolean().optional(),
+  "id": zod.string(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),
@@ -7202,13 +7203,14 @@ export const CreateExtractionResponse = zod.object({
   "report": zod.object({
   "expected": zod.array(zod.string()),
   "figures": zod.array(zod.string()),
-  "invalid": zod.array(zod.string()),
+  "keyDisagreements": zod.array(zod.string()),
+  "keysWorkedOut": zod.array(zod.string()),
   "marksDiffer": zod.array(zod.string()),
   "missing": zod.array(zod.string()),
   "pages": zod.int(),
   "recorded": zod.array(zod.string()),
+  "schemeRefused": zod.array(zod.string()),
   "stopped": zod.enum(['', 'quiz_full', 'credits']),
-  "unanswered": zod.array(zod.string()),
   "unpaired": zod.array(zod.string()),
   "windows": zod.int()
 }).optional(),
@@ -7231,9 +7233,9 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "chapterId": zod.string().nullable(),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
-  "hidden": zod.boolean().optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
@@ -7329,9 +7331,9 @@ export const CreateBlankFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
-  "hidden": zod.boolean().optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
@@ -7490,9 +7492,9 @@ export const ListMaterialsParams = zod.object({
 export const ListMaterialsResponseItem = zod.object({
   "chapterId": zod.string().nullable(),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "maxDepth": zod.int(),
-  "hidden": zod.boolean().optional(),
   "nodeCount": zod.int(),
   "position": zod.int(),
   "provenance": zod.object({
@@ -7633,9 +7635,9 @@ export const CreateMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
-  "hidden": zod.boolean().optional(),
   "isOwner": zod.boolean(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
   "maxDepth": zod.int(),
@@ -7763,9 +7765,9 @@ export const ListWorkspaceRecentResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
-  "hidden": zod.boolean().optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
@@ -7840,9 +7842,9 @@ export const ListWorkspaceRecentResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "chapterName": zod.string(),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
-  "hidden": zod.boolean().optional(),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),
   "privacy": zod.enum(['private', 'public', 'link']),

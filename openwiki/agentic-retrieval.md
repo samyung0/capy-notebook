@@ -5686,87 +5686,102 @@ later).
   past its turn slots it answers provider_busy (503) at once, as for
   `/generate`.
 - **The run** (`pipeline/retrieval/extraction.py`, prompts in
-  `prompts/extraction.py`):
+  `prompts/extraction.py`; one prompt reads questions and keys, Epo
+  2026-11-03, `todo-study-tracking/R6-extraction-prompt.md`):
   1. The outline: one call, reasoning off, lists the question labels the
      selected pages' indexed text holds (`store.file_passages`).
   2. Page windows of up to two pages in selected order. Each call gets the two
      page images (`capture.render_file` at `CAPY_CAPTURE_MAX_EDGE`, rendered when
      the window runs), each page's indexed text, the expected labels, the
      labels recorded so far and the open question (the last one recorded,
-     which may run onto the next page), with the tools `record_question`
-     (questions in one array: label, stem, parts with printed labels, blocks,
-     answer, marks, a printed total and figure boxes) and `continue_question`
-     (the open question's next parts or more of its last part). Each recorded
-     question is converted to the shared format in paper layout and goes
-     through Go's quiz validator at once
+     which may run onto the next page), with the tools `record_question` (one
+     question a call, several calls a reply: label, stem, parts with printed
+     labels, blocks, answer, marks, `key_source` and a short worked solution,
+     a printed total and figure boxes) and `continue_question` (the open
+     question's next parts or more of its last part). Every part carries its
+     key: mcq `correct`, short `accepted`, open marking `points` with marks
+     and a short model answer. The model copies a key the page prints
+     (`key_source: printed`) and otherwise works it out (`worked_out`),
+     never changing the printed question; no question is left out for lack
+     of a key. Each recorded question is converted to the shared format in
+     paper layout and goes through Go's quiz validator at once
      (`POST /api/internal/questions/check`, `materialdoc.QuizDocument`, the
-     check a quiz's creation makes); a refusal goes back to the model, which
-     records it again, up to four calls a window. Keys the page does not print
-     are filled with stand-ins for that check only. Printed option order is
-     kept. Sub-parts flatten: (b)(i) and (b)(ii) are two parts, the (b) lead-in
-     text starting the first. Recorded questions leave the conversation: the
-     next window carries labels and the open question only.
-  3. The answer files are parsed beside the windows, as text, in pieces of
+     check a quiz's creation makes); a refusal, a part without `key_source`
+     or arguments that are not JSON (the tool result names the parse error)
+     go back to the model, which sends that call again, up to six calls a
+     window. A reply cut off at the 24,000-token output cap is asked again
+     for fewer questions a reply. Printed option order is kept. Sub-parts
+     flatten: (b)(i) and (b)(ii) are two parts, the (b) lead-in text starting
+     the first. Recorded questions leave the conversation: the next window
+     carries labels and the open question only.
+  3. After the windows, the answer files are parsed as text, in pieces of
      12,000 characters, reasoning off, into entries
      `{question, part, answer, points, solution}`; they never share a request
-     with the pages. Code pairs entries with parts by normalised label
-     (`label_key`: "Q3." is "3", "(b)(ii)" is "b ii") and fills empty keys
-     only: an option letter becomes the printed option's index, a short
-     answer its value (a printed unit stripped), an open part's marking
-     points its marking items (joined down to `QUIZ_MARKSCHEME_MAX`, their
-     total replacing the part marks the model split from a printed total)
-     with the final answer as its sample answer; a worked solution fills the
-     part's solution.
-  4. A question with any part still without a key is not saved; the report
-     names it (`unanswered`). Each paired question goes through the validator
-     again, and one it refuses is left out (`invalid`) rather than failing
-     the quiz. A saved question whose paired part marks do not add up to the
-     total printed on the page is named in `marksDiffer`.
+     with the pages. The parse is given the recorded questions with their part
+     labels and names entries with them (2024 Q3(b) had been read as b(ii)).
+     Code pairs entries with parts by normalised label (`label_key`: "Q3." is
+     "3", "(b)(ii)" is "b ii"). A scheme key replaces a worked-out one: an
+     option letter becomes the printed option's index, a short answer its
+     value (a printed unit stripped), an open part's marking points its
+     marking items (joined down to `QUIZ_MARKSCHEME_MAX`, their total
+     replacing the part's marks) with the final answer as its model answer,
+     and the scheme's worked solution the AI one. A printed key stays. A key
+     that differs from the scheme's is named in `keyDisagreements` either way.
+  4. Each paired question goes through the validator again; one it refuses
+     keeps the page's keys (`schemeRefused`). A worked-out key no scheme
+     replaced keeps its solution marked AI-written (the solution block's
+     `label`, "AI-written" or "AI 撰写" by the starter's locale) and its
+     question is named in `keysWorkedOut`. A saved question whose part marks
+     do not add up to the total printed on the page is named in `marksDiffer`.
 - **Models.** The chat slot's default pin (`deepseek/deepseek-flash` today:
-  the slot requires vision and tool calls), with reasoning at low for the
-  windows (Epo's preference, research R3) and off for the outline and the
-  answer files (`extractionLLM`). DeepSeek's own API takes page images with
-  thinking on and tool calls (checked 2026-11-03). GLM-5.3-Flash at low is
-  the measured alternative.
+  the slot requires vision and tool calls), with reasoning at mid for the
+  windows, which work keys out as well as copying (Epo 2026-11-03), and off
+  for the outline and the answer files (`extractionLLM`). Epo picked
+  DeepSeek V4 Flash 0731 through OpenRouter in a slot of its own, but 0731
+  reads text only: OpenRouter lists `input_modalities: ["text"]` on all its
+  endpoints and an image request answers 404 "No endpoints found that support
+  image input" (checked 2026-11-03), so the slot is not built and the choice
+  waits on Epo (a TODO in `extractionLLM`). GLM-5.3-Flash is the measured
+  alternative.
 - **Progress and the end.** The service streams `questions` (every question
   recorded so far) after each window, which the gateway saves on the row, and
   then `done` with the quiz's questions and the report, or `error`. The relay
   runs in the API process on a detached context, like a chat turn; a restart
   fails what was running (`FailOrphanedExtractions` at boot, code
   `interrupted`). On `done` the gateway creates the quiz under the run's title
-  ("Title 2" when a quiz took it meanwhile) as the starter's material, records
-  the quiz id and report, settles the session and sends `{type: extraction,
-  extractionId, status}` on the starter's event stream. No question saved is
-  `extraction_empty`. `GET /api/extractions/{id}` reads a run its starter
-  began: status, the questions recorded so far (`recorded`), the quiz and the
-  report (`expected`, `missing`, `recorded`, `unanswered`, `invalid`,
-  `marksDiffer`, `unpaired`, `figures`, `stopped`, `pages`, `windows`).
-- **Attempts.** A run is a background job nobody can retry piece by piece,
-  so the outline, each window and each scheme piece get three attempts on a
-  busy, failing or silent provider (20 s, then 40 s apart), as ingest's
-  calls do (a scheme reply cut off or not JSON counts as a failed attempt);
-  a retried window records again over what it recorded, and a
-  definitive client error (400, 401, 403, 404, 422) fails the run at once.
-  On 2026-11-03 DeepSeek's API answered "Service is too busy" for several
-  minutes, which is what this guards against.
-- **Stops.** A run stops early when the quiz would pass `QUIZ_PARTS_MAX` or
-  `QUIZ_OPEN_PARTS_MAX` (`stopped: quiz_full`; a full HKDSE Paper 1 has about
-  45 open parts against the 20 a quiz holds) or when the starter's credits run
+  ("Title 2" when a quiz took it meanwhile) as the starter's material, hidden
+  from members (the paper and answer files are hidden when the run starts; see
+  [Hidden from members](authorization-permissions-lifecycles.md#hidden-from-members)),
+  records the quiz id and report, settles the session and sends `{type:
+  extraction, extractionId, status}` on the starter's event stream. No
+  question saved is `extraction_empty`. `GET /api/extractions/{id}` reads a
+  run its starter began: status, the questions recorded so far (`recorded`),
+  the quiz and the report (`expected`, `missing`, `recorded`, `keysWorkedOut`,
+  `keyDisagreements`, `schemeRefused`, `marksDiffer`, `unpaired`, `figures`,
+  `stopped`, `pages`, `windows`).
+- **Attempts.** The server retries a failed step once, silently (Epo
+  2026-11-03): the outline, each window and each scheme piece get a second
+  attempt 20 s after a busy, failing or silent provider (a scheme reply cut
+  off or not JSON counts as failed). The retrieval service has no job queue,
+  so the retry runs in the same request. A retried window records again over
+  what it recorded, and a definitive client error (400, 401, 403, 404, 422)
+  fails the run at once. The starter sees only progress and the final error.
+- **Stops.** A run stops early when the quiz would pass `QUIZ_PARTS_MAX` (100)
+  or `QUIZ_OPEN_PARTS_MAX` (100 AI-marked parts, raised from 20 for every quiz,
+  Epo 2026-11-03) (`stopped: quiz_full`) or when the starter's credits run
   out (`credits`), and saves what it has.
 - **Stored.** `question_extractions` (migration 0136) keeps the run: starter,
   title, status, the recorded questions, report, quiz, error. Nothing links a
   question, the quiz or the run to the files, pages or regions it was read
   from (Epo 2026-11-02, §8 item 7): they travel only in the request to the
   retrieval service. Account purge deletes a user's runs.
-- **Left out this round.** Figures are boxed by the model but not cropped: the
+- **Left out.** Figures are boxed by the model but not cropped: the
   questions are saved without them and the report lists them (`figures`).
-  Plan step 5 (blind-solving keys and worked solutions the paper lacks) is not
-  built, so a paper without an answer file saves only the questions whose keys
-  are printed. The quiz is not hidden from members: materials have no hidden
-  flag yet (a TODO in `finishExtraction`). Office pages, Markdown sections and
-  the page picker's cost estimate come with the UI.
-- **Bench.** `bench/extraction` (below and
-  [`bench/extraction/reports/2026-11-03-first-cut.md`](../bench/extraction/reports/2026-11-03-first-cut.md)).
+  Office pages, Markdown sections and the page picker's cost estimate come
+  with the UI.
+- **Bench.** `bench/extraction`, with findings in
+  [`2026-11-03-first-cut.md`](../bench/extraction/reports/2026-11-03-first-cut.md)
+  and [`2026-11-03-keys-in-one-prompt.md`](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md).
 
 ## Citations and the frontend
 

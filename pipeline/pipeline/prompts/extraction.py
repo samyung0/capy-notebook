@@ -42,27 +42,34 @@ def outline_messages(pages: list[tuple[str, str]]) -> list[dict[str, Any]]:
 
 # --------------------------------------------------------------- page windows
 
-EXTRACT_SYSTEM = f"""You copy the questions printed on exam or worksheet pages into a quiz, exactly as printed. You see up to two page images at a time, each with the page's indexed text, which may be rough: the image is what counts.
+EXTRACT_SYSTEM = f"""You copy the questions printed on exam or worksheet pages into a quiz, exactly as printed, each with its answer key. You see up to two page images at a time, each with the page's indexed text, which may be rough: the image is what counts.
 
-Record every question that starts on these pages with record_question, in printed order, one call for all of them. When the first page carries on the open question from the previous page (more parts, or more of its last part's text), add that with continue_question first.
+Record each question that starts on these pages with its own record_question call, in printed order; one reply may hold several calls. When the first page carries on the open question from the previous page (more parts, or more of its last part's text), add that with continue_question first.
 
 Copying:
-- Keep the wording, numbers, symbols and language exactly as printed. Write math as LaTeX between $ signs ($\\frac{{7(x-2)}}{{5}}$, $x^2$, $\\angle ABC$); never solve, simplify or reword.
+- Keep the wording, numbers, symbols and language exactly as printed. Write math as LaTeX between $ signs ($\\frac{{7(x-2)}}{{5}}$, $x^2$, $\\angle ABC$); never simplify or reword the printed text.
 - A table becomes a table block. Leave out answer lines, boxes for working, "Answers written in the margins will not be marked", page headers and footers.
 - A question's parts follow its printed labels (a), (b), (b)(i). The quiz holds parts in one flat list, so (b)(i) and (b)(ii) are two parts labelled "b(i)" and "b(ii)", and text printed under (b) before (i) goes at the start of b(i)'s blocks. A question without parts has an empty stem and one part labelled "".
 - At most {limits.QUIZ_QUESTION_PARTS_MAX} parts a question.
 
 Answers:
 - mcq: the options' text in printed order, without their letters A, B, C, D. Keep that order.
-- short: a single final value or word the learner types.
-- open: anything answered with working, a proof, an explanation or a drawing.
-- Give a key only when the page prints it: mcq "correct" (zero-based indexes), short "accepted". Never work an answer out yourself; the mark scheme supplies the keys.
+- short: a single final value or word the learner types, for a part worth 1 mark with no working to show.
+- open: anything answered with working, a proof, an explanation or a drawing, and any part marked for its method or worth more than 1 mark.
+- Give every part its correct answer and a short worked solution. Copy them when the page prints them and set key_source to printed; otherwise work them out, set key_source to worked_out, and never change the printed question.
+- The answer: mcq "correct" (zero-based indexes of the right options); short "accepted"; open "points", the marking points with their marks, at most {limits.QUIZ_MARKSCHEME_MAX} adding up to the part's marks, and "accepted", a short model answer.
 - marks: the part's printed marks. When only the question's total is printed ("(3 marks)" after (a) and (b)), split it across the parts as the work suggests and give the printed total in total_marks. An item printed without marks has 1.
 
 Figures: for each diagram, graph, chart or photo a question needs, give its page number and box [left, top, right, bottom] on a 0-1000 grid of that page.
 
 Each recorded question is checked at once. Fix what a result names and record that question again with the same label; an accepted question needs no second call. When every question on these pages is recorded, reply with the single word DONE.
 {SOURCE_RULE}"""
+
+CUT_OFF = (
+    "Your last reply was cut off at the output limit before its calls finished, "
+    "so nothing in it was recorded. Record the questions on these pages again, "
+    "fewer in each reply, and keep your working short."
+)
 
 _BLOCK = {
     "type": "object",
@@ -94,16 +101,28 @@ _ANSWER = {
         "correct": {
             "type": "array",
             "items": {"type": "integer"},
-            "description": "mcq: zero-based indexes of the correct options, only when the page prints them.",
+            "description": "mcq: zero-based indexes of the correct options.",
         },
         "accepted": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "short: the printed answer; open: a printed model answer. Only when printed.",
+            "description": "short: the correct answer (the value alone when a unit is printed beside the answer space); open: a short model answer.",
         },
         "unit": {
             "type": "string",
             "description": "short: the unit printed beside the answer space, if any.",
+        },
+        "points": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "marks": {"type": "integer", "minimum": 1},
+                },
+                "required": ["text", "marks"],
+            },
+            "description": f"open: the marking points, each a step that earns whole marks, at most {limits.QUIZ_MARKSCHEME_MAX}, adding up to the part's marks.",
         },
     },
     "required": ["type"],
@@ -123,8 +142,17 @@ _PART = {
             "minimum": 1,
             "maximum": limits.QUESTION_MARKS_MAX,
         },
+        "key_source": {
+            "type": "string",
+            "enum": ["printed", "worked_out"],
+            "description": "printed when the page prints the answer, worked_out when you worked it out.",
+        },
+        "solution": {
+            "type": "string",
+            "description": "A short worked solution: the steps that lead to the answer.",
+        },
     },
-    "required": ["label", "blocks", "answer", "marks"],
+    "required": ["label", "blocks", "answer", "marks", "key_source", "solution"],
 }
 
 _FIGURE = {
@@ -169,12 +197,8 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "record_question",
-            "description": "Record the questions that start on these pages, in printed order.",
-            "parameters": {
-                "type": "object",
-                "properties": {"questions": {"type": "array", "items": _QUESTION}},
-                "required": ["questions"],
-            },
+            "description": "Record one question that starts on these pages.",
+            "parameters": _QUESTION,
         },
     },
     {
@@ -278,8 +302,25 @@ SCHEME_SYSTEM = (
 )
 
 
-def scheme_messages(file_name: str, text: str) -> list[dict[str, Any]]:
+def scheme_labels(labels: list[tuple[str, list[str]]]) -> str:
+    """The recorded questions with their part labels: 1; 3: a, b; 4: a, b(i)."""
+    return "; ".join(
+        f"{label}: {', '.join(parts)}" if any(parts) else label
+        for label, parts in labels
+    )
+
+
+def scheme_messages(
+    file_name: str, text: str, labels: list[tuple[str, list[str]]]
+) -> list[dict[str, Any]]:
     return [
         {"role": "system", "content": SCHEME_SYSTEM},
-        {"role": "user", "content": f"{file_name}\n{source_block(text)}"},
+        {
+            "role": "user",
+            "content": (
+                "The quiz holds these questions and parts; name each entry with "
+                f"one of them where it matches: {scheme_labels(labels)}\n\n"
+                f"{file_name}\n{source_block(text)}"
+            ),
+        },
     ]

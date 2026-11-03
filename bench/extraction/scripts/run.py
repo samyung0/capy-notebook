@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import dataclasses
 import functools
 import json
@@ -188,7 +189,8 @@ async def run(args) -> dict:
 
     provider, model_slug, name, rates = MODELS[args.model]
     model = spec(provider, model_slug, name, rates, "low")
-    bind_request_llm("low")
+    # Windows run at mid, as the gateway pins them (Epo 2026-11-03).
+    bind_request_llm("mid")
     # As the service binds it: a busy model call waits its turn once.
     limits.bind_call_slots(limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S))
     usage = obs.start_usage()
@@ -196,8 +198,8 @@ async def run(args) -> dict:
     parsed: list = []
     parse_schemes = extraction.parse_schemes
 
-    async def kept(files, *, model):
-        entries = await parse_schemes(files, model=model)
+    async def kept(files, *, model, labels):
+        entries = await parse_schemes(files, model=model, labels=labels)
         parsed.extend(dataclasses.asdict(entry) for entry in entries)
         return entries
 
@@ -205,9 +207,12 @@ async def run(args) -> dict:
     started = time.monotonic()
     recorded: list[dict] = []
     done: dict = {}
-    async for event in extraction.run(pages, schemes, model=model, validate=validate):
+    async for event in extraction.run(
+        pages, schemes, model=model, validate=validate, locale="en"
+    ):
         if event["type"] == "questions":
-            recorded = event["questions"]
+            # The page's keys, before the scheme replaces worked-out ones.
+            recorded = copy.deepcopy(event["questions"])
             print(f"  window: {len(recorded)} questions so far", flush=True)
         else:
             done = event
@@ -263,23 +268,28 @@ def score(result: dict, gold: dict) -> dict:
     rec = result["report"]["recorded"]
     rec_keys = [label_key(label) for label in rec]
     found = [k for k in rec_keys if k in gold_q]
-    saved = {}
-    # Saved questions carry no label; they are saved in recorded order minus
-    # the unanswered ones.
-    unanswered = {label_key(label) for label in result["report"]["unanswered"]}
-    for key, question in zip(
-        [k for k in rec_keys if k not in unanswered], result["questions"]
-    ):
-        saved[key] = question
+    # Saved questions carry no label; every recorded question is saved, in
+    # recorded order.
+    saved = dict(zip(rec_keys, result["questions"]))
     by_recorded = dict(zip(rec_keys, result["recorded"]))
     structure = marks_total = marks_parts = 0
     mcq = mcq_order = mcq_elsewhere = 0
-    paired_parts = parts_total = 0
+    worked_mcq = worked_mcq_right = 0
+    worked_marks = worked_marks_right = 0
     figure_gold = figure_found = 0
     for key in found:
         g = gold_q[key]
-        question = saved.get(key) or by_recorded[key]
+        question = saved[key]
         parts = question["parts"]
+        # The model's own keys and marks, before the scheme replaced them.
+        for p, gp in zip(by_recorded[key]["parts"], g["parts"]):
+            if gp["type"] == "mcq" and p["answer"]["type"] == "mcq":
+                worked_mcq += 1
+                worked_mcq_right += p["answer"]["correct"] == [
+                    ord(gp["correct"]) - ord("A")
+                ]
+            worked_marks += 1
+            worked_marks_right += p["marks"] == gp["marks"]
         if len(parts) == len(g["parts"]) and all(
             p["answer"]["type"] == gp["type"] for p, gp in zip(parts, g["parts"])
         ):
@@ -288,9 +298,6 @@ def score(result: dict, gold: dict) -> dict:
                 marks_parts += 1
         if sum(p["marks"] for p in parts) == g["total"]:
             marks_total += 1
-        parts_total += len(parts)
-        if key in saved:
-            paired_parts += len(parts)
         for p, gp in zip(parts, g["parts"]):
             if gp["type"] == "mcq" and p["answer"]["type"] == "mcq":
                 mcq += 1
@@ -338,8 +345,14 @@ def score(result: dict, gold: dict) -> dict:
         "mcq_correct_option_elsewhere": mcq_elsewhere if mcq else None,
         "mcq_key_matches_gold": f"{keyed}/{mcq}" if mcq else None,
         "saved": len(result["questions"]),
-        "paired_parts": f"{paired_parts}/{parts_total}",
-        "unanswered": result["report"]["unanswered"],
+        "mcq_worked_out_key_right": f"{worked_mcq_right}/{worked_mcq}"
+        if worked_mcq
+        else None,
+        "worked_out_part_marks_right": f"{worked_marks_right}/{worked_marks}",
+        "keys_worked_out_left": len(result["report"]["keysWorkedOut"]),
+        "key_disagreements": result["report"]["keyDisagreements"],
+        "scheme_refused": result["report"]["schemeRefused"],
+        "marks_differ": result["report"]["marksDiffer"],
         "unpaired_scheme_labels": len(result["report"]["unpaired"]),
         "outline_expected": len(result["report"]["expected"]),
         "outline_missing": result["report"]["missing"],

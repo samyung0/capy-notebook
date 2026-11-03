@@ -29,25 +29,27 @@ type Extraction struct {
 
 // ExtractionReport is a finished run's completeness check, by printed
 // question label: the labels the pages' text listed (Expected), those never
-// read (Missing), those read (Recorded), those left out for a part without a
-// key (Unanswered) or refused once their keys were paired (Invalid), mark
-// scheme entries no question matched (Unpaired), and
-// questions saved without their figures (Figures, not cropped yet). Stopped
-// says why a run ended early: quiz_full or credits.
+// read (Missing), those read (Recorded), questions with a part whose key the
+// model worked out and no mark scheme replaced (KeysWorkedOut; their solutions
+// carry the AI-written label), parts whose key differs from the mark scheme's
+// (KeyDisagreements, "4(a)"), questions that keep the page's keys because the
+// scheme's were refused (SchemeRefused), saved questions whose part marks
+// differ from the printed total (MarksDiffer), mark scheme entries no question
+// matched (Unpaired), and questions saved without their figures (Figures, not
+// cropped yet). Stopped says why a run ended early: quiz_full or credits.
 type ExtractionReport struct {
-	Expected   []string `json:"expected" nullable:"false"`
-	Missing    []string `json:"missing" nullable:"false"`
-	Recorded   []string `json:"recorded" nullable:"false"`
-	Unanswered []string `json:"unanswered" nullable:"false"`
-	Invalid    []string `json:"invalid" nullable:"false"`
-	// Saved questions whose part marks, as paired, differ from the printed
-	// total.
-	MarksDiffer []string `json:"marksDiffer" nullable:"false"`
-	Unpaired    []string `json:"unpaired" nullable:"false"`
-	Figures     []string `json:"figures" nullable:"false"`
-	Stopped     string   `json:"stopped" enum:",quiz_full,credits"`
-	Pages       int      `json:"pages"`
-	Windows     int      `json:"windows"`
+	Expected         []string `json:"expected" nullable:"false"`
+	Missing          []string `json:"missing" nullable:"false"`
+	Recorded         []string `json:"recorded" nullable:"false"`
+	KeysWorkedOut    []string `json:"keysWorkedOut" nullable:"false"`
+	KeyDisagreements []string `json:"keyDisagreements" nullable:"false"`
+	SchemeRefused    []string `json:"schemeRefused" nullable:"false"`
+	MarksDiffer      []string `json:"marksDiffer" nullable:"false"`
+	Unpaired         []string `json:"unpaired" nullable:"false"`
+	Figures          []string `json:"figures" nullable:"false"`
+	Stopped          string   `json:"stopped" enum:",quiz_full,credits"`
+	Pages            int      `json:"pages"`
+	Windows          int      `json:"windows"`
 }
 
 const (

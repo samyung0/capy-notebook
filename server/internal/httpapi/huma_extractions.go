@@ -91,9 +91,12 @@ func checkExtractionRequest(req apimodel.CreateExtractionReq) error {
 }
 
 // extractionLLM is the run's model: the chat slot's default pin, whose slot
-// requires vision and tool calls, with reasoning at low for the page windows
-// (Epo's preference, research R3); outline and scheme calls turn it off. The
-// run's starter pays (Epo 2026-11-03).
+// requires vision and tool calls, with reasoning at mid for the page windows,
+// which work keys out as well as copying them (Epo 2026-11-03); outline and
+// scheme calls turn it off. The run's starter pays (Epo 2026-11-03).
+// TODO(study-extraction): Epo picked DeepSeek V4 Flash 0731 through OpenRouter
+// in a slot of its own, but 0731 reads text only (OpenRouter lists no image
+// input on any of its endpoints, 2026-11-03), so the model waits on Epo.
 func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, error) {
 	var out resolvedLLM
 	if a.modelReg == nil {
@@ -103,10 +106,10 @@ func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, er
 	if err != nil {
 		return out, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
 	}
-	if !slices.Contains(cfg.ThinkingLevels, models.ThinkingLow) {
-		return out, fmt.Errorf("%w: %s has no low thinking", store.ErrModelUnavailable, cfg.Ref())
+	if !slices.Contains(cfg.ThinkingLevels, models.ThinkingMid) {
+		return out, fmt.Errorf("%w: %s has no mid thinking", store.ErrModelUnavailable, cfg.Ref())
 	}
-	out.Cfg, out.Rates, out.UserID, out.Thinking = cfg, store.RatesFromConfig(cfg), userID, models.ThinkingLow
+	out.Cfg, out.Rates, out.UserID, out.Thinking = cfg, store.RatesFromConfig(cfg), userID, models.ThinkingMid
 	return out, nil
 }
 
@@ -207,6 +210,7 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 	}
 	body := map[string]any{
 		"workspaceId": wsID, "paper": paper, "answerFiles": answers, "spendSessionId": charge.id,
+		"locale": a.userLocale(ctx, actor),
 	}
 	llm.attach(body)
 	// The run goes on after this request returns.
@@ -222,10 +226,6 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 		}
 		return nil, hErr(&aiServiceError{cause: err})
 	}
-	run, err := a.s.CreateExtraction(runCtx, wsID, actor, title)
-	if err != nil {
-		stream.Close()
-		charge.release(ctx)
 	// Once the service has accepted the run, the files the quiz is made from
 	// are hidden from members, as the quiz will be (Epo 2026-11-03): a mark
 	// scheme must not reach the students. A refused request hides nothing.
@@ -236,6 +236,10 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 			return nil, hErr(err)
 		}
 	}
+	run, err := a.s.CreateExtraction(runCtx, wsID, actor, title)
+	if err != nil {
+		stream.Close()
+		charge.release(ctx)
 		return nil, hErr(err)
 	}
 	go a.relayExtraction(runCtx, stream, charge, run, actor, ws.Name)
@@ -340,7 +344,7 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 		return ended
 	}
 	if qs := strings.TrimSpace(string(ev.Questions)); qs == "" || qs == "[]" || qs == "null" {
-		return fail("extraction_empty", "No question could be saved with its answer from the selected pages.")
+		return fail("extraction_empty", "No questions could be read from the selected pages.")
 	}
 	title, err := a.s.DisambiguateMaterialTitle(ctx, run.WorkspaceID, run.Title)
 	if err != nil {

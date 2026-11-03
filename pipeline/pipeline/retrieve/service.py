@@ -766,6 +766,8 @@ class ExtractReq(LLMPin):
     paper: list[ExtractFile] = Field(min_length=1)
     answerFiles: list[ExtractFile]
     spendSessionId: str = Field(min_length=1)
+    # The starter's locale (users.locale) for the AI-written label.
+    locale: str | None = None
 
 
 @app.post("/extract")
@@ -808,15 +810,19 @@ async def _extract_events(
     slots_token = limits.bind_call_slots(
         limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S)
     )
+    hidden_token = store.bind_hidden_readers([req.workspaceId])
     accounting_token = None
     try:
-    hidden_token = store.bind_hidden_readers([req.workspaceId])
         accounting_token = _bind_accounting(req.spendSessionId)
         model = models.resolve_query_model(
             req.providerSlug, req.modelSlug, req.configVersion, slot=registry.Slot.CHAT
         )
         async for event in extraction.run(
-            pages, schemes, model=model, validate=extraction.gateway_validate
+            pages,
+            schemes,
+            model=model,
+            validate=extraction.gateway_validate,
+            locale=req.locale,
         ):
             yield _sse(event)
     except elitellm.ProviderBusy:
@@ -837,6 +843,6 @@ async def _extract_events(
             }
         )
     finally:
+        store.reset_hidden_readers(hidden_token)
         _reset_accounting(accounting_token)
         limits.reset_call_slots(slots_token)
-        store.reset_hidden_readers(hidden_token)

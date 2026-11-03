@@ -9,13 +9,14 @@ import type { ExtractionReportStopped } from './extractionReportStopped.ts';
 export interface ExtractionReport {
   expected: string[];
   figures: string[];
-  invalid: string[];
+  keyDisagreements: string[];
+  keysWorkedOut: string[];
   marksDiffer: string[];
   missing: string[];
   pages: number;
   recorded: string[];
+  schemeRefused: string[];
   stopped: ExtractionReportStopped;
-  unanswered: string[];
   unpaired: string[];
   windows: number;
 }

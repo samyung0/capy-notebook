@@ -2287,7 +2287,11 @@ components:
           items:
             type: string
           type: array
-        invalid:
+        keyDisagreements:
+          items:
+            type: string
+          type: array
+        keysWorkedOut:
           items:
             type: string
           type: array
@@ -2306,16 +2310,16 @@ components:
           items:
             type: string
           type: array
+        schemeRefused:
+          items:
+            type: string
+          type: array
         stopped:
           enum:
             - ""
             - quiz_full
             - credits
           type: string
-        unanswered:
-          items:
-            type: string
-          type: array
         unpaired:
           items:
             type: string
@@ -2327,8 +2331,9 @@ components:
         - expected
         - missing
         - recorded
-        - unanswered
-        - invalid
+        - keysWorkedOut
+        - keyDisagreements
+        - schemeRefused
         - marksDiffer
         - unpaired
         - figures
@@ -2355,13 +2360,13 @@ components:
           type: string
         hasBytes:
           type: boolean
+        hidden:
+          type: boolean
         id:
           type: string
         indexLimit:
           $ref: "#/components/schemas/FileIndexLimit"
         indexed:
-        hidden:
-          type: boolean
           type: boolean
         isPayer:
           type: boolean
@@ -2760,11 +2765,6 @@ components:
         - total
         - question
       type: object
-    ImportSourcesAccepted:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
     HiddenBody:
       additionalProperties: false
       properties:
@@ -2779,6 +2779,11 @@ components:
       required:
         - hidden
       type: object
+    ImportSourcesAccepted:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
           example: https://example.com/schemas/ImportSourcesAccepted.json
           format: uri
           readOnly: true
@@ -3190,13 +3195,13 @@ components:
           additionalProperties:
             $ref: "#/components/schemas/Provenance"
           type: object
+        hidden:
+          type: boolean
         id:
           type: string
         imageMaxBytes:
           format: int64
           type: integer
-        hidden:
-          type: boolean
         isOwner:
           type: boolean
         kind:
@@ -3400,13 +3405,13 @@ components:
         createdAt:
           format: date-time
           type: string
+        hidden:
+          type: boolean
         id:
           type: string
         kind:
           $ref: "#/components/schemas/MaterialKind"
         lostAccess:
-        hidden:
-          type: boolean
           description: The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it
           type: boolean
         preview:
@@ -3472,13 +3477,13 @@ components:
         createdAt:
           format: date-time
           type: string
+        hidden:
+          type: boolean
         id:
           type: string
         maxDepth:
           format: int64
           type: integer
-        hidden:
-          type: boolean
         nodeCount:
           format: int64
           type: integer
@@ -9749,11 +9754,6 @@ paths:
       summary: Create source room token
       tags:
         - Source collaboration
-  /api/files/{id}/links:
-    get:
-      operationId: getFileLinks
-      parameters:
-        - in: path
   /api/files/{id}/hidden:
     put:
       operationId: setFileHidden
@@ -9785,6 +9785,11 @@ paths:
       summary: Hide a workspace file from members, or show it again
       tags:
         - Content
+  /api/files/{id}/links:
+    get:
+      operationId: getFileLinks
+      parameters:
+        - in: path
           name: id
           required: true
           schema:
@@ -10647,11 +10652,6 @@ paths:
       summary: Create a quiz or flashcard set embedded in a note
       tags:
         - Materials
-  /api/materials/{id}/metadata:
-    patch:
-      operationId: updateMaterial
-      parameters:
-        - in: path
   /api/materials/{id}/hidden:
     put:
       operationId: setMaterialHidden
@@ -10683,6 +10683,11 @@ paths:
       summary: Hide a workspace material from members, or show it again
       tags:
         - Content
+  /api/materials/{id}/metadata:
+    patch:
+      operationId: updateMaterial
+      parameters:
+        - in: path
           name: id
           required: true
           schema:
