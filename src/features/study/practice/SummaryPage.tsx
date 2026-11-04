@@ -38,9 +38,17 @@ export function SummaryPage({ workspaceId }: { workspaceId: string }) {
     });
   return (
     <PracticeFrame>
-      <div className="flex flex-wrap items-baseline gap-x-3">
-        <h1 className="t-page-title">{m.study_panel_summary()}</h1>
-        <span className="t-meta text-fg-muted">{ws?.name}</span>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2.25">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">
+          <h1 className="t-page-title">{m.study_panel_summary()}</h1>
+          <span className="t-meta text-fg-muted">{ws?.name}</span>
+        </div>
+        {/* Not built yet (Make my own practice, P3), as on Practice. */}
+        <span title={m.study_panel_soon()}>
+          <Button disabled iconLeft="plus">
+            {m.practice_make_own()}
+          </Button>
+        </span>
       </div>
       {isPending ? (
         <SkeletonList count={4} rowHeight={44} />

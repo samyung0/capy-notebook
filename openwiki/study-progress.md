@@ -387,7 +387,8 @@ row per topic holding a quiz the caller can see, in reading order with Other fil
 last: its label, "9 of 10 right" (each question's latest check, full marks), the
 latest six results as squares, and Practise, which starts that topic's session.
 Assignments' overall joins it once they exist. While study progress is hidden it
-says so, with a Workspace settings button.
+says so, with a Workspace settings button. Make my own practice sits at the top right,
+disabled and marked Coming soon until it is built, as on Practice.
 
 ### Topic labels
 

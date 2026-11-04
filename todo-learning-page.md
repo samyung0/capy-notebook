@@ -218,10 +218,10 @@ Each needs Epo's yes and a line in `human/study-progress.md`:
 
 ## 8. Questions for Epo
 
-Answered 2026-11-04: the question bank stays off this page; Workspace review as the Dashboard's last row (D2); Learning's suggestions through the start dialog, so sets are not suggested for now; layout A; rows as links with kind icons; 4 rows, practice at most 3, no assignments; one-sentence reasons; Refresher in the UI; bordered buttons in AGENTS.md; Learning with no AI; labels and Summary built together; Continue rows kept; threshold kept; actions on the Dashboard.
+Answered 2026-11-04: Make my own practice is one button at the top right of Summary, disabled until built; the question bank stays off this page; Workspace review as the Dashboard's last row (D2); Learning's suggestions through the start dialog, so sets are not suggested for now; layout A; rows as links with kind icons; 4 rows, practice at most 3, no assignments; one-sentence reasons; Refresher in the UI; bordered buttons in AGENTS.md; Learning with no AI; labels and Summary built together; Continue rows kept; threshold kept; actions on the Dashboard.
 
 Built on my recommendation, so say if not: You teach rows (O2), the This week line, Past reviews as its own tab, the words.
 
 Still open:
 
-1. **Topic with nothing new to serve (canvas page 6).** T1 a row on Learning, or T2 a Make more button on Summary? Both link to Make my own practice (AI, credits, on click), which is not built yet. I recommend T2.
+1. **Make my own practice dialog (canvas page 6).** A: topic and how many. B: the approved P3 dialog. I recommend A. Building it needs its own design for storing a private session and a new generation prompt, which Epo sees before it changes anything (no silent prompt changes).
