@@ -258,7 +258,16 @@ Investigated 2026-11-04, nothing built. "Connecting" only shows in Edit, and Edi
 - D11: a hidden editor with nothing unsent leaves the room at 5 min and rejoins invisibly. AFFiNE's way, keeping the connection, works only because its server holds no document in memory.
 - D12: phones same as desktop, as Google Docs' Android app and AFFiNE open editable.
 - D14: expired edits show a toast with a Download action, "download now or it will be discarded". Today non-note items open once under a banner that says to copy what you need, and notes keep them as merge pieces.
-- D4 (Epo, 2026-11-04): check whether a device copy of notes can work, since it would solve this: paint from the device, join in the background. Checked 2026-11-04, nothing run or built: yes. No decision forbids it ("never stored" described one cache, and EP:18 already plans local copies), and joining with a filled document already works with no server change. Catches: it doesn't touch Plate's render time or server memory; typing waits for the token, about 150-800 ms on Plate (estimated); a removed member can glimpse a stale note, with no remote wipe; the copy must hold only confirmed state; browsers can evict it, so first opens still need the stored projection; quizzes don't suit it. Shape: one Yjs state row per note, written when clean on hide or unmount, 100 MB / 200 notes / 8 MiB each / 30 days, wiped at sign-out and account switch, notes first, built on `ItemRoom` so BlockSuite doesn't repeat it. Decisions C1-C9 await Epo.
+- D4 (Epo, 2026-11-04): check whether a device copy of notes can work, since it would solve this: paint from the device, join in the background. Checked 2026-11-04, nothing run or built: yes. No decision forbids it ("never stored" described one cache, and EP:18 already plans local copies), and joining with a filled document already works with no server change. Catches: it doesn't touch Plate's render time or server memory; typing waits for the token, about 150-800 ms on Plate (estimated); a removed member can glimpse a stale note, with no remote wipe; the copy must hold only confirmed state; browsers can evict it, so first opens still need the stored projection; quizzes don't suit it. Shape: one Yjs state row per note, written when clean on hide or unmount, 100 MB / 200 notes / 8 MiB each / 30 days, wiped at sign-out and account switch, notes first, built on `ItemRoom` so BlockSuite doesn't repeat it. 
+  **Decided (Epo, 2026-11-04), being built on `claude/open-highest` from `claude/study-all`:**
+  - C1: note bodies on the device, wiped at logout. C7 is the same rule, with an owner claim on each row.
+  - C2: members and viewers, not link viewers.
+  - C3: a brief stale glimpse is accepted.
+  - C4: hold edits for the token.
+  - C5: Plate stays static until first sync, with a spinner on the file status icon.
+  - C6: no new limits; copies share `sourceCache`'s rules (200 MiB, least recently opened out, 100 MB left for drafts).
+  - C8: all item types, including quizzes with their answer keys for people who can read them; the keys copy goes when someone drops to viewing and connects.
+  - C9: keep "Waiting for connection" offline with no copy.
 - D11, amended (Epo, 2026-11-04): keep today's server model. "Connecting" must never show, however a hidden tab comes back.
 - The AFFiNE server model doesn't fit BetterOffice as it stands: Office saves and edits run in engine processes on the collaboration server, which need the document there.
 
