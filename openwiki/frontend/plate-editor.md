@@ -3431,10 +3431,19 @@ the keys document (`keys:<id>:schema:<n>`), which only editors who can write
 join (`POST /api/materials/{id}/collaboration-token` with `{document: 'keys'}`;
 a viewer or a read-only editor gets 403, and the collaboration server refuses a
 read token for a keys room at JOIN and at refresh). The content document holds
-`questions`: question id to `{order, layout, labels, level?, stem, parts}`,
-part id to `{order, marks, blocks, answer}`, the answer map holding the type
-and what a learner may see (mcq options, a short answer's unit,
-matching left items). The keys document holds `keys`: part id to `{type,
+`questions`: question id to `{order, layout, labels, level?, stem, groups?,
+parts}`, group id to `{blocks}`, part id to `{order, marks, blocks, answer,
+group?}`, the answer map holding the type and what a learner may see (mcq
+options, a short answer's unit, matching left items). A group has no order of
+its own and no keys, so its text and figures merge entry by entry as a stem's do.
+What a merge leaves reads repaired (Epo 2026-11-04; `repairGroups` in the
+browser, `questions::repair_groups` in Rust, both on
+`testdata/repairs/groups.json`): a part naming a group that is gone has no group,
+a group with no parts goes, and a group's parts come together at the first one's
+place, in their order. Admission holds structure and caps only, as for the rest
+of the document, and the next write settles the order keys and takes a group no
+part names. The limits still measure such a group and its images stay in use
+(`held_question_json`) until then. The keys document holds `keys`: part id to `{type,
 solution, correct | accepted | hints | markscheme | gaps | options | pairs |
 items}`; an mcq's `correct` is a map of ticks by option id (one or more,
 Epo 2026-10-15), a boolean's a plain true or false, and an open part's
@@ -3474,7 +3483,8 @@ caps and counts only (`collaboration-rs/crates/items/src/quiz.rs`): texts,
 units, labels and attributions (`QUESTION_METADATA_MAX`), image and graph
 descriptions (`QUESTION_DESCRIPTION_MAX`, 500 in quizzes and notes; the bank
 keeps `QUESTION_TEXT_MAX`, Epo 2026-10-14), image sizes and ids, whole marks, list and table counts, questions, parts per question and per
-quiz, open parts, marking items, ticks and matching pairs, and each chart,
+quiz, a question's groups (no more than its parts may be), open parts, marking
+items, ticks and matching pairs, and each chart,
 plot and graph value against its kind's caps (`notes::questions::figure_caps`,
 sizes only: an unfinished figure is admitted; the block's type and value are
 read from the update or the held block, whichever writes them). Nothing past a
