@@ -1,0 +1,187 @@
+{
+ "note": "The 14 scanned gold figures (gold/<paper>.json figure_boxes) with the descriptions the window call wrote in run 73, and the top of the next question number printed below each figure on its page (Tesseract on a 2,200 px render, 0-1000 grid; null when the question is the last on its page).",
+ "figures": [
+  {
+   "paper": "2021-p1",
+   "page": 6,
+   "label": "8",
+   "description": "Figure 1: triangle ACE with B on AE and D on CE, BD drawn; A, B, E and C, D, E collinear.",
+   "box": [
+    278,
+    125,
+    805,
+    307
+   ],
+   "next_question_top": null
+  },
+  {
+   "paper": "2021-p1",
+   "page": 7,
+   "label": "9",
+   "description": "Bar chart of number of students against number of books read (23 to 28), with bars labelled k, 16, 12, 9, 11, 4.",
+   "box": [
+    235,
+    235,
+    772,
+    448
+   ],
+   "next_question_top": null
+  },
+  {
+   "paper": "2022-p1",
+   "page": 6,
+   "label": "8",
+   "description": "Diagram of quadrilateral BCDE with point A inside; segments AB, AC, AD, AE drawn, vertices labelled D, C, A, E, B.",
+   "box": [
+    262,
+    147,
+    735,
+    352
+   ],
+   "next_question_top": null
+  },
+  {
+   "paper": "2022-p2",
+   "page": 5,
+   "label": "14",
+   "description": "The 1st, 2nd and 3rd patterns of dots joined by arrows, followed by dots",
+   "box": [
+    145,
+    402,
+    880,
+    480
+   ],
+   "next_question_top": 680
+  },
+  {
+   "paper": "2022-p2",
+   "page": 6,
+   "label": "17",
+   "description": "Triangle PQR with M on PQ and N on QR, MN drawn",
+   "box": [
+    492,
+    388,
+    893,
+    597
+   ],
+   "next_question_top": 654
+  },
+  {
+   "paper": "2022-p2",
+   "page": 6,
+   "label": "18",
+   "description": "Rectangle ABCD above straight line EBF, with AE and CF drawn perpendicular to EBF",
+   "box": [
+    522,
+    690,
+    892,
+    937
+   ],
+   "next_question_top": null
+  },
+  {
+   "paper": "2022-p2",
+   "page": 7,
+   "label": "19",
+   "description": "Equilateral triangle ABC with D on AC and E on BC; segments BD and AE drawn.",
+   "box": [
+    550,
+    103,
+    882,
+    311
+   ],
+   "next_question_top": 363
+  },
+  {
+   "paper": "2022-p2",
+   "page": 7,
+   "label": "20",
+   "description": "Parallelogram with angles marked: b at top-left interior, a at top-right interior, c at bottom-left exterior, d at bottom-right exterior.",
+   "box": [
+    533,
+    398,
+    880,
+    560
+   ],
+   "next_question_top": 615
+  },
+  {
+   "paper": "2022-p2",
+   "page": 7,
+   "label": "21",
+   "description": "Circle with centre O and points A, B, C on the circle; chords AB, BC, CA and radii OA, OB, OC drawn.",
+   "box": [
+    558,
+    642,
+    882,
+    866
+   ],
+   "next_question_top": null
+  },
+  {
+   "paper": "2022-p2",
+   "page": 8,
+   "label": "22",
+   "description": "Right-angled triangle ABC (right angle at B) with D on AC and E on BC; segment ED drawn.",
+   "box": [
+    428,
+    130,
+    886,
+    297
+   ],
+   "next_question_top": 371
+  },
+  {
+   "paper": "2022-p2",
+   "page": 8,
+   "label": "24",
+   "description": "Graph of a straight line crossing the x-axis at −1 and the y-axis at 1.",
+   "box": [
+    474,
+    670,
+    890,
+    885
+   ],
+   "next_question_top": null
+  },
+  {
+   "paper": "2022-p2",
+   "page": 13,
+   "label": "38",
+   "description": "Circle through C, D at top with A, B at the bottom; tangent line QB touching at B and tangent line PA touching at A, chords drawn forming the quadrilateral",
+   "box": [
+    460,
+    423,
+    886,
+    640
+   ],
+   "next_question_top": 729
+  },
+  {
+   "paper": "2022-p2",
+   "page": 14,
+   "label": "40",
+   "description": "Cube $ABCDEFGH$ with base $ABCD$, top $EFGH$, and diagonals from $F$ to $A$, $G$, $H$ drawn inside",
+   "box": [
+    570,
+    135,
+    884,
+    385
+   ],
+   "next_question_top": 460
+  },
+  {
+   "paper": "2024-p1",
+   "page": 6,
+   "label": "8",
+   "description": "Figure 1: triangle-like diagram with A and B at the bottom, D and C above, and diagonals AC and BD crossing at E",
+   "box": [
+    272,
+    150,
+    710,
+    330
+   ],
+   "next_question_top": null
+  }
+ ]
+}
