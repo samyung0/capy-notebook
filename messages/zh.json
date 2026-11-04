@@ -157,6 +157,7 @@
   "notification_workspace_role_changed_body": "你在 {workspaceName} 中的角色现在是 {role}。",
   "notification_role_editor": "编辑者",
   "role_teaching_assistant": "助教",
+  "role_member": "成员",
   "workspace_transfer_confirm_body_class": "{name} 将成为所有者并承担存储费用。你将保留为助教。",
   "clone_workspace_not_allowed_class": "只有此工作区的成员和助教可以克隆它。",
   "clone_item_not_allowed_class": "只有其所在工作区的成员和助教可以克隆此内容。",

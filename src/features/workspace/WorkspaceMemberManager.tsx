@@ -56,11 +56,14 @@ function day(iso: string) {
   });
 }
 
-/** A class calls its editors teaching assistants (Epo 2026-11-04): the name
- * only, the role underneath stays editor. */
+/** A class calls its viewers members and its editors teaching assistants (Epo
+ * 2026-11-04): the names only, the roles underneath stay viewer and editor. */
 function roleOptions(isClass: boolean) {
   return [
-    { label: m.members_role_view(), value: 'viewer' },
+    {
+      label: isClass ? m.role_member() : m.members_role_view(),
+      value: 'viewer',
+    },
     {
       label: isClass ? m.role_teaching_assistant() : m.members_role_edit(),
       value: 'editor',
@@ -252,7 +255,8 @@ export function WorkspaceMemberManager({
             ) : canManage ? (
               <>
                 <RoleSelect
-                  className={cn(isClass ? 'w-44' : 'w-22 sm:w-28')}
+                  // Phones ellipsize Teaching assistant to leave room for the name.
+                  className={cn(isClass ? 'w-32 sm:w-44' : 'w-22 sm:w-28')}
                   disabled={updatingRole}
                   label={m.members_role_of({ name: member.name })}
                   onChange={(role) =>

@@ -81,6 +81,7 @@ table read the same in both.
 | Dashboard, anyone else | What to practise next, Activity (Assignments due waits for its page) | What to practise next, Activity |
 | Whose results | The owner and editor members see everyone's; a member their own | Each person their own |
 | An editor member is called | Teaching assistant, in the UI only (the invite's role switch, member rows' role dropdowns and text, the role-changed notification, the transfer confirmation, clone refusals); API, role value and anything sent to a model say editor | Editor |
+| A viewer member is called | Member, in the UI only (the invite's role switch, member rows' role dropdowns and text, the role-changed notification); API, role value and anything sent to a model say viewer | View in the role controls, Viewer in the notification |
 | Clone | An owner's or editor member's stays class; anyone else's is personal | Stays personal |
 | Change it | The owner, in Workspace settings → General. Nothing is deleted: assignments and reports are hidden until it changes back | The same |
 

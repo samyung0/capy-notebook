@@ -161,6 +161,7 @@
   "notification_workspace_role_changed_body": "Your role in {workspaceName} is now {role}.",
   "notification_role_editor": "Editor",
   "role_teaching_assistant": "Teaching assistant",
+  "role_member": "Member",
   "workspace_transfer_confirm_body_class": "{name} will become the owner and inherit the storage bill. You will stay as a teaching assistant.",
   "clone_workspace_not_allowed_class": "Only members and teaching assistants of this workspace can clone it.",
   "clone_item_not_allowed_class": "Only members and teaching assistants of its workspace can clone this.",
