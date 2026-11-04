@@ -4,7 +4,9 @@ mark scheme or answer files parsed as text (todo-study-tracking.md §8).
 One conversation (Epo 2026-11-05): the map call has every selected page with the
 layout model's boxes as JSON, the copy batches continue it, and the solve calls
 continue the copy batch that holds their questions. The system prompt and tools
-are the same on all of them, so the cache holds. The scheme or answer text never
+are the same on all of them, so the cache holds. A scan or an image goes with no
+page text (Epo 2026-11-05), which only changes the first paragraph and each page's
+heading. The scheme or answer text never
 shares a request with the pages; code pairs it with the questions by label
 (``retrieval.extraction``). A figure with no box takes a call of its own.
 
@@ -41,6 +43,13 @@ Figures: a layout model looked for pictures and charts on these pages. After the
 
 Each recorded question is checked at once. Fix what a result names and record that question again with the same label; an accepted question needs no second call. When every question or answer asked for is recorded, reply with the single word DONE.
 {SOURCE_RULE}"""
+
+# Scans and images (Epo 2026-11-05): no page text, nothing else changes.
+SYSTEM_NO_PAGE_TEXT = SYSTEM.replace(
+    ", each with the page's indexed text, which may be rough: the image is what counts.",
+    ".",
+    1,
+)
 
 MAP_ASK = (
     "Map these pages before recording anything. Call no tool in this reply. Answer with "
@@ -248,6 +257,12 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 
+def page_heading(image: int, number: int, file_name: str) -> str:
+    """A page sent with no text: its heading, numbered as figures name their page
+    image."""
+    return f"Page image {image}: page {number} of {file_name}."
+
+
 def page_text(image: int, number: int, file_name: str, text: str) -> str:
     """A page's heading, numbered as figures name their page image, and its text."""
     heading = f"Page image {image}: page {number} of {file_name}"
@@ -257,10 +272,11 @@ def page_text(image: int, number: int, file_name: str, text: str) -> str:
 
 
 def map_messages(
-    pages: list[tuple[str, str]], boxes: list[dict[str, Any]]
+    pages: list[tuple[str, str]], boxes: list[dict[str, Any]], *, with_text: bool
 ) -> list[dict[str, Any]]:
-    """``pages`` are (page text, image data URL) pairs; ``boxes`` the layout
-    model's, numbered once across the selection."""
+    """``pages`` are (page text or heading, image data URL) pairs; ``boxes`` the
+    layout model's, numbered once across the selection. Every thread continues
+    these messages, so a run has one system prompt."""
     content: list[dict[str, Any]] = []
     for text, image in pages:
         content.append({"type": "text", "text": text})
@@ -270,7 +286,7 @@ def map_messages(
     )
     content.append({"type": "text", "text": MAP_ASK})
     return [
-        {"role": "system", "content": SYSTEM},
+        {"role": "system", "content": SYSTEM if with_text else SYSTEM_NO_PAGE_TEXT},
         {"role": "user", "content": content},
     ]
 

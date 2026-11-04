@@ -159,8 +159,9 @@ for a simple one and the explanation as its solution (see
 [agentic-retrieval.md](agentic-retrieval.md), Question tools).
 
 Make a quiz reads questions printed in an uploaded paper into this format: in
-paper layout, printed option order kept, sub-parts flattened into parts. A map call
-lists the questions, copy batches copy them with no answers, and solve batches give
+paper layout, printed option order kept, sub-parts flattened into parts. The model
+reads a scan or an image from its page images alone, and a born-digital PDF with its
+indexed text beside them. A map call lists the questions, copy batches copy them with no answers, and solve batches give
 their keys, marking items and worked solutions, or a separate mark scheme or answer
 file does, paired by printed label, which needs no solve call for a question it wholly
 covers. Each question is checked by this validator as it is copied and as its answers

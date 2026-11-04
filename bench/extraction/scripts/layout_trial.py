@@ -328,6 +328,7 @@ async def run_job(job: dict, args, out_dir: Path) -> None:
         )
         return jpeg, size
 
+    layers = extraction.page_layers(pdf, {n: texts[n] for n in numbers})
     pages = [
         extraction.Page(
             n,
@@ -335,6 +336,7 @@ async def run_job(job: dict, args, out_dir: Path) -> None:
             texts[n],
             functools.partial(image, n),
             functools.partial(crop, n),
+            layer=layers[n],
         )
         for n in numbers
     ]

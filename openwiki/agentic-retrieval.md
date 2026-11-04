@@ -5692,7 +5692,8 @@ later).
   `todo-study-tracking/R6-extraction-prompt.md`, generated from the code by
   `bench/extraction/scripts/prompt_doc.py`; findings in
   [`2026-11-04-copy-first.md`](../bench/extraction/reports/2026-11-04-copy-first.md)
-  and [`2026-11-05-copy-first-structured.md`](../bench/extraction/reports/2026-11-05-copy-first-structured.md)):
+  [`2026-11-05-copy-first-structured.md`](../bench/extraction/reports/2026-11-05-copy-first-structured.md)
+  and [`2026-11-05-no-page-text.md`](../bench/extraction/reports/2026-11-05-no-page-text.md)):
   0. Layout, before anything else (`retrieval/layout.py`, Epo 2026-11-04): one
      request a page to the layout service (`CAPY_LAYOUT_URL`, one pool on the
      ingest host, runbook §7.6), at most 3 in flight a run, with the page image
@@ -5706,13 +5707,29 @@ later).
      `chart` at 0.5 or more, one of any pair with an IoU of 0.8 or more, and a box
      dropped when it holds a smaller box (at least 90% inside) plus `text` regions
      of its own outside it.
-  1. The map: one call, reasoning `mid`, sees each selected page's indexed text
-     (`store.file_passages`) and image (`capture.render_file` at
-     `CAPY_CAPTURE_MAX_EDGE`), then every box as JSON (number, page, coordinates
+  1. The map: one call, reasoning `mid`, sees each selected page's image
+     (`capture.render_file` at `CAPY_CAPTURE_MAX_EDGE`), on a born-digital paper
+     with its indexed text (`store.file_passages`) first, then every box as JSON (number, page, coordinates
      on the 0-1000 grid, label, score; nothing is drawn on the images), and
      answers one plain line a question: label, first and last page, part labels,
      box numbers (`parse_map`). A reply that calls a tool, is cut off or holds no
      line is a failed attempt; with no line twice the run has no questions.
+     Page text (Epo 2026-11-05, "scans only"): a run sends it only when no selected
+     page of the question paper is a scan and at least one is born digital, so a run
+     has one system prompt. A mark scheme has no say, and its call reads its own text.
+     Nothing stored says which a page is: the parser's `hidden_text_layer` and text-less
+     list are not saved and `parse_ocr_pages` is a count, so `prepare` reads each
+     selected page from the stored PDF (`page_layer`). Born digital is at least 40
+     characters the page shows (not render mode 3 or zero opacity) and no image covering
+     9/10 of it; blank, which has no say, is fewer, no image and under 40 characters of
+     indexed text; anything else is a scan, as are an image upload (its caption, which
+     is a page read, stays out) and whatever is not known. So one full-page cover in the
+     selection, or a digital PDF on a full-page background image, goes with no text. A
+     page over 100,000 characters counts as a scan without the character-by-character
+     read. With no text the system prompt's first paragraph ends "You see all the
+     selected page images at once." and each page's heading is "Page image 1: page 2 of
+     <file name>." Code still reads the text to look for a next question number when it
+     repairs a copy, which sends nothing.
   2. Copy batches of `COPY_BATCH` (16) of the map's questions, in parallel,
      reasoning `low`, each continuing the map's messages and reply with
      "Copy questions 1 to 16 now." `record_question` (one question a call, several
@@ -5774,6 +5791,10 @@ later).
      or `\[...\]`, which a page read writes and the quiz would show as raw text, is saved as
      `$...$` in text, options, answers, marking items and solutions (`dollar_math`); a code
      span, math already between $ signs, a bare $ beside it and table cells stay as they are.
+     Markdown bold loses its markers the same way, table cells included (`strip_bold`):
+     only a pair on one line that opens and closes as bold, outside code and math, so
+     `x**2`, `(x)**(y)`, `$a^{**}$` and `A**` stay. A word printed between literal `**`
+     can't be told from bold and loses them.
   8. Figures (Epo 2026-11-04). Each figure a copy names gives the numbers of the boxes that
      hold it, several for a split figure, the part whose text it follows ("" for the stem) and
      a few words on what it shows; a number that is no box, boxes on two pages, or a part the
@@ -5881,7 +5902,7 @@ later).
   [`2026-11-04-figures-and-fidelity.md`](../bench/extraction/reports/2026-11-04-figures-and-fidelity.md),
   [`2026-11-04-window-size.md`](../bench/extraction/reports/2026-11-04-window-size.md),
   [`2026-11-04-layout-first-trial.md`](../bench/extraction/reports/2026-11-04-layout-first-trial.md),
-  and on `claude/bench-copy-first` the map report and the two copy-first reports the route
+  and on `claude/bench-copy-first` the map report and the copy-first and no-text reports the route
   came from, with `scripts/copy_first.py`.
 
 ## Citations and the frontend

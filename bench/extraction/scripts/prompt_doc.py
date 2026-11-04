@@ -134,6 +134,7 @@ def answers(label: str, **extra) -> dict:
 
 async def generate(args) -> str:
     from pipeline.generated import limits as generated
+    from pipeline.prompts import extraction as prompts
     from pipeline.retrieval import extraction, layout, limits
 
     from pipeline import elitellm, registry
@@ -159,8 +160,15 @@ async def generate(args) -> str:
 
     layout.read_regions = read_regions
     pages = [
-        extraction.Page(5, "paper.pdf", "<the page's indexed text>", image, crop),
-        extraction.Page(6, "paper.pdf", "", image, crop),
+        extraction.Page(
+            5,
+            "paper.pdf",
+            "<the page's indexed text>",
+            image,
+            crop,
+            layer=extraction.BORN_DIGITAL,
+        ),
+        extraction.Page(6, "paper.pdf", "", image, crop, layer=extraction.BORN_DIGITAL),
     ]
     validate = bench.validator(bench.RESULTS / "quizcheck")
     long_words = "x" * (generated.QUESTION_DESCRIPTION_MAX + 1)
@@ -408,10 +416,28 @@ async def generate(args) -> str:
         "",
         "### The map's user message",
         "",
-        "Each block is one content part of the message: each page's text and image, then "
-        "all the boxes, numbered once across the selection, then the ask.",
+        "On a born-digital paper. Each block is one content part of the message: each "
+        "page's text and image, then all the boxes, numbered once across the selection, "
+        "then the ask.",
         "",
         map_user,
+        "",
+        "### A scan or an image: no page text",
+        "",
+        "A run sends page text only when no selected page of the question paper is a scan "
+        "and at least one is born digital, read from the stored PDF at the start "
+        "(`extraction.page_layer`). A mark scheme has no say, and its call reads its own "
+        f"text either way. Born digital: at least {extraction.VISIBLE_CHARS} characters "
+        "the page shows, not in render mode 3 or at zero opacity, and no image covering "
+        f"{extraction.IMAGE_COVERS_PAGE:.0%} of it. Blank, with no say: fewer, no image and "
+        f"under {extraction.VISIBLE_CHARS} characters of indexed text. Anything else is a "
+        "scan, and so are an image upload and whatever is not known. With no page text the "
+        "system prompt's first paragraph is this, and each page goes as this heading then "
+        "its image. Nothing else changes.",
+        "",
+        fenced(prompts.SYSTEM_NO_PAGE_TEXT.split("\n\n")[0]),
+        "",
+        fenced(prompts.page_heading(1, 2, "<file name>")),
         "",
         "### A copy batch",
         "",

@@ -268,6 +268,7 @@ async def run(args) -> dict:
         )
         return jpeg, size
 
+    layers = extraction.page_layers(pdf, {n: texts[n] for n in gold["pages"]})
     pages = [
         extraction.Page(
             number,
@@ -275,6 +276,7 @@ async def run(args) -> dict:
             texts[number],
             functools.partial(image, number),
             functools.partial(crop, number),
+            layer=layers[number],
         )
         for number in gold["pages"]
     ]

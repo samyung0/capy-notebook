@@ -124,12 +124,21 @@ ANSWER_MISSING = {
 
 Validate = Callable[[dict[str, Any]], Awaitable[str | None]]
 
+# What a selected page is, for whether its text goes to the model (Epo 2026-11-05).
+BORN_DIGITAL, SCAN, BLANK = "born_digital", "scan", "blank"
+VISIBLE_CHARS = 40
+IMAGE_COVERS_PAGE = 0.9
+# Far past a page of print. The read of what a page shows holds about 400 bytes a
+# character, in the retrieval service's own memory.
+PAGE_CHARS_MOST = 100_000
+
 
 @dataclass(frozen=True)
 class Page:
     """One selected page: its number in its file, the file's name, the
     page's indexed text, its image as a data URL, a box on it as a JPEG with
-    its pixel size, for a figure, and what the layout model found on it."""
+    its pixel size, for a figure, what the layout model found on it, and what
+    it is (``page_layer``); what is not known counts as a scan."""
 
     number: int
     file_name: str
@@ -137,6 +146,7 @@ class Page:
     image: Callable[[], Awaitable[str]]
     crop: Callable[[list[float]], Awaitable[tuple[bytes, tuple[int, int]]]]
     regions: tuple[layout.Region, ...] = ()
+    layer: str = SCAN
 
     def __deepcopy__(self, memo: dict[int, Any]) -> Page:
         # A recorded question's copies share its figures' pages.
@@ -799,14 +809,48 @@ def dollar_math(text: str) -> str:
     return _MATH_SPANS.sub(replace, text)
 
 
-def _dollar_math_in(question: dict[str, Any]) -> None:
-    """Every text a saved question shows, in place. A table's cells stay as they
-    are: a table can hold a literal, as a code or regular expression column does."""
+# What sits beside a power's ** and never beside bold: x**2, (x)**(y), a**β. Chinese
+# bold has no spaces around it, so these are not every word character.
+_POWER_SIDE = r"0-9A-Za-z_\u0370-\u03ff"
+_BOLD = re.compile(
+    rf"(?<![{_POWER_SIDE}*\\)\]}}\x00])\*\*(?=[^\s*])"
+    r"[^\n]*?"
+    rf"(?<=[^\s*\\])\*\*(?![{_POWER_SIDE}*(\[{{\x00])"
+)
+
+
+def strip_bold(text: str) -> str:
+    """Markdown bold without its markers: the quiz's text shows them raw
+    (bench/extraction/reports/2026-11-05-no-page-text.md). Only a pair on one line
+    that opens and closes as bold goes, outside code and math, so a power or an
+    A** stays."""
+    if "**" not in text:
+        return text
+    masked = _MATH_SPANS.sub(lambda match: "\x00" * len(match[0]), text)
+    kept: list[str] = []
+    at = 0
+    for match in _BOLD.finditer(masked):
+        kept += [text[at : match.start()], text[match.start() + 2 : match.end() - 2]]
+        at = match.end()
+    return "".join(kept) + text[at:]
+
+
+def _tidy_text_in(question: dict[str, Any]) -> None:
+    """Every text a saved question shows, in place: math as ``$...$``, bold without
+    its markers. A table's cells keep their ``\\(``: a table can hold a literal, as a
+    code or regular expression column does."""
+
+    def tidy(text: str) -> str:
+        return strip_bold(dollar_math(text))
 
     def in_blocks(blocks: list[dict[str, Any]]) -> None:
         for block in blocks:
             if block["type"] == "text":
-                block["text"] = dollar_math(block["text"])
+                block["text"] = tidy(block["text"])
+            elif block["type"] == "table":
+                block["rows"] = [
+                    [strip_bold(cell) for cell in row] for row in block["rows"]
+                ]
 
     in_blocks(question["stem"])
     for part in question["parts"]:
@@ -815,9 +859,9 @@ def _dollar_math_in(question: dict[str, Any]) -> None:
         answer = part["answer"]
         for name in ("options", "accepted", "hints"):
             if isinstance(answer.get(name), list):
-                answer[name] = [dollar_math(str(value)) for value in answer[name]]
+                answer[name] = [tidy(str(value)) for value in answer[name]]
         for item in part.get("markscheme") or []:
-            item["text"] = dollar_math(item["text"])
+            item["text"] = tidy(item["text"])
 
 
 def _counts(question: dict[str, Any]) -> tuple[int, int]:
@@ -1299,12 +1343,15 @@ async def read_map(
     """The map call: its messages with its reply, for every thread to continue,
     its rows, and its output tokens. A reply that calls a tool or is cut off is a
     failed attempt."""
+    with_text = sends_page_text(pages)
     messages = prompts.map_messages(
         [
             (
                 prompts.page_text(
                     index, p.number, p.file_name, p.text[:PAGE_TEXT_CHARS]
-                ),
+                )
+                if with_text
+                else prompts.page_heading(index, p.number, p.file_name),
                 await p.image(),
             )
             for index, p in enumerate(pages, 1)
@@ -1319,6 +1366,7 @@ async def read_map(
             }
             for number, (page, region) in boxes.items()
         ],
+        with_text=with_text,
     )
     response = await models.complete_response(
         messages,
@@ -1728,7 +1776,7 @@ async def run(
     crops: dict[str, str] = {}
     saved = [await placed(question, crops) for question in finals]
     for question in saved:
-        _dollar_math_in(question)
+        _tidy_text_in(question)
     recorded = {label_key(label) for label in current.labels()}
     expected = [row.label for row in rows]
     yield {
@@ -1803,6 +1851,47 @@ def page_texts(passages: list[dict[str, Any]]) -> dict[int, str]:
     return {number: "\n\n".join(texts) for number, texts in pages.items()}
 
 
+def page_layer(page: Any, text: str) -> str:
+    """What a PDF page is, from the stored PDF and its indexed text, since no stored
+    field says: the parser's hidden layer and text-less tests (parser/odl/hidden.py,
+    textless.py) are not saved. Born digital: at least 40 characters the page shows
+    (a hidden OCR layer is render mode 3 or zero opacity) and no image covering nine
+    tenths of it. Blank: fewer, no image and no page read. Anything else is a scan."""
+    import pymupdf
+
+    if len(page.get_text()) > PAGE_CHARS_MOST:
+        return SCAN
+    visible = sum(
+        len(span["chars"])
+        for span in page.get_texttrace()
+        if span["type"] != 3 and span.get("opacity", 1) != 0
+    )
+    images = page.get_image_info()
+    covered = max(
+        (
+            (pymupdf.Rect(image["bbox"]) & page.rect).get_area() / page.rect.get_area()
+            for image in images
+        ),
+        default=0,
+    )
+    if visible >= VISIBLE_CHARS:
+        return BORN_DIGITAL if covered < IMAGE_COVERS_PAGE else SCAN
+    return SCAN if images or len(text.strip()) >= VISIBLE_CHARS else BLANK
+
+
+def page_layers(pdf: Any, texts: dict[int, str]) -> dict[int, str]:
+    import pymupdf
+
+    with pymupdf.open(pdf) as doc:
+        return {n: page_layer(doc[n - 1], text) for n, text in texts.items()}
+
+
+def sends_page_text(pages: list[Page]) -> bool:
+    """The run's page text goes only when no page is a scan and one is born digital
+    (Epo 2026-11-05, "scans only"): a run has one system prompt, so the cache holds."""
+    return {page.layer for page in pages} - {BLANK} == {BORN_DIGITAL}
+
+
 def _page_count(pdf: Any) -> int:
     import pymupdf
 
@@ -1839,6 +1928,7 @@ async def prepare(
             raise ExtractionRefused(
                 "file_unavailable", f"{name} is no longer in the workspace."
             )
+        pdf = None
         if row.get("kind") == "pdf":
             try:
                 pdf = await capture.pdf_path(workspace_id, file_id)
@@ -1857,14 +1947,18 @@ async def prepare(
                 "page_out_of_range",
                 f"{name} has {count} pages; page {past[0]} is past its end.",
             )
-        texts = page_texts(await store.file_passages(workspace_id, file_id))
+        indexed = page_texts(await store.file_passages(workspace_id, file_id))
+        texts = {number: indexed.get(number, "") for number in numbers}
+        # An image has no text layer, and its caption is no page read: a scan.
+        layers = await slots.render_thread(page_layers, pdf, texts) if pdf else {}
         pages.extend(
             Page(
                 number,
                 name,
-                texts.get(number, ""),
+                texts[number],
                 functools.partial(_render, workspace_id, file_id, number),
                 functools.partial(_crop, workspace_id, file_id, number),
+                layer=layers.get(number, SCAN),
             )
             for number in numbers
         )

@@ -10,6 +10,7 @@ import io
 import json
 from types import SimpleNamespace
 
+import pymupdf
 import pytest
 from PIL import Image
 
@@ -100,6 +101,7 @@ def _page(
     text: str = "",
     crops: list | None = None,
     regions: tuple = (),
+    layer: str = extraction.SCAN,
 ) -> extraction.Page:
     async def image() -> str:
         return BLANK_PAGE
@@ -109,7 +111,7 @@ def _page(
             crops.append((number, box))
         return b"jpeg %d" % number, (400, 300)
 
-    return extraction.Page(number, "paper.pdf", text, image, crop, regions)
+    return extraction.Page(number, "paper.pdf", text, image, crop, regions, layer)
 
 
 def test_label_key_compares_printed_labels():
@@ -1244,6 +1246,85 @@ def test_dollar_math_leaves_literals_alone(text):
     assert extraction.dollar_math(text) == text
 
 
+@pytest.mark.parametrize(
+    ("text", "saved"),
+    [
+        ("**Fig. 1** shows", "Fig. 1 shows"),
+        ("Use **the** graph **below**.", "Use the graph below."),
+        ("(**a**) **$x^2$** is **5**", "(a) $x^2$ is 5"),
+        ("**Find $a^{**}$ now**", "Find $a^{**}$ now"),
+        ("这是**粗体**的字", "这是粗体的字"),
+        ("x**2 and **bold**", "x**2 and bold"),
+    ],
+)
+def test_strip_bold_removes_the_markers(text, saved):
+    assert extraction.strip_bold(text) == saved
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Powers, in every form that could pair up.
+        "x**2 + y**2",
+        "2 ** 3 ** 4",
+        "(a+b)**2 = (c)**(d) + (e)**(f)",
+        "α**β + γ**δ",
+        "[x]**2 + [y]**2",
+        # Math and code.
+        "$a^{**} + b^{**}$",
+        "`x**y and **z**`",
+        "```\n**kept**\n```",
+        # Grades, footnotes, arguments and markers on two lines.
+        "A** and B**",
+        "** significant; ** very",
+        "f(**a, **b)",
+        "a**\n**b",
+        "only **one marker",
+    ],
+)
+def test_strip_bold_leaves_what_is_not_bold(text):
+    assert extraction.strip_bold(text) == text
+
+
+async def test_saved_questions_show_no_bold_markers(monkeypatch):
+    item = _open("2", [("a", 2)])
+    item["stem"] = [
+        {"type": "text", "text": "**Read** this."},
+        {"type": "table", "header": True, "rows": [["**Head**", "x**2"]]},
+    ]
+    item["parts"][0]["blocks"] = _text("Find **y**.")
+    item["parts"][0]["answer"]["points"] = [{"text": "**Method**", "marks": 2}]
+    item["parts"][0]["answer"]["accepted"] = ["**7**"]
+    item["parts"][0]["solution"] = "So **y=7**."
+    mcq = _mcq("3", ["**a**", "b"], 1)
+    script = Script(
+        "\n".join([_row("2", parts="a"), _row("3")]),
+        {
+            "Copy questions 2 to 3 now.": [
+                _tools(
+                    ("record_question", _copy(item)), ("record_question", _copy(mcq))
+                )
+            ],
+            "Give the answers to questions 2 to 3 now.": [
+                _tools(
+                    ("record_answers", _answers(item)),
+                    ("record_answers", _answers(mcq)),
+                )
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(5)])
+    second, third = events[-1]["questions"]
+    assert second["stem"][0]["text"] == "Read this."
+    assert second["stem"][1]["rows"] == [["Head", "x**2"]]
+    part = second["parts"][0]
+    assert part["blocks"][0]["text"] == "Find y."
+    assert part["markscheme"][0]["text"] == "Method"
+    assert part["answer"]["accepted"] == ["7"]
+    assert part["solution"][0]["text"] == "So y=7."
+    assert third["parts"][0]["answer"]["options"] == ["a", "b"]
+
+
 async def test_saved_questions_show_no_backslash_math_and_tables_stay(monkeypatch):
     item = _open("2", [("a", 2)])
     item["stem"] = [
@@ -1281,6 +1362,182 @@ async def test_saved_questions_show_no_backslash_math_and_tables_stay(monkeypatc
     assert part["answer"]["accepted"] == ["$7$"]
     assert part["solution"][0]["text"] == "So $y=7$."
     assert third["parts"][0]["answer"]["options"] == ["$a$", "$b$"]
+
+
+def _pdf_page(text: str = "", *, hidden: bool = False, image: bool = False, box=None):
+    """One PDF page, with text shown or in a hidden layer, and an image."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    if text:
+        page.insert_text((50, 50), text, render_mode=3 if hidden else 0)
+    if image:
+        jpeg = base64.b64decode(BLANK_PAGE.split(",", 1)[1])
+        page.insert_image(box or page.rect, stream=jpeg)
+    return doc, page
+
+
+LINE = "A printed line of a question that is long enough to count. " * 2
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "indexed", "layer"),
+    [
+        ({"text": LINE}, LINE, extraction.BORN_DIGITAL),
+        # A figure on a printed page is no scan.
+        (
+            {"text": LINE, "image": True, "box": pymupdf.Rect(50, 100, 200, 200)},
+            LINE,
+            extraction.BORN_DIGITAL,
+        ),
+        # A scan under a hidden OCR layer, and one with no layer and a page read.
+        ({"text": LINE, "hidden": True, "image": True}, LINE, extraction.SCAN),
+        ({"image": True}, LINE, extraction.SCAN),
+        # OCR text drawn under the page's image.
+        ({"text": LINE, "image": True}, LINE, extraction.SCAN),
+        # A hidden layer with no image, and text only a page read found.
+        ({"text": LINE, "hidden": True}, LINE, extraction.SCAN),
+        ({}, LINE, extraction.SCAN),
+        # A blank page, with or without a footer.
+        ({}, "", extraction.BLANK),
+        ({"text": "BLANK PAGE"}, "BLANK PAGE", extraction.BLANK),
+    ],
+)
+def test_page_layer_tells_scans_from_born_digital_pages(kwargs, indexed, layer):
+    doc, page = _pdf_page(**kwargs)
+    with doc:
+        assert extraction.page_layer(page, indexed) == layer
+
+
+def test_a_page_with_far_too_much_text_is_not_read_a_character_at_a_time(monkeypatch):
+    monkeypatch.setattr(extraction, "PAGE_CHARS_MOST", len(LINE) - 1)
+    doc, page = _pdf_page(LINE)
+    with doc:
+        assert extraction.page_layer(page, LINE) == extraction.SCAN
+
+
+@pytest.mark.parametrize(
+    ("layers", "sent"),
+    [
+        ((extraction.BORN_DIGITAL, extraction.BORN_DIGITAL), True),
+        ((extraction.BORN_DIGITAL, extraction.BLANK), True),
+        ((extraction.BORN_DIGITAL, extraction.SCAN), False),
+        ((extraction.SCAN, extraction.BLANK), False),
+        ((extraction.BLANK, extraction.BLANK), False),
+    ],
+)
+def test_page_text_goes_only_when_no_page_is_a_scan(layers, sent):
+    pages = [_page(5 + index, layer=layer) for index, layer in enumerate(layers)]
+    assert extraction.sends_page_text(pages) is sent
+
+
+async def test_a_scan_sends_no_page_text_on_any_call(monkeypatch):
+    item = _open("8", [("a", 2)])
+    script = Script(
+        _row("8", 5, 6, "a"),
+        {
+            "Copy question 8 now.": [_tools(("record_question", _copy(item)))],
+            "Give the answers to question 8 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
+    )
+    events = await _run(
+        monkeypatch,
+        script,
+        [_page(5, "Rough text."), _page(6, layer=extraction.BORN_DIGITAL)],
+    )
+    assert events[-1]["report"]["recorded"] == ["8"]
+    first_paragraph = (
+        "You copy the questions printed on exam or worksheet pages into a quiz, exactly "
+        "as printed. You see all the selected page images at once."
+    )
+    assert {
+        body["messages"][0]["content"].split("\n\n")[0] for body in script.sent
+    } == {first_paragraph}
+    content = script.sent[0]["messages"][1]["content"]
+    assert content[0]["text"] == "Page image 1: page 5 of paper.pdf."
+    assert content[2]["text"] == "Page image 2: page 6 of paper.pdf."
+    assert "Rough text." not in json.dumps([body["messages"] for body in script.sent])
+
+
+@pytest.mark.parametrize(
+    ("layer", "page_part"),
+    [
+        (
+            extraction.BORN_DIGITAL,
+            (
+                "Page image 1: page 5 of paper.pdf. Its indexed text:\n"
+                "<source>\nPaper text.\n</source>"
+            ),
+        ),
+        (extraction.SCAN, "Page image 1: page 5 of paper.pdf."),
+    ],
+)
+async def test_only_the_papers_pages_decide_and_the_scheme_reads_its_text(
+    monkeypatch, layer, page_part
+):
+    """A scheme has no say over the paper's page text, and its parse reads its own
+    text whichever the paper is."""
+    read: list = []
+
+    async def complete(messages, **kwargs):
+        assert kwargs["call_purpose"] == "extraction_scheme"
+        read.append(messages[1]["content"])
+        return SimpleNamespace(content=json.dumps({"entries": []}))
+
+    item = _mcq("1", ["p", "q"], 0)
+    script = Script(
+        _row("1"),
+        {
+            "Copy question 1 now.": [_tools(("record_question", _copy(item)))],
+            "Give the answers to question 1 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
+    )
+    await _run(
+        monkeypatch,
+        script,
+        [_page(5, "Paper text.", layer=layer)],
+        [extraction.SchemeFile("answers.pdf", "Scheme text.")],
+        complete=complete,
+    )
+    assert script.sent[0]["messages"][1]["content"][0]["text"] == page_part
+    assert len(read) == 1
+    assert "Scheme text." in read[0]
+
+
+async def _prepared(monkeypatch, kind: str, path=None) -> list[extraction.Page]:
+    async def source(workspace_id, file_id):
+        return {"kind": kind}
+
+    async def passages(workspace_id, file_id):
+        return [{"text": LINE, "page_start": 1, "page_end": 1}]
+
+    async def pdf_path(workspace_id, file_id):
+        return path
+
+    monkeypatch.setattr(extraction.store, "file_page_source", source)
+    monkeypatch.setattr(extraction.store, "file_passages", passages)
+    monkeypatch.setattr(extraction.capture, "pdf_path", pdf_path)
+    paper = [{"fileId": "f", "name": "paper", "pages": [1]}]
+    pages, _ = await extraction.prepare("w", paper, [])
+    return pages
+
+
+async def test_prepare_reads_each_page_from_the_stored_pdf(monkeypatch, tmp_path):
+    doc, _ = _pdf_page(LINE)
+    path = tmp_path / "paper.pdf"
+    with doc:
+        doc.save(path)
+    pages = await _prepared(monkeypatch, "pdf", path)
+    assert [page.layer for page in pages] == [extraction.BORN_DIGITAL]
+
+
+async def test_prepare_treats_an_image_upload_as_a_scan(monkeypatch):
+    pages = await _prepared(monkeypatch, "image")
+    assert [(page.layer, page.text) for page in pages] == [(extraction.SCAN, LINE)]
+    assert extraction.sends_page_text(pages) is False
 
 
 async def test_the_map_message_holds_each_page_and_all_the_boxes(monkeypatch):
@@ -1335,7 +1592,12 @@ async def test_the_map_message_holds_each_page_and_all_the_boxes(monkeypatch):
     monkeypatch.setattr(extraction.layout, "read_regions", read_regions)
     crops: list = []
     events = await _run(
-        monkeypatch, script, [_page(5, "Text.", crops=crops), _page(6, crops=crops)]
+        monkeypatch,
+        script,
+        [
+            _page(5, "Text.", crops=crops, layer=extraction.BORN_DIGITAL),
+            _page(6, crops=crops, layer=extraction.BORN_DIGITAL),
+        ],
     )
     content = script.sent[0]["messages"][1]["content"]
     assert content[0]["text"] == (
