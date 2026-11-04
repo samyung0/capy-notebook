@@ -160,7 +160,10 @@ export function TopicPractice({
     start.group,
     topics?.find((t) => t.id === start.topicId)?.name
   );
-  const title = m.practice_session_title({ topic: name });
+  const title =
+    start.group === 'workspace'
+      ? m.dashboard_workspace_review()
+      : m.practice_session_title({ topic: name });
 
   if (started && running)
     return (

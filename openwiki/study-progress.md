@@ -372,6 +372,14 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
 - Below md the table becomes one row per item with its facts under the
   title (topic, questions, tried), the score and Practise on the right.
 
+### The Dashboard's What to practise next
+
+`SuggestedList` with `onReviewAll`, for whoever practises and while the workspace
+holds a quiz: up to three suggestions, then Workspace review (board D2), whose Start
+opens the topic session's dialog with `group=workspace`. So it is that session:
+questions only, at most 10 until a size is picked, 60% new and 40% practised
+(`withNew`), and the dialog lists them first. Sets are studied on their own page.
+
 ### Summary
 
 `SummaryPage.tsx`, `study=summary` (boards G5, M1), for whoever practises: one

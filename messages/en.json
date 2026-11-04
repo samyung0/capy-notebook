@@ -2647,5 +2647,7 @@
   "summary_topics": "Topics",
   "summary_right": "{right} of {asked} right",
   "summary_hidden": "Study progress is hidden here.",
-  "summary_error": "Could not load your summary."
+  "summary_error": "Could not load your summary.",
+  "dashboard_workspace_review": "Workspace review",
+  "dashboard_workspace_review_meta": "Everything in this workspace, with questions you have not seen."
 }

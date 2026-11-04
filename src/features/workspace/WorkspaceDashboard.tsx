@@ -85,25 +85,38 @@ export function WorkspaceDashboard({
         )}
       </header>
       {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
-      {practises && !!practice?.suggestions.length && (
-        <section className="flex flex-col">
-          <h2 className="t-subtitle">{m.dashboard_practise_next()}</h2>
-          <SuggestedList
-            list={practice.suggestions}
-            onStart={(s) =>
-              navigate({
-                search: {
-                  group: s.group,
-                  reviewMode: s.mode,
-                  study: 'practice' as const,
-                  topicId: s.topicId,
-                },
-                to: '.',
-              })
-            }
-          />
-        </section>
-      )}
+      {practises &&
+        (!!practice?.suggestions.length || !!practice?.quizzes.length) && (
+          <section className="flex flex-col">
+            <h2 className="t-subtitle">{m.dashboard_practise_next()}</h2>
+            <SuggestedList
+              list={practice.suggestions}
+              onReviewAll={
+                practice.quizzes.length
+                  ? () =>
+                      navigate({
+                        search: {
+                          group: 'workspace' as const,
+                          study: 'practice' as const,
+                        },
+                        to: '.',
+                      })
+                  : undefined
+              }
+              onStart={(s) =>
+                navigate({
+                  search: {
+                    group: s.group,
+                    reviewMode: s.mode,
+                    study: 'practice' as const,
+                    topicId: s.topicId,
+                  },
+                  to: '.',
+                })
+              }
+            />
+          </section>
+        )}
       {items.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="t-subtitle">{m.dashboard_recent_files()}</h2>

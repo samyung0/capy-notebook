@@ -1,6 +1,6 @@
 # Learning page plan
 
-Status 2026-11-04: built on this branch except the Dashboard's Start review, which waits for Epo's pick (canvas page 2). Go DB tests and e2e need CI. §8 lists what is left.
+Status 2026-11-04: built on this branch. Go DB tests and e2e need CI. §8 lists what is left.
 
 Epo's ask: "i want ot see if we cna start planning what the learning page at home do, ideally i dont want to use AI to do a lot of suggestion, rather i want to use the algorithms/scores to decide".
 
@@ -224,6 +224,6 @@ Built on my recommendation, so say if not: You teach rows (O2), flashcards in su
 
 Still open:
 
-1. **Dashboard Start review (canvas page 2).** A section button or B a last row? I recommend B.
+1. **Learning's suggestion rows.** They start the full session page straight away, with cards and up to 20 items, while the Dashboard's and Practice's open the small start dialog, questions only and 10. Keep that, or give Learning the dialog too? I recommend keeping it: the dialog's session has no cards, so Learning is the only place a set gets suggested.
 2. **Question bank.** Keep it off this page? I recommend yes: it has its own landing.
 3. **Topic with nothing new to serve.** Link to Make my own practice (AI, credits, on click)? I recommend no: leave it on Practice.
