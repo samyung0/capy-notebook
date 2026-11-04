@@ -242,6 +242,8 @@ AFFiNE waits only on a device with no local copy, and for non-admin members' fir
 
 **Epo, 2026-11-04:** no "Connecting" words and no Edit/View button on any item, always open at the person's highest permission. Being investigated first, for offline and draft-merge complications, with the report going to Epo before any code.
 
+Investigated 2026-11-04, nothing built. "Connecting" only shows in Edit, and Edit is opt-in today, so the real change is making Edit's slower, heavier open the default for everyone who can edit. Findings: people with edit rights lose their reading layouts (quiz answers show at once, flashcards open turned over, embeds lose Start quiz, Markdown and CSV show source); offline reading worsens unless the stored copy paints before the token; a plain open can write to the document through normalizing and the trailing paragraph (read in code, not run); a near-limit note opens in 15.2 s editable against 3.1 s read-only; Office is the capacity problem and collides with the ribbon decisions. Recommended: paint the stored copy, build the editor behind it, swap silently, and at 30 s show the saved copy with a red status. Leave Office until the ribbon lands. Fourteen decisions wait on Epo.
+
 ### 1.10 Phones (360 px)
 
 **How others do it:**
