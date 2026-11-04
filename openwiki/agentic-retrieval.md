@@ -5714,9 +5714,12 @@ later).
      for fewer questions a reply. Printed option order is kept, and lettered
      option lines the model also copied into a part's text are taken out in
      code when they match the options (a one-part question whose part held
-     only them takes its stem as its text). Sub-parts
-     flatten: (b)(i) and (b)(ii) are two parts, the (b) lead-in text starting
-     the first. Recorded questions leave the conversation: the next window
+     only them takes its stem as its text); a one-part question whose stem
+     repeats its part's text, or whose part repeats the stem's last sentence,
+     keeps it once. Sub-parts
+     flatten: (b)(i) and (b)(ii) are two parts, the (b) lead-in text (the first
+     sub-part's `lead_in` field, which code puts first in its blocks)
+     starting the first. Recorded questions leave the conversation: the next window
      carries labels and the open question only.
   3. After the windows, the answer files are parsed as text, in pieces of
      12,000 characters, reasoning off, into entries
@@ -5746,8 +5749,10 @@ later).
      (`locate_figures`, purpose `extraction_figures`; a reply that is not one
      box a figure is a failed attempt, as for the scheme parse). The window's
      own boxes were too far off to crop from (2022 Paper 2: 3 of 10 whole, 3
-     missing the figure; bench report 2026-11-04). Each figure is then
-     cropped from its page (`capture.render_file` with `page_edge`
+     missing the figure; bench report 2026-11-04). The located box is
+     padded by `FIGURE_PAD` (2% of the page at the sides, 3% at the top,
+     0.5% at the bottom: located boxes sit a little low, clipping labels
+     above the figure). Each figure is then cropped from its page (`capture.render_file` with `page_edge`
      `FIGURE_PAGE_EDGE`: the page's long side at 2,200 px, so labels read and
      a small figure stays small) and placed after that part's text as an
      image block whose asset is `figure:<id>` and whose description is the

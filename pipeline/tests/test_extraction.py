@@ -142,6 +142,40 @@ def test_option_lines_copied_into_the_text_are_taken_out():
     )
 
 
+def test_a_one_part_question_shows_its_text_once():
+    """A one-part question whose stem repeats its part's text keeps it once,
+    in the part; a stem that differs stays."""
+    item = _mcq("5", ["$540", "$600"])
+    item["stem"] = _text("A fan is sold at a discount of $30\\%$.")
+    item["parts"][0]["blocks"] = _text("A fan is sold at a discount of  $30\\%$.")
+    question = extraction.record(item, AI).question
+    assert question["stem"] == []
+    assert question["parts"][0]["blocks"] == _text(
+        "A fan is sold at a discount of  $30\\%$."
+    )
+    other = _mcq("6", ["a", "b"])
+    other["stem"] = _text("Given f(x).")
+    assert extraction.record(other, AI).question["stem"] == _text("Given f(x).")
+    tail = _mcq("7", ["2", "3"])
+    tail["stem"] = _text("Let 5a = 6c. Find $\\frac{a}{c}$.")
+    tail["parts"][0]["blocks"] = _text("Find $\\frac{a}{c}$.")
+    assert extraction.record(tail, AI).question["stem"] == _text("Let 5a = 6c.")
+
+
+def test_a_sub_parts_lead_in_starts_its_blocks():
+    """The text printed under (b) before (i), given as b(i)'s lead_in, is its
+    first block, once even when the blocks also hold it."""
+    item = _open("8", [("a", 2), ("b(i)", 1)])
+    item["parts"][1]["lead_in"] = "It is given that AC = 25 cm."
+    question = extraction.record(item, AI).question
+    assert question["parts"][1]["blocks"] == _text(
+        "It is given that AC = 25 cm."
+    ) + _text("Find b(i).")
+    item["parts"][1]["blocks"] = _text("It is given that AC = 25 cm.") + _text("x")
+    again = extraction.record(item, AI).question["parts"][1]["blocks"]
+    assert [b["text"] for b in again] == ["It is given that AC = 25 cm.", "x"]
+
+
 def test_a_part_must_say_where_its_key_came_from():
     item = _mcq("5", ["a", "b"])
     del item["parts"][0]["key_source"]

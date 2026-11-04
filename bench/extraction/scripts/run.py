@@ -491,6 +491,24 @@ def spans(pages: dict[int, str], labels: list[str]) -> dict[str, str]:
     return out
 
 
+def best_span(pages: dict[int, str], label: str, mine: str) -> str | None:
+    """The text after the occurrence of a numbered label at a line's start
+    whose span shares most numbers with ``mine``: an answer file may number
+    its instructions, or hold another paper's answers, before the right
+    entry."""
+    text = "\n".join(_FURNITURE.sub("", pages[n]) for n in sorted(pages))
+    after = re.compile(rf"(?m)^\W{{0,3}}{int(label) + 1}\s*[.,]")
+    want = numbers(mine)
+    best, score = None, -1
+    for start in re.finditer(rf"(?m)^\W{{0,3}}{label}\s*[.,]", text):
+        end = after.search(text, start.end())
+        span = text[start.end() : end.start() if end else start.end() + 6000]
+        shared = sum((want & numbers(span)).values())
+        if shared > score:
+            best, score = span, shared
+    return best
+
+
 def question_text(question: dict) -> str:
     """What a learner reads of a question: its text, table cells and options
     (not a figure's description, which the model writes)."""
@@ -778,7 +796,12 @@ def fidelity(result: dict, gold: dict, refs: Path) -> dict:
             )
             scheme[name] = {n: t for n, t in texts.items() if n >= first}
         entries: dict[str, list[str]] = collections.defaultdict(list)
+        recorded = {label_key(label) for label in labels}
         for entry in result["scheme_entries"]:
+            # Entries paired with a recorded question; unpaired ones are
+            # another question's and never reach the quiz.
+            if label_key(entry["question"]) not in recorded:
+                continue
             entries[entry["question"]].extend(
                 [
                     entry["answer"],
@@ -786,22 +809,25 @@ def fidelity(result: dict, gold: dict, refs: Path) -> dict:
                     *(p["text"] for p in entry["points"]),
                 ]
             )
-        scheme_spans = {
-            name: spans(texts, sorted(entries, key=lambda l: (len(l), l)))
-            for name, texts in scheme.items()
-        }
         srows = []
         for label, texts in entries.items():
-            references = [scheme_spans[name].get(label) for name in scheme_spans]
-            if any(ref is None for ref in references):
+            if not label.isdigit():
                 continue
             mine = _MARK_CODES.sub(" ", "\n".join(texts))
-            diff = _diff(mine, [_MARK_CODES.sub(" ", ref) for ref in references])
+            references = [best_span(texts_, label, mine) for texts_ in scheme.values()]
+            if any(ref is None for ref in references):
+                continue
+            # An entry repeats its final value in its answer, solution and
+            # points, so a number counts once: present in a reading or not.
+            theirs = set().union(
+                *(numbers(_MARK_CODES.sub(" ", r)) for r in references)
+            )
+            found = set(numbers(mine))
             srows.append(
                 {
                     "label": label,
-                    "numbers": diff["numbers"],
-                    "unsupported": diff["numbers_unsupported"],
+                    "numbers": len(found),
+                    "unsupported": sorted(found - theirs),
                 }
             )
         out["scheme"] = {

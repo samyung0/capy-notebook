@@ -292,9 +292,18 @@ def _part(raw: Any, ai_label: str) -> tuple[str, str, dict[str, Any]]:
     source = (
         raw.get("key_source") if raw.get("key_source") in (PRINTED, WORKED_OUT) else ""
     )
+    blocks = _blocks(raw.get("blocks"))
+    # A sub-part's lead-in, the text printed under (b) before (i), starts its
+    # blocks unless the model put it there too (2021 Q8(b) and Q10(b) lost
+    # theirs when the prompt only asked for it in the blocks).
+    lead_in = _text(raw.get("lead_in"), limits.QUESTION_TEXT_MAX)
+    if lead_in and not (
+        blocks and _same_blocks(blocks[:1], _blocks([{"text": lead_in}]))
+    ):
+        blocks.insert(0, {"type": "text", "text": lead_in})
     part: dict[str, Any] = {
         "id": str(uuid.uuid4()),
-        "blocks": _blocks(raw.get("blocks")),
+        "blocks": blocks,
         "answer": answer,
         "marks": raw.get("marks"),
         "solution": _solution(
@@ -375,6 +384,36 @@ def _drop_option_lines(question: dict[str, Any]) -> None:
             part["blocks"], question["stem"] = blocks, stem
 
 
+def _same_blocks(a: list[dict[str, Any]], b: list[dict[str, Any]]) -> bool:
+    def norm(block: dict[str, Any]) -> Any:
+        if block["type"] == "text":
+            return re.sub(r"\s+", " ", block["text"]).strip()
+        return block
+
+    return [norm(x) for x in a] == [norm(x) for x in b]
+
+
+def _drop_repeated_stem(question: dict[str, Any]) -> None:
+    """A one-part question shows its text once: a stem its part starts with
+    goes (the bench saw the whole text in both), and so does a stem's last
+    sentence the part repeats (2024 Q5: "Find …" in both)."""
+    stem, parts = question["stem"], question["parts"]
+    if len(parts) != 1 or not stem:
+        return
+    blocks = parts[0]["blocks"]
+    if _same_blocks(stem, blocks[: len(stem)]):
+        question["stem"] = []
+        return
+    if stem[-1]["type"] != "text" or not blocks or blocks[0]["type"] != "text":
+        return
+    tail, text = blocks[0]["text"].strip(), stem[-1]["text"].rstrip()
+    if tail and text != tail and text.endswith(tail):
+        head = text[: -len(tail)].rstrip()
+        question["stem"] = (
+            [*stem[:-1], {**stem[-1], "text": head}] if head else stem[:-1]
+        )
+
+
 def record(item: Any, ai_label: str) -> Recorded:
     """A ``record_question`` item as a quiz question in paper layout; its
     figures are read against the window's pages (``read_figures``)."""
@@ -390,6 +429,7 @@ def record(item: Any, ai_label: str) -> Recorded:
         "labels": "numbers" if first[:1].isdigit() else "letters",
     }
     _drop_option_lines(question)
+    _drop_repeated_stem(question)
     return Recorded(
         label=str(item.get("label") or "").strip(),
         question=question,
@@ -743,6 +783,7 @@ class Run:
             merged.part_labels.append(part_label)
             merged.sources.append(source)
         _drop_option_lines(merged.question)
+        _drop_repeated_stem(merged.question)
         more_figures, problem = read_figures(
             args.get("figures"), pages, merged.part_labels
         )

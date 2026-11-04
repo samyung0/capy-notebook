@@ -49,7 +49,7 @@ Record each question that starts on these pages with its own record_question cal
 Copying:
 - Keep the wording, numbers, symbols and language exactly as printed. Write math as LaTeX between $ signs ($\\frac{{7(x-2)}}{{5}}$, $x^2$, $\\angle ABC$), and a printed dollar sign for money as \\$ ($\\$78$ or \\$78); never simplify or reword the printed text.
 - A table becomes a table block. Leave out answer lines, boxes for working, "Answers written in the margins will not be marked", page headers and footers.
-- A question's parts follow its printed labels (a), (b), (b)(i). The quiz holds parts in one flat list, so (b)(i) and (b)(ii) are two parts labelled "b(i)" and "b(ii)". Text printed under (b) before (i), such as the data the sub-parts use, is never left out: it is b(i)'s first block. A question without parts has an empty stem and one part labelled "".
+- A question's parts follow its printed labels (a), (b), (b)(i). The quiz holds parts in one flat list, so (b)(i) and (b)(ii) are two parts labelled "b(i)" and "b(ii)". Text printed under (b) before (i), such as the data the sub-parts use, is never left out: give it as b(i)'s lead_in. A question without parts has an empty stem and one part labelled "".
 - At most {limits.QUIZ_QUESTION_PARTS_MAX} parts a question.
 
 Answers:
@@ -134,6 +134,10 @@ _PART = {
         "label": {
             "type": "string",
             "description": 'The printed part label: "a", "b(ii)"; "" for a question without parts.',
+        },
+        "lead_in": {
+            "type": "string",
+            "description": 'The first sub-part only: the text printed under its parent label before it, as under (b) before (i); "" when there is none.',
         },
         "blocks": {"type": "array", "items": _BLOCK, "minItems": 1},
         "answer": _ANSWER,
