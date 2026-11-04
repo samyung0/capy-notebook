@@ -23,7 +23,8 @@ gold), ``long`` (the two questions with the scheme's long numbers) or ``whole``.
 ``thumb1``, ``thumb1q``, ``thumb2``, ``thumb2q`` are Epo's images in the ignored files/,
 whole or with the question cropped out; a file there by name is its answer file, and
 ``nofile`` is the new wording with none. ``-lowsolve`` for solve calls at low reasoning and ``-strict`` for the file winning a
-disagreement, ``-mapnum`` for a map ask that numbers an unnumbered question. Every run's system prompt starts with a
+disagreement, ``-mapnum`` for a map ask that numbers an unnumbered question, ``-plain`` for no "printed"
+or "handwritten" in anything the model reads. Every run's system prompt starts with a
 nonce, so nothing it reads from a cache was written by another run.
 
 Answers, the stand-in's wording and the truth are exam text, so they live only in the
@@ -115,6 +116,47 @@ MAP_NUMBER_AFTER = (
     "share a number."
 )
 MAP_NUMBER_ADDED = "A question with no printed number takes the next number in order, starting from 1."
+# -plain: "printed" and "handwritten" out of every string the model reads (Epo
+# 2026-11-05: "i dont care how the quesitons is made"), longest first.
+PLAIN = [
+    (
+        "You copy the questions printed on exam or worksheet pages into a quiz, exactly as printed.",
+        "You copy the questions on the selected pages into a quiz, exactly as they appear.",
+    ),
+    (", in any layout, possibly handwritten.", ", in any layout."),
+    ("never change the printed question", "never change the question"),
+    ("exactly as printed", "exactly as they appear"),
+    ("a printed dollar sign for money", "a dollar sign for money"),
+    ("never simplify or reword the printed text", "never simplify or reword the text"),
+    ("follow its printed labels", "follow its labels"),
+    ("Text printed under (b)", "Text under (b)"),
+    ("the part's printed marks", "the part's marks as shown"),
+    ("only the question's total is printed", "only the question's total is shown"),
+    ("give the printed total", "give that total"),
+    ("An item printed without marks has 1", "An item with no marks shown has 1"),
+    ("<printed part labels, or none>", "<part labels, or none>"),
+    ("the question's printed number alone", "the question's number alone"),
+    ("it is printed on", "it is on"),
+    ("its printed part labels", "its part labels"),
+    ("text: the printed text.", "text: the text."),
+    ("The printed question number", "The question number"),
+    ("The printed part label", "The part label"),
+    ("the unit printed beside", "the unit shown beside"),
+    ("a unit is printed beside", "a unit is shown beside"),
+    ("the text printed under its parent", "the text under its parent"),
+    ("Text printed before the first part", "Text before the first part"),
+    ("The question's printed total, when only a total is printed.", "The question's total, when only a total is shown."),
+    ("in printed order", "in order"),
+]
+MAP_NUMBER_PLAIN = "A question with no number takes the next number in order, starting from 1."
+
+
+def plain(text: str) -> str:
+    for old, new in PLAIN:
+        text = text.replace(old, new)
+    return text
+
+
 MARKS_PROPERTY = {
     "type": "integer",
     "minimum": 1,
@@ -400,6 +442,7 @@ class State:
     on_solve: bool = False
     strict: bool = False
     map_number: bool = False
+    plain: bool = False
     map_reply: str = ""
     started: float = 0.0
     calls: list[dict] = field(default_factory=list)
@@ -427,6 +470,9 @@ def install() -> None:
     from pipeline.retrieval import extraction, models
 
     tools = tools_with_marks(prompts.TOOLS)
+    tools_plain = json.loads(plain(json.dumps(tools)))
+    if re.search(r"(?i)\bprint", json.dumps(tools_plain)):
+        raise AssertionError("printed left in the tools")
     production_messages = prompts.map_messages
 
     def map_messages(pages, boxes, *, with_text):
@@ -446,6 +492,15 @@ def install() -> None:
                 # what it found" holds, and before the ask.
                 content = messages[1]["content"]
                 content[-1:-1] = state.answer_blocks
+        if state.plain:
+            system = plain(system)
+            ask = messages[1]["content"][-1]
+            ask["text"] = plain(ask["text"]).replace(
+                MAP_NUMBER_AFTER, f"{MAP_NUMBER_AFTER} {MAP_NUMBER_PLAIN}", 1
+            )
+            for text in (system, ask["text"]):
+                if re.search(r"(?i)\bprint|handwrit", text):
+                    raise AssertionError(f"left in: {text[:200]}")
         messages[0]["content"] = f"Run {state.nonce}.\n{system}"
         if state.map_number:
             ask = messages[1]["content"][-1]
@@ -481,7 +536,7 @@ def install() -> None:
         purpose = kwargs.get("call_purpose", "")
         PURPOSE.set(purpose)
         if state.answer_blocks is not None and kwargs.get("tools"):
-            kwargs["tools"] = tools
+            kwargs["tools"] = tools_plain if state.plain else tools
         if state.low_solve and purpose == "extraction_solve":
             bind_request_llm("low")
         if state.on_solve and purpose == "extraction_solve":
@@ -692,6 +747,7 @@ async def one_job(job: dict, args, validate, model, detections: dict) -> dict:
         on_solve=job["on_solve"],
         strict=job["strict"],
         map_number=job["map_number"],
+        plain=job["plain"],
     )
     STATE.set(state)
     elitellm.bind_route_slot("extraction")
@@ -732,6 +788,7 @@ async def one_job(job: dict, args, validate, model, detections: dict) -> dict:
                 "on_solve",
                 "strict",
                 "map_number",
+                "plain",
             )
         },
         "nonce": state.nonce,
@@ -819,6 +876,7 @@ def parse_job(text: str) -> tuple[dict, int]:
             "on_solve": "onsolve" in flags,
             "strict": "strict" in flags,
             "map_number": "mapnum" in flags,
+            "plain": "plain" in flags,
             "name": f"{selection}-{file}-{mode or 'base'}",
         },
         int(runs),
@@ -970,6 +1028,7 @@ def load_runs() -> dict[str, list[dict]]:
             + ("-onsolve" if job.get("on_solve") else "")
             + ("-strict" if job.get("strict") else "")
             + ("-mapnum" if job.get("map_number") else "")
+            + ("-plain" if job.get("plain") else "")
         )
         runs[f"{job['selection']}:{job['file']}:{mode}"].append(result)
     return runs

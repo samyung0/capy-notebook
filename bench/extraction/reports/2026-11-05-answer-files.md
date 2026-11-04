@@ -25,7 +25,7 @@ parse, but the parse saves another question's answers without warning when a fil
 | Wording | **Add "even when your own working disagrees"** | Without it the model replaced the file's answer in all 6 runs. With it, 10 of 12 parts follow the file. See [following the file](#does-the-model-follow-the-file) |
 | The `marks` field on `record_answers` | **Drop it** | It changed nothing in any first-message run: the copy calls already get the marks right. On solve, where it was meant to help, it left Q7 wrong in 2 of 3 text runs |
 | Lower reasoning on solve | **No** | No clear saving, and the marks and answers were the same |
-| A whiteboard photo with no question number | **Your crop, plus one more wording test** | See [your images](#epos-images) |
+| A whiteboard photo with no question number | **No "printed" or "handwritten" in the prompts, as you decided** | Whole whiteboard found and solved 6 of 6, against 2 of 9. See [no "printed"](#no-printed-in-the-prompts) |
 
 ## The main table
 
@@ -239,9 +239,69 @@ What this shows:
 A question with no printed number takes the next number in order, starting from 1.
 ```
 
-It took the whole whiteboard from 2 of 9 to 2 of 3, and it lets working into the question. I would not adopt it alone.
-I think the first line of the system prompt is the real blocker, and that is untested: "printed" could become "printed
-or handwritten". I'd want your wording call before testing that.
+It took the whole whiteboard from 2 of 9 to 2 of 3, and it lets working into the question. Alone it wasn't enough: the
+next section's removal is what fixed it.
+
+## No "printed" in the prompts
+
+Epo, 2026-11-05: "remove printed/handwritten, i thought thats removed already, i dont care how the quesitons is made".
+They had not been removed. All these runs also have the stricter answer sentence and the map's numbering sentence.
+
+| Image or paper | How sent | Runs | Question found | Answer right | Note |
+|---|---|---:|---:|---:|---|
+| **Whiteboard, whole** | Empty slot | 6 | **6** | **6** | Working copied into the question in 2 |
+| Whiteboard, cropped | Empty slot | 3 | 3 | 1 | The crop still misreads the numerator in 2 |
+| Worksheet, whole | Empty slot | 3 | 3 | 3 | Marks total 7, not 5, in all 3 |
+
+| 2021 P1 | Wall s | Credits | Answers right | Marks right | Q4, Q7 right | New wording in a copy |
+|---|---|---|---|---|---:|---|
+| Text in the first message | 84 (68-99) | 20.5 (17.4-22.2) | 19, 19, 19 | 19, 19, 19 | 3, 3 of 3 | None |
+| Images in the first message | 92 (91-94) | 22.0 (21.7-22.5) | 19, 19, 19 | 19, 19, 19 | 3, 3 of 3 | One harmless symbol form |
+| No answer file | 99 (81-131) | 20.1 (16.4-25.7) | 19, 19, 19 | 19, 17, 17 | 3, 1 of 3 | None |
+
+Nothing got worse on the paper. The map has its 10 rows and the figures are the same, in every run. Costs sit within the
+earlier ranges, except images, which came in below them (22.0 against 25.0 to 27.9, with few runs). I can't say that is real.
+
+**What remains on photos.** Working now reaches the question on a whiteboard in 2 of 6 runs, and a page's marks are misread
+on the low-resolution worksheet. A rule would be untested wording, for your call: the "Leave out" line could also name
+`working written under a question`.
+
+**Every string,** before and after. The box call and two tool results are listed but were not all exercised here: the box
+call ran with its old wording, and the results never fired.
+
+| Where | Before | After |
+|---|---|---|
+| System, opening | `You copy the questions printed on exam or worksheet pages into a quiz, exactly as printed.` | `You copy the questions on the selected pages into a quiz, exactly as they appear.` |
+| Answer files sentence | `..., in any layout, possibly handwritten.` | `..., in any layout.` |
+| Copying order, mcq, map, schema | `in printed order` | `in order` |
+| Answer sentence | `never change the printed question` | `never change the question` |
+| Copying | `exactly as printed` | `exactly as they appear` |
+| Copying | `a printed dollar sign for money` | `a dollar sign for money` |
+| Copying | `never simplify or reword the printed text` | `never simplify or reword the text` |
+| Parts | `follow its printed labels` | `follow its labels` |
+| Parts | `Text printed under (b)` | `Text under (b)` |
+| Marks | `the part's printed marks` | `the part's marks as shown` |
+| Marks | `only the question's total is printed` | `only the question's total is shown` |
+| Marks | `give the printed total` | `give that total` |
+| Marks | `An item printed without marks has 1` | `An item with no marks shown has 1` |
+| Map | `<printed part labels, or none>` | `<part labels, or none>` |
+| Map | `the question's printed number alone` | `the question's number alone` |
+| Map, added after the section sentence | none | `A question with no number takes the next number in order, starting from 1.` |
+| Map, schema `pages` | `it is printed on` | `it is on` |
+| Map | `its printed part labels` | `its part labels` |
+| Schema, blocks | `text: the printed text.` | `text: the text.` |
+| Schema, label | `The printed question number` | `The question number` |
+| Schema, part label | `The printed part label` | `The part label` |
+| Schema, unit | `the unit printed beside` | `the unit shown beside` |
+| Schema, accepted | `a unit is printed beside` | `a unit is shown beside` |
+| Schema, lead-in | `the text printed under its parent` | `the text under its parent` |
+| Schema, stem | `Text printed before the first part` | `Text before the first part` |
+| Schema, total | `The question's printed total, when only a total is printed.` | `The question's total, when only a total is shown.` |
+| Box call, to change when built | `You find figures on a printed exam or worksheet page.` | `You find figures on a page.` |
+| Tool result, to change when built | `its printed label` | `its label` |
+| Tool result, to change when built | `the page numbers it is printed on` | `the page numbers it is on` |
+
+The parse's prompt also says "printed", and goes with the parse.
 
 ## The wording, verbatim
 
@@ -306,10 +366,10 @@ Call settings, tools and every other string are production's, in `todo-study-tra
 
 ## Limits and failures
 
-- 109 runs and 762 calls, all served by InferenceNet. No reply was cut off. One solve stream failed in a whole-paper run,
+- 130 runs, all served by InferenceNet. No reply was cut off. One solve stream failed in a whole-paper run,
   and its retry recorded the answers.
 - The longest reply was 10,656 tokens.
-- Refusals were production's existing kinds, up to 8 across a set's 3 runs. All were recorded in a later round.
+- Refusals were production's existing kinds, up to 10 across a set's 3 runs. All were recorded in a later round.
 - No copy call tried to record answers.
 
 ## What this can't show
@@ -333,8 +393,8 @@ Call settings, tools and every other string are production's, in `todo-study-tra
 
 ## Spend
 
-$0.79 of the $1 stop, against the $0.60 budget, all 1017 on the extraction route. The rise came from three things I added
-along the way: the stricter wording, the parse on the doctored files, and Epo's images. One process at a time, 3 runs in
+$0.89 of the $1 stop, against the $0.60 budget, all 1017 on the extraction route. The rise came from what was added along
+the way: the stricter wording, the parse on the doctored files, Epo's images and the removal of "printed". One process at a time, 3 runs in
 flight at most, peak RSS about 300 MB on the one run measured. Keys stayed in the process, read only from their named lines
 in `deploy/.env.uat`. Nothing covers this script with a test.
 
@@ -354,5 +414,5 @@ python -I bench/extraction/scripts/answer_files.py run --refs $R --detections <p
 python -I bench/extraction/scripts/answer_files.py score --refs $R
 ```
 
-`python` is the repository's `.venv`. Flags on a mode: `-strict`, `-lowsolve`, `-onsolve`, `-mapnum`. Results land in the
+`python` is the repository's `.venv`. Flags on a mode: `-strict`, `-lowsolve`, `-onsolve`, `-mapnum`, `-plain`. Results land in the
 ignored `.results/answerfiles/`.
