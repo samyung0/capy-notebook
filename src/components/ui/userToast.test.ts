@@ -1,4 +1,4 @@
-import { beforeEach, expect, it } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 import { dismissToast, finishToast, shownToasts, userToast } from './userToast';
 
 beforeEach(() => {
@@ -25,6 +25,20 @@ it('shows a different toast once the shown one has closed', () => {
   expect(shownToasts().other?.closing).toBe(true);
   finishToast(shownToasts().other!.id);
   expect(shownToasts().other).toMatchObject({ count: 1, title: 'Link copied' });
+});
+
+it('tells a toast it closed, shown or still queued, and not when replaced', () => {
+  const shownClosed = vi.fn();
+  const queuedClosed = vi.fn();
+  userToast({ id: 'old', onClose: shownClosed, title: 'Old edits' });
+  userToast({ id: 'old', onClose: shownClosed, title: 'Old edits again' });
+  userToast({ id: 'next', onClose: queuedClosed, title: 'Next' });
+  expect(shownClosed).not.toHaveBeenCalled();
+  dismissToast('next');
+  expect(queuedClosed).toHaveBeenCalledTimes(1);
+  dismissToast('old');
+  finishToast('old');
+  expect(shownClosed).toHaveBeenCalledTimes(1);
 });
 
 it('keeps an open error at the bottom while other toasts show above it', () => {

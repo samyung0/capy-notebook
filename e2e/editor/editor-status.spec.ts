@@ -7,7 +7,7 @@ import { m } from '../i18n';
 test('header distinguishes pending edits from durable saves', async ({
   page,
 }) => {
-  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
+  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor');
   const editor = page.locator(
     '[data-slate-editor="true"][contenteditable="true"]'
   );
@@ -16,10 +16,7 @@ test('header distinguishes pending edits from durable saves', async ({
   await expect(status).toHaveAttribute('data-save-state', 'saved');
   await expect(status.locator('svg')).toBeVisible();
   const savedIcon = await status.locator('svg').innerHTML();
-  await page
-    .getByRole('button', { name: m.material_mode() })
-    .press('Shift+Tab');
-  await expect(status).toBeFocused();
+  await status.focus();
   const tooltip = page.locator('[data-slot="tooltip-content"][data-open]');
   await expect(tooltip).toBeVisible();
   await expect(
@@ -88,22 +85,20 @@ test('header distinguishes pending edits from durable saves', async ({
   await page.evaluate(() => {
     (window as unknown as { disconnectEditor: () => void }).disconnectEditor();
   });
-  // The browser is online, so a dropped room reads as reconnecting.
-  await expect(status).toHaveAttribute('data-save-state', 'reconnecting');
+  // A dropped room changes nothing until its 30 s passed (D2): pending work
+  // reads Syncing, its late receipt Saved, and the next edit Syncing again.
+  await expect(status).toHaveAttribute('data-save-state', 'syncing');
   await releaseCheckpoint();
-  await expect(status).toHaveAttribute('data-save-state', 'reconnecting');
+  await expect(status).toHaveAttribute('data-save-state', 'saved');
   await page.keyboard.insertText(' offline edit');
   await page.clock.runFor(1000);
-  await expect(status).toHaveAttribute('data-save-state', 'reconnecting');
+  await expect(status).toHaveAttribute('data-save-state', 'syncing');
   await page.evaluate(() => {
     (window as unknown as { connectEditor: () => void }).connectEditor();
   });
   await expect(status).toHaveAttribute('data-save-state', 'syncing');
   await releaseCheckpoint();
   await expect(status).toHaveAttribute('data-save-state', 'saved');
-
-  await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(status).toHaveCount(0);
 });
 
 // A note on screen whose reconnect waits on the open budget keeps its editor
@@ -112,7 +107,7 @@ test('header distinguishes pending edits from durable saves', async ({
 test('a slowed reconnect says so under the sync indicator', async ({
   page,
 }) => {
-  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
+  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor');
   const editor = page.locator(
     '[data-slate-editor="true"][contenteditable="true"]'
   );
@@ -137,7 +132,7 @@ test('a slowed reconnect says so under the sync indicator', async ({
       } else mock.setCollaborationSlowed(false);
     }, value);
   await slow(true);
-  await expect(status).toHaveAttribute('data-save-state', 'reconnecting');
+  await expect(status).toHaveAttribute('data-save-state', 'saved');
   await expect(line).toHaveCount(0);
   await expect(line).toBeVisible({ timeout: 10_000 });
   await expect(editor).toBeVisible();
@@ -151,7 +146,7 @@ test('a slowed reconnect says so under the sync indicator', async ({
 // avatar per person from the room's presence, at most three, then +N; gone
 // when they leave.
 test('the header lists co-editors as an avatar group', async ({ page }) => {
-  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
+  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor');
   await expect(
     page.locator('[data-slate-editor="true"][contenteditable="true"]')
   ).toBeVisible({ timeout: 30_000 });
@@ -202,7 +197,7 @@ test("co-editors' carets, pointers and block selections show until the show-othe
     page.locator('[data-remote-run="Ben"]'),
   ];
   const openWithPeers = async () => {
-    await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
+    await page.goto('/workspaces/ws_bio?material=mat_e2e_editor');
     await expect(editor).toBeVisible({ timeout: 30_000 });
     await page.evaluate(async () => {
       const path = '/src/mocks/collaboration.ts';
@@ -242,7 +237,7 @@ test("co-editors' carets, pointers and block selections show until the show-othe
 test("this tab's pointer and block selection reach co-editors", async ({
   page,
 }) => {
-  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
+  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor');
   await expect(
     page.locator('[data-slate-editor="true"][contenteditable="true"]')
   ).toBeVisible({ timeout: 30_000 });

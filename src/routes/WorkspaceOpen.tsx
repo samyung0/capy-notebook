@@ -44,7 +44,7 @@ import {
   OfficeInsetContext,
 } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
-import { Menu, type MenuItem } from '@/components/ui/Menu';
+import type { MenuItem } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import {
   Popover,
@@ -84,7 +84,6 @@ import {
   canManageWorkspaceSettings,
   isWorkspaceReadOnly,
 } from '@/features/workspace/access';
-import { addSourceMenuItems } from '@/features/workspace/addSourceMenuItems';
 import { ChatPanel, type ChatRequest } from '@/features/workspace/ChatPanel';
 import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog';
 import { ArchivedChatsDialog } from '@/features/workspace/chat/ArchivedChatsDialog';
@@ -132,8 +131,8 @@ const PracticePage = lazy(() =>
 /** The header's panel toggles while their panel is open: the icon's strip
  * fills in the accent. */
 const PANEL_TOGGLE_OPEN = 'text-action-accent hover:text-action-accent';
-// The section panel beside the rail: the boards' 248px (T3, P2).
-const LEFT_SIZE = 248;
+// The section panel beside the rail (Epo 2026-11-04).
+const LEFT_SIZE = 272;
 const LEFT_MIN = 220;
 const VIEWER_MIN = 400;
 // The rail is 32% of the group from 1380px up (~438px at a 1400px window).
@@ -223,7 +222,7 @@ function useHeldHandle(held: HeldHandle) {
 /** Lays the side panels out whenever one opens or closes: the panel that did
  * not change keeps its width and the viewer takes the difference (the
  * library's own resize moves space to and from the farthest panel first, so
- * opening the rail collapsed the left panel). The left opens at 248px, the
+ * opening the rail collapsed the left panel). The left opens at 272px, the
  * rail at railSize, which it follows when the window resizes while it is the
  * only side panel open. When the viewer would drop under its least width, the
  * rail and then the left give way down to theirs. */
@@ -599,7 +598,7 @@ function WorkspaceOpen() {
       navigate({
         replace: true,
         resetScroll: false,
-        search: { material: citation.materialId, mode: 'view' },
+        search: { material: citation.materialId },
         to: '.',
       });
       return;
@@ -1088,6 +1087,10 @@ function WorkspaceOpen() {
         {section === 'files' ? (
           <FilesPanel
             generating={generating}
+            onAddSource={readOnly ? undefined : setAddSource}
+            onAddTopic={
+              readOnly ? undefined : () => setTopicForm({ mode: 'add' })
+            }
             onNavigate={() => setCitationTarget(null)}
             onOpenItem={setOpenItem}
             onRenameTopic={(ch) =>
@@ -1096,27 +1099,9 @@ function WorkspaceOpen() {
             openItem={openItem}
             readOnly={readOnly}
             renderTabRow={() => (
-              <SectionTitle
-                actions={
-                  !readOnly && (
-                    <div className="contents" data-workspace-add-menu>
-                      <Menu
-                        align="end"
-                        items={addSourceMenuItems(setAddSource, () =>
-                          setTopicForm({ mode: 'add' })
-                        )}
-                        trigger={
-                          <ToolbarButton label={m.action_new_file_or_topic()}>
-                            <Icon name="plus" />
-                          </ToolbarButton>
-                        }
-                      />
-                    </div>
-                  )
-                }
-                title={m.workspace_tab_files()}
-              />
+              <SectionTitle title={m.workspace_tab_files()} />
             )}
+            searchable
             uploadTopic={addSource ? openTopicId : undefined}
             workspaceId={workspaceId}
           />
@@ -1165,7 +1150,9 @@ function WorkspaceOpen() {
                   : 'practice'
                 : null
             }
-            onOpen={openStudy}
+            onOpen={(page) =>
+              openStudy(page === 'summary' ? 'summary' : 'practice')
+            }
             pages={studyView(ws).pages}
           />
         )}

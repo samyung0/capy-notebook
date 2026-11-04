@@ -4829,6 +4829,43 @@ components:
         - itemId
         - rating
       type: object
+    ReadableMaterialsInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ReadableMaterialsInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ids:
+          description: Materials this device keeps a copy of
+          items:
+            type: string
+          maxItems: 500
+          minItems: 1
+          type: array
+          uniqueItems: true
+      required:
+        - ids
+      type: object
+    ReadableMaterialsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ReadableMaterialsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ids:
+          description: The ones the caller can still read
+          items:
+            type: string
+          type: array
+      required:
+        - ids
+      type: object
     RecentOpen:
       additionalProperties: false
       properties:
@@ -10344,6 +10381,31 @@ paths:
       summary: Create a standalone note
       tags:
         - Materials
+  /api/materials/readable:
+    post:
+      operationId: readableMaterials
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReadableMaterialsInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadableMaterialsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List which of these materials the caller can read
+      tags:
+        - Material collaboration
   /api/materials/{id}:
     delete:
       operationId: deleteMaterial
@@ -10381,6 +10443,13 @@ paths:
           required: true
           schema:
             type: string
+        - description: Leave the document out (an empty value), for a device holding its own copy
+          explode: false
+          in: query
+          name: noContent
+          schema:
+            description: Leave the document out (an empty value), for a device holding its own copy
+            type: boolean
       responses:
         "200":
           content:

@@ -79,7 +79,7 @@ export default function MaterialOpen() {
               });
             }}
             readOnly={fileId ? fileReadOnly : false}
-            requestedMode={'mode' in search ? search.mode : null}
+            requestedMode={'mode' in search ? (search.mode ?? null) : null}
             standalone
             topics={[]}
             workspaceId={workspaceId}

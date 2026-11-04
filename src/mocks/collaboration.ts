@@ -258,6 +258,9 @@ function materialRoom(name: string, initialValue: MaterialValue): Room {
   const materialId = name.split(':')[1] ?? '';
   const room = createRoom(name, { id: materialId, kind: 'material' });
   if (!checkpoints.has(name)) {
+    // A device copy of a load-test note merges with its reseeded room.
+    if (import.meta.env.VITE_LOAD_TEST_SEED === 'true')
+      room.document.clientID = 7;
     room.document
       .get('content', Y.XmlText)
       .applyDelta(slateNodesToInsertDelta(initialValue));
@@ -1229,6 +1232,21 @@ export function mockNoteRoomText(materialId: string): string | null {
  * from now on each answers its next join `collaboration-late`, and a new
  * session joins as usual (`every`: a new one is late too, which the late path
  * takes for a failure); null ends it. */
+/** A note room as a spec checks it: its top-level block types, whether a
+ * participant wrote since it loaded, and its whole state. */
+export function mockNoteRoomState(materialId: string) {
+  const room = rooms.get(mockMaterialRoom(materialId));
+  if (!room) return null;
+  const root = room.document.get('content', Y.XmlText);
+  return {
+    blocks: (root.toDelta() as { insert: unknown }[]).map(({ insert }) =>
+      insert instanceof Y.XmlText ? String(insert.getAttribute('type')) : ''
+    ),
+    dirty: room.dirty,
+    state: Array.from(Y.encodeStateAsUpdate(room.document)),
+  };
+}
+
 export function lateSessions(materialId: string | null, every = false) {
   if (materialId) lateMaterials.set(materialId, every ? 'every' : 'joined');
   else lateMaterials.clear();

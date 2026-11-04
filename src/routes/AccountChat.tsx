@@ -158,10 +158,7 @@ export default function AccountChat() {
   function openCitation(citation: Citation) {
     const { materialId } = citation;
     if (materialId)
-      void openItem('material', materialId, {
-        material: materialId,
-        mode: 'view',
-      });
+      void openItem('material', materialId, { material: materialId });
     else
       void openItem(
         'file',

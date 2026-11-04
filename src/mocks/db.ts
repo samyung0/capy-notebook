@@ -72,9 +72,11 @@ import {
 import { dialogFiles, dialogSourceFile } from './dialogFiles';
 import {
   buildEditorNoteValue,
+  buildTableEndNoteValue,
   EDITOR_NOTE,
   EDITOR_WORKSPACE_ID,
   RUNNING_CHAT,
+  TABLE_END_NOTE,
 } from './editorSeed';
 import { errorMaterials } from './errorMaterials';
 import { markdownSamples } from './markdownSamples';
@@ -3001,6 +3003,23 @@ if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
       scopeFileNames: [],
       scopeTopics: [],
       title: EDITOR_NOTE.title,
+      topicId: null,
+      workspaceId: EDITOR_WORKSPACE_ID,
+      workspaceName: 'Biology 101',
+    }),
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      content: createMaterialDocument(
+        buildTableEndNoteValue() as MaterialValue
+      ),
+      createdAt: days(1),
+      id: TABLE_END_NOTE.id,
+      kind: 'note',
+      privacy: 'private',
+      role: 'owner',
+      scopeFileNames: [],
+      scopeTopics: [],
+      title: TABLE_END_NOTE.title,
       topicId: null,
       workspaceId: EDITOR_WORKSPACE_ID,
       workspaceName: 'Biology 101',

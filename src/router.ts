@@ -46,6 +46,7 @@ import { parseThemeSearch } from '@/components/app/themeDrawerSearch';
 import { prefetchOfficeFile } from '@/features/files/prefetchOfficeFile';
 import {
   parseDocumentModeSearch,
+  parseMaterialPageSearch,
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
 import {
@@ -370,7 +371,7 @@ const appRoutes = [
       void queryClient.prefetchQuery(materialQuery(params.materialId));
     },
     path: '/materials/$materialId',
-    validateSearch: parseDocumentModeSearch,
+    validateSearch: parseMaterialPageSearch,
   }),
   createRoute({
     component: lazyPage(() => import('@/routes/MaterialOpen')),

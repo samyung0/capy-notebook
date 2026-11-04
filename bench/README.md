@@ -43,6 +43,13 @@ deltas stay warn-only. Details: [editor-perf.md](../openwiki/editor-perf.md).
 Results land in the gitignored `editor/.results/`, so this family has no
 committed reports.
 
+`bench/editor/scripts/open-paint.mjs` measures a note's one way of opening on a
+production build with MSW, by hand (its header has the build): click or navigation
+to the note's text on screen, to an editable editor, its token's answer to that
+and the long tasks' blocking, first open and reopen from the device copy. MSW adds
+about 1.1 s to every `/api` call, so compare builds, not absolutes. Findings:
+[`editor/reports/2026-11-04-open-paint.md`](editor/reports/2026-11-04-open-paint.md).
+
 `pnpm bench:office` is the Office runtime's spec (`editor/scripts/runtime.office.ts`):
 a production build with MSW, the runtime on a second port of `localhost` (another
 origin on the same site, as in production), and a small and a large file per

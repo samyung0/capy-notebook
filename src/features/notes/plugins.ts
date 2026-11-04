@@ -112,10 +112,7 @@ import {
 } from './BlockSelection';
 import { customBlockPlugins } from './blocks/plugins';
 import type { EditorCollaborationOptions } from './Collaboration';
-import {
-  buildCollaborationPlugins,
-  collaborationTrailingBlockPlugin,
-} from './collaborationPlugins';
+import { buildCollaborationPlugins } from './collaborationPlugins';
 import {
   EquationPlugin,
   equationRule,
@@ -142,6 +139,7 @@ import {
 import { pendingRefsPlugin } from './pendingRefs';
 import { remoteCursorDecorationPlugin } from './RemoteCursors';
 import { remoteNormalizationPlugin } from './remoteNormalization';
+import { trailingBlockPlugin } from './roomBinding';
 import { SlashInputElement } from './SlashInput';
 import { stableElementIdsPlugin } from './stableElementIds';
 import { mergeTableCellsSafe, sanitizeTableStructure } from './tableStructure';
@@ -674,7 +672,7 @@ export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
         insertBefore: { keys: 'mod+shift+enter' },
       },
     }),
-    collaborationTrailingBlockPlugin,
+    trailingBlockPlugin,
     BlockPlaceholderPlugin.configure({
       options: {
         className:

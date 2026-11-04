@@ -26,13 +26,6 @@ test('a note holding a block this version cannot edit opens read-only', async ({
   await tree
     .getByRole('link', { exact: true, name: EDITOR_NOTE.title })
     .click();
-  const mode = page.getByRole('button', {
-    exact: true,
-    name: m.material_mode(),
-  });
-  await expect(mode).toBeVisible({ timeout: 30_000 });
-  if ((await mode.getAttribute('aria-pressed')) !== 'true') await mode.click();
-
   await expect(page.getByText(m.editor_unsupported_block_strip())).toBeVisible({
     timeout: 30_000,
   });

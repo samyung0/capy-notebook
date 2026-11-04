@@ -666,6 +666,8 @@ export type GenerateOptions =
    quizzes and flashcardSets are referenced by the unified materials index. */
 /** `content` is the rich Plate document; the wire keeps its nodes opaque. */
 export type Material = Omit<GenMaterial, 'content'> & {
+  /** Read without its body: this device holds its own copy of the note. */
+  contentOmitted?: boolean;
   content: import('@/features/materials/document').MaterialDocument;
 };
 

@@ -12,12 +12,17 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from 'react';
-import { isMaterialContentUnreadable, qk } from '@/api/client';
-import { useFile, useMaterial, useMaterials, useRecordOpen } from '@/api/hooks';
+import { isApiError, isMaterialContentUnreadable, qk } from '@/api/client';
+import {
+  useFile,
+  useMaterial,
+  useMaterials,
+  useMe,
+  useRecordOpen,
+} from '@/api/hooks';
 import type {
   Material,
   MaterialListItem,
@@ -36,7 +41,14 @@ import { Icon } from '@/components/ui/Icon';
 import { Menu } from '@/components/ui/Menu';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
+import {
+  copyLabel,
+  keepsCopyOf,
+  type RoomCopy,
+  useKeepMaterialCopy,
+  useMaterialCopy,
+  useRoomSeed,
+} from '@/features/collaboration/deviceCopy';
 import {
   createPresenceStore,
   type PresenceConnection,
@@ -64,9 +76,6 @@ import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
-import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
-import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
-import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { QuizEditor } from '@/features/quizzes/QuizEditor';
@@ -78,6 +87,8 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
+import { useOnlineStatus } from '@/lib/online';
+import { dropDeviceCopies } from '@/lib/sourceCache';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import {
   createEditorStatusStore,
@@ -90,58 +101,36 @@ import {
   type FlashcardsElement,
   flashcardsElementToCards,
   type MaterialDocument,
-  type MaterialValue,
-  parseMaterialDocument,
   type QuizElement,
 } from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
-import {
-  MaterialAttributionFooter,
-  SourcesLine,
-} from './MaterialAttributionFooter';
+import { SourcesLine } from './MaterialAttributionFooter';
 import { RemovedAssetsContext, useRemovedAssets } from './MediaAssetView';
 import { MermaidMaterialView } from './MermaidMaterialView';
+import type { MaterialMode } from './modePolicy';
 import {
-  type MaterialMode,
-  materialModePolicy,
-  resolveMaterialMode,
-} from './modePolicy';
-import { showNoteCitation } from './noteCitation';
+  DocumentAttribution,
+  loadPreview,
+  NoteBody,
+  NoteSkeleton,
+} from './NoteBody';
 import {
   type NoteCitationTarget,
   type OpenItem,
   readDocumentMode,
   saveDocumentMode,
 } from './openItem';
-import { embedKey, useNoteFooter } from './useNoteFooter';
-
-/* Interactive Plate is the heaviest chunk in this route. View mode
- * deliberately never loads it. */
-const NoteEditor = lazy(() =>
-  import('@/features/notes/NoteEditor').then((m) => ({
-    default: m.NoteEditor,
-  }))
-);
 
 /* A standalone mindmap's or diagram's live editor: CodeMirror, no Plate. */
 const MermaidMaterialEditor = lazy(
   () => import('@/features/notes/blocks/MermaidMaterialEditor')
 );
 
-/* Static Plate preview is still heavy — keep it out of the PDF / media path. */
-let previewModule: typeof import('./MaterialPreview') | undefined;
-const loadPreview = () =>
-  import('./MaterialPreview').then((module) => {
-    previewModule = module;
-    return module;
-  });
-const LazyMaterialPreview = lazy(() =>
-  loadPreview().then((m) => ({ default: m.MaterialPreview }))
+/* The static renderer of what is not a note (a note's is in NoteBody). */
+const MaterialPreview = lazy(() =>
+  loadPreview().then((module) => ({ default: module.MaterialPreview }))
 );
-type PreviewComponent =
-  | typeof LazyMaterialPreview
-  | typeof import('./MaterialPreview').MaterialPreview;
 
 /** The center pane. Dispatches on the currently-open item — a source file or a
  * study material — and renders a consistent header plus the item body. Quiz and
@@ -186,8 +175,10 @@ export function CenterContent({
   const [fileMenu, setFileMenu] = useState<HTMLSpanElement | null>(null);
   const [fileActions, setFileActions] = useState<HTMLSpanElement | null>(null);
   const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
-  const materialMode =
-    requestedMode ?? (item ? readDocumentMode(item) : 'view');
+  // An Office or text file's: a material opens at the highest mode its reader
+  // may have (Epo 2026-11-04).
+  const fileMode =
+    item?.kind === 'file' ? (requestedMode ?? readDocumentMode(item)) : 'view';
   // Full screen lives in the URL (`?fullscreen=true`) so the back gesture
   // leaves it; opening another item drops it with the rest of the search.
   const isFullscreen =
@@ -246,7 +237,8 @@ export function CenterContent({
   }, [isFullscreen, setFullscreen]);
 
   useEffect(() => {
-    if (item && requestedMode) saveDocumentMode(item, requestedMode);
+    if (item?.kind === 'file' && requestedMode)
+      saveDocumentMode(item, requestedMode);
   }, [item?.kind, item?.id, requestedMode]);
 
   // Each open orders Recent Files and the quick open (the hook sends at most
@@ -258,14 +250,10 @@ export function CenterContent({
     if (openKind && openId) recordOpen({ id: openId, kind: openKind });
   }, [openKind, openId, recordOpen]);
 
-  const changeMaterialMode = (nextMode: MaterialMode) => {
+  const changeFileMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
     setPresence(null);
-    if (item) saveDocumentMode(item, nextMode);
-    // The open editor's live document goes into the cached material before
-    // View renders, so View renders it once.
-    if (nextMode === 'view' && item?.kind === 'material')
-      handOverLiveNote(item.id);
+    if (item?.kind === 'file') saveDocumentMode(item, nextMode);
     onModeChange(nextMode);
   };
 
@@ -282,7 +270,7 @@ export function CenterContent({
   }
   return (
     <FileModeContext.Provider
-      value={{ mode: materialMode, onChange: changeMaterialMode }}
+      value={{ mode: fileMode, onChange: changeFileMode }}
     >
       <FileHeaderTarget.Provider value={fileHeader}>
         <FileMenuTarget.Provider value={fileMenu}>
@@ -322,7 +310,6 @@ export function CenterContent({
                           isFullscreen={isFullscreen}
                           item={item}
                           leading={leading}
-                          materialMode={materialMode}
                           menuBar={
                             <span
                               className="flex min-w-0 items-center"
@@ -333,7 +320,6 @@ export function CenterContent({
                           onDeleted={onDeleted}
                           oneColumn={oneColumn}
                           onImageZoomChange={setImageZoom}
-                          onMaterialModeChange={changeMaterialMode}
                           onToggleFullscreen={() =>
                             setFullscreen(!isFullscreen)
                           }
@@ -362,7 +348,6 @@ export function CenterContent({
                               citation={item.citation}
                               key={item.id}
                               materialId={item.id}
-                              mode={materialMode}
                               onEditorStatusChange={setEditorStatus}
                               onPresenceChange={setPresence}
                               readOnly={readOnly}
@@ -425,7 +410,6 @@ function MaterialBody({
   citation,
   materialId,
   workspaceId,
-  mode,
   allowExternalAssets,
   onEditorStatusChange,
   onPresenceChange,
@@ -436,7 +420,6 @@ function MaterialBody({
   citation?: NoteCitationTarget;
   materialId: string;
   workspaceId: string;
-  mode: MaterialMode | null;
   allowExternalAssets: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
   onPresenceChange: (connections: PresenceConnection[] | null) => void;
@@ -450,7 +433,7 @@ function MaterialBody({
   // Wait for the list before deciding. Rendering first and gating afterwards
   // would download the very document the gate exists to avoid, then throw the
   // mounted editor away.
-  if (workspaceId && isPending) return <FileLoading />;
+  if (workspaceId && isPending) return <MaterialLoading />;
 
   const reference = materials?.find((entry) => entry.id === materialId);
   const heavy = heavyMaterial(reference);
@@ -473,7 +456,6 @@ function MaterialBody({
       key={materialId}
       kind={reference?.type ?? listedKind(queryClient, materialId)}
       materialId={materialId}
-      mode={mode}
       onEditorStatusChange={onEditorStatusChange}
       onPresenceChange={onPresenceChange}
       staticNote={choice === 'readOnly'}
@@ -482,16 +464,31 @@ function MaterialBody({
   );
 }
 
-/** Shows a chat citation's passage in the note beside it. Each click brings
- * a new citation object, so a repeat scrolls and flashes again. */
-function NoteCitation({ citation }: { citation: NoteCitationTarget }) {
-  const anchor = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const scroller = anchor.current?.parentElement;
-    return scroller ? showNoteCitation(scroller, citation) : undefined;
-  }, [citation]);
-  return <span hidden ref={anchor} />;
+/** Nothing to paint yet: a wordless skeleton (Epo 2026-11-04), or while offline
+ * the one true thing to say (C9). */
+function MaterialLoading() {
+  const online = useOnlineStatus();
+  return online ? <NoteSkeleton /> : <FileLoading />;
 }
+
+const storedCards = (material: Material) =>
+  flashcardsElementToCards(
+    material.content.value.find(
+      (node): node is FlashcardsElement => node.type === 'flashcards'
+    ) ?? { children: [], id: '', type: 'flashcards' }
+  );
+
+/** A quiz's questions as its read stored them: no answer key. */
+const storedQuestions = (content: MaterialDocument) => {
+  const quiz = content.value.find(
+    (node): node is QuizElement => node.type === 'quiz'
+  );
+  return (quiz?.children ?? []).flatMap((node) =>
+    'type' in node && node.type === 'quiz_question'
+      ? [node.question as unknown as LearnerQuestion]
+      : []
+  );
+};
 
 /** A set's View: the stored cards, then the room's as they change. */
 function LiveSetGrid({
@@ -504,12 +501,7 @@ function LiveSetGrid({
   /** A card to open at once (a link to it). */
   openCardId?: string;
 }) {
-  const stored = flashcardsElementToCards(
-    material.content.value.find(
-      (node): node is FlashcardsElement => node.type === 'flashcards'
-    ) ?? { children: [], id: '', type: 'flashcards' }
-  );
-  const cards = useLiveSetCards(material.id, stored);
+  const cards = useLiveSetCards(material.id, storedCards(material));
   return (
     <FlashcardGrid
       action={action}
@@ -541,7 +533,6 @@ function MaterialContentBody({
   centerQuiz,
   kind,
   materialId,
-  mode,
   allowExternalAssets,
   forceReadOnly,
   onEditorStatusChange,
@@ -554,7 +545,6 @@ function MaterialContentBody({
   /** The kind the opening list or route knows, for a read that fails. */
   kind?: Material['kind'];
   materialId: string;
-  mode: MaterialMode | null;
   allowExternalAssets: boolean;
   forceReadOnly: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
@@ -569,7 +559,7 @@ function MaterialContentBody({
   citation?: NoteCitationTarget;
 }) {
   const {
-    data: material,
+    data: loaded,
     error,
     isLoading,
   } = useMaterial(materialId, {
@@ -587,11 +577,56 @@ function MaterialContentBody({
   );
   const overBar = useContext(FloatingBarContext);
   useEffect(() => {
-    if (mode === 'edit') void loadPreview();
-  }, [mode]);
-  const previewType = useRef<PreviewComponent>(undefined);
-  if (isLoading) {
-    return <FileLoading />;
+    void loadPreview();
+  }, []);
+  const { data: me } = useMe({ errorBoundary: false });
+  // A heavy note opened read-only reads nothing of its own beyond its read.
+  const seed = useRoomSeed(materialId, staticNote ? null : me?.id);
+  // An item's last read, painting until this one answers.
+  const copied = useMaterialCopy(materialId, staticNote ? null : me?.id);
+  const refused = isApiError(error) && error.status < 500;
+  // No access, or gone: what this device kept of it goes too.
+  const lost =
+    isApiError(error) && (error.status === 403 || error.status === 404);
+  useEffect(() => {
+    if (lost) void dropDeviceCopies(materialId);
+  }, [lost, materialId]);
+  const material = loaded ?? (refused ? undefined : (copied ?? undefined));
+  useKeepMaterialCopy(
+    loaded?.kind === 'note' ? undefined : loaded,
+    me?.id,
+    copied
+  );
+  const noteBody = (loaded: Material | undefined, editing: boolean) => (
+    <NoteBody
+      allowExternalAssets={allowExternalAssets}
+      citation={citation}
+      editing={editing}
+      material={loaded}
+      materialId={materialId}
+      onEditorStatusChange={onEditorStatusChange}
+      onPresenceChange={onPresenceChange}
+      onReadOnly={onReadOnly}
+      owner={me?.id}
+      seed={staticNote ? null : seed}
+      staticNote={staticNote}
+    />
+  );
+  // A device copy paints before its read answers, and while the read cannot
+  // answer (the browser offline, the server down), until it refuses.
+  // Keyed as the note below: the paint keeps its DOM as the read answers.
+  if (!material && seed?.row.kind === 'note' && !refused)
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1" key="note">
+          {noteBody(undefined, false)}
+        </div>
+      </div>
+    );
+  if (isLoading && !material) {
+    // Nothing shows for the few milliseconds the store takes.
+    if (me && (seed === undefined || copied === undefined)) return null;
+    return <MaterialLoading />;
   }
   if (error || !material) {
     return isMaterialContentUnreadable(error) ? (
@@ -605,9 +640,15 @@ function MaterialContentBody({
       <FileError />
     );
   }
-  const policy = materialModePolicy(material.capabilities);
+  // The highest mode this reader may have.
   const activeMode =
-    forceReadOnly || readOnly ? 'view' : resolveMaterialMode(mode, policy);
+    !(forceReadOnly || readOnly) && material.capabilities.canEditContent
+      ? 'edit'
+      : 'view';
+  const roomCopy: RoomCopy = {
+    keep: me && keepsCopyOf(material) ? copyLabel(material, me.id) : undefined,
+    seed,
+  };
   // Its payer (whoever created it) at the storage limit opens it view-only
   // under a strip saying so (uploader pays).
   const readOnlyStrip = material.storageFull ? (
@@ -623,26 +664,19 @@ function MaterialContentBody({
       />
     )
   );
-  // Edit to View shows the note at once (NoteEditorCore hands over its live
-  // value), so View must not suspend on loading its renderer: Edit loads it,
-  // and View then renders it directly. The type is chosen once per mount, at
-  // the first View: swapping the lazy wrapper for the loaded component later
-  // would remount the whole document (frames reload, quiz attempts reset).
-  if (activeMode === 'view')
-    previewType.current ??=
-      previewModule?.MaterialPreview ?? LazyMaterialPreview;
-  const MaterialPreview = previewType.current ?? LazyMaterialPreview;
-
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return (
       <div className="h-full min-h-0 overflow-auto">
         <TabContent fill>
           <QuizEditor
             action={<StudyButton kind="quiz" materialId={materialId} />}
+            copy={roomCopy}
             key={materialId}
             onPresenceChange={onPresenceChange}
             onStatusChange={onEditorStatusChange}
             quizId={materialId}
+            stored={storedQuestions(material.content)}
+            target={target}
             title={material.title}
           />
           <SourcesLine
@@ -663,9 +697,12 @@ function MaterialContentBody({
                 action={
                   <StudyButton kind="flashcards" materialId={materialId} />
                 }
+                copy={roomCopy}
                 onPresenceChange={onPresenceChange}
                 onStatusChange={onEditorStatusChange}
+                openCardId={target}
                 setId={materialId}
+                stored={storedCards(material)}
                 title={material.title}
               />
             ) : (
@@ -696,6 +733,8 @@ function MaterialContentBody({
         <AppErrorBoundary resetKeys={[materialId, activeMode]}>
           <Suspense fallback={<FileLoading />}>
             <MermaidMaterialEditor
+              content={material.content}
+              copy={roomCopy}
               kind={material.kind}
               materialId={materialId}
               onPresenceChange={onPresenceChange}
@@ -732,13 +771,11 @@ function MaterialContentBody({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {readOnlyStrip}
-      <div className="min-h-0 flex-1">
-        {activeMode === 'view' && (
+      <div className="min-h-0 flex-1" key="note">
+        {material.kind === 'note' ? (
+          noteBody(material, activeMode === 'edit')
+        ) : (
           <div className="relative h-full min-h-0 overflow-auto">
-            {material.kind === 'note' && <NoteDisplayToggles />}
-            {material.kind === 'note' && citation ? (
-              <NoteCitation citation={citation} />
-            ) : null}
             {material.kind === 'quiz' ? (
               <QuizPreview
                 content={material.content}
@@ -748,119 +785,20 @@ function MaterialContentBody({
                 title={material.title}
               />
             ) : (
-              <Suspense fallback={<FileLoading />}>
-                {material.kind === 'note' && !staticNote ? (
-                  <LiveNotePreview
-                    material={material}
-                    Preview={MaterialPreview}
-                  />
-                ) : (
-                  <MaterialPreview
-                    content={material.content}
-                    isStandalone={!material.workspaceId}
-                    kind={material.kind}
-                    title={material.title}
-                  />
-                )}
+              <Suspense fallback={<MaterialLoading />}>
+                <MaterialPreview
+                  content={material.content}
+                  isStandalone={!material.workspaceId}
+                  kind={material.kind}
+                  title={material.title}
+                />
                 <DocumentAttribution material={material} />
               </Suspense>
             )}
           </div>
         )}
-        {activeMode === 'edit' && (
-          <AppErrorBoundary resetKeys={[materialId, activeMode]}>
-            <Suspense fallback={<FileLoading />}>
-              <NoteEditor
-                allowExternalAssets={allowExternalAssets}
-                key={`${materialId}:${activeMode}`}
-                materialId={materialId}
-                onEditorStatusChange={onEditorStatusChange}
-                onPresenceChange={onPresenceChange}
-                onReadOnly={onReadOnly}
-              />
-            </Suspense>
-          </AppErrorBoundary>
-        )}
       </div>
     </div>
-  );
-}
-
-/** A material's credits after its document, in the reading column the static
- * renderer uses for it, so View and Edit (NoteEditorCore) end alike: a note's
- * own and those of the embeds its content holds (useNoteFooter). Like every
- * footer ending a view here, it keeps room under the workspace's floating bar
- * where that shows, and some space above the page's end. */
-function DocumentAttribution({ material }: { material: Material }) {
-  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
-  const overBar = useContext(FloatingBarContext);
-  const embeds = useMemo(
-    () => embedKey(material.content.value),
-    [material.content]
-  );
-  const provenance = useNoteFooter(material, embeds);
-  const { kind } = material;
-  return (
-    <MaterialAttributionFooter
-      className={cn(
-        'mx-auto w-full px-5 sm:px-10',
-        overBar ? 'pb-28' : 'pb-12',
-        (kind !== 'note' || displayWidth === 'half') && 'md:max-w-3xl'
-      )}
-      inline
-      provenance={provenance}
-    />
-  );
-}
-
-/** A note's View (Epo 2026-10-10): the projection paints first; then the
- * live-read module loads, outside the first paint and every other bundle, and
- * the note follows its room on a read channel. The room's value replaces the
- * painted one block by block, keeping each block the room has not changed, so
- * nothing flashes and a remote keystroke redraws one block. */
-function LiveNotePreview({
-  material,
-  Preview,
-}: {
-  material: Material;
-  Preview: PreviewComponent;
-}) {
-  const painted = useMemo<MaterialValue>(
-    () =>
-      parseMaterialDocument(material.content)?.value ?? material.content.value,
-    [material.content]
-  );
-  const [live, setLive] = useState<MaterialValue | null>(null);
-  const first = useRef(painted);
-  first.current = painted;
-  // The note's read channel, inside which its embeds join (Epo 2026-10-20).
-  const [seat] = useState(() => new NoteSeat());
-  useEffect(() => {
-    setLive(null);
-    let leave: (() => void) | undefined;
-    let gone = false;
-    const timer = setTimeout(() => {
-      void import('@/features/notes/liveNoteRead').then(({ readNoteLive }) => {
-        if (!gone)
-          leave = readNoteLive(material.id, first.current, setLive, seat);
-      });
-    });
-    return () => {
-      gone = true;
-      clearTimeout(timer);
-      leave?.();
-    };
-  }, [material.id, seat]);
-  return (
-    <NoteSeatContext.Provider value={seat}>
-      <Preview
-        content={material.content}
-        isStandalone={!material.workspaceId}
-        kind={material.kind}
-        title={material.title}
-        value={live ?? painted}
-      />
-    </NoteSeatContext.Provider>
   );
 }
 
@@ -889,16 +827,12 @@ function QuizPreview({
       .querySelector(`[data-question-id="${CSS.escape(target)}"]`)
       ?.scrollIntoView({ block: 'start' });
   }, [target]);
-  const quiz = content.value.find(
-    (node): node is QuizElement => node.type === 'quiz'
-  );
-  const stored = (quiz?.children ?? []).flatMap((node) =>
-    'type' in node && node.type === 'quiz_question'
-      ? [node.question as unknown as LearnerQuestion]
-      : []
-  );
+  // Someone gone from editing to viewing keeps no answers on this device.
+  useEffect(() => {
+    void dropDeviceCopies(quizId, 'keys');
+  }, [quizId]);
   // The stored questions paint first; the live room follows (live-items).
-  const questions = useLiveQuizQuestions(quizId, stored);
+  const questions = useLiveQuizQuestions(quizId, storedQuestions(content));
   return (
     <TabContent fill>
       <div className="mb-7 flex items-center gap-4">

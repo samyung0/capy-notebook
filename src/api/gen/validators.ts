@@ -3359,6 +3359,23 @@ export const CreateStandaloneMaterialResponse = zod.object({
 
 
 /**
+ * @summary List which of these materials the caller can read
+ */
+export const readableMaterialsBodyIdsMax = 500;
+
+
+
+export const ReadableMaterialsBody = zod.object({
+  "ids": zod.array(zod.string()).min(1).max(readableMaterialsBodyIdsMax).describe('Materials this device keeps a copy of')
+})
+
+export const ReadableMaterialsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "ids": zod.array(zod.string()).describe('The ones the caller can still read')
+})
+
+
+/**
  * @summary Move a material to the trash
  */
 export const DeleteMaterialParams = zod.object({
@@ -3381,6 +3398,10 @@ export const DeleteMaterialResponse = zod.void()
  */
 export const GetMaterialParams = zod.object({
   "id": zod.string()
+})
+
+export const GetMaterialQueryParams = zod.object({
+  "noContent": zod.boolean().optional().describe('Leave the document out (an empty value), for a device holding its own copy')
 })
 
 export const GetMaterialResponse = zod.object({

@@ -241,7 +241,7 @@ export async function openNote(
   noteId: string
 ) {
   await actor.page.goto(
-    `${run.env.appUrl}/workspaces/${workspaceId}?material=${noteId}&mode=edit`
+    `${run.env.appUrl}/workspaces/${workspaceId}?material=${noteId}`
   );
   const editor = actor.page.locator('[contenteditable="true"]').first();
   await expect(editor).toBeVisible({ timeout: 60_000 });
@@ -860,7 +860,7 @@ export async function readView(
 ) {
   const { page } = actor;
   await page.goto(
-    `${run.env.appUrl}/workspaces/${workspaceId}?material=${noteId}&mode=view`
+    `${run.env.appUrl}/workspaces/${workspaceId}?material=${noteId}`
   );
   for (const line of lines)
     await expect(page.getByText(line, { exact: true })).toBeVisible({
@@ -1140,7 +1140,7 @@ export async function quizImageOnPick(run: UatRun, quizId: string) {
   const before = await charge(run);
   const quizSize = Number((await materialRow(run, quizId)).size_bytes);
   const page = run.owner.page;
-  await page.goto(`${run.env.appUrl}/materials/${quizId}?mode=edit`);
+  await page.goto(`${run.env.appUrl}/materials/${quizId}`);
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .click();
@@ -1301,7 +1301,7 @@ export async function pastedQuizCopies(
  * the dialog just closes. */
 async function removeQuizImage(run: UatRun, quizId: string, assetId: string) {
   const page = run.owner.page;
-  await page.goto(`${run.env.appUrl}/materials/${quizId}?mode=edit`);
+  await page.goto(`${run.env.appUrl}/materials/${quizId}`);
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .click();
@@ -1379,7 +1379,7 @@ export async function cardImages(run: UatRun) {
   );
   const setId = string(created.id);
   const page = run.owner.page;
-  await page.goto(`${run.env.appUrl}/materials/${setId}?mode=edit`);
+  await page.goto(`${run.env.appUrl}/materials/${setId}`);
   await page
     .getByRole('button', { exact: true, name: m.flashcards_add_card() })
     .click();
