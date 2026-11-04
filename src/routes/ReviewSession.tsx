@@ -55,6 +55,7 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
+import { features } from '@/lib/features';
 import { SRS_RATINGS } from '@/lib/srs';
 
 /** What an item recorded: a card's rating (1 Again to 4 Easy), or a checked
@@ -253,7 +254,7 @@ function Session({
   // A review started in a workspace returns to its Practice page.
   const studySearch = { study: 'practice' as const };
   function back() {
-    if (search.from === 'review')
+    if (features.learning && search.from === 'review')
       navigate({ search: { tab: 'review' }, to: '/learning' });
     else
       navigate({
@@ -292,7 +293,7 @@ function Session({
             onBack={back}
             title={m.review_title({ workspace: ws?.name ?? '' })}
             trail={[
-              search.from === 'review'
+              features.learning && search.from === 'review'
                 ? {
                     label: m.nav_learning(),
                     link: linkOptions({

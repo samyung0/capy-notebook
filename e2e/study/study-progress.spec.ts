@@ -216,8 +216,7 @@ test.describe('study progress', () => {
     // Both questions of the attempt, both finished cards, one started card.
     expect(study.reviewable).toBe(5);
 
-    // Learning → Review: Workspaces lists the workspace, and its row
-    // opens a whole-workspace session over the five practised items, which
+    // A whole-workspace session over the five practised items, which
     // mixes in the new ones (the untouched quiz, the started set's other
     // cards).
     const manual = await ownerApi.get(
@@ -225,19 +224,8 @@ test.describe('study progress', () => {
     );
     const sessionTotal = (await manual.json()).items.length;
     expect(sessionTotal).toBeGreaterThan(5);
-    await ownerPage.goto('/learning');
-    const name = ownerPage
-      .locator('section', {
-        has: ownerPage.getByRole('heading', {
-          name: m.learning_workspaces(),
-        }),
-      })
-      .getByRole('button', { exact: true, name: ws.name });
-    await name.click();
-    await expect(ownerPage).toHaveURL(
-      new RegExp(
-        `/learning/review/${ws.id}\\?(?=.*group=workspace)(?=.*from=review)`
-      )
+    await ownerPage.goto(
+      `/learning/review/${ws.id}?group=workspace&from=workspace`
     );
     await expect(
       ownerPage.getByRole('progressbar', {
@@ -329,7 +317,7 @@ test.describe('study progress', () => {
     });
     expect(cardRating.status()).toBe(204);
 
-    // A whole-workspace review, as Learning's Workspaces row opens one.
+    // A whole-workspace review.
     await ownerPage.goto(
       `/learning/review/${ws.id}?group=workspace&from=workspace`
     );

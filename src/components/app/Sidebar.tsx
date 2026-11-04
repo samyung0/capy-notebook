@@ -56,7 +56,15 @@ function general(): NavItem[] {
     // Chat across all the user's files (Epo 2026-10-27).
     { icon: 'ai', label: m.nav_chat(), to: '/chat' },
     { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
-    { icon: 'knowledge', label: m.nav_learning(), to: '/learning' },
+    ...(features.learning
+      ? [
+          {
+            icon: 'knowledge' as IconName,
+            label: m.nav_learning(),
+            to: '/learning',
+          },
+        ]
+      : []),
     ...(features.schedule
       ? [
           {

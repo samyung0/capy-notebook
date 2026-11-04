@@ -2307,7 +2307,7 @@
   "chat_your_files_only_hint": "Use only your own files and materials for this message.",
   "chat_scope_info_label": "About where answers come from",
   "chat_grounded_outside": "Your sources first, then the textbook library and the web",
-  "study_hide_progress_hint": "For you only: Practice stops suggesting what to review, this workspace leaves Learning's Review. What you practise is still saved.",
+  "study_hide_progress_hint": "For you only: Practice stops suggesting what to review. What you practise is still saved.",
   "study_prefs_title": "What the chat builds",
   "study_pref_main": "Preferred format",
   "study_pref_main_hint": "What explains each topic. AI can still create other files if necessary.",

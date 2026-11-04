@@ -469,6 +469,14 @@ the browser. Embedded sets study there too and send no ratings
 
 ## Learning
 
+Hidden since 2026-11-04 (Epo, `features.learning`, `VITE_FEATURE_LEARNING`) until
+AI analysis of study progress is decided: no sidebar or phone-nav row, `/learning`
+redirects Home, and nothing links to it. The code stays. The session and result
+pages (`/learning/review/$workspaceId`, `/learning/reviews/$sessionId`) stay
+under their old paths, and with the flag off Back on them and on an attempt's
+result goes to the workspace's Practice, or Home for an attempt with no
+workspace.
+
 Learning has two tabs: Review (default, ending with past reviews, the
 recorded review sessions) and All results (quiz attempts). The title,
 tabs and tab padding follow Settings (`TabContent`), without its width cap.

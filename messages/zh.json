@@ -2307,7 +2307,7 @@
   "chat_your_files_only_hint": "本条消息只使用你自己的文件和资料。",
   "chat_scope_info_label": "关于回答的来源",
   "chat_grounded_outside": "优先使用你的来源，其次是教科书资料库和网络",
-  "study_hide_progress_hint": "仅对你生效：练习不再推荐复习内容，此工作区不再出现在学习的复习里，助手也不再读取你在这里的进度。你练习的内容仍会保存。",
+  "study_hide_progress_hint": "仅对你生效：练习不再推荐复习内容。你练习的内容仍会保存。",
   "study_prefs_title": "聊天生成的内容",
   "study_pref_main": "偏好格式",
   "study_pref_main_hint": "用什么讲解每个主题。AI 仍可在需要时制作其他文件。",
