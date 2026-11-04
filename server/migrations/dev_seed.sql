@@ -106,10 +106,10 @@ INSERT INTO flashcard_cards (card_id, material_id) VALUES
   ('c_5', 'dk_2'), ('c_6', 'dk_2'), ('dk_3:card:1', 'dk_3')
 ON CONFLICT (card_id) DO NOTHING;
 
-INSERT INTO attempts (id, user_id, material_id, quiz_name, workspace_name, topics, correct, total, pct, taken_at) VALUES
-  ('at_1', 'u_1', 'qz_1', 'Cell biology basics',   'Biology 101', '{"Cell structure"}',            8, 10, 80, now()-interval '2 day'),
-  ('at_2', 'u_1', 'qz_3', 'Integration techniques','Calculus II', '{"Techniques of integration"}', 6, 10, 60, now()-interval '3 day'),
-  ('at_3', 'u_1', 'qz_2', 'Genetics check-in',     'Biology 101', '{"Genetics"}',                  4, 10, 40, now()-interval '5 day')
+INSERT INTO attempts (id, user_id, material_id, workspace_id, quiz_name, workspace_name, topics, correct, total, pct, taken_at) VALUES
+  ('at_1', 'u_1', 'qz_1', 'ws_bio',  'Cell biology basics',   'Biology 101', '{"Cell structure"}',            8, 10, 80, now()-interval '2 day'),
+  ('at_2', 'u_1', 'qz_3', 'ws_calc', 'Integration techniques','Calculus II', '{"Techniques of integration"}', 6, 10, 60, now()-interval '3 day'),
+  ('at_3', 'u_1', 'qz_2', 'ws_bio',  'Genetics check-in',     'Biology 101', '{"Genetics"}',                  4, 10, 40, now()-interval '5 day')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO labels (id, user_id, name, color) VALUES

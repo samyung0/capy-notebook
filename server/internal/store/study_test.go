@@ -586,6 +586,9 @@ func TestFlashcardAttemptRecordsRatings(t *testing.T) {
 		len(got) != 2 || got[0].Front != "Ribosome" || len(got[0].Ratings) != 2 || got[1].Ratings[0] != 4 {
 		t.Fatalf("attempt = %+v, cards %+v", d.Attempt, got)
 	}
+	if n := f.count(t, `SELECT count(*) FROM attempts WHERE id=$1 AND workspace_id=$2`, ref.ID, f.ws.ID); n != 1 {
+		t.Fatalf("flashcard attempt not in its workspace")
+	}
 	checkQuiz(t, f.s, f.user, f.quiz(t).ID, []byte(studySnapshot), studyAnswers)
 	only, _, err := f.s.ListAttempts(ctx, f.user, AttemptParams{Kinds: []string{"flashcards"}, Limit: 30})
 	if err != nil || len(only) != 1 || only[0].ID != ref.ID {

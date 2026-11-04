@@ -1,7 +1,7 @@
 ---
 type: Backend
 title: "Study Progress and Review"
-description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), Hide study progress, Learning's Review (past reviews at its end) and All results tabs, the workspace Dashboard's activity, lifecycle and access."
+description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), Hide study progress, Learning's Review (past reviews at its end) and All results tabs, the workspace Dashboard's activity, the answer events log, lifecycle and access."
 tags: [backend, frontend, study, review, fsrs, flashcards, quizzes, progress]
 ---
 
@@ -47,6 +47,7 @@ clone or charged to storage.
 | `review_sessions (id, user_id, workspace_id, topic_id, group_kind, mode, evidence, items, started_at, last_answer_at, finished_at)` | Migration `0071_review_sessions.sql` (chapters renamed topics, group `topic`, in `0136_topics.sql`). One recorded session, written with its first answer: what it drew from (`group_kind` topic, others or workspace; `topic_id` for a topic, set NULL when the topic goes), the suggestion's `mode` (NULL from the workspace list) and `evidence`, every served item in order (`items`, for Continue, each with the `reason` it was served for: `new`, `missed` or `fading`), and `finished_at` once every served item is answered or Done ends it. The id is minted by the browser. |
 | `review_answers (session_id, material_id, item_id, kind, rating, correct, total, answers, graded, answered_at)` | One answered item of a session: a card's rating, or a question's rating, marks (`correct` of `total`), answers and graded question with its key. |
 | `attempts.kind`, `attempts.started_at` | Migration `0094_flashcard_attempts.sql`. Quiz and flashcard attempts share `attempts`: `kind` is `quiz` or `flashcards`; `started_at` is the browser's start time (null when not sent, and never after the end), so results show minutes. A flashcard attempt keeps its cards in `questions` (`AttemptCard`: id, front, back, image, every rating in order, cards in the order first rated), `correct` the cards whose first rating is Good or Easy, `total` the cards rated, `taken_at` the latest rating. |
+| `answer_events`, `attempts.workspace_id` | Migration `0136_answer_events.sql`: one row per graded part of every checked question, and the workspace an attempt was taken in ([Answer events](#answer-events)). |
 | `flashcard_cards (card_id, material_id)` | The old `card_stats` without its review columns: the card-to-set lookup card edits, deletes, listing counts and clone use. `card_id` is a global key, so clones mint new card ids. |
 
 `study_progress` and `workspace_study` cascade with their workspace;
@@ -199,11 +200,59 @@ Side effects, in the same transaction as the write:
   the answer, under a row lock on the session; the last served item finishes
   it. A session of another user, or an item outside the session's workspace,
   is 422 (`ErrReviewSession`).
+- A quiz check and a review check also log each graded part as an answer
+  event ([Answer events](#answer-events)).
 - Recording happens whether study progress shows or is hidden; showing it again shows the history.
 
 The browser refreshes Practice, review and Learning after every
 attempt and rating (`invalidateStudy`, for every workspace when the caller does
 not know which); the review session refreshes once at the end instead.
+
+## Answer events
+
+Migration `0136_answer_events.sql` (todo-study-tracking.md §5, step 3 of its
+order of work). `answer_events` is an append-only log of every graded part,
+kept for the per-topic mastery model still to come; nothing reads it yet. It
+keeps partial credit, which `review_log`'s ratings drop.
+
+- **Written** by `logAnswerTx` (`server/internal/store/answer_events.go`) in
+  the check's transaction, one row per part, on the two routes that grade
+  parts:
+  - `POST /api/quizzes/{id}/check` (`CheckQuizQuestion`): source `quiz`,
+    with the attempt's id. Every quiz check belongs to an attempt; there is no
+    separate submit.
+  - `POST /api/review/check` (`RateItem` with the graded question): source
+    `review`, for review sessions and Quick review, with no attempt.
+- **Not written:** a wholly blank question (`questions.Blank`, which an
+  attempt also leaves unrated), a part without marks, embedded quizzes, signed-out and
+  shared-note checks (which store nothing), bank checks (bank questions are
+  not materials) and flashcard ratings.
+- **Columns:** user; workspace (the quiz's when answered, null for a
+  standalone quiz); material, question and part ids; `item_hash`
+  (`QuestionHash`, as in `review_states`); `answer_type`; `awarded` of
+  `marks`; `grader`, `ai` for an answered open part (Jev marks it) and
+  `deterministic` for the rest, a blank open part included; `source`;
+  `attempt_id`, with no foreign key (only an account purge deletes attempts,
+  and it deletes these rows too); `key_seen`; `created_at`. The parts of one
+  check share `created_at`, so they group back into their question; `id`
+  orders a replay.
+- **`key_seen`** says an earlier check returned this question's key to the
+  user: a `review_log` rating of it, or another quiz attempt holding it,
+  blank checks included. It is read before the check is rated and leaves the
+  check's own attempt out. It serves the plan's same-day repeat rule. Seeing
+  the key in the editor does not count.
+- **Indexes:** (workspace, user, created_at) for member views and a
+  workspace's replay; (material, question) for per-question statistics.
+- **Lifecycle:** a deleted quiz leaves its events with no material (Epo,
+  2026-11-03), as attempts outlive their quiz; they cascade with their
+  workspace; `PurgeUser` deletes the user's rows; clones copy nothing.
+  An event names no topic yet, so one whose quiz is gone counts toward a
+  topic only once the topics step stores the question's topic on it.
+
+`attempts.workspace_id` (same migration) is the workspace a quiz or flashcard
+attempt was taken in, null for a standalone quiz, and set null when the
+workspace goes, since attempts outlive it. The attempts list still filters by
+the item's current workspace (`ListAttempts`).
 
 ## The review pool
 
@@ -592,14 +641,14 @@ Past reviews or All results without a sort in the URL redirects to it.
 | Review session opened and left unanswered | Nothing is written. |
 | Topic deleted | Its sessions keep their answers with no topic. |
 | File or material trashed | Rows stay; every read skips trashed items; restore brings them back. |
-| File or material purged | `study_progress`, `review_states` and `review_log` cascade. |
+| File or material purged | `study_progress`, `review_states` and `review_log` cascade; `answer_events` stay with no material. |
 | Item removed from a document | Its `review_states` row is ignored until the item returns. |
 | Question prompt or card face edited | That item's state resets on its next rating; until then it is out of the practised pool and comes back in a manual review as a new item. |
-| Workspace deleted | All four workspace-scoped tables go by cascade. |
+| Workspace deleted | All four workspace-scoped tables and `answer_events` go by cascade; attempts stay with no workspace. |
 | Member or link access lost | Rows stay, unreadable without access; Learning skips the workspace. |
 | Workspace or material clone | Nothing is copied; cloned cards get new ids. |
 | Workspace transfer | Rows stay with each user; `study_progress` and `workspace_study` are in `notOwnership` (`workspace_transfer_test.go`). |
-| Account purge | `PurgeUser` deletes the user's rows in all four tables and their review sessions. |
+| Account purge | `PurgeUser` deletes the user's rows in all four tables and `answer_events`, their review sessions. |
 | Reset | Clears progress rows and review states in the workspace; attempts and the log stay. |
 
 ## Authorization
@@ -655,6 +704,10 @@ account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
 - `server/internal/store/study_test.go`: attempts and ratings recording
   progress, embedded quizzes recording nothing, sets going started then done,
   review selection, Quick review, the Review list, Reset and purge.
+- `server/internal/store/answer_events_test.go`: quiz and review checks log
+  each graded part with its grader, source, attempt, workspace and
+  `key_seen` (a blank check counts as the key seen), blank questions log
+  nothing, standalone quizzes log no workspace, and purge deletes the rows.
 - `server/internal/httpapi/share_access_test.go`
   (`TestShareHTTPReadersRecordReviewRatings`): viewers and link visitors rate.
 - `server/internal/httpapi/answer_keys_test.go`
@@ -681,6 +734,8 @@ account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
   `study_progress`, `attempts` and `review_states` rows.
 
 Sources: [migration](../server/migrations/0051_study_progress.sql),
+[answer events migration](../server/migrations/0136_answer_events.sql),
+[answer events](../server/internal/store/answer_events.go),
 [FSRS wrapper](../server/internal/review/review.go),
 [store](../server/internal/store/study.go),
 [routes](../server/internal/httpapi/huma_study.go),

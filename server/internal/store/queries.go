@@ -2173,9 +2173,10 @@ type QuizCheck struct {
 var ErrQuestionChecked = errors.New("the question is already checked in this attempt")
 
 // CheckQuizQuestion adds one checked question to the user's attempt at the
-// quiz, creating the attempt with its first check, and for a workspace quiz
-// rates the question and marks the quiz done. An attempt is never closed: one
-// left partway counts with its unchecked questions at 0. A quiz embedded in a
+// quiz, creating the attempt with its first check, logs its graded parts as
+// answer events, and for a workspace quiz rates the question and marks the
+// quiz done. An attempt is never closed: one left partway counts with its
+// unchecked questions at 0. A quiz embedded in a
 // note is a quick check: the question comes back in an attempt without an id
 // and nothing is stored.
 func (s *Store) CheckQuizQuestion(ctx context.Context, userID, materialID string, c QuizCheck, now time.Time) (AttemptDetail, error) {
@@ -2252,10 +2253,14 @@ func (s *Store) CheckQuizQuestion(ctx context.Context, userID, materialID string
 		_, err = tx.Exec(ctx, `UPDATE attempts SET correct=$2, total=$3, pct=$4, taken_at=$5, answers=$6, questions=$7 WHERE id=$1`,
 			d.ID, d.Correct, d.Total, d.Pct, d.TakenAt, []byte(d.Answers), []byte(d.Questions))
 	} else {
-		_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, quiz_name, workspace_name, topics, correct, total, pct, started_at, taken_at, answers, questions)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, d.ID, d.MaterialID, userID, d.QuizName, d.WorkspaceName, d.Topics, d.Correct, d.Total, d.Pct, d.StartedAt, d.TakenAt, []byte(d.Answers), []byte(d.Questions))
+		_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, workspace_id, user_id, quiz_name, workspace_name, topics, correct, total, pct, started_at, taken_at, answers, questions)
+			VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, d.ID, d.MaterialID, mt.WorkspaceID, userID, d.QuizName, d.WorkspaceName, d.Topics, d.Correct, d.Total, d.Pct, d.StartedAt, d.TakenAt, []byte(d.Answers), []byte(d.Questions))
 	}
 	if err != nil {
+		return AttemptDetail{}, err
+	}
+	// Before the rating, which would count as the key seen.
+	if err := logAnswerTx(ctx, tx, userID, mt, c.Question, c.Answers, answerSourceQuiz, d.ID, now); err != nil {
 		return AttemptDetail{}, err
 	}
 	if err := rateQuestionTx(ctx, tx, userID, mt, c.Question, c.Answers, now); err != nil {

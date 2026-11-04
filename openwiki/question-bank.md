@@ -610,9 +610,9 @@ outside Yjs (D3 as revised 2026-10-10).
 
 | Grading route | Request | Effect |
 | --- | --- | --- |
-| `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}` | Grades one question's parts (closed in Go, open with Jev), adds it to the attempt ([study-progress.md](study-progress.md#endpoints)), rates review and marks progress for workspace quizzes; 200 with the `AttemptDetail` so far. Needs read access; frozen accounts check. |
+| `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}` | Grades one question's parts (closed in Go, open with Jev), adds it to the attempt ([study-progress.md](study-progress.md#endpoints)), rates review and marks progress for workspace quizzes, logs each graded part ([answer events](study-progress.md#answer-events)); 200 with the `AttemptDetail` so far. Needs read access; frozen accounts check. |
 | `POST /api/public/quizzes/{token}/grade` | `{questionId, answers, localId?}` | Signed out, one question: `{correct, total, question}`, nothing stored. The per-IP and global caps count only the answered open parts; over a cap it is 429 with `errors[0].message` `anonymous_grading_limit`. |
-| `POST /api/review/check` | `{materialId, itemId, answers}` | One question of a review session: `{correct, total, question}`, rated from `correct / total`. A card is 422; cards keep `POST /api/review/ratings` with a required `rating`, which no longer takes a `score`. |
+| `POST /api/review/check` | `{materialId, itemId, answers}` | One question of a review session: `{correct, total, question}`, rated from `correct / total`, each graded part logged as an answer event. A card is 422; cards keep `POST /api/review/ratings` with a required `rating`, which no longer takes a `score`. |
 | `POST /api/bank/questions/{id}/check` | `{answers}` | One bank question: `{correct, total, question}`, and records the learner's latest score. |
 
 Graded questions carry their keys, and every part `awarded`; open parts also
