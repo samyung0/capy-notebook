@@ -866,6 +866,8 @@ Steps 2, 3 and 7 can run side by side.
 
 **Hidden until AI analysis of study progress is decided (Epo, 2026-11-04):** the chat agent's `read_study_progress` tool goes, along with the leftover read-state rows, and the app's Learning page is hidden from the sidebar, phone nav and Home. Its code stays. Inside a workspace, review means Practice's Suggested and topic practice. Settings → Study stays at 20 for now, to be adjusted when review sessions are looked at again.
 
+**Built on `claude/study-shell` (e2b5750f8, 2026-11-04):** class or personal (`workspaces.kind`), Teaching assistant in class workspaces, `read_study_progress` and the read-state rows gone (contract v48), Learning hidden behind `features.learning`, undo and redo hidden on phones in the quiz and flashcard top bars, even 16px gaps around the phone header buttons, the empty workspace with the map-ink book and Add file. CI still has to confirm the Go DB tests, migrations and e2e. Choices to check: Upload and Make a quiz hide while a workspace is empty; the create dialog keeps its title, icon, cover, description and tags where C1 is shorter; personal role dropdowns read "Edit".
+
 **Combined preview (Epo, 2026-11-04):** `claude/study-all` merges every study branch so Epo can see it locally. It's not landing; migrations are renumbered there.
 
 **Next after this rework's mocks (Epo, 2026-11-03): the AFFiNE canvas** (`todo-canvas-workspace.md`, on hold since 2026-11-02). Drawing answers and the note tool build on the same BlockSuite edgeless editor, so they are planned with it.
