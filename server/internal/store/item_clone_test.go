@@ -800,6 +800,43 @@ func TestConcurrentFileClonesKeepTheCapAndOneChapter(t *testing.T) {
 	}
 }
 
+// Explore lists what its workspace shows everyone: a hidden quiz or flashcard
+// set stays off it, even in a public workspace.
+func TestExploreLeavesOutHiddenItems(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_explore_hidden_owner")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='viewer' WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	shown, err := s.CreateQuiz(ctx, Quiz{UserID: owner, Name: "Shown", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Questions: json.RawMessage(`[]`), Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden, err := s.CreateQuiz(ctx, Quiz{UserID: owner, Name: "Hidden", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Questions: json.RawMessage(`[]`), Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET hidden=true WHERE id=$1`, hidden.ID); err != nil {
+		t.Fatal(err)
+	}
+	quizzes, _, err := s.ListPublicQuizzes(ctx, owner, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	for _, quiz := range quizzes {
+		listed[quiz.ID] = true
+	}
+	if !listed[shown.ID] || listed[hidden.ID] {
+		t.Fatalf("listed %v, want %s and not %s", listed, shown.ID, hidden.ID)
+	}
+}
+
 // Explore offers Clone by the clone rule: in a public workspace only its
 // members and effective editors; a standalone public item to every reader.
 func TestExploreCanCloneFollowsTheCloneRule(t *testing.T) {
