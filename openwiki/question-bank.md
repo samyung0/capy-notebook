@@ -229,12 +229,12 @@ nodes and old question JSON are rejected, without a compatibility converter.
 
 ## Editing and assets
 
-A quiz is edited where it is open, like a flashcard set: the material
-page's Edit mode (`CenterContent.tsx`) renders `QuizEditor`, which joins the
-quiz's content and keys rooms and edits live (live-items, Epo 2026-10-10; see
-[plate-editor.md](frontend/plate-editor.md)): there is no Save or Reset, and
-the View switch leaves editing. Files' Edit and New quiz open
-`/materials/{id}?mode=edit`; there is no standalone quiz edit page, and
+A quiz is edited where it is open, like a flashcard set: for someone who may
+edit, the material page (`CenterContent.tsx`) renders `QuizEditor`, which joins
+the quiz's content and keys rooms and edits live (live-items, Epo 2026-10-10; see
+[plate-editor.md](frontend/plate-editor.md)): there is no Save or Reset, and no
+switch. Files' Edit and New quiz open
+`/materials/{id}`; there is no standalone quiz edit page, and
 renaming goes through the item's Rename. A note's quiz embed uses the same
 editor.
 

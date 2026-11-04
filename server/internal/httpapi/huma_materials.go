@@ -277,7 +277,15 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 	return a.materialResponse(ctx, res, role, false, false)
 }
 
-func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOutput, error) {
+// getMaterialInput can leave the body out: a device that keeps a copy of the
+// note paints from it and joins the room by difference (Epo 2026-11-04), so
+// only the rest of the read travels.
+type getMaterialInput struct {
+	ID        string `path:"id"`
+	NoContent bool   `query:"noContent" doc:"Leave the document out (an empty value), for a device holding its own copy"`
+}
+
+func (a *api) getMaterial(ctx context.Context, in *getMaterialInput) (*materialOutput, error) {
 	if _, err := a.materialRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
@@ -293,7 +301,7 @@ func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOu
 	// mindmap, Q453) while its room may hold edits the idle projection has
 	// not written yet: the room projects them now. A failed projection serves
 	// the stored one and is reported.
-	if a.projectLive(ctx, in.ID) {
+	if !in.NoContent && a.projectLive(ctx, in.ID) {
 		if res, err = a.s.GetMaterial(ctx, in.ID); err != nil {
 			return nil, hErr(err)
 		}
@@ -311,6 +319,9 @@ func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOu
 	// quiz's live rooms; only note export reads GET /api/quizzes/{id}/edit.
 	if err == nil && res.Kind == "quiz" {
 		materialdoc.LearnerQuiz(out.Body.Content)
+	}
+	if err == nil && in.NoContent {
+		out.Body.Content.Value = []map[string]any{}
 	}
 	return out, err
 }

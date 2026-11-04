@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { ApiError } from '@/api/client';
 import { COLLABORATION_LATE_REASON } from '@/features/notes/collaborationEvents';
+import { m } from '@/i18n';
 import type { RoomProviderConfig } from './roomProvider';
 
 // The room's provider, token and draft storage, recorded instead of real.
@@ -440,17 +441,19 @@ it('opens stored late edits in recovery, never applying them raw', async () => {
   room.destroy();
 });
 
-// Late merge M5 (review r1 L6): stored edits past the 7-day expiry open
-// once, copy-only and marked expired, and are dropped as they open.
-it('opens expired stored edits once in recovery and drops them', async () => {
+// D14 (Epo 2026-11-04): stored edits past the 7-day expiry leave the room to
+// open as usual, a toast offers them, and they go as it closes.
+it('opens past expired stored edits, offered in a toast until it closes', async () => {
   const row = { expired: true, lineage: 'material:q:schema:1' };
   drafts.rows = [row];
+  vi.mocked(userToast).mockClear();
   const { room } = await started();
-  expect(providers).toHaveLength(0);
-  expect(room.getSnapshot().recovery).toMatchObject({
-    expired: true,
-    refused: false,
-  });
+  expect(providers).toHaveLength(1);
+  expect(room.getSnapshot().recovery).toBeNull();
+  const toast = vi.mocked(userToast).mock.calls.at(-1)?.[0];
+  expect(toast?.button?.label).toBe(m.editor_old_edits_download());
+  expect(dropExpiredGroup).not.toHaveBeenCalled();
+  toast?.onClose?.();
   expect(dropExpiredGroup).toHaveBeenCalledWith([row], expect.any(Function));
   room.destroy();
 });
@@ -807,17 +810,16 @@ it('says the reload loses edits this device could not store', async () => {
 it('loads while its open is slowed, never offline, until it syncs', async () => {
   const { room } = await started();
   const [provider] = providers;
-  provider.config.onSynced?.({ state: true });
   provider.config.onClose?.({ code: 0, reason: 'socket closed' });
   expect(room.getSnapshot().status).toBe('offline');
   provider.config.onSlowed?.(true);
   expect(room.getSnapshot()).toMatchObject({
     offline: null,
     slowed: true,
-    status: 'connecting',
+    status: 'opening',
   });
   await vi.advanceTimersByTimeAsync(60_000);
-  expect(room.getSnapshot().status).toBe('connecting');
+  expect(room.getSnapshot().status).toBe('opening');
   provider.config.onSynced?.({ state: true });
   expect(room.getSnapshot().slowed).toBe(false);
   // A slowed open whose channel parked (closed as the user's oldest) shows
@@ -828,13 +830,36 @@ it('loads while its open is slowed, never offline, until it syncs', async () => 
   room.destroy();
 });
 
+// Epo 2026-11-04: a rejoin changes nothing until its 30 s passed.
+it('keeps its status through a drop until its 30 s passed', async () => {
+  vi.stubGlobal('navigator', { onLine: true });
+  const { room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  const { status } = room.getSnapshot();
+  expect(status).not.toBe('opening');
+  provider.config.onSynced?.({ state: false });
+  provider.config.onClose?.({ code: 0, reason: 'socket closed' });
+  expect(room.getSnapshot().status).toBe(status);
+  vi.advanceTimersByTime(29_999);
+  expect(room.getSnapshot().status).toBe(status);
+  provider.config.onSynced?.({ state: true });
+  vi.advanceTimersByTime(60_000);
+  expect(room.getSnapshot().status).toBe(status);
+  provider.config.onClose?.({ code: 0, reason: 'socket closed' });
+  vi.advanceTimersByTime(30_000);
+  expect(room.getSnapshot().status).toBe('offline');
+  room.destroy();
+  vi.unstubAllGlobals();
+});
+
 // Epo 2026-10-23: an item room's join has 30 s from its token request; one
 // never answered then shows the room's connection error (offline).
 it('goes offline when its join has not finished 30 s after its token request', async () => {
   vi.stubGlobal('navigator', { onLine: true });
   const { room } = await started();
   vi.advanceTimersByTime(29_999);
-  expect(room.getSnapshot().status).toBe('connecting');
+  expect(room.getSnapshot().status).toBe('opening');
   vi.advanceTimersByTime(1);
   expect(room.getSnapshot().status).toBe('offline');
   vi.unstubAllGlobals();

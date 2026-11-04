@@ -76,7 +76,7 @@ test('New quiz opens an editable draft', async ({ ownerApi, ownerPage }) => {
   expect(response.status()).toBe(201);
   const quiz = await response.json();
   try {
-    await expect(ownerPage).toHaveURL(`/materials/${quiz.id}?mode=edit`);
+    await expect(ownerPage).toHaveURL(`/materials/${quiz.id}`);
     // The draft edits live: its rooms open and Add question is there.
     await expect(
       ownerPage.getByRole('button', {

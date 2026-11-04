@@ -97,7 +97,7 @@ test.describe('shared material modes', () => {
     ).toBeVisible();
   });
 
-  test('editors toggle View and Edit, with comments only in Edit', async ({
+  test('editors open in the editor, with no switch', async ({
     otherPage,
     seed,
   }) => {
@@ -107,19 +107,10 @@ test.describe('shared material modes', () => {
       seed.editableNote.id,
       true
     );
-    const mode = otherPage.getByRole('button', { name: m.material_mode() });
-    await expect(mode).toHaveAttribute('aria-pressed', 'true');
-    await mode.click();
-    await expect(mode).toHaveAttribute('aria-pressed', 'false');
-    await expect(
-      otherPage.locator('[data-slate-editor="true"][contenteditable="true"]')
-    ).toHaveCount(0);
-    await expect(
-      otherPage.getByRole('button', { exact: true, name: m.editor_comment() })
-    ).toHaveCount(0);
-    await mode.click();
-    await expect(mode).toHaveAttribute('aria-pressed', 'true');
     await expectEditorLive(otherPage);
+    await expect(
+      otherPage.getByRole('button', { name: m.material_mode() })
+    ).toHaveCount(0);
   });
 
   test('room tokens and comment APIs follow the role matrix', async ({

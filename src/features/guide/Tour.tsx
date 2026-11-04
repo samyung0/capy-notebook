@@ -148,7 +148,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
     {
       at: inWorkspacePage,
       body: m.tour_editor_body,
-      go: () => inWorkspace({ material: note, mode: 'edit' }),
+      go: () => inWorkspace({ material: note }),
       loading: !materials,
       missing: !!materials && !note,
       // Back from the note's own quiz: its question dialog closes first.
@@ -169,7 +169,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
       body: m.tour_quiz_body,
       // A quiz of its own, else the welcome note's embedded one: both edit a
       // question in the same dialog.
-      go: () => inWorkspace({ material: quiz ?? note, mode: 'edit' }),
+      go: () => inWorkspace({ material: quiz ?? note }),
       loading: !materials,
       missing: !!materials && !quiz && !note,
       // The quiz loads under the card, lit in the centre panel, then its first

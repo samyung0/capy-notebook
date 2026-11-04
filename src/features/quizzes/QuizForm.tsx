@@ -198,7 +198,6 @@ export function QuizRecovery({
     recovery.keys?.doc ?? rooms.keys?.doc
   );
   const state = recoveryBanner({
-    expired: !!(recovery.content?.expired || recovery.keys?.expired),
     refused: !!(recovery.content?.refused || recovery.keys?.refused),
   });
   return (

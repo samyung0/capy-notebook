@@ -118,8 +118,12 @@ export function userToast({
 /** Closes a toast (a shown one fades out first), or every toast. */
 export function dismissToast(id?: ToastId) {
   for (const lane of Object.values(lanes)) {
-    if (id === undefined) lane.queue = [];
-    else lane.queue = lane.queue.filter((toast) => toast.id !== id);
+    const staying = lane.queue.filter(
+      (toast) => id !== undefined && toast.id !== id
+    );
+    for (const toast of lane.queue)
+      if (!staying.includes(toast)) toast.onClose?.();
+    lane.queue = staying;
     const { shown } = lane;
     if (shown && (id === undefined || shown.id === id) && !shown.closing)
       lane.shown = { ...shown, closing: true };
@@ -130,7 +134,10 @@ export function dismissToast(id?: ToastId) {
 /** A shown toast finished fading out: the next one in its lane shows. */
 export function finishToast(id: ToastId) {
   for (const lane of Object.values(lanes))
-    if (lane.shown?.closing && lane.shown.id === id) remove(lane, lane.shown);
+    if (lane.shown?.closing && lane.shown.id === id) {
+      lane.shown.onClose?.();
+      remove(lane, lane.shown);
+    }
   emit();
 }
 

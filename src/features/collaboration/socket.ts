@@ -5,6 +5,9 @@ import { decodeFrame, type Message, MessageKind } from './protocol';
 
 /** One room on the socket (a RoomProvider). */
 export interface ChannelHandler {
+  /** Whether its tab may sleep now that it hid: a note's or an item's room
+   * with nothing unsent. None says no. */
+  mayHide?(): boolean;
   onMessage(message: Message): void;
   /** The user's timeout ended: a room paused by it joins again and resyncs. */
   onResume(): void;
@@ -54,6 +57,8 @@ export class CollabSocket {
       if (!CollabSocket.idleWatched && typeof window !== 'undefined') {
         CollabSocket.idleWatched = true;
         watchIdle({
+          mayHide: () =>
+            [...CollabSocket.sockets.values()].every((each) => each.mayHide()),
           sleep: () => {
             for (const each of CollabSocket.sockets.values()) each.sleep();
           },
@@ -167,6 +172,10 @@ export class CollabSocket {
     this.retry = undefined;
     for (const handler of [...this.handlers]) handler.onSleep();
     this.close();
+  }
+
+  private mayHide() {
+    return [...this.handlers].every((handler) => handler.mayHide?.() === true);
   }
 
   /** Input or focus again: the socket opens and its rooms join again,

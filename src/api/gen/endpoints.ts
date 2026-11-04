@@ -80,6 +80,7 @@ import type {
   FlashcardSet,
   Generate200,
   GenerateReq,
+  GetMaterialParams,
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
   GetWorkspaceReviewParams,
@@ -139,6 +140,8 @@ import type {
   Quiz,
   RateReviewItemReq,
   ReadSourceRefreshParams,
+  ReadableMaterialsInputBody,
+  ReadableMaterialsOutputBody,
   RecentOutputBody,
   RedeemShareLinkInputBody,
   ReorderContentReq,
@@ -5119,6 +5122,70 @@ const res = await fetch(getCreateStandaloneMaterialUrl(),
 
 
 
+export type readableMaterialsResponse200 = {
+  data: ReadableMaterialsOutputBody
+  status: 200
+}
+
+export type readableMaterialsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type readableMaterialsResponseSuccess = (readableMaterialsResponse200) & {
+  headers: Headers;
+};
+export type readableMaterialsResponseError = (readableMaterialsResponseDefault) & {
+  headers: Headers;
+};
+
+export type readableMaterialsResponse = (readableMaterialsResponseSuccess | readableMaterialsResponseError)
+
+export const getReadableMaterialsUrl = () => {
+
+
+
+
+  return `/api/materials/readable`
+}
+
+/**
+ * @summary List which of these materials the caller can read
+ */
+export const readableMaterials = async (readableMaterialsInputBody: NonReadonly<ReadableMaterialsInputBody>, options?: RequestInit): Promise<readableMaterialsResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getReadableMaterialsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(readableMaterialsInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: readableMaterialsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as readableMaterialsResponse
+}
+
+
+
 export type deleteMaterialResponse204 = {
   data: void
   status: 204
@@ -5197,20 +5264,29 @@ export type getMaterialResponseError = (getMaterialResponseDefault) & {
 
 export type getMaterialResponse = (getMaterialResponseSuccess | getMaterialResponseError)
 
-export const getGetMaterialUrl = (id: string,) => {
+export const getGetMaterialUrl = (id: string,
+    params?: GetMaterialParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/materials/${id}`
+  return stringifiedParams.length > 0 ? `/api/materials/${id}?${stringifiedParams}` : `/api/materials/${id}`
 }
 
 /**
  * @summary Get a material
  */
-export const getMaterial = async (id: string, options?: RequestInit): Promise<getMaterialResponse> => {
+export const getMaterial = async (id: string,
+    params?: GetMaterialParams, options?: RequestInit): Promise<getMaterialResponse> => {
 
-  const res = await fetch(getGetMaterialUrl(id),
+  const res = await fetch(getGetMaterialUrl(id,params),
   {
     ...options,
     method: 'GET'

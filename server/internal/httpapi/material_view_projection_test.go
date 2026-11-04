@@ -90,4 +90,21 @@ func TestADiagramViewAsksItsOpenRoomForAFreshProjection(t *testing.T) {
 	if calls.Load() != 2 {
 		t.Fatalf("project calls = %d, want 2", calls.Load())
 	}
+
+	// A device holding its own copy reads the rest, and its room stays out of it
+	// (Epo 2026-11-04): only the difference downloads, from the room's JOIN.
+	rec := doReq(t, h, http.MethodGet, "/api/materials/"+diagram.ID+"?noContent=true", "u_owner", nil)
+	var bare struct {
+		Content struct {
+			Value []any `json:"value"`
+		} `json:"content"`
+		Title string `json:"title"`
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &bare) != nil ||
+		len(bare.Content.Value) != 0 || bare.Title != "Live diagram" {
+		t.Fatalf("GET noContent = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("project calls = %d, want 2", calls.Load())
+	}
 }

@@ -41,34 +41,28 @@ async function editPdf(page: Page) {
   ).toBeEnabled();
 }
 
-test('Blocks and Files open the shared document page in View', async ({
-  page,
-}) => {
+test('Blocks and Files open the shared document page', async ({ page }) => {
   await page.goto('/files?tab=blocks');
   await openItem(page, 'Study journal 001');
   await expect(page).toHaveURL(/\/materials\/mat_pagination_1$/);
-  await expect(
-    page.getByRole('button', { name: m.material_mode() })
-  ).toHaveAttribute('aria-pressed', 'false');
   const header = page
     .getByRole('heading', { exact: true, name: 'Study journal 001' })
     .locator('..')
     .locator('..');
   await expect(header.locator('use')).toHaveAttribute('href', /#java-enum$/);
-  const mode = header.getByRole('button', { name: m.material_mode() });
-  await mode.click();
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
-  await expect(page).toHaveURL(/mode=edit/);
-  await page.reload();
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
+  // At the highest mode its reader may have, with no switch; an old link's mode
+  // goes.
   await expect(
     page.locator('[data-slate-editor="true"][contenteditable="true"]')
   ).toBeVisible({ timeout: 30_000 });
-  await mode.focus();
-  await page.keyboard.press('Space');
-  await expect(mode).toHaveAttribute('aria-pressed', 'false');
-  await expect(page).toHaveURL(/mode=view/);
-  await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+  await expect(
+    header.getByRole('button', { name: m.material_mode() })
+  ).toHaveCount(0);
+  await page.goto('/materials/mat_pagination_1?mode=view');
+  await expect(
+    page.locator('[data-slate-editor="true"][contenteditable="true"]')
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page).not.toHaveURL(/mode=/);
 
   await header.getByRole('button', { name: m.a11y_open_menu() }).click();
   await expect(

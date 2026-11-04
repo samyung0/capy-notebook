@@ -11,7 +11,7 @@ const partAnswers = (dialog: Locator) =>
 test('undoing the add of a chart still open in its editor goes back to the question', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
+  await page.goto('/materials/qz_2');
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .first()
@@ -35,7 +35,7 @@ test('undoing the add of a chart still open in its editor goes back to the quest
 test('a quiz embedded in a note keeps its question dialog open through an edit', async ({
   page,
 }) => {
-  await page.goto('/workspaces/ws_bio?material=mat_note_1&mode=edit');
+  await page.goto('/workspaces/ws_bio?material=mat_note_1');
   await page
     .getByRole('heading', { name: 'Self-check' })
     .scrollIntoViewIfNeeded({ timeout: 30_000 });
@@ -73,7 +73,7 @@ test('a quiz embedded in a note keeps its question dialog open through an edit',
 test('closing an open answer editor goes back to the question', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
+  await page.goto('/materials/qz_2');
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .first()
@@ -96,7 +96,7 @@ test('closing an open answer editor goes back to the question', async ({
 test('a part’s marks step and type within 1 to the marks cap', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
+  await page.goto('/materials/qz_2');
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .first()
@@ -120,7 +120,7 @@ test('a part’s marks step and type within 1 to the marks cap', async ({
 test('a multiple choice option is marked correct with its toggle', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
+  await page.goto('/materials/qz_2');
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .first()
@@ -143,7 +143,7 @@ test('a multiple choice option is marked correct with its toggle', async ({
 test('a table adds a column and removes a row from its own controls', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
+  await page.goto('/materials/qz_2');
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .first()
@@ -172,7 +172,7 @@ test('a table adds a column and removes a row from its own controls', async ({
 test('adding a part shows it in the question instead of opening its answer', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
+  await page.goto('/materials/qz_2');
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .first()
@@ -189,7 +189,7 @@ test('adding a part shows it in the question instead of opening its answer', asy
 test('a group adds a sub-part, ungroups and goes with its parts', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
+  await page.goto('/materials/qz_2');
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .first()

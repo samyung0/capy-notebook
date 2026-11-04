@@ -72,7 +72,6 @@ function render(menuShown: boolean, standalone = false) {
         imageZoom={1}
         isFullscreen={false}
         item={{ id: 'f1', kind: 'file' }}
-        materialMode={null}
         menuBar={<span data-testid="menu-slot" />}
         menuShown={menuShown}
         onDeleted={() => undefined}
@@ -85,7 +84,6 @@ function render(menuShown: boolean, standalone = false) {
           workspaceName: 'Biology',
         }}
         onImageZoomChange={() => undefined}
-        onMaterialModeChange={() => undefined}
         onToggleFullscreen={() => undefined}
         presence={createPresenceStore()}
         readOnly={false}
