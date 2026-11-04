@@ -50,7 +50,7 @@ pub const QUESTION_TEXT_MAX: usize = 12000;
 pub const QUESTION_UNIT_MAX: usize = 100;
 pub const QUIZ_MARKSCHEME_MAX: usize = 5;
 pub const QUIZ_OPEN_ANSWER_MAX: usize = 5000;
-pub const QUIZ_OPEN_PARTS_MAX: usize = 20;
+pub const QUIZ_OPEN_PARTS_MAX: usize = 100;
 pub const QUIZ_PARTS_MAX: usize = 100;
 pub const QUIZ_QUESTION_PARTS_MAX: usize = 7;
 

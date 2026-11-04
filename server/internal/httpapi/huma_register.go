@@ -587,6 +587,8 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerThumbnails(api)
 	a.registerSourceUploads(api)
 	a.registerGenerate(api)
+	a.registerExtractions(api)
+	a.registerHidden(api)
 	a.registerMaterials(api)
 	a.registerOpens(api)
 	a.registerQuizzes(api)

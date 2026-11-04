@@ -209,7 +209,10 @@ type File struct {
 	PayerID string `json:"-"`
 	// IsPayer: the caller pays for the file, so it may move it (Epo
 	// 2026-10-27) whatever its role in the workspace.
-	IsPayer      bool    `json:"isPayer"`
+	IsPayer bool `json:"isPayer"`
+	// Hidden from members: only the workspace's owners and editors list,
+	// open or search it (Epo 2026-11-03).
+	Hidden       bool    `json:"hidden,omitempty"`
 	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of the page-1 thumbnail; list rows only"`
 	// Preview is a text source's opening characters.
 	Preview FilePreview `json:"preview,omitempty"`
@@ -448,6 +451,9 @@ type Material struct {
 	// ParentMaterialID is set on a quiz or flashcard set embedded in a note.
 	// The note owns its lifecycle and access; see embedded.go.
 	ParentMaterialID string `json:"parentMaterialId,omitempty"`
+	// Hidden from members: only the workspace's owners and editors list,
+	// open or search it (Epo 2026-11-03). An embedded item follows its note.
+	Hidden bool `json:"hidden,omitempty"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`
@@ -617,6 +623,8 @@ type MaterialRef struct {
 	MaxDepth  int   `json:"maxDepth"`
 	// Provenance credits the library books a curated material was written from.
 	Provenance *Provenance `json:"provenance,omitempty"`
+	// Hidden from members (Material.Hidden).
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 type ContentOrderItem struct {

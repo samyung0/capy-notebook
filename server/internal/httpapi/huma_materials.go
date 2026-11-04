@@ -158,7 +158,7 @@ func (a *api) listMaterials(ctx context.Context, in *workspaceIDInput) (*materia
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.ListMaterialRefs(ctx, in.ID)
+	res, err := a.s.ListMaterialRefs(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}

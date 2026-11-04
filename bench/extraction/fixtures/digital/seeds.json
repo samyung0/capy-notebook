@@ -1,0 +1,36 @@
+{
+ "note": "Born-digital papers for the figure box call (2026-11-04). Cambridge IGCSE specimen papers, public on cambridgeinternational.org; the PDFs live in the ignored data/question-bank/references/born-digital/<paper>/paper.pdf. Each figure has a hand-set seed region on the 0-1000 page grid; gold_digital.py takes the PDF's drawings, images and words inside it as the figure (labels included, the 'Fig. n' caption and 'NOT TO SCALE' left out) and writes figures.json.",
+ "papers": {
+  "igcse-maths-0580-2025-sp2": "https://www.cambridgeinternational.org/Images/663664-2025-specimen-paper-2.pdf",
+  "igcse-physics-0625-2023-sp2": "https://www.cambridgeinternational.org/Images/595784-2023-specimen-paper-2.pdf",
+  "igcse-biology-0610-2023-sp4": "https://www.cambridgeinternational.org/Images/595634-2023-specimen-paper-4.pdf"
+ },
+ "figures": [
+  {"paper": "igcse-maths-0580-2025-sp2", "page": 5, "label": "8", "seed": [270, 80, 580, 215], "description": "semicircle with diameter 9 cm"},
+  {"paper": "igcse-maths-0580-2025-sp2", "page": 8, "label": "15", "seed": [370, 80, 630, 350], "description": "grid with triangles A and T"},
+  {"paper": "igcse-maths-0580-2025-sp2", "page": 9, "label": "16", "seed": [205, 130, 760, 545], "description": "cumulative frequency curve of plant heights"},
+  {"paper": "igcse-maths-0580-2025-sp2", "page": 10, "label": "16", "seed": [220, 225, 745, 540], "description": "histogram grid of frequency density against height with the first bar drawn"},
+  {"paper": "igcse-maths-0580-2025-sp2", "page": 11, "label": "17", "seed": [265, 80, 600, 305], "description": "cyclic quadrilateral ABCD with diagonals meeting at X"},
+  {"paper": "igcse-maths-0580-2025-sp2", "page": 14, "label": "21", "seed": [135, 100, 660, 205], "description": "triangle with height h and base x beside a rectangle (h+2) by (x+1)"},
+  {"paper": "igcse-maths-0580-2025-sp2", "page": 16, "label": "25", "seed": [230, 340, 640, 432], "description": "two similar heart shapes, heights 9 cm and x cm"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 2, "label": "1", "seed": [125, 100, 875, 205], "description": "a length of string measured on a ruler"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 2, "label": "1", "seed": [300, 240, 700, 302], "description": "a pen with six turns of string"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 3, "label": "7", "seed": [285, 495, 715, 642], "description": "balloon and mass on a rod pivoted at P"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 6, "label": "17", "seed": [385, 615, 615, 698], "description": "gap between a hot surface and a cold surface"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 8, "label": "22", "seed": [258, 250, 742, 370], "description": "object 8.0 cm from a converging lens with focal point F"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 8, "label": "23", "seed": [265, 560, 620, 722], "description": "ray of light passing from transparent plastic into air"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 9, "label": "25", "seed": [395, 282, 605, 428], "description": "boat sending a sound pulse 1000 m down to the sea bed"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 9, "label": "26", "seed": [300, 600, 700, 845], "description": "sheet of ice on water with source S and microphones A to D"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 10, "label": "27", "seed": [300, 128, 700, 298], "description": "bar magnet with four plotting compasses A to D"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 12, "label": "34", "seed": [110, 350, 890, 625], "description": "four diagrams A to D of a bar magnet moving near a coil"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 13, "label": "36", "seed": [345, 142, 656, 285], "description": "magnetic field line around a wire carrying current into the page"},
+  {"paper": "igcse-physics-0625-2023-sp2", "page": 13, "label": "37", "seed": [258, 515, 742, 648], "description": "emissions from a source passing between two charged plates"},
+  {"paper": "igcse-biology-0610-2023-sp4", "page": 2, "label": "1", "seed": [245, 98, 755, 350], "description": "photomicrograph of villi in the small intestine"},
+  {"paper": "igcse-biology-0610-2023-sp4", "page": 4, "label": "2", "seed": [95, 520, 925, 910], "description": "graph of blood glucose concentration against time for persons A and B"},
+  {"paper": "igcse-biology-0610-2023-sp4", "page": 7, "label": "3", "seed": [70, 102, 930, 425], "description": "photomicrograph of human blood with a phagocyte, a lymphocyte and a red blood cell labelled"},
+  {"paper": "igcse-biology-0610-2023-sp4", "page": 9, "label": "3", "seed": [150, 140, 870, 565], "description": "pedigree diagram of haemophilia with its key"},
+  {"paper": "igcse-biology-0610-2023-sp4", "page": 13, "label": "5", "seed": [135, 98, 865, 395], "description": "photograph of marine iguanas"},
+  {"paper": "igcse-biology-0610-2023-sp4", "page": 15, "label": "6", "seed": [285, 140, 715, 430], "description": "food web of a coastal wetland"},
+  {"paper": "igcse-biology-0610-2023-sp4", "page": 16, "label": "6", "seed": [135, 130, 865, 398], "description": "part of the nitrogen cycle with processes A to D"}
+ ]
+}

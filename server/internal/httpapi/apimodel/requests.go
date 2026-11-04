@@ -313,6 +313,23 @@ type GenerateReq struct {
 	Title       MaterialTitle                `json:"title" minLength:"1"`
 }
 
+// CreateExtractionReq starts a Make a quiz run (todo-study-tracking.md §8):
+// the question paper's files with their selected pages (counted from 1; an
+// image is page 1), and the mark scheme or answer files, read whole. The
+// handler holds the run to fieldlimits.ExtractionPages selected pages and
+// fieldlimits.ExtractionFiles files in all.
+type CreateExtractionReq struct {
+	Title         MaterialTitle         `json:"title" minLength:"1"`
+	Paper         []ExtractionPaperFile `json:"paper" minItems:"1"`
+	AnswerFileIDs []string              `json:"answerFileIds,omitempty" nullable:"false"`
+}
+
+// ExtractionPaperFile is one question-paper file and the pages selected in it.
+type ExtractionPaperFile struct {
+	FileID string `json:"fileId" minLength:"1"`
+	Pages  []int  `json:"pages" minItems:"1"`
+}
+
 // CreateSourceUploadReq is a streamed source upload's metadata part (see
 // uploadSource); the schema bounds are checked there. Empty kind and parseMode
 // are inferred from name, then validated. That inference is not a product default.
@@ -339,6 +356,9 @@ type CreateSourceUploadReq struct {
 	// belongs to; its notification fires once BatchTotal files settle.
 	BatchID    string `json:"batchId" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9_-]+$"`
 	BatchTotal int    `json:"batchTotal" minimum:"1" maximum:"10000"`
+	// Hidden is the upload dialog's "Who can see it" (Epo 2026-11-04, V1);
+	// the Make a quiz dialog's uploads always send it.
+	Hidden bool `json:"hidden,omitempty" doc:"The file starts hidden from members: only the workspace's owners and editors see it. A file outside a workspace has no members, so it is refused there"`
 }
 
 // ImportSourcesReq pulls files from a connected Drive/OneDrive account.
@@ -354,6 +374,8 @@ type ImportSourcesReq struct {
 	// Each request then counts its own files in the batch.
 	BatchID    string `json:"batchId" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9_-]+$"`
 	BatchTotal int    `json:"batchTotal" minimum:"1" maximum:"10000"`
+	// Hidden, as for an upload.
+	Hidden bool `json:"hidden,omitempty" doc:"The file starts hidden from members: only the workspace's owners and editors see it. A file outside a workspace has no members, so it is refused there"`
 }
 
 type SourceImportAccepted struct {

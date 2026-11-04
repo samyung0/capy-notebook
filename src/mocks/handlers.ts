@@ -16,6 +16,7 @@ import type {
   EditableQuiz,
   FlashcardSet,
   GenerateOptions,
+  HiddenBody,
   Material,
   MaterialDiscussion,
   MaterialRef,
@@ -428,6 +429,7 @@ function resolveTags(kind: string, refs: TagInput[] | null | undefined): Tag[] {
 interface MockSourceImport {
   completed: boolean;
   fileId: string;
+  hidden: boolean;
   name: string;
   polls: number;
   sizeBytes: number;
@@ -459,6 +461,7 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
   const file: (typeof db.files)[number] = {
     addedAt: new Date().toISOString(),
     hasBytes: true,
+    hidden: sourceImport.hidden || undefined,
     id: sourceImport.fileId,
     indexed: true,
     ingestPct: 100,
@@ -618,6 +621,7 @@ function advanceChanges<T extends { id: string }>(
 type SourceUploadMetadata = {
   topicId?: string | null;
   topicName?: string | null;
+  hidden?: boolean;
   kind: string;
   name: string;
 };
@@ -2285,6 +2289,7 @@ export const handlers = [
       .filter((mt) => mt.workspaceId === wsId && !mt.parentMaterialId)
       .map((mt) => ({
         createdAt: mt.createdAt,
+        hidden: mt.hidden,
         id: mt.id,
         maxDepth: mt.maxDepth,
         nodeCount: mt.nodeCount,
@@ -2464,6 +2469,22 @@ export const handlers = [
     const body = (await request.json()) as Pick<Material, 'privacy'>;
     material.privacy = body.privacy;
     return HttpResponse.json(material);
+  }),
+  // Hidden from members: owners and editors switch a workspace item from its
+  // menu.
+  http.put('/api/files/:id/hidden', async ({ params, request }) => {
+    const file = db.files.find((item) => item.id === params.id);
+    if (!file?.workspaceId) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as HiddenBody;
+    file.hidden = body.hidden;
+    return HttpResponse.json(body);
+  }),
+  http.put('/api/materials/:id/hidden', async ({ params, request }) => {
+    const material = db.materials.find((item) => item.id === params.id);
+    if (!material?.workspaceId) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as HiddenBody;
+    material.hidden = body.hidden;
+    return HttpResponse.json(body);
   }),
   http.delete('/api/materials/:id', async ({ params }) => {
     trashMaterial(String(params.id));
@@ -2670,6 +2691,8 @@ export const handlers = [
         // Mirror the real backend: uploads start 'pending' until a worker
         // claims the ingest job, then the client animates progress.
         hasBytes: true,
+        // Who can see it: hidden from members from the start.
+        hidden: body.hidden || undefined,
         id: uid('f'),
         indexed: false,
         isPayer: true,
@@ -3650,6 +3673,7 @@ export const handlers = [
         topicName?: string | null;
         driveIds?: string[];
         fileIds: string[];
+        hidden?: boolean;
         parseMode?: 'fast' | 'none';
         provider: string;
         requestId?: string;
@@ -3668,6 +3692,7 @@ export const handlers = [
         const sourceImport: MockSourceImport = {
           completed: false,
           fileId: uid('f'),
+          hidden: body.hidden === true,
           name: `${body.provider}-import-${i + 1}.pdf`,
           polls: 0,
           sizeBytes: 512 * 1024,

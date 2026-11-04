@@ -168,6 +168,12 @@ class Config:
         if host.strip()
     )
 
+    # ---- layout service (layout/app.py) ----------------------------------
+    # One pool on the ingest host, over WireGuard, for Make a quiz's figure
+    # boxes (Epo 2026-11-04). Unset: every figure takes the box call.
+    layout_url: str = _env("CAPY_LAYOUT_URL", "")
+    layout_token: str = secret("CAPY_LAYOUT_TOKEN")
+
     # ---- persistent parse service ----------------------------------------
     # In production the ingest worker and parser both run on the Netcup ingest host.
     parser_url: str = _env("PARSER_URL", "")
@@ -430,6 +436,9 @@ if cfg.db_sync_pool_max_size <= 0 or cfg.db_async_pool_max_size <= 0:
 
 if cfg.turn_slots <= 0:
     raise ValueError("CAPY_TURN_SLOTS must be positive")
+
+if cfg.layout_url and not cfg.layout_token:
+    raise ValueError("CAPY_LAYOUT_URL needs CAPY_LAYOUT_TOKEN")
 
 
 def require_parse_timeouts() -> None:

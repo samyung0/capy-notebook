@@ -1024,7 +1024,7 @@ func QuizBounds(qs []map[string]any) error {
 		return fail(fmt.Sprintf("a quiz has at most %d parts", fieldlimits.QuizParts))
 	}
 	if open > fieldlimits.QuizOpenParts {
-		return fail(fmt.Sprintf("a quiz has at most %d open parts", fieldlimits.QuizOpenParts))
+		return fail(fmt.Sprintf("a quiz has at most %d AI-marked parts", fieldlimits.QuizOpenParts))
 	}
 	return nil
 }

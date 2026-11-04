@@ -220,7 +220,7 @@ func (a *api) listWorkspaceRecent(ctx context.Context, in *workspaceIDInput) (*w
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.ListWorkspaceRecent(ctx, in.ID, workspaceRecentCount)
+	res, err := a.s.ListWorkspaceRecent(ctx, userID(ctx), in.ID, workspaceRecentCount)
 	if err != nil {
 		return nil, hErr(err)
 	}

@@ -9,6 +9,7 @@ import type { Provenance } from './provenance.ts';
 
 export interface MaterialRef {
   createdAt: string;
+  hidden?: boolean;
   id: string;
   maxDepth: number;
   nodeCount: number;

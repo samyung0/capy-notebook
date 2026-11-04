@@ -20,10 +20,14 @@
 -- 32 in flight held ~600 requests/min (p95 5.5 s), while 96 queued (p95 25 s),
 -- so the gate stops at 32. Each current provider held 32 in flight without a
 -- 429 on 2026-10-20.
--- OpenRouter DeepSeek V4.1 Flash 1017 (InferenceNet, then Cloudflare, since
--- 2026-10-21) captions standalone images and, from 2026-10-28, writes note
+-- OpenRouter DeepSeek V4.1 Flash 1017 (Wafer's US endpoint, then InferenceNet,
+-- then Cloudflare since 2026-11-04; InferenceNet, then Cloudflare from
+-- 2026-10-21; Wafer's capacity was not measured) captions standalone images
+-- and, from 2026-10-28, writes note
 -- ghost text: 40 in flight with 20 kept for interactive calls (ghost text up
--- to 40, ingest captions up to 20; Epo 2026-10-29); UAT and local 8/4.
+-- to 40, ingest captions up to 20; Epo 2026-10-29); UAT and local 8/4. From
+-- 2026-11-03 Make a quiz's calls (the extraction slot) share that gate as
+-- interactive calls; the numbers were not re-measured for them.
 -- InferenceNet answered 128 page reads at once (p95 8.6 s) and Cloudflare 64
 -- (p95 10.1 s); a 2026-10-28 ghost-text probe from the ingest host (about 400
 -- tokens in, 20 out) held 64 in flight at about 5,000 calls a minute with no

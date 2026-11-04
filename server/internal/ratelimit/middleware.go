@@ -45,6 +45,8 @@ const (
 var aiSuffixes = []string{
 	"/chat/stream",
 	"/generate",
+	// Make a quiz: one start reads up to 40 pages with a vision model.
+	"/extractions",
 	// Server grading, which sends open answers to Jev: a quiz, review or bank
 	// check, one question each (the signed-out grade is under /api/public/),
 	// and the author's computation check.

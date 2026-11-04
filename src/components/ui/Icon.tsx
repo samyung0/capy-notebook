@@ -176,8 +176,10 @@ import {
   User02Icon,
   UserAdd01Icon,
   UserGroupIcon,
+  UserMultipleIcon,
   ViewIcon,
   ViewOffIcon,
+  ViewOffSlashIcon,
   WaveIcon,
   WifiError02Icon,
   WifiOff02Icon,
@@ -395,6 +397,8 @@ const HugeIcons = {
   lock: SquareLock02Icon,
   logout: LogoutSquare01Icon,
   maximize: ArrowExpand01Icon,
+  // Everyone in the workspace (upload's Who can see it).
+  members: UserMultipleIcon,
   menu: Menu01Icon,
   message: Message01Icon,
   microphone: Mic01Icon,
@@ -480,6 +484,8 @@ const HugeIcons = {
   userGroup: UserGroupIcon,
   view: ViewIcon,
   viewOff: ViewOffIcon,
+  // Hidden from members (X2): the eye struck through.
+  viewOffSlash: ViewOffSlashIcon,
   wand: MagicWand01Icon,
   wave: WaveIcon,
   width: ArrowHorizontalIcon,

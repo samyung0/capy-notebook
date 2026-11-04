@@ -6,6 +6,16 @@ Add an entry when another one is vendored.
 
 ---
 
+## PP-DocLayout_plus-L (model, added at image build)
+
+`layout/Dockerfile` adds PaddlePaddle's ONNX export of PP-DocLayout_plus-L from
+Hugging Face (`PaddlePaddle/PP-DocLayout_plus-L_onnx`, pinned revision and
+SHA-256). The weights are not in this repository.
+
+License: Apache License, Version 2.0.
+
+---
+
 ## tungstenite (vendored copy)
 
 `collaboration-rs/third_party/tungstenite` is the `tungstenite` 0.29.0 crate

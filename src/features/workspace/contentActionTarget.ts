@@ -7,6 +7,8 @@ import type {
 
 export interface ContentActionTarget {
   createdAt: string;
+  /** Hidden from members: owners and editors see it and may show it. */
+  hidden?: boolean;
   id: string;
   kind: string;
   maxDepth?: number;
@@ -21,6 +23,7 @@ export interface ContentActionTarget {
 export function toFileActionTarget(file: SourceFile): ContentActionTarget {
   return {
     createdAt: file.addedAt,
+    hidden: file.hidden,
     id: file.id,
     kind: file.kind,
     name: file.name,
@@ -36,6 +39,7 @@ export function toMaterialActionTarget(
 ): ContentActionTarget {
   return {
     createdAt: material.createdAt,
+    hidden: material.hidden,
     id: material.id,
     kind: 'type' in material ? material.type : material.kind,
     topicId: material.topicId,

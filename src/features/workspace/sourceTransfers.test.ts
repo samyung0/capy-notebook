@@ -41,6 +41,7 @@ const limits = { imageMaxBytes: 2 << 20, maxBytes: 10 << 20 };
 const request = (name: string): LocalTransferRequest => ({
   estimatedCreditMicros: 0,
   file: new File(['x'], name),
+  hidden: false,
   key: name,
   kind: 'pdf',
   name,
@@ -51,6 +52,7 @@ const request = (name: string): LocalTransferRequest => ({
 
 const remote = (name: string): RemoteTransferRequest => ({
   fileId: `drive_${name}`,
+  hidden: false,
   key: name,
   kind: 'pdf',
   name,
@@ -73,6 +75,34 @@ const runUntilAborted = ({ signal }: { signal: AbortSignal }) =>
   );
 
 describe('source transfers', () => {
+  it('sends Who can see it with each upload, so the file starts hidden', async () => {
+    const uploadSource = vi.fn(async ({ file }: { file: File }) => ({
+      id: `f_${file.name}`,
+    }));
+    startSourceTransfer({
+      importSources: vi.fn(),
+      limits,
+      local: [
+        { ...request('answers.pdf'), hidden: true },
+        request('notes.pdf'),
+      ],
+      uploadSource: uploadSource as never,
+      workspaceId: 'ws_1',
+    });
+    await vi.waitFor(() =>
+      expect(useSourceTransfers.getState().unsent).toBe(0)
+    );
+    expect(
+      uploadSource.mock.calls.map(([v]) => [
+        v.file.name,
+        (v as { hidden?: boolean }).hidden,
+      ])
+    ).toEqual([
+      ['answers.pdf', true],
+      ['notes.pdf', false],
+    ]);
+  });
+
   it('sends every file after one fails and merges failures into one toast', async () => {
     const uploadSource = vi.fn(
       ({ file }: { batchId: string; batchTotal: number; file: File }) => {

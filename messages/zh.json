@@ -549,6 +549,8 @@
   "source_upload_computer": "从电脑上传",
   "source_upload_hint": "PDF、Office、Markdown、文本、图片或音频",
   "source_selected_files": "文件详情",
+  "source_visibility": "谁可以看到",
+  "source_visibility_everyone": "工作区中的所有人",
   "source_create_sections": "分类",
   "source_create_section_materials": "学习资料",
   "source_create_section_documents": "文档",
@@ -2312,7 +2314,7 @@
   "question_validation_quiz_markscheme": "每个小题最多有 {max} 个评分要点。",
   "question_validation_open_answer_length": "参考答案最多 {max} 个字符。",
   "question_validation_quiz_parts": "每份测验最多有 {max} 个小题。",
-  "question_validation_quiz_open_parts": "每份测验最多有 {max} 个开放式小题。",
+  "question_validation_quiz_open_parts": "每份测验最多有 {max} 个 AI 评分小题。",
   "chat_workspace_only": "仅限工作区",
   "chat_workspace_only_hint": "本条消息只使用本工作区的文件和资料。",
   "chat_all_sources": "全部来源",
@@ -2617,5 +2619,9 @@
   "source_transfer_download_failed": "未能下载",
   "action_download": "下载",
   "action_download_markdown": "下载 Markdown",
-  "action_download_docx": "下载 Word"
+  "action_download_docx": "下载 Word",
+  "content_hide_from_members": "对成员隐藏",
+  "content_show_to_members": "向成员显示",
+  "content_hidden_from_members": "已对成员隐藏",
+  "quiz_ai_marked_count": "AI 评分小题 {count} / {max}"
 }

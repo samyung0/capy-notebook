@@ -77,6 +77,7 @@ import type {
   Flashcard,
   FlashcardSet,
   GenerateOptions,
+  HiddenBody,
   IngestSlots,
   InspectSourceImportsReq,
   InspectSourceImportsResponse,
@@ -955,16 +956,20 @@ export function useImportSources(
       topicName?: string | null;
       driveIds?: string[];
       fileIds: string[];
+      /** The files start hidden from members; a workspace import only. */
+      hidden?: boolean;
       parseMode?: 'fast' | 'none';
       provider: 'google' | 'microsoft';
       requestId?: string;
       signal?: AbortSignal;
     }) => {
-      const { signal, topicId, topicName, ...request } = body;
+      const { signal, topicId, topicName, hidden, ...request } = body;
       return api.post<unknown>(
         `${sourcesPath(workspaceId)}/import`,
-        // A standalone file has no topic.
-        workspaceId ? { ...request, topicId, topicName } : request,
+        // A standalone file has no topic or members.
+        workspaceId
+          ? { ...request, hidden: hidden || undefined, topicId, topicName }
+          : request,
         { signal }
       );
     },
@@ -1834,6 +1839,7 @@ export function useUploadSource(wsId: string | null) {
       durationSeconds,
       batchId,
       batchTotal,
+      hidden,
       onQueued,
       onUploadProgress,
       signal,
@@ -1846,6 +1852,9 @@ export function useUploadSource(wsId: string | null) {
       batchTotal: number;
       topicId?: string | null;
       topicName?: string | null;
+      /** The file starts hidden from members (Who can see it); a workspace
+       * upload only. */
+      hidden?: boolean;
       /** fast = OpenDataLoader, with OCR on text-less pages; none = store-only
        * for non-text kinds (no parse, not indexed). Text kinds (txt/md/json)
        * still index under none — there is no parse route to pick. */
@@ -1869,9 +1878,13 @@ export function useUploadSource(wsId: string | null) {
       const metadata = {
         batchId,
         batchTotal,
-        // A standalone file has no topic: the fields stay out.
+        // A standalone file has no topic or members: the fields stay out.
         ...(wsId
-          ? { topicId: topicId ?? null, topicName: topicName ?? null }
+          ? {
+              topicId: topicId ?? null,
+              topicName: topicName ?? null,
+              hidden: hidden || undefined,
+            }
           : {}),
         contentType: file.type || 'application/octet-stream',
         durationSeconds: durationSeconds || undefined,
@@ -2243,6 +2256,32 @@ export function useUpdateMaterialSharing() {
     onSuccess: (material) => {
       qc.setQueryData<Material>(qk.material(material.id), material);
       invalidateOwnedMaterials(qc);
+    },
+  });
+}
+
+/** Hide a workspace file or material from the workspace's members, or show
+ * it again (Epo 2026-11-03): owners and editors, from the item's menu. */
+export function useSetHidden(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      type,
+      hidden,
+    }: HiddenBody & { id: string; type: 'file' | 'material' }) =>
+      api.put<HiddenBody>(
+        `/${type === 'file' ? 'files' : 'materials'}/${id}/hidden`,
+        { hidden }
+      ),
+    onSuccess: (_result, { id, type }) => {
+      if (type === 'file') {
+        qc.invalidateQueries({ queryKey: qk.files(wsId) });
+        qc.invalidateQueries({ queryKey: qk.file(id) });
+      } else {
+        qc.invalidateQueries({ queryKey: qk.materials(wsId) });
+        qc.invalidateQueries({ queryKey: qk.material(id) });
+      }
     },
   });
 }

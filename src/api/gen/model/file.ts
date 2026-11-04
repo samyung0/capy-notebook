@@ -17,6 +17,7 @@ export interface File {
   addedAt: string;
   errorId?: string;
   hasBytes: boolean;
+  hidden?: boolean;
   id: string;
   indexLimit?: FileIndexLimit;
   indexed: boolean;

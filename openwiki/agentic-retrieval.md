@@ -90,6 +90,7 @@ network and no pin.
 | --- | --- | --- |
 | `chat.py` | `chat` | Agent system prompt (one prompt for every turn and both modes of the Workspace only switch) and full message list, a message led by a mode note where the switch is first known or changes; the Q221 send-back texts; the checkpoint compaction prompt |
 | `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
+| `extraction.py` | `chat` (default pin) | Make a quiz: the outline, the page-window system prompt with `record_question` / `continue_question`, and the mark scheme parse |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
 | `ingest.py` | `ingest` | File descriptor |
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
@@ -1668,10 +1669,11 @@ three attempts, a transient error retries, and a definitive client error (400,
 401, 403, 404, 422) ends the call; with no caption the job's retry runs.
 
 Caption calls never inherit a user's chat reasoning level. The captioning
-default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on InferenceNet
-then Cloudflare with fallbacks outside them and reasoning off (decision
-2026-10-19, after GLM-5.3-Flash on Relace stopped reading its input; DeepInfra
-until 2026-10-21; the provider pin is described in
+default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on Wafer's US
+endpoint, then InferenceNet, then Cloudflare, with fallbacks outside them and
+reasoning off (decision 2026-10-19, after GLM-5.3-Flash on Relace stopped
+reading its input; DeepInfra until 2026-10-21; Wafer first since 2026-11-04;
+the provider pin is described in
 [Model registry and pinning](observability-metering.md#model-registry-and-pinning)).
 Its catalog and capacity rows
 are UAT data. The caption prompt rides as the system message and the image as
@@ -5717,6 +5719,208 @@ is fixed, and the gateway must persist a parseable artifact.
 
 Response shapes are part of the contract with Go — do not change them lightly.
 
+## Make a quiz (questions from uploaded files)
+
+Questions printed in an uploaded paper become a new quiz
+(`todo-study-tracking.md` §8, step 7 of the study rework). It is a fixed
+pipeline like `/generate`, not the chat agent, and it runs as a background
+job: no UI yet (the dialog, page picker and editor, mocks X0a/X0b/X1/X2, come
+later).
+
+- **Start.** `POST /api/workspaces/{id}/extractions` (workspace editors) takes
+  a title, the question paper as `paper: [{fileId, pages}]` (pages counted
+  from 1; an image is page 1, so a photographed worksheet is several image
+  files) and `answerFileIds`, the mark scheme or answer files, read whole and
+  never page-picked. At most `fieldlimits.ExtractionPages` (40) selected pages
+  and `ExtractionFiles` (10) files in all, answer files included (Epo
+  2026-11-03); every file must be the workspace's, untrashed and indexed, and a
+  paper file a PDF or an image (Office files later). The gateway checks those,
+  that the title is free, the account can edit and has storage, then opens a
+  provider session on surface `generate` (the starter pays, Epo 2026-11-03;
+  its calls' purposes are `extraction_outline`, `extraction_window` and
+  `extraction_scheme`, so the Usage tab counts it under Generate),
+  posts `/extract` to the retrieval service and answers 202 with the run
+  (`store.Extraction`) once the service has accepted it. The service refuses
+  before streaming, as a 400 with its code, a page past its file's end
+  (`page_out_of_range`), a file with no page view or one gone, an answer file
+  with no indexed text, and one over 200,000 characters (`scheme_too_long`);
+  past its turn slots it answers provider_busy (503) at once, as for
+  `/generate`.
+- **The run** (`pipeline/retrieval/extraction.py`, prompts in
+  `prompts/extraction.py`; one prompt reads questions and keys, Epo
+  2026-11-03, `todo-study-tracking/R6-extraction-prompt.md`, generated from the
+  code by `bench/extraction/scripts/prompt_doc.py`):
+  0. Layout, before anything else (`retrieval/layout.py`, Epo 2026-11-04): one
+     request a page to the layout service (`CAPY_LAYOUT_URL`, one pool on the
+     ingest host, runbook §7.6), at most 3 in flight a run, with the windows' page
+     image (long side 1,568 px). The answer is every region PP-DocLayout_plus-L
+     finds. A 429 waits about 2 s and tries again, 4 tries in all; a request has
+     30 s and all the run's pages 90 s. A page whose request fails, stays busy or
+     runs out of time has no regions, and the run goes on. With no
+     `CAPY_LAYOUT_URL` no page has regions, so every figure takes the box call.
+     The layout service bills nothing. `layout.figure_boxes` turns regions into
+     the boxes a window sees: `image` and `chart` at 0.5 or more, one of any pair
+     with an IoU of 0.8 or more, and a box dropped when it holds a smaller box
+     (at least 90% inside) plus `text` regions of its own outside it.
+  1. The outline: one call, reasoning off, lists the question labels the
+     selected pages' indexed text holds (`store.file_passages`).
+  2. Page windows of up to two pages in selected order. Each call gets the two
+     page images (`capture.render_file` at `CAPY_CAPTURE_MAX_EDGE`, rendered when
+     the window runs; a page is rendered a second time for its layout request),
+     each page's indexed text followed by its boxes as JSON (number, page,
+     coordinates on the 0-1000 grid, label, score; numbers run across the window,
+     and nothing is drawn on the images), the expected labels, the
+     labels recorded so far and the open question (the last one recorded,
+     which may run onto the next page), with the tools `record_question` (one
+     question a call, several calls a reply: label, stem, parts with printed
+     labels, blocks, answer, marks, `key_source` and a short worked solution,
+     a printed total and figures) and `continue_question` (the open
+     question's next parts or more of its last part). Every part carries its
+     key: mcq `correct`, short `accepted`, open marking `points` with marks
+     and a short model answer. The model copies a key the page prints
+     (`key_source: printed`) and otherwise works it out (`worked_out`),
+     never changing the printed question; no question is left out for lack
+     of a key. Each recorded question is converted to the shared format in
+     paper layout and goes through Go's quiz validator at once
+     (`POST /api/internal/questions/check`, `materialdoc.QuizDocument`, the
+     check a quiz's creation makes); a refusal, a part without `key_source`
+     or arguments that are not JSON (the tool result names the parse error)
+     go back to the model, which sends that call again, up to six calls a
+     window. `continue_question` also accepts the last question recorded in
+     its own window, so a question continued there keeps its parts instead of
+     being recorded again over them. A reply cut off at the 24,000-token output
+     cap is asked again for fewer questions a reply. Printed option order is
+     kept, and option lines the model also copied into a part's text are taken
+     out in code when they match the options in order, lettered or plain, in or
+     out of the math, in one block or one a block (a one-part question whose part
+     held only them takes its stem as its text); a one-part question whose stem
+     repeats its part's text, or whose part repeats the stem's last sentence,
+     keeps it once. Sub-parts
+     flatten: (b)(i) and (b)(ii) are two parts, the (b) lead-in text (the first
+     sub-part's `lead_in` field, which code puts first in its blocks)
+     starting the first. Text printed at the very end of the last page shown, for
+     parts on the next page, goes in the call's `trailing_text` (Epo 2026-11-04):
+     code holds it, the next window sees it in the open question, and it goes in
+     front of what that window continues the question with. A window never sees
+     the previous page, so without this that text has nowhere to go. Recorded
+     questions leave the conversation: the next window carries labels and the open
+     question only.
+  3. After the windows, the answer files are parsed as text, in pieces of
+     12,000 characters, reasoning off, into entries
+     `{question, part, answer, points, solution}`; they never share a request
+     with the pages. The parse is given the recorded questions with their part
+     labels and names entries with them (2024 Q3(b) had been read as b(ii)).
+     Code pairs entries with parts by normalised label (`label_key`: "Q3." is
+     "3", "(b)(ii)" is "b ii"). A scheme key replaces a worked-out one: an
+     option letter becomes the printed option's index, a short answer its
+     value (a printed unit stripped), an open part's marking points its
+     marking items (joined down to `QUIZ_MARKSCHEME_MAX`, their total
+     replacing the part's marks) with the final answer as its model answer,
+     and the scheme's worked solution the AI one. A printed key stays. A key
+     that differs from the scheme's is named in `keyDisagreements` either way.
+  4. Each paired question goes through the validator again; one it refuses
+     keeps the page's keys (`schemeRefused`). A worked-out key no scheme
+     replaced keeps its solution marked AI-written (the solution block's
+     `label`, "AI-written" or "AI 撰写" by the starter's locale) and its
+     question is named in `keysWorkedOut`. A saved question whose part marks
+     do not add up to the total printed on the page is named in `marksDiffer`.
+  5. Figures (Epo 2026-11-04). Each figure a call names gives the numbers of
+     the boxes that hold it, several for a split figure, the part whose text it
+     follows ("" for the stem) and a few words on what it shows; a number that is
+     no box, boxes on two pages, or a part the question lacks go back to the
+     model. Code crops the chosen boxes together, adds an adjacent caption (a
+     `figure_title` region at 0.5 or more within 2.5% of the page above or below,
+     with its middle over them) and pads 1% of the page all round
+     (`layout.crop_box`). A figure no box holds gives `boxes: []` and its page
+     image in the window. After pairing, those figures alone take the box call:
+     one call a page, reasoning off, sees that page alone with its figures listed
+     (question label and description) and answers a box on a 0-1000 grid for each
+     (`locate_figures`, purpose `extraction_figures`; a reply that is not one
+     box a figure is a failed attempt; a page whose call fails twice keeps
+     its questions without those figures, named in `figuresLeftOut`). Coordinates
+     asked of the window itself were too far off to crop from (2022 Paper 2: 3 of
+     10 whole, 3 missing the figure; bench report 2026-11-04). The box call's box is
+     grown to the ink around it on the page image the call saw
+     (`layout.grown_to_ink`, Epo 2026-11-04): each edge moves out while the strip
+     just outside holds ink, up to 6 blank grid units and 80 units from where it
+     started, and 0.5% of the page goes on at the end. That took the box call from
+     63 whole, 40 tight and 36 both of 80 with a fixed pad to 68, 64 and 56
+     ([report](../bench/extraction/reports/2026-11-04-hosted-figure-boxes.md)). Each figure is then cropped from its page (`capture.render_file` with `page_edge`
+     `FIGURE_PAGE_EDGE`: the page's long side at 2,200 px, so labels read and
+     a small figure stays small) and placed after that part's text as an
+     image block whose asset is `figure:<id>` and whose description is the
+     model's words; the `done` event carries the JPEGs (`figures`).
+- **Models.** The `extraction` slot's default pin (`extractionLLM`;
+  migration `0138`), which needs vision: OpenRouter's
+  `deepseek/deepseek-v4.1-flash-1017` on the extraction slot's own route,
+  InferenceNet, then Cloudflare, then Wafer's US endpoint with fallbacks off
+  (Epo 2026-11-04; the model's other calls go Wafer first), the same pin
+  that reads pages, captions images and
+  writes ghost text, so one image model serves them all. Never direct
+  DeepSeek, which costs too much (Epo 2026-11-03). Windows reason at mid (sent
+  to OpenRouter as `medium`), and the outline and answer files run with
+  reasoning off. 0731, Epo's first pick, reads text only (OpenRouter lists
+  `input_modalities: ["text"]` on every endpoint and an image request answers
+  404). The bench compared 1017 with the unpinned V4.1 Flash and with direct
+  Flash
+  ([report](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md)).
+- **Progress and the end.** The service streams `questions` (every question
+  recorded so far) after each window, which the gateway saves on the row, and
+  then `done` with the quiz's questions and the report, or `error`. The relay
+  runs in the API process on a detached context, like a chat turn; a restart
+  fails what was running (`FailOrphanedExtractions` at boot, code
+  `interrupted`). On `done` the gateway creates the quiz under the run's title
+  ("Title 2" when a quiz took it meanwhile) as the starter's material, hidden
+  from members, with its figures as the quiz's own editor assets, charged to
+  the starter like images it uploads (`finishExtraction`; see
+  [backend-storage-quota.md](backend-storage-quota.md)). The run changes no
+  file's visibility: a picked file keeps its setting and a file uploaded in
+  the Make a quiz dialog is uploaded hidden (Epo 2026-11-04; see
+  [Hidden from members](authorization-permissions-lifecycles.md#hidden-from-members)).
+  It then records the quiz id and report, settles the session and sends `{type:
+  extraction, extractionId, status}` on the starter's event stream. No
+  question saved is `extraction_empty`. `GET /api/extractions/{id}` reads a
+  run its starter began: status, the questions recorded so far (`recorded`),
+  the quiz and the report (`expected`, `missing`, `recorded`, `keysWorkedOut`,
+  `keyDisagreements`, `schemeRefused`, `marksDiffer`, `unpaired`,
+  `schemeRepeats`, `figures`, `figuresLeftOut`, `stopped`, `pages`,
+  `windows`). `figures` names the questions saved with cropped figures, for
+  the starter to check; `figuresLeftOut` those saved without theirs, because
+  they had no box and their page's box call failed twice, or the figures did not fit in the
+  starter's storage (then the quiz is saved without any figures; Epo
+  2026-11-04).
+  `schemeRepeats` names scheme entries left out because an earlier entry had
+  their label and they were not its continuation across two scheme pieces
+  (the bench saw a later question's solution named 2021 Q8(b)(ii), which
+  merged in had doubled the part's marks).
+- **Attempts.** The server retries a failed step once, silently (Epo
+  2026-11-03): the outline, each window and each scheme piece get a second
+  attempt 20 s after a busy, failing or silent provider (a scheme reply cut
+  off or not JSON counts as failed). The retrieval service has no job queue,
+  so the retry runs in the same request. A retried window records again over
+  what it recorded, and a definitive client error (400, 401, 403, 404, 422)
+  fails the run at once. The starter sees only progress and the final error.
+- **Stops.** A run stops early when the quiz would pass `QUIZ_PARTS_MAX` (100)
+  or `QUIZ_OPEN_PARTS_MAX` (100 AI-marked parts, raised from 20 for every quiz,
+  Epo 2026-11-03) (`stopped: quiz_full`), when the starter's credits run
+  out (`credits`), or when its page windows have written more than 8,000
+  output tokens per selected page (`output_limit`, `WINDOW_OUTPUT_PER_PAGE`:
+  normal runs wrote at most 3,400 a page, and a runaway on Wafer 21,700 at 17
+  times a normal run's cost; Epo 2026-11-04), and saves what it has.
+- **Stored.** `question_extractions` (migration 0136) keeps the run: starter,
+  title, status, the recorded questions, report, quiz, error. Nothing links a
+  question, the quiz or the run to the files, pages or regions it was read
+  from (Epo 2026-11-02, §8 item 7): they travel only in the request to the
+  retrieval service. Account purge deletes a user's runs.
+- **Left out.** Office pages, Markdown sections and the page picker's cost
+  estimate come with the UI.
+- **Bench.** `bench/extraction`, with findings in
+  [`2026-11-03-first-cut.md`](../bench/extraction/reports/2026-11-03-first-cut.md),
+  [`2026-11-03-keys-in-one-prompt.md`](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md)
+  [`2026-11-04-figures-and-fidelity.md`](../bench/extraction/reports/2026-11-04-figures-and-fidelity.md),
+  [`2026-11-04-window-size.md`](../bench/extraction/reports/2026-11-04-window-size.md)
+  and [`2026-11-04-layout-first-trial.md`](../bench/extraction/reports/2026-11-04-layout-first-trial.md).
+
 ## Citations and the frontend
 
 A citation is:
@@ -6569,7 +6773,7 @@ chunk, with full coverage in the large-document reduction path.
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, 16 images per user message |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on InferenceNet then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
+| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on Wafer's US endpoint, then InferenceNet, then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
 | VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 40 and 40 (64 overall until 2026-10-29; a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION`, `ALIBABA_MODELSTUDIO_KEY`, `ALIBABA_MODELSTUDIO_URL` | Image decoding is capped at 100M pixels. Audio transcription needs both Alibaba values (all or none, and the URL ending in `/compatible-mode/v1`, checked at startup by the pipeline and the API; unset fails an audio ingest terminally); its two-hour cap, 12-task gate, hour-long task hold and ten-minute source link are code constants. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |

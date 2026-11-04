@@ -255,7 +255,9 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		// The Yjs client ids assigned to it in documents it does not own
 		// (Q226): the ids it wrote stay in those documents' state, so no one
 		// takes them.
-		"material_yjs_client_ids", "source_document_client_ids"} {
+		"material_yjs_client_ids", "source_document_client_ids",
+		// Make a quiz runs it started, in any workspace.
+		"question_extractions"} {
 		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE user_id=$1`, userID); err != nil {
 			return err
 		}

@@ -599,7 +599,10 @@ named provider directly. These exact routing exceptions are allowed:
   certifications stay retired.
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
-  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`, except MiniMax 3.1
+  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}` at `instant` (every
+  caption, page read, summary and ghost-text call) and otherwise at the call's
+  effort (Make a quiz's page windows on 1017 at `mid`, sent as `medium`),
+  except MiniMax 3.1
   Flash (`minimax/minimax-m3.1-flash`, a chat choice since 2026-10-24, Q224,
   migration `0112_chat_sources.sql`), which sends the chat pin's effort
   (`low`, `mid` as `medium`, `high`; `MINIMAX_EFFORTS`) at temperature 0.2 and
@@ -614,11 +617,24 @@ named provider directly. These exact routing exceptions are allowed:
   (decision 2026-10-20, after Relace's endpoint answered 429 for every summary;
   each held 32 summary calls in flight without a 429 when probed that day);
   `deepseek/deepseek-v4.1-flash-1017`, the captioning pin for page reads and
-  image captions (decision 2026-10-19) and the editor slot's ghost-text pin
-  (decision 2026-10-28), goes to InferenceNet, then Cloudflare
-  (decision 2026-10-21: both read page text as well as DeepInfra did;
-  InferenceNet describes non-text visuals such as QR codes less often, which is
-  accepted). Default routing is
+  image captions (decision 2026-10-19), the editor slot's ghost-text pin
+  (decision 2026-10-28) and the extraction slot's pin (Epo 2026-11-03), goes
+  to Wafer's US endpoint, then InferenceNet, then Cloudflare (Epo
+  2026-11-04), except Make a quiz's calls, which take the extraction slot's
+  own route, InferenceNet, then Cloudflare, then `wafer/us`
+  (`OPENROUTER_SLOT_ROUTING`, bound for the run with `bind_route_slot`; on
+  Wafer two runs lost the open parts' model answers and one ran away). One
+  model has two routes, so the catalog row, rates and pins stay one
+  (InferenceNet and Cloudflare since decision 2026-10-21, when both
+  read page text as well as DeepInfra did and InferenceNet described non-text
+  visuals such as QR codes less often, which was accepted). `order` takes an
+  endpoint tag as well as a provider name: `wafer/us` ($0.038 / $0.010 /
+  $0.50 per million input / cached / output tokens) is named so OpenRouter
+  never picks Wafer's `wafer/mxfp4` ($0.16 input); by name alone it took
+  `wafer/us` in five calls of five, and a tag's case matters (`Wafer/us` finds
+  no endpoint; 2026-11-04 probe). DeepInfra is on no chat or vision route
+  (Epo 2026-11-04); it serves only the Qwen embedding pin, on its own API.
+  Default routing is
   never used: providers behind one slug differ on images (one drops them
   silently, others take none), so a slug with no pin fails when its request is
   built, naming the slug. The allowlist in
@@ -636,7 +652,10 @@ A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat and editor also hold a per-user preference. Generate
 workflows run on the chat slot (migration `0044` merged the former `generate`
 slot into it; usage `surface` still records `generate`).
-The slots are `chat`, `editor`, `ingest`, `retrieval`
+The slots are `chat`, `editor`, `ingest`, `extraction` (Make a quiz's page
+windows, outline and answer-file parse, migration `0138`: a vision text slot
+on OpenRouter's DeepSeek V4.1 Flash 1017, never direct DeepSeek, Epo
+2026-11-03), `retrieval`
 (the workspace embedding model, used by ingest indexing and by chat/generate
 query embedding), `captioning` (the vision model used for standalone image
 uploads; embedded figure captioning was retired) and `rerank` (the
@@ -653,8 +672,8 @@ set `capabilities` (`vision`, `pdf`, `embedding`, `rerank`) on the catalog row;
 (`agentic_loop_certs.json`) and can never be set by hand. The only place the
 slot-to-capability policy lives is the map in
 `server/internal/models/slot.go`: chat needs `agentic_loop` and `vision`,
-retrieval needs `embedding`, captioning needs `vision`, rerank needs `rerank`,
-the other slots need nothing. Chat needs `vision` because its tools attach
+retrieval needs `embedding`, captioning and extraction need `vision`, rerank
+needs `rerank`, the other slots need nothing. Chat needs `vision` because its tools attach
 images (`capture_page`, Office pictures from `inspect_office_document`,
 pending Office images); the assignment check is the
 only gate, with no runtime vision check, and both seeded chat rows
@@ -821,8 +840,11 @@ peak price on its own API, $0.30 / $0.006 / $1.20 per million, Epo's rate
 InferenceNet, version 7 at this rate on DeepSeek's API and version 8 at
 300 / 8 / 1400 on the Morph-then-Cloudflare route), OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
-decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
-price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
+decision 2026-10-20), V4.1 Flash 1017 200 / 20 / 1200 for every use (Epo
+2026-11-04: the highest of its providers' list prices in each column,
+Cloudflare's $0.10 input and $0.60 output and Wafer's $0.010 cached input;
+160 / 16 / 1000, InferenceNet's list price, from decision 2026-10-21; migration
+0138 seeds a fresh database's row at it), MiniMax 3.1 Flash 300 / 30 /
 1200 (Together's list price, which DigitalOcean matches, 2026-10-24), embedding 40,
 reranker 200 (Alibaba qwen3-rerank's $0.10, migration 0134).
 While there is no production data these values are set directly in the UAT
@@ -1673,7 +1695,7 @@ orders of magnitude. Listing workspaces touches one index. A chat turn gets
 12 responses before its first write, 4 tool calls per response and 160 per
 turn (`pipeline/pipeline/retrieval/limits.py`). Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
-(`/chat/stream`, `/generate`, question checks (`/check`: a
+(`/chat/stream`, `/generate`, Make a quiz's start (`/extractions`), question checks (`/check`: a
 quiz's, a review session's, the bank's, one question each; Epo 2026-10-25
 keeps them here, since a learner does not check 15 questions a minute) and
 `/computation-check`) are 200/hour with burst 15, plus

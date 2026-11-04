@@ -31,6 +31,8 @@ type notificationEvent struct {
 	// chat_turn
 	ConversationID string `json:"conversationId,omitempty"`
 	Status         string `json:"status,omitempty"`
+	// extraction: a Make a quiz run ended (Status done or failed).
+	ExtractionID string `json:"extractionId,omitempty"`
 }
 
 func (a *api) publishNotificationEvent(ctx context.Context, userID string, event notificationEvent) {

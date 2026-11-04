@@ -7,11 +7,13 @@ worker and the retrieval service alike.
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import re
 import secrets
 import time
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
 
@@ -29,6 +31,30 @@ from .lang import TS_CONFIG, detect_lang
 log = logging.getLogger("capy.retrieval.store")
 
 _pool: AsyncConnectionPool | None = None
+
+# Hidden from members (Epo 2026-11-03): the workspaces whose hidden files and
+# materials this request may read, those its user edits. Unbound, none: a
+# request handler binds them (service.py) before searching or reading.
+_hidden_readers: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
+    "hidden_readers", default=()
+)
+
+
+def bind_hidden_readers(workspace_ids: Iterable[str]) -> contextvars.Token:
+    return _hidden_readers.set(tuple(workspace_ids))
+
+
+def reset_hidden_readers(token: contextvars.Token) -> None:
+    _hidden_readers.reset(token)
+
+
+def hidden_readers() -> list[str]:
+    return list(_hidden_readers.get())
+
+
+def _visible(alias: str, param: str = "%s") -> str:
+    """A predicate keeping {alias}'s hidden rows to the bound workspaces."""
+    return f"(NOT {alias}.hidden OR {alias}.workspace_id = ANY({param}))"
 
 
 async def pool() -> AsyncConnectionPool:
@@ -1264,6 +1290,7 @@ _MATERIAL_SCOPE_SQL = """
             JOIN rag_contents rc ON rc.id = mc.content_id AND rc.status = 'ready'
             JOIN materials m ON m.id = mc.material_id
             WHERE mc.workspace_id {in_ws} AND m.trashed_at IS NULL
+                AND (NOT m.hidden OR m.workspace_id = ANY(%(hidden_readers)s))
                 AND (%(no_filter)s OR m.id = ANY(%(file_ids)s))"""
 
 _SEARCH_SQL_TEMPLATE = """
@@ -1275,7 +1302,7 @@ WITH scoped_files AS (
             FROM rag_file_contents fc
             JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
             JOIN files f ON f.id = fc.file_id
-            WHERE {file_scope} AND f.trashed_at IS NULL
+            WHERE {file_scope} AND f.trashed_at IS NULL{hidden_files}
                 AND (%(no_filter)s OR f.id = ANY(%(file_ids)s)){material_scope}
         ) resources
         ORDER BY content_id, ordered_at, file_id
@@ -1423,6 +1450,10 @@ async def hybrid_search(
         if conn is not None or in_ws is None
         else _MATERIAL_SCOPE_SQL.format(in_ws=in_ws),
         file_scope=_file_scope(in_ws, owned=bool(owner_user_id)),
+        # The knowledge library's schema has no hidden flag.
+        hidden_files=""
+        if conn is not None
+        else "\n                AND (NOT f.hidden OR f.workspace_id = ANY(%(hidden_readers)s))",
         vec_scope=scope.format(alias="v"),
         lex_scope=scope.format(alias="c"),
     )
@@ -1450,6 +1481,7 @@ async def hybrid_search(
             "cfgs": list(TS_CONFIG.values()),
             "file_ids": list(file_ids or []),
             "no_filter": not file_ids,
+            "hidden_readers": hidden_readers(),
             "candidates": candidates,
             "rrf_k": _RRF_K,
             "lex_weight": _LEX_WEIGHT,
@@ -1529,6 +1561,7 @@ WITH scoped AS (
            fc.content_id
     FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
     WHERE f.workspace_id = ANY(%(ws)s) AND f.trashed_at IS NULL
+      AND (NOT f.hidden OR f.workspace_id = ANY(%(hidden_readers)s))
     UNION ALL
     SELECT f.id, 'file', f.name, NULL, NULL, fc.content_id
     FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
@@ -1538,6 +1571,7 @@ WITH scoped AS (
     FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
     WHERE m.workspace_id = ANY(%(ws)s) AND m.trashed_at IS NULL
       AND m.parent_material_id IS NULL
+      AND (NOT m.hidden OR m.workspace_id = ANY(%(hidden_readers)s))
     UNION ALL
     SELECT m.id, 'material', m.title, NULL, NULL, mc.content_id
     FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
@@ -1590,6 +1624,7 @@ async def summary_search(
                 "cfgs": list(TS_CONFIG.values()),
                 "names": names,
                 "limit": limit,
+                "hidden_readers": hidden_readers(),
             },
         )
         return [dict(row) for row in await cur.fetchall()]
@@ -1781,10 +1816,10 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
             FROM files f
                  LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
                  LEFT JOIN rag_content_summaries cs ON cs.content_id = fc.content_id
-            WHERE f.workspace_id = %s AND f.trashed_at IS NULL
+            WHERE f.workspace_id = %s AND f.trashed_at IS NULL AND {visible}
             ORDER BY f.position, f.added_at
-            """,
-            (workspace_id,),
+            """.format(visible=_visible("f")),
+            (workspace_id, hidden_readers()),
         )
         files = [dict(row) for row in await cur.fetchall()]
 
@@ -1802,10 +1837,10 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
                  LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
                  LEFT JOIN rag_content_summaries cs ON cs.content_id = mc.content_id
             WHERE m.workspace_id = %s AND m.trashed_at IS NULL
-              AND m.parent_material_id IS NULL
+              AND m.parent_material_id IS NULL AND {visible}
             ORDER BY m.position, m.created_at
-            """,
-            (workspace_id,),
+            """.format(visible=_visible("m")),
+            (workspace_id, hidden_readers()),
         )
         files.extend(dict(row) for row in await cur.fetchall())
 
@@ -1825,9 +1860,9 @@ async def file_page_source(
             SELECT f.kind, f.name, f.parse_mode, f.ever_parsed_successfully, f.blob_path, f.source_sha256, f.size_bytes
             FROM files f
             WHERE f.workspace_id IS NOT DISTINCT FROM %s AND f.id = %s
-              AND f.trashed_at IS NULL
-            """,
-            (workspace_id, file_id),
+              AND f.trashed_at IS NULL AND {visible}
+            """.format(visible=_visible("f")),
+            (workspace_id, file_id, hidden_readers()),
         )
         row = await cur.fetchone()
     return dict(row) if row else None
@@ -1860,6 +1895,7 @@ async def history_passages(
             JOIN files f ON f.id = fc.file_id
             JOIN rag_chunks c ON c.content_id = fc.content_id
             WHERE f.workspace_id = %s AND f.trashed_at IS NULL AND c.id = ANY(%s)
+              AND {file_visible}
             UNION ALL
             SELECT c.id, mc.material_id, 'material', c.chunk_idx, c.section_path, c.text,
                    c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,
@@ -1868,8 +1904,35 @@ async def history_passages(
             JOIN materials m ON m.id = mc.material_id
             JOIN rag_chunks c ON c.content_id = mc.content_id
             WHERE m.workspace_id = %s AND m.trashed_at IS NULL AND c.id = ANY(%s)
+              AND {material_visible}
+            """.format(file_visible=_visible("f"), material_visible=_visible("m")),
+            (
+                workspace_id,
+                chunk_ids,
+                hidden_readers(),
+                workspace_id,
+                chunk_ids,
+                hidden_readers(),
+            ),
+        )
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def file_passages(workspace_id: str, file_id: str) -> list[dict[str, Any]]:
+    """A workspace file's indexed passages in order, with their pages (None
+    on an image's caption), for Make a quiz's page text and scheme text."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT c.text, c.page_start, c.page_end
+            FROM rag_file_contents fc
+            JOIN files f ON f.id = fc.file_id
+            JOIN rag_chunks c ON c.content_id = fc.content_id
+            WHERE f.workspace_id = %s AND fc.file_id = %s AND f.trashed_at IS NULL
+            ORDER BY c.chunk_idx
             """,
-            (workspace_id, chunk_ids, workspace_id, chunk_ids),
+            (workspace_id, file_id),
         )
         return [dict(row) for row in await cur.fetchall()]
 
@@ -1891,7 +1954,7 @@ async def read_file_range(
                 JOIN files f ON f.id = fc.file_id
                 JOIN rag_chunks c ON c.content_id = fc.content_id
                 WHERE f.workspace_id IS NOT DISTINCT FROM %s AND fc.file_id = %s
-                  AND f.trashed_at IS NULL
+                  AND f.trashed_at IS NULL AND {file_visible}
                 UNION ALL
                 SELECT c.id, mc.material_id, 'material', c.chunk_idx, c.section_path, c.text,
                        c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,
@@ -1900,12 +1963,22 @@ async def read_file_range(
                 JOIN materials m ON m.id = mc.material_id
                 JOIN rag_chunks c ON c.content_id = mc.content_id
                 WHERE m.workspace_id = %s AND mc.material_id = %s AND m.trashed_at IS NULL
+                  AND {material_visible}
             ) passages
             WHERE chunk_idx >= %s
             ORDER BY chunk_idx
             LIMIT %s
-            """,
-            (workspace_id, file_id, workspace_id, file_id, start, count),
+            """.format(file_visible=_visible("f"), material_visible=_visible("m")),
+            (
+                workspace_id,
+                file_id,
+                hidden_readers(),
+                workspace_id,
+                file_id,
+                hidden_readers(),
+                start,
+                count,
+            ),
         )
         return [dict(row) for row in await cur.fetchall()]
 

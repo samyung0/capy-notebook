@@ -105,6 +105,7 @@ export type {
   FileChange,
   Flashcard,
   FlashcardSet,
+  HiddenBody,
   ImportSourcesAccepted as SourceImportAcceptedResponse,
   InspectedSourceImport,
   InspectSourceImportRejected,

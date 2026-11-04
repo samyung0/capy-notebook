@@ -41,6 +41,7 @@ validation instead of being remapped.
 | Create and edit comments; delete **own** comments                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Delete **another user's** comment or discussion                                             | Yes   | No            | No                 | No            | No                 | No           |
 | Topics, upload/rename/move/delete files, material metadata and delete, generate materials | Yes   | Yes           | Yes                | No            | No                 | No           |
+| See items hidden from members; hide or show an item ([Hidden from members](#hidden-from-members)) | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Workspace name, description, tags, privacy, `shareRole`, statistics                  | Yes   | Yes           | No                 | No            | No                 | No           |
 | Invite/remove members, change roles, delete or transfer the workspace                       | Yes   | No            | No                 | No            | No                 | No           |
 | Leave the workspace (remove its own member row)                                             | No    | Yes           | No                 | Yes           | No                 | No           |
@@ -344,7 +345,9 @@ Important boundaries:
   re-enabling link sharing re-arms the same URL.
 - A workspace material has no independent visibility policy. Its stored privacy
   is forced to `private`, and read access always follows the workspace. Only a
-  standalone material may be private, link-shared, or public on its own.
+  standalone material may be private, link-shared, or public on its own. The
+  one narrowing is [Hidden from members](#hidden-from-members), which keeps a
+  file or material to the workspace's editors.
 - Changing visibility or `shareRole` moves everyone's effective role, so it
   evicts live collaboration connections the same way a membership change does.
 - Content writes lock the workspace and re-read the actor's current effective
@@ -373,6 +376,87 @@ Important boundaries:
 Sources: [role resolution and access rules](../server/internal/store/share.go#L13),
 [transactional editor checks](../server/internal/store/storage.go#L183), and
 [sharing end-to-end coverage](../e2e/sharing/workspace-sharing.spec.ts#L34).
+
+### Hidden from members
+
+A workspace file or material can be hidden from members (Epo 2026-11-03,
+todo-study-tracking.md §8): only callers whose effective role on the workspace
+is owner or editor (members, or a link/public editor share role) can list,
+open or search it. Viewers, members or not, do not see it anywhere: the
+workspace's Files and materials lists, the cross-workspace lists of what the
+caller can open (Dashboard Recent, pickers, the Files page's All files), the
+Dashboard's recent rows and opens, Study's lists, review pool and counts,
+Learning's progress map and counts, search, the account chat's document scope
+and every retrieval tool. Opening it by id answers 404, as for any item the
+caller cannot reach. The anonymous workspace summary leaves hidden files out.
+The Files page's own list (what the caller pays for) still shows the payer
+its rows. The flag narrows reading only; what editors may do with the item is
+unchanged.
+
+- **Storage.** `files.hidden` and `materials.hidden` (migration 0137), false by
+  default; `upload_sessions.hidden` (migration 0139) carries an upload's
+  choice to its file row. A standalone item has no members and an embedded quiz or set
+  follows its note, so the flag is read only on a top-level workspace item.
+  `workspace_item_visible(hidden, workspace_id, viewer)` is the SQL rule the
+  lists and searches call; single-item reads check it in Go
+  (`materialEffectiveAccess`, `FileEffectiveRole`), the collaboration server in
+  `live_access`, and the internal document reads the pipeline uses through
+  the same two.
+- **Switching it.** `PUT /api/files/{id}/hidden` and `PUT
+  /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu ("Hide
+  from members" / "Show to members") or, to show it, its header chip. Owners and editors may switch it: the
+  write locks the workspace and re-reads the actor's effective role like any
+  content write (`lockWorkspaceEditorMutationTx`); a frozen account is refused
+  and a standalone or embedded item answers 404. Hiding drains the item's live
+  collaboration rooms through the eviction outbox, so a viewer with the
+  document open is disconnected and cannot reconnect.
+- **Uploading hidden.** The Add file dialog's Upload and Import tabs end with
+  "Who can see it" under the files (Epo 2026-11-04, V1): "Everyone in the
+  workspace" (the default, reset each time the dialog opens) or "Hidden from
+  members", with the chip's eye-off icon. Only owners and editors upload, so
+  viewers never see it, and a standalone upload has no members, so it does
+  not show there. The upload's metadata and the import request carry
+  `hidden` (`CreateSourceUploadReq`, `ImportSourcesReq`; a standalone file
+  sent with it is refused, 400); the upload session keeps it and
+  `finalizeUploadSessionTx` inserts the file row with it, a browser upload's
+  and a Drive import's alike, so the file is never visible for a moment the
+  way hiding it after the upload would leave it. Nothing else names a new
+  file to members: workspace tree events carry no names, ingest events carry
+  only the file id (the list refetch filters it out), and uploads send no
+  notification. The Dashboard's Activity query (on the study shell branch)
+  takes the `workspace_item_visible` filter when it lands.
+- **Retrieval.** The pipeline binds the workspaces whose hidden items a turn
+  may read (`bind_hidden_readers`): a workspace chat turn its workspace when
+  the caller is an owner or editor, an account chat turn the scope's
+  workspaces the caller can edit, generation and extraction their workspace
+  (both need edit). Search, summary search, the outline, page and range reads
+  and history passages filter on it; the knowledge library has no flag.
+- **Clone.** A viewer's workspace clone leaves hidden items out (nor can a
+  viewer reach one to clone it alone). An owner's or editor's clone, of the
+  workspace or of one item, copies each item's flag as it is: hidden stays
+  hidden and visible stays visible (Epo 2026-11-04). A copy with no workspace
+  has no members, so it is not hidden.
+- **Make a quiz.** An extracted quiz starts hidden. Files uploaded in the
+  Make a quiz dialog are uploaded hidden, with the same `hidden` flag, so a
+  mark scheme uploaded for the quiz never reaches the students; a file picked
+  from the workspace keeps its setting, and the run changes no file's
+  visibility (Epo 2026-11-04). See
+  [agentic-retrieval.md](agentic-retrieval.md#make-a-quiz-questions-from-uploaded-files).
+
+An open hidden item's header shows a "Hidden from members" chip after its
+name (X2; the icon alone on phones). For owners and editors who may change the
+item the chip is a button ("Show to members" in its tooltip) that shows it to
+members, as the ⋮ menu does (`useToggleHidden`, same request and error toast);
+hiding again stays in the menu, and a read-only editor's chip is a plain
+label. Files rows have no mark yet (they are being rebuilt on the study topics
+branch).
+
+Sources: [migration](../server/migrations/0137_hidden_from_members.sql),
+[routes](../server/internal/httpapi/huma_hidden.go),
+[switch and eviction](../server/internal/store/hidden.go),
+[single-item checks](../server/internal/store/share.go),
+[collaboration check](../collaboration-rs/crates/server/src/access.rs), and
+[retrieval filter](../pipeline/pipeline/retrieval/store.py).
 
 ## Feature permissions
 

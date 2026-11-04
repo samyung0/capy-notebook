@@ -2289,7 +2289,7 @@ pub fn check_content_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
         }
     }
     check_count(parts, q::QUIZ_PARTS_MAX, "a quiz's parts")?;
-    check_count(open, q::QUIZ_OPEN_PARTS_MAX, "a quiz's open parts")
+    check_count(open, q::QUIZ_OPEN_PARTS_MAX, "a quiz's AI-marked parts")
 }
 
 /// The keys document's caps, exactly.

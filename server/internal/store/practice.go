@@ -7,8 +7,8 @@ import (
 )
 
 // A workspace's Practice page (Epo 2026-11-03, boards P1 and P2). Every quiz
-// members can see is practice: until hidden quizzes exist, that is every
-// untrashed, top-level quiz of the workspace. Topic sessions are today's
+// the caller can see is practice: each untrashed, top-level quiz of the
+// workspace, hidden ones only for its owners and editors. Topic sessions are today's
 // review sessions over questions only, so the page's suggestions are scored
 // on questions too.
 
@@ -117,7 +117,7 @@ func (s *Store) practiceSuggestions(ctx context.Context, userID, wsID string, ou
 // whose stored content the current rules refuse is left out, as itemCounts
 // leaves it out.
 func (s *Store) practiceQuizzes(ctx context.Context, userID, wsID string, out *Practice) error {
-	sizes, err := s.itemCounts(ctx, wsID)
+	sizes, err := s.itemCounts(ctx, userID, wsID)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,8 @@ func (s *Store) practiceQuizzes(ctx context.Context, userID, wsID string, out *P
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.topic_id FROM materials m
 		LEFT JOIN topics t ON t.id=m.topic_id
 		WHERE m.workspace_id=$1 AND m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-		ORDER BY m.topic_id IS NULL, t.position, m.position, m.created_at DESC, m.id`, wsID)
+			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
+		ORDER BY m.topic_id IS NULL, t.position, m.position, m.created_at DESC, m.id`, wsID, userID)
 	if err != nil {
 		return err
 	}

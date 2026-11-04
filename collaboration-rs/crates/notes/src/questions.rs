@@ -1677,7 +1677,7 @@ pub fn assert_quiz_bounds(parts: usize, open_parts: usize) -> Check {
     }
     if open_parts > QUIZ_OPEN_PARTS_MAX {
         return fail(format!(
-            "A quiz has at most {QUIZ_OPEN_PARTS_MAX} open parts."
+            "A quiz has at most {QUIZ_OPEN_PARTS_MAX} AI-marked parts."
         ));
     }
     Ok(())

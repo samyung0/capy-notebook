@@ -29,6 +29,7 @@ from ..retrieval import (
     accounting,
     compact,
     contract,
+    extraction,
     library,
     limits,
     models,
@@ -180,6 +181,13 @@ async def generate_no_content_handler(
         {"code": "scope_has_no_indexed_content", "message": str(exc)},
         status_code=400,
     )
+
+
+@app.exception_handler(extraction.ExtractionRefused)
+async def extraction_refused_handler(
+    _request: Request, exc: extraction.ExtractionRefused
+):
+    return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=400)
 
 
 @app.exception_handler(elitellm.ProviderBusy)
@@ -492,6 +500,16 @@ async def _chat_events(req: ChatStreamReq):
     turn_id = req.assistantMessageId or ""
     if turn_id:
         _running[turn_id] = client
+    # Hidden from members (Epo 2026-11-03): the turn reads hidden items only
+    # in the workspaces its user edits.
+    readers = (
+        [w.id for w in req.scope.workspaces if w.canEdit]
+        if req.account
+        else [req.workspaceId]
+        if req.role in ("owner", "editor")
+        else []
+    )
+    hidden_token = store.bind_hidden_readers(readers)
     try:
         accounting_token = accounting.bind(req.spendSessionId)
         if req.account:
@@ -519,6 +537,7 @@ async def _chat_events(req: ChatStreamReq):
                 yield _sse(frame)
             yield _sse(with_turn_state(event, ctx))
     finally:
+        store.reset_hidden_readers(hidden_token)
         if _running.get(turn_id) is client:
             del _running[turn_id]
         if accounting_token is not None:
@@ -630,6 +649,8 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
     _take_turn_slot()
     # Its one model call answers provider_busy at once past the call slots too.
     slots_token = limits.bind_call_slots(limits.CallSlotPolicy(wait_s=0))
+    # Only the workspace's editors generate (Go), so hidden items are theirs.
+    hidden_token = store.bind_hidden_readers([req.workspaceId])
     try:
         accounting_token = _bind_accounting(req.spendSessionId)
         try:
@@ -641,6 +662,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
         finally:
             _reset_accounting(accounting_token)
     finally:
+        store.reset_hidden_readers(hidden_token)
         limits.reset_call_slots(slots_token)
         limits.TURN_SLOTS.release()
 
@@ -727,3 +749,106 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         "topics": topics,
         "questions": questions,
     }
+
+
+# ----------------------------------------------------------------- extraction
+
+
+class ExtractFile(BaseModel):
+    fileId: str = Field(min_length=1)
+    name: str
+    # A question paper's selected pages, counted from 1; empty for an answer file.
+    pages: list[int] = Field(default_factory=list)
+
+
+class ExtractReq(LLMPin):
+    workspaceId: str = Field(min_length=1)
+    paper: list[ExtractFile] = Field(min_length=1)
+    answerFiles: list[ExtractFile]
+    spendSessionId: str = Field(min_length=1)
+    # The starter's locale (users.locale) for the AI-written label.
+    locale: str | None = None
+
+
+@app.post("/extract")
+async def extract(req: ExtractReq):
+    """Make a quiz (todo-study-tracking.md §8): read the selected pages into
+    questions and pair the answer files with them, as events: ``questions``
+    after each page window, then ``done`` with the quiz and its report, or
+    ``error``. The request is checked first, so a page past its file's end
+    is a 400 before the stream starts. The run holds a turn slot from then on
+    (provider_busy at once when there is none, as for /generate); its model
+    calls wait for a call slot as a chat's do."""
+    # Only the workspace's editors make a quiz from files (Go), so the files,
+    # hidden from members as they are, are theirs to read.
+    hidden_token = store.bind_hidden_readers([req.workspaceId])
+    try:
+        pages, schemes = await extraction.prepare(
+            req.workspaceId,
+            [f.model_dump() for f in req.paper],
+            [f.model_dump() for f in req.answerFiles],
+        )
+    finally:
+        store.reset_hidden_readers(hidden_token)
+    _take_turn_slot()
+    slot = _ChatSlot()
+    slot.held = True
+    return _SlotStream(
+        _extract_events(req, pages, schemes),
+        slot,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _extract_events(
+    req: ExtractReq,
+    pages: list[extraction.Page],
+    schemes: list[extraction.SchemeFile],
+):
+    _bind_llm(req)
+    slots_token = limits.bind_call_slots(
+        limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S)
+    )
+    hidden_token = store.bind_hidden_readers([req.workspaceId])
+    # The run's OpenRouter calls take the extraction slot's route.
+    route_token = elitellm.bind_route_slot(registry.Slot.EXTRACTION.value)
+    accounting_token = None
+    try:
+        accounting_token = _bind_accounting(req.spendSessionId)
+        model = models.resolve_query_model(
+            req.providerSlug,
+            req.modelSlug,
+            req.configVersion,
+            slot=registry.Slot.EXTRACTION,
+        )
+        async for event in extraction.run(
+            pages,
+            schemes,
+            model=model,
+            validate=extraction.gateway_validate,
+            locale=req.locale,
+        ):
+            yield _sse(event)
+    except elitellm.ProviderBusy:
+        yield _sse(
+            {
+                "type": "error",
+                "code": models.BUSY_ERROR_CODE,
+                "message": models.BUSY_ERROR,
+            }
+        )
+    except Exception:
+        log.exception("extraction failed")
+        yield _sse(
+            {
+                "type": "error",
+                "code": "extraction_failed",
+                "message": "Reading the questions failed.",
+            }
+        )
+    finally:
+        elitellm.reset_route_slot(route_token)
+        store.reset_hidden_readers(hidden_token)
+        _reset_accounting(accounting_token)
+        limits.reset_call_slots(slots_token)

@@ -47,6 +47,8 @@ import {
   toFileActionTarget,
   toMaterialActionTarget,
 } from '@/features/workspace/contentActionTarget';
+import { HiddenChip } from '@/features/workspace/HiddenChip';
+import { useToggleHidden } from '@/features/workspace/hiddenFromMembers';
 import {
   OfflineStatus,
   WorkspaceStatusButton,
@@ -442,17 +444,36 @@ export function Header({
     'min-w-0 truncate',
     leading ? 't-body font-semibold' : 't-subtitle'
   );
+  // Owners and editors who may change the item show it to members from its
+  // chip as from the ⋮ menu; viewers never see a hidden item.
+  const itemReadOnly =
+    readOnly || (materialCapabilities ? !materialCapabilities.canEdit : false);
+  const toggleHidden = useToggleHidden(workspaceId);
+  const hiddenChip =
+    file?.hidden || material?.hidden ? (
+      <HiddenChip
+        onShow={
+          itemReadOnly || !workspaceId
+            ? undefined
+            : () => toggleHidden({ id: item.id, type: item.kind }, false)
+        }
+      />
+    ) : null;
   const name = oneColumn ? (
-    <h2 className="min-w-0">
-      <FilesTitleButton chrome={oneColumn}>
-        {fileIcon}
-        <span className={nameClassName}>{title ?? '--'}</span>
-      </FilesTitleButton>
-    </h2>
+    <>
+      <h2 className="min-w-0">
+        <FilesTitleButton chrome={oneColumn}>
+          {fileIcon}
+          <span className={nameClassName}>{title ?? '--'}</span>
+        </FilesTitleButton>
+      </h2>
+      {hiddenChip}
+    </>
   ) : (
     <>
       {fileIcon}
       <h2 className={nameClassName}>{title ?? '--'}</h2>
+      {hiddenChip}
     </>
   );
   const right = (
@@ -536,10 +557,7 @@ export function Header({
           })
         }
         onShare={shareable?.sharePath ? () => setSharing(true) : undefined}
-        readOnly={
-          readOnly ||
-          (materialCapabilities ? !materialCapabilities.canEdit : false)
-        }
+        readOnly={itemReadOnly}
         renameFieldLabel={m.files_file_name()}
         showMove={!standalone}
         topics={topics}
@@ -668,6 +686,7 @@ export function Header({
           <>
             {fileIcon}
             <h2 className={cn(nameClassName, 'flex-1')}>{title ?? '--'}</h2>
+            {hiddenChip}
           </>
         )}
         {statusRow}

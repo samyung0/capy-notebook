@@ -1,0 +1,5 @@
+numpy>=2,<3
+onnxruntime==1.31.1
+pillow==13.0.0
+starlette>=0.40,<1
+uvicorn>=0.29,<1

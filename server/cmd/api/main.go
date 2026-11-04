@@ -448,6 +448,9 @@ func main() {
 	if err := st.AbortOrphanedStreams(ctx); err != nil {
 		log.Fatalf("abort orphaned streams: %v", err)
 	}
+	if err := st.FailOrphanedExtractions(ctx); err != nil {
+		log.Fatalf("fail orphaned extractions: %v", err)
+	}
 
 	modelReg, err := models.New(ctx, st.Pool())
 	if err != nil {

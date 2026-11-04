@@ -102,11 +102,41 @@ describe('moving a file', () => {
     expect(labels({ canMoveTo: true })).toEqual([
       m.action_rename(),
       m.action_move_to(),
+      m.content_hide_from_members(),
       m.action_clone_to(),
       m.action_download(),
       m.content_properties(),
       m.action_delete(),
     ]);
     expect(labels({})).toContain(m.content_move_file());
+  });
+});
+
+describe('hiding an item from members', () => {
+  function items(content: ContentActionTarget, readOnly = false) {
+    menus.length = 0;
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <ContentActions
+          chapters={[]}
+          content={content}
+          display="menu"
+          readOnly={readOnly}
+          workspaceId="ws_1"
+        />
+      </QueryClientProvider>
+    );
+    return (menus[0] ?? []).map((item) => item.label);
+  }
+
+  it('offers Hide to owners and editors, Show once hidden, nothing to viewers', () => {
+    expect(items(file('pdf', 'ready'))).toContain(
+      m.content_hide_from_members()
+    );
+    expect(items({ ...file('pdf', 'ready'), hidden: true })).toContain(
+      m.content_show_to_members()
+    );
+    const viewer = items(file('pdf', 'ready'), true);
+    expect(viewer).not.toContain(m.content_hide_from_members());
   });
 });

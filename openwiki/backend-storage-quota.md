@@ -670,7 +670,15 @@ transaction, or one before an edit's blocks are sent). The bytes are known
 before the transaction, so there is no reservation; an object whose row was
 never inserted is deleted by the handler, and a refused edit's unreferenced
 figures are trashed at once. From then on the 60-second rule, pruning, trash
-and clones treat it like an upload.
+and clones treat it like an upload. A Make a quiz run's figures, crops of the
+paper's pages, are stored the same way: the done event carries the JPEGs, Go
+checks each against the starter's plan image cap, writes it to
+`editor-assets/{id}/…` (ids from the run id, `store.ChatAssetID`) and inserts
+it with the quiz in the quiz's creating transaction (`CreateMaterialDraft`
+with `Assets`), charged to the starter (M16). A quiz whose figures go over the
+starter's quota is saved as the quiz alone, its figures named in the
+report's `figuresLeftOut` (Epo 2026-11-04); only a quiz that does not fit by
+itself fails the run as `storage_full`.
 
 An image another note's or quiz's id brings into a material (a paste, undo,
 cut and paste, replayed draft, AI edit) is made the material's own by the

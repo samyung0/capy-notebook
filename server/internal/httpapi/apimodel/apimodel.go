@@ -191,6 +191,9 @@ type Material struct {
 	Provenance *store.Provenance `json:"provenance,omitempty"`
 	// ParentMaterialID names the note a quiz or flashcard set is embedded in.
 	ParentMaterialID string `json:"parentMaterialId,omitempty"`
+	// Hidden from members: only the workspace's owners and editors list,
+	// open or search it (Epo 2026-11-03).
+	Hidden bool `json:"hidden,omitempty"`
 	// SharePath is a standalone material's signed share link, for its Share
 	// dialog; absent in a workspace or embedded in a note.
 	SharePath string `json:"sharePath,omitempty"`
@@ -245,7 +248,7 @@ func FromMaterial(m store.Material) (Material, error) {
 		Privacy: m.Privacy, Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 		Revision: m.Revision,
 		IsOwner:  m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
-		Provenance: m.Provenance, ParentMaterialID: m.ParentMaterialID,
+		Provenance: m.Provenance, ParentMaterialID: m.ParentMaterialID, Hidden: m.Hidden,
 	}, nil
 }
 

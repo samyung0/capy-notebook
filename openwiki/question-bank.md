@@ -213,6 +213,14 @@ service expands each into one paper-layout question with one part, 1 mark
 for a simple one and the explanation as its solution (see
 [agentic-retrieval.md](agentic-retrieval.md), Question tools).
 
+Make a quiz reads questions printed in an uploaded paper into this format: in
+paper layout, printed option order kept, sub-parts flattened into parts, keys,
+marking items and worked solutions filled from a separate mark scheme or answer
+file paired by printed label, each question checked by this validator as it is
+recorded, and each figure the page shows cropped into an image block whose
+asset is the quiz's own, like an uploaded quiz image (see
+[agentic-retrieval.md](agentic-retrieval.md), Make a quiz).
+
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part
 IDs are unique within the material. Note chart/plot/graph voids store their validated
@@ -488,10 +496,15 @@ anonymous caps are in [observability-metering.md](observability-metering.md).
 
 User quizzes (not the bank) are bounded so a whole quiz stays within one
 grading budget: at most 100 parts per quiz, 7 per question, 5 marking items per part
-and 20 open parts per quiz, and a sample answer of at most 5,000 characters;
-learners' open answers have the same 5,000-character cap. The Go, browser and
-collaboration validators share these bounds (`fieldlimits.Quiz*`), and the
-generation prompt states them.
+and 100 open parts per quiz, and a sample answer of at most 5,000 characters;
+learners' open answers have the same 5,000-character cap. Open parts are called
+"AI-marked parts" in the UI and in errors; the cap was 20 until Epo raised it
+for every quiz on 2026-11-03 (a full HKDSE Paper 1 has about 45), and the
+quiz editor shows the count under the title ("34 of 100 AI-marked parts").
+The Go, browser and collaboration validators share these bounds
+(`fieldlimits.Quiz*`), the generation prompt states them, and the grading
+routes take a body of up to 4 MiB so a quiz's hundred longest open answers
+fit one submission.
 
 Attempts retain graded snapshots. Mistakes strip the attempt-only awards.
 Taking, reviewing and every read-only view (quiz preview, quiz editor, bank,
