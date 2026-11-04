@@ -884,8 +884,9 @@ function WorkspaceOpen() {
       workspaceId={workspaceId}
     />
   );
-  // Every tab stays mounted so chat keeps its state while hidden; only the
-  // visible one draws the tab row.
+  // Chat stays mounted so it keeps its state while hidden; only the visible
+  // view draws the tab row. Files stays too, except while the section panel
+  // shows the tree: that would be a second tree to render on every change.
   const noRow = () => null;
   // The Files dropdown's tree: the workspace as a plain row the size of a file
   // row (no switcher; Back leaves the workspace), Add file, Workspace settings
@@ -953,9 +954,11 @@ function WorkspaceOpen() {
   );
   const rail = (
     <>
-      <div className="min-h-0 flex-1" hidden={rightTab !== 'files'}>
-        {filesPanel(rightTab === 'files' ? railRow : noRow)}
-      </div>
+      {!leftFiles && (
+        <div className="min-h-0 flex-1" hidden={rightTab !== 'files'}>
+          {filesPanel(rightTab === 'files' ? railRow : noRow)}
+        </div>
+      )}
       <div className="min-h-0 flex-1" hidden={rightTab !== 'chat'}>
         <AppErrorBoundary resetKeys={[workspaceId]}>
           <ChatPanel

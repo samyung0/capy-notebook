@@ -37,15 +37,26 @@ test.describe('with the default layout', () => {
     );
     await expect(page.getByText('A cell is the basic')).toBeVisible();
 
+    // The toggle sits in a file's header (the Dashboard has none, boards H1,
+    // H2). Files swaps in the section tree around the chat, which keeps going.
+    await openSection(page, m.workspace_tab_files());
+    await left
+      .locator('[data-workspace-file-tree]')
+      .getByText('Cell structure.pdf')
+      .click();
+    await expect(page.getByText('A cell is the basic')).toBeVisible();
     await page
       .getByRole('button', { name: m.workspace_close_right_panel() })
       .click();
     await expect(page.locator('#rail')).toBeHidden();
     await page.reload();
-    await expect(
-      page.getByRole('button', { name: m.workspace_open_right_panel() })
-    ).toBeVisible({ timeout: 60_000 });
+    const open = page.getByRole('button', {
+      name: m.workspace_open_right_panel(),
+    });
+    await expect(open).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('#rail')).toBeHidden();
+    await open.click();
+    await expect(page.locator('#rail')).toBeVisible();
   });
 
   test('the rail avatar menu invites from the Sharing tab', async ({
@@ -175,7 +186,9 @@ test('the Dashboard has no panel; there, history lists archived chats', async ({
 test('a side panel handle trades width with the viewer alone, collapsing and restoring its own panel within one drag', async ({
   page,
 }) => {
-  await openWorkspace(page, 1440);
+  // Narrow enough for the viewer's least width to stop the rail: from about
+  // 1430px the rail's 50% cap stops it first, with the viewer still wider.
+  await openWorkspace(page, 1366);
   await openSection(page, m.workspace_section_agent());
   const left = leftPanel(page);
   await left.getByRole('button', { name: 'What is a cell?' }).click({
@@ -210,6 +223,7 @@ test('a side panel handle trades width with the viewer alone, collapsing and res
   // The rail grows until the viewer is at its least width; the left panel
   // keeps its width.
   await drag(1, [[-600, async () => expect(await width('files')).toBe(files)]]);
+  expect(await width('viewer')).toBe(400);
   const wide = await width('rail');
   expect(wide).toBeGreaterThan(rail);
   // Back and forth past its least width, the rail collapses and returns.

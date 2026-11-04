@@ -289,19 +289,21 @@ export const forgetNoteCopy = (materialId: string) =>
 
 async function loadHeldNotes(cache: Cache, owner: string) {
   heldNotes.clear();
-  for (const request of await cache.keys()) {
-    if (
-      !new URL(request.url).pathname.startsWith(`${ENTRY_PREFIX}${COPY_PREFIX}`)
-    )
-      continue;
-    const row = rowOf(await cache.match(request));
+  const prefix = `${ENTRY_PREFIX}${COPY_PREFIX}`;
+  const copies = (await cache.keys()).filter((request) =>
+    new URL(request.url).pathname.startsWith(prefix)
+  );
+  // Sign-in waits for this: the rows at once, not one after another.
+  const rows = await Promise.all(
+    copies.map(async (request) => rowOf(await cache.match(request)))
+  );
+  for (const row of rows)
     if (
       row?.owner === owner &&
       row.kind === 'note' &&
       row.document === 'content'
     )
       heldNotes.add(row.materialId);
-  }
 }
 
 /** The open store, its account and its free quota, kept ready: a write as the
