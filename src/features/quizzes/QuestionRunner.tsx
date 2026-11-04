@@ -15,11 +15,12 @@ import {
 import { Textarea } from '@/components/ui/TextArea';
 import {
   AnswerView,
-  answerRowClass,
+  answerBoxClass,
+  answerBoxesClass,
+  answerLetterClass,
   MatchingLayout,
   OptionKey,
   optionColumns,
-  optionKeyClass,
   optionLetter,
   QuestionBlockView,
   QuestionReview,
@@ -250,10 +251,39 @@ function gapValues(
   });
 }
 
-/** A choice as an underlined row: chosen while answering; after checking,
- * right or wrong with a tag, and a correct answer that was not chosen on a
- * green rule with a check. */
-function ChoiceRow({
+/** "Your answer" / "Correct answer" over a checked part's two lists. */
+const SUBHEAD = 't-meta mb-1.5 font-bold text-fg-muted';
+
+/** The correct answer under a checked part's own boxes (O4, R4): plain
+ * lines 4px apart, no boxes, one column even on paper questions; the label
+ * muted and bold, then the text semibold. */
+function PlainList({ rows }: { rows: { label: string; text: string }[] }) {
+  return (
+    <ol className="grid gap-1 font-semibold text-sm">
+      {rows.map((row) => (
+        <li className="flex items-baseline gap-2.5" key={row.label}>
+          <span className="w-4 shrink-0 font-bold text-fg-muted">
+            {row.label}
+          </span>
+          <TextView className="min-w-0" text={row.text} />
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** A checked choice's tag at the box's end. */
+const RESULT_TAG = {
+  missed: { icon: null, label: m.question_ui_correct_answer },
+  right: { icon: 'check', label: m.question_ui_result_right },
+  wrong: { icon: 'x', label: m.question_ui_your_answer },
+} as const;
+
+/** A choice as a box: chosen while answering; after checking, right (green
+ * fill), wrong (red fill) or the correct answer that was not chosen (green
+ * outline), each with its tag. `ownOnly` marks only the learner's choices,
+ * right or wrong, for a part whose correct answer lists apart (R4). */
+function ChoiceBox({
   label,
   text,
   selected,
@@ -261,6 +291,7 @@ function ChoiceRow({
   review,
   disabled,
   onClick,
+  ownOnly = false,
 }: {
   label: ReactNode;
   text: ReactNode;
@@ -269,65 +300,100 @@ function ChoiceRow({
   review: boolean;
   disabled: boolean;
   onClick?: () => void;
+  ownOnly?: boolean;
 }) {
   const state: RowState | undefined = review
     ? selected
       ? correct
         ? 'right'
         : 'wrong'
-      : correct
+      : correct && !ownOnly
         ? 'missed'
         : undefined
     : selected
       ? 'selected'
       : undefined;
-  const checked = state === 'right' || state === 'wrong' || state === 'missed';
+  const tag = state && state !== 'selected' ? RESULT_TAG[state] : null;
   return (
     <button
       aria-pressed={selected}
       className={cn(
-        answerRowClass(state),
+        answerBoxClass(state),
         'w-full text-left disabled:cursor-default',
-        !(review || disabled || selected) && 'hover:border-line-strong',
-        review && !state && 'text-fg-muted'
+        !(review || disabled || selected) && 'hover:border-line-strong'
       )}
       disabled={review || disabled}
       onClick={onClick}
       type="button"
     >
-      {(label !== null || review) && (
-        <OptionKey className={optionKeyClass(state)}>
-          {checked ? (
-            <Icon
-              name={state === 'wrong' ? 'x' : 'check'}
-              size={13}
-              strokeWidth={2.25}
-            />
-          ) : (
-            label
-          )}
-        </OptionKey>
+      {label !== null && (
+        <span className={answerLetterClass(state)}>{label}</span>
       )}
-      <span className="min-w-0 flex-1">{text}</span>
-      {review && (selected || correct) && (
+      <span className="min-w-0">{text}</span>
+      {tag && (
         <span
           className={cn(
-            'shrink-0 whitespace-nowrap font-bold text-xs',
-            correct ? 'text-tint-success-fg' : 'text-tint-error-fg'
+            'ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap pl-1 text-[12.5px]',
+            state === 'wrong' ? 'text-tint-error-fg' : 'text-tint-success-fg'
           )}
         >
-          {selected
-            ? m.question_ui_your_answer()
-            : m.question_ui_correct_answer()}
+          {tag.icon && <Icon name={tag.icon} size={16} />}
+          {ownOnly && state === 'wrong'
+            ? m.question_ui_result_wrong()
+            : tag.label()}
         </span>
       )}
     </button>
   );
 }
 
-/** The answer key under a checked gaps or ordering part, apart from the
- * learner's own answer so it reads plainly: the title in green, each entry
- * with a note where the learner differed. */
+/** A checked choice part's result above its boxes, as in Results: Right or
+ * Wrong with the marks; a skipped part reads Not answered and counts as
+ * wrong. */
+function PartResult({
+  part,
+  answered,
+  detail,
+}: {
+  part: QuestionPart;
+  answered: boolean;
+  /** After the marks: "1 right, 1 wrong" on a multi-answer part. */
+  detail?: string;
+}) {
+  const { awarded, marks } = part;
+  if (awarded == null) return null;
+  // Choices, True or False and ordering score all or nothing.
+  const right = answered && awarded >= marks;
+  const score =
+    marks === 1
+      ? m.question_ui_result_mark({ awarded: String(awarded) })
+      : m.question_ui_result_marks({
+          awarded: String(awarded),
+          marks: String(marks),
+        });
+  return (
+    <p className="mb-2.5 flex items-center gap-2 font-bold text-sm">
+      <span
+        className={cn(
+          'size-2.5 shrink-0 rounded-[2px]',
+          right ? 'bg-tint-success-fg' : 'bg-tint-error-fg'
+        )}
+      />
+      {right ? m.question_ui_result_right() : m.question_ui_result_wrong()}
+      <span className="t-meta font-semibold text-fg-muted">
+        {answered
+          ? detail
+            ? `${score} · ${detail}`
+            : score
+          : m.question_ui_result_skipped({ score })}
+      </span>
+    </p>
+  );
+}
+
+/** The answer key under a checked gaps part, apart from the learner's own
+ * answer so it reads plainly: the title in green, each entry with a note
+ * where the learner differed. */
 function KeyList({
   title,
   rows,
@@ -445,67 +511,93 @@ function PartRunner({
   const indices = Array.isArray(value)
     ? value.filter((item) => typeof item === 'number')
     : null;
+  const result = (answered: boolean, detail?: string) =>
+    review && isAuthoredPart(part) ? (
+      <PartResult answered={answered} detail={detail} part={part} />
+    ) : null;
   // Several options may be correct: options toggle like checkboxes.
-  if (answer.type === 'mcq')
+  if (answer.type === 'mcq') {
+    const correct = (i: number) =>
+      key?.type === 'mcq' && key.correct.includes(i);
+    const chosen = indices ?? [];
+    // A multi-answer part marked wrong (R4): the learner's choices on top,
+    // each right or wrong, then the correct answer as its own plain list.
+    // Single-answer parts outline the correct option instead (M1).
+    const apart =
+      review &&
+      key?.type === 'mcq' &&
+      key.correct.length > 1 &&
+      isAuthoredPart(part) &&
+      (part.awarded ?? 0) < part.marks;
+    const right = chosen.filter(correct).length;
     return (
-      <div className={cn('grid', twoColumns && '@xl:grid-cols-2 @xl:gap-x-7')}>
-        {answer.options.map((option, i) => {
-          const selected = indices?.includes(i) ?? false;
-          return (
-            <ChoiceRow
-              correct={key?.type === answer.type && key.correct.includes(i)}
-              disabled={disabled}
-              key={i}
-              label={optionLetter(i)}
-              onClick={() =>
-                onChange(
-                  selected
-                    ? (indices ?? []).filter((n) => n !== i)
-                    : [...(indices ?? []), i]
-                )
-              }
-              review={review}
-              selected={selected}
-              text={<TextView text={option} />}
+      <div>
+        {result(
+          chosen.length > 0,
+          apart
+            ? m.question_ui_result_choices({
+                right: String(right),
+                wrong: String(chosen.length - right),
+              })
+            : undefined
+        )}
+        {apart && <h4 className={SUBHEAD}>{m.question_ui_your_answer()}</h4>}
+        <div className={answerBoxesClass(twoColumns)}>
+          {answer.options.map((option, i) => {
+            const selected = chosen.includes(i);
+            return (
+              <ChoiceBox
+                correct={correct(i)}
+                disabled={disabled}
+                key={i}
+                label={optionLetter(i)}
+                onClick={() =>
+                  onChange(
+                    selected ? chosen.filter((n) => n !== i) : [...chosen, i]
+                  )
+                }
+                ownOnly={apart}
+                review={review}
+                selected={selected}
+                text={<TextView text={option} />}
+              />
+            );
+          })}
+        </div>
+        {apart && (
+          <>
+            <h4 className={cn(SUBHEAD, 'mt-3.5')}>
+              {m.question_ui_correct_answer()}
+            </h4>
+            <PlainList
+              rows={answer.options.flatMap((option, i) =>
+                correct(i) ? [{ label: optionLetter(i), text: option }] : []
+              )}
             />
-          );
-        })}
+          </>
+        )}
       </div>
     );
-  // True and False sit side by side, stacked on phones like other choices.
+  }
+  // True and False stack like other choices, text at the left (B2).
   if (answer.type === 'boolean')
-    return review ? (
-      <div className="grid @md:grid-cols-2 @md:gap-x-7">
-        {[true, false].map((option) => (
-          <ChoiceRow
-            correct={key?.type === 'boolean' && key.correct === option}
-            disabled
-            key={String(option)}
-            label={null}
-            review
-            selected={value === option}
-            text={option ? m.question_ui_true() : m.question_ui_false()}
-          />
-        ))}
-      </div>
-    ) : (
-      <div className="grid @md:grid-cols-2 @md:gap-x-7">
-        {[true, false].map((option) => (
-          <button
-            aria-pressed={value === option}
-            className={cn(
-              answerRowClass(value === option ? 'selected' : undefined),
-              '@md:justify-center font-semibold disabled:cursor-default',
-              value !== option && !disabled && 'hover:border-line-strong'
-            )}
-            disabled={disabled}
-            key={String(option)}
-            onClick={() => onChange(option)}
-            type="button"
-          >
-            {option ? m.question_ui_true() : m.question_ui_false()}
-          </button>
-        ))}
+    return (
+      <div>
+        {result(typeof value === 'boolean')}
+        <div className={answerBoxesClass()}>
+          {[true, false].map((option) => (
+            <ChoiceBox
+              correct={key?.type === 'boolean' && key.correct === option}
+              disabled={disabled}
+              key={String(option)}
+              label={null}
+              onClick={() => onChange(option)}
+              review={review}
+              selected={value === option}
+              text={option ? m.question_ui_true() : m.question_ui_false()}
+            />
+          ))}
+        </div>
       </div>
     );
   // Gap fields sit inside the part's text (GapText); a review with a miss
@@ -800,66 +892,67 @@ function PartRunner({
       ];
       onChange(next);
     }
+    // Checked (O4): "Your order" fills each item green in its right place
+    // and red elsewhere; when any is misplaced, "Correct order" lists the
+    // key plainly, each item saying where the learner put it. A skipped part
+    // shows the key's order unmarked.
+    const state = (item: string, i: number): RowState | undefined =>
+      review && ordered?.length
+        ? right(item, i)
+          ? 'right'
+          : 'wrong'
+        : undefined;
+    const misplaced = review && current.some((item, i) => !right(item, i));
     return (
-      <div className="grid">
-        {current.map((item, i) => (
-          <div
-            className={cn(
-              answerRowClass(
-                review ? (right(item, i) ? 'right' : 'wrong') : undefined
-              ),
-              !review && 'py-1 pr-0'
-            )}
-            key={keys[i]}
-          >
-            <OptionKey
+      <div>
+        {result(Boolean(ordered?.length))}
+        {misplaced && <h4 className={SUBHEAD}>{m.question_ui_your_order()}</h4>}
+        <div className={answerBoxesClass()}>
+          {current.map((item, i) => (
+            <div
               className={cn(
-                review &&
-                  (right(item, i)
-                    ? 'text-tint-success-fg'
-                    : 'text-tint-error-fg')
+                answerBoxClass(state(item, i)),
+                !review && 'py-1 pr-1.5'
               )}
+              key={keys[i]}
             >
-              {i + 1}
-            </OptionKey>
-            <TextView className="min-w-0 flex-1 text-fg" text={item} />
-            {!review && (
-              <span className="flex shrink-0 items-center">
-                <IconButton
-                  disabled={disabled || i === 0}
-                  icon="chevronUp"
-                  label={m.question_ui_move_up()}
-                  onClick={() => move(i, -1)}
-                  size="sm"
-                  variant="ghost-hover"
-                />
-                <IconButton
-                  disabled={disabled || i === current.length - 1}
-                  icon="chevronDown"
-                  label={m.question_ui_move_down()}
-                  onClick={() => move(i, 1)}
-                  size="sm"
-                  variant="ghost-hover"
-                />
-              </span>
-            )}
-          </div>
-        ))}
-        {review && current.some((item, i) => !right(item, i)) && (
-          <KeyList
-            rows={answer.items.map((item, i) => {
-              const at = current.indexOf(item);
-              return {
-                key: i + 1,
-                note:
-                  at === i
-                    ? undefined
-                    : m.question_ui_you_put({ position: at + 1 }),
+              <span className={answerLetterClass(state(item, i))}>{i + 1}</span>
+              <TextView className="min-w-0 flex-1" text={item} />
+              {!review && (
+                <span className="flex shrink-0 items-center">
+                  <IconButton
+                    disabled={disabled || i === 0}
+                    icon="chevronUp"
+                    label={m.question_ui_move_up()}
+                    onClick={() => move(i, -1)}
+                    size="sm"
+                    variant="ghost-hover"
+                  />
+                  <IconButton
+                    disabled={disabled || i === current.length - 1}
+                    icon="chevronDown"
+                    label={m.question_ui_move_down()}
+                    onClick={() => move(i, 1)}
+                    size="sm"
+                    variant="ghost-hover"
+                  />
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+        {misplaced && (
+          <>
+            <h4 className={cn(SUBHEAD, 'mt-3.5')}>
+              {m.question_ui_correct_order()}
+            </h4>
+            <PlainList
+              rows={answer.items.map((item, i) => ({
+                label: String(i + 1),
                 text: item,
-              };
-            })}
-            title={m.question_ui_correct_order()}
-          />
+              }))}
+            />
+          </>
         )}
       </div>
     );

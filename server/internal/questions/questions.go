@@ -213,7 +213,7 @@ func tuple(v any, count int) ([]float64, bool) {
 
 // Validate accepts decoded JSON maps; it never repairs or fills authored fields.
 func Validate(q map[string]any, policy Policy) error {
-	if err := keys(q, "id stem parts layout labels", "level"); err != nil {
+	if err := keys(q, "id stem parts layout labels", "level groups"); err != nil {
 		return err
 	}
 	if !str(q["id"], fieldlimits.QuestionID, true) || !enum(q["layout"], "paper split") || !enum(q["labels"], "letters numbers") {
@@ -243,12 +243,12 @@ func Validate(q map[string]any, policy Policy) error {
 		// closed part's answer is its own key and its solution explains it.
 		a, _ := p["answer"].(map[string]any)
 		open := a["type"] == "open"
-		required, optional := "id blocks answer marks solution", ""
+		required, optional := "id blocks answer marks solution", "group"
 		if open {
 			required += " markscheme"
 		}
 		if policy.Snapshot {
-			optional = "awarded"
+			optional += " awarded"
 			if open {
 				optional += " itemAwards"
 			}
@@ -308,6 +308,78 @@ func Validate(q map[string]any, policy Policy) error {
 			if !ok || n < 0 || n > marks || n*2 != math.Trunc(n*2) {
 				return fail("invalid awarded marks")
 			}
+		}
+	}
+	return checkGroups(q, parts, maxParts, policy)
+}
+
+// checkGroups holds grouped parts (Epo 2026-11-04): a group is text and
+// figures with no answer or marks, listed in `groups`; a part names its group
+// in `group`, and a group's parts sit next to each other in the flat list. A
+// group has at least one part and never holds another group.
+func checkGroups(q map[string]any, parts []any, maxParts int, policy Policy) error {
+	held := map[string]bool{}
+	if value, exists := q["groups"]; exists {
+		groups, ok := array(value, 0, maxParts)
+		if !ok {
+			return fail(fmt.Sprintf("groups must contain at most %d groups", maxParts))
+		}
+		for _, raw := range groups {
+			g, err := obj(raw)
+			if err != nil {
+				return err
+			}
+			if err := keys(g, "id blocks", ""); err != nil {
+				return err
+			}
+			if !str(g["id"], fieldlimits.QuestionID, true) {
+				return fail("invalid group id")
+			}
+			id := g["id"].(string)
+			if held[id] {
+				return fail("duplicate group id")
+			}
+			held[id] = true
+			if err := blocks(g["blocks"], policy); err != nil {
+				return err
+			}
+		}
+	}
+	seen := map[string]bool{}
+	previous := ""
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		value, grouped := p["group"]
+		if !grouped {
+			previous = ""
+			continue
+		}
+		id, ok := value.(string)
+		if !ok || !held[id] {
+			return fail("a part names a group the question does not have")
+		}
+		if seen[id] && previous != id {
+			return fail("a group's parts must sit next to each other")
+		}
+		seen[id], previous = true, id
+	}
+	if len(seen) != len(held) {
+		return fail("a group needs at least one part")
+	}
+	return nil
+}
+
+// GroupBlocks is the blocks of the group a part names, or nil when it has none.
+func GroupBlocks(q map[string]any, part map[string]any) []any {
+	id, ok := part["group"].(string)
+	if !ok {
+		return nil
+	}
+	groups, _ := q["groups"].([]any)
+	for _, raw := range groups {
+		if g, _ := raw.(map[string]any); g["id"] == id {
+			blocks, _ := g["blocks"].([]any)
+			return blocks
 		}
 	}
 	return nil
@@ -1135,7 +1207,7 @@ func Authored(q map[string]any) map[string]any {
 // question loses fields instead of panicking.
 func LearnerView(q map[string]any) map[string]any {
 	out := map[string]any{}
-	for _, key := range []string{"id", "stem", "layout", "labels", "level"} {
+	for _, key := range []string{"id", "stem", "groups", "layout", "labels", "level"} {
 		if v, ok := q[key]; ok {
 			out[key] = v
 		}
@@ -1170,7 +1242,11 @@ func LearnerView(q map[string]any) map[string]any {
 			items, _ := a["items"].([]any)
 			learner["items"] = shuffled(items)
 		}
-		parts = append(parts, map[string]any{"id": p["id"], "blocks": p["blocks"], "answer": learner, "marks": partMarks(p)})
+		part := map[string]any{"id": p["id"], "blocks": p["blocks"], "answer": learner, "marks": partMarks(p)}
+		if group, ok := p["group"]; ok {
+			part["group"] = group
+		}
+		parts = append(parts, part)
 	}
 	out["parts"] = parts
 	return out
@@ -1223,6 +1299,12 @@ func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
 		return kept
 	}
 	q["stem"] = rewrite(q["stem"])
+	groups, _ := q["groups"].([]any)
+	for _, raw := range groups {
+		if g, ok := raw.(map[string]any); ok {
+			g["blocks"] = rewrite(g["blocks"])
+		}
+	}
 	parts, _ := q["parts"].([]any)
 	for _, raw := range parts {
 		p, ok := raw.(map[string]any)
@@ -1241,6 +1323,13 @@ func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
 func blockLists(q map[string]any) [][]any {
 	stem, _ := q["stem"].([]any)
 	lists := [][]any{stem}
+	groups, _ := q["groups"].([]any)
+	for _, raw := range groups {
+		if g, ok := raw.(map[string]any); ok {
+			blocks, _ := g["blocks"].([]any)
+			lists = append(lists, blocks)
+		}
+	}
 	parts, _ := q["parts"].([]any)
 	for _, raw := range parts {
 		if p, ok := raw.(map[string]any); ok {
@@ -1263,17 +1352,31 @@ func imageAssetID(raw any) (string, bool) {
 }
 
 // GradingText is the question text a grader sees for one part: the stem, the
-// earlier parts and the part itself, with figures as their descriptions.
+// earlier parts and the part itself, with figures as their descriptions. A
+// group's text and figures come once, before the group's first part, so a part
+// inside a group is graded with its context; a question with no group reads
+// exactly as it did before groups.
 func GradingText(q map[string]any, partIndex int) string {
 	stem, _ := q["stem"].([]any)
 	sections := []string{blocksText(stem)}
 	parts, _ := q["parts"].([]any)
+	shared := map[string]bool{}
+	context := func(p map[string]any) {
+		if group, grouped := p["group"].(string); grouped && !shared[group] {
+			shared[group] = true
+			if text := blocksText(GroupBlocks(q, p)); text != "" {
+				sections = append(sections, "Shared context: "+text)
+			}
+		}
+	}
 	for i, raw := range parts[:partIndex] {
 		p, _ := raw.(map[string]any)
+		context(p)
 		blocks, _ := p["blocks"].([]any)
 		sections = append(sections, fmt.Sprintf("Earlier part %d: %s", i+1, blocksText(blocks)))
 	}
 	p, _ := parts[partIndex].(map[string]any)
+	context(p)
 	blocks, _ := p["blocks"].([]any)
 	sections = append(sections, "Part to grade: "+blocksText(blocks))
 	nonEmpty := sections[:0]

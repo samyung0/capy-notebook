@@ -317,13 +317,17 @@ func quickReview(items []scored) []ReviewItem {
 	return out
 }
 
-// quickQuestion is a question short enough for the Study panel.
+// quickQuestion is a question short enough for the Study panel: one part, not
+// inside a group.
 func quickQuestion(q map[string]any) bool {
 	parts, _ := q["parts"].([]any)
 	if len(parts) != 1 {
 		return false
 	}
 	p, _ := parts[0].(map[string]any)
+	if _, grouped := p["group"]; grouped {
+		return false
+	}
 	a, _ := p["answer"].(map[string]any)
 	switch a["type"] {
 	case "mcq", "boolean", "short", "gaps":
@@ -332,13 +336,14 @@ func quickQuestion(q map[string]any) bool {
 	return false
 }
 
-// questionText is the first text block of the stem or the first part.
+// questionText is the first text block of the stem, the first part's group or
+// the first part.
 func questionText(q map[string]any) string {
 	blocks, _ := q["stem"].([]any)
 	if parts, _ := q["parts"].([]any); len(parts) > 0 {
 		first, _ := parts[0].(map[string]any)
 		more, _ := first["blocks"].([]any)
-		blocks = append(append([]any{}, blocks...), more...)
+		blocks = append(append(append([]any{}, blocks...), questions.GroupBlocks(q, first)...), more...)
 	}
 	for _, raw := range blocks {
 		b, _ := raw.(map[string]any)

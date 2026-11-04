@@ -8,7 +8,7 @@
 //! Where the TS raises a zod error, this returns its own message: callers only
 //! show it. The checks after the schema keep the TS messages.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -1194,6 +1194,7 @@ pub fn figure_entries(block: &Value) -> Check {
 /// One part as the schema leaves it.
 struct Part {
     id: String,
+    group: Option<String>,
     answer: String,
     gaps: usize,
     open_accepted: Vec<String>,
@@ -1312,8 +1313,12 @@ fn part(value: &Value) -> Result<Part, String> {
         map,
         what,
         &["answer", "blocks", "id", "marks", "solution"],
-        &["awarded", "itemAwards", "markscheme"],
+        &["awarded", "group", "itemAwards", "markscheme"],
     )?;
+    let group = match present(map, "group") {
+        Some(group) => Some(identifier(group, what)?),
+        None => None,
+    };
     let (answer, gaps, open_accepted) = answer(&map["answer"])?;
     let awarded = match present(map, "awarded") {
         Some(v) => {
@@ -1366,6 +1371,7 @@ fn part(value: &Value) -> Result<Part, String> {
     let solution = block_list(&map["solution"], 0)?;
     Ok(Part {
         id,
+        group,
         answer,
         gaps,
         open_accepted,
@@ -1376,6 +1382,112 @@ fn part(value: &Value) -> Result<Part, String> {
         blocks,
         solution,
     })
+}
+
+/// A group of parts (Epo 2026-11-04): text and figures, the stem's block kinds
+/// and caps, with no answer or marks. Strict, so it holds no group of its own.
+struct Group {
+    id: String,
+    blocks: Vec<Block>,
+}
+
+fn group(value: &Value) -> Result<Group, String> {
+    let what = "group";
+    let map = object(value, what)?;
+    strict(map, what, &["blocks", "id"], &[])?;
+    Ok(Group {
+        id: identifier(&map["id"], what)?,
+        blocks: block_list(&map["blocks"], 0)?,
+    })
+}
+
+/// A part names a group the question holds, a group's parts sit next to each
+/// other in the flat list, and a group has at least one part.
+fn check_groups(groups: &[Group], parts: &[Part]) -> Check {
+    let mut held = HashSet::new();
+    for group in groups {
+        if !held.insert(group.id.as_str()) {
+            return fail("Group IDs must be unique.");
+        }
+    }
+    let mut seen = HashSet::new();
+    let mut previous = None;
+    for part in parts {
+        let Some(id) = part.group.as_deref() else {
+            previous = None;
+            continue;
+        };
+        if !held.contains(id) {
+            return fail("A part names a group the question does not have.");
+        }
+        if seen.contains(id) && previous != Some(id) {
+            return fail("A group's parts must sit next to each other.");
+        }
+        seen.insert(id);
+        previous = Some(id);
+    }
+    if seen.len() != held.len() {
+        return fail("A group needs at least one part.");
+    }
+    Ok(())
+}
+
+/// What a merge of two editors' changes can leave, as readers take it (Epo
+/// 2026-11-04): a part naming a group that is gone has no group, a group with
+/// no parts goes, and a group's parts come together at the first one's place,
+/// in their order; `groups` lists what is left in reading order. The
+/// browser's `repairGroups` is the same; both run
+/// testdata/repairs/groups.json.
+pub fn repair_groups(question: &mut Value) {
+    let held: HashMap<String, Value> = question
+        .get("groups")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|group| {
+            let id = group.get("id")?.as_str()?;
+            Some((id.to_owned(), group.clone()))
+        })
+        .collect();
+    let Some(parts) = question.get_mut("parts").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let mut gathered: Vec<Value> = Vec::with_capacity(parts.len());
+    let mut groups: Vec<Value> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let of = |part: &Value| part.get("group").and_then(Value::as_str).map(str::to_owned);
+    for at in 0..parts.len() {
+        let Some(id) = of(&parts[at]) else {
+            gathered.push(parts[at].clone());
+            continue;
+        };
+        let Some(group) = held.get(&id) else {
+            let mut part = parts[at].clone();
+            if let Some(part) = part.as_object_mut() {
+                part.remove("group");
+            }
+            gathered.push(part);
+            continue;
+        };
+        if seen.insert(id.clone()) {
+            groups.push(group.clone());
+            gathered.extend(
+                parts
+                    .iter()
+                    .filter(|part| of(part).as_deref() == Some(&id))
+                    .cloned(),
+            );
+        }
+    }
+    *parts = gathered;
+    let Some(question) = question.as_object_mut() else {
+        return;
+    };
+    if groups.is_empty() {
+        question.remove("groups");
+    } else {
+        question.insert("groups".into(), Value::Array(groups));
+    }
 }
 
 /// A question as the schema leaves it.
@@ -1414,7 +1526,7 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
         map,
         what,
         &["id", "labels", "layout", "parts", "stem"],
-        &["level"],
+        &["groups", "level"],
     )?;
     let id = identifier(&map["id"], what)?;
     one_of(&map["labels"], what, &["letters", "numbers"])?;
@@ -1427,6 +1539,14 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
         .map(part)
         .collect::<Result<_, _>>()?;
     let stem = block_list(&map["stem"], 0)?;
+    let groups = match present(map, "groups") {
+        Some(groups) => array(groups, what, 0, QUESTION_PARTS_MAX)?
+            .iter()
+            .map(group)
+            .collect::<Result<Vec<_>, _>>()?,
+        None => Vec::new(),
+    };
+    check_groups(&groups, &parts)?;
 
     let mut ids = HashSet::new();
     for part in &parts {
@@ -1506,11 +1626,15 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
             "A question has at most {QUIZ_QUESTION_PARTS_MAX} parts."
         ));
     }
-    for block in stem.iter().chain(
-        parts
-            .iter()
-            .flat_map(|p| p.blocks.iter().chain(&p.solution)),
-    ) {
+    for block in stem
+        .iter()
+        .chain(groups.iter().flat_map(|g| g.blocks.iter()))
+        .chain(
+            parts
+                .iter()
+                .flat_map(|p| p.blocks.iter().chain(&p.solution)),
+        )
+    {
         block.description_fits(policy.bank)?;
         if block.kind != "image" && block.kind != "graph" {
             continue;

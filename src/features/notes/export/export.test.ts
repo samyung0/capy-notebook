@@ -86,6 +86,38 @@ describe('readable note exports', () => {
     expect((await render(value, 'docx')).content).toContain('<hr/>');
   });
 
+  it('prints a group at part level with its parts as (i), (ii), and names them in the key', async () => {
+    const base = exampleQuestion('grouped');
+    const part = base.parts[0];
+    const { content } = await render([
+      quizNode({
+        questions: [
+          {
+            ...base,
+            groups: [
+              {
+                blocks: [{ text: 'Fig. 3.2 shows clotting.', type: 'text' }],
+                id: 'g',
+              },
+            ],
+            parts: [
+              { ...part, id: 'a' },
+              { ...part, group: 'g', id: 'b1' },
+              { ...part, group: 'g', id: 'b2' },
+            ],
+          },
+        ],
+      }),
+    ]);
+    expect(content).toContain('(b)');
+    expect(content).toContain('Fig. 3.2 shows clotting.');
+    expect(content).toContain(`(i) ${labels.marks}: 1`);
+    expect(content).toContain(`(ii) ${labels.marks}: 1`);
+    expect(content).toContain(`1 (b)(i). ${labels.answer}`);
+    expect(content).toContain(`1 (b)(ii). ${labels.answer}`);
+    expect(content).toContain(`1 (a). ${labels.answer}`);
+  });
+
   it('retains all seven answer types, multiple parts, distractors, units, hints and rich solutions', async () => {
     const questions = exampleAnswers.map((answer, i) =>
       exampleQuestion(String(i), answer)

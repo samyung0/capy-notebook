@@ -798,6 +798,7 @@ export const EMBED_CATALOG = {
       ],
       "assets": [
         "question.stem[].image.assetId",
+        "question.groups[].blocks[].image.assetId",
         "question.parts[].blocks[].image.assetId",
         "question.parts[].solution[].image.assetId"
       ],

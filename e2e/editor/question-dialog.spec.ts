@@ -17,9 +17,7 @@ test('undoing the add of a chart still open in its editor goes back to the quest
     .first()
     .click({ timeout: 30_000 });
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', { name: m.question_ui_add_block_or_part() })
-    .click();
+  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
   await page
     .getByRole('button', { exact: true, name: m.question_ui_chart() })
     .click();
@@ -53,9 +51,7 @@ test('a quiz embedded in a note keeps its question dialog open through an edit',
     .first()
     .click();
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', { name: m.question_ui_add_block_or_part() })
-    .click();
+  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
   // The edit reprojects the quiz and invalidates its read, which the note's
   // footer also observes: the refetch must reach the network and the embed
   // (with its dialog) stay mounted.
@@ -153,9 +149,7 @@ test('a table adds a column and removes a row from its own controls', async ({
     .first()
     .click({ timeout: 30_000 });
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', { name: m.question_ui_add_block_or_part() })
-    .click();
+  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
   await page
     .getByRole('button', { exact: true, name: m.question_ui_table() })
     .click();
@@ -184,11 +178,47 @@ test('adding a part shows it in the question instead of opening its answer', asy
     .first()
     .click({ timeout: 30_000 });
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', { name: m.question_ui_add_block_or_part() })
-    .click();
+  await dialog.getByRole('button', { name: m.question_ui_add_part() }).click();
   await page
     .getByRole('button', { exact: true, name: m.question_ui_part() })
     .click();
   await expect(partAnswers(dialog)).toHaveCount(2);
+});
+
+// Grouped parts (board U2): Add part's Group, then the group's own menu.
+test('a group adds a sub-part, ungroups and goes with its parts', async ({
+  page,
+}) => {
+  await page.goto('/materials/qz_2?mode=edit');
+  await page
+    .getByRole('button', { exact: true, name: m.action_edit() })
+    .first()
+    .click({ timeout: 30_000 });
+  const dialog = page.getByRole('dialog');
+  const menuItem = (name: string) =>
+    page.getByRole('button', { exact: true, name });
+  const groupMenu = () =>
+    dialog
+      .getByRole('button', {
+        name: m.question_ui_actions({
+          label: m.question_ui_question_placeholder(),
+        }),
+      })
+      .first();
+  await dialog.getByRole('button', { name: m.question_ui_add_part() }).click();
+  await menuItem(m.question_ui_group()).click();
+  // A group starts with its first part: the question now has two answers.
+  await expect(partAnswers(dialog)).toHaveCount(2);
+  await expect(dialog.locator('[data-group-id]')).toHaveCount(1);
+  await expect(dialog.locator('[data-group-id]')).toContainText('(b)');
+  await groupMenu().click({ force: true });
+  await menuItem(m.question_ui_add_sub_part()).click();
+  await expect(partAnswers(dialog)).toHaveCount(3);
+  await expect(
+    dialog.locator('strong').filter({ hasText: '(ii)' })
+  ).toBeVisible();
+  await groupMenu().click({ force: true });
+  await menuItem(m.question_ui_ungroup()).click();
+  await expect(dialog.locator('[data-group-id]')).toHaveCount(0);
+  await expect(partAnswers(dialog)).toHaveCount(3);
 });

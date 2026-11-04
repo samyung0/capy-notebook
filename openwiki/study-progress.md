@@ -117,10 +117,12 @@ the document returns 404.
 Each item has a hash, stored as `item_hash` when it is rated:
 
 - a card: SHA-256 of its front and back text (`CardHash`);
-- a question: SHA-256 of the text of its stem's text blocks and of each part's
-  prompt text blocks (`QuestionHash`). Answer keys, choices, marking schemes,
-  hints, solutions, marks, images, graphs, layout and styling are left out, so
-  editing them keeps the learner's state.
+- a question: SHA-256 of the text of its stem's text blocks, of each part's
+  prompt text blocks and, as the stem's, of its groups' text blocks in reading
+  order (`QuestionHash`). Answer keys, choices, marking schemes, hints, solutions,
+  marks, images, graphs, layout and styling are left out, so editing them keeps
+  the learner's state. A group with no text adds nothing, so grouping parts alone
+  keeps it too, and a question with no group hashes as it always did.
 
 A mismatch resets that one item. At read time the item is skipped (not in
 review, Quick review or the reviewable count) until it is rated again; at

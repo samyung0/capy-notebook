@@ -1,5 +1,6 @@
 import {
   Alert02Icon,
+  AlertCircleIcon,
   Archive01Icon,
   ArchiveRestoreIcon,
   ArrowDown02Icon,
@@ -284,6 +285,7 @@ const HugeIcons = {
    * 2026-11-03, AI2). Every caller uses this name. */
   ai: AiIcon,
   alert: Alert02Icon,
+  alertCircle: AlertCircleIcon,
   alignCenter: TextAlignCenterIcon,
   alignJustify: TextAlignJustifyIcon,
   alignLeft: TextAlignLeftIcon,

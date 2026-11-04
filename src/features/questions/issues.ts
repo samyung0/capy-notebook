@@ -5,6 +5,7 @@ import {
   QUESTION_PLOT_SERIES_MAX,
 } from '@/api/limits.generated';
 import { m } from '@/i18n';
+import { isLonePart, partPlaces, subLabel } from './groups';
 import {
   blockWithoutBlanks,
   type Question,
@@ -24,7 +25,12 @@ import {
 export type IssueRow =
   | {
       kind: 'block';
-      location: { index: number; partId?: string; solution?: boolean };
+      location: {
+        groupId?: string;
+        index: number;
+        partId?: string;
+        solution?: boolean;
+      };
     }
   | { kind: 'part' | 'solution'; partId: string };
 
@@ -155,12 +161,18 @@ export function questionIssues(
   policy: QuestionPolicy = {}
 ): QuestionIssue[] {
   const normal = withoutBlanks(question);
-  const several = question.parts.length > 1;
+  const several = !isLonePart(question);
   const generic = m.question_issue_generic();
   const parts = (index: unknown) =>
     typeof index === 'number' ? question.parts[index] : undefined;
-  const label = (index: number) =>
-    question.labels === 'letters' ? letter(index) : String(index + 1);
+  // "B", "2", and inside a group "B(i)", "2(i)".
+  const places = partPlaces(question);
+  const label = (index: number) => {
+    const place = places.get(question.parts[index].id);
+    const item = place?.item ?? index;
+    const top = question.labels === 'letters' ? letter(item) : String(item + 1);
+    return place?.sub === undefined ? top : `${top}${subLabel(place.sub)}`;
+  };
   // Blank text blocks are gone from `normal`: its block index i is the i-th
   // kept block of the typed section.
   const blockRow = (
@@ -180,6 +192,14 @@ export function questionIssues(
         ...(section === 'solution' && { solution: true }),
       },
     };
+  };
+  // A group's block i is the i-th kept block of its typed text and figures.
+  const groupRow = (at: number, index: number): IssueRow | undefined => {
+    const group = question.groups?.[at];
+    const kept = group?.blocks.flatMap((block, i) => (blank(block) ? [] : [i]));
+    const location = kept?.[index];
+    if (location === undefined || !group) return;
+    return { kind: 'block', location: { groupId: group.id, index: location } };
   };
   const issues: QuestionIssue[] = [];
   const add = (issue: QuestionIssue) => issues.push(issue);
@@ -214,6 +234,19 @@ export function questionIssues(
     const [head, at, field, ...rest] = issue.path;
     if (head === 'stem' && typeof at === 'number') {
       blockIssue(undefined, 'stem', at, issue);
+      continue;
+    }
+    // A group's block: the question's title shows it, its own row points at it.
+    if (
+      head === 'groups' &&
+      typeof at === 'number' &&
+      field === 'blocks' &&
+      typeof rest[0] === 'number'
+    ) {
+      add({
+        message: blockMessage(normal.groups?.[at]?.blocks[rest[0]], issue),
+        row: groupRow(at, rest[0]),
+      });
       continue;
     }
     const part = head === 'parts' ? parts(at) : undefined;
@@ -257,6 +290,10 @@ export function questionIssues(
   }
 
   for (const rule of ruleIssues(normal, policy)) {
+    if (rule.block?.section === 'group' && rule.group !== undefined) {
+      add({ message: generic, row: groupRow(rule.group, rule.block.index) });
+      continue;
+    }
     const part = parts(rule.part);
     if (!part || rule.part === undefined) {
       add({ message: generic });
@@ -273,14 +310,21 @@ export function questionIssues(
     else
       add({
         message: generic,
-        row: rule.block
-          ? blockRow(part, rule.block.section, rule.block.index)
-          : { kind: 'part', partId: part.id },
+        row:
+          rule.block && rule.block.section !== 'group'
+            ? blockRow(part, rule.block.section, rule.block.index)
+            : { kind: 'part', partId: part.id },
       });
   }
-  // In reading order: the stem, then each part's text, answer and solution.
+  // In reading order: the stem, then each part's text, answer and solution,
+  // a group's blocks before its first part.
   const place = ({ row }: QuestionIssue) => {
     if (!row) return -1;
+    const groupId = row.kind === 'block' ? row.location.groupId : undefined;
+    if (groupId !== undefined)
+      return (
+        question.parts.findIndex((item) => item.group === groupId) * 3 - 0.5
+      );
     const id = row.kind === 'block' ? row.location.partId : row.partId;
     const part = question.parts.findIndex((item) => item.id === id);
     const section =

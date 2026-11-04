@@ -57,10 +57,7 @@ export function WorkspaceFormDialog({
   setOpen: (open: boolean) => void;
   workspace: CreateWorkspaceReq &
     Partial<
-      Pick<
-        Workspace,
-        'topicCount' | 'cover' | 'fileCount' | 'id' | 'isOwner' | 'privacy'
-      >
+      Pick<Workspace, 'topicCount' | 'cover' | 'id' | 'isOwner' | 'privacy'>
     >;
   onSubmit: (values: WorkspaceFormValues) => Promise<Workspace | void>;
   /** clone creates like create, from a form prefilled with the source. */
@@ -173,7 +170,6 @@ export function WorkspaceFormDialog({
             <InputTitle>{m.cover_label()}</InputTitle>
             <CoverField
               card={{
-                fileCount: workspace.fileCount ?? 0,
                 iconId: iconId ?? workspace.iconId ?? '',
                 name: name || workspace.name,
                 privacy: workspace.privacy ?? 'private',

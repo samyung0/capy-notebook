@@ -1505,3 +1505,352 @@ fn asset_ids_cover_incomplete_questions() {
     );
     assert_eq!(quiz::asset_ids(&content.transact(), &keys.transact()), ids);
 }
+
+/* Grouped parts (Epo 2026-11-04): a group holds text and figures, a part names
+ * its group, and what a merge leaves reads repaired. */
+
+/// The shared fixture: a stem, (a), a group of a text, a chart, an image and
+/// a table over two parts, then (c).
+fn grouped() -> Value {
+    let path = format!(
+        "{}/../../../server/internal/questions/testdata/group-valid.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let fixture: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    fixture["question"].clone()
+}
+
+const QUESTION: &str = "q1";
+const GROUP: [&str; 4] = ["questions", QUESTION, "groups", "g1"];
+const GROUP_TEXT: [&str; 6] = ["questions", QUESTION, "groups", "g1", "blocks", "b0"];
+const PARTS: [&str; 3] = ["questions", QUESTION, "parts"];
+
+/// The question as editors read it, complete or not.
+fn typed(content: &Doc, keys: &Doc) -> Value {
+    let (content, keys) = (content.transact(), keys.transact());
+    let read = quiz::KeysRead::new(&keys);
+    quiz::questions_json(&content, Some(&read)).remove(0)
+}
+
+fn part_ids(question: &Value) -> Vec<&str> {
+    question["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|part| part["id"].as_str().unwrap())
+        .collect()
+}
+
+fn order_of(doc: &Doc, path: &[&str]) -> String {
+    let txn = doc.transact();
+    match map_in(doc, path).get(&txn, "order") {
+        Some(Out::Any(Any::String(order))) => order.to_string(),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A sub-part written as the dialog's Add sub-part does.
+fn add_sub_part(doc: &Doc, id: &str, group: &str, order: &str) {
+    let parts = map_in(doc, &PARTS);
+    let mut txn = doc.transact_mut();
+    let part = parts.insert(&mut txn, id, MapPrelim::default());
+    part.insert(&mut txn, "order", order);
+    part.insert(&mut txn, "marks", 1.0);
+    part.insert(&mut txn, "group", group);
+    let blocks = part.insert(&mut txn, "blocks", MapPrelim::default());
+    let block = blocks.insert(&mut txn, "b0", MapPrelim::default());
+    block.insert(&mut txn, "order", "a0");
+    block.insert(&mut txn, "type", "text");
+    block.insert(&mut txn, "text", TextPrelim::new("New sub-part."));
+    let answer = part.insert(&mut txn, "answer", MapPrelim::default());
+    answer.insert(&mut txn, "type", "short");
+}
+
+#[test]
+fn a_group_round_trips_in_reading_order() {
+    let question = grouped();
+    let (content, keys, _, _) = rooms(std::slice::from_ref(&question));
+    assert_eq!(projected(&content, &keys), vec![question.clone()]);
+    assert_eq!(typed(&content, &keys), question);
+    assert_eq!(
+        quiz::asset_ids(&content.transact(), &keys.transact()),
+        vec!["asset_clotting".to_owned()]
+    );
+}
+
+/// DESIGN 9.2 for groups: one editor types in the group's text while another
+/// adds a sub-part; both land, the sub-part after its group's others.
+#[test]
+fn two_editors_merge_a_groups_text_and_a_new_sub_part() {
+    let question = grouped();
+    let (content, keys, _, _) = rooms(std::slice::from_ref(&question));
+    let a = copy_of(&content, 3);
+    let b = copy_of(&content, 4);
+    text_in(&a, &GROUP_TEXT, "text").insert(&mut a.transact_mut(), 0, "Typed: ");
+    let last = order_of(&b, &[&PARTS[..], &["part-b2"]].concat());
+    let next = order_of(&b, &[&PARTS[..], &["part-c"]].concat());
+    let order = items::order::between(Some(&last), Some(&next)).unwrap();
+    add_sub_part(&b, "part-b3", "g1", &order);
+    converge(&content, Kind::Quiz, &a, &b);
+    let merged = typed(&content, &keys);
+    assert_eq!(
+        part_ids(&merged),
+        ["part-a", "part-b1", "part-b2", "part-b3", "part-c"]
+    );
+    assert_eq!(merged["parts"][3]["group"], json!("g1"));
+    assert!(
+        merged["groups"][0]["blocks"][0]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("Typed: ")
+    );
+}
+
+/// One editor removes the group with its parts while another adds a sub-part:
+/// the new part reads ungrouped, not lost.
+#[test]
+fn a_sub_part_added_as_its_group_goes_reads_ungrouped() {
+    let question = grouped();
+    let (content, keys, _, _) = rooms(std::slice::from_ref(&question));
+    let a = copy_of(&content, 3);
+    let b = copy_of(&content, 4);
+    {
+        let groups = map_in(&a, &GROUP[..3]);
+        let parts = map_in(&a, &PARTS);
+        let mut txn = a.transact_mut();
+        groups.remove(&mut txn, "g1");
+        parts.remove(&mut txn, "part-b1");
+        parts.remove(&mut txn, "part-b2");
+    }
+    let last = order_of(&b, &[&PARTS[..], &["part-b2"]].concat());
+    let next = order_of(&b, &[&PARTS[..], &["part-c"]].concat());
+    let order = items::order::between(Some(&last), Some(&next)).unwrap();
+    add_sub_part(&b, "part-b3", "g1", &order);
+    converge(&content, Kind::Quiz, &a, &b);
+    let merged = typed(&content, &keys);
+    assert_eq!(part_ids(&merged), ["part-a", "part-b3", "part-c"]);
+    assert!(merged["parts"][1].get("group").is_none());
+    assert!(merged.get("groups").is_none());
+}
+
+/// One editor moves the group while another reorders inside it: the keys
+/// merge per part and may split the group; readers keep it together at the
+/// first part's place, and the question still projects.
+#[test]
+fn parts_a_merge_separates_read_together() {
+    let question = grouped();
+    let (content, keys, _, _) = rooms(std::slice::from_ref(&question));
+    let a = copy_of(&content, 3);
+    let last = order_of(&a, &[&PARTS[..], &["part-c"]].concat());
+    map_in(&a, &[&PARTS[..], &["part-b2"]].concat()).insert(
+        &mut a.transact_mut(),
+        "order",
+        items::order::after(Some(&last)).as_str(),
+    );
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &a);
+    let read = typed(&content, &keys);
+    assert_eq!(part_ids(&read), ["part-a", "part-b1", "part-b2", "part-c"]);
+    assert_eq!(projected(&content, &keys), vec![question]);
+}
+
+/// Two editors remove a group's last two parts: the group is a shell nothing
+/// shows, the question stays marked, and its image stays in use until a write
+/// takes the group.
+#[test]
+fn a_group_with_no_parts_reads_as_gone_and_keeps_its_image() {
+    let question = grouped();
+    let (content, keys, _, _) = rooms(std::slice::from_ref(&question));
+    let a = copy_of(&content, 3);
+    let b = copy_of(&content, 4);
+    map_in(&a, &PARTS).remove(&mut a.transact_mut(), "part-b1");
+    map_in(&b, &PARTS).remove(&mut b.transact_mut(), "part-b2");
+    converge(&content, Kind::Quiz, &a, &b);
+    let read = typed(&content, &keys);
+    assert_eq!(part_ids(&read), ["part-a", "part-c"]);
+    assert!(read.get("groups").is_none());
+    assert_eq!(projected(&content, &keys).len(), 1);
+    assert_eq!(
+        quiz::asset_ids(&content.transact(), &keys.transact()),
+        vec!["asset_clotting".to_owned()]
+    );
+    // The limits still measure what the document holds.
+    let measured = serde_json::to_string(&quiz::content_document_value(&content.transact()));
+    assert!(measured.unwrap().contains("the stages of clotting"));
+}
+
+#[test]
+fn a_groups_blank_text_leaves_the_projection() {
+    let mut question = grouped();
+    question["groups"][0]["blocks"] = json!([{ "type": "text", "text": "  " }]);
+    let (content, keys, _, _) = rooms(std::slice::from_ref(&question));
+    let projected = projected(&content, &keys);
+    assert_eq!(projected[0]["groups"][0]["blocks"], json!([]));
+    assert_eq!(projected[0]["groups"][0]["id"], json!("g1"));
+}
+
+#[test]
+fn a_seeded_unknown_block_kind_in_a_group_is_found() {
+    let mut question = grouped();
+    question["groups"][0]["blocks"] = json!([{ "type": "timeline" }]);
+    let (content, _, _, _) = rooms(&[question]);
+    assert!(quiz::holds_unknown_block(&content.transact()));
+}
+
+/// The server's own writes: a save takes a group away with its map entry, and
+/// a question with no group gets no `groups` map.
+#[test]
+fn a_server_write_syncs_groups_as_what_differs() {
+    let question = grouped();
+    let (content, keys, _, _) = rooms(std::slice::from_ref(&question));
+    let mut ungrouped = question.clone();
+    ungrouped.as_object_mut().unwrap().remove("groups");
+    for part in ungrouped["parts"].as_array_mut().unwrap() {
+        part.as_object_mut().unwrap().remove("group");
+    }
+    quiz::set_questions(
+        &mut content.transact_mut(),
+        &mut keys.transact_mut(),
+        std::slice::from_ref(&ungrouped),
+    )
+    .unwrap();
+    assert_eq!(typed(&content, &keys), ungrouped);
+    assert_eq!(map_in(&content, &GROUP[..3]).len(&content.transact()), 0);
+
+    let question = fixtures().remove(0);
+    let (plain, _, _, _) = rooms(std::slice::from_ref(&question));
+    let held = map_in(&plain, &["questions", question["id"].as_str().unwrap()]);
+    assert!(!held.contains_key(&plain.transact(), "groups"));
+}
+
+/// Every grouped question the browser writes (tests/parity/ts.json) passes
+/// admission into a room that holds nothing yet, in both documents.
+#[test]
+fn a_room_admits_the_groups_the_browser_writes() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/parity/ts.json");
+    let browser: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let unhex = |text: &str| -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|at| u8::from_str_radix(&text[at..at + 2], 16).unwrap())
+            .collect()
+    };
+    let mut seen = 0;
+    for entry in browser["questions"].as_array().unwrap() {
+        if entry["question"].get("groups").is_none() {
+            continue;
+        }
+        seen += 1;
+        for (kind, name) in [(Kind::Quiz, "content"), (Kind::QuizKeys, "keys")] {
+            let room = Doc::with_options(ydoc::doc_options(1));
+            let mut check = validator(kind, &room);
+            let (result, _) = admit(&mut check, &room, &unhex(entry[name].as_str().unwrap()));
+            assert!(
+                matches!(result, Ok(Admission::Accepted)),
+                "{name}: {result:?}"
+            );
+        }
+    }
+    assert!(seen >= 4, "{seen} grouped questions");
+}
+
+#[test]
+fn group_shapes_no_editor_writes_are_refused() {
+    let questions = fixtures();
+    let question = questions
+        .iter()
+        .find(|q| q.get("groups").is_some())
+        .unwrap();
+    let id = question["id"].as_str().unwrap();
+    let group = question["groups"][0]["id"].as_str().unwrap();
+    let group_path = ["questions", id, "groups", group];
+    let part = question["parts"][1]["id"].as_str().unwrap();
+    let part_path = ["questions", id, "parts", part];
+    // A group holds blocks and nothing else: no answer, marks or a group.
+    for field in ["marks", "group", "order", "answer"] {
+        refused(
+            Kind::Quiz,
+            |doc| {
+                map_in(doc, &group_path).insert(&mut doc.transact_mut(), field, "x");
+            },
+            "outside its shape",
+        );
+    }
+    refused(
+        Kind::Quiz,
+        |doc| {
+            map_in(doc, &part_path).insert(&mut doc.transact_mut(), "group", "not an id!");
+        },
+        "group",
+    );
+    refused(
+        Kind::Quiz,
+        |doc| {
+            map_in(doc, &part_path).insert(&mut doc.transact_mut(), "group", 3.0);
+        },
+        "group",
+    );
+}
+
+/// A group's blocks take the stem's caps, at admission as in the exact check.
+#[test]
+fn group_values_past_their_caps_are_refused() {
+    let questions = fixtures();
+    let question = questions
+        .iter()
+        .find(|q| q.get("groups").is_some())
+        .unwrap();
+    let id = question["id"].as_str().unwrap();
+    let group = question["groups"][0]["id"].as_str().unwrap();
+    let blocks = ["questions", id, "groups", group, "blocks"];
+
+    // Text past 12,000 characters.
+    let (content, _, client, _) = rooms(&questions);
+    let first = first_key(&map_in(&client, &blocks), &client);
+    text_in(&client, &[&blocks[..], &[first.as_str()]].concat(), "text").insert(
+        &mut client.transact_mut(),
+        0,
+        &"x".repeat(12_001),
+    );
+    let mut check = validator(Kind::Quiz, &content);
+    let (result, _) = admit(&mut check, &content, &diff(&client, &content));
+    assert!(
+        matches!(result, Err(Refusal::Shape(ref m)) if m.contains("12000")),
+        "{result:?}"
+    );
+
+    // A group's 41st block.
+    let (content, _, client, _) = rooms(&questions);
+    {
+        let list = map_in(&client, &blocks);
+        let mut txn = client.transact_mut();
+        for i in 0..40 {
+            let block = list.insert(&mut txn, format!("extra{i}"), MapPrelim::default());
+            block.insert(&mut txn, "order", "a5");
+            block.insert(&mut txn, "type", "text");
+            block.insert(&mut txn, "text", TextPrelim::new("x"));
+        }
+    }
+    let mut check = validator(Kind::Quiz, &content);
+    let (result, _) = admit(&mut check, &content, &diff(&client, &content));
+    assert!(
+        matches!(result, Err(Refusal::Shape(ref m)) if m.contains("section")),
+        "{result:?}"
+    );
+
+    // An eighth group in a question (a group has at least one part).
+    let (content, _, client, _) = rooms(&questions);
+    {
+        let list = map_in(&client, &blocks[..3]);
+        let mut txn = client.transact_mut();
+        for i in 0..7 {
+            list.insert(&mut txn, format!("extra{i}"), MapPrelim::default());
+        }
+    }
+    let mut check = validator(Kind::Quiz, &content);
+    let (result, _) = admit(&mut check, &content, &diff(&client, &content));
+    assert!(
+        matches!(result, Err(Refusal::Shape(ref m)) if m.contains("groups")),
+        "{result:?}"
+    );
+}

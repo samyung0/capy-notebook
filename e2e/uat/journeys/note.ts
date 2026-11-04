@@ -1145,9 +1145,7 @@ export async function quizImageOnPick(run: UatRun, quizId: string) {
     .getByRole('button', { exact: true, name: m.action_edit() })
     .click();
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', { name: m.question_ui_add_block_or_part() })
-    .click();
+  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
   await page
     .getByRole('button', { exact: true, name: m.question_ui_image() })
     .click();

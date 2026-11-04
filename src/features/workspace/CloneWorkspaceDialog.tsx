@@ -33,7 +33,6 @@ export function CloneWorkspaceDialog({
     | 'topicCount'
     | 'cover'
     | 'description'
-    | 'fileCount'
     | 'iconId'
     | 'id'
     | 'isOwner'
@@ -52,7 +51,6 @@ export function CloneWorkspaceDialog({
     () => ({
       cover: workspace.cover,
       description: workspace.description,
-      fileCount: workspace.fileCount,
       iconId: workspace.iconId,
       // An owner's copy sits next to the source, so its name tells them apart.
       name: workspace.isOwner

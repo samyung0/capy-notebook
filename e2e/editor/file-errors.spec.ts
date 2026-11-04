@@ -304,7 +304,7 @@ test.fixme('PDF annotation load toast shows before the PDF loads', async ({
     .click();
   await expect(panel).toHaveAttribute('data-scenario-status', 'ready');
   const canvas = page.locator('[data-page="1"] canvas');
-  const toast = page.locator('[data-sonner-toast]').filter({
+  const toast = page.locator('[data-toast]').filter({
     hasText: m.pdf_annotations_failed(),
   });
   await expect(toast).toHaveCount(1, { timeout: 15_000 });

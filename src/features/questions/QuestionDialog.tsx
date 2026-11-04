@@ -43,6 +43,23 @@ import {
   SelectField,
 } from './editorFields';
 import { renderGraphSvg } from './graph';
+import {
+  addSubPart,
+  appendGroup,
+  canMoveItem,
+  canPlaceItem,
+  canRemoveGroup,
+  canRemovePart,
+  canUngroup,
+  fullPartLabel,
+  type ItemRef,
+  isLonePart,
+  moveItem,
+  placeItem,
+  questionItems,
+  removeGroup,
+  ungroup,
+} from './groups';
 import { IssueIcon, IssueSummary } from './IssueViews';
 import { issueMessages, questionIssues } from './issues';
 import {
@@ -72,7 +89,6 @@ const blockLabels = {
   chart: m.question_ui_chart,
   graph: m.question_ui_graph,
   image: m.question_ui_image,
-  part: m.question_ui_part,
   plot: m.question_ui_plot,
   table: m.question_ui_table,
   text: m.question_ui_text,
@@ -81,7 +97,6 @@ const blockIcons: Record<keyof typeof blockLabels, IconName> = {
   chart: 'chart',
   graph: 'graph',
   image: 'image',
-  part: 'listOrdered',
   plot: 'chart',
   table: 'table',
   text: 'text',
@@ -157,7 +172,15 @@ const blockSummary = (block: QuestionBlock, section: BlockSection) =>
 type Location = BlockSection & { index: number };
 type Row =
   | { kind: 'block'; location: Location }
+  | { kind: 'group'; groupId: string }
   | { kind: 'part' | 'solution'; partId: string };
+/** The item a part or group row moves, or none for a block or solution row. */
+const itemRef = (row: Row): ItemRef | null =>
+  row.kind === 'part'
+    ? { part: row.partId }
+    : row.kind === 'group'
+      ? { group: row.groupId }
+      : null;
 type Editing =
   | {
       kind: 'block';
@@ -236,6 +259,11 @@ function sectionBlocks(
   question: Question,
   section: BlockSection
 ): QuestionBlock[] {
+  if (section.groupId)
+    return (
+      question.groups?.find((group) => group.id === section.groupId)?.blocks ??
+      []
+    );
   return section.partId
     ? (question.parts.find((part) => part.id === section.partId)?.[
         section.solution ? 'solution' : 'blocks'
@@ -247,6 +275,13 @@ function changeBlocks(
   section: BlockSection,
   blocks: QuestionBlock[]
 ): Question {
+  if (section.groupId)
+    return {
+      ...question,
+      groups: question.groups?.map((group) =>
+        group.id === section.groupId ? { ...group, blocks } : group
+      ),
+    };
   return section.partId
     ? {
         ...question,
@@ -259,16 +294,24 @@ function changeBlocks(
     : { ...question, stem: blocks };
 }
 const sameSection = (a: BlockSection, b: BlockSection) =>
-  a.partId === b.partId && Boolean(a.solution) === Boolean(b.solution);
+  a.partId === b.partId &&
+  a.groupId === b.groupId &&
+  Boolean(a.solution) === Boolean(b.solution);
 function rowKey(row: Row): string {
-  return row.kind === 'block'
-    ? `${row.location.partId ?? 'stem'}:${Boolean(row.location.solution)}:${row.location.index}`
-    : `${row.kind}:${row.partId}`;
+  if (row.kind === 'group') return `group:${row.groupId}`;
+  if (row.kind !== 'block') return `${row.kind}:${row.partId}`;
+  const { groupId, index, partId, solution } = row.location;
+  const owner = groupId ? `group:${groupId}` : (partId ?? 'stem');
+  return `${owner}:${Boolean(solution)}:${index}`;
 }
 
 /** A row's element in the body. A blanks part has no answer controls of its
  * own: its text blocks holding the blanks stand for it (data-part-key). */
 function rowElement(row: Row) {
+  if (row.kind === 'group')
+    return document.querySelector<HTMLElement>(
+      `[data-group-id="${CSS.escape(row.groupId)}"]`
+    );
   const key = CSS.escape(rowKey(row));
   return document.querySelector<HTMLElement>(
     `[data-row-key="${key}"], [data-part-key="${key}"]`
@@ -407,49 +450,39 @@ function QuestionDialogSession({
     setSelected(null);
     setEditing(null);
   };
-  // Blocks move within their section and parts among parts; the outline
-  // menu, the floating toolbar and dragging all follow these rules.
+  // Blocks move within their section; parts and groups among the top-level
+  // items, a part inside a group among its group's. The outline menu, the
+  // floating toolbar and dragging all follow these rules.
   const canMove = (row: Row, direction: number) => {
-    let index = -1;
-    let count = 0;
     if (row.kind === 'block') {
-      index = row.location.index;
-      count = sectionBlocks(draft, row.location).length;
-    } else if (row.kind === 'part') {
-      index = draft.parts.findIndex((part) => part.id === row.partId);
-      count = draft.parts.length;
+      const target = row.location.index + direction;
+      return target >= 0 && target < sectionBlocks(draft, row.location).length;
     }
-    const target = index + direction;
-    return index >= 0 && target >= 0 && target < count;
+    const item = itemRef(row);
+    return !!item && canMoveItem(draft, item, direction);
   };
   const canDrag = (row: Row) =>
-    row.kind === 'block' || (row.kind === 'part' && draft.parts.length > 1);
+    row.kind === 'block' || canMove(row, -1) || canMove(row, 1);
   // A block lands beside another block, at the end of a part's text (before
-  // its answer) or at the start of a worked solution (after its title); a
-  // part lands beside another part.
+  // its answer), at the start of a group's (after its row) or of a worked
+  // solution (after its title); a part or group lands beside another in the
+  // same list.
   const canDrop = (source: Row | null, target: Row, after: boolean) => {
     if (source?.kind === 'block')
       return (
         target.kind === 'block' ||
         (target.kind === 'part' && !after) ||
-        (target.kind === 'solution' && after)
+        (target.kind !== 'part' && after)
       );
-    return (
-      source?.kind === 'part' &&
-      target.kind === 'part' &&
-      source.partId !== target.partId
-    );
+    const from = source && itemRef(source);
+    const to = itemRef(target);
+    return !!from && !!to && canPlaceItem(draft, from, to);
   };
   const move = (row: Row, direction: number) => {
     if (!canMove(row, direction)) return;
-    if (row.kind === 'solution') return;
-    if (row.kind === 'part') {
-      const index = draft.parts.findIndex((part) => part.id === row.partId);
-      const target = index + direction;
-      if (target < 0 || target >= draft.parts.length) return;
-      const parts = [...draft.parts];
-      [parts[index], parts[target]] = [parts[target], parts[index]];
-      setDraft({ ...draft, parts });
+    const item = itemRef(row);
+    if (item) {
+      setDraft(moveItem(draft, item, direction));
       return;
     }
     if (row.kind !== 'block') return;
@@ -465,43 +498,60 @@ function QuestionDialogSession({
     setSelected({ kind: 'block', location: { ...location, index: target } });
   };
   // Where Add puts a block: after the selected one, or in the selected section.
-  const addSection = (): BlockSection =>
-    selected?.kind === 'block'
-      ? selected.location
-      : selected
-        ? { partId: selected.partId, solution: selected.kind === 'solution' }
-        : {};
-  const addFull = (type: AddableBlock | 'part') =>
-    type === 'part'
-      ? draft.parts.length >=
-        (policy === 'bank'
-          ? limits.QUESTION_PARTS_MAX
-          : limits.QUIZ_QUESTION_PARTS_MAX)
-      : sectionBlocks(draft, addSection()).length >= limits.QUESTION_BLOCKS_MAX;
-  const add = (
-    type: AddableBlock | 'part',
-    section: BlockSection = addSection()
-  ) => {
+  const addSection = (): BlockSection => {
+    if (selected?.kind === 'block') return selected.location;
+    if (selected?.kind === 'group') return { groupId: selected.groupId };
+    return selected
+      ? { partId: selected.partId, solution: selected.kind === 'solution' }
+      : {};
+  };
+  const blockFull = () =>
+    sectionBlocks(draft, addSection()).length >= limits.QUESTION_BLOCKS_MAX;
+  const partsFull =
+    draft.parts.length >=
+    (policy === 'bank'
+      ? limits.QUESTION_PARTS_MAX
+      : limits.QUIZ_QUESTION_PARTS_MAX);
+  // A new part or sub-part shows selected in the question; its answer opens
+  // from there.
+  const revealPart = (partId: string) => {
+    const row: Row = { kind: 'part', partId };
+    setSelected(row);
+    setReveal((current) => ({ row, seq: (current?.seq ?? 0) + 1 }));
+  };
+  const newPart = () => blankQuestion().parts[0];
+  const addPart = () => {
+    const part = newPart();
+    setDraft({ ...draft, parts: [...draft.parts, part] });
+    revealPart(part.id);
+  };
+  // A group has at least one part, so it starts with its first.
+  const addGroup = () => {
+    const part = newPart();
+    setDraft(
+      appendGroup(
+        draft,
+        {
+          blocks: [newQuestionBlock('text')],
+          id: crypto.randomUUID(),
+        },
+        part
+      )
+    );
+    revealPart(part.id);
+  };
+  const addToGroup = (groupId: string) => {
+    const part = newPart();
+    setDraft(addSubPart(draft, groupId, part));
+    revealPart(part.id);
+  };
+  const leaveGroup = (next: Question) => {
+    setDraft(next);
+    setSelected(null);
+    setEditing(null);
+  };
+  const add = (type: AddableBlock, section: BlockSection = addSection()) => {
     setAddOpen(false);
-    if (type === 'part') {
-      const part = blankQuestion().parts[0];
-      const id =
-        selected?.kind === 'block'
-          ? selected.location.partId
-          : selected?.partId;
-      const index = id
-        ? draft.parts.findIndex((part) => part.id === id) + 1
-        : draft.parts.length;
-      const parts = [...draft.parts];
-      parts.splice(index, 0, part);
-      setDraft({ ...draft, parts });
-      // The new part shows selected in the question; its answer opens from
-      // there.
-      const row: Row = { kind: 'part', partId: part.id };
-      setSelected(row);
-      setReveal((current) => ({ row, seq: (current?.seq ?? 0) + 1 }));
-      return;
-    }
     const blocks = [...sectionBlocks(draft, section)];
     const index =
       selected?.kind === 'block' ? selected.location.index + 1 : blocks.length;
@@ -628,23 +678,22 @@ function QuestionDialogSession({
   ) => {
     dragged.current = null;
     setDrop(null);
-    if (!source) return;
-    if (source.kind === 'part' && target.kind === 'part') {
-      const parts = draft.parts.filter((part) => part.id !== source.partId);
-      const part = draft.parts.find((part) => part.id === source.partId);
-      const index = parts.findIndex((part) => part.id === target.partId);
-      if (!part || index < 0) return;
-      parts.splice(index + Number(after), 0, part);
-      setDraft({ ...draft, parts });
+    if (!source || !canDrop(source, target, after)) return;
+    const from = itemRef(source);
+    const to = itemRef(target);
+    if (from && to) {
+      setDraft(placeItem(draft, from, to, after));
+      return;
     }
-    if (!canDrop(source, target, after)) return;
     if (source.kind === 'block' && target.kind !== 'block') {
-      // Before an answer: after the part's last block; after a worked
-      // solution's title: before its first.
-      const section =
-        target.kind === 'part'
-          ? { partId: target.partId }
-          : { partId: target.partId, solution: true };
+      // Before an answer: after the part's last block; after a group's row or
+      // a worked solution's title: before its first.
+      const section: BlockSection =
+        target.kind === 'group'
+          ? { groupId: target.groupId }
+          : target.kind === 'part'
+            ? { partId: target.partId }
+            : { partId: target.partId, solution: true };
       const count = sectionBlocks(draft, section).length;
       dropRow(
         count && target.kind === 'part'
@@ -842,14 +891,13 @@ function QuestionDialogSession({
       start: start + 1,
     };
   })();
+  // Part labels only mean something when a question has several parts, or its
+  // one part sits in a group.
+  const labelled = !isLonePart(draft);
   const titleIssues = (partId?: string) =>
     issueMessages(
-      issues.filter((issue) =>
-        draft.parts.length > 1 ? issue.partId === partId : !partId
-      )
+      issues.filter((issue) => (labelled ? issue.partId === partId : !partId))
     );
-  // Part labels only mean something when a question has several parts.
-  const labelled = draft.parts.length > 1;
   const row = (
     item: Row,
     label: string,
@@ -857,16 +905,42 @@ function QuestionDialogSession({
   ) => {
     const key = rowKey(item);
     const part =
-      item.kind === 'block'
+      item.kind === 'block' || item.kind === 'group'
         ? undefined
         : draft.parts.find((part) => part.id === item.partId);
+    const group =
+      item.kind === 'group'
+        ? draft.groups?.find((entry) => entry.id === item.groupId)
+        : undefined;
+    // A group's row reads as its first text, which it stands for here.
+    const headLocation: Location | undefined =
+      item.kind === 'group' && group?.blocks[0]?.type === 'text'
+        ? { groupId: item.groupId, index: 0 }
+        : undefined;
     const block =
       item.kind === 'block'
         ? sectionBlocks(draft, item.location)[item.location.index]
-        : undefined;
+        : headLocation
+          ? group?.blocks[0]
+          : undefined;
+    const location = item.kind === 'block' ? item.location : headLocation;
+    const flagged =
+      issueRows.has(key) ||
+      (!!headLocation &&
+        issueRows.has(rowKey({ kind: 'block', location: headLocation })));
+    // A worked solution's title sits as close over its first row as a row's
+    // title over its meta (2px, Epo 2026-11-04).
+    const closeBelow = item.kind === 'solution' && !!part?.solution.length;
+    const closeAbove =
+      item.kind === 'block' &&
+      item.location.solution &&
+      item.location.index === 0;
     // Stem rows sit flush; a part's rows share the column its label sits in.
     const indented =
-      labelled && (item.kind !== 'block' || !!item.location.partId);
+      labelled &&
+      (item.kind !== 'block' ||
+        !!item.location.partId ||
+        !!item.location.groupId);
     return (
       <div
         className={cn(
@@ -909,9 +983,16 @@ function QuestionDialogSession({
         <button
           className={cn(
             'grid w-full min-w-0 py-1.5 pr-9 pl-2 text-left text-sm md:pr-2 md:pl-1',
-            indented ? 'grid-cols-[1.5rem_minmax(0,1fr)]' : 'grid-cols-1',
-            // A header row: tall enough for its menu button.
-            item.kind === 'solution' && 'min-h-9 content-center'
+            !indented && 'grid-cols-1',
+            indented &&
+              (draft.groups?.length
+                ? 'grid-cols-[1.75rem_minmax(0,1fr)]'
+                : 'grid-cols-[1.5rem_minmax(0,1fr)]'),
+            // A header row: tall enough for its menu button; with rows under
+            // it, its text stays where that height centres it.
+            item.kind === 'solution' && !closeBelow && 'min-h-9 content-center',
+            closeBelow && 'pt-[9.25px] pb-0',
+            closeAbove && 'pt-0.5'
           )}
           onClick={() => {
             // Brings the block (or the part's answer or worked solution) into
@@ -925,7 +1006,7 @@ function QuestionDialogSession({
           }}
           // A double click edits, as Edit in the row's menu does.
           onDoubleClick={() => {
-            if (item.kind === 'block') openBlock(item.location);
+            if (location) openBlock(location);
             else if (part && item.kind === 'part') openPart(part);
           }}
           type="button"
@@ -955,7 +1036,7 @@ function QuestionDialogSession({
                 label
               )}
             </span>
-            {issueRows.has(key) && (
+            {flagged && (
               <span
                 aria-label={m.question_issue_row()}
                 className="mt-px shrink-0 text-tint-warning-fg"
@@ -982,7 +1063,7 @@ function QuestionDialogSession({
           <div className="scroll-fade-x absolute inset-y-0 right-0 animate-none! rounded-r-lg bg-overlay pt-0.5 pr-0.5 pl-3 transition-opacity ease-(--motion-ease-smooth-out) [--scroll-fade-on:1] [--scroll-fade-start:12px] group-hover:bg-surface-hover-bg has-data-[state=open]:opacity-100 md:opacity-0 md:has-focus-visible:opacity-100 md:group-hover:opacity-100">
             <PopoverTrigger asChild>
               <ToolbarButton
-                className="hover:bg-transparent"
+                className={cn('hover:bg-transparent', closeAbove && '-mt-1')}
                 label={m.question_ui_actions({ label })}
                 tooltip={false}
               >
@@ -1020,7 +1101,37 @@ function QuestionDialogSession({
                 onClick={() => openBlock(item.location)}
               />
             )}
-            {item.kind !== 'solution' && (
+            {item.kind === 'group' && (
+              // Board U2: Move up, Move down, Add sub-part, Ungroup, Remove.
+              <>
+                <MenuItem
+                  disabled={!canMove(item, -1)}
+                  label={m.question_ui_move_up()}
+                  onClick={() => move(item, -1)}
+                />
+                <MenuItem
+                  disabled={!canMove(item, 1)}
+                  label={m.question_ui_move_down()}
+                  onClick={() => move(item, 1)}
+                />
+                <MenuItem
+                  disabled={partsFull}
+                  label={m.question_ui_add_sub_part()}
+                  onClick={() => addToGroup(item.groupId)}
+                />
+                <MenuItem
+                  disabled={!canUngroup(draft, item.groupId)}
+                  label={m.question_ui_ungroup()}
+                  onClick={() => leaveGroup(ungroup(draft, item.groupId))}
+                />
+                <MenuItem
+                  disabled={!canRemoveGroup(draft, item.groupId)}
+                  label={m.question_ui_remove()}
+                  onClick={() => leaveGroup(removeGroup(draft, item.groupId))}
+                />
+              </>
+            )}
+            {(item.kind === 'block' || item.kind === 'part') && (
               <>
                 <MenuItem
                   disabled={!canMove(item, -1)}
@@ -1035,7 +1146,9 @@ function QuestionDialogSession({
                   onClick={() => move(item, 1)}
                 />
                 <MenuItem
-                  disabled={item.kind === 'part' && draft.parts.length <= 1}
+                  disabled={
+                    item.kind === 'part' && !canRemovePart(draft, item.partId)
+                  }
                   icon={<Icon name="trash" />}
                   label={
                     item.kind === 'part'
@@ -1231,7 +1344,7 @@ function QuestionDialogSession({
       {moveTools({ kind: 'part', partId: part.id })}
       <ToolbarGroup>
         <ToolbarButton
-          disabled={draft.parts.length <= 1}
+          disabled={!canRemovePart(draft, part.id)}
           label={m.question_ui_remove_part()}
           onClick={() => removePart(part.id)}
           variant="danger-light"
@@ -1261,7 +1374,6 @@ function QuestionDialogSession({
         <span className="wavy-rule flex-1 text-line-strong" />
       </div>
       {parts.map((part) => {
-        const index = draft.parts.indexOf(part);
         return (
           // One gap between sections, one between a heading and its content.
           <div
@@ -1270,11 +1382,7 @@ function QuestionDialogSession({
             key={part.id}
           >
             {parts.length > 1 && (
-              <strong className="block">
-                {draft.labels === 'letters'
-                  ? `(${String.fromCharCode(97 + index)})`
-                  : `${index + 1}.`}
-              </strong>
+              <strong className="block">{fullPartLabel(draft, part.id)}</strong>
             )}
             {/* Learners see their own answer marked instead; the key is here
                 for the editor. An open part shows its optional sample answer
@@ -1418,7 +1526,10 @@ function QuestionDialogSession({
   // the save status, Undo and Save/Back.
   const removeButton = editing && (
     <Button
-      disabled={pending || (editing.kind === 'part' && draft.parts.length <= 1)}
+      disabled={
+        pending ||
+        (editing.kind === 'part' && !canRemovePart(draft, editing.part.id))
+      }
       onClick={() =>
         editing.kind === 'block'
           ? removeBlock(editing.location)
@@ -1704,7 +1815,7 @@ function QuestionDialogSession({
                 </p>
                 <Popover onOpenChange={setAddOpen} open={addOpen}>
                   <PopoverTrigger asChild>
-                    <ToolbarButton label={m.question_ui_add_block_or_part()}>
+                    <ToolbarButton label={m.question_ui_add_block()}>
                       <Icon name="plus" />
                     </ToolbarButton>
                   </PopoverTrigger>
@@ -1716,11 +1827,10 @@ function QuestionDialogSession({
                         'graph',
                         'table',
                         ...(uploadAsset ? ['image' as const] : []),
-                        'part',
                       ] as const
                     ).map((type) => (
                       <MenuItem
-                        disabled={addFull(type)}
+                        disabled={blockFull()}
                         icon={<Icon name={blockIcons[type]} />}
                         key={type}
                         label={blockLabels[type]()}
@@ -1776,18 +1886,12 @@ function QuestionDialogSession({
                   { meta: blockLabels[block.type]() }
                 )
               )}
-              {draft.parts.map((part, i) => {
-                // The part label sits on the part's first row: its first
-                // block, or its answer row when it has no blocks.
-                const mark =
-                  draft.labels === 'letters'
-                    ? `(${String.fromCharCode(97 + i)})`
-                    : `${i + 1}.`;
-                return (
-                  <div
-                    className={cn(labelled && i > 0 && 'mt-2')}
-                    key={part.id}
-                  >
+              {questionItems(draft).map((item, i) => {
+                // A part's outline rows: its blocks, its answer, its solution.
+                // The label sits on its first row: its first block, or its
+                // answer row when it has no blocks.
+                const partRows = (part: QuestionPart, mark: string) => (
+                  <>
                     {part.blocks.map((block, index) =>
                       row(
                         {
@@ -1805,9 +1909,6 @@ function QuestionDialogSession({
                       mark: part.blocks.length ? undefined : mark,
                       meta: `${answerLabels[part.answer.type]()} · ${marksLabel(part.marks)}`,
                     })}
-                    {/* Learners only see what sits between the waves once they
-                        check their answer. */}
-                    <div className="wavy-rule mx-2 my-2.5 text-line-strong md:mx-1" />
                     {row(
                       { kind: 'solution', partId: part.id },
                       m.question_ui_worked_solution()
@@ -1826,10 +1927,74 @@ function QuestionDialogSession({
                         { meta: blockLabels[block.type]() }
                       )
                     )}
-                    <div className="wavy-rule mx-2 my-2.5 text-line-strong md:mx-1" />
+                  </>
+                );
+                if (item.kind === 'part')
+                  return (
+                    <div
+                      className={cn(labelled && i > 0 && 'mt-2')}
+                      key={item.part.id}
+                    >
+                      {partRows(item.part, item.label)}
+                    </div>
+                  );
+                // Its row reads as its first text, the rest of its blocks
+                // follow, then its sub-parts, at the same place as (a), (b):
+                // the outline has no room for a step (Epo 2026-11-04).
+                const head = item.group.blocks[0];
+                const startsWithText = head?.type === 'text';
+                return (
+                  <div
+                    className={cn(labelled && i > 0 && 'mt-2')}
+                    key={item.group.id}
+                  >
+                    {row(
+                      { groupId: item.group.id, kind: 'group' },
+                      startsWithText
+                        ? blockSummary(head, {})
+                        : m.question_ui_group(),
+                      { mark: item.label }
+                    )}
+                    {item.group.blocks.map(
+                      (block, index) =>
+                        !(startsWithText && index === 0) &&
+                        row(
+                          {
+                            kind: 'block',
+                            location: { groupId: item.group.id, index },
+                          },
+                          blockSummary(block, {}),
+                          { meta: blockLabels[block.type]() }
+                        )
+                    )}
+                    {item.parts.map(({ label, part }) => (
+                      <div className="mt-2" key={part.id}>
+                        {partRows(part, label)}
+                      </div>
+                    ))}
                   </div>
                 );
               })}
+              {/* Board U2: Part or Group, at the end of the list. */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    className="mt-2"
+                    disabled={partsFull}
+                    iconLeft="plus"
+                    iconRight="chevronDown"
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {m.question_ui_add_part()}
+                  </Button>
+                </PopoverTrigger>
+                <ToolbarPopoverContent align="start" className="w-44">
+                  <MenuItem label={m.question_ui_part()} onClick={addPart} />
+                  <MenuItem label={m.question_ui_group()} onClick={addGroup} />
+                </ToolbarPopoverContent>
+              </Popover>
             </div>
             <div
               className={cn(

@@ -230,7 +230,7 @@ test('a Copy the clipboard refuses shows the error toast', async ({ page }) => {
   });
   await row.getByRole('button', { name: m.merge_copy() }).click();
   await expect(
-    page.locator('[data-sonner-toast]').filter({
+    page.locator('[data-toast]').filter({
       hasText: m.error_generic_title(),
     })
   ).toBeVisible();

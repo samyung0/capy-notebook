@@ -21,7 +21,7 @@ missed questions into their quizzes; production Jev grading remains in the centr
 The tree (`TopicTree` in `src/routes/QuestionBank.tsx`) lists every exam as a
 44px cover strip (`ExamStrip` in `src/features/questions/ExamPicker.tsx`): the
 art starts at the left edge and fades out to the right, the name sits on it in
-the cover's text colour as on workspace cards (`paint.light` dark, else white
+the cover's text colour (`paint.light` dark, else white
 over the strip shade; covers look the same in both themes), and the topic count
 and a chevron sit on the panel. A strip opens its subjects in place; several
 exams and subjects may stay open. The open topic's exam and subject, `?exam=`
@@ -144,6 +144,61 @@ a move swaps the two options and every pair's `right` with them, so each
 prompt keeps its answer, as removing an option does (Epo 2026-10-18,
 `StringList`'s `onMove` in `editorFields.tsx`).
 
+### Grouped parts
+
+Exam papers print one more level, such as (b) with its text and figure, then
+(b)(i) and (b)(ii). The format stays flat (Epo 2026-11-04): an optional
+`groups: [{id, blocks}]` on the question and an optional `group` id on a part. A
+group holds text and figures, a stem's block kinds and caps counting towards the
+same size limits, and has no answer or marks; it may hold no block, printing as
+a label alone. Parts stay the one unit for answers, marks, grading, attempts,
+answer events and review, so nothing keyed by part changes. One level only: a
+group is strictly `{id, blocks}`, so it holds no group. A part's `group` must
+name a group of the question, a group has at least one part, and a group's parts
+sit next to each other in `parts`; a group has no place of its own, it sits where
+its first part sits. Every validator refuses the rest, on the shared `group-*`
+fixtures. Reads of a live room repair what a merge leaves instead
+(`repairGroups`, [plate-editor.md](frontend/plate-editor.md)).
+
+Labels are computed, never stored (`src/features/questions/groups.ts`): a
+top-level item (an ungrouped part or a group) takes the question's `labels`,
+(a), (b) or 1., 2.; a part inside a group takes (i), (ii), (iii). A lone part
+needs no label, but a question's one part inside a group has one, since its
+group is printed beside it. Where nothing beside a part shows its group, it is
+named in full: "(b)(i)" or "2(i)" (the dialog's hidden answers, the export's
+answer key), and "Part B(i)" in an issue.
+
+Board U2, G1: in `QuestionView` the group's label and text sit at part level with
+no marks; its parts sit next as siblings in the same list, each with its own
+marks, and the header's total is unchanged. A sub-part's label steps 16px in from
+the question's own 36rem (`Label`), the same switch the layouts use, and
+lines up with the group's below it (phones, the Study panel); the text column
+stays where it is, as wide as the widest label with its step. A multi-part
+question's part shows its marks in words ("2 marks"), as the board does, not
+`[2]`, and once checked the header totals them ("6 / 8 marks", `QuestionReview`).
+
+In the question dialog the outline's Add part button at the end of the list is a
+dropdown of Part and Group; the outline's + adds blocks only. Both add at the
+end, and a group starts with an empty text and its first part. A group's outline
+row reads as its first text with the label, its other blocks follow, its parts
+sit at the same place as the top-level items (the outline has no room for the
+preview's step, Epo 2026-11-04), and its ⋮ holds Move up, Move down, Add
+sub-part, Ungroup and Remove. A group moves as a whole among the top-level items, past a part or
+another group, and a sub-part only among its group's parts; dragging follows the
+same lists, so nothing moves in or out of a group by dragging. Ungroup turns its
+parts into top-level parts where they are, its filled blocks joining its first
+part's top (off when they would not fit there), and Remove takes the group and
+its parts (off when they are all the question has). A group's last part cannot be
+removed on its own; its Ungroup or Remove takes it.
+
+Group text counts where stem text does: the grading text (below), the review hash
+([study-progress.md](study-progress.md)) and index text
+([embeds.md](embeds.md)). The chat agent's tools, generation and extraction do
+not offer groups yet. A grouped question the agent reads stays as stored in
+`inspect_document`, as a multi-part one does: `authored` declines it, so an edit
+of the note cannot drop its group. Quick review skips a part inside a group
+(`quickQuestion`).
+
 The Go validator is `server/internal/questions`; the browser and collaboration
 service share its JSON fixtures. Bounds originate in
 `server/internal/fieldlimits` and are generated for TypeScript and Python by
@@ -192,9 +247,11 @@ the dialog is a fixed
 88dvh and each column scrolls on its own; phones show sticky Outline and Body
 tabs, and a row click switches to Body first.
 Each part's worked solution is always listed in the outline (its Worked
-solution row is a 36px header, not a toggle) and shown in the body under the
-part's answer, both below a `wavy-rule` line; the body's line reads "Hidden
-until checked", since learners only get the solution after checking.
+solution row is a 36px header, not a toggle), at the outline's normal row
+spacing with no wavy lines (Epo 2026-11-04), its first row 2px under the title
+as a row's meta sits under its title, and shown in the body under the
+part's answer, below a `wavy-rule` line reading "Hidden until checked", since
+learners only get the solution after checking.
 Its title names the question ("Edit question 10").
 Outline rows drag by one rule (`canDrag`, `canDrop`, `canMove`): blocks always,
 parts only when there are several; a block lands beside a block, before a
@@ -420,7 +477,9 @@ answer that is only a list of subject vocabulary earns 0 on every item. The
 part's award is the sum and the snapshot keeps `itemAwards`. The grading text
 is built in Go (`questions.GradingText`) from the stem, earlier parts and the
 part, with figures as their descriptions (`[Figure]` for one without), tables
-and chart data. Requests carry
+and chart data. A group's text and figures come once, as `Shared context: …`
+before the group's first part (Epo 2026-11-04); a group with no blocks adds
+nothing, and a question with no group reads byte for byte as before. Requests carry
 only part ids and answers; the server loads the scheme, so the endpoints cannot
 grade arbitrary text (see Answer keys and server grading below). Saving an open part in the quiz editor
 asks Jev whether grading it needs a calculation checked and warns the author
@@ -600,24 +659,38 @@ score and awards, but its matching letters and ordering rows show as
 unanswered and its gaps as wrong.
 
 Answer areas span the text and marks columns of a part row; phones use 16px
-pane padding and a 1.5rem number column. Answers use the underline variant: no
-boxes, one bottom rule per item (`answerRowClass` in `QuestionView.tsx`), its
-key a letter or number in a small square badge (`OptionKey`, 6px corners). A
-state thickens and colours the rule: chosen is the accent with a filled badge;
-after checking, right is green and wrong red with a ✓/✗ badge and a "Your
-answer" tag, and a correct option not chosen sits on a dashed green rule tagged
-"Correct answer". Choices take two columns on wide paper answer areas; true /
-false sits side by side from a 28rem answer area and stacks below it. Text
+pane padding and a 1.5rem number column. Options, True / False and ordering
+items are full boxes (board K5, Epo 2026-11-03; `answerBoxClass` and
+`answerLetterClass` in `QuestionView.tsx`): 46px tall, `rounded-tile`, the
+letter or number muted before the text. Chosen is a purple tint
+(`tint-accent-1` with the accent border). After checking, a right choice fills
+green with ✓ Right, a wrong choice fills red with ✗ Your answer, and the
+correct answer the learner did not choose gets a green outline with no fill
+and "Correct answer" (M1), so a green fill only ever means chosen and right.
+A multi-answer part marked wrong (R4) shows "Your answer" on top, the
+learner's choices filled green (✓ Right) or red (✗ Wrong) and the rest
+plain, then "Correct answer" listing the correct options; its label adds
+the counts ("0 / 2 marks · 1 right, 1 wrong"). A checked ordering (O4) shows
+"Your order", each item green in its right place and red elsewhere, and when
+any is misplaced "Correct order" (number and text only). Both correct-answer
+lists are plain text lines, not boxes
+(`PlainList`: the letter or number muted and bold, the text semibold, 4px
+apart, one column even on paper questions); a skipped
+ordering shows the key's order unmarked. Once checked, a label above a
+choice, True / False or ordering part says Right or Wrong with its marks, as
+in Results ("Wrong · 0 / 1 mark"); a skipped part says "Not answered" and
+counts as wrong. The question header keeps its marks too (D1). Boxes stack
+with an 8px gap; choices sit two by two on wide paper answer areas, and True
+and False take a row each, text at the left in every state (B2). Text
 answers are underlined `Input`s, written answers sit on ruled lines
 (`ruled-lines`), and each gap is a blank in the sentence that grows with what is
 typed up to the line (a hidden copy of the value in `data-value` sizes it),
 punctuation after it kept on its line. Matching picks with an underlined
 `Select` letter in a wide answer area and with a row of letter buttons under
 each item below 28rem, the options listed above. After checking, a short answer
-lists every accepted answer with its unit; a gaps part with a miss and an
-ordering part out of order list the key under the learner's own answer
-("Correct answers", "Correct order"), noting what the learner wrote or where
-they put each misplaced item; matching shows the chosen letter and the correct
+lists every accepted answer with its unit; a gaps part with a miss lists the
+key under the learner's own answer ("Correct answers"), noting what the
+learner wrote; matching shows the chosen letter and the correct
 one. A checked open answer opens with a verdict counted over its marking points
 ("Partially correct: 1 of 3 points answered correctly", "Skipped: Question not
 answered").
@@ -762,7 +835,7 @@ answer-free (`questions.LearnerView`), editors' View mode included; Check
 answer posts the answers to the check route, which grades and records them and
 returns that question's key and awards only. The question then shows the quiz
 review (`QuestionReview`: part score in the marks column with no question total,
-the answer rows tagged Your answer and Correct answer, accepted answers, the
+the answer boxes tagged Right, Your answer and Correct answer, accepted answers, the
 worked solution collapsed), and the topic's marks and the landing refresh. Open
 parts (none in the bank today) are graded by Jev like a quiz's. Try again
 clears the answers and the key; the next check records a new attempt, and the
@@ -879,9 +952,10 @@ mounted. The MSW mock seeds answers in Area practice and Mensuration.
 ## Delivery and checks
 
 The Biology 101 MSW quiz and both note-embedded quizzes share
-`src/mocks/biologyQuiz.ts`: 11 questions, 13 parts and 26 marks covering all seven
-answer types, fixed-unit quantities, multipart questions, both layouts, formulas,
-tables, an editable graph and all six chart styles. Every part has a worked
+`src/mocks/biologyQuiz.ts`: 12 questions, 17 parts and 34 marks covering all seven
+answer types, fixed-unit quantities, multipart questions, grouped parts (board
+U2's, `q_blood`), both layouts, formulas, tables, an editable graph and all six
+chart styles. Every part has a worked
 solution. The graph SVG is rendered from its stored JSXGraph recipe. The seeded
 `at_1` attempt includes correct, incorrect, blank and partially credited answers
 for inspecting review states; the seeded attempts are graded by the mock scorer
