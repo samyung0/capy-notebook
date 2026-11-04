@@ -1076,7 +1076,7 @@ function FileBody({
     return (
       <div className="grid h-full place-items-center">
         <div className="flex w-64 -translate-y-1/2 flex-col items-center gap-3">
-          <Icon className="non-scaling-svg size-7" name="sparkles" />
+          <Icon className="non-scaling-svg size-7" name="ai" />
           <p>
             {waiting
               ? m.files_pending_named({ name: file.name })
