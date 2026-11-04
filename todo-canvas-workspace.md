@@ -246,6 +246,20 @@ Investigated 2026-11-04, nothing built. "Connecting" only shows in Edit, and Edi
 
 **Correction (Epo, 2026-11-04):** there's no separate reading layout to keep. The report's "quizzes open with answers" was wrong: the quiz editor's list shows no key; keys show only after pressing Edit on a question, and in the read-only fallback and recovery. Study is in the top right in both modes. So D3 and D6 are dropped. The real differences left: flashcards show turned cards, note embeds lose in-place Start quiz and Study (a Preview item in the ⋮ menu if needed), Markdown and CSV have no preview in Edit, Mermaid opens as a split, and citations and deep links only work in View.
 
+**Epo's answers (2026-11-04):**
+- D1: Office after the ribbon lands; the Office session is told.
+- D2: remove "Reconnecting…" and "Getting ready…" too.
+- D8: Markdown and CSV will show the table view as View does: a non-priority item, queued.
+- D9: no "View only" cue.
+- D13: the question bank keeps its Edit button.
+- Citations and deep links get fixed to work in Edit.
+- D5: a status strip over the visible note, not the full-pane panel, as AFFiNE and Google Docs keep the doc on screen.
+- D10: no strip; the status text next to the cloud icon says a draft is syncing.
+- D11: a hidden editor with nothing unsent leaves the room at 5 min and rejoins invisibly. AFFiNE's way, keeping the connection, works only because its server holds no document in memory.
+- D12: phones same as desktop, as Google Docs' Android app and AFFiNE open editable.
+- D14: expired edits show a toast with a Download action, "download now or it will be discarded". Today non-note items open once under a banner that says to copy what you need, and notes keep them as merge pieces.
+- D4 still open: AFFiNE paints a device copy and is editable at once, which needs note bodies stored on the device (never stored today). Proposal: the stored copy read-only with a silent swap now, the device copy with the BlockSuite work.
+
 ### 1.10 Phones (360 px)
 
 **How others do it:**
