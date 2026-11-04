@@ -8,7 +8,7 @@ const PAGES: Record<StudyPage, { icon: IconName; label: () => string }> = {
   assignments: { icon: 'clipboard', label: m.study_panel_assignments },
   members: { icon: 'userGroup', label: m.study_panel_members },
   practice: { icon: 'quiz', label: m.study_panel_practice },
-  results: { icon: 'profile', label: m.study_panel_my_results },
+  summary: { icon: 'profile', label: m.study_panel_summary },
 };
 
 const BUILT: StudyPage[] = ['practice'];

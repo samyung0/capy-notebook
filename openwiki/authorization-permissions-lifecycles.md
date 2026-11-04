@@ -76,8 +76,8 @@ table read the same in both.
 
 | | Class | Personal |
 | --- | --- | --- |
-| Study, owner and editor members | Members, Assignments, Practice: the quizzes and topics to manage, add and edit. No My results, Suggested or Practise | My results, Practice: Suggested, Practise, add and edit |
-| Study, anyone else | My results, Assignments, Practice: Suggested, Practise | My results, Practice: Suggested, Practise |
+| Study, owner and editor members | Members, Assignments, Practice: the quizzes and topics to manage, add and edit. No Summary, Suggested or Practise | Summary, Practice: Suggested, Practise, add and edit |
+| Study, anyone else | Summary, Assignments, Practice: Suggested, Practise | Summary, Practice: Suggested, Practise |
 | Dashboard, owner and editor members | Activity (AI marks and Assignments to check wait for their pages) | What to practise next, Activity |
 | Dashboard, anyone else | What to practise next, Activity (Assignments due waits for its page) | What to practise next, Activity |
 | Whose results | The owner and editor members see everyone's; a member their own | Each person their own |
