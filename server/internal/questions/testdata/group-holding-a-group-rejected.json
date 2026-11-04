@@ -1,0 +1,147 @@
+{
+  "name": "group-holding-a-group-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Blood contains several types of cell."
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Fig. 3.2 shows the stages of clotting."
+          },
+          {
+            "type": "chart",
+            "kind": "bar",
+            "title": "Clotting time",
+            "labels": ["Wound A", "Wound B"],
+            "series": [
+              {
+                "name": "Minutes",
+                "values": [4, 6]
+              }
+            ]
+          },
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_clotting"
+            },
+            "width": 640,
+            "height": 320,
+            "description": "The stages of clotting"
+          },
+          {
+            "type": "table",
+            "header": true,
+            "rows": [["Stage", "Result"], ["1", "Platelets stick"]]
+          }
+        ],
+        "groups": [
+          {
+            "id": "g2",
+            "blocks": []
+          }
+        ]
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-a",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "State the function of red blood cells."
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["oxygen"]
+        },
+        "marks": 1,
+        "solution": []
+      },
+      {
+        "id": "part-b1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Fill in the two empty boxes."
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["fibrin"]
+        },
+        "marks": 2,
+        "solution": [],
+        "group": "g1"
+      },
+      {
+        "id": "part-b2",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "State two roles of clotting."
+          }
+        ],
+        "answer": {
+          "type": "open",
+          "accepted": [],
+          "hints": []
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "A correct reason",
+            "marks": 2
+          }
+        ],
+        "solution": [
+          {
+            "type": "text",
+            "text": "Worked solution."
+          }
+        ],
+        "group": "g1"
+      },
+      {
+        "id": "part-c",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Explain why the wound stops bleeding."
+          }
+        ],
+        "answer": {
+          "type": "open",
+          "accepted": [],
+          "hints": []
+        },
+        "marks": 3,
+        "markscheme": [
+          {
+            "text": "A correct reason",
+            "marks": 3
+          }
+        ],
+        "solution": [
+          {
+            "type": "text",
+            "text": "Worked solution."
+          }
+        ]
+      }
+    ]
+  }
+}

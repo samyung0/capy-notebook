@@ -537,6 +537,17 @@ const answerSchema = z.discriminatedUnion('type', [
 ]);
 
 export const questionSchema = z.strictObject({
+  // Text and figures over parts, a stem's blocks and caps (Epo 2026-11-04).
+  // A group has at least one part, so no more groups than parts.
+  groups: z
+    .array(
+      z.strictObject({
+        blocks: z.array(questionBlockSchema).max(limits.QUESTION_BLOCKS_MAX),
+        id: identifier,
+      })
+    )
+    .max(limits.QUESTION_PARTS_MAX)
+    .optional(),
   id: identifier,
   labels: z.enum(['letters', 'numbers']),
   layout: z.enum(['paper', 'split']),
@@ -550,6 +561,7 @@ export const questionSchema = z.strictObject({
           .array(questionBlockSchema)
           .min(1)
           .max(limits.QUESTION_BLOCKS_MAX),
+        group: identifier.optional(),
         id: identifier,
         itemAwards: z.array(finite).optional(),
         itemResults: z.array(z.boolean()).optional(),
@@ -601,6 +613,7 @@ function hostedAsset(value: string, base?: string): boolean {
  * part index, and a block's section and index), and its copy. */
 export type RuleIssue = {
   rule:
+    | 'groups'
     | 'part-ids'
     | 'awarded'
     | 'gap-markers'
@@ -615,9 +628,29 @@ export type RuleIssue = {
     | 'asset-host'
     | 'upload-graphs';
   part?: number;
-  block?: { section: 'stem' | 'blocks' | 'solution'; index: number };
+  /** A block in `groups[group]` (its section is 'group'). */
+  group?: number;
+  block?: { section: 'stem' | 'group' | 'blocks' | 'solution'; index: number };
   message: string;
 };
+
+/** Groups' ids are unique, each has a part, a part's group is one the question
+ * holds, and a group's parts sit next to each other. */
+function groupsHold(question: Question): boolean {
+  const held = new Set(question.groups?.map((group) => group.id));
+  if (held.size !== (question.groups?.length ?? 0)) return false;
+  const seen = new Set<string>();
+  let previous: string | undefined;
+  for (const { group } of question.parts) {
+    if (group !== undefined) {
+      if (!held.has(group) || (seen.has(group) && previous !== group))
+        return false;
+      seen.add(group);
+    }
+    previous = group;
+  }
+  return seen.size === held.size;
+}
 
 /** Every hand-written rule the schema-valid `question` fails, in the order
  * `validateQuestion` checks them. */
@@ -626,6 +659,8 @@ export function ruleIssues(
   policy: QuestionPolicy = {}
 ): RuleIssue[] {
   const issues: RuleIssue[] = [];
+  if (!groupsHold(question))
+    issues.push({ message: m.question_validation_groups(), rule: 'groups' });
   const ids = new Set<string>();
   question.parts.forEach((part, index) => {
     const fail = (rule: RuleIssue['rule'], message: string) =>
@@ -694,10 +729,16 @@ export function ruleIssues(
   type Section = NonNullable<RuleIssue['block']>['section'];
   const sections: {
     blocks: QuestionBlock[];
+    group?: number;
     part?: number;
     section: Section;
   }[] = [
     { blocks: question.stem, section: 'stem' },
+    ...(question.groups ?? []).map((group, index) => ({
+      blocks: group.blocks,
+      group: index,
+      section: 'group' as const,
+    })),
     ...question.parts.flatMap((part, index) =>
       (['blocks', 'solution'] as const).map((section) => ({
         blocks: part[section],
@@ -706,10 +747,10 @@ export function ruleIssues(
       }))
     ),
   ];
-  for (const { blocks, part, section } of sections)
+  for (const { blocks, group, part, section } of sections)
     blocks.forEach((block, index) => {
       const fail = (rule: RuleIssue['rule'], message: string) =>
-        issues.push({ block: { index, section }, message, part, rule });
+        issues.push({ block: { index, section }, group, message, part, rule });
       if (!(policy.bank || descriptionFits(block)))
         fail('description', m.question_validation_text_too_long());
       if (block.type !== 'image' && block.type !== 'graph') return;

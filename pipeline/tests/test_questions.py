@@ -851,7 +851,10 @@ def test_an_inspected_quiz_fence_reads_back_as_the_items_it_was_written_from():
 
     assert [same(q) for q in again] == [same(q) for q in stored]
     assert "model_answer" not in questions.authored(stored[3])
-    # A question the fence form cannot write leaves the block as stored.
+    # A question the fence form cannot write leaves the block as stored: a
+    # group would be lost on the way back, as a stem would.
+    grouped = {**stored[1], "groups": [{"id": "g", "blocks": []}]}
+    assert questions.authored(grouped) is None
     stored[0]["stem"] = [{"type": "text", "text": "Context"}]
     assert (
         questions.quiz_fence_view(

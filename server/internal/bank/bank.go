@@ -295,7 +295,7 @@ func (s *Store) List(ctx context.Context, topic string) ([]Row, error) {
 			for _, raw := range parts {
 				part, _ := raw.(map[string]any)
 				blocks, _ := part["blocks"].([]any)
-				for _, raw := range blocks {
+				for _, raw := range append(append([]any{}, questions.GroupBlocks(q, part)...), blocks...) {
 					block, _ := raw.(map[string]any)
 					if block["type"] == "text" {
 						text, _ := block["text"].(string)

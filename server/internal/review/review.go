@@ -11,6 +11,8 @@ import (
 	"time"
 
 	fsrs "github.com/open-spaced-repetition/go-fsrs/v3"
+
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
 // Rating is a flashcard button: 1 Again, 2 Hard, 3 Good, 4 Easy.
@@ -91,17 +93,31 @@ func CardHash(front, back string) string {
 	return hash([]string{front, back})
 }
 
-// QuestionHash identifies what a quiz question asks: the text of its stem and
-// of each part's prompt. Answers, options, marking schemes, hints, images and
-// styling are left out, so editing them keeps the learner's progress.
+// QuestionHash identifies what a quiz question asks: the text of its stem, of
+// its groups (as the stem's, in reading order, those with text) and of each
+// part's prompt. Answers, options, marking schemes, hints, images and styling
+// are left out, so editing them keeps the learner's progress. A question whose
+// groups hold no text hashes as the same question ungrouped.
 func QuestionHash(q map[string]any) string {
 	parts, _ := q["parts"].([]any)
 	prompts := make([][]string, 0, len(parts))
+	groups := [][]string{}
+	seen := map[string]bool{}
 	for _, raw := range parts {
 		p, _ := raw.(map[string]any)
+		if group, grouped := p["group"].(string); grouped && !seen[group] {
+			seen[group] = true
+			if text := blockText(questions.GroupBlocks(q, p)); len(text) > 0 {
+				groups = append(groups, text)
+			}
+		}
 		prompts = append(prompts, blockText(p["blocks"]))
 	}
-	return hash(map[string]any{"stem": blockText(q["stem"]), "parts": prompts})
+	content := map[string]any{"stem": blockText(q["stem"]), "parts": prompts}
+	if len(groups) > 0 {
+		content["groups"] = groups
+	}
+	return hash(content)
 }
 
 // blockText is the text of a block list's text blocks.

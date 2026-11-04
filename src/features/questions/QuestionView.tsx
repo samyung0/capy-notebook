@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
 import { Icon } from '@/components/ui/Icon';
@@ -8,6 +8,7 @@ import {
 } from '@/features/materials/MediaAssetView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { isLonePart, questionItems } from './groups';
 import { TextView } from './TextView';
 
 export { TextView } from './TextView';
@@ -24,7 +25,11 @@ import {
   questionMarks,
 } from './types';
 
-export type BlockSection = { partId?: string; solution?: boolean };
+export type BlockSection = {
+  groupId?: string;
+  partId?: string;
+  solution?: boolean;
+};
 
 // Accepted answers are often bare LaTeX such as `-2\sqrt{5}`.
 const LATEX_COMMAND = /\\[a-zA-Z]/;
@@ -367,10 +372,25 @@ function Choices({
   return null;
 }
 
+const marksText = (count: number) =>
+  count === 1 ? m.question_ui_one_mark() : m.question_ui_marks({ count });
+
 /** A number or part label. Each stacks the question's other labels unseen,
  * so the label column is as wide as the widest and every text beside one
- * starts at the same x; no labels at all leave the column (and gap) empty. */
-function Label({ all, text }: { all: string[]; text: string }) {
+ * starts at the same x; no labels at all leave the column (and gap) empty. A
+ * sub-part's label sits 16px in on larger screens, so (i) and (ii) read as
+ * belonging to (b); on phones it lines up with (b) (board U2, G1). */
+function Label({
+  all,
+  sub = false,
+  subs,
+  text,
+}: {
+  all: string[];
+  sub?: boolean;
+  subs: string[];
+  text: string;
+}) {
   if (all.length === 0) return <span />;
   return (
     <span className="grid pr-2.5 font-bold md:pr-3">
@@ -383,7 +403,23 @@ function Label({ all, text }: { all: string[]; text: string }) {
           {item}
         </span>
       ))}
-      <span className="col-start-1 row-start-1">{text}</span>
+      {subs.map((item) => (
+        <span
+          aria-hidden
+          className="invisible col-start-1 row-start-1 @min-[36rem]/question:pl-4"
+          key={`sub-${item}`}
+        >
+          {item}
+        </span>
+      ))}
+      <span
+        className={cn(
+          'col-start-1 row-start-1',
+          sub && '@min-[36rem]/question:pl-4'
+        )}
+      >
+        {text}
+      </span>
     </span>
   );
 }
@@ -406,17 +442,19 @@ export interface QuestionViewProps {
   ) => ReactNode;
   renderMarks?: (part: QuestionPart | LearnerPart) => ReactNode;
   review?: boolean;
-  showTotalMarks?: boolean;
   /** Right of a title, after its marks: the question's (no part id) or a
    * part's (several parts); the question dialog's issue icons. */
   titleAside?: (partId?: string) => ReactNode;
+  /** The header's total when it is not the question's marks: a review's
+   * "6 / 8 marks" (board U2). */
+  totalMarks?: ReactNode;
 }
 
 export function QuestionView({
   question,
   questionNumber,
   review = false,
-  showTotalMarks = true,
+  totalMarks,
   headerMarks = true,
   renderAnswer,
   renderBlock,
@@ -425,7 +463,7 @@ export function QuestionView({
 }: QuestionViewProps) {
   // A lone part needs no label, and the header's marks stand in for its own.
   // With no stem either, its first text block joins the header.
-  const lone = question.parts.length === 1;
+  const lone = isLonePart(question);
   const merged = lone && question.stem.length === 0;
   const lead = merged ? question.parts[0].blocks : question.stem;
   const firstInHeader =
@@ -444,17 +482,107 @@ export function QuestionView({
     ));
   const partBlocks = (part: QuestionPart | LearnerPart) =>
     part.blocks.slice(partOffset);
-  const partLabel = (index: number) =>
-    question.labels === 'letters'
-      ? `(${String.fromCharCode(97 + index)})`
-      : `${index + 1}.`;
+  const items = questionItems<QuestionPart | LearnerPart>(question);
   const labels = [
     ...new Set([
       ...(questionNumber == null ? [] : [`${questionNumber}.`]),
-      ...(lone ? [] : question.parts.map((_, index) => partLabel(index))),
+      ...(lone ? [] : items.map((item) => item.label)),
     ]),
   ];
-  const label = (text: string) => <Label all={labels} text={text} />;
+  const subLabels = [
+    ...new Set(
+      items.flatMap((item) =>
+        item.kind === 'group' ? item.parts.map((sub) => sub.label) : []
+      )
+    ),
+  ];
+  const label = (text: string, sub = false) => (
+    <Label all={labels} sub={sub} subs={subLabels} text={text} />
+  );
+  const partRow = (
+    part: QuestionPart | LearnerPart,
+    text: string,
+    sub = false
+  ) => (
+    <li
+      className={cn(
+        'grid grid-cols-[auto_minmax(0,1fr)_auto] gap-y-3',
+        // A lone part has no label: on narrow widths its empty column
+        // closes so the part lines up with the stem.
+        lone && '@max-[36rem]/question:grid-cols-[0_minmax(0,1fr)_auto]'
+      )}
+      key={part.id}
+    >
+      {lone ? (
+        <span className="overflow-hidden">{label('')}</span>
+      ) : (
+        label(text, sub)
+      )}
+      {partBlocks(part).length > 0 && (
+        <div className="min-w-0 space-y-3">
+          {blocks(partBlocks(part), { partId: part.id }, partOffset)}
+        </div>
+      )}
+      {!lone && (
+        <span className="col-start-3 flex items-start gap-1 whitespace-nowrap pt-1 pl-1.5 text-fg-muted text-sm md:pl-2">
+          {renderMarks ? renderMarks(part) : marksText(part.marks)}
+          {titleAside?.(part.id)}
+        </span>
+      )}
+      {renderAnswer ? (
+        renderAnswer(part)
+      ) : (
+        <Choices part={part} twoColumns={optionColumns(question)} />
+      )}
+      {review && isAuthoredPart(part) && (
+        <div className="col-start-2 min-w-0 space-y-1 text-fg-secondary text-sm">
+          {/* An open part's sample answer is optional. */}
+          {(part.answer.type !== 'open' || part.answer.accepted.length > 0) && (
+            <>
+              <h4 className="font-semibold text-fg-muted text-xs">
+                {m.question_ui_answer()}
+              </h4>
+              <div>
+                <AnswerView part={part} />
+              </div>
+            </>
+          )}
+          {part.markscheme && (
+            <>
+              <h4 className="pt-2 font-semibold text-fg-muted text-xs">
+                {m.question_ui_marking_scheme()}
+              </h4>
+              <ul className="space-y-1">
+                {part.markscheme.map((item, i) => (
+                  <li className="flex items-baseline gap-4" key={i}>
+                    <TextView className="min-w-0 flex-1" text={item.text} />
+                    <span className="shrink-0 text-fg-muted text-sm">
+                      [{item.marks}]
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {part.solution.length > 0 && (
+            // Editors check solutions, so they start open here;
+            // learners' after-submit review keeps them collapsed.
+            <details open>
+              <summary className="cursor-pointer pt-2 font-semibold">
+                {m.question_ui_worked_solution()}
+              </summary>
+              <div className="mt-2 space-y-3">
+                {blocks(part.solution, {
+                  partId: part.id,
+                  solution: true,
+                })}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </li>
+  );
   // 1A: number, part label and text share one column grid so every text line
   // starts at the same x; marks stay smaller than the question text. The
   // label column is as wide as the question's widest label. Below 36rem of
@@ -481,10 +609,7 @@ export function QuestionView({
           {headerMarks &&
             (lone && renderMarks
               ? renderMarks(question.parts[0])
-              : showTotalMarks &&
-                (total === 1
-                  ? m.question_ui_one_mark()
-                  : m.question_ui_marks({ count: total })))}
+              : (totalMarks ?? marksText(total)))}
           {titleAside?.()}
         </span>
       </header>
@@ -517,90 +642,28 @@ export function QuestionView({
           </div>
         )}
         <ol className="min-w-0 space-y-6">
-          {question.parts.map((part, index) => (
-            <li
-              className={cn(
-                'grid grid-cols-[auto_minmax(0,1fr)_auto] gap-y-3',
-                // A lone part has no label: on narrow widths its empty column
-                // closes so the part lines up with the stem.
-                lone && '@max-[36rem]/question:grid-cols-[0_minmax(0,1fr)_auto]'
-              )}
-              key={part.id}
-            >
-              {lone ? (
-                <span className="overflow-hidden">{label('')}</span>
-              ) : (
-                label(partLabel(index))
-              )}
-              {partBlocks(part).length > 0 && (
-                <div className="min-w-0 space-y-3">
-                  {blocks(partBlocks(part), { partId: part.id }, partOffset)}
-                </div>
-              )}
-              {!lone && (
-                <span className="col-start-3 flex items-start gap-1 whitespace-nowrap pt-1 pl-1.5 text-fg-muted text-sm md:pl-2">
-                  {renderMarks ? renderMarks(part) : `[${part.marks}]`}
-                  {titleAside?.(part.id)}
-                </span>
-              )}
-              {renderAnswer ? (
-                renderAnswer(part)
-              ) : (
-                <Choices part={part} twoColumns={optionColumns(question)} />
-              )}
-              {review && isAuthoredPart(part) && (
-                <div className="col-start-2 min-w-0 space-y-1 text-fg-secondary text-sm">
-                  {/* An open part's sample answer is optional. */}
-                  {(part.answer.type !== 'open' ||
-                    part.answer.accepted.length > 0) && (
-                    <>
-                      <h4 className="font-semibold text-fg-muted text-xs">
-                        {m.question_ui_answer()}
-                      </h4>
-                      <div>
-                        <AnswerView part={part} />
-                      </div>
-                    </>
+          {items.map((item) =>
+            item.kind === 'part' ? (
+              partRow(item.part, item.label)
+            ) : (
+              // Text and figures at part level, no marks of its own; its parts
+              // follow as siblings, as printed.
+              <Fragment key={item.group.id}>
+                <li
+                  className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-y-3"
+                  data-group-id={item.group.id}
+                >
+                  {label(item.label)}
+                  {item.group.blocks.length > 0 && (
+                    <div className="min-w-0 space-y-3">
+                      {blocks(item.group.blocks, { groupId: item.group.id })}
+                    </div>
                   )}
-                  {part.markscheme && (
-                    <>
-                      <h4 className="pt-2 font-semibold text-fg-muted text-xs">
-                        {m.question_ui_marking_scheme()}
-                      </h4>
-                      <ul className="space-y-1">
-                        {part.markscheme.map((item, i) => (
-                          <li className="flex items-baseline gap-4" key={i}>
-                            <TextView
-                              className="min-w-0 flex-1"
-                              text={item.text}
-                            />
-                            <span className="shrink-0 text-fg-muted text-sm">
-                              [{item.marks}]
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                  {part.solution.length > 0 && (
-                    // Editors check solutions, so they start open here;
-                    // learners' after-submit review keeps them collapsed.
-                    <details open>
-                      <summary className="cursor-pointer pt-2 font-semibold">
-                        {m.question_ui_worked_solution()}
-                      </summary>
-                      <div className="mt-2 space-y-3">
-                        {blocks(part.solution, {
-                          partId: part.id,
-                          solution: true,
-                        })}
-                      </div>
-                    </details>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
+                </li>
+                {item.parts.map((sub) => partRow(sub.part, sub.label, true))}
+              </Fragment>
+            )
+          )}
         </ol>
       </div>
     </article>
@@ -614,6 +677,12 @@ export function QuestionReview({
   questionNumber,
   headerMarks,
 }: Omit<QuestionViewProps, 'question' | 'review'> & { question: Question }) {
+  const marks = questionMarks(question);
+  const awarded = question.parts.reduce(
+    (sum, part) => sum + (part.awarded ?? 0),
+    0
+  );
+  const graded = question.parts.some((part) => part.awarded != null);
   return (
     <QuestionView
       headerMarks={headerMarks}
@@ -705,7 +774,15 @@ export function QuestionReview({
           </span>
         );
       }}
-      showTotalMarks={false}
+      totalMarks={
+        graded &&
+        (marks === 1
+          ? m.question_ui_result_mark({ awarded: String(awarded) })
+          : m.question_ui_result_marks({
+              awarded: String(awarded),
+              marks: String(marks),
+            }))
+      }
     />
   );
 }

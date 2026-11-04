@@ -1679,6 +1679,11 @@ export const attempts: SeedAttempt[] = [
         q14: 'The rate stays at 6 because extra light no longer increases photosynthesis.',
         q15: ['mitochondria', 'glucose', ''],
       }),
+      'q_blood:a': 'Plasma',
+      'q_blood:b1': 'Platelets', // Wrong: correct answer is Fibrin.
+      'q_blood:b2': 'Stops blood loss',
+      'q_blood:c':
+        'Platelets stick at the cut, fibrin threads form a mesh, and trapped cells seal the wound.',
       'q14:control': null,
       'q14:increase': '4',
     },

@@ -574,6 +574,7 @@ func TestQuickQuestion(t *testing.T) {
 		"matching":   q(part("matching")),
 		"ordering":   q(part("ordering")),
 		"multi-part": q(part("mcq"), part("short")),
+		"grouped":    q(map[string]any{"id": "p", "group": "g", "answer": map[string]any{"type": "mcq"}}),
 		"card":       nil,
 	} {
 		if quickQuestion(question) {

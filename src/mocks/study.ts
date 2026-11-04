@@ -560,6 +560,7 @@ function quickReview(all: ReviewItem[]): ReviewItem[] {
       (it) =>
         (it.kind === 'card' ||
           (it.question?.parts.length === 1 &&
+            !it.question.parts[0].group &&
             QUICK_ANSWERS.includes(it.question.parts[0].answer.type))) &&
         (rated.get(`${it.materialId}/${it.itemId}`)?.lapses ?? 0) > 0
     )

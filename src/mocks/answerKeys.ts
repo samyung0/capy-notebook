@@ -60,6 +60,7 @@ export function learnerView(question: Question): LearnerQuestion {
         blocks: part.blocks,
         id: part.id,
         marks: part.marks,
+        ...(part.group ? { group: part.group } : {}),
       };
     }),
   };

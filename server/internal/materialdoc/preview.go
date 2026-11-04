@@ -253,16 +253,20 @@ func quizPreviewOf(nodes []map[string]any) quizPreview {
 // question stem when the part has none.
 func questionPreviewOf(q map[string]any) *questionPreview {
 	stem, _ := q["stem"].([]any)
-	var partBlocks []any
+	var partBlocks, groupBlocks []any
 	var answer map[string]any
 	if parts, _ := q["parts"].([]any); len(parts) > 0 {
 		part, _ := parts[0].(map[string]any)
 		partBlocks, _ = part["blocks"].([]any)
 		answer, _ = part["answer"].(map[string]any)
+		groupBlocks = questions.GroupBlocks(q, part)
 	}
 	typ, _ := answer["type"].(string)
 	out := &questionPreview{Type: typ}
 	text := blocksPlainText(partBlocks)
+	if text == "" {
+		text = blocksPlainText(groupBlocks)
+	}
 	if text == "" {
 		text = blocksPlainText(stem)
 	}
@@ -270,7 +274,7 @@ func questionPreviewOf(q map[string]any) *questionPreview {
 		text = questions.GapMarker.ReplaceAllLiteralString(text, previewGap)
 	}
 	out.Stem = clipRunes(text, previewStemRunes)
-	for _, raw := range append(append([]any{}, stem...), partBlocks...) {
+	for _, raw := range append(append(append([]any{}, stem...), groupBlocks...), partBlocks...) {
 		if block, _ := raw.(map[string]any); block["type"] == "chart" || block["type"] == "plot" || block["type"] == "graph" {
 			out.HasChart = true
 		}

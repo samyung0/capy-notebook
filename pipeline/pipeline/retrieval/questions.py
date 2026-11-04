@@ -582,10 +582,10 @@ def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
 
 def authored(question: dict[str, Any]) -> dict[str, Any] | None:
     """A stored question as the add_questions item a quiz fence takes (expand's
-    inverse), or None when it holds more than that form writes: a stem, more
-    parts, media or a non-text solution, another answer type."""
+    inverse), or None when it holds more than that form writes: a stem, a group,
+    more parts, media or a non-text solution, another answer type."""
     parts = question.get("parts") or []
-    if question.get("stem") or len(parts) != 1:
+    if question.get("stem") or question.get("groups") or len(parts) != 1:
         return None
     part = parts[0]
     blocks = part.get("blocks") or []
