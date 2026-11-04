@@ -72,7 +72,8 @@ default, resizable from 220px, collapsing on a drag like the right panel):
 
 - **Files:** the topic tree under its search and the New file or topic row
   (Epo 2026-11-04); the right panel keeps its own Files view with the workspace
-  picker.
+  picker for when this one is closed. Only one tree exists at a time: while this
+  one shows, the right panel offers Chat alone and doesn't mount its tree.
 - **Agent:** the chats, with voice and Archived chats on the title row; a
   chat opens in the right panel.
 - **Study:** Study's pages (`StudyPanel`), see
