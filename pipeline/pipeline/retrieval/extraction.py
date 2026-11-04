@@ -1010,11 +1010,13 @@ async def locate(
     return [box for box in boxes if box is not None]
 
 
-async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> None:
+async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> list[str]:
     """Give each saved figure the box a call seeing its page alone answers:
     boxes asked of the window, beside two pages and the whole extraction,
     were too far off to crop from (2022 Paper 2: 3 of 10 whole, 3 missing the
-    figure; bench/extraction/reports/2026-11-04-figures-and-fidelity.md)."""
+    figure; bench/extraction/reports/2026-11-04-figures-and-fidelity.md).
+    A page whose call fails twice keeps its questions without its figures
+    (Epo 2026-11-04); the labels of those questions are returned."""
     pages: dict[int, tuple[Page, list[tuple[Recorded, int]]]] = {}
     for question in held:
         for index, figure in enumerate(question.figures):
@@ -1022,12 +1024,22 @@ async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> None:
                 (question, index)
             )
 
+    failed: set[tuple[int, int]] = set()
+
     async def one(page: Page, items: list[tuple[Recorded, int]]) -> None:
-        boxes = await locate(
-            page,
-            [(q.label, q.figures[i].description) for q, i in items],
-            model=model,
-        )
+        try:
+            boxes = await _attempted(
+                functools.partial(
+                    locate,
+                    page,
+                    [(q.label, q.figures[i].description) for q, i in items],
+                    model=model,
+                )
+            )
+        except (elitellm.ProviderError, TimeoutError) as exc:
+            log.warning("figure boxes for page %d failed: %s", page.number, exc)
+            failed.update((id(q), i) for q, i in items)
+            return
         for (question, index), box in zip(items, boxes):
             padded = [
                 max(0.0, box[0] - FIGURE_PAD[0]),
@@ -1039,12 +1051,16 @@ async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> None:
                 question.figures[index], box=padded
             )
 
-    await asyncio.gather(
-        *(
-            _attempted(functools.partial(one, page, items))
-            for page, items in pages.values()
-        )
-    )
+    await asyncio.gather(*(one(page, items) for page, items in pages.values()))
+    left_out = []
+    for question in held:
+        kept = [
+            f for i, f in enumerate(question.figures) if (id(question), i) not in failed
+        ]
+        if len(kept) < len(question.figures):
+            left_out.append(question.label)
+            question.figures = kept
+    return left_out
 
 
 def _credits_out() -> bool:
@@ -1109,7 +1125,6 @@ async def run(
     disagreements: list[str] = []
     refused: list[str] = []
     marks_differ: list[str] = []
-    figures: list[str] = []
     finals: list[Recorded] = []
     for question in held:
         paired = pair(question, entries)
@@ -1130,9 +1145,8 @@ async def run(
         parts_total = sum(part["marks"] for part in question.question["parts"])
         if question.total is not None and parts_total != question.total:
             marks_differ.append(question.label)
-        if question.figures:
-            figures.append(question.label)
-    await locate_figures(finals, model=model)
+    figures_left_out = await locate_figures(finals, model=model)
+    figures = [question.label for question in finals if question.figures]
     crops: dict[str, str] = {}
     saved = [await placed(question, crops) for question in finals]
     recorded = {label_key(label) for label in current.labels()}
@@ -1166,8 +1180,11 @@ async def run(
             # continuation: left out rather than merged into it.
             "schemeRepeats": repeats,
             # Questions saved with figures cropped from the page, for the
-            # starter to check.
+            # starter to check, and questions saved without theirs: the box
+            # call for their page failed twice (Go adds those whose figures
+            # did not fit in the starter's storage).
             "figures": figures,
+            "figuresLeftOut": figures_left_out,
             "stopped": stopped,
             "pages": len(pages),
             "windows": windows,

@@ -2287,6 +2287,10 @@ components:
           items:
             type: string
           type: array
+        figuresLeftOut:
+          items:
+            type: string
+          type: array
         keyDisagreements:
           items:
             type: string
@@ -2343,6 +2347,7 @@ components:
         - unpaired
         - schemeRepeats
         - figures
+        - figuresLeftOut
         - stopped
         - pages
         - windows

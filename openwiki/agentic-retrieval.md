@@ -5747,7 +5747,9 @@ later).
      off, sees that page alone with its figures listed (question label and
      description) and answers a box on a 0-1000 grid for each
      (`locate_figures`, purpose `extraction_figures`; a reply that is not one
-     box a figure is a failed attempt, as for the scheme parse). The window's
+     box a figure is a failed attempt; a page whose call fails twice keeps
+     its questions without its figures, named in `figuresLeftOut`, Epo
+     2026-11-04). The window's
      own boxes were too far off to crop from (2022 Paper 2: 3 of 10 whole, 3
      missing the figure; bench report 2026-11-04). The located box is
      padded by `FIGURE_PAD` (2% of the page at the sides, 3% at the top,
@@ -5790,8 +5792,12 @@ later).
   run its starter began: status, the questions recorded so far (`recorded`),
   the quiz and the report (`expected`, `missing`, `recorded`, `keysWorkedOut`,
   `keyDisagreements`, `schemeRefused`, `marksDiffer`, `unpaired`,
-  `schemeRepeats`, `figures`, `stopped`, `pages`, `windows`). `figures` names
-  the questions saved with cropped figures, for the starter to check.
+  `schemeRepeats`, `figures`, `figuresLeftOut`, `stopped`, `pages`,
+  `windows`). `figures` names the questions saved with cropped figures, for
+  the starter to check; `figuresLeftOut` those saved without theirs, because
+  their page's box call failed twice or the figures did not fit in the
+  starter's storage (then the quiz is saved without any figures; Epo
+  2026-11-04).
   `schemeRepeats` names scheme entries left out because an earlier entry had
   their label and they were not its continuation across two scheme pieces
   (the bench saw a later question's solution named 2021 Q8(b)(ii), which

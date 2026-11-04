@@ -9,6 +9,7 @@ import type { ExtractionReportStopped } from './extractionReportStopped.ts';
 export interface ExtractionReport {
   expected: string[];
   figures: string[];
+  figuresLeftOut: string[];
   keyDisagreements: string[];
   keysWorkedOut: string[];
   marksDiffer: string[];

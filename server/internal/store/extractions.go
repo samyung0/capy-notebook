@@ -37,8 +37,10 @@ type Extraction struct {
 // differ from the printed total (MarksDiffer), mark scheme entries no question
 // matched (Unpaired), scheme entries named like an earlier one that were left
 // out rather than merged into it (SchemeRepeats, "8(b(ii))": another question's
-// entry the parse named wrongly), and questions saved with figures cropped from the page
-// (Figures), for the starter to check. Stopped says why a run ended early:
+// entry the parse named wrongly), questions saved with figures cropped from the page
+// (Figures), for the starter to check, and questions saved without their
+// figures (FiguresLeftOut): the box call for their page failed twice, or the
+// figures did not fit in the starter's storage (Epo 2026-11-04). Stopped says why a run ended early:
 // quiz_full, credits, or output_limit (its page windows wrote past the run's
 // output budget).
 type ExtractionReport struct {
@@ -52,6 +54,7 @@ type ExtractionReport struct {
 	Unpaired         []string `json:"unpaired" nullable:"false"`
 	SchemeRepeats    []string `json:"schemeRepeats" nullable:"false"`
 	Figures          []string `json:"figures" nullable:"false"`
+	FiguresLeftOut   []string `json:"figuresLeftOut" nullable:"false"`
 	Stopped          string   `json:"stopped" enum:",quiz_full,credits,output_limit"`
 	Pages            int      `json:"pages"`
 	Windows          int      `json:"windows"`

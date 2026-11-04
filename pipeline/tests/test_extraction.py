@@ -602,6 +602,63 @@ async def test_figures_are_cropped_from_their_page_and_placed_after_their_part(
     assert done["report"]["figures"] == ["8"]
 
 
+async def test_a_page_whose_figure_boxes_fail_saves_its_questions_without_them(
+    monkeypatch,
+):
+    """The box call for a page fails, and fails again on its one retry: the
+    question is saved without that page's figure and the report names it,
+    while a figure on another page is still placed (Epo 2026-11-04)."""
+    item = _open("8", [("a", 2)])
+    item["figures"] = [
+        {"image": 1, "part": "", "description": "Triangle"},
+        {"image": 2, "part": "a", "description": "Graph"},
+    ]
+    replies = iter(
+        [{"tool_calls": [_call("record_question", item)]}, {"content": "DONE"}]
+    )
+    attempts: list[str] = []
+
+    async def complete(messages, **kwargs):
+        if kwargs["call_purpose"] != "extraction_figures":
+            return SimpleNamespace(content='{"questions": ["8"]}')
+        listed = messages[1]["content"][0]["text"]
+        attempts.append(listed)
+        if "Triangle" in listed:
+            raise extraction.elitellm.ProviderError("upstream error")
+        return SimpleNamespace(content='{"boxes": [[100, 100, 500, 500]]}')
+
+    async def complete_response(messages, **kwargs):
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message={"role": "assistant", "content": "", **next(replies)},
+                )
+            ],
+            usage=SimpleNamespace(output_tokens=100),
+        )
+
+    async def validate(question):
+        return None
+
+    monkeypatch.setattr(extraction, "ATTEMPT_WAIT_S", 0)
+    monkeypatch.setattr(extraction.models, "complete", complete)
+    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
+    events = [
+        event
+        async for event in extraction.run(
+            [_page(5), _page(6)], [], model=MODEL, validate=validate, locale="en"
+        )
+    ]
+    done = events[-1]
+    assert sum("Triangle" in a for a in attempts) == 2
+    [question] = done["questions"]
+    assert [b["type"] for b in question["stem"]] == ["text"]
+    assert question["parts"][0]["blocks"][-1]["image"] == {"assetId": "figure:q8-1"}
+    assert done["report"]["figuresLeftOut"] == ["8"]
+    assert done["report"]["figures"] == ["8"]
+
+
 def test_extract_route_refuses_first_then_streams(monkeypatch):
     """/extract answers a refused request with a 400 before streaming, and a
     run's events as SSE, giving its turn slot back at the end."""

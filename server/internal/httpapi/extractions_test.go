@@ -137,3 +137,90 @@ func TestFinishedExtractionStoresItsFiguresAsTheQuizsAssets(t *testing.T) {
 		t.Fatalf("stored objects = %+v (%v)", listing, err)
 	}
 }
+
+// A run's questions lose only their cropped figures, and the report moves
+// their questions to figuresLeftOut.
+func TestFiguresLeftOutOfAQuiz(t *testing.T) {
+	question := `[{"id":"q8","stem":[{"type":"text","text":"In the figure"},` +
+		`{"type":"image","image":{"assetId":"figure:q8-1"},"width":40,"height":30},` +
+		`{"type":"image","image":{"assetId":"asset_upload"},"width":4,"height":3}],` +
+		`"layout":"paper","labels":"letters","parts":[{"id":"p","blocks":[{"type":"text","text":"Find x."}],` +
+		`"answer":{"type":"short","accepted":["3"]},"marks":1,"solution":[]}]}]`
+	bare, ok := withoutFigures(json.RawMessage(question))
+	if !ok || strings.Contains(string(bare), "figure:") || !strings.Contains(string(bare), "asset_upload") {
+		t.Fatalf("bare = %s (%v)", bare, ok)
+	}
+	var report store.ExtractionReport
+	moved := figuresLeftOut(json.RawMessage(`{"figures":["8","9"],"figuresLeftOut":["3"]}`))
+	if err := json.Unmarshal(moved, &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Figures) != 0 || strings.Join(report.FiguresLeftOut, ",") != "3,8,9" {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// A starter whose storage has room for the quiz but not its figures gets
+// the quiz without them, its figures named in the report and no asset
+// stored (Epo 2026-11-04). Needs Postgres (CI).
+func TestAFullStarterGetsTheQuizWithoutItsFigures(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	user := "u_extract_full_" + uuid.NewString()[:8]
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id,name,email) VALUES ($1,'Full',$2)`, user, user+"@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, user) })
+	ws, err := st.CreateWorkspace(ctx, user, store.WorkspaceCreate{Name: "Quiz", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM workspaces WHERE id=$1`, ws.ID) })
+	usage, err := st.StorageUsage(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Room for the quiz (a few KB), not for a 300 KB figure.
+	if _, err := st.Pool().Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`,
+		user, usage.LimitBytes-100_000); err != nil {
+		t.Fatal(err)
+	}
+	mem := blob.NewMemory()
+	a := &api{s: st, blob: mem}
+	run, err := st.CreateExtraction(ctx, ws.ID, user, "Full "+uuid.NewString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var crop bytes.Buffer
+	if err := jpeg.Encode(&crop, image.NewGray(image.Rect(0, 0, 40, 30)), nil); err != nil {
+		t.Fatal(err)
+	}
+	padded := append(crop.Bytes(), bytes.Repeat([]byte{7}, 300_000)...)
+	question := `[{"id":"q8","stem":[{"type":"text","text":"In the figure, ABC is a triangle."},` +
+		`{"type":"image","image":{"assetId":"figure:q8-1"},"width":40,"height":30}],` +
+		`"layout":"paper","labels":"letters","parts":[{"id":"p","blocks":[{"type":"text","text":"Find x."}],` +
+		`"answer":{"type":"short","accepted":["3"]},"marks":1,"solution":[]}]}]`
+	ended := a.finishExtraction(ctx, run, user, "Quiz", extractionEvent{
+		Type: "done", Questions: json.RawMessage(question),
+		Report:  json.RawMessage(`{"figures":["8"],"figuresLeftOut":[]}`),
+		Figures: []agentFigure{{ID: "q8-1", Image: padded}},
+	})
+	if ended.Status != store.ExtractionDone || ended.QuizID == nil || ended.Report == nil ||
+		strings.Join(ended.Report.FiguresLeftOut, ",") != "8" || len(ended.Report.Figures) != 0 {
+		t.Fatalf("run = %+v report = %+v", ended, ended.Report)
+	}
+	quiz, err := st.GetMaterial(ctx, *ended.QuizID)
+	if err != nil || strings.Contains(quiz.Content, "asset_") || !strings.Contains(quiz.Content, "ABC is a triangle") {
+		t.Fatalf("quiz content = %.200s (%v)", quiz.Content, err)
+	}
+	if _, err := st.GetEditorAsset(ctx, store.ChatAssetID(run.ID, "extraction/figure/q8-1")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("figure asset = %v, want none", err)
+	}
+	if listing, err := mem.ListObjects(ctx, "editor-assets/", "", 10); err != nil || len(listing.Keys) != 0 {
+		t.Fatalf("stored objects = %+v (%v)", listing, err)
+	}
+}

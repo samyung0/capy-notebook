@@ -1795,6 +1795,7 @@ export const GetExtractionResponse = zod.object({
   "report": zod.object({
   "expected": zod.array(zod.string()),
   "figures": zod.array(zod.string()),
+  "figuresLeftOut": zod.array(zod.string()),
   "keyDisagreements": zod.array(zod.string()),
   "keysWorkedOut": zod.array(zod.string()),
   "marksDiffer": zod.array(zod.string()),
@@ -7205,6 +7206,7 @@ export const CreateExtractionResponse = zod.object({
   "report": zod.object({
   "expected": zod.array(zod.string()),
   "figures": zod.array(zod.string()),
+  "figuresLeftOut": zod.array(zod.string()),
   "keyDisagreements": zod.array(zod.string()),
   "keysWorkedOut": zod.array(zod.string()),
   "marksDiffer": zod.array(zod.string()),

@@ -674,8 +674,10 @@ paper's pages, are stored the same way: the done event carries the JPEGs, Go
 checks each against the starter's plan image cap, writes it to
 `editor-assets/{id}/…` (ids from the run id, `store.ChatAssetID`) and inserts
 it with the quiz in the quiz's creating transaction (`CreateMaterialDraft`
-with `Assets`), charged to the starter (M16). A quiz and figures over the
-starter's quota fail the run as `storage_full`.
+with `Assets`), charged to the starter (M16). A quiz whose figures go over the
+starter's quota is saved as the quiz alone, its figures named in the
+report's `figuresLeftOut` (Epo 2026-11-04); only a quiz that does not fit by
+itself fails the run as `storage_full`.
 
 An image another note's or quiz's id brings into a material (a paste, undo,
 cut and paste, replayed draft, AI edit) is made the material's own by the

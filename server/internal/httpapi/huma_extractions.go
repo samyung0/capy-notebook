@@ -19,6 +19,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -339,7 +340,7 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 	}
 	failed := func(stage string, err error) store.Extraction {
 		if errors.Is(err, store.ErrStorageQuotaExceeded) {
-			return fail("storage_full", "The quiz and its figures do not fit in your storage.")
+			return fail("storage_full", "The quiz does not fit in your storage.")
 		}
 		obs.CaptureErr(ctx, err, map[string]string{"stage": stage})
 		return fail("extraction_failed", "The quiz could not be saved.")
@@ -367,12 +368,24 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 		}
 	}
 	// The quiz starts hidden from members (Epo 2026-11-03).
-	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
+	draft := store.MaterialDraft{
 		ActorUserID: actor, WorkspaceID: run.WorkspaceID, WorkspaceName: wsName,
 		Kind: store.MaterialQuiz, Title: title, Questions: questions, Assets: assets, Hidden: true,
-	})
+	}
+	mt, err := a.s.CreateMaterialDraft(ctx, draft)
 	if err != nil {
 		a.deleteAgentAssets(ctx, assets)
+	}
+	if errors.Is(err, store.ErrStorageQuotaExceeded) && len(assets) > 0 {
+		// The quiz is saved without its figures when they do not fit, and
+		// the report names their questions (Epo 2026-11-04).
+		bare, ok := withoutFigures(ev.Questions)
+		if !ok {
+			return fail("extraction_failed", "The quiz could not be saved.")
+		}
+		draft.Questions, draft.Assets, assets = bare, nil, nil
+		ev.Report = figuresLeftOut(ev.Report)
+		mt, err = a.s.CreateMaterialDraft(ctx, draft)
 	}
 	if errors.Is(err, materialdoc.ErrInvalid) {
 		return fail("quiz_invalid", err.Error())
@@ -392,6 +405,45 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 		obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_finish"})
 	}
 	return ended
+}
+
+// withoutFigures is a run's questions with their cropped figures (image blocks
+// of assetId `figure:<id>`) taken out; false when a part would be left empty.
+func withoutFigures(raw json.RawMessage) (json.RawMessage, bool) {
+	var list []map[string]any
+	if json.Unmarshal(raw, &list) != nil {
+		return nil, false
+	}
+	for _, question := range list {
+		kept := map[string]string{}
+		for _, id := range questions.AssetIDs(question) {
+			if !strings.HasPrefix(id, materialdoc.FigureRefPrefix) {
+				kept[id] = id
+			}
+		}
+		if !questions.RewriteAssetIDs(question, kept) {
+			return nil, false
+		}
+	}
+	out, err := json.Marshal(list)
+	return out, err == nil
+}
+
+// figuresLeftOut moves the report's questions with figures into
+// figuresLeftOut, after any whose figures were already left out.
+func figuresLeftOut(raw json.RawMessage) json.RawMessage {
+	var report map[string]any
+	if json.Unmarshal(raw, &report) != nil {
+		return raw
+	}
+	left, _ := report["figuresLeftOut"].([]any)
+	with, _ := report["figures"].([]any)
+	report["figuresLeftOut"], report["figures"] = append(left, with...), []any{}
+	out, err := json.Marshal(report)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 // internalCheckQuestion validates one extracted question the way a quiz's
