@@ -2354,6 +2354,7 @@
   "workspace_kind_class_line": "布置作业。只有成员才有成绩跟踪。",
   "workspace_kind_change_note": "改为个人后，作业和报告会被隐藏；改回来后会重新显示。",
   "dashboard_practise_next": "接下来练习什么",
+  "workspace_empty_title": "还没有文件",
   "dashboard_activity": "动态",
   "dashboard_activity_uploaded": "{name} 上传了 {title}",
   "dashboard_activity_added": "{name} 添加了 {title}",

@@ -2354,6 +2354,7 @@
   "workspace_kind_class_line": "Give out assignments. Only members get grade tracking.",
   "workspace_kind_change_note": "Going to Personal hides assignments and reports; they come back if you change it back.",
   "dashboard_practise_next": "What to practise next",
+  "workspace_empty_title": "No files yet",
   "dashboard_activity": "Activity",
   "dashboard_activity_uploaded": "{name} uploaded {title}",
   "dashboard_activity_added": "{name} added {title}",

@@ -16,6 +16,7 @@ import { SuggestedList } from '@/features/study/practice/SuggestedList';
 import { studyView } from '@/features/study/practice/studyView';
 import { getLocale, m } from '@/i18n';
 import { isWorkspaceReadOnly } from './access';
+import { WorkspaceEmpty } from './WorkspaceEmpty';
 
 /** How many recent files the Dashboard shows (boards H1, H2: one row of four). */
 const RECENT = 4;
@@ -48,6 +49,7 @@ export function WorkspaceDashboard({
     RECENT
   );
   const canAdd = !isWorkspaceReadOnly(workspace.capabilities);
+  const empty = !!recent && items.length === 0;
   const meta = data
     ? [
         data.ownerName,
@@ -69,7 +71,7 @@ export function WorkspaceDashboard({
           <h1 className="t-page-title truncate">{workspace.name}</h1>
           <span className="t-meta min-h-[1lh] text-fg-muted">{meta}</span>
         </div>
-        {canAdd && (
+        {canAdd && !empty && (
           <div className="-my-3.5 flex flex-wrap items-center gap-2">
             <Button iconLeft="upload" onClick={onUpload} variant="outline">
               {m.action_upload()}
@@ -81,6 +83,7 @@ export function WorkspaceDashboard({
           </div>
         )}
       </header>
+      {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
       {practises && !!practice?.suggestions.length && (
         <section className="flex flex-col">
           <h2 className="t-subtitle">{m.dashboard_practise_next()}</h2>
