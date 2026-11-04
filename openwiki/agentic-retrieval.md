@@ -5774,7 +5774,8 @@ later).
      list, and code refuses an open part with none (Epo 2026-11-05). The merged question
      goes through the validator; what a batch left out gets one more call.
   6. A scheme's key always replaces the model's: an option letter becomes the printed option's
-     index, a short answer its value (a printed unit stripped), an open part's marking
+     index, a short answer its value (a printed unit stripped) and its marks when the entry
+     has points that fit `QUESTION_MARKS_MAX`, an open part's marking
      points its marking items (joined down to `QUIZ_MARKSCHEME_MAX`, their total replacing
      the part's marks) with the final answer as its model answer, and the scheme's worked
      solution the model's. A key that differs from the scheme's is named in

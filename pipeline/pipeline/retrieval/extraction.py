@@ -942,9 +942,15 @@ def pair(held: Recorded, entries: dict[tuple[str, str], Entry]) -> Paired:
             unit = answer.get("unit", "")
             if unit and value.endswith(unit):
                 value = value[: -len(unit)].strip()
-            if answer["accepted"] and not _same(value, answer["accepted"][0]):
-                disagreed.append(name)
+            differs = answer["accepted"] and not _same(value, answer["accepted"][0])
             answer["accepted"], replaced = [value[: limits.QUESTION_TEXT_MAX]], True
+            # The scheme's marks, as on an open part.
+            marks = sum(item["marks"] for item in _items(entry.points))
+            if entry.points and marks <= limits.QUESTION_MARKS_MAX:
+                differs = differs or marks != part["marks"]
+                part["marks"] = marks
+            if differs:
+                disagreed.append(name)
         elif answer["type"] == "open" and entry.points:
             items = _items(entry.points)
             marks = sum(item["marks"] for item in items)

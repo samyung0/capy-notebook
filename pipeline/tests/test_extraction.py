@@ -310,6 +310,25 @@ def test_pairing_replaces_the_models_keys_and_names_disagreements():
     assert worked.question["parts"][0]["answer"]["correct"] == [0]
 
 
+def test_pairing_gives_a_short_part_the_schemes_marks():
+    def paired(points: list[dict]) -> tuple[int, list[str]]:
+        item = _mcq("5", ["x"])
+        item["parts"][0]["answer"] = {"type": "short", "accepted": ["7"]}
+        entry = {"question": "5", "part": "", "answer": "7", "points": points}
+        entries, _ = extraction._merged([extraction.entries_from({"entries": [entry]})])
+        out = extraction.pair(extraction.record(item), entries)
+        return out.held.question["parts"][0]["marks"], out.disagreed
+
+    # Copied at 1 mark: the scheme's 2 replace it and the difference is named.
+    two = [{"text": "1M", "marks": 1}, {"text": "1A", "marks": 1}]
+    assert paired(two) == (2, ["5"])
+    # The same marks name nothing; no points, or too many marks, keep the copy's.
+    assert paired([{"text": "1A", "marks": 1}]) == (1, [])
+    assert paired([]) == (1, [])
+    too_many = extraction.limits.QUESTION_MARKS_MAX + 1
+    assert paired([{"text": "x", "marks": too_many}]) == (1, [])
+
+
 def test_a_scheme_entry_split_across_pieces_merges_and_another_repeat_is_named():
     """The last entry of one scheme piece and the first of the next under the
     same label are one entry; a later entry named like an earlier one is
