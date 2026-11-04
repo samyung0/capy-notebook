@@ -2415,6 +2415,7 @@
   "make_quiz_stopped_full": "The quiz is full, so it stops at the last question that fits.",
   "make_quiz_stopped_output": "Reading stopped early on an unusually long answer. The quiz has what was read.",
   "make_quiz_missing": "These questions couldn't be read and aren't in the quiz: {labels}.",
+  "make_quiz_answers_missing": "These questions are in the quiz with no answers: {labels}.",
   "make_quiz_figures_left_out": "The figures for these questions couldn't be saved: {labels}.",
   "quiz_editor_questions": "Questions · {count}",
   "quiz_editor_back_files": "Files",

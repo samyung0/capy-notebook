@@ -2415,6 +2415,7 @@
   "make_quiz_stopped_full": "测验已满，停在最后一道放得下的题目。",
   "make_quiz_stopped_output": "读取因答案过长而提前停止。测验包含已读取的内容。",
   "make_quiz_missing": "这些题目无法读取，未包含在测验中：{labels}。",
+  "make_quiz_answers_missing": "这些题目已在测验中，但没有答案：{labels}。",
   "make_quiz_figures_left_out": "这些题目的图未能保存：{labels}。",
   "quiz_editor_questions": "题目 · {count}",
   "quiz_editor_back_files": "文件",

@@ -98,15 +98,22 @@ export function quizTitleFrom(
  * the ones the quiz can't show, because the question isn't in it. */
 export function extractionNotice(
   report:
-    | Pick<ExtractionReport, 'figuresLeftOut' | 'missing' | 'stopped'>
+    | (Pick<ExtractionReport, 'figuresLeftOut' | 'missing' | 'stopped'> & {
+        answersMissing?: string[];
+      })
     | undefined
 ): string | null {
   if (!report) return null;
   if (report.stopped === 'credits') return m.make_quiz_stopped_credits();
   if (report.stopped === 'quiz_full') return m.make_quiz_stopped_full();
   if (report.stopped === 'output_limit') return m.make_quiz_stopped_output();
-  if (report.missing.length > 0)
-    return m.make_quiz_missing({ labels: report.missing.join(', ') });
+  const lost = [
+    report.missing.length > 0 &&
+      m.make_quiz_missing({ labels: report.missing.join(', ') }),
+    report.answersMissing?.length &&
+      m.make_quiz_answers_missing({ labels: report.answersMissing.join(', ') }),
+  ].filter(Boolean);
+  if (lost.length > 0) return lost.join(' ');
   if (report.figuresLeftOut.length > 0)
     return m.make_quiz_figures_left_out({
       labels: report.figuresLeftOut.join(', '),

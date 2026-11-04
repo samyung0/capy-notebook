@@ -300,12 +300,12 @@ function reportFor(
   pages: number,
   missing: string[]
 ): ExtractionReport {
-  return {
+  // The report's keysWorkedOut goes with the extraction branch's API.
+  const report: Omit<ExtractionReport, 'keysWorkedOut'> = {
     expected: [...recorded, ...missing],
     figures: [],
     figuresLeftOut: [],
     keyDisagreements: [],
-    keysWorkedOut: [],
     marksDiffer: [],
     missing,
     pages,
@@ -316,6 +316,7 @@ function reportFor(
     unpaired: [],
     windows: Math.ceil(pages / 2),
   };
+  return report as ExtractionReport;
 }
 
 /** How fast a run reads, so its progress can be watched. */

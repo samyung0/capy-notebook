@@ -85,6 +85,9 @@ describe('Make a quiz', () => {
     expect(extractionNotice({ ...report, missing: ['4', '7'] })).toBe(
       m.make_quiz_missing({ labels: '4, 7' })
     );
+    expect(extractionNotice({ ...report, answersMissing: ['4', '7(b)'] })).toBe(
+      m.make_quiz_answers_missing({ labels: '4, 7(b)' })
+    );
     expect(extractionNotice({ ...report, stopped: 'credits' })).toBe(
       m.make_quiz_stopped_credits()
     );
