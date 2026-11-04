@@ -220,7 +220,8 @@ async def test_agent_stream_retries_only_before_the_first_byte(monkeypatch, slee
     assert sleeps == [0.25]
 
 
-# Epo 2026-11-04: a timeout is never tried again; only a busy answer is.
+# Epo 2026-11-04: an interactive call that times out is not tried again;
+# ingest keeps its retries (AGENTS.md).
 
 
 @pytest.mark.parametrize(
@@ -245,24 +246,35 @@ async def test_a_chat_call_that_times_out_is_not_tried_again(
     assert attempts == 1 and sleeps == []
 
 
-async def test_an_ingest_call_that_times_out_is_not_tried_again(
+async def test_an_ingest_call_that_times_out_is_tried_again(
     monkeypatch, sleeps, ingest_mode
 ):
-    """A 500 is still tried again (parts design Q7); a timeout is not."""
+    """Ingest keeps its retries (AGENTS.md): a caption that times out takes
+    the next of its attempts, and a page read that always times out is unread
+    after its three."""
     monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
     calls = 0
 
     async def complete(*_args, **_kwargs):
         nonlocal calls
         calls += 1
-        raise httpx.ReadTimeout("no answer")
+        if calls == 1 or calls > 2:
+            raise httpx.ReadTimeout("no answer")
+        return elitellm.chat_response(
+            {"role": "assistant", "content": "a caption"},
+            finish_reason="stop",
+            usage={"prompt_tokens": 1, "completion_tokens": 1},
+        )
 
     monkeypatch.setattr(models.elitellm, "complete", complete)
-    assert await models.caption_image("data:image/png;base64,AA==", "say") == ""
+    assert await models.caption_image("data:image/png;base64,AA==", "say") == (
+        "a caption"
+    )
+    assert calls == 2
     assert (
         await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1) is None
     )
-    assert calls == 2 and sleeps == []
+    assert calls == 5
 
 
 async def test_a_line_wait_that_runs_out_is_not_tried_again(monkeypatch, sleeps):

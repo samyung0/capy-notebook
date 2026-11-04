@@ -375,11 +375,11 @@ async def _retry_or_raise(
 
     ``retry_any`` also retries failures that are not busy answers; streaming
     callers use it for pre-byte failures, whose cause is usually transport.
-    A timeout, the provider's or our own wait's (the model's line, a call
-    slot), ends the call at once: only a busy answer is waited for and tried
-    again (Epo 2026-11-04).
+    For an interactive call a timeout, the provider's or our own wait's (the
+    model's line, a call slot), ends the call at once (Epo 2026-11-04); an
+    ingest call keeps its retries within its budget (AGENTS.md).
     """
-    if isinstance(exc, accounting.GateFull) or timed_out(exc):
+    if _interactive() and (isinstance(exc, accounting.GateFull) or timed_out(exc)):
         raise exc
     busy = busy_error(exc)
     last = attempt >= policy.attempts - 1

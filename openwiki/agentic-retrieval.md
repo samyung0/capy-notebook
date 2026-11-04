@@ -1696,9 +1696,9 @@ one read (decided 2026-10-15, replacing the second read of the same day's OCR
 decision): the ingest retry policy's three calls. An empty answer, one that
 stops at the cap (finish `length`, both settled at 0 credits) and a transient
 provider error (5xx, a connection reset) take the next call, as for the file
-descriptor (parts design Q7); after the third, at once on a definitive
-client error (400, 401, 403, 404, 422), or at once on a timeout (Epo
-2026-11-04), the page is unread. A busy provider
+descriptor (parts design Q7), and so does a timeout (ingest keeps its
+retries, AGENTS.md); after the third, or at once on a definitive client error
+(400, 401, 403, 404, 422), the page is unread. A busy provider
 past its budget raises `ProviderBusy` instead and the job re-pends once; pages
 already read are cached. On the re-claim (`last_wait`: the job's
 `provider_waits` at `PROVIDER_WAITS_MAX`) a page still busy is unread instead,
@@ -2017,9 +2017,9 @@ exists; the local bundle is gone once the first ingest finished.
   (assuming thinking off, which the operator-set ingest pin is expected to
   have). Within the call's three attempts (parts design Q7, 2026-10-15), an
   empty reply or one cut off at that cap is a failed attempt, a transient
-  provider error (5xx, a connection reset) takes the next attempt, and a
-  definitive client error (400, 401, 403, 404, 422) or a timeout (Epo
-  2026-11-04) ends the call at once.
+  provider error (5xx, a connection reset) or a timeout takes the next
+  attempt, and a definitive client error (400, 401, 403, 404, 422) ends the
+  call at once.
   The descriptor is a part (see "Parts" below): a failure writes no row and
   never fails the file. A reindex of a file with a ready descriptor first measures the net text change between the
   published chunks and the candidate (`text_change_tokens`: chunk overlap and

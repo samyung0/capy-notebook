@@ -1235,11 +1235,16 @@ transient error (5xx, a connection reset) and an empty
 or cut-off answer (settled, so its tokens are billed), and end at once on a
 definitive client error (400, 401, 403, 404, 422; parts design Q7).
 Chat planning retries any pre-byte failure but a timeout under that policy,
-each failed attempt closed at once as above. **Nothing retries a timeout**
-(Epo 2026-11-04): a provider call that times out (no first event, silence, the
-whole-call bound), a wait in a model's line or for a call slot that runs out,
-and the gateway's 90 s pipeline timeout each end the call; neither Go nor the
-browser sends it again (`models.timed_out`, `accounting.GateFull`). A failure after the first provider chunk —
+each failed attempt closed at once as above. **No interactive call retries a
+timeout** (Epo 2026-11-04): for chat, generate, the editor AI routes, ghost
+text and search's embeddings and reranks, a provider call that times out (no
+first event, silence, the whole-call bound), a wait in a model's line or for a
+call slot that runs out, and the gateway's 90 s pipeline timeout each end the
+call, and neither Go nor the browser sends it again (`models.timed_out`,
+`accounting.GateFull`). Ingest keeps its retries (AGENTS.md): its summary,
+caption and page-read calls take a timeout, and a line wait that ran out, as
+another attempt within their budget, and a failed job runs again within its
+attempts. A failure after the first provider chunk —
 even if the browser has not received SSE yet — is final for that response and
 is not retried; its call settles the usage the stream sent, or is abandoned. Settlement retries retain the same call id and in-memory receipt
 across transient database or gateway failures until it applies or its stored
@@ -1895,8 +1900,8 @@ The wait is bounded as chat's always was: an interactive call waits up to
 `CHAT_SLOT_WAIT_S` (60 s), past its three-second busy-retry budget; a rerank
 only its search's 5 s, after which the search keeps fused order; an ingest
 call its 120 s retry budget, after which the job re-pends as before. Past the
-bound the call fails as `provider_busy` (`accounting.GateFull`) and is not
-tried again, a chat call included. Waiting in line is not a retry: the line
+bound the call fails as `provider_busy` (`accounting.GateFull`); an
+interactive call, chat included, is not tried again. Waiting in line is not a retry: the line
 holds the call before anything is sent. The Go
 gateway's pipeline client allows a synchronous call 90 s (`syncTimeout`: the
 line's 60 s plus the 30 s it had before), so a generate or ghost-text request
