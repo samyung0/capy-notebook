@@ -551,15 +551,15 @@ async def test_figures_are_cropped_from_their_page_and_placed_after_their_part(
         "description": "Triangle ABC",
     }
     assert question["parts"][1]["blocks"][-1]["image"] == {"assetId": "figure:q8-2"}
-    # One locate call a page, naming its figures; the located box, held to
-    # the page, is cropped from that page.
+    # One locate call a page, naming its figures; the located box, padded
+    # (FIGURE_PAD) and held to the page, is cropped from that page.
     assert sorted(located) == [
         "The figures on this page:\n1. Question 8: Triangle ABC",
         "The figures on this page:\n1. Question 8: its figure",
     ]
     assert sorted(crops) == [
-        (5, [10.0, 0.0, 480.0, 500.0]),
-        (6, [100.0, 180.0, 920.0, 1000.0]),
+        (5, [0.0, 0.0, 500.0, 505.0]),
+        (6, [80.0, 150.0, 940.0, 1000.0]),
     ]
     assert done["figures"] == [
         {"id": "q8-1", "image": base64.b64encode(b"jpeg 6").decode()},

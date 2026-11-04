@@ -83,6 +83,12 @@ SCHEME_MAX_TOKENS = 12_000
 FIGURE_PAGE_EDGE = 2_200
 # The locate call's reply: a few boxes.
 LOCATE_MAX_TOKENS = 1_000
+# Padding added to a located box on the 0-1000 grid (left, top, right,
+# bottom). The boxes sit a little low: on the bench's 14 figures, tops cut off
+# labels above the figure while bottoms were already loose; this pad took
+# whole figures from 5 to 12 of 14 and kept 11 of 14 at least 70% figure
+# (bench/extraction/reports/2026-11-04-figures-and-fidelity.md).
+FIGURE_PAD = (20, 30, 20, 5)
 # Indexed text shown per page, and scheme text per parse call.
 PAGE_TEXT_CHARS = 6_000
 SCHEME_CHUNK_CHARS = 12_000
@@ -982,8 +988,14 @@ async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> None:
             model=model,
         )
         for (question, index), box in zip(items, boxes):
+            padded = [
+                max(0.0, box[0] - FIGURE_PAD[0]),
+                max(0.0, box[1] - FIGURE_PAD[1]),
+                min(1000.0, box[2] + FIGURE_PAD[2]),
+                min(1000.0, box[3] + FIGURE_PAD[3]),
+            ]
             question.figures[index] = dataclasses.replace(
-                question.figures[index], box=box
+                question.figures[index], box=padded
             )
 
     await asyncio.gather(
