@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { flushSync } from 'react-dom';
 import { captchaCopy, isAnonymousGradingLimit } from '@/api/anonymous';
+import { isNoAnswersError } from '@/api/client';
 import type { Provenance, Question } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
@@ -76,6 +77,13 @@ function stillAnswers(before: AnyPart, after: AnyPart, value: Answer): boolean {
     return JSON.stringify(a) === JSON.stringify(b);
   return true;
 }
+/** In place of a question's Check, under a question with no answers. */
+const NoAnswersLine = () => (
+  <p className="t-meta text-right text-fg-muted">
+    {m.quiz_no_answers_configured()}
+  </p>
+);
+
 const EmbeddedBody = ({ children }: { children: ReactNode }) => (
   <div>{children}</div>
 );
@@ -140,6 +148,9 @@ export function AttemptBody({
   // challenge or a captcha refusal under it after the check ends.
   const [lastChecked, setLastChecked] = useState<string | null>(null);
   const [checkError, setCheckError] = useState<string>();
+  // Questions a check found with no answers (Epo 2026-11-05): they say so, and
+  // neither finish nor score counts them.
+  const [noAnswers, setNoAnswers] = useState<ReadonlySet<string>>(new Set());
   // Confetti greets a try finished here, not one reopened finished.
   const [celebrate, setCelebrate] = useState(false);
   const setAnswer = useCallback(
@@ -182,9 +193,10 @@ export function AttemptBody({
     [run.checked]
   );
   const shown = questions.map((q) => checkedById.get(q.id) ?? q);
-  const checkedCount = questions.filter((q) => checkedById.has(q.id)).length;
-  const finished = questions.length > 0 && checkedCount === questions.length;
-  const { awarded, max } = runScore(questions, run.checked);
+  const answerable = questions.filter((q) => !noAnswers.has(q.id));
+  const checkedCount = answerable.filter((q) => checkedById.has(q.id)).length;
+  const finished = checkedCount > 0 && checkedCount === answerable.length;
+  const { awarded, max } = runScore(answerable, run.checked);
 
   // The try finishes with the check of its last question, not on a page
   // that opens it already finished.
@@ -226,7 +238,7 @@ export function AttemptBody({
           }
           byline={byline}
           className={inApp ? undefined : 'pt-4 sm:pt-2'}
-          meta={quizMeta(questions)}
+          meta={quizMeta(answerable)}
           onBack={onBack}
           title={name}
           trail={trail}
@@ -259,9 +271,13 @@ export function AttemptBody({
       setCheckError(undefined);
     });
     try {
-      finishedByCheck.current = checkedCount === questions.length - 1;
+      finishedByCheck.current = checkedCount === answerable.length - 1;
       await check(question.id, answers);
     } catch (err) {
+      if (isNoAnswersError(err)) {
+        setNoAnswers((current) => new Set(current).add(question.id));
+        return;
+      }
       finishedByCheck.current = false;
       const captcha = captchaCopy(err);
       if (captcha) {
@@ -298,6 +314,7 @@ export function AttemptBody({
             <QuizScore
               awarded={awarded}
               confetti={celebrate}
+              leftOut={noAnswers}
               max={max}
               minutes={
                 run.takenAt
@@ -314,8 +331,12 @@ export function AttemptBody({
             answers={answers}
             className={cn(embedded ? 'gap-10' : 'mt-12')}
             credits={provenance?.questions}
+            disabled={(question) => noAnswers.has(question.id)}
             questions={shown}
-            review
+            renderAfter={(question) =>
+              noAnswers.has(question.id) && <NoAnswersLine />
+            }
+            review={(question) => !noAnswers.has(question.id)}
           />
           {/* Sized like the quiz editor's Edit and Remove. */}
           <div className="mt-12 flex justify-end">
@@ -347,37 +368,43 @@ export function AttemptBody({
           answers={answers}
           className={cn(embedded && 'gap-10')}
           credits={provenance?.questions}
-          disabled={(question) => checking === question.id}
+          disabled={(question) =>
+            checking === question.id || noAnswers.has(question.id)
+          }
           onChange={setAnswer}
           questions={shown}
           renderAfter={(question) =>
-            !checkedById.has(question.id) && (
-              <div>
-                <div className="flex justify-end">
-                  {/* Sized like the review session's Check. */}
-                  <Button
-                    className="h-9 px-3.5"
-                    disabled={checking !== null}
-                    onClick={() => void checkQuestion(question)}
-                    rounded="normal"
-                    size="sm"
-                  >
-                    {checking === question.id
-                      ? m.quiz_grading()
-                      : m.question_ui_check()}
-                  </Button>
+            noAnswers.has(question.id) ? (
+              <NoAnswersLine />
+            ) : (
+              !checkedById.has(question.id) && (
+                <div>
+                  <div className="flex justify-end">
+                    {/* Sized like the review session's Check. */}
+                    <Button
+                      className="h-9 px-3.5"
+                      disabled={checking !== null}
+                      onClick={() => void checkQuestion(question)}
+                      rounded="normal"
+                      size="sm"
+                    >
+                      {checking === question.id
+                        ? m.quiz_grading()
+                        : m.question_ui_check()}
+                    </Button>
+                  </div>
+                  {lastChecked === question.id && (
+                    <>
+                      {belowCheck}
+                      {checkError && (
+                        <InputError className="mt-2 justify-end">
+                          {checkError}
+                        </InputError>
+                      )}
+                    </>
+                  )}
                 </div>
-                {lastChecked === question.id && (
-                  <>
-                    {belowCheck}
-                    {checkError && (
-                      <InputError className="mt-2 justify-end">
-                        {checkError}
-                      </InputError>
-                    )}
-                  </>
-                )}
-              </div>
+              )
             )
           }
           review={(question) => checkedById.has(question.id)}
@@ -385,7 +412,7 @@ export function AttemptBody({
         <p className="t-meta mt-12 text-fg-muted">
           {m.quiz_checked_count({
             checked: checkedCount,
-            total: questions.length,
+            total: answerable.length,
           })}
         </p>
         {footer}

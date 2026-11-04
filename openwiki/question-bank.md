@@ -214,12 +214,19 @@ for a simple one and the explanation as its solution (see
 [agentic-retrieval.md](agentic-retrieval.md), Question tools).
 
 Make a quiz reads questions printed in an uploaded paper into this format: in
-paper layout, printed option order kept, sub-parts flattened into parts, keys,
-marking items and worked solutions filled from a separate mark scheme or answer
-file paired by printed label, each question checked by this validator as it is
-recorded, and each figure the page shows cropped into an image block whose
-asset is the quiz's own, like an uploaded quiz image (see
-[agentic-retrieval.md](agentic-retrieval.md), Make a quiz).
+paper layout, printed option order kept, sub-parts flattened into parts. The model
+reads a scan or an image from its page images alone, and a born-digital PDF with its
+indexed text beside them. A map call lists the questions, copy batches copy them with no answers, and solve batches give
+their keys, marking items and worked solutions, or a separate mark scheme or answer
+file does, paired by printed label, which needs no solve call for a question it wholly
+covers. Each question is checked by this validator as it is copied and as its answers
+arrive, and each figure the page shows is cropped into an image block whose asset is
+the quiz's own, like an uploaded quiz image. This format has no key-less form, so a
+question with a part whose solve call failed is incomplete: it stays as copied, in the
+quiz's live room only, like an incomplete question an editor is typing. It isn't marked
+or counted, and a learner who checks it sees "No answers configured"; the run's report
+names it (see [agentic-retrieval.md](agentic-retrieval.md), Make a quiz, and
+[frontend/plate-editor.md](frontend/plate-editor.md)).
 
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part

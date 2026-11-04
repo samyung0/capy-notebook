@@ -1,11 +1,14 @@
 """Extraction prompts: questions read from the selected pages of a paper, and the
 mark scheme or answer files parsed as text (todo-study-tracking.md §8).
 
-Three calls, each on its own: the outline (expected question labels from the
-pages' indexed text), one page window at a time (two page images with the layout
-model's boxes as JSON, the outline, the open question and the two tools below),
-and the scheme or answer text, which never shares a request with the pages. Code
-pairs the scheme with the questions by label (``retrieval.extraction``).
+One conversation (Epo 2026-11-05): the map call has every selected page with the
+layout model's boxes as JSON, the copy batches continue it, and the solve calls
+continue the copy batch that holds their questions. The system prompt and tools
+are the same on all of them, so the cache holds. A scan or an image goes with no
+page text (Epo 2026-11-05), which only changes the first paragraph and each page's
+heading. The scheme or answer text never
+shares a request with the pages; code pairs it with the questions by label
+(``retrieval.extraction``). A figure with no box takes a call of its own.
 
 The printed text is kept as written, in its own language: no locale rule.
 """
@@ -18,53 +21,48 @@ from typing import Any
 from ..generated import limits
 from .sources import SOURCE_RULE, source_block
 
-# --------------------------------------------------------------------- outline
+SYSTEM = f"""You copy the questions printed on exam or worksheet pages into a quiz, exactly as printed. You see all the selected page images at once, each with the page's indexed text, which may be rough: the image is what counts.
 
-OUTLINE_SYSTEM = (
-    "You list the questions a printed paper holds, from the text of its pages. "
-    'Answer with JSON only: {"questions": ["1", "2", ...]}, each question\'s '
-    "printed number in printed order, once, without its parts (write 3, not "
-    "3(a)). Leave out instructions, headings, formula lists, page numbers and "
-    "anything that is not a question. Keep a section letter only when the "
-    'numbering restarts in each section (A1, B1). With no questions, answer {"questions": []}. '
-    + SOURCE_RULE
-)
-
-
-def outline_messages(pages: list[tuple[str, str]]) -> list[dict[str, Any]]:
-    """``pages`` are (heading, indexed text) in selected order."""
-    body = "\n\n".join(f"{heading}\n{source_block(text)}" for heading, text in pages)
-    return [
-        {"role": "system", "content": OUTLINE_SYSTEM},
-        {"role": "user", "content": body},
-    ]
-
-
-# --------------------------------------------------------------- page windows
-
-EXTRACT_SYSTEM = f"""You copy the questions printed on exam or worksheet pages into a quiz, exactly as printed, each with its answer key. You see a few page images at a time, each with the page's indexed text, which may be rough: the image is what counts.
-
-Record each question that starts on these pages with its own record_question call, in printed order; one reply may hold several calls. When the first page carries on the open question from the previous page (more parts, or more of its last part's text), add that with continue_question first.
+First you are asked for a map of the questions, as plain text. Then you are asked to copy some of them: give each its own record_question call, in printed order, from all its pages. Do not work out any answers yet. Later you are asked for the answers to some questions: give each its own record_answers call. Copy an answer the page prints; otherwise work it out, and never change the printed question.
 
 Copying:
 - Keep the wording, numbers, symbols and language exactly as printed. Write math as LaTeX between $ signs ($\\frac{{7(x-2)}}{{5}}$, $x^2$, $\\angle ABC$), and a printed dollar sign for money as \\$ ($\\$78$ or \\$78); never simplify or reword the printed text.
 - A table becomes a table block. Leave out answer lines, boxes for working, "Answers written in the margins will not be marked", page headers and footers.
 - A question's parts follow its printed labels (a), (b), (b)(i). The quiz holds parts in one flat list, so (b)(i) and (b)(ii) are two parts labelled "b(i)" and "b(ii)". Text printed under (b) before (i), such as the data the sub-parts use, is never left out: give it as b(i)'s lead_in. A question without parts has an empty stem and one part labelled "".
-- Text printed at the very end of the last page shown that leads into parts on the next page, such as the data under (b) with (b)(i) over the page, is never left out either: give it word for word as that question's trailing_text, and it goes in front of the question's next part.
 - At most {limits.QUIZ_QUESTION_PARTS_MAX} parts a question.
-
-Answers:
-- mcq: the options' text in printed order, without their letters A, B, C, D. Copy each option exactly as printed, digit for digit; never change one to fit your working. Keep that order, and leave the options out of the part's blocks.
+- mcq: the options' text in printed order, without their letters A, B, C, D. Keep that order, and leave the options out of the part's blocks.
 - short: a single final value or word the learner types, for a part worth 1 mark with no working to show.
 - open: anything answered with working, a proof, an explanation or a drawing, and any part marked for its method or worth more than 1 mark.
-- Give every part its correct answer and a short worked solution. Copy them when the page prints them and set key_source to printed; otherwise work them out, set key_source to worked_out, and never change the printed question.
-- The answer: mcq "correct" (zero-based indexes of the right options); short "accepted"; open "points", the marking points with their marks, at most {limits.QUIZ_MARKSCHEME_MAX} adding up to the part's marks, and "accepted", a short model answer.
 - marks: the part's printed marks. When only the question's total is printed ("(3 marks)" after (a) and (b)), split it across the parts as the work suggests and give the printed total in total_marks. An item printed without marks has 1.
 
-Figures: a layout model looked for pictures and charts on these pages. After each page's text comes what it found on that page, as JSON: each box's number (unique among these pages), page, coordinates [left, top, right, bottom] on a 0-1000 grid of the page image (0, 0 is the top left corner), label and score. Boxes are hints from a model, not part of the page. For each diagram, graph, chart or photo a question needs, give boxes, the numbers of the boxes that hold it; the part whose text it follows ("" for the text shared by every part); and a few words on what it shows. A figure split across boxes (a diagram and its key, two shapes side by side) takes all of them. When boxes overlap, give the one that holds the whole figure and the least else. Leave out a box that holds no figure of a question you record, such as a figure of a question that is not on these pages. When no box holds a figure the question needs, give boxes [] and image, the page image it is on (counted from 1 in the order shown). The figure is cropped from the page into the quiz, so the blocks never describe it.
+Answers, when asked for them:
+- Give every part its correct answer and a short worked solution.
+- The answer: mcq "correct" (zero-based indexes of the right options); short "accepted"; open "points", the marking points with their marks, at most {limits.QUIZ_MARKSCHEME_MAX} adding up to the part's marks, and "accepted", a short model answer.
 
-Each recorded question is checked at once. Fix what a result names and record that question again with the same label; an accepted question needs no second call. When every question on these pages is recorded, reply with the single word DONE.
+Figures: a layout model looked for pictures and charts on these pages. After the pages comes what it found, as JSON: each box's number, page, coordinates [left, top, right, bottom] on a 0-1000 grid of the page image (0, 0 is the top left corner), label and score. Boxes are hints from a model, not part of the page. For each diagram, graph, chart or photo a question needs, give boxes, the numbers of the boxes that hold it; the part whose text it follows ("" for the text shared by every part); and a few words on what it shows. A figure split across boxes (a diagram and its key, two shapes side by side) takes all of them. When boxes overlap, give the one that holds the whole figure and the least else. Leave out a box that holds no figure of a question. When no box holds a figure the question needs, give boxes [] and image, the page image it is on (counted from 1 in the order shown). The figure is cropped from the page into the quiz, so the blocks never describe it.
+
+Each recorded question is checked at once. Fix what a result names and record that question again with the same label; an accepted question needs no second call. When every question or answer asked for is recorded, reply with the single word DONE.
 {SOURCE_RULE}"""
+
+# Scans and images (Epo 2026-11-05): no page text, nothing else changes.
+SYSTEM_NO_PAGE_TEXT = SYSTEM.replace(
+    ", each with the page's indexed text, which may be rough: the image is what counts.",
+    ".",
+    1,
+)
+
+MAP_ASK = (
+    "Map these pages before recording anything. Call no tool in this reply. Answer with "
+    "plain text, one line for each question, in printed order, exactly in this form:\n"
+    "<label> | pages <first>-<last> | parts <printed part labels, or none> | figures <box "
+    "numbers, or none>\n"
+    "label is the question's printed number alone, as in 31, not B31; add a section (A1, "
+    "B1) only when two questions on these pages would otherwise share a number. first and "
+    "last are the page numbers it is printed on, from its number to its last line, as the "
+    "page headings give them. parts lists its printed part labels in order, separated by "
+    "commas, with sub-parts written out: a, b(i), b(ii). figures lists the numbers of the "
+    "boxes that hold its figures, separated by commas."
+)
 
 CUT_OFF = (
     "Your last reply was cut off at the output limit before its calls finished, "
@@ -90,6 +88,16 @@ _BLOCK = {
     "required": ["type"],
 }
 
+_LABEL = {
+    "type": "string",
+    "description": 'The printed question number, e.g. "7".',
+}
+
+_PART_LABEL = {
+    "type": "string",
+    "description": 'The printed part label: "a", "b(ii)"; "" for a question without parts.',
+}
+
 _ANSWER = {
     "type": "object",
     "properties": {
@@ -99,31 +107,9 @@ _ANSWER = {
             "items": {"type": "string"},
             "description": "mcq: each option's text in printed order, without its letter.",
         },
-        "correct": {
-            "type": "array",
-            "items": {"type": "integer"},
-            "description": "mcq: zero-based indexes of the correct options.",
-        },
-        "accepted": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "short: the correct answer (the value alone when a unit is printed beside the answer space); open: a short model answer.",
-        },
         "unit": {
             "type": "string",
             "description": "short: the unit printed beside the answer space, if any.",
-        },
-        "points": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string"},
-                    "marks": {"type": "integer", "minimum": 1},
-                },
-                "required": ["text", "marks"],
-            },
-            "description": f"open: the marking points, each a step that earns whole marks, at most {limits.QUIZ_MARKSCHEME_MAX}, adding up to the part's marks.",
         },
     },
     "required": ["type"],
@@ -132,10 +118,7 @@ _ANSWER = {
 _PART = {
     "type": "object",
     "properties": {
-        "label": {
-            "type": "string",
-            "description": 'The printed part label: "a", "b(ii)"; "" for a question without parts.',
-        },
+        "label": _PART_LABEL,
         "lead_in": {
             "type": "string",
             "description": 'The first sub-part only: the text printed under its parent label before it, as under (b) before (i); "" when there is none.',
@@ -147,17 +130,8 @@ _PART = {
             "minimum": 1,
             "maximum": limits.QUESTION_MARKS_MAX,
         },
-        "key_source": {
-            "type": "string",
-            "enum": ["printed", "worked_out"],
-            "description": "printed when the page prints the answer, worked_out when you worked it out.",
-        },
-        "solution": {
-            "type": "string",
-            "description": "A short worked solution: the steps that lead to the answer.",
-        },
     },
-    "required": ["label", "blocks", "answer", "marks", "key_source", "solution"],
+    "required": ["label", "blocks", "answer", "marks"],
 }
 
 _FIGURE = {
@@ -185,18 +159,10 @@ _FIGURE = {
     "required": ["boxes", "part", "description"],
 }
 
-_TRAILING_TEXT = {
-    "type": "string",
-    "description": 'Text printed at the very end of the last page shown, after this question\'s last part, that leads into parts on the next page; "" when there is none.',
-}
-
 _QUESTION = {
     "type": "object",
     "properties": {
-        "label": {
-            "type": "string",
-            "description": 'The printed question number, e.g. "7".',
-        },
+        "label": _LABEL,
         "stem": {
             "type": "array",
             "items": _BLOCK,
@@ -208,9 +174,62 @@ _QUESTION = {
             "description": "The question's printed total, when only a total is printed.",
         },
         "figures": {"type": "array", "items": _FIGURE},
-        "trailing_text": _TRAILING_TEXT,
+        "pages": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "The first and last page it is printed on, from its number to its last line, as the page headings give them.",
+        },
     },
-    "required": ["label", "stem", "parts"],
+    "required": ["label", "stem", "parts", "pages", "figures"],
+}
+
+# ``accepted`` is required for an open part's model answer. The flat part cannot
+# name its answer type, so every part sends it (Epo 2026-11-05).
+_ANSWERS = {
+    "type": "object",
+    "properties": {
+        "label": _LABEL,
+        "parts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "label": _PART_LABEL,
+                    "correct": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "mcq: zero-based indexes of the correct options.",
+                    },
+                    "accepted": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "short: the correct answer (the value alone when a unit is printed beside the answer space); open: a short model answer; mcq: an empty list.",
+                    },
+                    "points": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string"},
+                                "marks": {"type": "integer", "minimum": 1},
+                            },
+                            "required": ["text", "marks"],
+                        },
+                        "description": f"open: the marking points, each a step that earns whole marks, at most {limits.QUIZ_MARKSCHEME_MAX}, adding up to the part's marks.",
+                    },
+                    "solution": {
+                        "type": "string",
+                        "description": "A short worked solution: the steps that lead to the answer.",
+                    },
+                },
+                "required": ["label", "accepted", "solution"],
+            },
+            "minItems": 1,
+        },
+    },
+    "required": ["label", "parts"],
 }
 
 TOOLS: list[dict[str, Any]] = [
@@ -218,86 +237,69 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "record_question",
-            "description": "Record one question that starts on these pages.",
+            "description": "Record one whole question.",
             "parameters": _QUESTION,
         },
     },
     {
         "type": "function",
         "function": {
-            "name": "continue_question",
-            "description": "Add what the first page carries on from the open question: its next parts, or more of its last part's text.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "label": {
-                        "type": "string",
-                        "description": "The open question's label.",
-                    },
-                    "blocks": {
-                        "type": "array",
-                        "items": _BLOCK,
-                        "description": "More of the last part's text, printed on this page.",
-                    },
-                    "parts": {
-                        "type": "array",
-                        "items": _PART,
-                        "description": "The question's next parts, printed on this page.",
-                    },
-                    "figures": {"type": "array", "items": _FIGURE},
-                    "trailing_text": _TRAILING_TEXT,
-                },
-                "required": ["label"],
-            },
+            "name": "record_answers",
+            "description": "Record the answers to one question.",
+            "parameters": _ANSWERS,
         },
     },
 ]
 
 
-def window_intro(
-    *, expected: list[str], recorded: list[str], open_question: dict[str, Any] | None
-) -> str:
-    lines = [
-        "Questions the selected pages hold, from their text: "
-        + (", ".join(expected) if expected else "unknown")
-        + ".",
-        "Already recorded: " + (", ".join(recorded) if recorded else "none") + ".",
-    ]
-    if open_question is not None:
-        lines.append(
-            "Open question, recorded last from the previous page; continue it with "
-            "continue_question only if the first page below carries on with it:\n"
-            + json.dumps(open_question, ensure_ascii=False)
-        )
-    return "\n".join(lines)
+def page_heading(image: int, number: int, file_name: str) -> str:
+    """A page sent with no text: its heading, numbered as figures name their page
+    image."""
+    return f"Page image {image}: page {number} of {file_name}."
 
 
-def page_heading(number: int, file_name: str) -> str:
-    return f"Page {number} of {file_name}"
-
-
-def page_text(
-    image: int, number: int, file_name: str, text: str, boxes: list[dict[str, Any]]
-) -> str:
-    """A window page's heading, numbered as figures name their page image, its
-    text, and the layout model's boxes on it."""
+def page_text(image: int, number: int, file_name: str, text: str) -> str:
+    """A page's heading, numbered as figures name their page image, and its text."""
     heading = f"Page image {image}: page {number} of {file_name}"
-    found = f"Boxes on this page, as JSON: {json.dumps(boxes)}"
     if not text.strip():
-        return f"{heading}. It has no indexed text.\n{found}"
-    return f"{heading}. Its indexed text:\n{source_block(text)}\n{found}"
+        return f"{heading}. It has no indexed text."
+    return f"{heading}. Its indexed text:\n{source_block(text)}"
 
 
-def window_messages(intro: str, pages: list[tuple[str, str]]) -> list[dict[str, Any]]:
-    """``pages`` are (page text, image data URL) pairs, one or two."""
-    content: list[dict[str, Any]] = [{"type": "text", "text": intro}]
+def map_messages(
+    pages: list[tuple[str, str]], boxes: list[dict[str, Any]], *, with_text: bool
+) -> list[dict[str, Any]]:
+    """``pages`` are (page text or heading, image data URL) pairs; ``boxes`` the
+    layout model's, numbered once across the selection. Every thread continues
+    these messages, so a run has one system prompt."""
+    content: list[dict[str, Any]] = []
     for text, image in pages:
         content.append({"type": "text", "text": text})
         content.append({"type": "image_url", "image_url": {"url": image}})
+    content.append(
+        {"type": "text", "text": f"Boxes on these pages, as JSON: {json.dumps(boxes)}"}
+    )
+    content.append({"type": "text", "text": MAP_ASK})
     return [
-        {"role": "system", "content": EXTRACT_SYSTEM},
+        {"role": "system", "content": SYSTEM if with_text else SYSTEM_NO_PAGE_TEXT},
         {"role": "user", "content": content},
     ]
+
+
+def _named(labels: list[str]) -> str:
+    if len(labels) == 1:
+        return f"question {labels[0]}"
+    return f"questions {labels[0]} to {labels[-1]}"
+
+
+def copy_ask(labels: list[str]) -> str:
+    """``labels`` are a contiguous run, by their printed numbers."""
+    return f"Copy {_named(labels)} now."
+
+
+def solve_ask(labels: list[str]) -> str:
+    """``labels`` are a contiguous run, by their printed numbers."""
+    return f"Give the answers to {_named(labels)} now."
 
 
 # ------------------------------------------------------------------ figures
@@ -360,7 +362,7 @@ SCHEME_SYSTEM = (
 
 
 def scheme_labels(labels: list[tuple[str, list[str]]]) -> str:
-    """The recorded questions with their part labels: 1; 3: a, b; 4: a, b(i)."""
+    """The map's questions with their part labels: 1; 3: a, b; 4: a, b(i)."""
     return "; ".join(
         f"{label}: {', '.join(parts)}" if any(parts) else label
         for label, parts in labels

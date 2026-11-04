@@ -17,7 +17,7 @@ type Extraction struct {
 	WorkspaceID string `json:"workspaceId"`
 	Title       string `json:"title"`
 	Status      string `json:"status" enum:"running,done,failed"`
-	// Recorded counts the questions read so far, saved as each window ends.
+	// Recorded counts the questions copied so far, saved as each copy batch ends.
 	Recorded   int               `json:"recorded"`
 	Report     *ExtractionReport `json:"report,omitempty"`
 	QuizID     *string           `json:"quizId,omitempty"`
@@ -28,10 +28,11 @@ type Extraction struct {
 }
 
 // ExtractionReport is a finished run's completeness check, by printed
-// question label: the labels the pages' text listed (Expected), those never
-// read (Missing), those read (Recorded), questions with a part whose key the
-// model worked out and no mark scheme replaced (KeysWorkedOut; their solutions
-// carry the AI-written label), parts whose key differs from the mark scheme's
+// question label: the labels the map listed (Expected), those never copied
+// (Missing), those copied (Recorded), parts saved as copied with no answer because
+// their solve call failed or the run stopped first (AnswersMissing, "4(a)"), whether
+// the answer files could not be parsed, so every answer was worked out
+// (SchemeFailed), parts whose key differs from the mark scheme's
 // (KeyDisagreements, "4(a)"), questions that keep the page's keys because the
 // scheme's were refused (SchemeRefused), saved questions whose part marks
 // differ from the printed total (MarksDiffer), mark scheme entries no question
@@ -41,13 +42,15 @@ type Extraction struct {
 // (Figures), for the starter to check, and questions saved without their
 // figures (FiguresLeftOut): the box call for their page failed twice, or the
 // figures did not fit in the starter's storage (Epo 2026-11-04). Stopped says why a run ended early:
-// quiz_full, credits, or output_limit (its page windows wrote past the run's
-// output budget).
+// quiz_full, credits, or output_limit (its calls wrote past the run's output
+// budget). Windows is its copy batches: the name predates them, and the Make a
+// quiz screens' API keeps it.
 type ExtractionReport struct {
 	Expected         []string `json:"expected" nullable:"false"`
 	Missing          []string `json:"missing" nullable:"false"`
 	Recorded         []string `json:"recorded" nullable:"false"`
-	KeysWorkedOut    []string `json:"keysWorkedOut" nullable:"false"`
+	AnswersMissing   []string `json:"answersMissing,omitempty" nullable:"false"`
+	SchemeFailed     bool     `json:"schemeFailed,omitempty"`
 	KeyDisagreements []string `json:"keyDisagreements" nullable:"false"`
 	SchemeRefused    []string `json:"schemeRefused" nullable:"false"`
 	MarksDiffer      []string `json:"marksDiffer" nullable:"false"`
@@ -99,8 +102,8 @@ func (s *Store) GetExtraction(ctx context.Context, userID, id string) (Extractio
 	return e, err
 }
 
-// SaveExtractionQuestions keeps the questions recorded so far on a running
-// run, as each page window ends.
+// SaveExtractionQuestions keeps the questions copied so far on a running run,
+// with no answers yet, as each copy batch ends.
 func (s *Store) SaveExtractionQuestions(ctx context.Context, id string, questions json.RawMessage) error {
 	_, err := s.pool.Exec(ctx, `UPDATE question_extractions SET questions=$2
 		WHERE id=$1 AND status='running'`, id, questions)

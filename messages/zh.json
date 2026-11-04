@@ -2197,6 +2197,7 @@
   "quiz_question_wrong": "第 {number} 题：错误",
   "quiz_redo": "重做测验",
   "quiz_checked_count": "已检查 {checked}/{total}",
+  "quiz_no_answers_configured": "未设置答案",
   "quiz_questions": "题目",
   "question_ui_type_answer": "输入你的答案",
   "question_ui_scheme_and_solution": "评分标准与解题过程",

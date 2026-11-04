@@ -256,7 +256,7 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 	}
 	q, order, marks := quizQuestion(qs, in.Body.QuestionID)
 	if q == nil {
-		return nil, huma.Error404NotFound("the question is not in this quiz")
+		return nil, noAnswersConfiguredError()
 	}
 	// A repeated check (a lost response, a second tab) is refused before it
 	// costs a grading call.

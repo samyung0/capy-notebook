@@ -6,7 +6,7 @@ this script runs in the root venv and reaches it through CAPY_LAYOUT_URL and
 CAPY_LAYOUT_TOKEN, as retrieval does. The wrappers below only record what the code
 did; none changes it.
 
-    python -I layout_trial.py run --tag frozen --window-pages 2 --parallel 3 \
+    python -I layout_trial.py run --tag frozen --parallel 3 \
         --scans <dir> --digital <dir> --env-file <keys> \
         --jobs 2021-p1:1 igcse-maths-0580-2025-sp2:1 igcse-biology-0610-2023-sp4@2-17:1
     python -I layout_trial.py run ... --kill-pid <pid> --kill-after-pages 5
@@ -69,10 +69,8 @@ class State:
     layout_seconds: float = 0.0
     box_call_pages: int = 0
     scheme_entries: list = dataclasses.field(default_factory=list)
-    # Each window's first user message, images as <image: page N>.
+    # The map call's user message, images as <image: page N>.
     sent: list = dataclasses.field(default_factory=list)
-    # What the model gave as trailing_text: (question, text).
-    trailing: list = dataclasses.field(default_factory=list)
 
 
 def without_images(content: list[dict]) -> list[dict]:
@@ -120,10 +118,10 @@ def install() -> None:
     complete_response = extraction.models.complete_response
 
     async def complete(messages, **kwargs):
-        if kwargs.get("call_purpose") == "extraction_window" and len(messages) == 2:
+        if kwargs.get("call_purpose") == "extraction_map":
             STATE.get().sent.append(without_images(messages[1]["content"]))
         response = await complete_response(messages, **kwargs)
-        if kwargs.get("call_purpose") == "extraction_window":
+        if kwargs.get("call_purpose") in ("extraction_copy", "extraction_solve"):
             reply = elitellm.assistant_message_from_obj(
                 elitellm.message_from_response(response)
             )
@@ -217,28 +215,25 @@ def install() -> None:
 
     extraction.placed = placed
 
-    add, extend = extraction.Run.add, extraction.Run.extend
+    copy_question = extraction.Run.copy_question
+    record_answers = extraction.Run.record_answers
 
-    async def counted_add(self, item, window, pages_):
-        result = await add(self, item, window, pages_)
-        parts = len(item.get("parts") or []) if isinstance(item, dict) else 0
-        state = STATE.get()
-        state.calls[-1]["results"].append(["record", bench._outcome(result), parts])
-        if isinstance(item, dict) and item.get("trailing_text"):
-            state.trailing.append([item.get("label"), item["trailing_text"]])
-        return result
-
-    async def counted_extend(self, args_, window, pages_):
-        result = await extend(self, args_, window, pages_)
-        state = STATE.get()
-        state.calls[-1]["results"].append(
-            ["continue", bench._outcome(result), len(args_.get("parts") or [])]
+    async def counted_copy(self, item, pages_):
+        result = await copy_question(self, item, pages_)
+        STATE.get().calls[-1]["results"].append(
+            ["record", bench._outcome(result), len(item.get("parts") or [])]
         )
-        if args_.get("trailing_text"):
-            state.trailing.append([args_.get("label"), args_["trailing_text"]])
         return result
 
-    extraction.Run.add, extraction.Run.extend = counted_add, counted_extend
+    async def counted_answers(self, args_, pages_):
+        result = await record_answers(self, args_, pages_)
+        STATE.get().calls[-1]["results"].append(
+            ["answers", bench._outcome(result), len(args_.get("parts") or [])]
+        )
+        return result
+
+    extraction.Run.copy_question = counted_copy
+    extraction.Run.record_answers = counted_answers
 
     parse_schemes = extraction.parse_schemes
 
@@ -252,14 +247,14 @@ def install() -> None:
     extraction.parse_schemes = kept_schemes
 
 
-def parse_job(text: str, window_pages: int) -> dict:
+def parse_job(text: str) -> dict:
     head, repeat = text.split(":")
     paper, _, span = head.partition("@")
     return {
         "paper": paper,
         "span": span,
         "repeat": int(repeat),
-        "name": f"{paper}-{span or 'all'}-w{window_pages}-{repeat}",
+        "name": f"{paper}-{span or 'all'}-{repeat}",
     }
 
 
@@ -333,6 +328,7 @@ async def run_job(job: dict, args, out_dir: Path) -> None:
         )
         return jpeg, size
 
+    layers = extraction.page_layers(pdf, {n: texts[n] for n in numbers})
     pages = [
         extraction.Page(
             n,
@@ -340,6 +336,7 @@ async def run_job(job: dict, args, out_dir: Path) -> None:
             texts[n],
             functools.partial(image, n),
             functools.partial(crop, n),
+            layer=layers[n],
         )
         for n in numbers
     ]
@@ -356,7 +353,7 @@ async def run_job(job: dict, args, out_dir: Path) -> None:
     done: dict = {}
     started = time.monotonic()
     async for event in extraction.run(
-        pages, schemes, model=model, validate=validate, locale="en"
+        pages, schemes, model=model, validate=validate
     ):
         if event["type"] == "questions":
             recorded = copy.deepcopy(event["questions"])
@@ -387,12 +384,10 @@ async def run_job(job: dict, args, out_dir: Path) -> None:
         "scheme_entries": state.scheme_entries,
         "figures": state.figures,
         "names": state.names,
-        "window_pages": extraction.WINDOW_PAGES,
         "calls": state.calls,
         "box_call_pages": state.box_call_pages,
         "layout_seconds": state.layout_seconds,
         "sent": state.sent,
-        "trailing": state.trailing,
         "regions": {
             fm.stem_of(job["paper"], page.number): [
                 dataclasses.asdict(region) for region in found
@@ -488,28 +483,15 @@ async def flood(tasks: int, jpeg: bytes, stop: asyncio.Event) -> dict[str, int]:
 async def run_jobs(args) -> None:
     from pipeline.retrieval import capture, extraction
 
-    if args.window_pages:
-        extraction.WINDOW_PAGES = args.window_pages
     install()
     if args.kill_pid:
         kill_after(args.kill_after_pages, args.kill_pid)
-    if args.hide_held:
-        # The variant that holds trailing_text without showing it to the next window.
-        open_question = extraction.Run.open_question
-
-        def without_held(self):
-            shown = open_question(self)
-            if shown:
-                shown.pop("trailing_text", None)
-            return shown
-
-        extraction.Run.open_question = without_held
     binary = bench.RESULTS / "quizcheck"
     if not binary.exists():
         bench.quizcheck()
     out_dir = OUT / args.tag
     out_dir.mkdir(parents=True, exist_ok=True)
-    jobs = [parse_job(text, extraction.WINDOW_PAGES) for text in args.jobs]
+    jobs = [parse_job(text) for text in args.jobs]
     gate = asyncio.Semaphore(args.parallel)
 
     async def guarded(job):
@@ -712,7 +694,7 @@ def crossing(args) -> None:
     )
     print("|" + "---|" * 14)
     results = [r for r in load(args.tag) if r["paper"].startswith("igcse-biology")]
-    results.sort(key=lambda r: (r["window_pages"], r["pages"][0], r["repeat"]))
+    results.sort(key=lambda r: (r["pages"][0], r["repeat"]))
     for r in results:
         saved = dict(zip(r["report"]["recorded"], r["questions"]))
         parts = right = 0
@@ -748,7 +730,7 @@ def crossing(args) -> None:
                     where = "stem"
         w = (r["scores"].get("window") or {}).get("results") or {}
         print(
-            f"| {r['name']} | w{r['window_pages']} from p{r['pages'][0]} "
+            f"| {r['name']} | from p{r['pages'][0]} "
             f"| {parts}/{sum(len(g['parts']) for g in gold.values())} | {right}/6 "
             f"| {kept_all / total_all:.0%} ({lowest:.0%}) "
             f"| {'kept' if where != '-' else 'lost'} | {where} "
@@ -883,11 +865,9 @@ def main() -> None:
     p.add_argument("--digital", required=True)
     p.add_argument("--env-file", required=True)
     p.add_argument("--parallel", type=int, default=3)
-    p.add_argument("--window-pages", type=int)
     p.add_argument("--kill-pid", type=int)
     p.add_argument("--kill-after-pages", type=int, default=5)
     p.add_argument("--flood", type=int, default=0)
-    p.add_argument("--hide-held", action="store_true")
     p = sub.add_parser("score")
     p.add_argument("--tag", required=True)
     p.add_argument("--only")

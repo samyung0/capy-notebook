@@ -1446,6 +1446,9 @@ type MaterialDraft struct {
 	// for its maker's study reads (Material.PracticeWorkspaceID).
 	PracticeWorkspaceID string
 	PracticeTopicID     *string
+	// AllowNoQuestions lets a quiz start with none (Make a quiz, when every
+	// question it read goes to the room as incomplete).
+	AllowNoQuestions bool
 	// Library attribution; nil for a material built from workspace sources.
 	Provenance *Provenance
 }
@@ -1467,7 +1470,7 @@ func (d MaterialDraft) material() (Material, error) {
 		if err != nil {
 			return Material{}, err
 		}
-		if len(questions) == 0 {
+		if len(questions) == 0 && !d.AllowNoQuestions {
 			return Material{}, ErrEmptyMaterial
 		}
 		content, err := materialdoc.QuizDocument(d.Questions, d.TimeLimitMin)

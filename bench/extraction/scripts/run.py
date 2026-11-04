@@ -19,7 +19,7 @@ validator material creation uses.
 
 The OpenRouter models (``--model v41-1017`` and ``v41``) are held on named
 providers with fallbacks off, and their results record which provider served
-each call and what OpenRouter billed. ``--effort`` sets the page windows'
+each call and what OpenRouter billed. ``--effort`` sets the map and solve calls'
 thinking (mid, as the gateway pins it).
 
 Figures are cropped as production crops them (``FIGURE_PAGE_EDGE``) and written
@@ -244,8 +244,6 @@ def _outcome(result: str) -> str:
 
 def run_name(args) -> str:
     name = f"{args.paper}-{args.model}-{args.repeat}"
-    if args.window_pages is not None:
-        name += f"-w{args.window_pages or 'all'}"
     return name
 
 
@@ -270,6 +268,7 @@ async def run(args) -> dict:
         )
         return jpeg, size
 
+    layers = extraction.page_layers(pdf, {n: texts[n] for n in gold["pages"]})
     pages = [
         extraction.Page(
             number,
@@ -277,6 +276,7 @@ async def run(args) -> dict:
             texts[number],
             functools.partial(image, number),
             functools.partial(crop, number),
+            layer=layers[number],
         )
         for number in gold["pages"]
     ]
@@ -313,7 +313,7 @@ async def run(args) -> dict:
     )
     # As the service binds it: the run's calls take the extraction route.
     elitellm.bind_route_slot("extraction")
-    # Windows run at mid, as the gateway pins them (Epo 2026-11-03).
+    # The map and solve calls run at mid, as the gateway pins them (Epo 2026-11-03).
     bind_request_llm(args.effort)
     # As the service binds it: a busy model call waits its turn once.
     limits.bind_call_slots(limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S))
@@ -361,17 +361,14 @@ async def run(args) -> dict:
         return await locate_figures(held, model=model)
 
     extraction.locate_figures = located
-    # The window size (0: every selected page in one window), and what each
-    # window call did: how it finished, its output, its tool calls and their
-    # results.
-    if args.window_pages is not None:
-        extraction.WINDOW_PAGES = args.window_pages or len(pages)
+    # What each call that records did: how it finished, its output, its tool calls
+    # and their results.
     calls: list[dict] = []
     complete_response = extraction.models.complete_response
 
     async def counted(messages, **kwargs):
         response = await complete_response(messages, **kwargs)
-        if kwargs.get("call_purpose") != "extraction_window":
+        if kwargs.get("call_purpose") not in ("extraction_copy", "extraction_solve"):
             return response
         reply = elitellm.assistant_message_from_obj(
             elitellm.message_from_response(response)
@@ -387,34 +384,40 @@ async def run(args) -> dict:
         return response
 
     extraction.models.complete_response = counted
-    add, extend = extraction.Run.add, extraction.Run.extend
+    copy_question = extraction.Run.copy_question
+    record_answers = extraction.Run.record_answers
 
-    async def counted_add(self, item, window, pages_):
-        result = await add(self, item, window, pages_)
-        parts = len(item.get("parts") or []) if isinstance(item, dict) else 0
-        calls[-1]["results"].append(["record", _outcome(result), parts])
-        return result
-
-    async def counted_extend(self, args_, window, pages_):
-        result = await extend(self, args_, window, pages_)
+    async def counted_copy(self, item, pages_):
+        result = await copy_question(self, item, pages_)
         calls[-1]["results"].append(
-            ["continue", _outcome(result), len(args_.get("parts") or [])]
+            ["record", _outcome(result), len(item.get("parts") or [])]
         )
         return result
 
-    extraction.Run.add, extraction.Run.extend = counted_add, counted_extend
+    async def counted_answers(self, args_, pages_):
+        result = await record_answers(self, args_, pages_)
+        calls[-1]["results"].append(
+            ["answers", _outcome(result), len(args_.get("parts") or [])]
+        )
+        return result
+
+    extraction.Run.copy_question = counted_copy
+    extraction.Run.record_answers = counted_answers
     started = time.monotonic()
     recorded: list[dict] = []
     done: dict = {}
     async for event in extraction.run(
-        pages, schemes, model=model, validate=validate, locale="en"
+        pages, schemes, model=model, validate=validate
     ):
         if event["type"] == "questions":
-            # The page's keys, before the scheme replaces worked-out ones.
+            # The questions as copied, with their marks and no answers yet.
             recorded = copy.deepcopy(event["questions"])
-            print(f"  window: {len(recorded)} questions so far", flush=True)
+            print(f"  copied: {len(recorded)} questions so far", flush=True)
         else:
             done = event
+    if not schemes:
+        # With no scheme to replace them, these are the keys the model worked out.
+        recorded = copy.deepcopy(done["questions"])
     seconds = time.monotonic() - started
     crops = RESULTS / "crops" / run_name(args)
     crops.mkdir(parents=True, exist_ok=True)
@@ -461,7 +464,6 @@ async def run(args) -> dict:
         "report": done["report"],
         "scheme_entries": parsed,
         "figures": figures,
-        "window_pages": extraction.WINDOW_PAGES,
         "calls": calls,
     }
 
@@ -792,8 +794,8 @@ def box_scores(result: dict, gold: dict, key: str = "box") -> dict:
 
 
 def window_scores(result: dict) -> dict | None:
-    """What the page windows did: calls, cut-offs, re-asks, tool results and
-    questions recorded per call."""
+    """What the calls that record did: calls, cut-offs, tool results and questions
+    recorded per call."""
     calls = result.get("calls")
     if calls is None:
         return None
@@ -811,7 +813,6 @@ def window_scores(result: dict) -> dict | None:
     output = sum(c["output"] for c in calls)
     with_tools = sum(1 for c in calls if c["tool_calls"])
     return {
-        "window_pages": result.get("window_pages"),
         "windows": report["windows"],
         "calls": len(calls),
         # Calls with tool calls after each window's first: re-recording what
@@ -1089,7 +1090,6 @@ def score(result: dict, gold: dict, refs: Path) -> dict:
         if worked_mcq
         else None,
         "worked_out_part_marks_right": f"{worked_marks_right}/{worked_marks}",
-        "keys_worked_out_left": len(result["report"]["keysWorkedOut"]),
         "key_disagreements": result["report"]["keyDisagreements"],
         "scheme_refused": result["report"]["schemeRefused"],
         "marks_differ": result["report"]["marksDiffer"],
@@ -1128,15 +1128,10 @@ def main() -> None:
         "--score-only", action="store_true", help="rescore a saved result"
     )
     parser.add_argument(
-        "--window-pages",
-        type=int,
-        help="pages a window (production: 2); 0 puts every selected page in one",
-    )
-    parser.add_argument(
         "--effort",
         default="mid",
         choices=["low", "mid", "high"],
-        help="the page windows' thinking (the gateway pins mid)",
+        help="the map and solve calls' thinking (the gateway pins mid)",
     )
     args = parser.parse_args()
     RESULTS.mkdir(parents=True, exist_ok=True)

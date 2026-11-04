@@ -2197,6 +2197,7 @@
   "quiz_question_wrong": "Question {number}: wrong",
   "quiz_redo": "Redo quiz",
   "quiz_checked_count": "{checked} of {total} checked",
+  "quiz_no_answers_configured": "No answers configured",
   "quiz_questions": "Questions",
   "question_ui_type_answer": "Type your answer",
   "question_ui_scheme_and_solution": "Marking scheme and worked solution",

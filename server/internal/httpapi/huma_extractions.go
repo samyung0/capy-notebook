@@ -3,6 +3,8 @@ package httpapi
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -24,9 +27,10 @@ import (
 )
 
 // Make a quiz (todo-study-tracking.md §8): the retrieval service reads the
-// selected pages of a paper into questions, two pages a call, and pairs the
-// mark scheme and answer files with them by label; this gateway starts the
-// run, keeps the questions as each window ends and saves the quiz at the end.
+// selected pages of a paper into questions, a map call, then copy batches, then
+// solve batches, and pairs the mark scheme and answer files with them by label;
+// this gateway starts the run, keeps the questions as each copy batch ends and
+// saves the quiz at the end.
 // The run outlives the request, like a chat turn: it relays on a detached
 // context in this process, and FailOrphanedExtractions fails what a restart
 // cut short.
@@ -92,8 +96,8 @@ func checkExtractionRequest(req apimodel.CreateExtractionReq) error {
 
 // extractionLLM is the run's model: the extraction slot's default pin, a vision
 // model on OpenRouter (never direct DeepSeek, Epo 2026-11-03), with reasoning
-// at mid for the page windows, which work keys out as well as copying them;
-// outline and scheme calls turn it off. The run's starter pays.
+// at mid for the map and solve calls and low for the copy calls (Epo 2026-11-05);
+// scheme calls turn it off. The run's starter pays.
 func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, error) {
 	var out resolvedLLM
 	if a.modelReg == nil {
@@ -103,8 +107,8 @@ func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, er
 	if err != nil {
 		return out, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
 	}
-	if !slices.Contains(cfg.ThinkingLevels, models.ThinkingMid) {
-		return out, fmt.Errorf("%w: %s has no mid thinking", store.ErrModelUnavailable, cfg.Ref())
+	if !slices.Contains(cfg.ThinkingLevels, models.ThinkingMid) || !slices.Contains(cfg.ThinkingLevels, models.ThinkingLow) {
+		return out, fmt.Errorf("%w: %s lacks low or mid thinking", store.ErrModelUnavailable, cfg.Ref())
 	}
 	out.Cfg, out.Rates, out.UserID, out.Thinking = cfg, store.RatesFromConfig(cfg), userID, models.ThinkingMid
 	return out, nil
@@ -207,7 +211,6 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 	}
 	body := map[string]any{
 		"workspaceId": wsID, "paper": paper, "answerFiles": answers, "spendSessionId": charge.id,
-		"locale": a.userLocale(ctx, actor),
 	}
 	llm.attach(body)
 	// The run goes on after this request returns.
@@ -277,8 +280,8 @@ type extractionEvent struct {
 	Message   string          `json:"message"`
 }
 
-// relayExtraction follows a run to its end: it keeps the recorded questions
-// after each page window, then saves the quiz, or fails the run. Credits were
+// relayExtraction follows a run to its end: it keeps the copied questions
+// after each copy batch, then saves the quiz, or fails the run. Credits were
 // charged per model call, so the session closes as settled either way.
 func (a *api) relayExtraction(ctx context.Context, stream io.ReadCloser, charge *spend, run store.Extraction, actor, wsName string) {
 	defer stream.Close()
@@ -367,10 +370,17 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 			return failed("extraction_figures", err)
 		}
 	}
+	// A question with a part that has no answer goes to the quiz's room once the
+	// quiz exists; only a room holds one (Epo 2026-11-05).
+	complete, incomplete, err := materialdoc.SplitIncomplete(questions)
+	if err != nil {
+		return fail("quiz_invalid", err.Error())
+	}
 	// The quiz starts hidden from members (Epo 2026-11-03).
 	draft := store.MaterialDraft{
 		ActorUserID: actor, WorkspaceID: run.WorkspaceID, WorkspaceName: wsName,
-		Kind: store.MaterialQuiz, Title: title, Questions: questions, Assets: assets, Hidden: true,
+		Kind: store.MaterialQuiz, Title: title, Questions: complete, Assets: assets, Hidden: true,
+		AllowNoQuestions: len(incomplete) > 0,
 	}
 	mt, err := a.s.CreateMaterialDraft(ctx, draft)
 	if err != nil {
@@ -383,7 +393,10 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 		if !ok {
 			return fail("extraction_failed", "The quiz could not be saved.")
 		}
-		draft.Questions, draft.Assets, assets = bare, nil, nil
+		if draft.Questions, incomplete, err = materialdoc.SplitIncomplete(bare); err != nil {
+			return fail("quiz_invalid", err.Error())
+		}
+		draft.Assets, assets = nil, nil
 		ev.Report = figuresLeftOut(ev.Report)
 		mt, err = a.s.CreateMaterialDraft(ctx, draft)
 	}
@@ -400,11 +413,74 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 		}
 		a.thumbnailFigures(ctx, figures, ids)
 	}
+	if err := a.addIncompleteQuestions(ctx, run.ID, actor, mt.ID, incomplete); err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_incomplete"})
+		ev.Report = answersMissingLeftOut(ev.Report)
+	}
 	ended, err := a.s.FinishExtraction(ctx, run.ID, mt.ID, ev.Report)
 	if err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_finish"})
 	}
 	return ended
+}
+
+// addIncompleteQuestions puts a run's incomplete questions in the new quiz's room,
+// each after the question printed before it, through the same edit an agent's
+// question command makes. Only complete questions reach materials.content, so
+// grading and shared pages stay on what they read.
+func (a *api) addIncompleteQuestions(ctx context.Context, runID, actor, materialID string, incomplete []materialdoc.IncompleteQuestion) error {
+	if len(incomplete) == 0 {
+		return nil
+	}
+	commands := make([]json.RawMessage, len(incomplete))
+	sum := sha256.New()
+	for i, question := range incomplete {
+		var after any
+		if question.After != "" {
+			after = question.After
+		}
+		command, err := json.Marshal(map[string]any{
+			"type": "insert_child", "parentType": "quiz", "afterNodeId": after, "node": question.Node,
+		})
+		if err != nil {
+			return err
+		}
+		commands[i] = command
+		sum.Write(command)
+	}
+	// Uncancelled: the quiz is saved, and closing the stream should not lose these.
+	_, err := a.s.EditDocument(context.WithoutCancel(ctx), actor,
+		store.DocumentTarget{Kind: agenttools.KindMaterial, ID: materialID}, commands, nil,
+		store.DocumentOperation{
+			ID: store.ChatOperationID(runID, "incomplete-questions"), RequestHash: hex.EncodeToString(sum.Sum(nil)), ToolVersion: 1,
+		})
+	return err
+}
+
+// answersMissingLeftOut is the report of a run whose incomplete questions the
+// room did not take: they are named as questions with no copy.
+func answersMissingLeftOut(raw json.RawMessage) json.RawMessage {
+	var report map[string]any
+	if json.Unmarshal(raw, &report) != nil {
+		return raw
+	}
+	missing, _ := report["missing"].([]any)
+	parts, _ := report["answersMissing"].([]any)
+	seen := map[string]bool{}
+	for _, part := range parts {
+		name, _ := part.(string)
+		label, _, _ := strings.Cut(name, "(")
+		if label != "" && !seen[label] {
+			seen[label] = true
+			missing = append(missing, label)
+		}
+	}
+	report["missing"], report["answersMissing"] = missing, []any{}
+	out, err := json.Marshal(report)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 // withoutFigures is a run's questions with their cropped figures (image blocks
@@ -447,7 +523,7 @@ func figuresLeftOut(raw json.RawMessage) json.RawMessage {
 }
 
 // internalCheckQuestion validates one extracted question the way a quiz's
-// creation does, for the retrieval service's page windows: 200 with the
+// creation does, for the retrieval service's copy and solve calls: 200 with the
 // refusal in "problem", or with none.
 func (a *api) internalCheckQuestion(w http.ResponseWriter, r *http.Request) {
 	var req struct {
