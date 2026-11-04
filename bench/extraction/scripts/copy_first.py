@@ -110,6 +110,15 @@ COPY_ASK = (
     "none."
 )
 
+# The digit rules Epo asked to test on 2022 P2 Q34, added right after Copying's first bullet.
+DIGIT_RULES = {
+    "armb": "- Important: count the digits carefully for long numbers.",
+    "armc": (
+        "- Important: count the digits carefully for long numbers, on the page image, "
+        "since the indexed text may drop or add digits."
+    ),
+}
+
 # record_answers' accepted with the open-part fix: production's text, plus mcq's list.
 ACCEPTED_FIXED = (
     "short: the correct answer (the value alone when a unit is printed beside the answer "
@@ -141,7 +150,7 @@ def not_yet(label: str) -> str:
 _MAP_TOOLS = pm.map_tools
 
 
-def system_prompt(nonce: str, opening: str) -> str:
+def system_prompt(nonce: str, opening: str, rule: str = "") -> str:
     from pipeline.generated import limits
     from pipeline.prompts import extraction as prompts
     from pipeline.prompts.sources import SOURCE_RULE
@@ -149,6 +158,9 @@ def system_prompt(nonce: str, opening: str) -> str:
     assert limits.QUIZ_MARKSCHEME_MAX == 5
     text = prompts.EXTRACT_SYSTEM
     copying = text[text.index("Copying:") : text.index("Answers:")].rstrip()
+    if rule:
+        lines = copying.split("\n")
+        copying = "\n".join([*lines[:2], rule, *lines[2:]])
     return (
         f"Run {nonce}.\n{opening}\n\n{copying}\n{TYPES_AND_MARKS}\n\n{ANSWER_RULES}\n\n"
         f"{pm.FIGURE_RULES}\n\n{CLOSING}\n{SOURCE_RULE}"
@@ -221,6 +233,13 @@ def options_of(variant: str) -> dict:
         "probe": "probe" in flags,
         "low": "low" in flags,
         "copyonly": "copyonly" in flags,
+        # 2022 P2 Q34's digits: copy that question alone, or its real batch; a digit rule.
+        "q34": "q34" in flags,
+        "q34batch": "q34batch" in flags,
+        "rule": next(
+            (DIGIT_RULES[f] for f in flags if f in DIGIT_RULES),
+            "",
+        ),
         # record_answers requires accepted, and an open part without one is refused.
         "fix": "fix" in flags,
         # A paper's scheme parsed alongside the copying, its covered questions unsolved.
@@ -321,7 +340,9 @@ def install_copy() -> None:
         return TOOLS[options_of(fw.STATE.get().variant)["fix"]]
 
     pm.map_tools = tools_now
-    pm.system_prompt = lambda nonce: system_prompt(nonce, MAP_OPENING)
+    pm.system_prompt = lambda nonce: system_prompt(
+        nonce, MAP_OPENING, options_of(fw.STATE.get().variant)["rule"]
+    )
 
     stream = client._stream_sse
 
@@ -694,6 +715,10 @@ def install_copy() -> None:
             map_groups = [
                 [r["label"] for r in g] for g in chunks(rows, options["size"])
             ]
+            if options["q34"]:
+                map_groups = [["34"]]
+            if options["q34batch"]:
+                map_groups = [g for g in map_groups if "34" in g]
             extra["batches"] = map_groups
             threads: dict[int, list[dict]] = {}
 
@@ -718,7 +743,7 @@ def install_copy() -> None:
                 for i, f in enumerate(results)
                 if isinstance(f, BaseException)
             ]
-            for _ in range(REPAIRS):
+            for _ in range(0 if options["q34"] or options["q34batch"] else REPAIRS):
                 held = {label_key(label) for label in labels_now()}
                 missing = [
                     (i, label)
@@ -2597,6 +2622,69 @@ def structured(args) -> None:
     write_per_call(STRUCTURED_DIR)
 
 
+def q34(args) -> None:
+    """2022 P2 Q34's number and options, per arm: nothing else is scored."""
+    found = re.compile(r"12B00CD(0+)E")
+    groups: dict[str, list[dict]] = {}
+    for path in sorted(OUT.glob("2022-p2-all-*.json")):
+        j = json.loads(path.read_text())
+        groups.setdefault(j["variant"], []).append(j)
+    for variant, js in sorted(groups.items()):
+        zeros, exponents, missing = [], 0, 0
+        for j in js:
+            held = dict(zip(j["report"]["recorded"], j["questions"], strict=False))
+            if "34" not in held:
+                missing += 1
+                continue
+            got = found.findall(pm.plain(bench.question_text(held["34"])))
+            zeros.append(len(got[0]) if got else None)
+            exponents += bool(pm.known_failures(j).get("q34_exponents"))
+        copies = [c for j in js for c in j["call_log"] if is_copy(c) and "input" in c]
+        print(
+            variant,
+            "runs",
+            len(js),
+            "zeros",
+            dict(collections.Counter(zeros)),
+            "six zeros",
+            zeros.count(6),
+            "exponents right",
+            exponents,
+            "missing",
+            missing,
+            "| billed",
+            round(sum(j["billed_usd"] for j in js), 4),
+            "wall",
+            spread([j["seconds"] for j in js]),
+            "copy reasoning",
+            spread(
+                [
+                    sum(c["reasoning"] for c in j["call_log"] if is_copy(c) and "input" in c)
+                    for j in js
+                ]
+            ),
+            "copy output",
+            spread(
+                [
+                    sum(c["output"] for c in j["call_log"] if is_copy(c) and "input" in c)
+                    for j in js
+                ]
+            ),
+            "copy first share lowest",
+            round(
+                min(
+                    (c["cached"] / c["input"] for c in copies if c["round"] == 0),
+                    default=0,
+                ),
+                3,
+            ),
+            "failed",
+            sum(1 for j in js for c in j["call_log"] if "input" not in c),
+            "refusals",
+            sum(len(j.get("refusals") or []) for j in js),
+        )
+
+
 def setup(args) -> None:
     global OUT, SPEND_CAP, HARD_STOP
     OUT = bench.RESULTS / args.set
@@ -2638,7 +2726,7 @@ def main() -> None:
     p.add_argument("--env-file", required=True)
     p.add_argument("--parallel", type=int, default=3)
     p.add_argument("--override", nargs="*")
-    for name in ("report", "structured"):
+    for name in ("report", "structured", "q34"):
         p = sub.add_parser(name)
         p.add_argument("--scans", required=True)
         p.add_argument("--digital", required=True)
@@ -2655,6 +2743,9 @@ def main() -> None:
         return
     if args.command == "structured":
         structured(args)
+        return
+    if args.command == "q34":
+        q34(args)
         return
     run_all(args)
 
