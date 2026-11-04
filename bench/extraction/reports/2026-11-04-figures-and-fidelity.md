@@ -184,20 +184,105 @@ y as `$a$`, `$x$` and `$y$`, and 10 – 14 as `$10 - 14$`).
 As in round 2, the Paper 1 structure misses are mostly 1-mark parts typed as
 short answers, which the gold types as open.
 
-## Decisions for Epo
+## Epo's decisions (2026-11-04)
 
-1. **Locate failures fail the run.** A locate reply that is not one box per
-   figure counts as a failed attempt, like a scheme reply that is not JSON: one
-   silent retry, then the run fails. The alternative is to save the quiz
-   without that page's figures and name them in the report.
-2. **Storage full at the end fails the run** (`storage_full`), credits spent.
-   The alternative is to save the quiz without its figures.
-3. **The top pad brings in the question's own stem line** in about two thirds
-   of crops. Without it, 5 of 14 crops lost labels at the top. Keep it, or
-   accept clipped labels for cleaner crops?
-4. **Wide figures with a continuation** (2022 P2 Q14's "⇒ ⋯") and lines that
-   run far out (Q38's tangent) are clipped in both runs. Fixing them needs a
-   smarter crop (snapping to ink) or a second, zoomed locate call; not done.
+1. **A failed box call** gets one silent retry; after that the quiz is saved
+   without that page's figures, and the report names their questions
+   (`figuresLeftOut`). The run does not fail. Built and tested.
+2. **Storage full at the end:** the quiz is saved without its figures, which
+   are named in `figuresLeftOut`. Built and tested. Only a quiz that does not
+   fit by itself fails as `storage_full`.
+3. **The top pad stays**, including the question's own stem line it brings
+   into about two thirds of the crops.
+4. **Clipped wide figures** (2022 P2 Q14 and Q38) are left as they are for
+   now.
+
+## Born-digital pages
+
+Epo asked whether the box call, which works on scans, also works on
+born-digital pages. If it does, Make a quiz does not need the parser's figure
+boxes from ingest. I tested it on three public Cambridge IGCSE specimen papers
+from cambridgeinternational.org. Each page has a text layer. The PDFs are kept
+in the ignored `data/question-bank/references/born-digital/`, never in git.
+
+- **Mathematics 0580** (2025 specimen, Paper 2): 7 figures, all vector graphics
+  (a semicircle, grids, a cumulative frequency curve, a histogram grid, a
+  cyclic quadrilateral, shapes with dimension labels).
+- **Physics 0625** (2023 specimen, Paper 2, multiple choice): 12 vector
+  diagrams. Four pages hold two figures each (on one, both belong to
+  question 1), and question 34's four option diagrams form one figure.
+- **Biology 0610** (2023 specimen, Paper 4): 3 embedded raster photographs
+  (two photomicrographs and a photograph) and 4 vector figures (a graph, a
+  pedigree with its key, a food web, a nitrogen cycle).
+
+That is 26 figures on 21 pages.
+
+**Gold boxes come from the PDF itself** (`scripts/gold_digital.py`). For each
+figure, a seed region is set by hand. The gold box is everything the PDF holds
+inside that region: drawings, images and words, labels included. The
+"Fig. n.n" caption and "NOT TO SCALE" are left out. All 26 were checked by eye
+on renders; each holds the whole figure and nothing of the question text.
+
+**Each figure was run as production runs it** (`scripts/locate_digital.py`).
+`extraction.locate_figures` sends one call per page, reasoning off, with the
+page image at the windows' resolution, the same prompt and padding, on the
+extraction route. Each figure is listed with its question label and a
+description of the kind the window writes. Two repeats; InferenceNet served
+every call.
+
+| | Repeat 1 | Repeat 2 | Scans, runs 73 and 74 (for comparison) |
+|---|---|---|---|
+| Figures | 26 | 26 | 28 |
+| Whole after the pad | 22 | 21 | 21 |
+| Whole without the pad | 13 | 12 | – |
+| Tight (≥ 70% figure) after the pad | 12 | 13 | 18 |
+| Missed entirely | 0 | 0 | 0 |
+| Took in the next question | 0 | 0 (one bottom edge touched the next question's first line by 0.5% of the page, nothing visible) | 0 |
+| Took in another figure on the page | 0 | 0 | 0 |
+| Calls, time, billed | 22 calls (one retried), 4.2 s, $0.0006 | 22, 3.9 s, $0.0006 | – |
+
+By kind, over both repeats:
+
+| Figures | Count | Whole after the pad |
+|---|---|---|
+| Raster (photographs) | 6 | 6 |
+| Vector | 46 | 37 |
+| Large (5% of the page or more) | 38 | 33 |
+| Small (under 5% of the page) | 14 | 10 |
+| Alone on their page | 36 | 33 |
+| Two on their page | 16 | 10 |
+
+**What is lost when a crop is not whole.** Every miss is a label set outside
+the drawn lines: a leader-line label ("converging lens", "six turns of
+string", "transparent plastic"), a dimension label at the side ("(h+2)"), or,
+once, a graph's y-axis title and numbers. Small figures and pages with two
+figures are where this happens most. The scans lost the same kind of thing.
+
+The pad was tuned on scans, where located boxes sit a little low. On
+born-digital pages the raw boxes are already well placed, so the pad mostly
+adds the stem line above and the caption below. That is why tight drops from
+22-23 of 26 without the pad to 12-13 with it.
+
+Crops are 10-235 KB (median 26 KB). Large vector graphs and photographs are the
+biggest, at about 1,000-1,400 px on the long side.
+
+**Verdict.** One box call is good enough for every kind of page we tried: on
+scans and born-digital pages alike it placed every box it was asked for on
+its figure (14 scanned and 26 born-digital figures, two runs each, 80 boxes),
+never took in another question or figure, and gave whole crops for 75% of the
+scanned figures and 83% of the born-digital ones. The parser's figure boxes
+from ingest are not needed for Make a quiz.
+
+It is not exact on either kind of page. About one figure in five or six loses
+a side label. On born-digital pages that could be fixed without ingest boxes:
+at crop time, snap the located box to the PDF's own drawings, images and words
+around it, the way the gold boxes were made. Scans have nothing to snap to.
+Not built.
+
+**Not done:** OpenDataLoader's own image and chart boxes on these pages. Java
+17 is on the Mac, but running the parser locally means installing
+`opendataloader-pdf` into a separate environment and building its entry jar,
+so this optional comparison was skipped.
 
 ## Left out
 
@@ -208,12 +293,14 @@ short answers, which the gold types as open.
   side of the figures (storing the crops as the quiz's assets) is covered by
   `TestFinishedExtractionStoresItsFiguresAsTheQuizsAssets`, which runs in CI.
 - The lead-in field and the partial-stem fix landed after runs 73 and 74.
+- The born-digital test ran the box call alone, with hand-written figure
+  descriptions, not the whole extraction.
 
 ## Cost
 
 Runs 71 to 74 (14 runs) were billed $0.20 by OpenRouter. The locate probe, and
 the VLM page reads of 2022 Paper 1 and its scheme (21 pages on the captioning
-route), cost about $0.01 more.
+route), cost about $0.01 more. The two born-digital repeats cost $0.0012.
 
 The repository's `.env.local` holds no `OPENROUTER_API_KEY`. The bench read it
 from `deploy/.env.uat` (only the `DEEPSEEK_API_KEY` and `OPENROUTER_API_KEY`
@@ -227,4 +314,10 @@ python bench/extraction/scripts/run.py --paper 2022-p1 --model v41-1017 --repeat
 ```
 
 Add `--score-only` to rescore a saved run. Crops land in
-`.results/crops/<paper>-<model>-<n>/`.
+`.results/crops/<paper>-<model>-<n>/`. The born-digital test:
+
+```sh
+python -I bench/extraction/scripts/gold_digital.py data/question-bank/references/born-digital
+python -I bench/extraction/scripts/locate_digital.py data/question-bank/references/born-digital \
+  --repeat 1 --env-file <keys file>
+```
