@@ -368,9 +368,9 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	})
 
 	if _, err := owner.Exec(ctx, fmt.Sprintf(`
-        GRANT SELECT (provider, model, concurrency_total, interactive_reserve) ON model_capacities TO %s, %s;
-        GRANT INSERT (provider, model, concurrency_total, interactive_reserve) ON model_capacities TO %s;
-        GRANT UPDATE (concurrency_total, interactive_reserve) ON model_capacities TO %s;
+        GRANT SELECT (provider, model, concurrency_total) ON model_capacities TO %s, %s;
+        GRANT INSERT (provider, model, concurrency_total) ON model_capacities TO %s;
+        GRANT UPDATE (concurrency_total) ON model_capacities TO %s;
     `, readIdent, adminIdent, adminIdent, adminIdent)); err != nil {
 		t.Fatal(err)
 	}
