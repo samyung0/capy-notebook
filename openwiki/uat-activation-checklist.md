@@ -96,7 +96,7 @@ If the gateway is unhealthy, check these before anything else:
 | Gateway exits with `unknown EMAIL_BACKEND "resend"` or `cloudflare email token is required` | GitHub `uat` still has the Resend settings. Set `EMAIL_BACKEND=cloudflare` and `CLOUDFLARE_EMAIL_TOKEN` in GitHub `uat` (deployment runbook §12.5) and redeploy. |
 | Gateway refuses to start with Clerk configured | `CLERK_SECRET_KEY` or `CLERK_WEBHOOK_SECRET` is blank, or `CLERK_WEBHOOK_SECRET` is not a Svix signing secret (`whsec_` followed by base64). Both are required unless `AUTH_DISABLED` or `E2E_AUTH` is on. |
 | Variables changed but the container behaves as before | The host runs the env file of the last deploy (`/opt/capy/app/current/stack.env`). Run Deploy UAT rather than restarting a container. |
-| A platform model call fails with `model capacity is not configured` | Apply the Ops grants, then enter UAT’s own total and interactive reserve for each active model in Ops. |
+| A platform model call fails with `model capacity is not configured` | Apply the Ops grants, then enter UAT’s own total for each active model in Ops. |
 
 ## 2. Clerk webhook
 

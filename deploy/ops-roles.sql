@@ -132,7 +132,7 @@ GRANT SELECT (
   micros_per_cached_input_token, micros_per_output_token, enabled,
   is_default_for, created_at, updated_at, created_by, updated_by
 ) ON model_configs TO capy_ops;
-GRANT SELECT (provider, model, concurrency_total, interactive_reserve)
+GRANT SELECT (provider, model, concurrency_total)
   ON model_capacities TO capy_ops;
 GRANT SELECT (
   resource_key, version, unit, credit_micros_per_unit, active, created_at
@@ -205,7 +205,7 @@ GRANT SELECT (
   micros_per_cached_input_token, micros_per_output_token, enabled,
   is_default_for, created_at, updated_at, created_by, updated_by
 ) ON model_configs TO capy_ops_admin;
-GRANT SELECT (provider, model, concurrency_total, interactive_reserve)
+GRANT SELECT (provider, model, concurrency_total)
   ON model_capacities TO capy_ops_admin;
 GRANT SELECT (id, version, updated_at)
   ON model_registry_state TO capy_ops_admin;
@@ -233,9 +233,9 @@ GRANT INSERT (
   micros_per_cached_input_token, micros_per_output_token, enabled,
   is_default_for, created_by, updated_by
 ) ON model_configs TO capy_ops_admin;
-GRANT INSERT (provider, model, concurrency_total, interactive_reserve)
+GRANT INSERT (provider, model, concurrency_total)
   ON model_capacities TO capy_ops_admin;
-GRANT UPDATE (concurrency_total, interactive_reserve)
+GRANT UPDATE (concurrency_total)
   ON model_capacities TO capy_ops_admin;
 GRANT UPDATE (enabled, is_default_for, updated_at, updated_by)
   ON model_configs TO capy_ops_admin;

@@ -1706,7 +1706,8 @@ so the file ends partial rather than failing `provider_busy` (parts design
 ingest workers share a gate of its own: capacity leases under the fixed key
 `vlm_page`, at most `CAPY_VLM_PAGE_CAPACITY` calls in flight, taken in place of
 the captioning model's `model_capacities` row, so page reads neither need that
-row nor count against its ingest share. Both are per-environment settings
+row nor count against its total; page reads past it wait in that gate's own
+line, round-robin by job (Epo 2026-11-04). Both are per-environment settings
 (decision 2026-10-21): production allows 64 in flight and 40 per job
 (`docker-compose.ingest-host.yml`, a production input in the env manifest),
 UAT and local keep 20 and 10 (fixed in their Compose files, and the code's
@@ -3092,11 +3093,13 @@ AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
   is sent (`ClientDrop.left`, Q359). A waiting call cancelled as a slot
   is handed to it passes the slot to the next waiter. Generate and the editor
   AI routes have no waiting status (Q268): past the 64 their call answers the
-  existing 503 `provider_busy` at once, before reaching the provider. A chat
-  call past its model's capacity gate (`model_capacities`) waits the same way
-  in that model's line, and a busy provider answer puts it back in line once
-  without showing the error ([observability-metering.md](observability-metering.md),
-  Epo 2026-10-29). Embedding
+  existing 503 `provider_busy` at once, before reaching the provider. Any call
+  past its model's capacity gate (`model_capacities`), chat, generate, editor
+  or ingest, waits its turn in that model's one line, shared across processes
+  and round-robin by user or ingest job, up to 60 s for interactive calls
+  ([observability-metering.md](observability-metering.md), Epo 2026-11-04);
+  a busy provider answer puts a chat call back in line once without showing
+  the error (Epo 2026-10-29). Embedding
   and rerank calls inside tools take no slot, and the ingest worker binds no
   slot policy.
 - **Turns in progress.** At most 96 chat turns and generate requests run
@@ -6497,7 +6500,7 @@ chunk, with full coverage in the large-document reduction path.
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | Provider keys | `platformEnv` names | Every call uses the platform key named by `platformEnv` in `elitellm_providers.json`; there are no user keys (Q290). |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `OPENROUTER_API_KEY` | The ingest queue env carries the `OPENROUTER_API_KEY` chat also uses (GLM) for the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `OPENROUTER_API_KEY` | The ingest queue env carries the `OPENROUTER_API_KEY` chat also uses (GLM) for the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, one total shared with every interactive use; past it an ingest call waits its turn in the model's line, round-robin by job and user, within its two-minute budget (Epo 2026-11-04). Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |

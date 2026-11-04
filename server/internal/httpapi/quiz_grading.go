@@ -104,7 +104,10 @@ func (a *api) gradeOpenParts(ctx context.Context, parts map[string]openPart) (ma
 	var usage jev.Usage
 	var mu sync.Mutex
 	group, ctx := errgroup.WithContext(ctx)
-	group.SetLimit(5)
+	// 10 parts at once (Epo 2026-11-04, after the 2026-11-04 grading
+	// concurrency bench: a 40-part paper took 28-86 s at 5, 10, 20 or 40 at
+	// once, its slowest part setting the wall time).
+	group.SetLimit(10)
 	for id, part := range parts {
 		group.Go(func() error {
 			awards, used, err := a.jev.GradePart(ctx, part.question, part.markscheme, part.answer)

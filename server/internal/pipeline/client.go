@@ -18,6 +18,11 @@ import (
 
 const SecretHeader = "X-Pipeline-Secret"
 
+// syncTimeout bounds a PostRaw call: a model call's 60 s wait in its model's
+// line (Epo 2026-11-04), so that its provider_busy answer arrives, plus the
+// 30 s this budget was before.
+const syncTimeout = 90 * time.Second
+
 type Client struct {
 	base   string
 	secret string
@@ -28,7 +33,7 @@ func New(base, secret string) *Client {
 	return &Client{
 		base:   strings.TrimRight(base, "/"),
 		secret: secret,
-		hc:     &http.Client{Timeout: 30 * time.Second},
+		hc:     &http.Client{Timeout: syncTimeout},
 	}
 }
 

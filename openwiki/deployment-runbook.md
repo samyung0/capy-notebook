@@ -989,10 +989,11 @@ Ops model catalog before allowing platform model calls. Each environment stores
 its own provider/model limits in `model_capacities`; new databases start
 without limits and missing capacity fails explicitly. GLM-5.3-Flash keeps its
 `zai/glm-5.3-flash` capacity row but runs through OpenRouter on DigitalOcean,
-then Z.AI (decision 2026-10-21): production and UAT get 150 total / 125
-interactive reserve, local development 8 / 4. Rows already in a database keep
-their values (UAT had 48 / 40 from migration 0097), so raise them in Ops.
-Production's Qwen embedding is 200 / 80.
+then Z.AI (decision 2026-10-21): production and UAT get 150 in flight, local
+development 8. Rows already in a database keep their values (UAT had 48 from
+migration 0097), so raise them in Ops. Production's Qwen embedding is 200.
+A total is the model's whole capacity, shared by every use with no reserve
+(Epo 2026-11-04); calls past it wait their turn.
 UAT and full local development must use limits appropriate to their own
 provider accounts.
 `deploy/model-capacities.sql` is an opt-in bootstrap after migrations. It inserts
@@ -1005,7 +1006,7 @@ Apply to one explicitly selected database with
 an account, divide its quota among them before applying the script.
 
 Migration `0134_alibaba_rerank.sql` makes Alibaba `qwen3-rerank` the `rerank`
-default with a capacity of 64 (32 reserved), replacing DeepInfra
+default with a capacity of 64, replacing DeepInfra
 `Qwen/Qwen3-Reranker-4B` from `0030_rerank_slot.sql`. It reuses the
 environment's `ALIBABA_MODELSTUDIO_KEY` and `ALIBABA_MODELSTUDIO_URL` (the
 Singapore workspace's `.../compatible-mode/v1` base), now also passed to the

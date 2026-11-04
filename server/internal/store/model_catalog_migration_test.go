@@ -11,8 +11,9 @@ import (
 )
 
 // pre0010Schema restores the columns and slot names 0010 was written against,
-// which 0013 and 0044 later removed, and the GLM chat default 0116 moved.
-const pre0010Schema = `ALTER TABLE users
+// which 0013, 0044 and 0136 later removed, and the GLM chat default 0116 moved.
+const pre0010Schema = preReserveSchema + `;
+	ALTER TABLE users
 		ADD COLUMN quiz_model_provider_slug text NOT NULL DEFAULT 'deepseek',
 		ADD COLUMN quiz_model_slug text NOT NULL DEFAULT 'deepseek-flash',
 		ADD COLUMN generate_model_provider_slug text NOT NULL DEFAULT 'deepseek',
@@ -23,6 +24,11 @@ const pre0010Schema = `ALTER TABLE users
 		ALTER COLUMN chat_model_slug SET DEFAULT 'glm-5.3-flash';
 	ALTER TABLE model_configs DROP CONSTRAINT model_configs_slots_check,
 		DROP CONSTRAINT model_configs_default_for_check`
+
+// preReserveSchema restores the interactive reserve 0136 dropped, which the
+// earlier capacity migrations write.
+const preReserveSchema = `ALTER TABLE model_capacities
+	ADD COLUMN interactive_reserve integer NOT NULL DEFAULT 0`
 
 func TestDeepSeekFlashMigrationPreservesPinsRatesAndCapacity(t *testing.T) {
 	s := openMigrateTestStore(t)
@@ -165,7 +171,7 @@ func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, `DELETE FROM model_capacities;
-	  INSERT INTO model_capacities VALUES ('deepseek', 'deepseek-flash', 91, 13)`); err != nil {
+	  INSERT INTO model_capacities VALUES ('deepseek', 'deepseek-flash', 91)`); err != nil {
 		t.Fatal(err)
 	}
 	body, err := os.ReadFile("../../../deploy/model-capacities.sql")
@@ -183,19 +189,19 @@ func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 	}
 	for _, want := range []struct {
 		provider, model string
-		total, reserve  int
+		total           int
 	}{
-		{"deepseek", "deepseek-flash", 91, 13},
-		{"zai", "glm-5.3-flash", 150, 125},
-		{"deepinfra", "Qwen/Qwen3-Embedding-4B", 200, 80},
-		{"alibaba", "qwen3-rerank", 64, 32},
-		{"openrouter", "minimax/minimax-m3.1-flash", 16, 15},
+		{"deepseek", "deepseek-flash", 91},
+		{"zai", "glm-5.3-flash", 150},
+		{"deepinfra", "Qwen/Qwen3-Embedding-4B", 200},
+		{"alibaba", "qwen3-rerank", 64},
+		{"openrouter", "minimax/minimax-m3.1-flash", 16},
 	} {
-		var total, reserve int
-		err := tx.QueryRow(ctx, `SELECT concurrency_total, interactive_reserve
-		  FROM model_capacities WHERE provider=$1 AND model=$2`, want.provider, want.model).Scan(&total, &reserve)
-		if err != nil || total != want.total || reserve != want.reserve {
-			t.Fatalf("%s/%s: %d/%d err=%v", want.provider, want.model, total, reserve, err)
+		var total int
+		err := tx.QueryRow(ctx, `SELECT concurrency_total
+		  FROM model_capacities WHERE provider=$1 AND model=$2`, want.provider, want.model).Scan(&total)
+		if err != nil || total != want.total {
+			t.Fatalf("%s/%s: %d err=%v", want.provider, want.model, total, err)
 		}
 	}
 }
@@ -208,7 +214,7 @@ func TestZaiCapacityMigrationCopiesTheRelaceRowUnderZAIsCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `DELETE FROM model_capacities;
+	if _, err := tx.Exec(ctx, preReserveSchema+`; DELETE FROM model_capacities;
 	  INSERT INTO model_capacities VALUES
 	    ('relace', 'glm-5.3-flash', 100, 80), ('tencent', 'glm-5.3-flash', 30, 24)`); err != nil {
 		t.Fatal(err)
