@@ -78,8 +78,8 @@ table read the same in both.
 | --- | --- | --- |
 | Study, owner and editor members | Members, Assignments, Practice: the quizzes and topics to manage, add and edit. No Summary, Suggested or Practise | Summary, Practice: Suggested, Practise, add and edit |
 | Study, anyone else | Summary, Assignments, Practice: Suggested, Practise | Summary, Practice: Suggested, Practise |
-| Dashboard, owner and editor members | Activity (AI marks and Assignments to check wait for their pages) | What to practise next, Activity |
-| Dashboard, anyone else | What to practise next, Activity (Assignments due waits for its page) | What to practise next, Activity |
+| Dashboard, owner and editor members | To do (answers to approve, anything given to themselves), Activity | What to practise next, Activity |
+| Dashboard, anyone else | To do (what was given to them), What to practise next, Activity | What to practise next, Activity |
 | Whose results | The owner and editor members see everyone's; a member their own | Each person their own |
 | An editor member is called | Teaching assistant, in the UI only (the invite's role switch, member rows' role dropdowns and text, the role-changed notification, the transfer confirmation, clone refusals); API, role value and anything sent to a model say editor | Editor |
 | A viewer member is called | Member, in the UI only (the invite's role switch, member rows' role dropdowns and text, the role-changed notification); API, role value and anything sent to a model say viewer | View in the role controls, Viewer in the notification |
@@ -90,9 +90,25 @@ The server applies Practice's row: `WorkspacePractice` gives member counts and
 averages to a class's owner and editor members only, and suggestions and own
 reviews to everyone else. Recent files, on both Dashboards, is not in the
 board's lists and stays as boards H1 and H2 drew it. Not built, and belonging to
-Assignments and the grading switch: the join notice ("the owner sees your
+the grading switch and its own round: the join notice ("the owner sees your
 results", class only) and who pays for AI marking (class: the owner for
 assignments, a member for their own practice; personal: each person).
+
+Assignments ([study-progress.md](study-progress.md#assignments)) are a class's
+alone, and the store checks each of these itself (`assignmentStaff`,
+`lockAssignmentStaffTx`):
+
+| Action | Owner | Editor member | Link/public editor | Viewer member it went to | Other viewer member |
+| --- | --- | --- | --- | --- | --- |
+| Make, change, publish, close, reopen or delete one | Yes | Yes | No | No | No |
+| Read every assignment, the report, any member's results; change marks | Yes | Yes | No | No | No |
+| See and take it, read own results, tick an unmarked one | If they ticked "You" | If they ticked "You" | No | Yes | No |
+| A running attempt | Only their own | Only their own | No | Their own | No |
+
+Everything else answers 404, as does every route in a personal workspace, where
+they are hidden and not deleted. Who pays and a frozen account: making or marking
+is editing and refused when frozen; a member's own start, save, submit and tick
+are study data and go through, as ratings do.
 
 Sources: [role definitions](../server/internal/store/enums.go#L62),
 [role resolution](../server/internal/store/share.go#L27), and
