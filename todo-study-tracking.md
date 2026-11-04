@@ -663,6 +663,13 @@ No per-question rules section. Built-in rules apply to every open answer, and a 
   - Keep each part's result and re-grade only failed parts, instead of failing the check.
   - Grade assignment submissions in the background with the progress status. Thirty students handing in one paper together take about 15 minutes on Wafer alone.
   - **Total for 1017:** Wafer's latency doubles from about 60 calls in flight, and it starts handing calls on between 100 and 200. The bench suggested a separate 40-call grading limit, but that is a per-use cap, which Epo ruled out. In line with Epo's round-robin rule, raise 1017's one gate from 40 to about 100 instead, with every caller round-robin in the same line, so a grading burst can't starve ghost text or captions. **Approved (Epo, 2026-11-04):** one line per model, round-robin by requester, every caller waits (bounded as chat is) instead of failing at once, no interactive reserve, 1017 at 100, grading 10 parts at once per submission. Being built on `claude/model-queue-round-robin` from main. Timeouts, per-part re-grading and background grading come with the grading switch (§10 step 8).
+  - **Built (2026-11-04, `claude/model-queue-round-robin` 683231f11, migration 0136_model_line):** waiting calls are rows in Postgres beside the existing capacity leases, turned round-robin by requester (`user:<id>`, `job:<session>`) under the per-model lock. Interactive calls wait up to chat's 60 s, then `provider_busy`. `interactive_reserve` is gone everywhere. 1017 is at 100, and grading runs 10 parts at once (grading joins the line only after the switch off Jev; today it calls Jev from Go).
+  - **Open for Epo:**
+    - The OpenRouter account split (suggested: production 100, UAT 8, local 8; or production 84 to hold exactly 100).
+    - `vlm_page` still has its own gate (40 in production) beside 1017's 100: fold it into 1017's line?
+    - The Go pipeline client timeout goes from 30 s to 90 s, so a full 60 s wait ends as `provider_busy` and not a 502.
+    - Waiting generate and editor calls retake their process slot with a bounded wait.
+    - Deploy the app, ingest host and Ops together after the migration.
 
 **1017 capacity:** ghost text has run on 1017 since 2026-10-28; 0731 is the ingest descriptor model. The 40-in-flight gate (20 reserved for interactive calls) is our own setting from 2026-10-29, not a provider limit. InferenceNet answered 128 page reads at once and Cloudflare 64 without errors, but Wafer took 100 grading calls at once without an error (2026-11-04, above).
 
