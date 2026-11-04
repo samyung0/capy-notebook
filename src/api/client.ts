@@ -378,6 +378,13 @@ export const qk = {
   ownedMaterialsRoot: ['materials', 'owned'] as const,
   pastReviews: (params?: unknown) =>
     ['review', 'past', params ?? null] as const,
+  /** One assignment, its report and an attempt. */
+  assignment: (id: string) => ['assignment', id] as const,
+  assignmentAttempt: (id: string) => ['assignment-attempt', id] as const,
+  assignmentReport: (id: string) => ['assignment', id, 'report'] as const,
+  /** A class's assignments; refreshed with the rest of study. */
+  assignments: (wsId: string) =>
+    ['workspace', wsId, 'study', 'assignments'] as const,
   /** The workspace's Practice page; refreshed with the rest of study. */
   practice: (wsId: string) => ['workspace', wsId, 'study', 'practice'] as const,
   quiz: (id: string) => ['quiz', id] as const,

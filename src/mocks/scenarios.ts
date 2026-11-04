@@ -16,6 +16,7 @@ import {
   workspaces,
 } from './db';
 import { failureHandlers, failureScenarios } from './scenarioFailures';
+import { assignmentHandlers } from './assignments';
 import { practiceBody } from './study';
 
 export const authScenarios = [
@@ -562,6 +563,7 @@ export function getMockScenarioHandlers(
         http.get('/api/workspaces/:id/practice', ({ params }) =>
           HttpResponse.json(practiceBody(String(params.id), false))
         ),
+        ...assignmentHandlers('member'),
       ];
     case 'workspace-owner-full':
     case 'workspace-owner-grace':

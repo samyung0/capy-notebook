@@ -192,8 +192,12 @@ func (a *api) publishAssignment(ctx context.Context, in *assignmentIDInput) (*as
 		return nil, err
 	}
 	// Who may publish is checked before the quiz is read, and again in the store.
-	if _, err := a.s.GetAssignment(ctx, userID(ctx), in.ID, time.Now()); err != nil {
+	current, err := a.s.GetAssignment(ctx, userID(ctx), in.ID, time.Now())
+	if err != nil {
 		return nil, assignmentError(err)
+	}
+	if current.Manage == nil {
+		return nil, hErr(store.ErrNotFound)
 	}
 	quizID, err := a.s.AssignmentSourceQuiz(ctx, in.ID)
 	if err != nil {

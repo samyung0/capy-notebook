@@ -11,6 +11,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
+import type { Answers } from '@/features/quizzes/grade';
 import {
   durationBucket,
   failureReason,
@@ -105,6 +106,12 @@ import type {
   PastReviewParams,
   PendingWorkspaceInvite,
   Practice,
+  Assignment,
+  AssignmentAttempt,
+  AssignmentFormReq,
+  AssignmentList,
+  AssignmentMark,
+  AssignmentReport,
   Privacy,
   PublicFlashcardSetPage,
   PublicQuizPage,
@@ -2897,6 +2904,175 @@ export const usePractice = (
     enabled: options?.enabled,
     meta: queryMeta(options),
   });
+
+/** A class's assignments: all of them for its owner and teaching assistants,
+ * a member's own otherwise. */
+export const useAssignments = (
+  workspaceId: string,
+  options?: QueryUiOptions & { enabled?: boolean }
+) =>
+  useQuery({
+    enabled: options?.enabled,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<AssignmentList>(`/workspaces/${workspaceId}/assignments`),
+    queryKey: qk.assignments(workspaceId),
+  });
+
+export const useAssignment = (id: string, options?: QueryUiOptions) =>
+  useQuery({
+    enabled: !!id,
+    meta: queryMeta(options),
+    queryFn: () => api.get<Assignment>(`/assignments/${id}`),
+    queryKey: qk.assignment(id),
+  });
+
+export const useAssignmentReport = (id: string, options?: QueryUiOptions) =>
+  useQuery({
+    meta: queryMeta(options),
+    queryFn: () => api.get<AssignmentReport>(`/assignments/${id}/report`),
+    queryKey: qk.assignmentReport(id),
+  });
+
+export const useAssignmentAttempt = (
+  id: string,
+  options?: QueryUiOptions & { enabled?: boolean }
+) =>
+  useQuery({
+    enabled: options?.enabled,
+    meta: queryMeta(options),
+    queryFn: () => api.get<AssignmentAttempt>(`/assignment-attempts/${id}`),
+    queryKey: qk.assignmentAttempt(id),
+    // A running attempt's timer counts from the clock it was read at.
+    refetchOnWindowFocus: false,
+  });
+
+/** After a write: the workspace's lists, the Dashboard and this assignment. */
+function refreshAssignment(
+  qc: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  id?: string
+) {
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: qk.study(workspaceId) }),
+    qc.invalidateQueries({ queryKey: qk.workspaceDashboard(workspaceId) }),
+    id
+      ? qc.invalidateQueries({ queryKey: qk.assignment(id) })
+      : Promise.resolve(),
+  ]);
+}
+
+export function useCreateAssignment(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (body: AssignmentFormReq) =>
+      api.post<Assignment>(`/workspaces/${workspaceId}/assignments`, body),
+    onSuccess: () => refreshAssignment(qc, workspaceId),
+  });
+}
+
+export function useUpdateAssignment(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (body: AssignmentFormReq) =>
+      api.put<Assignment>(`/assignments/${id}`, body),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
+export function useDeleteAssignment(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/assignments/${id}`),
+    onSuccess: () => refreshAssignment(qc, workspaceId),
+  });
+}
+
+export function usePublishAssignment(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<Assignment>(`/assignments/${id}/publish`, {}),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
+export function useSetAssignmentClosed(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (closed: boolean) =>
+      api.put<Assignment>(`/assignments/${id}/closed`, { closed }),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
+export function useSetAssignmentDone(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ done, id }: { done: boolean; id: string }) =>
+      api.put<void>(`/assignments/${id}/done`, { done }),
+    onSettled: (_data, _error, { id }) =>
+      refreshAssignment(qc, workspaceId, id),
+  });
+}
+
+export function useStartAssignment(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.post<AssignmentAttempt>(`/assignments/${id}/start`, {}),
+    onSuccess: (attempt) => {
+      qc.setQueryData(qk.assignmentAttempt(attempt.id), attempt);
+      return refreshAssignment(qc, workspaceId, attempt.assignmentId);
+    },
+  });
+}
+
+/** Saves a running attempt's answers: no toast, the page says Saved or not. */
+export const saveAssignmentAnswers = (attemptId: string, answers: Answers) =>
+  api.put<void>(`/assignment-attempts/${attemptId}/answers`, { answers });
+
+export function useSubmitAssignmentAttempt(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ answers, id }: { answers: Answers; id: string }) =>
+      api.post<AssignmentAttempt>(`/assignment-attempts/${id}/submit`, {
+        answers,
+      }),
+    onSuccess: (attempt) => {
+      qc.setQueryData(qk.assignmentAttempt(attempt.id), attempt);
+      return refreshAssignment(qc, workspaceId, attempt.assignmentId);
+    },
+  });
+}
+
+export function useMarkAssignmentAnswer(
+  workspaceId: string,
+  assignmentId: string
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      attemptId,
+      mark,
+    }: {
+      attemptId: string;
+      mark: AssignmentMark;
+    }) =>
+      api.post<AssignmentAttempt>(
+        `/assignment-attempts/${attemptId}/marks`,
+        mark
+      ),
+    onSuccess: (attempt) => {
+      qc.setQueryData(qk.assignmentAttempt(attempt.id), attempt);
+      return Promise.all([
+        refreshAssignment(qc, workspaceId, assignmentId),
+        qc.invalidateQueries({ queryKey: qk.assignmentReport(assignmentId) }),
+      ]);
+    },
+  });
+}
 
 /** Refreshes Practice and review after practice in `workspaceId`, or in every
  * workspace when the caller does not know which. */

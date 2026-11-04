@@ -20,6 +20,7 @@ import {
 import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { gradeQuestions, learnerView } from './answerKeys';
+import { assignmentClosedAt } from './assignments';
 import * as db from './db';
 
 /* Study progress and review, per signed-in user (the mock has one). A
@@ -880,6 +881,7 @@ export function practiceBody(wsId: string, staff: boolean): Practice {
     const tried = TRIED[i % TRIED.length];
     return {
       best: best ? { correct: best.correct, total: best.total } : undefined,
+      assignmentClosedAt: assignmentClosedAt(mt.id),
       id: mt.id,
       questions: db.quizFromMaterial(mt).questions.length,
       title: mt.title,

@@ -26,6 +26,9 @@ import type {
   AnonymousEmbed as GenAnonymousEmbed,
   AnonymousNote as GenAnonymousNote,
   AnonymousQuiz as GenAnonymousQuiz,
+  AssignmentAttempt as GenAssignmentAttempt,
+  AssignmentQuestionReport as GenAssignmentQuestionReport,
+  AssignmentReport as GenAssignmentReport,
   AttemptDetail as GenAttemptDetail,
   Citation as GenCitation,
   Comment as GenComment,
@@ -365,6 +368,20 @@ export type StudySummary = Omit<GenStudySummary, 'quickReview'> & {
   quickReview: ReviewItem[];
 };
 export type {
+  Assignment,
+  AssignmentAnswerRow,
+  AssignmentFile,
+  AssignmentFileRef,
+  AssignmentFormReq,
+  AssignmentItemReport,
+  AssignmentList,
+  AssignmentManage,
+  AssignmentMark,
+  AssignmentMemberRow,
+  AssignmentMine,
+  AssignmentPartMark,
+  AssignmentPartReport,
+  AssignmentWrongAnswer,
   BankMarksOutputBody as BankTopicMarks,
   BankProgressOutputBody as BankProgress,
   BankSummaryOutputBody as BankTopicSummary,
@@ -389,6 +406,36 @@ export type {
   WorkspaceDashboard,
   WorkspaceKind,
 } from './gen/model';
+
+/** A graded question of a submitted assignment: a part left waiting for the
+ * owner is `pending`; a comment and who wrote it sit on the question. */
+export type AssignmentGradedPart = QuestionPart & {
+  pending?: boolean;
+  markedBy?: string;
+};
+export type AssignmentGradedQuestion = Omit<Question, 'parts'> & {
+  parts: AssignmentGradedPart[];
+  comment?: string;
+  commentBy?: string;
+  commentByName?: string;
+  commentByAvatarUrl?: string;
+};
+/** A try at a marked assignment. Running, its questions are answer-free;
+ * submitted, they are graded, and hold no keys unless `showAnswers`. */
+export type AssignmentAttempt = Omit<
+  GenAssignmentAttempt,
+  'answers' | 'questions'
+> & {
+  answers: Answers;
+  questions: (AssignmentGradedQuestion | LearnerQuestion)[];
+};
+export type AssignmentQuestionReport = Omit<
+  GenAssignmentQuestionReport,
+  'question'
+> & { question: Question };
+export type AssignmentReport = Omit<GenAssignmentReport, 'questions'> & {
+  questions: AssignmentQuestionReport[];
+};
 
 /** A suggested review's leading mode. */
 export type ReviewMode = NonNullable<GenReviewSession['mode']>;
@@ -602,6 +649,7 @@ import type {
   LearnerQuestion,
   Question,
   QuestionType,
+  QuestionPart,
 } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import type {

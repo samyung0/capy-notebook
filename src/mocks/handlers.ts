@@ -91,6 +91,8 @@ import {
   scenarioSourceSession,
   seedUploadedOffice,
 } from './scenarioFixtures';
+import { assignmentActivity, assignmentHandlers } from './assignments';
+import { mockWorkspaceMembers } from './workspaceMembers';
 import { studyHandlers } from './study';
 import { voiceInputHandlers } from './voiceInput';
 
@@ -211,70 +213,6 @@ interface MockInviteCandidate {
 
 const mockDiscussions = db.discussions;
 const mockWorkspaceInvites: MockWorkspaceInvite[] = [];
-export const mockWorkspaceMembers: WorkspaceMember[] = [
-  {
-    createdAt: new Date().toISOString(),
-    name: 'Morgan Lee',
-    role: 'editor',
-    userId: 'u_mock_collaborator',
-    workspaceId: 'ws_bio',
-  },
-  // A fuller Biology 101 roster so the panel foot's avatar group overflows.
-  {
-    avatarUrl: '/icons/avataaars-04.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Priya Nair',
-    role: 'editor',
-    userId: 'u_mock_priya',
-    workspaceId: 'ws_bio',
-  },
-  {
-    createdAt: new Date().toISOString(),
-    name: 'Tom Becker',
-    role: 'viewer',
-    userId: 'u_mock_tom',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-07.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Aiko Tanaka',
-    role: 'editor',
-    userId: 'u_mock_aiko',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-12.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Diego Alvarez',
-    role: 'viewer',
-    userId: 'u_mock_diego',
-    workspaceId: 'ws_bio',
-  },
-  {
-    createdAt: new Date().toISOString(),
-    name: 'Sara Okafor',
-    role: 'viewer',
-    userId: 'u_mock_sara',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-15.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Liam Walsh',
-    role: 'editor',
-    userId: 'u_mock_liam',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-18.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Hana Kim',
-    role: 'viewer',
-    userId: 'u_mock_hana',
-    workspaceId: 'ws_bio',
-  },
-];
 const mockInviteCandidates: MockInviteCandidate[] = [
   {
     email: 'morgan@example.com',
@@ -529,6 +467,8 @@ function trashMaterial(id: string, kind?: string) {
 }
 
 const pdfAnnotations: Record<string, PDFAnnotation[]> = {};
+export { mockWorkspaceMembers };
+
 /** Clear only state created by the dedicated User scenarios workspace. */
 export function resetScenarioHandlerState(workspaceId: string) {
   for (const rows of [mockWorkspaceMembers, mockWorkspaceInvites]) {
@@ -2055,6 +1995,7 @@ export const handlers = [
             title: mt.title,
           })
         ),
+      ...assignmentActivity(ws.id),
     ].sort(sortBy((row) => row.at, false));
     // The newest four, plus the newest agent-made set so its row shows as on
     // the boards (H2); the server takes the newest five.
@@ -2066,7 +2007,9 @@ export const handlers = [
       .sort(sortBy((row) => row.at, false))
       .map((row, i) => {
         const actor =
-          row.kind === 'agent' ? roster[0] : roster[i % roster.length];
+          row.kind === 'agent' || row.kind === 'assigned'
+            ? roster[0]
+            : roster[i % roster.length];
         return {
           ...row,
           actorAvatarUrl: actor.avatarUrl,
@@ -3338,6 +3281,7 @@ export const handlers = [
   }),
   /* ---------------- study progress and review ---------------- */
   ...studyHandlers,
+  ...assignmentHandlers('owner'),
 
   /* ---------------- schedule ---------------- */
   http.get('/api/events', async () => HttpResponse.json(db.events)),
