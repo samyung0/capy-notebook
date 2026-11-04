@@ -860,6 +860,8 @@ Steps 2, 3 and 7 can run side by side.
 - A clone keeps each item's hidden flag; a viewer's clone still leaves hidden items out.
 - **Late policy per assignment (supersedes "a closed assignment becomes practice at its due date" and "late submissions accepted until the owner closes" as the only behaviour):** New assignment has a "No late submissions" switch. On: it closes itself at the due date. Off: late work stays open, with a mark penalty option such as −20% or −50%, until an owner or teaching assistant closes it. The quiz becomes practice only when the assignment closes. Being built on `claude/study-assignments`.
 - The quiz picker in New assignment uses the file tree's search field.
+- **A quiz and its assignment are one item (supersedes "Quizzes for assignments are hidden from members" in §7 for a visible quiz, and assigning hiding a quiz):** visibility has nothing to do with being a quiz or an assignment. While a published assignment is open, the row shows the assignment icon; after closing it is a quiz again. A draft changes nothing. Publishing from a hidden quiz opens it to the assignees; publishing from a visible quiz leaves it visible, the owner's choice. The frozen copy stays underneath, so an edit can't change an open assignment.
+- **The join notice (V1) lands with Assignments,** which is what lets owners and teaching assistants see a member's answers and marks. It is about that, not the member's own Summary page.
 - The box-call fallback uses ink growth instead of `FIGURE_PAD`, the better result in the tests.
 - Study plans are dropped end to end.
 - Undo and redo are hidden on phones in the file and material top bar.
