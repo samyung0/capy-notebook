@@ -588,7 +588,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context, userID, cursor string) ([
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
-		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND NOT m.hidden
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL`+after,
 		append([]any{userID}, args...)...)
@@ -631,7 +631,7 @@ func (s *Store) ListPublicFlashcardSets(ctx context.Context, userID, cursor stri
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
-		WHERE m.kind='flashcards' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+		WHERE m.kind='flashcards' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND NOT m.hidden
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL`+after,
 		append([]any{userID}, args...)...)
