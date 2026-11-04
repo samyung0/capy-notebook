@@ -532,6 +532,8 @@
   "members_invite": "Invite",
   "members_role_of": "{name}'s role",
   "members_remove_named": "Remove {name}",
+  "members_remove_confirm_title": "Remove {name}?",
+  "members_remove_confirm_body": "{name} stops being a member until you invite them again.",
   "members_role_view": "View",
   "members_role_edit": "Edit",
   "members_invite_sent_title": "Invitation submitted",

@@ -110,8 +110,7 @@ export function WorkspaceMemberManager({
     mutate: updateMember,
     variables: updated,
   } = useUpdateWorkspaceMember(workspaceId);
-  const { isPending: removing, mutate: removeMember } =
-    useRemoveWorkspaceMember(workspaceId);
+  const [removing, setRemoving] = useState<WorkspaceMember | null>(null);
   const roles = roleOptions(isClass);
 
   const {
@@ -272,8 +271,7 @@ export function WorkspaceMemberManager({
                 <Button
                   aria-label={m.members_remove_named({ name: member.name })}
                   className="aspect-square px-0"
-                  disabled={removing}
-                  onClick={() => removeMember(member.userId)}
+                  onClick={() => setRemoving(member)}
                   variant="danger-light"
                 >
                   <Icon name="trash" />
@@ -335,7 +333,50 @@ export function WorkspaceMemberManager({
             />
           </div>
         )}
+
+      {removing && (
+        <RemoveMemberDialog
+          member={removing}
+          onClose={() => setRemoving(null)}
+          workspaceId={workspaceId}
+        />
+      )}
     </section>
+  );
+}
+
+function RemoveMemberDialog({
+  workspaceId,
+  member,
+  onClose,
+}: {
+  workspaceId: string;
+  member: WorkspaceMember;
+  onClose: () => void;
+}) {
+  const { isPending, mutateAsync: remove } =
+    useRemoveWorkspaceMember(workspaceId);
+  return (
+    <ConfirmDialog
+      body={m.members_remove_confirm_body({ name: member.name })}
+      closeOnConfirm={false}
+      confirmLabel={m.action_remove()}
+      danger
+      isSubmitting={isPending}
+      onClose={() => {
+        if (!isPending) onClose();
+      }}
+      onConfirm={async () => {
+        try {
+          await remove(member.userId);
+          onClose();
+        } catch {
+          // The mutation handler reports the failure; keep the confirmation open.
+        }
+      }}
+      open
+      title={m.members_remove_confirm_title({ name: member.name })}
+    />
   );
 }
 

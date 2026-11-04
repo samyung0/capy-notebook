@@ -753,6 +753,7 @@ export async function runJourney(
       );
       if (id === 'member-save')
         await ui.click(m.role_member(), '[role="option"]');
+      else await ui.click(m.action_remove());
       return;
     case 'ownership-transfer':
       await go(scenarioPath);

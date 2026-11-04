@@ -116,14 +116,18 @@ async function changeMember(
   const response = page.waitForResponse(
     (r) => new URL(r.url()).pathname === path && r.request().method() === method
   );
-  if (change === 'remove')
+  if (change === 'remove') {
     await people
       .getByRole('button', {
         exact: true,
         name: m.members_remove_named({ name }),
       })
       .click();
-  else {
+    await page
+      .getByRole('dialog', { name: m.members_remove_confirm_title({ name }) })
+      .getByRole('button', { exact: true, name: m.action_remove() })
+      .click();
+  } else {
     await people
       .getByRole('combobox', { exact: true, name: m.members_role_of({ name }) })
       .click();
