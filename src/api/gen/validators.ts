@@ -7750,12 +7750,18 @@ export const GetWorkspaceReviewParams = zod.object({
 })
 
 export const getWorkspaceReviewQueryGroupDefault = `workspace`;
+export const getWorkspaceReviewQueryCountMin = 0;
+export const getWorkspaceReviewQueryCountMax = 1000;
+
+
 
 export const GetWorkspaceReviewQueryParams = zod.object({
   "group": zod.enum(['topic', 'others', 'workspace']).default(getWorkspaceReviewQueryGroupDefault),
   "topicId": zod.string().optional().describe('The topic of a topic group'),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('A suggestion\'s mode; omitted for a review from the workspace list'),
-  "items": zod.enum(['quiz']).optional().describe('quiz serves questions only, whatever the review items preference (Practice\'s topic sessions)')
+  "items": zod.enum(['quiz']).optional().describe('quiz serves questions only, whatever the review items preference (Practice\'s topic sessions)'),
+  "count": zod.int().min(getWorkspaceReviewQueryCountMin).max(getWorkspaceReviewQueryCountMax).optional().describe('The session\'s size, picked in its start dialog'),
+  "order": zod.enum(['recommended', 'unattempted', 'incorrect']).optional().describe('Which items come first; recommended by default')
 })
 
 export const getWorkspaceReviewResponseDoneItemRatingMax = 4;
@@ -8111,6 +8117,26 @@ export const SetWorkspaceStudyResponse = zod.void()
 
 
 /**
+ * @summary How many questions a practice group holds, for its start dialog
+ */
+export const GetStudyQuestionCountParams = zod.object({
+  "id": zod.string()
+})
+
+export const getStudyQuestionCountQueryGroupDefault = `workspace`;
+
+export const GetStudyQuestionCountQueryParams = zod.object({
+  "group": zod.enum(['topic', 'others', 'workspace']).default(getStudyQuestionCountQueryGroupDefault),
+  "topicId": zod.string().optional().describe('The topic of a topic group')
+})
+
+export const GetStudyQuestionCountResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "total": zod.int()
+})
+
+
+/**
  * @summary Clear study progress in a workspace
  */
 export const ResetWorkspaceStudyParams = zod.object({
@@ -8136,9 +8162,11 @@ export const GetWorkspaceStudyTopicsResponse = zod.object({
   "label": zod.enum(['not_started', 'attempted', 'needs_practice', 'familiar', 'proficient', 'mastered']),
   "lastAt": zod.iso.datetime({"offset":true}).optional(),
   "name": zod.string().optional(),
-  "recent": zod.array(zod.enum(['right', 'partial', 'wrong'])),
+  "partial": zod.int(),
   "right": zod.int(),
-  "topicId": zod.string().optional()
+  "topicId": zod.string().optional(),
+  "unattempted": zod.int(),
+  "wrong": zod.int()
 }))
 })
 

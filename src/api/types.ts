@@ -400,10 +400,13 @@ export type ReviewReason = NonNullable<GenReviewItem['reason']>;
 /** What a new review session draws from: a suggestion's group and mode, or
  * the whole workspace without a mode. */
 export interface ReviewStart {
+  /** The start dialog's choices: the session's size and which come first. */
+  count?: number;
   group: GenReviewSession['group'];
   /** `quiz` serves questions only (Practice's topic sessions). */
   items?: 'quiz';
   mode?: ReviewMode;
+  order?: 'recommended' | 'unattempted' | 'incorrect';
   topicId?: string;
 }
 export type AttemptSort = ListAttemptsSort;

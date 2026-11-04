@@ -602,26 +602,42 @@ type TopicLabel = SummaryTopic['label'];
 
 /** Study → Summary's rows: a fixed spread over the workspace's topics. */
 function studyTopics(wsId: string): SummaryTopic[] {
-  const spread: Pick<SummaryTopic, 'asked' | 'label' | 'recent' | 'right'>[] = [
+  const spread: Pick<
+    SummaryTopic,
+    'asked' | 'label' | 'partial' | 'right' | 'unattempted' | 'wrong'
+  >[] = [
     {
       asked: 10,
       label: 'proficient',
-      recent: ['right', 'right', 'wrong', 'right'],
+      partial: 0,
       right: 9,
+      unattempted: 2,
+      wrong: 1,
     },
     {
       asked: 8,
       label: 'familiar',
-      recent: ['right', 'partial', 'wrong', 'right'],
+      partial: 1,
       right: 5,
+      unattempted: 4,
+      wrong: 2,
     },
     {
       asked: 4,
       label: 'needs_practice',
-      recent: ['wrong', 'wrong', 'right', 'wrong'],
+      partial: 0,
       right: 1,
+      unattempted: 8,
+      wrong: 3,
     },
-    { asked: 2, label: 'attempted', recent: ['wrong', 'right'], right: 1 },
+    {
+      asked: 2,
+      label: 'attempted',
+      partial: 0,
+      right: 1,
+      unattempted: 6,
+      wrong: 1,
+    },
   ];
   const quizTopics = db.topics.filter((t) => t.workspaceId === wsId);
   return quizTopics.map((t, i) => ({
@@ -631,8 +647,10 @@ function studyTopics(wsId: string): SummaryTopic[] {
     ...(spread[i] ?? {
       asked: 0,
       label: 'not_started' as const,
-      recent: [],
+      partial: 0,
       right: 0,
+      unattempted: 10,
+      wrong: 0,
     }),
   }));
 }
@@ -1031,6 +1049,21 @@ export const studyHandlers = [
       if (workspaceOf(key.split('/')[0]) === wsId) rated.delete(key);
     return new HttpResponse(null, { status: 204 });
   }),
+  http.get(
+    '/api/workspaces/:id/study/question-count',
+    ({ params, request }) => {
+      const url = new URL(request.url);
+      const group = (url.searchParams.get('group') ??
+        'workspace') as ReviewSessionRef['group'];
+      const topicId = url.searchParams.get('topicId') ?? undefined;
+      const wsId = String(params.id);
+      return HttpResponse.json({
+        total:
+          inGroup(wsId, group, topicId).filter((it) => it.kind === 'question')
+            .length + newQuestions(wsId, group, topicId).length,
+      });
+    }
+  ),
   http.get('/api/workspaces/:id/review', ({ params, request }) => {
     const url = new URL(request.url);
     const group = (url.searchParams.get('group') ??
@@ -1052,8 +1085,9 @@ export const studyHandlers = [
     const mixed: ReviewItem[] = [];
     for (let i = 0; i < Math.max(practised.length, fresh.length); i++)
       mixed.push(...[practised[i], fresh[i]].filter((it) => !!it));
+    const count = Number(url.searchParams.get('count')) || 0;
     const list = mixed
-      .slice(0, questionsOnly ? 10 : 20)
+      .slice(0, count || (questionsOnly ? 10 : 20))
       .map((it) => ({ ...it, reason: reasonOf(it) }));
     return HttpResponse.json({
       answered: 0,

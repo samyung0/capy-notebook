@@ -2649,5 +2649,14 @@
   "summary_hidden": "这里的学习进度已隐藏。",
   "summary_error": "无法加载总结。",
   "dashboard_workspace_review": "工作区复习",
-  "dashboard_workspace_review_meta": "这个工作区的全部内容，包括你还没做过的题目。"
+  "dashboard_workspace_review_meta": "这个工作区的全部内容，包括你还没做过的题目。",
+  "practice_choose_questions": "题目数量",
+  "practice_choose_mode": "模式",
+  "practice_choose_timer": "计时",
+  "practice_all_questions": "全部（{count}）",
+  "practice_order_recommended": "推荐",
+  "practice_order_unattempted": "未做过的优先",
+  "practice_order_incorrect": "答错的优先",
+  "practice_timer_off": "关闭",
+  "practice_timer_minutes": "{count} 分钟"
 }

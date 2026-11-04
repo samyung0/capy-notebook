@@ -83,6 +83,7 @@ import type {
   GetMaterialParams,
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
+  GetStudyQuestionCountParams,
   GetWorkspaceReviewParams,
   GradeAnonymousQuizReq,
   GradedQuestion,
@@ -178,6 +179,7 @@ import type {
   SourceUploadPolicy,
   SpendingLimitReq,
   StudyPreferences,
+  StudyQuestionCountOutputBody,
   StudySummary,
   StudyTopics,
   Syllabus,
@@ -11503,6 +11505,65 @@ const res = await fetch(getSetWorkspaceStudyUrl(id),
 
   const data: setWorkspaceStudyResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as setWorkspaceStudyResponse
+}
+
+
+
+export type getStudyQuestionCountResponse200 = {
+  data: StudyQuestionCountOutputBody
+  status: 200
+}
+
+export type getStudyQuestionCountResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getStudyQuestionCountResponseSuccess = (getStudyQuestionCountResponse200) & {
+  headers: Headers;
+};
+export type getStudyQuestionCountResponseError = (getStudyQuestionCountResponseDefault) & {
+  headers: Headers;
+};
+
+export type getStudyQuestionCountResponse = (getStudyQuestionCountResponseSuccess | getStudyQuestionCountResponseError)
+
+export const getGetStudyQuestionCountUrl = (id: string,
+    params?: GetStudyQuestionCountParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/workspaces/${id}/study/question-count?${stringifiedParams}` : `/api/workspaces/${id}/study/question-count`
+}
+
+/**
+ * @summary How many questions a practice group holds, for its start dialog
+ */
+export const getStudyQuestionCount = async (id: string,
+    params?: GetStudyQuestionCountParams, options?: RequestInit): Promise<getStudyQuestionCountResponse> => {
+
+  const res = await fetch(getGetStudyQuestionCountUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getStudyQuestionCountResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getStudyQuestionCountResponse
 }
 
 

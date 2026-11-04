@@ -428,7 +428,7 @@ var ErrReviewGroup = errors.New("no such review group in this workspace")
 // WorkspaceReview is a new session: a suggestion's items (mode set) or, from
 // the workspace list, the whole workspace's. questionsOnly serves questions
 // whatever the review items preference (Practice's topic sessions).
-func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info ReviewSessionInfo, questionsOnly bool, now time.Time) (ReviewSession, error) {
+func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info ReviewSessionInfo, questionsOnly bool, start ReviewOptions, now time.Time) (ReviewSession, error) {
 	out := ReviewSession{ReviewSessionInfo: info, Items: []ReviewItem{}, Done: []ReviewAnswer{}}
 	if info.Group == GroupTopic {
 		var ok bool
@@ -452,6 +452,9 @@ func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info R
 	if questionsOnly {
 		prefs = topicSessionPrefs(prefs, prefsRaw)
 	}
+	if start.Count > 0 {
+		prefs.Size = start.Count
+	}
 	items, history, err := s.scoredWorkspace(ctx, userID, wsID, prefs, now)
 	if err != nil {
 		return out, err
@@ -469,12 +472,22 @@ func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info R
 		out.Evidence = nil
 	}
 	var fresh []ranked
-	if info.Mode != nil {
-		out.Items = pickItems(items, g, true, prefs.Size)
-	} else {
+	if info.Mode == nil || start.Count > 0 {
 		if fresh, err = s.newPool(ctx, userID, wsID); err != nil {
 			return out, err
 		}
+	}
+	switch {
+	case start.Order == ReviewOrderUnattempted || start.Order == ReviewOrderIncorrect:
+		out.Items = orderedItems(start.Order, items, fresh, history, g, prefs)
+	case info.Mode != nil:
+		out.Items = pickItems(items, g, true, prefs.Size)
+		// A size the learner picked: past the suggestion's own items, the
+		// rest of the group as a manual session draws it.
+		if start.Count > len(out.Items) {
+			out.Items = topUp(out.Items, withNew(items, fresh, g, prefs), prefs.Size)
+		}
+	default:
 		out.Items = withNew(items, fresh, g, prefs)
 	}
 	withReasons(out.Items, fresh, history)
@@ -500,6 +513,89 @@ func withReasons(items []ReviewItem, fresh []ranked, history map[string][]review
 			items[i].Reason = ReasonFading
 		}
 	}
+}
+
+// How a learner asked a session to be drawn (Epo 2026-11-04): a size, and which
+// items come first. The empty order is Recommended, today's draw.
+const (
+	ReviewOrderUnattempted = "unattempted"
+	ReviewOrderIncorrect   = "incorrect"
+)
+
+// ReviewOptions are a session's start dialog choices.
+type ReviewOptions struct {
+	Count int
+	Order string
+}
+
+// orderedItems serves the group's never answered items or its latest misses
+// first, then the rest: practised by score, never answered in reading order.
+func orderedItems(order string, practised []scored, fresh []ranked, history map[string][]review.Rating, g reviewGroup, prefs ReviewPrefs) []ReviewItem {
+	var inGroup []scored
+	for _, it := range practised {
+		if g.has(it.ranked) {
+			inGroup = append(inGroup, it)
+		}
+	}
+	sort.SliceStable(inGroup, func(i, j int) bool { return inGroup[i].score() > inGroup[j].score() })
+	var missed, others, unseen []ReviewItem
+	for _, it := range inGroup {
+		last := history[it.MaterialID+"/"+it.ItemID]
+		if len(last) > 0 && (last[0] == review.Again || last[0] == review.Hard) {
+			missed = append(missed, it.ReviewItem)
+		} else {
+			others = append(others, it.ReviewItem)
+		}
+	}
+	for _, it := range fresh {
+		if g.has(it) && prefs.takes(it.Kind) {
+			unseen = append(unseen, it.ReviewItem)
+		}
+	}
+	var out []ReviewItem
+	if order == ReviewOrderUnattempted {
+		out = slices.Concat(unseen, missed, others)
+	} else {
+		out = slices.Concat(missed, others, unseen)
+	}
+	if len(out) > prefs.Size {
+		out = out[:prefs.Size]
+	}
+	return out
+}
+
+// topUp adds more's items not yet in items, up to size.
+func topUp(items, more []ReviewItem, size int) []ReviewItem {
+	for _, it := range more {
+		if len(items) >= size {
+			break
+		}
+		if !slices.ContainsFunc(items, func(c ReviewItem) bool { return c.MaterialID == it.MaterialID && c.ItemID == it.ItemID }) {
+			items = append(items, it)
+		}
+	}
+	return items
+}
+
+// StudyQuestionCount is how many questions a group holds, which caps a session's
+// size in its start dialog.
+func (s *Store) StudyQuestionCount(ctx context.Context, userID, wsID, group string, topicID *string, now time.Time) (int, error) {
+	pool, err := s.reviewPool(ctx, userID, wsID, now)
+	if err != nil {
+		return 0, err
+	}
+	fresh, err := s.newPool(ctx, userID, wsID)
+	if err != nil {
+		return 0, err
+	}
+	g := reviewGroup{kind: group, topicID: topicID}
+	n := 0
+	for _, it := range append(pool, fresh...) {
+		if it.Kind == "question" && g.has(it) {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // newShare is a manual session's share of never-rated items (Epo 2026-10-25:

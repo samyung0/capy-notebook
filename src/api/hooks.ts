@@ -2959,7 +2959,7 @@ export const workspaceReviewQuery = (workspaceId: string, start: ReviewStart) =>
   queryOptions({
     queryFn: () =>
       api.get<ReviewSession>(
-        `/workspaces/${workspaceId}/review${listSearch({ ...start }, '')}`
+        `/workspaces/${workspaceId}/review${listSearch({ ...start, count: start.count ? String(start.count) : undefined }, '')}`
       ),
     queryKey: qk.workspaceReview(workspaceId, start),
     staleTime: 0,
@@ -3019,6 +3019,21 @@ export const learningOverviewQuery = () =>
   });
 export const useLearningOverview = (options?: QueryUiOptions) =>
   useQuery({ ...learningOverviewQuery(), meta: queryMeta(options) });
+
+/** How many questions a practice group holds, for its start dialog. */
+export const useStudyQuestionCount = (
+  workspaceId: string,
+  group: ReviewStart['group'],
+  topicId?: string
+) =>
+  useQuery({
+    meta: queryMeta({ errorBoundary: false }),
+    queryFn: () =>
+      api.get<{ total: number }>(
+        `/workspaces/${workspaceId}/study/question-count${listSearch({ group, topicId }, '')}`
+      ),
+    queryKey: [...qk.study(workspaceId), 'question-count', group, topicId],
+  });
 
 /** Study → Summary: the caller's own standing per topic. */
 export const useStudyTopics = (workspaceId: string, options?: QueryUiOptions) =>

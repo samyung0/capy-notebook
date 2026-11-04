@@ -7,17 +7,18 @@ import { SkeletonList } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
-import { LabelChip } from '../topicLabels';
+import { LabelChip, topicSquares } from '../topicLabels';
 import { PracticeFrame } from './TopicPractice';
 
 const RESULT: Record<string, string> = {
   partial: 'bg-solid-warning',
   right: 'bg-solid-success',
+  unattempted: 'bg-fg-muted/30',
   wrong: 'bg-solid-error',
 };
 
 /** Study → Summary (boards G5, M1), for whoever practises here: each topic's
- * label, what it rests on and the latest answers, with Practise. Assignments'
+ * label, what it rests on and every question's result, grey when not attempted, with Practise. Assignments'
  * overall joins it once they exist; a section with nothing to show is not
  * drawn. */
 export function SummaryPage({ workspaceId }: { workspaceId: string }) {
@@ -102,7 +103,7 @@ function TopicRow({
       ? m.summary_right({ asked: topic.asked, right: topic.right })
       : '';
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 border-divider border-b py-2 md:min-h-11 md:grid-cols-[minmax(0,1fr)_132px_110px_64px_72px] md:py-1">
+    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 border-divider border-b py-2 md:min-h-11 md:grid-cols-[minmax(0,1fr)_132px_110px_130px_72px] md:py-1">
       <span className="truncate font-semibold">
         {topic.group === 'others' ? m.topic_other_files() : topic.name}
       </span>
@@ -112,9 +113,9 @@ function TopicRow({
         </span>
         <span className="t-meta text-fg-muted">{evidence}</span>
         <span aria-hidden className="hidden gap-[3px] md:flex">
-          {topic.recent.map((result, i) => (
+          {topicSquares(topic).map((result, i) => (
             <span
-              className={cn('size-2 rounded-[1px]', RESULT[result])}
+              className={cn('size-2 shrink-0 rounded-[1px]', RESULT[result])}
               key={`${i}-${result}`}
             />
           ))}

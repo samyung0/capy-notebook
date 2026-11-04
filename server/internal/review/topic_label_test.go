@@ -57,9 +57,8 @@ func TestTopicEvidenceCountsLatestAnswers(t *testing.T) {
 	if got.Right != 2 || got.Asked != 4 {
 		t.Fatalf("got %d of %d, want 2 of 4", got.Right, got.Asked)
 	}
-	want := []string{ResultRight, ResultWrong, ResultWrong, ResultWrong, ResultRight}
-	if fmt.Sprint(got.Recent) != fmt.Sprint(want) {
-		t.Fatalf("recent %v, want %v", got.Recent, want)
+	if got.Wrong != 2 || got.Partial != 0 {
+		t.Fatalf("got %+v, want 2 wrong", got)
 	}
 }
 
@@ -78,7 +77,7 @@ func TestTopicEditedQuestionStartsAgain(t *testing.T) {
 	parts := answers(0, 3)
 	parts = append(parts, PartAnswer{QuestionID: "q0", Hash: "new", Awarded: 1, Marks: 1, At: topicStart.Add(time.Hour)})
 	got := TopicLabel(parts, topicStart.Add(2*time.Hour))
-	if got.Right != 1 || got.Asked != 3 || len(got.Recent) != 3 {
+	if got.Right != 1 || got.Asked != 3 || got.Wrong != 2 {
 		t.Fatalf("got %+v", got)
 	}
 }

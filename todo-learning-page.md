@@ -1,6 +1,6 @@
 # Learning page plan
 
-Status 2026-11-04: built on this branch. Go DB tests and e2e need CI. §8 lists what is left.
+Status 2026-11-04: built on this branch except Make my own practice's generation, which waits for §8. Go DB tests and e2e need CI.
 
 Epo's ask: "i want ot see if we cna start planning what the learning page at home do, ideally i dont want to use AI to do a lot of suggestion, rather i want to use the algorithms/scores to decide".
 
@@ -224,4 +224,5 @@ Built on my recommendation, so say if not: You teach rows (O2), the This week li
 
 Still open:
 
-1. **Make my own practice dialog (canvas page 6).** A: topic and how many. B: the approved P3 dialog. I recommend A. Building it needs its own design for storing a private session and a new generation prompt, which Epo sees before it changes anything (no silent prompt changes).
+1. **Where a class member's generated quiz lives.** Generation keeps only the quiz file, but members cannot add files to a class and the generate route allows owners and editors only. In a personal workspace it is a normal quiz file. For a class: a) a quiz in the class that only its maker sees, charged to them, or b) a quiz in their own Files outside the class, whose answers then feed no topic label. I recommend a.
+2. **Timer at zero.** The session ends and opens its result. Keep, or let the learner carry on past zero? I recommend keeping it.

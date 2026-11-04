@@ -6,7 +6,6 @@
  */
 import type { SummaryTopicGroup } from './summaryTopicGroup.ts';
 import type { SummaryTopicLabel } from './summaryTopicLabel.ts';
-import type { SummaryTopicRecentItem } from './summaryTopicRecentItem.ts';
 
 export interface SummaryTopic {
   asked: number;
@@ -14,7 +13,9 @@ export interface SummaryTopic {
   label: SummaryTopicLabel;
   lastAt?: string;
   name?: string;
-  recent: SummaryTopicRecentItem[];
+  partial: number;
   right: number;
   topicId?: string;
+  unattempted: number;
+  wrong: number;
 }

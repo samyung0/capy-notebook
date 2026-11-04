@@ -341,3 +341,38 @@ func TestReviewPoolsOrderAndUnread(t *testing.T) {
 		t.Fatalf("practised pool = %+v", pool)
 	}
 }
+
+// A start dialog's order: never answered first, or latest misses first, each
+// then the rest, cut to the session's size.
+func TestOrderedItems(t *testing.T) {
+	item := func(id string) ReviewItem { return ReviewItem{MaterialID: "m", ItemID: id, Kind: "question"} }
+	practised := []scored{
+		{ranked: ranked{studyItem: studyItem{ReviewItem: item("fine")}}, parts: [3]float64{0.1}},
+		{ranked: ranked{studyItem: studyItem{ReviewItem: item("missed")}}, parts: [3]float64{0.2}},
+		{ranked: ranked{studyItem: studyItem{ReviewItem: item("fading")}}, parts: [3]float64{0.9}},
+	}
+	fresh := []ranked{{studyItem: studyItem{ReviewItem: item("new")}}}
+	history := map[string][]review.Rating{"m/fine": {review.Good}, "m/missed": {review.Again, review.Good}, "m/fading": {review.Good}}
+	ids := func(list []ReviewItem) string {
+		out := []string{}
+		for _, it := range list {
+			out = append(out, it.ItemID)
+		}
+		return strings.Join(out, " ")
+	}
+	prefs := ReviewPrefs{Size: 10, Items: "quiz"}
+	g := reviewGroup{kind: GroupWorkspace}
+	if got := ids(orderedItems(ReviewOrderUnattempted, practised, fresh, history, g, prefs)); got != "new missed fading fine" {
+		t.Fatalf("unattempted first = %s", got)
+	}
+	if got := ids(orderedItems(ReviewOrderIncorrect, practised, fresh, history, g, prefs)); got != "missed fading fine new" {
+		t.Fatalf("incorrect first = %s", got)
+	}
+	prefs.Size = 2
+	if got := ids(orderedItems(ReviewOrderIncorrect, practised, fresh, history, g, prefs)); got != "missed fading" {
+		t.Fatalf("cut to size = %s", got)
+	}
+	if got := ids(topUp([]ReviewItem{item("a")}, []ReviewItem{item("a"), item("b"), item("c")}, 2)); got != "a b" {
+		t.Fatalf("top up = %s", got)
+	}
+}

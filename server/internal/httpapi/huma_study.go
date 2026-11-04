@@ -44,6 +44,8 @@ type workspaceReviewInput struct {
 	TopicID string `query:"topicId" doc:"The topic of a topic group"`
 	Mode    string `query:"mode" enum:"tricky,fading,learned" doc:"A suggestion's mode; omitted for a review from the workspace list"`
 	Items   string `query:"items" enum:"quiz" doc:"quiz serves questions only, whatever the review items preference (Practice's topic sessions)"`
+	Count   int    `query:"count" minimum:"0" maximum:"1000" doc:"The session's size, picked in its start dialog"`
+	Order   string `query:"order" enum:"recommended,unattempted,incorrect" doc:"Which items come first; recommended by default"`
 }
 type reviewSessionIDInput struct {
 	ID string `path:"id" format:"uuid"`
@@ -94,6 +96,7 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodGet, "/api/review/sessions", "listPastReviews", tag, "Finished review sessions with their quiz and flashcard results", http.StatusOK, a.listPastReviews)
 	reg(api, http.MethodPost, "/api/review/ratings", "rateReviewItem", tag, "Record a flashcard's review rating", http.StatusNoContent, a.rateReviewItem)
 	regWithMaxBody(api, http.MethodPost, "/api/review/check", "checkReviewItem", tag, "Grade and rate one question of a review session", http.StatusOK, answersMaxBytes, a.checkReviewItem)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/study/question-count", "getStudyQuestionCount", tag, "How many questions a practice group holds, for its start dialog", http.StatusOK, a.getStudyQuestionCount)
 	reg(api, http.MethodGet, "/api/learning/overview", "getLearningOverview", tag, "Learning's Overview: what to do next across workspaces and how each stands", http.StatusOK, a.getLearningOverview)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study/topics", "getWorkspaceStudyTopics", tag, "Study → Summary: the caller's own standing per topic", http.StatusOK, a.getWorkspaceStudyTopics)
 	reg(api, http.MethodPatch, "/api/me/study-preferences", "setStudyPreferences", tag, "Save study preferences", http.StatusNoContent, a.setStudyPreferences)
@@ -192,7 +195,7 @@ func (a *api) getWorkspaceReview(ctx context.Context, in *workspaceReviewInput) 
 	if in.Mode != "" {
 		info.Mode = &in.Mode
 	}
-	res, err := a.s.WorkspaceReview(ctx, userID(ctx), in.ID, info, in.Items == "quiz", time.Now())
+	res, err := a.s.WorkspaceReview(ctx, userID(ctx), in.ID, info, in.Items == "quiz", store.ReviewOptions{Count: in.Count, Order: in.Order}, time.Now())
 	if errors.Is(err, store.ErrReviewGroup) {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -293,6 +296,34 @@ func commaValues(v string) []string {
 		}
 	}
 	return out
+}
+
+type studyQuestionCountInput struct {
+	ID      string `path:"id"`
+	Group   string `query:"group" enum:"topic,others,workspace" default:"workspace"`
+	TopicID string `query:"topicId" doc:"The topic of a topic group"`
+}
+type studyQuestionCountOutput struct {
+	Body struct {
+		Total int `json:"total"`
+	}
+}
+
+func (a *api) getStudyQuestionCount(ctx context.Context, in *studyQuestionCountInput) (*studyQuestionCountOutput, error) {
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	var topicID *string
+	if in.TopicID != "" {
+		topicID = &in.TopicID
+	}
+	n, err := a.s.StudyQuestionCount(ctx, userID(ctx), in.ID, in.Group, topicID, time.Now())
+	if err != nil {
+		return nil, storedContentError(ctx, "", err)
+	}
+	out := &studyQuestionCountOutput{}
+	out.Body.Total = n
+	return out, nil
 }
 
 func (a *api) getLearningOverview(ctx context.Context, _ *struct{}) (*learningOverviewOutput, error) {

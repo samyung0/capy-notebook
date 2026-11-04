@@ -7,6 +7,7 @@
 import type { GetWorkspaceReviewGroup } from './getWorkspaceReviewGroup.ts';
 import type { GetWorkspaceReviewItems } from './getWorkspaceReviewItems.ts';
 import type { GetWorkspaceReviewMode } from './getWorkspaceReviewMode.ts';
+import type { GetWorkspaceReviewOrder } from './getWorkspaceReviewOrder.ts';
 
 export type GetWorkspaceReviewParams = {
 group?: GetWorkspaceReviewGroup;
@@ -22,4 +23,14 @@ mode?: GetWorkspaceReviewMode;
  * quiz serves questions only, whatever the review items preference (Practice's topic sessions)
  */
 items?: GetWorkspaceReviewItems;
+/**
+ * The session's size, picked in its start dialog
+ * @minimum 0
+ * @maximum 1000
+ */
+count?: number;
+/**
+ * Which items come first; recommended by default
+ */
+order?: GetWorkspaceReviewOrder;
 };

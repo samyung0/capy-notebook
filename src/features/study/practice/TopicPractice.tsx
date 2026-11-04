@@ -1,9 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   invalidateStudy,
   useFinishReviewSession,
   useReviewResult,
+  useStudyQuestionCount,
   useTopics,
   useWorkspaceReview,
 } from '@/api/hooks';
@@ -13,6 +14,7 @@ import type {
   ReviewMode,
   ReviewReason,
   ReviewSessionRef,
+  ReviewStart,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
@@ -22,7 +24,14 @@ import {
   DialogFooter,
   DialogTitle,
 } from '@/components/ui/Dialog';
-import { SkeletonList } from '@/components/ui/feedback';
+import { SkeletonList, Spinner } from '@/components/ui/feedback';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/Select';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { markGettingStarted } from '@/features/guide/gettingStarted';
 import {
@@ -43,10 +52,14 @@ import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { CheckedQuestion, QuestionItem } from '../ReviewQuestion';
 import {
+  countChoices,
+  defaultCount,
   groupLabel,
   minutesLabel,
   questionsLabel,
   REASON,
+  TIMER_MINUTES,
+  timeLeft,
 } from './practiceText';
 
 /** A topic session's start, as the Practice page's URL holds it. */
@@ -102,11 +115,49 @@ type Checked = { answers: Answers; question: Question };
 
 type Running = { ref: ReviewSessionRef; items: ReviewItem[] };
 
-/** Practise on a topic (Epo 2026-11-03, boards F1 and F1b): today's review
- * engine over the topic's questions only, missed and fading ones first and
- * some not seen yet. The batch fetched here is the session: the start dialog
- * lists it over the Practice page, and Start runs it one question at a time
- * in the page's place. The first answer records it. */
+type Order = NonNullable<ReviewStart['order']>;
+const ORDERS: { label: () => string; value: Order }[] = [
+  { label: m.practice_order_recommended, value: 'recommended' },
+  { label: m.practice_order_unattempted, value: 'unattempted' },
+  { label: m.practice_order_incorrect, value: 'incorrect' },
+];
+
+/** One of the start dialog's choices. */
+function Choice({
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  options: { label: string; value: string }[];
+  value: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="t-meta font-semibold text-fg-secondary">{label}</span>
+      <Select onValueChange={onChange} value={value}>
+        <SelectTrigger aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+/** Practise on a topic or the whole workspace (Epo 2026-11-03, board F1b;
+ * start dialog 2026-11-04, board F1): the learner picks how many, which come
+ * first and an optional timer, and Start fetches that batch, which is the
+ * session, run one question at a time in the page's place. Questions only. The
+ * first answer records it. */
 export function TopicPractice({
   behind,
   onClose,
@@ -123,20 +174,33 @@ export function TopicPractice({
   workspaceId: string;
 }) {
   const { data: topics } = useTopics(workspaceId);
+  const { data: held, isPending: counting } = useStudyQuestionCount(
+    workspaceId,
+    start.group,
+    start.topicId
+  );
+  const total = held?.total ?? 0;
+  const [picked, setPicked] = useState<number | null>(null);
+  const [order, setOrder] = useState<Order>('recommended');
+  const [minutes, setMinutes] = useState(0);
+  const [begun, setBegun] = useState(false);
+  const size = picked ?? defaultCount(total);
   const { data, error, isError, isFetching, refetch } = useWorkspaceReview(
     workspaceId,
     {
+      count: size,
       group: start.group,
       items: 'quiz',
       mode: start.reviewMode,
+      order: order === 'recommended' ? undefined : order,
       topicId: start.topicId,
     },
-    { errorBoundary: false }
+    { enabled: begun, errorBoundary: false }
   );
-  // The batch fetched when the dialog opened: a later read would draw a
-  // different one.
+  // The batch fetched on Start: a later read would draw a different one.
   const [running, setRunning] = useState<Running | null>(null);
-  if (running === null && data && !isFetching && !isError) {
+  const [endsAt, setEndsAt] = useState<number | null>(null);
+  if (running === null && begun && data && !isFetching && !isError) {
     setRunning({
       items: data.items,
       ref: {
@@ -153,8 +217,8 @@ export function TopicPractice({
         workspaceId,
       },
     });
+    setEndsAt(minutes ? Date.now() + minutes * 60_000 : null);
   }
-  const [started, setStarted] = useState(false);
   const removed = useRemovedAssets(data?.removedAssetIds);
   const name = groupLabel(
     start.group,
@@ -165,10 +229,11 @@ export function TopicPractice({
       ? m.dashboard_workspace_review()
       : m.practice_session_title({ topic: name });
 
-  if (started && running)
+  if (running)
     return (
       <RemovedAssetsContext.Provider value={removed}>
         <Session
+          endsAt={endsAt}
           onClose={onClose}
           onDone={onDone}
           running={running}
@@ -177,9 +242,13 @@ export function TopicPractice({
         />
       </RemovedAssetsContext.Provider>
     );
-  const count = running?.items.length ?? 0;
+  const starting = begun && !isError;
   const startButton = (
-    <Button disabled={!count} onClick={() => setStarted(true)}>
+    <Button
+      disabled={!total || starting}
+      onClick={() => (begun ? void refetch() : setBegun(true))}
+    >
+      {starting && <Spinner />}
       {m.review_start()}
     </Button>
   );
@@ -192,14 +261,14 @@ export function TopicPractice({
         <DialogContent
           aria-describedby={undefined}
           cardScrollContainerClassName="sm:px-7 sm:pb-0"
-          className="sm:max-w-[790px]"
+          className="sm:max-w-[460px]"
         >
           <DialogTitle action={startButton} className="pb-0">
             {title}
           </DialogTitle>
-          {running && count > 0 && (
+          {total > 0 && (
             <p className="t-meta mt-0.5 font-semibold text-fg-muted">
-              {`${questionsLabel(count)} · ${minutesLabel(count)}`}
+              {`${questionsLabel(size)} · ${minutesLabel(size)}`}
             </p>
           )}
           {isError ? (
@@ -214,36 +283,49 @@ export function TopicPractice({
               title={m.practice_session_failed()}
               variant="panel"
             />
-          ) : running ? (
-            count === 0 ? (
-              <p className="t-meta my-8 text-fg-muted">
-                {m.practice_nothing()}
-              </p>
-            ) : (
-              <ol className="mt-4.5">
-                {running.items.map((item, i) => (
-                  <li
-                    className="flex h-9.5 items-center gap-3 border-divider border-b last:border-b-0"
-                    key={keyOf(item)}
-                  >
-                    <span className="t-meta w-5 shrink-0 font-bold text-fg-muted">
-                      {i + 1}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">
-                      <TextView
-                        className="whitespace-nowrap"
-                        text={questionLine(item.question)}
-                      />
-                    </span>
-                    <ReasonChip reason={item.reason} />
-                  </li>
-                ))}
-              </ol>
-            )
+          ) : !counting && total === 0 ? (
+            <p className="t-meta my-8 text-fg-muted">{m.practice_nothing()}</p>
           ) : (
-            <SkeletonList className="mt-4.5" count={6} rowHeight={38} />
+            <div className="mt-4 flex flex-col gap-4">
+              <Choice
+                label={m.practice_choose_questions()}
+                onChange={(v) => setPicked(Number(v))}
+                options={countChoices(total).map((n) => ({
+                  label:
+                    n === total
+                      ? m.practice_all_questions({ count: n })
+                      : String(n),
+                  value: String(n),
+                }))}
+                value={String(size)}
+              />
+              <Choice
+                label={m.practice_choose_mode()}
+                onChange={(v) => setOrder(v as Order)}
+                options={ORDERS.map((o) => ({
+                  label: o.label(),
+                  value: o.value,
+                }))}
+                value={order}
+              />
+              <Choice
+                label={m.practice_choose_timer()}
+                onChange={(v) => setMinutes(Number(v))}
+                options={[
+                  { label: m.practice_timer_off(), value: '0' },
+                  ...TIMER_MINUTES.map((n) => ({
+                    label: m.practice_timer_minutes({ count: n }),
+                    value: String(n),
+                  })),
+                ]}
+                value={String(minutes)}
+              />
+            </div>
           )}
-          <DialogFooter className="mt-2.5 border-divider border-t max-sm:hidden sm:-mx-7 sm:mb-0 sm:py-4 sm:pr-5 sm:pl-7">
+          <DialogFooter className="mt-2.5 max-sm:hidden sm:-mx-7 sm:px-7 sm:pb-5">
+            <Button onClick={onClose} variant="ghost">
+              {m.action_cancel()}
+            </Button>
             {startButton}
           </DialogFooter>
         </DialogContent>
@@ -256,12 +338,15 @@ export function TopicPractice({
  * with why it came; Next moves on, the last goes to the result, End session
  * stops early. */
 function Session({
+  endsAt,
   onClose,
   onDone,
   running,
   title,
   workspaceId,
 }: {
+  /** When an optional timer runs out; the session then ends. */
+  endsAt: number | null;
   onClose: () => void;
   onDone: (sessionId: string) => void;
   running: Running;
@@ -288,6 +373,25 @@ function Session({
     await finish(ref.id);
     onDone(ref.id);
   }
+  // The timer ends the session as End session does. A tick that sees none left
+  // calls the latest end, which knows what has been checked.
+  const [left, setLeft] = useState(() =>
+    endsAt === null ? null : endsAt - Date.now()
+  );
+  const latestEnd = useRef(end);
+  latestEnd.current = end;
+  useEffect(() => {
+    if (endsAt === null) return;
+    const tick = setInterval(() => {
+      const remaining = endsAt - Date.now();
+      setLeft(remaining);
+      if (remaining <= 0) {
+        clearInterval(tick);
+        void latestEnd.current();
+      }
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [endsAt]);
   function next() {
     if (index + 1 < items.length) setIndex(index + 1);
     // Every served item answered: the server finished the session.
@@ -310,6 +414,11 @@ function Session({
             style={{ width: `${((index + 1) / items.length) * 100}%` }}
           />
         </span>
+        {left !== null && (
+          <span className="t-meta font-semibold text-fg-secondary">
+            {timeLeft(left)}
+          </span>
+        )}
         <UnderlineLink
           className="ml-auto text-[13px]"
           disabled={finishing}

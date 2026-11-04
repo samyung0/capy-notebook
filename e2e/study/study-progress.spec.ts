@@ -475,11 +475,11 @@ test.describe('study progress', () => {
     const dialog = ownerPage.getByRole('dialog', {
       name: m.practice_session_title({ topic: 'Osmosis' }),
     });
-    await expect(dialog.getByText(m.practice_reason_new())).toBeVisible();
     await dialog
       .getByRole('button', { exact: true, name: m.review_start() })
       .locator('visible=true')
       .click();
+    await expect(ownerPage.getByText(m.practice_reason_new())).toBeVisible();
     await ownerPage
       .getByRole('button', { exact: true, name: m.question_ui_true() })
       .click();

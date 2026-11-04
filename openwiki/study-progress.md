@@ -139,7 +139,7 @@ workspace; writes need read access plus an account that can sign in
 | `PUT /api/workspaces/{id}/study/enabled` | Upserts `workspace_study`: `false` is Hide study progress, `true` shows it. |
 | `GET /api/workspaces/{id}/dashboard` | `WorkspaceDashboard` (`dashboard.go`), the workspace Dashboard for any reader: the owner's name, `members` (owner included) and `activity`, the five newest of the workspace's untrashed files (`uploaded`) and top-level materials (`added`), newest first, each with its actor's name and avatar. A material the chat agent made (an `agent_operations` row of kind `create_material` naming it) reads `agent` when the caller asked for it, else `added` under the asker's name. There is no activity log: joins, edits and deletions do not show, and notifications (personal: invites, role changes, removals) are not used. |
 | `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it. Attempts, the review log and the switch stay. |
-| `GET /api/workspaces/{id}/review?group=&topicId=&mode=&items=` | A new session: a suggestion's items (mode set) or the group's (no mode: a topic, Other files or the whole workspace, new items mixed in), each with its content (card faces, or the answer-free question, `questions.LearnerView`), material title and `reason` (`new` from the new pool, `missed` with an Again among its latest answers, else `fading`), plus the group, mode and evidence to send back with each answer. `items=quiz` serves questions only whatever the review items preference, and 10 of them unless the learner picked a session size (Practice's topic sessions). A topic not in the workspace is 404. |
+| `GET /api/workspaces/{id}/review?group=&topicId=&mode=&items=&count=&order=` | A new session: a suggestion's items (mode set) or the group's (no mode: a topic, Other files or the whole workspace, new items mixed in), each with its content (card faces, or the answer-free question, `questions.LearnerView`), material title and `reason` (`new` from the new pool, `missed` with an Again among its latest answers, else `fading`), plus the group, mode and evidence to send back with each answer. `items=quiz` serves questions only whatever the review items preference, and 10 of them unless the learner picked a session size (Practice's topic sessions). A topic not in the workspace is 404. |
 | `GET /api/workspaces/{id}/practice` | `Practice` (`practice.go`), Study → Practice for any reader, by the workspace's kind: `suggestions`, this workspace's suggested reviews over its questions only (`groupSuggestions` at full interest, since the learner is here; at most three, none while study progress is hidden); `quizzes`, every untrashed top-level quiz in reading order with its question count (`itemCounts`, refused content left out) and the caller's `best` attempt (best share of marks); `reviews`, the caller's topic and Other files sessions that answered a question, one row per topic: the latest one's served count and the best one's marks. A class's owner and editor members get neither of those but `members` (viewer members) and per quiz `triedBy` (viewer members with an attempt) and `average` (the mean of their best scores, 0 to 1, only once five tried: aggregates need five, Epo 2026-11-03 §11.8); never anyone's answers. |
 | `GET /api/review/sessions/{id}` | Continue: an unfinished session's items still to answer, read now (items that left their material drop), with answered of total. Another user's session is 404. |
 | `GET /api/review/sessions/{id}/result` | A session's result, finished or not: its Past reviews row (`ID` read), its answered items in answer order with their records (the resume read's `done`), and `better`, how many were rated above their latest `review_log` rating before the session started. Another user's session is 404. |
@@ -384,8 +384,10 @@ questions only, at most 10 until a size is picked, 60% new and 40% practised
 
 `SummaryPage.tsx`, `study=summary` (boards G5, M1), for whoever practises: one
 row per topic holding a quiz the caller can see, in reading order with Other files
-last: its label, "9 of 10 right" (each question's latest check, full marks), the
-latest six results as squares, and Practise, which starts that topic's session.
+last: its label, "9 of 10 right" (each question's latest check, full marks),
+squares for every question (right, partly, wrong by its latest answer, grey when
+not attempted, a quiz left partway included; above 10 they scale to 10 and any
+unattempted question keeps at least 1 grey; `topicSquares`), and Practise, which starts that topic's session.
 Assignments' overall joins it once they exist. While study progress is hidden it
 says so, with a Workspace settings button. Make my own practice sits at the top right,
 disabled and marked Coming soon until it is built, as on Practice.
@@ -426,13 +428,18 @@ items. The URL holds the start (`group`,
 `topicId`, `reviewMode` for a suggestion); the batch fetched then is the
 session.
 
-- **Start (F1):** a dialog over Practice, "Topic practice · <topic>", "n
-  questions · about m minutes" (1.2 minutes a question, rounded), every
-  question's first line (math rendered) with its reason chip (Missed before
-  in the warning tint, Not seen yet in the info tint, Fading grey), and Start
-  (in the phone header on phones). Closing returns to Practice.
+- **Start (F1, Epo 2026-11-04):** a dialog over Practice with the session's name
+  and "n questions · about m minutes" (1.2 minutes a question, rounded). Questions:
+  10, 20, 30, 50 under what the group holds, then All
+  (`GET /api/workspaces/{id}/study/question-count`); it starts at 10 or All. Mode:
+  Recommended (today's draw), Unattempted first (never answered in reading order,
+  then the rest by score) or Answered incorrectly first (latest answer Again or
+  Hard by score, then practised, then never answered), sent as `count` and `order`.
+  Timer: off, or 10, 20, 30 or 60 minutes. Start fetches that batch and runs it;
+  closing returns to Practice. Questions only: flashcards stay out.
 - **Session (F1b):** in the page's place, a header row with the title, "3 of
-  10", a 140px progress bar and End session; then one question at a time,
+  10", a 140px progress bar, the timer's time left when one was picked (at zero
+  the session ends as End session does; the time is not recorded) and End session; then one question at a time,
   "Question n · <answer type>" and its chip over the quiz page's runner and
   Check (`POST /api/review/check` with the session, so the first answer
   records it), the checked result with its key, and Next. The last Next, or

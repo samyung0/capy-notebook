@@ -6513,6 +6513,21 @@ components:
             - story
           type: string
       type: object
+    StudyQuestionCountOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StudyQuestionCountOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        total:
+          format: int64
+          type: integer
+      required:
+        - total
+      type: object
     StudySummary:
       additionalProperties: false
       properties:
@@ -6625,25 +6640,28 @@ components:
           type: string
         name:
           type: string
-        recent:
-          items:
-            enum:
-              - right
-              - partial
-              - wrong
-            type: string
-          type: array
+        partial:
+          format: int64
+          type: integer
         right:
           format: int64
           type: integer
         topicId:
           type: string
+        unattempted:
+          format: int64
+          type: integer
+        wrong:
+          format: int64
+          type: integer
       required:
         - group
         - label
         - right
+        - partial
+        - wrong
         - asked
-        - recent
+        - unattempted
       type: object
     Syllabus:
       additionalProperties: false
@@ -13256,6 +13274,27 @@ paths:
             enum:
               - quiz
             type: string
+        - description: The session's size, picked in its start dialog
+          explode: false
+          in: query
+          name: count
+          schema:
+            description: The session's size, picked in its start dialog
+            format: int64
+            maximum: 1000
+            minimum: 0
+            type: integer
+        - description: Which items come first; recommended by default
+          explode: false
+          in: query
+          name: order
+          schema:
+            description: Which items come first; recommended by default
+            enum:
+              - recommended
+              - unattempted
+              - incorrect
+            type: string
       responses:
         "200":
           content:
@@ -13495,6 +13534,48 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Show or hide study progress in a workspace
+      tags:
+        - Study
+  /api/workspaces/{id}/study/question-count:
+    get:
+      operationId: getStudyQuestionCount
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: group
+          schema:
+            default: workspace
+            enum:
+              - topic
+              - others
+              - workspace
+            type: string
+        - description: The topic of a topic group
+          explode: false
+          in: query
+          name: topicId
+          schema:
+            description: The topic of a topic group
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyQuestionCountOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: How many questions a practice group holds, for its start dialog
       tags:
         - Study
   /api/workspaces/{id}/study/reset:

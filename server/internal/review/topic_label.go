@@ -22,17 +22,16 @@ const (
 	ResultPartial = "partial"
 	ResultWrong   = "wrong"
 
-	topicMinQuestions  = 3    // different questions before a label means anything
-	topicNeedsBelow    = 0.6  // Needs practice: success under this
-	topicProficient    = 0.7  // Proficient: success over this
-	topicSure          = 0.8  // how sure both must be
-	topicClearsAt      = 0.5  // Needs practice leaves below this, so it does not flicker
-	topicHalfLifeDays  = 30.0 // older evidence fades (Claude's value)
-	topicLaterCheck    = 3 * 24 * time.Hour
-	topicLaterScore    = 0.7
-	topicRepeatWeight  = 0.5
-	topicPartsCounted  = 3.0 // a long question counts like at most this many parts
-	topicRecentResults = 6
+	topicMinQuestions = 3    // different questions before a label means anything
+	topicNeedsBelow   = 0.6  // Needs practice: success under this
+	topicProficient   = 0.7  // Proficient: success over this
+	topicSure         = 0.8  // how sure both must be
+	topicClearsAt     = 0.5  // Needs practice leaves below this, so it does not flicker
+	topicHalfLifeDays = 30.0 // older evidence fades (Claude's value)
+	topicLaterCheck   = 3 * 24 * time.Hour
+	topicLaterScore   = 0.7
+	topicRepeatWeight = 0.5
+	topicPartsCounted = 3.0 // a long question counts like at most this many parts
 )
 
 // PartAnswer is one graded part, as answer_events holds it. The parts of one
@@ -49,13 +48,13 @@ type PartAnswer struct {
 // TopicStanding is what a topic's answers add up to.
 type TopicStanding struct {
 	Label string
-	// Right of Asked counts each question's latest check: full marks of the
-	// different questions answered.
-	Right int
-	Asked int
-	// Recent are the latest checks' results, oldest first.
-	Recent []string
-	LastAt time.Time
+	// Right, Partial and Wrong count each question's latest check; Asked is
+	// their sum, the different questions answered.
+	Right   int
+	Partial int
+	Wrong   int
+	Asked   int
+	LastAt  time.Time
 }
 
 type topicCheck struct {
@@ -117,16 +116,14 @@ func TopicLabel(parts []PartAnswer, now time.Time) TopicStanding {
 	}
 	out.Asked = len(latest)
 	for _, c := range latest {
-		if resultOf(c) == ResultRight {
+		switch resultOf(c) {
+		case ResultRight:
 			out.Right++
+		case ResultPartial:
+			out.Partial++
+		default:
+			out.Wrong++
 		}
-	}
-	recent := checks
-	if len(recent) > topicRecentResults {
-		recent = recent[len(recent)-topicRecentResults:]
-	}
-	for _, c := range recent {
-		out.Recent = append(out.Recent, resultOf(c))
 	}
 	return out
 }

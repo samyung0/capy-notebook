@@ -69,7 +69,7 @@ func TestWorkspacePractice(t *testing.T) {
 	if len(got.Quizzes) != 1 || got.Quizzes[0].ID != quiz.ID || got.Quizzes[0].Questions != 2 || got.Quizzes[0].Best != nil || got.Members != nil {
 		t.Fatalf("practice before an attempt = %+v", got)
 	}
-	session, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, true, time.Now())
+	session, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, true, ReviewOptions{}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestWorkspacePractice(t *testing.T) {
 
 	// One of two right: q1 rated Good, q2 missed.
 	checkQuiz(t, f.s, f.user, quiz.ID, []byte(studySnapshot), studyAnswers)
-	session, err = f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, true, time.Now())
+	session, err = f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, true, ReviewOptions{}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

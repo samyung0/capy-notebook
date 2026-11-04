@@ -44,3 +44,20 @@ export function groupLabel(
   if (group === 'workspace') return m.practice_whole_workspace();
   return topicName ?? '';
 }
+
+/** The start dialog's sizes (Epo 2026-11-04): those under what the group holds,
+ * then All. */
+export function countChoices(total: number) {
+  return [...[10, 20, 30, 50].filter((n) => n < total), total];
+}
+
+/** A dialog starts at 10, or everything when the group holds fewer. */
+export const defaultCount = (total: number) => Math.min(10, total);
+
+export const TIMER_MINUTES = [10, 20, 30, 60] as const;
+
+/** "12:05": what a session's timer has left. */
+export function timeLeft(ms: number) {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}

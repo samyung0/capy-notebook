@@ -55,3 +55,45 @@ export function LabelChip({
     </span>
   );
 }
+
+const MAX_SQUARES = 10;
+export type SquareResult = 'right' | 'partial' | 'wrong' | 'unattempted';
+
+/** A topic's squares (Epo 2026-11-04): one per question's latest result, grey
+ * when not attempted, a quiz left partway included. A larger topic scales to
+ * MAX_SQUARES, and any unattempted question keeps at least one grey. */
+export function topicSquares(t: {
+  right: number;
+  partial: number;
+  wrong: number;
+  unattempted: number;
+}): SquareResult[] {
+  const results = [
+    ['right', t.right],
+    ['partial', t.partial],
+    ['wrong', t.wrong],
+    ['unattempted', t.unattempted],
+  ] as const;
+  const total = t.right + t.partial + t.wrong + t.unattempted;
+  const repeat = (name: SquareResult, n: number) =>
+    Array.from({ length: n }, () => name);
+  if (total <= MAX_SQUARES) return results.flatMap(([k, n]) => repeat(k, n));
+  const grey = t.unattempted
+    ? Math.max(1, Math.round((t.unattempted / total) * MAX_SQUARES))
+    : 0;
+  const answered = t.right + t.partial + t.wrong;
+  const room = MAX_SQUARES - grey;
+  const shares = results.slice(0, 3).map(([k, n]) => {
+    const exact = answered ? (n / answered) * room : 0;
+    return { exact, k, n: Math.floor(exact) };
+  });
+  // Largest remainders take what rounding down left.
+  let spare = room - shares.reduce((sum, s) => sum + s.n, 0);
+  for (const s of [...shares].sort((a, b) => b.exact - b.n - (a.exact - a.n))) {
+    if (spare-- > 0) s.n++;
+  }
+  return [
+    ...shares.flatMap((s) => repeat(s.k, s.n)),
+    ...repeat('unattempted', grey),
+  ];
+}

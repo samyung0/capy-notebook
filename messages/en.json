@@ -2649,5 +2649,14 @@
   "summary_hidden": "Study progress is hidden here.",
   "summary_error": "Could not load your summary.",
   "dashboard_workspace_review": "Workspace review",
-  "dashboard_workspace_review_meta": "Everything in this workspace, with questions you have not seen."
+  "dashboard_workspace_review_meta": "Everything in this workspace, with questions you have not seen.",
+  "practice_choose_questions": "Questions",
+  "practice_choose_mode": "Mode",
+  "practice_choose_timer": "Timer",
+  "practice_all_questions": "All ({count})",
+  "practice_order_recommended": "Recommended",
+  "practice_order_unattempted": "Unattempted first",
+  "practice_order_incorrect": "Answered incorrectly first",
+  "practice_timer_off": "Off",
+  "practice_timer_minutes": "{count} minutes"
 }

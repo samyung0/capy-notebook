@@ -452,11 +452,16 @@ type SummaryTopic struct {
 	TopicID *string `json:"topicId,omitempty"`
 	Name    string  `json:"name,omitempty"`
 	Label   string  `json:"label" enum:"not_started,attempted,needs_practice,familiar,proficient,mastered"`
-	Right   int     `json:"right"`
-	Asked   int     `json:"asked"`
-	// Recent are the latest checks' results, oldest first.
-	Recent []string   `json:"recent" nullable:"false" enum:"right,partial,wrong"`
-	LastAt *time.Time `json:"lastAt,omitempty"`
+	// Right, Partial and Wrong count each question's latest answer; Asked is
+	// their sum.
+	Right   int `json:"right"`
+	Partial int `json:"partial"`
+	Wrong   int `json:"wrong"`
+	Asked   int `json:"asked"`
+	// Unattempted counts the topic's questions with no answer yet, those of a
+	// quiz left partway included.
+	Unattempted int        `json:"unattempted"`
+	LastAt      *time.Time `json:"lastAt,omitempty"`
 }
 
 // StudyTopics is Study → Summary: the caller's own standing per topic. Enabled
@@ -490,36 +495,49 @@ func (s *Store) WorkspaceStudyTopics(ctx context.Context, userID, wsID string, c
 // quiz's topic: questions carry no topic of their own yet, and flashcards stay
 // out of mastery. Trashed and deleted quizzes leave their answers out.
 func (s *Store) topicStandings(ctx context.Context, userID, wsID string, now time.Time) ([]SummaryTopic, error) {
-	rows, err := s.pool.Query(ctx, `SELECT DISTINCT m.topic_id, t.name, t.position, m.topic_id IS NULL AS unfiled
+	sizes, err := s.itemCounts(ctx, userID, wsID)
+	if err != nil {
+		return nil, err
+	}
+	size := make(map[string]int, len(sizes))
+	for _, it := range sizes {
+		size[it.MaterialID] = it.Size
+	}
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.topic_id, t.name
 		FROM materials m LEFT JOIN topics t ON t.id=m.topic_id
 		WHERE m.workspace_id=$1 AND m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
-		ORDER BY unfiled, t.position`, wsID, userID)
+		ORDER BY m.topic_id IS NULL, t.position, m.id`, wsID, userID)
 	if err != nil {
 		return nil, err
 	}
 	out := []SummaryTopic{}
+	at := map[string]int{}
+	totals := map[string]int{}
 	for rows.Next() {
+		var id string
 		var t SummaryTopic
 		var name *string
-		var position *int
-		var unfiled bool
-		if err := rows.Scan(&t.TopicID, &name, &position, &unfiled); err != nil {
+		if err := rows.Scan(&id, &t.TopicID, &name); err != nil {
 			rows.Close()
 			return nil, err
 		}
+		key := ""
 		t.Group = GroupOthers
-		if !unfiled {
-			t.Group = GroupTopic
-			t.Name = *name
+		if t.TopicID != nil {
+			key, t.Group, t.Name = *t.TopicID, GroupTopic, *name
 		}
-		out = append(out, t)
+		if _, seen := at[key]; !seen {
+			at[key] = len(out)
+			out = append(out, t)
+		}
+		totals[key] += size[id]
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	rows, err = s.pool.Query(ctx, `SELECT m.topic_id, ae.question_id, ae.item_hash, ae.awarded, ae.marks, ae.key_seen, ae.created_at
+	rows, err = s.pool.Query(ctx, `SELECT m.topic_id, ae.material_id, ae.question_id, ae.item_hash, ae.awarded, ae.marks, ae.key_seen, ae.created_at
 		FROM answer_events ae JOIN materials m ON m.id=ae.material_id
 		WHERE ae.workspace_id=$1 AND ae.user_id=$2 AND m.kind='quiz' AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL AND workspace_item_visible(m.hidden, m.workspace_id, $2)
@@ -531,10 +549,13 @@ func (s *Store) topicStandings(ctx context.Context, userID, wsID string, now tim
 	parts := map[string][]review.PartAnswer{}
 	for rows.Next() {
 		var topicID *string
+		var materialID string
 		var p review.PartAnswer
-		if err := rows.Scan(&topicID, &p.QuestionID, &p.Hash, &p.Awarded, &p.Marks, &p.KeySeen, &p.At); err != nil {
+		if err := rows.Scan(&topicID, &materialID, &p.QuestionID, &p.Hash, &p.Awarded, &p.Marks, &p.KeySeen, &p.At); err != nil {
 			return nil, err
 		}
+		// A cloned quiz keeps its question ids.
+		p.QuestionID = materialID + "/" + p.QuestionID
 		key := ""
 		if topicID != nil {
 			key = *topicID
@@ -550,11 +571,11 @@ func (s *Store) topicStandings(ctx context.Context, userID, wsID string, now tim
 			key = *out[i].TopicID
 		}
 		standing := review.TopicLabel(parts[key], now)
-		out[i].Label, out[i].Right, out[i].Asked = standing.Label, standing.Right, standing.Asked
-		out[i].Recent = standing.Recent
-		if out[i].Recent == nil {
-			out[i].Recent = []string{}
-		}
+		out[i].Label, out[i].Right, out[i].Partial, out[i].Wrong = standing.Label, standing.Right, standing.Partial, standing.Wrong
+		out[i].Asked = standing.Asked
+		// ponytail: answers to questions since removed still count as asked;
+		// reading each quiz's current ids here would parse them all.
+		out[i].Unattempted = max(0, totals[key]-standing.Asked)
 		if !standing.LastAt.IsZero() {
 			last := standing.LastAt
 			out[i].LastAt = &last
