@@ -15,7 +15,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useFrosted } from '@/theme/theme';
-import { ChatBubbleIcon } from './ChatBubbleIcon';
+import { ChatButtonIcon } from './ChatButtonIcon';
 import { VoiceButton, VoiceElapsed, type VoiceInput } from './VoiceInput';
 
 /** The chat dock and the chat page share this name, so a view transition
@@ -250,7 +250,7 @@ export function ChatDock({
               onClick={expand}
               type="button"
             >
-              <ChatBubbleIcon />
+              <ChatButtonIcon />
               {draft && (
                 <span className="absolute top-2.5 right-2.5 size-2.5 rounded-full bg-white ring-2 ring-[#3f3188]" />
               )}
