@@ -120,19 +120,21 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
       title: m.tour_welcome_title,
     },
     {
-      absent: () => !!tourPanels() && !find('#rail'),
+      absent: () => !!tourPanels() && !find('#left'),
       at: inWorkspacePage,
       body: m.tour_files_body,
+      // The rail's Files section shows its tree beside it.
       prepare: () => {
         const panels = tourPanels();
-        if (panels && once('files')) panels.showFiles();
-        return !!panels;
+        if (!panels) return false;
+        if (once('files')) panels.showFiles();
+        return !!find('[data-workspace-file-tree]');
       },
-      spot: () => find('#rail [data-slot="card"]'),
+      spot: leftPanel,
       title: m.tour_files_title,
     },
     {
-      absent: () => !!tourPanels() && !find('#files'),
+      absent: () => !!tourPanels() && !find('#left'),
       at: inWorkspacePage,
       body: m.tour_chats_body,
       // The rail's Agent section shows its chats beside it.
@@ -140,7 +142,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
         const panels = tourPanels();
         if (!panels) return false;
         if (once('chats')) panels.showChats();
-        return !!find('[data-workspace-left-panel]');
+        return !find('[data-workspace-file-tree]');
       },
       spot: leftPanel,
       title: m.tour_chats_title,

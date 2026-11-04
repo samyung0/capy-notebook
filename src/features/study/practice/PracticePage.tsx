@@ -282,10 +282,10 @@ function AllPractice({
     });
 
   return (
-    <section className="mt-4">
+    <section className="@container mt-4">
       {/* 16px to the first text under it: phones' first row holds 11px above
           its text, the table's header 8px. */}
-      <div className="mb-1.25 flex items-center gap-2 md:mb-2">
+      <div className="@[740px]:mb-2 mb-1.25 flex items-center gap-2">
         {title && <h2 className="t-subtitle mr-2">{m.practice_all()}</h2>}
         {options.length > 0 && (
           <Menu
@@ -321,8 +321,9 @@ function AllPractice({
         <p className="t-meta mt-6 text-fg-muted">{m.practice_empty_topic()}</p>
       ) : (
         <>
-          {/* Wide: the boards' table. */}
-          <table className="hidden w-full table-fixed border-separate border-spacing-0 md:table">
+          {/* Wide: the boards' table, once its fixed columns leave the Quiz
+              column room. By the pane, which a dragged panel can narrow. */}
+          <table className="@[740px]:table hidden w-full table-fixed border-separate border-spacing-0">
             <thead>
               <tr>
                 <Th>{m.practice_col_quiz()}</Th>
@@ -409,7 +410,7 @@ function AllPractice({
             </tbody>
           </table>
           {/* Phones and narrow panes: one row per item, its facts under it. */}
-          <ul className="md:hidden">
+          <ul className="@[740px]:hidden">
             {shown.map((row) => {
               const review = row.kind === 'review' ? row.review : null;
               const quiz = row.kind === 'quiz' ? row.quiz : null;

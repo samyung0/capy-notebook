@@ -249,7 +249,6 @@ export default function AccountChat() {
               color="purple"
               fill
               focusOnOpen
-              historyButton={false}
               onActiveChange={onActiveChange}
               onOpenCitation={openCitation}
               onOpenResource={openResource}

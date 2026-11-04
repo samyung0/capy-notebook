@@ -3,6 +3,7 @@ import type { APIRequestContext, Page } from '@playwright/test';
 import type { StudySummary, Topic } from '../../src/api/types';
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
+import { openWorkspaceSettings } from '../helpers/workspace';
 import { m } from '../i18n';
 
 // Study progress is per user, so each test works in its own workspace.
@@ -535,10 +536,7 @@ test.describe('study progress', () => {
     // document, so the router never runs) and closes the dialog once.
     await ownerPage.goto('/workspaces');
     await ownerPage.getByRole('link', { name: workspace.name }).first().click();
-    await ownerPage
-      .getByLabel(m.workspace_settings(), { exact: true })
-      .first()
-      .click();
+    await openWorkspaceSettings(ownerPage);
     await expect(ownerPage).toHaveURL(/settings=/);
     await ownerPage.goBack();
     await expect(ownerPage).toHaveURL(/\/workspaces$/);

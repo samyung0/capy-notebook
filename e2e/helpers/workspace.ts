@@ -15,12 +15,20 @@ export async function openWorkspaceMaterial(
   );
 }
 
+/** Workspace settings from the workspace rail's avatar menu, at lg. */
+export async function openWorkspaceSettings(page: Page) {
+  await page
+    .getByRole('navigation', { name: m.workspace_rail_label() })
+    .getByRole('button', { name: m.workspace_account_menu() })
+    .click();
+  await page
+    .getByRole('menuitem', { exact: true, name: m.workspace_settings() })
+    .click();
+}
+
 /** Sharing controls moved into the workspace settings dialog's Sharing tab. */
 export async function openWorkspaceSharing(page: Page) {
-  await page
-    .getByRole('button', { name: m.workspace_settings() })
-    .first()
-    .click();
+  await openWorkspaceSettings(page);
   const dialog = page.getByRole('dialog');
   await dialog
     .getByRole('tab', { exact: true, name: m.workspace_sharing() })

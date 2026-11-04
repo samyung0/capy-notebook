@@ -67,32 +67,47 @@ Your avatar sits at its foot and opens the profile menu upwards, headed by
 the workspace's part: Invite member (owners and editors), Workspace
 settings, and Clone for readers who may.
 
-Each section but the Dashboard shows its panel beside the rail (272px by
-default, resizable from 220px, collapsing on a drag like the right panel):
+There is no right panel (Epo 2026-11-04). One panel sits beside the rail for
+every section but the Dashboard: 340px by default, resizable from 220px up to
+half the group, so the viewer never drops under its 400px least width. A drag
+past its least width closes it on release. It keeps its width between
+sections and between Agent's history and a chat, and comes back at the width it
+closed at until the page is left:
 
-- **Files:** the topic tree under its search and the New file or topic row
-  (Epo 2026-11-04); the right panel keeps its own Files view with the workspace
-  picker for when this one is closed. Only one tree exists at a time: while this
-  one shows, the right panel offers Chat alone and doesn't mount its tree.
-- **Agent:** the chats, with voice and Archived chats on the title row; a
-  chat opens in the right panel.
+- **Files:** the topic tree under its search and the New file or topic row,
+  with Collapse all topics on the title row.
+- **Agent:** the chat history, with voice and Archived chats on the title row
+  and New chat over the list. A chat row or New chat shows that chat in this
+  panel in place of the history, with a back arrow to the history and New chat
+  on its title row. **The centre keeps what it showed**: a file stays open
+  beside the chat, and a citation or resource link opens in the centre with the
+  section still on Agent.
 - **Study:** Study's pages (`StudyPanel`), see
   [study-progress.md](../study-progress.md#practice).
 
-The section starts from the URL (a Study page shows Study, an open item
-Files, else the Dashboard), an item opened from the Dashboard or Study moves
-it to Files, and leaving Study for the landing shows the Dashboard. Pressing
-the current section closes or reopens its panel; Dashboard opens the landing
-and Study opens Practice. With the rail the centre header has no back arrow
-or left-panel toggle; Study's pages fill the centre without a header. Below
-lg the one-column layout stays as before: the header's title opens the Files
-dropdown and its ⋮ (and the dropdown's foot) carry Dashboard, Study and
-Workspace settings.
+The chat stays mounted from lg whichever section shows, the panel closed too,
+so it keeps its thread, draft and stream; a thread that moves on while hidden
+shows its end on return. Every way into a chat goes to Agent (`openChat`):
+`?chat=new` from Get started, the history's rows and New chat, and voice. A chat
+on screen comes back after a reload or a closed tab (`capy.workspace.chatShown.<id>`,
+kept with the thread in `capy.chat.open.<id>`, T19); leaving the page forgets it.
+
+The section starts from that chat or the URL (a Study page shows Study, an open
+item Files, else the Dashboard). From the Dashboard or Study an item moves it to
+Files; a Study page moves it to Study unless Agent shows; leaving Study for the
+landing shows the Dashboard. Pressing the current section closes or reopens its
+panel; Dashboard opens the landing and Study opens Practice. With the rail the
+centre header has no back arrow or panel toggle; Study's pages fill the centre
+without a header. Below lg the one-column layout stays as before: the header's
+title opens the Files dropdown, its ⋮ (and the dropdown's foot) carry Dashboard,
+Study and Workspace settings, and chat is the dock and its chat page.
+
+A page has one `h1`: the Dashboard, Study's pages, a quiz and a flashcards set
+head themselves; with anything else open it is an `sr-only` workspace name.
 
 The AI icon (`ai` in `Icon.tsx`, a curved four-point star stroked like the
 rest; Epo picks the final shape from a mock) marks the agent: the rail's
-Agent, the sidebar's Chat, the right panel's Chat view, the chat panel's
-title and empty state, and Generate in the AI generate form.
+Agent, the sidebar's Chat, the chat panel's title and empty state, and Generate in the AI generate form.
 
 ## Styles
 
@@ -195,7 +210,7 @@ How it is drawn:
   sets `data-frosted` only when the frame lists that place, so the stylesheet
   has one rule for all three. Left is the sidebar and the workspace's left
   panel; centre is the page panel, the workspace viewer and the bank's
-  questions; right is the workspace's right panel and the bank's topics.
+  questions; right is the bank's topics.
   The rail sidebar (640–1023px) overlays the page and never frosts.
 - Inside a frosted panel a few tokens turn translucent, the same for every
   panel: hovers, `--divider` (Tabs' line, rules), `--border-default`, and

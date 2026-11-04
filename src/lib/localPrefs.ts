@@ -10,6 +10,10 @@ import { useState } from 'react';
  * Every key lives here so the stored set stays in one place.
  */
 export const PREF_KEYS = {
+  /** Agent's panel shows a chat rather than the history: kept while it is on
+   * screen, so a reload or a reopened tab comes back to it (Epo 2026-10-27,
+   * T19), and gone when the page is left. */
+  chatShown: (workspaceId: string) => `capy.workspace.chatShown.${workspaceId}`,
   filesView: 'capy.files.view',
   /** The flashcard run this browser continues: its attempt and each card's
    * ratings (flashcardRun.ts), per signed-in user on the app page (another
@@ -35,10 +39,6 @@ export const PREF_KEYS = {
   quizAttempt: (owner: 'account' | 'local', quizId: string) =>
     `capy.quizAttempt.${owner}.${quizId}`,
   recentsView: 'capy.recents.view',
-  /** The opened workspace's right panel (Files, Chat, Study) is open. */
-  rightPanel: 'capy.workspace.rightPanel',
-  /** The view the right panel shows: Files, Chat or Study. */
-  rightView: 'capy.workspace.rightView',
   /** When each workspace, file and material open was last sent (sentOpens.ts). */
   sentOpens: 'capy.opens.sent',
   sort: (list: SortedList) => `capy.sort.${list}`,

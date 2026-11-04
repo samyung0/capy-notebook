@@ -1318,20 +1318,6 @@ test.describe('agent writes to Office sources', () => {
   // The XLSX check finds the typed cell in the first editor's grid, which
   // renders only the columns in view: the viewer at 1280px with the rail's
   // Files panel closed (openOffice).
-  test.use({
-    storageState: async ({ baseURL }, use) =>
-      use({
-        cookies: [],
-        origins: [
-          {
-            localStorage: [
-              { name: 'capy.workspace.rightPanel', value: 'true' },
-            ],
-            origin: baseURL!,
-          },
-        ],
-      }),
-  });
 
   for (const format of ['docx', 'pptx', 'xlsx'] as const) {
     test(`${format === 'xlsx' ? 'set_range' : 'replace_text'} on a ${format.toUpperCase()} source lands on its targets, live for two editors, and one Undo restores both`, async ({

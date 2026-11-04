@@ -27,6 +27,7 @@ test.beforeEach(async ({ page }) => {
 test('a ready file offers Clone and its copy opens in the workspace', async ({
   page,
 }) => {
+  await showPanelView(page, m.workspace_tab_files());
   const row = page.locator('[data-workspace-content-row="file:f_1"]');
   await row.hover({ timeout: 30_000 });
   await row.getByRole('button', { name: m.a11y_open_menu() }).click();
