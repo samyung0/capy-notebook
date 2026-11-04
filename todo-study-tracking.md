@@ -849,6 +849,14 @@ Steps 2, 3 and 7 can run side by side.
 - **Workspace cards:** the half banner from the Home mock (D1), H2 (Epo, 2026-11-03): the icon on the banner's edge, ⋮ on the banner, topics in the line under the name, then access and tags. File cards stay as they are; they're thumbnails.
 - **Quiz options:** full boxes as in the mocks (F1b) instead of today's underlined rows, for options, true/false and ordering items; open answers keep their ruled lines (Epo, 2026-11-03). A right choice fills green with a tick and "Right"; a wrong choice fills red with "Your answer". Once checked, a label above the options says Right or Wrong with the marks, as in Results (A5); a skipped question says "Not answered" and counts as wrong. The correct answer you didn't choose gets a green outline with no fill and "Correct answer" (M1, Epo, 2026-11-03), so green fill only ever means you chose it and it's right.
 
+**Class or personal workspaces (Epo, 2026-11-04; canvas page 12, board U3, proposal awaiting Epo's look).** The owner picks when creating a workspace. Class: Assignments and Practice, and the owner has no My results and no Suggested or Practise. Personal: Practice only, no assignments, with My results and Suggested. The map on U3 fills in the rest: editors act like owners; a personal workspace can invite people, each seeing only their own results; Personal is the default; it can be changed in settings; a member's clone of a class becomes Personal. Assignments wait for this.
+
+**Other decisions (Epo, 2026-11-04):**
+- A clone keeps each item's hidden flag; a viewer's clone still leaves hidden items out.
+- The box-call fallback uses ink growth instead of `FIGURE_PAD`, the better result in the tests.
+- Study plans are dropped end to end.
+- Built as recommended on `claude/study-shell`, with screenshots for Epo to change: topic sessions at 10 questions, the AI star on New chat, file processing and the callout tip, Activity rows opening their file, no empty sections on the Dashboard, the dead move-files warning removed, the leftover read states dropped if nothing reads them, Add file's tabs and the topic ⋮ menu kept as built.
+
 **Next after this rework's mocks (Epo, 2026-11-03): the AFFiNE canvas** (`todo-canvas-workspace.md`, on hold since 2026-11-02). Drawing answers and the note tool build on the same BlockSuite edgeless editor, so they are planned with it.
 
 **Later (Epo, 2026-11-03): the app-wide Learning page.** The workspace's centre Study page goes (the Study tab's pages replace it). The app's Learning page stays in the sidebar for now and is redesigned later, perhaps to show the AI suggestions across workspaces.
