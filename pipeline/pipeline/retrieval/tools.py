@@ -44,6 +44,7 @@ from ..generated.limits import (
 )
 from ..prompts import preferences
 from ..prompts.sources import source_block
+from ..store import blobstore
 from . import (
     accounting,
     capture,
@@ -1798,7 +1799,13 @@ async def _search_images(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
                 len(lines) == IMAGES_SHOWN
                 or figure is None
                 or ref in listed
-                or figure.withheld
+                or not library.shown(
+                    figure.decorative,
+                    figure.excluded,
+                    figure.withheld,
+                    figure.bbox,
+                    figure.blank,
+                )
                 or not (figure.label or figure.description)
             ):
                 continue
@@ -1851,7 +1858,12 @@ async def _capture_library_page(args: dict[str, Any], ctx: ToolContext) -> ToolR
     started = time.perf_counter()
     try:
         jpeg, box, size = await capture.render_knowledge(
-            target.object_key, target.bytes, page, bbox, cfg.capture_max_edge
+            target.object_key,
+            target.bytes,
+            page,
+            bbox,
+            cfg.capture_max_edge,
+            target.excluded.get(page, []),
         )
     except capture.CaptureUnavailable as exc:
         return _refused(f"capture_library_page: {exc}", code=exc.code)
@@ -2363,26 +2375,31 @@ class NoteFigures:
 async def render_figure(
     figure: library.Figure,
 ) -> tuple[bytes, tuple[int, int]] | ToolResult:
-    """A figure's box on its page as a JPEG with its size, as
-    capture_library_page renders it: deterministic, so a retried write sends
-    the same bytes."""
+    """A figure's stored crop (a JPEG the loader made at publish, Epo
+    2026-11-04) with its pixel size. A missing crop refuses as a missing book
+    did when figures were rendered here; nothing falls back to a render."""
     try:
-        image, _, size = await capture.render_knowledge(
-            figure.object_key,
-            figure.bytes,
-            figure.page,
-            figure.bbox,
-            cfg.capture_max_edge,
+        image = await asyncio.to_thread(
+            blobstore.library_read_bytes,
+            library.figure_key(
+                figure.object_key, figure.page, figure.bbox, figure.blank
+            ),
         )
-    except capture.CaptureUnavailable as exc:
-        return _refused(f"figure {figure.id}: {exc}", code=exc.code)
-    except ValueError as exc:
+    except ValueError as exc:  # the bucket is not configured
         return _refused(f"figure {figure.id}: {exc}")
-    return image, size
+    if image is None:
+        return _refused(
+            f"figure {figure.id}: the source object is missing",
+            code="unavailable_target",
+        )
+    from PIL import Image
+
+    with Image.open(io.BytesIO(image)) as opened:  # reads the header only
+        return image, opened.size
 
 
 class FigureUnavailable(Exception):
-    """The library shows the figure, but its page could not be rendered now."""
+    """The library shows the figure, but its stored crop could not be read."""
 
 
 async def answer_figure(ref: str) -> dict[str, Any] | None:
@@ -2390,12 +2407,8 @@ async def answer_figure(ref: str) -> dict[str, Any] | None:
     of its box with its label and printed credit, or None when the library
     does not show it (the rule placing it in a note follows)."""
     figure = (await library.figures([ref])).get(ref)
-    if (
-        figure is None
-        or figure.decorative
-        or figure.excluded
-        or figure.withheld
-        or figure.bbox == deck.WHOLE_PAGE
+    if figure is None or not library.shown(
+        figure.decorative, figure.excluded, figure.withheld, figure.bbox, figure.blank
     ):
         return None
     rendered = await render_figure(figure)
@@ -2487,7 +2500,8 @@ async def library_figures(
     show.
 
     A figure must be one the library shows (not decorative, excluded or on a
-    withheld page), boxed apart from its page, and listed by an excerpt. It
+    withheld page), boxed apart from its page (``library.shown``: with some
+    area, not inside an excluded figure's box), and listed by an excerpt. It
     need not have been read this turn (Epo 2026-10-30, R1, as named
     excerpt_ids since 2026-10-14: a PowerPoint finished in a later message
     places figures an earlier one listed); the credited excerpt is one this
@@ -2517,6 +2531,15 @@ async def library_figures(
                 f"{ref} has no box of its own (its record is all of page "
                 f"{figure.page}); place another figure or describe it in words"
             )
+        elif not library.shown(
+            figure.decorative,
+            figure.excluded,
+            figure.withheld,
+            figure.bbox,
+            figure.blank,
+        ):
+            # A box with no area, or inside an excluded figure's box.
+            problems.append(f"{ref} is not shown by the library")
         elif not figure.excerpt_ids:
             problems.append(f"{ref} is listed by no excerpt")
         else:

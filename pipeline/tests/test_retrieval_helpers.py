@@ -325,8 +325,8 @@ def _figure(ref: str, **kwargs) -> library.Figure:
         excluded=False,
         withheld=kwargs.pop("withheld", False),
         object_key="books/ahss.pdf",
-        bytes=1,
         excerpt_ids=kwargs.pop("excerpt_ids", ["e_1"]),
+        blank=[],
     )
 
 

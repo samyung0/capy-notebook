@@ -4,6 +4,8 @@ image transport. The provider call itself is covered by the agent tests."""
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import json
 import os
 import time
@@ -11,6 +13,7 @@ from pathlib import Path
 
 import pymupdf
 import pytest
+from PIL import Image
 
 from pipeline.retrieval import capture, pending, tools
 from pipeline.retrieval.search import Passage
@@ -289,7 +292,7 @@ async def test_two_knowledge_captures_side_by_side_at_fifteen_attach_one(
     async def _target(excerpt_id):
         return _capture_target([338, 339])
 
-    async def _render(object_key, max_bytes, page, bbox, max_edge):
+    async def _render(object_key, max_bytes, page, bbox, max_edge, blank):
         await asyncio.sleep(0)  # both pass the check before the render
         return capture.render(pdf, 1, bbox, max_edge)
 
@@ -667,7 +670,9 @@ async def test_pdf_cache_is_keyed_by_the_stored_object(tmp_path, monkeypatch):
     assert after_reparse.read_bytes().endswith(b"previews/s/v2/fp2.pdf")
 
 
-def _capture_target(pages: list[int], withheld: tuple[int, ...] = ()):
+def _capture_target(
+    pages: list[int], withheld: tuple[int, ...] = (), excluded: dict | None = None
+):
     from pipeline.retrieval import library
 
     return library.CaptureTarget(
@@ -678,6 +683,7 @@ def _capture_target(pages: list[int], withheld: tuple[int, ...] = ()):
         bytes=1024,
         pages=pages,
         withheld_pages=list(withheld),
+        excluded=excluded or {},
     )
 
 
@@ -710,7 +716,7 @@ async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pd
         assert excerpt_id == "e_1"
         return _capture_target([338, 339, 341])
 
-    async def _render(object_key, max_bytes, page, bbox, max_edge):
+    async def _render(object_key, max_bytes, page, bbox, max_edge, blank):
         rendered.append((object_key, max_bytes, page))
         return capture.render(pdf, 1, bbox, max_edge)
 
@@ -736,6 +742,56 @@ async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pd
     assert url.startswith("data:image/jpeg;base64,")
     assert rendered == [("books/aaa.pdf", 1024, 341)]
     assert ctx.captures[0]["fileId"] == "e_1" and ctx.captures[0]["page"] == 341
+
+
+async def test_knowledge_capture_paints_excluded_figures_white(tmp_path, monkeypatch):
+    """Epo 2026-11-04 (Q10): a library page capture shows no excluded figure,
+    so no slide can embed one; the rest of the page is rendered as it is."""
+    black = tmp_path / "black.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=400, height=600)
+        page.draw_rect(page.rect, color=(0, 0, 0), fill=(0, 0, 0))
+        doc.save(black)
+
+    async def _target(excerpt_id):
+        return _capture_target([1], excluded={1: [[0.0, 0.0, 1000.0, 500.0]]})
+
+    async def _pdf(object_key, max_bytes):
+        return black
+
+    monkeypatch.setattr(tools.library, "capture_target", _target)
+    monkeypatch.setattr(capture, "knowledge_pdf_path", _pdf)
+    ctx = ToolContext(workspace_id="ws_1")
+    await tools._capture_library_page(
+        {"excerpt_id": "e_1", "page": 1, "_tool_call_id": "a"}, ctx
+    )
+    _, url = ctx.pending_images["a"]
+    with Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1]))) as image:
+        width, height = image.size
+        assert min(image.getpixel((width // 2, height // 4))) > 240
+        assert max(image.getpixel((width // 2, height * 3 // 4))) < 15
+
+
+async def test_a_figure_is_its_stored_crop_with_its_size(monkeypatch):
+    """Epo 2026-11-04: render_figure reads the crop the loader stored by the
+    figure's book and box; a missing one refuses with the text a missing book
+    gave when figures were rendered."""
+    from pipeline.retrieval import library
+
+    figure = library.Figure(
+        id="fig_1", book_title="B", page=3, bbox=[-4.0, 10.0, 500.0, 1004.0],
+        label="", description="", credit="", decorative=False, excluded=False,
+        withheld=False, object_key="books/abc.pdf", excerpt_ids=["e_1"], blank=[],
+    )  # fmt: skip
+    stored = {"figures/abc/3_-4_10_500_1004.jpg": _jpeg(640, 480)}
+    monkeypatch.setattr(tools.blobstore, "library_read_bytes", stored.get)
+
+    image, size = await tools.render_figure(figure)
+    assert image == stored["figures/abc/3_-4_10_500_1004.jpg"] and size == (640, 480)
+    stored.clear()
+    missing = await tools.render_figure(figure)
+    assert missing.refused and missing.error_code == "unavailable_target"
+    assert missing.text() == "figure fig_1: the source object is missing"
 
 
 async def test_knowledge_pdf_cache_is_keyed_by_the_object_key(tmp_path, monkeypatch):

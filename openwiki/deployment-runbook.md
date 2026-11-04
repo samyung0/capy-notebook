@@ -1864,7 +1864,9 @@ deployed retrieval service holds a read-only key; only the loader on the
 developer PC holds a key that can write.
 
 1. Create the bucket `capy-notebook-knowledge-base`, **private**. It holds one
-   object per book at `books/<sha256>.pdf`; nothing else writes into it.
+   object per book at `books/<sha256>.pdf` and one JPEG per shown figure at
+   `figures/<sha256>/<page>_<box>.jpg`, which the loader stores at publish
+   (Epo 2026-11-04); nothing else writes into it.
 2. Two application keys, each **scoped to that bucket only**; each secret is
    shown once:
    - **Reader**, `listFiles` and `readFiles`: the retrieval service's
@@ -1873,7 +1875,8 @@ developer PC holds a key that can write.
      let either environment change the books every tenant renders.
    - **Writer**, `readFiles` and `writeFiles`: only in the developer PC's
      ignored `.env.local` as `KNOWLEDGE_BASE_B2_WRITER_KEY_ID` and
-     `KNOWLEDGE_BASE_B2_WRITER_APP_KEY`, for the builder's source upload. It
+     `KNOWLEDGE_BASE_B2_WRITER_APP_KEY`, for the builder's source upload and
+     the loader's figure crops (the read key lists the bucket for them). It
      never goes to GitHub or a host; a CI test fails if any deploy
      file names these variables.
 
@@ -1883,8 +1886,10 @@ developer PC holds a key that can write.
 3. Endpoint `https://s3.eu-central-003.backblazeb2.com`, region
    `eu-central-003`.
 4. No CORS rules and no lifecycle rule. The browser never touches this bucket:
-   `capture_library_page` renders a page server-side and the books are
-   permanent.
+   `capture_library_page` renders a page server-side, Go proxies a figure's
+   stored crop, and the books are permanent. Stale crops (a box moved at a
+   republish, or a figure hidden later) stay unreachable; `crops --verify` in
+   the loader lists them.
 5. The five variables are **all or none**, enforced at import of
    `pipeline.config`: set all five and `capture_library_page` is offered;
    set none and the tool is simply unoffered. A **partial set raises while the

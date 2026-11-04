@@ -22,7 +22,11 @@ retrieval also uses) and `KNOWLEDGE_BASE_B2_WRITER_KEY_ID` with
 `KNOWLEDGE_BASE_B2_WRITER_APP_KEY`. The writer key is the only one that may
 write the shared book bucket: publish uploads a missing source PDF with it (same
 endpoint, region and bucket) and fails the upload when either value is missing;
-the read key never stands in. The ordinary dashboard runner uses two models
+the read key never stands in. The loader's publish also stores each shown
+figure's crop with it before writing the version, and refuses when one is
+missing (`figures/<sha256>/`, Epo 2026-11-04; `knowledge_base_library.py crops`
+backfills the current books and `crops --verify` lists missing and stale
+crops). The ordinary dashboard runner uses two models
 (`llm.py`): GLM-5.3-Flash on the local
 Ollama cloud model (`glm-5.3-flash:cloud`, 127.0.0.1:11434) serves topics and
 scraping; Qwen3.8-Flash on Alibaba Model Studio serves the transcribe and tag

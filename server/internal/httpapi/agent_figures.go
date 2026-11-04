@@ -19,8 +19,9 @@ import (
 )
 
 // agentFigure is a library figure an agent placed in a note
-// (`![caption](figure:<id>)`) or after a quiz question's text, rendered by the
-// retrieval service from the book's PDF: a crop of the figure's box as a JPEG.
+// (`![caption](figure:<id>)`) or after a quiz question's text: the crop of the
+// figure's box as a JPEG, which the library loader stored at publish and the
+// retrieval service reads from the knowledge-base bucket.
 // The note or quiz stores it as its own editor asset, like an image a user
 // uploads.
 type agentFigure struct {

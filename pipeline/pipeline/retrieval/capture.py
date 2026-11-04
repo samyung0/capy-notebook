@@ -13,7 +13,9 @@ carry text only.
 Images live on the turn's ``ToolContext`` and are never persisted.
 
 ``capture_library_page`` renders a library book the same way, from the
-knowledge-base bucket and keyed in the same cache by its object key.
+knowledge-base bucket and keyed in the same cache by its object key, with its
+excluded figures painted white. Library figures are not rendered here: the
+loader stores each shown one's crop at publish, through ``render``.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ import os
 import tempfile
 import time
 import warnings
+from collections.abc import Sequence
 from pathlib import Path
 from typing import IO, Any
 
@@ -158,10 +161,15 @@ async def knowledge_pdf_path(object_key: str, max_bytes: int) -> Path:
 
 
 async def render_knowledge(
-    object_key: str, max_bytes: int, page: int, bbox: list[float] | None, max_edge: int
+    object_key: str,
+    max_bytes: int,
+    page: int,
+    bbox: list[float] | None,
+    max_edge: int,
+    blank: list[list[float]],
 ) -> tuple[bytes, list[float], tuple[int, int]]:
     pdf = await knowledge_pdf_path(object_key, max_bytes)
-    return await limits.render_thread(render, pdf, page, bbox, max_edge)
+    return await limits.render_thread(render, pdf, page, bbox, max_edge, blank)
 
 
 def _image_capture(
@@ -352,10 +360,16 @@ async def render_file(
 
 
 def render(
-    pdf: Path, page: int, bbox: list[float] | None, max_edge: int
+    pdf: Path,
+    page: int,
+    bbox: list[float] | None,
+    max_edge: int,
+    blank: Sequence[list[float]] = (),
 ) -> tuple[bytes, list[float], tuple[int, int]]:
     """JPEG of the page or box, the box actually rendered on the 0-1000 grid,
-    and the pixel size."""
+    and the pixel size. Each ``blank`` box (an excluded library figure's) is
+    painted white where it overlaps (Epo 2026-11-04), in a page capture and a
+    stored figure crop alike."""
     import pymupdf
 
     with pymupdf.open(pdf) as doc:
@@ -363,22 +377,32 @@ def render(
             raise ValueError(f"page must be between 1 and {len(doc)}")
         pg = doc[page - 1]
         rect = pg.rect
+
+        def area(box: list[float]):
+            x0, y0, x1, y1 = box
+            return pymupdf.Rect(
+                rect.x0 + rect.width * x0 / 1000,
+                rect.y0 + rect.height * y0 / 1000,
+                rect.x0 + rect.width * x1 / 1000,
+                rect.y0 + rect.height * y1 / 1000,
+            )
+
         if bbox:
             x0, y0, x1, y1 = bbox
             if not (x0 < x1 and y0 < y1):
                 raise ValueError(
                     "bbox must be [x0, y0, x1, y1] with x0 < x1 and y0 < y1"
                 )
-            clip = pymupdf.Rect(
-                rect.x0 + rect.width * x0 / 1000,
-                rect.y0 + rect.height * y0 / 1000,
-                rect.x0 + rect.width * x1 / 1000,
-                rect.y0 + rect.height * y1 / 1000,
-            )
+            clip = area(bbox)
         else:
             clip, bbox = rect, [0, 0, 1000, 1000]
         scale = max_edge / max(clip.width, clip.height)
-        pix = pg.get_pixmap(matrix=pymupdf.Matrix(scale, scale), clip=clip, alpha=False)
+        matrix = pymupdf.Matrix(scale, scale)
+        pix = pg.get_pixmap(matrix=matrix, clip=clip, alpha=False)
+        for box in blank:
+            # Boxes that only touch the clip leave its pixels alone.
+            if area(box).intersects(clip):
+                pix.set_rect((area(box) * matrix).irect, (255, 255, 255))
     from PIL import Image
 
     image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)

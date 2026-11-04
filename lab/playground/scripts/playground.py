@@ -2764,12 +2764,15 @@ def check_questions() -> None:
 
 
 def check_figures() -> None:
-    """A note placing a library figure keeps its render under the run's
+    """A note placing a library figure keeps its stored crop under the run's
     assets/ and records it for the preview; an edit adds its own, and a quiz
     question takes one through add_question_media as an image block."""
+    import io
     from dataclasses import replace
     from tempfile import TemporaryDirectory
     from unittest.mock import patch
+
+    from PIL import Image
 
     from pipeline.retrieval import library, tools
 
@@ -2777,14 +2780,17 @@ def check_figures() -> None:
         id="fig_1", book_title="B", page=3, bbox=[0, 0, 500, 500], label="Figure 1",
         description="",
         credit="CC BY 4.0", decorative=False, excluded=False, withheld=False,
-        object_key="books/x.pdf", bytes=1, excerpt_ids=["exc_1"],
+        object_key="books/x.pdf", excerpt_ids=["exc_1"], blank=[],
     )
+    buffer = io.BytesIO()
+    Image.new("RGB", (1, 1), "white").save(buffer, "JPEG")
+    crop = buffer.getvalue()
 
     async def figures(ids):
         return {i: replace(figure, id=i) for i in ids}
 
-    async def render(*_args):
-        return b"\xff\xd8\xffjpeg", [0, 0, 500, 500], (1, 1)
+    def stored(key):
+        return crop
 
     async def provenance(excerpt_ids):
         return [{"id": "b", "title": "B", "excerptIds": list(excerpt_ids), "version": 1}]
@@ -2799,8 +2805,8 @@ def check_figures() -> None:
         assert not made.refused, made.text()
         note = state["materials"][-1]
         assert note["content"] == "# A\n\n![Figure 1 (CC BY 4.0)](figure:fig_1)"
-        assert note["figures"] == {"fig_1": {"file": "assets/fig_1.jpg", "bytes": 7}}
-        assert (run_dir / "assets" / "fig_1.jpg").read_bytes() == b"\xff\xd8\xffjpeg"
+        assert note["figures"] == {"fig_1": {"file": "assets/fig_1.jpg", "bytes": len(crop)}}
+        assert (run_dir / "assets" / "fig_1.jpg").read_bytes() == crop
         assert note["provenance"]["books"][0]["excerptIds"] == ["exc_1"]
         edited = await edit_material_locally(
             {"target": {"kind": "material", "id": note["id"]}, "excerpt_ids": ["exc_1"],
@@ -2834,7 +2840,7 @@ def check_figures() -> None:
         TemporaryDirectory() as tmp,
         patch.object(library, "figures", new=figures),
         patch.object(library, "provenance", new=provenance),
-        patch("pipeline.retrieval.capture.render_knowledge", new=render),
+        patch("pipeline.store.blobstore.library_read_bytes", new=stored),
     ):
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))
 

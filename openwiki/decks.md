@@ -70,8 +70,8 @@ serially.
    `<image href="figure:<figure id>">` (Epo 2026-10-30, D3): checked as a
    note's figure is (`tools.library_figures`: listed by an excerpt this turn
    read or shown by `search_images`, not decorative, excluded, withheld or a
-   whole page), its box rendered as `capture_library_page` renders it
-   (`tools.render_figure`), the href pointed at `../images/<figure id>.jpg`
+   whole page), its stored crop placed (`tools.render_figure`; Epo
+   2026-11-04, agentic-retrieval.md), the href pointed at `../images/<figure id>.jpg`
    and its excerpt's book credited (`tools.slide_figures`). Our checks then:
    the XML parses, the root is `<svg>` with `viewBox="0 0 1280 720"` and
    `lang`, and every other `<image>` is
@@ -81,6 +81,8 @@ serially.
    capture the turn's image budget has dropped, "no longer available", is
    refused; agentic-retrieval.md, Q349). Captures are numbered rather than
    named by page so page 4 of two sources cannot collide (Epo 2026-10-14).
+   A library capture has its excluded figures painted white (Epo
+   2026-11-04, Q10), so no slide can carry one and no refusal is needed.
    Then ppt-master's checker runs on
    the slide alone in a temporary project, and up to six of its errors come
    back as the refusal. A passing slide is kept (writing it again replaces it)

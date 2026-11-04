@@ -7,6 +7,7 @@ read tool lists the figures a model may pick.
 
 from __future__ import annotations
 
+import base64
 import secrets
 from urllib.parse import urlsplit, urlunsplit
 
@@ -14,6 +15,7 @@ import psycopg
 import pytest
 import test_library
 from psycopg.types.json import Jsonb
+from test_capture import _jpeg
 from test_library import CURRENT, OLDER
 
 from pipeline.retrieval import library, tools
@@ -204,6 +206,36 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
     assert found.excerpts[0].figure_ids == ["fig_1", "fig_2"]
 
 
+async def test_every_figure_a_model_is_offered_can_be_placed(library_db):
+    """read_library and search hits leave out what library.shown hides: a box
+    inside an excluded figure's box and a box with no area."""
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        for figure_id, bbox, excluded in (
+            ("fig_big", "{100,100,500,500}", True),
+            ("fig_in", "{150,150,200,200}", False),
+            ("fig_line", "{0,300,400,300}", False),
+        ):
+            conn.execute(
+                "INSERT INTO library_figures VALUES(%s,%s,'ahss',7,%s,NULL,'page-1000-topleft','parser_image',1,'[]','[]','Ch 8',%s,'[]',NULL,NULL)",
+                (CURRENT, figure_id, bbox, excluded),
+            )
+        conn.execute(
+            "UPDATE library_excerpts SET figure_ids='{fig_1,fig_in,fig_line,fig_big}' "
+            "WHERE id='e_intro'"
+        )
+    read = await library.read_excerpt("e_intro")
+    assert [f["id"] for f in read.figures] == ["fig_1"]
+    found = await library.search("regression", vector=test_library._unit_vector(0))
+    assert found.excerpts[0].figure_ids == ["fig_1"]
+    # The same rule as library.shown, which the writes apply.
+    found = await library.figures(["fig_1", "fig_in", "fig_line"])
+    assert {
+        ref
+        for ref, f in found.items()
+        if library.shown(f.decorative, f.excluded, f.withheld, f.bbox, f.blank)
+    } == {"fig_1"}
+
+
 async def test_read_library_lists_figures_after_the_text(monkeypatch):
     ctx = ToolContext(workspace_id="ws", operations=frozenset({"library.read"}))
     figures = [
@@ -275,18 +307,35 @@ async def test_figures_say_whether_the_library_shows_them(library_db):
     assert (await library.figures(["fig_1"]))["fig_1"].withheld
 
 
+async def test_a_figure_carries_the_excluded_boxes_its_crop_blanks(library_db):
+    """Epo 2026-11-04: the boxes the loader painted white, so the reader keys
+    the crop as the loader did; touching and whole-page boxes blank nothing."""
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        for figure_id, bbox in (
+            ("fig_over", "{5,5,20,20}"),
+            ("fig_touch", "{10,0,20,10}"),
+            ("fig_page", "{0,0,1000,1000}"),
+        ):
+            conn.execute(
+                "INSERT INTO library_figures VALUES(%s,%s,'ahss',7,%s,NULL,'page-1000-topleft','parser_image',0,'[]','[]','Ch 8',true,'[]',NULL,NULL)",
+                (CURRENT, figure_id, bbox),
+            )
+    figure = (await library.figures(["fig_1"]))["fig_1"]
+    assert figure.blank == [[5.0, 5.0, 20.0, 20.0]]
+
+
 def _figure_writes(monkeypatch):
-    """A Library-on context whose renders and gateway posts are recorded."""
+    """A Library-on context whose crop reads and gateway posts are recorded."""
     from test_agent import _created, _gateway_receipt, _library_ctx
 
     ctx = _library_ctx(monkeypatch)
-    rendered: list[tuple] = []
+    rendered: list[str] = []
 
-    async def _render(object_key, size, page, bbox, max_edge):
-        rendered.append((object_key, page, bbox))
-        return b"\xff\xd8\xffjpeg", bbox, (1, 1)
+    def _crop(key):
+        rendered.append(key)
+        return _jpeg(1, 1)
 
-    monkeypatch.setattr(tools.capture, "render_knowledge", _render)
+    monkeypatch.setattr(tools.blobstore, "library_read_bytes", _crop)
     sent = _gateway_receipt(monkeypatch, _created("mat_1", "Fit"))
     return ctx, rendered, sent
 
@@ -313,8 +362,9 @@ async def test_a_note_shows_a_figure_with_the_printed_credit(library_db, monkeyp
         "# Fit\n\n![Figure 1: \\[Scatter\\] plot (CC BY-SA, OpenIntro)](figure:fig_1)"
         "\n\n![a cell](https://e.com/c.png)"
     ), "the caption is the printed label and credit"
-    assert body["figures"] == [{"id": "fig_1", "image": "/9j/anBlZw=="}]
-    assert rendered == [("books/sha.pdf", 7, [0.0, 0.0, 10.0, 10.0])]
+    crop = base64.b64encode(_jpeg(1, 1)).decode()
+    assert body["figures"] == [{"id": "fig_1", "image": crop}]
+    assert rendered == ["figures/sha/7_0_0_10_10.jpg"], "the crop stored at publish"
     assert body["provenance"]["books"][0]["excerptIds"] == ["e_intro"], (
         "the figure's excerpt is credited without being named"
     )

@@ -4009,9 +4009,8 @@ materials are sources.
   gives the image node `width: "50%"` at import (`agentImages` in
   `markdownConvert.ts`), and the pipeline keeps the title through the caption
   rewrite and refuses any other size before rendering. After the write guard
-  passes, each figure's bbox is rendered as `capture_library_page` renders it
-  (`capture.render_knowledge`, JPEG q80, long edge `CAPY_CAPTURE_MAX_EDGE`),
-  deterministic and CPU only, with no cache, and sent beside the write as
+  passes, each figure's stored crop is read (`tools.render_figure`; Stored
+  figure crops, below) and sent beside the write as
   `figures: [{id, image}]` (base64; the post's timeout is 60 s then). Go
   (`agent_figures.go`) takes the figure images the converted markdown
   actually references: the converter keeps `figure:<id>` as the image node's
@@ -4035,7 +4034,54 @@ materials are sources.
   ordinary note images (pruning, trash, children pass, clones, quota).
   Request identity covers each figure's id and image digest. A quiz question
   takes a library figure through `add_question_media` instead (Question
-  tools, below), with the same checks (`tools.library_figures`) and render.
+  tools, below), with the same checks (`tools.library_figures`) and crop.
+- **Stored figure crops** (Epo 2026-11-04; supersedes 2026-10-11's "rendered
+  each time it is written"). Every library figure image (a chat answer's
+  `figure:<id>` line, a note, a quiz question, a slide placed by id) is the
+  JPEG the loader stored at publish in the knowledge-base bucket at
+  `figures/<pdf sha256>/<page>_<x0>_<y0>_<x1>_<y1>[_<blank digest>].jpg`
+  (`library.figure_key`: the sha of the version's verified
+  `books/<sha256>.pdf`, a capture copy's for the books that publish one, the
+  stored box on the 0-1000 grid, which may be negative, and, when the crop
+  paints excluded boxes white, 12 hex digits of SHA-256 over those boxes). The
+  key holds the box, not the figure id, so a republish that keeps a box and its
+  overlapping exclusions keeps its crop, and one that excludes or restores an
+  overlapping figure gets a fresh one; there is no table or column.
+  `library.figures` reads the excluded boxes on the figure's page and keeps
+  those overlapping its box (`library.blanked`, the loader's own rule; boxes
+  that only touch do not overlap), so the reader computes the loader's key.
+  `tools.render_figure` reads it with the read key
+  (`blobstore.library_read_bytes`, on an ordinary thread, not the 2 render
+  threads) and takes the pixel size from the JPEG header. A missing crop is
+  refused with the text a missing book gave before (`figure <id>: the source
+  object is missing`, `unavailable_target`; a 503 for a chat answer), with no
+  render fallback. The loader (`bench/rag/scripts/knowledge_base_library.py`)
+  crops exactly the figures `library.shown` passes (not decorative or
+  excluded, not on a withheld page, boxed apart from its page, with some area
+  once rounded, and not inside or equal to an excluded figure's box, where it
+  would show that image; `answer_figure`, `search_images` and
+  `library_figures` apply the same rule, the last with its existing "is not
+  shown by the library", and the figure ids of search hits and the figures
+  `read_library` lists go by its SQL twin, `library._LISTED_FIGURE`, the
+  withheld page aside, so a listed figure can be placed) with today's
+  renderer and settings (`capture.render`, long edge 1,568 px, JPEG q80), so a
+  crop is byte for byte the render it replaces, except that any excluded
+  figure's box overlapping it is painted white (13 figures in 2 books on
+  2026-11-04; a whole-page record has no box of its own and blanks nothing). It
+  renders from the run's PDF when its SHA-256 is the verified key's, else from
+  the published object (two books publish a capture copy through
+  `capture_privacy`, which binds `verify_object` to the copy, so their crops
+  stay redacted). `publish_book` lists `figures/<sha>/` with the read key, PUTs the
+  missing crops with the writer key (`writer_client`, which the source upload
+  in `lab/knowledge/ingest.py` shares) and lists again, all before it writes
+  anything: a crop still missing refuses the publish, and a republish that
+  keeps its boxes uploads nothing. `crops` does the same
+  for every current book from the live rows (the backfill, resumable;
+  `--book` narrows it) and `crops --verify` reports missing crops, stale ones
+  (a box moved at a republish, or a figure hidden later), which stay in the
+  private bucket where no reader reaches them, and how many records are
+  hidden only for a box with no area (none on 2026-11-04). The browser never reaches
+  the bucket: Go proxies the bytes as before.
 - **Answer.** A build turn ends like any turn: a Markdown answer
   listing the materials made, cited under the usual rules. The
   attribution the user sees for library content is the provenance footer on
@@ -4053,7 +4099,7 @@ materials are sources.
   will take them; `run.json` holds the turn's library reads
   (`library_reads`) and, once a write has landed, each tools-off call as a
   `stall_events` entry. A note's
-  library figures go through `tools.note_figures` and the production render;
+  library figures go through `tools.note_figures` and the stored crops;
   each crop is kept as `assets/<figure id>.jpg` under the run and recorded on
   the material (`figures`), which the preview shows with its caption
   (`AssetUrlContext` maps `figure:<id>` to the file). Decks (`create_deck`, `write_slide`, made the ppt-master way per `lab/playground/DECKS.md`) exist only there. Details, including
@@ -4072,8 +4118,8 @@ materials are sources.
 | `search_web` | none | DeepSeek's web search (`retrieval/websearch.py`, `POST https://api.deepseek.com/v1/tools/search` on the platform `DEEPSEEK_API_KEY`): one focused query of at most 128 characters, 5 results, no retry; only the query is sent (never the learner's question or IP), and the description asks for it in the model's own words rather than copied from the learner's files (Epo 2026-10-24, Q289). Each result is a `Passage(kind="web")` (`chunk_id` `web:<url>`, the link in `file_id`, title, site, the date parsed from DeepSeek's RFC 3339 value to YYYY-MM-DD and left out when it does not parse, DeepSeek's summary as the text and its snippet for display) in one source block, numbered like passages, with a data-not-instructions note and the searches left. A user message gets 3 searches: an empty one counts and is free, a failed one (an error, a timeout, a non-2xx answer or a body without a results list) is free and the first 2 failures do not count, so at most 5 calls run (Epo 2026-10-24); results that miss the point are an ordinary search the model judges, since DeepSeek answers even a nonsense query with 5 results (2026-10-24 probe); the parser keeps only title, url, snippet, summary, site_name and date; calls of one response hold their places while they run. The same query again in one message (compared without case or extra spaces) reuses that message's answer, neither charged nor counted; a search whose settlement fails keeps its results and is neither charged nor counted, its call row left to the receipt sweep (Editor 2026-10-24). A search with results costs 1.8 credits ([observability-metering.md](observability-metering.md)). Answers as not available while Workspace only is on. Retains cited results, which replay from their saved copy |
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
-| `search_images` | full | As `search_library` (Epo 2026-10-30). Images by what they show: the library's excerpt search (ten excerpts deep) runs underneath and lists the shown, described figures of those excerpts in rank order, at most eight, each with its id, label, description, book, page and credit. The result names no excerpt or library tool: the model learns only that it can place one by id in its answer, a note or a quiz question. A listed figure may be placed this turn without a `read_library`, credited with the excerpt that lists it (`ToolContext.shown_figures`). A chat answer's `![caption](figure:<id>)` line draws it through `GET /api/library/figures/{id}` (Go → pipeline `POST /library/figure`, `tools.answer_figure`): the JPEG of its box as base64 with its label and printed credit, 404 for a figure the library does not show; any signed-in user may read it. The learner's own images join as a second group once their pictures carry descriptions |
-| `capture_library_page` | none | As `search_library`, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
+| `search_images` | full | As `search_library` (Epo 2026-10-30). Images by what they show: the library's excerpt search (ten excerpts deep) runs underneath and lists the shown, described figures of those excerpts in rank order, at most eight, each with its id, label, description, book, page and credit. The result names no excerpt or library tool: the model learns only that it can place one by id in its answer, a note or a quiz question. A listed figure may be placed this turn without a `read_library`, credited with the excerpt that lists it (`ToolContext.shown_figures`). A chat answer's `![caption](figure:<id>)` line draws it through `GET /api/library/figures/{id}` (Go → pipeline `POST /library/figure`, `tools.answer_figure`): the stored crop of its box as base64 with its label and printed credit, 404 for a figure the library does not show, 503 when the crop is missing; any signed-in user may read it. The learner's own images join as a second group once their pictures carry descriptions |
+| `capture_library_page` | none | As `search_library`, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG, excluded figures painted white; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF, or an uploaded image as its single page 1, as a JPEG for the model; a Word, Excel or PowerPoint file is refused first, naming `inspect_office_document` (`unsupported_format`; Q283); refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_library_page` and `resolve_source_change`; adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes and flashcard sets (a quiz is created by `add_questions`; the agent makes no mindmap or diagram since 2026-10-25, Epo, though it can still rewrite a Mermaid block a learner added). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. Blank `content` (empty or whitespace) is not converted: Go stores the blank note a user's new note starts as (`materialdoc.Empty`, one empty paragraph; `MaterialDraft.Blank` lets it past the store's no-text check) and answers with the receipt plus a `notice` the result prints, "The note was created blank because content was empty; add its content with edit_document." (Epo 2026-10-29). Any other note left with no text, as one of only fences or figures, is still refused "The material has no content." `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it); a chart, plot or graph prints its block as compact JSON without a graph's drawn SVG, summed up past 1,500 characters as its type, kind, title, first 12 labels and series names (`tools._figure_view`), an interactive block its caption, a Mermaid block its source as its text and its caption apart (Epo 2026-10-22), and a flashcard its sides as `{"back":…,"front":…}` (`edit::card_text`; Epo 2026-10-21) |
@@ -4211,7 +4257,16 @@ lives in its own private bucket (`KNOWLEDGE_BASE_B2_*`, content-addressed as
 `books/<sha256>.pdf` and recorded in `library_book_versions.object_key`), is downloaded
 once per object key into the same LRU cache (`capture.cache_name(object_key)`)
 and rendered by the same `capture.render`; `blobstore.download_file` takes the
-bucket and client, so there is one download implementation. The excerpt replaces
+bucket and client, so there is one download implementation. Every excluded
+figure's box on the page (`library.capture_target`'s `excluded`) is painted
+white, as inside a stored crop (Epo 2026-11-04, Q10), so no capture, and no
+slide embedding one, shows an excluded image; `write_slide` adds no refusal
+for it. A whole-page excluded record has no box to paint, so its page joins
+the withheld pages for captures only, refused with the withheld-page text
+(Epo 2026-11-04, option 1; 133 records on 122 pages of 23 books, 118 of them
+not otherwise withheld, on 2026-11-04); the page's text, search and figures
+are unaffected. Library figures are not rendered here
+(Stored figure crops, above), so the cache serves only this tool. The excerpt replaces
 the cited page as the guard: only pages the excerpt covers, or the page of one
 of its figures, may be captured (`library.capture_target`). A page in the
 book's `library_books.withheld_pages` (reprinted texts the library withholds,
@@ -4423,7 +4478,7 @@ figure (contract v27) is checked and credited as a note's is
 listed by an excerpt, whose book joins the quiz's
 provenance), needs a `caption` when it has no printed label, refuses a
 caption (or, without one, a printed label) over the 500-character image
-description cap (`QUESTION_DESCRIPTION_MAX`), and is rendered
+description cap (`QUESTION_DESCRIPTION_MAX`), and takes its stored crop
 like a note figure (`tools.render_figure`). It becomes an image block,
 `{type: "image", image: {assetId: "figure:<id>"}, width, height,
 description, attribution}` (`questions.figure_block`): the pixel size of the

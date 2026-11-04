@@ -746,7 +746,13 @@ async def test_a_fresh_turn_can_write_with_its_write_tools_locked(monkeypatch):
 async def test_a_figure_the_library_does_not_show_is_no_answer_figure(
     monkeypatch, figure
 ):
-    shown = {"decorative": False, "excluded": False, "withheld": False, "bbox": [1, 2]}
+    shown = {
+        "decorative": False,
+        "excluded": False,
+        "withheld": False,
+        "bbox": [1, 2, 3, 4],
+        "blank": [],
+    }
     found = {} if figure is None else {"f": SimpleNamespace(**{**shown, **figure})}
 
     async def _figures(_refs):
