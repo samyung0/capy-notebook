@@ -582,7 +582,7 @@ the caller can edit) and then opens the same Add file dialog for it.
 
 Move puts files into a workspace, never out (Epo 2026-10-27):
 `POST /api/files/move` `{fileIds (1-20), workspaceId, topicId?,
-topicName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
+topicName?}` (`MoveFiles` in `store/file_move.go`).
 
 - A standalone file is moved by its owner; a workspace file by that
   workspace's owner or the file's payer (`File.isPayer` tells the caller).
@@ -592,10 +592,9 @@ topicName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
   running (409 `file_processing`), or already in the target (409) is refused.
   A topic move inside one workspace stays `PATCH /api/files/{id}`. Locks
   follow every workspace write: workspace rows by id, accounts, then files.
-- The workspaces it leaves lose their study progress and plan steps for it:
-  a move that would drop someone's started or finished progress answers 409
-  `progress_loss` with `{people, planSteps}` until `confirmProgressLoss`;
-  plan steps alone go without asking.
+- The workspaces it leaves lose any study progress row on it, without asking:
+  only practice records progress since 2026-11-03, and practice is on quizzes
+  and sets, which do not move.
 - Thumbnail keys stay inside their workspace: a moved file drops a key
   borrowed from another file, and files that borrowed the moved file's key
   drop theirs (the next capture redraws them).
@@ -1005,12 +1004,6 @@ Details live in [study-progress.md](study-progress.md).
   access to the rated material. Reads and writes never show another user's
   rows; the chat agent reads only the requester's, and only while their
   study progress shows (Hide study progress is per user and workspace).
-- Study plans are private to their user too. Any reader of a workspace may
-  keep plans in it; a plan's steps may name any workspace the user can read
-  when adding them. A plan whose parent workspace the user can no longer read
-  is left out of every list, and a step in a workspace they can no longer
-  read is shown locked without its title. Plans go with their parent
-  workspace and at account purge.
 - Frozen accounts record progress, ratings, Reset and the progress switches
   like anyone else (`requireAccountMutate`), since the rows are their own and
   charge no storage. Suspended, deletion-pending and deleted accounts have no
@@ -1426,12 +1419,12 @@ Confirm and Skip also start a Get started list in that browser only
 whether it was closed); the account's other browsers never saw the dialog
 and never show it. The sidebar (the rail, the phone nav drawer) shows
 "Get started n/3" above Settings until × or all three steps are done. Its
-popover lists Upload a file, Chat with Capy and Make a study plan; a row opens
+popover lists Upload a file, Chat with Capy and Practise a topic; a row opens
 its step in the workspace on screen, or else the latest one, through one-shot
 params the workspace page takes and drops: `?add=upload` (the Add file
-dialog), `?chat=new` (a new chat), `?study=true` (the Study page). A step ticks
+dialog), `?chat=new` (a new chat), `?study=practice` (Practice). A step ticks
 when it happens in this browser: an upload finishes, a chat message is sent, a
-plan is created. The starter workspace counts as made, so there is no create
+topic session's first answer is checked. The starter workspace counts as made, so there is no create
 step.
 
 Start tour runs the guided tour app-wide (`Tour`, mounted by `AppShell` while

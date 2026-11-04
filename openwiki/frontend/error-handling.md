@@ -227,8 +227,8 @@ not offline use: without a service worker the app itself does not load offline.
   a restored query until it is used and marks it for storage. Query `meta` cannot
   carry the mark, because hooks replace it with `queryMeta(options)`.
 - Stored: `/me`, workspace lists (not searches), a workspace and its topics,
-  files, materials, conversations, study states and study plans, file metadata,
-  the dashboard recents, notifications and the unread count, learning progress,
+  files, materials, conversations, study states, file metadata,
+  the dashboard recents, notifications and the unread count,
   the review overview, quiz attempts (the quiz page resumes its open one from
   it), calendar events, labels, tasks, tags, notification preferences,
   integrations, models, Explore, and the question bank's syllabus and progress.

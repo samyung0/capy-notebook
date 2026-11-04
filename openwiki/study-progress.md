@@ -1,8 +1,8 @@
 ---
 type: Backend
 title: "Study Progress and Review"
-description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), study plans, Hide study progress, Learning's Review (past reviews at its end), All results and Plans tabs, the workspace Dashboard's activity, lifecycle and access."
-tags: [backend, frontend, study, review, fsrs, flashcards, quizzes, progress, plans]
+description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), Hide study progress, Learning's Review (past reviews at its end) and All results tabs, the workspace Dashboard's activity, lifecycle and access."
+tags: [backend, frontend, study, review, fsrs, flashcards, quizzes, progress]
 ---
 
 # Study progress and review
@@ -15,10 +15,12 @@ goes on. The workspace's Study section (the rail's Study, its panel listing
 Study's pages) shows Practice: suggested topics, every quiz members can see
 as practice and the learner's own topic reviews, each started as a review
 session in the page's place; Learning's Review tab lists every workspace with
-progress and what a review would draw on, and its Plans tab lists the plans.
+progress and what a review would draw on.
 Read progress (Mark as read, Stop tracking, read marks, "done" counts,
 Learning's Progress tab and its railway map) went on 2026-11-03 (Epo): only
-practice records progress now. FSRS runs in Go and
+practice records progress now. Study plans, cross-workspace lists with their
+own review sessions, went on 2026-11-04 (Epo; migration `0137_drop_study_plans.sql`
+dropped their tables). FSRS runs in Go and
 nothing is scheduled by date: no due date, due count or interval preview is
 stored or shown for signed-in users. Review orders items by how likely the
 learner is to have forgotten them (retrievability) and by their latest
@@ -39,8 +41,6 @@ clone or charged to storage.
 | Table / column | Holds |
 | --- | --- |
 | `workspace_study (user_id, workspace_id, enabled)` | Hide study progress for one workspace (`enabled` false hides); no row shows progress (`StudyEnabled`). Migration `0108_study_plans.sql` dropped the old global default `users.study_progress`. |
-| `study_plans (id, user_id, workspace_id, name, created_at, updated_at)` | Migration `0108_study_plans.sql`. A user's private plan kept in a parent workspace (`workspace_id`, cascade); name at most 60 characters; at most 10 per user and workspace. |
-| `study_plan_steps (plan_id, position, kind, workspace_id, file_id \| material_id)` | A plan's steps in order: `kind` is `file` or `material`, with the matching target set (migration `0119_plan_reviews_file_steps.sql` dropped the topic, Others and whole-workspace steps); cascades with its plan, workspace and target; unique per plan and target; at most 200 per plan, in at most 20 groups. |
 | `study_progress (user_id, workspace_id, file_id \| material_id, state, updated_at)` | One row per practised quiz or set (`markProgressTx`: a check or a rating writes it); `state` is `started` or `done`. No row means untouched. Unique per (user, file) and (user, material). The table still allows `file_id` and `removed`, which only Mark as read and Stop tracking wrote; nothing writes either since 2026-11-03, and no legacy rows exist. |
 | `review_states (user_id, material_id, item_id, item_hash, stability, difficulty, reps, lapses, fsrs_state, last_review)` | FSRS state per quiz question or card. The key includes `material_id`, so a cloned quiz that keeps its question ids stays separate. |
 | `review_log (user_id, material_id, item_id, rating, reviewed_at)` | Append-only, rating 1–4 for every rating and every rated attempt question. Suggestions read each item's last 8 (`review_log_item_idx`); kept for offline merge and parameter fitting later too. |
@@ -63,12 +63,15 @@ What still reads `study_progress` (2026-11-03), so the table stays:
   latest `updated_at` is the suggestions' interest.
 - `AgentStudyProgress` (`study.go`): the chat agent's `read_study_progress`
   lists the rows with titles and states.
-- `MoveFiles` (`file_move.go`): counts people with a started or done row on
-  the moved files to ask before a move loses progress, then deletes those
-  rows. Only Mark as read wrote file rows, so the question cannot come up any
-  more; the confirmation (`ProgressLossError`, the Move dialog's step) is left
-  for Epo to drop.
-- `ResetStudy` and `PurgeUser` delete rows; `markProgressTx` writes them.
+- `ResetStudy`, `PurgeUser` and `MoveFiles` (a moved file's rows) delete rows;
+  `markProgressTx` writes them.
+
+Rows Mark as read and Stop tracking left behind (`file_id` set, or `removed`)
+are still read: `AgentStudyProgress` passes them to the chat agent, whose
+`read_study_progress` renders a state's rows under Done, Started or Removed
+with `(file f_1)`, and `reviewableWorkspaces` counts any row. So they stay, and
+the agent tool's description still says "files and materials", until Epo
+decides (2026-11-04).
 
 Embedded quizzes and sets (`parent_material_id` set) are quick checks that
 record nothing (Epo, 2026-10-06): no `study_progress` row, no review, no
@@ -136,17 +139,12 @@ workspace; writes need read access plus an account that can sign in
 
 | Endpoint | Effect |
 | --- | --- |
-| `GET /api/workspaces/{id}/study` | `StudySummary`: `enabled`, `recentAttempts` (the last 5 on the workspace's untrashed, non-embedded quizzes), `reviewable` (size of the review pool), `quickReview` and `unfinished` (the latest whole-workspace session left before its end, for Continue review). Since the workspace Study page went (2026-11-03) the app reads only `enabled` (Workspace settings → Study); `quickReview`, `unfinished`, `recentAttempts`, the `planId` form, `/study/attempts` and the plan create, update and per-workspace list endpoints have no page, and stay for now. |
+| `GET /api/workspaces/{id}/study` | `StudySummary`: `enabled`, `recentAttempts` (the last 5 on the workspace's untrashed, non-embedded quizzes), `reviewable` (size of the review pool), `quickReview` and `unfinished` (the latest whole-workspace session left before its end, for Continue review). Since the workspace Study page went (2026-11-03) the app reads only `enabled` (Workspace settings → Study); `quickReview`, `unfinished`, `recentAttempts` and `/study/attempts` have no page, and stay for now. |
 | `GET /api/workspaces/{id}/study/attempts` | `WorkspaceAttempts`: every untrashed, non-embedded quiz and set of the workspace with its `size` (questions or cards, from `itemsOf`), the user's attempt `count` and its latest three attempts, for the Study progress page. |
 | `PUT /api/workspaces/{id}/study/enabled` | Upserts `workspace_study`: `false` is Hide study progress, `true` shows it. |
-| `GET /api/workspaces/{id}/study/plans` | `StudyPlans`: the user's plans kept in the workspace, then their plans elsewhere with a step in it, and every readable workspace a parent or step names once (name, icon, cover). A step in a workspace the user can no longer read comes back `locked` with no title; a plan whose parent the user can no longer read is left out. |
-| `POST /api/workspaces/{id}/study/plans` | `{name}`: an empty plan kept in the workspace, for any reader; the eleventh in one workspace is 409. |
-| `PATCH /api/study/plans/{id}` | `{name?, steps?}`: renames and/or replaces the steps in order. A new step must be in a workspace the user can read and point at an untrashed target there; a step the plan already holds passes as it is (so a locked one survives a reorder); a repeat, a 201st step or a 21st group (`ErrStudyPlanSize`) is 422; another user's plan is 404. |
-| `DELETE /api/study/plans/{id}` | Deletes one of the user's plans. |
-| `GET /api/learning/plans` | Every plan of the user, newest first, in the same shape. |
 | `GET /api/workspaces/{id}/dashboard` | `WorkspaceDashboard` (`dashboard.go`), the workspace Dashboard for any reader: the owner's name, `members` (owner included) and `activity`, the five newest of the workspace's untrashed files (`uploaded`) and top-level materials (`added`), newest first, each with its actor's name and avatar. A material the chat agent made (an `agent_operations` row of kind `create_material` naming it) reads `agent` when the caller asked for it, else `added` under the asker's name. There is no activity log: joins, edits and deletions do not show, and notifications (personal: invites, role changes, removals) are not used. |
 | `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it. Attempts, the review log and the switch stay. |
-| `GET /api/workspaces/{id}/review?group=&topicId=&mode=&items=` | A new session: a suggestion's items (mode set) or the group's (no mode: a topic, Other files or the whole workspace, new items mixed in), each with its content (card faces, or the answer-free question, `questions.LearnerView`), material title and `reason` (`new` from the new pool, `missed` with an Again among its latest answers, else `fading`; plan sessions carry none), plus the group, mode and evidence to send back with each answer. `items=quiz` serves questions only whatever the review items preference (Practice's topic sessions). A topic not in the workspace is 404. |
+| `GET /api/workspaces/{id}/review?group=&topicId=&mode=&items=` | A new session: a suggestion's items (mode set) or the group's (no mode: a topic, Other files or the whole workspace, new items mixed in), each with its content (card faces, or the answer-free question, `questions.LearnerView`), material title and `reason` (`new` from the new pool, `missed` with an Again among its latest answers, else `fading`), plus the group, mode and evidence to send back with each answer. `items=quiz` serves questions only whatever the review items preference, and 10 of them unless the learner picked a session size (Practice's topic sessions). A topic not in the workspace is 404. |
 | `GET /api/workspaces/{id}/practice` | `Practice` (`practice.go`), Study → Practice for any reader: `suggestions`, this workspace's suggested reviews over its questions only (`groupSuggestions` at full interest, since the learner is here; at most three, none while study progress is hidden); `quizzes`, every untrashed top-level quiz in reading order with its question count (`itemCounts`, refused content left out) and the caller's `best` attempt (best share of marks); `reviews`, the caller's topic and Other files sessions that answered a question, one row per topic: the latest one's served count and the best one's marks. Owner and editor members also get `members` (viewer members) and per quiz `triedBy` (viewer members with an attempt) and `average` (the mean of their best scores, 0 to 1, only once five tried: aggregates need five, Epo 2026-11-03 §11.8); never anyone's answers. |
 | `GET /api/review/sessions/{id}` | Continue: an unfinished session's items still to answer, read now (items that left their material drop), with answered of total. Another user's session is 404. |
 | `GET /api/review/sessions/{id}/result` | A session's result, finished or not: its Past reviews row (`ID` read), its answered items in answer order with their records (the resume read's `done`), and `better`, how many were rated above their latest `review_log` rating before the session started. Another user's session is 404. |
@@ -260,15 +258,14 @@ miss, items missed twice or more, probably forgotten items (the sum of
 
 A session takes the group's items by score up to the session size, items at
 R at most 0.9 only for a suggestion, then interleaves the modes so a run of
-missed items is broken up. A manual review (Learning's workspace list, a plan
-review, Practice's topic sessions over a topic or Other files) takes its
-group (the whole workspace, a plan, a topic) with no recall
+missed items is broken up. A manual review (Learning's workspace list,
+Practice's topic sessions over a topic or Other files) takes its
+group (the whole workspace, a topic) with no recall
 cutoff, and mixes in new items (human/study-progress.md 2026-10-25):
 `newPool` is every item of the scope's tracked, untrashed, top-level quizzes
 and sets that the user never rated or whose content changed since its rating,
 in reading order (topics in order, then unfiled; by position, newest first on
-ties). A plan review reads it only for the plan's own quizzes and sets and puts
-the new items in the plan's step order. `withNew` gives the new items 60% of the session size
+ties). `withNew` gives the new items 60% of the session size
 (`newShare`) and the practised ones 40% as `pickItems` ranks them; a side that
 runs short leaves its places to the other, and the two are spread through the
 session in their shares. Suggestions, Quick review and every count stay on
@@ -279,7 +276,8 @@ Starting a session has its own rate limit, 60 an hour with a burst of 10
 preference ranks the practised side as it ranks suggestions.
 
 Preferences live in `users.study_preferences` with the chat's: `reviewSize`
-10, 20 (default), 30 or 50; `reviewItems` both (default), quiz or flashcards,
+10, 20 (default; a Practice topic session takes 10 until one is picked, Epo
+2026-11-04, board F1), 30 or 50; `reviewItems` both (default), quiz or flashcards,
 for suggested and manual sessions; `reviewFocus` balanced (default), tricky,
 fading or learned, for suggestions, suggested and manual sessions and Quick
 review. The chat ignores them.
@@ -330,8 +328,9 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
 `TopicPractice.tsx`. Practise on a topic is a review of that topic with
 today's engine (Epo 2026-11-03, F1): `GET …/review?group=topic&topicId=&items=quiz`
 serves the topic's questions only, missed and fading ones ranked as a manual
-review ranks them plus questions not seen yet (`withNew`), at most the review
-size preference; no AI-written items. The URL holds the start (`group`,
+review ranks them plus questions not seen yet (`withNew`), at most 10, or the
+session size once the learner picked one (`topicSessionPrefs`); no AI-written
+items. The URL holds the start (`group`,
 `topicId`, `reviewMode` for a suggestion); the batch fetched then is the
 session.
 
@@ -359,43 +358,10 @@ session.
 - The session is kept in Practice as the learner's own review ("Only you").
 
 Hide study progress (a switch in Workspace settings → Study, on while
-progress is hidden) still covers every plan in the workspace and keeps
-recording; Practice then shows no Suggested. Everyone signed in with access
+progress is hidden) keeps recording; Practice then shows no Suggested. Everyone signed in with access
 opens Workspace settings: owner and editor members on General, everyone else
 (viewers, share-role visitors) on Study, their only tab beside Others when
 they may clone. The rail avatar's menu carries Workspace settings.
-
-### Study plans
-
-`src/features/study/plans/` (human/study-progress.md 2026-10-22). A plan is
-the user's own ordered steps, kept in a parent workspace and able to reach
-into any workspace they can read; the workspace's own topic order is its
-default plan, "Default Plan" in Learning. Plans count no progress since read
-progress went (2026-11-03). A **group** is a run of consecutive steps in the
-same workspace and topic (Others for unfiled items), counted by the server
-for the cap (`planGroups`: a trashed step joins the run around it, steps in a
-workspace the user can no longer open group by workspace); nothing stores
-it. Adding a topic adds its files, so a file
-added to the topic later is not in the plan.
-
-- **No plan page since 2026-11-03.** The workspace Study page that showed
-  and edited one plan (its select, Add files, Remove from plan, Rename and
-  Delete plan) went with that page; plans are no longer created or edited in
-  the app. The plan endpoints stay, and Learning still lists the plans
-  (Plans), deletes them (their ⋮) and reviews them (Review); a plan's row
-  opens its parent workspace's Practice.
-- **Plan review sessions** (migration 0118): group `plan` with `plan_id`
-  and `plan_name` (kept once the plan is deleted); `workspace_id` is the
-  plan's parent, the access check. `GET /api/workspaces/{id}/review?group=plan&planId=`
-  picks the plan's items as a whole-workspace review does. The first answer
-  records the session against the plan's scope (the handler loads it: the
-  user's plan, kept in the session's workspace, the item's material one of
-  its steps); later answers are checked against the recorded
-  row instead (same owner, group and workspace, the named plan its own, the
-  item readable), so the session keeps going once the plan loses a step or
-  is deleted. Resume reads items from any workspace the user still reads. Past reviews, Continue review and results name the plan where a
-  topic session names its topic.
-- **Learning**: the Plans tab, below.
 
 ### Flashcard results
 
@@ -507,8 +473,8 @@ the browser. Embedded sets study there too and send no ratings
 
 ## Learning
 
-Learning has three tabs: Review (default, ending with past reviews, the
-recorded review sessions), All results (quiz attempts) and Plans. The title,
+Learning has two tabs: Review (default, ending with past reviews, the
+recorded review sessions) and All results (quiz attempts). The title,
 tabs and tab padding follow Settings (`TabContent`), without its width cap.
 Its Progress tab (the railway map, Continue, done counts, Finished and the
 finish toast) went with read progress on 2026-11-03; the page is redesigned
@@ -529,22 +495,16 @@ as on workspace cards).
   preferences links to Settings → Study.
 - **Continue review**: unfinished sessions, newest answer first, with
   "answered of total · when"; the row continues it.
-- **Your plans** (the overview's `plans`: the user's plans whose parent
-  workspace they can read and show study progress in, newest first; each
-  plan's count filters the workspace pools the overview already read, a
-  workspace it has not read is read once): the
-  parent's icon, the plan's name with its workspace muted after it, last
-  review of the plan's sessions; the row starts a plan review.
-- **Default plans**: each workspace's name and last review or "Not reviewed
+- **Workspaces**: each workspace's name and last review or "Not reviewed
   yet" / "Nothing practised yet" / "No quizzes or flashcards yet", with no
   count; the row starts a whole-workspace review.
 
 Those rows hover as a whole (no radius) and open on a click, with no
 Continue or Review link. `canReview` (practised items, or any quiz or
-set in scope of a kind the "review items" preference takes; for a plan only
-its quiz and set steps; a cheap EXISTS) decides: a row without it still opens and
+set in scope of a kind the "review items" preference takes; a cheap EXISTS)
+decides: a row without it still opens and
 raises an info toast, "Nothing to review yet", asking for a quiz or flashcards
-first. Suggestions keep their Start. With no workspace, plan or unfinished
+first. Suggestions keep their Start. With no workspace or unfinished
 session the tab says "Nothing to review yet." instead.
 - **Past reviews**: the table below, hidden until a first session finishes
   (Epo 2026-10-29); a filter that hides every row keeps it, saying nothing
@@ -555,16 +515,15 @@ session the tab says "Nothing to review yet." instead.
 `src/features/study/PastReviews.tsx`, the Review tab's last section, its
 filter beside the heading: finished sessions in Billing's plain table
 (`BillingTable`, no border, scrolls sideways) at every width (Date,
-Workspace, Study Plan, Topic, Quiz, Flashcards, Time, Status; Time and Status
+Workspace, Topic, Quiz, Flashcards, Time, Status; Time and Status
 from xl; no row menu: a click anywhere on a row opens the result, which has
 its own Review again),
 sorted from its column headers (`SortHeader`, no sort menu: date, workspace,
-plan, topic, quiz score, flashcard score, time spent, status; text columns
+topic, quiz score, flashcard score, time spent, status; text columns
 start A to Z, the rest newest or largest first, a second click flips) and the
 list pages' filter (workspace, has quiz questions or flashcards), both kept in
-the URL (`parsePastReviewsSearch`). Study Plan is a plan session's plan, else
-"Default Plan", and sorts plan sessions by name with the others last; Topic
-is a topic session's topic or Other files (empty for whole-workspace and plan
+the URL (`parsePastReviewsSearch`). Topic
+is a topic session's topic or Other files (empty for whole-workspace
 sessions) and sorts topic sessions by name with the rest last; status puts
 completed before stopped. Quiz is marks of the questions answered, Flashcards
 cards rated Good or Easy. A session ended early shows "Stopped after
@@ -617,14 +576,6 @@ the parser by `tab`). Each list's last sort pick is remembered in the browser
 (`sortSearch`, `src/lib/localPrefs.ts`): opening Workspaces, Files, Blocks,
 Past reviews or All results without a sort in the URL redirects to it.
 
-### Plans tab
-
-`Plans` in `src/routes/Learning.tsx` over `GET /api/learning/plans`: one row
-per plan, newest first, with its parent workspace's icon and name; the row
-opens the parent's Practice (`study=practice`) and its ⋮ holds Delete plan
-(confirmed). No counts. Plans cannot be created in the app since the Study
-page went, so a new account sees "No study plans yet."
-
 ## Lifecycle
 
 | Event | Effect |
@@ -635,12 +586,11 @@ page went, so a new account sees "No study plans yet."
 | File or material purged | `study_progress`, `review_states` and `review_log` cascade. |
 | Item removed from a document | Its `review_states` row is ignored until the item returns. |
 | Question prompt or card face edited | That item's state resets on its next rating; until then it is out of the practised pool and comes back in a manual review as a new item. |
-| Workspace deleted | All four workspace-scoped tables go by cascade, and so do the plans kept there and every step in it. |
-| Topic, file or material purged | Plan steps pointing at it go (cascade); a trashed one stays as a step. |
+| Workspace deleted | All four workspace-scoped tables go by cascade. |
 | Member or link access lost | Rows stay, unreadable without access; Learning skips the workspace. |
 | Workspace or material clone | Nothing is copied; cloned cards get new ids. |
 | Workspace transfer | Rows stay with each user; `study_progress` and `workspace_study` are in `notOwnership` (`workspace_transfer_test.go`). |
-| Account purge | `PurgeUser` deletes the user's rows in all four tables, their review sessions and their plans. |
+| Account purge | `PurgeUser` deletes the user's rows in all four tables and their review sessions. |
 | Reset | Clears progress rows and review states in the workspace; attempts and the log stay. |
 
 ## Authorization
@@ -711,10 +661,6 @@ account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
 - `server/internal/store/practice_test.go`: served items' reasons,
   Practice's quizzes, best attempt and the staff counts and average, and the
   Dashboard's owner, member count and activity (`TestWorkspaceDashboard`).
-- `server/internal/store/study_plans_test.go`: plans parented here and "also
-  in" across workspaces with titles, refused repeat and
-  unreadable steps, a locked step surviving a reorder, the 10-plan cap,
-  another user's plan not found, delete.
 - `e2e/study/study-progress.spec.ts` (Docker stack, the detailed checks):
   quizzes and sets practised through the attempt and study pages becoming
   reviewable, and Learning → Review's whole-workspace row; a mixed review
@@ -729,12 +675,9 @@ Sources: [migration](../server/migrations/0051_study_progress.sql),
 [store](../server/internal/store/study.go),
 [routes](../server/internal/httpapi/huma_study.go),
 [attempt hook](../server/internal/store/queries.go),
-[plans migration](../server/migrations/0108_study_plans.sql),
-[plans store](../server/internal/store/study_plans.go),
 [practice store](../server/internal/store/practice.go),
 [Practice](../src/features/study/practice/PracticePage.tsx),
 [topic sessions](../src/features/study/practice/TopicPractice.tsx),
-[plan review migration](../server/migrations/0119_plan_reviews_file_steps.sql),
 [Dashboard store](../server/internal/store/dashboard.go),
 [review session](../src/routes/ReviewSession.tsx) and
 [Learning](../src/routes/Learning.tsx).
