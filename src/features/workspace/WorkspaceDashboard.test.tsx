@@ -11,6 +11,7 @@ import { shortTime, WorkspaceDashboard } from './WorkspaceDashboard';
 const page = vi.hoisted(() => ({
   data: undefined as Dashboard | undefined,
   kind: 'personal' as 'class' | 'personal',
+  quizzes: [] as { id: string }[],
   suggestions: [] as ReviewSuggestion[],
 }));
 
@@ -27,7 +28,9 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/api/hooks', () => ({
   usePractice: (_id: string, { enabled }: { enabled: boolean }) => ({
-    data: enabled ? { suggestions: page.suggestions } : undefined,
+    data: enabled
+      ? { quizzes: page.quizzes, suggestions: page.suggestions }
+      : undefined,
   }),
   useWorkspaceDashboard: () => ({ data: page.data }),
   useWorkspaceRecent: () => ({ data: { files: [], materials: [] } }),
@@ -127,8 +130,12 @@ it('shows What to practise next to whoever practises, not to a class owner', () 
   ];
   page.kind = 'personal';
   expect(render()).toContain(m.dashboard_practise_next());
+  expect(render()).not.toContain(m.dashboard_workspace_review());
+  page.quizzes = [{ id: 'q_1' }];
+  expect(render()).toContain(m.dashboard_workspace_review());
   page.kind = 'class';
   expect(render()).not.toContain(m.dashboard_practise_next());
+  page.quizzes = [];
   page.suggestions = [];
   page.kind = 'personal';
 });
