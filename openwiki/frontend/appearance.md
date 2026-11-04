@@ -55,20 +55,23 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
 ## Workspace rail
 
 From lg (1260px) every workspace page leads with a labelled icon rail
-(`WorkspaceRail.tsx`, board N1 and S2): a 68px card, frosted as the left
-panel, with ← Home (to `/`), the workspace's icon as a 34px badge that only
+(`WorkspaceRail.tsx`): 60px wide, straight on the shell with no panel of its own
+(Epo 2026-11-04), so it has the app sidebar's page colour and a frame shows
+through behind it, with
+← Home (to `/`), the workspace's icon as a 34px badge that only
 says where you are, then Dashboard (Hugeicons' `DashboardSquare01Icon`),
 Files (a folder), Agent (the AI icon) and Study (an open book), each icon
-over its 11px label in a 58px item that fills `page-hover` while current.
+over its 11px label in a 56px item that takes the sidebar's dark fill while
+current.
 Your avatar sits at its foot and opens the profile menu upwards, headed by
 the workspace's part: Invite member (owners and editors), Workspace
 settings, and Clone for readers who may.
 
-Each section but the Dashboard shows its panel beside the rail (248px by
+Each section but the Dashboard shows its panel beside the rail (272px by
 default, resizable from 220px, collapsing on a drag like the right panel):
 
-- **Files:** the topic tree with a "+" for New file or topic (board T3); the
-  right panel keeps its own Files view with the search and the workspace
+- **Files:** the topic tree under its search and the New file or topic row
+  (Epo 2026-11-04); the right panel keeps its own Files view with the workspace
   picker.
 - **Agent:** the chats, with voice and Archived chats on the title row; a
   chat opens in the right panel.

@@ -1,7 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { useUnreadNotificationCount } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
-import { Panel } from '@/components/app/layout';
 import { ProfileMenu } from '@/components/app/ProfileMenu';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
@@ -28,9 +27,11 @@ const SECTIONS: {
   { icon: 'book', label: m.workspace_tab_study, value: 'study' },
 ];
 
-/* A rail item: the icon over its label, 58px wide (board N1). */
+/* A rail item: the icon over its label, as the app sidebar's rows look. The
+   page-coloured glow keeps it readable over a dark page frame, and can't be
+   seen without one. */
 const ITEM =
-  'flex w-14.5 cursor-pointer flex-col items-center gap-0.75 rounded-button-lg pt-1.75 pb-1.5 font-semibold text-[11px] text-fg-secondary leading-[1.1] outline-none transition-colors hover:bg-page-hover hover:text-fg focus-visible:ring-2 focus-visible:ring-action';
+  'flex w-14 cursor-pointer flex-col items-center gap-0.5 rounded-button-lg pt-1.5 pb-1 font-medium text-[11px] text-fg leading-[1.1] outline-none transition-colors drop-shadow-[0_0_3px_var(--color-page)] hover:bg-fg/6 focus-visible:ring-2 focus-visible:ring-action';
 
 function RailItem({
   active,
@@ -46,7 +47,11 @@ function RailItem({
   return (
     <button
       aria-current={active ? 'page' : undefined}
-      className={cn(ITEM, active && 'bg-page-hover text-fg')}
+      className={cn(
+        ITEM,
+        active &&
+          'bg-action font-bold text-action-fg drop-shadow-none hover:bg-action'
+      )}
       onClick={onClick}
       type="button"
     >
@@ -73,44 +78,40 @@ export function WorkspaceRail({
 }) {
   const { data: unread } = useUnreadNotificationCount({ errorBoundary: false });
   return (
-    <Panel
-      className="w-17 shrink-0"
-      frost="left"
-      sectionClassName="h-full py-3"
+    // No panel of its own: on the shell like the app sidebar's background, so a
+    // page frame shows straight through.
+    <nav
+      aria-label={m.workspace_rail_label()}
+      className="flex h-full w-15 shrink-0 flex-col items-center gap-0.5 overflow-y-auto overflow-x-hidden py-3"
     >
-      <nav
-        aria-label={m.workspace_rail_label()}
-        className="flex h-full flex-col items-center gap-1"
-      >
-        <Link className={cn(ITEM, 'mb-2')} preload="intent" to="/">
-          <Icon name="navigationBack" size={20} />
-          <span>{m.nav_home()}</span>
-        </Link>
-        <img
-          alt={workspace.name}
-          className="mb-2.5 size-8.5 shrink-0 rounded-[9px]"
-          src={iconUrl(workspace.iconId)}
-          title={workspace.name}
+      <Link className={cn(ITEM, 'mb-1')} preload="intent" to="/">
+        <Icon name="navigationBack" size={20} />
+        <span>{m.nav_home()}</span>
+      </Link>
+      <img
+        alt={workspace.name}
+        className="mb-1.5 size-8.5 shrink-0 rounded-[9px]"
+        src={iconUrl(workspace.iconId)}
+        title={workspace.name}
+      />
+      {SECTIONS.map((section) => (
+        <RailItem
+          active={active === section.value}
+          icon={section.icon}
+          key={section.value}
+          label={section.label()}
+          onClick={() => onSelect(section.value)}
         />
-        {SECTIONS.map((section) => (
-          <RailItem
-            active={active === section.value}
-            icon={section.icon}
-            key={section.value}
-            label={section.label()}
-            onClick={() => onSelect(section.value)}
-          />
-        ))}
-        <div className="mt-auto">
-          <ProfileMenu
-            dot={(unread?.count ?? 0) > 0}
-            notifications
-            trigger="own"
-            workspace={{ items: accountItems, name: workspace.name }}
-          />
-        </div>
-      </nav>
-    </Panel>
+      ))}
+      <div className="mt-auto">
+        <ProfileMenu
+          dot={(unread?.count ?? 0) > 0}
+          notifications
+          trigger="own"
+          workspace={{ items: accountItems, name: workspace.name }}
+        />
+      </div>
+    </nav>
   );
 }
 
