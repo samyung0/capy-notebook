@@ -222,6 +222,4 @@ Answered 2026-11-04: Make my own practice is one button at the top right of Summ
 
 Built on my recommendation, so say if not: You teach rows (O2), the This week line, Past reviews as its own tab, the words.
 
-Still open:
-
-1. **Timer at zero.** The session ends and opens its result. Keep, or let the learner carry on past zero? I recommend keeping it.
+Answered too: a timer at zero ends the session and opens its result; this branch lands with `claude/study-all`.
