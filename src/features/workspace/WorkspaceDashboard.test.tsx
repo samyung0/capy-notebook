@@ -151,6 +151,7 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
       files: [],
       id: 'as_1',
       kind: 'marked',
+      latePenaltyPct: 0,
       manage: {
         assignAll: true,
         assigned: 6,
@@ -162,6 +163,7 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
         toApprove: 5,
       },
       marks: 40,
+      noLate: false,
       postedAt: '2026-11-03T08:00:00Z',
       postedBy: 'Ms Wong',
       questions: 12,

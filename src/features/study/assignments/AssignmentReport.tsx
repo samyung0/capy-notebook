@@ -38,7 +38,14 @@ import { PracticeFrame, Td, Th } from '../practice/studyPage';
 import { ApproveTab } from './ApproveTab';
 import { BackToAssignments } from './AssignmentAttemptPage';
 import type { AssignmentsSearch, ReportTab } from './AssignmentsPage';
-import { dayLabel, markText, percentText } from './assignmentText';
+import {
+  closedItself,
+  dayLabel,
+  lateLabel,
+  markText,
+  percentText,
+  takesLateWork,
+} from './assignmentText';
 import { NewAssignmentDialog } from './NewAssignmentDialog';
 
 /** Questions the report opens with, as the board draws them. */
@@ -87,6 +94,11 @@ export function AssignmentReport({
     assignment.dueAt
       ? m.assignment_due({ date: dayLabel(assignment.dueAt) })
       : null,
+    assignment.noLate
+      ? m.assignment_switch_no_late()
+      : assignment.latePenaltyPct > 0
+        ? m.assignment_late_penalty({ percent: assignment.latePenaltyPct })
+        : null,
     assignment.closedAt
       ? m.assignment_closed_on({ date: dayLabel(assignment.closedAt) })
       : null,
@@ -206,10 +218,15 @@ function ReportMenu({
       align="end"
       items={[
         { icon: 'pencil', label: m.action_edit(), onClick: onEdit },
-        ...(assignment.draft
+        ...(assignment.draft || closedItself(assignment)
           ? []
           : [
               {
+                // Closing a marked one shows its quiz as practice, with its keys.
+                confirmLabel:
+                  assignment.kind === 'marked' && !assignment.closedAt
+                    ? m.assignment_close_confirm()
+                    : undefined,
                 icon: 'lock' as const,
                 label: assignment.closedAt
                   ? m.assignment_reopen()
@@ -375,7 +392,7 @@ function MembersTab({
         {dayLabel(member.submittedAt)}
         {member.late && (
           <span className="font-semibold text-tint-warning-fg">
-            {m.assignment_late()}
+            {lateLabel(member.latePenaltyPct)}
           </span>
         )}
       </span>
@@ -436,9 +453,9 @@ function MembersTab({
                 {member.minutes ? minutesShort(member.minutes) : ''}
               </Td>
               <Td>
-                {member.correct !== undefined && (
+                {member.mark !== undefined && (
                   <span className="font-bold">
-                    {formatPoints(member.correct)}{' '}
+                    {formatPoints(member.mark)}{' '}
                     <span className="font-semibold text-fg-muted">
                       / {formatPoints(member.total ?? 0)}
                     </span>
@@ -470,15 +487,15 @@ function MembersTab({
                 {approve(member)}
               </div>
             </div>
-            {member.correct !== undefined && (
+            {member.mark !== undefined && (
               <span className="shrink-0 font-bold">
-                {markText(member.correct, member.total ?? 0)}
+                {markText(member.mark, member.total ?? 0)}
               </span>
             )}
           </li>
         ))}
       </ul>
-      {assignment.closed && !assignment.closedAt && (
+      {takesLateWork(assignment) && (
         <p className="t-meta mt-3 text-fg-muted">{m.assignment_late_note()}</p>
       )}
     </>

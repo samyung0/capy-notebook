@@ -11,6 +11,7 @@ import type {
   AssignmentPartReport,
   AssignmentQuestionReport,
   AssignmentReport,
+  MaterialRef,
   WorkspaceActivity,
 } from '@/api/types';
 import type { Question, QuestionPart } from '@/features/questions/types';
@@ -40,6 +41,8 @@ type Row = {
   releasedAt?: string;
   timeLimitMin?: number;
   attempts: number;
+  noLate: boolean;
+  latePenaltyPct: number;
   assignAll: boolean;
   assignees: string[];
   draft: boolean;
@@ -332,6 +335,8 @@ function seed() {
     attempts: 1,
     draft: false,
     files: [],
+    latePenaltyPct: 0,
+    noLate: false,
     showAnswers: true,
     shuffle: false,
     workspaceId: WS,
@@ -374,7 +379,6 @@ function seed() {
       kind: 'marked',
       postedAt: at(0, 9),
       questions: worksheet(9),
-      quizId: quizzes[2]?.id,
       title: 'Inheritance worksheet',
     },
     {
@@ -390,11 +394,22 @@ function seed() {
       dueAt: at(-11),
       id: 'as_cells',
       kind: 'marked',
+      noLate: true,
       postedAt: at(-18, 9),
       questions: worksheet(10),
       quizId: quizzes[2]?.id,
       releasedAt: at(-11),
       title: 'Cells check',
+    },
+    {
+      ...common,
+      dueAt: at(-2),
+      id: 'as_osmosis',
+      kind: 'marked',
+      latePenaltyPct: 20,
+      postedAt: at(-7, 9),
+      questions: worksheet(10),
+      title: 'Osmosis check',
     },
     {
       ...common,
@@ -432,6 +447,11 @@ function seed() {
   const cells = rows.get('as_cells')!;
   for (const id of class6.slice(0, 5)) seedAttempt(cells, id, 7, 0, 25, 12);
   seedAttempt(cells, db.user.id, 8, 0, 24, 12);
+  // In on time, and late with its 20% off, the Member scenario's viewer too.
+  const osmosis = rows.get('as_osmosis')!;
+  for (const id of class6.slice(0, 3)) seedAttempt(osmosis, id, 8, 0, 21, 3);
+  for (const id of class6.slice(3, 5)) seedAttempt(osmosis, id, 9, 0, 23, 1);
+  seedAttempt(osmosis, db.user.id, 8, 0, 26, 1);
 
   done.set('as_read', new Map(class6.slice(0, 4).map((id) => [id, at(0, 9)])));
   done.set('as_notes', new Map(class6.slice(0, 2).map((id) => [id, at(0, 9)])));
@@ -440,8 +460,34 @@ function seed() {
 /** Who ticked an unmarked assignment, and when. */
 const done = new Map<string, Map<string, string>>();
 
+const pastDue = (row: Row) =>
+  !!row.dueAt && Date.parse(row.dueAt) <= Date.now();
+
+/** Closed by hand, or from its due date under No late submissions. */
+const closedAtOf = (row: Row) => {
+  if (
+    row.noLate &&
+    pastDue(row) &&
+    (!row.closedAt || Date.parse(row.dueAt!) < Date.parse(row.closedAt))
+  )
+    return row.dueAt;
+  return row.closedAt;
+};
+
 const isClosed = (row: Row) =>
-  !!row.closedAt || (!!row.dueAt && Date.parse(row.dueAt) <= Date.now());
+  !!closedAtOf(row) || (row.kind === 'unmarked' && pastDue(row));
+
+const isLate = (row: Row, submittedAt?: string) =>
+  !row.noLate &&
+  !!submittedAt &&
+  !!row.dueAt &&
+  Date.parse(submittedAt) > Date.parse(row.dueAt);
+
+const penaltyOf = (row: Row, submittedAt?: string) =>
+  isLate(row, submittedAt) ? row.latePenaltyPct : 0;
+
+const penalised = (correct: number, pct: number) =>
+  Math.round(correct * (100 - pct)) / 100;
 
 const assignedTo = (row: Row, viewer: Viewer) => {
   const members = viewers(row.workspaceId).map((m) => m.userId);
@@ -494,7 +540,7 @@ function sweep(row: Row) {
     const late =
       attempt.deadlineAt &&
       Date.now() > Date.parse(attempt.deadlineAt) + 15_000;
-    if (late || row.closedAt) finish(row, attempt, attempt.answers, true);
+    if (late || closedAtOf(row)) finish(row, attempt, attempt.answers, true);
   }
 }
 
@@ -548,7 +594,9 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
   return {
     attempts: row.attempts,
     closed: isClosed(row),
-    closedAt: row.closedAt,
+    closedAt: closedAtOf(row),
+    latePenaltyPct: row.latePenaltyPct,
+    noLate: row.noLate,
     draft: row.draft,
     dueAt: row.dueAt,
     files: row.files.flatMap((f): Assignment['files'] => {
@@ -604,11 +652,12 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
             correct: myTotals?.correct,
             done: !!mine || !!tick,
             doneAt: mine?.submittedAt ?? tick,
-            late:
-              !!mine &&
-              !!row.dueAt &&
-              Date.parse(mine.submittedAt!) > Date.parse(row.dueAt),
+            late: isLate(row, mine?.submittedAt),
+            latePenaltyPct: penaltyOf(row, mine?.submittedAt),
             latestAttemptId: mine?.id,
+            mark:
+              myTotals &&
+              penalised(myTotals.correct, penaltyOf(row, mine?.submittedAt)),
             missing:
               row.kind === 'marked' &&
               !mine &&
@@ -634,10 +683,8 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
     autoSubmitted: attempt.autoSubmitted,
     deadlineAt: attempt.deadlineAt,
     id: attempt.id,
-    late:
-      !!attempt.submittedAt &&
-      !!row.dueAt &&
-      Date.parse(attempt.submittedAt) > Date.parse(row.dueAt),
+    late: isLate(row, attempt.submittedAt),
+    latePenaltyPct: penaltyOf(row, attempt.submittedAt),
     now: new Date().toISOString(),
     removedAssetIds: [],
     startedAt: attempt.startedAt,
@@ -651,6 +698,7 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
       ...common,
       answers: attempt.answers,
       correct: 0,
+      mark: 0,
       questions: (row.questions ?? []).map(learnerView),
       showAnswers: false,
       status: 'running' as const,
@@ -663,6 +711,10 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
     ...common,
     ...totals(attempt.graded),
     answers: attempt.answers,
+    mark: penalised(
+      totals(attempt.graded).correct,
+      penaltyOf(row, attempt.submittedAt)
+    ),
     questions: attempt.graded.map((question) =>
       show
         ? question
@@ -752,10 +804,9 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
         attemptId: a?.id,
         avatarUrl: person.avatarUrl,
         correct: sum?.correct,
-        late:
-          !!a &&
-          !!row.dueAt &&
-          Date.parse(a.submittedAt!) > Date.parse(row.dueAt),
+        late: isLate(row, a?.submittedAt),
+        latePenaltyPct: penaltyOf(row, a?.submittedAt),
+        mark: sum && penalised(sum.correct, penaltyOf(row, a?.submittedAt)),
         minutes: a
           ? Math.max(
               1,
@@ -826,6 +877,8 @@ function applyForm(row: Row, body: AssignmentFormReq) {
   row.dueAt = body.dueAt ?? undefined;
   row.timeLimitMin = body.timeLimitMin ?? undefined;
   row.attempts = body.attempts;
+  row.noLate = body.noLate;
+  row.latePenaltyPct = body.latePenaltyPct;
   row.assignAll = body.assignAll;
   row.assignees = body.assignees;
   row.approveAiMarks = body.approveAiMarks;
@@ -837,7 +890,7 @@ function applyForm(row: Row, body: AssignmentFormReq) {
   }));
 }
 
-/** Freezes the quiz as publishing does, and hides it from members. */
+/** Freezes the quiz as publishing does. */
 function freeze(row: Row) {
   const material = db.materials.find((mt) => mt.id === row.quizId);
   if (material) row.questions = db.quizFromMaterial(material).questions;
@@ -859,8 +912,72 @@ export function assignmentActivity(workspaceId: string): WorkspaceActivity[] {
 /** When the assignment that made this quiz practice closed (board P1). */
 export function assignmentClosedAt(quizId: string) {
   seed();
-  return [...rows.values()].find((r) => r.quizId === quizId && r.releasedAt)
-    ?.dueAt;
+  const row = [...rows.values()].find(
+    (r) => r.quizId === quizId && r.releasedAt
+  );
+  return row && (closedAtOf(row) ?? row.releasedAt);
+}
+
+/** A quiz row's fields for this viewer, as the server's lists read them: the icon
+ * while it is under an open assignment, and for an assignee what the row opens. */
+export function quizAssignmentFields(quizId: string, viewer: Viewer) {
+  seed();
+  const open = [...rows.values()].filter(
+    (r) => r.quizId === quizId && !r.draft && !closedAtOf(r)
+  );
+  if (!open.length) return {};
+  if (viewer === 'owner') return { assigned: true };
+  const mine = open
+    .filter((r) => assignedTo(r, viewer).includes(db.user.id))
+    .sort((a, b) => Date.parse(a.dueAt!) - Date.parse(b.dueAt!))[0];
+  return mine ? { assigned: true, assignmentId: mine.id } : {};
+}
+
+/** Told once in this page's life. */
+let sharingNoticeSeen = false;
+
+/** GET /api/recent for this viewer. */
+export function recentFor(url: string, viewer: Viewer) {
+  const page = db.listRecent(new URL(url));
+  return {
+    ...page,
+    items: page.items.map((item) =>
+      item.material
+        ? {
+            ...item,
+            material: {
+              ...item.material,
+              ...quizAssignmentFields(item.material.id, viewer),
+            },
+          }
+        : item
+    ),
+  };
+}
+
+/** A workspace's rows for this viewer: a member lists a hidden quiz only while it
+ * is assigned to them. */
+export function workspaceMaterialRefs(wsId: string, viewer: Viewer) {
+  const refs: MaterialRef[] = db.materials
+    .filter((mt) => mt.workspaceId === wsId && !mt.parentMaterialId)
+    .map((mt) => ({
+      createdAt: mt.createdAt,
+      hidden: mt.hidden,
+      id: mt.id,
+      maxDepth: mt.maxDepth,
+      nodeCount: mt.nodeCount,
+      position: mt.position,
+      sizeBytes: mt.contentBytes,
+      title: mt.title,
+      topicId: mt.topicId,
+      type: mt.kind,
+      ...quizAssignmentFields(mt.id, viewer),
+    }))
+    .filter((ref) => viewer === 'owner' || !ref.hidden || ref.assignmentId)
+    // An assignee isn't told it is hidden from others.
+    .map((ref) => (ref.assignmentId ? { ...ref, hidden: false } : ref))
+    .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  return refs;
 }
 
 const gone = () => new HttpResponse(null, { status: 404 });
@@ -918,6 +1035,8 @@ export const assignmentHandlers = (viewer: Viewer) => {
           files: [],
           id: newId('as'),
           kind: body.kind,
+          latePenaltyPct: 0,
+          noLate: false,
           postedAt: new Date().toISOString(),
           quizId: body.quizId,
           showAnswers: true,
@@ -927,12 +1046,20 @@ export const assignmentHandlers = (viewer: Viewer) => {
         };
         applyForm(row, body);
         if (row.kind === 'marked' && !row.draft) freeze(row);
-        const material = db.materials.find((mt) => mt.id === row.quizId);
-        if (material) material.hidden = true;
         rows.set(row.id, row);
         return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
       }
     ),
+    http.get('/api/workspaces/:id/sharing-notice', ({ params }) => {
+      const ws = db.workspaces.find((w) => w.id === params.id);
+      return HttpResponse.json({
+        due: viewer === 'member' && ws?.kind === 'class' && !sharingNoticeSeen,
+      });
+    }),
+    http.put('/api/workspaces/:id/sharing-notice', () => {
+      sharingNoticeSeen = true;
+      return new HttpResponse(null, { status: 204 });
+    }),
     http.get('/api/assignments/:id', ({ params }) => {
       const row = rowOf(params.id);
       if (!row) return gone();
@@ -986,7 +1113,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
           a.assignmentId === row.id && a.userId === db.user.id && !a.submittedAt
       );
       if (running) return HttpResponse.json(attemptView(running, row, viewer));
-      if (row.closedAt)
+      if (closedAtOf(row))
         return conflict('assignment_closed', 'This assignment is closed.');
       const used = [...attempts.values()].filter(
         (a) => a.assignmentId === row.id && a.userId === db.user.id

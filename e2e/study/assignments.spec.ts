@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { Assignment, AssignmentAttempt } from '../../src/api/types';
+import type {
+  Assignment,
+  AssignmentAttempt,
+  MaterialRef,
+} from '../../src/api/types';
 import { expect, test } from '../fixtures/actors';
 import { m } from '../i18n';
 
@@ -109,6 +113,8 @@ test.describe('assignments', () => {
           dueAt: inAWeek(),
           files: [],
           kind: 'marked',
+          latePenaltyPct: 0,
+          noLate: false,
           quizId: quiz.id,
           showAnswers: true,
           shuffle: false,
@@ -120,8 +126,14 @@ test.describe('assignments', () => {
     const assignment = (await res.json()) as Assignment;
     expect(assignment.manage?.assigned).toBe(1);
 
-    // The quiz went hidden: the member reaches only the assignment.
+    // While it is open the assignee reaches only the assignment, through one row.
     expect((await viewerApi.get(`/api/quizzes/${quiz.id}`)).status()).toBe(404);
+    const refs = (await (
+      await viewerApi.get(`/api/workspaces/${workspaceId}/materials`)
+    ).json()) as MaterialRef[];
+    expect(refs.find((ref) => ref.id === quiz.id)?.assignmentId).toBe(
+      assignment.id
+    );
 
     // The member answers on their page.
     await viewerPage.goto(`/workspaces/${workspaceId}?study=assignments`);
@@ -181,6 +193,16 @@ test.describe('assignments', () => {
         return [after.correct, after.waitingAnswers];
       })
       .toEqual([3, 0]);
+
+    // Closing gives the member the quiz.
+    expect(
+      (
+        await ownerApi.put(`/api/assignments/${assignment.id}/closed`, {
+          data: { closed: true },
+        })
+      ).status()
+    ).toBe(200);
+    expect((await viewerApi.get(`/api/quizzes/${quiz.id}`)).status()).toBe(200);
   });
 
   test('a personal workspace has no assignments for anyone', async ({

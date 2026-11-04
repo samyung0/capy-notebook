@@ -21,7 +21,13 @@ import { PracticeFrame, Td, Th } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
 import { AssignmentAttemptPage } from './AssignmentAttemptPage';
 import { AssignmentReport } from './AssignmentReport';
-import { dayLabel, kindLabel, markText, percentText } from './assignmentText';
+import {
+  dayLabel,
+  kindLabel,
+  lateLabel,
+  markText,
+  percentText,
+} from './assignmentText';
 import { MemberAssignment } from './MemberAssignment';
 import { NewAssignmentDialog } from './NewAssignmentDialog';
 import { useAssignmentStart } from './useAssignmentStart';
@@ -499,7 +505,7 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
     if (mine.done)
       return (
         <span className="font-bold">
-          {markText(mine.correct ?? 0, (mine.total ?? 0) - mine.waitingMarks)}
+          {markText(mine.mark ?? 0, (mine.total ?? 0) - mine.waitingMarks)}
         </span>
       );
     if (row.closedAt)
@@ -632,12 +638,14 @@ function MemberTitle({ row }: { row: Assignment }) {
       </span>
       {row.mine?.late && (
         <span className="t-meta shrink-0 font-semibold text-tint-warning-fg">
-          {m.assignment_late()}
+          {lateLabel(row.mine.latePenaltyPct)}
         </span>
       )}
       {row.mine?.missing && !row.closedAt && (
         <span className="t-meta shrink-0 font-semibold text-tint-error-fg">
-          {m.assignment_overdue()}
+          {row.latePenaltyPct > 0
+            ? m.assignment_overdue_penalty({ percent: row.latePenaltyPct })
+            : m.assignment_overdue()}
         </span>
       )}
     </div>

@@ -10,7 +10,11 @@ import { PreviewCard } from '@/components/app/PreviewCard';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
-import { recentIcon, recentThumbnail } from '@/features/home/RecentItemsCard';
+import {
+  recentIcon,
+  recentSearch,
+  recentThumbnail,
+} from '@/features/home/RecentItemsCard';
 import { mergeRecentItems, type RecentItem } from '@/features/home/recentItems';
 import { TodoSection } from '@/features/study/assignments/TodoSection';
 import { SuggestedList } from '@/features/study/practice/SuggestedList';
@@ -159,9 +163,7 @@ function RecentCard({
       <Link
         params={{ workspaceId }}
         preload="intent"
-        search={
-          item.kind === 'material' ? { material: item.id } : { file: item.id }
-        }
+        search={recentSearch(item)}
         to="/workspaces/$workspaceId"
       />
     </PreviewCard>

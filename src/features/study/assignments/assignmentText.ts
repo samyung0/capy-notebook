@@ -1,4 +1,8 @@
-import type { Assignment, AssignmentGradedQuestion } from '@/api/types';
+import type {
+  Assignment,
+  AssignmentFormReq,
+  AssignmentGradedQuestion,
+} from '@/api/types';
 import { formatPoints } from '@/features/quizzes/grade';
 import { getLocale, m } from '@/i18n';
 
@@ -43,6 +47,46 @@ export const minutesText = (count: number) =>
 /** "31 / 40". */
 export const markText = (correct: number, total: number) =>
   `${formatPoints(correct)} / ${formatPoints(total)}`;
+
+/** "Late −20%", or "Late" with no penalty. */
+export const lateLabel = (penaltyPct: number) =>
+  penaltyPct > 0
+    ? m.assignment_late_penalty({ percent: penaltyPct })
+    : m.assignment_late();
+
+/** The due date's policy as sent: it goes with a marked assignment's due date,
+ * and No late submissions takes no penalty. */
+export function latePolicy({
+  dueAt,
+  kind,
+  latePenaltyPct,
+  noLate,
+}: Pick<AssignmentFormReq, 'dueAt' | 'kind' | 'latePenaltyPct' | 'noLate'>) {
+  if (kind !== 'marked' || !dueAt) return { latePenaltyPct: 0, noLate: false };
+  return noLate
+    ? { latePenaltyPct: 0, noLate: true }
+    : { latePenaltyPct, noLate: false };
+}
+
+const pastDue = (dueAt: string | undefined, now: number) =>
+  !!dueAt && Date.parse(dueAt) <= now;
+
+/** Closed by its own due date (No late submissions), so it can't be reopened. */
+export const closedItself = (
+  { dueAt, noLate }: Pick<Assignment, 'dueAt' | 'noLate'>,
+  now = Date.now()
+) => noLate && pastDue(dueAt, now);
+
+/** Past its due date with late work open until an owner or TA closes it. */
+export const takesLateWork = (
+  {
+    closedAt,
+    dueAt,
+    kind,
+    noLate,
+  }: Pick<Assignment, 'closedAt' | 'dueAt' | 'kind' | 'noLate'>,
+  now = Date.now()
+) => kind === 'marked' && !noLate && !closedAt && pastDue(dueAt, now);
 
 /** The boards' "78%"; marks decided so far only. */
 export const percentText = (share: number) => `${Math.round(share * 100)}%`;

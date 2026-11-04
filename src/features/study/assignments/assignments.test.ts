@@ -2,13 +2,18 @@ import { expect, it } from 'vitest';
 import type { AssignmentGradedQuestion } from '@/api/types';
 import { parseWorkspaceOpenSearch } from '@/features/materials/openItem';
 import { m } from '@/i18n';
+import { materialCanClone } from '@/features/files/fileUtils';
 import {
+  closedItself,
   dayLabel,
   dayTimeLabel,
+  lateLabel,
+  latePolicy,
   localInputValue,
   markSteps,
   markText,
   questionOutcome,
+  takesLateWork,
 } from './assignmentText';
 import { paperMeta } from './useAssignmentStart';
 
@@ -75,4 +80,55 @@ it('keeps each report link in the URL', () => {
   expect(
     parse({ assignment: 'as1', question: 'q3', study: 'assignments' }).question
   ).toBe(undefined);
+});
+
+it('sends the due date policy only with a marked due date', () => {
+  const dueAt = '2026-11-07T18:00:00Z';
+  const marked = { dueAt, kind: 'marked' as const };
+  expect(latePolicy({ ...marked, latePenaltyPct: 20, noLate: false })).toEqual({
+    latePenaltyPct: 20,
+    noLate: false,
+  });
+  // The switch on takes no penalty, whatever the hidden select held.
+  expect(latePolicy({ ...marked, latePenaltyPct: 20, noLate: true })).toEqual({
+    latePenaltyPct: 0,
+    noLate: true,
+  });
+  const none = { latePenaltyPct: 0, noLate: false };
+  expect(
+    latePolicy({ kind: 'marked', latePenaltyPct: 50, noLate: true })
+  ).toEqual(none);
+  expect(
+    latePolicy({ dueAt, kind: 'unmarked', latePenaltyPct: 50, noLate: true })
+  ).toEqual(none);
+});
+
+it('tells late work open from closed by its own due date', () => {
+  const dueAt = '2026-11-07T18:00:00Z';
+  const after = Date.parse(dueAt) + 1000;
+  const before = Date.parse(dueAt) - 1000;
+  const noLate = { dueAt, kind: 'marked' as const, noLate: true };
+  const late = { dueAt, kind: 'marked' as const, noLate: false };
+  expect(closedItself(noLate, after)).toBe(true);
+  expect(closedItself(noLate, before)).toBe(false);
+  expect(closedItself(late, after)).toBe(false);
+  expect(takesLateWork(late, after)).toBe(true);
+  expect(takesLateWork(late, before)).toBe(false);
+  expect(takesLateWork(noLate, after)).toBe(false);
+  expect(takesLateWork({ ...late, closedAt: dueAt }, after)).toBe(false);
+  expect(takesLateWork({ ...late, kind: 'unmarked' }, after)).toBe(false);
+});
+
+it('names the penalty on late work', () => {
+  expect(lateLabel(20)).toBe(m.assignment_late_penalty({ percent: 20 }));
+  expect(lateLabel(0)).toBe(m.assignment_late());
+});
+
+it('offers an assigned quiz to clone to staff alone', () => {
+  const linkEditor = { canClone: true, role: undefined };
+  expect(materialCanClone(linkEditor)).toBe(true);
+  expect(materialCanClone(linkEditor, true)).toBe(false);
+  expect(materialCanClone({ canClone: true, role: 'editor' }, true)).toBe(true);
+  expect(materialCanClone({ canClone: true, role: 'owner' }, true)).toBe(true);
+  expect(materialCanClone({ canClone: false, role: 'viewer' })).toBe(false);
 });

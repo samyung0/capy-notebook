@@ -7,7 +7,7 @@ import type {
 import { Icon } from '@/components/ui/Icon';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { m } from '@/i18n';
-import { markText, minutesText } from './assignmentText';
+import { lateLabel, markText, minutesText } from './assignmentText';
 
 /** Submitted (A4): the mark so far, what still waits for the owner, and the
  * links on. */
@@ -58,7 +58,12 @@ export function AssignmentSubmitted({
       )}
       <p className="mt-4 font-medium">
         {m.assignment_mark_so_far()}{' '}
-        <b className="font-bold">{markText(attempt.correct, decided)}</b>
+        <b className="font-bold">{markText(attempt.mark, decided)}</b>
+        {attempt.late && (
+          <span className="ml-2 font-semibold text-tint-warning-fg">
+            {lateLabel(attempt.latePenaltyPct)}
+          </span>
+        )}
       </p>
       {attempt.waitingAnswers > 0 && (
         <p className="t-meta mt-2 text-fg-secondary">

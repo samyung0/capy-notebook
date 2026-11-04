@@ -127,6 +127,7 @@ import type {
   ReviewStart,
   SearchResult,
   SetModelPrefsReq,
+  SharingNotice,
   SourceFile,
   SourceUploadPolicy,
   SpendingLimitReq,
@@ -2919,6 +2920,23 @@ export const useAssignments = (
     queryKey: qk.assignments(workspaceId),
   });
 
+/** Whether this class member is yet to be told what they share (board V1). */
+export const useSharingNotice = (workspaceId: string, enabled: boolean) =>
+  useQuery({
+    enabled,
+    meta: queryMeta({ errorBoundary: false }),
+    queryFn: () =>
+      api.get<SharingNotice>(`/workspaces/${workspaceId}/sharing-notice`),
+    queryKey: qk.sharingNotice(workspaceId),
+  });
+
+export function useMarkSharingNoticeSeen(workspaceId: string) {
+  return useMutation({
+    mutationFn: () =>
+      api.put<void>(`/workspaces/${workspaceId}/sharing-notice`),
+  });
+}
+
 export const useAssignment = (id: string, options?: QueryUiOptions) =>
   useQuery({
     enabled: !!id,
@@ -2959,6 +2977,9 @@ function refreshAssignment(
   return Promise.all([
     qc.invalidateQueries({ queryKey: qk.study(workspaceId) }),
     qc.invalidateQueries({ queryKey: qk.workspaceDashboard(workspaceId) }),
+    // A quiz's row shows its assignment's icon while it is open.
+    qc.invalidateQueries({ queryKey: qk.materials(workspaceId) }),
+    qc.invalidateQueries({ queryKey: qk.recent }),
     id
       ? qc.invalidateQueries({ queryKey: qk.assignment(id) })
       : Promise.resolve(),

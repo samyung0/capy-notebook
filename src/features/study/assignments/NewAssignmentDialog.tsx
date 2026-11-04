@@ -43,6 +43,7 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { Switch } from '@/components/ui/Switch';
+import { PanelSearchField } from '@/features/workspace/PanelSearch';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
@@ -51,12 +52,14 @@ import { questionsLabel } from '../practice/practiceText';
 import {
   dayLabel,
   dayTimeLabel,
+  latePolicy,
   localInputValue,
   minutesText,
 } from './assignmentText';
 
 const TIME_LIMITS = [15, 30, 45, 60, 90, 120, 180];
 const ATTEMPTS = [1, 2, 3, 5];
+const LATE_PENALTIES = [0, 20, 50];
 
 const FIELD_TRIGGER =
   'flex h-(--control-h) w-full items-center gap-2 rounded-input border border-line bg-field px-3.25 text-left text-fg outline-none hover:border-line-strong focus-visible:border-line-strong data-[state=open]:border-line-strong';
@@ -105,6 +108,8 @@ export function NewAssignmentDialog({
         materialId,
       })),
       kind: existing?.kind ?? 'marked',
+      latePenaltyPct: existing?.latePenaltyPct ?? 0,
+      noLate: existing?.noLate ?? false,
       quizId: manage?.quizId ?? presetQuizId,
       showAnswers: manage?.showAnswers ?? true,
       shuffle: manage?.shuffle ?? false,
@@ -142,6 +147,8 @@ export function NewAssignmentDialog({
   const kind = watch('kind');
   const quizId = watch('quizId');
   const draft = watch('draft');
+  const dueAt = watch('dueAt');
+  const noLate = watch('noLate');
   const [titleEdited, setTitleEdited] = useState(!!existing);
   const { mutate: create, isPending: creating } =
     useCreateAssignment(workspaceId);
@@ -158,6 +165,7 @@ export function NewAssignmentDialog({
   const submit = handleSubmit((values) => {
     const body: AssignmentFormReq = {
       ...values,
+      ...latePolicy(values),
       files: kind === 'marked' ? [] : values.files,
       quizId: kind === 'marked' ? values.quizId : undefined,
       timeLimitMin: kind === 'marked' ? values.timeLimitMin : undefined,
@@ -296,6 +304,7 @@ export function NewAssignmentDialog({
               />
             </Field>
           )}
+          {/* Under the due date: on phones it follows Due, from sm the row below. */}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               error={errors.dueAt?.message}
@@ -315,61 +324,32 @@ export function NewAssignmentDialog({
               />
             </Field>
             {kind === 'marked' ? (
-              <Field label={m.assignment_field_time_limit()}>
-                <Controller
-                  control={control}
-                  name="timeLimitMin"
-                  render={({ field }) => (
-                    <Select
-                      onValueChange={(value) =>
-                        field.onChange(
-                          value === 'none' ? undefined : Number(value)
-                        )
-                      }
-                      value={field.value ? String(field.value) : 'none'}
-                    >
-                      <SelectTrigger
-                        aria-label={m.assignment_field_time_limit()}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">
-                          {m.assignment_no_limit()}
-                        </SelectItem>
-                        {TIME_LIMITS.map((min) => (
-                          <SelectItem key={min} value={String(min)}>
-                            {minutesText(min)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </Field>
-            ) : (
-              <AssignToField control={control} workspaceId={workspaceId} />
-            )}
-            {kind === 'marked' && (
-              <>
-                <Field label={m.assignment_field_attempts()}>
+              <div className="order-2 sm:order-0">
+                <Field label={m.assignment_field_time_limit()}>
                   <Controller
                     control={control}
-                    name="attempts"
+                    name="timeLimitMin"
                     render={({ field }) => (
                       <Select
-                        onValueChange={(value) => field.onChange(Number(value))}
-                        value={String(field.value)}
+                        onValueChange={(value) =>
+                          field.onChange(
+                            value === 'none' ? undefined : Number(value)
+                          )
+                        }
+                        value={field.value ? String(field.value) : 'none'}
                       >
                         <SelectTrigger
-                          aria-label={m.assignment_field_attempts()}
+                          aria-label={m.assignment_field_time_limit()}
                         >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {ATTEMPTS.map((count) => (
-                            <SelectItem key={count} value={String(count)}>
-                              {count}
+                          <SelectItem value="none">
+                            {m.assignment_no_limit()}
+                          </SelectItem>
+                          {TIME_LIMITS.map((min) => (
+                            <SelectItem key={min} value={String(min)}>
+                              {minutesText(min)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -377,7 +357,90 @@ export function NewAssignmentDialog({
                     )}
                   />
                 </Field>
-                <AssignToField control={control} workspaceId={workspaceId} />
+              </div>
+            ) : (
+              <AssignToField control={control} workspaceId={workspaceId} />
+            )}
+            {kind === 'marked' && dueAt && (
+              <div className="flex flex-col gap-2 sm:col-span-2">
+                <SwitchRow
+                  control={control}
+                  label={m.assignment_switch_no_late()}
+                  name="noLate"
+                />
+                {!noLate && (
+                  <div className="flex min-h-8 items-center justify-between gap-4">
+                    <span className="font-medium">
+                      {m.assignment_field_late_penalty()}
+                    </span>
+                    <Controller
+                      control={control}
+                      name="latePenaltyPct"
+                      render={({ field }) => (
+                        <Select
+                          onValueChange={(value) =>
+                            field.onChange(Number(value))
+                          }
+                          value={String(field.value)}
+                        >
+                          <SelectTrigger
+                            aria-label={m.assignment_field_late_penalty()}
+                            className="w-37.5"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {LATE_PENALTIES.map((pct) => (
+                              <SelectItem key={pct} value={String(pct)}>
+                                {pct === 0
+                                  ? m.assignment_penalty_none()
+                                  : m.assignment_penalty_value({
+                                      percent: pct,
+                                    })}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            {kind === 'marked' && (
+              <>
+                <div className="order-3">
+                  <Field label={m.assignment_field_attempts()}>
+                    <Controller
+                      control={control}
+                      name="attempts"
+                      render={({ field }) => (
+                        <Select
+                          onValueChange={(value) =>
+                            field.onChange(Number(value))
+                          }
+                          value={String(field.value)}
+                        >
+                          <SelectTrigger
+                            aria-label={m.assignment_field_attempts()}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ATTEMPTS.map((count) => (
+                              <SelectItem key={count} value={String(count)}>
+                                {count}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </Field>
+                </div>
+                <div className="order-3">
+                  <AssignToField control={control} workspaceId={workspaceId} />
+                </div>
               </>
             )}
           </div>
@@ -459,7 +522,7 @@ function SwitchRow({
 }: {
   control: Control<AssignmentFormReq>;
   label: string;
-  name: 'draft' | 'approveAiMarks' | 'showAnswers' | 'shuffle';
+  name: 'draft' | 'approveAiMarks' | 'noLate' | 'showAnswers' | 'shuffle';
 }) {
   return (
     <Controller
@@ -601,10 +664,9 @@ function QuizPicker({
         align="start"
         className="w-(--radix-popover-trigger-width) p-1.5"
       >
-        <Input
-          aria-label={m.assignment_search()}
-          leftIcon="search"
-          onChange={(event) => setQuery(event.target.value)}
+        <PanelSearchField
+          label={m.assignment_search_quizzes()}
+          onChange={setQuery}
           value={query}
         />
         <ul className="mt-1.5 max-h-60 overflow-auto">
@@ -900,10 +962,9 @@ function FilesField({
           align="start"
           className="w-85 max-w-[calc(100vw-2rem)] p-1.5"
         >
-          <Input
-            aria-label={m.assignment_search()}
-            leftIcon="search"
-            onChange={(event) => setQuery(event.target.value)}
+          <PanelSearchField
+            label={m.assignment_search_files()}
+            onChange={setQuery}
             value={query}
           />
           <ul className="mt-1.5 max-h-60 overflow-auto">

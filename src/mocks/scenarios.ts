@@ -16,7 +16,11 @@ import {
   workspaces,
 } from './db';
 import { failureHandlers, failureScenarios } from './scenarioFailures';
-import { assignmentHandlers } from './assignments';
+import {
+  assignmentHandlers,
+  recentFor,
+  workspaceMaterialRefs,
+} from './assignments';
 import { practiceBody } from './study';
 
 export const authScenarios = [
@@ -556,12 +560,20 @@ export function getMockScenarioHandlers(
               canManageMembers: false,
               canView: true,
             },
+            // A class's viewer member clones nothing.
+            canClone: workspace.kind !== 'class',
             isOwner: false,
             role: 'viewer',
           });
         }),
         http.get('/api/workspaces/:id/practice', ({ params }) =>
           HttpResponse.json(practiceBody(String(params.id), false))
+        ),
+        http.get('/api/workspaces/:id/materials', ({ params }) =>
+          HttpResponse.json(workspaceMaterialRefs(String(params.id), 'member'))
+        ),
+        http.get('/api/recent', async ({ request }) =>
+          HttpResponse.json(recentFor(request.url, 'member'))
         ),
         ...assignmentHandlers('member'),
       ];

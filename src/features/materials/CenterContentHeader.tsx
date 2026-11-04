@@ -36,6 +36,7 @@ import {
   IMAGE_ZOOM_STEP,
   isImageFile,
   officeFormatOf,
+  materialCanClone,
 } from '@/features/files/fileUtils';
 import {
   type NoteEditorSaveState,
@@ -341,9 +342,9 @@ function useHeader(
       !embedded &&
       (standalone
         ? !('workspaceId' in mt && mt.workspaceId)
-        : !!workspace?.canClone),
+        : materialCanClone(workspace, listed?.assigned)),
     defaultMode: policy.defaultMode,
-    icon: materialIconName(kind),
+    icon: materialIconName(kind, listed?.assigned),
     material: mt,
     materialCapabilities: capabilities,
     modes: policy.modes,
@@ -535,7 +536,7 @@ export function Header({
           ...(oneColumn?.addItems ?? []),
           // A quiz opens New assignment with itself set (board A1).
           ...(item.kind === 'material' &&
-          icon === materialIconName('quiz') &&
+          (icon === materialIconName('quiz') || icon === 'assignment') &&
           studyView(studyWorkspace).manages
             ? [
                 {

@@ -20,7 +20,7 @@ import {
 import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { gradeQuestions, learnerView } from './answerKeys';
-import { assignmentClosedAt } from './assignments';
+import { assignmentClosedAt, quizAssignmentFields } from './assignments';
 import * as db from './db';
 
 /* Study progress and review, per signed-in user (the mock has one). A
@@ -874,7 +874,11 @@ export function practiceBody(wsId: string, staff: boolean): Practice {
     .slice(0, 3);
   const TRIED = [5, 2, 6, 0];
   const AVERAGE = [0.74, 0, 0.81, 0];
-  const quizzes = groupQuizzes(wsId, 'workspace').map((mt, i) => {
+  // A quiz assigned to the member is not their practice until it closes.
+  const practised = groupQuizzes(wsId, 'workspace').filter(
+    (mt) => staff || !quizAssignmentFields(mt.id, 'member').assignmentId
+  );
+  const quizzes = practised.map((mt, i) => {
     const best = db.attempts
       .filter((a) => a.materialId === mt.id && a.kind === 'quiz' && a.total > 0)
       .sort((a, b) => b.correct / b.total - a.correct / a.total)[0];

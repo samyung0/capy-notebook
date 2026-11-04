@@ -33,6 +33,7 @@ import { BackToAssignments } from './AssignmentAttemptPage';
 import {
   dayLabel,
   markSteps,
+  lateLabel,
   markText,
   OUTCOME_LABEL,
   OUTCOME_SQUARE,
@@ -129,7 +130,7 @@ export function AttemptResults({
               {m.assignment_submitted_on({ date: when })}
               {attempt.late && (
                 <span className="font-semibold text-tint-warning-fg">
-                  {m.assignment_late()}
+                  {lateLabel(attempt.latePenaltyPct)}
                 </span>
               )}
               {attempt.autoSubmitted && (
@@ -137,16 +138,26 @@ export function AttemptResults({
               )}
             </p>
           </div>
-          <p className="flex shrink-0 items-baseline gap-1.5 whitespace-nowrap">
-            <span className="font-extrabold text-[1.875rem] leading-none tracking-[-0.02rem] sm:text-[2.125rem]">
-              {markText(attempt.correct, decided)}
-            </span>
-            {decided > 0 && (
-              <span className="t-meta font-semibold text-fg-muted">
-                {percentText(attempt.correct / decided)}
+          <div className="shrink-0 text-right">
+            <p className="flex items-baseline justify-end gap-1.5 whitespace-nowrap">
+              <span className="font-extrabold text-[1.875rem] leading-none tracking-[-0.02rem] sm:text-[2.125rem]">
+                {markText(attempt.mark, decided)}
               </span>
+              {decided > 0 && (
+                <span className="t-meta font-semibold text-fg-muted">
+                  {percentText(attempt.mark / decided)}
+                </span>
+              )}
+            </p>
+            {attempt.latePenaltyPct > 0 && (
+              // On phones it wraps under the mark rather than squeezing the title.
+              <p className="t-meta mt-1 w-0 min-w-full text-fg-muted sm:w-auto sm:min-w-0 sm:whitespace-nowrap">
+                {m.assignment_before_penalty({
+                  mark: markText(attempt.correct, decided),
+                })}
+              </p>
             )}
-          </p>
+          </div>
         </div>
         <div className="mt-5.5 flex flex-wrap items-center gap-2">
           {(['right', 'partly', 'wrong', 'waiting'] as const).map(

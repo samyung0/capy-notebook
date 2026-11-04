@@ -385,6 +385,9 @@ export const qk = {
   /** A class's assignments; refreshed with the rest of study. */
   assignments: (wsId: string) =>
     ['workspace', wsId, 'study', 'assignments'] as const,
+  /** Whether a class member is yet to be told what they share. */
+  sharingNotice: (wsId: string) =>
+    ['workspace', wsId, 'sharing-notice'] as const,
   /** The workspace's Practice page; refreshed with the rest of study. */
   practice: (wsId: string) => ['workspace', wsId, 'study', 'practice'] as const,
   quiz: (id: string) => ['quiz', id] as const,

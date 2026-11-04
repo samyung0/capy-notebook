@@ -400,6 +400,7 @@ export type {
   Row as BankListRow,
   SessionScore,
   SetStudyEnabledReq,
+  SharingNoticeOutputBody as SharingNotice,
   TopicProgress as BankTopicProgress,
   UnfinishedSession,
   WorkspaceActivity,

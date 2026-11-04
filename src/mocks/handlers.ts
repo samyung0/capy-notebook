@@ -19,8 +19,6 @@ import type {
   HiddenBody,
   Material,
   MaterialDiscussion,
-  MaterialRef,
-  MaterialRefType,
   ModelRef,
   MoveFilesReq,
   PDFAnnotation,
@@ -91,7 +89,13 @@ import {
   scenarioSourceSession,
   seedUploadedOffice,
 } from './scenarioFixtures';
-import { assignmentActivity, assignmentHandlers } from './assignments';
+import {
+  assignmentActivity,
+  assignmentHandlers,
+  quizAssignmentFields,
+  recentFor,
+  workspaceMaterialRefs,
+} from './assignments';
 import { mockWorkspaceMembers } from './workspaceMembers';
 import { studyHandlers } from './study';
 import { voiceInputHandlers } from './voiceInput';
@@ -122,9 +126,6 @@ function sortBy<T>(key: (row: T) => string | number, asc: boolean) {
 import { dialogFiles } from './dialogFiles';
 import { errorMaterials } from './errorMaterials';
 import { sourceUploadPolicy } from './sourceUploadPolicy';
-
-/** Map a material's storage kind to the left-panel ref type. */
-const refType = (kind: Material['kind']): MaterialRefType => kind;
 
 const latency = () => delay(1000 + Math.random() * 220);
 /** /me carries the account lifecycle, as the server's does. */
@@ -467,7 +468,7 @@ function trashMaterial(id: string, kind?: string) {
 }
 
 const pdfAnnotations: Record<string, PDFAnnotation[]> = {};
-export { mockWorkspaceMembers };
+export { mockWorkspaceMembers } from './workspaceMembers';
 
 /** Clear only state created by the dedicated User scenarios workspace. */
 export function resetScenarioHandlerState(workspaceId: string) {
@@ -1949,7 +1950,7 @@ export const handlers = [
     });
   }),
   http.get('/api/recent', async ({ request }) =>
-    HttpResponse.json(db.listRecent(new URL(request.url)))
+    HttpResponse.json(recentFor(request.url, 'owner'))
   ),
   http.post('/api/files/:id/open', ({ params }) => {
     db.itemOpens.set(`file:${params.id}`, new Date().toISOString());
@@ -2194,7 +2195,10 @@ export const handlers = [
         )
       );
     return HttpResponse.json({
-      items: rows.slice(offset, offset + limit).map(db.materialListItem),
+      items: rows.slice(offset, offset + limit).map((mt) => ({
+        ...db.materialListItem(mt),
+        ...quizAssignmentFields(mt.id, 'owner'),
+      })),
       nextCursor:
         offset + limit < rows.length ? String(offset + limit) : undefined,
     });
@@ -2228,25 +2232,9 @@ export const handlers = [
     db.materials.unshift(mt);
     return HttpResponse.json(mt, { status: 201 });
   }),
-  http.get('/api/workspaces/:id/materials', async ({ params }) => {
-    const wsId = String(params.id);
-    const refs: MaterialRef[] = db.materials
-      .filter((mt) => mt.workspaceId === wsId && !mt.parentMaterialId)
-      .map((mt) => ({
-        createdAt: mt.createdAt,
-        hidden: mt.hidden,
-        id: mt.id,
-        maxDepth: mt.maxDepth,
-        nodeCount: mt.nodeCount,
-        position: mt.position,
-        sizeBytes: mt.contentBytes,
-        title: mt.title,
-        topicId: mt.topicId,
-        type: refType(mt.kind),
-      }))
-      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-    return HttpResponse.json(refs);
-  }),
+  http.get('/api/workspaces/:id/materials', async ({ params }) =>
+    HttpResponse.json(workspaceMaterialRefs(String(params.id), 'owner'))
+  ),
   http.post('/api/workspaces/:id/materials', async ({ params, request }) => {
     const wsId = String(params.id);
     const ws = db.workspaces.find((w) => w.id === wsId);
