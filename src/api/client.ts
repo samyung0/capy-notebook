@@ -45,6 +45,12 @@ export function isApiError(err: unknown): err is ApiError {
   return err instanceof ApiError;
 }
 
+/** A check of a question with no answers configured: a live quiz holds it, and
+ * only complete questions are marked (D4, Epo 2026-11-05). */
+export function isNoAnswersError(err: unknown): err is ApiError {
+  return isApiError(err) && err.code === 'question_no_answers';
+}
+
 export function isStorageQuotaError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'storage_quota_exceeded';
 }

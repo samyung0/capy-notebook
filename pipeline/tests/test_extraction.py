@@ -1063,8 +1063,8 @@ async def test_a_copy_batch_that_fails_ends_alone_and_its_questions_are_named(
 async def test_a_solve_call_that_fails_keeps_the_copies_and_names_what_is_missing(
     monkeypatch,
 ):
-    """A failed solve call leaves its questions in the quiz, as open parts whose
-    marking note says so, an mcq's options in its text. Others are unaffected."""
+    """A failed solve call leaves its questions in the quiz as copied, named in the
+    report, and keeps what a part has. Others are unaffected."""
     one, two, three = (
         _mcq("1", ["p", "q"], 1),
         _open("2", [("a", 2)]),
@@ -1098,14 +1098,67 @@ async def test_a_solve_call_that_fails_keeps_the_copies_and_names_what_is_missin
     assert report["recorded"] == ["1", "2", "3", "4"]
     assert report["answersMissing"] == ["1", "2(a)", "4"]
     assert report["keysWorkedOut"] == ["3"]
-    note = extraction.ANSWER_MISSING["en"]
     first, second, third, fourth = done["questions"]
-    assert first["parts"][0]["answer"] == {"type": "open", "accepted": [], "hints": []}
-    assert first["parts"][0]["markscheme"] == [{"text": note, "marks": 1}]
-    assert first["parts"][0]["blocks"][-1]["text"] == "A. p\nB. q"
-    assert second["parts"][0]["markscheme"] == [{"text": note, "marks": 2}]
+    assert first["parts"][0]["answer"] == {
+        "type": "mcq",
+        "options": ["p", "q"],
+        "correct": [],
+    }
+    assert first["parts"][0]["solution"] == []
+    assert second["parts"][0]["answer"]["type"] == "open"
+    assert second["parts"][0]["markscheme"] == []
     assert third["parts"][0]["answer"]["correct"] == [1]
-    assert fourth["parts"][0]["answer"] == {"type": "open", "accepted": [], "hints": []}
+    assert fourth["parts"][0]["answer"]["type"] == "short"
+    assert fourth["parts"][0]["answer"]["accepted"] == []
+    assert fourth["parts"][0]["answer"]["unit"] == "cm"
+
+
+async def test_a_scheme_key_stays_beside_a_part_with_no_answer(monkeypatch):
+    """Q1(a) has its scheme entry, and Q1(b)'s solve call fails: (a) keeps its key
+    and (b) is named, with no refusal of the scheme's version."""
+    item = _open("1", [("a", 1), ("b", 1)])
+
+    async def complete(messages, **kwargs):
+        return SimpleNamespace(
+            content=json.dumps(
+                {
+                    "entries": [
+                        {
+                            "question": "1",
+                            "part": "a",
+                            "answer": "7",
+                            "points": [{"text": "1A", "marks": 1}],
+                        }
+                    ]
+                }
+            )
+        )
+
+    ask = "Give the answers to question 1 now."
+    down = extraction.elitellm.ProviderError("upstream error")
+    script = Script(
+        _row("1", parts="a, b"),
+        {"Copy question 1 now.": [_tools(("record_question", _copy(item)))]},
+        fail={ask: [down] * 4},
+    )
+
+    async def validate(question):
+        return None if all(extraction._has_key(p) for p in question["parts"]) else "x"
+
+    events = await _run(
+        monkeypatch,
+        script,
+        [_page(5)],
+        [extraction.SchemeFile("scheme.pdf", "the scheme")],
+        complete=complete,
+        validate=validate,
+    )
+    done = events[-1]
+    assert done["report"]["answersMissing"] == ["1(b)"]
+    assert done["report"]["schemeRefused"] == []
+    first, second = done["questions"][0]["parts"]
+    assert first["markscheme"] == [{"text": "1A", "marks": 1}]
+    assert second["markscheme"] == []
 
 
 async def test_a_map_that_fails_twice_fails_the_run(monkeypatch):

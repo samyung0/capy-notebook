@@ -181,11 +181,103 @@ func TestAReportNamesMissingAnswers(t *testing.T) {
 	if strings.Contains(string(empty), "answersMissing") || strings.Contains(string(empty), "schemeFailed") {
 		t.Fatalf("empty report = %s", empty)
 	}
-	question := `[{"id":"q2","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p","blocks":[{"type":"text","text":"Pick.\nA. p\nB. q"}],` +
-		`"answer":{"type":"open","accepted":[],"hints":[]},"marks":2,` +
-		`"markscheme":[{"text":"No answer was worked out for this part.","marks":2}],"solution":[]}]}]`
-	if _, err := materialdoc.QuizDocument(json.RawMessage(question), nil); err != nil {
-		t.Fatalf("no-answer form refused: %v", err)
+}
+
+// A run's questions split in printed order: the ones QuizDocument takes, and for
+// the rest the room's node after the question printed before it.
+func TestAnIncompleteQuestionIsKeptForTheRoom(t *testing.T) {
+	question := func(id, answer string) string {
+		return `{"id":"` + id + `","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p` + id + `",` +
+			`"blocks":[{"type":"text","text":"Pick."}],"answer":` + answer + `,"marks":1,"solution":[]}]}`
+	}
+	keyed := `{"type":"mcq","options":["a","b"],"correct":[1]}`
+	none := `{"type":"mcq","options":["a","b"],"correct":[]}`
+	raw := "[" + question("q1", none) + "," + question("q2", keyed) + "," + question("q3", none) + "]"
+	complete, incomplete, err := materialdoc.SplitIncomplete(json.RawMessage(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := materialdoc.QuizDocument(complete, nil); err != nil {
+		t.Fatalf("complete questions refused: %v", err)
+	}
+	var kept []map[string]any
+	if err := json.Unmarshal(complete, &kept); err != nil || len(kept) != 1 || kept[0]["id"] != "q2" {
+		t.Fatalf("complete = %s (%v)", complete, err)
+	}
+	if len(incomplete) != 2 || incomplete[0].After != "" || incomplete[1].After != "q2" ||
+		incomplete[0].Node["type"] != "quiz_question" || incomplete[1].Node["id"] != "q3" {
+		t.Fatalf("incomplete = %+v", incomplete)
+	}
+}
+
+// A quiz whose questions all lack answers still saves: an empty quiz, its
+// questions sent to the authority in printed order, and the report keeps naming
+// the parts. If the authority refuses, they are named as questions with no copy.
+// Needs Postgres (CI).
+func TestAQuizWithNoAnswersSavesAndGoesToTheRoom(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	var sent struct {
+		Target   store.DocumentTarget `json:"target"`
+		Commands []struct {
+			Type        string          `json:"type"`
+			ParentType  string          `json:"parentType"`
+			AfterNodeID *string         `json:"afterNodeId"`
+			Node        json.RawMessage `json:"node"`
+		} `json:"commands"`
+	}
+	refuse := false
+	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if refuse {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+			t.Error(err)
+		}
+		_, _ = w.Write([]byte(`{"operationId":"op","kind":"edit_document","toolVersion":1,"outcome":"succeeded"}`))
+	}))
+	t.Cleanup(authority.Close)
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
+	a := &api{s: st, blob: blob.NewMemory()}
+	questions := `[{"id":"q1","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p1",` +
+		`"blocks":[{"type":"text","text":"Pick."}],"answer":{"type":"mcq","options":["a","b"],"correct":[]},"marks":1,"solution":[]}]},` +
+		`{"id":"q2","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p2",` +
+		`"blocks":[{"type":"text","text":"Name."}],"answer":{"type":"short","accepted":[]},"marks":1,"solution":[]}]}]`
+	finish := func(title string) store.Extraction {
+		run, err := st.CreateExtraction(ctx, "ws_e2e_private", "u_editor", title+" "+uuid.NewString())
+		if err != nil {
+			t.Fatal(err)
+		}
+		ended := a.finishExtraction(ctx, run, "u_editor", "E2E Private Workspace", extractionEvent{
+			Type: "done", Questions: json.RawMessage(questions),
+			Report: json.RawMessage(`{"missing":["3"],"answersMissing":["1","2"]}`),
+		})
+		if ended.Status != store.ExtractionDone || ended.QuizID == nil {
+			t.Fatalf("run = %+v", ended)
+		}
+		t.Cleanup(func() {
+			_, _ = st.Pool().Exec(context.Background(), `DELETE FROM materials WHERE id=$1`, *ended.QuizID)
+		})
+		return ended
+	}
+	ended := finish("No answers")
+	if sent.Target.ID != *ended.QuizID || len(sent.Commands) != 2 || sent.Commands[0].Type != "insert_child" ||
+		sent.Commands[0].ParentType != "quiz" || sent.Commands[0].AfterNodeID != nil ||
+		sent.Commands[1].AfterNodeID == nil || *sent.Commands[1].AfterNodeID != "q1" {
+		t.Fatalf("sent = %+v", sent)
+	}
+	if strings.Join(ended.Report.AnswersMissing, ",") != "1,2" {
+		t.Fatalf("report = %+v", ended.Report)
+	}
+	refuse = true
+	left := finish("Left out")
+	if strings.Join(left.Report.Missing, ",") != "3,1,2" || len(left.Report.AnswersMissing) != 0 {
+		t.Fatalf("report = %+v", left.Report)
 	}
 }
 

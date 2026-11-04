@@ -1395,6 +1395,9 @@ type MaterialDraft struct {
 	// Hidden from the workspace's members from the start (a quiz made from
 	// files, Epo 2026-11-03).
 	Hidden bool
+	// AllowNoQuestions lets a quiz start with none (Make a quiz, when every
+	// question it read goes to the room as incomplete).
+	AllowNoQuestions bool
 	// Library attribution; nil for a material built from workspace sources.
 	Provenance *Provenance
 }
@@ -1416,7 +1419,7 @@ func (d MaterialDraft) material() (Material, error) {
 		if err != nil {
 			return Material{}, err
 		}
-		if len(questions) == 0 {
+		if len(questions) == 0 && !d.AllowNoQuestions {
 			return Material{}, ErrEmptyMaterial
 		}
 		content, err := materialdoc.QuizDocument(d.Questions, d.TimeLimitMin)

@@ -5783,10 +5783,19 @@ later).
   7. Each paired question goes through the validator again; one it refuses keeps the page's
      keys (`schemeRefused`). A worked-out key no scheme replaced keeps its solution marked
      AI-written (the solution block's `label`, "AI-written" or "AI 撰写" by the starter's
-     locale) and its question is named in `keysWorkedOut`. A part left with no answer is
-     saved as an open part whose one marking item says so, `ANSWER_MISSING` by locale, an
-     mcq's options as lettered lines in its text, since the validator has no other form with
-     no key, and is named in `answersMissing`. A saved question whose part marks do not add
+     locale) and its question is named in `keysWorkedOut`. A part left with no answer stays
+     as copied (an mcq with `correct: []`, a short part with `accepted: []`, an open part
+     with no marking items) with whatever keys its other parts got, and is named in
+     `answersMissing` (Epo 2026-11-05, "allow no answers for questions then"). The
+     validator has no key-less form and only extraction changes, so Go splits the run's
+     questions (`materialdoc.SplitIncomplete`): the quiz is created from those it takes,
+     with none at all if need be (`MaterialDraft.AllowNoQuestions`), and the rest go to its
+     room in printed order through the agent's edit (`insert_child`, the authority's
+     receipt under the run's operation id), which holds an incomplete question and projects
+     only complete ones (D4). So `materials.content`, list counts, shared pages, review
+     sessions and an assignment's frozen quiz hold the complete questions; the quiz editor
+     and the attempt page show them all, the editor with its issue line. If the authority
+     refuses that edit, the quiz stays saved and those questions are named in `missing`. A saved question whose part marks do not add
      up to the total printed on the page is named in `marksDiffer`. Math written `\(...\)`
      or `\[...\]`, which a page read writes and the quiz would show as raw text, is saved as
      `$...$` in text, options, answers, marking items and solutions (`dollar_math`); a code

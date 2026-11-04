@@ -285,7 +285,7 @@ func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body a
 	}
 	q, _, _ := quizQuestion(qs, body.QuestionID)
 	if q == nil {
-		return nil, huma.Error404NotFound("the question is not in this quiz")
+		return nil, noAnswersConfiguredError()
 	}
 	plan, err := planGrading([]map[string]any{q}, body.Answers)
 	if err != nil {
@@ -379,7 +379,7 @@ func (a *api) checkSharedNoteQuiz(ctx context.Context, in *checkSharedNoteQuizIn
 	}
 	q, _, _ := quizQuestion(qs, in.Body.QuestionID)
 	if q == nil {
-		return nil, huma.Error404NotFound("the question is not in this quiz")
+		return nil, noAnswersConfiguredError()
 	}
 	plan, err := planGrading([]map[string]any{q}, in.Body.Answers)
 	if err != nil {

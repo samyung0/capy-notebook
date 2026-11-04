@@ -166,10 +166,12 @@ their keys, marking items and worked solutions, or a separate mark scheme or ans
 file does, paired by printed label, which needs no solve call for a question it wholly
 covers. Each question is checked by this validator as it is copied and as its answers
 arrive, and each figure the page shows is cropped into an image block whose asset is
-the quiz's own, like an uploaded quiz image. This format has no key-less form, so a part
-whose solve call failed is saved as an open part whose one marking item says it has no
-answer, and the run's report names it (see [agentic-retrieval.md](agentic-retrieval.md),
-Make a quiz).
+the quiz's own, like an uploaded quiz image. This format has no key-less form, so a
+question with a part whose solve call failed is incomplete: it stays as copied, in the
+quiz's live room only, like an incomplete question an editor is typing. It isn't marked
+or counted, and a learner who checks it sees "No answers configured"; the run's report
+names it (see [agentic-retrieval.md](agentic-retrieval.md), Make a quiz, and
+[frontend/plate-editor.md](frontend/plate-editor.md)).
 
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part

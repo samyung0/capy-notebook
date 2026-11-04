@@ -3513,7 +3513,15 @@ open-answer hints never count against it, but a part needs one block with
 content. The bank dialog's Save drops them too (`withoutBlanks`). Readers
 (the attempt page, the workspace quiz View, note embeds in View) paint the stored questions and then follow the content room
 (`liveQuizReads.ts`); a learner's answer that no longer points at what a part
-holds (a removed option, a changed set of ordering items) is dropped (D9).
+holds (a removed option, a changed set of ordering items) is dropped (D9). A
+check of a question the room holds but grading doesn't (404
+`question_no_answers`) shows "No answers configured" in place of its Check,
+with no toast and nothing recorded (Epo 2026-11-05). From then the try leaves it
+out: the header's counts, "{checked} of {total} checked", the result opening once
+the rest are checked, and the score, which matches the attempt the server keeps
+(it never counts a question that isn't projected). Until its Check is pressed it
+counts in those on the page, and the result waits for it. Shared pages and review
+sessions read stored questions, so they never show one.
 Live rooms are the only writers of quiz content (Epo 2026-10-16: the REST
 content write is gone). Agent question commands write what differs in the
 questions that differ, texts as the fewest changes and lists by position, so

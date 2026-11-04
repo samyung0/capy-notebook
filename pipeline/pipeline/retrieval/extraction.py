@@ -111,16 +111,9 @@ ATTEMPTS = 2
 ATTEMPT_WAIT_S = 20.0
 
 PRINTED, WORKED_OUT, SCHEME = "printed", "worked_out", "scheme"
-# A part left with no answer: its failed solve call could not be made up.
-NO_ANSWER = "none"
 # The label a worked-out solution carries in the saved quiz, in the starter's
 # language (QuestionView draws a text block's label before its text).
 AI_WRITTEN = {"en": "AI-written", "zh": "AI 撰写"}
-# The marking note on a part saved with no answer, which the report names too.
-ANSWER_MISSING = {
-    "en": "No answer was worked out for this part. Add one before using this question.",
-    "zh": "这一部分还没有答案。使用这道题之前请先补上。",
-}
 
 Validate = Callable[[dict[str, Any]], Awaitable[str | None]]
 
@@ -751,32 +744,32 @@ def _has_key(part: dict[str, Any]) -> bool:
     return bool(part.get("markscheme"))
 
 
-def _mark_no_answer(held: Recorded, note: str) -> list[str]:
-    """Keep a part with no answer as an open part whose marking note says so, the
-    only form with no key the validator takes; an mcq's options go in its text. The
-    part names, for the report."""
-    names: list[str] = []
-    for index, (label, part) in enumerate(
-        zip(held.part_labels, held.question["parts"])
-    ):
+def _parts_with_no_answer(held: Recorded) -> list[str]:
+    """The parts that never got an answer, as the report names them. They stay as
+    copied: a live quiz holds an incomplete question, and only complete ones are
+    marked (Epo 2026-11-05, "allow no answers for questions then")."""
+    return [
+        part_name(held.label, label)
+        for label, part in zip(held.part_labels, held.question["parts"])
+        if not _has_key(part)
+    ]
+
+
+def _with_keys_filled(question: dict[str, Any]) -> dict[str, Any]:
+    """A saved question with placeholder keys on the parts with none, so a check
+    looks at what it holds. It is never saved."""
+    out = copy.deepcopy(question)
+    for part in out["parts"]:
         if _has_key(part):
             continue
         answer = part["answer"]
         if answer["type"] == "mcq":
-            lines = [
-                f"{chr(ord('A') + n)}. {option}"
-                for n, option in enumerate(answer.get("options") or [])
-            ]
-            part["blocks"] = [
-                *part["blocks"],
-                {"type": "text", "text": "\n".join(lines)},
-            ]
-        part["answer"] = {"type": "open", "accepted": [], "hints": []}
-        part["markscheme"] = [{"text": note, "marks": part["marks"]}]
-        part["solution"] = []
-        held.sources[index] = NO_ANSWER
-        names.append(part_name(held.label, label))
-    return names
+            answer["correct"] = [0]
+        elif answer["type"] == "short":
+            answer["accepted"] = ["0"]
+        else:
+            part["markscheme"] = [{"text": "-", "marks": part["marks"]}]
+    return out
 
 
 # A code span, math already between $ signs, or math between \( \) or \[ \].
@@ -1560,7 +1553,6 @@ async def run(
         boxes=numbered_boxes(pages),
         output_budget=OUTPUT_PER_PAGE * len(pages),
     )
-    note = ANSWER_MISSING[normalize_locale(locale)]
     try:
         base, rows, output = await _attempted(
             functools.partial(read_map, pages, current.boxes, model=model)
@@ -1752,21 +1744,22 @@ async def run(
     finals: list[Recorded] = []
     for question in held:
         paired = pair(question, entries)
-        missing_here = _mark_no_answer(paired.held, note)
         if paired.matched:
             key = label_key(question.label)
             used.update(k for k in entries if k[0] == key)
             disagreements.extend(paired.disagreed)
         # The scheme's version is checked as the quiz's creation will check it; a
         # refusal keeps the page's keys rather than losing the question.
-        if paired.matched and await validate(paired.held.question):
+        if paired.matched and await validate(_with_keys_filled(paired.held.question)):
             refused.append(question.label)
-            missing_here = _mark_no_answer(question, note)
         else:
             question = paired.held
-        answers_missing.extend(missing_here)
+        answers_missing.extend(_parts_with_no_answer(question))
         finals.append(question)
-        if WORKED_OUT in question.sources:
+        if any(
+            source == WORKED_OUT and _has_key(part)
+            for source, part in zip(question.sources, question.question["parts"])
+        ):
             worked_out.append(question.label)
         parts_total = sum(part["marks"] for part in question.question["parts"])
         if question.total is not None and parts_total != question.total:

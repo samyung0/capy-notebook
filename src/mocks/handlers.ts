@@ -51,6 +51,7 @@ import {
   mermaidNode,
   quizNode,
 } from '@/features/materials/document';
+import { questionIssues } from '@/features/questions/issues';
 import {
   exampleAnswers,
   exampleQuestion,
@@ -3178,7 +3179,12 @@ export const handlers = [
     if (!quizMt) return new HttpResponse(null, { status: 404 });
     const quiz = db.quizFromMaterial(quizMt);
     const question = quiz.questions.find((q) => q.id === questionId);
-    if (!question) return new HttpResponse(null, { status: 404 });
+    // As the server: only complete questions are projected and marked.
+    if (!question || questionIssues(question).length > 0)
+      return HttpResponse.json(
+        { errors: [{ message: 'question_no_answers' }] },
+        { status: 404 }
+      );
     const [graded] = gradeQuestions([question], answers).questions;
     const order = quiz.questions.map((q) => q.id);
     const existing = db.attempts.find(

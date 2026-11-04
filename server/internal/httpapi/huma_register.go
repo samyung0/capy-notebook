@@ -77,6 +77,19 @@ func conflictError(code, detail string) error {
 	}
 }
 
+// noAnswersConfiguredError is a check of a question that is not projected: a
+// reader shows every question a room holds, and only complete ones are projected
+// (D4), so the page says it has no answers rather than showing an error (Epo
+// 2026-11-05).
+func noAnswersConfiguredError() error {
+	return &huma.ErrorModel{
+		Status: http.StatusNotFound,
+		Title:  http.StatusText(http.StatusNotFound),
+		Detail: "the question is not in this quiz",
+		Errors: []*huma.ErrorDetail{{Message: "question_no_answers"}},
+	}
+}
+
 // limitError is a 429 carrying a machine code the browser maps to copy.
 func limitError(code, detail string) error {
 	return &huma.ErrorModel{
