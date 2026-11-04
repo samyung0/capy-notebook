@@ -2039,6 +2039,7 @@ export const handlers = [
           (f): WorkspaceActivity => ({
             at: f.addedAt,
             fileId: f.id,
+            hidden: f.hidden,
             kind: 'uploaded',
             title: f.name,
           })
@@ -2048,6 +2049,7 @@ export const handlers = [
         .map(
           (mt): WorkspaceActivity => ({
             at: mt.createdAt,
+            hidden: mt.hidden,
             kind: mt.kind === 'flashcards' ? 'agent' : 'added',
             materialId: mt.id,
             title: mt.title,

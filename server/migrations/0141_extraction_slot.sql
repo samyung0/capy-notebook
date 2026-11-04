@@ -77,7 +77,7 @@ BEGIN
   ORDER BY version DESC LIMIT 1;
   IF FOUND THEN
     UPDATE model_configs SET enabled = false, is_default_for = '{}',
-      updated_at = now(), updated_by = 'migration:0138'
+      updated_at = now(), updated_by = 'migration:0141'
     WHERE provider_slug = current_config.provider_slug
       AND model_slug = current_config.model_slug AND version = current_config.version;
     SELECT max(version) + 1 INTO current_config.version FROM model_configs
@@ -97,13 +97,13 @@ BEGIN
     END IF;
     current_config.created_at := now();
     current_config.updated_at := now();
-    current_config.created_by := 'migration:0138';
-    current_config.updated_by := 'migration:0138';
+    current_config.created_by := 'migration:0141';
+    current_config.updated_by := 'migration:0141';
     INSERT INTO model_configs SELECT current_config.*;
   ELSE
     INSERT INTO model_configs (
       version, provider_name, model_name, provider_slug, model_slug,
-      platform_enabled, byok_enabled, context_window_tokens,
+      context_window_tokens,
       thinking_levels, default_thinking, params, slots, capabilities,
       micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
       enabled, is_default_for, created_by, updated_by
@@ -111,10 +111,10 @@ BEGIN
       (SELECT COALESCE(max(version), 0) + 1 FROM model_configs
         WHERE provider_slug = 'openrouter' AND model_slug = 'deepseek/deepseek-v4.1-flash-1017'),
       'DeepSeek', 'DeepSeek V4.1 Flash 1017', 'openrouter', 'deepseek/deepseek-v4.1-flash-1017',
-      true, false, 1000000,
+      1000000,
       ARRAY['low','mid'], 'mid', '{}'::jsonb, ARRAY['extraction'], ARRAY['vision'],
       200, 1200, 20,
-      true, ARRAY['extraction'], 'migration:0138', 'migration:0138'
+      true, ARRAY['extraction'], 'migration:0141', 'migration:0141'
     );
   END IF;
   UPDATE model_registry_state SET version = version + 1, updated_at = now();

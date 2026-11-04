@@ -148,7 +148,8 @@ func TestWorkspacePractice(t *testing.T) {
 
 // The Dashboard names the owner and counts members (the owner included); its
 // Activity lists files and materials newest first with who added them,
-// leaving trashed ones out.
+// leaving trashed ones out, and hidden ones out for a viewer: the owner gets
+// them with their mark.
 func TestWorkspaceDashboard(t *testing.T) {
 	f := newStudyFixture(t, "u_dashboard")
 	ctx := context.Background()
@@ -168,7 +169,22 @@ func TestWorkspaceDashboard(t *testing.T) {
 	if got.OwnerName == "" || got.Members != 2 {
 		t.Fatalf("dashboard header = %+v", got)
 	}
-	if len(got.Activity) != 1 || got.Activity[0].Kind != ActivityAdded || *got.Activity[0].MaterialID != quiz.ID || got.Activity[0].ActorID != f.user {
+	if len(got.Activity) != 1 || got.Activity[0].Hidden || got.Activity[0].Kind != ActivityAdded || *got.Activity[0].MaterialID != quiz.ID || got.Activity[0].ActorID != f.user {
 		t.Fatalf("activity = %+v", got.Activity)
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET hidden=true WHERE id=$1`, quiz.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = f.s.WorkspaceDashboard(ctx, member, f.ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Activity) != 0 {
+		t.Fatalf("the viewer's activity lists the hidden quiz: %+v", got.Activity)
+	}
+	if got, err = f.s.WorkspaceDashboard(ctx, f.user, f.ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Activity) != 1 || !got.Activity[0].Hidden {
+		t.Fatalf("the owner's activity = %+v", got.Activity)
 	}
 }

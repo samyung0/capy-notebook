@@ -706,6 +706,8 @@ export const files: SourceFile[] = [
     (file, position): SourceFile => ({
       addedAt: hours(1),
       hasBytes: true,
+      // Hidden from members, so its eye shows on Files and Activity.
+      hidden: file.name === 'course-guide.xlsx' || undefined,
       id: file.id,
       indexed: false,
       isPayer: true,
@@ -808,6 +810,7 @@ export const files: SourceFile[] = [
   {
     addedAt: days(15),
     hasBytes: true,
+    hidden: true,
     id: 'f_4',
     indexed: true,
     // A member uploaded it: as a non-owner editor (the workspace-owner-*
@@ -2838,6 +2841,7 @@ seedQuizzes.forEach((q) => {
         quizNode({ questions: q.questions }, q.id),
       ]),
       createdAt: q.createdAt,
+      hidden: q.id === 'qz_2' || undefined,
       id: q.id,
       kind: 'quiz',
       privacy: q.privacy,

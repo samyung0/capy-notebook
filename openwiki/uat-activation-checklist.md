@@ -91,7 +91,7 @@ On the app host, as root (set up in
 In Ops, DeepSeek V4.1 Flash 1017 (`openrouter` /
 `deepseek/deepseek-v4.1-flash-1017`) is at 16 in flight, UAT's share of the
 OpenRouter account (production 84; Epo 2026-11-04), and the ingest host and
-Ops run the app's release SHA: from migration `0136` they deploy together
+Ops run the app's release SHA: from migration `0144` they deploy together
 ([deployment runbook §0](deployment-runbook.md#0-release-flow-and-branch-policy)).
 
 If the gateway is unhealthy, check these before anything else:

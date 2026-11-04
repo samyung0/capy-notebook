@@ -100,6 +100,9 @@ func TestFinishedExtractionStoresItsFiguresAsTheQuizsAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(st.Close)
+	if err := st.LoadPlanLimits(ctx); err != nil {
+		t.Fatal(err)
+	}
 	mem := blob.NewMemory()
 	a := &api{s: st, blob: mem}
 	run, err := st.CreateExtraction(ctx, "ws_e2e_private", "u_editor", "Figures "+uuid.NewString())
@@ -170,6 +173,9 @@ func TestAFullStarterGetsTheQuizWithoutItsFigures(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(st.Close)
+	if err := st.LoadPlanLimits(ctx); err != nil {
+		t.Fatal(err)
+	}
 	user := "u_extract_full_" + uuid.NewString()[:8]
 	if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id,name,email) VALUES ($1,'Full',$2)`, user, user+"@example.test"); err != nil {
 		t.Fatal(err)
@@ -185,7 +191,8 @@ func TestAFullStarterGetsTheQuizWithoutItsFigures(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Room for the quiz (a few KB), not for a 300 KB figure.
-	if _, err := st.Pool().Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`,
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO user_storage (user_id, used_bytes) VALUES ($1,$2)
+		ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`,
 		user, usage.LimitBytes-100_000); err != nil {
 		t.Fatal(err)
 	}

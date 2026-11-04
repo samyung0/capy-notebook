@@ -53,6 +53,7 @@ import type {
   CreateDiscussionReq,
   CreateEmbeddedMaterialReq,
   CreateEventReq,
+  CreateExtractionReq,
   CreateFlashcardSetReq,
   CreateMaterialReq,
   CreateQuizReq,
@@ -71,6 +72,7 @@ import type {
   ExploreFlashcardSetsParams,
   ExploreQuizzesParams,
   ExploreWorkspacesParams,
+  Extraction,
   File,
   FileLinks,
   FilePage,
@@ -83,6 +85,7 @@ import type {
   GetWorkspaceReviewParams,
   GradeAnonymousQuizReq,
   GradedQuestion,
+  HiddenBody,
   ImportSourcesAccepted,
   ImportSourcesReq,
   IngestSlots,
@@ -3123,6 +3126,56 @@ export const exploreWorkspaces = async (params?: ExploreWorkspacesParams, option
 
 
 
+export type getExtractionResponse200 = {
+  data: Extraction
+  status: 200
+}
+
+export type getExtractionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getExtractionResponseSuccess = (getExtractionResponse200) & {
+  headers: Headers;
+};
+export type getExtractionResponseError = (getExtractionResponseDefault) & {
+  headers: Headers;
+};
+
+export type getExtractionResponse = (getExtractionResponseSuccess | getExtractionResponseError)
+
+export const getGetExtractionUrl = (id: string,) => {
+
+
+
+
+  return `/api/extractions/${id}`
+}
+
+/**
+ * @summary A Make a quiz run its starter began
+ */
+export const getExtraction = async (id: string, options?: RequestInit): Promise<getExtractionResponse> => {
+
+  const res = await fetch(getGetExtractionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getExtractionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getExtractionResponse
+}
+
+
+
 export type listOwnedFilesResponse200 = {
   data: FilePage
   status: 200
@@ -3778,6 +3831,71 @@ const res = await fetch(getCreateSourceCollaborationTokenUrl(id),
 
   const data: createSourceCollaborationTokenResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createSourceCollaborationTokenResponse
+}
+
+
+
+export type setFileHiddenResponse200 = {
+  data: HiddenBody
+  status: 200
+}
+
+export type setFileHiddenResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type setFileHiddenResponseSuccess = (setFileHiddenResponse200) & {
+  headers: Headers;
+};
+export type setFileHiddenResponseError = (setFileHiddenResponseDefault) & {
+  headers: Headers;
+};
+
+export type setFileHiddenResponse = (setFileHiddenResponseSuccess | setFileHiddenResponseError)
+
+export const getSetFileHiddenUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/hidden`
+}
+
+/**
+ * @summary Hide a workspace file from members, or show it again
+ */
+export const setFileHidden = async (id: string,
+    hiddenBody: NonReadonly<HiddenBody>, options?: RequestInit): Promise<setFileHiddenResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSetFileHiddenUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(hiddenBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setFileHiddenResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as setFileHiddenResponse
 }
 
 
@@ -5416,6 +5534,71 @@ const res = await fetch(getCreateEmbeddedMaterialUrl(id),
 
   const data: createEmbeddedMaterialResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createEmbeddedMaterialResponse
+}
+
+
+
+export type setMaterialHiddenResponse200 = {
+  data: HiddenBody
+  status: 200
+}
+
+export type setMaterialHiddenResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type setMaterialHiddenResponseSuccess = (setMaterialHiddenResponse200) & {
+  headers: Headers;
+};
+export type setMaterialHiddenResponseError = (setMaterialHiddenResponseDefault) & {
+  headers: Headers;
+};
+
+export type setMaterialHiddenResponse = (setMaterialHiddenResponseSuccess | setMaterialHiddenResponseError)
+
+export const getSetMaterialHiddenUrl = (id: string,) => {
+
+
+
+
+  return `/api/materials/${id}/hidden`
+}
+
+/**
+ * @summary Hide a workspace material from members, or show it again
+ */
+export const setMaterialHidden = async (id: string,
+    hiddenBody: NonReadonly<HiddenBody>, options?: RequestInit): Promise<setMaterialHiddenResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSetMaterialHiddenUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(hiddenBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setMaterialHiddenResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as setMaterialHiddenResponse
 }
 
 
@@ -9926,6 +10109,71 @@ export const getWorkspaceDashboard = async (id: string, options?: RequestInit): 
 
   const data: getWorkspaceDashboardResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getWorkspaceDashboardResponse
+}
+
+
+
+export type createExtractionResponse202 = {
+  data: Extraction
+  status: 202
+}
+
+export type createExtractionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 202>
+}
+
+export type createExtractionResponseSuccess = (createExtractionResponse202) & {
+  headers: Headers;
+};
+export type createExtractionResponseError = (createExtractionResponseDefault) & {
+  headers: Headers;
+};
+
+export type createExtractionResponse = (createExtractionResponseSuccess | createExtractionResponseError)
+
+export const getCreateExtractionUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/extractions`
+}
+
+/**
+ * @summary Start reading the questions on selected pages into a new quiz
+ */
+export const createExtraction = async (id: string,
+    createExtractionReq: NonReadonly<CreateExtractionReq>, options?: RequestInit): Promise<createExtractionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateExtractionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createExtractionReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createExtractionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createExtractionResponse
 }
 
 

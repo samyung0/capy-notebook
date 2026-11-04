@@ -60,7 +60,7 @@ routes change in step. A collaboration service ahead of its gateway can, for
 example, misread the gateway's `epoch-reset` answer and keep a discarded room
 refused until the gateway catches up.
 
-The release that brings migration `0136` (one line per model) deploys the app,
+The release that brings migration `0144` (one line per model) deploys the app,
 the ingest host and Ops together, right after the migration (Epo 2026-11-04):
 the migration drops `model_capacities.interactive_reserve`, which the previous
 release's ingest workers and Ops registry still read, so they fail admissions

@@ -1744,6 +1744,44 @@ export const ExploreWorkspacesResponse = zod.object({
 
 
 /**
+ * @summary A Make a quiz run its starter began
+ */
+export const GetExtractionParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetExtractionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "error": zod.string().optional(),
+  "errorCode": zod.string().optional(),
+  "finishedAt": zod.iso.datetime({"offset":true}).optional(),
+  "id": zod.string(),
+  "quizId": zod.string().optional(),
+  "recorded": zod.int(),
+  "report": zod.object({
+  "expected": zod.array(zod.string()),
+  "figures": zod.array(zod.string()),
+  "figuresLeftOut": zod.array(zod.string()),
+  "keyDisagreements": zod.array(zod.string()),
+  "keysWorkedOut": zod.array(zod.string()),
+  "marksDiffer": zod.array(zod.string()),
+  "missing": zod.array(zod.string()),
+  "pages": zod.int(),
+  "recorded": zod.array(zod.string()),
+  "schemeRefused": zod.array(zod.string()),
+  "schemeRepeats": zod.array(zod.string()),
+  "stopped": zod.enum(['', 'quiz_full', 'credits', 'output_limit']),
+  "unpaired": zod.array(zod.string()),
+  "windows": zod.int()
+}).optional(),
+  "status": zod.enum(['running', 'done', 'failed']),
+  "title": zod.string(),
+  "workspaceId": zod.string()
+})
+
+
+/**
  * @summary List the files the caller pays for, or can open (scope=member)
  */
 export const listOwnedFilesQueryQMax = 120;
@@ -1775,6 +1813,7 @@ export const ListOwnedFilesResponse = zod.object({
   "addedAt": zod.iso.datetime({"offset":true}),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
@@ -1873,6 +1912,7 @@ export const MoveFilesResponseItem = zod.object({
   "addedAt": zod.iso.datetime({"offset":true}),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
@@ -1978,6 +2018,7 @@ export const GetFileResponse = zod.object({
   "addedAt": zod.iso.datetime({"offset":true}),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
@@ -2073,6 +2114,7 @@ export const UpdateFileResponse = zod.object({
   "addedAt": zod.iso.datetime({"offset":true}),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
@@ -2367,6 +2409,7 @@ export const CloneFileResponse = zod.object({
   "addedAt": zod.iso.datetime({"offset":true}),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
@@ -2464,6 +2507,23 @@ export const CreateSourceCollaborationTokenResponse = zod.object({
   "room": zod.string(),
   "token": zod.string(),
   "url": zod.string()
+})
+
+
+/**
+ * @summary Hide a workspace file from members, or show it again
+ */
+export const SetFileHiddenParams = zod.object({
+  "id": zod.string()
+})
+
+export const SetFileHiddenBody = zod.object({
+  "hidden": zod.boolean()
+})
+
+export const SetFileHiddenResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "hidden": zod.boolean()
 })
 
 
@@ -3068,6 +3128,7 @@ export const ListOwnedMaterialsResponse = zod.object({
   "items": zod.array(zod.object({
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -3167,6 +3228,7 @@ export const CreateStandaloneMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
@@ -3324,6 +3386,7 @@ export const GetMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
@@ -3476,6 +3539,7 @@ export const CloneMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
@@ -3750,6 +3814,7 @@ export const CreateEmbeddedMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
@@ -3817,6 +3882,23 @@ export const CreateEmbeddedMaterialResponse = zod.object({
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
+})
+
+
+/**
+ * @summary Hide a workspace material from members, or show it again
+ */
+export const SetMaterialHiddenParams = zod.object({
+  "id": zod.string()
+})
+
+export const SetMaterialHiddenBody = zod.object({
+  "hidden": zod.boolean()
+})
+
+export const SetMaterialHiddenResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "hidden": zod.boolean()
 })
 
 
@@ -3942,6 +4024,7 @@ export const UpdateMaterialSharingResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
@@ -4288,7 +4371,7 @@ export const SetStudyPreferencesResponse = zod.void()
  */
 export const ListModelSlotsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "slots": zod.array(zod.enum(['chat', 'editor', 'ingest', 'retrieval', 'captioning', 'rerank']))
+  "slots": zod.array(zod.enum(['chat', 'editor', 'ingest', 'extraction', 'retrieval', 'captioning', 'rerank']))
 })
 
 
@@ -5344,6 +5427,7 @@ export const ListRecentResponse = zod.object({
   "addedAt": zod.iso.datetime({"offset":true}),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
@@ -5419,6 +5503,7 @@ export const ListRecentResponse = zod.object({
   "material": zod.object({
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -5873,6 +5958,7 @@ export const ImportStandaloneSourcesBody = zod.object({
   "batchTotal": zod.int().min(1).max(importStandaloneSourcesBodyBatchTotalMax),
   "driveIds": zod.array(zod.string()).optional(),
   "fileIds": zod.array(zod.string()).min(1).max(importStandaloneSourcesBodyFileIdsMax),
+  "hidden": zod.boolean().optional().describe('The file starts hidden from members: only the workspace\'s owners and editors see it. A file outside a workspace has no members, so it is refused there'),
   "parseMode": zod.enum(['fast', 'none']).optional(),
   "provider": zod.enum(['google', 'microsoft']),
   "requestId": zod.string().max(importStandaloneSourcesBodyRequestIdMax).optional(),
@@ -6865,12 +6951,67 @@ export const GetWorkspaceDashboardResponse = zod.object({
   "actorName": zod.string().optional(),
   "at": zod.iso.datetime({"offset":true}),
   "fileId": zod.string().optional(),
+  "hidden": zod.boolean().optional(),
   "kind": zod.enum(['uploaded', 'added', 'agent']),
   "materialId": zod.string().optional(),
   "title": zod.string()
 })),
   "members": zod.int(),
   "ownerName": zod.string()
+})
+
+
+/**
+ * @summary Start reading the questions on selected pages into a new quiz
+ */
+export const CreateExtractionParams = zod.object({
+  "id": zod.string()
+})
+
+
+
+
+export const createExtractionBodyTitleMax = 120;
+
+
+
+export const CreateExtractionBody = zod.object({
+  "answerFileIds": zod.array(zod.string()).optional(),
+  "paper": zod.array(zod.object({
+  "fileId": zod.string().min(1),
+  "pages": zod.array(zod.int()).min(1).nullable()
+})).min(1).nullable(),
+  "title": zod.string().min(1).max(createExtractionBodyTitleMax)
+})
+
+export const CreateExtractionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "error": zod.string().optional(),
+  "errorCode": zod.string().optional(),
+  "finishedAt": zod.iso.datetime({"offset":true}).optional(),
+  "id": zod.string(),
+  "quizId": zod.string().optional(),
+  "recorded": zod.int(),
+  "report": zod.object({
+  "expected": zod.array(zod.string()),
+  "figures": zod.array(zod.string()),
+  "figuresLeftOut": zod.array(zod.string()),
+  "keyDisagreements": zod.array(zod.string()),
+  "keysWorkedOut": zod.array(zod.string()),
+  "marksDiffer": zod.array(zod.string()),
+  "missing": zod.array(zod.string()),
+  "pages": zod.int(),
+  "recorded": zod.array(zod.string()),
+  "schemeRefused": zod.array(zod.string()),
+  "schemeRepeats": zod.array(zod.string()),
+  "stopped": zod.enum(['', 'quiz_full', 'credits', 'output_limit']),
+  "unpaired": zod.array(zod.string()),
+  "windows": zod.int()
+}).optional(),
+  "status": zod.enum(['running', 'done', 'failed']),
+  "title": zod.string(),
+  "workspaceId": zod.string()
 })
 
 
@@ -6886,6 +7027,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "addedAt": zod.iso.datetime({"offset":true}),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
@@ -6983,6 +7125,7 @@ export const CreateBlankFileResponse = zod.object({
   "addedAt": zod.iso.datetime({"offset":true}),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
@@ -7143,6 +7286,7 @@ export const ListMaterialsParams = zod.object({
 
 export const ListMaterialsResponseItem = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
@@ -7285,6 +7429,7 @@ export const CreateMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 })).optional(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
@@ -7466,6 +7611,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "addedAt": zod.iso.datetime({"offset":true}),
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
@@ -7541,6 +7687,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "materials": zod.array(zod.object({
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -7715,6 +7862,7 @@ export const ImportSourcesBody = zod.object({
   "batchTotal": zod.int().min(1).max(importSourcesBodyBatchTotalMax),
   "driveIds": zod.array(zod.string()).optional(),
   "fileIds": zod.array(zod.string()).min(1).max(importSourcesBodyFileIdsMax),
+  "hidden": zod.boolean().optional().describe('The file starts hidden from members: only the workspace\'s owners and editors see it. A file outside a workspace has no members, so it is refused there'),
   "parseMode": zod.enum(['fast', 'none']).optional(),
   "provider": zod.enum(['google', 'microsoft']),
   "requestId": zod.string().max(importSourcesBodyRequestIdMax).optional(),

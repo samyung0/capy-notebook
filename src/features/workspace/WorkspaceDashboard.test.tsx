@@ -72,6 +72,24 @@ it('opens each activity row on its file or material', () => {
   expect(html).toContain('href="?material=m_1"');
 });
 
+it('marks a hidden item on its activity row', () => {
+  page.data = {
+    activity: [
+      {
+        actorName: 'Cara',
+        at: '2026-11-04T08:00:00Z',
+        fileId: 'f_1',
+        hidden: true,
+        kind: 'uploaded',
+        title: 'Answers.pdf',
+      },
+    ],
+    members: 7,
+    ownerName: 'Ms Wong',
+  };
+  expect(render()).toContain(m.content_hidden_from_members());
+});
+
 it('leaves out an empty section, with no hint in its place', () => {
   page.data = { activity: [], members: 1, ownerName: 'Ms Wong' };
   const html = render();

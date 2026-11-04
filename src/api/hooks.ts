@@ -1881,9 +1881,9 @@ export function useUploadSource(wsId: string | null) {
         // A standalone file has no topic or members: the fields stay out.
         ...(wsId
           ? {
+              hidden: hidden || undefined,
               topicId: topicId ?? null,
               topicName: topicName ?? null,
-              hidden: hidden || undefined,
             }
           : {}),
         contentType: file.type || 'application/octet-stream',

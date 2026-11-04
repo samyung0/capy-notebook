@@ -63,6 +63,7 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 	fingerprintBody, err := json.Marshal(struct {
 		TopicID   *string
 		TopicName string
+		Hidden    bool
 		ParseMode string
 		Provider  string
 		Refs      []integrations.ImportRef

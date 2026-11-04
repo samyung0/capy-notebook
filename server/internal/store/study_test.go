@@ -287,7 +287,7 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	if n := f.count(t, `SELECT count(*) FROM review_states WHERE user_id=$1`, f.user); n != 0 {
 		t.Fatalf("review states after reset = %d", n)
 	}
-	if n := f.count(t, `SELECT count(*) FROM review_log WHERE user_id=$1`, f.user); n != 5 {
+	if n := f.count(t, `SELECT count(*) FROM review_log WHERE user_id=$1`, f.user); n != 4 {
 		t.Fatalf("review log after reset = %d", n)
 	}
 

@@ -653,7 +653,7 @@ default pin; chat and editor also hold a per-user preference. Generate
 workflows run on the chat slot (migration `0044` merged the former `generate`
 slot into it; usage `surface` still records `generate`).
 The slots are `chat`, `editor`, `ingest`, `extraction` (Make a quiz's page
-windows, outline and answer-file parse, migration `0138`: a vision text slot
+windows, outline and answer-file parse, migration `0141`: a vision text slot
 on OpenRouter's DeepSeek V4.1 Flash 1017, never direct DeepSeek, Epo
 2026-11-03), `retrieval`
 (the workspace embedding model, used by ingest indexing and by chat/generate
@@ -844,7 +844,7 @@ decision 2026-10-20), V4.1 Flash 1017 200 / 20 / 1200 for every use (Epo
 2026-11-04: the highest of its providers' list prices in each column,
 Cloudflare's $0.10 input and $0.60 output and Wafer's $0.010 cached input;
 160 / 16 / 1000, InferenceNet's list price, from decision 2026-10-21; migration
-0138 seeds a fresh database's row at it), MiniMax 3.1 Flash 300 / 30 /
+0141 seeds a fresh database's row at it), MiniMax 3.1 Flash 300 / 30 /
 1200 (Together's list price, which DigitalOcean matches, 2026-10-24), embedding 40,
 reranker 200 (Alibaba qwen3-rerank's $0.10, migration 0134).
 While there is no production data these values are set directly in the UAT
@@ -1895,7 +1895,7 @@ A call goes straight through, lease and row in one transaction, only when the
 gate has room and nobody waits in the model's line. Otherwise it waits its turn
 in that line, which every caller shares: chat, generate, the editor's AI and
 ghost text, embeddings and reranks, and the ingest calls on the ingest host.
-The line lives in Postgres (`provider_capacity_waiters`, migration `0136`), so
+The line lives in Postgres (`provider_capacity_waiters`, migration `0144`), so
 the app and ingest hosts share it as they share the leases. Each waiting call
 has a row naming its requester, the user (`user:<id>`) or, for an ingest
 session, the job (`job:<session>`); every lease names its requester too.

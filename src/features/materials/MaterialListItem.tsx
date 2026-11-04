@@ -5,6 +5,7 @@ import { FileIcon } from '@/components/ui/FileIcon';
 import { Spinner } from '@/components/ui/feedback';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toMaterialActionTarget } from '@/features/workspace/contentActionTarget';
+import { HiddenMark } from '@/features/workspace/HiddenChip';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { materialIconName } from '@/lib/fileIcons';
@@ -73,6 +74,7 @@ export function MaterialListItem({
             ? m.files_quiz_row({ title: matRef.title })
             : matRef.title}
         </span>
+        {matRef.hidden && <HiddenMark />}
         {generating && <Spinner className="size-4 shrink-0" />}
       </Link>
       {hoverMenu && (

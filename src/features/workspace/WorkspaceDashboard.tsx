@@ -16,6 +16,7 @@ import { SuggestedList } from '@/features/study/practice/SuggestedList';
 import { studyView } from '@/features/study/practice/studyView';
 import { getLocale, m } from '@/i18n';
 import { isWorkspaceReadOnly } from './access';
+import { HiddenMark } from './HiddenChip';
 
 /** How many recent files the Dashboard shows (boards H1, H2: one row of four). */
 const RECENT = 4;
@@ -200,7 +201,10 @@ function ActivityRow({
             src={row.actorAvatarUrl || undefined}
           />
         )}
-        <span className="min-w-0 flex-1">{text}</span>
+        <span className="min-w-0 flex-1">
+          {text}
+          {row.hidden && <HiddenMark className="ml-1.5 align-[-2px]" />}
+        </span>
         <span className="t-meta shrink-0 text-fg-muted">
           {shortTime(row.at)}
         </span>

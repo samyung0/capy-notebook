@@ -118,10 +118,10 @@ describe('hiding an item from members', () => {
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <ContentActions
-          chapters={[]}
           content={content}
           display="menu"
           readOnly={readOnly}
+          topics={[]}
           workspaceId="ws_1"
         />
       </QueryClientProvider>

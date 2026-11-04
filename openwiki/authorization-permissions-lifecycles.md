@@ -393,8 +393,8 @@ The Files page's own list (what the caller pays for) still shows the payer
 its rows. The flag narrows reading only; what editors may do with the item is
 unchanged.
 
-- **Storage.** `files.hidden` and `materials.hidden` (migration 0137), false by
-  default; `upload_sessions.hidden` (migration 0139) carries an upload's
+- **Storage.** `files.hidden` and `materials.hidden` (migration 0140), false by
+  default; `upload_sessions.hidden` (migration 0142) carries an upload's
   choice to its file row. A standalone item has no members and an embedded quiz or set
   follows its note, so the flag is read only on a top-level workspace item.
   `workspace_item_visible(hidden, workspace_id, viewer)` is the SQL rule the
@@ -423,8 +423,9 @@ unchanged.
   way hiding it after the upload would leave it. Nothing else names a new
   file to members: workspace tree events carry no names, ingest events carry
   only the file id (the list refetch filters it out), and uploads send no
-  notification. The Dashboard's Activity query (on the study shell branch)
-  takes the `workspace_item_visible` filter when it lands.
+  notification. The Dashboard's Activity query filters with
+  `workspace_item_visible`, so a viewer never gets the row; owners and editors
+  get it with `hidden` and the eye after its name (board U1).
 - **Retrieval.** The pipeline binds the workspaces whose hidden items a turn
   may read (`bind_hidden_readers`): a workspace chat turn its workspace when
   the caller is an owner or editor, an account chat turn the scope's
@@ -448,10 +449,10 @@ name (X2; the icon alone on phones). For owners and editors who may change the
 item the chip is a button ("Show to members" in its tooltip) that shows it to
 members, as the ⋮ menu does (`useToggleHidden`, same request and error toast);
 hiding again stays in the menu, and a read-only editor's chip is a plain
-label. Files rows have no mark yet (they are being rebuilt on the study topics
-branch).
+label. A hidden item's Files row carries the eye at its end (`HiddenMark`,
+board T3).
 
-Sources: [migration](../server/migrations/0137_hidden_from_members.sql),
+Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
 [routes](../server/internal/httpapi/huma_hidden.go),
 [switch and eviction](../server/internal/store/hidden.go),
 [single-item checks](../server/internal/store/share.go),

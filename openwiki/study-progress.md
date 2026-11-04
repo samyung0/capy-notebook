@@ -47,7 +47,7 @@ clone or charged to storage.
 | `review_sessions (id, user_id, workspace_id, topic_id, group_kind, mode, evidence, items, started_at, last_answer_at, finished_at)` | Migration `0071_review_sessions.sql` (chapters renamed topics, group `topic`, in `0136_topics.sql`). One recorded session, written with its first answer: what it drew from (`group_kind` topic, others or workspace; `topic_id` for a topic, set NULL when the topic goes), the suggestion's `mode` (NULL from the workspace list) and `evidence`, every served item in order (`items`, for Continue, each with the `reason` it was served for: `new`, `missed` or `fading`), and `finished_at` once every served item is answered or Done ends it. The id is minted by the browser. |
 | `review_answers (session_id, material_id, item_id, kind, rating, correct, total, answers, graded, answered_at)` | One answered item of a session: a card's rating, or a question's rating, marks (`correct` of `total`), answers and graded question with its key. |
 | `attempts.kind`, `attempts.started_at` | Migration `0094_flashcard_attempts.sql`. Quiz and flashcard attempts share `attempts`: `kind` is `quiz` or `flashcards`; `started_at` is the browser's start time (null when not sent, and never after the end), so results show minutes. A flashcard attempt keeps its cards in `questions` (`AttemptCard`: id, front, back, image, every rating in order, cards in the order first rated), `correct` the cards whose first rating is Good or Easy, `total` the cards rated, `taken_at` the latest rating. |
-| `answer_events`, `attempts.workspace_id` | Migration `0136_answer_events.sql`: one row per graded part of every checked question, and the workspace an attempt was taken in ([Answer events](#answer-events)). |
+| `answer_events`, `attempts.workspace_id` | Migration `0143_answer_events.sql`: one row per graded part of every checked question, and the workspace an attempt was taken in ([Answer events](#answer-events)). |
 | `flashcard_cards (card_id, material_id)` | The old `card_stats` without its review columns: the card-to-set lookup card edits, deletes, listing counts and clone use. `card_id` is a global key, so clones mint new card ids. |
 
 `study_progress` and `workspace_study` cascade with their workspace;
@@ -210,7 +210,7 @@ not know which); the review session refreshes once at the end instead.
 
 ## Answer events
 
-Migration `0136_answer_events.sql` (todo-study-tracking.md §5, step 3 of its
+Migration `0143_answer_events.sql` (todo-study-tracking.md §5, step 3 of its
 order of work). `answer_events` is an append-only log of every graded part,
 kept for the per-topic mastery model still to come; nothing reads it yet. It
 keeps partial credit, which `review_log`'s ratings drop.
@@ -734,7 +734,7 @@ account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
   `study_progress`, `attempts` and `review_states` rows.
 
 Sources: [migration](../server/migrations/0051_study_progress.sql),
-[answer events migration](../server/migrations/0136_answer_events.sql),
+[answer events migration](../server/migrations/0143_answer_events.sql),
 [answer events](../server/internal/store/answer_events.go),
 [FSRS wrapper](../server/internal/review/review.go),
 [store](../server/internal/store/study.go),

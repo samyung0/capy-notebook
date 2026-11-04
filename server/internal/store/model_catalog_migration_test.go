@@ -11,7 +11,7 @@ import (
 )
 
 // pre0010Schema restores the columns and slot names 0010 was written against,
-// which 0013, 0044 and 0136 later removed, and the GLM chat default 0116 moved.
+// which 0013, 0044 and 0144 later removed, and the GLM chat default 0116 moved.
 const pre0010Schema = preReserveSchema + `;
 	ALTER TABLE users
 		ADD COLUMN quiz_model_provider_slug text NOT NULL DEFAULT 'deepseek',
@@ -25,7 +25,7 @@ const pre0010Schema = preReserveSchema + `;
 	ALTER TABLE model_configs DROP CONSTRAINT model_configs_slots_check,
 		DROP CONSTRAINT model_configs_default_for_check`
 
-// preReserveSchema restores the interactive reserve 0136 dropped, which the
+// preReserveSchema restores the interactive reserve 0144 dropped, which the
 // earlier capacity migrations write.
 const preReserveSchema = `ALTER TABLE model_capacities
 	ADD COLUMN interactive_reserve integer NOT NULL DEFAULT 0`
@@ -184,7 +184,7 @@ func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 		}
 	}
 	var count int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM model_capacities`).Scan(&count); err != nil || count != 5 {
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM model_capacities`).Scan(&count); err != nil || count != 6 {
 		t.Fatalf("bootstrap rows=%d err=%v", count, err)
 	}
 	for _, want := range []struct {
@@ -196,6 +196,7 @@ func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 		{"deepinfra", "Qwen/Qwen3-Embedding-4B", 200},
 		{"alibaba", "qwen3-rerank", 64},
 		{"openrouter", "minimax/minimax-m3.1-flash", 16},
+		{"openrouter", "deepseek/deepseek-v4.1-flash-1017", 84},
 	} {
 		var total int
 		err := tx.QueryRow(ctx, `SELECT concurrency_total

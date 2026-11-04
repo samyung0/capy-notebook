@@ -41,7 +41,8 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   opens its topic session; **Recent files**, the newest four as bordered
   preview cards with the name under each (`PreviewCard bordered`); and
   **Activity**, the five newest uploads and added materials with who and
-  when, the agent's own rows under the AI icon
+  when, the agent's own rows under the AI icon, a hidden item's with the eye
+  after its name for the owners and editors who get it
   (`GET /api/workspaces/{id}/dashboard`, see
   [study-progress.md](../study-progress.md#endpoints)), each row opening its
   file or material. An empty section does not show, so To do, assignments and

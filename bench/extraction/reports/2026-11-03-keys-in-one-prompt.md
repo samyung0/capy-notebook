@@ -154,7 +154,7 @@ three open proof parts (2021 Q8(a) and Q8(b)(i), 2024 Q8(a)) saved without a
 model answer. The worked solution is still there, and a given scheme fills
 the answer in. The unpinned V4.1 Flash wrote every answer but cost more and
 varied more (56 to 90 credits on 2022 P2). Epo's follow-up made 1017 the
-extraction slot's pin (migration 0138).
+extraction slot's pin (migration 0141).
 
 ## Wafer first (2026-11-04)
 

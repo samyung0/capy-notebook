@@ -12,6 +12,7 @@ export interface WorkspaceActivity {
   actorName?: string;
   at: string;
   fileId?: string;
+  hidden?: boolean;
   kind: WorkspaceActivityKind;
   materialId?: string;
   title: string;

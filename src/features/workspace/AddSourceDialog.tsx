@@ -35,7 +35,6 @@ import {
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
-import { InputTitle } from '@/components/ui/Input';
 import {
   Popover,
   PopoverContent,
@@ -804,8 +803,13 @@ function VisibilitySelect({
   onChange: (hidden: boolean) => void;
 }) {
   return (
-    <div className="mt-4 flex shrink-0 flex-col gap-1.5">
-      <InputTitle id="source-visibility">{m.source_visibility()}</InputTitle>
+    <div className="flex shrink-0 flex-col gap-1.5">
+      <p
+        className="t-meta font-semibold text-fg-secondary"
+        id="source-visibility"
+      >
+        {m.source_visibility()}
+      </p>
       <Select
         onValueChange={(value) => onChange(value === 'hidden')}
         value={hidden ? 'hidden' : 'everyone'}
@@ -1286,7 +1290,7 @@ export function AddSourceDialog({
               ),
               file: source.file,
               hidden,
-                  key: source.key,
+              key: source.key,
               kind: source.kind,
               name: source.name,
               pageCount:
@@ -1809,6 +1813,11 @@ export function AddSourceDialog({
               ref={inputRef}
               type="file"
             />
+            {noCredits && (
+              <p className="t-meta mt-4 text-fg-muted">
+                {m.source_upload_no_credits()}
+              </p>
+            )}
             {uploadPolicy && uploads.sources.length > 0 && (
               <div className="mt-4 flex min-h-0 flex-col gap-4">
                 <UploadList
@@ -1817,21 +1826,16 @@ export function AddSourceDialog({
                   uploadPolicy={uploadPolicy}
                 />
                 {workspaceId && (
-                  <UploadTopicField
-                    onChange={setUploadTopic}
-                    value={uploadTopic}
-                    workspaceId={workspaceId}
-                  />
+                  <>
+                    <UploadTopicField
+                      onChange={setUploadTopic}
+                      value={uploadTopic}
+                      workspaceId={workspaceId}
+                    />
+                    <VisibilitySelect hidden={hidden} onChange={setHidden} />
+                  </>
                 )}
               </div>
-            )}
-            {noCredits && (
-              <p className="t-meta mt-4 text-fg-muted">
-                {m.source_upload_no_credits()}
-              </p>
-            )}
-            {workspaceId && uploads.sources.length > 0 && (
-              <VisibilitySelect hidden={hidden} onChange={setHidden} />
             )}
           </div>
         )}
@@ -1883,7 +1887,9 @@ export function AddSourceDialog({
               />
             )}
             {workspaceId && imports.sources.length > 0 && (
-              <VisibilitySelect hidden={hidden} onChange={setHidden} />
+              <div className="mt-4">
+                <VisibilitySelect hidden={hidden} onChange={setHidden} />
+              </div>
             )}
           </div>
         )}

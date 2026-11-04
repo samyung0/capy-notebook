@@ -6,6 +6,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
+import { HiddenMark } from '@/features/workspace/HiddenChip';
 import {
   type RetryProcessing,
   retryFailedFile,
@@ -102,6 +103,7 @@ export function FileListItem({
           >
             {file.name}
           </span>
+          {file.hidden && <HiddenMark />}
         </Link>
         {hoverMenu && (
           <ContentActions

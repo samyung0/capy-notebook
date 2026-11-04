@@ -5853,7 +5853,7 @@ later).
      image block whose asset is `figure:<id>` and whose description is the
      model's words; the `done` event carries the JPEGs (`figures`).
 - **Models.** The `extraction` slot's default pin (`extractionLLM`;
-  migration `0138`), which needs vision: OpenRouter's
+  migration `0141`), which needs vision: OpenRouter's
   `deepseek/deepseek-v4.1-flash-1017` on the extraction slot's own route,
   InferenceNet, then Cloudflare, then Wafer's US endpoint with fallbacks off
   (Epo 2026-11-04; the model's other calls go Wafer first), the same pin
@@ -5909,7 +5909,7 @@ later).
   output tokens per selected page (`output_limit`, `WINDOW_OUTPUT_PER_PAGE`:
   normal runs wrote at most 3,400 a page, and a runaway on Wafer 21,700 at 17
   times a normal run's cost; Epo 2026-11-04), and saves what it has.
-- **Stored.** `question_extractions` (migration 0136) keeps the run: starter,
+- **Stored.** `question_extractions` (migration 0139) keeps the run: starter,
   title, status, the recorded questions, report, quiz, error. Nothing links a
   question, the quiz or the run to the files, pages or regions it was read
   from (Epo 2026-11-02, §8 item 7): they travel only in the request to the
