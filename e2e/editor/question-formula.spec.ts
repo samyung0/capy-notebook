@@ -249,7 +249,12 @@ test('a question formula selects on click for Delete and edits on double click',
   await expect(field).toBeVisible();
   await field.press('Enter');
   await expect(field).toHaveCount(0);
-  await formulas.first().click();
+  // Closing the field sends focus to the dialog for a moment, and a click in
+  // that moment leaves it there, where Delete misses the editor.
+  await expect(async () => {
+    await formulas.first().click();
+    await expect(editor).toBeFocused({ timeout: 200 });
+  }).toPass();
   await expect(field).toHaveCount(0);
   await page.keyboard.press('Delete');
   await expect(formulas).toHaveCount(count - 1);

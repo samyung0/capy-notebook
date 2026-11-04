@@ -505,7 +505,7 @@ function WorkspaceOpen() {
     });
   }
 
-  /** Study → Practice takes the centre pane; Back returns here. */
+  /** A Study page takes the centre pane; Back returns here. */
   function openStudy(page: StudyPage) {
     if (page === 'members') return;
     setCitationTarget(null);

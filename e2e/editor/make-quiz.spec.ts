@@ -33,6 +33,14 @@ async function pickPages(page: Page, ...numbers: number[]) {
   for (const number of numbers) await pageSheet(page, number).click();
 }
 
+// The MSW User scenarios panel floats over the footer's corner.
+async function extract(page: Page) {
+  await page.addStyleTag({
+    content: '[data-testid=mock-scenario-panel] { display: none }',
+  });
+  await page.getByRole('button', { name: m.make_quiz_extract() }).click();
+}
+
 test('a paper and its mark scheme become a hidden quiz, open in its editor', async ({
   page,
 }) => {
@@ -73,7 +81,7 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
     page.getByText(m.make_quiz_pages_count({ count: 2, max: 40 }))
   ).toBeVisible();
 
-  await page.getByRole('button', { name: m.make_quiz_extract() }).click();
+  await extract(page);
   await expect(
     page.getByRole('heading', { name: m.make_quiz_reading_title() })
   ).toBeVisible();
@@ -97,7 +105,7 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
 test('an edit on the page reaches the question list', async ({ page }) => {
   await page.goto('/workspaces/ws_bio?make=pages&paper=f_paper_2025');
   await pageSheet(page, 2).click({ timeout: 30_000 });
-  await page.getByRole('button', { name: m.make_quiz_extract() }).click();
+  await extract(page);
   await expect(page.locator('[data-question-row]')).toHaveCount(12, {
     timeout: 40_000,
   });
@@ -115,7 +123,7 @@ test('an edit on the page reaches the question list', async ({ page }) => {
 test('a failed run says so and goes back to the pages', async ({ page }) => {
   await page.goto('/workspaces/ws_bio?make=pages&paper=f_paper_fails');
   await pageSheet(page, 1).click({ timeout: 30_000 });
-  await page.getByRole('button', { name: m.make_quiz_extract() }).click();
+  await extract(page);
   await expect(
     page.getByRole('heading', { name: m.make_quiz_failed_title() })
   ).toBeVisible({ timeout: 30_000 });
