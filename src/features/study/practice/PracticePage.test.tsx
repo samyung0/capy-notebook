@@ -126,10 +126,10 @@ it('lists Study pages for each of the four people, Practice the one built', () =
   expect(teacher.indexOf(m.study_panel_members())).toBeLessThan(
     teacher.indexOf(m.study_panel_assignments())
   );
-  expect(teacher).not.toContain(m.study_panel_my_results());
+  expect(teacher).not.toContain(m.study_panel_summary());
   expect(teacher).toContain('aria-current="page"');
   const member = panel('class', 'viewer');
-  expect(member.indexOf(m.study_panel_my_results())).toBeLessThan(
+  expect(member.indexOf(m.study_panel_summary())).toBeLessThan(
     member.indexOf(m.study_panel_assignments())
   );
   expect(member).not.toContain(m.study_panel_members());
@@ -137,7 +137,7 @@ it('lists Study pages for each of the four people, Practice the one built', () =
     panel('personal', 'owner'),
     panel('personal', 'viewer'),
   ]) {
-    expect(personal).toContain(m.study_panel_my_results());
+    expect(personal).toContain(m.study_panel_summary());
     expect(personal).toContain(m.study_panel_practice());
     expect(personal).not.toContain(m.study_panel_assignments());
     expect(personal).not.toContain(m.study_panel_members());
