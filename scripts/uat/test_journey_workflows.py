@@ -354,7 +354,9 @@ try {
                     if args[0] == "git":
                         value = REVISION
                     elif args[1] == "ps":
-                        value = "b" * 64
+                        # A one-off `docker run` of the parser image carries the same project and service labels.
+                        oneoff = "label=com.docker.compose.oneoff=False" not in args
+                        value = "b" * 64 + ("\n" + "e" * 64 if oneoff else "")
                     elif args[1:3] == ("image", "inspect"):
                         value = image_revision
                     else:

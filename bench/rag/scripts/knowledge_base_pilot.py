@@ -508,9 +508,22 @@ def boxes_intersect(a: list, b: list) -> bool:
     return min(a[2], b[2]) > max(a[0], b[0]) and min(a[3], b[3]) > max(a[1], b[1])
 
 
+def page_evidence_candidates(blocks: list[dict]) -> list[list]:
+    """decode.page_evidence's candidate headings."""
+    return [
+        [index, block["page_idx"], block["bbox"], block.get("text", "")]
+        for index, block in enumerate(blocks)
+        if block.get("text_level")
+        and len(block.get("bbox", [])) == 4
+        and isinstance(block.get("page_idx"), int)
+        and any(c.isalpha() for c in block.get("text", ""))
+    ]
+
+
 def page_chunks(blocks: list[dict], raw: Path, source: Path):
     # worker._page_chunks cannot be imported on Windows: worker imports fcntl.
     # Keep its exact core calls and page-model selection, without worker plumbing.
+    from pipeline.ingest import decode
     from pipeline.retrieval.confidence import score_chunks, vlm_pages
     from pipeline.retrieval.headings import retain_headings
     from pipeline.retrieval.packing import pack_blocks
@@ -523,18 +536,14 @@ def page_chunks(blocks: list[dict], raw: Path, source: Path):
         raise PilotError("Parser refinement has no valid frozen furniture list")
     chunks = pack_blocks(blocks, frozenset(furniture))
     evidence = refinement.get("page_evidence")
-    if evidence is not None:
-        chunks = retain_headings(
-            blocks, source, chunks, verified=set(evidence["visible_headings"])
-        )
-        score_chunks(
-            chunks, source, vlm=vlm_pages(blocks), page_texts=evidence["page_texts"]
-        )
-    else:
+    if evidence is None:
+        # The worker's sandboxed decode child runs only on Linux; the builder
+        # calls the same evidence reader in this process.
         repaired = raw / "parsed.pdf"
         page_pdf = repaired if repaired.is_file() else source
-        chunks = retain_headings(blocks, page_pdf, chunks)
-        score_chunks(chunks, page_pdf, vlm=vlm_pages(blocks))
+        evidence = decode._evidence(str(page_pdf), page_evidence_candidates(blocks))
+    chunks = retain_headings(blocks, chunks, verified=set(evidence["visible_headings"]))
+    score_chunks(chunks, vlm=vlm_pages(blocks), page_texts=evidence["page_texts"])
     return chunks
 
 
