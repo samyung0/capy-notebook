@@ -858,6 +858,8 @@ Steps 2, 3 and 7 can run side by side.
 
 **Other decisions (Epo, 2026-11-04):**
 - A clone keeps each item's hidden flag; a viewer's clone still leaves hidden items out.
+- **Late policy per assignment (supersedes "a closed assignment becomes practice at its due date" and "late submissions accepted until the owner closes" as the only behaviour):** New assignment has a "No late submissions" switch. On: it closes itself at the due date. Off: late work stays open, with a mark penalty option such as −20% or −50%, until an owner or teaching assistant closes it. The quiz becomes practice only when the assignment closes. Being built on `claude/study-assignments`.
+- The quiz picker in New assignment uses the file tree's search field.
 - The box-call fallback uses ink growth instead of `FIGURE_PAD`, the better result in the tests.
 - Study plans are dropped end to end.
 - Undo and redo are hidden on phones in the file and material top bar.
