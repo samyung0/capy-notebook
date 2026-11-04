@@ -534,6 +534,8 @@
   "members_invite": "邀请",
   "members_role_of": "{name} 的角色",
   "members_remove_named": "移除 {name}",
+  "members_remove_confirm_title": "移除 {name}？",
+  "members_remove_confirm_body": "{name} 将不再是成员，除非你再次邀请。",
   "members_role_view": "查看",
   "members_role_edit": "编辑",
   "members_invite_sent_title": "邀请已提交",
