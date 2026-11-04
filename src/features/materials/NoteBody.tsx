@@ -269,7 +269,9 @@ export function NoteBody({
     void queryClient.invalidateQueries({ queryKey: qk.material(materialId) });
   }, [bodyMissing, materialId, queryClient]);
   // The editor's chunk once the paint is up, not behind the read and the token.
-  const mayEdit = !!painted && (material?.capabilities.canEditContent ?? true);
+  // A heavy note opened read-only never needs it.
+  const mayEdit =
+    !!painted && !staticNote && (material?.capabilities.canEditContent ?? true);
   useEffect(() => {
     if (mayEdit) void loadEditor();
   }, [mayEdit]);
@@ -424,7 +426,7 @@ function PaintedFrame({
   const paintEnd = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const end = paintEnd.current;
-    if (!end) return;
+    if (!end || shown) return;
     const near = new IntersectionObserver(
       ([entry]) => {
         if (entry?.isIntersecting) setWhole(true);
@@ -433,7 +435,7 @@ function PaintedFrame({
     );
     near.observe(end);
     return () => near.disconnect();
-  }, [cut]);
+  }, [cut, shown]);
   const moved = useRef<{ place: NotePosition; view: NoteView } | null>(null);
   const [editor, setEditor] = useState<NoteView | null>(null);
   const value = useRef(painted);
