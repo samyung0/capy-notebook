@@ -181,8 +181,9 @@ In the question dialog the outline's Add part button at the end of the list is a
 dropdown of Part and Group; the outline's + adds blocks only. Both add at the
 end, and a group starts with an empty text and its first part. A group's outline
 row reads as its first text with the label, its other blocks follow, its parts
-sit in by 16px, and its ⋮ holds Move up, Move down, Add sub-part, Ungroup and
-Remove. A group moves as a whole among the top-level items, past a part or
+sit at the same place as the top-level items (the outline has no room for the
+preview's step, Epo 2026-11-04), and its ⋮ holds Move up, Move down, Add
+sub-part, Ungroup and Remove. A group moves as a whole among the top-level items, past a part or
 another group, and a sub-part only among its group's parts; dragging follows the
 same lists, so nothing moves in or out of a group by dragging. Ungroup turns its
 parts into top-level parts where they are, its filled blocks joining its first
@@ -246,9 +247,10 @@ the dialog is a fixed
 88dvh and each column scrolls on its own; phones show sticky Outline and Body
 tabs, and a row click switches to Body first.
 Each part's worked solution is always listed in the outline (its Worked
-solution row is a 36px header, not a toggle) and shown in the body under the
-part's answer, both below a `wavy-rule` line; the body's line reads "Hidden
-until checked", since learners only get the solution after checking.
+solution row is a 36px header, not a toggle), at the outline's normal row
+spacing with no wavy lines (Epo 2026-11-04), and shown in the body under the
+part's answer, below a `wavy-rule` line reading "Hidden until checked", since
+learners only get the solution after checking.
 Its title names the question ("Edit question 10").
 Outline rows drag by one rule (`canDrag`, `canDrop`, `canMove`): blocks always,
 parts only when there are several; a block lands beside a block, before a

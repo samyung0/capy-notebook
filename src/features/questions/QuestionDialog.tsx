@@ -1899,9 +1899,6 @@ function QuestionDialogSession({
                       mark: part.blocks.length ? undefined : mark,
                       meta: `${answerLabels[part.answer.type]()} · ${marksLabel(part.marks)}`,
                     })}
-                    {/* Learners only see what sits between the waves once they
-                        check their answer. */}
-                    <div className="wavy-rule mx-2 my-2.5 text-line-strong md:mx-1" />
                     {row(
                       { kind: 'solution', partId: part.id },
                       m.question_ui_worked_solution()
@@ -1920,7 +1917,6 @@ function QuestionDialogSession({
                         { meta: blockLabels[block.type]() }
                       )
                     )}
-                    <div className="wavy-rule mx-2 my-2.5 text-line-strong md:mx-1" />
                   </>
                 );
                 if (item.kind === 'part')
@@ -1933,7 +1929,8 @@ function QuestionDialogSession({
                     </div>
                   );
                 // Its row reads as its first text, the rest of its blocks
-                // follow, and its sub-parts sit in by 16px (board U2).
+                // follow, then its sub-parts, at the same place as (a), (b):
+                // the outline has no room for a step (Epo 2026-11-04).
                 const head = item.group.blocks[0];
                 const startsWithText = head?.type === 'text';
                 return (
@@ -1960,13 +1957,11 @@ function QuestionDialogSession({
                           { meta: blockLabels[block.type]() }
                         )
                     )}
-                    <div className="ml-4">
-                      {item.parts.map(({ label, part }, sub) => (
-                        <div className={cn(sub > 0 && 'mt-2')} key={part.id}>
-                          {partRows(part, label)}
-                        </div>
-                      ))}
-                    </div>
+                    {item.parts.map(({ label, part }) => (
+                      <div className="mt-2" key={part.id}>
+                        {partRows(part, label)}
+                      </div>
+                    ))}
                   </div>
                 );
               })}
