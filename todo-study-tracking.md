@@ -870,6 +870,21 @@ Steps 2, 3 and 7 can run side by side.
 
 **Combined preview (Epo, 2026-11-04):** `claude/study-all` merges every study branch so Epo can see it locally. It's not landing; migrations are renumbered there.
 
+**Landing handed over (Epo, 2026-11-04):** "hand over to "Rust harness optimizations and security review"". That session sequences this onto main. State at handover:
+- **What exists:** `claude/study-all` at `e97451d32` merges everything below, renumbers migrations (0136 to 0145 in order: topics, drop study plans, workspace kind, question extractions, hidden from members, extraction slot, upload hidden, answer events, model line, study progress practice only) and is 2 behind main. Its parts: `claude/study-ui-pieces` `4dc98d4cb`, `claude/study-grouped-parts` `35ae750d4`, `claude/study-topics` `255cad65c`, `claude/study-shell` `a9fc1bfa1`, `claude/study-extraction` `b2c52c5a2`, `claude/study-answer-events-91b7cd` `de4385432`, `claude/model-queue-round-robin` `e6f0569e0`.
+- **Not verified:** CI has not run on any of it, so Go DB tests, migrations, e2e and the edited UAT membership journey are all unconfirmed. Commits used `--no-verify`, because a worktree's pre-commit typecheck can't pass with an empty BetterOffice folder.
+- **Must not land as is:**
+  - `bench/extraction/fixtures/` (gold, digital, matching; 11 files) holds extracts of copyrighted papers and comes out of git first, history included, so land by squash rather than merging those commits.
+  - `claude/study-extraction` alone still has the slot migration naming `platform_enabled` and `byok_enabled`, which 0121 dropped. The fix is only on `claude/study-all`.
+- **Waiting on Epo:** the extraction route. They are reviewing the switch to the paper map (`bench/extraction/reports/2026-11-04-paper-map-parallel.md` on `claude/bench-hosted-figure-boxes`), so what is on the branch may change before it lands.
+- **Needs review from the PC side:** the layout service (`layout/`, `deploy/docker-compose.layout.yml`). `deploy/layout.env.example` still has placeholders for the capacity settings in `2026-11-04-layout-capacity.md`, and the plan of one port per instance over WireGuard is unreviewed. It isn't deployed, and extraction needs `CAPY_LAYOUT_URL`.
+- **Not part of this landing yet:**
+  - `claude/open-highest` (always open at the highest permission, device copy) is still being built on top of `claude/study-all`, for non-Office items only.
+  - Office's side of that waits for the ribbon (D1 in `todo-canvas-workspace.md` §1.9).
+  - `claude/study-make-quiz` and `claude/study-assignments` are starting now.
+  - `learning-page-plan` is planning only.
+- **Keep:** no deploy without Epo; prompt changes get shown to Epo first.
+
 **Next after this rework's mocks (Epo, 2026-11-03): the AFFiNE canvas** (`todo-canvas-workspace.md`, on hold since 2026-11-02). Drawing answers and the note tool build on the same BlockSuite edgeless editor, so they are planned with it.
 
 **Later (Epo, 2026-11-03): the app-wide Learning page.** The workspace's centre Study page goes (the Study tab's pages replace it). The app's Learning page stays in the sidebar for now and is redesigned later, perhaps to show the AI suggestions across workspaces.
