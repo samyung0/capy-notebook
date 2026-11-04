@@ -224,6 +224,9 @@ func TestAQuizWithNoAnswersSavesAndGoesToTheRoom(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(st.Close)
+	if err := st.LoadPlanLimits(ctx); err != nil {
+		t.Fatal(err)
+	}
 	var sent struct {
 		Target   store.DocumentTarget `json:"target"`
 		Commands []struct {
@@ -261,7 +264,14 @@ func TestAQuizWithNoAnswersSavesAndGoesToTheRoom(t *testing.T) {
 			Report: json.RawMessage(`{"missing":["3"],"answersMissing":["1","2"]}`),
 		})
 		if ended.Status != store.ExtractionDone || ended.QuizID == nil {
-			t.Fatalf("run = %+v", ended)
+			code, message := "", ""
+			if ended.ErrorCode != nil {
+				code = *ended.ErrorCode
+			}
+			if ended.Error != nil {
+				message = *ended.Error
+			}
+			t.Fatalf("run ended %s: %s: %s", ended.Status, code, message)
 		}
 		t.Cleanup(func() {
 			_, _ = st.Pool().Exec(context.Background(), `DELETE FROM materials WHERE id=$1`, *ended.QuizID)

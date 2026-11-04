@@ -34,7 +34,7 @@ func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 	h := openShareAPI(t, pipeline.New(srv.URL, ""))
 	req := generateBody("Default carrying quiz")
 	delete(req, "count")
-	if rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate", "u_editor", req); rec.Code != http.StatusBadRequest {
+	if rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate", "u_editor", req); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("a quiz without a count: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	req["count"] = 5

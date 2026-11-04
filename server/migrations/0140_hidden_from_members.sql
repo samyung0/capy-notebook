@@ -50,3 +50,4 @@ AS $$
       )
   )
 $$;
+REVOKE EXECUTE ON FUNCTION workspace_item_visible(boolean, text, text) FROM PUBLIC;

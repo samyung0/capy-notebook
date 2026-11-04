@@ -225,13 +225,13 @@ func TestStudyLeavesOutAQuizARuleRefuses(t *testing.T) {
 		"/api/workspaces/" + ws.ID + "/study/attempts",
 		"/api/workspaces/" + ws.ID + "/review",
 		"/api/review/sessions/" + session,
-		"/api/review/overview",
+		"/api/learning/overview",
 	} {
 		rec := doReq(t, h, http.MethodGet, path, "u_owner", nil)
 		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), broken) {
 			t.Errorf("%s = %d %s, want 200 without the broken quiz", path, rec.Code, rec.Body.String())
 		}
-		if path != "/api/review/overview" && !strings.Contains(rec.Body.String(), good) {
+		if path != "/api/learning/overview" && !strings.Contains(rec.Body.String(), good) {
 			t.Errorf("%s = %s, want the good quiz", path, rec.Body.String())
 		}
 	}
