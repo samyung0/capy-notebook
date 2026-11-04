@@ -60,15 +60,17 @@ export function WorkspaceDashboard({
   return (
     // One column leaves room under the page for the floating chat button.
     <div className="flex min-h-0 flex-1 flex-col gap-6.5 overflow-auto px-4 pt-5 pb-24 sm:px-6 lg:px-9 lg:pt-7 lg:pb-10">
-      {/* Spread apart on one line; wrapped, the actions start their own
-          line at the left. */}
-      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-3">
+      {/* Spread apart on one line; wrapped, the actions start their own line
+          at the left, 16px from the text above and below. Their negative
+          margins give that whatever the width: on one line the name's height
+          decides, so they cancel out. */}
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-6">
         <div className="flex min-w-0 flex-col gap-0.5">
           <h1 className="t-page-title truncate">{workspace.name}</h1>
           <span className="t-meta min-h-[1lh] text-fg-muted">{meta}</span>
         </div>
         {canAdd && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="-my-3.5 flex flex-wrap items-center gap-2">
             <Button iconLeft="upload" onClick={onUpload} variant="outline">
               {m.action_upload()}
             </Button>
