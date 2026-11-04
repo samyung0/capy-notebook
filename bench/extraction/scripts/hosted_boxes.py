@@ -15,7 +15,7 @@ production retries it. Run from the repository root with the root .venv:
     python -I bench/extraction/scripts/hosted_boxes.py call <model> --repeat 1 \
         --scans <hkdse-math-compulsory> --digital <born-digital> --env-file <keys>
     python -I bench/extraction/scripts/hosted_boxes.py lines --source tesseract \
-        --scans ... --digital ...
+        --scans ... --digital ...  # or --source modelstudio --env-file <keys>
     python -I bench/extraction/scripts/hosted_boxes.py deepseek <saved runs>... \
         --name deepseek-today --repeat 1
     python -I bench/extraction/scripts/hosted_boxes.py score --scans ... --digital ...
@@ -33,9 +33,7 @@ runs of the same shape) into this bench's runs. ``layout`` does the same for
 OpenRouter calls are held on named providers with fallbacks off and DeepInfra
 ignored; each call records the provider that served it and what OpenRouter
 billed. Model Studio (Singapore) calls are priced from their token counts at
-the list prices below; on 2026-11-04 the key answered 403 "Access denied by
-API-Key restrictions" from the Mac for every model, so no Model Studio run
-exists. Every call adds to ``.results/hosted/spend.json``; a run stops before
+the list prices below. Every call adds to ``.results/hosted/spend.json``; a run stops before
 a call that would take the total past ``SPEND_CAP``.
 
 ``score`` rescores every saved run raw, with today's pad, with a wider pad,
@@ -53,6 +51,7 @@ import argparse
 import asyncio
 import base64
 import functools
+import io
 import itertools
 import json
 import os
@@ -137,13 +136,6 @@ MODELS: dict[str, dict] = {
         "price": (0.2, 1.6),
         "body": {"enable_thinking": False},
     },
-    "ms-qwen3.6-flash": {
-        "api": "modelstudio",
-        "slug": "qwen3.6-flash",
-        "fmt": "qwen",
-        "price": (0.25, 1.5),
-        "body": {"enable_thinking": False},
-    },
     "ms-qwen-vl-ocr": {
         "api": "modelstudio",
         "slug": "qwen-vl-ocr",
@@ -151,15 +143,16 @@ MODELS: dict[str, dict] = {
         "price": (0.07, 0.16),
         "pixels": True,
     },
+    "ms-qwen-vl-ocr-rect": {
+        "api": "modelstudio",
+        "slug": "qwen-vl-ocr",
+        "fmt": "ocr",
+        "price": (0.07, 0.16),
+        "pixels": True,
+    },
 }
 LAYOUT = "layout-plus-l-1017"
 LINES_MODEL = "ms-qwen-vl-ocr"
-# The advanced_recognition task's fixed prompt (Model Studio docs); the
-# OpenAI-compatible endpoint takes it as text beside the image.
-LINES_PROMPT = (
-    "Locate all text lines and return the coordinates of the rotated rectangle"
-    "([cx, cy, width, height, angle])."
-)
 # On Model Studio's OCR models: keep the 1,568 px page at its size.
 MIN_PIXELS, MAX_PIXELS = 32 * 32 * 3, 32 * 32 * 2048
 
@@ -179,6 +172,14 @@ def prompt(fmt: str, listed: str) -> tuple[str | None, str]:
             "coordinates in JSON format: a list with one entry per figure, in the "
             'order listed, {"label": "<figure number>", "bbox_2d": [x1, y1, x2, '
             "y2]}, coordinates relative to the image on a 0-1000 scale."
+        )
+    if fmt == "ocr":
+        return None, (
+            f"{page} Locate each of these figures:\n{listed}\n\n{RULE} Return the "
+            "coordinates of the rotated rectangle ([cx, cy, width, height, angle]) of "
+            "each figure in JSON format: a list with one entry per figure, in the "
+            'order listed, {"label": "<figure number>", "rotate_rect": [cx, cy, '
+            "width, height, angle]}, on a 0-1000 scale."
         )
     if fmt == "gemini":
         return (
@@ -334,6 +335,15 @@ def _keyed_entries(text: str, key: str) -> list[tuple[str, list]]:
     return entries
 
 
+def _unrotated(rect: list[float]) -> list[float]:
+    """qwen-vl-ocr's [cx, cy, a, b, angle] as a box. It writes the long side of a
+    horizontal line last and calls that angle 90, so past 45 degrees b is the
+    width."""
+    cx, cy, first, second, angle = rect
+    w, h = (second, first) if abs(angle) > 45 else (first, second)
+    return [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2]
+
+
 def parse(fmt: str, text: str, labels: list[str]) -> list[list[float]] | None:
     """The answer's boxes as [left, top, right, bottom] on 0-1000, or None."""
     if fmt == "glm":
@@ -343,7 +353,7 @@ def parse(fmt: str, text: str, labels: list[str]) -> list[list[float]] | None:
         )
         entries = [(m[0], [float(v) for v in m[1:]]) for m in found]
     else:
-        key = "box_2d" if fmt == "gemini" else "bbox_2d"
+        key = {"gemini": "box_2d", "ocr": "rotate_rect"}.get(fmt, "bbox_2d")
         data = _json_list(text)
         entries = []
         if isinstance(data, list) and all(
@@ -357,7 +367,11 @@ def parse(fmt: str, text: str, labels: list[str]) -> list[list[float]] | None:
         return None
     out = []
     for b in boxes:
-        if len(b) != 4 or not all(isinstance(v, (int, float)) for v in b):
+        if not all(isinstance(v, (int, float)) for v in b):
+            return None
+        if len(b) == 5:  # qwen-vl-ocr answers rectangles even when asked for boxes
+            b = _unrotated(b)
+        if len(b) != 4:
             return None
         if fmt == "gemini":
             b = [b[1], b[0], b[3], b[2]]
@@ -603,32 +617,60 @@ async def call_run(args) -> None:
 # ------------------------------------------------------------- text lines
 
 
-def _parse_lines(text: str, size: tuple[int, int]) -> list[dict]:
-    """advanced_recognition's text lines as {text, box (0-1000)}; its rotated
-    rectangles are [cx, cy, width, height, angle] in the page image's
-    pixels."""
-    data = _json_list(text)
+async def advanced_recognition(client, keys: dict, jpeg: bytes) -> dict:
+    """Model Studio's advanced_recognition task on one page, through the native
+    endpoint: the OpenAI-compatible one has no ``ocr_options``, and sent as a
+    prompt there the task answers empty or with no text. ``words_info`` holds each
+    line's text and corners in the image's pixels; lines are {text, box (0-1000)}."""
+    from PIL import Image
+
+    root = keys["ALIBABA_MODELSTUDIO_URL"].split("/compatible-mode")[0]
+    body = {
+        "model": MODELS[LINES_MODEL]["slug"],
+        "input": {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "image": data_url(jpeg),
+                            "min_pixels": MIN_PIXELS,
+                            "max_pixels": MAX_PIXELS,
+                            "enable_rotate": False,
+                        }
+                    ],
+                }
+            ]
+        },
+        "parameters": {"ocr_options": {"task": "advanced_recognition"}},
+    }
+    started = time.monotonic()
+    resp = await client.post(
+        f"{root}/api/v1/services/aigc/multimodal-generation/generation",
+        headers={"Authorization": f"Bearer {keys['ALIBABA_MODELSTUDIO_KEY']}"},
+        json=body,
+        timeout=TIMEOUT_S,
+    )
+    seconds = time.monotonic() - started
+    raw = resp.json()
+    if resp.status_code != 200:
+        raise RuntimeError(f"HTTP {resp.status_code}: {json.dumps(raw)[:300]}")
+    usage = raw["usage"]
+    price = MODELS[LINES_MODEL]["price"]
+    w, h = Image.open(io.BytesIO(jpeg)).size
     lines = []
-    w, h = size
-    for item in data if isinstance(data, list) else []:
-        if not isinstance(item, dict):
-            continue
-        rect = item.get("rotate_rect")
-        if not (isinstance(rect, list) and len(rect) == 5):
-            continue
-        cx, cy, rw, rh, angle = (float(v) for v in rect)
-        if abs(angle) > 45:
-            rw, rh = rh, rw
-        box = [
-            (cx - rw / 2) / w * 1000,
-            (cy - rh / 2) / h * 1000,
-            (cx + rw / 2) / w * 1000,
-            (cy + rh / 2) / h * 1000,
-        ]
-        lines.append(
-            {"text": str(item.get("text", "")), "box": [round(v, 1) for v in box]}
-        )
-    return lines
+    content = raw["output"]["choices"][0]["message"]["content"]
+    for item in content[0]["ocr_result"]["words_info"]:
+        xs, ys = item["location"][0::2], item["location"][1::2]
+        box = [min(xs) / w, min(ys) / h, max(xs) / w, max(ys) / h]
+        lines.append({"text": item["text"], "box": [round(v * 1000, 1) for v in box]})
+    return {
+        "lines": lines,
+        "seconds": round(seconds, 2),
+        "tokens": [usage["input_tokens"], usage["output_tokens"]],
+        "cost": (usage["input_tokens"] * price[0] + usage["output_tokens"] * price[1])
+        / 1e6,
+    }
 
 
 def tesseract_lines(pdf: str, number: int) -> list[dict]:
@@ -683,10 +725,7 @@ def tesseract_lines(pdf: str, number: int) -> list[dict]:
 async def lines_run(args) -> None:
     """Every page's text lines, from Model Studio's advanced_recognition task
     or from Tesseract, into .results/hosted/lines-<source>.json."""
-    import io
-
     import httpx
-    from PIL import Image
 
     figs = figures(Path(args.scans), Path(args.digital))
     by_page = pages(figs)
@@ -699,32 +738,22 @@ async def lines_run(args) -> None:
         ]
     else:
         keys = load_keys(args.env_file)
-        model = MODELS[LINES_MODEL]
         spend = Spend()
         sem = asyncio.Semaphore(CONCURRENCY)
-        extra = {"min_pixels": MIN_PIXELS, "max_pixels": MAX_PIXELS}
 
         async def one(client, key, items):
             jpeg = page_jpeg(items[0]["pdf"], key[1])
-            size = Image.open(io.BytesIO(jpeg)).size
             async with sem:
                 spend.check(0.01)
-                got = await complete(
-                    client, keys, model, None, LINES_PROMPT, data_url(jpeg), 8000, extra
-                )
+                got = await advanced_recognition(client, keys, jpeg)
             spend.add("lines", got["cost"])
-            return {
-                "paper": key[0],
-                "page": key[1],
-                "size": size,
-                **got,
-                "lines": _parse_lines(got["text"], size),
-            }
+            return {"paper": key[0], "page": key[1], **got}
 
         async with httpx.AsyncClient() as client:
             calls = await asyncio.gather(
                 *(one(client, k, v) for k, v in by_page.items())
             )
+        print("billed", round(sum(c["cost"] for c in calls), 5), "usd")
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / f"lines-{args.source}.json").write_text(
         json.dumps(calls, indent=1, ensure_ascii=False)
@@ -1043,7 +1072,7 @@ INK = [
 LINES = [
     {"reach": r, "longest": n, "margin": m}
     for r in (5, 10, 20, 30)
-    for n in (6, 12, 20)
+    for n in (6, 12, 20, 30)
     for m in (0, 5, 10)
 ]
 INK_LEVEL = 150  # grey below this is ink
@@ -1063,7 +1092,6 @@ def pad(box: list[float], p: tuple) -> list[float]:
 @functools.cache
 def ink_page(pdf: str, number: int, level: int = INK_LEVEL):
     """The page at the model image's scale as a 0/255 ink mask."""
-    import io
 
     from PIL import Image
 
@@ -1395,6 +1423,12 @@ HEAD_TO_HEAD = [
     (LAYOUT, None),
     ("qwen3-vl-30b", {"gap": 6, "cap": 50, "margin": 10}),
     ("qwen3-vl-30b", {"gap": 6, "cap": 50, "margin": 5}),
+    ("qwen3-vl-30b", {"reach": 10, "longest": 30, "margin": 10}),
+    ("deepseek-list", {"reach": 20, "longest": 12, "margin": 0}),
+    ("ms-qwen3-vl-plus", (10, 10, 10, 10)),
+    ("ms-qwen3-vl-plus", (5, 5, 5, 5)),
+    ("ms-qwen3-vl-plus", {"gap": 6, "cap": 50, "margin": 10}),
+    ("ms-qwen3-vl-plus", {"gap": 6, "cap": 50, "margin": 5}),
     ("qwen3.6-plus", (5, 5, 5, 5)),
     ("qwen3.6-plus", {"gap": 6, "cap": 30, "margin": 5}),
     ("qwen3.6-plus", PAD),
@@ -1446,12 +1480,21 @@ def print_head_to_head(args) -> None:
 
 
 def _finish(f: dict, raw: list[float], setting) -> list[float]:
-    """A raw box with one setting: None as it is, a tuple a pad, a dict ink growth."""
+    """A raw box with one setting: None as it is, a tuple a pad, a dict ink growth,
+    or, with ``reach``, growth to Model Studio's text lines."""
     if setting is None:
         return raw
     if isinstance(setting, tuple):
         return pad(raw, setting)
+    if "reach" in setting:
+        return grow_lines(_ocr_lines()[(f["paper"], f["page"])], raw, **setting)
     return grow_ink(ink_page(f["pdf"], f["page"]), raw, **setting)
+
+
+@functools.cache
+def _ocr_lines() -> dict:
+    calls = json.loads((OUT / "lines-modelstudio.json").read_text())
+    return {(c["paper"], c["page"]): c["lines"] for c in calls}
 
 
 def _both_runs(m: dict) -> dict:
@@ -1531,7 +1574,6 @@ def _px(box: list[float], w: int, h: int) -> list[float]:
 def sheet(args) -> None:
     """The misses (under 98% covered) of each model:method, gold box green,
     crop red, on the page image."""
-    import io
 
     from PIL import Image, ImageDraw, ImageFont
 

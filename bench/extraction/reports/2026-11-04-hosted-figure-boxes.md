@@ -19,6 +19,14 @@ figures over two runs. It flips when you change the margin or fix the gold's
 blank areas. On the half of the figures its setting was not chosen on, it is one
 crop behind.
 
+Epo updated the Model Studio side afterwards, and none of its models beats it either.
+`qwen3-vl-plus` with ink growth gets 71 whole, 76 tight and 67 both, against the
+layout model's 76, 72 and 68. `qwen-vl-ocr` is not a figure detector: it boxes the
+whole question, so only 10 of 80 crops are tight. Its `advanced_recognition` text
+lines do better than Tesseract's, and on Qwen3-VL-30B they reach 80 whole, 68 tight
+and 68 both. That ties the layout model on both, at the cost of a second call per
+page.
+
 All counts are over two runs: 28 scanned crops, 52 born-digital crops. *Both*
 means one crop is whole and tight. *Held out* is the 40 crops on the half of the
 figures not used to choose the setting. The layout model's settings were chosen
@@ -30,13 +38,17 @@ on all the figures, so its held-out column flatters it a little.
 | Qwen3-VL-30B, ink growth (gap 6, cap 50, margin 10) | 26 | 28 | 52 | 45 | 78 | 73 | 71 | 37 |
 | GLM-4.5V, ink growth (gap 8, cap 80, margin 5) | 26 | 28 | 47 | 50 | 73 | 78 | 71 | 35 |
 | Qwen3.6-Plus, 0.5% pad | 28 | 23 | 50 | 47 | 78 | 70 | 68 | 38 |
+| Qwen3-VL-30B, `advanced_recognition` lines (reach 10, longest 30, margin 10) | 28 | 26 | 52 | 42 | 80 | 68 | 68 | 36 |
+| Model Studio `qwen3-vl-plus`, ink growth (gap 6, cap 50, margin 5) | 25 | 28 | 46 | 48 | 71 | 76 | 67 | 33 |
+| Model Studio `qwen-vl-ocr`, ink growth (gap 4, cap 120, margin 0) | 28 | 0 | 50 | 10 | 78 | 10 | 10 | 6 |
 | Qwen3.6-Plus, today's pad | 28 | 20 | 52 | 25 | 80 | 45 | 45 | 21 |
 | DeepSeek 1017, today's prompt, ink growth (gap 6, cap 80, margin 5) | 23 | 24 | 45 | 40 | 68 | 64 | 56 | 27 |
 | DeepSeek 1017, today's prompt, today's pad (production) | 20 | 16 | 43 | 24 | 63 | 40 | 36 | 17 |
 
 The layout row was rescored here from that bench's saved crops, and it gives the
-report's 76, 72 and 68. None of these pipelines took in another figure. Only
-DeepSeek took in the next question, 2 crops in each of its rows.
+report's 76, 72 and 68. Only DeepSeek took in the next question, 2 crops in each of
+its rows. Only `qwen-vl-ocr` took in another figure. The text-line setting was
+picked for the most whole crops over all 80, so its held-out column flatters it too.
 
 Each pipeline fails differently. I looked at all 40 crops of one run of each
 hosted candidate, and the layout model's flaws come from its report and saved
@@ -61,14 +73,14 @@ onnxruntime dependency, a 130 MB model file, and about 520 MB during a run.
 **If Epo does not want that runtime in retrieval, Qwen3-VL-30B with ink growth is
 an equal alternative.** It needs one call per page, about 50 lines of Pillow, and
 a parser for Qwen's replies. It costs $0.007 per 16 pages against about $0.0016, and takes 5.6 s a page at the
-median. It needs Epo's sign-off, because it adds a model beside 1017, and his
+median. It needs Epo's sign-off, because it adds a model beside 1017, and their
 provider order (Novita then SiliconFlow served these runs).
 
 **Either way, ink growth improves the fallback box call.** Layout's plan keeps
 today's call for pages with no box. Replacing `FIGURE_PAD` with ink growth takes
 DeepSeek from 63 whole, 40 tight and 36 both to 68, 64 and 56, with no new model.
 This goes against Epo's 2026-11-04 decision to keep the top pad
-(`human/agentic-retrieval.md`), so it needs his call. It is not built.
+(`human/agentic-retrieval.md`), so it needs their call. It is not built.
 
 **Not worth pursuing:**
 
@@ -76,12 +88,11 @@ This goes against Epo's 2026-11-04 decision to keep the top pad
 - Qwen3.6-Flash, which is erratic on born-digital pages.
 - Mistral OCR, which splits figures, leaves out titles and captions, and costs
   the most.
-- Growing to text lines, which adds nothing over ink growth or a small pad on the
-  models worth using.
+- `qwen-vl-ocr` as a box model, which boxes the question instead of its figure.
+- Growing to text lines, which adds a call per page to tie at best.
 
-**Not tested:** Gemini and Alibaba Model Studio. Both answer 403 from this Mac
-(see "Blocked"). I retested both after Epo's account switch and got the same
-answers.
+**Not tested:** Gemini, which answers 403 from this Mac (see "Blocked"). I retested
+it after Epo's account switch and got the same answer.
 
 ## What ran
 
@@ -105,18 +116,23 @@ the question text, options or answer lines around it."
   on 0-1000.
 - Gemini: Google's detection system prompt and `box_2d` as `[ymin, xmin, ymax,
   xmax]` on 0-1000. It is written, but no call got through.
+- `qwen-vl-ocr`: two runs asked as Qwen above, two asked for its own `rotate_rect`
+  `[cx, cy, a, b, angle]`. It answers rectangles either way, so the parser turns them
+  into boxes.
 
 **Routing.** Every route was pinned with `allow_fallbacks: false` and DeepInfra on
 `provider.ignore`. Parasail served all 68 Qwen3-VL-235B calls. Novita served 59
 Qwen3-VL-30B calls and SiliconFlow 5. Alibaba served Qwen3.6, and Z.AI served GLM.
-OpenRouter has no 32B Qwen3-VL, so I ran 30B-A3B.
+OpenRouter has no 32B Qwen3-VL, so I ran 30B-A3B. Model Studio's calls went directly
+to the Singapore workspace in `deploy/.env.uat`, with no OpenRouter in between.
 
-**Models beyond the brief.** Qwen3.6-Flash and Qwen3.6-Plus were added because
-Model Studio was blocked and Alibaba serves them through OpenRouter. GLM-4.5V and
+**Models beyond the brief.** Qwen3.6-Flash and Qwen3.6-Plus were added while Model
+Studio was blocked, because Alibaba serves them through OpenRouter. GLM-4.5V and
 GLM-4.6V both ran, since Gemini was out.
 
-**Reasoning.** Off (`reasoning.enabled: false`) on Qwen3.6 and GLM. Every call
-reported 0 reasoning tokens. The Qwen3-VL instruct models do not think.
+**Reasoning.** Off (`reasoning.enabled: false`) on Qwen3.6 and GLM, and
+`enable_thinking: false` on `qwen3-vl-plus`. Every call reported 0 reasoning tokens.
+The Qwen3-VL instruct models do not think.
 
 **Baselines.** The DeepSeek rows are the earlier prompt-variant runs, read into
 this bench: scanned runs 201-202 with `digital-1` and `-2` for today's prompt, and
@@ -144,13 +160,20 @@ listed under "Growing to ink".
 | Qwen3.6-Flash, Alibaba | 20 | 21 | 67 | 25 | 33 | 51 | 33 | 27 | 47 | 62 | 57 |
 | Qwen3-VL-235B-A22B, Parasail | 12 | 46 | 72 | 26 | 48 | 51 | 47 | 26 | 49 | 71 | 66 |
 | Qwen3-VL-30B-A3B, Novita | 17 | 41 | 77 | 24 | 50 | 55 | 51 | 26 | 52 | 73 | 71 |
+| `qwen3-vl-plus`, Model Studio | 10 | 36 | 78 | 23 | 42 | 60 | 49 | 25 | 46 | 76 | 67 |
+| `qwen-vl-ocr`, asked for boxes, Model Studio | 25 | 45 | 11 | 27 | 46 | 6 | 4 | 28 | 50 | 10 | 10 |
+| `qwen-vl-ocr`, asked for `rotate_rect`, Model Studio | 24 | 48 | 10 | 28 | 48 | 4 | 4 | 28 | 48 | 8 | 8 |
 | GLM-4.5V, Z.AI | 6 | 29 | 78 | 20 | 45 | 56 | 43 | 26 | 47 | 78 | 71 |
 | GLM-4.6V, Z.AI | 2 | 20 | 78 | 20 | 34 | 58 | 34 | 27 | 42 | 76 | 65 |
 | Mistral OCR plugin | 16 | 32 | 78 | 20 | 40 | 56 | 40 | 20 | 38 | 78 | 56 |
 | Mistral OCR, pieces joined | 16 | 34 | 78 | 20 | 44 | 56 | 42 | 20 | 42 | 78 | 60 |
 
-Next question: DeepSeek today's prompt 2 padded and 2 grown, list first 1 padded.
-No other row took one in. No crop took in another figure.
+Next question: DeepSeek today's prompt 2 padded and 2 grown, list first 1 padded,
+`qwen-vl-ocr` asked for `rotate_rect` 2 in each column. No other row took one in.
+Other figure: `qwen-vl-ocr` asked for boxes, 2 padded and 1 grown. No other row took
+one in. Its counts also lose physics page 2, where it answered the wrong number of
+boxes for two figures: five in run 2 asked for boxes, and one in each `rotate_rect`
+run.
 
 Raw boxes are mostly tight and often not whole, and nearly every miss is a label
 or a line's end just outside the box. Qwen3.6-Plus has the most whole raw boxes.
@@ -167,6 +190,9 @@ GLM's hug the drawing hardest.
 | Qwen3.6-Flash | Alibaba | 0.00044 | 0.0070 | 3.2 | 5.1 | 1,872, 77 |
 | Qwen3-VL-235B | Parasail | 0.00056 | 0.0089 | 2.2 | 3.5 | 1,867, 89 |
 | Qwen3-VL-30B | Novita, SiliconFlow | 0.00043 | 0.0069 | 5.6 | 8.2 | 1,867, 73 |
+| `qwen3-vl-plus` | Model Studio | 0.00048 | 0.0076 | 1.8 | 2.6 | 1,867, 63 |
+| `qwen-vl-ocr` | Model Studio | 0.00014 | 0.0022 | 1.1 | 2.2 | 1,867, 62 |
+| `advanced_recognition`, on top of a box call | Model Studio | 0.00027 | 0.0042 | 5.1 | – | 1,750, 890 |
 | GLM-4.5V | Z.AI | 0.00139 | 0.0223 | 3.2 | 3.9 | 2,380, 18 |
 | GLM-4.6V | Z.AI | 0.00070 | 0.0112 | 4.3 | 5.5 | 2,385, 26 |
 | Mistral OCR plugin | plugin, carrier call on Novita | 0.00208 | 0.0333 | 3.3 | 4.2 | – |
@@ -174,6 +200,8 @@ GLM's hug the drawing hardest.
 "Per 16-page paper" is 16 page calls, an upper bound, since production calls only
 the pages with figures. Z.AI's cache cut GLM's second run to $0.00033 and $0.00040
 a page. The layout model also costs about 1 CPU-second a page and 540 MB at peak.
+Model Studio's dollars are token counts at list price, not a bill (see "Model
+Studio").
 
 ## Post-processing
 
@@ -207,6 +235,7 @@ did not ask for. The layout model's 1% pad prompted it.
 | Qwen3.6-Plus | 5, 5, 5, 5 | 78 | 70 | 68 | 40/38/38 |
 | Qwen3-VL-30B | 10, 10, 10, 10 | 74 | 73 | 69 | 36/39/35 |
 | Qwen3-VL-235B | 5, 5, 5, 5 | 72 | 71 | 64 | 34/39/34 |
+| `qwen3-vl-plus` | 15, 15, 15, 15 | 69 | 70 | 61 | 33/38/31 |
 | GLM-4.5V | 20, 20, 20, 20 | 69 | 56 | 47 | 33/26/21 |
 | DeepSeek, today's prompt | 10, 20, 10, 5 | 57 | 61 | 47 | 28/30/23 |
 
@@ -222,12 +251,14 @@ The grid was gap 4/6/8/12/16, cap 30/50/80/120 and margin 0/5/10.
 |---|---|---|---|---|---|
 | Qwen3-VL-30B | 6, 50, 10 | 78 | 73 | 71 | 38/39/37 |
 | GLM-4.5V | 8, 80, 5 | 73 | 78 | 71 | 35/40/35 |
+| `qwen3-vl-plus` | 6, 50, 5 | 71 | 76 | 67 | 33/40/33 |
 | Qwen3-VL-235B | 4, 30, 5 | 75 | 71 | 66 | 37/39/36 |
 | Qwen3.6-Plus | 6, 30, 0 | 73 | 72 | 65 | 36/38/34 |
 | GLM-4.6V | 8, 50, 5 | 69 | 76 | 65 | 33/40/33 |
 | Qwen3.6-Flash | 8, 120, 5 | 74 | 62 | 57 | 37/35/33 |
 | DeepSeek, today's prompt | 6, 80, 5 | 68 | 64 | 56 | 31/32/27 |
 | Mistral OCR | 8, 30, 0 | 58 | 78 | 56 | 28/40/28 |
+| `qwen-vl-ocr`, asked for boxes | 4, 120, 0 | 78 | 10 | 10 | 39/6/6 |
 | DeepSeek, list first | 6, 50, 0 | 61 | 61 | 47 | 27/34/24 |
 
 A gap of 4 to 8 works. At 12 or more the edge crosses the line spacing and climbs
@@ -241,24 +272,48 @@ short of Q14's third pattern, and a label past a blank gap stays out, as with
 
 ### Growing to short text lines
 
-Model Studio's `advanced_recognition` could not be called, so I tried its idea
-with Tesseract's text lines (2,200 px render). The rule takes in every line of at
-most `longest` characters within `reach` units of the box, and never a longer one,
-which would be question text. The grid was reach 5/10/20/30, longest 6/12/20 and
-margin 0/5/10.
+The rule takes in every line of at most `longest` characters within `reach` units of
+the box, and never a longer one, which would be question text. The grid was reach
+5/10/20/30, longest 6/12/20/30 and margin 0/5/10.
 
-| Model | Reach, longest, margin | Whole /80 | Tight /80 | Both /80 |
+Tesseract's lines come from a 2,200 px render. Model Studio's come from
+`advanced_recognition` on `qwen-vl-ocr`. That needs the native endpoint
+(`/api/v1/services/aigc/multimodal-generation/generation` with `ocr_options`), whose
+`words_info` gives each line's text and four corners in the image's pixels. On the
+OpenAI-compatible endpoint the fixed prompt answers empty, and a wording that asks for
+JSON returns a few rectangles with no text.
+
+| Boxes | Tesseract: reach, longest, margin | Whole, tight, both | `advanced_recognition`: reach, longest, margin | Whole, tight, both |
 |---|---|---|---|---|
-| Qwen3.6-Plus | 5, 6, 5 | 78 | 70 | 68 |
-| Qwen3-VL-235B | 5, 6, 5 | 75 | 71 | 66 |
-| Qwen3-VL-30B | 5, 6, 10 | 74 | 73 | 69 |
-| DeepSeek, list first | 10, 6, 5 | 57 | 62 | 45 |
-| DeepSeek, today's prompt | 5, 6, 10 | 54 | 59 | 44 |
+| Qwen3-VL-30B | 5, 6, 10 | 74, 73, 69 | 5, 6, 10 | 74, 73, 69 |
+| Qwen3.6-Plus | 5, 6, 5 | 78, 70, 68 | 5, 6, 5 | 78, 70, 68 |
+| Qwen3-VL-235B | 5, 6, 5 | 75, 71, 66 | 5, 6, 5 | 72, 71, 64 |
+| GLM-4.5V | 10, 20, 5 | 71, 64, 55 | 5, 20, 5 | 71, 74, 65 |
+| `qwen3-vl-plus` | 5, 6, 10 | 67, 72, 61 | 5, 20, 0 | 60, 76, 56 |
+| DeepSeek, list first | 10, 6, 5 | 57, 62, 45 | 20, 12, 0 | 60, 63, 47 |
+| DeepSeek, today's prompt | 5, 6, 10 | 54, 59, 44 | 10, 20, 10 | 63, 53, 47 |
 
-It beats the tuned ink setting only on Mistral's boxes and on Qwen3.6-Plus, and
-there it only matches a 0.5% pad. Nearly every model settled on 6 characters, so it
-takes in almost nothing. A label like "six turns of string" is as long as text it
-must leave out.
+Tuned for crops both whole and tight, most models settle on the shortest lines, so
+the rule takes in almost nothing and matches a small pad. It beats the tuned ink
+setting only on Mistral's boxes and on Qwen3.6-Plus, and there it only matches a 0.5%
+pad.
+
+Model Studio's lines are better when you let the rule reach further. Picking the
+setting with the most whole crops over all 80:
+
+| Boxes | Tesseract: whole, tight, both | `advanced_recognition`: whole, tight, both |
+|---|---|---|
+| Qwen3-VL-30B | 78, 56, 54 | 80, 68, 68 |
+| `qwen3-vl-plus` | 74, 60, 54 | 74, 66, 60 |
+| DeepSeek, list first | 72, 41, 36 (next question 3) | 73, 49, 45 (next question 3) |
+| DeepSeek, today's prompt | 69, 46, 40 (next question 4) | 65, 51, 45 (next question 4) |
+
+Qwen3-VL-30B's 80 is the setting in the top table. I checked all 40 crops of run 2 by
+eye, and all are whole, including the "Figure 1" caption that ink growth loses. Its
+tight count is the price: a few crops hold the stem, and 2021 P1 Q8 also holds part
+(a). The OCR model also merges neighbours ("pen six turns of string") and can draw a
+figure-wide box for a short label, as with "string" on the ruler. That helps whole
+crops and hurts tight ones. None of this lifts DeepSeek near the hosted rows.
 
 ### Remaining misses
 
@@ -277,6 +332,11 @@ content in both runs, Physics Q27 in run 1, and 2021 P1 Q9, Physics Q22 and Biol
 Q2 in run 2. The misses on 2022 P2 Q38 and Maths Q17 are blank gold, the same problem
 as above.
 
+[`misses-model-studio.jpg`](2026-11-04-hosted-figure-boxes/misses-model-studio.jpg)
+shows `qwen3-vl-plus` after ink growth. 2021 P1 Q9 loses the chart's right end, Maths
+Q21 loses "(h+2)", and Biology Q3 loses the side labels of its photograph, all in both
+runs. 2024 P1 Q8 loses "Figure 1" in run 1. Maths Q17 is blank gold.
+
 ## Gold with blank areas
 
 Some gold boxes hold blank page. Maths Q17 has 33 grid units on the right, 2022 P2
@@ -290,7 +350,9 @@ its two Q17 crops.
 | Layout plus-L with 1017 | 76, 72, 68 | 78, 72, 70 |
 | Qwen3-VL-30B, gap 6, cap 50, margin 10 | 78, 73, 71 | 78, 70, 68 |
 | Qwen3-VL-30B, gap 6, cap 50, margin 5 | 74, 75, 69 | 78, 75, 73 |
+| Qwen3-VL-30B, `advanced_recognition` lines | 80, 68, 68 | 80, 63, 63 |
 | Qwen3.6-Plus, 0.5% pad | 78, 70, 68 | 80, 69, 69 |
+| `qwen3-vl-plus`, gap 6, cap 50, margin 5 | 71, 76, 67 | 73, 74, 67 |
 | GLM-4.5V, gap 8, cap 80, margin 5 | 73, 78, 71 | 75, 76, 71 |
 | DeepSeek today's prompt, gap 6, cap 80, margin 5 | 68, 64, 56 | 72, 61, 55 |
 
@@ -324,34 +386,32 @@ A direct test would need a key from Epo:
   regions and a caption, so captions would stay with the figure. It needs an Azure
   resource endpoint and key. Untested.
 
-## Blocked
+## Model Studio
 
-**Gemini** (`google/gemini-3.8-flash`, `google/gemini-3.5-flash-lite`). Every call
-answers 403 "The request is prohibited due to a violation of provider Terms Of
-Service". That holds on Google AI Studio and Vertex, on those models and on
-`gemini-2.5-flash-lite`, even for a text-only "Say ok.", so the content is not the
-cause. The Mac's address geolocates to Japan, where Gemini is offered, which points
-at the OpenRouter account or key. Epo would need to check that account, or give a
-Google AI Studio key. The prompt is in the script, ready to run.
+Epo updated the Model Studio side on 2026-11-04, and the VL and OCR models answer now.
+Earlier the same day every call answered 403 "Access denied by API-Key restrictions".
+I re-read the key and URL from `deploy/.env.uat` and made one small call per model.
 
-**Alibaba Model Studio, Singapore** (`ALIBABA_MODELSTUDIO_KEY` and `_URL` from
-`deploy/.env.uat`). Listing models works. Every chat and embedding call answers 403
-"Access denied by API-Key restrictions". I tried `qwen3-vl-plus`,
-`qwen-vl-ocr-2025-11-20`, `qwen3.6-flash`, `qwen3.8-flash`,
-`deepseek-v4.1-flash-1017`, `qwen-plus` and `qwen3.7-text-embedding`. The key is
-most likely limited to the servers' addresses, so testing from the Mac needs Epo to
-add its address or issue a bench key. I did not try other endpoints to get past the
-restriction. No call went through, so no free quota was drawn.
+| Model | Answer |
+|---|---|
+| `qwen3-vl-plus` | answers |
+| `qwen-vl-ocr` | answers, though the list shows only its dated id |
+| `qwen-vl-ocr-2025-11-20` | answers |
+| `qwen3-vl-flash`, `qwen-vl-max`, `qwen-vl-plus`, `qwen3.5-ocr`, `qwen-vl-ocr-latest` | 404 "Model not exist" |
 
-The workspace lists `qwen3-vl-plus` and `qwen-vl-ocr-2025-11-20`. It does not list
-`qwen3-vl-flash`, and `qwen3.5-ocr` answers "Model not exist". A run would add
-`qwen3-vl-plus` against the OpenRouter Qwen3-VL rows, `qwen-vl-ocr` asked for figure
-boxes, and `advanced_recognition` lines. The routes are in the script (`ms-*`
-models, `lines --source modelstudio`). The OCR model's coordinate space needs
-checking against a born-digital page's text layer first.
+**`qwen3-vl-plus` against Qwen3-VL through OpenRouter.** It is tighter and less whole
+than the 235B on Parasail: raw 46 whole and 78 tight against 58 and 72, and padded 65
+and 60 against 74 and 51. Grown to ink, the two nearly meet, at 67 both against 66. It
+is a little faster and cheaper, at 1.8 s and $0.0076 per 16 pages against 2.2 s and
+$0.0089. Its answers never needed the tolerant parser.
 
-Model Studio prices, Singapore, per million tokens, from the pricing page on
-2026-11-04:
+**`qwen-vl-ocr` as a box model.** Asked in either format, it answers a box around the
+whole question block, with a median width of 80% of the page against the gold's 43%.
+That is why it scores well on whole and almost nothing on tight. I checked this by eye
+on run 1 of the `rotate_rect` format. It is a text-line model, and nothing here
+suggests a prompt would fix that.
+
+**Prices**, Singapore, per million tokens, from the pricing page on 2026-11-04:
 
 | Model | Input | Output | Free quota |
 |---|---|---|---|
@@ -365,6 +425,23 @@ Model Studio prices, Singapore, per million tokens, from the pricing page on
 Alibaba's OpenRouter endpoint charges less for `qwen3.6-flash`, at $0.1875 and
 $1.125. Qwen3.6-Plus costs $0.325 and $1.95 there.
 
+**Free quota: I cannot tell.** The responses carry token counts and no quota or billing
+field, and I have no console access. This bench used about 127,000 tokens on
+`qwen3-vl-plus` and about 350,000 on `qwen-vl-ocr`, both under the 1M listed, and every
+OCR run used the `qwen-vl-ocr` alias, the one with free quota. So all of it could have
+come from quota, if the quota's 90 days are still running. Epo can see which on the
+console's billing page. At list price this round is about $0.06.
+
+## Blocked
+
+**Gemini** (`google/gemini-3.8-flash`, `google/gemini-3.5-flash-lite`). Every call
+answers 403 "The request is prohibited due to a violation of provider Terms Of
+Service". That holds on Google AI Studio and Vertex, on those models and on
+`gemini-2.5-flash-lite`, even for a text-only "Say ok.", so the content is not the
+cause. The Mac's address geolocates to Japan, where Gemini is offered, which points
+at the OpenRouter account or key. Epo would need to check that account, or give a
+Google AI Studio key. The prompt is in the script, ready to run.
+
 ## Notes
 
 - **Qwen3-VL-235B's answers.** In run 2 it wrote four multi-figure pages as one JSON
@@ -373,6 +450,9 @@ $1.125. Qwen3.6-Plus costs $0.325 and $1.95 there.
   parser reads the keys in order and recovers them. Qwen3.6-Plus did the same on one
   page in run 2, and Qwen3-VL-30B and Qwen3.6-Flash never did. Any Qwen integration
   needs that parser.
+- **`qwen-vl-ocr`'s rectangles.** With angle 90, the fourth number is the width, so
+  `[488, 206, 245, 763, 90]` is 763 wide and 245 tall on the 0-1000 grid. I checked
+  that convention against the text layer of a born-digital page.
 - **GLM's box tokens** do not come back through OpenRouter, so answers read "1: [276,
   125, 797, 287]".
 - **Exact comparisons.** `locate_digital.score` rounds before comparing, so this
@@ -394,8 +474,11 @@ $1.125. Qwen3.6-Plus costs $0.325 and $1.95 there.
 | GLM-4.5V | $0.058 |
 | GLM-4.6V | $0.037 |
 | Mistral OCR plugin, 2 runs and probes | $0.144 |
-| Gemini and Model Studio, all 403 | $0 |
-| **Total** | **about $0.38** |
+| Model Studio `qwen3-vl-plus`, 2 runs and a probe, at list price | $0.031 |
+| Model Studio `qwen-vl-ocr`, 4 runs and probes, at list price | $0.020 |
+| Model Studio `advanced_recognition`, one pass over 32 pages, at list price | $0.009 |
+| Gemini, all 403 | $0 |
+| **Total** | **about $0.44**, of which about $0.06 is this Model Studio round |
 
 The DeepSeek and layout rows reuse existing runs and cost nothing here.
 
@@ -408,6 +491,7 @@ S=bench/extraction/scripts/hosted_boxes.py
 REFS="--scans data/question-bank/references/hkdse-math-compulsory --digital data/question-bank/references/born-digital"
 python -I $S call qwen3-vl-30b --repeat 1 $REFS --env-file deploy/.env.uat
 python -I $S lines --source tesseract $REFS
+python -I $S lines --source modelstudio $REFS --env-file deploy/.env.uat
 uv run --no-project --with numpy --with opencv-python-headless --with pymupdf==1.28.2 \
   --with pillow --with httpx python -I $S mistral --repeat 1 $REFS --env-file deploy/.env.uat
 python -I $S deepseek <locate-base-scan-201.json> <digital-1.json> --name deepseek-today --repeat 1
