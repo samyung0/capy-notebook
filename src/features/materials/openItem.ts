@@ -1,8 +1,8 @@
 import type { Region, ReviewMode } from '@/api/types';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import {
-  isSettingsTab,
-  type SettingsTab,
+  isSettingsView,
+  type SettingsView,
 } from '@/features/workspace/settingsTabs';
 import type { MaterialMode } from './modePolicy';
 
@@ -56,7 +56,9 @@ export type WorkspaceOpenSearch = {
   /** Practice's result of a finished topic session. */
   review?: string;
   /** Workspace settings open at this tab, over whatever the page shows. */
-  settings?: SettingsTab;
+  settings?: SettingsView;
+  /** What its search holds. */
+  settingsQuery?: string;
   /** One-shot actions from the Get started list, dropped once taken: open the
    * Add file dialog, or a new chat. */
   add?: 'upload';
@@ -112,7 +114,10 @@ export function parseWorkspaceOpenSearch(
     ...parseOpenPage(search),
     add: search.add === 'upload' ? 'upload' : undefined,
     chat: search.chat === 'new' ? 'new' : undefined,
-    settings: isSettingsTab(search.settings) ? search.settings : undefined,
+    settings: isSettingsView(search.settings) ? search.settings : undefined,
+    settingsQuery: isSettingsView(search.settings)
+      ? text(search.settingsQuery)
+      : undefined,
   };
 }
 

@@ -114,7 +114,7 @@ export async function runJourney(
     doc.destroy();
     return text;
   };
-  const share = async () => {
+  const seedMember = () => {
     if (
       !mockWorkspaceMembers.some((row) => row.workspaceId === scenarioWorkspace)
     )
@@ -125,6 +125,9 @@ export async function runJourney(
         userId: 'u_mock_collaborator',
         workspaceId: scenarioWorkspace,
       });
+  };
+  const share = async () => {
+    seedMember();
     await go(scenarioPath);
     await dialog('workspace-sharing');
   };
@@ -756,9 +759,12 @@ export async function runJourney(
       else await ui.click(m.action_remove());
       return;
     case 'ownership-transfer':
+      seedMember();
       await go(scenarioPath);
       await dialog('ownership-transfer');
       fail();
+      ui.activate(await ui.element('[role="dialog"] [role="combobox"]'));
+      await ui.click('Morgan Lee', '[role="option"]');
       await ui.click(m.workspace_transfer_confirm());
       return;
     case 'topic-save':

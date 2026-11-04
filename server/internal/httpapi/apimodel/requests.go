@@ -192,8 +192,7 @@ type UpdateWorkspaceMemberReq struct {
 }
 
 // TransferWorkspaceReq hands a workspace to another member. The recipient must
-// already be a member: transfer charges them for every byte in the workspace, so
-// it cannot be done to somebody who has not opted in.
+// already be a member.
 type TransferWorkspaceReq struct {
 	RecipientID string `json:"recipientId" minLength:"1"`
 }

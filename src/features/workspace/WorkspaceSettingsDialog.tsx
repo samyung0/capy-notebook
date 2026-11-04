@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { qk } from '@/api/client';
 import {
   useDeleteWorkspace,
@@ -16,23 +16,33 @@ import type { Workspace } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { DangerZone, SettingRow } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
-import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
+import {
+  ConfirmDialog,
+  SimpleDialog,
+  useIsPhone,
+} from '@/components/ui/Dialog';
 import { Skeleton } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
 import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
+import { useDebounced } from '@/lib/useDebounced';
 import { canManageWorkspaceSettings } from './access';
 import { CloneWorkspaceDialog } from './CloneWorkspaceDialog';
 import { IndexingTab } from './IndexingTab';
+import { matchesSearch, PanelSearch } from './PanelSearch';
 import { ShareDialog } from './ShareDialog';
-import type { SettingsTab } from './settingsTabs';
+import type { SettingsTab, SettingsView } from './settingsTabs';
 import { WorkspaceFormEditDialog } from './WorkspaceFormEditDialog';
+import { WorkspaceTransferDialog } from './WorkspaceMemberManager';
 
-/** Workspace settings. `tab` and `onTabChange` keep the tab in the caller's
- * URL (the workspace page); without them the dialog keeps its own. */
+/** Workspace settings: the tabs in a column under a search, on phones a list
+ * that opens each tab as its own page. `tab`, `query` and their callbacks keep
+ * both in the caller's URL (the workspace page); without them the dialog keeps
+ * its own. */
 export function WorkspaceSettingsDialog({
   workspace,
   open,
@@ -40,10 +50,14 @@ export function WorkspaceSettingsDialog({
   initialTab,
   tab: controlledTab,
   onTabChange,
+  query,
+  onQueryChange,
 }: {
   initialTab?: SettingsTab;
-  tab?: SettingsTab;
-  onTabChange?: (tab: SettingsTab) => void;
+  tab?: SettingsView;
+  onTabChange?: (tab: SettingsView) => void;
+  query?: string;
+  onQueryChange?: (query: string) => void;
   workspace: Workspace;
   open: boolean;
   onClose: () => void;
@@ -61,18 +75,21 @@ export function WorkspaceSettingsDialog({
     value === 'study' ||
     (value === 'others' ? others : value === 'danger' ? danger : manage);
   const first: SettingsTab = manage ? 'general' : 'study';
-  const [ownTab, setOwnTab] = useState<SettingsTab>(
-    initialTab && allowed(initialTab) ? initialTab : first
-  );
+  const [ownTab, setOwnTab] = useState<SettingsView>(initialTab ?? 'menu');
   const requested = controlledTab ?? ownTab;
   // While it fades out the URL has no tab: keep showing the last one.
-  const lastTab = useRef<SettingsTab>(first);
-  if (open) lastTab.current = allowed(requested) ? requested : first;
-  const tab = lastTab.current;
-  const setTab = (value: SettingsTab) =>
+  const lastPicked = useRef<SettingsTab | null>(null);
+  if (open)
+    lastPicked.current =
+      requested !== 'menu' && allowed(requested) ? requested : null;
+  const picked = lastPicked.current;
+  const tab = picked ?? first;
+  const setTab = (value: SettingsView) =>
     onTabChange ? onTabChange(value) : setOwnTab(value);
+  const phone = useIsPhone();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [transferring, setTransferring] = useState(false);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { mutateAsync: update } = useUpdateWorkspace();
@@ -109,141 +126,192 @@ export function WorkspaceSettingsDialog({
       onRetry={() => void refetch()}
     />
   ) : null;
-  const tabs = [
+  const tabs: SettingsNavTab[] = [
     ...(manage
       ? [
-          { label: m.workspace_general(), value: 'general' },
-          { label: m.workspace_sharing(), value: 'sharing' },
-          { label: m.workspace_indexing(), value: 'indexing' },
-          { label: m.workspace_stats_title(), value: 'statistics' },
+          {
+            label: m.workspace_general(),
+            terms: [
+              m.icon_label(),
+              m.cover_label(),
+              m.common_name(),
+              m.summary_description_label(),
+              m.common_tags(),
+              m.workspace_kind_label(),
+              m.workspace_kind_personal(),
+              m.workspace_kind_class(),
+            ],
+            value: 'general' as const,
+          },
+          {
+            label: m.workspace_sharing(),
+            terms: [
+              m.share_visibility(),
+              m.share_anyone_with_access(),
+              m.members_people(),
+              m.members_invite(),
+              m.members_pending_title(),
+            ],
+            value: 'sharing' as const,
+          },
+          {
+            label: m.workspace_indexing(),
+            terms: [
+              m.workspace_auto_process(),
+              m.workspace_file_changes(),
+              m.workspace_failed_files(),
+            ],
+            value: 'indexing' as const,
+          },
+          {
+            label: m.workspace_stats_title(),
+            terms: [
+              m.quiz_col_topics(),
+              m.nav_files(),
+              m.nav_quizzes(),
+              m.stats_attempts(),
+              m.stats_average_score(),
+            ],
+            value: 'statistics' as const,
+          },
         ]
       : []),
-    { label: m.workspace_tab_study(), value: 'study' },
-    ...(others ? [{ label: m.workspace_tab_others(), value: 'others' }] : []),
+    {
+      label: m.workspace_tab_study(),
+      terms: [m.study_hide_progress()],
+      value: 'study' as const,
+    },
+    ...(others
+      ? [
+          {
+            label: m.workspace_tab_others(),
+            terms: [m.action_clone_workspace()],
+            value: 'others' as const,
+          },
+        ]
+      : []),
     ...(danger
       ? [
           {
             label: m.workspace_tab_danger(),
+            terms: owner
+              ? [m.workspace_transfer_action(), m.workspace_delete_action()]
+              : [m.workspace_leave_action()],
             tone: 'danger' as const,
-            value: 'danger',
+            value: 'danger' as const,
           },
         ]
       : []),
   ];
-  return (
-    // A manager's tabs share one tall frame, so switching never resizes it;
-    // anyone else's few rows fit their content, without a lone tab.
-    <SimpleDialog
-      cardClassName={cn(manage && 'h-full')}
-      className={cn('flex flex-col gap-0', manage && 'h-[88dvh]')}
-      onClose={onClose}
-      open={open}
-      title={m.workspace_settings()}
-    >
-      {tabs.length > 1 && (
-        <Tabs
-          className="dialog-tabs-bleed w-auto whitespace-nowrap sm:mt-2.5"
-          onChange={(value) => setTab(value as SettingsTab)}
-          tabs={tabs}
-          value={tab}
+  const content = (
+    <>
+      {tab === 'general' && (
+        <WorkspaceFormEditDialog
+          embedded
+          onSubmit={(values) => update({ ...values, id: workspace.id })}
+          open={open}
+          setOpen={onClose}
+          workspace={workspace}
         />
       )}
-      {/* No bottom padding: the dialog's own sits under the General footer. */}
-      <div className="mt-1 flex-1 pt-5">
-        {tab === 'general' && (
-          <WorkspaceFormEditDialog
-            embedded
-            onSubmit={(values) => update({ ...values, id: workspace.id })}
-            open={open}
-            setOpen={onClose}
-            workspace={workspace}
-          />
-        )}
-        {tab === 'sharing' && (
-          <ShareDialog
-            canManageMembers={workspace.capabilities.canManageMembers}
-            containerClassName="-mt-3"
-            embedded
-            link={workspace.sharePath}
-            onClose={onClose}
-            onPrivacyChange={(privacy) =>
-              updateSharing({ id: workspace.id, privacy })
-            }
-            onShareRoleChange={(shareRole) =>
-              updateSharing({ id: workspace.id, shareRole })
-            }
-            open={open}
-            privacy={workspace.privacy}
-            saving={sharing}
-            shareRole={workspace.shareRole}
-            workspaceId={workspace.id}
-          />
-        )}
-        {tab === 'statistics' &&
-          (isError ? (
-            statsError
-          ) : isPending ? (
-            <div
-              aria-label={m.a11y_loading()}
-              className="grid grid-cols-2 gap-3"
-              role="status"
-            >
-              {Array.from({ length: 5 }, (_, i) => (
-                <Skeleton className="h-[73px] rounded-card" key={i} />
+      {tab === 'sharing' && (
+        <ShareDialog
+          canManageMembers={workspace.capabilities.canManageMembers}
+          containerClassName="-mt-3"
+          embedded
+          link={workspace.sharePath}
+          onClose={onClose}
+          onPrivacyChange={(privacy) =>
+            updateSharing({ id: workspace.id, privacy })
+          }
+          onShareRoleChange={(shareRole) =>
+            updateSharing({ id: workspace.id, shareRole })
+          }
+          open={open}
+          privacy={workspace.privacy}
+          saving={sharing}
+          shareRole={workspace.shareRole}
+          workspaceId={workspace.id}
+        />
+      )}
+      {tab === 'statistics' &&
+        (isError ? (
+          statsError
+        ) : isPending ? (
+          <div
+            aria-label={m.a11y_loading()}
+            className="grid grid-cols-2 gap-3"
+            role="status"
+          >
+            {Array.from({ length: 5 }, (_, i) => (
+              <Skeleton className="h-[73px] rounded-card" key={i} />
+            ))}
+          </div>
+        ) : (
+          stats && (
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                [m.quiz_col_topics(), stats.topics],
+                [m.nav_files(), stats.files],
+                [m.nav_quizzes(), stats.quizzes],
+                [m.stats_attempts(), stats.attempts],
+                [m.stats_average_score(), `${stats.avgScore}%`],
+              ].map(([label, value]) => (
+                <div
+                  className="rounded-card border border-line bg-surface-hover-bg px-4 py-3"
+                  key={label}
+                >
+                  <p className="t-label text-fg-muted">{label}</p>
+                  <p className="t-large-card-title mt-1">
+                    <NumberPopIn value={String(value)} />
+                  </p>
+                </div>
               ))}
             </div>
-          ) : (
-            stats && (
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  [m.quiz_col_topics(), stats.topics],
-                  [m.nav_files(), stats.files],
-                  [m.nav_quizzes(), stats.quizzes],
-                  [m.stats_attempts(), stats.attempts],
-                  [m.stats_average_score(), `${stats.avgScore}%`],
-                ].map(([label, value]) => (
-                  <div
-                    className="rounded-card border border-line bg-surface-hover-bg px-4 py-3"
-                    key={label}
-                  >
-                    <p className="t-label text-fg-muted">{label}</p>
-                    <p className="t-large-card-title mt-1">
-                      <NumberPopIn value={String(value)} />
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )
-          ))}
-        {tab === 'indexing' && (
-          <IndexingTab error={statsError} stats={stats} workspace={workspace} />
-        )}
-        {tab === 'study' && <StudyTab workspaceId={workspace.id} />}
-        {tab === 'others' && (
-          <div className="flex flex-col gap-6">
-            <SettingRow
-              hint={m.workspace_clone_hint()}
-              title={m.action_clone_workspace()}
+          )
+        ))}
+      {tab === 'indexing' && (
+        <IndexingTab error={statsError} stats={stats} workspace={workspace} />
+      )}
+      {tab === 'study' && <StudyTab workspaceId={workspace.id} />}
+      {tab === 'others' && (
+        <div className="flex flex-col gap-6">
+          <SettingRow
+            hint={m.workspace_clone_hint()}
+            title={m.action_clone_workspace()}
+          >
+            <Button
+              iconLeft="clone"
+              onClick={() => setCloneOpen(true)}
+              rounded="large"
+              variant="outline"
             >
-              <Button
-                iconLeft="clone"
-                onClick={() => setCloneOpen(true)}
-                rounded="large"
-                variant="outline"
+              {m.action_clone()}
+            </Button>
+          </SettingRow>
+          <CloneWorkspaceDialog
+            open={cloneOpen}
+            setOpen={setCloneOpen}
+            workspace={workspace}
+          />
+        </div>
+      )}
+      {tab === 'danger' && (
+        <DangerZone>
+          {owner ? (
+            <>
+              <SettingRow
+                hint={m.workspace_transfer_hint()}
+                title={m.workspace_transfer_action()}
               >
-                {m.action_clone()}
-              </Button>
-            </SettingRow>
-            <CloneWorkspaceDialog
-              open={cloneOpen}
-              setOpen={setCloneOpen}
-              workspace={workspace}
-            />
-          </div>
-        )}
-        {tab === 'danger' && (
-          <DangerZone>
-            {owner ? (
+                <Button
+                  onClick={() => setTransferring(true)}
+                  rounded="large"
+                  variant="danger-outline"
+                >
+                  {m.workspace_transfer_confirm()}
+                </Button>
+              </SettingRow>
               <SettingRow
                 hint={m.workspace_delete_hint()}
                 title={m.workspace_delete_action()}
@@ -258,24 +326,85 @@ export function WorkspaceSettingsDialog({
                   {m.action_delete()}
                 </Button>
               </SettingRow>
-            ) : (
-              <SettingRow
-                hint={m.workspace_leave_hint()}
-                title={m.workspace_leave_action()}
+            </>
+          ) : (
+            <SettingRow
+              hint={m.workspace_leave_hint()}
+              title={m.workspace_leave_action()}
+            >
+              <Button
+                disabled={leaving || !me}
+                onClick={() => setConfirmLeave(true)}
+                rounded="large"
+                variant="danger"
               >
-                <Button
-                  disabled={leaving || !me}
-                  onClick={() => setConfirmLeave(true)}
-                  rounded="large"
-                  variant="danger"
-                >
-                  {m.action_leave()}
-                </Button>
-              </SettingRow>
+                {m.action_leave()}
+              </Button>
+            </SettingRow>
+          )}
+        </DangerZone>
+      )}
+    </>
+  );
+  // A lone tab needs no list, and a phone's list is the whole page until a tab
+  // is picked.
+  const nav = tabs.length > 1;
+  const page = phone && nav && picked;
+  return (
+    // A manager's tabs share one tall frame, so switching never resizes it;
+    // anyone else's few rows fit their content.
+    <SimpleDialog
+      cardClassName={cn(manage && 'h-full')}
+      cardScrollContainerClassName={cn(
+        'sm:overflow-hidden',
+        nav && 'sm:pl-3.5'
+      )}
+      className={cn('flex flex-col gap-0', manage && 'h-[88dvh]')}
+      onBack={page ? () => setTab('menu') : undefined}
+      onClose={onClose}
+      // The dialog takes focus, not the search: a tablet's keyboard stays down.
+      onOpenAutoFocus={(event) => {
+        event.preventDefault();
+        (event.currentTarget as HTMLElement).focus();
+      }}
+      open={open}
+      title={
+        page
+          ? tabs.find((item) => item.value === picked)?.label
+          : m.workspace_settings()
+      }
+      width={nav ? 880 : undefined}
+    >
+      <div className="flex min-h-0 flex-1 flex-col sm:mt-2 sm:flex-row">
+        {nav && (
+          <SettingsNav
+            className={cn(page && 'hidden')}
+            onChange={(value) => setTab(value)}
+            onQueryChange={onQueryChange}
+            query={query}
+            tabs={tabs}
+            value={picked ?? (phone ? '' : first)}
+          />
+        )}
+        {(!phone || !nav || picked) && (
+          // To the card's edges from sm: its scrollbar and the General footer's
+          // padding are the dialog's own.
+          <div
+            className={cn(
+              'min-w-0 flex-1 pt-2 sm:-mr-5.5 sm:-mb-6.5 sm:overflow-y-auto sm:pt-0.5 sm:pr-5.5 sm:pb-6.5',
+              nav && 'sm:pl-4'
             )}
-          </DangerZone>
+          >
+            {content}
+          </div>
         )}
       </div>
+      {transferring && (
+        <WorkspaceTransferDialog
+          onClose={() => setTransferring(false)}
+          workspaceId={workspace.id}
+        />
+      )}
       <ConfirmDialog
         body={m.workspace_delete_confirm_body()}
         confirmLabel={m.trash_delete_forever()}
@@ -297,6 +426,105 @@ export function WorkspaceSettingsDialog({
         title={m.workspace_leave_confirm_title({ name: workspace.name })}
       />
     </SimpleDialog>
+  );
+}
+
+type SettingsNavTab = {
+  label: string;
+  /** The settings it holds, for the search. */
+  terms: string[];
+  tone?: 'danger';
+  value: SettingsTab;
+};
+
+/** The search and the tabs under it. The search narrows the tabs to those
+ * holding a match, naming the setting under its tab; the tab open stays open
+ * whatever it finds. */
+function SettingsNav({
+  className,
+  onChange,
+  onQueryChange,
+  query,
+  tabs,
+  value,
+}: {
+  className?: string;
+  onChange: (value: SettingsTab) => void;
+  onQueryChange?: (query: string) => void;
+  query?: string;
+  tabs: SettingsNavTab[];
+  value: string;
+}) {
+  const [search, setSearch] = useState(query ?? '');
+  const settled = useDebounced(search.trim());
+  // Only what was typed since: opening from a link writes nothing back.
+  const sent = useRef(settled);
+  useEffect(() => {
+    if (settled === sent.current) return;
+    sent.current = settled;
+    onQueryChange?.(settled);
+  }, [settled, onQueryChange]);
+  const shown = tabs.flatMap(({ label, terms, tone, value: tab }) => {
+    const inLabel = matchesSearch(label, search);
+    const match = inLabel
+      ? undefined
+      : terms.find((term) => matchesSearch(term, search));
+    return inLabel || match
+      ? [
+          {
+            label: (
+              <span className="flex items-center justify-between gap-2">
+                <span className="min-w-0">
+                  <span className="block">{label}</span>
+                  {match && (
+                    <span className="t-meta block font-normal text-fg-muted">
+                      {match}
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 text-fg-muted sm:hidden">
+                  <Icon name="navigationForward" />
+                </span>
+              </span>
+            ),
+            tone,
+            value: tab,
+          },
+        ]
+      : [];
+  });
+  return (
+    <nav
+      aria-label={m.workspace_settings()}
+      className={cn(
+        'flex shrink-0 flex-col sm:-mb-6.5 sm:w-48 sm:border-divider sm:border-r sm:pr-4 sm:pb-6.5',
+        className
+      )}
+    >
+      {/* PanelSearch pads itself for a panel; here the field lines up with the
+          tabs. */}
+      <div className="-mx-2.5 -mt-2.5">
+        <PanelSearch
+          label={m.workspace_settings_search()}
+          onChange={setSearch}
+          value={search}
+        />
+      </div>
+      {shown.length > 0 ? (
+        <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+          <Tabs
+            onChange={(next) => onChange(next as SettingsTab)}
+            orientation="vertical"
+            tabs={shown}
+            value={value}
+          />
+        </div>
+      ) : (
+        <p className="t-meta mt-3 px-3.5 text-fg-muted">
+          {m.workspace_settings_no_match()}
+        </p>
+      )}
+    </nav>
   );
 }
 

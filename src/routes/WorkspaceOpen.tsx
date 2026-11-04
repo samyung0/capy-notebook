@@ -96,7 +96,7 @@ import {
   PanelTitleMenu,
   type PanelView,
 } from '@/features/workspace/PanelTitleMenu';
-import type { SettingsTab } from '@/features/workspace/settingsTabs';
+import type { SettingsView } from '@/features/workspace/settingsTabs';
 import { WorkspaceDashboard } from '@/features/workspace/WorkspaceDashboard';
 import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
 import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
@@ -514,14 +514,33 @@ function WorkspaceOpen() {
   /** Workspace settings at `tab`, kept in the URL so a link can open it.
    * Opening, switching tabs and closing replace the entry, so the dialog
    * adds no history. */
-  function setSettingsTab(tab: SettingsTab | undefined) {
+  function setSettingsTab(tab: SettingsView | undefined) {
     // The live URL, not this render's: a dialog closing because the app is
     // leaving (Back, Clone, Delete) finds no settings there and stays put.
     const latest = router.latestLocation.search as WorkspaceOpenSearch;
     if (tab === latest.settings) return;
     navigate({
       replace: true,
-      search: (previous) => ({ ...previous, settings: tab }),
+      search: (previous) => ({
+        ...previous,
+        settings: tab,
+        settingsQuery: tab ? previous.settingsQuery : undefined,
+      }),
+      to: '.',
+    });
+  }
+
+  /** Its search once settled, in the URL beside the tab; a search settling
+   * after the dialog closed stays out. */
+  function setSettingsQuery(query: string) {
+    const latest = router.latestLocation.search as WorkspaceOpenSearch;
+    if (!latest.settings || query === (latest.settingsQuery ?? '')) return;
+    navigate({
+      replace: true,
+      search: (previous) => ({
+        ...previous,
+        settingsQuery: query || undefined,
+      }),
       to: '.',
     });
   }
@@ -717,11 +736,10 @@ function WorkspaceOpen() {
     setRightOpen(true);
     setChatRequest((previous) => ({ id, seq: (previous?.seq ?? 0) + 1 }));
   }
-  // Everyone has settings: owner and editor members open on General, viewers
-  // and share-role visitors on their own Study tab.
+  // Everyone has settings: phones open on the tab list, wider screens on the
+  // first tab (General for owner and editor members, else their own Study).
   const rowProps = {
-    onOpenSettings: () =>
-      setSettingsTab(canManageWorkspaceSettings(ws) ? 'general' : 'study'),
+    onOpenSettings: () => setSettingsTab('menu'),
   };
   // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
   // pager) clear: the chat dock stays a button above it.
@@ -1293,8 +1311,10 @@ function WorkspaceOpen() {
       />
       <WorkspaceSettingsDialog
         onClose={() => setSettingsTab(undefined)}
+        onQueryChange={setSettingsQuery}
         onTabChange={setSettingsTab}
         open={!!search.settings}
+        query={search.settingsQuery}
         tab={search.settings}
         workspace={ws}
       />

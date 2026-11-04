@@ -473,14 +473,24 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
   avatar. A user whose display name is empty is shown by user id.
 - **People with access** in Workspace settings → Sharing (Epo 2026-11-04): the
   owner's row reads Owner; for the owner each other row has its role dropdown,
-  applied at once, and a trash that removes at once, and a role switch sits
-  above the invite's email field and Invite. An editor member sees the list
+  applied at once, and a trash that asks first ("Remove {name}?", staying open
+  if the removal fails), and a role switch sits above the invite's email field
+  and Invite. An editor member sees the list
   with each role as text, no invite and no pending invitations; they leave from
   Danger. Viewer members have no Sharing tab.
 - **Everyone signed in with access** (members and share-role visitors)
   opens Workspace settings: its Study tab holds their own Hide study
   progress. General, Sharing, Indexing and Statistics are for
   owners and editors; Others shows with Clone, Danger for the owner.
+- **The dialog's layout** (Epo 2026-11-04): the tabs sit in a left column under
+  the file tree's search (`PanelSearch`). On phones the search and tabs fill
+  the page, and a tab opens as its own page with an arrow back to them. The
+  search narrows the tabs to those holding a match in the tab's name or a
+  setting's name, shown under the tab; the tab open stays open. The workspace
+  URL holds both: `settings=<tab>`, `settings=menu` (no tab picked: phones show
+  the list, wider screens the first tab) and `settingsQuery=<text>`. Moving
+  between them replaces the URL entry, so the browser's Back leaves settings.
+  Opened from a workspace card the dialog keeps both to itself.
 - **Owner and editor members** can rename/recolor/describe/tag the workspace,
   change private/link/public visibility or `shareRole`, and view workspace
   statistics. The kind (Used for, in General) is the owner's alone. Tags land in the owner's tag namespace whoever edits them.
@@ -490,8 +500,8 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
 - **Any editor or viewer member** may leave the workspace (Epo 2026-10-28):
   the settings Danger tab shows it Leave, which is the remove call on its own
   row (`DELETE /api/workspaces/{id}/members/{memberId}` with its own id) and
-  sends no removal notification. The owner's Danger tab shows only Delete; an
-  owner hands the workspace over with a transfer instead.
+  sends no removal notification. The owner's Danger tab shows Transfer and
+  Delete; an owner hands the workspace over with a transfer instead.
 - **Owner only** can invite a member, change a member's role, remove a member,
   delete the workspace, and switch Auto process edits (Epo 2026-10-21): a
   workspace update carrying `autoProcess` from anyone else is refused whole
@@ -500,11 +510,12 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
 - Frozen owners cannot create invitations or promote an existing member,
   because either action widens exposure. They may demote or remove members as
   recovery-safe mutations. Grace owners invite and promote normally.
-- Ownership is not assigned through a normal role change. The owner must use
-  **transfer ownership** and select an existing live member.
-- On transfer, the recipient becomes owner and assumes the complete storage
-  bill. The old owner remains as an editor. Transfer is refused if the recipient
-  cannot fit the workspace's used and reserved bytes or file count.
+- Ownership is not assigned through a normal role change. The owner uses
+  **Transfer ownership** in Workspace settings → Danger and picks an existing
+  live member (Epo 2026-11-04). There is no accept step and no notification.
+- On transfer, the recipient becomes owner and the old owner remains as an
+  editor. No storage charge moves: each file stays charged to its uploader. A
+  transfer is refused past the recipient's plan file count for a workspace.
 - The workspace cap counts owned and joined workspaces together (Epo
   2026-10-28): Free 10, Pro 50 (migration `0070_owned_workspace_cap.sql`), one
   count of the user's `workspace_members` rows, since every owner holds one with
