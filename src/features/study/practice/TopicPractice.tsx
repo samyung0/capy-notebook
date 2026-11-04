@@ -24,7 +24,7 @@ import {
   DialogFooter,
   DialogTitle,
 } from '@/components/ui/Dialog';
-import { SkeletonList, Spinner } from '@/components/ui/feedback';
+import { SkeletonList } from '@/components/ui/feedback';
 import {
   Select,
   SelectContent,
@@ -155,9 +155,9 @@ function Choice({
 
 /** Practise on a topic or the whole workspace (Epo 2026-11-03, board F1b;
  * start dialog 2026-11-04, board F1): the learner picks how many, which come
- * first and an optional timer, and Start fetches that batch, which is the
- * session, run one question at a time in the page's place. Questions only. The
- * first answer records it. */
+ * first and an optional timer, over the batch those choices draw. Start runs
+ * that batch, the one on screen, one question at a time in the page's place.
+ * Questions only. The first answer records it. */
 export function TopicPractice({
   behind,
   onClose,
@@ -183,24 +183,24 @@ export function TopicPractice({
   const [picked, setPicked] = useState<number | null>(null);
   const [order, setOrder] = useState<Order>('recommended');
   const [minutes, setMinutes] = useState(0);
-  const [begun, setBegun] = useState(false);
   const size = picked ?? defaultCount(total);
-  const { data, error, isError, isFetching, refetch } = useWorkspaceReview(
-    workspaceId,
-    {
-      count: size,
-      group: start.group,
-      items: 'quiz',
-      mode: start.reviewMode,
-      order: order === 'recommended' ? undefined : order,
-      topicId: start.topicId,
-    },
-    { enabled: begun, errorBoundary: false }
-  );
-  // The batch fetched on Start: a later read would draw a different one.
+  const { data, error, isError, isFetching, isPlaceholderData, refetch } =
+    useWorkspaceReview(
+      workspaceId,
+      {
+        count: size,
+        group: start.group,
+        items: 'quiz',
+        mode: start.reviewMode,
+        order: order === 'recommended' ? undefined : order,
+        topicId: start.topicId,
+      },
+      { enabled: total > 0, errorBoundary: false, keepPrevious: true }
+    );
   const [running, setRunning] = useState<Running | null>(null);
   const [endsAt, setEndsAt] = useState<number | null>(null);
-  if (running === null && begun && data && !isFetching && !isError) {
+  function begin() {
+    if (!data) return;
     setRunning({
       items: data.items,
       ref: {
@@ -242,13 +242,9 @@ export function TopicPractice({
         />
       </RemovedAssetsContext.Provider>
     );
-  const starting = begun && !isError;
+  const count = data?.items.length ?? size;
   const startButton = (
-    <Button
-      disabled={!total || starting}
-      onClick={() => (begun ? void refetch() : setBegun(true))}
-    >
-      {starting && <Spinner />}
+    <Button disabled={!data?.items.length || isFetching} onClick={begin}>
       {m.review_start()}
     </Button>
   );
@@ -261,66 +257,96 @@ export function TopicPractice({
         <DialogContent
           aria-describedby={undefined}
           cardScrollContainerClassName="sm:px-7 sm:pb-0"
-          className="sm:max-w-[460px]"
+          className="sm:max-w-[790px]"
         >
           <DialogTitle action={startButton} className="pb-0">
             {title}
           </DialogTitle>
           {total > 0 && (
             <p className="t-meta mt-0.5 font-semibold text-fg-muted">
-              {`${questionsLabel(size)} · ${minutesLabel(size)}`}
+              {`${questionsLabel(count)} · ${minutesLabel(count)}`}
             </p>
           )}
-          {isError ? (
-            <ErrorState
-              action={
-                <Button onClick={() => void refetch()} variant="outline">
-                  {m.action_retry()}
-                </Button>
-              }
-              className="my-8"
-              errorId={unexpectedErrorId(error)}
-              title={m.practice_session_failed()}
-              variant="panel"
-            />
-          ) : !counting && total === 0 ? (
+          {!counting && total === 0 ? (
             <p className="t-meta my-8 text-fg-muted">{m.practice_nothing()}</p>
           ) : (
-            <div className="mt-4 flex flex-col gap-4">
-              <Choice
-                label={m.practice_choose_questions()}
-                onChange={(v) => setPicked(Number(v))}
-                options={countChoices(total).map((n) => ({
-                  label:
-                    n === total
-                      ? m.practice_all_questions({ count: n })
-                      : String(n),
-                  value: String(n),
-                }))}
-                value={String(size)}
-              />
-              <Choice
-                label={m.practice_choose_mode()}
-                onChange={(v) => setOrder(v as Order)}
-                options={ORDERS.map((o) => ({
-                  label: o.label(),
-                  value: o.value,
-                }))}
-                value={order}
-              />
-              <Choice
-                label={m.practice_choose_timer()}
-                onChange={(v) => setMinutes(Number(v))}
-                options={[
-                  { label: m.practice_timer_off(), value: '0' },
-                  ...TIMER_MINUTES.map((n) => ({
-                    label: m.practice_timer_minutes({ count: n }),
+            <>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <Choice
+                  label={m.practice_choose_questions()}
+                  onChange={(v) => setPicked(Number(v))}
+                  options={countChoices(total).map((n) => ({
+                    label:
+                      n === total
+                        ? m.practice_all_questions({ count: n })
+                        : String(n),
                     value: String(n),
-                  })),
-                ]}
-                value={String(minutes)}
-              />
-            </div>
+                  }))}
+                  value={String(size)}
+                />
+                <Choice
+                  label={m.practice_choose_mode()}
+                  onChange={(v) => setOrder(v as Order)}
+                  options={ORDERS.map((o) => ({
+                    label: o.label(),
+                    value: o.value,
+                  }))}
+                  value={order}
+                />
+                <Choice
+                  label={m.practice_choose_timer()}
+                  onChange={(v) => setMinutes(Number(v))}
+                  options={[
+                    { label: m.practice_timer_off(), value: '0' },
+                    ...TIMER_MINUTES.map((n) => ({
+                      label: m.practice_timer_minutes({ count: n }),
+                      value: String(n),
+                    })),
+                  ]}
+                  value={String(minutes)}
+                />
+              </div>
+              {isError ? (
+                <ErrorState
+                  action={
+                    <Button onClick={() => void refetch()} variant="outline">
+                      {m.action_retry()}
+                    </Button>
+                  }
+                  className="my-8"
+                  errorId={unexpectedErrorId(error)}
+                  title={m.practice_session_failed()}
+                  variant="panel"
+                />
+              ) : data ? (
+                <ol
+                  className={cn(
+                    'mt-4 max-h-[40vh] overflow-auto border-divider border-t',
+                    isPlaceholderData && 'opacity-60'
+                  )}
+                >
+                  {data.items.map((item, i) => (
+                    <li
+                      className="flex h-9.5 items-center gap-3 border-divider border-b last:border-b-0"
+                      key={keyOf(item)}
+                    >
+                      <span className="t-meta w-5 shrink-0 font-bold text-fg-muted">
+                        {i + 1}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        <TextView
+                          className="whitespace-nowrap"
+                          text={questionLine(item.question)}
+                        />
+                      </span>
+                      <ReasonChip reason={item.reason} />
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <SkeletonList className="mt-4" count={5} rowHeight={38} />
+              )}
+            </>
           )}
           <DialogFooter className="mt-2.5 max-sm:hidden sm:-mx-7 sm:px-7 sm:pb-5">
             <Button onClick={onClose} variant="ghost">

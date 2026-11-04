@@ -2967,12 +2967,15 @@ export const workspaceReviewQuery = (workspaceId: string, start: ReviewStart) =>
 export const useWorkspaceReview = (
   workspaceId: string,
   start: ReviewStart,
-  options?: QueryUiOptions & { enabled?: boolean }
+  options?: QueryUiOptions & { enabled?: boolean; keepPrevious?: boolean }
 ) =>
   useQuery({
     ...workspaceReviewQuery(workspaceId, start),
     enabled: options?.enabled,
     meta: queryMeta(options),
+    placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
+    // The batch on screen is the session: a refocus must not redraw it.
+    refetchOnWindowFocus: false,
   });
 
 /** An unfinished session's items still to answer, for Continue. */

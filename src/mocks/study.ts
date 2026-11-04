@@ -1082,9 +1082,16 @@ export const studyHandlers = [
       questionsOnly && !mode
         ? newQuestions(String(params.id), group, topicId)
         : [];
-    const mixed: ReviewItem[] = [];
-    for (let i = 0; i < Math.max(practised.length, fresh.length); i++)
-      mixed.push(...[practised[i], fresh[i]].filter((it) => !!it));
+    const order = url.searchParams.get('order');
+    const mixed: ReviewItem[] =
+      order === 'unattempted'
+        ? [...fresh, ...practised]
+        : order === 'incorrect'
+          ? [...practised, ...fresh]
+          : [];
+    if (!order)
+      for (let i = 0; i < Math.max(practised.length, fresh.length); i++)
+        mixed.push(...[practised[i], fresh[i]].filter((it) => !!it));
     const count = Number(url.searchParams.get('count')) || 0;
     const list = mixed
       .slice(0, count || (questionsOnly ? 10 : 20))

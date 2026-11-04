@@ -435,8 +435,10 @@ session.
   Recommended (today's draw), Unattempted first (never answered in reading order,
   then the rest by score) or Answered incorrectly first (latest answer Again or
   Hard by score, then practised, then never answered), sent as `count` and `order`.
-  Timer: off, or 10, 20, 30 or 60 minutes. Start fetches that batch and runs it;
-  closing returns to Practice. Questions only: flashcards stay out.
+  Timer: off, or 10, 20, 30 or 60 minutes. Under them, a scrolling list of the
+  questions those choices draw, each with its reason chip: every change fetches a
+  new batch (counting toward the `Review` rate limit), and Start runs the batch on
+  screen. Closing returns to Practice. Questions only: flashcards stay out.
 - **Session (F1b):** in the page's place, a header row with the title, "3 of
   10", a 140px progress bar, the timer's time left when one was picked (at zero
   the session ends as End session does; the time is not recorded) and End session; then one question at a time,
