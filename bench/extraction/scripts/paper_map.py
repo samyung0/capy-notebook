@@ -167,7 +167,7 @@ def parse_map(text: str) -> list[dict]:
 
 
 def options_of(variant: str) -> dict:
-    m = re.fullmatch(r"map(\d+)((?:-\w+)*)", variant)
+    m = re.fullmatch(r"map(?:copy)?(\d+)((?:-\w+)*)", variant)
     flags = (m[2] or "").split("-")
     return {
         "size": int(m[1]),
@@ -221,6 +221,43 @@ def ask_text(labels: list[str]) -> str:
     return f"Record question{'s' if len(labels) > 1 else ''} {names} now."
 
 
+async def selection(state, pages) -> list[dict]:
+    """The first message's blocks before its ask: each page's text and image, then all
+    the boxes as JSON, numbered once across the selection into ``state.window``."""
+    from pipeline.prompts import extraction as prompts
+    from pipeline.retrieval import extraction
+
+    state.window = {}
+    for page in pages:
+        regions = state.det.get(fm.stem_of(state.paper, page.number), [])
+        for region in fm.boxes_of(regions)[1]:
+            state.window[len(state.window) + 1] = (page.number, region)
+    boxes = [
+        {
+            "box": n,
+            "page": page,
+            "coordinates": [round(v) for v in region["box"]],
+            "label": region["label"],
+            "score": round(region["score"], 2),
+        }
+        for n, (page, region) in state.window.items()
+    ]
+    content: list[dict] = []
+    for index, p in enumerate(pages, 1):
+        text = prompts.page_text(
+            index, p.number, p.file_name, p.text[: extraction.PAGE_TEXT_CHARS]
+        )
+        content.append({"type": "text", "text": text})
+        content.append({"type": "image_url", "image_url": {"url": await p.image()}})
+    content.append(
+        {
+            "type": "text",
+            "text": "Boxes on these pages, as JSON: " + json.dumps(boxes),
+        }
+    )
+    return content
+
+
 def install_map() -> None:
     """X as the outline call, and the batches as the one window, so the production
     run's pairing, figures and report follow unchanged."""
@@ -267,7 +304,7 @@ def install_map() -> None:
     async def logged_complete(messages, **kwargs):
         state = fw.STATE.get()
         call = CALL.get()
-        if not state.variant.startswith("map") or call is None:
+        if not state.variant.startswith(("map", "copy")) or call is None:
             return await complete_response(messages, **kwargs)
         call["t0"] = time.monotonic()
         call["at"] = round(call["t0"] - state.extra["started"], 2)
@@ -314,34 +351,7 @@ def install_map() -> None:
         extra.setdefault("call_log", [])
         options = options_of(state.variant)
         nonce = extra.setdefault("nonce", secrets.token_hex(6))
-        state.window = {}
-        for page in pages:
-            regions = state.det.get(fm.stem_of(state.paper, page.number), [])
-            for region in fm.boxes_of(regions)[1]:
-                state.window[len(state.window) + 1] = (page.number, region)
-        boxes = [
-            {
-                "box": n,
-                "page": page,
-                "coordinates": [round(v) for v in region["box"]],
-                "label": region["label"],
-                "score": round(region["score"], 2),
-            }
-            for n, (page, region) in state.window.items()
-        ]
-        content: list[dict] = []
-        for index, p in enumerate(pages, 1):
-            text = prompts.page_text(
-                index, p.number, p.file_name, p.text[: extraction.PAGE_TEXT_CHARS]
-            )
-            content.append({"type": "text", "text": text})
-            content.append({"type": "image_url", "image_url": {"url": await p.image()}})
-        content.append(
-            {
-                "type": "text",
-                "text": "Boxes on these pages, as JSON: " + json.dumps(boxes),
-            }
-        )
+        content = await selection(state, pages)
         content.append({"type": "text", "text": MAP_ASK})
         extra["prefix"] = [
             {"role": "system", "content": system_prompt(nonce)},

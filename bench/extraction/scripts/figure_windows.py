@@ -232,7 +232,7 @@ def install() -> None:
 
     def figures_from_boxes(raw, pages, part_labels):
         state = STATE.get()
-        if state.variant != "boxes" and not state.variant.startswith("map"):
+        if state.variant != "boxes" and not state.variant.startswith(("map", "copy")):
             return read_figures(raw, pages, part_labels)
         read = []
         parts = {extraction.label_key(label) for label in part_labels}
@@ -294,7 +294,7 @@ def install() -> None:
             for q in held
             for f in q.figures
         ]
-        if state.variant != "boxes" and not state.variant.startswith("map"):
+        if state.variant != "boxes" and not state.variant.startswith(("map", "copy")):
             state.box_calls += len({f.page.number for q in held for f in q.figures})
             return await locate_figures(held, model=model)
         # Only figures with no box go to the box call.
