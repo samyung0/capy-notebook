@@ -253,7 +253,7 @@ export function CenterContent({
   const changeFileMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
     setPresence(null);
-    if (item) saveDocumentMode(item, nextMode);
+    if (item?.kind === 'file') saveDocumentMode(item, nextMode);
     onModeChange(nextMode);
   };
 
@@ -585,6 +585,12 @@ function MaterialContentBody({
   // An item's last read, painting until this one answers.
   const copied = useMaterialCopy(materialId, staticNote ? null : me?.id);
   const refused = isApiError(error) && error.status < 500;
+  // No access, or gone: what this device kept of it goes too.
+  const lost =
+    isApiError(error) && (error.status === 403 || error.status === 404);
+  useEffect(() => {
+    if (lost) void dropDeviceCopies(materialId);
+  }, [lost, materialId]);
   const material = loaded ?? (refused ? undefined : (copied ?? undefined));
   useKeepMaterialCopy(
     loaded?.kind === 'note' ? undefined : loaded,

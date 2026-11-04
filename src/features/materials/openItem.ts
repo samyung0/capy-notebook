@@ -65,11 +65,15 @@ export type WorkspaceOpenSearch = {
   chat?: 'new';
 };
 
-function documentModeKey(item: OpenItem): string {
+/** A file's last mode here: a material has none, it opens at the highest its
+ * reader may have. */
+type FileItem = Extract<OpenItem, { kind: 'file' }>;
+
+function documentModeKey(item: FileItem): string {
   return `capy.document.mode.${item.kind}.${item.id}`;
 }
 
-export function readDocumentMode(item: OpenItem): MaterialMode {
+export function readDocumentMode(item: FileItem): MaterialMode {
   try {
     return localStorage.getItem(documentModeKey(item)) === 'edit'
       ? 'edit'
@@ -79,7 +83,7 @@ export function readDocumentMode(item: OpenItem): MaterialMode {
   }
 }
 
-export function saveDocumentMode(item: OpenItem, mode: MaterialMode): void {
+export function saveDocumentMode(item: FileItem, mode: MaterialMode): void {
   try {
     localStorage.setItem(documentModeKey(item), mode);
   } catch {

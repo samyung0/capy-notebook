@@ -81,23 +81,19 @@ describe('searchFromOpenItem', () => {
 describe('document mode cache', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('remembers each file and material independently, defaulting to view', () => {
+  it('remembers each file independently, defaulting to view', () => {
     const values = new Map<string, string>();
     vi.stubGlobal('localStorage', {
       getItem: (key: string) => values.get(key) ?? null,
       setItem: (key: string, value: string) => values.set(key, value),
     });
     const file = { id: '1', kind: 'file' as const };
-    const material = { id: '1', kind: 'material' as const };
     expect(readDocumentMode(file)).toBe('view');
     saveDocumentMode(file, 'edit');
     expect(readDocumentMode(file)).toBe('edit');
-    expect(readDocumentMode(material)).toBe('view');
     expect(readDocumentMode({ id: '2', kind: 'file' })).toBe('view');
-    saveDocumentMode(material, 'edit');
     saveDocumentMode(file, 'view');
     expect(readDocumentMode(file)).toBe('view');
-    expect(readDocumentMode(material)).toBe('edit');
   });
 
   it('keeps documents usable when browser storage is unavailable', () => {

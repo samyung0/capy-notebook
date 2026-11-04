@@ -395,7 +395,7 @@ export function MaterialRefElement(props: PlateElementProps) {
         contentEditable={false}
       >
         {materialId && canEdit && (
-          <div className="absolute top-0 right-0 z-10 opacity-0 pointer-coarse:opacity-100 transition-opacity group-hover/embed:opacity-100 has-data-[state=open]:opacity-100">
+          <div className="absolute -top-7 right-0 z-10 bg-surface opacity-0 pointer-coarse:opacity-100 transition-opacity group-hover/embed:opacity-100 has-data-[state=open]:opacity-100">
             <Menu
               items={[
                 previewing
