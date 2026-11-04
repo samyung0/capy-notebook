@@ -5,7 +5,7 @@ Status 2026-11-01: round 1. Nothing is decided yet.
 **On hold (Epo, 2026-11-02):** canvas mode waits. Study and member performance tracking come first, in their own plan.
 
 **Decided (Epo, 2026-11-02): S2, the icon rail plus a panel, with a label under each rail icon.** It is used for the workspace shell in `todo-study-tracking.md`.
-- **Mocks:** the Design canvas at https://claude.ai/artifact/LJbZnwLBYb5wJFevQsLanj. Artboard names (S1, E2, …) are used below.
+- **Mocks:** the Design canvas at https://claude.ai/artifact/LJbZnwLBYb5wJFevQsLanj. Epo's other account for now (2026-11-04): a copy at https://claude.ai/artifact/AxrnmePzt5Nr8Ggoio6gBw, built from the local sources; comments and any hand edits made only on the original aren't in it. Artboard names (S1, E2, …) are used below.
 - **Research:** one report per area in `todo-canvas-workspace/`, each claim with a URL or a file path:
   - `A-canvas.md`
   - `B-localfirst.md`
