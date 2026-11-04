@@ -808,9 +808,10 @@ and [material editor checks](../server/internal/store/share.go#L209).
 ### Comments and live collaboration
 
 - Owner and effective editors can list discussions, create a discussion and
-  reply in Edit mode. A thread is a flat list of comments with no nesting and
-  no resolved state; threads are only deleted.
-  View mode has no comment controls. There is no commenter role or separate Comment mode.
+  reply in the editor, which is what they always open (Epo 2026-11-04). A thread
+  is a flat list of comments with no nesting and no resolved state; threads are
+  only deleted.
+  A viewer has no comment controls. There is no commenter role or separate Comment mode.
 - A user can edit only their own comment.
 - A user can delete their own comment or discussion. Only the workspace owner
   can delete another user's comment or discussion.
@@ -1543,8 +1544,8 @@ buttons it names; the question dialog's Undo and Redo also get a held
 "Undo · Redo" label. The card sits beside the lit part or, without room, in
 its bottom-right corner; a part under 96px tall goes above or below it
 instead, so the phone mic is not covered. The question step edits the workspace's first quiz,
-else the welcome note's embedded one: the note opens in Edit and its quiz
-block's Edit opens the same dialog. The last step lights the mic that opens the
+else the welcome note's embedded one: its quiz block's Edit opens the same
+dialog. The last step lights the mic that opens the
 account voice overlay: the voice card on the rail or the full sidebar, and on
 phones the mic after the nav and recent-files buttons in the top row (shown
 where the browser can record). A step whose part this width lacks (side panels

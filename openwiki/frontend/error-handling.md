@@ -415,7 +415,7 @@ inside workspaces: the server's capabilities drop `canEdit` for a frozen
 account, so edit mode, comments and create controls disappear, and
 drop only a material's `canEditContent` while its payer is at or over its
 limit (full or grace), so edit mode, comments, PDF marks and quiz or card
-edits disappear while rename, move and delete stay. `?mode=edit` falls back to view in both.
+edits disappear while rename, move and delete stay, and a note or item opens for reading.
 A write that still meets `account_over_quota` or `storage_quota_exceeded`
 inside a workspace (a stale capability, or creation at the limit) shows only
 the workspace status toast: `deferStorageRefusal` (in `src/lib/errors.ts`,
@@ -682,7 +682,8 @@ Playwright tests should use `expectErrorSurface(page, variant, text?)` from
 ## Collaborative source failures
 
 Source editors expose connecting, reconnecting, saving, saved, offline,
-unsaved, error and recovery states, shown in the header like the note editor's
+unsaved, error and recovery states (a note's and an item's have no connecting
+or reconnecting words, Epo 2026-11-04), shown in the header like the note editor's
 (see [plate-editor.md](plate-editor.md#connection-lifetime-and-refusals)).
 Saved requires an explicit durable checkpoint receipt. A failed save the
 server retries keeps the mounted editor and its pending receipts, shows Not
@@ -774,12 +775,16 @@ reload to continue from the last saved version."), and edits from another
 lineage (a newer version over unsaved edits, a draft from another version, a
 note room that moved on) the `changed` one ("This file changed while your
 edits were waiting to sync. Copy anything you need, then reload."). Unsent
-edits whose group was last edited over 7 days ago (Epo 2026-10-24; for notes
-until the merge view, Q251) open once under the `expired` one ("These edits
-are more than 7 days old and too old to sync. Copy anything you need, then
-reload."): their rows are deleted as they open (reported as
-`draft_unrestorable` / `expired`) and no draft sweep sends them. Notes have
-no recovery renderer (Epo 2026-10-24, Q251): their refused, other-lineage
+edits whose group was last edited over 7 days ago (Epo 2026-10-24) open an
+Office or text file once under the `expired` one ("These edits are more than 7
+days old and too old to sync. Copy anything you need, then reload."): their rows
+are deleted as they open (reported as `draft_unrestorable` / `expired`) and no
+draft sweep sends them. A quiz, a set or a diagram opens as usual instead, under
+a toast with Download ("Some old edits can't sync. Download them now or they'll
+be discarded.", Epo 2026-11-04, D14) that stays until dismissed: a diagram's source,
+a set's cards as tab-separated lines or a quiz's questions as JSON
+(`expiredDrafts.ts`). Its rows go when it closes, so a tab closed first shows it
+again at the next open. Notes have no recovery renderer (Epo 2026-10-24, Q251): their refused, other-lineage
 and expired edits, and blocks of a saved copy someone else changed
 meanwhile (Q229), open the live note with the merge view under the `review`
 strip ("Some of your edits couldn't sync into this note.", Review and
