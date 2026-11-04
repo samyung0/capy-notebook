@@ -370,9 +370,6 @@ export type {
   BankSummaryQuestion,
   Cover as CoverConfig,
   PastReview,
-  PlanStep,
-  PlanStepInput,
-  PlanWorkspace,
   Practice,
   PracticeQuiz,
   PracticeReview,
@@ -385,8 +382,6 @@ export type {
   Row as BankListRow,
   SessionScore,
   SetStudyEnabledReq,
-  StudyPlan,
-  StudyPlans,
   TopicProgress as BankTopicProgress,
   UnfinishedSession,
   WorkspaceActivity,
@@ -404,8 +399,6 @@ export interface ReviewStart {
   /** `quiz` serves questions only (Practice's topic sessions). */
   items?: 'quiz';
   mode?: ReviewMode;
-  /** A plan group's plan, kept in the session's workspace. */
-  planId?: string;
   topicId?: string;
 }
 export type AttemptSort = ListAttemptsSort;

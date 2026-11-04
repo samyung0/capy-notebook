@@ -361,9 +361,6 @@ export const qk = {
   integrations: ['integrations'] as const,
   invoices: ['billing', 'invoices'] as const,
   labels: ['labels'] as const,
-  learningPlans: ['learning', 'plans'] as const,
-  /** Everything under Learning: its plans. */
-  learningRoot: ['learning'] as const,
   libraryFigure: (id: string) => ['library-figure', id] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,

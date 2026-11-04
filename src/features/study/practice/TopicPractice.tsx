@@ -415,7 +415,7 @@ export function PracticeResult({
   const { session } = data;
   const questions = data.items.filter((it) => it.kind === 'question');
   const right = questions.filter((a) => outcomeOf(a) === 'right').length;
-  const group = session.group === 'plan' ? 'workspace' : session.group;
+  const { group } = session;
   return (
     <PracticeFrame>
       <div className="flex w-full max-w-220 flex-col">

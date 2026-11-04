@@ -624,9 +624,6 @@ type SourceUploadMetadata = {
 
 /** A clone's topic: the picked one, or one by name (any case), created
  * when missing. */
-/** The progress_loss 409 shows once per page load (POST /files/move). */
-let mockProgressLossAsked = false;
-
 function mockCloneTopic(
   workspaceId: string,
   { topicId, topicName }: { topicId?: string; topicName?: string }
@@ -1852,21 +1849,6 @@ export const handlers = [
         { errors: [{ message: 'file_processing' }] },
         { status: 409 }
       );
-    if (
-      !body.confirmProgressLoss &&
-      !mockProgressLossAsked &&
-      moving.some((file) => file.id === 'f_1')
-    ) {
-      mockProgressLossAsked = true;
-      return HttpResponse.json(
-        {
-          errors: [
-            { message: 'progress_loss', value: { people: 3, planSteps: 2 } },
-          ],
-        },
-        { status: 409 }
-      );
-    }
     const topicId = mockCloneTopic(target.id, body);
     for (const file of moving) {
       const source = db.workspaces.find((ws) => ws.id === file.workspaceId);

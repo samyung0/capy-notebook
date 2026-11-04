@@ -22,7 +22,7 @@ export type ReviewSearch = Omit<Partial<ReviewStart>, 'mode'> & {
   session?: string;
 };
 
-const GROUPS = ['topic', 'others', 'workspace', 'plan'] as const;
+const GROUPS = ['topic', 'others', 'workspace'] as const;
 const MODES: readonly ReviewMode[] = ['tricky', 'fading', 'learned'];
 const text = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 
@@ -37,7 +37,6 @@ export function parseReviewSearch(
   const mode = MODES.find((md) => md === search.reviewMode);
   if (mode) out.reviewMode = mode;
   out.topicId = text(search.topicId);
-  out.planId = text(search.planId);
   out.session = text(search.session);
   return out;
 }
@@ -50,7 +49,6 @@ export const PAST_REVIEW_SORTS: readonly PastReviewSort[] = [
   'cards',
   'time',
   'workspace',
-  'plan',
   'topic',
   'status',
 ];

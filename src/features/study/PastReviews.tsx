@@ -53,7 +53,7 @@ export function PastReviews() {
   const rows = data?.pages.flatMap((page) => page.items) ?? [];
   const sorting: ColumnSort<PastReviewSort> = {
     ascending: params.dir === 'asc',
-    ascendingFirst: ['workspace', 'plan', 'topic', 'status'],
+    ascendingFirst: ['workspace', 'topic', 'status'],
     onSortChange: (next, asc) =>
       setSearch(sortSearch('pastReviews', next, asc, PAST_REVIEW_SORT_DEFAULT)),
     sort,
@@ -123,12 +123,6 @@ export function PastReviews() {
               },
               {
                 clamp: true,
-                id: 'plan',
-                label: m.past_col_plan(),
-                sort: 'plan',
-              },
-              {
-                clamp: true,
                 id: 'topic',
                 label: m.past_col_topic(),
                 sort: 'topic',
@@ -160,13 +154,10 @@ export function PastReviews() {
                     {formatDate(r.startedAt)}
                   </Link>
                 ),
-                plan: r.group === 'plan' ? r.topicName : m.plan_default(),
                 quiz: <ScoreText score={r.quiz} />,
                 status: <Status review={r} />,
                 time: m.past_minutes({ count: minutes(r) }),
-                // A plan session's name is its plan, not a topic.
-                topic:
-                  r.group === 'plan' ? '' : groupName(r.group, r.topicName),
+                topic: groupName(r.group, r.topicName),
                 workspace: (
                   <WorkspaceCell iconId={r.iconId} name={r.workspaceName} />
                 ),

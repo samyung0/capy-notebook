@@ -1859,7 +1859,6 @@ export const moveFilesBodyTopicNameMax = 60;
 
 
 export const MoveFilesBody = zod.object({
-  "confirmProgressLoss": zod.boolean().optional().describe('Drop the left workspaces\' study progress and plan steps for these files'),
   "fileIds": zod.array(zod.string()).min(1).max(moveFilesBodyFileIdsMax).nullable(),
   "topicId": zod.string().optional().describe('A topic of the workspace; exclusive with topicName'),
   "topicName": zod.string().max(moveFilesBodyTopicNameMax).optional().describe('A topic of this name (any case), created when missing'),
@@ -3012,51 +3011,6 @@ export const UpdateLabelResponse = zod.object({
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "id": zod.string(),
   "name": zod.string()
-})
-
-
-/**
- * @summary Every study plan of the user
- */
-export const listLearningPlansResponseWorkspacesItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
-export const listLearningPlansResponseWorkspacesItemCoverLineMax = 40;
-
-export const listLearningPlansResponseWorkspacesItemCoverSeedMax = 16;
-
-
-export const listLearningPlansResponseWorkspacesItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
-
-
-export const ListLearningPlansResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "plans": zod.array(zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "name": zod.string(),
-  "steps": zod.array(zod.object({
-  "kind": zod.enum(['file', 'material']),
-  "locked": zod.boolean(),
-  "targetId": zod.string().describe('The file or material'),
-  "title": zod.string(),
-  "workspaceId": zod.string()
-})),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "workspaceId": zod.string()
-})),
-  "workspaces": zod.array(zod.object({
-  "cover": zod.object({
-  "color": zod.string().regex(listLearningPlansResponseWorkspacesItemCoverColorRegExp),
-  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
-  "line": zod.string().max(listLearningPlansResponseWorkspacesItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
-  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
-  "seed": zod.string().max(listLearningPlansResponseWorkspacesItemCoverSeedMax).regex(listLearningPlansResponseWorkspacesItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
-  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
-}).optional(),
-  "iconId": zod.string(),
-  "name": zod.string(),
-  "workspaceId": zod.string()
-}))
 })
 
 
@@ -5506,7 +5460,7 @@ export const CheckReviewItemBody = zod.object({
   "repeated": zod.int(),
   "young": zod.int()
 }).optional(),
-  "group": zod.enum(['topic', 'others', 'workspace', 'plan']),
+  "group": zod.enum(['topic', 'others', 'workspace']),
   "id": zod.uuid().describe('Minted by the browser when the session starts'),
   "items": zod.array(zod.object({
   "itemId": zod.string().min(1),
@@ -5514,7 +5468,6 @@ export const CheckReviewItemBody = zod.object({
   "reason": zod.enum(['new', 'missed', 'fading']).optional()
 })).min(1).max(checkReviewItemBodySessionItemsMax),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
-  "planId": zod.string().optional().describe('The plan of a plan group'),
   "topicId": zod.string().optional(),
   "workspaceId": zod.string().min(1)
 }).optional().describe('The review session the answer belongs to; the first answer records it')
@@ -5533,16 +5486,6 @@ export const CheckReviewItemResponse = zod.object({
  */
 export const GetReviewOverviewResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "plans": zod.array(zod.object({
-  "canReview": zod.boolean(),
-  "iconId": zod.string(),
-  "lastReviewedAt": zod.iso.datetime({"offset":true}).optional(),
-  "name": zod.string(),
-  "planId": zod.string(),
-  "reviewable": zod.int(),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})),
   "suggestions": zod.array(zod.object({
   "evidence": zod.object({
   "forgotten": zod.int(),
@@ -5562,7 +5505,7 @@ export const GetReviewOverviewResponse = zod.object({
 })),
   "unfinished": zod.array(zod.object({
   "answered": zod.int(),
-  "group": zod.enum(['topic', 'others', 'workspace', 'plan']),
+  "group": zod.enum(['topic', 'others', 'workspace']),
   "iconId": zod.string(),
   "id": zod.string(),
   "lastAnswerAt": zod.iso.datetime({"offset":true}),
@@ -5612,7 +5555,7 @@ export const RateReviewItemBody = zod.object({
   "repeated": zod.int(),
   "young": zod.int()
 }).optional(),
-  "group": zod.enum(['topic', 'others', 'workspace', 'plan']),
+  "group": zod.enum(['topic', 'others', 'workspace']),
   "id": zod.uuid().describe('Minted by the browser when the session starts'),
   "items": zod.array(zod.object({
   "itemId": zod.string().min(1),
@@ -5620,7 +5563,6 @@ export const RateReviewItemBody = zod.object({
   "reason": zod.enum(['new', 'missed', 'fading']).optional()
 })).min(1).max(rateReviewItemBodySessionItemsMax),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
-  "planId": zod.string().optional().describe('The plan of a plan group'),
   "topicId": zod.string().optional(),
   "workspaceId": zod.string().min(1)
 }).optional().describe('The review session the rating belongs to; the first answer records it')
@@ -5642,7 +5584,7 @@ export const listPastReviewsQueryLimitMax = 100;
 
 
 export const ListPastReviewsQueryParams = zod.object({
-  "sort": zod.enum(['date', 'quiz', 'cards', 'time', 'workspace', 'plan', 'topic', 'status']).default(listPastReviewsQuerySortDefault),
+  "sort": zod.enum(['date', 'quiz', 'cards', 'time', 'workspace', 'topic', 'status']).default(listPastReviewsQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listPastReviewsQueryDirDefault),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
   "has": zod.string().optional().describe('Comma-separated: quiz, flashcards; a session with either passes'),
@@ -5659,7 +5601,7 @@ export const ListPastReviewsResponse = zod.object({
   "total": zod.number()
 }).optional(),
   "finishedAt": zod.iso.datetime({"offset":true}).optional().describe('Omitted on the result page of a session not finished yet'),
-  "group": zod.enum(['topic', 'others', 'workspace', 'plan']),
+  "group": zod.enum(['topic', 'others', 'workspace']),
   "iconId": zod.string(),
   "id": zod.string(),
   "lastAnswerAt": zod.iso.datetime({"offset":true}),
@@ -5717,7 +5659,7 @@ export const ResumeReviewSessionResponse = zod.object({
   "repeated": zod.int(),
   "young": zod.int()
 }).optional(),
-  "group": zod.enum(['topic', 'others', 'workspace', 'plan']),
+  "group": zod.enum(['topic', 'others', 'workspace']),
   "items": zod.array(zod.object({
   "back": zod.string().optional(),
   "front": zod.string().optional(),
@@ -5732,7 +5674,6 @@ export const ResumeReviewSessionResponse = zod.object({
   "reason": zod.enum(['new', 'missed', 'fading']).optional()
 })),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
-  "planId": zod.string().optional().describe('The plan of a plan group'),
   "removedAssetIds": zod.array(zod.string()).nullish(),
   "topicId": zod.string().optional(),
   "total": zod.int()
@@ -5787,7 +5728,7 @@ export const GetReviewResultResponse = zod.object({
   "total": zod.number()
 }).optional(),
   "finishedAt": zod.iso.datetime({"offset":true}).optional().describe('Omitted on the result page of a session not finished yet'),
-  "group": zod.enum(['topic', 'others', 'workspace', 'plan']),
+  "group": zod.enum(['topic', 'others', 'workspace']),
   "iconId": zod.string(),
   "id": zod.string(),
   "lastAnswerAt": zod.iso.datetime({"offset":true}),
@@ -5998,42 +5939,6 @@ export const GetStandaloneSourceImportResponse = zod.object({
   "removedPictures": zod.int(),
   "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'cancelled'])
 })
-
-
-/**
- * @summary Delete a study plan
- */
-export const DeleteStudyPlanParams = zod.object({
-  "id": zod.uuid()
-})
-
-export const DeleteStudyPlanResponse = zod.void()
-
-
-/**
- * @summary Rename a study plan or replace its steps
- */
-export const UpdateStudyPlanParams = zod.object({
-  "id": zod.uuid()
-})
-
-export const updateStudyPlanBodyNameMax = 60;
-
-
-export const updateStudyPlanBodyStepsMax = 200;
-
-
-
-export const UpdateStudyPlanBody = zod.object({
-  "name": zod.string().min(1).max(updateStudyPlanBodyNameMax).optional(),
-  "steps": zod.array(zod.object({
-  "kind": zod.enum(['file', 'material']),
-  "targetId": zod.string().min(1).describe('The file or material'),
-  "workspaceId": zod.string()
-})).max(updateStudyPlanBodyStepsMax).optional()
-})
-
-export const UpdateStudyPlanResponse = zod.void()
 
 
 /**
@@ -7653,9 +7558,8 @@ export const GetWorkspaceReviewParams = zod.object({
 export const getWorkspaceReviewQueryGroupDefault = `workspace`;
 
 export const GetWorkspaceReviewQueryParams = zod.object({
-  "group": zod.enum(['topic', 'others', 'workspace', 'plan']).default(getWorkspaceReviewQueryGroupDefault),
+  "group": zod.enum(['topic', 'others', 'workspace']).default(getWorkspaceReviewQueryGroupDefault),
   "topicId": zod.string().optional().describe('The topic of a topic group'),
-  "planId": zod.string().optional().describe('The plan of a plan group, one of the user\'s plans kept in this workspace'),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('A suggestion\'s mode; omitted for a review from the workspace list'),
   "items": zod.enum(['quiz']).optional().describe('quiz serves questions only, whatever the review items preference (Practice\'s topic sessions)')
 })
@@ -7691,7 +7595,7 @@ export const GetWorkspaceReviewResponse = zod.object({
   "repeated": zod.int(),
   "young": zod.int()
 }).optional(),
-  "group": zod.enum(['topic', 'others', 'workspace', 'plan']),
+  "group": zod.enum(['topic', 'others', 'workspace']),
   "items": zod.array(zod.object({
   "back": zod.string().optional(),
   "front": zod.string().optional(),
@@ -7706,7 +7610,6 @@ export const GetWorkspaceReviewResponse = zod.object({
   "reason": zod.enum(['new', 'missed', 'fading']).optional()
 })),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
-  "planId": zod.string().optional().describe('The plan of a plan group'),
   "removedAssetIds": zod.array(zod.string()).nullish(),
   "topicId": zod.string().optional(),
   "total": zod.int()
@@ -7919,10 +7822,6 @@ export const GetWorkspaceStudyParams = zod.object({
   "id": zod.string()
 })
 
-export const GetWorkspaceStudyQueryParams = zod.object({
-  "planId": zod.string().optional().describe('Draw Reviewable, QuickReview and Unfinished from this plan of the user\'s, kept in this workspace')
-})
-
 export const GetWorkspaceStudyResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "enabled": zod.boolean(),
@@ -7957,7 +7856,7 @@ export const GetWorkspaceStudyResponse = zod.object({
   "reviewable": zod.int(),
   "unfinished": zod.object({
   "answered": zod.int(),
-  "group": zod.enum(['topic', 'others', 'workspace', 'plan']),
+  "group": zod.enum(['topic', 'others', 'workspace']),
   "iconId": zod.string(),
   "id": zod.string(),
   "lastAnswerAt": zod.iso.datetime({"offset":true}),
@@ -8013,87 +7912,6 @@ export const SetWorkspaceStudyBody = zod.object({
 })
 
 export const SetWorkspaceStudyResponse = zod.void()
-
-
-/**
- * @summary Plans kept in a workspace, then plans elsewhere with a step in it
- */
-export const ListWorkspacePlansParams = zod.object({
-  "id": zod.string()
-})
-
-export const listWorkspacePlansResponseWorkspacesItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
-export const listWorkspacePlansResponseWorkspacesItemCoverLineMax = 40;
-
-export const listWorkspacePlansResponseWorkspacesItemCoverSeedMax = 16;
-
-
-export const listWorkspacePlansResponseWorkspacesItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
-
-
-export const ListWorkspacePlansResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "plans": zod.array(zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "name": zod.string(),
-  "steps": zod.array(zod.object({
-  "kind": zod.enum(['file', 'material']),
-  "locked": zod.boolean(),
-  "targetId": zod.string().describe('The file or material'),
-  "title": zod.string(),
-  "workspaceId": zod.string()
-})),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "workspaceId": zod.string()
-})),
-  "workspaces": zod.array(zod.object({
-  "cover": zod.object({
-  "color": zod.string().regex(listWorkspacePlansResponseWorkspacesItemCoverColorRegExp),
-  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
-  "line": zod.string().max(listWorkspacePlansResponseWorkspacesItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
-  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
-  "seed": zod.string().max(listWorkspacePlansResponseWorkspacesItemCoverSeedMax).regex(listWorkspacePlansResponseWorkspacesItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
-  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
-}).optional(),
-  "iconId": zod.string(),
-  "name": zod.string(),
-  "workspaceId": zod.string()
-}))
-})
-
-
-/**
- * @summary Add an empty study plan to a workspace
- */
-export const CreateStudyPlanParams = zod.object({
-  "id": zod.string()
-})
-
-export const createStudyPlanBodyNameMax = 60;
-
-
-
-export const CreateStudyPlanBody = zod.object({
-  "name": zod.string().min(1).max(createStudyPlanBodyNameMax)
-})
-
-export const CreateStudyPlanResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "name": zod.string(),
-  "steps": zod.array(zod.object({
-  "kind": zod.enum(['file', 'material']),
-  "locked": zod.boolean(),
-  "targetId": zod.string().describe('The file or material'),
-  "title": zod.string(),
-  "workspaceId": zod.string()
-})),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "workspaceId": zod.string()
-})
 
 
 /**

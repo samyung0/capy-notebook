@@ -104,7 +104,6 @@ export function ContentActions({
   readOnly = false,
   canRename = true,
   workspaceId,
-  workspaceName,
 }: {
   /** Offers the topic-only Move (a file with `canMoveTo` gets Move to…). */
   showMove?: boolean;
@@ -144,8 +143,6 @@ export function ContentActions({
   renameFieldLabel?: string;
   renameTitle?: string;
   workspaceId: string;
-  /** The item's workspace name, for Move to…'s progress confirmation. */
-  workspaceName?: string;
 }) {
   const { mutateAsync: updateFile } = useUpdateFile(workspaceId);
   const { mutate: moveFile } = useMoveFile(workspaceId);
@@ -341,7 +338,6 @@ export function ContentActions({
                 name: content.name,
                 topicId: content.topicId,
                 workspaceId,
-                workspaceName,
               }}
               onClose={() => setMoveToOpen(false)}
               onMoved={onMoved}

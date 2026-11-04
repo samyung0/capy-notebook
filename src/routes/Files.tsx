@@ -536,7 +536,6 @@ const FileItem = memo(function FileItem({
               readOnly
               topics={[]}
               workspaceId={file.workspaceId}
-              workspaceName={file.workspaceName}
             />
           ) : (
             // The server reads what the caller may do with each row.
@@ -565,7 +564,6 @@ const FileItem = memo(function FileItem({
               showMove={false}
               topics={[]}
               workspaceId={file.workspaceId}
-              workspaceName={workspace?.name ?? file.workspaceName}
             />
           )
         }

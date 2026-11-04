@@ -381,15 +381,8 @@ func (a *api) moveFiles(ctx context.Context, in *moveFilesInput) (*filesOutputBo
 		}
 		target.TopicID = &b.TopicID
 	}
-	files, err := a.s.MoveFiles(ctx, userID(ctx), b.FileIDs, target, b.ConfirmProgressLoss)
-	var loss *store.ProgressLossError
+	files, err := a.s.MoveFiles(ctx, userID(ctx), b.FileIDs, target)
 	switch {
-	case errors.As(err, &loss):
-		return nil, &huma.ErrorModel{
-			Status: http.StatusConflict, Title: http.StatusText(http.StatusConflict),
-			Detail: "moving drops study progress",
-			Errors: []*huma.ErrorDetail{{Message: "progress_loss", Value: map[string]int{"people": loss.People, "planSteps": loss.PlanSteps}}},
-		}
 	case errors.Is(err, store.ErrFileProcessing):
 		return nil, &huma.ErrorModel{
 			Status: http.StatusConflict, Title: http.StatusText(http.StatusConflict),

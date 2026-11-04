@@ -179,7 +179,7 @@ test('study progress: a quiz finished, a set studied and a short review are reco
     page.getByRole('button', { name: m.flashcards_study_again() })
   ).toBeVisible();
 
-  // A whole-workspace review, as Learning's Default plans row opens one. A
+  // A whole-workspace review, as Learning's Workspaces row opens one. A
   // manual session gives 60% of its places (12 of a new account's 20) to
   // never-rated items and the rest to practised ones, each side filling
   // what the other leaves (store.withNew): here the quiz not yet taken's one

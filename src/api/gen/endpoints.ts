@@ -56,7 +56,6 @@ import type {
   CreateFlashcardSetReq,
   CreateMaterialReq,
   CreateQuizReq,
-  CreateStudyPlanReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
   Customization,
@@ -82,7 +81,6 @@ import type {
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
   GetWorkspaceReviewParams,
-  GetWorkspaceStudyParams,
   GradeAnonymousQuizReq,
   GradedQuestion,
   ImportSourcesAccepted,
@@ -173,8 +171,6 @@ import type {
   SourceSession,
   SourceUploadPolicy,
   SpendingLimitReq,
-  StudyPlan,
-  StudyPlans,
   StudyPreferences,
   StudySummary,
   Syllabus,
@@ -198,7 +194,6 @@ import type {
   UpdateMeReq,
   UpdateQuizMetadataReq,
   UpdateStandaloneSharingReq,
-  UpdateStudyPlanReq,
   UpdateTaskReq,
   UpdateTopicReq,
   UpdateWorkspaceMemberReq,
@@ -4835,56 +4830,6 @@ const res = await fetch(getUpdateLabelUrl(id),
 
 
 
-export type listLearningPlansResponse200 = {
-  data: StudyPlans
-  status: 200
-}
-
-export type listLearningPlansResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listLearningPlansResponseSuccess = (listLearningPlansResponse200) & {
-  headers: Headers;
-};
-export type listLearningPlansResponseError = (listLearningPlansResponseDefault) & {
-  headers: Headers;
-};
-
-export type listLearningPlansResponse = (listLearningPlansResponseSuccess | listLearningPlansResponseError)
-
-export const getListLearningPlansUrl = () => {
-
-
-
-
-  return `/api/learning/plans`
-}
-
-/**
- * @summary Every study plan of the user
- */
-export const listLearningPlans = async ( options?: RequestInit): Promise<listLearningPlansResponse> => {
-
-  const res = await fetch(getListLearningPlansUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listLearningPlansResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listLearningPlansResponse
-}
-
-
-
 export type getLibraryFigureResponse200 = {
   data: LibraryFigure
   status: 200
@@ -8502,121 +8447,6 @@ export const getStandaloneSourceImport = async (jobId: string, options?: Request
 
 
 
-export type deleteStudyPlanResponse204 = {
-  data: void
-  status: 204
-}
-
-export type deleteStudyPlanResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type deleteStudyPlanResponseSuccess = (deleteStudyPlanResponse204) & {
-  headers: Headers;
-};
-export type deleteStudyPlanResponseError = (deleteStudyPlanResponseDefault) & {
-  headers: Headers;
-};
-
-export type deleteStudyPlanResponse = (deleteStudyPlanResponseSuccess | deleteStudyPlanResponseError)
-
-export const getDeleteStudyPlanUrl = (id: string,) => {
-
-
-
-
-  return `/api/study/plans/${id}`
-}
-
-/**
- * @summary Delete a study plan
- */
-export const deleteStudyPlan = async (id: string, options?: RequestInit): Promise<deleteStudyPlanResponse> => {
-
-  const res = await fetch(getDeleteStudyPlanUrl(id),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: deleteStudyPlanResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as deleteStudyPlanResponse
-}
-
-
-
-export type updateStudyPlanResponse204 = {
-  data: void
-  status: 204
-}
-
-export type updateStudyPlanResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type updateStudyPlanResponseSuccess = (updateStudyPlanResponse204) & {
-  headers: Headers;
-};
-export type updateStudyPlanResponseError = (updateStudyPlanResponseDefault) & {
-  headers: Headers;
-};
-
-export type updateStudyPlanResponse = (updateStudyPlanResponseSuccess | updateStudyPlanResponseError)
-
-export const getUpdateStudyPlanUrl = (id: string,) => {
-
-
-
-
-  return `/api/study/plans/${id}`
-}
-
-/**
- * @summary Rename a study plan or replace its steps
- */
-export const updateStudyPlan = async (id: string,
-    updateStudyPlanReq: NonReadonly<UpdateStudyPlanReq>, options?: RequestInit): Promise<updateStudyPlanResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getUpdateStudyPlanUrl(id),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(updateStudyPlanReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateStudyPlanResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as updateStudyPlanResponse
-}
-
-
-
 export type listTagsResponse200 = {
   data: Tag[]
   status: 200
@@ -11206,29 +11036,20 @@ export type getWorkspaceStudyResponseError = (getWorkspaceStudyResponseDefault) 
 
 export type getWorkspaceStudyResponse = (getWorkspaceStudyResponseSuccess | getWorkspaceStudyResponseError)
 
-export const getGetWorkspaceStudyUrl = (id: string,
-    params?: GetWorkspaceStudyParams,) => {
-  const normalizedParams = new URLSearchParams();
+export const getGetWorkspaceStudyUrl = (id: string,) => {
 
-  Object.entries(params || {}).forEach(([key, value]) => {
 
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
 
-  const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/api/workspaces/${id}/study?${stringifiedParams}` : `/api/workspaces/${id}/study`
+  return `/api/workspaces/${id}/study`
 }
 
 /**
  * @summary Study progress in a workspace
  */
-export const getWorkspaceStudy = async (id: string,
-    params?: GetWorkspaceStudyParams, options?: RequestInit): Promise<getWorkspaceStudyResponse> => {
+export const getWorkspaceStudy = async (id: string, options?: RequestInit): Promise<getWorkspaceStudyResponse> => {
 
-  const res = await fetch(getGetWorkspaceStudyUrl(id,params),
+  const res = await fetch(getGetWorkspaceStudyUrl(id),
   {
     ...options,
     method: 'GET'
@@ -11357,121 +11178,6 @@ const res = await fetch(getSetWorkspaceStudyUrl(id),
 
   const data: setWorkspaceStudyResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as setWorkspaceStudyResponse
-}
-
-
-
-export type listWorkspacePlansResponse200 = {
-  data: StudyPlans
-  status: 200
-}
-
-export type listWorkspacePlansResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listWorkspacePlansResponseSuccess = (listWorkspacePlansResponse200) & {
-  headers: Headers;
-};
-export type listWorkspacePlansResponseError = (listWorkspacePlansResponseDefault) & {
-  headers: Headers;
-};
-
-export type listWorkspacePlansResponse = (listWorkspacePlansResponseSuccess | listWorkspacePlansResponseError)
-
-export const getListWorkspacePlansUrl = (id: string,) => {
-
-
-
-
-  return `/api/workspaces/${id}/study/plans`
-}
-
-/**
- * @summary Plans kept in a workspace, then plans elsewhere with a step in it
- */
-export const listWorkspacePlans = async (id: string, options?: RequestInit): Promise<listWorkspacePlansResponse> => {
-
-  const res = await fetch(getListWorkspacePlansUrl(id),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listWorkspacePlansResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listWorkspacePlansResponse
-}
-
-
-
-export type createStudyPlanResponse201 = {
-  data: StudyPlan
-  status: 201
-}
-
-export type createStudyPlanResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type createStudyPlanResponseSuccess = (createStudyPlanResponse201) & {
-  headers: Headers;
-};
-export type createStudyPlanResponseError = (createStudyPlanResponseDefault) & {
-  headers: Headers;
-};
-
-export type createStudyPlanResponse = (createStudyPlanResponseSuccess | createStudyPlanResponseError)
-
-export const getCreateStudyPlanUrl = (id: string,) => {
-
-
-
-
-  return `/api/workspaces/${id}/study/plans`
-}
-
-/**
- * @summary Add an empty study plan to a workspace
- */
-export const createStudyPlan = async (id: string,
-    createStudyPlanReq: NonReadonly<CreateStudyPlanReq>, options?: RequestInit): Promise<createStudyPlanResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getCreateStudyPlanUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(createStudyPlanReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createStudyPlanResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createStudyPlanResponse
 }
 
 

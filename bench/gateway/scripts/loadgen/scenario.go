@@ -299,7 +299,6 @@ func (u *user) learning(ctx context.Context, sp *space) {
 	all(
 		func() { _ = u.get(ctx, "/api/attempts?limit=30", "/api/attempts p1", false, nil) },
 		func() { _ = u.get(ctx, "/api/review/overview", "/api/review/overview", false, nil) },
-		func() { _ = u.get(ctx, "/api/learning/plans", "/api/learning/plans", false, nil) },
 	)
 	// The Results tab's list under a second cache key.
 	_ = u.get(ctx, "/api/attempts?limit=30&kinds=", "/api/attempts p1", false, nil)
@@ -439,9 +438,6 @@ func (u *user) studyTab(ctx context.Context, sp *space) {
 		func() { _ = u.get(ctx, "/api/workspaces/"+sp.id+"/study", "/api/workspaces/{id}/study", false, nil) },
 		func() {
 			_ = u.get(ctx, "/api/workspaces/"+sp.id+"/study/attempts", "/api/workspaces/{id}/study/attempts", false, nil)
-		},
-		func() {
-			_ = u.get(ctx, "/api/workspaces/"+sp.id+"/study/plans", "/api/workspaces/{id}/study/plans", false, nil)
 		},
 	)
 	u.think(ctx, 30*time.Second)

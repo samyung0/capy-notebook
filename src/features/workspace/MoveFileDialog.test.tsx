@@ -74,21 +74,6 @@ vi.mock('./TopicSelect', async (original) => ({
   },
 }));
 vi.mock('@/components/ui/Dialog', () => ({
-  ConfirmDialog: ({
-    children,
-    onConfirm,
-    title,
-  }: {
-    children: ReactNode;
-    onConfirm: () => void;
-    title: string;
-  }) => (
-    <div data-confirm="">
-      {title}
-      {children}
-      <button data-confirm-move="" onClick={onConfirm} type="button" />
-    </div>
-  ),
   SimpleDialog: ({
     action,
     children,
@@ -173,45 +158,6 @@ it('offers the workspaces the user edits, the current one marked, never No works
   expect(
     document.querySelector('[data-current]')?.getAttribute('data-current')
   ).toBe('ch_1');
-  act(() => root.unmount());
-});
-
-it('asks before dropping study progress, then moves with the confirmation', async () => {
-  stubApi((_url, body) =>
-    (body as { confirmProgressLoss?: boolean }).confirmProgressLoss
-      ? Response.json([{ id: 'f_1', workspaceId: 'ws_b' }])
-      : Response.json(
-          {
-            errors: [
-              { message: 'progress_loss', value: { people: 3, planSteps: 2 } },
-            ],
-          },
-          { status: 409 }
-        )
-  );
-  const { onClose, root } = await render();
-  await act(async () => ui.pickWorkspace('ws_b'));
-  await submit();
-  const confirm = document.querySelector('[data-confirm]');
-  expect(confirm?.textContent).toContain(
-    m.move_progress_title({ workspace: 'Physics' })
-  );
-  expect(confirm?.textContent).toContain(m.move_progress_people({ count: 3 }));
-  expect(confirm?.textContent).toContain(m.move_progress_steps({ count: 2 }));
-  await act(async () => {
-    document
-      .querySelector('[data-confirm-move]')
-      ?.dispatchEvent(new window.Event('click', { bubbles: true }));
-  });
-  expect(calls.map((call) => [call.method, call.url, call.body])).toEqual([
-    ['POST', '/api/files/move', { fileIds: ['f_1'], workspaceId: 'ws_b' }],
-    [
-      'POST',
-      '/api/files/move',
-      { confirmProgressLoss: true, fileIds: ['f_1'], workspaceId: 'ws_b' },
-    ],
-  ]);
-  expect(onClose).toHaveBeenCalled();
   act(() => root.unmount());
 });
 

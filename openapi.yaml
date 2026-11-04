@@ -1699,22 +1699,6 @@ components:
         workspaceId:
           type: string
       type: object
-    CreateStudyPlanReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CreateStudyPlanReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 60
-          minLength: 1
-          type: string
-      required:
-        - name
-      type: object
     CreateWorkspaceInviteReq:
       additionalProperties: false
       properties:
@@ -3493,9 +3477,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        confirmProgressLoss:
-          description: Drop the left workspaces' study progress and plan steps for these files
-          type: boolean
         fileIds:
           items:
             type: string
@@ -3860,7 +3841,6 @@ components:
             - topic
             - others
             - workspace
-            - plan
           type: string
         iconId:
           type: string
@@ -3958,70 +3938,11 @@ components:
         - sentAt
         - expiresAt
       type: object
-    PlanStep:
-      additionalProperties: false
-      properties:
-        kind:
-          enum:
-            - file
-            - material
-          type: string
-        locked:
-          type: boolean
-        targetId:
-          description: The file or material
-          type: string
-        title:
-          type: string
-        workspaceId:
-          type: string
-      required:
-        - kind
-        - workspaceId
-        - targetId
-        - title
-        - locked
-      type: object
-    PlanStepInput:
-      additionalProperties: false
-      properties:
-        kind:
-          enum:
-            - file
-            - material
-          type: string
-        targetId:
-          description: The file or material
-          minLength: 1
-          type: string
-        workspaceId:
-          type: string
-      required:
-        - kind
-        - workspaceId
-        - targetId
-      type: object
     PlanTier:
       enum:
         - free
         - pro
       type: string
-    PlanWorkspace:
-      additionalProperties: false
-      properties:
-        cover:
-          $ref: "#/components/schemas/Cover"
-        iconId:
-          type: string
-        name:
-          type: string
-        workspaceId:
-          type: string
-      required:
-        - workspaceId
-        - name
-        - iconId
-      type: object
     Practice:
       additionalProperties: false
       properties:
@@ -5001,10 +4922,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        plans:
-          items:
-            $ref: "#/components/schemas/ReviewPlan"
-          type: array
         suggestions:
           items:
             $ref: "#/components/schemas/ReviewSuggestion"
@@ -5020,38 +4937,7 @@ components:
       required:
         - suggestions
         - unfinished
-        - plans
         - workspaces
-      type: object
-    ReviewPlan:
-      additionalProperties: false
-      properties:
-        canReview:
-          type: boolean
-        iconId:
-          type: string
-        lastReviewedAt:
-          format: date-time
-          type: string
-        name:
-          type: string
-        planId:
-          type: string
-        reviewable:
-          format: int64
-          type: integer
-        workspaceId:
-          type: string
-        workspaceName:
-          type: string
-      required:
-        - planId
-        - name
-        - workspaceId
-        - workspaceName
-        - iconId
-        - reviewable
-        - canReview
       type: object
     ReviewResult:
       additionalProperties: false
@@ -5099,7 +4985,6 @@ components:
             - topic
             - others
             - workspace
-            - plan
           type: string
         items:
           items:
@@ -5111,9 +4996,6 @@ components:
             - tricky
             - fading
             - learned
-          type: string
-        planId:
-          description: The plan of a plan group
           type: string
         removedAssetIds:
           items:
@@ -5142,7 +5024,6 @@ components:
             - topic
             - others
             - workspace
-            - plan
           type: string
         id:
           description: Minted by the browser when the session starts
@@ -5160,9 +5041,6 @@ components:
             - tricky
             - fading
             - learned
-          type: string
-        planId:
-          description: The plan of a plan group
           type: string
         topicId:
           type: string
@@ -6234,60 +6112,6 @@ components:
         - near_limit
         - full
       type: string
-    StudyPlan:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/StudyPlan.json
-          format: uri
-          readOnly: true
-          type: string
-        createdAt:
-          format: date-time
-          type: string
-        id:
-          type: string
-        name:
-          type: string
-        steps:
-          items:
-            $ref: "#/components/schemas/PlanStep"
-          type: array
-        updatedAt:
-          format: date-time
-          type: string
-        workspaceId:
-          type: string
-      required:
-        - id
-        - workspaceId
-        - name
-        - createdAt
-        - updatedAt
-        - steps
-      type: object
-    StudyPlans:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/StudyPlans.json
-          format: uri
-          readOnly: true
-          type: string
-        plans:
-          items:
-            $ref: "#/components/schemas/StudyPlan"
-          type: array
-        workspaces:
-          items:
-            $ref: "#/components/schemas/PlanWorkspace"
-          type: array
-      required:
-        - plans
-        - workspaces
-      type: object
     StudyPreferences:
       additionalProperties: false
       properties:
@@ -6849,7 +6673,6 @@ components:
             - topic
             - others
             - workspace
-            - plan
           type: string
         iconId:
           type: string
@@ -7068,25 +6891,6 @@ components:
           description: Visibility for a standalone material
       required:
         - privacy
-      type: object
-    UpdateStudyPlanReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpdateStudyPlanReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 60
-          minLength: 1
-          type: string
-        steps:
-          items:
-            $ref: "#/components/schemas/PlanStepInput"
-          maxItems: 200
-          type: array
       type: object
     UpdateTaskReq:
       additionalProperties: false
@@ -9940,25 +9744,6 @@ paths:
       summary: Update a label
       tags:
         - Schedule
-  /api/learning/plans:
-    get:
-      operationId: listLearningPlans
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/StudyPlans"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Every study plan of the user
-      tags:
-        - Study
   /api/library/figures/{id}:
     get:
       operationId: getLibraryFigure
@@ -11397,7 +11182,6 @@ paths:
               - cards
               - time
               - workspace
-              - plan
               - topic
               - status
             type: string
@@ -11719,55 +11503,6 @@ paths:
       summary: Get standalone source import status
       tags:
         - Content
-  /api/study/plans/{id}:
-    delete:
-      operationId: deleteStudyPlan
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            format: uuid
-            type: string
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Delete a study plan
-      tags:
-        - Study
-    patch:
-      operationId: updateStudyPlan
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateStudyPlanReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Rename a study plan or replace its steps
-      tags:
-        - Study
   /api/tags:
     get:
       operationId: listTags
@@ -12925,7 +12660,6 @@ paths:
               - topic
               - others
               - workspace
-              - plan
             type: string
         - description: The topic of a topic group
           explode: false
@@ -12933,13 +12667,6 @@ paths:
           name: topicId
           schema:
             description: The topic of a topic group
-            type: string
-        - description: The plan of a plan group, one of the user's plans kept in this workspace
-          explode: false
-          in: query
-          name: planId
-          schema:
-            description: The plan of a plan group, one of the user's plans kept in this workspace
             type: string
         - description: A suggestion's mode; omitted for a review from the workspace list
           explode: false
@@ -13134,13 +12861,6 @@ paths:
           required: true
           schema:
             type: string
-        - description: Draw Reviewable, QuickReview and Unfinished from this plan of the user's, kept in this workspace
-          explode: false
-          in: query
-          name: planId
-          schema:
-            description: Draw Reviewable, QuickReview and Unfinished from this plan of the user's, kept in this workspace
-            type: string
       responses:
         "200":
           content:
@@ -13207,61 +12927,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Show or hide study progress in a workspace
-      tags:
-        - Study
-  /api/workspaces/{id}/study/plans:
-    get:
-      operationId: listWorkspacePlans
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/StudyPlans"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Plans kept in a workspace, then plans elsewhere with a step in it
-      tags:
-        - Study
-    post:
-      operationId: createStudyPlan
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateStudyPlanReq"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/StudyPlan"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Add an empty study plan to a workspace
       tags:
         - Study
   /api/workspaces/{id}/study/reset:

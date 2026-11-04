@@ -18,8 +18,8 @@ import type { ReviewSearch } from './reviewSearch';
 import { groupName, itemCount, REVIEW_MODE, reviewReason } from './reviewText';
 
 /** Learning → Review: suggested reviews with their reason, sessions left
- * before the end, your plans and every workspace's Default Plan for a review
- * of your own, then past reviews. */
+ * before the end, every workspace for a review of your own, then past
+ * reviews. */
 export function ReviewTab() {
   const { data, fetchStatus, isLoading } = useReviewOverview();
   const revealRef = useLoadingReveal(isLoading);
@@ -35,11 +35,9 @@ export function ReviewTab() {
     });
   return (
     <div className="flex flex-col gap-9" ref={revealRef}>
-      {!data.workspaces.length &&
-        !data.plans.length &&
-        !data.unfinished.length && (
-          <p className="py-8 text-center text-fg-muted">{m.review_empty()}</p>
-        )}
+      {!data.workspaces.length && !data.unfinished.length && (
+        <p className="py-8 text-center text-fg-muted">{m.review_empty()}</p>
+      )}
       {data.suggestions.length > 0 && (
         <section>
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
@@ -92,31 +90,10 @@ export function ReviewTab() {
           })}
         </section>
       )}
-      {data.plans.length > 0 && (
-        <section>
-          <h3 className="mb-1 font-bold text-fg-muted text-sm">
-            {m.learning_your_plans()}
-          </h3>
-          {byLastReviewed(data.plans).map((p) => (
-            <Row
-              iconId={p.iconId}
-              key={p.planId}
-              meta={reviewedMeta(p)}
-              onOpen={() =>
-                p.canReview
-                  ? review(p.workspaceId, { group: 'plan', planId: p.planId })
-                  : nothingToReview()
-              }
-              title={p.name}
-              titleSub={p.workspaceName}
-            />
-          ))}
-        </section>
-      )}
       {data.workspaces.length > 0 && (
         <section>
           <h3 className="mb-1 font-bold text-fg-muted text-sm">
-            {m.learning_default_plans()}
+            {m.learning_workspaces()}
           </h3>
           {byLastReviewed(data.workspaces).map((ws) => (
             <Row
@@ -138,7 +115,7 @@ export function ReviewTab() {
   );
 }
 
-/** An empty plan or workspace still opens: it says why it cannot. */
+/** An empty workspace still opens: it says why it cannot. */
 function nothingToReview() {
   userToast({
     description: m.review_nothing_body(),
@@ -147,7 +124,7 @@ function nothingToReview() {
   });
 }
 
-/** When the plan or workspace was last reviewed, or why it never was. */
+/** When the workspace was last reviewed, or why it never was. */
 function reviewedMeta(row: {
   lastReviewedAt?: string;
   reviewable: number;

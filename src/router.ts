@@ -317,14 +317,12 @@ const appRoutes = [
       const saved =
         search.tab === 'results'
           ? savedSort('results', RESULT_SORTS, RESULT_SORT_DEFAULT, search)
-          : search.tab === 'plans'
-            ? undefined
-            : savedSort(
-                'pastReviews',
-                PAST_REVIEW_SORTS,
-                PAST_REVIEW_SORT_DEFAULT,
-                search
-              );
+          : savedSort(
+              'pastReviews',
+              PAST_REVIEW_SORTS,
+              PAST_REVIEW_SORT_DEFAULT,
+              search
+            );
       if (saved)
         throw redirect({
           replace: true,

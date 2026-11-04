@@ -12,5 +12,4 @@ export const GetWorkspaceReviewGroup = {
   topic: 'topic',
   others: 'others',
   workspace: 'workspace',
-  plan: 'plan',
 } as const;

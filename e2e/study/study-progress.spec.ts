@@ -216,7 +216,7 @@ test.describe('study progress', () => {
     // Both questions of the attempt, both finished cards, one started card.
     expect(study.reviewable).toBe(5);
 
-    // Learning → Review: Default plans lists the workspace, and its row
+    // Learning → Review: Workspaces lists the workspace, and its row
     // opens a whole-workspace session over the five practised items, which
     // mixes in the new ones (the untouched quiz, the started set's other
     // cards).
@@ -229,7 +229,7 @@ test.describe('study progress', () => {
     const name = ownerPage
       .locator('section', {
         has: ownerPage.getByRole('heading', {
-          name: m.learning_default_plans(),
+          name: m.learning_workspaces(),
         }),
       })
       .getByRole('button', { exact: true, name: ws.name });
@@ -329,7 +329,7 @@ test.describe('study progress', () => {
     });
     expect(cardRating.status()).toBe(204);
 
-    // A whole-workspace review, as Learning's Default plans row opens one.
+    // A whole-workspace review, as Learning's Workspaces row opens one.
     await ownerPage.goto(
       `/learning/review/${ws.id}?group=workspace&from=workspace`
     );

@@ -122,7 +122,6 @@ import type {
   SourceFile,
   SourceUploadPolicy,
   SpendingLimitReq,
-  StudyPlans,
   StudyPreferences,
   StudySummary,
   Tag,
@@ -1428,9 +1427,7 @@ export function useMoveFile(wsId: string) {
   });
 }
 /** Move files into a workspace the caller edits (never out of one). `from`
- * holds the workspaces they leave, whose lists, topics, stats and study
- * progress change too. A 409 `progress_loss` asks before dropping study
- * progress: resend with `confirmProgressLoss`. */
+ * holds the workspaces they leave, whose lists, topics and stats change too. */
 export function useMoveFiles(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
@@ -1444,8 +1441,6 @@ export function useMoveFiles(options?: MutationUiOptions) {
         qc.invalidateQueries({ queryKey: qk.file(file.id) });
       qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       qc.invalidateQueries({ queryKey: qk.recent });
-      // The left workspaces' progress and plan steps for the files are gone.
-      void invalidateStudy(qc);
     },
   });
 }
@@ -2857,14 +2852,14 @@ export const practiceQuery = (workspaceId: string) =>
 export const usePractice = (workspaceId: string, options?: QueryUiOptions) =>
   useQuery({ ...practiceQuery(workspaceId), meta: queryMeta(options) });
 
-/** Refreshes Practice, review and Learning after practice in
- * `workspaceId`, or in every workspace when the caller does not know which. */
+/** Refreshes Practice and review after practice in `workspaceId`, or in every
+ * workspace when the caller does not know which. */
 export function invalidateStudy(
   qc: ReturnType<typeof useQueryClient>,
   workspaceId?: string
 ) {
   // qk.study, qk.practice and qk.workspaceReview: ['workspace', id,
-  // 'study' | 'review', ...]. Learning's plans sit under learningRoot.
+  // 'study' | 'review', ...].
   return Promise.all([
     qc.invalidateQueries({
       predicate: ({ queryKey: [scope, id, kind] }) =>
@@ -2873,7 +2868,6 @@ export function invalidateStudy(
         (kind === 'study' || kind === 'review'),
     }),
     qc.invalidateQueries({ queryKey: qk.reviewRoot }),
-    qc.invalidateQueries({ queryKey: qk.learningRoot }),
   ]);
 }
 
@@ -2982,26 +2976,6 @@ export const usePastReviews = (params: PastReviewParams = {}) =>
     ...pastReviewsQuery(params),
     placeholderData: keepPreviousData,
   });
-
-/* ---------------- study plans ---------------- */
-/** Every plan of the user, for Learning → Progress. */
-export const useLearningPlans = (options?: QueryUiOptions) =>
-  useQuery({
-    meta: queryMeta(options),
-    queryFn: () => api.get<StudyPlans>('/learning/plans'),
-    queryKey: qk.learningPlans,
-  });
-
-const invalidatePlans = (qc: QueryClient) =>
-  qc.invalidateQueries({ queryKey: qk.learningPlans });
-
-export function useDeleteStudyPlan() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/study/plans/${id}`),
-    onSettled: () => invalidatePlans(qc),
-  });
-}
 
 /** Records one rating; the study page toasts a failure once. Each rating
  * refreshes `workspaceId`'s progress, or every workspace's when omitted; a

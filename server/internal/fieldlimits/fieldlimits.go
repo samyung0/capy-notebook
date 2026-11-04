@@ -23,7 +23,6 @@ const (
 	TopicName     = 60
 	// TopicDescription is a topic's optional one line on what it covers.
 	TopicDescription = 200
-	StudyPlanName    = 60
 	FileName         = 120
 	MaterialTitle    = FileName
 	// An agent-made material's or file's made-from line: at most
@@ -174,7 +173,6 @@ var Columns = map[string]int{
 	"workspaces.description":           WorkspaceDescription,
 	"topics.name":                      TopicName,
 	"topics.description":               TopicDescription,
-	"study_plans.name":                 StudyPlanName,
 	"files.name":                       FileName,
 	"materials.workspace_name":         WorkspaceName,
 	"materials.title":                  MaterialTitle,

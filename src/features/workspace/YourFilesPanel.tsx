@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
 import {
+  useMoveFiles,
   useOwnedFiles,
   useTopics,
-  useWorkspace,
   useWorkspaces,
 } from '@/api/hooks';
 import type { SourceFile } from '@/api/types';
@@ -20,7 +20,7 @@ import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 import { useDebounced } from '@/lib/useDebounced';
-import { moveErrorMessage, useMoveFilesFlow } from './MoveFileDialog';
+import { moveErrorMessage } from './MoveFileDialog';
 import { NewTopicInput, TopicSelect, topicByName } from './TopicSelect';
 
 /** POST /files/move takes at most this many files at once. */
@@ -57,9 +57,8 @@ export function YourFilesPanel({
     .flatMap((page) => page.items)
     .filter((file) => !file.lostAccess);
   const { data: workspaces } = useWorkspaces();
-  const { data: workspace } = useWorkspace(workspaceId);
   const { data: topics } = useTopics(workspaceId);
-  const { confirm, move } = useMoveFilesFlow(workspace?.name ?? '');
+  const { mutateAsync: moveFiles } = useMoveFiles({ errorToast: false });
   const [picked, setPicked] = useState<Map<string, SourceFile>>(new Map());
   const [topic, setTopic] = useState<{
     topicId: string | null;
@@ -91,21 +90,17 @@ export function YourFilesPanel({
     // A topic name still being typed counts, so Move never drops it.
     const typed = newTopic?.trim();
     const { topicId, topicName } = typed ? topicByName(topics, typed) : topic;
-    const only = selected.length === 1 ? selected[0] : undefined;
     try {
-      const moved = await move(
-        {
+      await moveFiles({
+        body: {
           fileIds: selected.map((file) => file.id),
           topicId: topicId ?? undefined,
           topicName: topicName ?? undefined,
           workspaceId,
         },
-        selected.map((file) => file.workspaceId),
-        only
-          ? { name: only.name, workspaceName: only.workspaceName ?? '' }
-          : { count: selected.length }
-      );
-      if (moved) onMoved();
+        from: selected.map((file) => file.workspaceId),
+      });
+      onMoved();
     } catch (error) {
       setFormError({
         errorId: unexpectedErrorId(error),
@@ -247,7 +242,6 @@ export function YourFilesPanel({
           </Button>
         </DialogPrimary>
       </DialogFooter>
-      {confirm}
     </div>
   );
 }

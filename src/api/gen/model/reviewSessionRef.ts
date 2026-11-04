@@ -21,8 +21,6 @@ export interface ReviewSessionRef {
   items: SessionItem[];
   /** Omitted for a review started from the workspace list */
   mode?: ReviewSessionRefMode;
-  /** The plan of a plan group */
-  planId?: string;
   topicId?: string;
   /** @minLength 1 */
   workspaceId: string;

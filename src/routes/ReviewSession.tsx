@@ -106,7 +106,6 @@ export default function ReviewSession() {
         search.session,
         search.group,
         search.topicId,
-        search.planId,
         search.reviewMode,
       ].join('|')}
       search={search}
@@ -139,7 +138,6 @@ function Session({
           start: {
             group: search.group ?? 'workspace',
             mode: search.reviewMode,
-            planId: search.planId,
             topicId: search.topicId,
           },
         }
@@ -187,7 +185,6 @@ function Session({
           materialId,
         })),
         mode: data.mode,
-        planId: data.planId,
         topicId: data.topicId,
         workspaceId,
       },
@@ -198,9 +195,8 @@ function Session({
   // Cards rise from one stack across the session, the rated one swiping away.
   const stack = useCardStack();
 
-  // Ratings save in the background and refresh progress once, in every
-  // workspace (a plan's items span several), when the session is left or
-  // Review more asks for the next batch.
+  // Ratings save in the background and refresh progress once, when the
+  // session is left or Review more asks for the next batch.
   const qc = useQueryClient();
   const { mutateAsync: rateItem } = useRateReviewItem(null);
   const { mutate: finish } = useFinishReviewSession();
@@ -277,7 +273,6 @@ function Session({
           start: {
             group: session.ref.group,
             mode: session.ref.mode,
-            planId: session.ref.planId,
             topicId: session.ref.topicId,
           },
         });

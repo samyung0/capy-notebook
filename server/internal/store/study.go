@@ -232,45 +232,22 @@ func (s *Store) StudyEnabled(ctx context.Context, userID, wsID string) (bool, er
 }
 
 func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.Time) (StudySummary, error) {
-	return s.studySummary(ctx, userID, wsID, nil, now)
-}
-
-// PlanStudySummary is one of the user's plans kept in the workspace: Enabled
-// and the review parts (Reviewable, QuickReview, Unfinished) drawn from the
-// plan, RecentAttempts left empty; ErrReviewGroup for any other plan.
-func (s *Store) PlanStudySummary(ctx context.Context, userID, wsID, planID string, now time.Time) (StudySummary, error) {
-	plan, err := s.workspacePlan(ctx, userID, wsID, &planID)
-	if err != nil {
-		return StudySummary{}, err
-	}
-	return s.studySummary(ctx, userID, wsID, &plan, now)
-}
-
-func (s *Store) studySummary(ctx context.Context, userID, wsID string, plan *PlanScope, now time.Time) (StudySummary, error) {
 	out := StudySummary{RecentAttempts: []Attempt{}, QuickReview: []ReviewItem{}}
 	var err error
 	if out.Enabled, err = s.StudyEnabled(ctx, userID, wsID); err != nil {
 		return out, err
 	}
-	// A plan's summary carries only its review parts.
-	if plan == nil {
-		if err := s.recentAttempts(ctx, userID, wsID, &out); err != nil {
-			return out, err
-		}
+	if err := s.recentAttempts(ctx, userID, wsID, &out); err != nil {
+		return out, err
 	}
-	// Continue review: the workspace's latest whole-workspace session, or the
-	// plan's latest plan session.
+	// Continue review: the workspace's latest whole-workspace session.
 	var u UnfinishedSession
-	group, planID := GroupWorkspace, ""
-	if plan != nil {
-		group, planID = GroupPlan, plan.ID
-	}
-	err = s.pool.QueryRow(ctx, `SELECT rs.id, rs.workspace_id, w.name, w.icon_id, rs.group_kind, COALESCE(rs.plan_name, ''),
+	err = s.pool.QueryRow(ctx, `SELECT rs.id, rs.workspace_id, w.name, w.icon_id, rs.group_kind,
 			(SELECT count(*) FROM review_answers ra WHERE ra.session_id=rs.id), jsonb_array_length(rs.items), rs.last_answer_at
 		FROM review_sessions rs JOIN workspaces w ON w.id=rs.workspace_id
-		WHERE rs.user_id=$1 AND rs.workspace_id=$2 AND rs.group_kind=$3 AND ($4 = '' OR rs.plan_id=$4) AND rs.finished_at IS NULL
-		ORDER BY rs.last_answer_at DESC LIMIT 1`, userID, wsID, group, planID).
-		Scan(&u.ID, &u.WorkspaceID, &u.WorkspaceName, &u.IconID, &u.Group, &u.TopicName, &u.Answered, &u.Total, &u.LastAnswerAt)
+		WHERE rs.user_id=$1 AND rs.workspace_id=$2 AND rs.group_kind=$3 AND rs.finished_at IS NULL
+		ORDER BY rs.last_answer_at DESC LIMIT 1`, userID, wsID, GroupWorkspace).
+		Scan(&u.ID, &u.WorkspaceID, &u.WorkspaceName, &u.IconID, &u.Group, &u.Answered, &u.Total, &u.LastAnswerAt)
 	if err == nil {
 		out.Unfinished = &u
 	} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -280,28 +257,19 @@ func (s *Store) studySummary(ctx context.Context, userID, wsID string, plan *Pla
 	if err != nil {
 		return out, err
 	}
-	var items []scored
-	if plan != nil {
-		if items, err = s.scoredPlan(ctx, userID, *plan, reviewPrefsOf(prefs), now); err != nil {
-			return out, err
-		}
-		out.Reviewable = len(items)
-	} else {
-		pool, err := s.reviewPool(ctx, userID, wsID, now)
-		if err != nil {
-			return out, err
-		}
-		out.Reviewable = len(pool)
-		if len(pool) == 0 {
-			return out, nil
-		}
-		history, err := s.reviewHistory(ctx, userID, pool)
-		if err != nil {
-			return out, err
-		}
-		items = scoreItems(pool, history, reviewPrefsOf(prefs))
+	pool, err := s.reviewPool(ctx, userID, wsID, now)
+	if err != nil {
+		return out, err
 	}
-	out.QuickReview = quickReview(items)
+	out.Reviewable = len(pool)
+	if len(pool) == 0 {
+		return out, nil
+	}
+	history, err := s.reviewHistory(ctx, userID, pool)
+	if err != nil {
+		return out, err
+	}
+	out.QuickReview = quickReview(scoreItems(pool, history, reviewPrefsOf(prefs)))
 	return out, nil
 }
 
@@ -703,12 +671,11 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 }
 
 // newPool is every item of the workspace's quizzes and sets (not trashed or
-// embedded; among only when it is not nil) the user has never
-// rated, or whose content changed since its rating, in reading order:
+// embedded) the user has never rated, or whose content changed since its rating, in reading order:
 // topics in order, then unfiled, each by position, newest first on ties.
 // Only a new manual session reads it: it parses every quiz and set in scope
 // (through the cache), which the overview and the Study page never do.
-func (s *Store) newPool(ctx context.Context, userID, wsID string, only []string) ([]ranked, error) {
+func (s *Store) newPool(ctx context.Context, userID, wsID string) ([]ranked, error) {
 	type quizMaterial struct {
 		id, title string
 		revision  int64
@@ -718,8 +685,8 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string, only []string)
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, m.topic_id FROM materials m
 		LEFT JOIN topics c ON c.id=m.topic_id
 		WHERE m.workspace_id=$1 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
-			AND m.parent_material_id IS NULL AND ($2::text[] IS NULL OR m.id = ANY($2))
-		ORDER BY m.topic_id IS NULL, c.position, m.position, m.created_at DESC, m.id`, wsID, only)
+			AND m.parent_material_id IS NULL
+		ORDER BY m.topic_id IS NULL, c.position, m.position, m.created_at DESC, m.id`, wsID)
 	if err != nil {
 		return nil, err
 	}

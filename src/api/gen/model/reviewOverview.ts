@@ -4,7 +4,6 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { ReviewPlan } from './reviewPlan.ts';
 import type { ReviewSuggestion } from './reviewSuggestion.ts';
 import type { ReviewWorkspace } from './reviewWorkspace.ts';
 import type { UnfinishedSession } from './unfinishedSession.ts';
@@ -12,7 +11,6 @@ import type { UnfinishedSession } from './unfinishedSession.ts';
 export interface ReviewOverview {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  plans: ReviewPlan[];
   suggestions: ReviewSuggestion[];
   unfinished: UnfinishedSession[];
   workspaces: ReviewWorkspace[];

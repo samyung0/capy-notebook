@@ -29,14 +29,12 @@ type CloneFileReq struct {
 }
 
 // MoveFilesReq is the body for POST /api/files/move: files put into a
-// workspace (Epo 2026-10-27), refused with progress_loss until confirmed when
-// the workspaces they leave hold study progress or plan steps for them.
+// workspace (Epo 2026-10-27).
 type MoveFilesReq struct {
-	FileIDs             []string  `json:"fileIds" minItems:"1" maxItems:"20"`
-	WorkspaceID         string    `json:"workspaceId" minLength:"1"`
-	TopicID             string    `json:"topicId,omitempty" doc:"A topic of the workspace; exclusive with topicName"`
-	TopicName           TopicName `json:"topicName,omitempty" doc:"A topic of this name (any case), created when missing"`
-	ConfirmProgressLoss bool      `json:"confirmProgressLoss,omitempty" doc:"Drop the left workspaces' study progress and plan steps for these files"`
+	FileIDs     []string  `json:"fileIds" minItems:"1" maxItems:"20"`
+	WorkspaceID string    `json:"workspaceId" minLength:"1"`
+	TopicID     string    `json:"topicId,omitempty" doc:"A topic of the workspace; exclusive with topicName"`
+	TopicName   TopicName `json:"topicName,omitempty" doc:"A topic of this name (any case), created when missing"`
 }
 
 // CreateBlankFileReq is the body for POST /api/workspaces/{id}/files/blank:
@@ -554,17 +552,6 @@ type SetChatPrefsReq struct {
 // SetStudyEnabledReq shows (true) or hides study progress in one workspace.
 type SetStudyEnabledReq struct {
 	Enabled bool `json:"enabled"`
-}
-
-// CreateStudyPlanReq names a new, empty plan.
-type CreateStudyPlanReq struct {
-	Name StudyPlanName `json:"name" minLength:"1"`
-}
-
-// UpdateStudyPlanReq renames the plan and/or replaces its steps in order.
-type UpdateStudyPlanReq struct {
-	Name  *StudyPlanName         `json:"name,omitempty" minLength:"1"`
-	Steps *[]store.PlanStepInput `json:"steps,omitempty" maxItems:"200"`
 }
 
 // RateReviewItemReq rates a flashcard (rating) or a question answered in

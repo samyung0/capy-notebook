@@ -37,7 +37,7 @@ export const scoreText = (s: SessionScore) =>
 
 /** A topic session's name: its topic, Other files, or the whole workspace. */
 export function groupLabel(
-  group: 'topic' | 'others' | 'workspace' | 'plan',
+  group: 'topic' | 'others' | 'workspace',
   topicName?: string
 ) {
   if (group === 'others') return m.topic_other_files();

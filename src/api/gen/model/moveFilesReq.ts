@@ -8,8 +8,6 @@
 export interface MoveFilesReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** Drop the left workspaces' study progress and plan steps for these files */
-  confirmProgressLoss?: boolean;
   /**
      * @minItems 1
      * @maxItems 20
