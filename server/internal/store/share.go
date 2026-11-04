@@ -212,8 +212,9 @@ func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 //   - standalone link/public material: viewer
 //
 // The owner's lifecycle hides it as workspaceRoles does. A workspace material
-// hidden from members is not found for a viewer (Epo 2026-11-03); an embedded
-// one follows its note.
+// hidden from members is not found for a viewer (Epo 2026-11-03), nor is a quiz
+// for a viewer it is assigned to until that assignment closes (Epo 2026-11-04);
+// an embedded one follows its note.
 func materialEffectiveAccess(
 	ctx context.Context,
 	q rowQueryer,
@@ -230,7 +231,8 @@ func materialEffectiveAccess(
 	var linkGranted, hidden bool
 	err := q.QueryRow(ctx, `
 		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
-			COALESCE(wm.role, ''), m.parent_material_id, m.hidden,
+			COALESCE(wm.role, ''), m.parent_material_id,
+			m.hidden OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL),
 			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
 				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
 		FROM materials m
@@ -561,19 +563,23 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context, userID, cursor string)
 	return out, next, nil
 }
 
-// CanCloneFrom is who may copy what sits in a workspace, on roles already
-// read (assertCloneSourceTx): members of any role and effective editors.
-func CanCloneFrom(member, effective WorkspaceRole) bool {
+// CanCloneFrom is who may copy what sits in a workspace, on roles already read
+// (assertCloneSourceTx): members of any role and effective editors; of a class,
+// effective editors alone (Epo 2026-11-04), so never a viewer member.
+func CanCloneFrom(kind WorkspaceKind, member, effective WorkspaceRole) bool {
+	if kind == WorkspaceClass {
+		return RoleCanEdit(effective)
+	}
 	return member != "" || RoleCanEdit(effective)
 }
 
 // exploreCloneCols reads, after a materials row m joined to its workspace w
 // and the caller's ($1) membership me, whether the caller may clone it: a
 // standalone public item is open to every reader (exploreCanClone).
-const exploreCloneCols = memberRoleCol + `, COALESCE(w.privacy,'private'), COALESCE(w.share_role,'viewer')`
+const exploreCloneCols = memberRoleCol + `, COALESCE(w.privacy,'private'), COALESCE(w.share_role,'viewer'), COALESCE(w.kind,'personal')`
 
-func exploreCanClone(workspaceID string, member WorkspaceRole, privacy Privacy, shareRole ShareRole) bool {
-	return workspaceID == "" || CanCloneFrom(member, EffectiveRole(member, privacy, shareRole))
+func exploreCanClone(workspaceID string, kind WorkspaceKind, member WorkspaceRole, privacy Privacy, shareRole ShareRole) bool {
+	return workspaceID == "" || CanCloneFrom(kind, member, EffectiveRole(member, privacy, shareRole))
 }
 
 // ListPublicQuizzes lists a page of Explore quizzes, read from their stored
@@ -584,7 +590,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context, userID, cursor string) ([
 		return nil, "", err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), (m.preview->>'questionCount')::int, m.created_at,
-			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`
+			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`, `+quizAssignmentOpenSQL("m.id")+`
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
@@ -604,11 +610,13 @@ func (s *Store) ListPublicQuizzes(ctx context.Context, userID, cursor string) ([
 		var member WorkspaceRole
 		var privacy Privacy
 		var shareRole ShareRole
+		var kind WorkspaceKind
+		var assignedOpen bool
 		if err := rows.Scan(&q.ID, &q.Name, &q.WorkspaceID, &q.QuestionCount, &createdAt, &q.Author, &q.Clones,
-			&member, &privacy, &shareRole); err != nil {
+			&member, &privacy, &shareRole, &kind, &assignedOpen); err != nil {
 			return nil, "", err
 		}
-		q.CanClone = exploreCanClone(q.WorkspaceID, member, privacy, shareRole)
+		q.CanClone = exploreCanClone(q.WorkspaceID, kind, member, privacy, shareRole) && (!assignedOpen || RoleCanEdit(member))
 		out = append(out, q)
 		keys = append(keys, exploreKey{q.Clones, createdAt, q.ID})
 	}
@@ -646,13 +654,14 @@ func (s *Store) ListPublicFlashcardSets(ctx context.Context, userID, cursor stri
 		var member WorkspaceRole
 		var privacy Privacy
 		var shareRole ShareRole
+		var kind WorkspaceKind
 		var createdAt time.Time
-		set, err := scanFlashcardSetRow(rows, &item.Author, &item.Clones, &member, &privacy, &shareRole, &createdAt)
+		set, err := scanFlashcardSetRow(rows, &item.Author, &item.Clones, &member, &privacy, &shareRole, &kind, &createdAt)
 		if err != nil {
 			return nil, "", err
 		}
 		item.FlashcardSet = set
-		item.CanClone = exploreCanClone(set.WorkspaceID, member, privacy, shareRole)
+		item.CanClone = exploreCanClone(set.WorkspaceID, kind, member, privacy, shareRole)
 		out = append(out, item)
 		keys = append(keys, exploreKey{item.Clones, createdAt, item.ID})
 	}
@@ -1012,12 +1021,14 @@ func (s *Store) snapshotWorkspaceForClone(
 	var snapshot workspaceCloneSnapshot
 	// A viewer's clone leaves out what is hidden from members (Epo
 	// 2026-11-03); an owner's or editor's takes everything, each item keeping
-	// its flag (Epo 2026-11-04).
-	_, role, err := workspaceRoles(ctx, tx, actorID, workspaceID)
+	// its flag (Epo 2026-11-04). A quiz under an open assignment goes only with
+	// a clone by the owner or a teaching assistant.
+	member, role, err := workspaceRoles(ctx, tx, actorID, workspaceID)
 	if err != nil {
 		return workspaceCloneSnapshot{}, err
 	}
 	seeHidden := RoleCanEdit(role)
+	takeAssigned := RoleCanEdit(member)
 	rows, err := tx.Query(ctx,
 		`SELECT id, name, description, position FROM topics
 		 WHERE workspace_id=$1 ORDER BY position`,
@@ -1045,11 +1056,12 @@ func (s *Store) snapshotWorkspaceForClone(
 		`SELECT id, COALESCE(material_id,''), name, purpose, object_path, content_type, size_bytes,
 			status, COALESCE(etag,''), created_at, completed_at
 		 FROM editor_assets a
-		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL AND (material_id IS NULL OR EXISTS (
+		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL AND assignment_id IS NULL AND (material_id IS NULL OR EXISTS (
 			SELECT 1 FROM materials m LEFT JOIN materials p ON p.id=m.parent_material_id
-			WHERE m.id=a.material_id AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))))
+			WHERE m.id=a.material_id AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))
+				AND ($3 OR NOT `+quizAssignmentOpenSQL("m.id")+`)))
 		 ORDER BY created_at`,
-		workspaceID, seeHidden,
+		workspaceID, seeHidden, takeAssigned,
 	)
 	if err != nil {
 		return workspaceCloneSnapshot{}, err
@@ -1094,12 +1106,21 @@ func (s *Store) snapshotWorkspaceForClone(
 		snapshot.bytes += file.sizeBytes + file.sourceBytes
 	}
 
+	// What it leaves out for an open assignment counts in the toast.
+	if !takeAssigned {
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM materials m
+			WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND ($2 OR NOT m.hidden)
+				AND `+quizAssignmentOpenSQL("m.id"), workspaceID, seeHidden).Scan(&snapshot.skipped); err != nil {
+			return workspaceCloneSnapshot{}, err
+		}
+	}
 	rows, err = tx.Query(ctx,
 		`SELECT `+materialColsM+`
 		 FROM materials m LEFT JOIN materials p ON p.id=m.parent_material_id
 		 WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))
+			AND ($3 OR NOT `+quizAssignmentOpenSQL("m.id")+`)
 		 ORDER BY m.created_at`,
-		workspaceID, seeHidden,
+		workspaceID, seeHidden, takeAssigned,
 	)
 	if err != nil {
 		return workspaceCloneSnapshot{}, err
@@ -1263,8 +1284,8 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string, input 
 }
 
 // cloneKind is a clone's kind (Epo 2026-11-04, board U3): an owner's or editor
-// member's keeps the source's; anyone else's is personal, so a member's copy
-// of a class is theirs alone.
+// member's keeps the source's; anyone else's is personal, so a link or public
+// editor's copy of a class is theirs alone.
 func cloneKind(source WorkspaceKind, member WorkspaceRole) WorkspaceKind {
 	if RoleCanEdit(member) {
 		return source
@@ -1971,7 +1992,32 @@ func assertCloneSourceTx(ctx context.Context, tx pgx.Tx, userID, workspaceID str
 	if effective == "" {
 		return ErrNotFound
 	}
-	if !CanCloneFrom(member, effective) {
+	var kind WorkspaceKind
+	if err := tx.QueryRow(ctx, `SELECT kind FROM workspaces WHERE id=$1`, workspaceID).Scan(&kind); err != nil {
+		return err
+	}
+	if !CanCloneFrom(kind, member, effective) {
+		return ErrForbidden
+	}
+	return nil
+}
+
+// assertAssignedQuizCloneTx refuses a quiz under an open assignment to all but
+// the workspace's owner and teaching assistants (Epo 2026-11-04): assertCloneSourceTx
+// still admits a link or public editor.
+func assertAssignedQuizCloneTx(ctx context.Context, tx pgx.Tx, userID, workspaceID, quizID string) error {
+	member, _, err := workspaceRoles(ctx, tx, userID, workspaceID)
+	if err != nil {
+		return err
+	}
+	if RoleCanEdit(member) {
+		return nil
+	}
+	var open bool
+	if err := tx.QueryRow(ctx, `SELECT `+quizAssignmentOpenSQL("$1"), quizID).Scan(&open); err != nil {
+		return err
+	}
+	if open {
 		return ErrForbidden
 	}
 	return nil
@@ -2231,6 +2277,11 @@ func (s *Store) cloneMaterialOnce(
 	if src.WorkspaceID != "" {
 		if err := assertCloneSourceTx(ctx, tx, userID, src.WorkspaceID); err != nil {
 			return "", err
+		}
+		if src.Kind == "quiz" {
+			if err := assertAssignedQuizCloneTx(ctx, tx, userID, src.WorkspaceID, matID); err != nil {
+				return "", err
+			}
 		}
 	}
 	// Account lifecycle is the only source-side serialization. The material and

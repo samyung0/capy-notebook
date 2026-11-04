@@ -1,6 +1,11 @@
 import { delay, HttpResponse, http, type RequestHandler } from 'msw';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import { learnerView } from './answerKeys';
+import {
+  assignmentHandlers,
+  recentFor,
+  workspaceMaterialRefs,
+} from './assignments';
 import { chatFixtureOptions, chatFixtures } from './chatFixtures';
 import { mockChatStream } from './chatStream';
 import {
@@ -549,6 +554,8 @@ export function getMockScenarioHandlers(
           if (!workspace) return new HttpResponse(null, { status: 404 });
           return HttpResponse.json({
             ...workspace,
+            // A class's viewer member clones nothing.
+            canClone: workspace.kind !== 'class',
             capabilities: {
               canEdit: false,
               canEditContent: false,
@@ -562,6 +569,13 @@ export function getMockScenarioHandlers(
         http.get('/api/workspaces/:id/practice', ({ params }) =>
           HttpResponse.json(practiceBody(String(params.id), false))
         ),
+        http.get('/api/workspaces/:id/materials', ({ params }) =>
+          HttpResponse.json(workspaceMaterialRefs(String(params.id), 'member'))
+        ),
+        http.get('/api/recent', async ({ request }) =>
+          HttpResponse.json(recentFor(request.url, 'member'))
+        ),
+        ...assignmentHandlers('member'),
       ];
     case 'workspace-owner-full':
     case 'workspace-owner-grace':

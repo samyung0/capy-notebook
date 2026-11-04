@@ -10,8 +10,13 @@ import { PreviewCard } from '@/components/app/PreviewCard';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
-import { recentIcon, recentThumbnail } from '@/features/home/RecentItemsCard';
+import {
+  recentIcon,
+  recentSearch,
+  recentThumbnail,
+} from '@/features/home/RecentItemsCard';
 import { mergeRecentItems, type RecentItem } from '@/features/home/recentItems';
+import { TodoSection } from '@/features/study/assignments/TodoSection';
 import { SuggestedList } from '@/features/study/practice/SuggestedList';
 import { studyView } from '@/features/study/practice/studyView';
 import { getLocale, m } from '@/i18n';
@@ -24,10 +29,9 @@ const RECENT = 4;
 
 /** The workspace's front page (Epo 2026-11-02, boards H1 owner, H2 member):
  * its name with the owner and member count, Upload and Make a quiz from a
- * file for those who may add, What to practise next for whoever practises here
- * (board U3), then Recent files and Activity. To do, assignments and AI marks
- * wait for their pages: with nothing in it, a section is not shown (Epo
- * 2026-11-02). */
+ * file for those who may add, To do in a class, What to practise next for
+ * whoever practises here (board U3), then Recent files and Activity: with nothing
+ * in it, a section is not shown (Epo 2026-11-02). */
 export function WorkspaceDashboard({
   onMakeQuiz,
   onUpload,
@@ -39,7 +43,8 @@ export function WorkspaceDashboard({
 }) {
   const { data } = useWorkspaceDashboard(workspace.id);
   const { data: recent } = useWorkspaceRecent(workspace.id);
-  const practises = !studyView(workspace).manages;
+  const { manages, pages } = studyView(workspace);
+  const practises = !manages;
   const { data: practice } = usePractice(workspace.id, {
     enabled: practises,
     errorBoundary: false,
@@ -84,6 +89,9 @@ export function WorkspaceDashboard({
         )}
       </header>
       {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
+      {pages.includes('assignments') && (
+        <TodoSection manages={manages} workspaceId={workspace.id} />
+      )}
       {practises &&
         (!!practice?.suggestions.length || !!practice?.quizzes.length) && (
           <section className="flex flex-col">
@@ -136,7 +144,7 @@ export function WorkspaceDashboard({
           <ul>
             {data.activity.map((row) => (
               <ActivityRow
-                key={`${row.fileId ?? row.materialId}-${row.at}`}
+                key={`${row.fileId ?? row.materialId ?? row.assignmentId}-${row.at}`}
                 row={row}
                 workspaceId={workspace.id}
               />
@@ -167,9 +175,7 @@ function RecentCard({
       <Link
         params={{ workspaceId }}
         preload="intent"
-        search={
-          item.kind === 'material' ? { material: item.id } : { file: item.id }
-        }
+        search={recentSearch(item)}
         to="/workspaces/$workspaceId"
       />
     </PreviewCard>
@@ -190,9 +196,11 @@ function ActivityRow({
     row.kind === 'agent'
       ? bold(m.dashboard_activity_agent, { title: row.title })
       : bold(
-          row.kind === 'uploaded'
-            ? m.dashboard_activity_uploaded
-            : m.dashboard_activity_added,
+          row.kind === 'assigned'
+            ? m.dashboard_activity_assigned
+            : row.kind === 'uploaded'
+              ? m.dashboard_activity_uploaded
+              : m.dashboard_activity_added,
           { name, title: row.title }
         );
   return (
@@ -202,7 +210,11 @@ function ActivityRow({
         params={{ workspaceId }}
         preload="intent"
         search={
-          row.materialId ? { material: row.materialId } : { file: row.fileId }
+          row.assignmentId
+            ? { assignment: row.assignmentId, study: 'assignments' as const }
+            : row.materialId
+              ? { material: row.materialId }
+              : { file: row.fileId }
         }
         to="/workspaces/$workspaceId"
       >

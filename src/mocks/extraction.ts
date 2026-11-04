@@ -300,8 +300,7 @@ function reportFor(
   pages: number,
   missing: string[]
 ): ExtractionReport {
-  // The report's keysWorkedOut goes with the extraction branch's API.
-  const report: Omit<ExtractionReport, 'keysWorkedOut'> = {
+  const report: ExtractionReport = {
     expected: [...recorded, ...missing],
     figures: [],
     figuresLeftOut: [],

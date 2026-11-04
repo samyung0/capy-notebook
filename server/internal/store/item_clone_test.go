@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
@@ -888,6 +889,26 @@ func TestExploreCanCloneFollowsTheCloneRule(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("public editor", stranger, true)
+
+	// A class: its viewer member no longer clones, and while the quiz is under an
+	// open assignment neither does a public editor, only the owner.
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET kind='class', share_role='viewer' WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	check("class viewer member", member, false)
+	check("class public viewer", stranger, false)
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET share_role='editor' WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	check("class public editor", stranger, true)
+	now := time.Now().UTC()
+	due := now.Add(time.Hour)
+	if _, err := s.CreateAssignment(ctx, owner, ws.ID, AssignmentForm{Kind: AssignmentMarked, Title: "Paper", QuizID: inWorkspace.ID,
+		Questions: frozenFixture(t), DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Files: []AssignmentFileRef{}}, now); err != nil {
+		t.Fatal(err)
+	}
+	check("assigned, class public editor", stranger, false)
+	check("assigned, owner", owner, true)
 }
 
 // A file copy keeps its made-from names (scope_file_names), as a material

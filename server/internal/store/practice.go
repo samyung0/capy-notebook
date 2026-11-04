@@ -50,6 +50,9 @@ type PracticeQuiz struct {
 	// Average is the mean of those members' best scores (0 to 1), once at
 	// least five of them tried; a class's owner and editors only.
 	Average *float64 `json:"average,omitempty"`
+	// AssignmentClosedAt is when the assignment it was given as closed, which
+	// made it practice (Epo 2026-11-03).
+	AssignmentClosedAt *time.Time `json:"assignmentClosedAt,omitempty"`
 }
 
 // PracticeReview is the caller's reviews of one topic (or of Other files)
@@ -133,6 +136,7 @@ func (s *Store) practiceQuizzes(ctx context.Context, userID, wsID string, out *P
 		WHERE (m.workspace_id=$1 OR (m.practice_workspace_id=$1 AND m.owner_user_id=$2))
 			AND m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
+			AND `+quizAssignedToSQL("m.id", "$2")+` IS NULL
 		ORDER BY t.id IS NULL, t.position, m.position, m.created_at DESC, m.id`, wsID, userID)
 	if err != nil {
 		return err
@@ -160,6 +164,9 @@ func (s *Store) practiceQuizzes(ctx context.Context, userID, wsID string, out *P
 	for i, q := range out.Quizzes {
 		at[q.ID] = i
 	}
+	if err := s.practiceClosedAssignments(ctx, wsID, at, out); err != nil {
+		return err
+	}
 	rows, err = s.pool.Query(ctx, `SELECT DISTINCT ON (material_id) material_id, correct::float8, total::float8
 		FROM attempts WHERE user_id=$1 AND material_id = ANY($2) AND kind='quiz' AND total > 0
 		ORDER BY material_id, correct / total DESC, taken_at DESC`, userID, ids)
@@ -174,6 +181,31 @@ func (s *Store) practiceQuizzes(ctx context.Context, userID, wsID string, out *P
 			return err
 		}
 		out.Quizzes[at[id]].Best = &best
+	}
+	return rows.Err()
+}
+
+// practiceClosedAssignments notes each quiz whose assignment has closed.
+func (s *Store) practiceClosedAssignments(ctx context.Context, wsID string, at map[string]int, out *Practice) error {
+	// Closing is what released it: at the due date under No late submissions, else
+	// by hand. A reopened one keeps the time it was released.
+	rows, err := s.pool.Query(ctx, `SELECT source_quiz_id,
+			max(COALESCE(CASE WHEN no_late THEN LEAST(closed_at, due_at) ELSE closed_at END, released_at))
+		FROM assignments WHERE workspace_id=$1 AND source_quiz_id IS NOT NULL AND released_at IS NOT NULL
+		GROUP BY source_quiz_id`, wsID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var closed time.Time
+		if err := rows.Scan(&id, &closed); err != nil {
+			return err
+		}
+		if i, ok := at[id]; ok {
+			out.Quizzes[i].AssignmentClosedAt = &closed
+		}
 	}
 	return rows.Err()
 }

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import type {
+  Assignment,
   WorkspaceDashboard as Dashboard,
   ReviewSuggestion,
 } from '@/api/types';
@@ -9,6 +10,7 @@ import { m } from '@/i18n';
 import { shortTime, WorkspaceDashboard } from './WorkspaceDashboard';
 
 const page = vi.hoisted(() => ({
+  assignments: [] as Assignment[],
   data: undefined as Dashboard | undefined,
   kind: 'personal' as 'class' | 'personal',
   quizzes: [] as { id: string }[],
@@ -27,11 +29,14 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 vi.mock('@/api/hooks', () => ({
+  useAssignments: () => ({ data: { items: page.assignments } }),
   usePractice: (_id: string, { enabled }: { enabled: boolean }) => ({
     data: enabled
       ? { quizzes: page.quizzes, suggestions: page.suggestions }
       : undefined,
   }),
+  useSetAssignmentDone: () => ({ mutate: vi.fn() }),
+  useStartAssignment: () => ({ mutate: vi.fn() }),
   useWorkspaceDashboard: () => ({ data: page.data }),
   useWorkspaceRecent: () => ({ data: { files: [], materials: [] } }),
 }));
@@ -139,6 +144,66 @@ it('shows What to practise next to whoever practises, not to a class owner', () 
   page.quizzes = [];
   page.suggestions = [];
   page.kind = 'personal';
+});
+
+it("lists a class's To do: answers to approve for its owner, nothing when empty", () => {
+  page.data = { activity: [], members: 7, ownerName: 'Ms Wong' };
+  page.kind = 'class';
+  page.assignments = [];
+  expect(render()).not.toContain(m.dashboard_todo());
+  page.assignments = [
+    {
+      attempts: 1,
+      closed: false,
+      draft: false,
+      files: [],
+      id: 'as_1',
+      kind: 'marked',
+      latePenaltyPct: 0,
+      manage: {
+        approveAiMarks: true,
+        assignAll: true,
+        assigned: 6,
+        assignees: [],
+        done: 5,
+        showAnswers: true,
+        shuffle: false,
+        toApprove: 5,
+      },
+      marks: 40,
+      noLate: false,
+      postedAt: '2026-11-03T08:00:00Z',
+      postedBy: 'Ms Wong',
+      questions: 12,
+      title: 'Past paper',
+      topicIds: [],
+      workspaceId: 'ws',
+    } as Assignment,
+  ];
+  const html = render();
+  expect(html).toContain(m.dashboard_todo());
+  expect(html).toContain('Past paper');
+  expect(html).toContain(m.dashboard_waiting({ count: 5 }));
+  expect(html).toContain('tab=approve');
+  page.assignments = [];
+  page.kind = 'personal';
+});
+
+it('opens an assigned row on its assignment', () => {
+  page.data = {
+    activity: [
+      {
+        actorName: 'Ms Wong',
+        assignmentId: 'as_1',
+        at: '2026-11-04T08:00:00Z',
+        kind: 'assigned',
+        title: 'Past paper',
+      },
+    ],
+    members: 7,
+    ownerName: 'Ms Wong',
+  };
+  expect(render()).toContain('href="?assignment=as_1&amp;study=assignments"');
 });
 
 it('writes times as the boards do', () => {

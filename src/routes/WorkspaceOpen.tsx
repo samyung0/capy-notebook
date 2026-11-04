@@ -71,8 +71,9 @@ import {
   searchFromOpenItem,
   type WorkspaceOpenSearch,
 } from '@/features/materials/openItem';
+import { SharingNotice } from '@/features/study/assignments/SharingNotice';
 import { StudyPanel } from '@/features/study/practice/StudyPanel';
-import { studyView } from '@/features/study/practice/studyView';
+import { type StudyPage, studyView } from '@/features/study/practice/studyView';
 import { VoiceFooterButton } from '@/features/voice/VoiceCard';
 import {
   AddSourceDialog,
@@ -135,6 +136,11 @@ const ExtractionProgress = lazy(() =>
 const splitIds = (ids: string | undefined) =>
   ids ? ids.split(',').filter(Boolean) : [];
 
+const AssignmentsPage = lazy(() =>
+  import('@/features/study/assignments/AssignmentsPage').then((mod) => ({
+    default: mod.AssignmentsPage,
+  }))
+);
 const PracticePage = lazy(() =>
   import('@/features/study/practice/PracticePage').then((mod) => ({
     default: mod.PracticePage,
@@ -500,10 +506,11 @@ function WorkspaceOpen() {
   }
 
   /** Study → Practice takes the centre pane; Back returns here. */
-  function openStudy(study: 'practice' | 'summary') {
+  function openStudy(page: StudyPage) {
+    if (page === 'members') return;
     setCitationTarget(null);
     setFilesOpen(false);
-    navigate({ search: { study }, to: '.' });
+    navigate({ search: { study: page }, to: '.' });
   }
   const openPractice = () => openStudy('practice');
 
@@ -736,6 +743,16 @@ function WorkspaceOpen() {
       label: m.workspace_tab_study(),
       onClick: openPractice,
     },
+    // Phones have no Study panel: a class's Assignments sits beside Study.
+    ...(studyView(ws).pages.includes('assignments')
+      ? [
+          {
+            icon: 'clipboard' as const,
+            label: m.study_panel_assignments(),
+            onClick: () => openStudy('assignments'),
+          },
+        ]
+      : []),
     {
       icon: 'settings',
       label: m.workspace_settings(),
@@ -860,11 +877,32 @@ function WorkspaceOpen() {
   );
   // Study's pages fill the centre without a file header from lg (boards P1,
   // P2); one column keeps its header for the Files dropdown and ⋮.
+  // A link to a page this person doesn't have opens Practice.
+  const studyShown: StudyPage =
+    search.study === 'assignments' ||
+    (search.study === 'summary' && studyView(ws).pages.includes('summary'))
+      ? search.study
+      : 'practice';
   const studyContent =
     studyPage &&
-    (search.study === 'summary' && studyView(ws).pages.includes('summary') ? (
+    (studyShown === 'summary' ? (
       <Suspense fallback={null}>
         <SummaryPage workspaceId={workspaceId} />
+      </Suspense>
+    ) : studyShown === 'assignments' ? (
+      <Suspense fallback={null}>
+        <AssignmentsPage
+          search={{
+            assignment: search.assignment,
+            attempt: search.attempt,
+            member: search.member,
+            newFromQuiz: search.newFromQuiz,
+            own: search.own,
+            question: search.question,
+            tab: search.tab,
+          }}
+          workspaceId={workspaceId}
+        />
       </Suspense>
     ) : (
       <Suspense fallback={null}>
@@ -1061,18 +1099,9 @@ function WorkspaceOpen() {
         )}
         {leftOpen && section === 'study' && (
           <StudyPanel
-            active={
-              studyPage
-                ? search.study === 'summary' &&
-                  studyView(ws).pages.includes('summary')
-                  ? 'summary'
-                  : 'practice'
-                : null
-            }
-            onOpen={(page) =>
-              openStudy(page === 'summary' ? 'summary' : 'practice')
-            }
-            pages={studyView(ws).pages}
+            active={studyPage ? studyShown : null}
+            onOpen={openStudy}
+            workspace={ws}
           />
         )}
         <div className="min-h-0 flex-1" hidden={!chatOnScreen}>
@@ -1242,6 +1271,7 @@ function WorkspaceOpen() {
         tab={search.settings}
         workspace={ws}
       />
+      <SharingNotice workspace={ws} />
       {canClone && (
         <CloneWorkspaceDialog
           open={cloneOpen}

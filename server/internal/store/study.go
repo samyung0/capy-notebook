@@ -603,6 +603,7 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 		WHERE (m.workspace_id=$2 OR (m.practice_workspace_id=$2 AND m.owner_user_id=$1)) AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL
 			AND workspace_item_visible(m.hidden, m.workspace_id, $1)
+			AND `+quizAssignedToSQL("m.id", "$1")+` IS NULL
 		ORDER BY m.position, m.created_at, m.id`, userID, wsID)
 	if err != nil {
 		return nil, err
@@ -704,6 +705,7 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string) ([]ranked, err
 		WHERE (m.workspace_id=$2 OR (m.practice_workspace_id=$2 AND m.owner_user_id=$1)) AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL
 			AND workspace_item_visible(m.hidden, m.workspace_id, $1)
+			AND `+quizAssignedToSQL("m.id", "$1")+` IS NULL
 		ORDER BY c.id IS NULL, c.position, m.position, m.created_at DESC, m.id`, userID, wsID)
 	if err != nil {
 		return nil, err
@@ -915,9 +917,10 @@ func (s *Store) WorkspaceAttempts(ctx context.Context, userID, wsID string) ([]I
 // card count, parsing only documents whose revision
 // the item cache does not hold; hidden ones only for owners and editors.
 func (s *Store) itemCounts(ctx context.Context, userID, wsID string) ([]ItemAttempts, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, revision FROM materials
-		WHERE (workspace_id=$1 OR (practice_workspace_id=$1 AND owner_user_id=$2)) AND kind IN ('quiz','flashcards') AND trashed_at IS NULL AND parent_material_id IS NULL
-			AND workspace_item_visible(hidden, workspace_id, $2)`, wsID, userID)
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.revision FROM materials m
+		WHERE (m.workspace_id=$1 OR (m.practice_workspace_id=$1 AND m.owner_user_id=$2)) AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
+			AND `+quizAssignedToSQL("m.id", "$2")+` IS NULL`, wsID, userID)
 	if err != nil {
 		return nil, err
 	}

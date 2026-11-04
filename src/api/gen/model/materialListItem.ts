@@ -9,6 +9,8 @@ import type { MaterialListItemPreview } from './materialListItemPreview.ts';
 import type { Privacy } from './privacy.ts';
 
 export interface MaterialListItem {
+  assigned?: boolean;
+  assignmentId?: string;
   cardCount?: number;
   createdAt: string;
   hidden?: boolean;

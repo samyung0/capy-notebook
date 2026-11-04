@@ -1,7 +1,7 @@
 import type { Workspace } from '@/api/types';
 import { canManageWorkspaceSettings } from '@/features/workspace/access';
 
-/** Study's pages. Members and Assignments wait for their own branches. */
+/** Study's pages. Members waits for its own branch. */
 export type StudyPage = 'members' | 'assignments' | 'practice' | 'summary';
 
 /** What Study gives this person (Epo 2026-11-04, board U3). In a class the

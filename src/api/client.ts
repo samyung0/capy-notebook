@@ -333,6 +333,13 @@ export const qk = {
     wsId
       ? (['workspace', wsId, 'conversations', 'archived'] as const)
       : (['account-chat', 'conversations', 'archived'] as const),
+  /** One assignment, its report and an attempt. */
+  assignment: (id: string) => ['assignment', id] as const,
+  assignmentAttempt: (id: string) => ['assignment-attempt', id] as const,
+  assignmentReport: (id: string) => ['assignment', id, 'report'] as const,
+  /** A class's assignments; refreshed with the rest of study. */
+  assignments: (wsId: string) =>
+    ['workspace', wsId, 'study', 'assignments'] as const,
   attempt: (id: string) => ['attempt', id] as const,
   attempts: (params?: unknown) => ['attempts', params ?? null] as const,
   attemptsRoot: ['attempts'] as const,
@@ -397,6 +404,9 @@ export const qk = {
   reviewRoot: ['review'] as const,
   reviewSession: (id: string) => ['review', 'session', id] as const,
   search: (q: string) => ['search', q] as const,
+  /** Whether a class member is yet to be told what they share. */
+  sharingNotice: (wsId: string) =>
+    ['workspace', wsId, 'sharing-notice'] as const,
   sourceUploadPolicy: (wsId?: string) =>
     ['source-upload-policy', wsId ?? null] as const,
   study: (wsId: string) => ['workspace', wsId, 'study'] as const,

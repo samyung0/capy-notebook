@@ -1,4 +1,4 @@
-import type { SourceFile } from '@/api/types';
+import type { SourceFile, Workspace } from '@/api/types';
 import { m } from '@/i18n';
 
 const IMAGE_EXTS = new Set([
@@ -94,6 +94,16 @@ export function fileIsTranscribing(file: { kind: string; status?: string }) {
  * design Q2). The server copies no other file. */
 export function fileCanClone(file: Pick<SourceFile, 'status' | 'indexed'>) {
   return file.status === 'ready' || (file.status === 'failed' && file.indexed);
+}
+
+/** Whether Clone is offered on a workspace's material: while a quiz is under an
+ * open assignment, to the owner and teaching assistants alone (Epo 2026-11-04). */
+export function materialCanClone(
+  workspace: Pick<Workspace, 'canClone' | 'role'> | undefined,
+  assigned?: boolean
+) {
+  if (!workspace?.canClone) return false;
+  return !assigned || workspace.role === 'owner' || workspace.role === 'editor';
 }
 
 /** Whether Move to… (another workspace or topic) is offered on a workspace

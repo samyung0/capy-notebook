@@ -3,7 +3,12 @@ import {
   type QueryClient,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
+import {
+  Navigate,
+  useNavigate,
+  useRouter,
+  useSearch,
+} from '@tanstack/react-router';
 import {
   type ComponentProps,
   lazy,
@@ -431,6 +436,20 @@ function MaterialBody({
   if (workspaceId && isPending) return <MaterialLoading />;
 
   const reference = materials?.find((entry) => entry.id === materialId);
+  // A direct link to a quiz assigned to the reader opens the assignment.
+  if (reference?.assignmentId) {
+    return (
+      <Navigate
+        params={{ workspaceId }}
+        replace
+        search={{
+          assignment: reference.assignmentId,
+          study: 'assignments' as const,
+        }}
+        to="/workspaces/$workspaceId"
+      />
+    );
+  }
   const heavy = heavyMaterial(reference);
   if (heavy && !choice) {
     return (

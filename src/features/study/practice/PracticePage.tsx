@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { type ReactNode, useState } from 'react';
+import { useState } from 'react';
 import { usePractice, useTopics, useWorkspace } from '@/api/hooks';
 import type {
   Practice,
@@ -19,12 +19,13 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { materialIconName } from '@/lib/fileIcons';
+import { dayMonth } from '../assignments/assignmentText';
 import { MakePractice } from './MakePractice';
 import { questionsLabel, scoreText } from './practiceText';
 import { SuggestedList } from './SuggestedList';
+import { PracticeFrame, Td, Th } from './studyPage';
 import { studyView } from './studyView';
 import {
-  PracticeFrame,
   PracticeResult,
   type PracticeStart,
   TopicPractice,
@@ -384,6 +385,7 @@ function AllPractice({
                   >
                     <Td>
                       <QuizName
+                        closedAt={row.quiz.assignmentClosedAt}
                         onlyYou={row.quiz.onlyYou}
                         title={row.quiz.title}
                       />
@@ -439,6 +441,11 @@ function AllPractice({
                       tried: quiz.triedBy ?? 0,
                     })
                   : null,
+                quiz?.assignmentClosedAt
+                  ? m.assignment_closed_note({
+                      date: dayMonth(quiz.assignmentClosedAt),
+                    })
+                  : null,
               ].filter(Boolean);
               const score = review?.best ?? quiz?.best;
               return (
@@ -490,53 +497,26 @@ function AllPractice({
   );
 }
 
-function Th({
-  children,
-  className,
+function QuizName({
+  closedAt,
+  onlyYou,
+  title,
 }: {
-  children?: ReactNode;
-  className?: string;
+  /** The assignment that made it practice closed then (board P1). */
+  closedAt?: string;
+  onlyYou?: boolean;
+  title: string;
 }) {
-  return (
-    <th
-      className={cn(
-        't-meta border-divider border-b px-3 py-1.5 text-left align-bottom font-semibold text-fg-muted',
-        className
-      )}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  className,
-  muted,
-}: {
-  children?: ReactNode;
-  className?: string;
-  muted?: boolean;
-}) {
-  return (
-    <td
-      className={cn(
-        'h-10 truncate border-divider border-b px-3',
-        muted && 'font-semibold text-fg-muted',
-        className
-      )}
-    >
-      {children}
-    </td>
-  );
-}
-
-function QuizName({ onlyYou, title }: { onlyYou?: boolean; title: string }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
       <FileIcon className="size-4 shrink-0" name={materialIconName('quiz')} />
       <span className="truncate font-semibold">{title}</span>
       {onlyYou && <OnlyYou />}
+      {closedAt && (
+        <span className="t-meta shrink-0 text-fg-muted max-lg:hidden">
+          {m.assignment_closed_note({ date: dayMonth(closedAt) })}
+        </span>
+      )}
     </div>
   );
 }

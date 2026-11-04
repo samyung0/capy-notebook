@@ -10,8 +10,8 @@ import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { LabelChip, topicSquares } from '../topicLabels';
 import { MakePractice } from './MakePractice';
+import { PracticeFrame } from './studyPage';
 import { studyView } from './studyView';
-import { PracticeFrame } from './TopicPractice';
 
 const RESULT: Record<string, string> = {
   partial: 'bg-solid-warning',

@@ -20,7 +20,8 @@ Read progress (Mark as read, Stop tracking, read marks, "done" counts,
 Learning's Progress tab and its railway map) went on 2026-11-03 (Epo): only
 practice records progress now. Study plans, cross-workspace lists with their
 own review sessions, went on 2026-11-04 (Epo; migration `0137_drop_study_plans.sql`
-dropped their tables). FSRS runs in Go and
+dropped their tables). In a class Study also holds
+[Assignments](#assignments). FSRS runs in Go and
 nothing is scheduled by date: no due date, due count or interval preview is
 stored or shown for signed-in users. Review orders items by how likely the
 learner is to have forgotten them (retrievability) and by their latest
@@ -340,9 +341,9 @@ file header (28px 36px padding); one column keeps the header for the Files
 dropdown and ⋮. The rail's Study opens it and its panel (`StudyPanel.tsx`)
 lists Study's pages: in a class, Members, Assignments and Practice for owner
 and editor members, Summary, Assignments and Practice for others; in a
-personal workspace, Summary and Practice for everyone. Practice
-and Summary are built; the rest show as muted rows with a "Coming soon" title
-and do nothing. Practice's row is current on the page, during a topic session
+personal workspace, Summary and Practice for everyone. Practice, Summary and
+[Assignments](#assignments) are built; the rest show as muted rows with a
+"Coming soon" title and do nothing. Practice's row is current on the page, during a topic session
 and on its result.
 
 Data: `GET /api/workspaces/{id}/practice` (`qk.practice`, under the
@@ -741,8 +742,201 @@ append-only card review log plus card states live in IndexedDB
 (`src/lib/localDb.ts`, database `capy-local`), and nothing is imported into an
 account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
 
+## Assignments
+
+Work a class's owner and teaching assistants give its members (Epo 2026-11-03,
+`todo-study-tracking.md` §4, §5, §7; boards A0 to A5, W1 to W4, G3, G3m). The
+page is `src/features/study/assignments/AssignmentsPage.tsx`, the centre page
+while the URL has `study=assignments` (`parseAssignments` in `openItem.ts`), and
+`studyView` gates it: only a class lists Assignments, and elsewhere the link
+opens Practice. The Study panel stays beside every view with Assignments current;
+its count is what is left to do for a member and the assignments with answers
+waiting for staff (`useAssignmentCount`, Claude's reading: the boards' counts
+don't follow their rows).
+
+**Words.** A *marked* assignment freezes a quiz: members submit it, it is marked
+and it counts. An *unmarked* one is a title and optional files (picked from the
+workspace's) that members tick. Neither is a file. There is no other state than
+draft or published: a draft is invisible to members, and publishing posts it.
+
+**Data** (migration `0147_assignments.sql`):
+
+| Table or column | Holds |
+| --- | --- |
+| `assignments` | Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `approve_ai_marks`, `show_answers`, `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its quiz became practice, once) |
+| `assignment_assignees` | Picked names and a staff member's own "You" |
+| `assignment_files` | An unmarked assignment's files and materials, in order |
+| `assignment_done` | A member's tick |
+| `editor_assets.assignment_id` | A frozen copy's image rows |
+| `attempts` (kind `assignment`) | A try: `assignment_id`, `deadline_at`, `submitted_at`, `auto_submitted`, `waiting_marks`, `waiting_answers`, with no `material_id`, so no practice read (best score, tried by, averages, review pool) ever sees it, and `GET /api/attempts` and its list leave it out |
+| `answer_events` | Source `assignment`, grader `owner`: closed parts at submit, open parts when marked; a changed mark is a new row, and the latest per attempt and part stands |
+| `workspace_members.sharing_notice_seen_at` | When this member was told what they share (migration `0148_sharing_notice.sql`) |
+
+**Who it went to.** `assign_all` is every viewer member, later joiners included,
+and never an editor. Named lists fix who; a removed member drops out of the
+counts and keeps their rows. An owner or editor is left out unless they tick
+"You" (A1b), which then gives them the member's page too (`own=true`).
+
+**The frozen copy.** Publishing (creating, unless it is a draft, whose quiz stays
+live until Publish) copies the quiz's current questions, live edits projected
+first, into `assignments.questions`. Images become new `editor_assets` rows of
+the workspace with no material and an `assignment_id`, so editing or deleting the
+quiz leaves them, deleting the assignment deletes them (the foreign key), and a
+workspace clone leaves them out. They are charged to whoever published, as a clone
+is, and the Embeds tab doesn't list them; the questions JSON itself isn't charged,
+as an attempt's snapshot isn't. Members are only ever served this copy:
+answer-free while running (`questions.LearnerViews`), with keys only after
+submitting if Show answers is on.
+
+**One row** (Epo 2026-11-04). A quiz and its assignment are the same content: lists
+hold one row, and making an assignment changes nothing about the quiz. Whether it
+is hidden stays the owner's choice, and a draft does nothing at all. While a
+published assignment is open (not closed by hand, not past a No late submissions
+due date):
+
+| Who | Their row | The quiz itself |
+| --- | --- | --- |
+| Owner, teaching assistant | The assignment icon (`assigned`), and it opens their usual view | Theirs as always |
+| A link or public editor | The assignment icon, no Clone | Theirs to read and edit; they can't clone it |
+| A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `AccountDocumentAccess`), and it is off Practice, reviews and new items |
+| A viewer it did not go to | A normal quiz if it is visible; no row if hidden | As it was, the owner's choice |
+
+`quizAssignedToSQL` and `quizAssignmentOpenSQL` in `store/assignments.go` are the
+two reads; `materialIconName(kind, assigned)` is the icon, a quill in the file-icon
+sprite, on the file tree, Recent, Blocks cards and the open file's header. A direct
+link to the quiz sends its assignee to the assignment (`CenterContent`). Delete
+(the toast's Undo) restores nothing, since nothing changed. Clones: see
+[authorization](authorization-permissions-lifecycles.md#class-clones).
+
+What this leaves open: an unassigned member of a visible quiz keeps normal access
+with its checks. A signed-out browser on a public or link workspace's share page is
+nobody in particular, so an assignee could open it there. An attempt made before
+the assignment stays readable by whoever took it.
+
+**Taking it.** `POST /api/assignments/{id}/start` starts an attempt, or returns
+the one running (one per member: `attempts_assignment_running_idx`). A time limit
+asks first (Before you start, A0) because Start starts the clock: `deadline_at`
+is set on the server, and the response's `now` is what the page's timer counts
+against. No limit opens straight away. Answers save whole (`PUT
+/api/assignment-attempts/{id}/answers`, 2 s after typing rests, on Next and
+Previous, when the tab hides and on leaving the page) and the header says Saved,
+Saving or Not saved. Every opening reads the attempt afresh, never from a cache, so
+its answers and clock are the server's;
+nothing retries a failed save but the next change and Submit, which sends them
+all. A shuffled paper's order comes from a seed of the attempt's id, so a reload
+keeps it. Bookmarks stay in this browser.
+
+**Submitting.** `POST …/submit` grades closed parts with the same deterministic
+Go scoring as a quiz (`questions.Graded`). An answered open part is left
+`pending` ("Not marked") with no model call; a blank one earns 0. At zero the
+page submits; a closed tab is the server's: past `deadline_at` by a 15 s grace, or
+once it closes, by hand or at a No late submissions due date, the next request or
+`SweepAssignments` (each minute, in `cmd/api`) submits what was saved,
+`auto_submitted`.
+
+**The due date's policy** (Epo 2026-11-04, supersedes §11.5's close by the owner
+alone). Set per assignment in New assignment's Advanced; marked work with a due
+date only (the store refuses anything else, `checkLatePolicy`), so with no due date
+Advanced holds Draft only.
+
+Advanced (Epo 2026-11-04, `AdvancedSection.tsx`) is an accordion holding the policy
+and Draft only, with the app's `motion-accordion` recipe. It starts closed unless a
+saved assignment holds something other than the defaults there, a draft, No late
+submissions or a penalty (`advancedStartsOpen`, Claude's pick). Once opened it
+scrolls itself into view, since it opens at the dialog's foot, below the fold on a
+phone. Editing a published assignment has no Draft only, and one with no due date
+has no Advanced at all.
+
+- **No late submissions on.** It closes itself at the due date: nothing starts, an
+  attempt still running is submitted as saved, and nothing reads Late. The menu has
+  no Reopen once it has closed itself (`closedItself`), though staff can still close
+  it early.
+- **Off, the default.** Late work is open until an owner or teaching assistant
+  closes it (report ⋮, with a confirm since it shows the keys, and reversible); a
+  note on Members says so. The late penalty (No penalty, −20%, −50%) comes off the
+  mark of a submission past the due date: `Mark` is `Correct` less the penalty,
+  which stays raw. It reads live, so changing it or the due date applies to work
+  already in, and an open part marked later is penalised with the rest. Late work
+  shows "Late −20%" on Results, Submitted and the report's Members, and Results adds
+  "30 / 40 before the late penalty"; the class Average uses the penalised mark. A
+  timed attempt submitted after the due date counts as late, and answer events,
+  per-part marks and reviews keep the raw marks.
+
+Nothing submitted past the due date reads Missing for staff and Overdue for the
+member, with the penalty on it (Overdue −20%). An unmarked assignment has no policy
+and leaves the open list at its due date. Attempts default to 1. With more than
+one, the latest submission counts (Claude's pick).
+
+**Results** (A5). The mark top right is marks decided over marks decided, so a
+waiting part never reads as lost; Submitted (A4) says the same as "Your mark so
+far". Right, partly, wrong and not marked counts sit above every question, which
+opens to its answer, marking points and worked solution. Show answers off leaves
+marks and comments and removes keys, marking points and solutions on the server
+(`gradedWithoutKeys`). Practise again shows once its quiz is practice. The top right
+shows the mark after any late penalty, with the unpenalised mark under it.
+
+**The report** (G3, G3m, A3; `GET /api/assignments/{id}/report`, owner and editor
+members only). Chips, then three tabs, each with its link: Questions (`tab` absent:
+percent correct and answer frequencies, common wrong answers, how often each
+marking point was awarded, "Often missed" under half), Members (`tab=members`:
+submitted, Late with its penalty, Missing, minutes taken, mark, "n to approve"; a row opens that
+member's Results, where any mark and comment can change) and Approve AI marks
+(`tab=approve`, `&question=`, `&member=`; A3 by question, A3b by member). Percent,
+average and the table's Average need five results (§11.8). The links
+`/workspaces/{id}/study/assignments/{id}` redirect to this URL.
+
+**Marks.** `POST /api/assignment-attempts/{id}/marks` sets one question's marks,
+in half marks up to each point's or closed part's marks, and its comment.
+Totals move in the same transaction. Until the grading switch no model marks
+anything: rows waiting read Not marked, the AI column reads "–", Approve saves the
+owner's marks and Approve all stays disabled with a reason.
+
+**Closing becomes practice** (Epo 2026-11-03, 2026-11-04: closing, not the due date
+alone). Once it has closed, by hand or at a No late submissions due date, the sweep
+(within a minute) sets `released_at` and makes the quiz a normal visible one
+(`hidden=false`) unless another open assignment still holds it; the icon and the
+assignee's refusal end at the close itself. A hidden quiz's row can so go missing
+for that minute. Practice notes "Assignment, closed 24 Oct" (`assignmentClosedAt`).
+The owner can hide it again from its ⋮, and the sweep leaves that alone. Marked
+answers join reviews at that moment (§11.6): each attempt's fully marked questions
+are rated on the quiz, a later-marked one when it stops waiting.
+
+**Sharing notice** (Epo 2026-11-04, board V1). A simple compact dialog, 540px wide
+from `sm` and the width of the page less its gutters on a phone, on a viewer member's
+first open of a class after joining or once for those already in one: the workspace's
+name, its owner as public pages show one (avatar left of the name, read with the
+notice only while it is due, supersedes the 2026-11-03 "doesn't name the owner"),
+"You are sharing the following data:", then what this branch really shares with its
+owner and teaching assistants, results on assignments and practice on each quiz as
+part of a class count and average, and one button (`SharingNotice.tsx`, `GET` and
+`PUT /api/workspaces/{id}/sharing-notice`). Dismissing it counts as told, once per member
+row, so leaving and rejoining tells again. Staff and personal workspaces never see
+it. The board's own line about topic labels waits for topic summaries, and its Join
+step and "What members see" link for an invite preview and board G5.
+
+**Dashboard.** `TodoSection` (H1, H2, H2b). A member's To do is what went to them:
+quizzes with Start (Before you start opens over the Dashboard), the rest with a
+tick; Show done brings finished ones back crossed out. Staff's holds answers to
+approve and anything they gave themselves, with New assignment at its top right.
+Empty, the section doesn't show. Activity gains "assigned" rows, to whoever it
+went to and staff.
+
+**Not built.** The grading switch and everything behind it (AI marks, Mark with
+AI, Approve all, quoted highlights, charging). Home's To approve list and the bell. Topic labels and mastery on Results. Regrade one
+question. Per-member extra time and excused work. New quiz, Make a quiz from a
+file and Generate questions in the picker show Coming soon behind the `newQuiz`
+seam, which nothing fills yet.
+
+Sources: [store](../server/internal/store/assignments.go),
+[routes](../server/internal/httpapi/huma_assignments.go),
+[sweep](../server/cmd/api/assignment_worker.go),
+[migration](../server/migrations/0147_assignments.sql),
+[page](../src/features/study/assignments/AssignmentsPage.tsx).
+
 ## Tests
 
+- `server/internal/store/assignments_test.go` and
+  `e2e/study/assignments.spec.ts`: see [test-catalog.md](test-catalog.md).
 - `server/internal/review/review_test.go` also holds the answer-history
   order Epo signed off (`TestHistoryWeightsOrder`).
 - `server/internal/review/topic_label_test.go`: the label counts Epo reviewed, a

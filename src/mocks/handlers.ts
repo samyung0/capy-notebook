@@ -19,8 +19,6 @@ import type {
   HiddenBody,
   Material,
   MaterialDiscussion,
-  MaterialRef,
-  MaterialRefType,
   ModelRef,
   MoveFilesReq,
   PDFAnnotation,
@@ -67,6 +65,13 @@ import { getFileKind } from '@/features/workspace/sourceUpload';
 import { DEV_SHARE_LINK_SECRET, sharePath } from '@/lib/shareLink';
 import { accountChatHandlers } from './accountChat';
 import { gradeQuestions, learnerView } from './answerKeys';
+import {
+  assignmentActivity,
+  assignmentHandlers,
+  quizAssignmentFields,
+  recentFor,
+  workspaceMaterialRefs,
+} from './assignments';
 import { mockResumeStream } from './chatResume';
 import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
@@ -94,6 +99,7 @@ import {
 } from './scenarioFixtures';
 import { studyHandlers } from './study';
 import { voiceInputHandlers } from './voiceInput';
+import { mockWorkspaceMembers } from './workspaceMembers';
 
 /** Query parsing shared by the owner-scoped list mocks; the cursor is an offset. */
 function listParams(href: string) {
@@ -121,9 +127,6 @@ function sortBy<T>(key: (row: T) => string | number, asc: boolean) {
 import { dialogFiles } from './dialogFiles';
 import { errorMaterials } from './errorMaterials';
 import { sourceUploadPolicy } from './sourceUploadPolicy';
-
-/** Map a material's storage kind to the left-panel ref type. */
-const refType = (kind: Material['kind']): MaterialRefType => kind;
 
 const latency = () => delay(1000 + Math.random() * 220);
 /** /me carries the account lifecycle, as the server's does. */
@@ -206,70 +209,6 @@ interface MockInviteCandidate {
 
 const mockDiscussions = db.discussions;
 const mockWorkspaceInvites: MockWorkspaceInvite[] = [];
-export const mockWorkspaceMembers: WorkspaceMember[] = [
-  {
-    createdAt: new Date().toISOString(),
-    name: 'Morgan Lee',
-    role: 'editor',
-    userId: 'u_mock_collaborator',
-    workspaceId: 'ws_bio',
-  },
-  // A fuller Biology 101 roster so the panel foot's avatar group overflows.
-  {
-    avatarUrl: '/icons/avataaars-04.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Priya Nair',
-    role: 'editor',
-    userId: 'u_mock_priya',
-    workspaceId: 'ws_bio',
-  },
-  {
-    createdAt: new Date().toISOString(),
-    name: 'Tom Becker',
-    role: 'viewer',
-    userId: 'u_mock_tom',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-07.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Aiko Tanaka',
-    role: 'editor',
-    userId: 'u_mock_aiko',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-12.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Diego Alvarez',
-    role: 'viewer',
-    userId: 'u_mock_diego',
-    workspaceId: 'ws_bio',
-  },
-  {
-    createdAt: new Date().toISOString(),
-    name: 'Sara Okafor',
-    role: 'viewer',
-    userId: 'u_mock_sara',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-15.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Liam Walsh',
-    role: 'editor',
-    userId: 'u_mock_liam',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-18.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Hana Kim',
-    role: 'viewer',
-    userId: 'u_mock_hana',
-    workspaceId: 'ws_bio',
-  },
-];
 const mockInviteCandidates: MockInviteCandidate[] = [
   {
     email: 'morgan@example.com',
@@ -524,6 +463,9 @@ function trashMaterial(id: string, kind?: string) {
 }
 
 const pdfAnnotations: Record<string, PDFAnnotation[]> = {};
+
+export { mockWorkspaceMembers } from './workspaceMembers';
+
 /** Clear only state created by the dedicated User scenarios workspace. */
 export function resetScenarioHandlerState(workspaceId: string) {
   for (const rows of [mockWorkspaceMembers, mockWorkspaceInvites]) {
@@ -2032,7 +1974,7 @@ export const handlers = [
     });
   }),
   http.get('/api/recent', async ({ request }) =>
-    HttpResponse.json(db.listRecent(new URL(request.url)))
+    HttpResponse.json(recentFor(request.url, 'owner'))
   ),
   http.post('/api/files/:id/open', ({ params }) => {
     db.itemOpens.set(`file:${params.id}`, new Date().toISOString());
@@ -2078,6 +2020,7 @@ export const handlers = [
             title: mt.title,
           })
         ),
+      ...assignmentActivity(ws.id),
     ].sort(sortBy((row) => row.at, false));
     // The newest four, plus the newest agent-made set so its row shows as on
     // the boards (H2); the server takes the newest five.
@@ -2089,7 +2032,9 @@ export const handlers = [
       .sort(sortBy((row) => row.at, false))
       .map((row, i) => {
         const actor =
-          row.kind === 'agent' ? roster[0] : roster[i % roster.length];
+          row.kind === 'agent' || row.kind === 'assigned'
+            ? roster[0]
+            : roster[i % roster.length];
         return {
           ...row,
           actorAvatarUrl: actor.avatarUrl,
@@ -2274,7 +2219,10 @@ export const handlers = [
         )
       );
     return HttpResponse.json({
-      items: rows.slice(offset, offset + limit).map(db.materialListItem),
+      items: rows.slice(offset, offset + limit).map((mt) => ({
+        ...db.materialListItem(mt),
+        ...quizAssignmentFields(mt.id, 'owner'),
+      })),
       nextCursor:
         offset + limit < rows.length ? String(offset + limit) : undefined,
     });
@@ -2308,25 +2256,9 @@ export const handlers = [
     db.materials.unshift(mt);
     return HttpResponse.json(mt, { status: 201 });
   }),
-  http.get('/api/workspaces/:id/materials', async ({ params }) => {
-    const wsId = String(params.id);
-    const refs: MaterialRef[] = db.materials
-      .filter((mt) => mt.workspaceId === wsId && !mt.parentMaterialId)
-      .map((mt) => ({
-        createdAt: mt.createdAt,
-        hidden: mt.hidden,
-        id: mt.id,
-        maxDepth: mt.maxDepth,
-        nodeCount: mt.nodeCount,
-        position: mt.position,
-        sizeBytes: mt.contentBytes,
-        title: mt.title,
-        topicId: mt.topicId,
-        type: refType(mt.kind),
-      }))
-      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-    return HttpResponse.json(refs);
-  }),
+  http.get('/api/workspaces/:id/materials', async ({ params }) =>
+    HttpResponse.json(workspaceMaterialRefs(String(params.id), 'owner'))
+  ),
   http.post('/api/workspaces/:id/materials', async ({ params, request }) => {
     const wsId = String(params.id);
     const ws = db.workspaces.find((w) => w.id === wsId);
@@ -3290,6 +3222,7 @@ export const handlers = [
   }),
   /* ---------------- study progress and review ---------------- */
   ...studyHandlers,
+  ...assignmentHandlers('owner'),
 
   /* ---------------- schedule ---------------- */
   http.get('/api/events', async () => HttpResponse.json(db.events)),

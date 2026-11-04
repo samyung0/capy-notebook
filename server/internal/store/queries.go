@@ -1988,13 +1988,14 @@ func (s *Store) MaterialWorkspaceID(ctx context.Context, id string) (string, err
 // ListMaterialRefs returns the unified, workspace-scoped list of versioned
 // Plate materials, newest first.
 // ListMaterialRefs lists the workspace's top-level materials userID may see:
-// hidden ones only for its owners and editors.
+// hidden ones only for its owners and editors, and a quiz assigned to them.
 func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
-	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, topic_id, position, created_at, size_bytes, node_count, max_depth, provenance, hidden
-		FROM materials WHERE workspace_id=$1 AND parent_material_id IS NULL AND trashed_at IS NULL
-			AND workspace_item_visible(hidden, workspace_id, $2)
-		ORDER BY position, created_at DESC`, wsID, userID)
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, m.topic_id, m.position, m.created_at, m.size_bytes, m.node_count, m.max_depth,
+			m.provenance, m.hidden, `+materialAssignedCols("$2")+`
+		FROM materials m WHERE m.workspace_id=$1 AND m.parent_material_id IS NULL AND m.trashed_at IS NULL
+			AND (workspace_item_visible(m.hidden, m.workspace_id, $2) OR `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL)
+		ORDER BY m.position, m.created_at DESC`, wsID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -2015,9 +2016,13 @@ func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]Ma
 			&r.MaxDepth,
 			&provenance,
 			&r.Hidden,
+			&r.Assigned,
+			&r.AssignmentID,
 		); err != nil {
 			return nil, err
 		}
+		// An assignee isn't told it is hidden from others.
+		r.Hidden = r.Hidden && r.AssignmentID == ""
 		if r.Provenance, err = decodeProvenance(provenance); err != nil {
 			return nil, err
 		}
@@ -2146,7 +2151,7 @@ func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams
 	}
 	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT `+attemptCols+`
 		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
-		WHERE a.user_id=$1 AND ($2::text[] IS NULL OR m.workspace_id = ANY($2)) AND ($5::text[] IS NULL OR a.kind = ANY($5))
+		WHERE a.user_id=$1 AND a.kind <> 'assignment' AND ($2::text[] IS NULL OR m.workspace_id = ANY($2)) AND ($5::text[] IS NULL OR a.kind = ANY($5))
 		ORDER BY %s %s NULLS LAST, a.taken_at DESC, a.id
 		LIMIT $3 OFFSET $4`, order, dir), userID, workspaces, p.Limit+1, p.Offset, kinds)
 	if err != nil {
@@ -2389,7 +2394,7 @@ func (s *Store) GetAttempt(ctx context.Context, id, userID string) (AttemptDetai
 	var d AttemptDetail
 	err := s.pool.QueryRow(ctx, `SELECT `+attemptCols+`, a.answers, a.questions
 		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
-		WHERE a.id=$1 AND a.user_id=$2`, id, userID).
+		WHERE a.id=$1 AND a.user_id=$2 AND a.kind <> 'assignment'`, id, userID).
 		Scan(append(attemptDest(&d.Attempt), &d.Answers, &d.Questions)...)
 	if isNoRows(err) {
 		return d, ErrNotFound

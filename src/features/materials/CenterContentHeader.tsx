@@ -36,6 +36,7 @@ import {
   IMAGE_MIN_ZOOM,
   IMAGE_ZOOM_STEP,
   isImageFile,
+  materialCanClone,
   officeFormatOf,
 } from '@/features/files/fileUtils';
 import {
@@ -43,6 +44,7 @@ import {
   type NoteEditorStatus,
   noteEditorStatusLabel,
 } from '@/features/notes/editorMode';
+import { studyView } from '@/features/study/practice/studyView';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import {
   toFileActionTarget,
@@ -351,8 +353,8 @@ function useHeader(
       !embedded &&
       (standalone
         ? !('workspaceId' in mt && mt.workspaceId)
-        : !!workspace?.canClone),
-    icon: materialIconName(kind),
+        : materialCanClone(workspace, listed?.assigned)),
+    icon: materialIconName(kind, listed?.assigned),
     material: mt,
     materialCapabilities: capabilities,
     showImageZoom: false,
@@ -421,6 +423,9 @@ export function Header({
     showImageZoom,
   } = useHeader(item, workspaceId, standalone);
   const navigate = useNavigate();
+  const { data: studyWorkspace } = useWorkspace(standalone ? '' : workspaceId, {
+    errorBoundary: false,
+  });
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
   const office = !!file && !!officeFormatOf(file);
@@ -524,6 +529,25 @@ export function Header({
         key={`${item.kind}:${item.id}`}
         leadingItems={[
           ...(oneColumn?.addItems ?? []),
+          // A quiz opens New assignment with itself set (board A1).
+          ...(item.kind === 'material' &&
+          (icon === materialIconName('quiz') || icon === 'assignment') &&
+          studyView(studyWorkspace).manages
+            ? [
+                {
+                  icon: 'clipboard',
+                  label: m.assignment_new(),
+                  onClick: () =>
+                    void navigate({
+                      search: {
+                        newFromQuiz: item.id,
+                        study: 'assignments' as const,
+                      },
+                      to: '.',
+                    }),
+                } satisfies MenuItem,
+              ]
+            : []),
           ...(sm
             ? [
                 {

@@ -82,7 +82,7 @@ export const MaterialCard = memo(function MaterialCard({
     <ItemCard
       actions={<Menu items={menuFor(item)} triggerIcon={itemMenuIcon(view)} />}
       details={materialListDetails(item)}
-      icon={materialIconName(item.kind)}
+      icon={materialIconName(item.kind, item.assigned)}
       link={item.lostAccess ? undefined : linkFor(item)}
       meta={relativeTime(item.updatedAt)}
       onOpen={item.lostAccess ? toastLostAccess : undefined}

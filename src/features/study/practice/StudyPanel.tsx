@@ -1,8 +1,10 @@
+import type { Workspace } from '@/api/types';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { SectionTitle } from '@/features/workspace/WorkspaceRail';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import type { StudyPage } from './studyView';
+import { useAssignmentCount } from '../assignments/useAssignmentCount';
+import { type StudyPage, studyView } from './studyView';
 
 const PAGES: Record<StudyPage, { icon: IconName; label: () => string }> = {
   assignments: { icon: 'clipboard', label: m.study_panel_assignments },
@@ -11,19 +13,21 @@ const PAGES: Record<StudyPage, { icon: IconName; label: () => string }> = {
   summary: { icon: 'profile', label: m.study_panel_summary },
 };
 
-const BUILT: StudyPage[] = ['practice', 'summary'];
+const BUILT: StudyPage[] = ['practice', 'summary', 'assignments'];
 
 /** The Study panel: this person's pages (studyView). A page not built yet
  * shows as a disabled row. */
 export function StudyPanel({
   active,
   onOpen,
-  pages,
+  workspace,
 }: {
   active: StudyPage | null;
   onOpen: (page: StudyPage) => void;
-  pages: StudyPage[];
+  workspace: Pick<Workspace, 'id' | 'kind' | 'role'>;
 }) {
+  const { pages } = studyView(workspace);
+  const assignmentCount = useAssignmentCount(workspace);
   return (
     <div className="flex h-full min-h-0 flex-col" data-study-panel>
       <SectionTitle title={m.workspace_tab_study()} />
@@ -52,9 +56,14 @@ export function StudyPanel({
               type="button"
             >
               <Icon className="shrink-0" name={PAGES[page].icon} size={18} />
-              <span className="min-w-0 translate-y-px truncate">
+              <span className="min-w-0 flex-1 translate-y-px truncate">
                 {PAGES[page].label()}
               </span>
+              {page === 'assignments' && !!assignmentCount && (
+                <span className="t-meta shrink-0 translate-y-px font-semibold text-fg-muted">
+                  {assignmentCount}
+                </span>
+              )}
             </button>
           );
         })}

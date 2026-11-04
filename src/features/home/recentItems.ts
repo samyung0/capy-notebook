@@ -6,7 +6,11 @@ import type {
   SourceFile,
   Workspace,
 } from '@/api/types';
-import { fileCanClone, fileCanMoveTo } from '@/features/files/fileUtils';
+import {
+  fileCanClone,
+  fileCanMoveTo,
+  materialCanClone,
+} from '@/features/files/fileUtils';
 
 export type RecentItem =
   | {
@@ -63,7 +67,12 @@ function toRecentItems(
       workspaceId: file.workspaceId,
     })),
     ...materials.map((material) => ({
-      canClone: canClone(material.workspaceId),
+      canClone:
+        !material.workspaceId ||
+        materialCanClone(
+          workspaceById.get(material.workspaceId),
+          material.assigned
+        ),
       canEdit: canEdit(material.workspaceId),
       createdAt: material.createdAt,
       id: material.id,

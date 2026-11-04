@@ -1,4 +1,10 @@
 import type { ReviewReason, SessionScore } from '@/api/types';
+import type {
+  LearnerQuestion,
+  Question,
+  QuestionBlock,
+  TextBlock,
+} from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 
@@ -60,4 +66,20 @@ export const TIMER_MINUTES = [10, 20, 30, 60] as const;
 export function timeLeft(ms: number) {
   const seconds = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+const blockText = (blocks: QuestionBlock[] = []) =>
+  blocks.find((b): b is TextBlock => b.type === 'text' && b.text.trim() !== '')
+    ?.text;
+
+/** A question's first line: its stem's, else its first part's. */
+export function questionLine(
+  q?: Pick<Question | LearnerQuestion, 'stem' | 'parts'>
+) {
+  if (!q) return '';
+  return (
+    blockText(q.stem) ??
+    q.parts.map((p) => blockText(p.blocks)).find(Boolean) ??
+    ''
+  );
 }

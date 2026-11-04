@@ -629,6 +629,12 @@ type MaterialRef struct {
 	Provenance *Provenance `json:"provenance,omitempty"`
 	// Hidden from members (Material.Hidden).
 	Hidden bool `json:"hidden,omitempty"`
+	// Assigned: a quiz under an open assignment, for whoever it went to and
+	// whoever edits it; it shows the assignment icon (Epo 2026-11-04).
+	Assigned bool `json:"assigned,omitempty"`
+	// AssignmentID is the assignment a viewer takes this quiz through; the row
+	// opens it, and the quiz itself is refused until it closes.
+	AssignmentID string `json:"assignmentId,omitempty"`
 }
 
 type ContentOrderItem struct {

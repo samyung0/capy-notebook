@@ -123,7 +123,7 @@ func (s *Store) AccountDocumentAccess(ctx context.Context, userID string, items 
 				CASE WHEN req.kind='source_file' THEN f.user_id ELSE COALESCE(p.owner_user_id, m.owner_user_id) END AS owner,
 				COALESCE(f.name, m.title, '') AS title, COALESCE(f.kind, '') AS file_kind,
 				COALESCE(m.kind, '') AS material_kind,
-				COALESCE(f.hidden, p.hidden, m.hidden, false) AS hidden
+				COALESCE(f.hidden, p.hidden, m.hidden, false) OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$1")+` IS NOT NULL) AS hidden
 			FROM req
 			LEFT JOIN files f ON req.kind='source_file' AND f.id=req.id AND f.trashed_at IS NULL
 			LEFT JOIN materials m ON req.kind='material' AND m.id=req.id AND m.trashed_at IS NULL
@@ -255,7 +255,7 @@ func (s *Store) AccountDocuments(ctx context.Context, userID string, place Accou
 				AND (f.workspace_id IN (SELECT id FROM scope) OR (f.workspace_id IS NULL AND f.user_id=$1))
 			UNION ALL
 			SELECT 1, 'material', m.id, m.title, '', m.kind, m.topic_id, m.workspace_id, m.position,
-				m.created_at, mc.content_id, m.hidden
+				m.created_at, mc.content_id, m.hidden OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$1")+` IS NOT NULL)
 			FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id=m.id
 			WHERE m.trashed_at IS NULL AND m.parent_material_id IS NULL
 				AND (m.workspace_id IN (SELECT id FROM scope) OR (m.workspace_id IS NULL AND m.owner_user_id=$1))

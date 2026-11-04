@@ -25,6 +25,7 @@ const (
 	TopicDescription = 200
 	FileName         = 120
 	MaterialTitle    = FileName
+	AssignmentTitle  = 120
 	// An agent-made material's or file's made-from line: at most
 	// MaterialSources entries of at most MaterialSource characters.
 	MaterialSources   = 20
@@ -182,6 +183,7 @@ var Columns = map[string]int{
 	"files.name":                       FileName,
 	"materials.workspace_name":         WorkspaceName,
 	"materials.title":                  MaterialTitle,
+	"assignments.title":                AssignmentTitle,
 	"attempts.quiz_name":               MaterialTitle,
 	"question_extractions.title":       MaterialTitle,
 	"attempts.workspace_name":          WorkspaceName,

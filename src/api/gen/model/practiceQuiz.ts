@@ -7,6 +7,7 @@
 import type { SessionScore } from './sessionScore.ts';
 
 export interface PracticeQuiz {
+  assignmentClosedAt?: string;
   average?: number;
   best?: SessionScore;
   id: string;

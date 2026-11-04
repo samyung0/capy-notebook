@@ -16,7 +16,11 @@ import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
 import { FileListItem } from '@/features/files/FileListItem';
-import { fileCanMoveTo, fileIsIngesting } from '@/features/files/fileUtils';
+import {
+  fileCanMoveTo,
+  fileIsIngesting,
+  materialCanClone,
+} from '@/features/files/fileUtils';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
 import type { OpenItem } from '@/features/materials/openItem';
 import { m } from '@/i18n';
@@ -337,7 +341,7 @@ export function FilesPanel({
           openItem?.kind === 'material' &&
           openItem.id === mt.id
         }
-        canClone={!!workspace?.canClone}
+        canClone={materialCanClone(workspace, mt.assigned)}
         color="purple"
         data={mt}
         indent={grouped}
