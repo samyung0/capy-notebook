@@ -197,7 +197,9 @@ function roleLabel(role: string, workspaceKind: string) {
         ? m.role_teaching_assistant()
         : m.notification_role_editor();
     case 'viewer':
-      return m.notification_role_viewer();
+      return workspaceKind === 'class'
+        ? m.role_member()
+        : m.notification_role_viewer();
     default:
       return role;
   }

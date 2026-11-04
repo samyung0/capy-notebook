@@ -108,16 +108,18 @@ it.each(sent)('renders copy for $kind $data.code', (item) => {
   expect(html).toMatch(NON_EMPTY_BODY);
 });
 
-// A class names its editors teaching assistants; the role value stays editor.
+// A class names its roles members and teaching assistants; the role values stay.
 it.each([
-  ['class', m.role_teaching_assistant()],
-  ['personal', m.notification_role_editor()],
-])('names the editor role in a %s workspace', (workspaceKind, role) => {
+  ['class', 'editor', m.role_teaching_assistant()],
+  ['personal', 'editor', m.notification_role_editor()],
+  ['class', 'viewer', m.role_member()],
+  ['personal', 'viewer', m.notification_role_viewer()],
+])('names in a %s workspace the %s role', (workspaceKind, value, role) => {
   const html = renderToStaticMarkup(
     <NotificationItem
       notification={{
         at: '2026-11-04T00:00:00Z',
-        data: { role: 'editor', workspaceKind, workspaceName: 'Bio' },
+        data: { role: value, workspaceKind, workspaceName: 'Bio' },
         id: 'n',
         kind: 'workspace_role_changed',
       }}
