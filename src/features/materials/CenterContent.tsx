@@ -12,12 +12,17 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from 'react';
 import { isMaterialContentUnreadable, qk } from '@/api/client';
-import { useFile, useMaterial, useMaterials, useRecordOpen } from '@/api/hooks';
+import {
+  useFile,
+  useMaterial,
+  useMaterials,
+  useMe,
+  useRecordOpen,
+} from '@/api/hooks';
 import type {
   Material,
   MaterialListItem,
@@ -36,7 +41,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Menu } from '@/components/ui/Menu';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
+import { useRoomSeed } from '@/features/collaboration/deviceCopy';
 import {
   createPresenceStore,
   type PresenceConnection,
@@ -65,8 +70,6 @@ import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
-import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
-import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { QuizEditor } from '@/features/quizzes/QuizEditor';
@@ -78,6 +81,7 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
+import { useOnlineStatus } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import {
   createEditorStatusStore,
@@ -90,16 +94,11 @@ import {
   type FlashcardsElement,
   flashcardsElementToCards,
   type MaterialDocument,
-  type MaterialValue,
-  parseMaterialDocument,
   type QuizElement,
 } from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
-import {
-  MaterialAttributionFooter,
-  SourcesLine,
-} from './MaterialAttributionFooter';
+import { SourcesLine } from './MaterialAttributionFooter';
 import { RemovedAssetsContext, useRemovedAssets } from './MediaAssetView';
 import { MermaidMaterialView } from './MermaidMaterialView';
 import {
@@ -107,41 +106,28 @@ import {
   materialModePolicy,
   resolveMaterialMode,
 } from './modePolicy';
-import { showNoteCitation } from './noteCitation';
+import {
+  DocumentAttribution,
+  loadPreview,
+  NoteBody,
+  NoteSkeleton,
+} from './NoteBody';
 import {
   type NoteCitationTarget,
   type OpenItem,
   readDocumentMode,
   saveDocumentMode,
 } from './openItem';
-import { embedKey, useNoteFooter } from './useNoteFooter';
-
-/* Interactive Plate is the heaviest chunk in this route. View mode
- * deliberately never loads it. */
-const NoteEditor = lazy(() =>
-  import('@/features/notes/NoteEditor').then((m) => ({
-    default: m.NoteEditor,
-  }))
-);
 
 /* A standalone mindmap's or diagram's live editor: CodeMirror, no Plate. */
 const MermaidMaterialEditor = lazy(
   () => import('@/features/notes/blocks/MermaidMaterialEditor')
 );
 
-/* Static Plate preview is still heavy — keep it out of the PDF / media path. */
-let previewModule: typeof import('./MaterialPreview') | undefined;
-const loadPreview = () =>
-  import('./MaterialPreview').then((module) => {
-    previewModule = module;
-    return module;
-  });
-const LazyMaterialPreview = lazy(() =>
-  loadPreview().then((m) => ({ default: m.MaterialPreview }))
+/* The static renderer of what is not a note (a note's is in NoteBody). */
+const MaterialPreview = lazy(() =>
+  loadPreview().then((module) => ({ default: module.MaterialPreview }))
 );
-type PreviewComponent =
-  | typeof LazyMaterialPreview
-  | typeof import('./MaterialPreview').MaterialPreview;
 
 /** The center pane. Dispatches on the currently-open item — a source file or a
  * study material — and renders a consistent header plus the item body. Quiz and
@@ -450,7 +436,7 @@ function MaterialBody({
   // Wait for the list before deciding. Rendering first and gating afterwards
   // would download the very document the gate exists to avoid, then throw the
   // mounted editor away.
-  if (workspaceId && isPending) return <FileLoading />;
+  if (workspaceId && isPending) return <MaterialLoading />;
 
   const reference = materials?.find((entry) => entry.id === materialId);
   const heavy = heavyMaterial(reference);
@@ -482,15 +468,11 @@ function MaterialBody({
   );
 }
 
-/** Shows a chat citation's passage in the note beside it. Each click brings
- * a new citation object, so a repeat scrolls and flashes again. */
-function NoteCitation({ citation }: { citation: NoteCitationTarget }) {
-  const anchor = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const scroller = anchor.current?.parentElement;
-    return scroller ? showNoteCitation(scroller, citation) : undefined;
-  }, [citation]);
-  return <span hidden ref={anchor} />;
+/** Nothing to paint yet: a wordless skeleton (Epo 2026-11-04), or while offline
+ * the one true thing to say (C9). */
+function MaterialLoading() {
+  const online = useOnlineStatus();
+  return online ? <NoteSkeleton /> : <FileLoading />;
 }
 
 /** A set's View: the stored cards, then the room's as they change. */
@@ -587,11 +569,30 @@ function MaterialContentBody({
   );
   const overBar = useContext(FloatingBarContext);
   useEffect(() => {
-    if (mode === 'edit') void loadPreview();
-  }, [mode]);
-  const previewType = useRef<PreviewComponent>(undefined);
+    void loadPreview();
+  }, []);
+  const { data: me } = useMe({ errorBoundary: false });
+  // A heavy note opened read-only reads nothing of its own beyond its read.
+  const seed = useRoomSeed(materialId, staticNote ? null : me?.id);
+  const noteBody = (loaded: Material | undefined, editing: boolean) => (
+    <NoteBody
+      allowExternalAssets={allowExternalAssets}
+      citation={citation}
+      editing={editing}
+      material={loaded}
+      materialId={materialId}
+      onEditorStatusChange={onEditorStatusChange}
+      onPresenceChange={onPresenceChange}
+      onReadOnly={onReadOnly}
+      owner={me?.id}
+      seed={staticNote ? null : seed}
+      staticNote={staticNote}
+    />
+  );
   if (isLoading) {
-    return <FileLoading />;
+    // A device copy paints before its read answers.
+    if (seed?.row.kind === 'note') return noteBody(undefined, false);
+    return <MaterialLoading />;
   }
   if (error || !material) {
     return isMaterialContentUnreadable(error) ? (
@@ -623,16 +624,6 @@ function MaterialContentBody({
       />
     )
   );
-  // Edit to View shows the note at once (NoteEditorCore hands over its live
-  // value), so View must not suspend on loading its renderer: Edit loads it,
-  // and View then renders it directly. The type is chosen once per mount, at
-  // the first View: swapping the lazy wrapper for the loaded component later
-  // would remount the whole document (frames reload, quiz attempts reset).
-  if (activeMode === 'view')
-    previewType.current ??=
-      previewModule?.MaterialPreview ?? LazyMaterialPreview;
-  const MaterialPreview = previewType.current ?? LazyMaterialPreview;
-
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return (
       <div className="h-full min-h-0 overflow-auto">
@@ -733,12 +724,10 @@ function MaterialContentBody({
     <div className="flex h-full min-h-0 flex-col">
       {readOnlyStrip}
       <div className="min-h-0 flex-1">
-        {activeMode === 'view' && (
+        {material.kind === 'note' ? (
+          noteBody(material, activeMode === 'edit')
+        ) : (
           <div className="relative h-full min-h-0 overflow-auto">
-            {material.kind === 'note' && <NoteDisplayToggles />}
-            {material.kind === 'note' && citation ? (
-              <NoteCitation citation={citation} />
-            ) : null}
             {material.kind === 'quiz' ? (
               <QuizPreview
                 content={material.content}
@@ -748,119 +737,20 @@ function MaterialContentBody({
                 title={material.title}
               />
             ) : (
-              <Suspense fallback={<FileLoading />}>
-                {material.kind === 'note' && !staticNote ? (
-                  <LiveNotePreview
-                    material={material}
-                    Preview={MaterialPreview}
-                  />
-                ) : (
-                  <MaterialPreview
-                    content={material.content}
-                    isStandalone={!material.workspaceId}
-                    kind={material.kind}
-                    title={material.title}
-                  />
-                )}
+              <Suspense fallback={<MaterialLoading />}>
+                <MaterialPreview
+                  content={material.content}
+                  isStandalone={!material.workspaceId}
+                  kind={material.kind}
+                  title={material.title}
+                />
                 <DocumentAttribution material={material} />
               </Suspense>
             )}
           </div>
         )}
-        {activeMode === 'edit' && (
-          <AppErrorBoundary resetKeys={[materialId, activeMode]}>
-            <Suspense fallback={<FileLoading />}>
-              <NoteEditor
-                allowExternalAssets={allowExternalAssets}
-                key={`${materialId}:${activeMode}`}
-                materialId={materialId}
-                onEditorStatusChange={onEditorStatusChange}
-                onPresenceChange={onPresenceChange}
-                onReadOnly={onReadOnly}
-              />
-            </Suspense>
-          </AppErrorBoundary>
-        )}
       </div>
     </div>
-  );
-}
-
-/** A material's credits after its document, in the reading column the static
- * renderer uses for it, so View and Edit (NoteEditorCore) end alike: a note's
- * own and those of the embeds its content holds (useNoteFooter). Like every
- * footer ending a view here, it keeps room under the workspace's floating bar
- * where that shows, and some space above the page's end. */
-function DocumentAttribution({ material }: { material: Material }) {
-  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
-  const overBar = useContext(FloatingBarContext);
-  const embeds = useMemo(
-    () => embedKey(material.content.value),
-    [material.content]
-  );
-  const provenance = useNoteFooter(material, embeds);
-  const { kind } = material;
-  return (
-    <MaterialAttributionFooter
-      className={cn(
-        'mx-auto w-full px-5 sm:px-10',
-        overBar ? 'pb-28' : 'pb-12',
-        (kind !== 'note' || displayWidth === 'half') && 'md:max-w-3xl'
-      )}
-      inline
-      provenance={provenance}
-    />
-  );
-}
-
-/** A note's View (Epo 2026-10-10): the projection paints first; then the
- * live-read module loads, outside the first paint and every other bundle, and
- * the note follows its room on a read channel. The room's value replaces the
- * painted one block by block, keeping each block the room has not changed, so
- * nothing flashes and a remote keystroke redraws one block. */
-function LiveNotePreview({
-  material,
-  Preview,
-}: {
-  material: Material;
-  Preview: PreviewComponent;
-}) {
-  const painted = useMemo<MaterialValue>(
-    () =>
-      parseMaterialDocument(material.content)?.value ?? material.content.value,
-    [material.content]
-  );
-  const [live, setLive] = useState<MaterialValue | null>(null);
-  const first = useRef(painted);
-  first.current = painted;
-  // The note's read channel, inside which its embeds join (Epo 2026-10-20).
-  const [seat] = useState(() => new NoteSeat());
-  useEffect(() => {
-    setLive(null);
-    let leave: (() => void) | undefined;
-    let gone = false;
-    const timer = setTimeout(() => {
-      void import('@/features/notes/liveNoteRead').then(({ readNoteLive }) => {
-        if (!gone)
-          leave = readNoteLive(material.id, first.current, setLive, seat);
-      });
-    });
-    return () => {
-      gone = true;
-      clearTimeout(timer);
-      leave?.();
-    };
-  }, [material.id, seat]);
-  return (
-    <NoteSeatContext.Provider value={seat}>
-      <Preview
-        content={material.content}
-        isStandalone={!material.workspaceId}
-        kind={material.kind}
-        title={material.title}
-        value={live ?? painted}
-      />
-    </NoteSeatContext.Provider>
   );
 }
 

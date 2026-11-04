@@ -1210,6 +1210,7 @@
   "editor_connecting": "Connecting",
   "editor_status_synced": "Synced",
   "editor_status_syncing": "Syncing…",
+  "editor_status_syncing_draft": "Syncing your draft…",
   "editor_status_saved": "Saved",
   "editor_status_offline": "Offline",
   "editor_status_unavailable": "Collaboration unavailable",

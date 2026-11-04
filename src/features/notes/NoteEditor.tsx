@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
   lazy,
+  type ReactNode,
   Suspense,
   useCallback,
   useEffect,
@@ -34,16 +35,16 @@ import {
   type SaveBannerState,
 } from '@/components/banners/SaveBanner';
 import { ConfirmDialog } from '@/components/ui/Dialog';
-import { Spinner } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
+import type { RoomSeed } from '@/features/collaboration/deviceCopy';
 import type { PresenceConnection } from '@/features/collaboration/presence';
-import { FileError, FileLoading } from '@/features/files/FileStates';
+import { FileError } from '@/features/files/FileStates';
 import { MaterialRenderProvider } from '@/features/materials/MaterialRenderContext';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { draftKey, dropLostDrafts } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
-import { unexpectedErrorId } from '@/lib/errors';
+import { dropDeviceCopies } from '@/lib/sourceCache';
 import {
   type MaterialLimitCode,
   materialLimitMessage,
@@ -77,6 +78,20 @@ import { toastSaveUndone } from './saveFailure';
 // The merge view's sheet loads only once there are pieces to review.
 const NoteMergeView = lazy(() => import('./merge/NoteMergeView'));
 const noSubscription = () => () => {};
+
+/** Shows what a hidden editor renders instead of a note: the paint gives way
+ * to it, since nothing will replace the paint. */
+function Replacing({
+  children,
+  onShown,
+}: {
+  children: ReactNode;
+  onShown?: (view: NoteView | null) => void;
+}) {
+  useLayoutEffect(() => onShown?.(null), [onShown]);
+  return children;
+}
+
 const NO_PIECES: MergeSnapshot = {
   canApply: false,
   pieces: [],
@@ -116,17 +131,28 @@ export function NoteEditor({
   materialId,
   allowExternalAssets = false,
   onEditorStatusChange,
+  onJoinFailed,
   onPresenceChange,
   onReadOnly,
+  onShown,
+  seed,
 }: {
   materialId: string;
   allowExternalAssets?: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
+  /** The join ran past its 30 s: Retry for the strip over the note on screen,
+   * null once it is not failing. */
+  onJoinFailed?: (retry: (() => void) | null) => void;
   /** The room's other editors, for the header's avatar group. */
   onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   /** The room turned read-only (`code`: why, when it says): the note drops
    * to view mode and its unsaved edits are discarded. */
   onReadOnly?: (code?: ReadOnlyCode) => void;
+  /** The editor (or an error panel in its place, null) is ready for the
+   * screen: it builds hidden behind the painted note until then. */
+  onShown?: (view: NoteView | null) => void;
+  /** The device copy its first mount starts from; undefined until read. */
+  seed?: RoomSeed | null;
 }) {
   const {
     data: material,
@@ -136,37 +162,37 @@ export function NoteEditor({
     errorBoundary: false,
   });
 
-  if (isLoading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner />
-      </div>
-    );
-  }
+  if (isLoading) return null;
   if (isMaterialContentUnreadable(error)) {
     return (
-      <FileError
-        message={m.material_decode_body()}
-        title={m.material_decode_title()}
-      />
+      <Replacing onShown={onShown}>
+        <FileError
+          message={m.material_decode_body()}
+          title={m.material_decode_title()}
+        />
+      </Replacing>
     );
   }
   if (!material) {
     return (
-      <FileError
-        message={m.editor_note_deleted()}
-        title={m.editor_note_not_found()}
-      />
+      <Replacing onShown={onShown}>
+        <FileError
+          message={m.editor_note_deleted()}
+          title={m.editor_note_not_found()}
+        />
+      </Replacing>
     );
   }
 
   if (!material.capabilities.canEditContent) {
     return (
-      <FileError
-        icon="securityWarning"
-        message={m.editor_mode_unavailable_body()}
-        title={m.editor_mode_unavailable()}
-      />
+      <Replacing onShown={onShown}>
+        <FileError
+          icon="securityWarning"
+          message={m.editor_mode_unavailable_body()}
+          title={m.editor_mode_unavailable()}
+        />
+      </Replacing>
     );
   }
 
@@ -176,8 +202,11 @@ export function NoteEditor({
       key={material.id}
       material={material}
       onEditorStatusChange={onEditorStatusChange}
+      onJoinFailed={onJoinFailed}
       onPresenceChange={onPresenceChange}
       onReadOnly={onReadOnly}
+      onShown={onShown}
+      seed={seed}
     />
   );
 }
@@ -186,14 +215,20 @@ function CollaborativeNoteEditor({
   material,
   allowExternalAssets,
   onEditorStatusChange,
+  onJoinFailed,
   onPresenceChange,
   onReadOnly,
+  onShown,
+  seed,
 }: {
   material: Material;
   allowExternalAssets: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
+  onJoinFailed?: (retry: (() => void) | null) => void;
   onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   onReadOnly?: (code?: ReadOnlyCode) => void;
+  onShown?: (view: NoteView | null) => void;
+  seed?: RoomSeed | null;
 }) {
   const qc = useQueryClient();
   const {
@@ -389,6 +424,50 @@ function CollaborativeNoteEditor({
         editIncidentReporter('material', material.id)
       ).catch(() => undefined);
   }, [storedKey, tokenDropsDrafts, tokenStatus, material.id]);
+  // Refused on connecting: the device copy goes, which holds no unique work.
+  const tokenRefused = tokenStatus === 404 || tokenStatus === 403;
+  useEffect(() => {
+    if (tokenRefused) void dropDeviceCopies(material.id);
+  }, [tokenRefused, material.id]);
+  // The room threw away the state the copy holds (a new lineage).
+  const copyMoved =
+    !!seed &&
+    !!collaborationTokenData &&
+    seed.room !== collaborationTokenData.room;
+  useEffect(() => {
+    if (copyMoved) void dropDeviceCopies(material.id, 'content');
+  }, [copyMoved, material.id]);
+  // Past the join's 30 s with nothing to mount, or its token failing (not
+  // refused): the strip's Retry asks again. A mount that joined late stands.
+  const retryToken = useCallback(() => {
+    joinStart.current = Date.now();
+    setTokenTimedOut(false);
+    setTokenAttempt((value) => value + 1);
+    void refetchCollaborationToken();
+  }, [refetchCollaborationToken]);
+  const tokenFailed =
+    !collaborationTokenData &&
+    !tokenRefused &&
+    (tokenTimedOut || !!collaborationTokenError);
+  const [mountFailed, setMountFailed] = useState(false);
+  const retryMount = useCallback(() => {
+    setMountFailed(false);
+    setEditorGeneration((generation) => generation + 1);
+  }, []);
+  const failedRetry = tokenFailed
+    ? retryToken
+    : mountFailed
+      ? retryMount
+      : null;
+  useEffect(() => {
+    onJoinFailed?.(failedRetry);
+    return () => onJoinFailed?.(null);
+  }, [failedRetry, onJoinFailed]);
+  // The header says an open is under way while nothing but the paint shows,
+  // and red once its token ran out.
+  useEffect(() => {
+    onEditorStatusChange?.({ saveState: tokenFailed ? 'error' : 'opening' });
+  }, [onEditorStatusChange, tokenFailed]);
   // Identity matters more than the allocation: this context is read from inside
   // the document tree, so a fresh object on every render makes React walk every
   // node's fiber looking for consumers instead of bailing out at the top.
@@ -425,11 +504,26 @@ function CollaborativeNoteEditor({
   const wanted = collaborationTokenData
     ? `${collaborationTokenData.room}:${editorGeneration}`
     : null;
+  const seedRead = seed !== undefined;
   const ready: NoteMount | null =
-    collaborationTokenData && storedKey && drafts && drafts.for === wanted
-      ? { drafts, key: wanted, token: collaborationTokenData }
+    collaborationTokenData &&
+    storedKey &&
+    seedRead &&
+    drafts &&
+    drafts.for === wanted
+      ? {
+          drafts,
+          key: wanted,
+          // The first mount only, on the room the copy holds: a later one
+          // (a refusal, a moved room) starts empty.
+          seed:
+            editorGeneration === 0 && !copyMoved
+              ? (seed ?? undefined)
+              : undefined,
+          token: collaborationTokenData,
+        }
       : null;
-  const swap = useRoomSwap(ready, wanted, onEditorStatusChange);
+  const swap = useRoomSwap(ready, wanted, onShown);
   // The room answered late (in-place GC): the paused editor's document goes
   // to the next mount, which merges its unsent edits (NoteEditorCore `late`).
   const [late, setLate] = useState<{ key: string; handed: Handed } | null>(
@@ -454,70 +548,64 @@ function CollaborativeNoteEditor({
 
   if (unavailable === 'notFound')
     return (
-      <FileError
-        message={m.editor_note_deleted()}
-        title={m.editor_note_not_found()}
-      />
+      <Replacing onShown={onShown}>
+        <FileError
+          message={m.editor_note_deleted()}
+          title={m.editor_note_not_found()}
+        />
+      </Replacing>
     );
   if (unavailable === 'forbidden')
     return (
-      <FileError
-        icon="securityWarning"
-        message={m.editor_access_lost_body()}
-        title={m.editor_access_lost()}
-      />
+      <Replacing onShown={onShown}>
+        <FileError
+          icon="securityWarning"
+          message={m.editor_access_lost_body()}
+          title={m.editor_access_lost()}
+        />
+      </Replacing>
     );
 
-  // A first open's token never answered within the join's 30 s.
-  if (tokenTimedOut && !collaborationTokenData)
-    return (
-      <FileError
-        icon="error"
-        message={m.editor_collab_unavailable()}
-        onRetry={() => {
-          joinStart.current = Date.now();
-          setTokenTimedOut(false);
-          setTokenAttempt((value) => value + 1);
-          void refetchCollaborationToken();
-        }}
-      />
-    );
-
-  if (meIsPending || discussionsIsPending || collaborationTokenIsPending) {
-    return <FileLoading />;
-  }
+  // Hidden behind the painted note until there is an editor to show.
+  if (meIsPending || discussionsIsPending || collaborationTokenIsPending)
+    return null;
 
   if (!meData || meIsError) {
-    return <FileError icon="error" message={m.editor_user_info_failed()} />;
+    return (
+      <Replacing onShown={onShown}>
+        <FileError icon="error" message={m.editor_user_info_failed()} />
+      </Replacing>
+    );
   }
 
   // Only a first request can fail here: once the editor holds a room, a new
-  // token rides the open connection instead.
+  // token rides the open connection instead. A failure that is no refusal
+  // keeps the painted note under the strip's Retry (Epo 2026-11-04).
   if (!collaborationTokenData) {
-    const status = tokenStatus;
-    return status === 404 ? (
-      <FileError
-        message={m.editor_note_deleted()}
-        title={m.editor_note_not_found()}
-      />
-    ) : status === 403 ? (
-      <FileError
-        icon="securityWarning"
-        message={m.editor_access_lost_body()}
-        title={m.editor_access_lost()}
-      />
-    ) : (
-      <FileError
-        errorId={unexpectedErrorId(collaborationTokenError)}
-        icon="error"
-        message={m.editor_collab_unavailable()}
-        onRetry={() => void refetchCollaborationToken()}
-      />
-    );
+    if (tokenStatus === 404)
+      return (
+        <Replacing onShown={onShown}>
+          <FileError
+            message={m.editor_note_deleted()}
+            title={m.editor_note_not_found()}
+          />
+        </Replacing>
+      );
+    if (tokenStatus === 403)
+      return (
+        <Replacing onShown={onShown}>
+          <FileError
+            icon="securityWarning"
+            message={m.editor_access_lost_body()}
+            title={m.editor_access_lost()}
+          />
+        </Replacing>
+      );
+    return null;
   }
 
   // Stored edits are read for each room and mount before the editor opens.
-  if (!(meData && storedKey && swap.shown)) return <FileLoading />;
+  if (!(meData && storedKey && swap.shown)) return null;
 
   const renderMount = (mount: NoteMount, phase: NoteEditorPhase) => (
     <NoteEditorCore
@@ -533,6 +621,7 @@ function CollaborativeNoteEditor({
       material={material}
       onDocumentRejected={onDocumentRejected}
       onEditorStatusChange={onEditorStatusChange}
+      onJoinFailed={setMountFailed}
       onLate={onLate}
       onLateUnloaded={onLateUnloaded}
       onMergeStore={onMergeStore}
@@ -547,6 +636,7 @@ function CollaborativeNoteEditor({
       phase={phase}
       pieces={mount.drafts.pieces}
       restored={mount.drafts.current}
+      seed={mount.seed}
       sources={mount.drafts.sources}
     />
   );
@@ -632,6 +722,7 @@ function CollaborativeNoteEditor({
 interface NoteMount {
   drafts: NoteDrafts;
   key: string;
+  seed?: RoomSeed;
   token: MaterialCollaborationToken;
 }
 
@@ -646,7 +737,7 @@ interface NoteMount {
 function useRoomSwap(
   ready: NoteMount | null,
   wanted: string | null,
-  onEditorStatusChange?: (status: NoteEditorStatus | null) => void
+  onShown?: (view: NoteView | null) => void
 ) {
   const [shown, setShown] = useState<NoteMount | null>(null);
   // The first open has nothing to pause.
@@ -699,12 +790,6 @@ function useRoomSwap(
     return () => document.removeEventListener('visibilitychange', hidden);
   }, [pending, readyKey, swapTo, way]);
 
-  // The paused note says Reconnecting; a standby editor keeps saying so
-  // itself, with a slowed open's line.
-  useEffect(() => {
-    if (pending) onEditorStatusChange?.({ saveState: 'reconnecting' });
-  }, [pending, onEditorStatusChange]);
-
   // The shown editor painted after an at-once swap (its paint lifts a
   // phone's copy).
   const [paintedKey, setPaintedKey] = useState<string | null>(null);
@@ -716,9 +801,10 @@ function useRoomSwap(
       else if (current?.key === key) {
         setPaintedKey(key);
         setCopy(null);
+        onShown?.(view);
       }
     },
-    [swapTo]
+    [onShown, swapTo]
   );
 
   // Back where the reader was once the next editor is on screen and

@@ -63,6 +63,10 @@ export interface RoomProviderConfig {
   parent?: NoteSeat;
   /** The socket to join on; the tab's shared one for the URL by default. */
   socket?: CollabSocket;
+  /** A device copy seeded the document, at this stored version: the JOIN
+   * names it and the room answers what lies past its state. Unlike
+   * `unsentFrom` it marks nothing as unsent. */
+  storedFrom?: number;
   /** A room token. `previous`, the last one this provider used (even
    * expired), asks for its client ids again (Q236): a reconnect keeps them. */
   token: (previous?: string) => Promise<string>;
@@ -215,7 +219,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
-    this.storedVersion = config.unsentFrom ?? 0;
+    this.storedVersion = config.storedFrom ?? config.unsentFrom ?? 0;
     this.unsentAt = config.unsentFrom ?? null;
     this.document = config.document;
     this.awareness = config.awareness ?? new Awareness(config.document);

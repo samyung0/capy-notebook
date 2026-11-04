@@ -4,9 +4,11 @@ import { USE_MSW } from '@/api/auth';
 import { api } from '@/api/client';
 import type { Material } from '@/api/types';
 import {
+  claimSourceCache,
   type DeviceCopyRow,
   deviceCopyMaterials,
   dropDeviceCopies,
+  prepareDeviceCopies,
   readDeviceCopy,
   storeDeviceCopy,
 } from '@/lib/sourceCache';
@@ -69,6 +71,8 @@ export async function readRoomSeed(
   document: DeviceCopyRow['document'] = 'content'
 ): Promise<RoomSeed | null> {
   if (!keepsCopies(materialId)) return null;
+  // Under MSW no sign-in claims the store (AuthProvider).
+  if (USE_MSW) await claimSourceCache(owner);
   const copy = await readDeviceCopy(owner, materialId, document);
   if (!copy) return null;
   const { state, ...row } = copy;
@@ -108,8 +112,9 @@ export function useRoomSeed(
 interface Keep {
   /** Nothing of this device's is unsent. */
   clean: () => boolean;
-  /** What the row says now; null when nothing may be kept. */
-  row: () => Omit<DeviceCopyRow, 'format'> | null;
+  owner: string;
+  /** What the row says now. */
+  row: () => Omit<DeviceCopyRow, 'format' | 'size'>;
 }
 
 /**
@@ -117,19 +122,21 @@ interface Keep {
  * `stop` runs, only if it changed since it was seeded or last written and only
  * while clean. One encode (30-80 ms on a near-limit note), on no typing path.
  */
-export function keepDeviceCopy(doc: Y.Doc, { clean, row }: Keep) {
+export function keepDeviceCopy(doc: Y.Doc, { clean, owner, row }: Keep) {
   let changed = false;
   let stopped = false;
+  // Under MSW no sign-in claims the store (AuthProvider).
+  void (USE_MSW ? claimSourceCache(owner) : Promise.resolve()).then(() =>
+    prepareDeviceCopies(owner)
+  );
   const onUpdate = (_update: Uint8Array, origin: unknown) => {
     if (origin !== SEED_ORIGIN) changed = true;
   };
   const write = () => {
     if (!changed || stopped || !clean()) return;
-    const next = row();
-    if (!next) return;
     changed = false;
     void storeDeviceCopy(
-      next,
+      row(),
       Y.encodeStateAsUpdate(doc) as Uint8Array<ArrayBuffer>
     );
   };

@@ -17,6 +17,7 @@ import type {
   UserColor,
 } from '@/api/types';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
+import { Spinner } from '@/components/ui/feedback';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
@@ -69,13 +70,23 @@ const STATUS_ICON = {
   connecting: 'cloudSync',
   error: 'cloudAlert',
   offline: 'cloudOff',
-  preparing: 'cloudSync',
   reconnecting: 'cloudSync',
   saved: 'CloudIcon',
   synced: 'CloudIcon',
   syncing: 'cloudSync',
   unsaved: 'cloudAlert',
-} satisfies Record<NoteEditorSaveState, IconName>;
+} satisfies Record<
+  Exclude<NoteEditorSaveState, 'opening' | 'syncing-draft'>,
+  IconName
+>;
+
+/** The status's mark: a spinner while a copy waits for its first sync or a
+ * draft is on its way (Epo 2026-11-04), else its cloud. */
+function StatusIcon({ state }: { state: NoteEditorSaveState }) {
+  if (state === 'opening' || state === 'syncing-draft')
+    return <Spinner className="size-4.5" />;
+  return <Icon className="size-4.5" name={STATUS_ICON[state]} />;
+}
 
 /* The header's labels follow its width. A size container breaks WebKit's
    scroll anchoring for a reader while blocks are added above (Q393), so
@@ -199,6 +210,7 @@ export function EditorSaveStatus({
   if (!(online && editorStatus && statusLabel)) return null;
   const failed =
     editorStatus.saveState === 'error' || editorStatus.saveState === 'unsaved';
+  const opening = editorStatus.saveState === 'opening';
   if (labelled)
     return (
       <span
@@ -211,8 +223,8 @@ export function EditorSaveStatus({
         role="status"
       >
         {/* Lifted 1px to Fustat's cap band, level with the label. */}
-        <Icon className="size-4.5" name={STATUS_ICON[editorStatus.saveState]} />
-        {statusLabel}
+        <StatusIcon state={editorStatus.saveState} />
+        {opening ? <span className="sr-only">{statusLabel}</span> : statusLabel}
       </span>
     );
   return (
@@ -233,11 +245,12 @@ export function EditorSaveStatus({
       >
         {/* Unlifted, a touch below the ⋮: the cloud's glyph leaves room
             under its base, so its ink centre reads high. */}
-        <Icon className="size-4.5" name={STATUS_ICON[editorStatus.saveState]} />
+        <StatusIcon state={editorStatus.saveState} />
         <span
           className={cn(
             'sr-only',
             labelWhenWide &&
+              !opening &&
               // Dropped 1px with the cloud.
               't-meta @xl/header:not-sr-only @xl/header:ml-2 translate-y-[1px] @xl/header:whitespace-nowrap group-data-roomy/header:not-sr-only group-data-roomy/header:ml-2 group-data-roomy/header:whitespace-nowrap'
           )}
@@ -248,9 +261,12 @@ export function EditorSaveStatus({
           <span className="sr-only">{m.editor_open_slowed()}</span>
         )}
       </TooltipTrigger>
-      <TooltipContent side="bottom">
-        {slowedLine ? m.editor_open_slowed() : statusLabel}
-      </TooltipContent>
+      {/* Opening has no words but the slowed line. */}
+      {(slowedLine || !opening) && (
+        <TooltipContent side="bottom">
+          {slowedLine ? m.editor_open_slowed() : statusLabel}
+        </TooltipContent>
+      )}
     </Tooltip>
   );
 }

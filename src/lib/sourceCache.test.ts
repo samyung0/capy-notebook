@@ -6,6 +6,7 @@ import {
   deviceCopyMaterials,
   dropDeviceCopies,
   evictOldestSource,
+  prepareDeviceCopies,
   readCachedSource,
   readDeviceCopy,
   storeDeviceCopy,
@@ -243,6 +244,33 @@ describe('device copies', () => {
     await claimSourceCache('user_b');
     await storeDeviceCopy(row('n1'), state());
     expect(await deviceCopyMaterials('user_a')).toEqual([]);
+  });
+
+  it('issues the write with no await once the store is ready, for a page going', async () => {
+    await prepareDeviceCopies('user_a');
+    const cache = await storage.open('capy-source-bytes');
+    const put = vi.spyOn(cache, 'put');
+    void storeDeviceCopy(row('n1'), state());
+    expect(put).toHaveBeenCalledOnce();
+  });
+
+  it('counts a copy whose page went before the index heard of it', async () => {
+    await prepareDeviceCopies('user_a');
+    const cache = await storage.open('capy-source-bytes');
+    void storeDeviceCopy(row('n1'), state());
+    // The page died here: its bytes landed, the index never did.
+    await vi.waitFor(async () =>
+      expect(await readDeviceCopy('user_a', 'n1')).not.toBeNull()
+    );
+    await cache.put(
+      '/capy-source-cache/index.json',
+      Response.json({ entries: [], owner: 'user_a' })
+    );
+    expect(await deviceCopyMaterials('user_a')).toEqual(['n1']);
+    await storeDeviceCopy(row('n2'), state());
+    expect(await indexed()).toEqual(
+      expect.arrayContaining(['copy/n1/content', 'copy/n2/content'])
+    );
   });
 
   it('is wiped when signing out', async () => {

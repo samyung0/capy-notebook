@@ -42,6 +42,8 @@ export interface DeviceCopyRow {
   /** The room whose state it holds: another name means the state was thrown
    * away there, and the copy goes. */
   room: string;
+  /** The bytes' length. */
+  size: number;
   standalone: boolean;
   title: string;
   /** The stored version the state holds, which its JOIN names. */
@@ -64,7 +66,8 @@ interface Index {
   owner?: string;
 }
 
-const entryKey = (key: string) => `/capy-source-cache/${key}`;
+const ENTRY_PREFIX = '/capy-source-cache/';
+const entryKey = (key: string) => `${ENTRY_PREFIX}${key}`;
 
 async function open(): Promise<Cache | null> {
   try {
@@ -111,20 +114,30 @@ async function leavesDraftReserve(bytes: number): Promise<boolean> {
   }
 }
 
-/** Stores `bytes` under `key`, then drops the least recently used entries past
+/** Puts `entry` in the index, then drops the least recently used entries past
  * `limit` and any bytes no entry counts (dropped above, or another tab's write
- * lost in a race), so the store stays within the limit. */
-async function put(
+ * lost in a race), so the store stays within the limit. A device copy written
+ * as its page went has its row with its bytes and joins the index here. */
+async function settle(
   cache: Cache,
   index: Index,
-  entry: Omit<Entry, 'size' | 'used'>,
-  bytes: Uint8Array<ArrayBuffer>,
+  entry: Omit<Entry, 'used'>,
   limit: number
 ) {
-  await cache.put(entryKey(entry.key), new Response(bytes));
+  const requests = await cache.keys();
+  const known = new Set([entry.key, ...index.entries.map((item) => item.key)]);
+  const orphans = await Promise.all(
+    requests.map(async (request) => {
+      const key = new URL(request.url).pathname.slice(ENTRY_PREFIX.length);
+      return key.startsWith(COPY_PREFIX) && !known.has(key)
+        ? copyEntry(key, await cache.match(request))
+        : null;
+    })
+  );
   const entries = [
     ...index.entries.filter((item) => item.key !== entry.key),
-    { ...entry, size: bytes.byteLength, used: Date.now() },
+    ...orphans.filter((item) => item !== null),
+    { ...entry, used: Date.now() },
   ].sort((a, b) => b.used - a.used);
   let total = 0;
   const kept = entries.filter((item) => {
@@ -132,7 +145,7 @@ async function put(
     return total <= limit;
   });
   const keep = new Set([INDEX, ...kept.map((item) => entryKey(item.key))]);
-  for (const request of await cache.keys())
+  for (const request of requests)
     if (!keep.has(new URL(request.url).pathname)) await cache.delete(request);
   await writeIndex(cache, { ...index, entries: kept });
 }
@@ -185,14 +198,33 @@ export async function cacheSource(
     if (!cache) return;
     const index = await readIndex(cache);
     if (!index.owner || (await sha256Hex(bytes)) !== key) return;
-    await put(cache, index, { key }, bytes, limit);
+    await cache.put(entryKey(key), new Response(bytes));
+    await settle(cache, index, { key, size: bytes.byteLength }, limit);
   } catch {
     // Not stored: the next open downloads again.
   }
 }
 
+const COPY_PREFIX = 'copy/';
 const copyKey = (materialId: string, document: DeviceCopyRow['document']) =>
-  `copy/${encodeURIComponent(materialId)}/${document}`;
+  `${COPY_PREFIX}${encodeURIComponent(materialId)}/${document}`;
+/** A copy's row beside its bytes, the same response: a write as the page goes
+ * lands whole or not at all, and the index learns of it later. */
+const ROW_HEADER = 'x-capy-copy';
+
+function rowOf(stored: Response | undefined): DeviceCopyRow | null {
+  try {
+    const row = stored?.headers.get(ROW_HEADER);
+    return row ? (JSON.parse(decodeURIComponent(row)) as DeviceCopyRow) : null;
+  } catch {
+    return null;
+  }
+}
+
+function copyEntry(key: string, stored: Response | undefined): Entry | null {
+  const copy = rowOf(stored);
+  return copy && { copy, key, size: copy.size, used: 0 };
+}
 
 /** A device copy of a room's state for `owner`, or null. A row of another
  * account or format goes as it is read. */
@@ -204,56 +236,91 @@ export async function readDeviceCopy(
   try {
     const cache = await open();
     if (!cache) return null;
-    const index = await readIndex(cache);
     const key = copyKey(materialId, document);
-    const entry = index.entries.find((item) => item.key === key);
-    if (!entry?.copy) return null;
     const stored = await cache.match(entryKey(key));
-    if (
-      !stored ||
-      index.owner !== owner ||
-      entry.copy.owner !== owner ||
-      entry.copy.format !== COPY_FORMAT
-    ) {
-      await cache.delete(entryKey(key));
-      index.entries = index.entries.filter((item) => item !== entry);
-      await writeIndex(cache, index);
+    if (!stored) return null;
+    const row = rowOf(stored);
+    if (row?.owner !== owner || row.format !== COPY_FORMAT) {
+      await removeEntries(cache, [key]);
       return null;
     }
     const state = new Uint8Array(await stored.arrayBuffer());
-    entry.used = Date.now();
     // Not waited for: this read is on its way to the first paint.
-    void writeIndex(cache, index).catch(() => undefined);
-    return { ...entry.copy, state };
+    void touch(cache, key).catch(() => undefined);
+    return { ...row, state };
   } catch {
     return null;
   }
 }
 
+async function touch(cache: Cache, key: string) {
+  const index = await readIndex(cache);
+  const entry = index.entries.find((item) => item.key === key);
+  if (!entry) return;
+  entry.used = Date.now();
+  await writeIndex(cache, index);
+}
+
+async function removeEntries(cache: Cache, keys: string[]) {
+  for (const key of keys) await cache.delete(entryKey(key));
+  const index = await readIndex(cache);
+  index.entries = index.entries.filter((item) => !keys.includes(item.key));
+  await writeIndex(cache, index);
+}
+
+/** The open store, its account and its free quota, kept ready: a write as the
+ * page goes lands only when `Cache.put` is issued in the event's own task, with
+ * no await before it (measured in Chromium on reload, navigation and close). */
+let prepared: { cache: Cache; free: number; owner: string } | null = null;
+
+/** Readies this account's writes; a store of another account takes none. */
+export async function prepareDeviceCopies(owner: string): Promise<void> {
+  try {
+    const cache = await open();
+    const { quota, usage } = await navigator.storage.estimate();
+    prepared =
+      cache &&
+      quota !== undefined &&
+      usage !== undefined &&
+      (await readIndex(cache)).owner === owner
+        ? { cache, free: quota - usage, owner }
+        : null;
+  } catch {
+    prepared = null;
+  }
+}
+
 /** Stores a room's confirmed state as its device copy, in the store's budget,
- * when the store is `row.owner`'s: one written after sign-out stores nothing. */
+ * when the store is `row.owner`'s: one written after sign-out stores nothing.
+ * Issued at once when the store is ready (`prepared`). */
 export async function storeDeviceCopy(
-  row: Omit<DeviceCopyRow, 'format'>,
+  row: Omit<DeviceCopyRow, 'format' | 'size'>,
   state: Uint8Array<ArrayBuffer>,
   limit = SOURCE_CACHE_LIMIT_BYTES
 ): Promise<void> {
   try {
-    if (state.byteLength > limit) return;
-    if (!(await leavesDraftReserve(state.byteLength))) return;
-    const cache = await open();
-    if (!cache) return;
-    const index = await readIndex(cache);
-    if (index.owner !== row.owner) return;
-    await put(
-      cache,
-      index,
-      {
-        copy: { ...row, format: COPY_FORMAT },
-        key: copyKey(row.materialId, row.document),
-      },
-      state,
-      limit
+    if (prepared?.owner !== row.owner) await prepareDeviceCopies(row.owner);
+    const ready = prepared;
+    const size = state.byteLength;
+    if (
+      ready?.owner !== row.owner ||
+      size > limit ||
+      ready.free - size < DRAFT_RESERVE_BYTES
+    )
+      return;
+    const key = copyKey(row.materialId, row.document);
+    const copy: DeviceCopyRow = { ...row, format: COPY_FORMAT, size };
+    await ready.cache.put(
+      entryKey(key),
+      new Response(state, {
+        headers: { [ROW_HEADER]: encodeURIComponent(JSON.stringify(copy)) },
+      })
     );
+    const index = await readIndex(ready.cache);
+    // Signed out meanwhile: the claim deleted the store under this handle.
+    if (index.owner !== row.owner) return;
+    await settle(ready.cache, index, { copy, key, size }, limit);
+    await prepareDeviceCopies(row.owner);
   } catch {
     // Not stored: the next open reads the whole document from its room.
   }
@@ -267,16 +334,12 @@ export async function dropDeviceCopies(
   try {
     const cache = await open();
     if (!cache) return;
-    const index = await readIndex(cache);
-    const going = index.entries.filter(
-      ({ copy }) =>
-        copy?.materialId === materialId &&
-        (!document || copy.document === document)
+    await removeEntries(
+      cache,
+      document
+        ? [copyKey(materialId, document)]
+        : [copyKey(materialId, 'content'), copyKey(materialId, 'keys')]
     );
-    if (!going.length) return;
-    for (const { key } of going) await cache.delete(entryKey(key));
-    index.entries = index.entries.filter((item) => !going.includes(item));
-    await writeIndex(cache, index);
   } catch {
     // Left to the sweep at the next page load.
   }
@@ -287,12 +350,18 @@ export async function deviceCopyMaterials(owner: string): Promise<string[]> {
   try {
     const cache = await open();
     if (!cache) return [];
-    const { entries } = await readIndex(cache);
+    const copies = await Promise.all(
+      (await cache.keys())
+        .filter((request) =>
+          new URL(request.url).pathname.startsWith(
+            `${ENTRY_PREFIX}${COPY_PREFIX}`
+          )
+        )
+        .map(async (request) => rowOf(await cache.match(request)))
+    );
     return [
       ...new Set(
-        entries.flatMap(({ copy }) =>
-          copy?.owner === owner ? [copy.materialId] : []
-        )
+        copies.flatMap((row) => (row?.owner === owner ? [row.materialId] : []))
       ),
     ];
   } catch {
@@ -333,6 +402,7 @@ export async function evictOldestSource(): Promise<boolean> {
  */
 export async function claimSourceCache(owner: string | null): Promise<void> {
   try {
+    prepared = null;
     const cache = owner ? await open() : null;
     if (cache && (await readIndex(cache)).owner === owner) return;
     await globalThis.caches?.delete(NAME);

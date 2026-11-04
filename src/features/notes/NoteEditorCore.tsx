@@ -48,6 +48,12 @@ import {
   EditorHoldScope,
 } from '@/features/collaboration/CollaborationHold';
 import {
+  copyLabel,
+  keepDeviceCopy,
+  keepsCopyOf,
+  type RoomSeed,
+} from '@/features/collaboration/deviceCopy';
+import {
   applyMerged,
   hiddenDocument,
   holdsUnsent,
@@ -66,15 +72,14 @@ import {
 } from '@/features/collaboration/presence';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { limitUndo } from '@/features/collaboration/undo';
-import { FileLoading } from '@/features/files/FileStates';
 import {
   createMaterialDocument,
   type MaterialDocument,
   type MaterialValue,
-  parseMaterialDocument,
 } from '@/features/materials/document';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { MaterialPreview } from '@/features/materials/MaterialPreview';
+import { parsedDocument, seedValue } from '@/features/materials/NoteBody';
 import { embedKey, useNoteFooter } from '@/features/materials/useNoteFooter';
 import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
 import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
@@ -99,6 +104,7 @@ import {
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { isBoolean, PREF_KEYS, readPref, writePref } from '@/lib/localPrefs';
+import { dropDeviceCopies } from '@/lib/sourceCache';
 import { GhostTextSync } from './ai/GhostTextView';
 import { BlockSelectionPresence } from './BlockSelection';
 import { NoteBlockDialogsProvider } from './blocks/dialogContext';
@@ -552,9 +558,9 @@ const scrollSelectionIntoView: NonNullable<
 
 /**
  * Where an editor stands in a room swap (Epo 2026-10-22, roomSwap.ts):
- * `live` on screen; `standby` building beside or under the paused one, its
- * header status Reconnecting; `paused` the one being replaced, read-only and
- * out of its room, reporting nothing more.
+ * `live` on screen; `standby` building beside or under the paused one, the
+ * header's status left as it was; `paused` the one being replaced, read-only
+ * and out of its room, reporting nothing more.
  */
 export type NoteEditorPhase = 'live' | 'standby' | 'paused';
 
@@ -583,6 +589,7 @@ export function NoteEditorCore({
   onPainted,
   joinStartedAt,
   onEditorStatusChange,
+  onJoinFailed,
   onPresenceChange,
   onDocumentRejected,
   onLate,
@@ -593,6 +600,7 @@ export function NoteEditorCore({
   onReadOnly,
   onSaveDelayed,
   onUnavailable,
+  seed,
 }: {
   phase?: NoteEditorPhase;
   /** Its content first painted (once). */
@@ -637,6 +645,9 @@ export function NoteEditorCore({
    * false once it is not). */
   onMergeStore?: (store: MergeStore, on: boolean) => void;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
+  /** The first join ran past its 30 s (true: the note shows the saved copy,
+   * status red), or it synced after all (false). */
+  onJoinFailed?: (failed: boolean) => void;
   /** The room's other editors, for the header's avatar group (null once
    * the editor unmounts). */
   onPresenceChange?: (connections: PresenceConnection[] | null) => void;
@@ -682,10 +693,14 @@ export function NoteEditorCore({
   /** The note was trashed or deleted, or this user lost access to it (its
    * stored edits went too, except for an account lock). */
   onUnavailable?: (kind: 'notFound' | 'forbidden') => void;
+  /** The device copy this mount starts from: its document already holds the
+   * state, and the JOIN names its version, so the room answers the
+   * difference. Plate still stays hidden until the first sync (C5). */
+  seed?: RoomSeed;
 }) {
   const qc = useQueryClient();
   const ydoc = useMemo(
-    () => new Y.Doc({ gc: true }),
+    () => seed?.doc ?? new Y.Doc({ gc: true }),
     [collaborationToken.room]
   );
   // Typing the room never saw that a join's step 2 hides in a deleted block
@@ -793,10 +808,12 @@ export function NoteEditorCore({
   // costs seconds. It is the *initial* value — the room is authoritative from
   // sync onwards — so it is computed once per mount rather than on every
   // render that a status change or a projection refetch causes.
-  const [projection] = useState<MaterialValue>(
-    () =>
-      parseMaterialDocument(material.content)?.value ??
-      ([{ children: [{ text: '' }], type: 'p' }] as MaterialValue)
+  const [projection] = useState<MaterialValue>(() =>
+    seed
+      ? seedValue(seed)
+      : material.content.value.length
+        ? parsedDocument(material.content)
+        : ([{ children: [{ text: '' }], type: 'p' }] as MaterialValue)
   );
   // Until the room's first sync the editor holds the saved copy, editable
   // (Q229): the projection, or the newest stored copy's edited value, whose
@@ -857,9 +874,6 @@ export function NoteEditorCore({
   // header. Holding the full status here re-rendered the toolbar and palette on
   // the first keystroke of every edit (Saved to Syncing).
   const [handshaking, setHandshaking] = useState(true);
-  // The room's answer waits on the user's open budget (Epo 2026-10-20):
-  // loading, not offline, until it syncs.
-  const [slowed, setSlowed] = useState(false);
   // The room's presence (Epo 2026-10-20): cursor labels read its verified
   // names, and the header shows its avatar group.
   const [presence] = useState(createPresenceStore);
@@ -875,21 +889,20 @@ export function NoteEditorCore({
 
   // Re-announcing a status the header already shows re-renders it for nothing.
   const reportedStatus = useRef<NoteEditorStatus['saveState'] | null>(null);
-  // A note on screen whose reconnect is slowed by the open budget says so
-  // under the header's sync indicator (Epo 2026-10-20); a first open says so
-  // under its loading pane.
+  // An open or a reconnect slowed by the open budget says so under the header's
+  // sync indicator (Epo 2026-10-20, 2026-11-04).
   const reportedSlowed = useRef(false);
   const phaseNow = useRef(phase);
   phaseNow.current = phase;
-  // A paused editor reports nothing; a standby one reads as Reconnecting,
-  // the paused note above it still on screen.
+  // A paused editor reports nothing; a standby one leaves the header's status
+  // as it was, the paused note above it still on screen.
   const statusChange = useRef(onEditorStatusChange);
   statusChange.current = phase === 'paused' ? undefined : onEditorStatusChange;
   // Stored steps of never-accepted sessions go through the draft send while
   // the room joins (Q319): view-only until it settles. Past DRAFT_SEND_WAIT_MS
   // the note applies them and edits on, nothing live and every JOIN waiting
   // for the send, until the room took them (`heldSteps`, Q327, Q328). Both
-  // read as syncing.
+  // read as a draft syncing, with a spinner and no strip (D10).
   const [draftsSending, setDraftsSending] = useState(sendRows.length > 0);
   const sendingNow = useRef(sendRows.length > 0);
   const heldSteps = useRef(false);
@@ -898,21 +911,23 @@ export function NoteEditorCore({
   // synced, whichever comes last.
   const holdSteps = useRef<(() => void) | null>(null);
   const report = useCallback((saveState: NoteEditorStatus['saveState']) => {
-    // A late mount reads Getting ready, standby beside the paused note too.
+    const slowed = reportedSlowed.current ? { slowed: true } : {};
+    // Its open goes on behind the note on screen, and says only that it is
+    // slowed.
+    if (phaseNow.current === 'standby') {
+      if (reportedSlowed.current)
+        statusChange.current?.({ saveState: 'opening', slowed: true });
+      return;
+    }
+    // A late mount opens until its merge applied (D2: no Getting ready).
     const shown =
       lateNow.current && saveState !== 'offline' && saveState !== 'error'
-        ? 'preparing'
-        : phaseNow.current === 'standby'
-          ? 'reconnecting'
-          : (sendingNow.current || heldSteps.current) &&
-              (saveState === 'saved' || saveState === 'reconnecting')
-            ? 'syncing'
-            : saveState;
-    statusChange.current?.(
-      reportedSlowed.current
-        ? { saveState: shown, slowed: true }
-        : { saveState: shown }
-    );
+        ? 'opening'
+        : (sendingNow.current || heldSteps.current) &&
+            (saveState === 'saved' || saveState === 'opening')
+          ? 'syncing-draft'
+          : saveState;
+    statusChange.current?.({ saveState: shown, ...slowed });
   }, []);
   // Whether the merge view's choices may edit the note now (set once the
   // store exists), and whether the editor is locked.
@@ -922,7 +937,7 @@ export function NoteEditorCore({
   const addPieces = useRef((_pieces: MergePiece[]) => {});
   const setStatus = useCallback(
     (next: NoteEditorStatus['saveState']) => {
-      setHandshaking(next === 'connecting');
+      setHandshaking(next === 'opening');
       if (reportedStatus.current === next) return;
       reportedStatus.current = next;
       report(next);
@@ -932,12 +947,8 @@ export function NoteEditorCore({
   );
   const markSlowed = useCallback(
     (next: boolean) => {
-      setSlowed(next);
-      // A standby editor's open is the paused note's reconnect.
-      const shown =
-        next && (hasSynced.current || phaseNow.current === 'standby');
-      if (reportedSlowed.current === shown) return;
-      reportedSlowed.current = shown;
+      if (reportedSlowed.current === next) return;
+      reportedSlowed.current = next;
       if (reportedStatus.current) report(reportedStatus.current);
     },
     [report]
@@ -952,10 +963,12 @@ export function NoteEditorCore({
     () => unsavedChanges.current || pendingCheckpoints.current.size > 0,
     []
   );
+  // A first open reads as opening. A rejoin changes nothing until its 30 s
+  // passed (D2): the last state stays, and unsent work reads Syncing.
   const connecting = useCallback(() => {
     // A stopped editor (refused build, paused) keeps what it shows.
-    if (stale.current) return;
-    setStatus(hasSynced.current ? 'reconnecting' : 'connecting');
+    if (stale.current || hasSynced.current) return;
+    setStatus('opening');
   }, [setStatus]);
 
   // Plugin options are captured before the editor exists, so the handlers they
@@ -984,6 +997,8 @@ export function NoteEditorCore({
   );
   useEffect(() => () => saveDelay.dispose(), [saveDelay]);
   const reportUnavailable = useRef(onUnavailable);
+  const reportJoinFailed = useRef(onJoinFailed);
+  reportJoinFailed.current = phase === 'paused' ? undefined : onJoinFailed;
   const reportOffline = useRef(onOffline);
   const reportOutdated = useRef(onOutdated);
   const reportLate = useRef(onLate);
@@ -1025,7 +1040,7 @@ export function NoteEditorCore({
     offlineMode.current = false;
     recorder.current?.connected();
     reportOffline.current?.(null);
-    connecting();
+    setStatus(hasUnsavedWork() ? 'syncing' : 'saved');
   };
   // Set once the editor exists; reports a room that turned read-only once.
   // `refusedConnect`: a (re)connect refused read-only, which only this
@@ -1060,6 +1075,15 @@ export function NoteEditorCore({
   goLate.current = () => {
     if (stale.current || rejected.current) return;
     stale.current = true;
+    // A clean device copy older than the room's window holds no work of its
+    // own: it goes, and a fresh document joins.
+    if (seed && !hasUnsavedWork() && !recorder.current?.unsaved) {
+      sender.current?.stop();
+      roomProvider(editorRef.current)?.disconnect();
+      void dropDeviceCopies(material.id, 'content');
+      reportLate.current?.(null);
+      return;
+    }
     // The next mount merges the rows the draft send held (review r4 N3).
     sender.current?.stop();
     roomProvider(editorRef.current)?.disconnect();
@@ -1288,6 +1312,9 @@ export function NoteEditorCore({
         return;
       }
       rejected.current = true;
+      // The next mount starts from the room alone: what the copy holds may be
+      // what the room refused (it lost a co-editor's update in a crash).
+      void dropDeviceCopies(material.id, 'content');
       const merging = !!lateDocument && !mergeApplied.current;
       const unsaved =
         !merging && (hasUnsavedWork() || !!recorder.current?.unsaved);
@@ -1479,6 +1506,9 @@ export function NoteEditorCore({
           storageOk.current || !(hasUnsavedWork() || recorder.current?.unsaved)
         );
       } else {
+        // Refused on connecting: the device copy goes, which holds no unique
+        // work.
+        void dropDeviceCopies(material.id);
         // The note's stored edits go too (not for an account lock); queued
         // before the recorder's discard, the report counts this session's
         // rows.
@@ -1528,10 +1558,12 @@ export function NoteEditorCore({
             roomSynced.current = isSynced;
             // A bind Plate tried before the first sync happens now.
             if (isSynced) {
+              reportJoinFailed.current?.(false);
               bindSyncedRoom(editorRef.current);
               const hidden = hiddenTyping.synced();
               if (hidden.length) addPieces.current(hidden);
             }
+            canApplyNow.current();
             if (!isSynced || rejected.current) return;
             markSlowed(false);
             hasSynced.current = true;
@@ -1599,6 +1631,7 @@ export function NoteEditorCore({
                       handleStatelessEvent(payload);
                     },
                     onStep1: hiddenTyping.armed,
+                    storedFrom: seed?.version,
                     token: async (previousToken?: string) => {
                       let token: MaterialCollaborationToken;
                       try {
@@ -1697,6 +1730,33 @@ export function NoteEditorCore({
   // Provider callbacks are configured before the editor exists.
   const editorRef = useRef(editor);
   editorRef.current = editor;
+
+  // A member's device copy (Epo 2026-11-04): what the room confirmed, written
+  // when nothing is unsent, on hide and as the mount goes. Before the recorder's
+  // effect: its cleanup, which runs first, still reads what is unsent.
+  useEffect(() => {
+    if (!keepsCopyOf(material)) return;
+    const keeper = keepDeviceCopy(ydoc, {
+      clean: () =>
+        hasSynced.current &&
+        !rejected.current &&
+        !stale.current &&
+        !discarded.current &&
+        !lateNow.current &&
+        !hasUnsavedWork() &&
+        !recorder.current?.unsaved &&
+        !capyRoom(editorRef.current)?.unsyncedChanges,
+      owner: currentUserId,
+      row: () => ({
+        ...copyLabel(material, currentUserId),
+        document: 'content',
+        materialId: material.id,
+        room: collaborationToken.room,
+        version: capyRoom(editorRef.current)?.reportedVersion ?? 0,
+      }),
+    });
+    return () => keeper.close();
+  }, [ydoc]);
 
   // Unsaved work is written to this device as it happens and deleted by the
   // receipts that cover it. Restored edits go in first, before the room
@@ -1798,6 +1858,7 @@ export function NoteEditorCore({
   canApplyNow.current = () =>
     store.setCanApply(
       phaseNow.current === 'live' &&
+        roomSynced.current &&
         !lockedNow.current &&
         !rejected.current &&
         !stale.current &&
@@ -1917,7 +1978,10 @@ export function NoteEditorCore({
       onStuck: () => {
         if (stale.current || heldSteps.current) return;
         if (hasSynced.current) goOfflineNow.current();
-        else setStatus('error');
+        else {
+          setStatus('error');
+          reportJoinFailed.current?.(true);
+        }
       },
       provider: () =>
         rejected.current || stale.current
@@ -1937,7 +2001,7 @@ export function NoteEditorCore({
   useEffect(() => {
     let active = true;
     let initialized = false;
-    setStatus('connecting');
+    setStatus('opening');
     // Delay initialization by one task so React Strict Mode's development-only
     // setup/cleanup probe cannot initialize the same Slate-Yjs editor twice.
     const initializeTimer = setTimeout(() => {
@@ -2366,12 +2430,12 @@ export function NoteEditorCore({
                 >
                   <NoteDisplayToggles toolbar={toolbarToggle} />
                   <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
-                    {/* The room replaces the projection copy the moment it syncs,
-                     * so painting that copy first renders the whole document
-                     * twice — seconds of it on a near-limit note. Anything other
-                     * than a healthy handshake still paints, otherwise a broken
-                     * collaboration service would leave a readable note hidden
-                     * behind a spinner. */}
+                    {/* The static paint in front (NoteBody) shows the note while
+                     * this builds: painting the projection here too would render
+                     * the whole document twice, seconds of it on a near-limit
+                     * note. Anything other than a healthy handshake still
+                     * paints: past the join's 30 s the saved copy, editable
+                     * (Q229). */}
                     {lateCopy &&
                     lateMerging &&
                     (phase === 'live' || lateUnloaded) ? (
@@ -2384,12 +2448,7 @@ export function NoteEditorCore({
                           title={material.title}
                         />
                       </div>
-                    ) : handshaking || lateMerging ? (
-                      <FileLoading
-                        message={m.editor_connecting()}
-                        slowed={slowed}
-                      />
-                    ) : (
+                    ) : handshaking || lateMerging ? null : (
                       <>
                         <EditorScrollAreaContext.Provider value={scrollArea}>
                           <CollaborationHold>

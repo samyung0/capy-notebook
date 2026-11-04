@@ -1210,6 +1210,7 @@
   "editor_connecting": "正在连接",
   "editor_status_synced": "已同步",
   "editor_status_syncing": "正在同步…",
+  "editor_status_syncing_draft": "正在同步你的草稿…",
   "editor_status_saved": "已保存",
   "editor_status_offline": "离线",
   "editor_status_unavailable": "协作不可用",

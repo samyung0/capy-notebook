@@ -2420,6 +2420,54 @@ copy (`src/features/collaboration/deviceCopy.ts`, stored by
   at each page load `POST /api/materials/readable` answers which kept ids the
   account can still read, in one query, and the rest go (`sweepDeviceCopies`).
 
+- **What a copy is.** The room's state as one row per document, written whole:
+  never per key, and only when nothing of this device's is unsent
+  (`keepDeviceCopy`), so a discarded or refused edit cannot come back. A note
+  writes on hide, on `pagehide` and as its mount goes, one encode (30-80 ms on a
+  near-limit note), only if the document changed since it was seeded or last
+  written. Its row travels with its bytes in one response, so a write as the page
+  goes lands whole: Chromium drops a `Cache.put` after an `await` in `pagehide`
+  and keeps one issued in the event's own task (measured on reload, navigation
+  and close), which is why the open store and its quota are kept ready
+  (`prepareDeviceCopies`). The index learns of such a copy at the next store.
+- **Joining from one.** The document is seeded before the room joins and takes
+  the token's fresh client id as any new one does (the seed is no write of this
+  session). The JOIN names the copy's stored version (`storedFrom`), and the room
+  answers what lies past its state. A token naming another room drops the copy
+  and starts empty (the lineage moved). A refusal (unassigned or a store's
+  rejection, not-found, forbidden, a read channel closed for what it holds, or a
+  late answer to a clean copy) drops the copy and remounts or rejoins with none,
+  so it can never fail twice; a server crash that lost a co-editor's update ends
+  this way.
+
+### Opening a note
+
+Epo decided on 2026-11-04 that a note opens one way (`NoteBody`). It paints at
+once, static and read-only: from the device copy when there is one, before its
+material read answers (`seedValue`), else the stored projection, else a wordless
+skeleton (`NoteSkeleton`). Offline with nothing to paint it reads "Waiting for
+connection" (C9).
+
+- **A viewer** stays on the paint, which follows its room on a read channel
+  (`LiveNote`, `readNoteLive`, Q158), from its copy when it has one.
+- **An editor** builds Plate behind the paint: `NoteEditor` mounts `invisible
+  absolute inset-0` and `inert`, and asks for its token, discussions and drafts
+  meanwhile. Edits are held until there is an editor (C4, no spare client ids):
+  keys are dropped and a phone shows no keyboard. Plate stays static until the
+  first sync (C5): no early bind. Once `NoteEditorCore` painted (`onShown`) the
+  paint goes and the editor shows in the same commit, at the block under the top
+  edge (the paint's blocks by value order, `paintedPosition`) and with a caret
+  placed in the paint moved onto it. Embeds in that paint hold their place
+  (`HeldEmbed`): the editor's own join theirs, and a study view would flash.
+- **The status** beside the title is a spinner with no words while it opens
+  (`opening`) and, with the draft's words, during a draft send (`syncing-draft`,
+  D10, no strip). A slowed open says so in its tooltip.
+- **At 30 s** a strip with Retry shows over whichever is on screen (`unreachable`,
+  D5). A token that never answered or failed leaves the paint and a red status;
+  a token that answered with a join that never did paints the editable saved copy
+  (Q229), its base the copy's value where it started from one. A refused token
+  (403, 404) shows the panel, as before.
+
 ### The editable saved copy
 
 Epo decided on 2026-10-24 (Q229) that a note shown from its saved copy
