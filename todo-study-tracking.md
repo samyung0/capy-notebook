@@ -522,6 +522,12 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - **S3:** the page read at ingest also returns figure boxes in the same call. No extra call, but boxes asked beside other work were worse (the batch call's own boxes missed 3 of 10), and every scanned page's read prompt changes.
   - **Recommendation:** S1 now, since a few drops are fine. S2 if drops turn out frequent on real uploads.
 
+**Batch size (2026-11-04, `claude/study-extraction` 0bf07a705, `bench/extraction/reports/2026-11-04-window-size.md`):** 48 runs at 1, 2, 3, 4, 6 and all pages per call, plus 14 on a paper whose questions cross pages, for $0.84.
+- **Result:** one call reliably records 12 questions (largest reply 14,931 of 24,000 output tokens). 13-17 is unmeasured, and an 18-question reply reached 90% of the cap. The real limit is tokens: reasoning is about half the output.
+- **Recommendation:** keep 2 pages a call. Keys and marks don't move with size, and cost is flat from 2 to 6 pages. 6 pages lost three questions in one run; one window with all pages named no figures in 1 of 2 runs.
+- **Found, not fixed:** options repeated as plain unlettered lines; a sentence before a sub-part on the next page lost at a window edge; a re-record inside one window silently replacing earlier parts (one run lost Q1's a(i) and a(ii)); one question split in two; printed options rewritten to fit a misread number (2022 P2 Q34).
+- **Needs Epo's sign-off, built without a recorded decision:** repeated-stem removal, the `lead_in` field, `schemeRepeats`, the `\$` rule, the locate call replacing window boxes, and the side and bottom values of `FIGURE_PAD`.
+
 **Upload: everyone or hidden from members (Epo, 2026-11-04; canvas page 10, board U1).**
 - **Scope:** owners and editors choose, when uploading, whether members see the file. Hidden works as the ⋮ menu's Hide from members does: viewers don't see the file in Files, search, the agent, Activity or any notification; owners and editors see it with the eye mark.
 - **Default:** everyone, as today. Uploads inside Make a quiz start hidden.
