@@ -27,6 +27,9 @@ import { addCard, isBlank, readCards, removeCard, useCards } from './liveSet';
  * and removing a card change the set at once for everyone in it; there is
  * no Save, Reset or Done. A card added and left blank goes away when its
  * dialog closes, as the old save left blank cards out. */
+const scrollToCard = (node: HTMLLIElement | null) =>
+  node?.scrollIntoView({ block: 'center' });
+
 export function FlashcardsEditor({
   room,
   status,
@@ -34,6 +37,7 @@ export function FlashcardsEditor({
   title,
   action,
   onEmpty,
+  openCardId,
   showTitle = true,
   showUndo = true,
   compact = false,
@@ -47,6 +51,8 @@ export function FlashcardsEditor({
   /** Inside a note: removing the last card removes the embed block. A set
    * of its own keeps at least one card. */
   onEmpty?: () => void;
+  /** A card to scroll to at once (a link to it). */
+  openCardId?: string;
   /** Off where the page header already names the set. */
   showTitle?: boolean;
   /** Off inside a note (the card dialog carries them). */
@@ -169,6 +175,7 @@ export function FlashcardsEditor({
               label={m.flashcards_edit_card()}
               n={index + 1}
               onOpen={() => setEditing({ added: false, id: card.id })}
+              ref={card.id === openCardId ? scrollToCard : undefined}
             />
           ))}
           {addTile}

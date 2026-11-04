@@ -372,11 +372,13 @@ function EditingNote({
   const [shown, setShown] = useState(false);
   const paintBox = useRef<HTMLDivElement>(null);
   const moved = useRef<{ place: NotePosition; view: NoteView } | null>(null);
+  const [editor, setEditor] = useState<NoteView | null>(null);
   const value = useRef(painted);
   const onShown = useCallback((view: NoteView | null) => {
     const box = paintBox.current;
     const place = box && view && paintedPosition(box, value.current);
     if (place && view) moved.current = { place, view };
+    setEditor(view);
     setShown(true);
   }, []);
   // The editor is laid out behind the paint, and on screen from this commit:
@@ -386,6 +388,15 @@ function EditingNote({
     restoreNotePosition(moved.current.view, moved.current.place);
     moved.current = null;
   }, [shown]);
+  // A chat citation's passage, in the editor once it shows (in the paint until
+  // then): each click brings a new citation object.
+  useEffect(
+    () =>
+      shown && editor && citation
+        ? showNoteCitation(editor.scrollArea, citation)
+        : undefined,
+    [citation, editor, shown]
+  );
   const [joinFailed, setJoinFailed] = useState<{ retry: () => void } | null>(
     null
   );

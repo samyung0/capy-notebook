@@ -626,6 +626,7 @@ function MaterialContentBody({
             onPresenceChange={onPresenceChange}
             onStatusChange={onEditorStatusChange}
             quizId={materialId}
+            target={target}
             title={material.title}
           />
           <SourcesLine
@@ -648,6 +649,7 @@ function MaterialContentBody({
                 }
                 onPresenceChange={onPresenceChange}
                 onStatusChange={onEditorStatusChange}
+                openCardId={target}
                 setId={materialId}
                 title={material.title}
               />

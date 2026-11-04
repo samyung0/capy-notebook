@@ -27,6 +27,7 @@ import {
 import type * as Y from 'yjs';
 import { ContentSwap } from '@/components/ui/ContentSwap';
 import { CharCount } from '@/components/ui/Input';
+import { Menu } from '@/components/ui/Menu';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
@@ -385,10 +386,34 @@ export function MaterialRefElement(props: PlateElementProps) {
   const { materialId, refKind } = props.element as unknown as MaterialRefNode;
 
   const canEdit = !readOnly && !!dialogs;
+  // An editor answers or studies it in place through its ⋮ (Epo 2026-11-04).
+  const [previewing, setPreviewing] = useState(false);
   return (
     <PlateElement {...props} className="my-4">
-      <div contentEditable={false}>
-        {materialId && canEdit ? (
+      <div
+        className={cn(canEdit && 'group/embed relative')}
+        contentEditable={false}
+      >
+        {materialId && canEdit && (
+          <div className="absolute top-0 right-0 z-10 opacity-0 pointer-coarse:opacity-100 transition-opacity group-hover/embed:opacity-100 has-data-[state=open]:opacity-100">
+            <Menu
+              items={[
+                previewing
+                  ? {
+                      icon: 'pencil',
+                      label: m.action_edit(),
+                      onClick: () => setPreviewing(false),
+                    }
+                  : {
+                      icon: 'view',
+                      label: m.editor_embed_preview(),
+                      onClick: () => setPreviewing(true),
+                    },
+              ]}
+            />
+          </div>
+        )}
+        {materialId && canEdit && !previewing ? (
           <AppEmbedEdit
             materialId={materialId}
             // The last question or card removed takes the block with it;

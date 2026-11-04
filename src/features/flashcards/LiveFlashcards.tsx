@@ -38,6 +38,7 @@ export function LiveFlashcards({
   onEmpty,
   onPresenceChange,
   onStatusChange,
+  openCardId,
   showTitle,
   showUndo,
   compact,
@@ -53,6 +54,8 @@ export function LiveFlashcards({
   /** The room's other editors, for the header's avatar group. */
   onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   onStatusChange?: (status: NoteEditorStatus | null) => void;
+  /** A card to scroll to, e.g. from a review summary. */
+  openCardId?: string;
   showTitle?: boolean;
   showUndo?: boolean;
   /** Small front-only cards in the editor, as a note's block shows them. */
@@ -126,6 +129,7 @@ export function LiveFlashcards({
     <FlashcardGrid
       action={action}
       cards={cards}
+      openCardId={openCardId}
       title={showTitle ? title : ''}
     />
   );
@@ -140,6 +144,7 @@ export function LiveFlashcards({
             action={action}
             compact={compact}
             onEmpty={onEmpty}
+            openCardId={openCardId}
             room={room}
             setId={setId}
             showTitle={showTitle}

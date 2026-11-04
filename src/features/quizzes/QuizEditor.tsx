@@ -1,4 +1,4 @@
-import { type ReactNode, useContext, useEffect } from 'react';
+import { type ReactNode, useContext, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { QUIZ_OPEN_PARTS_MAX } from '@/api/limits.generated';
 import type { Question } from '@/api/types';
@@ -51,8 +51,11 @@ export function QuizEditor({
   action,
   onPresenceChange,
   onStatusChange,
+  target,
 }: {
   quizId: string;
+  /** A question to scroll to, e.g. from a review summary. */
+  target?: string;
   title: string;
   /** Sits right of the title. */
   action?: ReactNode;
@@ -78,6 +81,17 @@ export function QuizEditor({
   ]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   useReportPresence(onPresenceChange, rooms.presence);
+  // Once its question shows.
+  const scrolledTo = useRef<string | null>(null);
+  useEffect(() => {
+    if (!target || scrolledTo.current === target) return;
+    const question = document.querySelector(
+      `[data-question-id="${CSS.escape(target)}"]`
+    );
+    if (!question) return;
+    scrolledTo.current = target;
+    question.scrollIntoView({ block: 'start' });
+  });
 
   if (rooms.status === 'unavailable')
     return <p role="alert">{m.material_ref_unavailable()}</p>;
