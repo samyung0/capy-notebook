@@ -41,7 +41,14 @@ import { Icon } from '@/components/ui/Icon';
 import { Menu } from '@/components/ui/Menu';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { useRoomSeed } from '@/features/collaboration/deviceCopy';
+import {
+  copyLabel,
+  keepsCopyOf,
+  type RoomCopy,
+  useKeepMaterialCopy,
+  useMaterialCopy,
+  useRoomSeed,
+} from '@/features/collaboration/deviceCopy';
 import {
   createPresenceStore,
   type PresenceConnection,
@@ -81,6 +88,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
 import { useOnlineStatus } from '@/lib/online';
+import { dropDeviceCopies } from '@/lib/sourceCache';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import {
   createEditorStatusStore,
@@ -463,6 +471,25 @@ function MaterialLoading() {
   return online ? <NoteSkeleton /> : <FileLoading />;
 }
 
+const storedCards = (material: Material) =>
+  flashcardsElementToCards(
+    material.content.value.find(
+      (node): node is FlashcardsElement => node.type === 'flashcards'
+    ) ?? { children: [], id: '', type: 'flashcards' }
+  );
+
+/** A quiz's questions as its read stored them: no answer key. */
+const storedQuestions = (content: MaterialDocument) => {
+  const quiz = content.value.find(
+    (node): node is QuizElement => node.type === 'quiz'
+  );
+  return (quiz?.children ?? []).flatMap((node) =>
+    'type' in node && node.type === 'quiz_question'
+      ? [node.question as unknown as LearnerQuestion]
+      : []
+  );
+};
+
 /** A set's View: the stored cards, then the room's as they change. */
 function LiveSetGrid({
   material,
@@ -474,12 +501,7 @@ function LiveSetGrid({
   /** A card to open at once (a link to it). */
   openCardId?: string;
 }) {
-  const stored = flashcardsElementToCards(
-    material.content.value.find(
-      (node): node is FlashcardsElement => node.type === 'flashcards'
-    ) ?? { children: [], id: '', type: 'flashcards' }
-  );
-  const cards = useLiveSetCards(material.id, stored);
+  const cards = useLiveSetCards(material.id, storedCards(material));
   return (
     <FlashcardGrid
       action={action}
@@ -537,7 +559,7 @@ function MaterialContentBody({
   citation?: NoteCitationTarget;
 }) {
   const {
-    data: material,
+    data: loaded,
     error,
     isLoading,
   } = useMaterial(materialId, {
@@ -560,6 +582,15 @@ function MaterialContentBody({
   const { data: me } = useMe({ errorBoundary: false });
   // A heavy note opened read-only reads nothing of its own beyond its read.
   const seed = useRoomSeed(materialId, staticNote ? null : me?.id);
+  // An item's last read, painting until this one answers.
+  const copied = useMaterialCopy(materialId, staticNote ? null : me?.id);
+  const refused = isApiError(error) && error.status < 500;
+  const material = loaded ?? (refused ? undefined : (copied ?? undefined));
+  useKeepMaterialCopy(
+    loaded?.kind === 'note' ? undefined : loaded,
+    me?.id,
+    copied
+  );
   const noteBody = (loaded: Material | undefined, editing: boolean) => (
     <NoteBody
       allowExternalAssets={allowExternalAssets}
@@ -577,13 +608,13 @@ function MaterialContentBody({
   );
   // A device copy paints before its read answers, and while the read cannot
   // answer (the browser offline, the server down), until it refuses.
-  if (
-    !material &&
-    seed?.row.kind === 'note' &&
-    !(isApiError(error) && error.status < 500)
-  )
+  if (!material && seed?.row.kind === 'note' && !refused)
     return noteBody(undefined, false);
-  if (isLoading) return <MaterialLoading />;
+  if (isLoading && !material) {
+    // Nothing shows for the few milliseconds the store takes.
+    if (me && (seed === undefined || copied === undefined)) return null;
+    return <MaterialLoading />;
+  }
   if (error || !material) {
     return isMaterialContentUnreadable(error) ? (
       <FileError
@@ -601,6 +632,10 @@ function MaterialContentBody({
     !(forceReadOnly || readOnly) && material.capabilities.canEditContent
       ? 'edit'
       : 'view';
+  const roomCopy: RoomCopy = {
+    keep: me && keepsCopyOf(material) ? copyLabel(material, me.id) : undefined,
+    seed,
+  };
   // Its payer (whoever created it) at the storage limit opens it view-only
   // under a strip saying so (uploader pays).
   const readOnlyStrip = material.storageFull ? (
@@ -622,10 +657,12 @@ function MaterialContentBody({
         <TabContent fill>
           <QuizEditor
             action={<StudyButton kind="quiz" materialId={materialId} />}
+            copy={roomCopy}
             key={materialId}
             onPresenceChange={onPresenceChange}
             onStatusChange={onEditorStatusChange}
             quizId={materialId}
+            stored={storedQuestions(material.content)}
             target={target}
             title={material.title}
           />
@@ -647,10 +684,12 @@ function MaterialContentBody({
                 action={
                   <StudyButton kind="flashcards" materialId={materialId} />
                 }
+                copy={roomCopy}
                 onPresenceChange={onPresenceChange}
                 onStatusChange={onEditorStatusChange}
                 openCardId={target}
                 setId={materialId}
+                stored={storedCards(material)}
                 title={material.title}
               />
             ) : (
@@ -681,6 +720,8 @@ function MaterialContentBody({
         <AppErrorBoundary resetKeys={[materialId, activeMode]}>
           <Suspense fallback={<FileLoading />}>
             <MermaidMaterialEditor
+              content={material.content}
+              copy={roomCopy}
               kind={material.kind}
               materialId={materialId}
               onPresenceChange={onPresenceChange}
@@ -773,16 +814,12 @@ function QuizPreview({
       .querySelector(`[data-question-id="${CSS.escape(target)}"]`)
       ?.scrollIntoView({ block: 'start' });
   }, [target]);
-  const quiz = content.value.find(
-    (node): node is QuizElement => node.type === 'quiz'
-  );
-  const stored = (quiz?.children ?? []).flatMap((node) =>
-    'type' in node && node.type === 'quiz_question'
-      ? [node.question as unknown as LearnerQuestion]
-      : []
-  );
+  // Someone gone from editing to viewing keeps no answers on this device.
+  useEffect(() => {
+    void dropDeviceCopies(quizId, 'keys');
+  }, [quizId]);
   // The stored questions paint first; the live room follows (live-items).
-  const questions = useLiveQuizQuestions(quizId, stored);
+  const questions = useLiveQuizQuestions(quizId, storedQuestions(content));
   return (
     <TabContent fill>
       <div className="mb-7 flex items-center gap-4">

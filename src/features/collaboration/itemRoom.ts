@@ -545,6 +545,7 @@ export class ItemRoom {
             ? this.provider.reportedVersion
             : 0,
       }),
+      seeded: !!this.options.seed,
     });
   }
 

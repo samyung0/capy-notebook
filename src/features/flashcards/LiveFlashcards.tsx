@@ -8,6 +8,7 @@ import {
 } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
 import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
+import type { RoomCopy } from '@/features/collaboration/deviceCopy';
 import {
   itemEditingStopped,
   useItemRoom,
@@ -19,10 +20,11 @@ import {
   useReportPresence,
 } from '@/features/collaboration/presence';
 import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
+import type { FlashcardContent } from '@/features/materials/blocks';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
 import { FlashcardGrid } from './FlashcardGrid';
-import { FlashcardsEditor } from './FlashcardsEditor';
+import { FlashcardsEditor, PaintedCards } from './FlashcardsEditor';
 import { useCards } from './liveSet';
 
 /** A set's live editor: joins its room and edits the document once synced.
@@ -35,17 +37,23 @@ export function LiveFlashcards({
   setId,
   title,
   action,
+  copy,
   onEmpty,
   onPresenceChange,
   onStatusChange,
   openCardId,
   showTitle,
   showUndo,
+  stored,
   compact,
   enabled = true,
   inside,
   wake,
 }: InNote & {
+  /** A page's device copy its room starts from. */
+  copy?: RoomCopy;
+  /** The cards as a page's read holds them, painted until the room syncs. */
+  stored?: FlashcardContent[];
   setId: string;
   title: string;
   /** Sits right of the title. */
@@ -70,8 +78,8 @@ export function LiveFlashcards({
   const actorId = me?.id ?? null;
   const { room, snapshot } = useItemRoom(
     setId,
-    (enabled || held) && !!actorId,
-    { actorId, inside, wake }
+    (enabled || held) && !!actorId && (!copy || copy.seed !== undefined),
+    { actorId, inside, keep: copy?.keep, seed: copy?.seed, wake }
   );
   useEffect(() => {
     setHeld(snapshot.status === 'syncing' || snapshot.status === 'offline');
@@ -109,6 +117,20 @@ export function LiveFlashcards({
           action={action}
           cards={recovered}
           title={showTitle ? title : ''}
+        />
+      </div>
+    );
+  // Painted until it syncs (Epo 2026-11-04): what the device copy holds, else
+  // what the read holds, as the editor lays them out.
+  if (stored && !(room && snapshot.synced))
+    return (
+      <div className="flex flex-col gap-4">
+        {isOutdatedBanner(snapshot.offline) && <SaveBanner state="outdated" />}
+        <PaintedCards
+          action={action}
+          cards={cards.length ? cards : stored}
+          openCardId={openCardId}
+          title={title}
         />
       </div>
     );

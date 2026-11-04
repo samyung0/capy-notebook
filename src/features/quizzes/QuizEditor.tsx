@@ -2,11 +2,10 @@ import { type ReactNode, useContext, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { QUIZ_OPEN_PARTS_MAX } from '@/api/limits.generated';
 import type { Question } from '@/api/types';
-import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { FileBanner } from '@/components/banners/FileBanner';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
-import { Skeleton } from '@/components/ui/feedback';
 import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
+import type { RoomCopy } from '@/features/collaboration/deviceCopy';
 import { itemEditingStopped } from '@/features/collaboration/itemRoom';
 import {
   itemSaveState,
@@ -16,9 +15,9 @@ import {
   type PresenceConnection,
   useReportPresence,
 } from '@/features/collaboration/presence';
-import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
 import { FileActionsTarget } from '@/features/files/fileModeContext';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import type { LearnerQuestion } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { useQuizQuestions, useQuizRooms } from './liveQuizRooms';
 import { QuizForm, QuizRecovery } from './QuizForm';
@@ -49,10 +48,16 @@ export function QuizEditor({
   quizId,
   title,
   action,
+  copy,
   onPresenceChange,
   onStatusChange,
+  stored,
   target,
 }: {
+  /** The device copy its rooms start from. */
+  copy: RoomCopy;
+  /** The questions as its read holds them, painted until the rooms sync. */
+  stored: LearnerQuestion[];
   quizId: string;
   /** A question to scroll to, e.g. from a review summary. */
   target?: string;
@@ -63,7 +68,7 @@ export function QuizEditor({
   onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   onStatusChange?: (status: NoteEditorStatus | null) => void;
 }) {
-  const rooms = useQuizRooms(quizId, { edit: true });
+  const rooms = useQuizRooms(quizId, { copy, edit: true });
   const questions = useQuizQuestions(rooms.content?.doc, rooms.keys?.doc);
   const headerActions = useContext(FileActionsTarget);
   useEffect(() => {
@@ -95,6 +100,17 @@ export function QuizEditor({
 
   if (rooms.status === 'unavailable')
     return <p role="alert">{m.material_ref_unavailable()}</p>;
+  // Until they sync (Epo 2026-11-04): what the device copy holds, else what the
+  // read holds; the Edit and Remove rows join them.
+  const painted = (
+    <div className="grid gap-6">
+      {isOutdatedBanner(rooms.offline) && <SaveBanner state="outdated" />}
+      <QuizQuestionList<Question | LearnerQuestion>
+        disabled
+        questions={questions.length ? questions : stored}
+      />
+    </div>
+  );
   return (
     <div className="flex flex-col gap-7">
       {rooms.undo &&
@@ -144,19 +160,10 @@ export function QuizEditor({
             </CollaborationHold>
           </div>
         ) : (
-          <Skeleton className="h-64 w-full" />
+          painted
         )
-      ) : isOutdatedBanner(rooms.offline) ? (
-        // Refused as outdated before it synced: nothing of the rooms to show.
-        <SaveBanner state="outdated" />
-      ) : rooms.status === 'offline' ? (
-        // Opened offline (or the server failed): it joins once back.
-        <QueryPausedState />
       ) : (
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-64 w-full" />
-          <SlowedOpenLine slowed={rooms.slowed} />
-        </div>
+        painted
       )}
     </div>
   );

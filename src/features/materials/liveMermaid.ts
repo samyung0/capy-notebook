@@ -60,6 +60,28 @@ export function readMermaid(doc: Y.Doc): LiveMermaid | null {
   return null;
 }
 
+/** A stored `mermaid` block as a live one nothing is joined to, for painting
+ * the editor before its room synced. */
+export function storedMermaid(node: MermaidElement): LiveMermaid {
+  const doc = new Y.Doc();
+  const block = new Y.XmlText();
+  const caption = new Y.XmlText();
+  contentRoot(doc).insertEmbed(0, block);
+  block.setAttribute('type', SHARED_TEXT_ELEMENT);
+  block.insertEmbed(0, caption);
+  caption.insert(0, node.children[0].children.map(({ text }) => text).join(''));
+  const source = new Y.Text(node.source);
+  block.setAttribute(SHARED_TEXT_KEY, source as never);
+  return {
+    block,
+    caption,
+    id: node.id,
+    source,
+    theme: node.theme,
+    width: node.width,
+  };
+}
+
 /** The block, read again when the room adds, removes or re-attributes it;
  * typing in its source or caption does not re-read it. */
 export function useMermaid(doc: Y.Doc | null | undefined): LiveMermaid | null {

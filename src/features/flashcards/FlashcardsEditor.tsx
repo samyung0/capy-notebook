@@ -11,6 +11,7 @@ import type {
 } from '@/features/collaboration/itemRoom';
 import { UndoButtons } from '@/features/collaboration/LiveItemControls';
 import { FileActionsTarget } from '@/features/files/fileModeContext';
+import type { FlashcardContent } from '@/features/materials/blocks';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CardDialog } from './CardDialog';
@@ -29,6 +30,39 @@ import { addCard, isBlank, readCards, removeCard, useCards } from './liveSet';
  * dialog closes, as the old save left blank cards out. */
 const scrollToCard = (node: HTMLLIElement | null) =>
   node?.scrollIntoView({ block: 'center' });
+
+/** The editor's grid before its room synced: the same tiles, nothing to press. */
+export function PaintedCards({
+  action,
+  cards,
+  openCardId,
+  title,
+}: {
+  action?: ReactNode;
+  cards: FlashcardContent[];
+  openCardId?: string;
+  title: string;
+}) {
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center gap-4">
+        <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
+        {action}
+      </div>
+      <CardGrid>
+        {cards.map((card, index) => (
+          <CardTile
+            card={card}
+            headerImage
+            key={card.id}
+            n={index + 1}
+            ref={card.id === openCardId ? scrollToCard : undefined}
+          />
+        ))}
+      </CardGrid>
+    </div>
+  );
+}
 
 export function FlashcardsEditor({
   room,

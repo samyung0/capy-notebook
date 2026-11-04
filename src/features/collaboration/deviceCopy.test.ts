@@ -47,6 +47,7 @@ describe('keepDeviceCopy', () => {
       clean: () => true,
       owner: 'user',
       row,
+      seeded: true,
     });
     type(doc, 'typed');
     keep.close();
@@ -65,6 +66,7 @@ describe('keepDeviceCopy', () => {
       clean: () => true,
       owner: 'user',
       row,
+      seeded: true,
     });
     page.dispatchEvent(new Event('pagehide'));
     expect(storeDeviceCopy).not.toHaveBeenCalled();
@@ -82,12 +84,25 @@ describe('keepDeviceCopy', () => {
       clean: () => clean,
       owner: 'user',
       row,
+      seeded: true,
     });
     type(doc, 'typed');
     page.dispatchEvent(new Event('pagehide'));
     expect(storeDeviceCopy).not.toHaveBeenCalled();
     clean = true;
     keep.close();
+    expect(storeDeviceCopy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('keepDeviceCopy without a copy to start from', () => {
+  it('writes what it holds even if nothing changed since it began', () => {
+    keepDeviceCopy(new Y.Doc(), {
+      clean: () => true,
+      owner: 'user',
+      row,
+      seeded: false,
+    }).close();
     expect(storeDeviceCopy).toHaveBeenCalledTimes(1);
   });
 });

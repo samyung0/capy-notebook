@@ -1742,6 +1742,7 @@ export function NoteEditorCore({
         room: collaborationToken.room,
         version: capyRoom(editorRef.current)?.reportedVersion ?? 0,
       }),
+      seeded: !!seed,
     });
     return () => keeper.close();
   }, [ydoc]);

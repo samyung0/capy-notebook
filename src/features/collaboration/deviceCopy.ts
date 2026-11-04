@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { api } from '@/api/client';
@@ -91,6 +91,13 @@ export async function readRoomSeed(
   return { doc, room: row.room, row, version: row.version };
 }
 
+/** What a page keeps of a room: its seed (undefined until read), and its row's
+ * label when this person keeps copies at all. */
+export interface RoomCopy {
+  keep?: CopyLabel;
+  seed: RoomSeed | null | undefined;
+}
+
 /** The copy of `materialId` read once for this mount: undefined until the read
  * settled, or forever without an `owner` yet. */
 export function useRoomSeed(
@@ -100,7 +107,7 @@ export function useRoomSeed(
 ) {
   const [seed, setSeed] = useState<RoomSeed | null>();
   useEffect(() => {
-    if (!owner) return;
+    if (!(owner && materialId)) return;
     let current = true;
     void readRoomSeed(owner, materialId, document).then((read) => {
       if (current) setSeed(read);
@@ -113,12 +120,90 @@ export function useRoomSeed(
   return seed;
 }
 
+/** The last material read kept on this device for an item (not a note, whose
+ * copy is its room's): it paints before its read answers. Undefined until the
+ * store answered, or forever without an `owner` yet. */
+export function useMaterialCopy(
+  materialId: string,
+  owner: string | null | undefined
+) {
+  const [copy, setCopy] = useState<Material | null>();
+  useEffect(() => {
+    if (!owner) return;
+    let current = true;
+    if (!keepsCopies(materialId)) {
+      setCopy(null);
+      return;
+    }
+    void (async () => {
+      if (USE_MSW) await claimSourceCache(owner);
+      const read = await readDeviceCopy(owner, materialId, 'read');
+      if (!current) return;
+      try {
+        setCopy(
+          read
+            ? (JSON.parse(new TextDecoder().decode(read.state)) as Material)
+            : null
+        );
+      } catch {
+        setCopy(null);
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  }, [materialId, owner]);
+  return copy;
+}
+
+/** Keeps the latest read of `material` on this device, on hide and as the page
+ * leaves it, when it differs from what is stored. */
+export function useKeepMaterialCopy(
+  material: Material | undefined,
+  owner: string | null | undefined,
+  stored: Material | null | undefined
+) {
+  const written = useRef<string | null>(null);
+  useEffect(() => {
+    if (!(material && owner && keepsCopyOf(material))) return;
+    written.current ??= stored ? JSON.stringify(stored) : null;
+    void prepareDeviceCopies(owner);
+    const write = () => {
+      const text = JSON.stringify(material);
+      if (text === written.current) return;
+      written.current = text;
+      void storeDeviceCopy(
+        {
+          ...copyLabel(material, owner),
+          document: 'read',
+          materialId: material.id,
+          room: '',
+          version: 0,
+        },
+        new TextEncoder().encode(text) as Uint8Array<ArrayBuffer>
+      );
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') write();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', write);
+    return () => {
+      write();
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', write);
+    };
+  }, [material, owner, stored]);
+}
+
 interface Keep {
   /** Nothing of this device's is unsent. */
   clean: () => boolean;
   owner: string;
   /** What the row says now. */
   row: () => Omit<DeviceCopyRow, 'format' | 'size'>;
+  /** It starts from a copy: nothing to write until it changes. */
+  seeded: boolean;
 }
 
 /**
@@ -126,8 +211,11 @@ interface Keep {
  * `stop` runs, only if it changed since it was seeded or last written and only
  * while clean. One encode (30-80 ms on a near-limit note), on no typing path.
  */
-export function keepDeviceCopy(doc: Y.Doc, { clean, owner, row }: Keep) {
-  let changed = false;
+export function keepDeviceCopy(
+  doc: Y.Doc,
+  { clean, owner, row, seeded }: Keep
+) {
+  let changed = !seeded;
   let stopped = false;
   // Under MSW no sign-in claims the store (AuthProvider).
   void (USE_MSW ? claimSourceCache(owner) : Promise.resolve()).then(() =>

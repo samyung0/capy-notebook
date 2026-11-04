@@ -32,7 +32,10 @@ const COPY_FORMAT = 1;
 
 /** A device copy's row beside its bytes. */
 export interface DeviceCopyRow {
-  document: 'content' | 'keys';
+  /** A room's Yjs state (`content`, a quiz's `keys`), or the answer-free
+   * material read itself (`read`): what an item paints from before anything
+   * answers, a viewer's whole copy of a quiz (its lists arrive outside Yjs). */
+  document: 'content' | 'keys' | 'read';
   format: number;
   /** For painting before the material read answers. */
   kind: MaterialKind;
@@ -338,7 +341,11 @@ export async function dropDeviceCopies(
       cache,
       document
         ? [copyKey(materialId, document)]
-        : [copyKey(materialId, 'content'), copyKey(materialId, 'keys')]
+        : [
+            copyKey(materialId, 'content'),
+            copyKey(materialId, 'keys'),
+            copyKey(materialId, 'read'),
+          ]
     );
   } catch {
     // Left to the sweep at the next page load.

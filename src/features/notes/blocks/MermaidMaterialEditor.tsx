@@ -11,6 +11,7 @@ import { Icon } from '@/components/ui/Icon';
 import { CharCount } from '@/components/ui/Input';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
+import type { RoomCopy } from '@/features/collaboration/deviceCopy';
 import {
   itemEditingStopped,
   useItemRoom,
@@ -29,16 +30,17 @@ import {
   useBoundText,
   useYText,
 } from '@/features/collaboration/yText';
-import { FileLoading } from '@/features/files/FileStates';
 import {
   BLOCK_CAPTION_MAX,
   type MaterialDocument,
   MERMAID_SOURCE_MAX,
+  type MermaidElement,
 } from '@/features/materials/document';
 import {
   blockSource,
   type LiveMermaid,
   mermaidNode,
+  storedMermaid,
   useMermaid,
 } from '@/features/materials/liveMermaid';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
@@ -73,6 +75,8 @@ import { textLength } from '@/lib/textLength';
  * the header's save status. Unsent edits stay on this device as a set's do.
  */
 export default function MermaidMaterialEditor({
+  content,
+  copy,
   kind,
   materialId,
   onPresenceChange,
@@ -81,6 +85,10 @@ export default function MermaidMaterialEditor({
   provenance,
   title,
 }: {
+  /** The block as its read holds it, painted until the room syncs. */
+  content: MaterialDocument;
+  /** The device copy its room starts from. */
+  copy: RoomCopy;
   kind: 'mindmap' | 'diagram';
   materialId: string;
   provenance: Provenance | undefined;
@@ -94,8 +102,18 @@ export default function MermaidMaterialEditor({
 }) {
   const { data: me } = useMe();
   const actorId = me?.id ?? null;
-  const { room, snapshot } = useItemRoom(materialId, !!actorId, { actorId });
+  const { room, snapshot } = useItemRoom(
+    materialId,
+    !!actorId && copy.seed !== undefined,
+    { actorId, keep: copy.keep, seed: copy.seed }
+  );
   const live = useMermaid(room?.doc);
+  const [stored] = useState(() => {
+    const node = content.value.find(
+      (child): child is MermaidElement => child.type === 'mermaid'
+    );
+    return node ? storedMermaid(node) : null;
+  });
   const recovered = useMermaid(snapshot.recovery?.doc);
   useEffect(() => {
     const saveState = snapshot.recovery
@@ -132,13 +150,25 @@ export default function MermaidMaterialEditor({
         )}
       </div>
     );
-  // Refused as outdated before it synced: nothing of the room to show.
-  if (isOutdatedBanner(snapshot.offline) && !snapshot.synced)
-    return <SaveBanner state="outdated" />;
-  if (!(room && snapshot.synced && live))
+  // Painted until it syncs (Epo 2026-11-04): what the device copy holds, else
+  // what the read holds, in the same split, taking no input.
+  if (!(room && snapshot.synced && live)) {
+    const painted = live ?? stored;
     return (
-      <FileLoading message={m.editor_connecting()} slowed={snapshot.slowed} />
+      <div className="flex min-h-0 flex-1 flex-col">
+        {isOutdatedBanner(snapshot.offline) && <SaveBanner state="outdated" />}
+        {painted && (
+          <LiveDiagram
+            history={room?.history ?? NO_HISTORY}
+            live={painted}
+            provenance={provenance}
+            readOnly
+            title={title}
+          />
+        )}
+      </div>
     );
+  }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {snapshot.offline && <SaveBanner state={snapshot.offline} />}
@@ -154,6 +184,14 @@ export default function MermaidMaterialEditor({
     </div>
   );
 }
+
+const NO_HISTORY: UndoTarget = {
+  canRedo: () => false,
+  canUndo: () => false,
+  redo: () => undefined,
+  subscribe: () => () => undefined,
+  undo: () => undefined,
+};
 
 function ReadOnlyDiagram({
   kind,
