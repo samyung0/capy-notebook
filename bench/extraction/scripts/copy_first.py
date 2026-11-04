@@ -15,13 +15,16 @@ questions. Around the production ``extraction.run``, through ``paper_map.py`` an
     python -I copy_first.py report --scans ... --digital ... --detections ...
     python -I copy_first.py run --set copyfirst2 --hard-stop 1.5 --jobs <paper>:mapcopy16-low:1 ...
     python -I copy_first.py structured --set copyfirst2 --scans ... --digital ... --detections ...
+    python -I copy_first.py run --set nopagetext --hard-stop 1 --jobs <paper>:mapcopy16-low-fix-notext:1 ...
+    python -I copy_first.py no_text --set nopagetext --scans ... --digital ... --detections ...
 
 A job's variant is ``copy<size>`` or ``mapcopy16``, plus ``-probe`` (exactly three solve
 batches), ``-low`` (the copy calls at effort low instead of reasoning off) or ``-copyonly``
 (no solve calls: what the copy call alone reads), ``-fix`` (``accepted`` required on
 ``record_answers``, and an open part without one refused), ``-scheme`` (the scheme parsed alongside
-the copying, and only the questions it does not cover solved) or ``-noscheme`` (a gold paper
-without its scheme). Each run's system
+the copying, and only the questions it does not cover solved), ``-noscheme`` (a gold paper
+without its scheme) or ``-notext`` (each page's heading and image, with no indexed text, on a map
+variant). Each run's system
 prompt starts with a nonce, so nothing it reads from a cache was written by another run.
 Results land in ``.results/copyfirst/``, the spend in its ``spend.json``. Keys are read
 into the process only, never printed.
@@ -33,6 +36,7 @@ import argparse
 import asyncio
 import collections
 import copy
+import difflib
 import functools
 import json
 import math
@@ -80,6 +84,12 @@ MAP_OPENING = (
     "its pages. Do not work out any answers yet. Later you are asked for the answers to "
     "some questions: give each its own record_answers call. Copy an answer the page "
     "prints; otherwise work it out, and never change the printed question."
+)
+# Epo 2026-11-05: the pages with no indexed text. Report: ``reports/2026-11-05-no-page-text.md``.
+MAP_OPENING_NO_TEXT = MAP_OPENING.replace(
+    "You see all the selected page images at once, each with the page's indexed text, "
+    "which may be rough: the image is what counts.",
+    "You see all the selected page images at once.",
 )
 TYPES_AND_MARKS = (
     "- mcq: the options' text in printed order, without their letters A, B, C, D. Keep "
@@ -242,6 +252,8 @@ def options_of(variant: str) -> dict:
         ),
         # record_answers requires accepted, and an open part without one is refused.
         "fix": "fix" in flags,
+        # Each page's heading and image only: no indexed text, and no system sentence on it.
+        "notext": "notext" in flags,
         # A paper's scheme parsed alongside the copying, its covered questions unsolved.
         "scheme": "scheme" in flags,
         # Part of a question and a whole question planted out of the parsed scheme, so the
@@ -340,9 +352,22 @@ def install_copy() -> None:
         return TOOLS[options_of(fw.STATE.get().variant)["fix"]]
 
     pm.map_tools = tools_now
-    pm.system_prompt = lambda nonce: system_prompt(
-        nonce, MAP_OPENING, options_of(fw.STATE.get().variant)["rule"]
-    )
+
+    def map_system(nonce: str) -> str:
+        options = options_of(fw.STATE.get().variant)
+        opening = MAP_OPENING_NO_TEXT if options["notext"] else MAP_OPENING
+        return system_prompt(nonce, opening, options["rule"])
+
+    pm.system_prompt = map_system
+
+    page_text = prompts.page_text
+
+    def page_heading(image: int, number: int, file_name: str, text: str) -> str:
+        if "notext" in fw.STATE.get().variant.split("-"):
+            return f"Page image {image}: page {number} of {file_name}."
+        return page_text(image, number, file_name, text)
+
+    prompts.page_text = page_heading
 
     stream = client._stream_sse
 
@@ -352,6 +377,13 @@ def install_copy() -> None:
             call["reasoning_sent"] = body.get("reasoning")
             call["max_tokens_sent"] = body.get("max_tokens")
             call["route_sent"] = (body.get("provider") or {}).get("order")
+            if call.get("stage") == "X" and options_of(fw.STATE.get().variant)["notext"]:
+                # X's text as sent, so the report can show no page text went.
+                system, first = body["messages"][:2]
+                fw.STATE.get().extra["x_sent_text"] = {
+                    "system": system["content"],
+                    "blocks": [b["text"] for b in first["content"] if b["type"] == "text"],
+                }
         cost = 0.0
         try:
             async for event in stream(url, headers, body):
@@ -1943,6 +1975,8 @@ def structure_truth(paper: str, args) -> dict[str, dict]:
         if paper == BIOLOGY
         else fw.gold_of(paper)
     )
+    if gold is None:
+        return {}
     return {
         q["label"]: {
             "parts": len(q["parts"]),
@@ -2068,21 +2102,25 @@ def _part_names(j: dict, truth: dict) -> list[list[str]]:
     ]
 
 
-def structured(args) -> None:
+def structured(
+    args, papers: list[str] = STRUCTURED, runs=None, folder: Path = STRUCTURED_DIR
+) -> None:
+    """``runs`` given: those sets alone, with no map 8 or window pick baselines."""
     from pipeline.retrieval.extraction import label_key
 
     det = fm.load_detections(args.detections)
     gold = ls.gold_figures()
     eye = fm.load_eye()
-    runs = load_runs()
+    alone = runs is not None
+    runs = runs if alone else load_runs()
     sets = {
         paper: [
             *((v, runs[v][paper]) for v in sorted(runs) if paper in runs[v]),
-            *((k, v) for k, v in baselines(paper).items() if v),
+            *(() if alone else ((k, v) for k, v in baselines(paper).items() if v)),
         ]
-        for paper in STRUCTURED
+        for paper in papers
     }
-    truths = {paper: structure_truth(paper, args) for paper in STRUCTURED}
+    truths = {paper: structure_truth(paper, args) for paper in papers}
     print("truth totals", {p: sum(q["total"] for q in t.values()) for p, t in truths.items()})
 
     print("\n== cost and time, mean (lowest-highest)")
@@ -2619,7 +2657,319 @@ def structured(args) -> None:
             )
             at += len(js)
 
-    write_per_call(STRUCTURED_DIR)
+    write_per_call(folder)
+
+
+# ---------------------------------------------- the pages with no indexed text
+
+NO_TEXT_DIR = HERE.parent / "reports" / "2026-11-05-no-page-text"
+NO_TEXT_PAPERS = ["2022-p2", "2023-p2", "2021-p1", BIOLOGY, MATHS]
+# The structured report's rows with the text. Copy calls are the same requests with or
+# without the scheme, and differ only in record_answers' schema before the fix.
+WITH_TEXT = {
+    "mapcopy16-low": "copyfirst",
+    "mapcopy16-low-fix": "copyfirst2",
+    "mapcopy16-low-fix-noscheme": "copyfirst2",
+    "mapcopy16-low-fix-scheme": "copyfirst2",
+}
+
+
+def no_text_sets() -> dict[str, dict[str, list[dict]]]:
+    """This set's whole-paper runs, and the saved runs with the text."""
+    runs = {v: papers for v, papers in load_runs().items() if "q34" not in v}
+    for folder in ("copyfirst", "copyfirst2"):
+        for path in sorted((bench.RESULTS / folder).glob("*-all-mapcopy16-low*.json")):
+            j = json.loads(path.read_text())
+            if j["variant"] in WITH_TEXT and j["paper"] in NO_TEXT_PAPERS:
+                runs.setdefault(j["variant"], {}).setdefault(j["paper"], []).append(j)
+    return runs
+
+
+def _stage(call: dict) -> str:
+    return {"X": "X", "copybatch": "copy", "copy": "copy"}.get(call["stage"], "solve")
+
+
+def _tables(q: dict) -> tuple[int, int]:
+    blocks = [*q["stem"], *(b for p in q["parts"] for b in p["blocks"])]
+    tables = [b for b in blocks if b["type"] == "table"]
+    return len(tables), sum(len(row) for t in tables for row in t.get("rows") or [])
+
+
+def no_text(args) -> None:
+    from pipeline.retrieval.extraction import label_key
+
+    runs = no_text_sets()
+    structured(args, NO_TEXT_PAPERS, runs, NO_TEXT_DIR)
+    listed = {
+        paper: [(v, runs[v][paper]) for v in sorted(runs) if paper in runs[v]]
+        for paper in NO_TEXT_PAPERS
+    }
+
+    print("\n== 2022 P2 Q34, each run")
+    found = re.compile(r"12B00CD(0+)E")
+    for name, js in listed["2022-p2"]:
+        for j in js:
+            held = dict(zip(j["report"]["recorded"], j["questions"], strict=False))
+            got = found.findall(pm.plain(bench.question_text(held["34"])))
+            print(
+                name,
+                j["name"][-1],
+                "zeros",
+                len(got[0]) if got else None,
+                "exponents",
+                pm.known_failures(j).get("q34_exponents"),
+            )
+    q34(args)
+
+    print("\n== cost by stage, each set's mean: calls, input, uncached, output, reasoning, seconds")
+    for paper, sets in listed.items():
+        for name, js in sets:
+            row = {}
+            for stage in ("X", "copy", "solve"):
+                calls = [
+                    [c for c in j["call_log"] if "input" in c and _stage(c) == stage]
+                    for j in js
+                ]
+
+                def mean(field) -> float:
+                    return round(statistics.fmean(sum(field(c) for c in cs) for cs in calls))
+
+                row[stage] = (
+                    round(statistics.fmean(len(cs) for cs in calls), 1),
+                    mean(lambda c: c["input"]),
+                    mean(lambda c: c["input"] - c["cached"]),
+                    mean(lambda c: c["output"]),
+                    mean(lambda c: c["reasoning"]),
+                    mean(lambda c: c["seconds"]),
+                )
+            print(
+                paper,
+                name,
+                len(js),
+                row,
+                "total input",
+                spread([j["usage"]["inputTokens"] for j in js]),
+                "cached share",
+                round(
+                    sum(j["usage"]["cachedReadTokens"] for j in js)
+                    / sum(j["usage"]["inputTokens"] for j in js),
+                    3,
+                ),
+                "failed",
+                sum(1 for j in js for c in j["call_log"] if "input" not in c),
+                "restarts",
+                [j.get("flow_attempts") for j in js],
+                "peak",
+                [j.get("peak_in_flight") for j in js],
+                "providers",
+                [j.get("providers") for j in js][:1],
+            )
+
+    print("\n== the map, each run against the truth")
+    for paper, sets in listed.items():
+        pages, parts = pm.page_truth(paper, args), pm.part_truth(paper, args)
+        print(paper, "truth rows", len(pages), "with parts", sum(bool(v) for v in (parts or {}).values()))
+        for name, js in sets:
+            for j in js:
+                m = pm.map_rows(j, pages, parts)
+                x = next(c for c in j["call_log"] if c["stage"] == "X")
+                print(
+                    paper,
+                    name,
+                    j["name"][-1],
+                    "rows",
+                    m["rows"],
+                    "missing",
+                    m["labels_missing"],
+                    "extra",
+                    m["labels_extra"],
+                    "sections",
+                    m["sections_added"],
+                    "pages wrong",
+                    m["pages_wrong"],
+                    "parts wrong",
+                    m["parts_wrong"],
+                    "x tokens",
+                    (x.get("input"), x.get("output"), x.get("reasoning"), x.get("seconds")),
+                )
+
+    print("\n== each map's rows: the same as a map sent the text? And what the copy moved")
+
+    def map_key(j: dict) -> tuple:
+        return tuple(
+            (r["label"], r["first"], r["last"], tuple(r["parts"]), tuple(r["figures"]))
+            for r in j["map"]
+        )
+
+    for paper, sets in listed.items():
+        texted = {map_key(j) for name, js in sets if "notext" not in name for j in js}
+        for name, js in sets:
+            for j in js:
+                rows = {label_key(r["label"]): r for r in j["map"]}
+                moved = []
+                for c in j["copy_rows"]:
+                    r = rows.get(label_key(c["label"]))
+                    if r is None:
+                        moved.append((c["label"], "not in the map"))
+                        continue
+                    for field in ("first", "last", "figures"):
+                        if c[field] != r[field]:
+                            moved.append((c["label"], field, r[field], c[field]))
+                    if [part for part in c["parts"] if part] != r["parts"]:
+                        moved.append((c["label"], "parts", r["parts"], c["parts"]))
+                print(paper, name, j["name"][-1], "as with text", map_key(j) in texted, "moved", moved)
+
+    print("\n== tables: questions with one, (tables, cells); each run")
+    for paper, sets in listed.items():
+        for name, js in sets:
+            for j in js:
+                print(
+                    paper,
+                    name,
+                    j["name"][-1],
+                    {
+                        label: _tables(q)
+                        for label, q in zip(j["report"]["recorded"], j["questions"], strict=False)
+                        if _tables(q)[0]
+                    },
+                )
+
+    print("\n== keys: worked out against gold and each set's keys across runs")
+    for paper, sets in listed.items():
+        for name, js in sets:
+            print(
+                paper,
+                name,
+                [
+                    {
+                        k: (j.get("scores") or {}).get(k)
+                        for k in (
+                            "mcq_worked_out_key_right",
+                            "mcq_key_matches_gold",
+                            "key_disagreements",
+                            "part_structure",
+                            "part_marks_exact",
+                            "question_marks_total",
+                            "keys_worked_out_left",
+                        )
+                    }
+                    for j in js
+                ],
+            )
+    for paper in ("2022-p2", "2023-p2"):
+        every = [(name, j) for name, js in listed[paper] for j in js]
+        keys = [keys_of(j) for _, j in every]
+        labels = sorted({k for r in keys for k in r}, key=lambda t: (len(t), t))
+        common = {
+            k: collections.Counter(str(r.get(k)) for r in keys).most_common(1)[0][0]
+            for k in labels
+        }
+        for (name, j), r in zip(every, keys, strict=True):
+            print(
+                paper,
+                name,
+                j["name"][-1],
+                "keys off the commonest",
+                [k for k in labels if str(r.get(k)) != common[k]],
+            )
+
+    print("\n== Maths Q16's opening: words of the text layer before (a), found in each run")
+    want = maths_q16_opening(args)
+    for name, js in listed[MATHS]:
+        for j in js:
+            held = dict(zip(j["report"]["recorded"], j["questions"], strict=False))
+            have = _words(bench.question_text(held["16"]))
+            print(name, j["name"][-1], f"{len(want & have)}/{len(want)}")
+
+    print("\n== markers the app shows raw: questions with **, questions with \\(, each run")
+    for paper, sets in listed.items():
+        for name, js in sets:
+            print(
+                paper,
+                name,
+                [sum("**" in bench.question_text(q) for q in j["questions"]) for j in js],
+                [sum("\\(" in bench.question_text(q) for q in j["questions"]) for j in js],
+            )
+
+    print("\n== each question's readings, markup aside, for a look at the page: the commonest's")
+    print("runs, then each other reading's runs and what it changes (T text, N no text)")
+    for paper, sets in listed.items():
+        every = [
+            ("N" if "notext" in name else "T") + j["name"][-1]
+            for name, js in sets
+            for j in js
+        ]
+        texts = [
+            {
+                label_key(label): _reading(bench.question_text(q))
+                for label, q in zip(j["report"]["recorded"], j["recorded"], strict=False)
+            }
+            for _, js in sets
+            for j in js
+        ]
+        print("==", paper)
+        for key in sorted({k for t in texts for k in t}, key=lambda t: (len(t), t)):
+            groups: dict[tuple, list[str]] = {}
+            for who, t in zip(every, texts, strict=True):
+                groups.setdefault(tuple(t.get(key, ())), []).append(who)
+            if len(groups) == 1:
+                continue
+            ordered = sorted(groups.items(), key=lambda g: -len(g[1]))
+            base = list(ordered[0][0])
+            print(f"Q{key}", ordered[0][1])
+            for tokens, who in ordered[1:]:
+                matcher = difflib.SequenceMatcher(None, base, list(tokens), autojunk=False)
+                print(
+                    "   ",
+                    who,
+                    [
+                        (" ".join(base[a:b])[:60], " ".join(tokens[c:d])[:60])
+                        for tag, a, b, c, d in matcher.get_opcodes()
+                        if tag != "equal"
+                    ][:10],
+                )
+
+
+def _reading(text: str) -> list[str]:
+    """A question's tokens with markup, math delimiters and spacing taken out, and
+    the same symbol written two ways made one."""
+    t = re.sub(r"\*\*|\\[()\[\]]|\$", " ", text)
+    t = re.sub(r"\\(?:mathrm|text|textrm|mathbf|textbf|mathit)\s*\{([^{}]*)\}", r" \1 ", t)
+    t = re.sub(r"\\(?:left|right|displaystyle|,|;|!|quad|qquad|:| )", " ", t)
+    for one, other in (
+        ("\\dfrac", "\\frac"),
+        ("\\tfrac", "\\frac"),
+        ("\\leqslant", "\\le"),
+        ("\\geqslant", "\\ge"),
+        ("\\leq", "\\le"),
+        ("\\geq", "\\ge"),
+        ("\u2212", "-"),
+        ("\u2013", "-"),
+        ("\u2264", "\\le"),
+        ("\u2265", "\\ge"),
+        ("\u2a7d", "\\le"),
+        ("\u2a7e", "\\ge"),
+        ("\u00f7", "\\div"),
+        ("\u00d7", "\\times"),
+        ("\u00b0", "^\\circ"),
+        ("\u2220", "\\angle"),
+    ):
+        t = t.replace(one, other)
+    t = re.sub(r"[{}]|\.{3,}|\\ldots|\\dots|\u2026", " ", t)
+    t = re.sub(r"(?<=\d) (?=\d{3}\b)", "", t)
+    return re.findall(r"\\[A-Za-z]+|[A-Za-z]+|\d+(?:\.\d+)?|[^\s\w.]", t)
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[A-Za-z]{3,}|\d+", text))
+
+
+def maths_q16_opening(args) -> set[str]:
+    import pymupdf
+
+    with pymupdf.open(Path(args.digital) / MATHS / "paper.pdf") as doc:
+        text = "\n".join(doc[n].get_text() for n in (8, 9))
+    return _words(re.search(r"(?ms)^16\s(.*?)\(a\)", text)[1])
 
 
 def q34(args) -> None:
@@ -2726,7 +3076,7 @@ def main() -> None:
     p.add_argument("--env-file", required=True)
     p.add_argument("--parallel", type=int, default=3)
     p.add_argument("--override", nargs="*")
-    for name in ("report", "structured", "q34"):
+    for name in ("report", "structured", "q34", "no_text"):
         p = sub.add_parser(name)
         p.add_argument("--scans", required=True)
         p.add_argument("--digital", required=True)
@@ -2746,6 +3096,9 @@ def main() -> None:
         return
     if args.command == "q34":
         q34(args)
+        return
+    if args.command == "no_text":
+        no_text(args)
         return
     run_all(args)
 
