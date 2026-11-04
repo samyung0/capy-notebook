@@ -1149,30 +1149,59 @@
       "id": "nursing",
       "area": "medicine-health",
       "label": "Nursing",
-      "aliases": [
-        "nursing fundamentals",
-        "clinical skills",
-        "patient care",
-        "medical-surgical nursing",
-        "maternal-newborn nursing",
-        "psychiatric nursing",
-        "nursing pharmacology"
-      ],
+      "aliases": ["psychiatric nursing"],
       "level": "undergraduate",
       "catalogs": {
         "otl": ["Medicine > Nursing"],
         "openstax": [
-          "Clinical Nursing Skills",
-          "Fundamentals of Nursing",
-          "Medical-Surgical Nursing",
-          "Maternal-Newborn Nursing",
           "Psychiatric-Mental Health Nursing",
           "Nutrition for Nurses",
-          "Pharmacology for Nurses",
           "Population Health for Nurses"
         ],
         "libretexts": ["Medicine: Nursing"]
       }
+    },
+    {
+      "id": "clinical-nursing",
+      "area": "medicine-health",
+      "label": "Clinical nursing",
+      "aliases": [
+        "nursing fundamentals",
+        "clinical skills",
+        "patient care",
+        "nursing assessment"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "openstax": ["Clinical Nursing Skills", "Fundamentals of Nursing"]
+      }
+    },
+    {
+      "id": "maternal-child-nursing",
+      "area": "medicine-health",
+      "label": "Maternal and child nursing",
+      "aliases": [
+        "maternal-newborn nursing",
+        "obstetric nursing",
+        "pediatric nursing",
+        "women's health nursing",
+        "family nursing"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "openstax": ["Maternal-Newborn Nursing"] }
+    },
+    {
+      "id": "medical-surgical-nursing",
+      "area": "medicine-health",
+      "label": "Medical-surgical nursing",
+      "aliases": [
+        "med-surg nursing",
+        "adult health nursing",
+        "health alterations",
+        "nursing care of adults"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "openstax": ["Medical-Surgical Nursing"] }
     },
     {
       "id": "nutrition",
@@ -1201,10 +1230,14 @@
         "medications",
         "pharmacokinetics",
         "pharmacodynamics",
-        "drug classes"
+        "drug classes",
+        "nursing pharmacology"
       ],
       "level": "undergraduate",
-      "catalogs": { "libretexts": ["Medicine: Pharmacology"] }
+      "catalogs": {
+        "openstax": ["Pharmacology for Nurses"],
+        "libretexts": ["Medicine: Pharmacology"]
+      }
     },
     {
       "id": "public-health",
@@ -1280,6 +1313,21 @@
           "Medicine: Basic Science"
         ]
       }
+    },
+    {
+      "id": "healthcare-management",
+      "area": "medicine-health",
+      "label": "Healthcare management",
+      "aliases": [
+        "healthcare administration",
+        "health services management",
+        "patient safety",
+        "quality improvement",
+        "health information management",
+        "healthcare compliance"
+      ],
+      "level": "undergraduate",
+      "catalogs": {}
     },
 
     {

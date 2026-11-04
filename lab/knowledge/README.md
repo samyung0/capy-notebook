@@ -116,7 +116,9 @@ private, loopback, link-local, shared, multicast, reserved, unspecified and
 IPv4-mapped forms of those are refused, and the page or download fails without
 a retry. The check and the connection look the name up separately, so a name
 whose answer changes between the two is not covered. The local builder parser container
-uses `CAPY_MAX_SOURCE_BYTES=209715200` to match; preserve this override when
+uses `CAPY_MAX_SOURCE_BYTES=314572800` and `CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES=314572800`
+so hand-supplied PDFs up to 300 MiB and their repaired copies fit (the second also goes in
+`parser_limits` in config.json); preserve these overrides when
 recreating it, and set `CAPY_PARSE_WORKERS=1` and `CAPY_PARSE_MAX_PAGES=100000`,
 which the parser requires; book ingestion takes books of any length and the
 application's own limits stay unchanged (decisions 2026-09-29). PDFs download two at a time with
