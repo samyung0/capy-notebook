@@ -7,6 +7,7 @@ import {
   useSetNotificationPrefs,
 } from '@/api/hooks';
 import { PageHeader, PagePanel } from '@/components/app/layout';
+import { SettingsNav, type SettingsNavTab } from '@/components/app/SettingsNav';
 import { STYLE_LABELS, StyleIcon } from '@/components/app/ThemeDrawer';
 import {
   DangerZone,
@@ -15,6 +16,8 @@ import {
   TabHeader,
 } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
+import { useIsPhone } from '@/components/ui/Dialog';
+import { IconButton } from '@/components/ui/IconButton';
 import {
   Select,
   SelectContent,
@@ -200,52 +203,154 @@ function DangerTab() {
   );
 }
 
+/** The tabs with what each holds, for the phone list's search. */
+function settingsTabs(): SettingsNavTab<SettingsTab>[] {
+  return [
+    {
+      icon: 'profile',
+      label: m.settings_tab_account(),
+      terms: [m.settings_avatar(), m.onboarding_name(), m.settings_email()],
+      value: 'account',
+    },
+    {
+      icon: 'palette',
+      label: m.settings_tab_customizations(),
+      terms: [
+        m.settings_language(),
+        m.settings_theme(),
+        m.settings_mode(),
+        m.settings_chat_title(),
+        m.settings_chat_steps(),
+        m.settings_chat_send_key(),
+        m.settings_editor_title(),
+        m.settings_show_others(),
+      ],
+      value: 'customizations',
+    },
+    {
+      icon: 'book',
+      label: m.settings_tab_study(),
+      terms: [
+        m.study_pref_review_title(),
+        m.study_prefs_title(),
+        m.study_pref_checks(),
+      ],
+      value: 'study',
+    },
+    {
+      icon: 'bell',
+      label: m.settings_tab_notifications(),
+      terms: NOTIFICATION_ROWS.map((row) => row.title()),
+      value: 'notifications',
+    },
+    {
+      icon: 'ai',
+      label: m.settings_tab_llm(),
+      terms: [m.settings_llm_chat(), m.settings_llm_note_ai()],
+      value: 'llm',
+    },
+    {
+      icon: 'alert',
+      label: m.workspace_tab_danger(),
+      terms: [m.settings_danger_zone_title()],
+      tone: 'danger',
+      value: 'danger',
+    },
+  ];
+}
+
+/** Top tabs from sm. Phones open on the tab list with its search, and each tab
+ * is a page with an arrow back; the browser's Back also returns to the list. */
 export default function Settings() {
   const navigate = useNavigate();
-  const { tab = 'account' } = useSearch({ from: '/auth-shell/settings' });
+  const { q, tab: picked } = useSearch({ from: '/auth-shell/settings' });
+  const phone = useIsPhone();
+  const tab = picked ?? 'account';
+  const tabs = settingsTabs();
+  const openTab = (value: SettingsTab | undefined) =>
+    navigate({
+      replace: !(phone && value),
+      search: (previous) => ({ ...previous, tab: value }),
+      to: '/settings',
+    });
+
+  if (phone && !picked)
+    return (
+      <PagePanel header={<PageHeader title={m.profile_menu_settings()} />}>
+        <TabContent narrow>
+          <SettingsNav
+            label={m.profile_menu_settings()}
+            onChange={(value) => void openTab(value)}
+            onQueryChange={(query) =>
+              void navigate({
+                replace: true,
+                search: (previous) => ({
+                  ...previous,
+                  q: query || undefined,
+                }),
+                to: '/settings',
+              })
+            }
+            query={q}
+            tabs={tabs}
+            value=""
+          />
+        </TabContent>
+      </PagePanel>
+    );
 
   return (
-    <PagePanel header={<PageHeader title={m.profile_menu_settings()} />}>
-      <Tabs
-        className="page-tabs-px"
-        onChange={(value) => {
-          void navigate({
-            replace: true,
-            search: { tab: value as SettingsTab },
-            to: '/settings',
-          });
-        }}
-        tabs={[
-          { label: m.settings_tab_account(), value: 'account' },
-          {
-            label: m.settings_tab_customizations(),
-            value: 'customizations',
-          },
-          { label: m.settings_tab_study(), value: 'study' },
-          { label: m.settings_tab_notifications(), value: 'notifications' },
-          { label: m.settings_tab_llm(), value: 'llm' },
-          {
-            label: m.workspace_tab_danger(),
-            tone: 'danger',
-            value: 'danger',
-          },
-        ]}
-        value={tab}
-      />
+    <PagePanel
+      header={
+        <PageHeader
+          title={
+            phone ? (
+              <div className="flex items-center gap-1">
+                <IconButton
+                  className="-ml-2.5"
+                  icon="navigationBack"
+                  onClick={() => void openTab(undefined)}
+                  size="sm"
+                  variant="ghost-hover"
+                >
+                  <span className="sr-only">{m.action_back()}</span>
+                </IconButton>
+                <h1 className="t-page-title">
+                  {tabs.find((item) => item.value === tab)?.label}
+                </h1>
+              </div>
+            ) : (
+              m.profile_menu_settings()
+            )
+          }
+        />
+      }
+    >
+      {!phone && (
+        <Tabs
+          className="page-tabs-px"
+          onChange={(value) => void openTab(value as SettingsTab)}
+          tabs={tabs}
+          value={tab}
+        />
+      )}
       <TabContent narrow>
-        {tab === 'customizations' ? (
-          <CustomizationsTab />
-        ) : tab === 'study' ? (
-          <StudyPreferencesSection />
-        ) : tab === 'notifications' ? (
-          <NotificationsTab />
-        ) : tab === 'llm' ? (
-          <LlmTab />
-        ) : tab === 'danger' ? (
-          <DangerTab />
-        ) : (
-          <AccountTab />
-        )}
+        {/* A phone's header already names the tab. */}
+        <div className="max-sm:[&_[data-slot=tab-header]]:hidden">
+          {tab === 'customizations' ? (
+            <CustomizationsTab />
+          ) : tab === 'study' ? (
+            <StudyPreferencesSection />
+          ) : tab === 'notifications' ? (
+            <NotificationsTab />
+          ) : tab === 'llm' ? (
+            <LlmTab />
+          ) : tab === 'danger' ? (
+            <DangerTab />
+          ) : (
+            <AccountTab />
+          )}
+        </div>
       </TabContent>
     </PagePanel>
   );

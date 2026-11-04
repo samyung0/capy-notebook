@@ -406,6 +406,12 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   the list, wider screens the first tab) and `settingsQuery=<text>`. Moving
   between them replaces the URL entry, so the browser's Back leaves settings.
   Opened from a workspace card the dialog keeps both to itself.
+- **Account Settings** (`/settings`, Epo 2026-11-04) keeps its top tabs from
+  `sm`. Phones use the same list (`SettingsNav`) as a page: one card of rows with
+  icons and an inset divider under the search, each tab a page with an arrow
+  back. No `tab` in the URL means the list on a phone and Account on wider
+  screens; `q=<text>` holds the search. A tab pushes a history entry on phones,
+  so the browser's Back returns to the list.
 - **Owner and editor members** can rename/recolor/describe/tag the workspace,
   change private/link/public visibility or `shareRole`, and view workspace
   statistics. The kind (Used for, in General) is the owner's alone. Tags land in the owner's tag namespace whoever edits them.

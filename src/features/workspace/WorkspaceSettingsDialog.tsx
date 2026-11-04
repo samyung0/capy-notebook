@@ -1,19 +1,18 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { qk } from '@/api/client';
 import {
   useDeleteWorkspace,
   useLeaveWorkspace,
   useMe,
-  useSetWorkspaceStudyEnabled,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
   useWorkspaceStats,
-  useWorkspaceStudy,
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
+import { SettingsNav, type SettingsNavTab } from '@/components/app/SettingsNav';
 import { DangerZone, SettingRow } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import {
@@ -22,18 +21,13 @@ import {
   useIsPhone,
 } from '@/components/ui/Dialog';
 import { Skeleton } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
-import { Switch } from '@/components/ui/Switch';
-import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
-import { useDebounced } from '@/lib/useDebounced';
 import { canManageWorkspaceSettings } from './access';
 import { CloneWorkspaceDialog } from './CloneWorkspaceDialog';
 import { IndexingTab } from './IndexingTab';
-import { matchesSearch, PanelSearch } from './PanelSearch';
 import { ShareDialog } from './ShareDialog';
 import type { SettingsTab, SettingsView } from './settingsTabs';
 import { WorkspaceFormEditDialog } from './WorkspaceFormEditDialog';
@@ -126,10 +120,11 @@ export function WorkspaceSettingsDialog({
       onRetry={() => void refetch()}
     />
   ) : null;
-  const tabs: SettingsNavTab[] = [
+  const tabs: SettingsNavTab<SettingsTab>[] = [
     ...(manage
       ? [
           {
+            icon: 'settings' as const,
             label: m.workspace_general(),
             terms: [
               m.icon_label(),
@@ -144,6 +139,7 @@ export function WorkspaceSettingsDialog({
             value: 'general' as const,
           },
           {
+            icon: 'userAdd' as const,
             label: m.workspace_sharing(),
             terms: [
               m.share_visibility(),
@@ -155,6 +151,7 @@ export function WorkspaceSettingsDialog({
             value: 'sharing' as const,
           },
           {
+            icon: 'database' as const,
             label: m.workspace_indexing(),
             terms: [
               m.workspace_auto_process(),
@@ -164,6 +161,7 @@ export function WorkspaceSettingsDialog({
             value: 'indexing' as const,
           },
           {
+            icon: 'chart' as const,
             label: m.workspace_stats_title(),
             terms: [
               m.quiz_col_topics(),
@@ -177,6 +175,7 @@ export function WorkspaceSettingsDialog({
         ]
       : []),
     {
+      icon: 'book' as const,
       label: m.workspace_tab_study(),
       terms: [m.study_hide_progress()],
       value: 'study' as const,
@@ -184,6 +183,7 @@ export function WorkspaceSettingsDialog({
     ...(others
       ? [
           {
+            icon: 'moreHorizontal' as const,
             label: m.workspace_tab_others(),
             terms: [m.action_clone_workspace()],
             value: 'others' as const,
@@ -193,6 +193,7 @@ export function WorkspaceSettingsDialog({
     ...(danger
       ? [
           {
+            icon: 'alert' as const,
             label: m.workspace_tab_danger(),
             terms: owner
               ? [m.workspace_transfer_action(), m.workspace_delete_action()]
@@ -378,7 +379,11 @@ export function WorkspaceSettingsDialog({
       <div className="flex min-h-0 flex-1 flex-col sm:mt-2 sm:flex-row">
         {nav && (
           <SettingsNav
-            className={cn(page && 'hidden')}
+            className={cn(
+              'sm:-mb-6.5 sm:w-48 sm:border-divider sm:border-r sm:pr-4 sm:pb-6.5',
+              page && 'hidden'
+            )}
+            label={m.workspace_settings()}
             onChange={(value) => setTab(value)}
             onQueryChange={onQueryChange}
             query={query}
@@ -426,131 +431,5 @@ export function WorkspaceSettingsDialog({
         title={m.workspace_leave_confirm_title({ name: workspace.name })}
       />
     </SimpleDialog>
-  );
-}
-
-type SettingsNavTab = {
-  label: string;
-  /** The settings it holds, for the search. */
-  terms: string[];
-  tone?: 'danger';
-  value: SettingsTab;
-};
-
-/** The search and the tabs under it. The search narrows the tabs to those
- * holding a match, naming the setting under its tab; the tab open stays open
- * whatever it finds. */
-function SettingsNav({
-  className,
-  onChange,
-  onQueryChange,
-  query,
-  tabs,
-  value,
-}: {
-  className?: string;
-  onChange: (value: SettingsTab) => void;
-  onQueryChange?: (query: string) => void;
-  query?: string;
-  tabs: SettingsNavTab[];
-  value: string;
-}) {
-  const [search, setSearch] = useState(query ?? '');
-  const settled = useDebounced(search.trim());
-  // Only what was typed since: opening from a link writes nothing back.
-  const sent = useRef(settled);
-  useEffect(() => {
-    if (settled === sent.current) return;
-    sent.current = settled;
-    onQueryChange?.(settled);
-  }, [settled, onQueryChange]);
-  const shown = tabs.flatMap(({ label, terms, tone, value: tab }) => {
-    const inLabel = matchesSearch(label, search);
-    const match = inLabel
-      ? undefined
-      : terms.find((term) => matchesSearch(term, search));
-    return inLabel || match
-      ? [
-          {
-            label: (
-              <span className="flex items-center justify-between gap-2">
-                <span className="min-w-0">
-                  <span className="block">{label}</span>
-                  {match && (
-                    <span className="t-meta block font-normal text-fg-muted">
-                      {match}
-                    </span>
-                  )}
-                </span>
-                <span className="shrink-0 text-fg-muted sm:hidden">
-                  <Icon name="navigationForward" />
-                </span>
-              </span>
-            ),
-            tone,
-            value: tab,
-          },
-        ]
-      : [];
-  });
-  return (
-    <nav
-      aria-label={m.workspace_settings()}
-      className={cn(
-        'flex shrink-0 flex-col sm:-mb-6.5 sm:w-48 sm:border-divider sm:border-r sm:pr-4 sm:pb-6.5',
-        className
-      )}
-    >
-      {/* PanelSearch pads itself for a panel; here the field lines up with the
-          tabs. */}
-      <div className="-mx-2.5 -mt-2.5">
-        <PanelSearch
-          label={m.workspace_settings_search()}
-          onChange={setSearch}
-          value={search}
-        />
-      </div>
-      {shown.length > 0 ? (
-        <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
-          <Tabs
-            onChange={(next) => onChange(next as SettingsTab)}
-            orientation="vertical"
-            tabs={shown}
-            value={value}
-          />
-        </div>
-      ) : (
-        <p className="t-meta mt-3 px-3.5 text-fg-muted">
-          {m.workspace_settings_no_match()}
-        </p>
-      )}
-    </nav>
-  );
-}
-
-/** The member's own study switches for this workspace, whichever plan the
- * Study page shows. */
-function StudyTab({ workspaceId }: { workspaceId: string }) {
-  const { data: study } = useWorkspaceStudy(workspaceId);
-  const { isPending, mutate: setShown } =
-    useSetWorkspaceStudyEnabled(workspaceId);
-  return (
-    <div className="flex flex-col gap-6">
-      <SettingRow
-        hint={m.study_hide_progress_hint()}
-        title={m.study_hide_progress()}
-      >
-        {study ? (
-          <Switch
-            aria-label={m.study_hide_progress()}
-            checked={!study.enabled}
-            disabled={isPending}
-            onCheckedChange={(on) => setShown(!on)}
-          />
-        ) : (
-          <Skeleton className="h-6 w-10 rounded-full" />
-        )}
-      </SettingRow>
-    </div>
   );
 }

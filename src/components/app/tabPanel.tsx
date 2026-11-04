@@ -54,7 +54,7 @@ export function TabHeader({
   badge?: ReactNode;
 }) {
   return (
-    <div className="mb-7 flex flex-col gap-1">
+    <div className="mb-7 flex flex-col gap-1" data-slot="tab-header">
       <div className="flex items-center gap-2.5">
         <h2 className="t-card-title">{title}</h2>
         {badge}
