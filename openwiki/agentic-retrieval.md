@@ -5717,8 +5717,8 @@ Response shapes are part of the contract with Go — do not change them lightly.
 Questions printed in an uploaded paper become a new quiz
 (`todo-study-tracking.md` §8, step 7 of the study rework). It is a fixed
 pipeline like `/generate`, not the chat agent, and it runs as a background
-job: no UI yet (the dialog, page picker and editor, mocks X0a/X0b/X1/X2, come
-later).
+job. The screens (boards X0a, X0b, X1, X2) are in
+[Make a quiz screens](question-bank.md#make-a-quiz-screens).
 
 - **Start.** `POST /api/workspaces/{id}/extractions` (workspace editors) takes
   a title, the question paper as `paper: [{fileId, pages}]` (pages counted
@@ -5905,8 +5905,9 @@ later).
   question, the quiz or the run to the files, pages or regions it was read
   from (Epo 2026-11-02, §8 item 7): they travel only in the request to the
   retrieval service. Account purge deletes a user's runs.
-- **Left out.** Office pages, Markdown sections and the page picker's cost
-  estimate come with the UI.
+- **Left out.** Office pages and Markdown sections: the gateway refuses them as
+  a paper, and sending them changes what a page window sends, which needs Epo's
+  sign-off first.
 - **Bench.** `bench/extraction`, with findings in
   [`2026-11-03-first-cut.md`](../bench/extraction/reports/2026-11-03-first-cut.md),
   [`2026-11-03-keys-in-one-prompt.md`](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md)

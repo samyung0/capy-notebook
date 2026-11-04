@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { MathfieldElement } from 'mathlive';
+import { openQuestionDialog } from '../helpers/quizEditor';
 import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
@@ -154,7 +155,7 @@ test('a wide display formula scrolls in its own box with an edge fade, a fitting
   // The smallest supported phone: on narrow widths the stem runs the full
   // width under the number, and the reaction equation just fits at 390 px.
   await page.setViewportSize({ height: 844, width: 360 });
-  await page.goto('/materials/qz_1?mode=edit');
+  await page.goto('/materials/qz_1?mode=view');
   // The first question's reaction equation is wider than a 360 px column.
   const formula = page
     .locator('[data-question-id]')
@@ -223,10 +224,7 @@ test('a question formula selects on click for Delete and edits on double click',
   page,
 }) => {
   await page.goto('/materials/qz_1?mode=edit');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   // The stem's second block is the reaction's display formula.
   await dialog

@@ -12,6 +12,7 @@ import type { Browser, Locator, Page } from '@playwright/test';
 import { unzipSync } from 'fflate';
 import { showNoteToolbar } from '../../helpers/editor';
 import { showPanelView } from '../../helpers/panelView';
+import { openQuestionDialog } from '../../helpers/quizEditor';
 import { m } from '../../i18n';
 import {
   api,
@@ -1141,9 +1142,7 @@ export async function quizImageOnPick(run: UatRun, quizId: string) {
   const quizSize = Number((await materialRow(run, quizId)).size_bytes);
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/materials/${quizId}?mode=edit`);
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .click();
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
   await page
@@ -1302,9 +1301,7 @@ export async function pastedQuizCopies(
 async function removeQuizImage(run: UatRun, quizId: string, assetId: string) {
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/materials/${quizId}?mode=edit`);
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .click();
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   await dialog
     .getByRole('button', {

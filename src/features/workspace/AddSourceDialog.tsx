@@ -320,7 +320,7 @@ function SourceAnalysisNote({
   );
 }
 
-function localRows(
+export function localRows(
   selections: ReturnType<typeof validateLocalSourceSelection>['accepted'],
   policy: SourceUploadPolicy,
   noCredits: boolean
@@ -395,7 +395,7 @@ function setConnectResume(
 /** Expected cost of one source at the policy rates: audio by whole seconds,
  * fast-parsed documents by text-layer and vision-read page count, everything
  * else free. */
-function sourceCreditEstimate(
+export function sourceCreditEstimate(
   source: Pick<
     PendingSource,
     'analysisResult' | 'audioDurationSeconds' | 'kind' | 'parseMode'
@@ -422,7 +422,7 @@ type SourceBatch = ReturnType<typeof useSourceBatch>;
 
 /** One tab's pending sources: analysis and row settings. Upload and Import
  * each own one, so their lists never mix. */
-function useSourceBatch(
+export function useSourceBatch(
   uploadPolicy: SourceUploadPolicy | undefined,
   initialSources: PendingSource[]
 ) {
@@ -904,7 +904,7 @@ function SourceFooter({
 /** An Upload row's parse mode (Epo 2026-11-03): the default, else none when
  * the payer is out of AI credits or the browser's analysis refuses fast
  * parsing, since the Upload tab has no parse-mode choice. */
-function uploadParseMode(
+export function uploadParseMode(
   source: PendingSource,
   policy: SourceUploadPolicy,
   noCredits: boolean

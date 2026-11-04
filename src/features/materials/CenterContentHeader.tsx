@@ -16,6 +16,7 @@ import type {
   Topic,
   UserColor,
 } from '@/api/types';
+import { Button } from '@/components/ui/Button';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
@@ -175,10 +176,13 @@ export const EditorStatusStoreContext = createContext<EditorStatusStore | null>(
 export function EditorSaveStatus({
   labelled = false,
   labelWhenWide = false,
+  plain = false,
   store,
 }: {
   labelled?: boolean;
   labelWhenWide?: boolean;
+  /** With `labelled`: the words alone (the quiz editor, board X2). */
+  plain?: boolean;
   store: EditorStatusStore;
 }) {
   // Subscribed in an effect rather than with `useStore`: an external-store
@@ -211,7 +215,12 @@ export function EditorSaveStatus({
         role="status"
       >
         {/* Lifted 1px to Fustat's cap band, level with the label. */}
-        <Icon className="size-4.5" name={STATUS_ICON[editorStatus.saveState]} />
+        {!plain && (
+          <Icon
+            className="size-4.5"
+            name={STATUS_ICON[editorStatus.saveState]}
+          />
+        )}
         {statusLabel}
       </span>
     );
@@ -373,9 +382,16 @@ export function Header({
   menuBar,
   menuShown,
   oneColumn,
+  onFocusPage,
+  onLeaveEditor,
   presence,
 }: {
   oneColumn?: OneColumnChrome;
+  /** A focused page opened or closed: the quiz editor takes the Files panel's
+   * place (board X2). */
+  onFocusPage?: (focused: boolean) => void;
+  /** The editor's "Files" link: back to the Files panel, the quiz in View. */
+  onLeaveEditor?: () => void;
   standalone?: boolean;
   fileControls?: ReactNode;
   /** Office files: buttons the runtime adds before the mode toggle (Present). */
@@ -423,6 +439,16 @@ export function Header({
       ? materialMode
       : defaultMode;
   const navigate = useNavigate();
+  const quizEditing =
+    !oneColumn &&
+    !readOnly &&
+    !!material &&
+    ('type' in material ? material.type : material.kind) === 'quiz' &&
+    activeMode === 'edit';
+  useEffect(() => {
+    onFocusPage?.(quizEditing);
+    return () => onFocusPage?.(false);
+  }, [onFocusPage, quizEditing]);
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
   const office = !!file && !!officeFormatOf(file);
@@ -509,6 +535,59 @@ export function Header({
       )}
     </>
   );
+  // The quiz editor's own row (board X2): Files, the quiz and its state, then
+  // Preview and New assignment. ⋮ and the right panel stay in Preview.
+  if (quizEditing)
+    return (
+      <div
+        className="flex h-14 shrink-0 items-center gap-2 border-divider border-b px-5"
+        data-testid="content-header"
+      >
+        {leading}
+        {onLeaveEditor && (
+          <button
+            className="mr-1 inline-flex shrink-0 cursor-pointer items-center gap-1.5 font-semibold text-fg-secondary underline"
+            onClick={onLeaveEditor}
+            type="button"
+          >
+            <Icon name="navigationBack" size={16} />
+            {m.quiz_editor_back_files()}
+          </button>
+        )}
+        {fileIcon}
+        <h2 className="min-w-0 truncate font-extrabold text-lg">
+          {title ?? '--'}
+        </h2>
+        {hiddenChip}
+        <EditorSaveStatus labelled plain store={editorStatus} />
+        {fileActions}
+        <RoomPresence store={presence} />
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <Button
+            onClick={() => onMaterialModeChange('view')}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {m.quiz_editor_preview()}
+          </Button>
+          {/* Not on this branch yet: New assignment (A1). */}
+          {workspaceId && (
+            <span title={m.study_panel_soon()}>
+              <Button
+                disabled
+                iconLeft="plus"
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {m.quiz_editor_new_assignment()}
+              </Button>
+            </span>
+          )}
+        </div>
+      </div>
+    );
   // The file's ⋮ follows its name, the status icons after it; phones keep
   // ⋮ at the row's end.
   const menu = (

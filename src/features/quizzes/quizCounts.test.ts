@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Question } from '@/api/types';
 import { m } from '@/i18n';
-import { quizCounts } from './QuizEditor';
+import { aiMarkedCount } from './QuizEditor';
 
 const part = (type: 'mcq' | 'open') =>
   ({
@@ -33,8 +33,8 @@ describe('the quiz editor counts', () => {
         stem: [],
       },
     ] as Question[];
-    expect(quizCounts(questions)).toBe(
-      `${m.question_ui_question_count({ count: 2 })} · ${m.quiz_ai_marked_count({ count: 2, max: 100 })}`
+    expect(aiMarkedCount(questions)).toBe(
+      m.quiz_ai_marked_count({ count: 2, max: 100 })
     );
   });
 });

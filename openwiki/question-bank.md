@@ -221,6 +221,42 @@ recorded, and each figure the page shows cropped into an image block whose
 asset is the quiz's own, like an uploaded quiz image (see
 [agentic-retrieval.md](agentic-retrieval.md), Make a quiz).
 
+### Make a quiz screens
+
+`src/features/makeQuiz`, from the Dashboard's Make a quiz from a file, for those
+who may edit the workspace (a viewer's `?make=` link shows the Dashboard).
+
+- **The dialog** (`MakeQuizDialog`, boards X0a, X0b): the question paper from a
+  menu of the workspace's PDFs and images or a new upload, and any mark scheme or
+  answer files the same way. A photographed paper can be several images. Files
+  have no stored page count, so the browser reads "16 pages" (`filePages.ts`): a
+  PDF's table through pdf.js with range requests once its row scrolls into view,
+  a Word or PowerPoint file through the upload analysis on the chosen rows only.
+  An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden
+  from members and in no topic, and shows "Reading pages" until it is indexed.
+  Continue waits for the paper's pages and for each answer file to have an id; an
+  answer file may still be reading. Files, mark scheme and answer files included,
+  stop at `EXTRACTION_FILES_MAX`.
+- **The page picker** (`PagePicker`, board X1, `?make=pages&paper=…&answers=…`):
+  pages shown large and drawn near the viewport only, one click selects one, up to
+  `EXTRACTION_PAGES_MAX`. Page numbers run across a paper's files. The footer's
+  "about 60 credits" is `estimatedCredits`, a fixed rate from the board. Extract
+  questions waits for answer files to be read and starts the run; a refusal shows
+  in the footer's `FormAlert`. The quiz takes the paper's name, the next number
+  when it is taken.
+- **The run** (`ExtractionProgress`, `?make=run&run=…`): reads
+  `GET /api/extractions/{id}` every 3 s while running, shows the questions read so
+  far, and on `done` opens the quiz in Edit, or on `failed` shows the run's error
+  with a way back to the pages. It depends only on the row's status, `recorded`,
+  `quizId` and `report`, never on how a run batches its calls. Leaving the page
+  leaves the run going: the stream's `extraction` event brings a toast with Open
+  (`extractionEnd.ts`). A report's left-out questions or early stop show as one
+  warning toast (`extractionNotice`); everything else about a saved quiz shows as
+  its normal issues.
+- **The pages keep the rail, without the section panel** (`focusPage` in
+  `WorkspaceOpen`), as the quiz editor does; a rail section leaves them. Phones
+  drop the chat dock on the pages, whose footer holds its corner.
+
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part
 IDs are unique within the material. Note chart/plot/graph voids store their validated
@@ -235,8 +271,20 @@ quiz's content and keys rooms and edits live (live-items, Epo 2026-10-10; see
 [plate-editor.md](frontend/plate-editor.md)): there is no Save or Reset, and
 the View switch leaves editing. Files' Edit and New quiz open
 `/materials/{id}?mode=edit`; there is no standalone quiz edit page, and
-renaming goes through the item's Rename. A note's quiz embed uses the same
-editor.
+renaming goes through the item's Rename, in Preview.
+
+The editor is a page (board X2, Epo 2026-11-02): the question list on the left
+(number, first words, an issue's warning, marks; the AI-marked count under it)
+and the open question on the right (`QuestionPane`), with each text block edited
+where it stands, an image's Choose image, and each part's Answer type, correct
+answer, Marks, marking scheme and worked solution. Its header row is Files, the
+quiz with its chip and save state, Undo and Redo, Preview (View) and New
+assignment. Phones show the list, then one question with All questions to go
+back, under the normal header. What the page doesn't lay out (charts, graphs,
+tables, blanks, layout and part labels, adding blocks, parts and groups, a unit
+or hints) is in the question's ⋮, Edit all details: the question dialog on the
+same question. A note's quiz embed keeps the list of questions with Edit and
+Remove (`QuizForm`).
 
 `QuestionDialog` is shared by the bank and the quiz editor. Its outline
 column (min 15rem, nudged 4px left to line up with the dialog title) keeps
@@ -283,8 +331,8 @@ marks, image links) read "Finish the question and its answer."; an image
 block added but not uploaded yet (an empty link) reads "Image: choose an
 image file" on its row, and the asset-host rule skips it. The dialog
 shows one issue box at the top of the body with the first issue and
-"(+n more)" (`IssueSummary` in `IssueViews.tsx`, also the quiz editor's line
-under each question in `QuizForm`); an open answer or block editor shows
+"(+n more)" (`IssueSummary` in `IssueViews.tsx`, also at the top of the quiz
+page's question and under each question in `QuizForm`); an open answer or block editor shows
 the same box for its own row's issues under its inputs, so it never moves
 them (a graph lists its own), a warning icon right of each affected
 title (`IssueIcon`, through `QuestionView`'s `titleAside`: the question's for
@@ -500,7 +548,7 @@ and 100 open parts per quiz, and a sample answer of at most 5,000 characters;
 learners' open answers have the same 5,000-character cap. Open parts are called
 "AI-marked parts" in the UI and in errors; the cap was 20 until Epo raised it
 for every quiz on 2026-11-03 (a full HKDSE Paper 1 has about 45), and the
-quiz editor shows the count under the title ("34 of 100 AI-marked parts").
+quiz editor shows the count under its question list ("34 of 100 AI-marked parts").
 The Go, browser and collaboration validators share these bounds
 (`fieldlimits.Quiz*`), the generation prompt states them, and the grading
 routes take a body of up to 4 MiB so a quiz's hundred longest open answers

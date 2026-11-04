@@ -349,6 +349,7 @@ export const qk = {
   exploreFlashcardSets: ['explore', 'flashcardSets'] as const,
   exploreQuizzes: ['explore', 'quizzes'] as const,
   exploreWorkspaces: ['explore', 'workspaces'] as const,
+  extraction: (id: string) => ['extraction', id] as const,
   file: (id: string) => ['file', id] as const,
   fileLinks: (id: string, consumer: 'view' | 'preview' = 'view') =>
     ['file-links', id, consumer] as const,

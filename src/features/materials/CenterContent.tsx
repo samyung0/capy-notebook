@@ -154,6 +154,8 @@ export function CenterContent({
   color,
   onDeleted,
   onModeChange,
+  onFocusPage,
+  onLeaveEditor,
   page,
   requestedMode = null,
   workspaceId,
@@ -162,6 +164,10 @@ export function CenterContent({
   oneColumn,
   standalone = false,
 }: {
+  /** The quiz editor opened or closed (it takes the Files panel's place). */
+  onFocusPage?: (focused: boolean) => void;
+  /** The quiz editor's Files link. */
+  onLeaveEditor?: () => void;
   /** The page shown under the header while no file is open: the
    * workspace's Dashboard or a Study page (one column; from lg the
    * workspace draws it without the header). */
@@ -332,7 +338,9 @@ export function CenterContent({
                           menuShown={menuShown}
                           onDeleted={onDeleted}
                           oneColumn={oneColumn}
+                          onFocusPage={onFocusPage}
                           onImageZoomChange={setImageZoom}
+                          onLeaveEditor={onLeaveEditor}
                           onMaterialModeChange={changeMaterialMode}
                           onToggleFullscreen={() =>
                             setFullscreen(!isFullscreen)
@@ -635,22 +643,14 @@ function MaterialContentBody({
 
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return (
-      <div className="h-full min-h-0 overflow-auto">
-        <TabContent fill>
-          <QuizEditor
-            action={<StudyButton kind="quiz" materialId={materialId} />}
-            key={materialId}
-            onPresenceChange={onPresenceChange}
-            onStatusChange={onEditorStatusChange}
-            quizId={materialId}
-            title={material.title}
-          />
-          <SourcesLine
-            className={cn('mt-16 pb-4', overBar && 'pb-20')}
-            provenance={material.provenance}
-          />
-        </TabContent>
-      </div>
+      <QuizEditor
+        key={materialId}
+        onPresenceChange={onPresenceChange}
+        onStatusChange={onEditorStatusChange}
+        quizId={materialId}
+        target={target}
+        title={material.title}
+      />
     );
   }
   if (material.kind === 'flashcards') {
