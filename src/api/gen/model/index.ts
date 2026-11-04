@@ -277,6 +277,8 @@ export * from './questionCredit.ts';
 export * from './quiz.ts';
 export * from './quizQuestionsItem.ts';
 export * from './rateReviewItemReq.ts';
+export * from './readableMaterialsInputBody.ts';
+export * from './readableMaterialsOutputBody.ts';
 export * from './readSourceRefreshParams.ts';
 export * from './recentOpen.ts';
 export * from './recentOutputBody.ts';

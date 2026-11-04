@@ -262,7 +262,8 @@ not offline use: without a service worker the app itself does not load offline.
   error after the fetched history (Q576 F2). Clicking the shown conversation again
   does nothing. Undo and Redo answered in the tab outlive a seed. A failed
   refetch's kept data is stored like any other (every persisted query).
-- Never stored: file, note, quiz and card bodies, collaboration tokens,
+- Never stored in this cache: file, note, quiz and card bodies (a device keeps
+  those apart, as [device copies](plate-editor.md#device-copies)), collaboration tokens,
   presigned links, review sessions,
   answer keys (quiz and bank edit views), ingest slots, workspace stats, upload
   policy, billing, usage, account deletion preflight, searches, members and

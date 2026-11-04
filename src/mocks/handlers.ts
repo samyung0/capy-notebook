@@ -2403,6 +2403,12 @@ export const handlers = [
         })
       : new HttpResponse(null, { status: 404 });
   }),
+  http.post('/api/materials/readable', async ({ request }) => {
+    const { ids } = (await request.json()) as { ids: string[] };
+    return HttpResponse.json({
+      ids: ids.filter((id) => db.materials.some((item) => item.id === id)),
+    });
+  }),
   http.post(
     '/api/materials/:id/collaboration-token',
     async ({ params, request }) => {

@@ -2,6 +2,7 @@ import { Outlet, useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { api } from '@/api/client';
 import { useEventStream, useMe } from '@/api/hooks';
+import { useDeviceCopySweep } from '@/features/collaboration/deviceCopy';
 import { Tour } from '@/features/guide/Tour';
 import { useRunningTour } from '@/features/guide/tourStore';
 import { useFinishToasts } from '@/features/questions/finishToasts';
@@ -39,6 +40,7 @@ export function AppShell() {
   useEffect(() => {
     if (actorId) startDraftSweeps(actorId, api);
   }, [actorId]);
+  useDeviceCopySweep(actorId);
   useFinishToasts();
   useKeyboardHeight();
   const themeDrawer = useThemeDrawer();

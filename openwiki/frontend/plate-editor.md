@@ -2396,6 +2396,30 @@ reported as editing incidents; the service records its discards, refusals and
 lineage moves itself (see
 [observability](../observability-metering.md#editing-incidents)).
 
+### Device copies
+
+Epo decided on 2026-11-04 (C1, ahead of the offline round's order) that a device
+keeps the Yjs state of what it opened, so an item paints at once and only the
+difference downloads. "Copy" alone means Q229's rows below; this one is a device
+copy (`src/features/collaboration/deviceCopy.ts`, stored by
+`src/lib/sourceCache.ts`).
+
+- **Who** (C2): members, viewers included (`keepsCopyOf`: `isOwner` or a `role`,
+  which a link visitor's read does not carry). Not someone who came through a
+  link. Under MSW only `mock-scenario-` fixtures keep one, since only their rooms
+  survive a reload; a copy of a reset room would merge back into it.
+- **Limits** (C6): the source cache's. One budget of 200 MiB with the source
+  bytes, least recently opened out first, a store that would leave under 100 MB
+  free is skipped, and a draft write the quota refuses deletes entries here. No
+  count, per-note cap or age limit.
+- **Owner** (C1, C7): every row names its account and a read for anyone else
+  deletes it. Signing out wipes the store with the source bytes
+  (`claimSourceCache`, `claimAccountData`). No separate account-switch rule.
+- **Lost access** (C3): a brief stale glimpse is accepted and there is no remote
+  wipe. A person refused on connecting loses the copy (`dropDeviceCopies`), and
+  at each page load `POST /api/materials/readable` answers which kept ids the
+  account can still read, in one query, and the rest go (`sweepDeviceCopies`).
+
 ### The editable saved copy
 
 Epo decided on 2026-10-24 (Q229) that a note shown from its saved copy

@@ -262,33 +262,101 @@ func materialEffectiveAccess(
 	if parentID != nil {
 		return materialEffectiveAccess(ctx, q, userID, *parentID)
 	}
-	// A workspace material's owner_user_id is its payer (uploader pays) and
-	// grants nothing: access follows the workspace.
-	if wsID == nil && materialOwner != nil && *materialOwner == userID {
-		return RoleOwner, nil
+	row := materialAccessRow{
+		materialOwner: materialOwner, materialPrivacy: materialPrivacy,
+		workspaceID: wsID, workspaceOwner: workspaceOwner, workspacePrivacy: workspacePrivacy,
+		shareRole: shareRole, memberRole: memberRole, hidden: hidden, linkGranted: linkGranted,
 	}
-	if workspaceOwner != nil && *workspaceOwner == userID {
-		return RoleOwner, nil
-	}
-
-	// A link resource reaches a nonmember only through a redeemed link.
-	workspaceShared := wsID != nil && workspacePrivacy != nil &&
-		(*workspacePrivacy == PrivacyPublic ||
-			(*workspacePrivacy == PrivacyLink && (memberRole != "" || linkGranted)))
-	materialShared := wsID == nil &&
-		(materialPrivacy == PrivacyPublic || (materialPrivacy == PrivacyLink && linkGranted))
-	var sharedRole WorkspaceRole
-	switch {
-	case workspaceShared && shareRole != nil:
-		sharedRole = shareRole.WorkspaceRole()
-	case workspaceShared, materialShared:
-		sharedRole = RoleViewer
-	}
-	role := MaxRole(memberRole, sharedRole)
-	if role == "" || (hidden && !RoleCanEdit(role)) {
+	role := row.role(userID)
+	if role == "" {
 		return "", ErrNotFound
 	}
 	return role, nil
+}
+
+// materialAccessRow is what a material's access depends on, read for its
+// caller; an embedded material's are its note's.
+type materialAccessRow struct {
+	materialOwner, workspaceID, workspaceOwner *string
+	materialPrivacy                            Privacy
+	workspacePrivacy                           *Privacy
+	shareRole                                  *ShareRole
+	memberRole                                 WorkspaceRole
+	hidden, linkGranted                        bool
+}
+
+// role is the caller's effective role, "" when the material is out of reach.
+func (r materialAccessRow) role(userID string) WorkspaceRole {
+	// A workspace material's owner_user_id is its payer (uploader pays) and
+	// grants nothing: access follows the workspace.
+	if r.workspaceID == nil && r.materialOwner != nil && *r.materialOwner == userID {
+		return RoleOwner
+	}
+	if r.workspaceOwner != nil && *r.workspaceOwner == userID {
+		return RoleOwner
+	}
+
+	// A link resource reaches a nonmember only through a redeemed link.
+	workspaceShared := r.workspaceID != nil && r.workspacePrivacy != nil &&
+		(*r.workspacePrivacy == PrivacyPublic ||
+			(*r.workspacePrivacy == PrivacyLink && (r.memberRole != "" || r.linkGranted)))
+	materialShared := r.workspaceID == nil &&
+		(r.materialPrivacy == PrivacyPublic || (r.materialPrivacy == PrivacyLink && r.linkGranted))
+	var sharedRole WorkspaceRole
+	switch {
+	case workspaceShared && r.shareRole != nil:
+		sharedRole = r.shareRole.WorkspaceRole()
+	case workspaceShared, materialShared:
+		sharedRole = RoleViewer
+	}
+	role := MaxRole(r.memberRole, sharedRole)
+	if role == "" || (r.hidden && !RoleCanEdit(role)) {
+		return ""
+	}
+	return role
+}
+
+// ReadableMaterialIDs lists which of ids the caller can read, by the same rule
+// as MaterialEffectiveRole, in one query: the sweep of a device's kept copies
+// asks at every page load, and a token per copy would cost seven reads each
+// (Epo 2026-11-04). The order is the store's.
+func (s *Store) ReadableMaterialIDs(ctx context.Context, userID string, ids []string) ([]string, error) {
+	if userID == "" {
+		return []string{}, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT wanted.id, m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
+			COALESCE(wm.role, ''), m.hidden,
+			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
+				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
+		FROM materials wanted
+		JOIN materials m ON m.id=COALESCE(wanted.parent_material_id, wanted.id)
+		LEFT JOIN workspaces w ON w.id=m.workspace_id
+		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
+		LEFT JOIN workspace_members wm
+			ON wm.workspace_id=w.id AND wm.user_id=$2
+		WHERE wanted.id = ANY($1::text[]) AND wanted.trashed_at IS NULL AND m.trashed_at IS NULL
+			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+			AND (owner.suspended_at IS NULL OR owner.id=$2)`, ids, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	readable := []string{}
+	for rows.Next() {
+		var id string
+		var row materialAccessRow
+		if err := rows.Scan(
+			&id, &row.materialOwner, &row.materialPrivacy, &row.workspaceID, &row.workspaceOwner,
+			&row.workspacePrivacy, &row.shareRole, &row.memberRole, &row.hidden, &row.linkGranted,
+		); err != nil {
+			return nil, err
+		}
+		if row.role(userID) != "" {
+			readable = append(readable, id)
+		}
+	}
+	return readable, rows.Err()
 }
 
 // UpdateStandaloneMaterialPrivacy is the only material-sharing write. It

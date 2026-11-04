@@ -3,8 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   cacheSource,
   claimSourceCache,
+  deviceCopyMaterials,
+  dropDeviceCopies,
   evictOldestSource,
   readCachedSource,
+  readDeviceCopy,
+  storeDeviceCopy,
 } from './sourceCache';
 
 /** Cache Storage as the browser keeps it, in memory: requests by URL. */
@@ -78,8 +82,8 @@ const stored = () => [
 async function indexed() {
   const cache = await storage.open('capy-source-bytes');
   const index = await cache.match('/capy-source-cache/index.json');
-  const { entries } = (await index!.json()) as { entries: { sha: string }[] };
-  return entries.map((entry) => entry.sha);
+  const { entries } = (await index!.json()) as { entries: { key: string }[] };
+  return entries.map((entry) => entry.key);
 }
 
 describe('source bytes kept on the device', () => {
@@ -202,5 +206,83 @@ describe('source bytes kept on the device', () => {
     await cacheSource(deck.sha, deck.bytes);
     expect(await readCachedSource(deck.sha)).toBeNull();
     await expect(claimSourceCache('user_a')).resolves.toBeUndefined();
+  });
+});
+
+describe('device copies', () => {
+  const row = (
+    materialId: string,
+    document: 'content' | 'keys' = 'content'
+  ) => ({
+    document,
+    kind: 'note' as const,
+    materialId,
+    owner: 'user_a',
+    room: `material:${materialId}:schema:1`,
+    standalone: false,
+    title: 'A note',
+    version: 3,
+  });
+  const state = (bytes = 8) => new Uint8Array(bytes).fill(7);
+
+  it('reads back the state and its row for its owner', async () => {
+    await storeDeviceCopy(row('n1'), state());
+    const copy = await readDeviceCopy('user_a', 'n1');
+    expect(copy).toMatchObject({ room: 'material:n1:schema:1', version: 3 });
+    expect(copy?.state).toEqual(state());
+    expect(await deviceCopyMaterials('user_a')).toEqual(['n1']);
+  });
+
+  it('never hands a row to another signed-in user, and it goes', async () => {
+    await storeDeviceCopy(row('n1'), state());
+    expect(await readDeviceCopy('user_b', 'n1')).toBeNull();
+    expect(await readDeviceCopy('user_a', 'n1')).toBeNull();
+  });
+
+  it('stores nothing for a store another account claimed', async () => {
+    await claimSourceCache('user_b');
+    await storeDeviceCopy(row('n1'), state());
+    expect(await deviceCopyMaterials('user_a')).toEqual([]);
+  });
+
+  it('is wiped when signing out', async () => {
+    await storeDeviceCopy(row('n1'), state());
+    await claimSourceCache(null);
+    await claimSourceCache('user_a');
+    expect(await readDeviceCopy('user_a', 'n1')).toBeNull();
+  });
+
+  it('shares the budget with source bytes, least recently opened out first', async () => {
+    vi.useFakeTimers();
+    await storeDeviceCopy(row('n1'), state(100 * MB));
+    vi.advanceTimersByTime(1000);
+    const file = source('a file');
+    await cacheSource(file.sha, file.bytes);
+    vi.advanceTimersByTime(1000);
+    await storeDeviceCopy(row('n2'), state(101 * MB));
+    expect(await deviceCopyMaterials('user_a')).toEqual(['n2']);
+    expect(await readCachedSource(file.sha)).toEqual(file.bytes);
+  });
+
+  it('leaves offline drafts their reserve', async () => {
+    quota({ quota: 150 * MB, usage: 0 });
+    await storeDeviceCopy(row('n1'), state(60 * MB));
+    expect(await deviceCopyMaterials('user_a')).toEqual([]);
+  });
+
+  it('makes way for a draft the quota refused', async () => {
+    await storeDeviceCopy(row('n1'), state());
+    expect(await evictOldestSource()).toBe(true);
+    expect(await readDeviceCopy('user_a', 'n1')).toBeNull();
+  });
+
+  it("drops one document's copy or all of a material's", async () => {
+    await storeDeviceCopy(row('q1'), state());
+    await storeDeviceCopy(row('q1', 'keys'), state());
+    await dropDeviceCopies('q1', 'keys');
+    expect(await readDeviceCopy('user_a', 'q1', 'keys')).toBeNull();
+    expect(await readDeviceCopy('user_a', 'q1')).not.toBeNull();
+    await dropDeviceCopies('q1');
+    expect(await readDeviceCopy('user_a', 'q1')).toBeNull();
   });
 });
