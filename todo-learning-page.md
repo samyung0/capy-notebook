@@ -218,37 +218,36 @@ Each needs Epo's yes and a line in `human/study-progress.md`:
 - AGENTS.md: links use underlines. Done: bordered buttons for actions and links alike (Epo 2026-11-04).
 - 2026-10-10: Fading. Done: Refresher in the UI, the API value stays `fading` (Epo 2026-11-04).
 - 2026-10-10: "not tested yet" is Continue's job. Continue went with read progress, so Start rows take it.
-- 2026-11-04: Learning stays hidden until AI analysis of study progress is decided. This plan brings it back with none.
+- 2026-11-04: Learning stays hidden until AI analysis of study progress is decided. Done: it comes back with no AI once built (Epo 2026-11-04).
 - Plan §10: "perhaps to show the AI suggestions across workspaces". Replaced by rules.
 
 ## 8. Questions for Epo
 
-Answered 2026-11-04: layout A; rows as links with kind icons; 4 rows; order assignments, quizzes not done, suggestions; one-sentence reasons; Refresher in the UI; bordered buttons in AGENTS.md; Start rows (implied by the order).
+Answered 2026-11-04: layout A; rows as links with kind icons; 4 rows; order assignments, quizzes not done, suggestions; one-sentence reasons; Refresher in the UI; bordered buttons in AGENTS.md, with existing ones removed by Epo as they come up; Start rows (implied by the order); Learning comes back with no AI and `read_study_progress` stays gone.
 
 Each has a recommendation, so "as recommended" is a full answer.
 
 **Decides whether and when this gets built**
 
-1. **Bring Learning back with no AI?** It was hidden until AI analysis is decided. If yes, `read_study_progress` stays gone too. Yes.
-2. **Topic labels now or later?** Count them now as in §4, or wait for the mastery model after its simulator? Now, replacing the count when the model lands.
-3. **Summary.** Workspaces rows open Summary, which is not built. Build Summary with this page, or open Practice until it exists? Together, since both need the labels.
+1. **Topic labels now or later?** Not Started, Attempted, Needs practice, Familiar, Proficient, Mastered. Epo approved them and their thresholds on 2026-11-03, but they exist only in mocks: no branch has them in code. Count them now as in §4, or wait for the mastery model after its simulator? Now, replacing the count when the model lands.
+2. **Summary.** Study → Summary is a disabled row marked Coming soon; only its mock boards exist (G5 and M1 on the study canvas, under the old name My results). Workspaces rows on Learning open it. Build Summary with this page, or open Practice until it exists? Together, since both need the labels.
 
 **Rules**
 
-4. **Caps for the 4 rows.** 2 assignments, 2 quizzes, last row kept for a suggestion? Yes.
-5. **Continue rows.** Keep them: a quiz left partway with the quizzes, an unfinished session with the suggestions? Keep. The session half is the only way back to an unfinished session while Learning is hidden and the workspace Study page is gone.
-6. **Review threshold.** Keep 3? A 5-question quiz answered right waits 17 days, while a 20-question quiz answered wrong comes back in about 10 hours. Keep.
-7. **Whole-workspace review.** Today's Learning rows start one. Drop it, or keep it in a row ⋮? Drop: Suggested and topic sessions cover it.
-8. **Flashcards in suggestions.** Keep cards in Learning's suggestions while Practice stays on questions? Keep: this would be the only place sets get suggested.
+3. **Caps for the 4 rows.** 2 assignments, 2 quizzes, last row kept for a suggestion? Yes.
+4. **Continue rows.** Keep them: a quiz left partway with the quizzes, an unfinished session with the suggestions? Keep. The session half is the only way back to an unfinished session while Learning is hidden and the workspace Study page is gone.
+5. **Review threshold.** Keep 3? A 5-question quiz answered right waits 17 days, while a 20-question quiz answered wrong comes back in about 10 hours. Keep.
+6. **Whole-workspace review.** Today's Learning rows start one. Drop it, or keep it in a row ⋮? Drop: Suggested and topic sessions cover it.
+7. **Flashcards in suggestions.** Keep cards in Learning's suggestions while Practice stays on questions? Keep: this would be the only place sets get suggested.
 
 **Who sees what**
 
-9. **Class owner with nothing to study (canvas page 3).** O1 empty page, or O2 You teach rows that open Study → Members? O2, so a teacher does not land on a dead end.
-10. **Question bank.** Add one row for the last bank topic, or keep the bank off this page? Off: it has its own landing.
-11. **Topic with nothing new to serve.** Link to Make my own practice (AI, credits, on click) from this page? No, leave it on Practice.
+8. **Class owner with nothing to study (canvas page 3).** O1 empty page, or O2 You teach rows that open Study → Members? O2, so a teacher does not land on a dead end.
+9. **Question bank.** Add one row for the last bank topic, or keep the bank off this page? Off: it has its own landing.
+10. **Topic with nothing new to serve.** Link to Make my own practice (AI, credits, on click) from this page? No, leave it on Practice.
 
 **Small**
 
-12. **This week line.** Keep or drop? You did not ask for it. Keep, as the one line that shows the work adding up.
-13. **Past reviews as its own tab (canvas page 4).** Keep? It moves out of the old Review tab. Keep.
-14. **Words.** Are "Overview", "What to do next" and "items tried" right? Yes, unless you prefer others.
+11. **This week line.** Keep or drop? You did not ask for it. Keep, as the one line that shows the work adding up.
+12. **Past reviews as its own tab (canvas page 4).** Keep? It moves out of the old Review tab. Keep.
+13. **Words.** Are "Overview", "What to do next" and "items tried" right? Yes, unless you prefer others.

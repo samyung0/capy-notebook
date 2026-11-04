@@ -40,20 +40,7 @@ function WorkspacesSection() {
   const revealRef = useLoadingReveal(isLoading);
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="t-large-card-title">{m.home_workspaces()}</h2>
-        <Button
-          asChild
-          className="underline"
-          iconRight="navigationForward"
-          size="xs"
-          variant="ghost-link"
-        >
-          <Link preload="intent" to="/workspaces">
-            {m.action_go_workspaces()}
-          </Link>
-        </Button>
-      </div>
+      <h2 className="t-large-card-title mb-3">{m.home_workspaces()}</h2>
       {waitsForConnection(fetchStatus, data) ? (
         <QueryPausedState />
       ) : isLoading ? (

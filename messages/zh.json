@@ -402,7 +402,6 @@
   "connection_online_body": "更改正在重新同步。",
   "connection_reconnecting_title": "正在重新连接",
   "connection_reconnecting_body": "部分实时更新正在重新连接…",
-  "action_go_workspaces": "前往工作区",
   "action_create": "创建",
   "search_result_placeholder": "你在找什么 :)",
   "search_error": "暂时无法搜索",
