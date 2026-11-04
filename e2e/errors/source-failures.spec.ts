@@ -53,7 +53,6 @@ async function sourceResponses(
       const failed = failure === 'ingest' && files.length === 0;
       const file = {
         addedAt: new Date().toISOString(),
-        chapterId: null,
         hasBytes: true,
         id: 'f_upload_' + uploads.length,
         indexed: !failed,
@@ -63,6 +62,7 @@ async function sourceResponses(
         revision: 1,
         sizeBytes: Number(metadata.sizeBytes),
         status: failed ? 'processing' : 'ready',
+        topicId: null,
         workspaceId,
       };
       files.push(file);
@@ -77,7 +77,7 @@ async function chooseSources(page: Page, workspaceId: string, names: string[]) {
   await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-add-menu]')
-    .getByRole('button', { exact: true, name: m.action_new_file_or_chapter() })
+    .getByRole('button', { exact: true, name: m.action_new_file_or_topic() })
     .click();
   await page
     .getByRole('menuitem', { name: m.action_upload_or_import() })

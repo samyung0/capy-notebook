@@ -714,7 +714,7 @@ storage.
 | `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: score}}` for the topic list: the latest score of each answered current question. |
 | `GET /api/bank/topics/{topicId}/summary` | `{questions: [{id, position, preview, marks, answerTypes, score, reviewedAt}]}`: every current question in topic order, unpaged, with the latest score for its current content (null when not answered) and when it was last marked reviewed (null when not); the summary page and the tree's squares. |
 | `GET /api/bank/progress` | `{topics}`: every topic with at least one answered current question, most recent answer first. Each carries exam, subject and topic ids and labels, `total` (current questions), `answered`, `correct` (score 1), `lastAnsweredAt`, `nextQuestionId`: the first unanswered question after the most recently answered one in topic order, wrapping to the start, or null when every question is answered, `questionIds` (the topic's current questions in order), `answeredPositions` (1-based places of the answered ones) and `lastAnsweredPosition` (the place of the most recent answer), which the landing's progress map draws and links. |
-| `POST /api/bank/copy` | `{questionIds (1–20), workspaceId, quizId \| quizName, chapterId? \| chapterName?}` returns `{workspaceId, quizId}`. Below. |
+| `POST /api/bank/copy` | `{questionIds (1–20), workspaceId, quizId \| quizName, topicId? \| topicName?}` returns `{workspaceId, quizId}`. Below. |
 
 A current question is one that is not retracted and whose stored hash equals
 its hash now; `bank.TopicHashes` and `Store.Progress` (`server/internal/bank/progress.go`)
@@ -729,11 +729,11 @@ purge deletes the rows.
 questions unchanged (`bankCopies`, `bankAppendCommands`): each question's credit is resolved
 from its bank sources into the quiz's provenance under the question's id, and
 an unknown or retracted id fails the call with 404. Exactly one destination:
-`quizName` makes a new quiz in the workspace, filed in `chapterId` or
-`chapterName` when given (at most one, and neither with `quizId`; 422
-otherwise). `chapterName` reuses the workspace's chapter of that name in any
+`quizName` makes a new quiz in the workspace, filed in `topicId` or
+`topicName` when given (at most one, and neither with `quizId`; 422
+otherwise). `topicName` reuses the workspace's topic of that name in any
 case or creates it in the quiz's transaction (`Store.CreateMaterialDraft` with
-the upload path's `resolveUploadChapterID`, which locks the workspace row);
+the upload path's `resolveUploadTopicID`, which locks the workspace row);
 `quizId` appends after an existing workspace quiz's last question through the
 document authority, which writes the merged credits with the content. A quiz a
 note embeds is such a quiz: the credits join that quiz's own record and its
@@ -836,13 +836,12 @@ would leave the map's top edge).
 
 Answering a topic's last unanswered question raises a success toast, "Topic
 finished" with Go check, which opens `/qb?finished=<topic>`. The toast comes
-from `useFinishToasts` (`src/features/study/finishToasts.ts`, mounted in
+from `useFinishToasts` (`src/features/questions/finishToasts.ts`, mounted in
 `AppShell` so the progress route stays observed on every signed-in page): each
 refetch of the route is compared with the one before, and a topic finished now
 but not before toasts (answering any question refetches it). The first time a
 finished topic leads the landing in a browser, the map celebrates
-(`src/features/questions/trailMap/finish.tsx`, shared with Learning's railway
-map): the page scrolls the map into view, the last stop pops filled, the line
+(`src/features/questions/trailMap/finish.tsx`): the page scrolls the map into view, the last stop pops filled, the line
 runs on to the flag with a dot at its head, the flag waves while four sketched
 fireworks (drawn-out rays with falling sparks, no rocket trails) open in turn in
 the sky beside it, clear of the Finished tag and kept inside the map's width, in

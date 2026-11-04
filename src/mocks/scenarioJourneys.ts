@@ -484,7 +484,6 @@ export async function runJourney(
     'annotations-load': `${scenarioPath}?file=mock-scenario-pdf`,
     'attempt-load': `/quizzes/attempts/${db.attempts[0].id}`,
     'billing-load': '/billing',
-    'chapters-load': scenarioPath,
     'collaboration-token': `${scenarioPath}?material=${scenarioNote}&mode=edit`,
     'dashboard-lists': '/',
     'deletion-check': '/settings?tab=danger',
@@ -507,6 +506,7 @@ export async function runJourney(
     schedule: '/schedule',
     'service-503': '/workspaces',
     tasks: '/tasks',
+    'topics-load': scenarioPath,
     'trash-load': '/files?tab=trash',
     'workspace-401': scenarioPath,
     'workspace-404': scenarioPath,
@@ -763,11 +763,11 @@ export async function runJourney(
       fail();
       await ui.click(m.workspace_transfer_confirm());
       return;
-    case 'chapter-save':
+    case 'topic-save':
       await go(scenarioPath);
       await ui.click(m.action_add_file());
-      await ui.click(m.action_add_chapter());
-      await ui.fill('[role="dialog"] input', 'Scenario chapter');
+      await ui.click(m.action_add_topic());
+      await ui.fill('[role="dialog"] input', 'Scenario topic');
       fail();
       await ui.submit('[role="dialog"] form');
       return;

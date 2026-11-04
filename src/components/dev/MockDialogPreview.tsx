@@ -16,8 +16,6 @@ import type { MockDialogId } from './mockDialogOptions';
 
 const source: PendingSource = {
   analysisStatus: 'ready',
-  chapterId: null,
-  chapterName: null,
   contentType: 'text/plain',
   fileId: 'mock_drive_file',
   key: 'mock-dialog-source',
@@ -28,6 +26,8 @@ const source: PendingSource = {
   provider: 'google',
   sizeBytes: 2048,
   sizeEstimate: false,
+  topicId: null,
+  topicName: null,
 };
 
 export default function MockDialogPreview({

@@ -55,18 +55,6 @@ export const mockToastOptions: {
   },
   {
     group: 'Success and notices',
-    label: 'Workspace finished',
-    toast: () => ({
-      button: action(m.common_go_check()),
-      description: m.learning_workspace_finished_toast({
-        workspace: 'Biology 101',
-      }),
-      title: m.learning_workspace_finished(),
-      variant: 'success',
-    }),
-  },
-  {
-    group: 'Success and notices',
     label: 'Account deletion requested',
     toast: () => ({
       title: m.settings_deletion_requested_toast(),

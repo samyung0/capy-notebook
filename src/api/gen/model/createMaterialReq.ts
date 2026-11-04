@@ -15,9 +15,9 @@ export interface CreateMaterialReq {
   /** Material kind */
   kind: MaterialKind;
   /** @nullable */
-  scopeChapters?: string[] | null;
-  /** @nullable */
   scopeFileNames?: string[] | null;
+  /** @nullable */
+  scopeTopics?: string[] | null;
   /** @maxLength 120 */
   title?: string;
 }

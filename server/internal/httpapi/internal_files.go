@@ -26,7 +26,7 @@ type internalFileReq struct {
 	AssistantMessageID string            `json:"assistantMessageId"`
 	ToolCallID         string            `json:"toolCallId"`
 	Name               string            `json:"name"`
-	ChapterID          string            `json:"chapterId"`
+	TopicID            string            `json:"topicId"`
 	Content            []byte            `json:"content"`
 	Provenance         *store.Provenance `json:"provenance"`
 	// Sources is the deck's made-from line, as for a material.
@@ -89,13 +89,13 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 	}
 	sum := sha256.Sum256(req.Content)
 	op, ok := a.agentFileOperation(w, r, req.Scope, req.UserID, req.WorkspaceID, req.AssistantMessageID, req.ToolCallID, map[string]any{
-		"name": name, "chapterId": req.ChapterID, "provenance": req.Provenance,
+		"name": name, "topicId": req.TopicID, "provenance": req.Provenance,
 		"contentSha256": hex.EncodeToString(sum[:]), "sources": req.Sources,
 	})
 	if !ok {
 		return
 	}
-	chapterID, ok := a.agentChapter(w, r.Context(), req.ChapterID, req.WorkspaceID)
+	topicID, ok := a.agentTopic(w, r.Context(), req.TopicID, req.WorkspaceID)
 	if !ok {
 		return
 	}
@@ -110,7 +110,7 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	receipt, ok := a.storeAgentFile(w, r.Context(), agentFile{
-		name: name, chapterID: chapterID, content: req.Content, provenance: req.Provenance,
+		name: name, topicID: topicID, content: req.Content, provenance: req.Provenance,
 		sourceNames: sourceNames, op: op,
 	})
 	if ok {
@@ -166,32 +166,32 @@ func (a *api) agentFileOperation(w http.ResponseWriter, r *http.Request, scope, 
 	}, true
 }
 
-// agentChapter checks a chat file's chapter before anything is built or
+// agentTopic checks a chat file's topic before anything is built or
 // stored; "" files it in none (nil). A refusal is written to w and ok is
 // false.
-func (a *api) agentChapter(w http.ResponseWriter, ctx context.Context, chapterID, workspaceID string) (*string, bool) {
-	if chapterID == "" {
+func (a *api) agentTopic(w http.ResponseWriter, ctx context.Context, topicID, workspaceID string) (*string, bool) {
+	if topicID == "" {
 		return nil, true
 	}
-	ok, err := a.s.ChapterInWorkspace(ctx, chapterID, workspaceID)
+	ok, err := a.s.TopicInWorkspace(ctx, topicID, workspaceID)
 	if err != nil {
 		a.fail(w, err)
 		return nil, false
 	}
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code": "unknown_chapter", "message": "chapter_id is not a chapter of the workspace the item is created in",
+			"code": "unknown_topic", "message": "topic_id is not a topic of the workspace the item is created in",
 		})
 		return nil, false
 	}
-	return &chapterID, true
+	return &topicID, true
 }
 
 // agentFile is a file the chat agent made, ready to store under op in the
-// chapter agentChapter checked.
+// topic agentTopic checked.
 type agentFile struct {
 	name       string
-	chapterID  *string
+	topicID    *string
 	content    []byte
 	provenance *store.Provenance
 	// sourceNames is its made-from line (resolveSources); nil stores none.
@@ -239,7 +239,7 @@ func (a *api) storeAgentFile(w http.ResponseWriter, ctx context.Context, f agent
 	}
 	op, created, err := a.s.CreateAgentFileOperation(ctx, store.AgentFileDraft{
 		WorkspaceID: f.op.WorkspaceID, ActorUserID: f.op.ActorUserID, Name: f.name, Kind: kind,
-		ChapterID: f.chapterID, SizeBytes: size, BlobPath: blobPath, Parser: a.parser,
+		TopicID: f.topicID, SizeBytes: size, BlobPath: blobPath, Parser: a.parser,
 		ParseMode: parseMode, Provenance: f.provenance, ScopeFileNames: f.sourceNames,
 	}, f.op)
 	// Uncancelled: a pipeline timeout or disconnect that failed the insert

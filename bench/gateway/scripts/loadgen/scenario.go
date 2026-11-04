@@ -74,7 +74,6 @@ func (u *user) shell(ctx context.Context) {
 			_ = u.get(ctx, "/api/notifications/unread-count", "/api/notifications/unread-count", false, nil)
 		},
 		func() { _ = u.get(ctx, "/api/bank/progress", "/api/bank/progress", false, nil) },
-		func() { _ = u.get(ctx, "/api/learning/progress", "/api/learning/progress", false, nil) },
 	)
 }
 
@@ -136,7 +135,7 @@ func (u *user) refetchTree(ctx context.Context, ws string) {
 		func() {
 			_ = u.get(ctx, "/api/workspaces/"+ws+"/materials", "/api/workspaces/{id}/materials", true, nil)
 		},
-		func() { _ = u.get(ctx, "/api/workspaces/"+ws+"/chapters", "/api/workspaces/{id}/chapters", true, nil) },
+		func() { _ = u.get(ctx, "/api/workspaces/"+ws+"/topics", "/api/workspaces/{id}/topics", true, nil) },
 	)
 }
 
@@ -145,7 +144,7 @@ func (u *user) openWorkspace(ctx context.Context, ws string) *space {
 	var items []material
 	all(
 		func() { _ = u.get(ctx, "/api/workspaces/"+ws, "/api/workspaces/{id}", true, nil) },
-		func() { _ = u.get(ctx, "/api/workspaces/"+ws+"/chapters", "/api/workspaces/{id}/chapters", false, nil) },
+		func() { _ = u.get(ctx, "/api/workspaces/"+ws+"/topics", "/api/workspaces/{id}/topics", false, nil) },
 		func() { u.workspaceFileList(ctx, ws, false) },
 		func() {
 			_ = u.get(ctx, "/api/workspaces/"+ws+"/materials", "/api/workspaces/{id}/materials", true, &items)
@@ -255,7 +254,7 @@ func (u *user) takeQuiz(ctx context.Context, sp *space) {
 	per := 60 * time.Second / time.Duration(max(1, len(quiz.Questions)))
 	if quiz.check(ctx, u, id, started, func() { u.think(ctx, per) }) == nil {
 		all(
-			func() { _ = u.get(ctx, "/api/learning/progress", "/api/learning/progress", true, nil) },
+			func() { _ = u.get(ctx, "/api/workspaces/"+sp.id+"/practice", "/api/workspaces/{id}/practice", true, nil) },
 			func() { _ = u.get(ctx, "/api/workspaces/"+sp.id+"/study", "/api/workspaces/{id}/study", true, nil) },
 		)
 	}
@@ -285,11 +284,9 @@ func (u *user) studyCards(ctx context.Context, sp *space) {
 		if ctx.Err() != nil {
 			return
 		}
-		if u.call(ctx, http.MethodPost, "/api/review/ratings", "/api/review/ratings", map[string]any{
+		_ = u.call(ctx, http.MethodPost, "/api/review/ratings", "/api/review/ratings", map[string]any{
 			"itemId": card.ID, "materialId": id, "rating": 1 + u.rng.IntN(4), "attempt": attempt,
-		}, nil, http.StatusNoContent) == nil {
-			_ = u.get(ctx, "/api/learning/progress", "/api/learning/progress", true, nil)
-		}
+		}, nil, http.StatusNoContent)
 	}
 	u.think(ctx, 10*time.Second)
 }
@@ -301,9 +298,7 @@ func (u *user) learning(ctx context.Context, sp *space) {
 	u.openStream(ctx, "")
 	all(
 		func() { _ = u.get(ctx, "/api/attempts?limit=30", "/api/attempts p1", false, nil) },
-		func() { _ = u.get(ctx, "/api/learning/progress", "/api/learning/progress", false, nil) },
 		func() { _ = u.get(ctx, "/api/review/overview", "/api/review/overview", false, nil) },
-		func() { _ = u.get(ctx, "/api/learning/plans", "/api/learning/plans", false, nil) },
 	)
 	// The Results tab's list under a second cache key.
 	_ = u.get(ctx, "/api/attempts?limit=30&kinds=", "/api/attempts p1", false, nil)
@@ -444,9 +439,6 @@ func (u *user) studyTab(ctx context.Context, sp *space) {
 		func() {
 			_ = u.get(ctx, "/api/workspaces/"+sp.id+"/study/attempts", "/api/workspaces/{id}/study/attempts", false, nil)
 		},
-		func() {
-			_ = u.get(ctx, "/api/workspaces/"+sp.id+"/study/plans", "/api/workspaces/{id}/study/plans", false, nil)
-		},
 	)
 	u.think(ctx, 30*time.Second)
 }
@@ -464,7 +456,7 @@ func (u *user) createNote(ctx context.Context, sp *space) {
 			_ = u.get(ctx, "/api/workspaces/"+sp.id+"/materials", "/api/workspaces/{id}/materials", true, nil)
 		},
 		func() {
-			_ = u.get(ctx, "/api/workspaces/"+sp.id+"/chapters", "/api/workspaces/{id}/chapters", true, nil)
+			_ = u.get(ctx, "/api/workspaces/"+sp.id+"/topics", "/api/workspaces/{id}/topics", true, nil)
 		},
 		func() {
 			_ = u.call(ctx, http.MethodPost, "/api/materials/"+created.ID+"/collaboration-token",

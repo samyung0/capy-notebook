@@ -123,7 +123,7 @@ func TestShareHTTPReads(t *testing.T) {
 		{"anon link flashcards", "", "/api/flashcards/dk_e2e_link", 401},
 		{"anon public flashcards", "", "/api/flashcards/dk_e2e_public", 401},
 		{"anon link cards", "", "/api/flashcards/dk_e2e_link/cards", 401},
-		{"anon link chapters", "", "/api/workspaces/ws_e2e_link/chapters", 401},
+		{"anon link topics", "", "/api/workspaces/ws_e2e_link/topics", 401},
 		{"anon link files", "", "/api/workspaces/ws_e2e_link/files", 401},
 		{"anon link materials", "", "/api/workspaces/ws_e2e_link/materials", 401},
 		{"anon file", "", "/api/files/f_missing", 401},

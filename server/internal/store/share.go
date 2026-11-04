@@ -35,7 +35,7 @@ A caller's effective role is the more permissive of their membership and the
 share role. Roles are grants rather than caps: capping a member at their
 invited role would not restrain anyone, since the same link hands that access
 to every other signed-in account. Content authority (documents, comments,
-chapters, files, materials, generation, clone) follows the effective role;
+topics, files, materials, generation, clone) follows the effective role;
 workspace settings follow persisted membership only. */
 
 // workspaceRoles reads the actor's persisted membership and the role the
@@ -135,7 +135,7 @@ func (s *Store) WorkspaceEffectiveRole(ctx context.Context, userID, wsID string)
 	return effective, nil
 }
 
-// AssertWorkspaceEditor gates workspace content: chapters, files, materials,
+// AssertWorkspaceEditor gates workspace content: topics, files, materials,
 // generation. Member editors and link/public share-role editors both pass.
 func (s *Store) AssertWorkspaceEditor(ctx context.Context, userID, wsID string) error {
 	role, err := s.WorkspaceEffectiveRole(ctx, userID, wsID)
@@ -374,10 +374,10 @@ func (s *Store) FileEffectiveRole(ctx context.Context, userID, fileID string) (W
 	return RoleOwner, nil
 }
 
-// ChapterWorkspaceID resolves the owning workspace of a chapter.
-func (s *Store) ChapterWorkspaceID(ctx context.Context, chapterID string) (string, error) {
+// TopicWorkspaceID resolves the owning workspace of a topic.
+func (s *Store) TopicWorkspaceID(ctx context.Context, topicID string) (string, error) {
 	var wsID string
-	err := s.pool.QueryRow(ctx, `SELECT workspace_id FROM chapters WHERE id=$1`, chapterID).Scan(&wsID)
+	err := s.pool.QueryRow(ctx, `SELECT workspace_id FROM topics WHERE id=$1`, topicID).Scan(&wsID)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
@@ -662,26 +662,27 @@ func snapshotStandaloneCloneAssets(
 	return assets, assetMap, bytes, nil
 }
 
-type workspaceCloneChapter struct {
-	id       string
-	name     string
-	position int
+type workspaceCloneTopic struct {
+	id          string
+	name        string
+	description string
+	position    int
 }
 
 type workspaceCloneFile struct {
-	id, name, kind, status      string
-	chapterID, parser, blobPath *string
-	sourceETag                  *string
-	contentHash, sourceSHA256   *string
-	sizeBytes                   int64
-	position                    int64
-	indexed, everParsed         bool
-	parseMode                   string
-	indexLimit                  *string
-	provenance                  []byte
-	thumbnailKey                *string
-	preview                     []byte
-	revision                    int64
+	id, name, kind, status    string
+	topicID, parser, blobPath *string
+	sourceETag                *string
+	contentHash, sourceSHA256 *string
+	sizeBytes                 int64
+	position                  int64
+	indexed, everParsed       bool
+	parseMode                 string
+	indexLimit                *string
+	provenance                []byte
+	thumbnailKey              *string
+	preview                   []byte
+	revision                  int64
 	// scopeFileNames is its made-from line, which a copy keeps as a material
 	// copy does (Epo 2026-10-21).
 	scopeFileNames []string
@@ -697,7 +698,7 @@ type workspaceCloneFile struct {
 // design Q2). indexed counts only an index that is ready.
 func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any) ([]workspaceCloneFile, error) {
 	rows, err := tx.Query(ctx,
-		`SELECT f.id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.status,
+		`SELECT f.id, f.topic_id, f.position, f.name, f.kind, f.size_bytes, f.status,
 			i.served, f.parser, f.blob_path, f.source_etag,
 			f.content_hash, f.source_sha256, f.parse_mode, f.ever_parsed_successfully,
 			f.index_limit, f.provenance, f.thumbnail_key, f.preview, f.revision, f.scope_file_names,
@@ -719,7 +720,7 @@ func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any)
 	for rows.Next() {
 		var file workspaceCloneFile
 		if err := rows.Scan(
-			&file.id, &file.chapterID, &file.position, &file.name, &file.kind,
+			&file.id, &file.topicID, &file.position, &file.name, &file.kind,
 			&file.sizeBytes, &file.status, &file.indexed, &file.parser,
 			&file.blobPath, &file.sourceETag, &file.contentHash, &file.sourceSHA256,
 			&file.parseMode, &file.everParsed, &file.indexLimit, &file.provenance,
@@ -744,17 +745,17 @@ func insertCloneFileTx(
 	tx pgx.Tx,
 	f workspaceCloneFile,
 	newID, workspaceID, actorID string,
-	chapterID *string,
+	topicID *string,
 	name string,
 	position int64,
 ) (*ThumbnailCopy, error) {
 	// The cloner pays and is credited (uploader pays).
 	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
+		(id, workspace_id, user_id, created_by, topic_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
 		 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance, preview, revision,
 		 scope_file_names)
 		VALUES ($1,NULLIF($2,''),$3,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
-		newID, workspaceID, actorID, chapterID, position, name, f.kind, f.sizeBytes, f.status, f.indexed, f.parser, f.blobPath,
+		newID, workspaceID, actorID, topicID, position, name, f.kind, f.sizeBytes, f.status, f.indexed, f.parser, f.blobPath,
 		f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance, f.preview, f.revision,
 		f.scopeFileNames); err != nil {
 		return nil, err
@@ -844,7 +845,7 @@ func cloneMentions(content string, members map[string]bool) (string, error) {
 }
 
 type workspaceCloneSnapshot struct {
-	chapters    []workspaceCloneChapter
+	topics      []workspaceCloneTopic
 	files       []workspaceCloneFile
 	assets      []workspaceCloneAsset
 	materials   []workspaceCloneMaterial
@@ -927,7 +928,7 @@ func (s *Store) snapshotWorkspaceForClone(
 ) (workspaceCloneSnapshot, error) {
 	var snapshot workspaceCloneSnapshot
 	rows, err := tx.Query(ctx,
-		`SELECT id, name, position FROM chapters
+		`SELECT id, name, description, position FROM topics
 		 WHERE workspace_id=$1 ORDER BY position`,
 		workspaceID,
 	)
@@ -935,12 +936,12 @@ func (s *Store) snapshotWorkspaceForClone(
 		return workspaceCloneSnapshot{}, err
 	}
 	for rows.Next() {
-		var chapter workspaceCloneChapter
-		if err := rows.Scan(&chapter.id, &chapter.name, &chapter.position); err != nil {
+		var topic workspaceCloneTopic
+		if err := rows.Scan(&topic.id, &topic.name, &topic.description, &topic.position); err != nil {
 			rows.Close()
 			return workspaceCloneSnapshot{}, err
 		}
-		snapshot.chapters = append(snapshot.chapters, chapter)
+		snapshot.topics = append(snapshot.topics, topic)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -1148,7 +1149,7 @@ func (s *Store) snapshotWorkspaceForClone(
 	return snapshot, nil
 }
 
-// CloneWorkspace deep-copies a shared workspace (chapters, files, materials,
+// CloneWorkspace deep-copies a shared workspace (topics, files, materials,
 // fresh card stats, retrieval index) into a new workspace owned by userID. Blob
 // objects are shared rather than duplicated: the clone copies blob_path and
 // editor asset object paths, and locks their refcount rows through commit. The
@@ -1161,6 +1162,16 @@ func (s *Store) snapshotWorkspaceForClone(
 func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string, input WorkspaceCreate) (Workspace, error) {
 	workspace, _, _, err := s.CloneWorkspaceThumbnails(ctx, userID, srcID, input)
 	return workspace, err
+}
+
+// cloneKind is a clone's kind (Epo 2026-11-04, board U3): an owner's or editor
+// member's keeps the source's; anyone else's is personal, so a member's copy
+// of a class is theirs alone.
+func cloneKind(source WorkspaceKind, member WorkspaceRole) WorkspaceKind {
+	if RoleCanEdit(member) {
+		return source
+	}
+	return WorkspacePersonal
 }
 
 // ThumbnailCopy is a thumbnail a clone copies under its own file id once it
@@ -1380,6 +1391,10 @@ func (s *Store) cloneWorkspaceOnce(
 			Kind:        "workspace",
 		}
 	}
+	// The copy takes the cloner's plan's topic cap, as it takes the file cap.
+	if len(snapshot.topics) > limits.TopicsPerWorkspace {
+		return "", nil, 0, ErrTooManyTopics
+	}
 	if err := s.gateStorageTx(ctx, tx, userID, snapshot.bytes); err != nil {
 		return "", nil, 0, err
 	}
@@ -1398,21 +1413,25 @@ func (s *Store) cloneWorkspaceOnce(
 	).Scan(&srcEmbed.Pin.ProviderSlug, &srcEmbed.Pin.ModelSlug, &srcEmbed.Pin.Version, &srcEmbed.Dim); err != nil {
 		return "", nil, 0, err
 	}
-	if err := s.insertWorkspaceTx(ctx, tx, newID, userID, input.Name, input.Tags, srcEmbed); err != nil {
+	member, _, err := workspaceRoles(ctx, tx, userID, srcID)
+	if err != nil {
+		return "", nil, 0, err
+	}
+	if err := s.insertWorkspaceTx(ctx, tx, newID, userID, input.Name, input.Tags, cloneKind(src.Kind, member), srcEmbed); err != nil {
 		return "", nil, 0, err
 	}
 	if err := setWorkspaceAppearanceTx(ctx, tx, newID, input); err != nil {
 		return "", nil, 0, err
 	}
 
-	// Chapters (old id -> new id).
-	chapterMap := map[string]string{}
+	// Topics (old id -> new id).
+	topicMap := map[string]string{}
 	{
-		for _, c := range snapshot.chapters {
-			nid := uid("ch")
-			chapterMap[c.id] = nid
-			if _, err := tx.Exec(ctx, `INSERT INTO chapters (id, workspace_id, name, position) VALUES ($1,$2,$3,$4)`,
-				nid, newID, c.name, c.position); err != nil {
+		for _, c := range snapshot.topics {
+			nid := uid("tp")
+			topicMap[c.id] = nid
+			if _, err := tx.Exec(ctx, `INSERT INTO topics (id, workspace_id, name, description, position) VALUES ($1,$2,$3,$4,$5)`,
+				nid, newID, c.name, c.description, c.position); err != nil {
 				return "", nil, 0, err
 			}
 		}
@@ -1425,13 +1444,13 @@ func (s *Store) cloneWorkspaceOnce(
 	for _, f := range snapshot.files {
 		nid := uid("f")
 		fileMap[f.id] = nid
-		var chapterID *string
-		if f.chapterID != nil {
-			if mapped, ok := chapterMap[*f.chapterID]; ok {
-				chapterID = &mapped
+		var topicID *string
+		if f.topicID != nil {
+			if mapped, ok := topicMap[*f.topicID]; ok {
+				topicID = &mapped
 			}
 		}
-		thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, newID, userID, chapterID, f.name, f.position)
+		thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, newID, userID, topicID, f.name, f.position)
 		if err != nil {
 			return "", nil, 0, err
 		}
@@ -1468,10 +1487,10 @@ func (s *Store) cloneWorkspaceOnce(
 					}
 				}
 			}
-			var chapterID *string
-			if mt.ChapterID != nil {
-				if mapped, ok := chapterMap[*mt.ChapterID]; ok {
-					chapterID = &mapped
+			var topicID *string
+			if mt.TopicID != nil {
+				if mapped, ok := topicMap[*mt.TopicID]; ok {
+					topicID = &mapped
 				}
 			}
 			content := materialSnapshot.content
@@ -1488,11 +1507,11 @@ func (s *Store) cloneWorkspaceOnce(
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO materials
 				(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-					 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance,
+					 topic_id, position, scope_topics, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance,
 					 parent_material_id, preview)
 				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17,$18,$19)`,
-				nid, userID, newID, input.Name, mt.Kind, title, json.RawMessage(content), chapterID,
-				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
+				nid, userID, newID, input.Name, mt.Kind, title, json.RawMessage(content), topicID,
+				mt.Position, mt.ScopeTopics, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
 				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID, materialSnapshot.preview); err != nil {
 				return "", nil, 0, err
 			}
@@ -1776,12 +1795,12 @@ func unzipIDs(m map[string]string) (old, fresh []string) {
 
 // CloneTarget is where a single file or material copy lands and what it is
 // called: a workspace the actor edits, optionally filed in one of its
-// chapters (ChapterID) or a chapter by name created when missing
-// (ChapterName), or no workspace for a standalone material.
+// topics (TopicID) or a topic by name created when missing
+// (TopicName), or no workspace for a standalone material.
 type CloneTarget struct {
 	WorkspaceID string
-	ChapterID   *string
-	ChapterName string
+	TopicID     *string
+	TopicName   string
 	Name        string
 }
 
@@ -1789,7 +1808,7 @@ type CloneTarget struct {
 type cloneDestination struct {
 	workspaceID, workspaceName string
 	payerID                    string // the copy's bytes are charged here
-	chapterID                  *string
+	topicID                    *string
 	members                    map[string]bool // mentions that stay live
 }
 
@@ -1818,7 +1837,7 @@ func (s *Store) lockCloneTargetTx(
 		return cloneDestination{}, err
 	}
 	dest := cloneDestination{workspaceID: target.WorkspaceID, payerID: actorID, members: map[string]bool{ownerID: true}}
-	if dest.chapterID, err = resolveUploadChapterID(ctx, tx, target.WorkspaceID, target.ChapterID, target.ChapterName); err != nil {
+	if dest.topicID, err = s.resolveUploadTopicID(ctx, tx, target.WorkspaceID, target.TopicID, target.TopicName); err != nil {
 		return cloneDestination{}, err
 	}
 	if err := tx.QueryRow(ctx, `SELECT name FROM workspaces WHERE id=$1`, target.WorkspaceID).
@@ -1969,7 +1988,7 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 		return "", nil, err
 	}
 	nid := uid("f")
-	thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, dest.workspaceID, userID, dest.chapterID,
+	thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, dest.workspaceID, userID, dest.topicID,
 		target.Name, time.Now().UnixMicro())
 	if err != nil {
 		return "", nil, err
@@ -2055,7 +2074,7 @@ func (s *Store) queueCloneIngestTx(ctx context.Context, tx pgx.Tx, actorID, work
 }
 
 // CloneMaterial copies one material into a workspace the actor edits (and
-// one of its chapters) or, with no workspace, into a private standalone copy.
+// one of its topics) or, with no workspace, into a private standalone copy.
 // A note brings its embedded rows along under fresh ids; flashcards get fresh
 // card ids; editor assets get fresh rows over shared blobs. Comments, Yjs
 // state and study progress are not copied. The cloner pays.
@@ -2234,12 +2253,12 @@ func (s *Store) cloneMaterialOnce(
 		return "", err
 	}
 
-	// Scope names chapters and files of the source's workspace: kept only in it.
-	scopeChapters, scopeFileNames := []string{}, []string{}
+	// Scope names topics and files of the source's workspace: kept only in it.
+	scopeTopics, scopeFileNames := []string{}, []string{}
 	if dest.workspaceID != "" && dest.workspaceID == src.WorkspaceID {
-		scopeChapters, scopeFileNames = src.ScopeChapters, src.ScopeFileNames
+		scopeTopics, scopeFileNames = src.ScopeTopics, src.ScopeFileNames
 	}
-	insert := func(clone materialClone, title string, chapterID, parentID *string, scopeChapters, scopeFileNames []string) error {
+	insert := func(clone materialClone, title string, topicID, parentID *string, scopeTopics, scopeFileNames []string) error {
 		// Attribution travels with the copy: dropping it would strip the
 		// source books' licence credit.
 		var provenance []byte
@@ -2251,11 +2270,11 @@ func (s *Store) cloneMaterialOnce(
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO materials
 			(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-			 chapter_id, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, revision, updated_by,
+			 topic_id, scope_topics, scope_file_names, privacy, color, node_count, max_depth, revision, updated_by,
 			 parent_material_id, provenance, preview)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$2,$16,$17,$18)`,
 			clone.newID, userID, dest.payerID, nullStr(dest.workspaceID), dest.workspaceName, clone.src.Kind,
-			title, json.RawMessage(clone.content), chapterID, scopeChapters, scopeFileNames, clone.src.Color,
+			title, json.RawMessage(clone.content), topicID, scopeTopics, scopeFileNames, clone.src.Color,
 			clone.metrics.NodeCount, clone.metrics.MaxDepth, clone.src.Revision, parentID, provenance,
 			clone.preview); err != nil {
 			if isUniqueViolation(err) {
@@ -2271,7 +2290,7 @@ func (s *Store) cloneMaterialOnce(
 		}
 		return nil
 	}
-	if err := insert(root, target.Name, dest.chapterID, nil, scopeChapters, scopeFileNames); err != nil {
+	if err := insert(root, target.Name, dest.topicID, nil, scopeTopics, scopeFileNames); err != nil {
 		return "", err
 	}
 	if err := markCreatedTx(ctx, tx, userID, OpenMaterial, root.newID); err != nil {

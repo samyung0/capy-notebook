@@ -111,7 +111,7 @@ type generateOpts struct {
 	Count       int // questions or cards; required for a quiz or flashcard set
 	Types       []string
 	Levels      []string
-	Chapters    []string
+	Topics      []string
 	FileIds     []string
 	Detail      string
 	DiagramType string
@@ -132,7 +132,7 @@ func generateOptsFrom(req apimodel.GenerateReq, title string) generateOpts {
 		Count:       req.Count,
 		Types:       types,
 		Levels:      levels,
-		Chapters:    req.Chapters,
+		Topics:      req.Topics,
 		FileIds:     req.FileIds,
 		Detail:      string(req.Detail),
 		DiagramType: string(req.DiagramType),
@@ -151,10 +151,10 @@ func normalizeGenerateTitle(title string) (string, error) {
 }
 
 // resolveScope resolves the Generate panel's ids: any untrashed file or
-// top-level material of the workspace, and chapters, which add every item
+// top-level material of the workspace, and topics, which add every item
 // filed in them. No ids means every item. Items without indexed text
 // contribute none; a scope with no text at all is refused.
-func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts) (fileIDs, fileNames, chapterNames []string, err error) {
+func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts) (fileIDs, fileNames, topicNames []string, err error) {
 	items, err := a.s.SourceItems(ctx, wsID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -178,28 +178,28 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 		}
 		add(id)
 	}
-	if len(opts.FileIds) == 0 && len(opts.Chapters) == 0 {
+	if len(opts.FileIds) == 0 && len(opts.Topics) == 0 {
 		for _, item := range items {
 			add(item.ID)
 		}
 	}
-	if len(opts.Chapters) > 0 {
-		chapters, err := a.s.ListChapters(ctx, wsID)
+	if len(opts.Topics) > 0 {
+		topics, err := a.s.ListTopics(ctx, wsID)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		names := make(map[string]string, len(chapters))
-		for _, ch := range chapters {
+		names := make(map[string]string, len(topics))
+		for _, ch := range topics {
 			names[ch.ID] = ch.Name
 		}
-		for _, id := range opts.Chapters {
+		for _, id := range opts.Topics {
 			name, ok := names[id]
 			if !ok {
-				return nil, nil, nil, unknownScopeIDError{kind: "chapter", id: id}
+				return nil, nil, nil, unknownScopeIDError{kind: "topic", id: id}
 			}
-			chapterNames = append(chapterNames, name)
+			topicNames = append(topicNames, name)
 			for _, item := range items {
-				if item.ChapterID != nil && *item.ChapterID == id {
+				if item.TopicID != nil && *item.TopicID == id {
 					add(item.ID)
 				}
 			}
@@ -214,17 +214,17 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 	if !hasIndexed {
 		return nil, nil, nil, errScopeNoIndexedContent
 	}
-	return fileIDs, fileNames, chapterNames, nil
+	return fileIDs, fileNames, topicNames, nil
 }
 
 type unknownScopeIDError struct {
-	kind string // item or chapter
+	kind string // item or topic
 	id   string
 }
 
 func (e unknownScopeIDError) Error() string {
-	if e.kind == "chapter" {
-		return fmt.Sprintf("No chapter has the id %q: it may have been deleted.", e.id)
+	if e.kind == "topic" {
+		return fmt.Sprintf("No topic has the id %q: it may have been deleted.", e.id)
 	}
 	return fmt.Sprintf("No workspace item has the id %q: it may have been deleted or moved to trash.", e.id)
 }
@@ -236,13 +236,13 @@ func (a *api) generateViaPipe(
 	llm resolvedLLM,
 	spendSessionID string,
 ) (any, pipeUsage, error) {
-	fileIDs, fileNames, chapterNames, err := a.resolveScope(ctx, wsID, opts)
+	fileIDs, fileNames, topicNames, err := a.resolveScope(ctx, wsID, opts)
 	if err != nil {
 		return nil, pipeUsage{}, err
 	}
 	body := map[string]any{
 		"workspaceId": wsID, "kind": opts.Kind, "types": opts.Types, "levels": opts.Levels,
-		"chapters": chapterNames, "fileIds": fileIDs, "fileNames": fileNames,
+		"topics": topicNames, "fileIds": fileIDs, "fileNames": fileNames,
 		"detail": opts.Detail, "diagramType": opts.DiagramType,
 		"locale":         a.userLocale(ctx, userID),
 		"spendSessionId": spendSessionID,
@@ -286,8 +286,8 @@ func (a *api) generateViaPipe(
 		}
 		mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
 			ActorUserID: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "quiz", Title: name,
-			Questions:     qp.Questions,
-			ScopeChapters: chapterNames, ScopeFileNames: fileNames,
+			Questions:   qp.Questions,
+			ScopeTopics: topicNames, ScopeFileNames: fileNames,
 		})
 		if err != nil {
 			return nil, usage, err
@@ -315,7 +315,7 @@ func (a *api) generateViaPipe(
 		for _, c := range fp.Cards {
 			fronts = append(fronts, [2]string{c.Front, c.Back})
 		}
-		res, err := a.persistFlashcardSet(ctx, userID, wsID, wsName, opts.Title, fronts, chapterNames, fileNames)
+		res, err := a.persistFlashcardSet(ctx, userID, wsID, wsName, opts.Title, fronts, topicNames, fileNames)
 		if err != nil {
 			return nil, usage, err
 		}
@@ -326,7 +326,7 @@ func (a *api) generateViaPipe(
 			Content string `json:"content"`
 		}
 		_ = json.Unmarshal(raw, &mp)
-		res, err := a.persistMaterial(ctx, userID, wsID, wsName, store.MaterialKind(head.Kind), opts.Title, mp.Content, chapterNames, fileNames)
+		res, err := a.persistMaterial(ctx, userID, wsID, wsName, store.MaterialKind(head.Kind), opts.Title, mp.Content, topicNames, fileNames)
 		if err != nil {
 			return nil, usage, err
 		}
@@ -343,14 +343,14 @@ func (a *api) persistFlashcardSet(
 	ctx context.Context,
 	userID, wsID, wsName, title string,
 	cards [][2]string,
-	chapterNames, fileNames []string,
+	topicNames, fileNames []string,
 ) (any, error) {
 	if len(cards) == 0 {
 		return nil, errGenerateEmpty
 	}
 	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
 		ActorUserID: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "flashcards", Title: title,
-		Cards: cards, ScopeChapters: chapterNames, ScopeFileNames: fileNames, Color: "green",
+		Cards: cards, ScopeTopics: topicNames, ScopeFileNames: fileNames, Color: "green",
 	})
 	if err != nil {
 		return nil, err
@@ -372,13 +372,13 @@ func (a *api) persistFlashcardSet(
 	return map[string]any{"kind": "flashcards", "material": flashcardSet, "cards": out}, nil
 }
 
-func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName string, kind store.MaterialKind, title, content string, chapterNames, fileNames []string) (any, error) {
+func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName string, kind store.MaterialKind, title, content string, topicNames, fileNames []string) (any, error) {
 	if strings.TrimSpace(content) == "" {
 		return nil, errGenerateEmpty
 	}
 	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
 		ActorUserID: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: kind, Title: title,
-		Content: content, ScopeChapters: chapterNames, ScopeFileNames: fileNames,
+		Content: content, ScopeTopics: topicNames, ScopeFileNames: fileNames,
 	})
 	if err != nil {
 		return nil, err

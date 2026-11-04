@@ -16,7 +16,7 @@ type starterProvisioner struct {
 }
 
 // CreateDefaultWorkspace provisions the starter workspace once, then adds a
-// chapter holding a blank Word file and the welcome note (Epo 2026-10-29).
+// topic holding a blank Word file and the welcome note (Epo 2026-10-29).
 // Sample content never fails the account's first request: a failure is
 // reported and leaves the workspace as far as it got.
 func (p starterProvisioner) CreateDefaultWorkspace(ctx context.Context, userID string) error {
@@ -34,13 +34,13 @@ func (p starterProvisioner) CreateDefaultWorkspace(ctx context.Context, userID s
 
 func (a *api) fillStarterWorkspace(ctx context.Context, userID string, ws store.StarterWorkspace) error {
 	sample := store.StarterCopyFor(ws.Locale)
-	chapter, err := a.s.AddChapter(ctx, ws.ID, userID, sample.Chapter)
+	topic, err := a.s.AddTopic(ctx, ws.ID, userID, sample.Topic, "")
 	if err != nil {
 		return err
 	}
-	if _, err := a.s.CreateStarterNote(ctx, userID, ws, chapter.ID); err != nil {
+	if _, err := a.s.CreateStarterNote(ctx, userID, ws, topic.ID); err != nil {
 		return err
 	}
-	_, err = a.addBlankOfficeFile(ctx, userID, ws.ID, "docx", sample.Document+".docx", &chapter.ID)
+	_, err = a.addBlankOfficeFile(ctx, userID, ws.ID, "docx", sample.Document+".docx", &topic.ID)
 	return err
 }

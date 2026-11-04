@@ -85,13 +85,13 @@ const quiz = {
 };
 const workspace = {
   author: 'Mia',
-  chapters: [],
   description: '',
   files: [],
   iconId: 'waves-03',
   name: 'Biology',
   privacy: 'public',
   tags: [],
+  topics: [],
 };
 const QUIZ_PAGE = `/share/quizzes/${await shareToken(DEV_SHARE_LINK_SECRET, 'mat_0123456789')}`;
 const SUMMARY_PAGE = await sharePath(DEV_SHARE_LINK_SECRET, 'ws_0123456789');

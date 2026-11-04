@@ -207,31 +207,19 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 	if got := f.progress(t, set); got != "done" {
 		t.Fatalf("set after a new card = %q", got)
 	}
-	// Practising a removed set brings it back.
-	removed := "removed"
-	if err := f.s.SetStudyItem(ctx, f.user, f.ws.ID, nil, &set, &removed); err != nil {
-		t.Fatal(err)
-	}
-	f.rate(t, cards[0], 3)
-	if got := f.progress(t, set); got == "removed" || got == "" {
-		t.Fatalf("removed set after practice = %q", got)
-	}
 	score := 1.0
 	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: set, ItemID: cards[0].ID, Score: &score}, time.Now()); !errors.Is(err, ErrStudyRating) {
 		t.Fatalf("a card scored like a question: %v", err)
 	}
-	if err := f.s.SetStudyItem(ctx, f.user, f.ws.ID, nil, &embedded.ID, &removed); !errors.Is(err, ErrStudyTarget) {
-		t.Fatalf("an embedded quiz entered progress: %v", err)
-	}
 
 	// What the chat agent reads: the quiz and the set, the one workspace quiz
-	// attempt, and the unfiled chapter holding all four rated items.
+	// attempt, and the unfiled topic holding all four rated items.
 	progress, err := f.s.AgentStudyProgress(ctx, f.user, f.ws.ID, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !progress.Enabled || len(progress.Items) != 2 || len(progress.RecentAttempts) != 1 ||
-		len(progress.WeakChapters) != 1 || progress.WeakChapters[0].Items != 4 {
+		len(progress.WeakTopics) != 1 || progress.WeakTopics[0].Items != 4 {
 		t.Fatalf("agent progress = %+v", progress)
 	}
 }
@@ -240,15 +228,10 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	f := newStudyFixture(t, "u_study_review")
 	ctx := context.Background()
 	kept := f.set(t, [2]string{"Golgi", "Ships proteins"}, [2]string{"Lysosome", "Digests waste"})
-	gone := f.set(t, [2]string{"Ribosome", "Makes proteins"})
 	trashed := f.set(t, [2]string{"Nucleus", "Holds DNA"})
 	unrated := f.set(t, [2]string{"Vacuole", "Stores water"})
-	for _, c := range []Flashcard{kept[0], kept[1], gone[0], trashed[0]} {
+	for _, c := range []Flashcard{kept[0], kept[1], trashed[0]} {
 		f.rate(t, c, 3)
-	}
-	removed := "removed"
-	if err := f.s.SetStudyItem(ctx, f.user, f.ws.ID, nil, &gone[0].MaterialID, &removed); err != nil {
-		t.Fatal(err)
 	}
 	if _, err := f.s.TrashMaterial(ctx, f.user, trashed[0].MaterialID, "", AgentOperation{}); err != nil {
 		t.Fatal(err)
@@ -257,8 +240,8 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	editCardFront(t, f.s, f.user, kept[1].MaterialID, kept[1].ID, "Golgi apparatus")
 
 	// A manual review takes the practised card and the new ones (the edited
-	// card and the never-rated set), not the removed or trashed sets.
-	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, time.Now())
+	// card and the never-rated set), not the trashed set.
+	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,16 +300,13 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	if err := f.s.SetWorkspaceStudy(ctx, f.user, f.ws.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.CreateStudyPlan(ctx, f.user, f.ws.ID, "Plan"); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := f.s.RequestAccountDeletion(ctx, f.user, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.s.PurgeUser(ctx, f.user); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"study_progress", "workspace_study", "review_states", "review_log", "review_sessions", "study_plans"} {
+	for _, table := range []string{"study_progress", "workspace_study", "review_states", "review_log", "review_sessions"} {
 		if n := f.count(t, `SELECT count(*) FROM `+table+` WHERE user_id=$1`, f.user); n != 0 {
 			t.Fatalf("%s after account purge = %d", table, n)
 		}
@@ -351,16 +331,11 @@ func TestQuizAttemptRatesHalfMarks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Remove the quiz first: an attempt brings it back.
-	removed := "removed"
-	if err := f.s.SetStudyItem(ctx, f.user, f.ws.ID, nil, &quiz.ID, &removed); err != nil {
-		t.Fatal(err)
-	}
 	snapshot, _ := json.Marshal([]any{question("a", 0.5), question("b", 1), question("c", 1.5)})
 	answers := `{"a:part:1":"x","b:part:1":"x","c:part:1":"x"}`
 	checkQuiz(t, f.s, f.user, quiz.ID, snapshot, answers)
 	if got := f.progress(t, quiz.ID); got != "done" {
-		t.Fatalf("removed quiz after an attempt = %q", got)
+		t.Fatalf("quiz after an attempt = %q", got)
 	}
 	for item, want := range map[string]int{"a": 1, "b": 2, "c": 3} {
 		if n := f.count(t, `SELECT rating FROM review_log WHERE user_id=$1 AND material_id=$2 AND item_id=$3`, f.user, quiz.ID, item); n != want {
@@ -477,7 +452,7 @@ func TestReviewSkipsEmbeddedOrphanedAndEditedItems(t *testing.T) {
 
 	removeCard(t, f.s, f.user, cards[0].MaterialID, cards[1].ID)
 	editCardFront(t, f.s, f.user, cards[0].MaterialID, cards[2].ID, "Nucleus envelope")
-	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, time.Now())
+	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

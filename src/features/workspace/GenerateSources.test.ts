@@ -1,35 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import type { Chapter, MaterialRef, SourceFile } from '@/api/types';
+import type { MaterialRef, SourceFile, Topic } from '@/api/types';
 import { scopeOf, sourceGroups } from './GenerateSources';
 
-const chapter = (id: string, order: number) =>
-  ({ id, name: id, order }) as Chapter;
-const file = (id: string, chapterId: string | null, indexed = true) =>
+const topic = (id: string, order: number) => ({ id, name: id, order }) as Topic;
+const file = (id: string, topicId: string | null, indexed = true) =>
   ({
     addedAt: '2026-10-25T00:00:00Z',
-    chapterId,
     id,
     indexed,
     kind: 'pdf',
     name: `${id}.pdf`,
     position: 0,
+    topicId,
   }) as SourceFile;
 const material = (
   id: string,
   type: MaterialRef['type'],
-  chapterId: string | null
+  topicId: string | null
 ) =>
   ({
-    chapterId,
     createdAt: '2026-10-25T00:00:00Z',
     id,
     position: 1,
     title: id,
+    topicId,
     type,
   }) as MaterialRef;
 
 const groups = sourceGroups(
-  [chapter('genetics', 2), chapter('cells', 1), chapter('empty', 3)],
+  [topic('genetics', 2), topic('cells', 1), topic('empty', 3)],
   [
     file('a', 'cells'),
     file('b', 'cells'),
@@ -41,7 +40,7 @@ const groups = sourceGroups(
 );
 
 describe('sourceGroups', () => {
-  it('lists indexed files and notes by chapter order, then Others', () => {
+  it('lists indexed files and notes by topic order, then Others', () => {
     expect(groups.map((g) => [g.id, g.items.map((it) => it.id)])).toEqual([
       ['cells', ['a', 'b', 'note']],
       ['genetics', ['c']],
@@ -53,15 +52,15 @@ describe('sourceGroups', () => {
 describe('scopeOf', () => {
   it('sends nothing for the whole workspace', () => {
     expect(scopeOf(groups, new Set(['a', 'b', 'note', 'c', 'd']))).toEqual({
-      chapters: [],
       fileIds: [],
+      topics: [],
     });
   });
 
-  it('sends whole chapters by id and the other ticked items by id', () => {
+  it('sends whole topics by id and the other ticked items by id', () => {
     expect(scopeOf(groups, new Set(['c', 'a', 'd']))).toEqual({
-      chapters: ['genetics'],
       fileIds: ['a', 'd'],
+      topics: ['genetics'],
     });
   });
 });

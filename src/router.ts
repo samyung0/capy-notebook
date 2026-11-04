@@ -11,7 +11,6 @@ import {
   attemptsQuery,
   billingQuery,
   cardsQuery,
-  chaptersQuery,
   conversationsQuery,
   eventsQuery,
   exploreFlashcardSetsQuery,
@@ -21,7 +20,6 @@ import {
   filesQuery,
   flashcardSetQuery,
   labelsQuery,
-  learningProgressQuery,
   materialQuery,
   materialsQuery,
   meQuery,
@@ -33,6 +31,7 @@ import {
   recentQuery,
   reviewOverviewQuery,
   tasksQuery,
+  topicsQuery,
   usageQuery,
   workspaceQuery,
   workspacesQuery,
@@ -221,7 +220,7 @@ const blocksRedirect = <const T extends string>(path: T) =>
 
 const appRoutes = [
   createRoute({
-    component: lazyPage(() => import('@/routes/Dashboard')),
+    component: lazyPage(() => import('@/routes/Home')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
@@ -271,7 +270,7 @@ const appRoutes = [
       const id = params.workspaceId;
       qc.prefetchQuery(workspaceQuery(id));
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
-      qc.prefetchQuery(chaptersQuery(id));
+      qc.prefetchQuery(topicsQuery(id));
       qc.prefetchQuery(filesQuery(id));
       qc.prefetchQuery(materialsQuery(id));
       qc.prefetchQuery(conversationsQuery(id));
@@ -318,14 +317,12 @@ const appRoutes = [
       const saved =
         search.tab === 'results'
           ? savedSort('results', RESULT_SORTS, RESULT_SORT_DEFAULT, search)
-          : search.tab === 'review'
-            ? savedSort(
-                'pastReviews',
-                PAST_REVIEW_SORTS,
-                PAST_REVIEW_SORT_DEFAULT,
-                search
-              )
-            : undefined;
+          : savedSort(
+              'pastReviews',
+              PAST_REVIEW_SORTS,
+              PAST_REVIEW_SORT_DEFAULT,
+              search
+            );
       if (saved)
         throw redirect({
           replace: true,
@@ -337,7 +334,6 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       void qc.prefetchInfiniteQuery(attemptsQuery());
-      void qc.prefetchQuery(learningProgressQuery());
       void qc.prefetchQuery(reviewOverviewQuery());
     },
     path: '/learning',
@@ -348,10 +344,6 @@ const appRoutes = [
         ...(tab.tab === 'results'
           ? parseResultsSearch(search)
           : parsePastReviewsSearch(search)),
-        // The workspace a finish toast's Go check leads Progress's map with.
-        ...(typeof search.finished === 'string' && search.finished
-          ? { finished: search.finished }
-          : {}),
       };
     },
   }),

@@ -36,10 +36,10 @@ def _passage(chunk_id: str, file_id: str = "f_1", **kwargs) -> Passage:
 async def test_unscoped_context_resolves_to_every_workspace_file():
     ctx = ToolContext(workspace_id="ws_1")
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
-            {"id": "f_1", "name": "one", "chapter_id": None, "chunks": 1},
-            {"id": "f_2", "name": "two", "chapter_id": None, "chunks": 1},
+            {"id": "f_1", "name": "one", "topic_id": None, "chunks": 1},
+            {"id": "f_2", "name": "two", "topic_id": None, "chunks": 1},
         ],
     }
 
@@ -52,11 +52,11 @@ async def test_unscoped_context_resolves_to_every_workspace_file():
 async def test_agent_cannot_widen_a_scope_the_user_narrowed():
     ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1", "f_2"])
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
-            {"id": "f_1", "name": "one", "chapter_id": None, "chunks": 1},
-            {"id": "f_2", "name": "two", "chapter_id": None, "chunks": 1},
-            {"id": "f_99", "name": "other", "chapter_id": None, "chunks": 1},
+            {"id": "f_1", "name": "one", "topic_id": None, "chunks": 1},
+            {"id": "f_2", "name": "two", "topic_id": None, "chunks": 1},
+            {"id": "f_99", "name": "other", "topic_id": None, "chunks": 1},
         ],
     }
 
@@ -73,10 +73,10 @@ async def test_agent_cannot_widen_a_scope_the_user_narrowed():
 async def test_fully_out_of_scope_request_is_rejected_not_widened():
     ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
-            {"id": "f_1", "name": "one", "chapter_id": None, "chunks": 1},
-            {"id": "f_99", "name": "other", "chapter_id": None, "chunks": 1},
+            {"id": "f_1", "name": "one", "topic_id": None, "chunks": 1},
+            {"id": "f_99", "name": "other", "topic_id": None, "chunks": 1},
         ],
     }
 
@@ -144,8 +144,8 @@ async def test_dispatch_rechecks_operations_and_validates_arguments(monkeypatch)
 def test_restricted_empty_scope_stays_empty():
     ctx = ToolContext(workspace_id="ws_1", file_ids=[])
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "one", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "one", "topic_id": None, "chunks": 1}],
     }
     import asyncio
 
@@ -581,9 +581,9 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert rendered["_kind"] == "turn_context"
     assert "Open: Cells.pdf (file f_1). The learner owns this workspace." in body
     assert "General: Explainers are short" in body, "brief writing"
-    assert "a PowerPoint explains each chapter" in body
+    assert "a PowerPoint explains each topic" in body
     assert (
-        "each chapter with a quiz of at most 2 questions and a set of at most 10 flashcards"
+        "each topic with a quiz of at most 2 questions and a set of at most 10 flashcards"
         in body
     )
     # Knowledge checks are notes only: a deck's turn gets no check line.
@@ -595,11 +595,11 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert body.count("- e_1 ") == 1, "one line per excerpt, not per read"
     assert turn_context.FINAL_NOTICE in turn_context.message(ctx, final=True)["content"]
 
-    # Chapters come from list_sources; the open file names its own (Epo 2026-10-25).
-    ctx.chapters = [{"id": "ch_1", "name": "Cells"}, {"id": "ch_2", "name": "Genes"}]
-    ctx.open_resource["chapter_id"] = "ch_2"
+    # Topics come from list_sources; the open file names its own (Epo 2026-10-25).
+    ctx.topics = [{"id": "ch_1", "name": "Cells"}, {"id": "ch_2", "name": "Genes"}]
+    ctx.open_resource["topic_id"] = "ch_2"
     filed = turn_context.message(ctx)["content"]
-    assert "Open: Cells.pdf (file f_1), in chapter Genes [ch_2]." in filed
+    assert "Open: Cells.pdf (file f_1), in topic Genes [ch_2]." in filed
     assert "ch_1" not in filed
     # The open file is no request of its own (Epo 2026-10-25).
     assert turn_context.OPEN_CAUTION in filed
@@ -610,10 +610,10 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert "Open: nothing. The learner can only view this workspace." in empty
     assert "Library excerpts" not in empty
     assert (
-        "Output files: each chapter with a quiz of at most 2 questions; make no "
+        "Output files: each topic with a quiz of at most 2 questions; make no "
         "standalone flashcards unless asked." in empty
     ), "default preferences: quiz less, flashcards off said off"
-    assert "a note explains each chapter" in empty
+    assert "a note explains each topic" in empty
     assert (
         "Notes: Close each note section with a knowledge check of at most 1 question."
         in empty
@@ -732,12 +732,12 @@ def test_tier_only_is_untouched_when_no_tier_fired():
 async def test_gather_context_rejects_one_invalid_file_atomically(monkeypatch):
     async def _outline(_workspace_id):
         return {
-            "chapters": [],
+            "topics": [],
             "files": [
                 {
                     "id": "f_valid",
                     "name": "valid.md",
-                    "chapter_id": None,
+                    "topic_id": None,
                     "chunks": 1,
                 }
             ],
@@ -865,7 +865,7 @@ def test_normalize_questions_rejects_legacy_or_partial_output():
 
 def test_scope_label_names_both_axes():
     assert workflows.scope_label(["Ch 1"], ["a.pdf"]) == (
-        "chapters Ch 1; documents a.pdf"
+        "topics Ch 1; documents a.pdf"
     )
     assert workflows.scope_label([], []) == ""
 
@@ -1448,7 +1448,7 @@ def test_study_progress_is_offered_only_when_progress_is_on():
     assert "read_study_progress" in _names(ctx)
 
 
-def test_study_progress_renders_states_quizzes_and_weak_chapters():
+def test_study_progress_renders_states_quizzes_and_weak_topics():
     text = tools.render_progress(
         {
             "items": [
@@ -1465,16 +1465,16 @@ def test_study_progress_renders_states_quizzes_and_weak_chapters():
                     "quizName": "Cell quiz",
                     "pct": 62,
                     "takenAt": "2026-10-03T09:00:00Z",
-                    "chapters": ["Cells"],
+                    "topics": ["Cells"],
                 }
             ],
-            "weakChapters": [{"chapter": "", "retention": 0.41, "items": 7}],
+            "weakTopics": [{"topic": "", "retention": 0.41, "items": 7}],
         }
     )
     assert "Done:\n- Cells.pdf (file f_1)" in text
     assert "Started:\n- Organelles (material m_2)" in text
     assert "- Cell quiz: 62% on 2026-10-03 (Cells)" in text
-    assert "- Not in a chapter: 41% retained across 7" in text
+    assert "- Not in a topic: 41% retained across 7" in text
     assert (
         tools.render_progress({}) == "No study progress recorded in this workspace yet."
     )

@@ -8,10 +8,11 @@ export interface PlanLimits {
   ownedWorkspaceLimit: number | null;
   sourceFileMaxBytes: number;
   storageLimitBytes: number;
+  topicsPerWorkspace: number;
 }
 
 /**
- * Explicit product-copy snapshot of `plan_limits` (initial schema plus 0069, 0070 and 0114,
+ * Explicit product-copy snapshot of `plan_limits` (initial schema plus 0069, 0070, 0114 and 0136,
  * Pro's 10,000 credits set directly in UAT on 2026-10-15, and Free's 300 monthly
  * credits set there on 2026-10-30; the 800-credit starter grant comes with the first saved card, migration 0109).
  * This is intentionally not fetched through an API. Changing a value is an
@@ -27,6 +28,7 @@ export const PLAN_LIMITS = {
     ownedWorkspaceLimit: 10,
     sourceFileMaxBytes: 10_485_760,
     storageLimitBytes: 100_000_000,
+    topicsPerWorkspace: 10,
   },
   pro: {
     creditLimitMicros: 10_000_000_000,
@@ -36,5 +38,6 @@ export const PLAN_LIMITS = {
     ownedWorkspaceLimit: 50,
     sourceFileMaxBytes: 31_457_280,
     storageLimitBytes: 1_000_000_000,
+    topicsPerWorkspace: 20,
   },
 } as const satisfies Record<PlanTier, PlanLimits>;

@@ -196,14 +196,14 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
         )
     ]
     # Every place problem at once, not the first of them.
-    placed = questions.check({"questions": [MCQ], "chapter_id": "ch"})
+    placed = questions.check({"questions": [MCQ], "topic_id": "ch"})
     assert placed.call == [
         (
             "quiz_id, title: expected exactly one, quiz_id to add to a quiz or title to "
             "create one; sent neither"
         ),
         (
-            "chapter_id: files a new quiz, so it goes with title; adding to a quiz takes "
+            "topic_id: files a new quiz, so it goes with title; adding to a quiz takes "
             "quiz_id alone"
         ),
     ]
@@ -217,7 +217,7 @@ def test_a_blank_field_is_left_out_unless_the_kind_needs_it():
     sent = {
         "title": "T",
         "quiz_id": "null",
-        "chapter_id": "",
+        "topic_id": "",
         "questions": [
             {**MCQ, "accepted": [], "unit": "", "explanation": None, "back": ""},
             {**SHORT, "accepted": [], "options": None},
@@ -328,14 +328,14 @@ def _store(quiz: list[dict], written: list) -> QuizStore:
 
 async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkeypatch):
     """The valid questions land after the quiz's last question, in order; the
-    left-out one is named for resending in its place. A chapter_id beside
+    left-out one is named for resending in its place. A topic_id beside
     quiz_id is ignored and said so."""
     ctx = _ctx(monkeypatch)
     written: list = []
     store = _store([{"id": "q_old", "stem": [], "parts": []}], written)
     args = {
         "quiz_id": "mat_q",
-        "chapter_id": "ch_1",
+        "topic_id": "ch_1",
         "questions": [MCQ, {**SHORT, "accepted": ["minus seventy"]}, SHORT],
         "_tool_call_id": "call_1",
     }
@@ -358,7 +358,7 @@ async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkey
         "- questions[1].accepted[0]: expected a plain number because unit is set"
         in text
     )
-    assert text.endswith("chapter_id ignored: quiz mat_q keeps its chapter.")
+    assert text.endswith("topic_id ignored: quiz mat_q keeps its topic.")
 
     # Nothing valid: nothing is written and every problem comes back at once.
     refused = await tools.write_questions(

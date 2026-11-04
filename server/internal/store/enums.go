@@ -57,6 +57,19 @@ func (Privacy) Schema(r huma.Registry) *huma.Schema {
 	return enumRef(r, "Privacy", "private", "public", "link")
 }
 
+// WorkspaceKind is what a workspace is used for (Epo 2026-11-04, board U3): it
+// decides who sees what in Study, not who may do what elsewhere.
+type WorkspaceKind string
+
+const (
+	WorkspaceClass    WorkspaceKind = "class"
+	WorkspacePersonal WorkspaceKind = "personal"
+)
+
+func (WorkspaceKind) Schema(r huma.Registry) *huma.Schema {
+	return enumRef(r, "WorkspaceKind", "class", "personal")
+}
+
 // WorkspaceRole controls collaborative access. Persisted workspace membership
 // and effective link/public material access both use these capability levels.
 type WorkspaceRole string

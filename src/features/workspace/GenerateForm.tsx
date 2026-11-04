@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import {
-  type Chapter,
   type DiagramType,
   type GenerateOptions,
   type MaterialRef,
   QUESTION_TYPES,
   type QuestionType,
   type SourceFile,
+  type Topic,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { DialogFooter, DialogPrimary } from '@/components/ui/Dialog';
@@ -164,7 +164,7 @@ function OptionSelect<T extends string>({
  * so each kind's options start fresh. */
 export function GenerateForm({
   mode,
-  chapters,
+  topics,
   files,
   materials,
   workspaceName,
@@ -175,7 +175,7 @@ export function GenerateForm({
   onGenerate,
 }: {
   mode: GenerateMode;
-  chapters: Chapter[];
+  topics: Topic[];
   files: SourceFile[];
   materials: MaterialRef[];
   workspaceName: string;
@@ -196,8 +196,8 @@ export function GenerateForm({
   const [diagramType, setDiagramType] = useState<DiagramType>('auto');
 
   const groups = useMemo(
-    () => sourceGroups(chapters, files, materials),
-    [chapters, files, materials]
+    () => sourceGroups(topics, files, materials),
+    [topics, files, materials]
   );
   // Ticked items still listed: one trashed or no longer indexed since it
   // was ticked drops out, so a pick never empties into the whole workspace.
@@ -330,7 +330,7 @@ export function GenerateForm({
         <DialogPrimary pending={pending}>
           <Button
             disabled={pending || !ready}
-            iconLeft={pending ? undefined : 'sparkles'}
+            iconLeft={pending ? undefined : 'ai'}
             onClick={run}
             size="lg"
             variant="accent"

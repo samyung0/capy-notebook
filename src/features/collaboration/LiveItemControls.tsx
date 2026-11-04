@@ -66,8 +66,9 @@ export function LiveStatus({
   );
 }
 
-/** Undo and Redo of this user's own edits to one live item. `header` lifts
- * the icons 1px from lg, level with the View toggle's icon beside them;
+/** Undo and Redo of this user's own edits to one live item. `header` is the
+ * file and material top bar's copy: phones go without it (Epo 2026-11-04), and
+ * from lg the icons lift 1px, level with the View toggle's icon beside them.
  * `footer` lifts them half a pixel always, level with the live status. */
 export function UndoButtons({
   manager,
@@ -93,7 +94,10 @@ export function UndoButtons({
   const held = useCollaborationHeld();
   return (
     // The tour outlines the pair.
-    <span className="flex items-center" data-undo-buttons>
+    <span
+      className={cn('flex items-center', header && 'hidden sm:flex')}
+      data-undo-buttons
+    >
       <ToolbarButton
         disabled={held || !canUndo}
         label={m.editor_undo()}

@@ -161,7 +161,9 @@ import (
 // workspace_id and says what it lists there.
 // v46: create_chapter (Epo 2026-10-29) appends a chapter, named as asked or
 // Chapter (n), in both scopes; account chat's copy names its workspace_id.
-const ContractVersion = 46
+// v47: chapters become topics (Epo 2026-11-03): create_topic and topic_id,
+// and create_topic takes an optional one-line description.
+const ContractVersion = 47
 
 // Scope is the kind of chat a tool is offered in: a workspace's, or the
 // account's across the user's own files (Epo 2026-10-27). A conversation keeps
@@ -621,9 +623,9 @@ func officeCommandSchema() map[string]any {
 	return map[string]any{
 		"oneOf": []any{
 			variant("create", "First command only, without file_id: makes a new file; the call's other commands then apply to it.", map[string]any{
-				"format":     map[string]any{"type": "string", "enum": []string{"xlsx", "docx"}},
-				"title":      map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle, "description": "The file's name, without its extension."},
-				"chapter_id": str("The chapter to put it in; omit it to not put it in a chapter."),
+				"format":   map[string]any{"type": "string", "enum": []string{"xlsx", "docx"}},
+				"title":    map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle, "description": "The file's name, without its extension."},
+				"topic_id": str("The topic to put it in; omit it to not put it in a topic."),
 			}, "format", "title"),
 			variant("set_range", "XLSX: write a rectangle of cells.", map[string]any{
 				"sheet":    sheet,
@@ -917,7 +919,7 @@ func Definitions() []Definition {
 			Name:      "list_sources",
 			Scopes:    both,
 			Retention: RetainFull,
-			Description: "List the workspace's source files and study materials by chapter, " +
+			Description: "List the workspace's source files and study materials by topic, " +
 				"with ids, kinds, editability and passage counts.",
 			InputSchema:        obj(map[string]any{}),
 			Concurrency:        "read",
@@ -938,7 +940,7 @@ func Definitions() []Definition {
 			Scopes:    accountOnly,
 			Retention: RetainFull,
 			Description: "Find the user's files and materials by their names and summaries, in their " +
-				"workspaces and outside them. Each hit gives its id, workspace and chapter (or outside " +
+				"workspaces and outside them. Each hit gives its id, workspace and topic (or outside " +
 				"workspaces), whether the user can edit it, and its summary when it has one. Use it " +
 				"before search_files_content.",
 			InputSchema:        obj(map[string]any{"query": str("")}, "query"),
@@ -951,7 +953,7 @@ func Definitions() []Definition {
 			Retention: RetainCitedPassages,
 			Description: "Search the content of the user's files, in their workspaces and outside " +
 				"them, for passages matching one focused query. Each passage names its file's " +
-				"workspace and chapter and whether the user can edit it.",
+				"workspace and topic and whether the user can edit it.",
 			InputSchema: obj(map[string]any{
 				"query": str(""),
 				"file_ids": idList("Restrict to these items (ids from search_files_summary or "+
@@ -982,13 +984,16 @@ func Definitions() []Definition {
 		}),
 		// Account chat's copy (profiles/account.py) takes the workspace_id.
 		chatTool(Definition{
-			Name:      "create_chapter",
+			Name:      "create_topic",
 			Scopes:    both,
 			Retention: RetainFull,
-			Description: "Add a chapter at the end of the workspace's chapters, for files to be filed in " +
-				"by the chapter_id it returns. Without a name it is Chapter (n). A name over its limit " +
-				"is cut to it and saved.",
-			InputSchema:        obj(map[string]any{"name": str("")}),
+			Description: "Add a topic at the end of the workspace's topics, for files to be filed in " +
+				"by the topic_id it returns. Without a name it is Topic (n). A name or description " +
+				"over its limit is cut to it and saved.",
+			InputSchema: obj(map[string]any{
+				"name":        str(""),
+				"description": str("One line on what the topic covers."),
+			}),
 			Mutates:            true,
 			Concurrency:        "mutate",
 			RequiredOperations: []Operation{OpMaterialCreate},
@@ -1027,7 +1032,7 @@ func Definitions() []Definition {
 			Scopes:    workspaceOnly,
 			Retention: RetainNone,
 			Description: "Read the learner's study progress in this workspace: files and " +
-				"materials done or started, recent quiz results, and the chapters they retain least.",
+				"materials done or started, recent quiz results, and the topics they retain least.",
 			InputSchema:        obj(map[string]any{}),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpSourceRead},
@@ -1157,7 +1162,7 @@ func Definitions() []Definition {
 					"description": "note only: markdown.",
 				},
 				"sources":     sourcesSchema("The "),
-				"chapter_id":  str("The chapter to put it in; omit it to not put it in a chapter."),
+				"topic_id":    str("The topic to put it in; omit it to not put it in a topic."),
 				"excerpt_ids": excerptIDs("Library excerpts it was written from; they become its attribution."),
 			}, "kind"),
 			Mutates:            true,
@@ -1183,9 +1188,9 @@ func Definitions() []Definition {
 				`"marks": 1}], "model_answer": "Water enters by osmosis and, with no cell wall to resist ` +
 				`it, the membrane ruptures."}]}`,
 			InputSchema: obj(quizPlace(map[string]any{
-				"title":      str("Instead of quiz_id: create a quiz with this title."),
-				"chapter_id": str("With title: the new quiz's chapter."),
-				"sources":    sourcesSchema("With title: the new quiz's "),
+				"title":    str("Instead of quiz_id: create a quiz with this title."),
+				"topic_id": str("With title: the new quiz's topic."),
+				"sources":  sourcesSchema("With title: the new quiz's "),
 				"questions": map[string]any{
 					"type": "array", "minItems": 1, "maxItems": 20, "items": questionSchema(),
 				},
@@ -1235,7 +1240,7 @@ func Definitions() []Definition {
 						"brief": map[string]any{"type": "string", "minLength": 1, "maxLength": 1200},
 					}, "title", "brief"),
 				},
-				"chapter_id":  str("The chapter to put the PowerPoint in; omit it to not put it in a chapter."),
+				"topic_id":    str("The topic to put the PowerPoint in; omit it to not put it in a topic."),
 				"sources":     sourcesSchema("The "),
 				"excerpt_ids": deckExcerpts(),
 			}, "title", "slides"),

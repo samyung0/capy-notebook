@@ -32,11 +32,11 @@ _EDITING = f"""How to write to the workspace: build study materials, add to them
 
 Plan:
 - You must identify the requirement first before building: the learning scope and learner's level, as "I want to learn physics" lacks both: check what is missing and offer a default they can accept rather than an open question.
-- In the same message, briefly outline what you will create: each new file and the chapter it goes in, reusing the workspace's chapters (list_sources) and marking the new ones with create_chapter. The outline should be brief.
+- In the same message, briefly outline what you will create: each new file and the topic it goes in, reusing the workspace's topics (list_sources) and marking the new ones with create_topic. The outline should be brief.
 
 What to build:
-- Each chapter gets one main explainer, a note or a PowerPoint as the output-files preference says; note_building or deck_building says how to write it.
-- Quizzes and flashcards are standalone materials filed in the chapter they practise, by its chapter_id from list_sources.
+- Each topic gets one main explainer, a note or a PowerPoint as the output-files preference says; note_building or deck_building says how to write it.
+- Quizzes and flashcards are standalone materials filed in the topic they practise, by its topic_id from list_sources.
 - Always add images. Images catch the learner's attention and make ideas easier to explain. A picture need not carry the explanation itself; it only needs to be relevant. Make an image that is likely decorative, such as a logo or an icon, smaller.
 - Follow the study preferences in the turn context unless the request says otherwise.
 
@@ -97,7 +97,7 @@ Limits: edit_office_document's description lists a call's limits, per command ki
 _EDITING_LIBRARY = """
 - excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_library this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""
 
-_NOTE_BUILDING = """How to write a note, a chapter's main explainer when the output-files preference says Capy Note.
+_NOTE_BUILDING = """How to write a note, a topic's main explainer when the output-files preference says Capy Note.
 
 - Images, charts, plots and interactive blocks go inside the note where they help an idea, as the study preferences say.
 - A quiz or flashcards fence inside a note is a knowledge check, sized and placed as the study preferences say.
@@ -143,11 +143,11 @@ def deck_building(rules: str, style: str, style_text: str) -> str:
     """The deck skill: the method, the slide rules and the style with its
     reference slides (ppt-master's Quick route, openwiki/decks.md)."""
     return (
-        "How to make a PowerPoint, a chapter's main explainer when the "
+        "How to make a PowerPoint, a topic's main explainer when the "
         "output-files preference says PowerPoint.\n\n"
         "Plan:\n"
         "- Outline with create_deck: one title and brief per slide, in order, one slide per idea, "
-        "8 to 20 per chapter, opening with a cover. A brief says the slide's audience move (what "
+        "8 to 20 per topic, opening with a cover. A brief says the slide's audience move (what "
         "the student knows before and after), how its points relate, and the content with its source.\n"
         "- Then write the slides one per write_slide call, each from what you just read for it.\n"
         "- A slide the checker refuses comes back with its errors: fix those and send the whole "
@@ -179,13 +179,13 @@ def account_editing() -> str:
         ("How to write to the workspace:", "How to write to the learner's files:"),
         (
             (
-                "each new file and the chapter it goes in, reusing the workspace's "
-                "chapters (list_sources) and marking the new ones with create_chapter."
+                "each new file and the topic it goes in, reusing the workspace's "
+                "topics (list_sources) and marking the new ones with create_topic."
             ),
             (
-                "each new file, the chapter it goes in. Identify which workspace you "
-                "should work in, and reuse the workspace's chapters (list_sources) and "
-                "mark the new ones with create_chapter. If there is no suitable "
+                "each new file, the topic it goes in. Identify which workspace you "
+                "should work in, and reuse the workspace's topics (list_sources) and "
+                "mark the new ones with create_topic. If there is no suitable "
                 "workspace, also suggest creating a workspace for the new files "
                 "(create_workspace goes first before any files are created)."
             ),
@@ -222,11 +222,11 @@ def account_editing() -> str:
         (
             (
                 "- Quizzes and flashcards are standalone materials filed in the "
-                "chapter they practise, by its chapter_id from list_sources."
+                "topic they practise, by its topic_id from list_sources."
             ),
             (
                 "- Quizzes and flashcards are standalone materials, filed in the "
-                "chapter they practise when they land in a workspace."
+                "topic they practise when they land in a workspace."
             ),
         ),
         (

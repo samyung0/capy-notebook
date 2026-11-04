@@ -27,7 +27,7 @@ func TestMoveDrainsTheSourceRoomAndNamesTheTargetWorkspace(t *testing.T) {
 		VALUES ($1, $2, 'text', 3, 1, 'p')`, owner, file.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID}, false); err != nil {
+	if _, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID}); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := s.pool.Query(ctx, `SELECT id, channel, payload FROM collaboration_eviction_outbox WHERE payload->>'fileId'=$1`, file.ID)

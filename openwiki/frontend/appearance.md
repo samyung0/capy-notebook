@@ -9,7 +9,7 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
 
 - The page panel (`PagePanel`, `src/components/app/layout.tsx`) has no notch.
   Its header and body scroll together at every width.
-- There is no top bar. From `lg`, the sidebar (`Sidebar account`) carries
+- There is no top bar. From `lg`, the app sidebar (`Sidebar account`) carries
   Search and Notifications under the app name. Its foot is your profile row,
   which opens the profile menu upwards: Settings, Billing & usage, Theme and
   Log out (`ProfileMenu trigger="row"`).
@@ -26,8 +26,65 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   `[data-frosted]`), so the frost shows through. A row's hover ⋮
   (`HoverActions`) drops its fill there and the row's label fades out under
   it instead.
-- The opened workspace has no app sidebar. Its 1-2-3 panels sit straight on
-  the shell, so the frame shows around and between them.
+- The opened workspace has no app sidebar. Its panels sit straight on the
+  shell, 8px apart, so the frame shows around and between them.
+- **Names (Epo, 2026-11-03):** the app's front page (`/`, `src/routes/Home.tsx`,
+  `nav_home`, the house icon) is **Home**; a workspace's front page, its
+  landing with no file open, is its **Dashboard**. "Home" always means the
+  app's own home.
+- **Dashboard (Epo 2026-11-03, boards H1 owner, H2 member, H3):**
+  `WorkspaceDashboard.tsx`, the centre with nothing open (from lg without a
+  file header; one column keeps it). The workspace's name with "owner · N
+  members", Upload and a disabled "Make a quiz from a file" ("Coming soon")
+  for those who may add; **What to practise next**, Practice's suggestions for
+  whoever practises here (`studyView`, board U3), each with Practise, which
+  opens its topic session; **Recent files**, the newest four as bordered
+  preview cards with the name under each (`PreviewCard bordered`); and
+  **Activity**, the five newest uploads and added materials with who and
+  when, the agent's own rows under the AI icon
+  (`GET /api/workspaces/{id}/dashboard`, see
+  [study-progress.md](../study-progress.md#endpoints)), each row opening its
+  file or material. An empty section does not show, so To do, assignments and
+  AI marks (not built) never do yet, and an empty Dashboard has no hint. The old
+  landing's Add file, Quick open, Workspace settings and Practice cards went.
+
+## Workspace rail
+
+From lg (1260px) every workspace page leads with a labelled icon rail
+(`WorkspaceRail.tsx`, board N1 and S2): a 68px card, frosted as the left
+panel, with ← Home (to `/`), the workspace's icon as a 34px badge that only
+says where you are, then Dashboard (Hugeicons' `DashboardSquare01Icon`),
+Files (a folder), Agent (the AI icon) and Study (an open book), each icon
+over its 11px label in a 58px item that fills `page-hover` while current.
+Your avatar sits at its foot and opens the profile menu upwards, headed by
+the workspace's part: Invite member (owners and editors), Workspace
+settings, and Clone for readers who may.
+
+Each section but the Dashboard shows its panel beside the rail (248px by
+default, resizable from 220px, collapsing on a drag like the right panel):
+
+- **Files:** the topic tree with a "+" for New file or topic (board T3); the
+  right panel keeps its own Files view with the search and the workspace
+  picker.
+- **Agent:** the chats, with voice and Archived chats on the title row; a
+  chat opens in the right panel.
+- **Study:** Study's pages (`StudyPanel`), see
+  [study-progress.md](../study-progress.md#practice).
+
+The section starts from the URL (a Study page shows Study, an open item
+Files, else the Dashboard), an item opened from the Dashboard or Study moves
+it to Files, and leaving Study for the landing shows the Dashboard. Pressing
+the current section closes or reopens its panel; Dashboard opens the landing
+and Study opens Practice. With the rail the centre header has no back arrow
+or left-panel toggle; Study's pages fill the centre without a header. Below
+lg the one-column layout stays as before: the header's title opens the Files
+dropdown and its ⋮ (and the dropdown's foot) carry Dashboard, Study and
+Workspace settings.
+
+The AI icon (`ai` in `Icon.tsx`, a curved four-point star stroked like the
+rest; Epo picks the final shape from a mock) marks the agent: the rail's
+Agent, the sidebar's Chat, the right panel's Chat view, the chat panel's
+title and empty state, and Generate in the AI generate form.
 
 ## Styles
 
@@ -96,11 +153,15 @@ strength, frosted }`:
 - **Frosted:** which panels frost over the frame, any of Left, Centre and
   Right (a toggle row under Strength). Left is the default; an empty list
   frosts none. A frame stored before the field existed takes the default.
-- **Default:** a device with no stored frame draws Arc in Mist with the left
-  panel frosted. A frame the user stored or synced, None included, wins.
-  The pre-paint scripts only copy a stored frame; `ThemeProvider` applies
-  the frame in a layout effect, so a brand new device still shows it with
-  the shell's first paint.
+- **Default (Epo, 2026-11-03):** None. It lives in one place,
+  `DEFAULT_PAGE_FRAME` in `pageFrame.ts`, which also stands in for any
+  invalid stored field. A device with no stored frame, and an account that
+  never synced (`users.customization` NULL; the server keeps no default of
+  its own), shows the page colour with opaque panels. Picking a pattern
+  from there starts on Mist with the left panel frosted. A frame the user
+  stored or synced wins. The pre-paint scripts only copy a stored frame's
+  paint (`capy.pageFrameCss`), so with nothing stored they paint nothing,
+  which is the default.
 - **Shuffle** (right of Sync) moves every dot and Strength to random values,
   as custom colours.
 

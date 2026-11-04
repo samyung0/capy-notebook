@@ -71,6 +71,7 @@ import {
   FitToScreenIcon,
   FlashIcon,
   Flowchart01Icon,
+  Folder01Icon,
   FunctionSquareIcon,
   GeometricShapes01Icon,
   Globe02Icon,
@@ -85,6 +86,7 @@ import {
   Heading06Icon,
   HelpCircleIcon,
   HighlighterIcon,
+  Home01Icon,
   Image01Icon,
   InformationCircleIcon,
   Key01Icon,
@@ -105,7 +107,6 @@ import {
   MagicWand01Icon,
   Menu01Icon,
   Message01Icon,
-  MessageAdd01Icon,
   Mic01Icon,
   MinusSignCircleIcon,
   MinusSignIcon,
@@ -130,6 +131,7 @@ import {
   Redo03Icon,
   RefreshCcwIcon,
   RotateClockwiseIcon,
+  RotateCwIcon,
   Route01Icon,
   ScissorIcon,
   Search01Icon,
@@ -172,6 +174,7 @@ import {
   Upload01Icon,
   User02Icon,
   UserAdd01Icon,
+  UserGroupIcon,
   ViewIcon,
   ViewOffIcon,
   WaveIcon,
@@ -265,14 +268,28 @@ const PanelRightOpenIcon = [
   ],
 ] satisfies IconSvgElement;
 
+const AiIcon = [
+  [
+    'path',
+    {
+      d: 'M12 2.5C12.6 7.6 16.4 11.4 21.5 12C16.4 12.6 12.6 16.4 12 21.5C11.4 16.4 7.6 12.6 2.5 12C7.6 11.4 11.4 7.6 12 2.5Z',
+      fill: 'currentColor',
+      key: '0',
+    },
+  ],
+] satisfies IconSvgElement;
+
 const HugeIcons = {
+  /** What marks AI and the agent: a filled curved four-point star (Epo
+   * 2026-11-03, AI2). Every caller uses this name. */
+  ai: AiIcon,
   alert: Alert02Icon,
   alignCenter: TextAlignCenterIcon,
   alignJustify: TextAlignJustifyIcon,
   alignLeft: TextAlignLeftIcon,
   alignRight: TextAlignRightIcon,
   // A lidded box with a slot, hand-rolled on ArchiveRestore's lid: Hugeicons
-  // has no plain lidded archive (Archive01 is the chapter glyph).
+  // has no plain lidded archive (Archive01 is the topic glyph).
   archive: [
     'M19.5 3H4.5C3.56538 3 3.09808 3 2.75 3.20096C2.52197 3.33261 2.33261 3.52197 2.20096 3.75C2 4.09808 2 4.56538 2 5.5C2 6.43462 2 6.90192 2.20096 7.25C2.33261 7.47803 2.52197 7.66739 2.75 7.79904C3.09808 8 3.56538 8 4.5 8H19.5C20.4346 8 20.9019 8 21.25 7.79904C21.478 7.66739 21.6674 7.47803 21.799 7.25C22 6.90192 22 6.43462 22 5.5C22 4.56538 22 4.09808 21.799 3.75C21.6674 3.52197 21.478 3.33261 21.25 3.20096C20.9019 3 20.4346 3 19.5 3Z',
     'M20 8V15C20 17.8284 20 19.2426 19.1213 20.1213C18.2426 21 16.8284 21 14 21H10C7.17157 21 5.75736 21 4.87868 20.1213C4 19.2426 4 17.8284 4 15V8',
@@ -292,7 +309,6 @@ const HugeIcons = {
   bookOpenCheck: BookOpenCheckIcon,
   braces: BracesIcon,
   CloudIcon,
-  chapter: Archive01Icon,
   chart: ChartColumnBigIcon,
   check: CheckIcon,
   chevronDown: ChevronDownIcon,
@@ -343,6 +359,7 @@ const HugeIcons = {
     'M5 7h11a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2z',
     'M8 4h11a2 2 0 012 2v8',
   ],
+  folder: Folder01Icon,
   folderCollapse: ListChevronsDownUpIcon,
   folderExpand: ListChevronsUpDownIcon,
   globe: Globe02Icon,
@@ -358,6 +375,7 @@ const HugeIcons = {
   heading6: Heading06Icon,
   help: HelpCircleIcon,
   highlighter: HighlighterIcon,
+  home: Home01Icon,
   image: Image01Icon,
   indentDecrease: ListIndentDecreaseIcon,
   indentIncrease: ListIndentIncreaseIcon,
@@ -385,7 +403,6 @@ const HugeIcons = {
   moreVertical: MoreVerticalIcon,
   navigationBack: ArrowLeft04Icon,
   navigationForward: ArrowRight04Icon,
-  newChat: MessageAdd01Icon,
   newFile: FileEditIcon,
   newNote: PencilEdit02Icon,
   paintBucket: PaintBucketIcon,
@@ -418,9 +435,11 @@ const HugeIcons = {
   rectangle: SquareIcon,
   redo: Redo03Icon,
   refresh: RefreshCcwIcon,
-  removeFromChapter: Eraser01Icon,
+  removeFromTopic: Eraser01Icon,
   retry: Undo02Icon,
   rotate: RotateClockwiseIcon,
+  /** A topic review to redo (Practice's own reviews, board P2). */
+  rotateCw: RotateCwIcon,
   route: Route01Icon,
   schedule: Calendar04Icon,
   scissors: ScissorIcon,
@@ -445,6 +464,7 @@ const HugeIcons = {
   tick: Tick02Icon,
   tickDouble: TickDouble01Icon,
   todo: CheckListIcon,
+  topic: Archive01Icon,
   trash: Delete02Icon,
   unarchive: ArchiveRestoreIcon,
   underline: TextUnderlineIcon,
@@ -455,6 +475,7 @@ const HugeIcons = {
   unpin: PinOffIcon,
   upload: Upload01Icon,
   userAdd: UserAdd01Icon,
+  userGroup: UserGroupIcon,
   view: ViewIcon,
   viewOff: ViewOffIcon,
   wand: MagicWand01Icon,

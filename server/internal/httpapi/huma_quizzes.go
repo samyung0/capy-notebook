@@ -135,7 +135,7 @@ func (a *api) createQuiz(ctx context.Context, in *createQuizInput) (*quizOutput,
 		wsName = ws.Name
 	}
 	res, err := a.s.CreateQuiz(ctx, store.Quiz{
-		UserID: userID(ctx), Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Chapters: b.Chapters,
+		UserID: userID(ctx), Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Topics: b.Topics,
 		Questions: apimodel.EncodeQuestions(b.Questions), Privacy: privacy, TimeLimitMin: nil,
 	})
 	if errors.Is(err, materialdoc.ErrInvalid) {
@@ -155,7 +155,7 @@ func (a *api) updateQuizMetadata(ctx context.Context, in *updateQuizMetadataInpu
 		return nil, hErr(err)
 	}
 	res, err := a.s.UpdateQuizMetadata(ctx, in.ID, store.QuizMetadataPatch{
-		Name: apimodel.Str(in.Body.Name), Chapters: in.Body.Chapters, UpdatedBy: userID(ctx),
+		Name: apimodel.Str(in.Body.Name), Topics: in.Body.Topics, UpdatedBy: userID(ctx),
 	})
 	if err != nil {
 		return nil, hErr(err)

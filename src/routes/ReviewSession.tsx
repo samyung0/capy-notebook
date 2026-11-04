@@ -105,8 +105,7 @@ export default function ReviewSession() {
         workspaceId,
         search.session,
         search.group,
-        search.chapterId,
-        search.planId,
+        search.topicId,
         search.reviewMode,
       ].join('|')}
       search={search}
@@ -137,10 +136,9 @@ function Session({
       ? { resume: search.session }
       : {
           start: {
-            chapterId: search.chapterId,
             group: search.group ?? 'workspace',
             mode: search.reviewMode,
-            planId: search.planId,
+            topicId: search.topicId,
           },
         }
   );
@@ -179,7 +177,6 @@ function Session({
       live,
       order: [...done.keys(), ...live.keys()],
       ref: {
-        chapterId: data.chapterId,
         evidence: data.evidence,
         group: data.group,
         id: 'resume' in source ? source.resume : crypto.randomUUID(),
@@ -188,7 +185,7 @@ function Session({
           materialId,
         })),
         mode: data.mode,
-        planId: data.planId,
+        topicId: data.topicId,
         workspaceId,
       },
     });
@@ -198,9 +195,8 @@ function Session({
   // Cards rise from one stack across the session, the rated one swiping away.
   const stack = useCardStack();
 
-  // Ratings save in the background and refresh progress once, in every
-  // workspace (a plan's items span several), when the session is left or
-  // Review more asks for the next batch.
+  // Ratings save in the background and refresh progress once, when the
+  // session is left or Review more asks for the next batch.
   const qc = useQueryClient();
   const { mutateAsync: rateItem } = useRateReviewItem(null);
   const { mutate: finish } = useFinishReviewSession();
@@ -238,7 +234,7 @@ function Session({
       !(
         s.workspaceId === workspaceId &&
         s.group === session?.ref.group &&
-        s.chapterId === session?.ref.chapterId
+        s.topicId === session?.ref.topicId
       )
   );
 
@@ -254,16 +250,11 @@ function Session({
     );
   }
 
-  // A plan's review returns to its Study page with the plan picked.
-  const planId = search.planId ?? session?.ref.planId;
-  const studySearch = {
-    study: true as const,
-    ...(planId ? { plan: planId } : {}),
-  };
+  // A review started in a workspace returns to its Practice page.
+  const studySearch = { study: 'practice' as const };
   function back() {
     if (search.from === 'review')
       navigate({ search: { tab: 'review' }, to: '/learning' });
-    // A workspace review starts on its Study page and returns there.
     else
       navigate({
         params: { workspaceId },
@@ -280,10 +271,9 @@ function Session({
       if (session)
         setSource({
           start: {
-            chapterId: session.ref.chapterId,
             group: session.ref.group,
             mode: session.ref.mode,
-            planId: session.ref.planId,
+            topicId: session.ref.topicId,
           },
         });
       setSession(null);
@@ -426,10 +416,10 @@ function Session({
                 navigate({
                   params: { workspaceId: s.workspaceId },
                   search: {
-                    chapterId: s.chapterId,
                     from: search.from,
                     group: s.group,
                     reviewMode: s.mode,
+                    topicId: s.topicId,
                   },
                   to: '/learning/review/$workspaceId',
                 })
@@ -502,10 +492,7 @@ function SessionResult({
               <div className="flex items-center justify-between gap-4 border-divider border-y py-3">
                 <div className="min-w-0">
                   <div className="truncate font-semibold">
-                    {[
-                      next.workspaceName,
-                      groupName(next.group, next.chapterName),
-                    ]
+                    {[next.workspaceName, groupName(next.group, next.topicName)]
                       .filter(Boolean)
                       .join(' · ')}
                   </div>

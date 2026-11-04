@@ -333,7 +333,6 @@ export const qk = {
   billing: ['billing'] as const,
   cards: (flashcardSetId: string) =>
     ['flashcardSet', flashcardSetId, 'cards'] as const,
-  chapters: (wsId: string) => ['workspace', wsId, 'chapters'] as const,
   /** One workspace's chats, or with null the account chat's. */
   conversations: (wsId: string | null) =>
     wsId
@@ -362,10 +361,6 @@ export const qk = {
   integrations: ['integrations'] as const,
   invoices: ['billing', 'invoices'] as const,
   labels: ['labels'] as const,
-  learningPlans: ['learning', 'plans'] as const,
-  learningProgress: ['learning', 'progress'] as const,
-  /** Everything under Learning: progress and plans. */
-  learningRoot: ['learning'] as const,
   libraryFigure: (id: string) => ['library-figure', id] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
@@ -383,9 +378,8 @@ export const qk = {
   ownedMaterialsRoot: ['materials', 'owned'] as const,
   pastReviews: (params?: unknown) =>
     ['review', 'past', params ?? null] as const,
-  /** A plan's review parts on its workspace's Study page. */
-  planStudy: (wsId: string, planId: string) =>
-    ['workspace', wsId, 'study', 'plan', planId] as const,
+  /** The workspace's Practice page; refreshed with the rest of study. */
+  practice: (wsId: string) => ['workspace', wsId, 'study', 'practice'] as const,
   quiz: (id: string) => ['quiz', id] as const,
   /** GET /recent: Recent Files and the quick open share it. */
   recent: ['recent'] as const,
@@ -398,11 +392,9 @@ export const qk = {
   sourceUploadPolicy: (wsId?: string) =>
     ['source-upload-policy', wsId ?? null] as const,
   study: (wsId: string) => ['workspace', wsId, 'study'] as const,
-  studyAttempts: (wsId: string) =>
-    ['workspace', wsId, 'study', 'attempts'] as const,
-  studyPlans: (wsId: string) => ['workspace', wsId, 'study', 'plans'] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
+  topics: (wsId: string) => ['workspace', wsId, 'topics'] as const,
   trash: (wsId?: string) => ['trash', wsId ?? 'all'] as const,
   usage: ['usage'] as const,
   usageEvents: (params?: unknown) =>
@@ -410,6 +402,10 @@ export const qk = {
   workspace: (id: string) => ['workspace', id] as const,
   workspaceCollaborators: (id: string) =>
     ['workspace', id, 'collaborators'] as const,
+  /** The Dashboard's owner, members and Activity; under `files` like
+   * Recent files, so a file list invalidation refetches it too. */
+  workspaceDashboard: (wsId: string) =>
+    ['workspace', wsId, 'files', 'dashboard'] as const,
   workspaceInvites: (id: string) => ['workspace', id, 'invites'] as const,
   workspaceMembers: (id: string) => ['workspace', id, 'members'] as const,
   workspaceReview: (wsId: string, params?: unknown) =>

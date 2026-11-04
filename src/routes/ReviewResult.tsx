@@ -85,7 +85,7 @@ export default function ReviewResult() {
           meta={sample ? m.tour_example() : reviewResultMeta(s)}
           metaClassName="text-fg-secondary text-sm"
           onBack={toReview}
-          title={groupName(s.group, s.chapterName) || s.workspaceName}
+          title={groupName(s.group, s.topicName) || s.workspaceName}
           trail={[
             { label: m.nav_learning(), link: linkOptions({ to: '/learning' }) },
             {
@@ -103,10 +103,10 @@ export default function ReviewResult() {
               navigate({
                 params: { workspaceId: s.workspaceId },
                 search: {
-                  chapterId: s.chapterId,
                   from: 'review',
                   group: s.group,
                   reviewMode: s.mode,
+                  topicId: s.topicId,
                 },
                 to: '/learning/review/$workspaceId',
               })

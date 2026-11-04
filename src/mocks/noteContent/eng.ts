@@ -18,10 +18,10 @@ import {
 /** English Literature — close reading: quotes, marks, columns, light quiz. */
 export const engNotes: SeedNote[] = [
   {
-    chapterId: null,
     daysAgo: 3,
     id: 'mat_note_eng_gatsby',
     title: 'Close reading — The Great Gatsby (Ch. 1–3)',
+    topicId: null,
     value: [
       heading(1, 'The Great Gatsby — early chapters'),
       toc(),

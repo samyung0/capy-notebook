@@ -1525,7 +1525,7 @@ _PIN_COLUMNS = (
 # first; no index covers the summaries, as the scope is small.
 _SUMMARY_SEARCH_SQL = """
 WITH scoped AS (
-    SELECT f.id, 'file' AS kind, f.name AS title, f.workspace_id, f.chapter_id,
+    SELECT f.id, 'file' AS kind, f.name AS title, f.workspace_id, f.topic_id,
            fc.content_id
     FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
     WHERE f.workspace_id = ANY(%(ws)s) AND f.trashed_at IS NULL
@@ -1534,7 +1534,7 @@ WITH scoped AS (
     FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
     WHERE f.workspace_id IS NULL AND f.user_id = %(me)s AND f.trashed_at IS NULL
     UNION ALL
-    SELECT m.id, 'material', m.title, m.workspace_id, m.chapter_id, mc.content_id
+    SELECT m.id, 'material', m.title, m.workspace_id, m.topic_id, mc.content_id
     FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
     WHERE m.workspace_id = ANY(%(ws)s) AND m.trashed_at IS NULL
       AND m.parent_material_id IS NULL
@@ -1556,9 +1556,9 @@ ranked AS (
                      WHERE q.lang = s.lang AND s.search @@ q.q), 0) AS summary_rank
     FROM scoped sc LEFT JOIN rag_content_summaries s ON s.content_id = sc.content_id
 )
-SELECT r.id, r.kind, r.title, r.workspace_id, r.chapter_id, ch.name AS chapter_name,
+SELECT r.id, r.kind, r.title, r.workspace_id, r.topic_id, ch.name AS topic_name,
        r.descriptor
-FROM ranked r LEFT JOIN chapters ch ON ch.id = r.chapter_id
+FROM ranked r LEFT JOIN topics ch ON ch.id = r.topic_id
 WHERE r.name_hits > 0 OR r.summary_rank > 0
 ORDER BY r.name_hits DESC, r.summary_rank DESC, r.id
 LIMIT %(limit)s
@@ -1599,7 +1599,7 @@ async def item_places(
     file_ids: list[str], material_ids: list[str]
 ) -> dict[str, dict[str, Any]]:
     """Where each untrashed file and material lives now: its workspace (None
-    for none), owner, chapter and a file's kind, for labelling account chat's
+    for none), owner, topic and a file's kind, for labelling account chat's
     passages."""
     if not file_ids and not material_ids:
         return {}
@@ -1607,13 +1607,13 @@ async def item_places(
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT f.id, f.workspace_id, f.user_id AS owner_id, f.chapter_id,
-                   ch.name AS chapter_name, f.kind AS file_kind
-            FROM files f LEFT JOIN chapters ch ON ch.id = f.chapter_id
+            SELECT f.id, f.workspace_id, f.user_id AS owner_id, f.topic_id,
+                   ch.name AS topic_name, f.kind AS file_kind
+            FROM files f LEFT JOIN topics ch ON ch.id = f.topic_id
             WHERE f.id = ANY(%s) AND f.trashed_at IS NULL
             UNION ALL
-            SELECT m.id, m.workspace_id, m.owner_user_id, m.chapter_id, ch.name, NULL
-            FROM materials m LEFT JOIN chapters ch ON ch.id = m.chapter_id
+            SELECT m.id, m.workspace_id, m.owner_user_id, m.topic_id, ch.name, NULL
+            FROM materials m LEFT JOIN topics ch ON ch.id = m.topic_id
             WHERE m.id = ANY(%s) AND m.trashed_at IS NULL
             """,
             (list(file_ids), list(material_ids)),
@@ -1711,30 +1711,30 @@ async def record_search_events(events: list[dict[str, Any]]) -> None:
 # ------------------------------------------------------- structure & summaries
 
 
-async def workspace_chapters(
+async def workspace_topics(
     workspace_id: str, open_id: str | None = None
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """The chapters in order, and the chapter the open file or material is in."""
+    """The topics in order, and the topic the open file or material is in."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
-            "SELECT id, name FROM chapters WHERE workspace_id = %s ORDER BY position, id",
+            "SELECT id, name FROM topics WHERE workspace_id = %s ORDER BY position, id",
             (workspace_id,),
         )
-        chapters = [dict(row) for row in await cur.fetchall()]
+        topics = [dict(row) for row in await cur.fetchall()]
         if not open_id:
-            return chapters, None
+            return topics, None
         cur = await conn.execute(
             """
-            SELECT chapter_id FROM files WHERE id = %s AND workspace_id = %s
+            SELECT topic_id FROM files WHERE id = %s AND workspace_id = %s
             UNION ALL
-            SELECT chapter_id FROM materials WHERE id = %s AND workspace_id = %s
+            SELECT topic_id FROM materials WHERE id = %s AND workspace_id = %s
             LIMIT 1
             """,
             (open_id, workspace_id, open_id, workspace_id),
         )
         row = await cur.fetchone()
-    return chapters, (row["chapter_id"] if row else None)
+    return topics, (row["topic_id"] if row else None)
 
 
 async def resource_titles(workspace_id: str, ids: list[str]) -> dict[str, str]:
@@ -1756,24 +1756,24 @@ async def resource_titles(workspace_id: str, ids: list[str]) -> dict[str, str]:
 
 
 async def workspace_outline(workspace_id: str) -> dict[str, Any]:
-    """Chapters, their files and top-level materials, and the per-file
+    """Topics, their files and top-level materials, and the per-file
     descriptor the listing tool prints."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT ch.id, ch.name
-            FROM chapters ch
+            SELECT ch.id, ch.name, ch.description
+            FROM topics ch
             WHERE ch.workspace_id = %s
             ORDER BY ch.position, ch.id
             """,
             (workspace_id,),
         )
-        chapters = [dict(row) for row in await cur.fetchall()]
+        topics = [dict(row) for row in await cur.fetchall()]
 
         cur = await conn.execute(
             """
-                 SELECT f.id, f.name, f.chapter_id, f.status,
+                 SELECT f.id, f.name, f.topic_id, f.status,
                      coalesce(cs.descriptor, '') AS descriptor,
                      (SELECT count(*) FROM rag_chunks c
                       JOIN rag_file_contents rfc ON rfc.content_id = c.content_id
@@ -1793,7 +1793,7 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
         # a quiz, flashcard set, mindmap or diagram never has any.
         cur = await conn.execute(
             """
-            SELECT m.id, m.title AS name, m.chapter_id, 'ready' AS status,
+            SELECT m.id, m.title AS name, m.topic_id, 'ready' AS status,
                    coalesce(cs.descriptor, '') AS descriptor, 'material' AS kind,
                    m.kind AS material_kind,
                    (SELECT count(*) FROM rag_chunks c
@@ -1809,7 +1809,7 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
         )
         files.extend(dict(row) for row in await cur.fetchall())
 
-    return {"chapters": chapters, "files": files}
+    return {"topics": topics, "files": files}
 
 
 async def file_page_source(

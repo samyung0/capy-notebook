@@ -40,12 +40,13 @@ validation instead of being remapped.
 | Edit material document content (collaboration `write`)                                      | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Create and edit comments; delete **own** comments                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Delete **another user's** comment or discussion                                             | Yes   | No            | No                 | No            | No                 | No           |
-| Chapters, upload/rename/move/delete files, material metadata and delete, generate materials | Yes   | Yes           | Yes                | No            | No                 | No           |
+| Topics, upload/rename/move/delete files, material metadata and delete, generate materials | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Workspace name, description, tags, privacy, `shareRole`, statistics                  | Yes   | Yes           | No                 | No            | No                 | No           |
 | Invite/remove members, change roles, delete or transfer the workspace                       | Yes   | No            | No                 | No            | No                 | No           |
 | Leave the workspace (remove its own member row)                                             | No    | Yes           | No                 | Yes           | No                 | No           |
 | Member roster (`userId`, `name`, `avatarUrl`, `role`; never email)                          | Yes   | Yes           | No                 | Yes           | No                 | No           |
 | Mention directory (`userId`, `name`, `avatarUrl`)                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
+| Change the workspace's kind, class or personal (below)                                      | Yes   | No            | No                 | No            | No                 | No           |
 | Clone the workspace                                                                         | Yes   | Yes           | Yes                | Yes           | No                 | No           |
 | Clone one of its files or materials (into a workspace the cloner edits, or standalone)      | Yes   | Yes           | Yes                | Yes           | No                 | No           |
 | Clone a standalone link/public quiz, flashcards, or material                                | Yes   | —             | —                  | —             | Yes                | No           |
@@ -67,6 +68,30 @@ workspace's `canEditContent` equals its `canEdit` (uploader pays: storage
 narrows items, not workspaces).
 The client has no frozen or storage-limit logic of its own for these.
 
+A workspace is for a class or for personal use (`workspaces.kind`, default
+`personal`; Epo 2026-11-04, board U3). It decides who sees what in Study, not
+who may do what above: the invite, hidden items and every capability in the
+table read the same in both.
+
+| | Class | Personal |
+| --- | --- | --- |
+| Study, owner and editor members | Members, Assignments, Practice: the quizzes and topics to manage, add and edit. No My results, Suggested or Practise | My results, Practice: Suggested, Practise, add and edit |
+| Study, anyone else | My results, Assignments, Practice: Suggested, Practise | My results, Practice: Suggested, Practise |
+| Dashboard, owner and editor members | Activity (AI marks and Assignments to check wait for their pages) | What to practise next, Activity |
+| Dashboard, anyone else | What to practise next, Activity (Assignments due waits for its page) | What to practise next, Activity |
+| Whose results | The owner and editor members see everyone's; a member their own | Each person their own |
+| An editor member is called | Teaching assistant, in the UI only | Editor |
+| Clone | An owner's or editor member's stays class; anyone else's is personal | Stays personal |
+| Change it | The owner, in Workspace settings → General. Nothing is deleted: assignments and reports are hidden until it changes back | The same |
+
+The server applies Practice's row: `WorkspacePractice` gives member counts and
+averages to a class's owner and editor members only, and suggestions and own
+reviews to everyone else. Recent files, on both Dashboards, is not in the
+board's lists and stays as boards H1 and H2 drew it. Not built, and belonging to
+Assignments and the grading switch: the join notice ("the owner sees your
+results", class only) and who pays for AI marking (class: the owner for
+assignments, a member for their own practice; personal: each person).
+
 Sources: [role definitions](../server/internal/store/enums.go#L62),
 [role resolution](../server/internal/store/share.go#L27), and
 [capability contract test](../server/internal/store/contracts_test.go#L9).
@@ -86,7 +111,7 @@ forged path with the same 404 page before any API call, so guessed IDs never
 reach Go or Postgres. The signature only proves the link came from us; the
 summary query still decides visibility, so unsharing works as before, and
 rotating the secret replaces every link at once. The response contains the workspace
-name, stored `iconId`, description, tags, privacy, owner display name, chapter names and,
+name, stored `iconId`, description, tags, privacy, owner display name, topic names and,
 for every file including unfiled ones, its name, `sizeBytes` and `addedAt`. It
 contains no material content, extracted text, internal content IDs, blob keys,
 download URLs, member details or account email. This is a metadata projection, not an AI-generated content summary.
@@ -96,7 +121,7 @@ Private, missing or malformed IDs and suspended, deletion-pending or deleted
 owners return `404`; an authenticated owner does not bypass private-summary
 exclusion. Over-quota owners retain summary reads under the existing read policy.
 Success and failure responses use `Cache-Control: no-store`; no summary cache,
-queue, R2 or KV invalidation is involved. More than 1000 chapters or a projection
+queue, R2 or KV invalidation is involved. More than 1000 topics or a projection
 larger than 256 KiB returns `422` rather than a truncated outline.
 
 The summary uses one full-width panel with a centered reading column, including
@@ -116,9 +141,9 @@ public items), Open Graph with `og:locale` `en_US` and `article:modified_time` w
 card and schema.org JSON-LD (`CreativeWork`, `Quiz`, `LearningResource` for flashcards, `Article` for notes); no
 `og:image` until file thumbnails exist. The workspace uses its stored icon and
 shows the owner's avatar (`authorAvatarUrl`, 1px high) beside their name in its byline, and a ⋮ beside the
-name offers Clone workspace (see Clone from a public page below). Chapter and file rows use the file panel's
+name offers Clone workspace (see Clone from a public page below). Topic and file rows use the file panel's
 Catppuccin sprite and filename icon mapping, with file icons shifted up 1px;
-the client supplies the hashed sprite URL. Files outside chapters remain visible
+the client supplies the hashed sprite URL. Files outside topics remain visible
 without an “Unfiled files” heading. Workspace Share and Settings → Sharing put
 Preview beside Copy for link/public workspaces; it opens the summary in a new
 tab. Private workspaces still have no anonymous or owner-bypass summary.
@@ -126,7 +151,7 @@ tab. Private workspaces still have no anonymous or owner-bypass summary.
 Local MSW development renders signed `/w/` paths from the server's seed data,
 with seed `sharePath` values signed by the dev secret in `src/lib/shareLink.ts`, since
 browser MSW cannot intercept the server-side fetch. World History (`ws_hist`)
-has four chapters and twelve readable source files for previewing the outline.
+has four topics and twelve readable source files for previewing the outline.
 Biology 101 (`ws_bio`) is also shared by link in the seed, with a sample description for immediate preview.
 Browser-only changes to MSW records do not update this server seed snapshot.
 
@@ -284,7 +309,7 @@ nonmember; see the permission matrix above for what each column may do.
 Important boundaries:
 
 - A share-role editor holds the same content authority as an editor member:
-  document body, comments, chapters, files, material metadata and deletion,
+  document body, comments, topics, files, material metadata and deletion,
   generation and clone. Bytes and inference credits are charged to the actor
   (uploader pays). This is deliberate so users can predict what an edit
   link grants.
@@ -366,7 +391,7 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   owners and editors; Others shows with Clone, Danger for the owner.
 - **Owner and editor members** can rename/recolor/describe/tag the workspace,
   change private/link/public visibility or `shareRole`, and view workspace
-  statistics. Tags land in the owner's tag namespace whoever edits them.
+  statistics. The kind (Used for, in General) is the owner's alone. Tags land in the owner's tag namespace whoever edits them.
   Widening sharing is an edit, refused when the actor or the owner is
   frozen; narrowing (privacy toward private, share role toward viewer) stays
   open to both.
@@ -467,10 +492,29 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
 [settings mutations](../server/internal/store/queries.go#L505), and
 [transfer transaction](../server/internal/store/workspace_transfer.go#L36).
 
-### Chapters, files, and uploads
+### Topics, files, and uploads
 
 - Owner and effective editors (member or share role) can create, rename,
-  reorder, move, and delete chapters.
+  reorder, move, and delete topics.
+- Topics (chapters before 2026-11-03, Epo) are one flat list per workspace:
+  each has a name and an optional one-line description (`topics.description`,
+  200 runes; set through the API and chat's `create_topic`, no field in the UI
+  yet), and a file or material has at most one (`topic_id`). The Files panel
+  groups by topic in order, then Other files (no topic), as plain group rows
+  that only open and close (board T3: 32px rows, a 16px chevron, the name in
+  bold, the count muted at the end, 1px between rows); there is no topic page.
+  Item rows are 30px with a 16px icon and one truncated line starting under
+  the group's name, the open item shown by the row's background, a quiz read
+  as "<title> · quiz", and no progress mark (the Study page's Contents keeps
+  those). Dragging an item onto another topic moves it there. The Add file
+  dialog's Upload tab asks one Topic for the whole upload (board T4, starting
+  on the open item's topic, else Other files) and, while the dialog is open,
+  Files highlights that topic's row in place of the open item's; Import and
+  Your files keep their own pickers starting there too. Nothing files itself.
+  "Other files" names the no-topic group everywhere except the Study page's
+  Contents and AI generate's sources, which say Others. The owner's plan caps
+  a workspace's topics (10 Free, 20 Pro,
+  [backend-storage-quota.md](backend-storage-quota.md)).
 - Owner and effective editors can add/upload, rename, move, and trash source
   files and editor assets. Deleting a file moves it to the workspace trash for
   30 days; the current workspace owner and the item's payer list, restore or
@@ -527,7 +571,7 @@ the caller can edit) and then opens the same Add file dialog for it.
 - Routes mirror the workspace ones without the workspace segment:
   `/api/sources/uploads[/tickets]`, `/api/sources/batches/{batchId}/removed`,
   `/api/sources/import`, `/api/sources/import-inspect`,
-  `/api/sources/import-content`, `/api/sources/imports/{jobId}`. A chapter is
+  `/api/sources/import-content`, `/api/sources/imports/{jobId}`. A topic is
   refused (400). The reservation runs the owner's account and storage gates
   (`lockFileEditorMutationTx` in `store/storage.go`) with no file-count cap
   for now; a folder import expands to at most one request's files
@@ -562,8 +606,8 @@ the caller can edit) and then opens the same Add file dialog for it.
   owner alone.
 
 Move puts files into a workspace, never out (Epo 2026-10-27):
-`POST /api/files/move` `{fileIds (1-20), workspaceId, chapterId?,
-chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
+`POST /api/files/move` `{fileIds (1-20), workspaceId, topicId?,
+topicName?}` (`MoveFiles` in `store/file_move.go`).
 
 - A standalone file is moved by its owner; a workspace file by that
   workspace's owner or the file's payer (`File.isPayer` tells the caller).
@@ -571,12 +615,11 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
   (uploader pays). Who may move is answered first (404); then a file still
   processing, or with a parse, ingest or source refresh job pending or
   running (409 `file_processing`), or already in the target (409) is refused.
-  A chapter move inside one workspace stays `PATCH /api/files/{id}`. Locks
+  A topic move inside one workspace stays `PATCH /api/files/{id}`. Locks
   follow every workspace write: workspace rows by id, accounts, then files.
-- The workspaces it leaves lose their study progress and plan steps for it:
-  a move that would drop someone's started or finished progress answers 409
-  `progress_loss` with `{people, planSteps}` until `confirmProgressLoss`;
-  plan steps alone go without asking.
+- The workspaces it leaves lose any study progress row on it, without asking:
+  only practice records progress since 2026-11-03, and practice is on quizzes
+  and sets, which do not move.
 - Thumbnail keys stay inside their workspace: a moved file drops a key
   borrowed from another file, and files that borrowed the moved file's key
   drop theirs (the next capture redraws them).
@@ -621,7 +664,7 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
   refetches its file, so it follows on its next open. Both workspaces'
   trees hear of it (0125 `notify_workspace_tree`).
 - Entry points: Move to… in the Files page and workspace file menus (it
-  replaces the chapter-only move for files), the dashboard's Recent menus,
+  replaces the topic-only move for files), the dashboard's Recent menus,
   the header of a file opened at `/files/{id}` (its payer only: that page
   reads no workspace) and the workspace Add file dialog's Your files tab
   (`GET /api/files?q=`). Clone to… opens the same
@@ -650,7 +693,7 @@ a source; opening or restoring it in place stays refused. A lost-access
 note offers neither yet: reading it for export would reach it in place.
 
 Sources: [read link headers](../server/internal/blob/s3.go#L165),
-[chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),
+[topic and file handlers](../server/internal/httpapi/huma_content.go#L54),
 [source upload guard](../server/internal/httpapi/uploads.go#L40),
 [editor asset guard](../server/internal/httpapi/editor_assets.go#L142), and
 [owner storage gate](../server/internal/httpapi/server.go#L234).
@@ -873,10 +916,10 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 - One file or material clones through `CloneItemDialog` (file and material row
   menus in the workspace, Files and Blocks lists, quiz and flashcard pages,
   Explore, the public page link): a destination workspace the cloner edits
-  plus a chapter (existing, none, or new by name), or "No workspace"; and the
-  copy's name. `POST /api/files/{id}/clone` takes `{workspaceId?, chapterId?,
-  chapterName?, name}`, `POST /api/materials/{id}/clone` takes `{workspaceId?, chapterId?,
-  chapterName?, title}`; an embedded row is never cloned on its own (404). The
+  plus a topic (existing, none, or new by name), or "No workspace"; and the
+  copy's name. `POST /api/files/{id}/clone` takes `{workspaceId?, topicId?,
+  topicName?, name}`, `POST /api/materials/{id}/clone` takes `{workspaceId?, topicId?,
+  topicName?, title}`; an embedded row is never cloned on its own (404). The
   destination is admitted like any workspace write (workspace row, then the
   source owner's, actor's and payer's accounts in ID order): the cloner must
   edit it and neither they nor its owner may be frozen. The source access check
@@ -905,7 +948,7 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 - A copied note keeps a mention live only for a member (or the owner) of its
   destination; any other mention becomes plain `@Name` text, as does every
   mention in a standalone copy and in a workspace clone (whose only member is
-  the cloner). Scope chapters and file names are kept only in the source's own
+  the cloner). Scope topics and file names are kept only in the source's own
   workspace. References to embedded rows point at their fresh copies; one whose
   row was not copied is dropped.
 - Every workspace Clone (card menu, Explore, settings, the workspace picker, the
@@ -986,12 +1029,6 @@ Details live in [study-progress.md](study-progress.md).
   access to the rated material. Reads and writes never show another user's
   rows; the chat agent reads only the requester's, and only while their
   study progress shows (Hide study progress is per user and workspace).
-- Study plans are private to their user too. Any reader of a workspace may
-  keep plans in it; a plan's steps may name any workspace the user can read
-  when adding them. A plan whose parent workspace the user can no longer read
-  is left out of every list, and a step in a workspace they can no longer
-  read is shown locked without its title. Plans go with their parent
-  workspace and at account purge.
 - Frozen accounts record progress, ratings, Reset and the progress switches
   like anyone else (`requireAccountMutate`), since the rows are their own and
   charge no storage. Suspended, deletion-pending and deleted accounts have no
@@ -1212,7 +1249,7 @@ working. An owner at or over its limit (usage level `full`, which grace always
 is) also makes everything it pays for view-only, for owner and members alike:
 edit mode, comments and annotations are off (refused with
 `storage_quota_exceeded`, capability `canEditContent`), while renaming,
-reordering, moving between chapters and trashing still work (`canEdit`). It is
+reordering, moving between topics and trashing still work (`canEdit`). It is
 enforced at admission only, like frozen; see
 [backend-storage-quota.md](backend-storage-quota.md). `over_quota_frozen` is read-only apart from reading, downloading,
 trashing or deleting whole items, workspace chat, narrowing exposure, transfer,
@@ -1250,7 +1287,7 @@ subscription already sent "Pro cancelled" and gets none. Notifications and
 emails already sent stay sent when an account recovers.
 
 Store-level enforcement sits in the workspace edit lock
-(`lockWorkspaceEditorMutationTx`, which checks the actor; trash and chapter
+(`lockWorkspaceEditorMutationTx`, which checks the actor; trash and topic
 deletion use `lockWorkspaceEditorRecoveryTx` without the check; a frozen owner
 narrows only what it pays for), the
 settings and sharing writes, standalone material updates (privacy narrowing
@@ -1407,12 +1444,12 @@ Confirm and Skip also start a Get started list in that browser only
 whether it was closed); the account's other browsers never saw the dialog
 and never show it. The sidebar (the rail, the phone nav drawer) shows
 "Get started n/3" above Settings until × or all three steps are done. Its
-popover lists Upload a file, Chat with Capy and Make a study plan; a row opens
+popover lists Upload a file, Chat with Capy and Practise a topic; a row opens
 its step in the workspace on screen, or else the latest one, through one-shot
 params the workspace page takes and drops: `?add=upload` (the Add file
-dialog), `?chat=new` (a new chat), `?study=true` (the Study page). A step ticks
+dialog), `?chat=new` (a new chat), `?study=practice` (Practice). A step ticks
 when it happens in this browser: an upload finishes, a chat message is sent, a
-plan is created. The starter workspace counts as made, so there is no create
+topic session's first answer is checked. The starter workspace counts as made, so there is no create
 step.
 
 Start tour runs the guided tour app-wide (`Tour`, mounted by `AppShell` while
@@ -1448,7 +1485,7 @@ the app's Radix Popover with a virtual anchor, no tour library.
 The starter workspace comes with sample content (Epo 2026-10-29, replacing
 the template-workspace copy): right after provisioning inserts it,
 `starterProvisioner` (`httpapi/starter.go`, the store the middleware and the
-Clerk webhook are given) adds a Getting started chapter holding the welcome
+Clerk webhook are given) adds a Getting started topic holding the welcome
 note, with two quiz questions and two flashcards embedded
 (`store.CreateStarterNote`, copy in `store/starter.go`, English or Chinese by
 the account's locale), and a blank Word file built like the Create tab's
@@ -1792,7 +1829,7 @@ embedded materials or of someone else's standalone material are acknowledged
 and not stored, since Recent never lists them. In the browser every
 successful mutation marks Recent stale (`src/api/queryClient.ts`), as do chat
 agent changes and finished uploads, so it refetches wherever it shows. Past reviews and notifications keep the caller's
-history but blank the live workspace (and chapter) name once the caller can no
+history but blank the live workspace (and topic) name once the caller can no
 longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.
 The Embeds tab lists every image and audio clip the caller pays for

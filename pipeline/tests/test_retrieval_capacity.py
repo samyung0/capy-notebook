@@ -338,7 +338,7 @@ def _turns(monkeypatch, replies: dict[str, list[AssembledResponse]]):
     async def nothing(*_args, **_kwargs):
         return pending.PendingSources()
 
-    async def no_chapters(*_args, **_kwargs):
+    async def no_topics(*_args, **_kwargs):
         return [], None
 
     async def no_titles(*_args, **_kwargs):
@@ -346,7 +346,7 @@ def _turns(monkeypatch, replies: dict[str, list[AssembledResponse]]):
 
     monkeypatch.setattr(agent.tools, "run", run)
     monkeypatch.setattr(pending, "load", nothing)
-    monkeypatch.setattr(agent.store, "workspace_chapters", no_chapters)
+    monkeypatch.setattr(agent.store, "workspace_topics", no_topics)
     monkeypatch.setattr(agent.store, "resource_titles", no_titles)
     return provider, tools_ran, gates
 

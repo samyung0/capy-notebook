@@ -16,6 +16,7 @@ import {
   workspaces,
 } from './db';
 import { failureHandlers, failureScenarios } from './scenarioFailures';
+import { practiceBody } from './study';
 
 export const authScenarios = [
   {
@@ -146,6 +147,11 @@ export const mockScenarioOptions = [
   { id: 'workspace-owner-full', label: "Member: owner's storage full" },
   { id: 'workspace-owner-grace', label: "Member: owner's grace period" },
   { id: 'workspace-owner-frozen', label: "Member: owner's account frozen" },
+  { id: 'workspace-member', label: 'Member: a viewer studying here' },
+  {
+    id: 'workspace-editor',
+    label: 'Editor: a teaching assistant or editor here',
+  },
   { id: 'account-deleted', label: 'Account deleted' },
   { id: 'account-deletion-pending', label: 'Account deletion pending' },
   { id: 'import-rejected', label: 'Cloud selection rejected' },
@@ -177,6 +183,8 @@ export const LAST_SCENARIO = 'capy.scenario.last';
 export const scenarioUploadName = 'Scenario upload.txt';
 export const permanentScenarios: readonly string[] = [
   'new-account',
+  'workspace-member',
+  'workspace-editor',
   'file-list-forbidden',
   'account-locked',
   'workspace-401',
@@ -210,12 +218,10 @@ const NEW_ACCOUNT_LISTS = {
   '/api/bank/progress': { topics: [] },
   '/api/events': [],
   '/api/files': { items: [] },
-  '/api/learning/progress': { active: [], finished: [], hiddenCount: 0 },
   '/api/materials': { items: [] },
   '/api/notifications': { items: [] },
   '/api/notifications/unread-count': { count: 0 },
   '/api/review/overview': {
-    plans: [],
     suggestions: [],
     unfinished: [],
     workspaces: [],
@@ -510,6 +516,53 @@ export function getMockScenarioHandlers(
         ...(storageUsage === 'full' ? viewOnlyContent('own') : []),
       ];
     }
+    case 'workspace-editor':
+      // The viewer as an editor member: in a class they manage Practice as a
+      // teaching assistant, in a personal workspace they practise and edit.
+      return [
+        http.get('/api/workspaces/:id', ({ params }) => {
+          const workspace = workspaces.find((row) => row.id === params.id);
+          if (!workspace) return new HttpResponse(null, { status: 404 });
+          return HttpResponse.json({
+            ...workspace,
+            capabilities: {
+              ...workspace.capabilities,
+              canManageMembers: false,
+            },
+            isOwner: false,
+            role: 'editor',
+          });
+        }),
+        http.get('/api/workspaces/:id/practice', ({ params }) => {
+          const workspace = workspaces.find((row) => row.id === params.id);
+          return HttpResponse.json(
+            practiceBody(String(params.id), workspace?.kind === 'class')
+          );
+        }),
+      ];
+    case 'workspace-member':
+      // The viewer as a viewer member: Study shows a member's pages and
+      // Practice their own suggestions and best scores.
+      return [
+        http.get('/api/workspaces/:id', ({ params }) => {
+          const workspace = workspaces.find((row) => row.id === params.id);
+          if (!workspace) return new HttpResponse(null, { status: 404 });
+          return HttpResponse.json({
+            ...workspace,
+            capabilities: {
+              canEdit: false,
+              canEditContent: false,
+              canManageMembers: false,
+              canView: true,
+            },
+            isOwner: false,
+            role: 'viewer',
+          });
+        }),
+        http.get('/api/workspaces/:id/practice', ({ params }) =>
+          HttpResponse.json(practiceBody(String(params.id), false))
+        ),
+      ];
     case 'workspace-owner-full':
     case 'workspace-owner-grace':
     case 'workspace-owner-frozen': {
@@ -821,7 +874,7 @@ const keptWhenFrozen = [
 ];
 // A frozen owner's content (for a healthy member only these writes fail).
 const ownerContent =
-  /^\/api\/(workspaces\/[^/]+|materials\/[^/]+|files|quizzes\/[^/]+|flashcards\/[^/]+|chapters|comments|discussions|trash)(\/|$)/;
+  /^\/api\/(workspaces\/[^/]+|materials\/[^/]+|files|quizzes\/[^/]+|flashcards\/[^/]+|topics|comments|discussions|trash)(\/|$)/;
 
 /** The server's `account_over_quota` for every write it refuses: anything a
  * frozen `account` does apart from what it keeps, or writes into a frozen

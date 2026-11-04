@@ -53,12 +53,12 @@ serially.
    and the style with its reference slides
    (`prompts/deck_styles/editorial/`: `style.md`, `examples/*.svg`). Both deck
    tools are refused until `editing` and `deck_building` are in the request
-   (`skills.REQUIRES`). The catalog words it as the chapters' skill when the
+   (`skills.REQUIRES`). The catalog words it as the topics' skill when the
    output files are PowerPoint, else as one for a request that asks for a deck.
-2. **`create_deck {title, slides[{title, brief}], chapter_id?, sources?, excerpt_ids?}`.**
+2. **`create_deck {title, slides[{title, brief}], topic_id?, sources?, excerpt_ids?}`.**
    1 to 30 slides. The outline lives on the turn (`ToolContext.decks`, id
-   `deck_` + sha256(message, call)[:12]); nothing is stored. `chapter_id` must
-   be one of the turn's chapters. Its `excerpt_ids` follow a material
+   `deck_` + sha256(message, call)[:12]); nothing is stored. `topic_id` must
+   be one of the turn's topics. Its `excerpt_ids` follow a material
    write's rule (`tools.write_sources`): named excerpts are credited, and
    omitted ones are the excerpts read since the last write, so each slide
    credits what was read for it. A deck write credits the reads but does not
@@ -158,7 +158,7 @@ with its credit; a BY-SA figure makes the deck BY-SA (Go computes the licence).
 
 ## Storing: `POST /api/internal/files`
 
-`{workspaceId, userId, assistantMessageId, toolCallId, name, chapterId,
+`{workspaceId, userId, assistantMessageId, toolCallId, name, topicId,
 content (base64), provenance, sources}` from the last `write_slide`
 (`server/internal/httpapi/internal_files.go`). The deck lands the way an upload
 does:
@@ -175,10 +175,10 @@ does:
   `files.scope_file_names` (migration `0100`), which no API response carries
   yet and a copy of the file keeps.
 - The receipt id is `ChatOperationID(message, call)`; the request hash covers
-  the name, chapter, provenance, sources and the content's SHA-256. A replay
+  the name, topic, provenance, sources and the content's SHA-256. A replay
   returns the receipt before any blob is written.
 - The blob goes under `sources/`, then `store.CreateAgentFileOperation` runs
-  `createSourceWithJobTx`: the editor lock, the chapter, the
+  `createSourceWithJobTx`: the editor lock, the topic, the
   owner's quota gate on the bytes plus the provenance JSON, the workspace file
   cap, the actor's ingest reservation (refused when their credits are
   exhausted), the `files` row with `provenance`, and the parse job that makes
@@ -215,9 +215,9 @@ gives an empty slide and `add_text_box` puts text on it.
 dense too, so how much either explains is the writing style's job (Epo
 2026-10-14). It reaches the model as the first study-preference line of the
 turn context (`prompts/preferences.py` `MAIN_FORMAT`), which also has the
-agent make other materials as the preferences and the chapter's teaching need
+agent make other materials as the preferences and the topic's teaching need
 say. With `deck` the knowledge-check line is left out (checks are notes only),
-and `read_skill`'s catalog offers `deck_building` for the chapters and
+and `read_skill`'s catalog offers `deck_building` for the topics and
 `note_building` for a request that asks for a note.
 
 ## Not used yet

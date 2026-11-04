@@ -30,6 +30,7 @@ import { iconStyles, iconUrl } from '@/lib/icon-catalog';
 import { textLength } from '@/lib/textLength';
 import { CoverField } from './CoverField';
 import { randomSeed } from './CoverPicker';
+import { WorkspaceKindField } from './WorkspaceKindField';
 
 const workspaceIcons = iconStyles.find(
   (style) => style.id === 'waves'
@@ -56,7 +57,10 @@ export function WorkspaceFormDialog({
   setOpen: (open: boolean) => void;
   workspace: CreateWorkspaceReq &
     Partial<
-      Pick<Workspace, 'chapterCount' | 'cover' | 'fileCount' | 'id' | 'privacy'>
+      Pick<
+        Workspace,
+        'topicCount' | 'cover' | 'fileCount' | 'id' | 'isOwner' | 'privacy'
+      >
     >;
   onSubmit: (values: WorkspaceFormValues) => Promise<Workspace | void>;
   /** clone creates like create, from a form prefilled with the source. */
@@ -169,12 +173,12 @@ export function WorkspaceFormDialog({
             <InputTitle>{m.cover_label()}</InputTitle>
             <CoverField
               card={{
-                chapterCount: workspace.chapterCount ?? 0,
                 fileCount: workspace.fileCount ?? 0,
                 iconId: iconId ?? workspace.iconId ?? '',
                 name: name || workspace.name,
                 privacy: workspace.privacy ?? 'private',
                 tags: tags ?? [],
+                topicCount: workspace.topicCount ?? 0,
               }}
               disabled={isSubmitting}
               onChange={field.onChange}
@@ -210,6 +214,24 @@ export function WorkspaceFormDialog({
           </label>
         )}
       />
+      {(mode === 'create' || (mode === 'edit' && workspace.isOwner)) && (
+        <Controller
+          control={control}
+          name="kind"
+          render={({ field }) => (
+            <WorkspaceKindField
+              disabled={isSubmitting}
+              note={
+                mode === 'edit' && workspace.kind === 'class'
+                  ? m.workspace_kind_change_note()
+                  : undefined
+              }
+              onChange={field.onChange}
+              value={field.value ?? 'personal'}
+            />
+          )}
+        />
+      )}
       <Controller
         control={control}
         name="description"

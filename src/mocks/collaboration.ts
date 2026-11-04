@@ -1308,7 +1308,7 @@ export function announceSourceMoved(fileId: string, workspaceId: string) {
   const file = db.files.find((row) => row.id === fileId);
   if (file) {
     file.workspaceId = workspaceId;
-    file.chapterId = null;
+    file.topicId = null;
   }
   for (const provider of [...sourceProviders])
     provider.announceMoved(fileId, workspaceId);

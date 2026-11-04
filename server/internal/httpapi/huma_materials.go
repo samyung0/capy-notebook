@@ -263,7 +263,7 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		Kind:           kind,
 		Title:          title,
 		Content:        raw,
-		ScopeChapters:  in.Body.ScopeChapters,
+		ScopeTopics:    in.Body.ScopeTopics,
 		ScopeFileNames: in.Body.ScopeFileNames,
 		Privacy:        "private",
 	})
@@ -330,19 +330,19 @@ func (a *api) updateMaterial(
 	}
 	patch := store.MaterialPatch{
 		Title:          apimodel.Str(in.Body.Title),
-		ScopeChapters:  in.Body.ScopeChapters,
+		ScopeTopics:    in.Body.ScopeTopics,
 		ScopeFileNames: in.Body.ScopeFileNames,
 		UpdatedBy:      userID(ctx),
 	}
-	// chapterId: "" unfiles (NULL), a real id files it, omitted leaves it.
-	if in.Body.ChapterID != nil {
-		if *in.Body.ChapterID == "" {
+	// topicId: "" unfiles (NULL), a real id files it, omitted leaves it.
+	if in.Body.TopicID != nil {
+		if *in.Body.TopicID == "" {
 			var none *string
-			patch.ChapterID = &none
+			patch.TopicID = &none
 		} else {
-			cid := *in.Body.ChapterID
+			cid := *in.Body.TopicID
 			p := &cid
-			patch.ChapterID = &p
+			patch.TopicID = &p
 		}
 	}
 	res, err := a.s.UpdateMaterial(ctx, in.ID, patch)

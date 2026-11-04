@@ -197,7 +197,7 @@ export default function AccountChat() {
         {m.workspace_tab_chat()}
       </h1>
       <ToolbarButton disabled={!shown} label={m.chat_new()} onClick={newChat}>
-        <Icon name="newChat" />
+        <Icon name="ai" />
       </ToolbarButton>
     </div>
   );

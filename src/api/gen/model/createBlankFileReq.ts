@@ -9,8 +9,6 @@ import type { CreateBlankFileReqFormat } from './createBlankFileReqFormat.ts';
 export interface CreateBlankFileReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** A chapter of the workspace */
-  chapterId?: string;
   format: CreateBlankFileReqFormat;
   /**
      * The file's name without its extension
@@ -18,4 +16,6 @@ export interface CreateBlankFileReq {
      * @maxLength 120
      */
   name: string;
+  /** A topic of the workspace */
+  topicId?: string;
 }

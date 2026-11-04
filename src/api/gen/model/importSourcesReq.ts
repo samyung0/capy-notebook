@@ -21,9 +21,6 @@ export interface ImportSourcesReq {
      * @maximum 10000
      */
   batchTotal: number;
-  chapterId?: string;
-  /** @maxLength 60 */
-  chapterName?: string;
   driveIds?: string[];
   /**
      * @minItems 1
@@ -34,4 +31,7 @@ export interface ImportSourcesReq {
   provider: ImportSourcesReqProvider;
   /** @maxLength 128 */
   requestId?: string;
+  topicId?: string;
+  /** @maxLength 60 */
+  topicName?: string;
 }

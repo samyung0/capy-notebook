@@ -2,11 +2,12 @@ import { HttpResponse, http } from 'msw';
 import type {
   ItemAttempts,
   PastReview,
-  PlanStep,
-  ProgressWorkspace,
+  Practice,
+  PracticeReview,
   ReviewAnswer,
   ReviewItem,
   ReviewMode,
+  ReviewReason,
   ReviewSessionRef,
   ReviewSuggestion,
   StudySummary,
@@ -25,48 +26,24 @@ import * as db from './db';
  * rating is remembered with its lapses; there is no FSRS here, so "least
  * retained" is most lapses, then oldest. */
 
-type State = 'started' | 'done' | 'removed';
 type Rated = { lapses: number; at: number };
 
-const progress = new Map<
-  string,
-  Map<string, { kind: 'file' | 'material'; state: State; at: number }>
->();
+/** Practised quizzes and sets per workspace, as study_progress rows. */
+const progress = new Map<string, Set<string>>();
 const enabled = new Map<string, boolean>();
-/** The last progress write per workspace, for Learning's Progress order. */
-const studiedAt = new Map<string, number>();
 const rated = new Map<string, Rated>(); // `${materialId}/${itemId}`
 
 function items(wsId: string) {
   let map = progress.get(wsId);
   if (!map) {
-    map = new Map();
+    map = new Set();
     progress.set(wsId, map);
   }
   return map;
 }
 
 // Biology 101 opens with some history, as in the mocks.
-items('ws_bio').set('f_1', {
-  at: Date.now() - 9 * 86_400_000,
-  kind: 'file',
-  state: 'done',
-});
-items('ws_bio').set('f_2', {
-  at: Date.now() - 9 * 86_400_000,
-  kind: 'file',
-  state: 'done',
-});
-items('ws_bio').set('qz_1', {
-  at: Date.now() - 5 * 86_400_000,
-  kind: 'material',
-  state: 'done',
-});
-items('ws_bio').set('dk_1', {
-  at: Date.now() - 1 * 86_400_000,
-  kind: 'material',
-  state: 'started',
-});
+for (const id of ['qz_1', 'qz_2', 'dk_1']) items('ws_bio').add(id);
 for (const [card, lapses] of [
   ['c_4', 2],
   ['c_7', 1],
@@ -78,23 +55,12 @@ for (const [card, lapses] of [
 rated.set('qz_1/q4', { at: Date.now() - 7_200_000, lapses: 1 });
 rated.set('qz_1/q15', { at: Date.now() - 5_400_000, lapses: 1 });
 rated.set('qz_1/q12', { at: Date.now() - 3_600_000, lapses: 1 });
-// Calculus started yesterday; World History is finished on first read (below).
-items('ws_calc').set('f_6', {
-  at: Date.now() - 1 * 86_400_000,
-  kind: 'file',
-  state: 'done',
-});
-// A twice-missed ordering question: Calculus has a review but no Quick review.
-items('ws_calc').set('qz_3', {
-  at: Date.now() - 1 * 86_400_000,
-  kind: 'material',
-  state: 'started',
-});
+// Genetics practised once a week ago, so Practice suggests it as fading.
+rated.set('qz_2/q7', { at: Date.now() - 7 * 86_400_000, lapses: 0 });
+// A twice-missed ordering question from yesterday: Calculus has a review
+// but no Quick review.
+items('ws_calc').add('qz_3');
 rated.set('qz_3/q29', { at: Date.now() - 86_400_000, lapses: 2 });
-studiedAt.set('ws_bio', Date.now() - 3_600_000);
-studiedAt.set('ws_calc', Date.now() - 86_400_000);
-studiedAt.set('ws_hist', Date.now() - 3 * 86_400_000);
-let historyFinished = false;
 
 /** Adds a card's rating to its flashcard attempt, as the server does: cards
  * in first-rated order with every rating, scored by first ratings of Good or
@@ -112,7 +78,6 @@ function recordCard(
   if (!attempt) {
     attempt = {
       cards: [],
-      chapters: [],
       correct: 0,
       id: ref.id,
       kind: 'flashcards',
@@ -121,6 +86,7 @@ function recordCard(
       quizName: mt.title,
       startedAt: ref.startedAt,
       takenAt: at,
+      topics: [],
       total: 0,
       workspaceId: mt.workspaceId,
       workspaceName: mt.workspaceName ?? '',
@@ -167,333 +133,21 @@ function recordCard(
   }
 }
 
-/** A workspace's tracked items for Learning's map: untrashed files and
- * non-embedded materials, minus the ones the user stopped tracking. */
-function tracked(wsId: string) {
-  const states = items(wsId);
-  return [
-    ...db.files
-      .filter((f) => f.workspaceId === wsId)
-      .map((f) => ({
-        chapterId: f.chapterId,
-        createdAt: f.addedAt,
-        id: f.id,
-        kind: f.kind as string,
-        position: f.position,
-        title: f.name,
-        type: 'file' as const,
-      })),
-    ...db.materials
-      .filter((mt) => mt.workspaceId === wsId && !mt.parentMaterialId)
-      .map((mt) => ({
-        chapterId: mt.chapterId ?? null,
-        createdAt: mt.createdAt,
-        id: mt.id,
-        kind: mt.kind as string,
-        position: mt.position,
-        title: mt.title,
-        type: 'material' as const,
-      })),
-  ]
-    .map((it) => {
-      const st = states.get(it.id);
-      return {
-        ...it,
-        doneAt:
-          st?.state === 'done' ? new Date(st.at).toISOString() : undefined,
-        state: st?.state,
-      };
-    })
-    .filter((it) => it.state !== 'removed');
-}
-
 const daysAgo = (days: number) =>
   new Date(Date.now() - days * 86_400_000).toISOString();
-/** Progress rows only, so Learning's lists show a realistic spread: no items
- * behind them (Organic Chemistry and English Literature open their real,
- * empty workspaces; the others have no workspace in the mock). */
-const SHOWCASE: ProgressWorkspace[] = [
+/** Workspaces with progress but no items in the mock, so Learning's Review
+ * overview lists a realistic spread (Organic Chemistry and English Literature
+ * open their real, empty workspaces). */
+const SHOWCASE = [
+  { iconId: 'waves-04', name: 'Organic Chemistry', workspaceId: 'ws_chem' },
+  { iconId: 'waves-05', name: 'English Literature', workspaceId: 'ws_eng' },
   {
-    cover: { color: '#eb6834', pattern: 'hexagons', style: 'geo' },
-    done: 2,
-    iconId: 'waves-04',
-    lastStudiedAt: daysAgo(2),
-    name: 'Organic Chemistry',
-    total: 26,
-    workspaceId: 'ws_chem',
-  },
-  {
-    cover: {
-      color: '#f8efc9',
-      kind: 'latin',
-      style: 'paper',
-    },
-    done: 8,
-    iconId: 'waves-05',
-    lastStudiedAt: daysAgo(4),
-    name: 'English Literature',
-    total: 12,
-    workspaceId: 'ws_eng',
-  },
-  {
-    cover: {
-      color: '#d0505e',
-      kind: 'math',
-      style: 'symbols',
-    },
-    done: 11,
     iconId: 'waves-06',
-    lastStudiedAt: daysAgo(6),
     name: 'Physics: mechanics',
-    total: 20,
     workspaceId: 'ws_demo_physics',
   },
-  {
-    done: 3,
-    iconId: 'waves-07',
-    lastStudiedAt: daysAgo(9),
-    name: 'Spanish A2',
-    total: 30,
-    workspaceId: 'ws_demo_spanish2',
-  },
-  {
-    cover: {
-      color: '#c48a00',
-      kind: 'math',
-      style: 'doodles',
-    },
-    done: 14,
-    iconId: 'waves-08',
-    lastStudiedAt: daysAgo(12),
-    name: 'Statistics',
-    total: 18,
-    workspaceId: 'ws_demo_stats',
-  },
-  {
-    cover: { color: '#1b9e6f', pattern: 'xes', style: 'geo' },
-    done: 15,
-    iconId: 'waves-09',
-    lastStudiedAt: daysAgo(9),
-    name: 'Chemistry basics',
-    total: 15,
-    workspaceId: 'ws_demo_chem0',
-  },
-  {
-    cover: {
-      color: '#d0505e',
-      kind: 'kana',
-      style: 'symbols',
-    },
-    done: 20,
-    iconId: 'waves-10',
-    lastStudiedAt: daysAgo(30),
-    name: 'Spanish A1',
-    total: 20,
-    workspaceId: 'ws_demo_spanish1',
-  },
-  {
-    cover: {
-      color: '#2a78d6',
-      kind: 'math',
-      style: 'symbols',
-    },
-    done: 24,
-    iconId: 'waves-11',
-    lastStudiedAt: daysAgo(40),
-    name: 'Linear algebra',
-    total: 24,
-    workspaceId: 'ws_demo_linalg',
-  },
-  {
-    cover: { color: '#fbf9f3', kind: 'kana', style: 'paper' },
-    done: 8,
-    iconId: 'waves-02',
-    lastStudiedAt: daysAgo(60),
-    name: 'Essay writing',
-    total: 8,
-    workspaceId: 'ws_demo_essay',
-  },
-  {
-    done: 12,
-    iconId: 'waves-03',
-    lastStudiedAt: daysAgo(75),
-    name: 'Art history',
-    total: 12,
-    workspaceId: 'ws_demo_art',
-  },
+  { iconId: 'waves-07', name: 'Spanish A2', workspaceId: 'ws_demo_spanish2' },
 ];
-
-/** As the server: `lead` (a listed workspace) leads the map, else the first
- * in progress, else the first finished; showcase rows have no items to map. */
-type MockPlanStep = {
-  kind: PlanStep['kind'];
-  workspaceId: string;
-  targetId: string;
-};
-type MockPlan = {
-  id: string;
-  workspaceId: string;
-  name: string;
-  createdAt: string;
-  updatedAt: string;
-  steps: MockPlanStep[];
-};
-
-/** A seeded plan in Biology reaching into Calculus, as a plan does. */
-const plans: MockPlan[] = [
-  {
-    createdAt: daysAgo(5),
-    id: 'plan_winter',
-    name: 'Winter exams',
-    steps: [
-      ...db.chapters
-        .filter((ch) => ch.workspaceId === 'ws_bio')
-        .sort((a, b) => a.order - b.order)
-        .slice(0, 2)
-        .flatMap((ch) => chapterSteps('ws_bio', ch.id)),
-      ...db.chapters
-        .filter((ch) => ch.workspaceId === 'ws_calc')
-        .sort((a, b) => a.order - b.order)
-        .slice(0, 1)
-        .flatMap((ch) => chapterSteps('ws_calc', ch.id)),
-    ],
-    updatedAt: daysAgo(1),
-    workspaceId: 'ws_bio',
-  },
-];
-
-/** A chapter's files and materials as plan steps, in reading order. */
-function chapterSteps(wsId: string, chapterId: string): MockPlanStep[] {
-  return [
-    ...db.files
-      .filter((f) => f.workspaceId === wsId && f.chapterId === chapterId)
-      .map((f) => ({
-        kind: 'file' as const,
-        position: f.position,
-        targetId: f.id,
-      })),
-    ...db.materials
-      .filter(
-        (mt) =>
-          mt.workspaceId === wsId &&
-          !mt.parentMaterialId &&
-          mt.chapterId === chapterId
-      )
-      .map((mt) => ({
-        kind: 'material' as const,
-        position: mt.position,
-        targetId: mt.id,
-      })),
-  ]
-    .sort((a, b) => a.position - b.position)
-    .map(({ kind, targetId }) => ({ kind, targetId, workspaceId: wsId }));
-}
-
-function stepTitle(step: MockPlanStep) {
-  if (step.kind === 'file')
-    return db.files.find((f) => f.id === step.targetId)?.name ?? '';
-  return db.materials.find((mt) => mt.id === step.targetId)?.title ?? '';
-}
-
-/** The plans response: steps with titles, every named workspace once. */
-function studyPlans(list: MockPlan[]) {
-  const ids = [
-    ...new Set(
-      list.flatMap((p) => [
-        p.workspaceId,
-        ...p.steps.map((st) => st.workspaceId),
-      ])
-    ),
-  ];
-  return {
-    plans: list.map((p) => ({
-      ...p,
-      steps: p.steps.map((st) => ({
-        ...st,
-        locked: false,
-        title: stepTitle(st),
-      })),
-    })),
-    workspaces: ids.map((wsId) => {
-      const ws = db.workspaces.find((w) => w.id === wsId);
-      return {
-        chapters: db.chapters
-          .filter((ch) => ch.workspaceId === wsId)
-          .map((ch) => ({ id: ch.id, name: ch.name, order: ch.order })),
-        cover: ws?.cover,
-        hidden: !(enabled.get(wsId) ?? true),
-        iconId: ws?.iconId ?? '',
-        items: tracked(wsId).map(({ state, ...it }) => ({
-          ...it,
-          ...(state ? { state } : {}),
-        })),
-        name: ws?.name ?? wsId,
-        workspaceId: wsId,
-      };
-    }),
-  };
-}
-
-function learningProgress(leadId: string | null, all = false) {
-  if (!historyFinished) {
-    historyFinished = true;
-    for (const it of tracked('ws_hist'))
-      items('ws_hist').set(it.id, {
-        at: Date.now() - 3 * 86_400_000,
-        kind: it.type,
-        state: 'done',
-      });
-  }
-  const rows: ProgressWorkspace[] = [...progress.keys()]
-    .filter((wsId) =>
-      [...items(wsId).values()].some((it) => it.state !== 'removed')
-    )
-    .map((wsId) => {
-      const ws = db.workspaces.find((w) => w.id === wsId);
-      const list = tracked(wsId);
-      return {
-        cover: ws?.cover,
-        done: list.filter((it) => it.state === 'done').length,
-        hidden: !(enabled.get(wsId) ?? true),
-        iconId: ws?.iconId ?? '',
-        lastStudiedAt: new Date(studiedAt.get(wsId) ?? 0).toISOString(),
-        name: ws?.name ?? wsId,
-        total: list.length,
-        workspaceId: wsId,
-      };
-    })
-    .filter((ws) => ws.total > 0);
-  rows.push(
-    ...SHOWCASE.filter(
-      (ws) => !rows.some((r) => r.workspaceId === ws.workspaceId)
-    ).map((ws) => ({ ...ws, hidden: !(enabled.get(ws.workspaceId) ?? true) }))
-  );
-  rows.sort((a, b) => b.lastStudiedAt.localeCompare(a.lastStudiedAt));
-  // Hidden ones are counted either way and listed only with `all`.
-  const listed = all ? rows : rows.filter((ws) => !ws.hidden);
-  const active = listed.filter((ws) => ws.done < ws.total).slice(0, 10);
-  const finished = listed.filter((ws) => ws.done >= ws.total).slice(0, 10);
-  const mapped = [...active, ...finished]
-    .filter((ws) => !ws.hidden)
-    .map((ws) => ws.workspaceId)
-    .filter((id) => progress.has(id));
-  const lead = mapped.find((id) => id === leadId) ?? mapped[0];
-  return {
-    active,
-    finished,
-    hiddenCount: rows.filter((ws) => ws.hidden).length,
-    lead: lead && {
-      chapters: db.chapters
-        .filter((ch) => ch.workspaceId === lead)
-        .map((ch) => ({ id: ch.id, name: ch.name, order: ch.order })),
-      items: tracked(lead).map(({ state, ...it }) => ({
-        ...it,
-        ...(state ? { state } : {}),
-      })),
-      workspaceId: lead,
-    },
-  };
-}
 
 function cardsOf(materialId: string) {
   const mt = db.materials.find((x) => x.id === materialId);
@@ -510,8 +164,7 @@ function cardsOf(materialId: string) {
 /** Rated items of the quizzes and sets in progress, least retained first. */
 function pool(wsId: string): ReviewItem[] {
   const out: (ReviewItem & { rank: Rated })[] = [];
-  for (const [id, it] of items(wsId)) {
-    if (it.kind !== 'material' || it.state === 'removed') continue;
+  for (const id of items(wsId)) {
     const mt = db.materials.find((x) => x.id === id);
     if (!mt) continue;
     if (mt.kind === 'flashcards')
@@ -571,11 +224,6 @@ function summary(wsId: string): StudySummary {
   const ws = db.workspaces.find((w) => w.id === wsId);
   return {
     enabled: enabled.get(wsId) ?? true,
-    items: [...items(wsId)].map(([id, it]) => ({
-      ...(it.kind === 'file' ? { fileId: id } : { materialId: id }),
-      state: it.state,
-      updatedAt: new Date(it.at).toISOString(),
-    })),
     quickReview: quickReview(all),
     recentAttempts: db.attempts
       .filter((a) => a.kind === 'quiz' && a.workspaceName === ws?.name)
@@ -584,34 +232,6 @@ function summary(wsId: string): StudySummary {
     reviewable: all.length,
     unfinished: unfinished().find(
       (u) => u.workspaceId === wsId && u.group === 'workspace'
-    ),
-  };
-}
-
-/** A plan's rated items across its workspaces, only what its steps hold. */
-function planPool(planId: string): ReviewItem[] {
-  const plan = plans.find((p) => p.id === planId);
-  if (!plan) return [];
-  const held = (wsId: string, it: ReviewItem) =>
-    plan.steps.some(
-      (st) =>
-        st.workspaceId === wsId &&
-        st.kind === 'material' &&
-        it.materialId === st.targetId
-    );
-  const spaces = [...new Set(plan.steps.map((st) => st.workspaceId))];
-  return spaces.flatMap((wsId) => pool(wsId).filter((it) => held(wsId, it)));
-}
-
-/** The workspace's summary with a plan's review parts, as ?planId= asks. */
-function planSummary(wsId: string, planId: string): StudySummary {
-  const all = planPool(planId);
-  return {
-    ...summary(wsId),
-    quickReview: quickReview(all),
-    reviewable: all.length,
-    unfinished: unfinished().find(
-      (u) => u.workspaceId === wsId && sessions.get(u.id)?.planId === planId
     ),
   };
 }
@@ -628,16 +248,7 @@ function rate(materialId: string, itemId: string, missed: boolean) {
     lapses: (rated.get(key)?.lapses ?? 0) + (missed ? 1 : 0),
   });
   const wsId = workspaceOf(materialId);
-  if (wsId) {
-    studiedAt.set(wsId, Date.now());
-    const map = items(wsId);
-    if (map.get(materialId)?.state !== 'done')
-      map.set(materialId, {
-        at: Date.now(),
-        kind: 'material',
-        state: 'started',
-      });
-  }
+  if (wsId) items(wsId).add(materialId);
 }
 
 /* Review sessions: recorded with their first answer, finished once every
@@ -657,10 +268,9 @@ type Answer =
 type Session = {
   workspaceId: string;
   group: ReviewSessionRef['group'];
-  chapterId?: string;
-  planId?: string;
+  topicId?: string;
   mode?: ReviewMode;
-  items: { materialId: string; itemId: string }[];
+  items: { materialId: string; itemId: string; reason?: ReviewReason }[];
   answers: Map<string, Answer>;
   startedAt: number;
   lastAnswerAt: number;
@@ -691,13 +301,12 @@ function answer(
   if (!session) {
     session = {
       answers: new Map(),
-      chapterId: ref.chapterId,
       group: ref.group,
       items: ref.items,
       lastAnswerAt: Date.now(),
       mode: ref.mode,
-      planId: ref.planId,
       startedAt: Date.now(),
+      topicId: ref.topicId,
       workspaceId: ref.workspaceId,
     };
     sessions.set(ref.id, session);
@@ -708,21 +317,71 @@ function answer(
     session.finishedAt ??= Date.now();
 }
 
-function chapterOf(materialId: string) {
-  return db.materials.find((x) => x.id === materialId)?.chapterId ?? null;
+function topicOf(materialId: string) {
+  return db.materials.find((x) => x.id === materialId)?.topicId ?? null;
 }
 
 function inGroup(
   wsId: string,
   group: ReviewSuggestion['group'],
-  chapterId?: string
+  topicId?: string
 ) {
   return pool(wsId).filter((it) =>
-    group === 'chapter'
-      ? chapterOf(it.materialId) === chapterId
+    group === 'topic'
+      ? topicOf(it.materialId) === topicId
       : group === 'others'
-        ? !chapterOf(it.materialId)
+        ? !topicOf(it.materialId)
         : true
+  );
+}
+
+/** Why a session serves an item: never rated, missed, or fading. */
+function reasonOf(it: { materialId: string; itemId: string }): ReviewReason {
+  const rank = rated.get(`${it.materialId}/${it.itemId}`);
+  if (!rank) return 'new';
+  return rank.lapses > 0 ? 'missed' : 'fading';
+}
+
+/** The group's quizzes in reading order, top-level and untrashed. */
+function groupQuizzes(
+  wsId: string,
+  group: ReviewSuggestion['group'],
+  topicId?: string
+) {
+  const order = (id?: string | null) =>
+    db.topics.find((t) => t.id === id)?.order ?? Number.MAX_SAFE_INTEGER;
+  return db.materials
+    .filter(
+      (mt) =>
+        mt.workspaceId === wsId &&
+        mt.kind === 'quiz' &&
+        !mt.parentMaterialId &&
+        (group === 'topic'
+          ? mt.topicId === topicId
+          : group === 'others'
+            ? !mt.topicId
+            : true)
+    )
+    .sort((a, b) => order(a.topicId) - order(b.topicId));
+}
+
+/** Questions of the group's quizzes never rated, for a manual session. */
+function newQuestions(
+  wsId: string,
+  group: ReviewSuggestion['group'],
+  topicId?: string
+): ReviewItem[] {
+  return groupQuizzes(wsId, group, topicId).flatMap((mt) =>
+    db
+      .quizFromMaterial(mt)
+      .questions.filter((q) => !rated.has(`${mt.id}/${q.id}`))
+      .map((question) => ({
+        itemId: question.id,
+        kind: 'question' as const,
+        materialId: mt.id,
+        materialTitle: mt.title,
+        question: learnerView(question),
+      }))
   );
 }
 
@@ -780,8 +439,6 @@ const SHOWCASE_SUGGESTIONS: ReviewSuggestion[] = [
     workspaceName: 'Spanish A2',
   },
   {
-    chapterId: 'ch_demo_ibp',
-    chapterName: 'Integration by parts',
     evidence: {
       forgotten: 3,
       lastPractisedAt: daysAgo(2),
@@ -789,10 +446,12 @@ const SHOWCASE_SUGGESTIONS: ReviewSuggestion[] = [
       repeated: 0,
       young: 8,
     },
-    group: 'chapter',
+    group: 'topic',
     iconId: 'waves-05',
     items: 9,
     mode: 'learned',
+    topicId: 'ch_demo_ibp',
+    topicName: 'Integration by parts',
     workspaceId: 'ws_calc',
     workspaceName: 'Calculus II',
   },
@@ -822,14 +481,11 @@ function unfinished() {
       const ws = db.workspaces.find((w) => w.id === s.workspaceId);
       return {
         answered: s.answers.size,
-        chapterName:
-          s.group === 'plan'
-            ? plans.find((p) => p.id === s.planId)?.name
-            : db.chapters.find((ch) => ch.id === s.chapterId)?.name,
         group: s.group,
         iconId: ws?.iconId ?? '',
         id,
         lastAnswerAt: new Date(s.lastAnswerAt).toISOString(),
+        topicName: db.topics.find((ch) => ch.id === s.topicId)?.name,
         total: s.items.length,
         workspaceId: s.workspaceId,
         workspaceName: ws?.name ?? s.workspaceId,
@@ -859,31 +515,6 @@ function overview() {
       : undefined;
   };
   return {
-    // As the server: plans whose parent shows study progress, newest first.
-    plans: [...plans]
-      .filter((p) => enabled.get(p.workspaceId) ?? true)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .map((p) => {
-        const ws = db.workspaces.find((w) => w.id === p.workspaceId);
-        const times = [...sessions.values()]
-          .filter((sn) => sn.planId === p.id)
-          .map((sn) => sn.lastAnswerAt);
-        return {
-          // As the server: practised items, or any quiz or set step.
-          canReview:
-            planPool(p.id).length > 0 ||
-            p.steps.some((st) => isQuiz(st.targetId)),
-          iconId: ws?.iconId ?? '',
-          lastReviewedAt: times.length
-            ? new Date(Math.max(...times)).toISOString()
-            : undefined,
-          name: p.name,
-          planId: p.id,
-          reviewable: planPool(p.id).length,
-          workspaceId: p.workspaceId,
-          workspaceName: ws?.name ?? p.workspaceId,
-        };
-      }),
     suggestions: [
       ...real.flatMap(suggestionsOf),
       ...SHOWCASE_SUGGESTIONS,
@@ -921,30 +552,30 @@ const SHOWCASE_PAST: PastReview[] = [
   {
     answered: 18,
     cards: { correct: 6, total: 7 },
-    chapterName: 'Membranes & transport',
     finishedAt: daysAgo(1),
-    group: 'chapter',
+    group: 'topic',
     iconId: 'waves-04',
     id: 'past_1',
     lastAnswerAt: daysAgo(1),
     mode: 'tricky',
     quiz: { correct: 7.5, total: 11 },
     startedAt: new Date(Date.now() - 86_400_000 - 660_000).toISOString(),
+    topicName: 'Membranes & transport',
     total: 18,
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
   },
   {
     answered: 9,
-    chapterName: 'Integration by parts',
     finishedAt: daysAgo(2),
-    group: 'chapter',
+    group: 'topic',
     iconId: 'waves-05',
     id: 'past_2',
     lastAnswerAt: daysAgo(2),
     mode: 'learned',
     quiz: { correct: 6, total: 9 },
     startedAt: new Date(Date.now() - 2 * 86_400_000 - 360_000).toISOString(),
+    topicName: 'Integration by parts',
     total: 9,
     workspaceId: 'ws_calc',
     workspaceName: 'Calculus II',
@@ -992,10 +623,8 @@ function pastSortKey(r: PastReview, sort: string | null) {
       return +new Date(r.lastAnswerAt) - +new Date(r.startedAt);
     case 'workspace':
       return r.workspaceName.toLowerCase();
-    case 'plan':
-      return r.group === 'plan' ? (r.chapterName ?? '').toLowerCase() : null;
-    case 'chapter':
-      return r.group === 'chapter' ? (r.chapterName ?? '').toLowerCase() : null;
+    case 'topic':
+      return r.group === 'topic' ? (r.topicName ?? '').toLowerCase() : null;
     case 'status':
       return r.answered < r.total ? 1 : 0;
     default:
@@ -1009,12 +638,16 @@ function answeredItems(
   session: Session,
   current: (materialId: string, itemId: string) => ReviewItem | undefined
 ) {
+  const reasons = new Map(
+    session.items.map((it) => [`${it.materialId}/${it.itemId}`, it.reason])
+  );
   return [...session.answers].flatMap(([key, a]): ReviewAnswer[] => {
     const [materialId, itemId] = key.split('/');
     const found = current(materialId, itemId);
     if (!found) return [];
     // The learner view's question gives way to the graded one.
-    const { question: _learner, ...item } = found;
+    const { question: _learner, ...rest } = found;
+    const item = { ...rest, reason: reasons.get(key) };
     return a.kind === 'card'
       ? [{ ...item, rating: a.rating }]
       : [
@@ -1108,11 +741,6 @@ function pastRow(id: string, s: Session): PastReview {
           total: cards.length,
         }
       : undefined,
-    chapterId: s.chapterId,
-    chapterName:
-      s.group === 'plan'
-        ? plans.find((p) => p.id === s.planId)?.name
-        : db.chapters.find((ch) => ch.id === s.chapterId)?.name,
     finishedAt: s.finishedAt ? new Date(s.finishedAt).toISOString() : undefined,
     group: s.group,
     iconId: ws?.iconId ?? '',
@@ -1126,6 +754,8 @@ function pastRow(id: string, s: Session): PastReview {
         }
       : undefined,
     startedAt: new Date(s.startedAt).toISOString(),
+    topicId: s.topicId,
+    topicName: db.topics.find((ch) => ch.id === s.topicId)?.name,
     total: s.items.length,
     workspaceId: s.workspaceId,
     workspaceName: ws?.name ?? s.workspaceId,
@@ -1158,37 +788,151 @@ function pastReviews(params: URLSearchParams) {
   return { items: list, more: false };
 }
 
-export const studyHandlers = [
-  http.get('/api/workspaces/:id/study', ({ params, request }) => {
-    const planId = new URL(request.url).searchParams.get('planId');
-    return HttpResponse.json(
-      planId
-        ? planSummary(String(params.id), planId)
-        : summary(String(params.id))
+// Biology 101's Membranes & transport was reviewed once (Practice's "Only
+// you" row): two of three questions right.
+{
+  const quiz = db.materials.find((x) => x.id === 'qz_1');
+  const questions = quiz ? db.quizFromMaterial(quiz).questions : [];
+  const picked = ['q4', 'q12', 'q15'].flatMap(
+    (id) => questions.find((q) => q.id === id) ?? []
+  );
+  const at = Date.now() - 2 * 86_400_000;
+  sessions.set('5f0c2a41-7c3e-4c55-9d2b-1e8a9c4b6d02', {
+    answers: new Map(
+      picked.map((question, i): [string, Answer] => {
+        const graded = gradeQuestions([question], {});
+        return [
+          `qz_1/${question.id}`,
+          {
+            answers: {},
+            correct: i === 1 ? 0 : graded.max,
+            graded: graded.questions[0],
+            kind: 'question',
+            rating: i === 1 ? 1 : 3,
+            total: graded.max,
+          },
+        ];
+      })
+    ),
+    finishedAt: at,
+    group: 'topic',
+    items: picked.map((question, i) => ({
+      itemId: question.id,
+      materialId: 'qz_1',
+      reason: i === 2 ? 'new' : 'missed',
+    })),
+    lastAnswerAt: at,
+    startedAt: at - 6 * 60_000,
+    topicId: 'ch_2',
+    workspaceId: 'ws_bio',
+  });
+}
+
+/** Practice as the server reads it: this workspace's suggestions over its
+ * questions, every quiz in reading order with the best attempt, the
+ * caller's topic reviews; staff also get member counts (the mock's are
+ * fixed: six members, a group average once five tried). */
+export function practiceBody(wsId: string, staff: boolean): Practice {
+  // One suggestion per topic with rated questions: tricky when missed.
+  const groups = new Map<string, ReviewItem[]>();
+  for (const it of pool(wsId))
+    if (it.kind === 'question') {
+      const key = topicOf(it.materialId) ?? '';
+      groups.set(key, [...(groups.get(key) ?? []), it]);
+    }
+  const ws = db.workspaces.find((w) => w.id === wsId);
+  const suggestions: ReviewSuggestion[] = [...groups]
+    .map(([topicId, list]): ReviewSuggestion => {
+      const ranks = list.map(
+        (it) =>
+          rated.get(`${it.materialId}/${it.itemId}`) ?? { at: 0, lapses: 0 }
+      );
+      const missed = ranks.filter((r) => r.lapses > 0).length;
+      return {
+        evidence: {
+          forgotten: Math.ceil(list.length / 2),
+          lastPractisedAt: new Date(
+            Math.max(...ranks.map((r) => r.at))
+          ).toISOString(),
+          missed,
+          repeated: ranks.filter((r) => r.lapses > 1).length,
+          young: list.length,
+        },
+        group: topicId ? 'topic' : 'others',
+        iconId: ws?.iconId ?? '',
+        items: list.length,
+        mode: missed ? 'tricky' : 'fading',
+        topicId: topicId || undefined,
+        topicName: db.topics.find((t) => t.id === topicId)?.name,
+        workspaceId: wsId,
+        workspaceName: ws?.name ?? wsId,
+      };
+    })
+    .sort((a, b) => b.items - a.items)
+    .slice(0, 3);
+  const TRIED = [5, 2, 6, 0];
+  const AVERAGE = [0.74, 0, 0.81, 0];
+  const quizzes = groupQuizzes(wsId, 'workspace').map((mt, i) => {
+    const best = db.attempts
+      .filter((a) => a.materialId === mt.id && a.kind === 'quiz' && a.total > 0)
+      .sort((a, b) => b.correct / b.total - a.correct / a.total)[0];
+    const tried = TRIED[i % TRIED.length];
+    return {
+      best: best ? { correct: best.correct, total: best.total } : undefined,
+      id: mt.id,
+      questions: db.quizFromMaterial(mt).questions.length,
+      title: mt.title,
+      topicId: mt.topicId ?? undefined,
+      ...(staff
+        ? {
+            average: tried >= 5 ? AVERAGE[i % AVERAGE.length] : undefined,
+            triedBy: tried,
+          }
+        : {}),
+    };
+  });
+  const reviews = new Map<string, PracticeReview>();
+  for (const [, session] of [...sessions].sort(
+    (a, b) => b[1].lastAnswerAt - a[1].lastAnswerAt
+  )) {
+    if (session.workspaceId !== wsId) continue;
+    if (session.group !== 'topic' && session.group !== 'others') continue;
+    const marks = [...session.answers.values()].flatMap((a) =>
+      a.kind === 'question' ? [a] : []
     );
-  }),
+    if (!marks.length) continue;
+    const best = {
+      correct: marks.reduce((n, a) => n + a.correct, 0),
+      total: marks.reduce((n, a) => n + a.total, 0),
+    };
+    const key = `${session.group}:${session.topicId ?? ''}`;
+    const seen = reviews.get(key);
+    if (!seen)
+      reviews.set(key, {
+        best,
+        group: session.group,
+        lastAt: new Date(session.lastAnswerAt).toISOString(),
+        questions: session.items.length,
+        topicId: session.topicId,
+      });
+    else if (best.correct / best.total > seen.best.correct / seen.best.total)
+      seen.best = best;
+  }
+  return {
+    quizzes,
+    reviews: [...reviews.values()],
+    suggestions: items(wsId).size > 0 ? suggestions : [],
+    ...(staff ? { members: 6 } : {}),
+  };
+}
+
+export const studyHandlers = [
+  http.get('/api/workspaces/:id/study', ({ params }) =>
+    HttpResponse.json(summary(String(params.id)))
+  ),
   http.put('/api/workspaces/:id/study/enabled', async ({ params, request }) => {
     const body = (await request.json()) as { enabled: boolean };
     enabled.set(String(params.id), body.enabled);
-    return new HttpResponse(null, { status: 204 });
-  }),
-  http.put('/api/workspaces/:id/study/items', async ({ params, request }) => {
-    const body = (await request.json()) as {
-      fileId?: string;
-      materialId?: string;
-      state?: 'done' | 'removed';
-    };
-    const id = body.fileId ?? body.materialId;
-    if (!id) return new HttpResponse(null, { status: 422 });
-    const map = items(String(params.id));
-    studiedAt.set(String(params.id), Date.now());
-    if (body.state)
-      map.set(id, {
-        at: Date.now(),
-        kind: body.fileId ? 'file' : 'material',
-        state: body.state,
-      });
-    else map.delete(id);
     return new HttpResponse(null, { status: 204 });
   }),
   http.post('/api/workspaces/:id/study/reset', ({ params }) => {
@@ -1202,23 +946,28 @@ export const studyHandlers = [
     const url = new URL(request.url);
     const group = (url.searchParams.get('group') ??
       'workspace') as ReviewSessionRef['group'];
-    const chapterId = url.searchParams.get('chapterId') ?? undefined;
-    const planId = url.searchParams.get('planId') ?? undefined;
+    const topicId = url.searchParams.get('topicId') ?? undefined;
     const mode = (url.searchParams.get('mode') ?? undefined) as
       | ReviewMode
       | undefined;
-    const list = (
-      group === 'plan' && planId
-        ? planPool(planId)
-        : inGroup(
-            String(params.id),
-            group as ReviewSuggestion['group'],
-            chapterId
-          )
-    ).slice(0, 20);
+    // Practice's topic sessions serve questions only; without a mode they
+    // mix in questions not seen yet, alternating with practised ones.
+    const questionsOnly = url.searchParams.get('items') === 'quiz';
+    let practised = inGroup(String(params.id), group, topicId);
+    if (questionsOnly)
+      practised = practised.filter((it) => it.kind === 'question');
+    const fresh =
+      questionsOnly && !mode
+        ? newQuestions(String(params.id), group, topicId)
+        : [];
+    const mixed: ReviewItem[] = [];
+    for (let i = 0; i < Math.max(practised.length, fresh.length); i++)
+      mixed.push(...[practised[i], fresh[i]].filter((it) => !!it));
+    const list = mixed
+      .slice(0, questionsOnly ? 10 : 20)
+      .map((it) => ({ ...it, reason: reasonOf(it) }));
     return HttpResponse.json({
       answered: 0,
-      chapterId,
       done: [],
       evidence: mode
         ? suggestionsOf(String(params.id)).find((sg) => sg.group === group)
@@ -1227,74 +976,10 @@ export const studyHandlers = [
       group,
       items: list,
       mode,
-      planId,
+      topicId,
       total: list.length,
     });
   }),
-  http.get('/api/learning/progress', ({ request }) => {
-    const search = new URL(request.url).searchParams;
-    return HttpResponse.json(
-      learningProgress(search.get('lead'), search.get('all') === 'true')
-    );
-  }),
-  http.get('/api/workspaces/:id/study/plans', ({ params }) => {
-    const wsId = String(params.id);
-    return HttpResponse.json(
-      studyPlans([
-        ...plans.filter((p) => p.workspaceId === wsId),
-        ...plans.filter(
-          (p) =>
-            p.workspaceId !== wsId &&
-            p.steps.some((st) => st.workspaceId === wsId)
-        ),
-      ])
-    );
-  }),
-  http.post('/api/workspaces/:id/study/plans', async ({ params, request }) => {
-    const wsId = String(params.id);
-    const { name } = (await request.json()) as { name: string };
-    if (plans.filter((p) => p.workspaceId === wsId).length >= 10)
-      return HttpResponse.json(
-        { detail: 'this workspace already has 10 plans' },
-        { status: 409 }
-      );
-    const now = new Date().toISOString();
-    const plan: MockPlan = {
-      createdAt: now,
-      id: `plan_${crypto.randomUUID()}`,
-      name,
-      steps: [],
-      updatedAt: now,
-      workspaceId: wsId,
-    };
-    plans.push(plan);
-    return HttpResponse.json({ ...plan, steps: [] }, { status: 201 });
-  }),
-  http.patch('/api/study/plans/:id', async ({ params, request }) => {
-    const plan = plans.find((p) => p.id === params.id);
-    if (!plan) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as {
-      name?: string;
-      steps?: MockPlanStep[];
-    };
-    if (body.name) plan.name = body.name;
-    if (body.steps) plan.steps = body.steps;
-    plan.updatedAt = new Date().toISOString();
-    return new HttpResponse(null, { status: 204 });
-  }),
-  http.delete('/api/study/plans/:id', ({ params }) => {
-    const at = plans.findIndex((p) => p.id === params.id);
-    if (at < 0) return new HttpResponse(null, { status: 404 });
-    plans.splice(at, 1);
-    return new HttpResponse(null, { status: 204 });
-  }),
-  http.get('/api/learning/plans', () =>
-    HttpResponse.json(
-      studyPlans(
-        [...plans].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      )
-    )
-  ),
   http.get('/api/review/overview', () => HttpResponse.json(overview())),
   http.get('/api/review/sessions', ({ request }) =>
     HttpResponse.json(pastReviews(new URL(request.url).searchParams))
@@ -1311,13 +996,14 @@ export const studyHandlers = [
     const done = answeredItems(session, current);
     return HttpResponse.json({
       answered: session.answers.size,
-      chapterId: session.chapterId,
       done,
       group: session.group,
-      items: left
-        .map((it) => current(it.materialId, it.itemId))
-        .filter(Boolean),
+      items: left.flatMap((it) => {
+        const found = current(it.materialId, it.itemId);
+        return found ? [{ ...found, reason: it.reason }] : [];
+      }),
       mode: session.mode,
+      topicId: session.topicId,
       total: session.items.length,
     });
   }),
@@ -1348,6 +1034,16 @@ export const studyHandlers = [
     if (!session) return new HttpResponse(null, { status: 404 });
     session.finishedAt ??= Date.now();
     return new HttpResponse(null, { status: 204 });
+  }),
+  http.get('/api/workspaces/:id/practice', ({ params }) => {
+    const wsId = String(params.id);
+    const ws = db.workspaces.find((w) => w.id === wsId);
+    return HttpResponse.json(
+      practiceBody(
+        wsId,
+        ws?.kind === 'class' && (ws.role === 'owner' || ws.role === 'editor')
+      )
+    );
   }),
   http.get('/api/workspaces/:id/study/attempts', ({ params }) => {
     const items: ItemAttempts[] = db.materials

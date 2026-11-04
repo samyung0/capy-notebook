@@ -46,9 +46,9 @@ export default function Workspaces() {
       value: 'created',
     },
     {
-      icon: 'chapter',
-      label: m.workspaces_sort_chapters(),
-      value: 'chapters',
+      icon: 'topic',
+      label: m.workspaces_sort_topics(),
+      value: 'topics',
     },
     {
       icon: 'files',
@@ -166,7 +166,7 @@ export default function Workspaces() {
         }}
         open={createOpen}
         setOpen={setCreateOpen}
-        workspace={{ name: '', tags: [] }}
+        workspace={{ kind: 'personal', name: '', tags: [] }}
       />
     </PagePanel>
   );

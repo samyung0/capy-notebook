@@ -10,9 +10,6 @@ import type { Privacy } from './privacy.ts';
 
 export interface MaterialListItem {
   cardCount?: number;
-  /** @nullable */
-  chapterId: string | null;
-  chapterName: string;
   createdAt: string;
   id: string;
   kind: MaterialKind;
@@ -25,6 +22,9 @@ export interface MaterialListItem {
   sharePath?: string;
   sizeBytes: number;
   title: string;
+  /** @nullable */
+  topicId: string | null;
+  topicName: string;
   updatedAt: string;
   workspaceId: string;
   workspaceName: string;

@@ -131,14 +131,14 @@
   margin: 0 40px;
   border-top: 1px solid var(--divider);
 }
-.summary-chapter {
+.summary-topic {
   padding: 23px 0;
   border-bottom: 1px solid var(--divider);
 }
-.summary-chapter:last-child {
+.summary-topic:last-child {
   border-bottom: 0;
 }
-.summary-chapter h2 {
+.summary-topic h2 {
   display: flex;
   gap: 10px;
   align-items: flex-start;
@@ -172,7 +172,7 @@
 .summary-files svg {
   translate: 0 -1px;
 }
-.summary-chapter svg {
+.summary-topic svg {
   flex-shrink: 0;
   width: 20px;
   height: 20px;

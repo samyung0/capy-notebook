@@ -8,8 +8,6 @@ import type { MaterialRefType } from './materialRefType.ts';
 import type { Provenance } from './provenance.ts';
 
 export interface MaterialRef {
-  /** @nullable */
-  chapterId: string | null;
   createdAt: string;
   id: string;
   maxDepth: number;
@@ -18,5 +16,7 @@ export interface MaterialRef {
   provenance?: Provenance;
   sizeBytes: number;
   title: string;
+  /** @nullable */
+  topicId: string | null;
   type: MaterialRefType;
 }

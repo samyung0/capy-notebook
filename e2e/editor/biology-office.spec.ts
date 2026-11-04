@@ -10,19 +10,15 @@ import {
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
-// These checks measure the Office viewer at 1280-1440px with the rail open
-// and the left panel closed, the layout they were written against; the
-// workspace now opens the left panel at every width that has it.
+// These checks measure the Office viewer at 1280-1440px with the right panel
+// open; an open file also shows the workspace rail and its Files panel.
 test.use({
   storageState: async ({ baseURL }, use) =>
     use({
       cookies: [],
       origins: [
         {
-          localStorage: [
-            { name: 'capy.workspace.rightPanel', value: 'true' },
-            { name: 'capy.workspace.leftPanel', value: 'false' },
-          ],
+          localStorage: [{ name: 'capy.workspace.rightPanel', value: 'true' }],
           origin: baseURL!,
         },
       ],
@@ -1950,7 +1946,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
       .locator('..')
       .getByRole('button', {
         exact: true,
-        name: m.action_new_file_or_chapter(),
+        name: m.action_new_file_or_topic(),
       })
       .first()
       .click();

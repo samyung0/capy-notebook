@@ -196,7 +196,7 @@ export function WorkspaceSettingsDialog({
             stats && (
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  [m.quiz_col_chapters(), stats.chapters],
+                  [m.quiz_col_topics(), stats.topics],
                   [m.nav_files(), stats.files],
                   [m.nav_quizzes(), stats.quizzes],
                   [m.stats_attempts(), stats.attempts],

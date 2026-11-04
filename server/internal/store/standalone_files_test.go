@@ -242,12 +242,12 @@ func TestStandaloneFileMovesIntoAWorkspaceWithItsIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	moved, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: ws.ID, ChapterName: "Imported"}, false)
+	moved, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: ws.ID, TopicName: "Imported"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(moved) != 1 || moved[0].ID != file.ID || moved[0].WorkspaceID != ws.ID || moved[0].ChapterID == nil {
-		t.Fatalf("moved = %+v, want the same file in a new chapter of the workspace", moved)
+	if len(moved) != 1 || moved[0].ID != file.ID || moved[0].WorkspaceID != ws.ID || moved[0].TopicID == nil {
+		t.Fatalf("moved = %+v, want the same file in a new topic of the workspace", moved)
 	}
 	// The owner-scoped content row itself moves into the workspace
 	// (migration 0126): nothing is copied.
@@ -263,8 +263,8 @@ func TestStandaloneFileMovesIntoAWorkspaceWithItsIndex(t *testing.T) {
 }
 
 // Between workspaces the source owner or the payer moves a file, an editor
-// who is neither cannot, and progress there goes only once confirmed.
-func TestWorkspaceFileMoveAuthorityAndProgressLoss(t *testing.T) {
+// who is neither cannot, and a progress row on it goes.
+func TestWorkspaceFileMoveAuthority(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_move_src_owner")
@@ -287,14 +287,10 @@ func TestWorkspaceFileMoveAuthorityAndProgressLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := s.MoveFiles(ctx, editor, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID}, true); !errors.Is(err, ErrNotFound) {
+	if _, err := s.MoveFiles(ctx, editor, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("editor move = %v, want not found", err)
 	}
-	var loss *ProgressLossError
-	if _, err := s.MoveFiles(ctx, member, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID}, false); !errors.As(err, &loss) || loss.People != 1 {
-		t.Fatalf("unconfirmed move = %v, want one person's progress reported", err)
-	}
-	moved, err := s.MoveFiles(ctx, member, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID}, true)
+	moved, err := s.MoveFiles(ctx, member, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +299,7 @@ func TestWorkspaceFileMoveAuthorityAndProgressLoss(t *testing.T) {
 	}
 	var progressLeft bool
 	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM study_progress WHERE file_id=$1)`, file.ID).Scan(&progressLeft); err != nil || progressLeft {
-		t.Fatalf("progress kept after a confirmed move: %v, %v", progressLeft, err)
+		t.Fatalf("progress kept after a move: %v, %v", progressLeft, err)
 	}
 }
 
@@ -372,7 +368,7 @@ func TestIndexedWorkspaceFileMovesWithItsIndexAndOwnThumbnailsOnly(t *testing.T)
 		}
 	}
 
-	if _, err := s.MoveFiles(ctx, owner, []string{moved.ID, twin.ID}, MoveTarget{WorkspaceID: dst.ID}, false); err != nil {
+	if _, err := s.MoveFiles(ctx, owner, []string{moved.ID, twin.ID}, MoveTarget{WorkspaceID: dst.ID}); err != nil {
 		t.Fatal(err)
 	}
 	contentOf := func(fileID, wsID string) string {
@@ -428,21 +424,17 @@ func TestMoveRefusalsComeInOrder(t *testing.T) {
 		uid("job"), file.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.MoveFiles(ctx, stranger, []string{file.ID}, MoveTarget{WorkspaceID: theirs.ID}, true); !errors.Is(err, ErrNotFound) {
+	if _, err := s.MoveFiles(ctx, stranger, []string{file.ID}, MoveTarget{WorkspaceID: theirs.ID}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("stranger move of a busy file = %v, want not found", err)
 	}
-	if _, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID}, true); !errors.Is(err, ErrFileProcessing) {
+	if _, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID}); !errors.Is(err, ErrFileProcessing) {
 		t.Fatalf("move during a source refresh = %v, want processing", err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE jobs SET status='done' WHERE payload->>'fileId'=$1`, file.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO study_progress (user_id, workspace_id, file_id, state) VALUES ($1,$2,$3,'removed')`,
-		owner, src.ID, file.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID}, false); err != nil {
-		t.Fatalf("move with only removed progress = %v, want no confirmation", err)
+	if _, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID}); err != nil {
+		t.Fatalf("move after the refresh = %v", err)
 	}
 }
 

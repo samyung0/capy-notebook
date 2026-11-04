@@ -5,20 +5,21 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { GetWorkspaceReviewGroup } from './getWorkspaceReviewGroup.ts';
+import type { GetWorkspaceReviewItems } from './getWorkspaceReviewItems.ts';
 import type { GetWorkspaceReviewMode } from './getWorkspaceReviewMode.ts';
 
 export type GetWorkspaceReviewParams = {
 group?: GetWorkspaceReviewGroup;
 /**
- * The chapter of a chapter group
+ * The topic of a topic group
  */
-chapterId?: string;
-/**
- * The plan of a plan group, one of the user's plans kept in this workspace
- */
-planId?: string;
+topicId?: string;
 /**
  * A suggestion's mode; omitted for a review from the workspace list
  */
 mode?: GetWorkspaceReviewMode;
+/**
+ * quiz serves questions only, whatever the review items preference (Practice's topic sessions)
+ */
+items?: GetWorkspaceReviewItems;
 };

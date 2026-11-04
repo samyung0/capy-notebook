@@ -5,7 +5,7 @@ import { PREF_KEYS } from '@/lib/localPrefs';
 export type TourPanels = {
   /** The right panel on Files. */
   showFiles: () => void;
-  /** The left panel on Chats. */
+  /** The rail's Agent section with its chats. */
   showChats: () => void;
   /** The panels as their stored preferences say, once the tour put them
    * back. */
@@ -19,12 +19,7 @@ let running: Running | null = null;
 // The workspace panel preferences the tour changes, as they were before it:
 // a panel the viewer kept closed is closed again when it stops (Epo
 // 2026-10-29).
-const PANEL_PREFS = [
-  PREF_KEYS.leftPanel,
-  PREF_KEYS.leftView,
-  PREF_KEYS.rightPanel,
-  PREF_KEYS.rightView,
-];
+const PANEL_PREFS = [PREF_KEYS.rightPanel, PREF_KEYS.rightView];
 let panelsBefore: (string | null)[] = [];
 let panels: RefObject<TourPanels | null> | null = null;
 const listeners = new Set<() => void>();

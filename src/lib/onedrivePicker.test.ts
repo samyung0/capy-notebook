@@ -184,17 +184,17 @@ describe('toImportRequest', () => {
         { id: 'item2' },
       ])
     ).toEqual({
-      chapterId: undefined,
       driveIds: ['b!abc', ''],
       fileIds: ['item1', 'item2'],
       provider: 'microsoft',
+      topicId: undefined,
     });
     expect(
       toImportRequest('google', [{ driveId: 'ignored', id: 'g1' }])
     ).toEqual({
-      chapterId: undefined,
       fileIds: ['g1'],
       provider: 'google',
+      topicId: undefined,
     });
   });
 });
