@@ -106,7 +106,7 @@ function BeforeYouStart({
         <p className="t-meta mt-3.5 text-fg-secondary">
           {paperMeta(assignment)}
         </p>
-        <DialogFooter>
+        <DialogFooter className="max-sm:justify-end">
           <Button disabled={starting} onClick={onCancel} variant="ghost">
             {m.assignment_not_now()}
           </Button>

@@ -977,7 +977,7 @@ func (s *Store) snapshotWorkspaceForClone(
 		`SELECT id, COALESCE(material_id,''), name, purpose, object_path, content_type, size_bytes,
 			status, COALESCE(etag,''), created_at, completed_at
 		 FROM editor_assets a
-		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL AND (material_id IS NULL OR EXISTS (
+		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL AND assignment_id IS NULL AND (material_id IS NULL OR EXISTS (
 			SELECT 1 FROM materials m LEFT JOIN materials p ON p.id=m.parent_material_id
 			WHERE m.id=a.material_id AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))))
 		 ORDER BY created_at`,

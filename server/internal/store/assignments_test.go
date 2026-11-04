@@ -13,7 +13,7 @@ import (
 const assignmentQuestions = `[
  {"id":"q1","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p1","blocks":[{"type":"text","text":"Pick"}],"answer":{"type":"mcq","options":["a","b"],"correct":[1]},"marks":1,"solution":[]}]},
  {"id":"q2","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p2","blocks":[{"type":"text","text":"Name it"}],"answer":{"type":"short","accepted":["osmosis"]},"marks":2,"solution":[]}]},
- {"id":"q3","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p3","blocks":[{"type":"text","text":"Explain"}],"answer":{"type":"open"},"marks":3,"markscheme":[{"text":"Names the membrane","marks":2},{"text":"Says dilute","marks":1}],"solution":[]}]}
+ {"id":"q3","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p3","blocks":[{"type":"text","text":"Explain"}],"answer":{"type":"open","accepted":[],"hints":[]},"marks":3,"markscheme":[{"text":"Names the membrane","marks":2},{"text":"Says dilute","marks":1}],"solution":[]}]}
 ]`
 
 func frozenFixture(t *testing.T) []map[string]any {
@@ -657,5 +657,76 @@ func TestAssignmentFrozenCopyAndUndo(t *testing.T) {
 	}
 	if left != 0 {
 		t.Fatal("deleting left its attempts")
+	}
+}
+
+// TestAssignmentFrozenImages: the copy's images are its own rows, charged to who
+// published, so deleting the quiz leaves them; a workspace clone leaves them out;
+// deleting the assignment deletes them.
+func TestAssignmentFrozenImages(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-images")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	assetID := uid("asset")
+	questions := json.RawMessage(`[{"id":"q1","stem":[{"type":"image","image":{"assetId":"` + assetID + `"},"width":10,"height":10,"description":"Figure"}],"layout":"paper","labels":"letters","parts":[{"id":"p1","blocks":[{"type":"text","text":"Pick"}],"answer":{"type":"mcq","options":["a","b"],"correct":[1]},"marks":1,"solution":[]}]}]`)
+	quiz, err := f.s.CreateQuiz(ctx, Quiz{UserID: f.user, Name: "With figure", WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Questions: questions, Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const objectPath = "editor-assets/assignment-images/blob"
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO editor_assets
+		(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status, completed_at)
+		VALUES ($1,$2,$3,$4,$4,'figure.png','image',$5,'image/png',10,'ready',now())`, assetID, f.ws.ID, quiz.ID, f.user, objectPath); err != nil {
+		t.Fatal(err)
+	}
+	var qs []map[string]any
+	if err := json.Unmarshal(questions, &qs); err != nil {
+		t.Fatal(err)
+	}
+	form := f.form(t, now.Add(time.Hour))
+	form.QuizID, form.Questions = quiz.ID, qs
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var copied string
+	if err := f.s.pool.QueryRow(ctx, `SELECT id FROM editor_assets WHERE assignment_id=$1`, created.ID).Scan(&copied); err != nil {
+		t.Fatalf("no frozen image row: %v", err)
+	}
+	if copied == assetID {
+		t.Fatal("the copy names the quiz's own image")
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := json.Marshal(run.Questions); !strings.Contains(string(raw), copied) || strings.Contains(string(raw), assetID) {
+		t.Fatalf("the running copy's images = %s", raw)
+	}
+	if len(run.RemovedAssetIDs) != 0 {
+		t.Fatalf("removed = %v", run.RemovedAssetIDs)
+	}
+
+	clone, err := f.s.CloneWorkspace(ctx, f.user, f.ws.ID, WorkspaceCreate{Name: "Clone", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cloned int
+	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE workspace_id=$1`, clone.ID).Scan(&cloned); err != nil {
+		t.Fatal(err)
+	}
+	if cloned != 1 {
+		t.Fatalf("a clone holds %d images, want the quiz's one", cloned)
+	}
+
+	if err := f.s.DeleteAssignment(ctx, f.user, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE id=$1`, copied).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Fatal("deleting the assignment left its frozen image")
 	}
 }

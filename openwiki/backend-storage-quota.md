@@ -159,11 +159,12 @@ access, the owner role and the owner's lifecycle (deleted, suspended) follow
 the workspace (`materialEffectiveAccess`, `live_access`).
 
 An assignment's frozen copy (Claude's pick, Epo to confirm): its images are new
-`editor_assets` rows of the workspace with no material, charged to whoever
-published and checked by `gateStorageTx`, as a clone's are; the Embeds tab, which
-joins through a material, doesn't list them, so such a payer's meter runs ahead of
-that tab by their size. Deleting the assignment or the workspace deletes them. The
-frozen questions JSON isn't charged, as an attempt's snapshot isn't
+`editor_assets` rows of the workspace with no material and an `assignment_id`,
+charged to whoever published and checked by `gateStorageTx`, as a clone's are; the
+Embeds tab, which joins through a material, doesn't list them, so such a payer's
+meter runs ahead of that tab by their size. Deleting the assignment or the
+workspace deletes them, and a workspace clone leaves them out. The frozen questions
+JSON isn't charged, as an attempt's snapshot isn't
 ([study-progress.md](study-progress.md#assignments)).
 
 A curated material's `provenance` record is **never charged** — `size_bytes` is

@@ -63,6 +63,11 @@ CREATE TABLE assignment_files (
 CREATE INDEX assignment_files_file_idx ON assignment_files(file_id);
 CREATE INDEX assignment_files_material_idx ON assignment_files(material_id);
 
+-- A frozen copy's images: rows of the workspace with no material, deleted with
+-- the assignment. A workspace clone leaves them out: nothing it copies names them.
+ALTER TABLE editor_assets ADD COLUMN assignment_id text REFERENCES assignments(id) ON DELETE CASCADE;
+CREATE INDEX editor_assets_assignment_idx ON editor_assets(assignment_id) WHERE assignment_id IS NOT NULL;
+
 -- A member's tick on an unmarked assignment.
 CREATE TABLE assignment_done (
   assignment_id text NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,

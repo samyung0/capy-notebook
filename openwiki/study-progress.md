@@ -704,6 +704,7 @@ draft or published: a draft is invisible to members, and publishing posts it.
 | `assignment_assignees` | Picked names and a staff member's own "You" |
 | `assignment_files` | An unmarked assignment's files and materials, in order |
 | `assignment_done` | A member's tick |
+| `editor_assets.assignment_id` | A frozen copy's image rows |
 | `attempts` (kind `assignment`) | A try: `assignment_id`, `deadline_at`, `submitted_at`, `auto_submitted`, `waiting_marks`, `waiting_answers`, with no `material_id`, so no practice read (best score, tried by, averages, review pool) ever sees it, and `GET /api/attempts` and its list leave it out |
 | `answer_events` | Source `assignment`, grader `owner`: closed parts at submit, open parts when marked; a changed mark is a new row, and the latest per attempt and part stands |
 
@@ -715,10 +716,11 @@ counts and keeps their rows. An owner or editor is left out unless they tick
 **The frozen copy.** Publishing (creating, unless it is a draft, whose quiz stays
 live until Publish) copies the quiz's current questions, live edits projected
 first, into `assignments.questions`. Images become new `editor_assets` rows of
-the workspace with no material, so editing or deleting the quiz leaves them, and
-deleting the assignment deletes them. They are charged to whoever published, as a
-clone is, and the Embeds tab doesn't list them; the questions JSON itself isn't
-charged, as an attempt's snapshot isn't. Members are only ever served this copy:
+the workspace with no material and an `assignment_id`, so editing or deleting the
+quiz leaves them, deleting the assignment deletes them (the foreign key), and a
+workspace clone leaves them out. They are charged to whoever published, as a clone
+is, and the Embeds tab doesn't list them; the questions JSON itself isn't charged,
+as an attempt's snapshot isn't. Members are only ever served this copy:
 answer-free while running (`questions.LearnerViews`), with keys only after
 submitting if Show answers is on. Making a marked assignment hides its quiz from
 members, since a hidden quiz isn't practice; Delete (the toast's Undo) shows it

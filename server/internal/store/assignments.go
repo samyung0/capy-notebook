@@ -673,7 +673,7 @@ func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, ac
 	for _, q := range qs {
 		assetIDs = append(assetIDs, questions.AssetIDs(q)...)
 	}
-	idMap, err := s.copyFrozenAssetsTx(ctx, tx, wsID, actorID, assetIDs, now)
+	idMap, err := s.copyFrozenAssetsTx(ctx, tx, id, wsID, actorID, assetIDs, now)
 	if err != nil {
 		return err
 	}
@@ -698,7 +698,7 @@ func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, ac
 }
 
 // copyFrozenAssetsTx copies the quiz's ready images and returns old id → new id.
-func (s *Store) copyFrozenAssetsTx(ctx context.Context, tx pgx.Tx, wsID, actorID string, ids []string, now time.Time) (map[string]string, error) {
+func (s *Store) copyFrozenAssetsTx(ctx context.Context, tx pgx.Tx, assignmentID, wsID, actorID string, ids []string, now time.Time) (map[string]string, error) {
 	idMap := map[string]string{}
 	if len(ids) == 0 {
 		return idMap, nil
@@ -735,11 +735,11 @@ func (s *Store) copyFrozenAssetsTx(ctx context.Context, tx pgx.Tx, wsID, actorID
 	}
 	for oldID, newID := range idMap {
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
-			(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes,
+			(id, workspace_id, material_id, assignment_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes,
 			 status, etag, created_at, completed_at, thumbnail_key)
-			SELECT $1, workspace_id, NULL, $2, $2, name, purpose, object_path, content_type, size_bytes,
-				'ready', etag, $3, $3, thumbnail_key
-			FROM editor_assets WHERE id=$4`, newID, actorID, now, oldID); err != nil {
+			SELECT $1::text, workspace_id, NULL::text, $5::text, $2::text, $2::text, name, purpose, object_path, content_type, size_bytes,
+				'ready', etag, $3::timestamptz, $3::timestamptz, thumbnail_key
+			FROM editor_assets WHERE id=$4`, newID, actorID, now, oldID, assignmentID); err != nil {
 			return nil, err
 		}
 	}
@@ -882,32 +882,19 @@ func (s *Store) DeleteAssignment(ctx context.Context, actorID, id string) error 
 		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID, also...); err != nil {
 			return err
 		}
-		var raw []byte
 		var source *string
 		var hid bool
 		var released *time.Time
-		if err := tx.QueryRow(ctx, `SELECT questions, source_quiz_id, hid_source, released_at FROM assignments WHERE id=$1 FOR UPDATE`, id).
-			Scan(&raw, &source, &hid, &released); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT source_quiz_id, hid_source, released_at FROM assignments WHERE id=$1 FOR UPDATE`, id).
+			Scan(&source, &hid, &released); err != nil {
 			if isNoRows(err) {
 				return ErrNotFound
 			}
 			return err
 		}
-		qs, err := decodeFrozen(raw)
-		if err != nil {
-			return err
-		}
-		var assetIDs []string
-		for _, q := range qs {
-			assetIDs = append(assetIDs, questions.AssetIDs(q)...)
-		}
-		if len(assetIDs) > 0 {
-			if creator != nil {
-				if err := s.lockStorageRowTx(ctx, tx, *creator); err != nil {
-					return err
-				}
-			}
-			if _, err := tx.Exec(ctx, `DELETE FROM editor_assets WHERE id = ANY($1) AND workspace_id=$2 AND material_id IS NULL`, assetIDs, wsID); err != nil {
+		// Its frozen images go with it, and their bytes off the payer's meter.
+		if creator != nil {
+			if err := s.lockStorageRowTx(ctx, tx, *creator); err != nil {
 				return err
 			}
 		}
@@ -1142,9 +1129,15 @@ func (s *Store) SaveAssignmentAnswers(ctx context.Context, userID, attemptID str
 	}
 	expired := false
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		r, err := scanAttemptRow(tx.QueryRow(ctx, `SELECT `+attemptRowCols+`
+		// This runs every few seconds per member: it leaves the frozen copy out.
+		var r attemptRow
+		err := tx.QueryRow(ctx, `SELECT a.workspace_id, t.submitted_at, t.deadline_at, a.closed_at
 			FROM attempts t JOIN assignments a ON a.id=t.assignment_id
-			WHERE t.id=$1 AND t.user_id=$2 FOR UPDATE OF t`, attemptID, userID))
+			WHERE t.id=$1 AND t.user_id=$2 FOR UPDATE OF t`, attemptID, userID).
+			Scan(&r.wsID, &r.submitted, &r.deadline, &r.closedAt)
+		if isNoRows(err) {
+			return ErrNotFound
+		}
 		if err != nil {
 			return err
 		}
@@ -1156,7 +1149,12 @@ func (s *Store) SaveAssignmentAnswers(ctx context.Context, userID, attemptID str
 		}
 		if r.expired(now) {
 			expired = true
-			return s.finishAttemptTx(ctx, tx, r, nil, true, now)
+			full, err := scanAttemptRow(tx.QueryRow(ctx, `SELECT `+attemptRowCols+`
+				FROM attempts t JOIN assignments a ON a.id=t.assignment_id WHERE t.id=$1`, attemptID))
+			if err != nil {
+				return err
+			}
+			return s.finishAttemptTx(ctx, tx, full, nil, true, now)
 		}
 		raw, err := json.Marshal(answers)
 		if err != nil {
@@ -1460,8 +1458,12 @@ func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now t
 		for _, q := range frozen {
 			ids = append(ids, questions.AssetIDs(q)...)
 		}
-		if v.RemovedAssetIDs, err = s.MissingEditorAssetIDs(ctx, ids); err != nil {
+		removed, err := s.MissingEditorAssetIDs(ctx, ids)
+		if err != nil {
 			return v, err
+		}
+		if removed != nil {
+			v.RemovedAssetIDs = removed
 		}
 		return v, nil
 	}
