@@ -856,6 +856,7 @@ Steps 2, 3 and 7 can run side by side.
 - The box-call fallback uses ink growth instead of `FIGURE_PAD`, the better result in the tests.
 - Study plans are dropped end to end.
 - Undo and redo are hidden on phones in the file and material top bar.
+- The first list is done on `claude/study-shell` (902e2635d): plans dropped (migration 0137), topic sessions at 10, the AI star, Activity rows opening. CI still has to confirm the Go DB tests and e2e. The read-state rows stay for now: the agent's `read_study_progress` result and `reviewableWorkspaces` still read them, and removing them is a prompt change that waits for Epo.
 - Built as recommended on `claude/study-shell`, with screenshots for Epo to change: topic sessions at 10 questions, the AI star on New chat, file processing and the callout tip, Activity rows opening their file, no empty sections on the Dashboard, the dead move-files warning removed, the leftover read states dropped if nothing reads them, Add file's tabs and the topic ⋮ menu kept as built.
 
 **Next after this rework's mocks (Epo, 2026-11-03): the AFFiNE canvas** (`todo-canvas-workspace.md`, on hold since 2026-11-02). Drawing answers and the note tool build on the same BlockSuite edgeless editor, so they are planned with it.
