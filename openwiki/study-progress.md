@@ -586,8 +586,10 @@ icon, the retry arrow for a session or suggestion). Assignments stay off it.
    last answer within 14 days. Then new: each workspace's first quiz or set in
    reading order with no `study_progress` row, where the user is the owner or a
    member and opened or practised it in the last 30 days, the latest first.
-2. Suggestions fill what is left: the engine above, at most 2 per workspace, past a
-   topic with an unfinished session.
+2. Suggestions fill what is left: the engine above over questions only, at most 2
+   per workspace, past a topic with an unfinished session. A row opens the topic
+   session's start dialog over that workspace's Practice, as the Dashboard's do, so
+   closing it stays there. Sets are not suggested anywhere for now (Epo 2026-11-04).
 
 **Workspaces**, newest practice first, each workspace holding a quiz or set: counts
 per topic label, weakest first, "38 of 120 items tried" (rated items with current

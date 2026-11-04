@@ -186,7 +186,10 @@ func (s *Store) LearningOverview(ctx context.Context, userID string, now time.Ti
 	if err != nil {
 		return out, err
 	}
+	// Suggestions start the topic session's dialog, which holds questions only,
+	// as on Practice and the Dashboard (Epo 2026-11-04).
 	prefs := reviewPrefsOf(prefsRaw)
+	prefs.Items = "quiz"
 	var suggestions []ReviewSuggestion
 	ids := make([]string, 0, len(scope))
 	byID := make(map[string]*learningWorkspace, len(scope))

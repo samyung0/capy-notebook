@@ -186,24 +186,24 @@ function RowIcon({ row }: { row: LearningRow }) {
 function NextRow({ row }: { row: LearningRow }) {
   const navigate = useNavigate();
   const { suggestion: s, workspaceName, workspaceId } = row;
-  const review = (search: {
-    group?: LearningRow['group'];
-    reviewMode?: NonNullable<LearningRow['suggestion']>['mode'];
-    session?: string;
-    topicId?: string;
-  }) =>
-    navigate({
-      params: { workspaceId },
-      search: { ...search, from: 'review' as const } as never,
-      to: '/learning/review/$workspaceId',
-    });
   function open() {
-    if (row.kind === 'session') return review({ session: row.sessionId });
+    if (row.kind === 'session')
+      return navigate({
+        params: { workspaceId },
+        search: { from: 'review' as const, session: row.sessionId },
+        to: '/learning/review/$workspaceId',
+      });
+    // The start dialog over the workspace's Practice, as on its Dashboard.
     if (s)
-      return review({
-        group: s.group,
-        reviewMode: s.mode,
-        topicId: s.topicId,
+      return navigate({
+        params: { workspaceId },
+        search: {
+          group: s.group,
+          reviewMode: s.mode,
+          study: 'practice' as const,
+          topicId: s.topicId,
+        },
+        to: '/workspaces/$workspaceId',
       });
     if (row.materialKind === 'flashcards')
       return navigate({

@@ -82,7 +82,7 @@ At most 4 rows (Epo 2026-11-04). Each row is one link: the whole row hovers, squ
 | Kind | Rule | Row says | Opens |
 |---|---|---|---|
 | **Practice**, at most 3 | Continue first, newest first: a session with `finished_at` empty, or a quiz whose newest attempt checked fewer questions than it holds, last answer within 14 days. Then new: the first quiz or set in reading order with no `study_progress` row, one per workspace, where you are the owner or a member and opened or practised it in the last 30 days | "Continue · 3 of 10 answered · 2 h ago", "Not started · 12 questions" | The session, quiz or set |
-| **Suggestions** fill the rest | Today's engine, unchanged: item = (1 − R) × (1 + tricky + learned), items at R ≤ 0.9, summed per topic, × interest. Shows at 3 or more, largest first, at most 2 per workspace. A topic with an unfinished session is skipped | Mode label, one sentence, "N items" | The session |
+| **Suggestions** fill the rest, questions only, through the start dialog | Today's engine, unchanged: item = (1 − R) × (1 + tricky + learned), items at R ≤ 0.9, summed per topic, × interest. Shows at 3 or more, largest first, at most 2 per workspace. A topic with an unfinished session is skipped | Mode label, one sentence, "N items" | The session |
 
 Nothing lists a member's assignments across workspaces: Home has no such list today, and the Dashboard's To do is per workspace. Decide that when Assignments lands.
 
@@ -218,12 +218,10 @@ Each needs Epo's yes and a line in `human/study-progress.md`:
 
 ## 8. Questions for Epo
 
-Answered 2026-11-04: layout A; rows as links with kind icons; 4 rows, practice at most 3, no assignments; one-sentence reasons; Refresher in the UI; bordered buttons in AGENTS.md; Learning with no AI; labels and Summary built together; Continue rows kept; threshold kept; actions on the Dashboard.
+Answered 2026-11-04: the question bank stays off this page; Workspace review as the Dashboard's last row (D2); Learning's suggestions through the start dialog, so sets are not suggested for now; layout A; rows as links with kind icons; 4 rows, practice at most 3, no assignments; one-sentence reasons; Refresher in the UI; bordered buttons in AGENTS.md; Learning with no AI; labels and Summary built together; Continue rows kept; threshold kept; actions on the Dashboard.
 
-Built on my recommendation, so say if not: You teach rows (O2), flashcards in suggestions, the This week line, Past reviews as its own tab, the words.
+Built on my recommendation, so say if not: You teach rows (O2), the This week line, Past reviews as its own tab, the words.
 
 Still open:
 
-1. **Learning's suggestion rows.** They start the full session page straight away, with cards and up to 20 items, while the Dashboard's and Practice's open the small start dialog, questions only and 10. Keep that, or give Learning the dialog too? I recommend keeping it: the dialog's session has no cards, so Learning is the only place a set gets suggested.
-2. **Question bank.** Keep it off this page? I recommend yes: it has its own landing.
-3. **Topic with nothing new to serve.** Link to Make my own practice (AI, credits, on click)? I recommend no: leave it on Practice.
+1. **Topic with nothing new to serve (canvas page 6).** T1 a row on Learning, or T2 a Make more button on Summary? Both link to Make my own practice (AI, credits, on click), which is not built yet. I recommend T2.
