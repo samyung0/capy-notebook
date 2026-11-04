@@ -270,7 +270,7 @@ export default function Settings() {
   const openTab = (value: SettingsTab | undefined) =>
     navigate({
       replace: !(phone && value),
-      search: (previous) => ({ ...previous, tab: value }),
+      search: { q, tab: value },
       to: '/settings',
     });
 
@@ -284,10 +284,7 @@ export default function Settings() {
             onQueryChange={(query) =>
               void navigate({
                 replace: true,
-                search: (previous) => ({
-                  ...previous,
-                  q: query || undefined,
-                }),
+                search: { q: query || undefined },
                 to: '/settings',
               })
             }

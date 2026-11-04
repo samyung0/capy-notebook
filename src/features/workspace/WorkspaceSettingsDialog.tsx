@@ -6,9 +6,11 @@ import {
   useDeleteWorkspace,
   useLeaveWorkspace,
   useMe,
+  useSetWorkspaceStudyEnabled,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
   useWorkspaceStats,
+  useWorkspaceStudy,
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
@@ -22,6 +24,7 @@ import {
 } from '@/components/ui/Dialog';
 import { Skeleton } from '@/components/ui/feedback';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
+import { Switch } from '@/components/ui/Switch';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
@@ -431,5 +434,32 @@ export function WorkspaceSettingsDialog({
         title={m.workspace_leave_confirm_title({ name: workspace.name })}
       />
     </SimpleDialog>
+  );
+}
+
+/** The member's own study switches for this workspace, whichever plan the
+ * Study page shows. */
+function StudyTab({ workspaceId }: { workspaceId: string }) {
+  const { data: study } = useWorkspaceStudy(workspaceId);
+  const { isPending, mutate: setShown } =
+    useSetWorkspaceStudyEnabled(workspaceId);
+  return (
+    <div className="flex flex-col gap-6">
+      <SettingRow
+        hint={m.study_hide_progress_hint()}
+        title={m.study_hide_progress()}
+      >
+        {study ? (
+          <Switch
+            aria-label={m.study_hide_progress()}
+            checked={!study.enabled}
+            disabled={isPending}
+            onCheckedChange={(on) => setShown(!on)}
+          />
+        ) : (
+          <Skeleton className="h-6 w-10 rounded-full" />
+        )}
+      </SettingRow>
+    </div>
   );
 }
