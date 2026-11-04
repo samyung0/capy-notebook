@@ -732,7 +732,9 @@ asks first (Before you start, A0) because Start starts the clock: `deadline_at`
 is set on the server, and the response's `now` is what the page's timer counts
 against. No limit opens straight away. Answers save whole (`PUT
 /api/assignment-attempts/{id}/answers`, 2 s after typing rests, on Next and
-Previous, and when the tab hides) and the header says Saved, Saving or Not saved;
+Previous, when the tab hides and on leaving the page) and the header says Saved,
+Saving or Not saved. Every opening reads the attempt afresh, never from a cache, so
+its answers and clock are the server's;
 nothing retries a failed save but the next change and Submit, which sends them
 all. A shuffled paper's order comes from a seed of the attempt's id, so a reload
 keeps it. Bookmarks stay in this browser.
