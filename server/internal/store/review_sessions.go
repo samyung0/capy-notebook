@@ -76,6 +76,20 @@ func reviewPrefsOf(p StudyPreferences) ReviewPrefs {
 	return out
 }
 
+// topicSessionSize is a Practice topic session's size until the learner picks
+// a session size in Settings (Epo 2026-11-04, board F1).
+const topicSessionSize = 10
+
+// topicSessionPrefs are a Practice topic session's: its questions only, at
+// topicSessionSize unless a size was picked.
+func topicSessionPrefs(prefs ReviewPrefs, saved StudyPreferences) ReviewPrefs {
+	prefs.Items = "quiz"
+	if saved.ReviewSize == 0 {
+		prefs.Size = topicSessionSize
+	}
+	return prefs
+}
+
 // kinds are the material kinds the preference reviews.
 func (p ReviewPrefs) kinds() []string {
 	switch p.Items {
@@ -436,7 +450,7 @@ func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info R
 	}
 	prefs := reviewPrefsOf(prefsRaw)
 	if questionsOnly {
-		prefs.Items = "quiz"
+		prefs = topicSessionPrefs(prefs, prefsRaw)
 	}
 	items, history, err := s.scoredWorkspace(ctx, userID, wsID, prefs, now)
 	if err != nil {

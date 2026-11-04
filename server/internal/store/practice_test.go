@@ -22,6 +22,17 @@ func TestWithReasons(t *testing.T) {
 	}
 }
 
+func TestTopicSessionPrefs(t *testing.T) {
+	unset := StudyPreferences{}
+	if got := topicSessionPrefs(reviewPrefsOf(unset), unset); got.Size != 10 || got.Items != "quiz" {
+		t.Fatalf("no size picked = %+v", got)
+	}
+	picked := StudyPreferences{ReviewSize: 20}
+	if got := topicSessionPrefs(reviewPrefsOf(picked), picked); got.Size != 20 {
+		t.Fatalf("20 picked = %+v", got)
+	}
+}
+
 // The Practice page lists the quiz with its questions and the caller's best
 // attempt; owners and editors also see how many viewer members tried it, and
 // the group average once five did. Topic sessions say why each item came.
