@@ -331,6 +331,15 @@ Flash with GLM-5.3-Flash,
 measures the round-2 prompt that works keys out, and
 [figures and fidelity](extraction/reports/2026-11-04-figures-and-fidelity.md)
 measures figure crops and the content against the page.
+`extraction/scripts/layout_detect.py` runs a document layout model
+(PP-DocLayout under onnxruntime or PaddleOCR, Docling's Heron under
+onnxruntime or transformers) over the gold pages in a container
+(`layout_host.sh`, run on the ingest host), recording each region with its
+CPU time and memory. `layout_score.py` scores its figure boxes against the
+gold boxes as the box call's crops are scored, and `layout_match.py` has 1017
+pick the boxes by number for each figure a window described;
+[layout models](extraction/reports/2026-11-04-layout-models.md) compares them
+with the box call.
 
 ### rag
 
