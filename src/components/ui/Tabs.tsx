@@ -9,7 +9,8 @@ export interface TabsProps {
   bottomBorder?: boolean;
   className?: string;
   onChange?: (value: string) => void;
-  /** Vertical: a column of rows without the underline; arrows up and down. */
+  /** Vertical: arrows up and down, no underline. Phones get one card of rows,
+   * wider screens a plain column. */
   orientation?: 'horizontal' | 'vertical';
   tabs: Tab[];
   value: string;
@@ -62,7 +63,7 @@ export function Tabs({
       aria-orientation={orientation}
       className={cn(
         vertical
-          ? 'flex w-full flex-col gap-0.5'
+          ? 'flex w-full flex-col overflow-hidden rounded-card bg-surface-hover-bg sm:gap-0.5 sm:overflow-visible sm:rounded-none sm:bg-transparent'
           : 'scroll-fade-x flex w-full shrink-0 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
         // --divider itself: --color-divider resolves on the root, so it would
         // miss a frosted panel's translucent divider.
@@ -79,19 +80,23 @@ export function Tabs({
           <button
             aria-selected={active}
             className={cn(
-              'shrink-0 font-semibold transition-colors focus-visible:ring-inset',
+              'shrink-0 transition-colors focus-visible:ring-inset',
               vertical
-                ? 'rounded-button px-3.5 py-3 text-left text-base sm:py-2 sm:text-sm'
-                : 'px-3 py-2 text-sm',
+                ? 'group/tab text-left font-medium text-base sm:rounded-button sm:px-3.5 sm:py-2 sm:font-semibold sm:text-sm'
+                : 'px-3 py-2 font-semibold text-sm',
               underline && 'border-b-2',
               active
                 ? cn(
                     'font-bold text-fg',
-                    vertical ? 'bg-surface-hover-bg' : 'border-action'
+                    vertical
+                      ? 'sm:bg-surface-hover-bg sm:font-bold'
+                      : 'border-action'
                   )
                 : cn(
-                    'border-transparent text-fg-muted hover:text-fg',
-                    vertical && 'hover:bg-surface-hover-bg'
+                    'border-transparent hover:text-fg',
+                    vertical
+                      ? 'text-fg sm:text-fg-muted sm:hover:bg-surface-hover-bg'
+                      : 'text-fg-muted'
                   ),
               t.tone === 'danger' &&
                 (active
