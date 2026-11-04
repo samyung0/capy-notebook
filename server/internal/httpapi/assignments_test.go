@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -30,7 +31,7 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 	t.Cleanup(func() { setKind("personal") })
 
 	quiz := doReq(t, h, http.MethodPost, "/api/quizzes", "u_owner", map[string]any{
-		"name": "Assignment routes", "workspaceId": "ws_e2e_private", "topics": []string{},
+		"name": fmt.Sprintf("Assignment routes %d", time.Now().UnixNano()), "workspaceId": "ws_e2e_private", "topics": []string{},
 		"questions": []map[string]any{{
 			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
 			"parts": []map[string]any{{
@@ -49,6 +50,9 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 	if err := json.Unmarshal(quiz.Body.Bytes(), &made); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		doReq(t, h, http.MethodDelete, "/api/quizzes/"+made.ID, "u_owner", nil)
+	})
 	form := map[string]any{
 		"kind": "marked", "title": "Routes", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
 		"attempts": 1, "assignAll": true, "assignees": []string{}, "draft": false,
