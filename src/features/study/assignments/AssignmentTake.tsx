@@ -179,10 +179,14 @@ export function AssignmentTake({
     const wait = setTimeout(() => void flush(), SAVE_AFTER_MS);
     return () => clearTimeout(wait);
   }, [answers, flush]);
+  // Leaving the page or hiding the tab saves what the wait above still holds.
   useEffect(() => {
     const leaving = () => void flush();
     document.addEventListener('visibilitychange', leaving);
-    return () => document.removeEventListener('visibilitychange', leaving);
+    return () => {
+      document.removeEventListener('visibilitychange', leaving);
+      leaving();
+    };
   }, [flush]);
   // An ordering part always shows an order, so showing it is answering it.
   const question = questions[index];

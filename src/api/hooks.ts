@@ -2943,7 +2943,10 @@ export const useAssignmentAttempt = (
     meta: queryMeta(options),
     queryFn: () => api.get<AssignmentAttempt>(`/assignment-attempts/${id}`),
     queryKey: qk.assignmentAttempt(id),
-    // A running attempt's timer counts from the clock it was read at.
+    // Every opening reads it afresh: a running attempt's answers and the clock
+    // its timer counts from must not come from a cache. It holds typed answers,
+    // so a refocus doesn't replace them.
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   });
 

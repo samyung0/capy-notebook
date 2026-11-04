@@ -43,10 +43,8 @@ export function AssignmentAttemptPage({
   attemptId: string;
   workspaceId: string;
 }) {
-  const { data, error, isError, isPending, refetch } = useAssignmentAttempt(
-    attemptId,
-    { errorBoundary: false }
-  );
+  const { data, error, isError, isFetchedAfterMount, isPending, refetch } =
+    useAssignmentAttempt(attemptId, { errorBoundary: false });
   const { data: assignment } = useAssignment(data?.assignmentId ?? '', {
     errorBoundary: false,
   });
@@ -55,7 +53,9 @@ export function AssignmentAttemptPage({
   const ranHere = useRef(false);
   const [seenResults, setSeenResults] = useState(false);
   if (data?.status === 'running') ranHere.current = true;
-  if (isPending)
+  // Taking it starts only from this opening's read, never a cached one.
+  const waitingForFresh = data?.status === 'running' && !isFetchedAfterMount;
+  if (isPending || waitingForFresh)
     return (
       <PracticeFrame>
         <SkeletonList count={8} rowHeight={36} />
