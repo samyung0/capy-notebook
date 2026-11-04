@@ -407,8 +407,10 @@ unchanged.
   (both need edit). Search, summary search, the outline, page and range reads
   and history passages filter on it; the knowledge library has no flag.
 - **Clone.** A viewer's workspace clone leaves hidden items out (nor can a
-  viewer reach one to clone it alone); an editor's clone copies them, and the
-  copies start visible in the new workspace.
+  viewer reach one to clone it alone). An owner's or editor's clone, of the
+  workspace or of one item, copies each item's flag as it is: hidden stays
+  hidden and visible stays visible (Epo 2026-11-04). A copy with no workspace
+  has no members, so it is not hidden.
 - **Make a quiz.** An extracted quiz starts hidden. Files uploaded in the
   Make a quiz dialog are uploaded hidden, with the same `hidden` flag, so a
   mark scheme uploaded for the quiz never reaches the students; a file picked

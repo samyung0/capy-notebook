@@ -1,5 +1,6 @@
 """Make a quiz: the layout service's regions on the selected pages, the boxes a
-page window picks figures from, and the crop those boxes make (Epo 2026-11-04;
+page window picks figures from, the crop those boxes make, and the box call's box
+grown to ink (Epo 2026-11-04;
 bench/extraction/reports/2026-11-04-figure-matching.md).
 
 ``read_regions`` asks the service (``layout/app.py``, one pool on the ingest
@@ -12,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import logging
 import random
 from collections.abc import Awaitable, Callable
@@ -19,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from PIL import Image
 
 from ..config import cfg
 
@@ -45,6 +48,17 @@ NESTED_INSIDE = 0.9
 CAPTION_GAP = 25
 # 1% of the page on every side, on the 0-1000 grid.
 CROP_PAD = 10
+# The box call's box grown to the ink around it (Epo 2026-11-04): 68 whole, 64
+# tight, 56 both of 80 against 63, 40, 36 with a fixed pad, the settings tuned in
+# bench/extraction/reports/2026-11-04-hosted-figure-boxes.md. Grey below INK_LEVEL
+# is ink, and a strip with INK_MIN dark pixels holds ink. An edge stops after
+# INK_GAP blank grid units or INK_CAP units from where it started; a gap of 12 or
+# more crosses the line spacing and climbs into the question's text.
+INK_LEVEL = 150
+INK_MIN = 2
+INK_GAP = 6
+INK_CAP = 80
+INK_MARGIN = 5
 
 
 @dataclass(frozen=True)
@@ -138,6 +152,60 @@ def crop_box(boxes: list[list[float]], regions: tuple[Region, ...]) -> list[floa
     ]
 
 
+def jpeg_of(data_url: str) -> bytes:
+    return base64.b64decode(data_url.split(",", 1)[1])
+
+
+def grown_to_ink(jpeg: bytes, boxes: list[list[float]]) -> list[list[float]]:
+    """Each box pushed outward over the ink on the page image the model saw:
+    each edge in turn moves while the strip just outside it holds ink, until none
+    moves, then the margin goes on."""
+    with Image.open(io.BytesIO(jpeg)) as page:
+        mask = page.convert("L").point(lambda v: 255 if v < INK_LEVEL else 0)
+    return [_grown(mask, box) for box in boxes]
+
+
+def _grown(mask: Image.Image, box: list[float]) -> list[float]:
+    width, height = mask.size
+    sx, sy = width / 1000, height / 1000
+    x0, y0, x1, y1 = (
+        round(box[0] * sx),
+        round(box[1] * sy),
+        round(box[2] * sx),
+        round(box[3] * sy),
+    )
+    left, top = max(0, x0 - round(INK_CAP * sx)), max(0, y0 - round(INK_CAP * sy))
+    right = min(width - 1, x1 + round(INK_CAP * sx))
+    bottom = min(height - 1, y1 + round(INK_CAP * sy))
+    gap_x, gap_y = max(1, round(INK_GAP * sx)), max(1, round(INK_GAP * sy))
+
+    def reach(start: int, limit: int, step: int, gap: int, strip) -> int:
+        """How far an edge gets from start toward limit, one pixel at a time."""
+        position, blank, edge = start, 0, start
+        while (limit - position) * step > 0 and blank < gap:
+            position += step
+            if mask.crop(strip(position)).histogram()[255] >= INK_MIN:
+                edge, blank = position, 0
+            else:
+                blank += 1
+        return edge
+
+    moved = True
+    while moved:
+        before = (x0, y0, x1, y1)
+        x0 = reach(x0, left, -1, gap_x, lambda p: (p, y0, p + 1, y1 + 1))
+        x1 = reach(x1, right, 1, gap_x, lambda p: (p, y0, p + 1, y1 + 1))
+        y0 = reach(y0, top, -1, gap_y, lambda p: (x0, p, x1 + 1, p + 1))
+        y1 = reach(y1, bottom, 1, gap_y, lambda p: (x0, p, x1 + 1, p + 1))
+        moved = (x0, y0, x1, y1) != before
+    return [
+        max(0.0, x0 / sx - INK_MARGIN),
+        max(0.0, y0 / sy - INK_MARGIN),
+        min(1000.0, (x1 + 1) / sx + INK_MARGIN),
+        min(1000.0, (y1 + 1) / sy + INK_MARGIN),
+    ]
+
+
 def _parsed(data: Any) -> tuple[Region, ...]:
     try:
         regions = tuple(
@@ -181,8 +249,7 @@ async def read_regions(
 
     async def one(client: httpx.AsyncClient, index: int) -> None:
         async with gate:
-            url = await images[index]()
-            jpeg = base64.b64decode(url.split(",", 1)[1])
+            jpeg = jpeg_of(await images[index]())
             try:
                 found[index] = await _page(client, jpeg)
             except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:

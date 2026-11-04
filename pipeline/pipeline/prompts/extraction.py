@@ -50,10 +50,11 @@ Copying:
 - Keep the wording, numbers, symbols and language exactly as printed. Write math as LaTeX between $ signs ($\\frac{{7(x-2)}}{{5}}$, $x^2$, $\\angle ABC$), and a printed dollar sign for money as \\$ ($\\$78$ or \\$78); never simplify or reword the printed text.
 - A table becomes a table block. Leave out answer lines, boxes for working, "Answers written in the margins will not be marked", page headers and footers.
 - A question's parts follow its printed labels (a), (b), (b)(i). The quiz holds parts in one flat list, so (b)(i) and (b)(ii) are two parts labelled "b(i)" and "b(ii)". Text printed under (b) before (i), such as the data the sub-parts use, is never left out: give it as b(i)'s lead_in. A question without parts has an empty stem and one part labelled "".
+- Text printed at the very end of the last page shown that leads into parts on the next page, such as the data under (b) with (b)(i) over the page, is never left out either: give it word for word as that question's trailing_text, and it goes in front of the question's next part.
 - At most {limits.QUIZ_QUESTION_PARTS_MAX} parts a question.
 
 Answers:
-- mcq: the options' text in printed order, without their letters A, B, C, D. Keep that order, and leave the options out of the part's blocks.
+- mcq: the options' text in printed order, without their letters A, B, C, D. Copy each option exactly as printed, digit for digit; never change one to fit your working. Keep that order, and leave the options out of the part's blocks.
 - short: a single final value or word the learner types, for a part worth 1 mark with no working to show.
 - open: anything answered with working, a proof, an explanation or a drawing, and any part marked for its method or worth more than 1 mark.
 - Give every part its correct answer and a short worked solution. Copy them when the page prints them and set key_source to printed; otherwise work them out, set key_source to worked_out, and never change the printed question.
@@ -184,6 +185,11 @@ _FIGURE = {
     "required": ["boxes", "part", "description"],
 }
 
+_TRAILING_TEXT = {
+    "type": "string",
+    "description": 'Text printed at the very end of the last page shown, after this question\'s last part, that leads into parts on the next page; "" when there is none.',
+}
+
 _QUESTION = {
     "type": "object",
     "properties": {
@@ -202,6 +208,7 @@ _QUESTION = {
             "description": "The question's printed total, when only a total is printed.",
         },
         "figures": {"type": "array", "items": _FIGURE},
+        "trailing_text": _TRAILING_TEXT,
     },
     "required": ["label", "stem", "parts"],
 }
@@ -238,6 +245,7 @@ TOOLS: list[dict[str, Any]] = [
                         "description": "The question's next parts, printed on this page.",
                     },
                     "figures": {"type": "array", "items": _FIGURE},
+                    "trailing_text": _TRAILING_TEXT,
                 },
                 "required": ["label"],
             },

@@ -2728,6 +2728,51 @@ docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # 
 
 ---
 
+### 7.6 Layout service
+
+Make a quiz finds figures with PP-DocLayout_plus-L's ONNX export under
+onnxruntime (`layout/app.py`). One pool runs on this host and serves UAT and
+production together, with no split and no queue of its own (Epo 2026-11-04). The
+service is stateless: a JPEG in, regions out, nothing stored, only counts and
+timings logged. It is its own compose project under `/opt/capy-layout`, outside
+the UAT and production projects and the release workflows, like the library
+database (§7.3). The image holds the model: `layout/Dockerfile` adds it from a
+pinned Hugging Face revision and checks its SHA-256 at build, so the build needs
+the network and the running service does not.
+
+1. Check out the reviewed commit under `/opt/capy-layout/src`.
+2. Create `/opt/capy-layout/.env` (mode 0600) from `deploy/layout.env.example`.
+   `LAYOUT_REVISION` is that commit, `LAYOUT_BIND_ADDRESS` the host's WireGuard
+   address `10.77.0.2`, and `CAPY_LAYOUT_TOKEN` comes from `openssl rand -hex 32`.
+3. Build and start:
+
+   ```bash
+   docker compose --project-name capy-layout --env-file /opt/capy-layout/.env \
+     -f /opt/capy-layout/src/deploy/docker-compose.layout.yml up -d --build
+   ```
+
+4. Check it. `docker inspect --format '{{.State.Health.Status}}' capy-layout`
+   reports `healthy`, `curl http://10.77.0.2:8092/healthz` answers `ok`, `ss -tlnp
+   | grep 8092` shows the WireGuard address alone, and a probe of the public
+   address is refused. The container uses host networking like the parser, because
+   the host firewall drops forwarded traffic into Docker bridges.
+5. Give both environments the service. In `deploy/.env.uat` and `deploy/.env.prod`
+   set `CAPY_LAYOUT_URL=http://10.77.0.2:8092` and the same `CAPY_LAYOUT_TOKEN`,
+   then push them (§12.7) and deploy the app. Retrieval makes the calls, over
+   WireGuard, as it reads the library database.
+
+The container runs as uid 10003 with no capabilities, no privilege gain, Docker's
+default seccomp profile, a read-only root and `pids_limit: 128`. The body is capped
+by `LAYOUT_MAX_BYTES` and the image by `LAYOUT_MAX_PIXELS`.
+
+**Without it, nothing breaks.** Past `LAYOUT_QUEUE_DEPTH` requests in the service,
+the next is answered 429; the client waits about 2 s and tries again, 4 tries in
+all. A page whose request fails, stays busy or runs out of time, or any page while
+`CAPY_LAYOUT_URL` is unset, takes the box call for its figures: one more
+model call a page, with looser crops (68 whole, 64 tight and 56 both of 80, against 76, 73 and 70)
+([report](../bench/extraction/reports/2026-11-04-figure-matching.md)). `/healthz`
+counts `served`, `busy` and each refusal; a rising `busy` means the pool is short.
+
 ## 8. Database
 
 1. Apply migrations with `/migrate` from the **same image / git SHA** as the

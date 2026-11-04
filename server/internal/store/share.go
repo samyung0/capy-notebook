@@ -689,7 +689,7 @@ type workspaceCloneFile struct {
 	contentHash, sourceSHA256   *string
 	sizeBytes                   int64
 	position                    int64
-	indexed, everParsed         bool
+	indexed, everParsed, hidden bool
 	parseMode                   string
 	indexLimit                  *string
 	provenance                  []byte
@@ -715,7 +715,7 @@ func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any)
 			i.served, f.parser, f.blob_path, f.source_etag,
 			f.content_hash, f.source_sha256, f.parse_mode, f.ever_parsed_successfully,
 			f.index_limit, f.provenance, f.thumbnail_key, f.preview, f.revision, f.scope_file_names,
-			d.base_blob_path, COALESCE(d.storage_bytes, 0)
+			d.base_blob_path, COALESCE(d.storage_bytes, 0), f.hidden
 		 FROM files f LEFT JOIN source_documents d ON d.file_id=f.id
 		 CROSS JOIN LATERAL (SELECT f.indexed AND EXISTS (
 				SELECT 1 FROM rag_file_contents fc
@@ -738,7 +738,7 @@ func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any)
 			&file.blobPath, &file.sourceETag, &file.contentHash, &file.sourceSHA256,
 			&file.parseMode, &file.everParsed, &file.indexLimit, &file.provenance,
 			&file.thumbnailKey, &file.preview, &file.revision, &file.scopeFileNames,
-			&file.sourceBasePath, &file.sourceBytes,
+			&file.sourceBasePath, &file.sourceBytes, &file.hidden,
 		); err != nil {
 			return nil, err
 		}
@@ -751,8 +751,9 @@ func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any)
 // published bytes, made-from names, published captions and saved edit state, which reopens at
 // epoch 1 on the same base (job, refresh and notice columns start empty; the
 // reprocess mark travels, so a copy of bytes an export-only publication left
-// unindexed is indexed like its source). Its thumbnail is copied under the new
-// id once the transaction commits.
+// unindexed is indexed like its source). It keeps the source's hidden flag (Epo
+// 2026-11-04), which means nothing without a workspace. Its thumbnail is copied
+// under the new id once the transaction commits.
 func insertCloneFileTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -766,11 +767,11 @@ func insertCloneFileTx(
 	if _, err := tx.Exec(ctx, `INSERT INTO files
 		(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
 		 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance, preview, revision,
-		 scope_file_names)
-		VALUES ($1,NULLIF($2,''),$3,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+		 scope_file_names, hidden)
+		VALUES ($1,NULLIF($2,''),$3,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
 		newID, workspaceID, actorID, chapterID, position, name, f.kind, f.sizeBytes, f.status, f.indexed, f.parser, f.blobPath,
 		f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance, f.preview, f.revision,
-		f.scopeFileNames); err != nil {
+		f.scopeFileNames, f.hidden && workspaceID != ""); err != nil {
 		return nil, err
 	}
 	// Saved edits travel (Epo 2026-10-11): the base state, the rows saved over
@@ -941,7 +942,8 @@ func (s *Store) snapshotWorkspaceForClone(
 ) (workspaceCloneSnapshot, error) {
 	var snapshot workspaceCloneSnapshot
 	// A viewer's clone leaves out what is hidden from members (Epo
-	// 2026-11-03); an owner's or editor's takes everything.
+	// 2026-11-03); an owner's or editor's takes everything, each item keeping
+	// its flag (Epo 2026-11-04).
 	_, role, err := workspaceRoles(ctx, tx, actorID, workspaceID)
 	if err != nil {
 		return workspaceCloneSnapshot{}, err
@@ -1517,11 +1519,11 @@ func (s *Store) cloneWorkspaceOnce(
 			if _, err := tx.Exec(ctx, `INSERT INTO materials
 				(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 					 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance,
-					 parent_material_id, preview)
-				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17,$18,$19)`,
+					 parent_material_id, preview, hidden)
+				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17,$18,$19,$20)`,
 				nid, userID, newID, input.Name, mt.Kind, title, json.RawMessage(content), chapterID,
 				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
-				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID, materialSnapshot.preview); err != nil {
+				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID, materialSnapshot.preview, mt.Hidden); err != nil {
 				return "", nil, 0, err
 			}
 			for _, cid := range materialSnapshot.cardIDs {
@@ -2280,12 +2282,12 @@ func (s *Store) cloneMaterialOnce(
 		if _, err := tx.Exec(ctx, `INSERT INTO materials
 			(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 			 chapter_id, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, revision, updated_by,
-			 parent_material_id, provenance, preview)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$2,$16,$17,$18)`,
+			 parent_material_id, provenance, preview, hidden)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$2,$16,$17,$18,$19)`,
 			clone.newID, userID, dest.payerID, nullStr(dest.workspaceID), dest.workspaceName, clone.src.Kind,
 			title, json.RawMessage(clone.content), chapterID, scopeChapters, scopeFileNames, clone.src.Color,
 			clone.metrics.NodeCount, clone.metrics.MaxDepth, clone.src.Revision, parentID, provenance,
-			clone.preview); err != nil {
+			clone.preview, clone.src.Hidden && dest.workspaceID != ""); err != nil {
 			if isUniqueViolation(err) {
 				return ErrTitleTaken
 			}

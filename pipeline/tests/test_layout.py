@@ -4,9 +4,11 @@ makes, and the service's answers, busy and failed (pipeline.retrieval.layout).""
 from __future__ import annotations
 
 import asyncio
+import io
 
 import httpx
 import pytest
+from PIL import Image, ImageDraw
 
 from pipeline.retrieval import layout
 from pipeline.retrieval.layout import Region
@@ -59,6 +61,37 @@ def test_a_crop_takes_all_its_boxes_an_adjacent_caption_and_a_one_percent_pad():
         1000.0,
         1000.0,
     ]
+
+
+def _ink_page(*boxes: tuple[int, int, int, int]) -> bytes:
+    """A white page 1000 px a side, a grid unit a pixel, with black rectangles."""
+    page = Image.new("L", (1000, 1000), 255)
+    draw = ImageDraw.Draw(page)
+    for box in boxes:
+        draw.rectangle(box, fill=0)
+    buffer = io.BytesIO()
+    page.save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def test_the_box_calls_box_grows_to_the_ink_around_it():
+    """Edges move out over the figure's ink and past a small gap, stop at a gap
+    wider than INK_GAP, and take the 0.5% margin at the end."""
+    jpeg = _ink_page(
+        (100, 100, 300, 300),  # The figure; the box holds only its middle.
+        (304, 150, 310, 180),  # A label 3 px away: taken in.
+        (100, 320, 300, 340),  # A line of text 20 px below: left out.
+    )
+    grown = layout.grown_to_ink(jpeg, [[150.0, 150.0, 250.0, 250.0]])
+    assert grown == [[95.0, 95.0, 316.0, 306.0]]
+
+
+def test_an_edge_stops_at_its_cap():
+    """Ink running on past 80 grid units from where the edge started."""
+    jpeg = _ink_page((100, 100, 900, 200))
+    [grown] = layout.grown_to_ink(jpeg, [[400.0, 120.0, 500.0, 180.0]])
+    assert grown[0] == 400.0 - layout.INK_CAP - layout.INK_MARGIN
+    assert grown[2] == 500.0 + layout.INK_CAP + 1 + layout.INK_MARGIN
 
 
 def _images(count: int = 1) -> list:

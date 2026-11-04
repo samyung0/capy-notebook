@@ -32,6 +32,7 @@ import functools
 import html
 import json
 import os
+import re
 import signal
 import sys
 import time
@@ -68,6 +69,22 @@ class State:
     layout_seconds: float = 0.0
     box_call_pages: int = 0
     scheme_entries: list = dataclasses.field(default_factory=list)
+    # Each window's first user message, images as <image: page N>.
+    sent: list = dataclasses.field(default_factory=list)
+    # What the model gave as trailing_text: (question, text).
+    trailing: list = dataclasses.field(default_factory=list)
+
+
+def without_images(content: list[dict]) -> list[dict]:
+    out, page = [], "?"
+    for item in content:
+        if item["type"] == "text":
+            found = re.search(r"Page image \d+: page (\d+) of", item["text"])
+            page = found.group(1) if found else page
+            out.append(item["text"])
+        else:
+            out.append(f"<image: page {page}>")
+    return out
 
 
 STATE: contextvars.ContextVar[State] = contextvars.ContextVar("layout_trial_job")
@@ -103,6 +120,8 @@ def install() -> None:
     complete_response = extraction.models.complete_response
 
     async def complete(messages, **kwargs):
+        if kwargs.get("call_purpose") == "extraction_window" and len(messages) == 2:
+            STATE.get().sent.append(without_images(messages[1]["content"]))
         response = await complete_response(messages, **kwargs)
         if kwargs.get("call_purpose") == "extraction_window":
             reply = elitellm.assistant_message_from_obj(
@@ -203,16 +222,20 @@ def install() -> None:
     async def counted_add(self, item, window, pages_):
         result = await add(self, item, window, pages_)
         parts = len(item.get("parts") or []) if isinstance(item, dict) else 0
-        STATE.get().calls[-1]["results"].append(
-            ["record", bench._outcome(result), parts]
-        )
+        state = STATE.get()
+        state.calls[-1]["results"].append(["record", bench._outcome(result), parts])
+        if isinstance(item, dict) and item.get("trailing_text"):
+            state.trailing.append([item.get("label"), item["trailing_text"]])
         return result
 
     async def counted_extend(self, args_, window, pages_):
         result = await extend(self, args_, window, pages_)
-        STATE.get().calls[-1]["results"].append(
+        state = STATE.get()
+        state.calls[-1]["results"].append(
             ["continue", bench._outcome(result), len(args_.get("parts") or [])]
         )
+        if args_.get("trailing_text"):
+            state.trailing.append([args_.get("label"), args_["trailing_text"]])
         return result
 
     extraction.Run.add, extraction.Run.extend = counted_add, counted_extend
@@ -368,6 +391,8 @@ async def run_job(job: dict, args, out_dir: Path) -> None:
         "calls": state.calls,
         "box_call_pages": state.box_call_pages,
         "layout_seconds": state.layout_seconds,
+        "sent": state.sent,
+        "trailing": state.trailing,
         "regions": {
             fm.stem_of(job["paper"], page.number): [
                 dataclasses.asdict(region) for region in found
@@ -468,6 +493,17 @@ async def run_jobs(args) -> None:
     install()
     if args.kill_pid:
         kill_after(args.kill_after_pages, args.kill_pid)
+    if args.hide_held:
+        # The variant that holds trailing_text without showing it to the next window.
+        open_question = extraction.Run.open_question
+
+        def without_held(self):
+            shown = open_question(self)
+            if shown:
+                shown.pop("trailing_text", None)
+            return shown
+
+        extraction.Run.open_question = without_held
     binary = bench.RESULTS / "quizcheck"
     if not binary.exists():
         bench.quizcheck()
@@ -661,6 +697,105 @@ def score(args) -> None:
     )
 
 
+def crossing(args) -> None:
+    """Questions that cross a page, on the Biology paper at each window offset:
+    parts, marks, words kept against its text layer, and Q2(b)'s lead-in."""
+    import pymupdf
+    import window_crossing as wc
+
+    doc = pymupdf.open(Path(args.digital) / wc.GOLD["pdf"])
+    gold = {q["label"]: q for q in wc.GOLD["questions"]}
+    print(
+        "| Run | Windows from | Parts saved | Right parts and marks | Words kept (lowest) "
+        "| Q2(b) sentence | Where | Q2 marks (gold 3,3,3,4,2) | Trailing text given "
+        "| Continued | Not open | Refused | Seconds | Billed |"
+    )
+    print("|" + "---|" * 14)
+    results = [r for r in load(args.tag) if r["paper"].startswith("igcse-biology")]
+    results.sort(key=lambda r: (r["window_pages"], r["pages"][0], r["repeat"]))
+    for r in results:
+        saved = dict(zip(r["report"]["recorded"], r["questions"]))
+        parts = right = 0
+        kept_all, total_all, lowest = 0, 0, 1.0
+        for label, g in gold.items():
+            q = saved.get(label)
+            want = wc.page_words(doc, g["pages"])
+            total_all += sum(want.values())
+            if q is None:
+                lowest = 0.0
+                continue
+            parts += len(q["parts"])
+            right += [p["marks"] for p in q["parts"]] == [
+                p["marks"] for p in g["parts"]
+            ]
+            kept = sum((want & wc.words(wc.saved_text(q))).values())
+            kept_all += kept
+            lowest = min(lowest, kept / sum(want.values()))
+        where = "-"
+        two = saved.get("2")
+        gold_marks = [p["marks"] for p in gold["2"]["parts"]]
+        two_marks = [p["marks"] for p in two["parts"]] if two else []
+        invented = len(two_marks) - len(gold_marks)
+        if two:
+            for n, part in enumerate(two["parts"]):
+                texts = [b.get("text", "") for b in part["blocks"]]
+                if any("monitored" in t for t in texts):
+                    first = "monitored" in texts[0]
+                    where = f"part {n + 1} of {len(two['parts'])}, {'first' if first else 'later'} block"
+                    break
+            else:
+                if any("monitored" in b.get("text", "") for b in two["stem"]):
+                    where = "stem"
+        w = (r["scores"].get("window") or {}).get("results") or {}
+        print(
+            f"| {r['name']} | w{r['window_pages']} from p{r['pages'][0]} "
+            f"| {parts}/{sum(len(g['parts']) for g in gold.values())} | {right}/6 "
+            f"| {kept_all / total_all:.0%} ({lowest:.0%}) "
+            f"| {'kept' if where != '-' else 'lost'} | {where} "
+            f"| {','.join(map(str, two_marks))}{' (a part invented)' if invented > 0 else ''} "
+            f"| {len(r.get('trailing') or [])} | {w.get('continued', 0)} "
+            f"| {w.get('not_open', 0)} | {w.get('refused', 0)} "
+            f"| {r['seconds']:.0f} | ${r['billed_usd']} |"
+        )
+
+
+# Paper 2 Q34 as printed: its long number and its options' exponents.
+Q34_ZEROS = 6
+Q34_EXPONENTS = [[22, 14], [22, 14], [24, 16], [24, 16]]
+
+
+def q34(args) -> None:
+    """Paper 2 Q34 against the print: the zeros after CD, and the options."""
+    print(
+        "| Run | Zeros after CD (6 printed) | Options as printed | Key | Repeated options |"
+    )
+    print("|---|---|---|---|---|")
+    right = {"zeros": 0, "options": 0, "runs": 0}
+    for r in load(args.tag):
+        if r["paper"] != "2022-p2" or "34" not in r["report"]["recorded"]:
+            continue
+        q = r["questions"][r["report"]["recorded"].index("34")]
+        part = q["parts"][0]
+        text = " ".join(b.get("text", "") for b in q["stem"] + part["blocks"])
+        plain = re.sub(r"\\text\{([^}]*)\}", r"\1", text)
+        found = re.search(r"CD(0+)E", plain)
+        zeros = len(found.group(1)) if found else None
+        exponents = [
+            [int(v) for v in re.findall(r"4\^\{(\d+)\}", option)]
+            for option in part["answer"]["options"]
+        ]
+        as_printed = exponents == Q34_EXPONENTS
+        right["runs"] += 1
+        right["zeros"] += zeros == Q34_ZEROS
+        right["options"] += as_printed
+        repeated = "299" in text
+        print(
+            f"| {r['name']} | {zeros} | {'yes' if as_printed else exponents} "
+            f"| {part['answer']['correct']} | {'yes' if repeated else 'no'} |"
+        )
+    print(right)
+
+
 # ----------------------------------------------------------------- the sheet
 
 
@@ -752,15 +887,25 @@ def main() -> None:
     p.add_argument("--kill-pid", type=int)
     p.add_argument("--kill-after-pages", type=int, default=5)
     p.add_argument("--flood", type=int, default=0)
+    p.add_argument("--hide-held", action="store_true")
     p = sub.add_parser("score")
     p.add_argument("--tag", required=True)
     p.add_argument("--only")
     p = sub.add_parser("sheet")
     p.add_argument("--tag", required=True)
     p.add_argument("--name", required=True)
+    p = sub.add_parser("crossing")
+    p.add_argument("--tag", required=True)
+    p.add_argument("--digital", required=True)
+    p = sub.add_parser("q34")
+    p.add_argument("--tag", required=True)
     args = parser.parse_args()
     if args.command == "score":
         score(args)
+    elif args.command == "crossing":
+        crossing(args)
+    elif args.command == "q34":
+        q34(args)
     elif args.command == "sheet":
         sheet(args)
     else:

@@ -2,9 +2,10 @@
 messages, tools and settings of the page window's first call, and the tool results
 for figures that cannot be read, on the same two pages and boxes, for diffing.
 
-Epo 2026-11-04: production matches ``figure_windows.py`` at ``5700f09fd`` word for
-word. That commit's bench wraps its own production code, so each dump runs in its
-own process against its own tree:
+Epo 2026-11-04: production keeps ``figure_windows.py`` at ``5700f09fd`` word for
+word, apart from the prompt changes Epo has approved since (the diff shows them).
+That commit's bench wraps its own production code, so each dump runs in its own
+process against its own tree:
 
     mkdir /tmp/variant && git archive 5700f09fd pipeline bench/extraction server/internal/models \
         | tar -x -C /tmp/variant

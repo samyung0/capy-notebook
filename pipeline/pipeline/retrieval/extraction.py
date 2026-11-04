@@ -86,13 +86,6 @@ SCHEME_MAX_TOKENS = 12_000
 FIGURE_PAGE_EDGE = 2_200
 # The locate call's reply: a few boxes.
 LOCATE_MAX_TOKENS = 1_000
-# Padding added to the box call's box on the 0-1000 grid (left, top, right,
-# bottom); a box a window picks takes layout.CROP_PAD and its caption instead
-# (Epo 2026-11-04). The boxes sit a little low: on the bench's 14 figures, tops cut off
-# labels above the figure while bottoms were already loose; this pad took
-# whole figures from 5 to 12 of 14 and kept 11 of 14 at least 70% figure
-# (bench/extraction/reports/2026-11-04-figures-and-fidelity.md).
-FIGURE_PAD = (20, 30, 20, 5)
 # Indexed text shown per page, and scheme text per parse call.
 PAGE_TEXT_CHARS = 6_000
 SCHEME_CHUNK_CHARS = 12_000
@@ -163,6 +156,9 @@ class Recorded:
     figures: list[Figure] = field(default_factory=list)
     # The question's printed total, when the page prints only a total.
     total: int | None = None
+    # Text printed at the end of the page its window ended on, for the part
+    # that comes next: the next window cannot see that page.
+    held_text: str = ""
 
 
 @dataclass
@@ -352,13 +348,18 @@ def _without_options(text: str, options: list[str]) -> str:
     return text
 
 
+def _loose_option(value: str) -> str:
+    r"""An option or a line as they are compared: $ signs, spacing, \text{} and a
+    closing full stop aside ("A. $131\text{ cm}$." repeats "131 cm")."""
+    plain = re.sub(r"\\text\{([^{}]*)\}", r"\1", value.replace("$", ""))
+    return re.sub(r"\s+", "", plain.replace("\\ ", " ")).rstrip(".")
+
+
 def _option_line(line: str, letter: str) -> str:
-    """A line as an option is compared with it, its own letter aside."""
-    line = line.strip()
-    mark = _OPTION_LETTER.match(line)
-    if mark and mark.group(1) == letter:
-        line = line[mark.end() :]
-    return _option_text(line)
+    """A line as an option is compared with it, its own letter aside: "A. x",
+    "(A) x", "A x" or in the math, "$A.\\ x$"."""
+    line = line.replace("$", "").replace("\\ ", " ").strip()
+    return _loose_option(re.sub(rf"^\(?{letter}[.)]?\s+", "", line))
 
 
 def _without_option_lines(
@@ -367,7 +368,7 @@ def _without_option_lines(
     """The blocks without a run of lines that are the options, in order, one a
     line, in one block or one a block, with or without their letters (2022
     Paper 2: "48 kg.\n\n50 kg.\n\n53 kg.\n\n60 kg." beside the same options)."""
-    wanted = [_option_text(option) for option in options]
+    wanted = [_loose_option(option) for option in options]
     if len(wanted) < 2 or not all(wanted):
         return blocks
     letters = [chr(ord("A") + i) for i in range(len(options))]
@@ -489,6 +490,7 @@ def record(item: Any, ai_label: str) -> Recorded:
         part_labels=labels,
         sources=[source for _, source, _ in parsed],
         total=_whole(item.get("total_marks")),
+        held_text=_text(item.get("trailing_text"), limits.QUESTION_TEXT_MAX),
     )
 
 
@@ -868,10 +870,21 @@ class Run:
             )
         merged = copy.deepcopy(self.recorded[key])
         more = _blocks(args.get("blocks"))
+        added = [_part(raw, self.ai_label) for raw in args.get("parts") or []]
+        # What the last window held goes in front of what comes next.
+        held = _blocks([{"text": merged.held_text}])
+        following = more or (added[0][2]["blocks"] if added else None)
+        if held and following is not None:
+            if not _same_blocks(following[:1], held):
+                following.insert(0, held[0])
+            merged.held_text = ""
+        merged.held_text = (
+            _text(args.get("trailing_text"), limits.QUESTION_TEXT_MAX)
+            or merged.held_text
+        )
         if more:
             merged.question["parts"][-1]["blocks"].extend(more)
-        for raw in args.get("parts") or []:
-            part_label, source, part = _part(raw, self.ai_label)
+        for part_label, source, part in added:
             merged.question["parts"].append(part)
             merged.part_labels.append(part_label)
             merged.sources.append(source)
@@ -897,13 +910,16 @@ class Run:
         if self.open_label is None:
             return None
         held = self.recorded[label_key(self.open_label)]
-        return {
+        shown: dict[str, Any] = {
             "label": held.label,
             "parts": [
                 {"label": label, "blocks": part["blocks"]}
                 for label, part in zip(held.part_labels, held.question["parts"])
             ],
         }
+        if held.held_text:
+            shown["trailing_text"] = held.held_text
+        return shown
 
     def labels(self) -> list[str]:
         return [held.label for held in self.held()]
@@ -1156,15 +1172,12 @@ async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> list[st
             log.warning("figure boxes for page %d failed: %s", page.number, exc)
             failed.update((id(q), i) for q, i in items)
             return
-        for (question, index), box in zip(items, boxes):
-            padded = [
-                max(0.0, box[0] - FIGURE_PAD[0]),
-                max(0.0, box[1] - FIGURE_PAD[1]),
-                min(1000.0, box[2] + FIGURE_PAD[2]),
-                min(1000.0, box[3] + FIGURE_PAD[3]),
-            ]
+        # The box grown to the ink on the page image the call saw (Epo 2026-11-04).
+        jpeg = layout.jpeg_of(await page.image())
+        grown = await slots.render_thread(layout.grown_to_ink, jpeg, boxes)
+        for (question, index), box in zip(items, grown):
             question.figures[index] = dataclasses.replace(
-                question.figures[index], box=padded
+                question.figures[index], box=box
             )
 
     await asyncio.gather(*(one(page, items) for page, items in pages.values()))

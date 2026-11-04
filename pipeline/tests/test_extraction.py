@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import base64
 import copy
+import io
 import json
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import extraction
@@ -81,6 +83,16 @@ def _call(name: str, args: dict, n: int = 0) -> dict:
     }
 
 
+def _jpeg(size: int = 1000) -> str:
+    buffer = io.BytesIO()
+    Image.new("L", (size, size), 255).save(buffer, "JPEG")
+    return "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+# A blank page 1000 px a side: a grid unit is a pixel and no box finds ink.
+BLANK_PAGE = _jpeg()
+
+
 def _page(
     number: int,
     text: str = "",
@@ -88,7 +100,7 @@ def _page(
     regions: tuple = (),
 ) -> extraction.Page:
     async def image() -> str:
-        return "data:image/jpeg;base64,AA=="
+        return BLANK_PAGE
 
     async def crop(box: list[float]) -> tuple[bytes, tuple[int, int]]:
         if crops is not None:
@@ -187,6 +199,29 @@ def test_plain_option_lines_are_taken_out_too():
         "Pick one."
     )
 
+    # The letter inside the math, and the line typeset where the option is not.
+    in_math = _mcq("25", ["$(8, 60^\\circ)$.", "$(8, 120^\\circ)$."])
+    in_math["parts"][0]["blocks"] = _text(
+        "Find it.\n$A.\\ (8, 60^\\circ)$.\n$B.\\ (8, 120^\\circ)$."
+    )
+    assert extraction.record(in_math, AI).question["parts"][0]["blocks"] == _text(
+        "Find it."
+    )
+    typeset = _mcq("20", ["82 cm", "100 cm"])
+    typeset["parts"][0]["blocks"] = _text(
+        "Find it.\nA. $82\\text{ cm}$.\nB. $100\\text{ cm}$."
+    )
+    assert extraction.record(typeset, AI).question["parts"][0]["blocks"] == _text(
+        "Find it."
+    )
+
+    bare_letter = _mcq("30", ["a relay", "a thermistor"])
+    bare_letter["stem"] = _text("Which one?")
+    bare_letter["parts"][0]["blocks"] = _text("A a relay\nB a thermistor")
+    assert extraction.record(bare_letter, AI).question["parts"][0]["blocks"] == _text(
+        "Which one?"
+    )
+
     shuffled = _mcq("26", ["1", "2"])
     shuffled["parts"][0]["blocks"] = _text("Pick one.\n2\n1")
     assert extraction.record(shuffled, AI).question["parts"][0]["blocks"] == _text(
@@ -211,6 +246,38 @@ async def test_the_last_question_of_a_window_can_be_continued_in_that_window():
     assert await run.extend(more, window, pages) == "Question 1: continued."
     assert run.recorded["1"].part_labels == ["a(i)", "a(ii)", "a(iii)", "b"]
     assert [p["marks"] for p in run.recorded["1"].question["parts"]] == [1, 1, 2, 4]
+
+
+async def test_trailing_text_goes_in_front_of_the_next_windows_first_part():
+    """A sentence at the end of the page a window ended on: held, shown to the
+    next window with the open question, and put in front of the part continued
+    there. Only once when the model copied it there too."""
+
+    async def validate(question):
+        return None
+
+    run = extraction.Run(validate=validate, ai_label=AI)
+    pages = [_page(4)]
+    first = _open("2", [("a", 1)])
+    first["trailing_text"] = "Person A and person B were monitored."
+    await run.add(first, set(), pages)
+    run.open_label = "2"
+    assert run.open_question()["trailing_text"] == first["trailing_text"]
+
+    more = {"label": "2", "parts": [_open_part("b(i)", 1)]}
+    assert await run.extend(more, set(), pages) == "Question 2: continued."
+    blocks = run.recorded["2"].question["parts"][1]["blocks"]
+    assert blocks == [*_text(first["trailing_text"]), *_text("Find b(i).")]
+    assert "trailing_text" not in run.open_question()
+
+    copied = _open("3", [("a", 1)])
+    copied["trailing_text"] = "Data for (b)."
+    await run.add(copied, set(), pages)
+    run.open_label = "3"
+    part = _open_part("b(i)", 1)
+    part["blocks"] = _text("Data for (b).")
+    await run.extend({"label": "3", "parts": [part]}, set(), pages)
+    assert run.recorded["3"].question["parts"][1]["blocks"] == _text("Data for (b).")
 
 
 def test_a_one_part_question_shows_its_text_once():
@@ -656,15 +723,16 @@ async def test_figures_are_cropped_from_their_page_and_placed_after_their_part(
         "description": "Triangle ABC",
     }
     assert question["parts"][1]["blocks"][-1]["image"] == {"assetId": "figure:q8-2"}
-    # One locate call a page, naming its figures; the located box, padded
-    # (FIGURE_PAD) and held to the page, is cropped from that page.
+    # One locate call a page, naming its figures; the located box, grown to ink
+    # (none on these pages), its margin on and held to the page, is cropped from
+    # that page.
     assert sorted(located) == [
         "The figures on this page:\n1. Question 8: Triangle ABC",
         "The figures on this page:\n1. Question 8: its figure",
     ]
     assert sorted(crops) == [
-        (5, [0.0, 0.0, 500.0, 505.0]),
-        (6, [80.0, 150.0, 940.0, 1000.0]),
+        (5, [5.0, 0.0, 486.0, 506.0]),
+        (6, [95.0, 175.0, 926.0, 1000.0]),
     ]
     assert done["figures"] == [
         {"id": "q8-1", "image": base64.b64encode(b"jpeg 6").decode()},
@@ -824,7 +892,7 @@ async def test_a_window_gets_its_boxes_as_json_and_records_figures_by_number(
         '[{"box": 3, "page": 6, "coordinates": [50, 61, 700, 800], '
         '"label": "chart", "score": 0.88}]'
     )
-    assert content[2]["image_url"]["url"] == "data:image/jpeg;base64,AA=="
+    assert content[2]["image_url"]["url"] == BLANK_PAGE
     results = [m["content"] for m in sent[-1][0] if m["role"] == "tool"]
     assert results[0] == (
         "Question 8: figures[0].boxes: there is no box 4 on these pages; the boxes "
@@ -850,7 +918,7 @@ async def test_a_figure_with_no_box_takes_the_box_call_beside_one_that_has_a_box
     monkeypatch,
 ):
     """Boxes [] with its page image sends that figure alone to the box call,
-    padded by FIGURE_PAD; so do those of a page whose layout call failed. A
+    whose box is grown to ink; so do those of a page whose layout call failed. A
     figure with a box is not asked about."""
     first, _ = _figure_regions()
     item = _open("8", [("a", 2)])
@@ -894,8 +962,8 @@ async def test_a_figure_with_no_box_takes_the_box_call_beside_one_that_has_a_box
     ]
     assert crops == [
         (5, [90.0, 190.0, 410.0, 430.0]),
-        (5, [280.0, 270.0, 420.0, 405.0]),
-        (6, [280.0, 270.0, 420.0, 405.0]),
+        (5, [295.0, 295.0, 406.0, 406.0]),
+        (6, [295.0, 295.0, 406.0, 406.0]),
     ]
     assert events[-1]["report"]["figuresLeftOut"] == []
 
@@ -944,7 +1012,7 @@ async def test_a_failed_layout_call_leaves_every_figure_to_the_box_call(monkeypa
     assert sent[0][0][1]["content"][1]["text"].endswith(
         "Boxes on this page, as JSON: []"
     )
-    assert crops == [(5, [280.0, 270.0, 420.0, 405.0])]
+    assert crops == [(5, [295.0, 295.0, 406.0, 406.0])]
     assert events[-1]["report"]["figures"] == ["8"]
 
 

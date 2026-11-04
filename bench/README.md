@@ -333,7 +333,10 @@ measures the round-2 prompt that works keys out, and
 measures figure crops and the content against the page, and
 [window size](extraction/reports/2026-11-04-window-size.md) how many questions
 one call records (`--window-pages`, tables from `scripts/window_table.py` and
-`scripts/window_crossing.py`).
+`scripts/window_crossing.py`), and
+[layout first](extraction/reports/2026-11-04-layout-first-trial.md) runs the layout
+service over HTTP through the real code (`scripts/layout_trial.py`; the service's
+venv and model file are in that report).
 
 ### rag
 

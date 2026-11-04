@@ -370,7 +370,7 @@ class Caller:
                     model=self.model,
                 )
             )
-            p = extraction.FIGURE_PAD
+            p = (20, 30, 20, 5)  # The pad the box call had when this ran.
             return [
                 [
                     max(0.0, b[0] - p[0]),

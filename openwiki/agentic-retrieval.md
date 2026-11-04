@@ -5688,12 +5688,28 @@ later).
   `/generate`.
 - **The run** (`pipeline/retrieval/extraction.py`, prompts in
   `prompts/extraction.py`; one prompt reads questions and keys, Epo
-  2026-11-03, `todo-study-tracking/R6-extraction-prompt.md`):
+  2026-11-03, `todo-study-tracking/R6-extraction-prompt.md`, generated from the
+  code by `bench/extraction/scripts/prompt_doc.py`):
+  0. Layout, before anything else (`retrieval/layout.py`, Epo 2026-11-04): one
+     request a page to the layout service (`CAPY_LAYOUT_URL`, one pool on the
+     ingest host, runbook §7.6), at most 3 in flight a run, with the windows' page
+     image (long side 1,568 px). The answer is every region PP-DocLayout_plus-L
+     finds. A 429 waits about 2 s and tries again, 4 tries in all; a request has
+     30 s and all the run's pages 90 s. A page whose request fails, stays busy or
+     runs out of time has no regions, and the run goes on. With no
+     `CAPY_LAYOUT_URL` no page has regions, so every figure takes the box call.
+     The layout service bills nothing. `layout.figure_boxes` turns regions into
+     the boxes a window sees: `image` and `chart` at 0.5 or more, one of any pair
+     with an IoU of 0.8 or more, and a box dropped when it holds a smaller box
+     (at least 90% inside) plus `text` regions of its own outside it.
   1. The outline: one call, reasoning off, lists the question labels the
      selected pages' indexed text holds (`store.file_passages`).
   2. Page windows of up to two pages in selected order. Each call gets the two
      page images (`capture.render_file` at `CAPY_CAPTURE_MAX_EDGE`, rendered when
-     the window runs), each page's indexed text, the expected labels, the
+     the window runs; a page is rendered a second time for its layout request),
+     each page's indexed text followed by its boxes as JSON (number, page,
+     coordinates on the 0-1000 grid, label, score; numbers run across the window,
+     and nothing is drawn on the images), the expected labels, the
      labels recorded so far and the open question (the last one recorded,
      which may run onto the next page), with the tools `record_question` (one
      question a call, several calls a reply: label, stem, parts with printed
@@ -5710,17 +5726,25 @@ later).
      check a quiz's creation makes); a refusal, a part without `key_source`
      or arguments that are not JSON (the tool result names the parse error)
      go back to the model, which sends that call again, up to six calls a
-     window. A reply cut off at the 24,000-token output cap is asked again
-     for fewer questions a reply. Printed option order is kept, and lettered
-     option lines the model also copied into a part's text are taken out in
-     code when they match the options (a one-part question whose part held
-     only them takes its stem as its text); a one-part question whose stem
+     window. `continue_question` also accepts the last question recorded in
+     its own window, so a question continued there keeps its parts instead of
+     being recorded again over them. A reply cut off at the 24,000-token output
+     cap is asked again for fewer questions a reply. Printed option order is
+     kept, and option lines the model also copied into a part's text are taken
+     out in code when they match the options in order, lettered or plain, in or
+     out of the math, in one block or one a block (a one-part question whose part
+     held only them takes its stem as its text); a one-part question whose stem
      repeats its part's text, or whose part repeats the stem's last sentence,
      keeps it once. Sub-parts
      flatten: (b)(i) and (b)(ii) are two parts, the (b) lead-in text (the first
      sub-part's `lead_in` field, which code puts first in its blocks)
-     starting the first. Recorded questions leave the conversation: the next window
-     carries labels and the open question only.
+     starting the first. Text printed at the very end of the last page shown, for
+     parts on the next page, goes in the call's `trailing_text` (Epo 2026-11-04):
+     code holds it, the next window sees it in the open question, and it goes in
+     front of what that window continues the question with. A window never sees
+     the previous page, so without this that text has nowhere to go. Recorded
+     questions leave the conversation: the next window carries labels and the open
+     question only.
   3. After the windows, the answer files are parsed as text, in pieces of
      12,000 characters, reasoning off, into entries
      `{question, part, answer, points, solution}`; they never share a request
@@ -5740,21 +5764,28 @@ later).
      `label`, "AI-written" or "AI 撰写" by the starter's locale) and its
      question is named in `keysWorkedOut`. A saved question whose part marks
      do not add up to the total printed on the page is named in `marksDiffer`.
-  5. Figures. Each figure a call names gives its page image in the window
-     (1 or 2), the part whose text it follows ("" for the stem) and a few
-     words on what it shows; a page image or part the call cannot have goes
-     back to the model. After pairing, one call a page with figures, reasoning
-     off, sees that page alone with its figures listed (question label and
-     description) and answers a box on a 0-1000 grid for each
+  5. Figures (Epo 2026-11-04). Each figure a call names gives the numbers of
+     the boxes that hold it, several for a split figure, the part whose text it
+     follows ("" for the stem) and a few words on what it shows; a number that is
+     no box, boxes on two pages, or a part the question lacks go back to the
+     model. Code crops the chosen boxes together, adds an adjacent caption (a
+     `figure_title` region at 0.5 or more within 2.5% of the page above or below,
+     with its middle over them) and pads 1% of the page all round
+     (`layout.crop_box`). A figure no box holds gives `boxes: []` and its page
+     image in the window. After pairing, those figures alone take the box call:
+     one call a page, reasoning off, sees that page alone with its figures listed
+     (question label and description) and answers a box on a 0-1000 grid for each
      (`locate_figures`, purpose `extraction_figures`; a reply that is not one
      box a figure is a failed attempt; a page whose call fails twice keeps
-     its questions without its figures, named in `figuresLeftOut`, Epo
-     2026-11-04). The window's
-     own boxes were too far off to crop from (2022 Paper 2: 3 of 10 whole, 3
-     missing the figure; bench report 2026-11-04). The located box is
-     padded by `FIGURE_PAD` (2% of the page at the sides, 3% at the top,
-     0.5% at the bottom: located boxes sit a little low, clipping labels
-     above the figure). Each figure is then cropped from its page (`capture.render_file` with `page_edge`
+     its questions without those figures, named in `figuresLeftOut`). Coordinates
+     asked of the window itself were too far off to crop from (2022 Paper 2: 3 of
+     10 whole, 3 missing the figure; bench report 2026-11-04). The box call's box is
+     grown to the ink around it on the page image the call saw
+     (`layout.grown_to_ink`, Epo 2026-11-04): each edge moves out while the strip
+     just outside holds ink, up to 6 blank grid units and 80 units from where it
+     started, and 0.5% of the page goes on at the end. That took the box call from
+     63 whole, 40 tight and 36 both of 80 with a fixed pad to 68, 64 and 56
+     ([report](../bench/extraction/reports/2026-11-04-hosted-figure-boxes.md)). Each figure is then cropped from its page (`capture.render_file` with `page_edge`
      `FIGURE_PAGE_EDGE`: the page's long side at 2,200 px, so labels read and
      a small figure stays small) and placed after that part's text as an
      image block whose asset is `figure:<id>` and whose description is the
@@ -5795,7 +5826,7 @@ later).
   `schemeRepeats`, `figures`, `figuresLeftOut`, `stopped`, `pages`,
   `windows`). `figures` names the questions saved with cropped figures, for
   the starter to check; `figuresLeftOut` those saved without theirs, because
-  their page's box call failed twice or the figures did not fit in the
+  they had no box and their page's box call failed twice, or the figures did not fit in the
   starter's storage (then the quiz is saved without any figures; Epo
   2026-11-04).
   `schemeRepeats` names scheme entries left out because an earlier entry had
@@ -5826,7 +5857,9 @@ later).
 - **Bench.** `bench/extraction`, with findings in
   [`2026-11-03-first-cut.md`](../bench/extraction/reports/2026-11-03-first-cut.md),
   [`2026-11-03-keys-in-one-prompt.md`](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md)
-  and [`2026-11-04-figures-and-fidelity.md`](../bench/extraction/reports/2026-11-04-figures-and-fidelity.md).
+  [`2026-11-04-figures-and-fidelity.md`](../bench/extraction/reports/2026-11-04-figures-and-fidelity.md),
+  [`2026-11-04-window-size.md`](../bench/extraction/reports/2026-11-04-window-size.md)
+  and [`2026-11-04-layout-first-trial.md`](../bench/extraction/reports/2026-11-04-layout-first-trial.md).
 
 ## Citations and the frontend
 
