@@ -144,7 +144,7 @@ paraglide is used for internationalization. use paraglide functions to support i
 - DO NOT use chevron icon for navigational links icon, use navigationback and navigationForward
 - Always let larger screens override smaller screen styles, phones are usually less powerful and need to run longer if it needs to pplay more styles
 - Never use `tabular-nums`
-- Use buttons with borders when its an action which stays on the same page, for links/spa links use buttons/links with underline and potentially a navigationForward icon
+- Use buttons with borders for actions on the same page and for links/spa links alike, potentially with a navigationForward icon on links; do not use underlined buttons
 - Smallest support device screen is `360px` in width
 
 ## Final Remarks
