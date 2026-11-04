@@ -245,6 +245,28 @@ data. After sync, Slate-Yjs replaces editor children from the shared root.
 Yjs-aware history is installed by `YjsPlugin`; ordinary Slate history must not
 be layered on top. Normalizers must be deterministic and idempotent because
 they run for remote operations too.
+
+**Opening writes nothing** (Epo 2026-11-04, `roomBinding.ts`). Binding
+force-normalizes the whole tree, and each remote change normalizes the blocks
+it touched, as local operations slate-yjs sends to the room. Measured in the
+browser: a note ending in a table got a trailing paragraph from whoever opened
+it (two people opening together left two), and an ordered list without its
+`listStart`s got them. So until the person's first real edit in this mount
+(`edited`: a local operation outside a normalization that is not a selection)
+only Slate's own normalizer runs, and only with operations Yjs holds nothing of
+(an empty leaf beside an inline, two leaves of equal marks merging); any other
+is dropped. The plugins' normalizers wait for that edit and then see only what
+it dirtied. The trailing paragraph comes with the first edit, written straight
+into the document under its own origin so it is no part of that edit's Undo
+(as an ordinary edit, the Undo would bring it back as a new edit and empty
+Redo). Later, `trailingBlockPlugin` adds one only behind a real edit in the same
+batch, never for a co-editor's or an agent's change. A click below the last
+block, where a note not ending in a paragraph has nothing to click on, adds the
+paragraph and puts the caret in it (`openTrailingParagraph`), which counts as
+the first edit; from the keyboard Mod+Enter leaves the last block as before. The
+checkpoint debounce starts only for a real edit (this person's or an Undo's,
+`takeLocalEdit`): a co-editor's change no longer reads Syncing or asks for a
+receipt here.
 The toolbar subscribes directly to Yjs UndoManager stack events, including
 undo/redo and clear, so availability updates without editor focus or selection.
 Its actions use the same Yjs history as note editing.

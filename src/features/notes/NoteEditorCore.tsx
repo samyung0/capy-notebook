@@ -157,7 +157,13 @@ import {
   remoteCursorRangesForEntry,
   useRemotePeers,
 } from './RemoteCursors';
-import { bindSyncedRoom, roomBindingPlugin, whenBound } from './roomBinding';
+import {
+  bindSyncedRoom,
+  openTrailingParagraph,
+  roomBindingPlugin,
+  takeLocalEdit,
+  whenBound,
+} from './roomBinding';
 import {
   type RoomReconnector,
   refusalDropsDrafts,
@@ -491,6 +497,18 @@ const NoteEditorContent = memo(function NoteEditorContent({
     [editor]
   );
 
+  // Below the last block, where a note not ending in a paragraph has nothing
+  // to click on until its first edit (opening writes nothing, roomBinding.ts).
+  const onClick = useCallback(
+    (event: React.MouseEvent) => {
+      if (editor.api.isReadOnly() || !editor.children.length) return;
+      const last = editor.api.toDOMNode(editor.children.at(-1) as never);
+      if (last && event.clientY > last.getBoundingClientRect().bottom)
+        openTrailingParagraph(editor);
+    },
+    [editor]
+  );
+
   return (
     <PlateContainer className="relative [&_.slate-selection-area]:z-50 [&_.slate-selection-area]:border [&_.slate-selection-area]:border-action-accent/25 [&_.slate-selection-area]:bg-action-accent/15">
       <PlateContent
@@ -500,6 +518,7 @@ const NoteEditorContent = memo(function NoteEditorContent({
           shouldShowStats && 'pb-16'
         )}
         decorate={decorate}
+        onClick={onClick}
         onKeyDown={onKeyDown}
         placeholder={showEditorPlaceholder ? m.editor_placeholder() : undefined}
         readOnly={readOnly}
@@ -2206,7 +2225,9 @@ export function NoteEditorCore({
           insertsMany(current.operations)
         );
       }
-      scheduleCheckpoint();
+      // A co-editor's change or a normalization holds nothing of this tab's to
+      // save.
+      if (takeLocalEdit(current)) scheduleCheckpoint();
       const { operations } = current;
       if (
         operations.length > 0 &&
