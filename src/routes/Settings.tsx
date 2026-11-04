@@ -35,6 +35,7 @@ import { LanguageRow } from '@/features/settings/LanguageRow';
 import { ModelPicker } from '@/features/settings/ModelPicker';
 import { StudyPreferencesSection } from '@/features/settings/StudyPreferencesSection';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import type { SettingsTab } from '@/lib/tabSearch';
 import { STYLES, THEMES, themeSwatch, useTheme } from '@/theme/theme';
 
@@ -300,6 +301,7 @@ export default function Settings() {
     <PagePanel
       header={
         <PageHeader
+          className={cn(phone && '-mt-1.5 pt-0')}
           title={
             phone ? (
               <div className="flex items-center gap-1">
@@ -312,7 +314,7 @@ export default function Settings() {
                 >
                   <span className="sr-only">{m.action_back()}</span>
                 </IconButton>
-                <h1 className="t-page-title">
+                <h1 className="t-large-card-title text-lg leading-tight">
                   {tabs.find((item) => item.value === tab)?.label}
                 </h1>
               </div>
@@ -332,8 +334,8 @@ export default function Settings() {
         />
       )}
       <TabContent narrow>
-        {/* A phone's header already names the tab. */}
-        <div className="max-sm:[&_[data-slot=tab-header]]:hidden">
+        {/* A phone's header already names the tab, as a dialog's title does. */}
+        <div className="max-sm:-mt-4 max-sm:[&_[data-slot=tab-header]]:hidden">
           {tab === 'customizations' ? (
             <CustomizationsTab />
           ) : tab === 'study' ? (

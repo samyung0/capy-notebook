@@ -412,6 +412,10 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   back. No `tab` in the URL means the list on a phone and Account on wider
   screens; `q=<text>` holds the search. A tab pushes a history entry on phones,
   so the browser's Back returns to the list.
+- **A setting row** (`SettingRow`, Epo 2026-11-04) on a phone keeps its label and
+  control on one line with the hint on its own line under both, in both settings
+  surfaces; wider screens keep the hint under the label. A phone's tab page titles
+  itself like a dialog.
 - **Owner and editor members** can rename/recolor/describe/tag the workspace,
   change private/link/public visibility or `shareRole`, and view workspace
   statistics. The kind (Used for, in General) is the owner's alone. Tags land in the owner's tag namespace whoever edits them.

@@ -21,7 +21,8 @@ import { m } from '@/i18n';
 import { track } from '@/lib/analytics';
 import { cn } from '@/lib/cn';
 import { deferStorageRefusal, describeError } from '@/lib/errors';
-import { Input, InputTitle } from '../../components/ui/Input';
+import { SettingRow } from '../../components/app/tabPanel';
+import { Input } from '../../components/ui/Input';
 import { MATERIALMODE_ICON } from '../materials/materialIconMappings';
 import { WorkspaceMemberManager } from './WorkspaceMemberManager';
 
@@ -227,53 +228,47 @@ export function ShareDialog({
   const content = (
     <>
       <div className={cn('flex flex-col gap-6', containerClassName)}>
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <InputTitle>{m.share_visibility()}</InputTitle>
-            <p className="t-meta text-fg-muted">{current.hint}</p>
-          </div>
-          <div className="w-36 shrink-0 sm:w-auto sm:min-w-45 sm:max-w-70">
-            <Select
-              disabled={busy}
-              onValueChange={(v) => handlePrivacyChange(v as Privacy)}
-              value={privacy}
-            >
-              <SelectTrigger
-                aria-label={m.share_visibility()}
-                data-privacy={privacy}
-                loading={savingField === 'privacy'}
+        <div className="mt-3">
+          <SettingRow hint={current.hint} title={m.share_visibility()}>
+            <div className="w-40 shrink-0 sm:w-auto sm:min-w-45 sm:max-w-70">
+              <Select
+                disabled={busy}
+                onValueChange={(v) => handlePrivacyChange(v as Privacy)}
+                value={privacy}
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {options.map((o) => (
-                    <SelectItem
-                      className={
-                        o.value === 'public' && shareRole === 'editor'
-                          ? 'text-tint-error-fg hover:bg-tint-error'
-                          : undefined
-                      }
-                      iconAndValue={o}
-                      key={o.value}
-                      value={o.value}
-                    />
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
+                <SelectTrigger
+                  aria-label={m.share_visibility()}
+                  data-privacy={privacy}
+                  loading={savingField === 'privacy'}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {options.map((o) => (
+                      <SelectItem
+                        className={
+                          o.value === 'public' && shareRole === 'editor'
+                            ? 'text-tint-error-fg hover:bg-tint-error'
+                            : undefined
+                        }
+                        iconAndValue={o}
+                        key={o.value}
+                        value={o.value}
+                      />
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+          </SettingRow>
         </div>
         {workspaceId &&
           privacy !== 'private' &&
           shareRole &&
           onShareRoleChange && (
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-1">
-                <InputTitle>{m.share_anyone_with_access()}</InputTitle>
-                <p className="t-meta text-fg-muted">{roleHint}</p>
-              </div>
-              <div className="w-36 shrink-0 sm:w-auto sm:min-w-45 sm:max-w-70">
+            <SettingRow hint={roleHint} title={m.share_anyone_with_access()}>
+              <div className="w-40 shrink-0 sm:w-auto sm:min-w-45 sm:max-w-70">
                 <Select
                   disabled={busy}
                   onValueChange={(value) =>
@@ -306,7 +301,7 @@ export function ShareDialog({
                   </SelectContent>
                 </Select>
               </div>
-            </div>
+            </SettingRow>
           )}
         {publicEditorActive && (
           <WarningBanner message={m.share_public_edit_warning()} />
