@@ -314,6 +314,7 @@ export function AttemptBody({
             <QuizScore
               awarded={awarded}
               confetti={celebrate}
+              leftOut={noAnswers}
               max={max}
               minutes={
                 run.takenAt
@@ -323,9 +324,7 @@ export function AttemptBody({
                     })
                   : undefined
               }
-              questions={
-                shown.filter((q) => !noAnswers.has(q.id)) as Question[]
-              }
+              questions={shown as Question[]}
             />
           )}
           <QuizQuestionList
