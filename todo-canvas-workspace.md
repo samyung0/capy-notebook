@@ -240,6 +240,8 @@ AFFiNE waits only on a device with no local copy, and for non-admin members' fir
 - On a device with no copy, paint the stored previews first.
 - This needs Epo's sign-off: note bodies would be stored on the device. It also needs a choice: can a user edit before the token arrives (keep the last client id) or only read?
 
+**Epo, 2026-11-04:** no "Connecting" words and no Edit/View button on any item, always open at the person's highest permission. Being investigated first, for offline and draft-merge complications, with the report going to Epo before any code.
+
 ### 1.10 Phones (360 px)
 
 **How others do it:**
