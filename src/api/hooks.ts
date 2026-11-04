@@ -2646,17 +2646,24 @@ export const getMaterialCollaborationToken = (
       return token;
     });
 
+/** A material's room token, as its editor asks for it. */
+export const materialTokenQuery = (materialId: string) =>
+  queryOptions({
+    meta: queryMeta({ errorBoundary: false }),
+    queryFn: () => getMaterialCollaborationToken(materialId),
+    queryKey: ['material', materialId, 'collaboration-token'],
+    staleTime: 3 * 60 * 1000,
+  });
+
 export function useMaterialCollaborationToken(
   materialId: string,
   enabled = true,
   options?: QueryUiOptions
 ) {
   return useQuery({
+    ...materialTokenQuery(materialId),
     enabled: !!materialId && enabled,
     meta: queryMeta(options),
-    queryFn: () => getMaterialCollaborationToken(materialId),
-    queryKey: ['material', materialId, 'collaboration-token'],
-    staleTime: 3 * 60 * 1000,
   });
 }
 

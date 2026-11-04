@@ -608,8 +608,15 @@ function MaterialContentBody({
   );
   // A device copy paints before its read answers, and while the read cannot
   // answer (the browser offline, the server down), until it refuses.
+  // Keyed as the note below: the paint keeps its DOM as the read answers.
   if (!material && seed?.row.kind === 'note' && !refused)
-    return noteBody(undefined, false);
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1" key="note">
+          {noteBody(undefined, false)}
+        </div>
+      </div>
+    );
   if (isLoading && !material) {
     // Nothing shows for the few milliseconds the store takes.
     if (me && (seed === undefined || copied === undefined)) return null;
@@ -758,7 +765,7 @@ function MaterialContentBody({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {readOnlyStrip}
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1" key="note">
         {material.kind === 'note' ? (
           noteBody(material, activeMode === 'edit')
         ) : (

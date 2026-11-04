@@ -2164,13 +2164,17 @@ export function NoteEditorCore({
       paintReported.current === 'editor'
     )
       return;
-    return afterPaint(() => {
+    const report = () => {
       paintReported.current = view;
       paintedChange.current?.({
         editor: view === 'editor' ? editor : null,
         scrollArea,
       });
-    });
+    };
+    // Behind a first open's static note nothing waits on its paint: laid out
+    // once as it shows, not once hidden and once shown.
+    if (firstOpenNow.current) return report();
+    return afterPaint(report);
   }, [editor, handshaking, lateMerging, lateUnloaded, scrollArea]);
 
   // Cursor awareness goes to every peer through the server: at most one per

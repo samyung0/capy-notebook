@@ -13,6 +13,7 @@ import {
 } from 'react';
 import * as Y from 'yjs';
 import { qk } from '@/api/client';
+import { materialTokenQuery } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { SaveBanner } from '@/components/banners/SaveBanner';
@@ -53,10 +54,9 @@ import { embedKey, useNoteFooter } from './useNoteFooter';
 
 /* Interactive Plate is the heaviest chunk in this route: it loads behind a
  * painted note, never before one. */
+const loadEditor = () => import('@/features/notes/NoteEditor');
 const NoteEditor = lazy(() =>
-  import('@/features/notes/NoteEditor').then((module) => ({
-    default: module.NoteEditor,
-  }))
+  loadEditor().then((module) => ({ default: module.NoteEditor }))
 );
 
 /* Static Plate preview is still heavy: kept out of the PDF and media path. */
@@ -189,12 +189,13 @@ function PaintedNote({
   const [Preview] = useState(
     () => previewModule?.MaterialPreview ?? LazyMaterialPreview
   );
+  // The same object while the body is not there: the static note stays put as
+  // the read answers.
+  const body =
+    material && !material.contentOmitted ? material.content : undefined;
   const content = useMemo<MaterialDocument>(
-    () =>
-      material && !material.contentOmitted
-        ? material.content
-        : { schemaVersion: 1, value },
-    [material, value]
+    () => body ?? { schemaVersion: 1, value },
+    [body, value]
   );
   return (
     <Preview
@@ -267,16 +268,25 @@ export function NoteBody({
     forgetNoteCopy(materialId);
     void queryClient.invalidateQueries({ queryKey: qk.material(materialId) });
   }, [bodyMissing, materialId, queryClient]);
+  // The editor's chunk once the paint is up, not behind the read and the token.
+  const mayEdit = !!painted && (material?.capabilities.canEditContent ?? true);
+  useEffect(() => {
+    if (mayEdit) void loadEditor();
+  }, [mayEdit]);
   if (!(painted && label) || bodyMissing) return <NoteSkeleton />;
-  if (editing && material) {
-    handed.current ??= 'editor';
+  // The same frame before its read answers as for an editor: the static note
+  // keeps its DOM from one to the other, never painted twice.
+  if (editing || !material) {
+    if (material) handed.current ??= 'editor';
     return (
-      <EditingNote
+      <PaintedFrame
         allowExternalAssets={allowExternalAssets}
         citation={citation}
+        editing={editing}
         key={materialId}
         label={label}
         material={material}
+        materialId={materialId}
         onEditorStatusChange={onEditorStatusChange}
         onPresenceChange={onPresenceChange}
         onReadOnly={onReadOnly}
@@ -285,14 +295,13 @@ export function NoteBody({
       />
     );
   }
-  if (material && !staticNote && seed !== undefined)
-    handed.current ??= 'reader';
+  if (!staticNote && seed !== undefined) handed.current ??= 'reader';
   return (
     <div className="relative h-full min-h-0 overflow-auto">
       <NoteDisplayToggles />
       {citation && <NoteCitation citation={citation} />}
       <Suspense fallback={<NoteSkeleton />}>
-        {material && !staticNote && seed !== undefined ? (
+        {!staticNote && seed !== undefined ? (
           <LiveNote
             keep={
               owner && keepsCopyOf(material)
@@ -307,9 +316,7 @@ export function NoteBody({
         ) : (
           <PaintedNote label={label} material={material} value={painted} />
         )}
-        {material && (
-          <DocumentAttribution material={material} value={painted} />
-        )}
+        <DocumentAttribution material={material} value={painted} />
       </Suspense>
     </div>
   );
@@ -365,15 +372,22 @@ function LiveNote({
   );
 }
 
-/** An editor's note: the paint on top until Plate behind it has painted the
- * room's document (or its saved copy, past the join's 30 s), then Plate, at the
- * reader's block and caret. At 30 s a strip with Retry shows over whichever is
- * on screen. */
-function EditingNote({
+/** How many blocks the frame paints until the reader nears their end: the
+ * editor replaces them in moments, and a near-limit note's whole static DOM
+ * would slow its build by about a second (bench/editor/reports). */
+const PAINT_BLOCKS = 100;
+
+/** An editor's note, and any note before its read answers: the paint on top
+ * until Plate behind it has painted the room's document (or its saved copy,
+ * past the join's 30 s), then Plate, at the reader's block and caret. At 30 s a
+ * strip with Retry shows over whichever is on screen. */
+function PaintedFrame({
   allowExternalAssets,
   citation,
+  editing,
   label,
   material,
+  materialId,
   onEditorStatusChange,
   onPresenceChange,
   onReadOnly,
@@ -382,16 +396,44 @@ function EditingNote({
 }: {
   allowExternalAssets: boolean;
   citation?: NoteCitationTarget;
+  editing: boolean;
   label: PaintLabel;
-  material: Material;
+  material: Material | undefined;
+  materialId: string;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
   onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   onReadOnly: (code?: ReadOnlyCode) => void;
   painted: MaterialValue;
   seed: RoomSeed | null | undefined;
 }) {
+  const builds = editing && !!material;
+  // Its token alongside the paint, not behind the editor's chunk.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (builds) void queryClient.prefetchQuery(materialTokenQuery(materialId));
+  }, [builds, materialId, queryClient]);
   const [shown, setShown] = useState(false);
   const paintBox = useRef<HTMLDivElement>(null);
+  // A citation may point anywhere in the note.
+  const [whole, setWhole] = useState(!!citation);
+  const cut = !whole && painted.length > PAINT_BLOCKS;
+  const firstBlocks = useMemo(
+    () => (cut ? painted.slice(0, PAINT_BLOCKS) : painted),
+    [cut, painted]
+  );
+  const paintEnd = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const end = paintEnd.current;
+    if (!end) return;
+    const near = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) setWhole(true);
+      },
+      { root: paintBox.current, rootMargin: '100% 0px' }
+    );
+    near.observe(end);
+    return () => near.disconnect();
+  }, [cut]);
   const moved = useRef<{ place: NotePosition; view: NoteView } | null>(null);
   const [editor, setEditor] = useState<NoteView | null>(null);
   const value = useRef(painted);
@@ -418,6 +460,19 @@ function EditingNote({
         : undefined,
     [citation, editor, shown]
   );
+  // The paint leaves at once and its DOM later: unmounting a near-limit note
+  // would hold up the editor's first frame.
+  const [paintGone, setPaintGone] = useState(false);
+  useEffect(() => {
+    if (!shown) return;
+    const go = () => setPaintGone(true);
+    if (typeof requestIdleCallback !== 'function') {
+      const timer = setTimeout(go, 200);
+      return () => clearTimeout(timer);
+    }
+    const idle = requestIdleCallback(go, { timeout: 2000 });
+    return () => cancelIdleCallback(idle);
+  }, [shown]);
   const [joinFailed, setJoinFailed] = useState<{ retry: () => void } | null>(
     null
   );
@@ -426,16 +481,17 @@ function EditingNote({
     []
   );
   return (
-    <AppErrorBoundary resetKeys={[material.id]}>
+    <AppErrorBoundary resetKeys={[materialId]}>
       <div className="flex h-full min-h-0 flex-col">
         {joinFailed && (
           <SaveBanner onRetry={joinFailed.retry} state="unreachable" />
         )}
         <div className="relative min-h-0 flex-1">
-          {!shown && (
+          {!paintGone && (
             <div
               className="relative h-full min-h-0 overflow-auto"
               data-note-paint=""
+              hidden={shown}
               ref={paintBox}
             >
               <NoteDisplayToggles toolbar={HELD_TOOLBAR} />
@@ -445,9 +501,12 @@ function EditingNote({
                   <PaintedNote
                     label={label}
                     material={material}
-                    value={painted}
+                    value={firstBlocks}
                   />
-                  <DocumentAttribution material={material} value={painted} />
+                  {cut && <div ref={paintEnd} />}
+                  {material && !cut && (
+                    <DocumentAttribution material={material} value={painted} />
+                  )}
                 </Suspense>
               </EmbedViewContext.Provider>
             </div>
@@ -456,18 +515,20 @@ function EditingNote({
             className={cn('h-full', !shown && 'invisible absolute inset-0')}
             inert={!shown}
           >
-            <Suspense fallback={null}>
-              <NoteEditor
-                allowExternalAssets={allowExternalAssets}
-                materialId={material.id}
-                onEditorStatusChange={onEditorStatusChange}
-                onJoinFailed={onJoinFailed}
-                onPresenceChange={onPresenceChange}
-                onReadOnly={onReadOnly}
-                onShown={onShown}
-                seed={seed}
-              />
-            </Suspense>
+            {builds && (
+              <Suspense fallback={null}>
+                <NoteEditor
+                  allowExternalAssets={allowExternalAssets}
+                  materialId={materialId}
+                  onEditorStatusChange={onEditorStatusChange}
+                  onJoinFailed={onJoinFailed}
+                  onPresenceChange={onPresenceChange}
+                  onReadOnly={onReadOnly}
+                  onShown={onShown}
+                  seed={seed}
+                />
+              </Suspense>
+            )}
           </div>
         </div>
       </div>
