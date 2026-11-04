@@ -44,9 +44,9 @@ const DND_TYPES = ['application/x-capy-material', 'application/x-capy-file'];
 /** Other files' key in the open-groups map; topic ids never take it. */
 const OTHER_FILES = 'other-files';
 
-/** The topic tree with its files and materials. Lives in the right panel's
- * Files tab, as its own column when pinned, or in the header's dropdown below lg;
- * `renderTabRow` draws whichever header that placement needs. */
+/** The topic tree with its files and materials. Lives in the rail's Files
+ * section from lg, or in the header's dropdown below lg; `renderTabRow` draws
+ * whichever header that placement needs. */
 export function FilesPanel({
   workspaceId,
   readOnly,

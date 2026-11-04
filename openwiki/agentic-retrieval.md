@@ -3476,7 +3476,7 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
   recording, and it always starts a new chat: from the sidebar an account
   chat, handed through `askByVoice` to Chat's page (`useVoiceAsk` in
   `AccountChat`) once that page is reached; from a workspace that
-  workspace's chat, opened in its right panel. Either way the question
+  workspace's chat, opened in the rail's Agent panel. Either way the question
   rides on `ChatRequest.prompt`, which `ChatPanel` sends once per request,
   never again when the panel mounts anew. The account dialog lives once in
   `AppShell`, so the phone drawer can close under it; a press outside the

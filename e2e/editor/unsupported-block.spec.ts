@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE, EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 // Decision 5 (Epo 2026-10-13): a note holding a block this version of Capy
@@ -11,6 +12,7 @@ test('a note holding a block this version cannot edit opens read-only', async ({
   page,
 }) => {
   await page.goto(`/workspaces/${EDITOR_WORKSPACE_ID}`);
+  await showPanelView(page, m.workspace_tab_files());
   const tree = page.locator('[data-workspace-file-tree]');
   await expect(tree).toBeVisible({ timeout: 30_000 });
   await page.evaluate(async (id) => {

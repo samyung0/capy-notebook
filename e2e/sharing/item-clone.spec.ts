@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import type { Material, SourceFile } from '../../src/api/types';
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 // The clone dialog for one file or material. Who may clone and what a copy
@@ -9,6 +10,7 @@ import { m } from '../i18n';
 
 /** A row's ⋮ menu in the workspace Files panel. */
 async function openRowMenu(page: Page, name: string) {
+  await showPanelView(page, m.workspace_tab_files());
   const row = page
     .locator('[data-workspace-file-tree]')
     .getByRole('link', { name })

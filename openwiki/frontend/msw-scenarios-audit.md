@@ -43,7 +43,7 @@ The mock chat stream uses the current `block_start` / `block_delta` /
 
 In **Biology 101 → Chat → History**, each **Answer:** or **Answer failure:**
 conversation opens a saved preview immediately. The original plain-text cell
-answer remains available. In **User scenarios**, click the matching answer button. It opens the dedicated workspace Chat tab and
+answer remains available. In **User scenarios**, click the matching answer button. It opens a new chat in the workspace's Agent section and
 sends a fixture prompt through the real composer.
 
 The fixtures cover prose/code/math and CJK text; tabs, steps, accordions and

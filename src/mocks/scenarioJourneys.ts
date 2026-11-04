@@ -133,7 +133,8 @@ export async function runJourney(
   };
   const chat = async () => {
     await go(scenarioPath);
-    await ui.panelView(m.workspace_tab_chat());
+    await ui.railSection(m.workspace_section_agent());
+    await ui.click(m.chat_new());
     await ui.fill(
       `textarea[aria-label="${m.chat_placeholder()}"]`,
       'Explain the source for this scenario.'
@@ -1004,8 +1005,7 @@ export async function runJourney(
     case 'conversations-load':
       fail();
       await go(scenarioPath);
-      await ui.panelView(m.workspace_tab_chat());
-      await ui.click(m.chat_history());
+      await ui.railSection(m.workspace_section_agent());
       return 'Chat history currently suppresses its read error.';
     case 'generation-failed':
     case 'ai-context':

@@ -7,7 +7,6 @@ import {
 } from '@tanstack/react-router';
 import {
   lazy,
-  type ReactNode,
   type RefObject,
   Suspense,
   useCallback,
@@ -19,7 +18,6 @@ import {
   type GroupImperativeHandle,
   useGroupRef,
 } from 'react-resizable-panels';
-import { createStore, type StoreApi, useStore } from 'zustand';
 import { isApiError } from '@/api/client';
 import { addTopicBodyNameMax } from '@/api/gen/validators';
 import {
@@ -89,15 +87,10 @@ import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog'
 import { ArchivedChatsDialog } from '@/features/workspace/chat/ArchivedChatsDialog';
 import { ConversationList } from '@/features/workspace/chat/ConversationList';
 import { FilesPanel } from '@/features/workspace/FilesPanel';
-import { PanelTabRow, type TabAction } from '@/features/workspace/PanelTabRow';
-import {
-  PanelTitleMenu,
-  type PanelView,
-} from '@/features/workspace/PanelTitleMenu';
+import type { TabAction } from '@/features/workspace/PanelTabRow';
 import type { SettingsView } from '@/features/workspace/settingsTabs';
 import { WorkspaceDashboard } from '@/features/workspace/WorkspaceDashboard';
 import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
-import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
 import {
   SectionTitle,
   WorkspaceRail,
@@ -107,14 +100,15 @@ import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsD
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
-import { isBoolean, PREF_KEYS, readPref, useLocalPref } from '@/lib/localPrefs';
+import {
+  isBoolean,
+  PREF_KEYS,
+  readPref,
+  removePref,
+  writePref,
+} from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-
-type PanelTab = 'files' | 'chat';
-
-const isPanelTab = (value: unknown): value is PanelTab =>
-  value === 'files' || value === 'chat';
 
 const SummaryPage = lazy(() =>
   import('@/features/study/practice/SummaryPage').then((mod) => ({
@@ -127,156 +121,66 @@ const PracticePage = lazy(() =>
   }))
 );
 
-/** The header's panel toggles while their panel is open: the icon's strip
- * fills in the accent. */
-const PANEL_TOGGLE_OPEN = 'text-action-accent hover:text-action-accent';
-// The section panel beside the rail (Epo 2026-11-04).
-const LEFT_SIZE = 272;
+// The section panel beside the rail: one default for every section (Epo
+// 2026-11-04). It can be dragged as wide as half the group, as the right panel
+// could, which from lg keeps the viewer above its least width.
+const LEFT_SIZE = 340;
 const LEFT_MIN = 220;
+const LEFT_MAX = '50%';
 const VIEWER_MIN = 400;
-// The rail is 32% of the group from 1380px up (~438px at a 1400px window).
-// Narrower, it takes three quarters of the lost width down to 400px, the
-// least a rich chat answer (cards, tables, charts) reads well in.
-const RAIL_SHARE = 0.32;
-const RAIL_FULL_AT = 1380;
-const RAIL_MIN = 400;
-function railSize(groupWidth: number) {
-  if (groupWidth >= RAIL_FULL_AT) return RAIL_SHARE * groupWidth;
-  return Math.max(
-    RAIL_MIN,
-    RAIL_SHARE * RAIL_FULL_AT - 0.75 * (RAIL_FULL_AT - groupWidth)
-  );
-}
 
-type Side = 'files' | 'rail';
-
-/** The side panel whose handle is being dragged. A store, so a drag
- * re-renders the two side panels and not the workspace. */
-type HeldHandle = StoreApi<{ side: Side | null }>;
-
-/** A side panel. Closed, it collapses to nothing but stays mounted, so the
- * rail's chat keeps its thread, draft and stream. usePanelLayout places it;
- * dragging it under its least width closes it on release. While the other
- * side's handle is dragged it is disabled: the library otherwise takes space
- * past the viewer's least width from it, shrinking or collapsing the panel
- * across the viewer. Only during the drag: the library ignores a handle
- * beside a disabled panel, so the other handle could not be taken. */
-function SidePanel({
-  id,
-  held,
-  minSize,
-  maxSize,
-  className,
-  children,
-}: {
-  id: Side;
-  held: HeldHandle;
-  minSize: string;
-  maxSize: string;
-  className: string;
-  children: ReactNode;
-}) {
-  const otherHeld = useStore(
-    held,
-    (state) => !!state.side && state.side !== id
-  );
-  return (
-    <ResizablePanel
-      className={cn('overflow-visible!', className)}
-      collapsible
-      // Constant: a changing defaultSize re-registers the group.
-      defaultSize="0%"
-      disabled={otherHeld}
-      id={id}
-      maxSize={maxSize}
-      minSize={minSize}
-    >
-      {children}
-    </ResizablePanel>
-  );
-}
-
-/** Marks which side panel's handle a press took, until the pointer lets go.
- * The library hit-tests handles by geometry, not by the event's target, and
- * focuses the handle it took in its document capture listener: read in the
- * window's bubble phase, after it, the active element says which. */
-function useHeldHandle(held: HeldHandle) {
-  useEffect(() => {
-    const press = () => {
-      const side = (document.activeElement as HTMLElement | null)?.dataset.side;
-      if (side === 'files' || side === 'rail') held.setState({ side });
-    };
-    const release = () => held.setState({ side: null });
-    window.addEventListener('pointerdown', press);
-    window.addEventListener('pointerup', release, true);
-    window.addEventListener('pointercancel', release, true);
-    return () => {
-      window.removeEventListener('pointerdown', press);
-      window.removeEventListener('pointerup', release, true);
-      window.removeEventListener('pointercancel', release, true);
-    };
-  }, [held]);
-}
-
-/** Lays the side panels out whenever one opens or closes: the panel that did
- * not change keeps its width and the viewer takes the difference (the
- * library's own resize moves space to and from the farthest panel first, so
- * opening the rail collapsed the left panel). The left opens at 272px, the
- * rail at railSize, which it follows when the window resizes while it is the
- * only side panel open. When the viewer would drop under its least width, the
- * rail and then the left give way down to theirs. */
+/** Places the left panel whenever it opens or closes, as the library starts it
+ * at nothing. It comes back at the width it closed at; closed, it collapses but
+ * stays mounted, so Agent's chat keeps its thread, draft and stream. Dragging it
+ * under its least width closes it on release. */
 function usePanelLayout({
   group,
   groupRef,
-  left,
-  right,
+  open,
 }: {
   group: HTMLDivElement | null;
   groupRef: RefObject<GroupImperativeHandle | null>;
-  left: boolean;
-  right: boolean;
+  open: boolean;
 }) {
+  const kept = useRef(LEFT_SIZE);
   useEffect(() => {
     if (!group) return;
-    // The first callback lands after the group has registered its panels.
-    let first = true;
     const observer = new ResizeObserver(([entry]) => {
       const handle = groupRef.current;
       const width = entry.contentRect.width;
-      const fit = right && !left;
-      if (!(handle && width > 0 && (first || fit))) return;
+      if (!(handle && width > 0)) return;
       const current = handle.getLayout();
       // The library reads a layout's sizes by position, in the order its
       // panels registered (not the DOM's): the current layout's keys give
       // that order. None yet: the group has no size, wait for one.
       const order = Object.keys(current);
       if (order.length === 0) return;
-      // The first callback after a toggle keeps the rail's width; later
-      // ones are window resizes, which refit it.
-      const toggled = first;
-      first = false;
-      const kept = (id: string) => ((current[id] ?? 0) * width) / 100;
-      let files = left ? kept('files') || LEFT_SIZE : 0;
-      let rail = right ? (toggled ? kept('rail') : 0) || railSize(width) : 0;
-      let short = VIEWER_MIN - (width - files - rail);
-      if (short > 0 && rail > 0) {
-        const give = Math.min(short, rail - RAIL_MIN);
-        rail -= Math.max(give, 0);
-        short -= Math.max(give, 0);
-      }
-      if (short > 0 && files > 0) files -= Math.min(short, files - LEFT_MIN);
-      const share = (px: number) => (px / width) * 100;
-      const sizes: Record<string, number> = {
-        files: share(files),
-        rail: share(rail),
-        viewer: 100 - share(files) - share(rail),
-      };
+      // Only the callback that lands after the group registered its panels;
+      // a window resize keeps the panels' shares.
+      observer.disconnect();
+      const shown = ((current.left ?? 0) * width) / 100;
+      if (shown > 0) kept.current = shown;
+      const left = open ? (kept.current / width) * 100 : 0;
+      const sizes: Record<string, number> = { left, viewer: 100 - left };
       handle.setLayout(Object.fromEntries(order.map((id) => [id, sizes[id]])));
     });
     observer.observe(group);
     return () => observer.disconnect();
-  }, [group, groupRef, left, right]);
+  }, [group, groupRef, open]);
 }
+
+/** A panel's own actions as its title row's buttons. */
+const tabButtons = (actions: TabAction[]) =>
+  actions.map((action) => (
+    <ToolbarButton
+      disabled={action.disabled}
+      key={action.label}
+      label={action.label}
+      onClick={action.onClick}
+    >
+      <Icon name={action.icon} />
+    </ToolbarButton>
+  ));
 
 /** A read this user may not make (gone or forbidden). */
 function missing(error: unknown): boolean {
@@ -294,8 +198,8 @@ function missing(error: unknown): boolean {
  * storage, a read in flight or one seen fresh on another page never moves
  * the page. Opened PDFs never refetch their
  * file, so they follow on their next open. Every follow replaces history and
- * opens the file as a normal open does: its mode and the panels from this
- * device, out of full screen. */
+ * opens the file as a normal open does: its mode from this device, out of full
+ * screen. */
 function useFollowOpenFile(workspaceId: string, fileId: string | null) {
   const navigate = useNavigate();
   const {
@@ -421,34 +325,41 @@ function WorkspaceOpen() {
   const { mutateAsync: updateTopic } = useUpdateTopic(workspaceId);
   const [cloneOpen, setCloneOpen] = useState(false);
 
-  // Breakpoints: one column below 1260px; from there the rail with its
-  // section's panel, and the right panel. The right starts closed (a chat row
-  // opens it); its toggle and view are remembered.
+  // Breakpoints: one column below 1260px; from there the rail with one panel
+  // beside it, whichever section shows.
   const lg = useMediaQuery('(min-width: 1260px)');
-  const [rightOpen, setRightOpen] = useLocalPref(
-    PREF_KEYS.rightPanel,
-    false,
-    isBoolean
-  );
   const oneColumnLayout = !lg;
   const searchedOpenItem = openItemFromSearch(search);
   const studyPage = !searchedOpenItem && !!search.study;
-  // The rail's section: a Study page in the URL shows Study, an open item
-  // Files, else the Dashboard (no panel). Pressing the shown section again
+  // Agent shows its chat rather than the history (Epo 2026-11-04, option A). A
+  // chat on screen comes back after a reload or a closed tab, with the thread
+  // the chat panel keeps.
+  const [chatShown, setChatShown] = useState(() =>
+    readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean)
+  );
+  // The rail's section: that chat, a Study page in the URL shows Study, an open
+  // item Files, else the Dashboard (no panel). Pressing the shown section again
   // closes or reopens its panel.
   const [section, setSection] = useState<WorkspaceSection>(() =>
-    studyPage ? 'study' : searchedOpenItem ? 'files' : 'dashboard'
+    chatShown
+      ? 'agent'
+      : studyPage
+        ? 'study'
+        : searchedOpenItem
+          ? 'files'
+          : 'dashboard'
   );
   const [panelOpen, setPanelOpen] = useState(true);
   const openKey = searchedOpenItem
     ? `${searchedOpenItem.kind}:${searchedOpenItem.id}`
     : null;
+  // The centre moves on while Agent keeps its chat: a citation opens its file
+  // beside the chat, and so does anything else opened there. From the Dashboard
+  // or Study, an item shows in Files and a Study page in Study. Leaving Study for
+  // the landing (Back) shows the Dashboard.
   useEffect(() => {
-    if (studyPage) setSection('study');
+    if (studyPage) setSection((was) => (was === 'agent' ? was : 'study'));
   }, [studyPage]);
-  // An item opened from the Dashboard or Study shows in Files; chats keep
-  // Agent while their citations open files. Leaving Study for the landing
-  // (Back) shows the Dashboard.
   useEffect(() => {
     if (openKey)
       setSection((was) =>
@@ -459,26 +370,41 @@ function WorkspaceOpen() {
   }, [openKey, studyPage]);
   const leftOpen = section !== 'dashboard' && panelOpen;
   const leftShown = lg && leftOpen;
+  const chatOnScreen = leftShown && section === 'agent' && chatShown;
+  useEffect(() => {
+    if (!chatOnScreen) return;
+    const key = PREF_KEYS.chatShown(workspaceId);
+    writePref(key, true);
+    return () => removePref(key);
+  }, [chatOnScreen, workspaceId]);
   const panelGroupRef = useGroupRef();
-  const [heldHandle] = useState<HeldHandle>(() =>
-    createStore(() => ({ side: null }))
-  );
-  useHeldHandle(heldHandle);
   const [panelGroup, setPanelGroup] = useState<HTMLDivElement | null>(null);
   usePanelLayout({
-    // One column has no side panels to place.
+    // One column has no side panel to place.
     group: lg ? panelGroup : null,
     groupRef: panelGroupRef,
-    left: leftShown,
-    right: rightOpen,
+    open: leftShown,
   });
   const [archivedOpen, setArchivedOpen] = useState(false);
-  // The left panel's chat list drives the rail's chat, which reports back
-  // the thread it shows.
+  // Agent's list drives the chat, which reports back the thread it shows.
   const [chatRequest, setChatRequest] = useState<ChatRequest>();
   const [activeChat, setActiveChat] = useState<string | null>(null);
+  /** The chat opens that thread, or with a null id a new chat. */
+  function requestChat(id: string | null, prompt?: string) {
+    setChatRequest((previous) => ({
+      id,
+      prompt,
+      seq: (previous?.seq ?? 0) + 1,
+    }));
+  }
+  /** Every way into a chat: Agent's panel, showing that chat. */
+  function openChat(id: string | null, prompt?: string) {
+    setSection('agent');
+    setPanelOpen(true);
+    setChatShown(true);
+    requestChat(id, prompt);
+  }
 
-  const [tab, setTab] = useLocalPref(PREF_KEYS.rightView, 'files', isPanelTab);
   // One column: Files drops from the top, under the header it was opened from.
   const [filesOpen, setFilesOpen] = useState(false);
   // The Files dropdown hangs from the header, which lives in CenterContent.
@@ -653,38 +579,50 @@ function WorkspaceOpen() {
     if (!loaded || linkTaken.current) return;
     linkTaken.current = true;
     if (add && !readOnly) setAddSource('upload');
-    if (chat) {
-      setTab('chat');
-      setRightOpen(true);
-      setChatRequest((previous) => ({
-        id: null,
-        seq: (previous?.seq ?? 0) + 1,
-      }));
-    }
+    if (chat) openChat(null);
     navigate({
       replace: true,
       search: (previous) => ({ ...previous, add: undefined, chat: undefined }),
       to: '.',
     });
-  }, [add, chat, loaded, navigate, readOnly, setRightOpen, setTab]);
+  }, [add, chat, loaded, navigate, readOnly]);
   // The tour (features/guide/Tour.tsx) opens panels through these while this
-  // page is open.
+  // page is open; when it stops, the panel goes back as it was before it, with
+  // the section fitting what the tour left in the centre.
   const tourPanels = useRef<TourPanels | null>(null);
+  const beforeTour = useRef<{
+    chatShown: boolean;
+    panelOpen: boolean;
+    section: WorkspaceSection;
+  } | null>(null);
   useEffect(() => {
+    const show = (next: WorkspaceSection) => {
+      beforeTour.current ??= { chatShown, panelOpen, section };
+      setSection(next);
+      setPanelOpen(true);
+    };
     tourPanels.current = {
-      // The tour wrote back what the panels were before it.
       restore: () => {
-        setRightOpen(readPref(PREF_KEYS.rightPanel, false, isBoolean));
-        setTab(readPref(PREF_KEYS.rightView, 'files', isPanelTab));
+        const before = beforeTour.current;
+        if (!before) return;
+        beforeTour.current = null;
+        setChatShown(before.chatShown);
+        setPanelOpen(before.panelOpen);
+        setSection(
+          before.section === 'dashboard'
+            ? studyPage
+              ? 'study'
+              : openKey
+                ? 'files'
+                : 'dashboard'
+            : before.section
+        );
       },
       showChats: () => {
-        setSection('agent');
-        setPanelOpen(true);
+        show('agent');
+        setChatShown(false);
       },
-      showFiles: () => {
-        setTab('files');
-        setRightOpen(true);
-      },
+      showFiles: () => show('files'),
     };
   });
   useEffect(() => registerTourPanels(tourPanels), []);
@@ -715,35 +653,9 @@ function WorkspaceOpen() {
       <WorkspaceError backLabel={m.workspace_back_to()} backTo="/workspaces" />
     );
 
-  // Every role that can read the workspace studies (Study → Practice),
-  // browses and chats; AI generate lives in the Add file dialog. The right
-  // panel's title switches its views. One Files tree at a time: while the
-  // section panel shows Files, the right panel offers Chat alone and shows
-  // it.
-  const leftFiles = leftShown && section === 'files';
-  const rightTab: PanelTab = leftFiles ? 'chat' : tab;
-  const railViews: PanelView<PanelTab>[] = [
-    ...(leftFiles
-      ? []
-      : [
-          {
-            icon: 'filesNav' as const,
-            label: m.workspace_tab_files(),
-            value: 'files' as const,
-          },
-        ]),
-    { icon: 'ai', label: m.workspace_tab_chat(), value: 'chat' },
-  ];
-  function openChat(id: string | null) {
-    setTab('chat');
-    setRightOpen(true);
-    setChatRequest((previous) => ({ id, seq: (previous?.seq ?? 0) + 1 }));
-  }
   // Everyone has settings: phones open on the tab list, wider screens on the
   // first tab (General for owner and editor members, else their own Study).
-  const rowProps = {
-    onOpenSettings: () => setSettingsTab('menu'),
-  };
+  const openSettings = () => setSettingsTab('menu');
   // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
   // pager) clear: the chat dock stays a button above it.
   const openFile =
@@ -791,7 +703,7 @@ function WorkspaceOpen() {
     {
       icon: 'settings',
       label: m.workspace_settings(),
-      onClick: rowProps.onOpenSettings,
+      onClick: openSettings,
     },
   ];
   function openFiles() {
@@ -817,7 +729,7 @@ function WorkspaceOpen() {
     {
       icon: 'settings',
       label: m.workspace_settings(),
-      onClick: rowProps.onOpenSettings,
+      onClick: openSettings,
     },
     ...(readOnly && canClone
       ? [
@@ -840,54 +752,12 @@ function WorkspaceOpen() {
       }
     : undefined;
 
-  const railRow = (actions: TabAction[]) => (
-    <PanelTabRow
-      actions={actions}
-      title={
-        <PanelTitleMenu onChange={setTab} value={rightTab} views={railViews} />
-      }
-      {...rowProps}
-    />
-  );
-  // The workspace switcher leads the file tree and scrolls with it.
-  const picker = (
-    <div className="mt-1 flex flex-col">
-      <WorkspacePicker
-        onClone={readOnly && canClone ? () => setCloneOpen(true) : undefined}
-        onOpenSettings={rowProps.onOpenSettings}
-        workspace={ws}
-      />
-    </div>
-  );
-
   const openChatResource = (ref: ResourceRef) =>
     setOpenItem(
       ref.kind === 'material'
         ? { id: ref.id, kind: 'material' }
         : { id: ref.id, kind: 'file' }
     );
-  const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
-    <FilesPanel
-      header={picker}
-      onAddSource={readOnly ? undefined : setAddSource}
-      onAddTopic={readOnly ? undefined : () => setTopicForm({ mode: 'add' })}
-      onNavigate={() => setCitationTarget(null)}
-      onOpenItem={setOpenItem}
-      onRenameTopic={(ch) =>
-        setTopicForm({ id: ch.id, mode: 'rename', name: ch.name })
-      }
-      openItem={openItem}
-      readOnly={readOnly}
-      renderTabRow={renderTabRow}
-      searchable
-      uploadTopic={addSource ? openTopicId : undefined}
-      workspaceId={workspaceId}
-    />
-  );
-  // Chat stays mounted so it keeps its state while hidden; only the visible
-  // view draws the tab row. Files stays too, except while the section panel
-  // shows the tree: that would be a second tree to render on every change.
-  const noRow = () => null;
   // The Files dropdown's tree: the workspace as a plain row the size of a file
   // row (no switcher; Back leaves the workspace), Add file, Workspace settings
   // and Study pinned under it; Add topic stays in the header's ⋮.
@@ -946,38 +816,12 @@ function WorkspaceOpen() {
       }
       openItem={openItem}
       readOnly={readOnly}
-      renderTabRow={noRow}
+      renderTabRow={() => null}
       rowMenus={false}
       uploadTopic={addSource ? openTopicId : undefined}
       workspaceId={workspaceId}
     />
   );
-  const rail = (
-    <>
-      {!leftFiles && (
-        <div className="min-h-0 flex-1" hidden={rightTab !== 'files'}>
-          {filesPanel(rightTab === 'files' ? railRow : noRow)}
-        </div>
-      )}
-      <div className="min-h-0 flex-1" hidden={rightTab !== 'chat'}>
-        <AppErrorBoundary resetKeys={[workspaceId]}>
-          <ChatPanel
-            canReprocess={ws.isOwner}
-            color="purple"
-            historyButton={!leftShown}
-            onActiveChange={setActiveChat}
-            onOpenCitation={openCitation}
-            onOpenResource={openChatResource}
-            openResource={openItem}
-            renderTabRow={rightTab === 'chat' ? railRow : noRow}
-            request={chatRequest}
-            workspaceId={workspaceId}
-          />
-        </AppErrorBoundary>
-      </div>
-    </>
-  );
-
   // Study's pages fill the centre without a file header from lg (boards P1,
   // P2); one column keeps its header for the Files dropdown and ⋮.
   const studyContent =
@@ -1008,9 +852,19 @@ function WorkspaceOpen() {
         workspace={ws}
       />
     ));
+  // The page's one h1: the Dashboard, Study's pages, a quiz and a flashcards set
+  // head themselves with theirs.
+  const openMaterialType =
+    openItem?.kind === 'material'
+      ? materials?.find((mt) => mt.id === openItem.id)?.type
+      : undefined;
+  const headsItself =
+    !!pageContent ||
+    openMaterialType === 'quiz' ||
+    openMaterialType === 'flashcards';
   const viewer = (
     <Panel className="w-full" frost="center" sectionClassName="h-full gap-0">
-      <h1 className="sr-only">{ws.name}</h1>
+      {!headsItself && <h1 className="sr-only">{ws.name}</h1>}
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
         {lg && pageContent ? (
@@ -1045,22 +899,6 @@ function WorkspaceOpen() {
             readOnly={readOnly}
             requestedMode={search.mode ?? null}
             topics={topics ?? []}
-            trailing={
-              lg && (
-                <ToolbarButton
-                  aria-pressed={rightOpen}
-                  className={cn(rightOpen && PANEL_TOGGLE_OPEN)}
-                  label={
-                    rightOpen
-                      ? m.workspace_close_right_panel()
-                      : m.workspace_open_right_panel()
-                  }
-                  onClick={() => setRightOpen(!rightOpen)}
-                >
-                  <Icon name={rightOpen ? 'panelRightOpen' : 'panelRight'} />
-                </ToolbarButton>
-              )
-            }
             workspaceId={workspaceId}
           />
         )}
@@ -1068,22 +906,14 @@ function WorkspaceOpen() {
     </Panel>
   );
 
-  // The right panel runs full height.
-  const railColumn = (
-    <Panel
-      className="h-full w-full"
-      frost="right"
-      sectionClassName="h-full gap-0 overflow-hidden"
-    >
-      {rail}
-    </Panel>
-  );
-  // The rail section's panel (boards T3, P1, P2): Files' tree with its add
-  // menu, Agent's chats, or Study's pages. The Dashboard has none.
+  // The one panel beside the rail (boards T3, P1, P2): Files' tree with its add
+  // menu, Agent's chats or a chat, or Study's pages. The Dashboard has none. The
+  // chat stays mounted through all of them, closed too, so it keeps its thread,
+  // draft and stream.
   const sectionPanel = (
     <Panel className="w-full" frost="left" sectionClassName="h-full gap-0">
       <div className="flex h-full min-h-0 flex-col" data-workspace-left-panel>
-        {section === 'files' ? (
+        {leftOpen && section === 'files' && (
           <FilesPanel
             onAddSource={readOnly ? undefined : setAddSource}
             onAddTopic={
@@ -1096,28 +926,24 @@ function WorkspaceOpen() {
             }
             openItem={openItem}
             readOnly={readOnly}
-            renderTabRow={() => (
-              <SectionTitle title={m.workspace_tab_files()} />
+            renderTabRow={(actions) => (
+              <SectionTitle
+                actions={tabButtons(actions)}
+                title={m.workspace_tab_files()}
+              />
             )}
             searchable
             uploadTopic={addSource ? openTopicId : undefined}
             workspaceId={workspaceId}
           />
-        ) : section === 'agent' ? (
+        )}
+        {leftOpen && section === 'agent' && !chatShown && (
           <>
             <SectionTitle
               actions={
                 <>
                   <VoiceFooterButton
-                    onSend={(prompt) => {
-                      setTab('chat');
-                      setRightOpen(true);
-                      setChatRequest((previous) => ({
-                        id: null,
-                        prompt,
-                        seq: (previous?.seq ?? 0) + 1,
-                      }));
-                    }}
+                    onSend={(prompt) => openChat(null, prompt)}
                     workspaceId={workspaceId}
                   />
                   <ToolbarButton
@@ -1134,11 +960,12 @@ function WorkspaceOpen() {
               activeId={activeChat}
               onNew={() => openChat(null)}
               onOpen={openChat}
-              onRemoved={(id) => id === activeChat && openChat(null)}
+              onRemoved={(id) => id === activeChat && requestChat(null)}
               workspaceId={workspaceId}
             />
           </>
-        ) : (
+        )}
+        {leftOpen && section === 'study' && (
           <StudyPanel
             active={
               studyPage
@@ -1154,6 +981,28 @@ function WorkspaceOpen() {
             pages={studyView(ws).pages}
           />
         )}
+        <div className="min-h-0 flex-1" hidden={!chatOnScreen}>
+          <AppErrorBoundary resetKeys={[workspaceId]}>
+            <ChatPanel
+              canReprocess={ws.isOwner}
+              color="purple"
+              hidden={!chatOnScreen}
+              onActiveChange={setActiveChat}
+              onOpenCitation={openCitation}
+              onOpenResource={openChatResource}
+              openResource={openItem}
+              renderTabRow={(actions, title) => (
+                <SectionTitle
+                  actions={tabButtons(actions)}
+                  onBack={() => setChatShown(false)}
+                  title={title}
+                />
+              )}
+              request={chatRequest}
+              workspaceId={workspaceId}
+            />
+          </AppErrorBoundary>
+        </div>
       </div>
     </Panel>
   );
@@ -1180,43 +1029,39 @@ function WorkspaceOpen() {
         <ResizablePanelGroup
           className={cn(
             'group/panels overflow-visible! flex min-h-0 min-w-0 flex-1',
-            // Collapsed, a side panel leaves no gap or handle behind.
-            'data-files-collapsed:[&>#files]:hidden! data-rail-collapsed:[&>#rail]:hidden!',
-            !leftOpen && '[&>#files]:hidden!',
-            !rightOpen && '[&>#rail]:hidden!'
+            // Collapsed, the left panel leaves no gap or handle behind.
+            'data-left-collapsed:[&>#left]:hidden!',
+            !leftOpen && '[&>#left]:hidden!'
           )}
           elementRef={setPanelGroup}
           groupRef={panelGroupRef}
-          // A drag can collapse a panel before the pointer lets go. Marked on
+          // A drag can collapse the panel before the pointer lets go. Marked on
           // the group without a render, its gap and handle go in the same
           // frame; it closes only on release, so dragging back reopens it.
           onLayoutChange={(layout) => {
-            panelGroup?.toggleAttribute('data-files-collapsed', !layout.files);
-            panelGroup?.toggleAttribute('data-rail-collapsed', !layout.rail);
+            panelGroup?.toggleAttribute('data-left-collapsed', !layout.left);
           }}
           onLayoutChanged={(layout, { isUserInteraction }) => {
-            if (!isUserInteraction) return;
-            if (leftOpen && layout.files === 0) setPanelOpen(false);
-            if (rightOpen && layout.rail === 0) setRightOpen(false);
+            if (isUserInteraction && leftOpen && layout.left === 0)
+              setPanelOpen(false);
           }}
           orientation="horizontal"
         >
           {lg && (
             <>
-              <SidePanel
-                className="pr-1"
-                held={heldHandle}
-                id="files"
-                maxSize="420px"
+              <ResizablePanel
+                className="overflow-visible! pr-1"
+                collapsible
+                // Constant: a changing defaultSize re-registers the group.
+                defaultSize="0%"
+                id="left"
+                maxSize={LEFT_MAX}
                 minSize={`${LEFT_MIN}px`}
               >
-                {/* Unlike the right panel's chat, nothing here needs to
-                    survive closing. */}
-                {leftOpen && sectionPanel}
-              </SidePanel>
+                {sectionPanel}
+              </ResizablePanel>
               <ResizableHandle
-                className="group-data-files-collapsed/panels:[&>div]:hidden"
-                data-side="files"
+                className="group-data-left-collapsed/panels:[&>div]:hidden"
                 disabled={!leftOpen}
                 withHandle={leftOpen}
               />
@@ -1225,8 +1070,7 @@ function WorkspaceOpen() {
           <ResizablePanel
             className={cn(
               'overflow-visible!',
-              leftShown && 'pl-1 group-data-files-collapsed/panels:pl-0',
-              lg && rightOpen && 'pr-1 group-data-rail-collapsed/panels:pr-0'
+              leftShown && 'pl-1 group-data-left-collapsed/panels:pl-0'
             )}
             id="viewer"
             minSize={oneColumnLayout ? undefined : `${VIEWER_MIN}px`}
@@ -1262,25 +1106,6 @@ function WorkspaceOpen() {
               )}
             </div>
           </ResizablePanel>
-          {lg && (
-            <>
-              <ResizableHandle
-                className="group-data-rail-collapsed/panels:[&>div]:hidden"
-                data-side="rail"
-                disabled={!rightOpen}
-                withHandle={rightOpen}
-              />
-              <SidePanel
-                className="pl-1"
-                held={heldHandle}
-                id="rail"
-                maxSize="50%"
-                minSize={`${RAIL_MIN}px`}
-              >
-                {railColumn}
-              </SidePanel>
-            </>
-          )}
         </ResizablePanelGroup>
         {oneColumnLayout && (
           <Popover modal onOpenChange={setFilesOpen} open={filesOpen}>

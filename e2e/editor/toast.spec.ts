@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { openWorkspaceSettings } from '../helpers/workspace';
 import { m } from '../i18n';
 
 async function showToast(
@@ -21,12 +22,7 @@ for (const inDialog of [false, true]) {
       page.getByRole('heading', { exact: true, name: 'Biology 101' })
     ).toBeVisible({ timeout: 30_000 });
     if (inDialog) {
-      // The rail's gear (its aria-label); the empty viewer's quick action shares
-      // the name as text and appears once the recent files load.
-      await page
-        .getByLabel(m.workspace_settings(), { exact: true })
-        .first()
-        .click();
+      await openWorkspaceSettings(page);
       await expect(page.getByRole('dialog')).toBeVisible();
     }
 

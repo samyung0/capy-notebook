@@ -147,7 +147,6 @@ export function CenterContent({
   requestedMode = null,
   workspaceId,
   leading,
-  trailing,
   oneColumn,
   standalone = false,
 }: {
@@ -160,8 +159,6 @@ export function CenterContent({
   standalone?: boolean;
   /** Workspace chrome drawn before the file name in the header. */
   leading?: ReactNode;
-  /** Workspace chrome at the header's right end. */
-  trailing?: ReactNode;
   topics: Topic[];
   item: OpenItem | null;
   readOnly?: boolean;
@@ -263,7 +260,6 @@ export function CenterContent({
         leading={leading}
         oneColumn={oneColumn}
         page={page}
-        trailing={trailing}
         workspaceId={standalone ? '' : workspaceId}
       />
     );
@@ -327,7 +323,6 @@ export function CenterContent({
                           readOnly={readOnly}
                           standalone={standalone}
                           topics={topics}
-                          trailing={trailing}
                           workspaceId={workspaceId}
                         />
                       </div>
@@ -884,13 +879,11 @@ function StudyButton({
  * `leading` null leaves the row's start empty (the rail carries Home). */
 function EmptyCenter({
   leading,
-  trailing,
   oneColumn,
   page,
   workspaceId,
 }: {
   leading?: ReactNode;
-  trailing?: ReactNode;
   oneColumn?: OneColumnChrome;
   page?: ReactNode;
   workspaceId: string;
@@ -943,19 +936,16 @@ function EmptyCenter({
             <WorkspaceStatusButton />
           </>
         )}
-        {(menuItems.length > 0 || trailing) && (
+        {menuItems.length > 0 && (
           <div className="ml-auto flex items-center">
-            {menuItems.length > 0 && (
-              <Menu
-                items={menuItems}
-                trigger={
-                  <ToolbarButton label={m.a11y_open_menu()}>
-                    <Icon name="moreVertical" />
-                  </ToolbarButton>
-                }
-              />
-            )}
-            {trailing}
+            <Menu
+              items={menuItems}
+              trigger={
+                <ToolbarButton label={m.a11y_open_menu()}>
+                  <Icon name="moreVertical" />
+                </ToolbarButton>
+              }
+            />
           </div>
         )}
       </div>

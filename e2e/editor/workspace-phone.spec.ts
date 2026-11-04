@@ -140,3 +140,24 @@ test('chat docks as a button, keeps a draft, and grows into its page on send', a
   await expect(close).toHaveCount(0);
   await expect(button).toBeVisible();
 });
+
+test('the chat page lists past chats in its history dialog, with See archived', async ({
+  page,
+}) => {
+  await open(page);
+  const dock = page.locator('[data-workspace-chat-dock]');
+  await dock
+    .getByRole('button', { exact: true, name: m.workspace_tab_chat() })
+    .click({ timeout: 60_000 });
+  await dock.getByRole('button', { name: m.chat_history() }).click();
+  const history = page.getByRole('dialog', { name: m.chat_history() });
+  await expect(
+    history.getByRole('button', { name: 'Exam plan for the cell unit' })
+  ).toBeVisible();
+  await history.getByRole('button', { name: m.chat_see_archived() }).click();
+  await expect(
+    page
+      .getByRole('dialog', { name: m.chat_archived_title() })
+      .getByText('Lab report draft questions')
+  ).toBeVisible();
+});

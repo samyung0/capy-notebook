@@ -4,6 +4,7 @@ import type { Workspace } from '@/api/types';
 import { ProfileMenu } from '@/components/app/ProfileMenu';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
+import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -115,17 +116,29 @@ export function WorkspaceRail({
   );
 }
 
-/** A section panel's title row (boards T3, P1): the section's name and its
- * actions on the right. */
+/** A section panel's title row (boards T3, P1): the section's name, or Agent's
+ * chat with a back arrow to the chat history, and its actions on the right. */
 export function SectionTitle({
   actions,
+  onBack,
   title,
 }: {
   actions?: React.ReactNode;
+  onBack?: () => void;
   title: string;
 }) {
   return (
-    <div className="flex h-14 shrink-0 items-center gap-1 pr-2.5 pl-4">
+    <div
+      className={cn(
+        'flex h-14 shrink-0 items-center gap-1 pr-2.5',
+        onBack ? 'pl-2.5' : 'pl-4'
+      )}
+    >
+      {onBack && (
+        <ToolbarButton label={m.chat_history()} onClick={onBack}>
+          <Icon name="navigationBack" />
+        </ToolbarButton>
+      )}
       <h2 className="min-w-0 flex-1 truncate font-bold text-base">{title}</h2>
       {actions && <div className="flex shrink-0 items-center">{actions}</div>}
     </div>

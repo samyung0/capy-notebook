@@ -43,7 +43,8 @@ test('files and materials move between topics, reorder together, and unfile on t
 
   // A collapsed topic accepts content and opens after the drop.
   await destination
-    .getByRole('button', { exact: true, name: 'Membranes & transport' })
+    // The group's name, then its count.
+    .getByRole('button', { name: /^Membranes & transport \d+$/ })
     .click();
   await dragOver(page, file, destination, { x: 45, y: 12 });
   await expect(destination).toHaveClass(/bg-tint-accent-1/);

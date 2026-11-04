@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
+import { openWorkspaceSettings } from '../../helpers/workspace';
 import { m } from '../../i18n';
 import {
   api,
@@ -101,10 +102,7 @@ async function changeMember(
   );
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page
-    .getByRole('button', { exact: true, name: m.workspace_settings() })
-    .first()
-    .click();
+  await openWorkspaceSettings(page);
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_sharing() })

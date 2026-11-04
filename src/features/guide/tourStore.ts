@@ -1,14 +1,12 @@
 import { type RefObject, useSyncExternalStore } from 'react';
-import { PREF_KEYS } from '@/lib/localPrefs';
 
 /** What the opened workspace page shows on the tour's request. */
 export type TourPanels = {
-  /** The right panel on Files. */
+  /** The rail's Files section with its tree. */
   showFiles: () => void;
   /** The rail's Agent section with its chats. */
   showChats: () => void;
-  /** The panels as their stored preferences say, once the tour put them
-   * back. */
+  /** The panel as it was before the tour moved it (Epo 2026-10-29). */
   restore: () => void;
 };
 
@@ -16,11 +14,6 @@ export type TourPanels = {
 type Running = { workspaceId: string };
 
 let running: Running | null = null;
-// The workspace panel preferences the tour changes, as they were before it:
-// a panel the viewer kept closed is closed again when it stops (Epo
-// 2026-10-29).
-const PANEL_PREFS = [PREF_KEYS.rightPanel, PREF_KEYS.rightView];
-let panelsBefore: (string | null)[] = [];
 let panels: RefObject<TourPanels | null> | null = null;
 const listeners = new Set<() => void>();
 
@@ -36,35 +29,15 @@ function subscribe(listener: () => void) {
 }
 
 export function startTour(workspaceId: string) {
-  if (!running) panelsBefore = PANEL_PREFS.map(readRaw);
   running = { workspaceId };
   emit();
 }
 
 export function stopTour() {
   if (!running) return;
-  for (const [i, key] of PANEL_PREFS.entries())
-    writeRaw(key, panelsBefore[i] ?? null);
   panels?.current?.restore();
   running = null;
   emit();
-}
-
-function readRaw(key: string) {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeRaw(key: string, value: string | null) {
-  try {
-    if (value === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
-  } catch {
-    // per-viewer convenience only
-  }
 }
 
 export function useRunningTour(): Running | null {
