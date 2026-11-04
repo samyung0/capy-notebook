@@ -2253,14 +2253,30 @@ func (s *Store) releaseAssignment(ctx context.Context, id string, now time.Time)
 
 /* ---------------------------------------------------------- sharing notice */
 
-// SharingNoticeDue reports whether this viewer member of a class is yet to be
-// told what it shares with its owner and teaching assistants (board V1).
-func (s *Store) SharingNoticeDue(ctx context.Context, userID, wsID string) (bool, error) {
-	var due bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_members wm
+// SharingNotice is what a class's viewer member is yet to be told (board V1).
+type SharingNotice struct {
+	Due bool `json:"due"`
+	// Owner is who they share with (Epo 2026-11-04), read only while it is due.
+	Owner *MaterialAuthor `json:"owner,omitempty"`
+}
+
+// SharingNoticeFor reads the notice a member is due; anyone else is due nothing.
+func (s *Store) SharingNoticeFor(ctx context.Context, userID, wsID string) (SharingNotice, error) {
+	var owner MaterialAuthor
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(NULLIF(owner.name,''), owner.id),
+			COALESCE('/icons/' || NULLIF(owner.avatar_icon_id,'') || '.svg', owner.avatar_url, '')
+		FROM workspace_members wm
 		JOIN workspaces w ON w.id=wm.workspace_id AND w.kind='class'
-		WHERE wm.workspace_id=$1 AND wm.user_id=$2 AND wm.role='viewer' AND wm.sharing_notice_seen_at IS NULL)`, wsID, userID).Scan(&due)
-	return due, err
+		JOIN users owner ON owner.id=w.user_id
+		WHERE wm.workspace_id=$1 AND wm.user_id=$2 AND wm.role='viewer' AND wm.sharing_notice_seen_at IS NULL`, wsID, userID).
+		Scan(&owner.Name, &owner.AvatarURL)
+	if isNoRows(err) {
+		return SharingNotice{}, nil
+	}
+	if err != nil {
+		return SharingNotice{}, err
+	}
+	return SharingNotice{Due: true, Owner: &owner}, nil
 }
 
 // MarkSharingNoticeSeen records that the member was told, so it never shows twice.

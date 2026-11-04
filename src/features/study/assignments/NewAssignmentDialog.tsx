@@ -49,7 +49,9 @@ import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { questionsLabel } from '../practice/practiceText';
+import { AdvancedSection } from './AdvancedSection';
 import {
+  advancedStartsOpen,
   dayLabel,
   dayTimeLabel,
   latePolicy,
@@ -146,9 +148,15 @@ export function NewAssignmentDialog({
   });
   const kind = watch('kind');
   const quizId = watch('quizId');
-  const draft = watch('draft');
   const dueAt = watch('dueAt');
   const noLate = watch('noLate');
+  const [advancedOpen, setAdvancedOpen] = useState(() =>
+    advancedStartsOpen(existing)
+  );
+  // The policy goes with a marked assignment's due date; a published one is past
+  // being a draft.
+  const hasPolicy = kind === 'marked' && !!dueAt;
+  const hasDraft = !existing || existing.draft;
   const [titleEdited, setTitleEdited] = useState(!!existing);
   const { mutate: create, isPending: creating } =
     useCreateAssignment(workspaceId);
@@ -304,7 +312,6 @@ export function NewAssignmentDialog({
               />
             </Field>
           )}
-          {/* Under the due date: on phones it follows Due, from sm the row below. */}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               error={errors.dueAt?.message}
@@ -324,32 +331,61 @@ export function NewAssignmentDialog({
               />
             </Field>
             {kind === 'marked' ? (
-              <div className="order-2 sm:order-0">
-                <Field label={m.assignment_field_time_limit()}>
+              <Field label={m.assignment_field_time_limit()}>
+                <Controller
+                  control={control}
+                  name="timeLimitMin"
+                  render={({ field }) => (
+                    <Select
+                      onValueChange={(value) =>
+                        field.onChange(
+                          value === 'none' ? undefined : Number(value)
+                        )
+                      }
+                      value={field.value ? String(field.value) : 'none'}
+                    >
+                      <SelectTrigger
+                        aria-label={m.assignment_field_time_limit()}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">
+                          {m.assignment_no_limit()}
+                        </SelectItem>
+                        {TIME_LIMITS.map((min) => (
+                          <SelectItem key={min} value={String(min)}>
+                            {minutesText(min)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </Field>
+            ) : (
+              <AssignToField control={control} workspaceId={workspaceId} />
+            )}
+            {kind === 'marked' && (
+              <>
+                <Field label={m.assignment_field_attempts()}>
                   <Controller
                     control={control}
-                    name="timeLimitMin"
+                    name="attempts"
                     render={({ field }) => (
                       <Select
-                        onValueChange={(value) =>
-                          field.onChange(
-                            value === 'none' ? undefined : Number(value)
-                          )
-                        }
-                        value={field.value ? String(field.value) : 'none'}
+                        onValueChange={(value) => field.onChange(Number(value))}
+                        value={String(field.value)}
                       >
                         <SelectTrigger
-                          aria-label={m.assignment_field_time_limit()}
+                          aria-label={m.assignment_field_attempts()}
                         >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">
-                            {m.assignment_no_limit()}
-                          </SelectItem>
-                          {TIME_LIMITS.map((min) => (
-                            <SelectItem key={min} value={String(min)}>
-                              {minutesText(min)}
+                          {ATTEMPTS.map((count) => (
+                            <SelectItem key={count} value={String(count)}>
+                              {count}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -357,121 +393,83 @@ export function NewAssignmentDialog({
                     )}
                   />
                 </Field>
-              </div>
-            ) : (
-              <AssignToField control={control} workspaceId={workspaceId} />
+                <AssignToField control={control} workspaceId={workspaceId} />
+              </>
             )}
-            {kind === 'marked' && dueAt && (
-              <div className="flex flex-col gap-2 sm:col-span-2">
+          </div>
+          {kind === 'marked' && (
+            <div className="flex flex-col gap-2 pt-0.5">
+              <SwitchRow
+                control={control}
+                label={m.assignment_switch_approve()}
+                name="approveAiMarks"
+              />
+              <SwitchRow
+                control={control}
+                label={m.assignment_switch_answers()}
+                name="showAnswers"
+              />
+              <SwitchRow
+                control={control}
+                label={m.assignment_switch_shuffle()}
+                name="shuffle"
+              />
+            </div>
+          )}
+          {(hasPolicy || hasDraft) && (
+            <AdvancedSection
+              onToggle={() => setAdvancedOpen(!advancedOpen)}
+              open={advancedOpen}
+            >
+              {hasPolicy && (
                 <SwitchRow
                   control={control}
                   label={m.assignment_switch_no_late()}
                   name="noLate"
                 />
-                {!noLate && (
-                  <div className="flex min-h-8 items-center justify-between gap-4">
-                    <span className="font-medium">
-                      {m.assignment_field_late_penalty()}
-                    </span>
-                    <Controller
-                      control={control}
-                      name="latePenaltyPct"
-                      render={({ field }) => (
-                        <Select
-                          onValueChange={(value) =>
-                            field.onChange(Number(value))
-                          }
-                          value={String(field.value)}
+              )}
+              {hasPolicy && !noLate && (
+                <div className="flex min-h-8 items-center justify-between gap-4">
+                  <span className="font-medium">
+                    {m.assignment_field_late_penalty()}
+                  </span>
+                  <Controller
+                    control={control}
+                    name="latePenaltyPct"
+                    render={({ field }) => (
+                      <Select
+                        onValueChange={(value) => field.onChange(Number(value))}
+                        value={String(field.value)}
+                      >
+                        <SelectTrigger
+                          aria-label={m.assignment_field_late_penalty()}
+                          className="w-37.5"
                         >
-                          <SelectTrigger
-                            aria-label={m.assignment_field_late_penalty()}
-                            className="w-37.5"
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {LATE_PENALTIES.map((pct) => (
-                              <SelectItem key={pct} value={String(pct)}>
-                                {pct === 0
-                                  ? m.assignment_penalty_none()
-                                  : m.assignment_penalty_value({
-                                      percent: pct,
-                                    })}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-            {kind === 'marked' && (
-              <>
-                <div className="order-3">
-                  <Field label={m.assignment_field_attempts()}>
-                    <Controller
-                      control={control}
-                      name="attempts"
-                      render={({ field }) => (
-                        <Select
-                          onValueChange={(value) =>
-                            field.onChange(Number(value))
-                          }
-                          value={String(field.value)}
-                        >
-                          <SelectTrigger
-                            aria-label={m.assignment_field_attempts()}
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ATTEMPTS.map((count) => (
-                              <SelectItem key={count} value={String(count)}>
-                                {count}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </Field>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {LATE_PENALTIES.map((pct) => (
+                            <SelectItem key={pct} value={String(pct)}>
+                              {pct === 0
+                                ? m.assignment_penalty_none()
+                                : m.assignment_penalty_value({ percent: pct })}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
                 </div>
-                <div className="order-3">
-                  <AssignToField control={control} workspaceId={workspaceId} />
-                </div>
-              </>
-            )}
-          </div>
-          <div className="flex flex-col gap-2 pt-0.5">
-            {(!existing || draft) && (
-              <SwitchRow
-                control={control}
-                label={m.assignment_switch_draft()}
-                name="draft"
-              />
-            )}
-            {kind === 'marked' && (
-              <>
+              )}
+              {hasDraft && (
                 <SwitchRow
                   control={control}
-                  label={m.assignment_switch_approve()}
-                  name="approveAiMarks"
+                  label={m.assignment_switch_draft()}
+                  name="draft"
                 />
-                <SwitchRow
-                  control={control}
-                  label={m.assignment_switch_answers()}
-                  name="showAnswers"
-                />
-                <SwitchRow
-                  control={control}
-                  label={m.assignment_switch_shuffle()}
-                  name="shuffle"
-                />
-              </>
-            )}
-          </div>
+              )}
+            </AdvancedSection>
+          )}
           {errors.root?.message && (
             <InputError>{errors.root.message}</InputError>
           )}

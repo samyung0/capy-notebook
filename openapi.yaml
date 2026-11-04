@@ -6157,17 +6157,19 @@ components:
         - editor
         - viewer
       type: string
-    SharingNoticeOutputBody:
+    SharingNotice:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SharingNoticeOutputBody.json
+          example: https://example.com/schemas/SharingNotice.json
           format: uri
           readOnly: true
           type: string
         due:
           type: boolean
+        owner:
+          $ref: "#/components/schemas/MaterialAuthor"
       required:
         - due
       type: object
@@ -14127,7 +14129,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SharingNoticeOutputBody"
+                $ref: "#/components/schemas/SharingNotice"
           description: OK
         default:
           content:

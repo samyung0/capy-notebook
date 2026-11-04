@@ -4,6 +4,7 @@ import { parseWorkspaceOpenSearch } from '@/features/materials/openItem';
 import { m } from '@/i18n';
 import { materialCanClone } from '@/features/files/fileUtils';
 import {
+  advancedStartsOpen,
   closedItself,
   dayLabel,
   dayTimeLabel,
@@ -131,4 +132,13 @@ it('offers an assigned quiz to clone to staff alone', () => {
   expect(materialCanClone({ canClone: true, role: 'editor' }, true)).toBe(true);
   expect(materialCanClone({ canClone: true, role: 'owner' }, true)).toBe(true);
   expect(materialCanClone({ canClone: false, role: 'viewer' })).toBe(false);
+});
+
+it('opens Advanced only for what a saved assignment holds there', () => {
+  const plain = { draft: false, latePenaltyPct: 0, noLate: false };
+  expect(advancedStartsOpen()).toBe(false);
+  expect(advancedStartsOpen(plain)).toBe(false);
+  expect(advancedStartsOpen({ ...plain, draft: true })).toBe(true);
+  expect(advancedStartsOpen({ ...plain, noLate: true })).toBe(true);
+  expect(advancedStartsOpen({ ...plain, latePenaltyPct: 20 })).toBe(true);
 });

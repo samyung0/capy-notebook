@@ -68,6 +68,14 @@ export function latePolicy({
     : { latePenaltyPct, noLate: false };
 }
 
+/** Advanced starts closed, unless a saved assignment holds something other than
+ * its defaults there, so nothing is hidden by surprise. */
+export const advancedStartsOpen = (
+  existing?: Pick<Assignment, 'draft' | 'latePenaltyPct' | 'noLate'>
+) =>
+  !!existing &&
+  (existing.draft || existing.noLate || existing.latePenaltyPct > 0);
+
 const pastDue = (dueAt: string | undefined, now: number) =>
   !!dueAt && Date.parse(dueAt) <= now;
 

@@ -1332,22 +1332,29 @@ func TestAssignedQuizClonesForStaffAlone(t *testing.T) {
 	}
 }
 
-// TestSharingNoticeIsToldOnce: a class's viewer member is told once; staff, a
-// stranger and a personal workspace's member never.
+// TestSharingNoticeIsToldOnce: a class's viewer member is told once, with its
+// owner; staff, a stranger and a personal workspace's member never.
 func TestSharingNoticeIsToldOnce(t *testing.T) {
 	f := newAssignmentFixture(t, "sharing-notice")
 	ctx := context.Background()
 	stranger := newBlobTestUser(t, f.s, "sharing-notice-stranger")
+	if _, err := f.s.pool.Exec(ctx, `UPDATE users SET name='Ms Wong', avatar_url='https://example.com/wong.png' WHERE id=$1`, f.user); err != nil {
+		t.Fatal(err)
+	}
 	due := func(userID string) bool {
 		t.Helper()
-		got, err := f.s.SharingNoticeDue(ctx, userID, f.ws.ID)
+		got, err := f.s.SharingNoticeFor(ctx, userID, f.ws.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return got
+		return got.Due
 	}
 	if !due(f.viewer) || !due(f.other) {
 		t.Fatal("a class's viewer members are not due the notice")
+	}
+	notice, err := f.s.SharingNoticeFor(ctx, f.viewer, f.ws.ID)
+	if err != nil || notice.Owner == nil || notice.Owner.Name != "Ms Wong" || notice.Owner.AvatarURL != "https://example.com/wong.png" {
+		t.Fatalf("the notice = %+v, err %v", notice, err)
 	}
 	if due(f.user) || due(f.editor) || due(stranger) {
 		t.Fatal("the notice is due someone who shares nothing")

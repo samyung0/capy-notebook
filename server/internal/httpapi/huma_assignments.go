@@ -65,9 +65,7 @@ type assignmentMarkInput struct {
 	Body store.AssignmentMark
 }
 type sharingNoticeOutput struct {
-	Body struct {
-		Due bool `json:"due"`
-	}
+	Body store.SharingNotice
 }
 
 func (a *api) registerAssignments(api huma.API) {
@@ -300,13 +298,11 @@ func (a *api) markAssignmentAnswer(ctx context.Context, in *assignmentMarkInput)
 
 // getSharingNotice reads the caller's own flag, so it needs no access check.
 func (a *api) getSharingNotice(ctx context.Context, in *assignmentIDInput) (*sharingNoticeOutput, error) {
-	due, err := a.s.SharingNoticeDue(ctx, userID(ctx), in.ID)
+	notice, err := a.s.SharingNoticeFor(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out := &sharingNoticeOutput{}
-	out.Body.Due = due
-	return out, nil
+	return &sharingNoticeOutput{Body: notice}, nil
 }
 
 func (a *api) markSharingNoticeSeen(ctx context.Context, in *assignmentIDInput) (*Empty, error) {

@@ -4,9 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { MaterialAuthor } from './materialAuthor.ts';
 
-export interface SharingNoticeOutputBody {
+export interface SharingNotice {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   due: boolean;
+  owner?: MaterialAuthor;
 }

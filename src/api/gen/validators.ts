@@ -8571,7 +8571,11 @@ export const GetSharingNoticeParams = zod.object({
 
 export const GetSharingNoticeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "due": zod.boolean()
+  "due": zod.boolean(),
+  "owner": zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string()
+}).optional()
 })
 
 

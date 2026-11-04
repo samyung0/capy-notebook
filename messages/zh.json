@@ -2815,5 +2815,6 @@
   "sharing_notice_lead": "你正在分享以下数据：",
   "sharing_notice_results": "你的作业成绩",
   "sharing_notice_practice": "你在每个测验上的练习，计入全班人数和平均分",
-  "sharing_notice_ok": "知道了"
+  "sharing_notice_ok": "知道了",
+  "assignment_advanced": "高级"
 }

@@ -164,7 +164,7 @@ import type {
   SetModelPrefsReq,
   SetStudyEnabledReq,
   ShareRedemption,
-  SharingNoticeOutputBody,
+  SharingNotice,
   SourceCandidateReadOutputBody,
   SourceCandidateResponse,
   SourceCheckpoint,
@@ -11849,7 +11849,7 @@ const res = await fetch(getUpdateWorkspaceSharingUrl(id),
 
 
 export type getSharingNoticeResponse200 = {
-  data: SharingNoticeOutputBody
+  data: SharingNotice
   status: 200
 }
 

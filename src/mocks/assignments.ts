@@ -12,6 +12,7 @@ import type {
   AssignmentQuestionReport,
   AssignmentReport,
   MaterialRef,
+  SharingNotice,
   WorkspaceActivity,
 } from '@/api/types';
 import type { Question, QuestionPart } from '@/features/questions/types';
@@ -1052,9 +1053,13 @@ export const assignmentHandlers = (viewer: Viewer) => {
     ),
     http.get('/api/workspaces/:id/sharing-notice', ({ params }) => {
       const ws = db.workspaces.find((w) => w.id === params.id);
+      if (viewer !== 'member' || ws?.kind !== 'class' || sharingNoticeSeen)
+        return HttpResponse.json({ due: false } satisfies SharingNotice);
+      // The name the Dashboard and assignments show as this class's owner.
       return HttpResponse.json({
-        due: viewer === 'member' && ws?.kind === 'class' && !sharingNoticeSeen,
-      });
+        due: true,
+        owner: { avatarUrl: db.user.avatarUrl, name: db.user.name },
+      } satisfies SharingNotice);
     }),
     http.put('/api/workspaces/:id/sharing-notice', () => {
       sharingNoticeSeen = true;

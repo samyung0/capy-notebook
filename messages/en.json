@@ -2815,5 +2815,6 @@
   "sharing_notice_lead": "You are sharing the following data:",
   "sharing_notice_results": "Your results on assignments",
   "sharing_notice_practice": "Your practice on each quiz, as part of a class count and average",
-  "sharing_notice_ok": "Got it"
+  "sharing_notice_ok": "Got it",
+  "assignment_advanced": "Advanced"
 }
