@@ -339,7 +339,14 @@ CPU time and memory. `layout_score.py` scores its figure boxes against the
 gold boxes as the box call's crops are scored, and `layout_match.py` has 1017
 pick the boxes by number for each figure a window described;
 [layout models](extraction/reports/2026-11-04-layout-models.md) compares them
-with the box call.
+with the box call. `layout_capacity.py` runs the chosen model beside a
+production-shaped parser on the ingest host (`layout_burst.py`, one instance in
+a stream of 40-page bursts; the passes in `fixtures/layout-capacity/`), sampling
+every container each second. `layout_crash.py` runs a throwaway service
+(`layout_service.py`, `layout_health.py`) under simulated callers
+(`layout_callers.py`) and injects faults;
+[layout capacity](extraction/reports/2026-11-04-layout-capacity.md) has both
+results.
 
 ### rag
 

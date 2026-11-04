@@ -1,0 +1,100 @@
+[
+ {
+  "name": "a-1x4",
+  "scenario": "a",
+  "layout": {
+   "instances": 1,
+   "threads": 4
+  }
+ },
+ {
+  "name": "a-2x2",
+  "scenario": "a",
+  "layout": {
+   "instances": 2,
+   "threads": 2
+  }
+ },
+ {
+  "name": "d-1x4",
+  "scenario": "d",
+  "layout": {
+   "instances": 1,
+   "threads": 4
+  }
+ },
+ {
+  "name": "d-2x2",
+  "scenario": "d",
+  "layout": {
+   "instances": 2,
+   "threads": 2
+  }
+ },
+ {
+  "name": "d-2x2-nospin",
+  "scenario": "d",
+  "layout": {
+   "instances": 2,
+   "threads": 2,
+   "no_spin": true
+  }
+ },
+ {
+  "name": "d-2x2-shares128",
+  "scenario": "d",
+  "layout": {
+   "instances": 2,
+   "threads": 2,
+   "shares": 128
+  }
+ },
+ {
+  "name": "d-2x2-shares128-nospin",
+  "scenario": "d",
+  "layout": {
+   "instances": 2,
+   "threads": 2,
+   "shares": 128,
+   "no_spin": true
+  }
+ },
+ {
+  "name": "d-2x2-nice19",
+  "scenario": "d",
+  "layout": {
+   "instances": 2,
+   "threads": 2,
+   "nice": 19
+  }
+ },
+ {
+  "name": "d-2x2-cpus1",
+  "scenario": "d",
+  "layout": {
+   "instances": 2,
+   "threads": 2,
+   "cpus": 1
+  }
+ },
+ {
+  "name": "d-2x1-shares128-nospin",
+  "scenario": "d",
+  "layout": {
+   "instances": 2,
+   "threads": 1,
+   "shares": 128,
+   "no_spin": true
+  }
+ },
+ {
+  "name": "d-2x2-shares2-nospin",
+  "scenario": "d",
+  "layout": {
+   "instances": 2,
+   "threads": 2,
+   "shares": 2,
+   "no_spin": true
+  }
+ }
+]

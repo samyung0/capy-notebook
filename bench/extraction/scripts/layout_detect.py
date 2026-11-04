@@ -92,7 +92,7 @@ class PaddleOnnx:
     mean/std, channels first. The graph returns [class, score, x0, y0, x1,
     y1, ...] rows in the original image's pixels."""
 
-    def __init__(self, path: Path, threads: int):
+    def __init__(self, path: Path, threads: int, spin: bool = True):
         import onnxruntime as ort
         import yaml
 
@@ -107,6 +107,9 @@ class PaddleOnnx:
         options = ort.SessionOptions()
         options.intra_op_num_threads = threads
         options.inter_op_num_threads = 1
+        if not spin:
+            # Waiting threads sleep instead of holding a core.
+            options.add_session_config_entry("session.intra_op.allow_spinning", "0")
         self.session = ort.InferenceSession(
             str(path / "inference.onnx"),
             options,

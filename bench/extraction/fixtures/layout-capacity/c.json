@@ -1,0 +1,32 @@
+[
+ {
+  "id": "scan-150",
+  "pages": 150,
+  "path": "/opt/capy-parser-stress-20260928/inputs/scan-150.pdf"
+ },
+ {
+  "id": "p1400-1",
+  "pages": 1400,
+  "path": "/opt/capy-parser-stress-20260928/inputs/biology-1400-noocr.pdf"
+ },
+ {
+  "id": "p1400-2",
+  "pages": 1400,
+  "path": "/opt/capy-parser-stress-20260928/inputs/biology-1400-noocr.pdf"
+ },
+ {
+  "id": "p1400-3",
+  "pages": 1400,
+  "path": "/opt/capy-parser-stress-20260928/inputs/biology-1400-noocr.pdf"
+ },
+ {
+  "id": "p1400-4",
+  "pages": 1400,
+  "path": "/opt/capy-parser-stress-20260928/inputs/biology-1400-noocr.pdf"
+ },
+ {
+  "id": "p1400-5",
+  "pages": 1400,
+  "path": "/opt/capy-parser-stress-20260928/inputs/biology-1400-noocr.pdf"
+ }
+]

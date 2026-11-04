@@ -1,0 +1,97 @@
+[
+ {
+  "name": "idle",
+  "duration": 60
+ },
+ {
+  "name": "base-solo",
+  "scenario": "solo",
+  "mode": "solo"
+ },
+ {
+  "name": "base-a-1",
+  "scenario": "a"
+ },
+ {
+  "name": "base-a-2",
+  "scenario": "a"
+ },
+ {
+  "name": "base-c",
+  "scenario": "c"
+ },
+ {
+  "name": "base-d-1",
+  "scenario": "d"
+ },
+ {
+  "name": "base-d-2",
+  "scenario": "d"
+ },
+ {
+  "name": "alone-1x1",
+  "layout": {
+   "instances": 1,
+   "threads": 1
+  },
+  "duration": 120
+ },
+ {
+  "name": "alone-1x2",
+  "layout": {
+   "instances": 1,
+   "threads": 2
+  },
+  "duration": 120
+ },
+ {
+  "name": "alone-1x4",
+  "layout": {
+   "instances": 1,
+   "threads": 4
+  },
+  "duration": 120
+ },
+ {
+  "name": "alone-2x1",
+  "layout": {
+   "instances": 2,
+   "threads": 1
+  },
+  "duration": 120
+ },
+ {
+  "name": "alone-2x2",
+  "layout": {
+   "instances": 2,
+   "threads": 2
+  },
+  "duration": 120
+ },
+ {
+  "name": "alone-2x4",
+  "layout": {
+   "instances": 2,
+   "threads": 4
+  },
+  "duration": 120
+ },
+ {
+  "name": "alone-1x4-nospin",
+  "layout": {
+   "instances": 1,
+   "threads": 4,
+   "no_spin": true
+  },
+  "duration": 120
+ },
+ {
+  "name": "alone-2x2-nospin",
+  "layout": {
+   "instances": 2,
+   "threads": 2,
+   "no_spin": true
+  },
+  "duration": 120
+ }
+]

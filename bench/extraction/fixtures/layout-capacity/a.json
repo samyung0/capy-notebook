@@ -1,0 +1,42 @@
+[
+ {
+  "id": "scan-300",
+  "pages": 300,
+  "path": "/opt/capy-parser-stress-20260928/inputs/scan-300.pdf"
+ },
+ {
+  "id": "scan-150",
+  "pages": 150,
+  "path": "/opt/capy-parser-stress-20260928/inputs/scan-150.pdf"
+ },
+ {
+  "id": "lecture-2-ocr",
+  "pages": 42,
+  "path": "/opt/capy-layout-capacity-20261104/inputs/lecture_plus_scan.pdf"
+ },
+ {
+  "id": "book-1",
+  "pages": 608,
+  "path": "/opt/capy-parser-stress-20260928/inputs/biology-610-noocr.pdf"
+ },
+ {
+  "id": "book-2",
+  "pages": 608,
+  "path": "/opt/capy-parser-stress-20260928/inputs/biology-610-noocr.pdf"
+ },
+ {
+  "id": "book-3",
+  "pages": 608,
+  "path": "/opt/capy-parser-stress-20260928/inputs/biology-610-noocr.pdf"
+ },
+ {
+  "id": "book-4",
+  "pages": 608,
+  "path": "/opt/capy-parser-stress-20260928/inputs/biology-610-noocr.pdf"
+ },
+ {
+  "id": "book-5",
+  "pages": 608,
+  "path": "/opt/capy-parser-stress-20260928/inputs/biology-610-noocr.pdf"
+ }
+]

@@ -1,7 +1,7 @@
 # Make a quiz: layout models for finding figures (2026-11-04)
 
 Epo asked on 2026-11-04 whether a document layout model finds the figures on
-exam pages better than the AI box call Make a quiz uses today. He asked for
+exam pages better than the AI box call Make a quiz uses today. They asked for
 whatever is easiest to run on our machines, not minding the resources. Every
 model ran on the ingest host, in one throwaway container with no network, at
 the parser's production limits. The matching step, which needs DeepSeek 1017,

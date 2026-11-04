@@ -1,0 +1,62 @@
+[
+ {
+  "name": "d-2x2-shares128-nospin-2",
+  "scenario": "d",
+  "layout": {
+   "instances": 2,
+   "threads": 2,
+   "shares": 128,
+   "no_spin": true
+  }
+ },
+ {
+  "name": "d-1x4-shares128-nospin",
+  "scenario": "d",
+  "layout": {
+   "instances": 1,
+   "threads": 4,
+   "shares": 128,
+   "no_spin": true
+  }
+ },
+ {
+  "name": "d-1x2-shares128-nospin",
+  "scenario": "d",
+  "layout": {
+   "instances": 1,
+   "threads": 2,
+   "shares": 128,
+   "no_spin": true
+  }
+ },
+ {
+  "name": "a-2x2-shares128-nospin",
+  "scenario": "a",
+  "layout": {
+   "instances": 2,
+   "threads": 2,
+   "shares": 128,
+   "no_spin": true
+  }
+ },
+ {
+  "name": "a-1x4-shares128-nospin",
+  "scenario": "a",
+  "layout": {
+   "instances": 1,
+   "threads": 4,
+   "shares": 128,
+   "no_spin": true
+  }
+ },
+ {
+  "name": "c-2x2-shares128-nospin",
+  "scenario": "c",
+  "layout": {
+   "instances": 2,
+   "threads": 2,
+   "shares": 128,
+   "no_spin": true
+  }
+ }
+]
