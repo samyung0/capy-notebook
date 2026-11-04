@@ -164,24 +164,23 @@ func TestFiguresLeftOutOfAQuiz(t *testing.T) {
 	}
 }
 
-// The report names parts saved with no answer and a scheme that could not be
-// parsed, and says nothing of either when they did not happen; a question with
-// no key travels as an open part whose one marking item says so, which the
+// The report names parts saved with no answer, and says nothing of them when
+// there are none; a question with no key travels as an open part whose one marking item says so, which the
 // quiz's validator takes.
 func TestAReportNamesMissingAnswers(t *testing.T) {
 	var report store.ExtractionReport
-	raw := `{"recorded":["1","2"],"answersMissing":["2(a)"],"schemeFailed":true,"windows":1}`
+	raw := `{"recorded":["1","2"],"answersMissing":["2(a)"],"windows":1}`
 	if err := json.Unmarshal([]byte(raw), &report); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(report.AnswersMissing, ",") != "2(a)" || !report.SchemeFailed {
+	if strings.Join(report.AnswersMissing, ",") != "2(a)" {
 		t.Fatalf("report = %+v", report)
 	}
 	empty, err := json.Marshal(store.ExtractionReport{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(empty), "answersMissing") || strings.Contains(string(empty), "schemeFailed") {
+	if strings.Contains(string(empty), "answersMissing") {
 		t.Fatalf("empty report = %s", empty)
 	}
 }

@@ -304,15 +304,10 @@ function reportFor(
     expected: [...recorded, ...missing],
     figures: [],
     figuresLeftOut: [],
-    keyDisagreements: [],
-    marksDiffer: [],
     missing,
     pages,
     recorded,
-    schemeRefused: [],
-    schemeRepeats: [],
     stopped: '',
-    unpaired: [],
     windows: Math.ceil(pages / 2),
   };
   return report as ExtractionReport;

@@ -2918,14 +2918,6 @@ components:
           items:
             type: string
           type: array
-        keyDisagreements:
-          items:
-            type: string
-          type: array
-        marksDiffer:
-          items:
-            type: string
-          type: array
         missing:
           items:
             type: string
@@ -2937,16 +2929,6 @@ components:
           items:
             type: string
           type: array
-        schemeFailed:
-          type: boolean
-        schemeRefused:
-          items:
-            type: string
-          type: array
-        schemeRepeats:
-          items:
-            type: string
-          type: array
         stopped:
           enum:
             - ""
@@ -2954,10 +2936,6 @@ components:
             - credits
             - output_limit
           type: string
-        unpaired:
-          items:
-            type: string
-          type: array
         windows:
           format: int64
           type: integer
@@ -2965,11 +2943,6 @@ components:
         - expected
         - missing
         - recorded
-        - keyDisagreements
-        - schemeRefused
-        - marksDiffer
-        - unpaired
-        - schemeRepeats
         - figures
         - figuresLeftOut
         - stopped

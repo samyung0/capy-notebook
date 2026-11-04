@@ -30,15 +30,8 @@ type Extraction struct {
 // ExtractionReport is a finished run's completeness check, by printed
 // question label: the labels the map listed (Expected), those never copied
 // (Missing), those copied (Recorded), parts saved as copied with no answer because
-// their solve call failed or the run stopped first (AnswersMissing, "4(a)"), whether
-// the answer files could not be parsed, so every answer was worked out
-// (SchemeFailed), parts whose key differs from the mark scheme's
-// (KeyDisagreements, "4(a)"), questions that keep the page's keys because the
-// scheme's were refused (SchemeRefused), saved questions whose part marks
-// differ from the printed total (MarksDiffer), mark scheme entries no question
-// matched (Unpaired), scheme entries named like an earlier one that were left
-// out rather than merged into it (SchemeRepeats, "8(b(ii))": another question's
-// entry the parse named wrongly), questions saved with figures cropped from the page
+// their solve call failed or the run stopped first (AnswersMissing, "4(a)"),
+// questions saved with figures cropped from the page
 // (Figures), for the starter to check, and questions saved without their
 // figures (FiguresLeftOut): the box call for their page failed twice, or the
 // figures did not fit in the starter's storage (Epo 2026-11-04). Stopped says why a run ended early:
@@ -46,21 +39,15 @@ type Extraction struct {
 // budget). Windows is its copy batches: the name predates them, and the Make a
 // quiz screens' API keeps it.
 type ExtractionReport struct {
-	Expected         []string `json:"expected" nullable:"false"`
-	Missing          []string `json:"missing" nullable:"false"`
-	Recorded         []string `json:"recorded" nullable:"false"`
-	AnswersMissing   []string `json:"answersMissing,omitempty" nullable:"false"`
-	SchemeFailed     bool     `json:"schemeFailed,omitempty"`
-	KeyDisagreements []string `json:"keyDisagreements" nullable:"false"`
-	SchemeRefused    []string `json:"schemeRefused" nullable:"false"`
-	MarksDiffer      []string `json:"marksDiffer" nullable:"false"`
-	Unpaired         []string `json:"unpaired" nullable:"false"`
-	SchemeRepeats    []string `json:"schemeRepeats" nullable:"false"`
-	Figures          []string `json:"figures" nullable:"false"`
-	FiguresLeftOut   []string `json:"figuresLeftOut" nullable:"false"`
-	Stopped          string   `json:"stopped" enum:",quiz_full,credits,output_limit"`
-	Pages            int      `json:"pages"`
-	Windows          int      `json:"windows"`
+	Expected       []string `json:"expected" nullable:"false"`
+	Missing        []string `json:"missing" nullable:"false"`
+	Recorded       []string `json:"recorded" nullable:"false"`
+	AnswersMissing []string `json:"answersMissing,omitempty" nullable:"false"`
+	Figures        []string `json:"figures" nullable:"false"`
+	FiguresLeftOut []string `json:"figuresLeftOut" nullable:"false"`
+	Stopped        string   `json:"stopped" enum:",quiz_full,credits,output_limit"`
+	Pages          int      `json:"pages"`
+	Windows        int      `json:"windows"`
 }
 
 const (

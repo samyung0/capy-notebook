@@ -3,7 +3,8 @@ and solve share one cached start (Epo 2026-11-05: "dont use code for pairing, se
 files directly"). No parse and no ``pair()``. Report:
 ``reports/2026-11-05-answer-files.md``.
 
-Around this branch's production ``extraction.run``: the bench only adds the answer
+Written against ``extraction.run`` at ``e89a06d85``, before step 2 built this route, so it
+needs that commit's pipeline to run again. The bench only adds the answer
 blocks to the map's message, the wording to its system prompt, ``marks`` to
 ``record_answers`` and, in code, the part's marks from that field. Nothing in the
 pipeline changes.

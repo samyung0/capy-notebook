@@ -8,21 +8,18 @@ solve; bench/extraction/reports/2026-11-05-copy-first-structured.md):
    number the boxes figures are picked from, once across the selection.
 1. The map: one call sees every selected page and its boxes and answers one
    line a question: label, pages, parts, figures.
+   The answer files go with it (Epo 2026-11-05, "dont use code for pairing, send the
+   files directly"), as indexed text or page images, so every later call reads them
+   from the cache.
 2. Copy batches of 16 of the map's questions, in parallel, each continuing the
    map's conversation at low reasoning. ``record_question`` carries no answers.
-   The mark scheme and answer files are parsed as text from the moment the map
-   ends, each on its own and never beside the pages, naming entries by the map's
-   labels and parts.
 3. Code checks the copies against the map and sends a repair for a question left
    out: a map row not copied, a gap in the numbers, or the next number printed on
    a page no row covers. A figure the map lists and a batch left out is added
    from the map's boxes.
-4. Code pairs the scheme with the copies by label: a question whose every part
-   it covers needs no model call. Solve batches of up to 8 of the rest, in
-   parallel at medium reasoning, each continue the copy batch holding their
-   questions and give ``record_answers``: copied when the page prints them,
-   otherwise worked out (Epo 2026-11-03). A printed key stays, a scheme's replaces
-   a worked-out one, and any disagreement is named in the report.
+4. Solve batches of up to 8 questions, in parallel at medium reasoning, each continue
+   the copy batch holding their questions and give ``record_answers``: taken from the
+   answer files or the page when they give them, otherwise worked out.
 
 Every recorded question and answer goes through the Go validator at once and a
 problem goes back to the model. A call that fails is tried once more where it is
@@ -31,8 +28,7 @@ stay, and a part left with no answer is named in the report.
 
 The printed option order is kept (``add_questions`` shuffles; this does not),
 and option lines the model also copied into a part's text are taken out. No
-question is left out for want of a key. A worked-out solution carries an
-"AI-written" label. Each figure a question needs is recorded by box number (Epo
+question is left out for want of a key. Each figure a question needs is recorded by box number (Epo
 2026-11-04). One with no box is boxed at the end by a call that sees its page
 alone. Each is cropped from its page and placed after the text of the part it
 names, as an image block whose asset is ``figure:<id>``; the ``done`` event
@@ -88,7 +84,6 @@ COPY_REPAIR_PASSES = 2
 # page and cost 17 times a normal run
 # (bench/extraction/reports/2026-11-03-keys-in-one-prompt.md, Epo 2026-11-04).
 OUTPUT_PER_PAGE = 8_000
-SCHEME_MAX_TOKENS = 12_000
 # A figure is cropped at the scale that gives its page's long side this many
 # pixels (about 190 DPI on A4, against the page images' 1,568), so its labels read
 # and a small figure stays small; the crop's long side is still at most
@@ -96,15 +91,14 @@ SCHEME_MAX_TOKENS = 12_000
 FIGURE_PAGE_EDGE = 2_200
 # The locate call's reply: a few boxes.
 LOCATE_MAX_TOKENS = 1_000
-# Indexed text shown per page, and scheme text per parse call.
+# Indexed text shown per page.
 PAGE_TEXT_CHARS = 6_000
-SCHEME_CHUNK_CHARS = 12_000
-# The longest mark scheme or answer file a run reads, about 60 dense pages;
-# a longer one is refused rather than cut.
-SCHEME_TEXT_CHARS = 200_000
+# The longest answer file a run sends as text, about 60 dense pages; a longer one is
+# refused rather than cut.
+ANSWER_TEXT_CHARS = 200_000
 
 # A busy, failing or silent provider costs a call one silent retry (Epo
-# 2026-11-03): the map, a thread's round or a scheme piece runs once more. A
+# 2026-11-03): the map or a thread's round runs once more. A
 # definitive client error does not retry.
 ATTEMPTS = 2
 ATTEMPT_WAIT_S = 20.0
@@ -153,9 +147,13 @@ class Figure:
 
 
 @dataclass(frozen=True)
-class SchemeFile:
+class AnswerFile:
+    """A mark scheme, answer key or someone's answers, as the map's message carries it:
+    its page images, each with its number, or else its indexed text."""
+
     name: str
-    text: str
+    text: str = ""
+    images: tuple[tuple[int, Callable[[], Awaitable[str]]], ...] = ()
 
 
 @dataclass
@@ -166,8 +164,6 @@ class Recorded:
     question: dict[str, Any]
     part_labels: list[str]
     figures: list[Figure] = field(default_factory=list)
-    # The question's printed total, when the page prints only a total.
-    total: int | None = None
 
 
 @dataclass(frozen=True)
@@ -180,15 +176,6 @@ class MapRow:
     last: int
     parts: list[str]
     figures: list[int]
-
-
-@dataclass
-class Entry:
-    question: str
-    part: str
-    answer: str = ""
-    points: list[dict[str, Any]] = field(default_factory=list)
-    solution: str = ""
 
 
 # ---------------------------------------------------------------- labels
@@ -498,7 +485,6 @@ def record(item: Any) -> Recorded:
         label=str(item.get("label") or "").strip(),
         question=question,
         part_labels=labels,
-        total=_whole(item.get("total_marks")),
     )
 
 
@@ -712,23 +698,6 @@ def _parts_with_no_answer(held: Recorded) -> list[str]:
     ]
 
 
-def _with_keys_filled(question: dict[str, Any]) -> dict[str, Any]:
-    """A saved question with placeholder keys on the parts with none, so a check
-    looks at what it holds. It is never saved."""
-    out = copy.deepcopy(question)
-    for part in out["parts"]:
-        if _has_key(part):
-            continue
-        answer = part["answer"]
-        if answer["type"] == "mcq":
-            answer["correct"] = [0]
-        elif answer["type"] == "short":
-            answer["accepted"] = ["0"]
-        else:
-            part["markscheme"] = [{"text": "-", "marks": part["marks"]}]
-    return out
-
-
 # A code span, math already between $ signs, or math between \( \) or \[ \].
 _MATH_SPANS = re.compile(
     r"```.*?```|`[^`\n]*`"
@@ -819,154 +788,6 @@ def _counts(question: dict[str, Any]) -> tuple[int, int]:
     return len(parts), sum(1 for p in parts if p["answer"].get("type") == "open")
 
 
-# ------------------------------------------------------------------ pairing
-
-
-def entries_from(data: Any) -> list[Entry]:
-    entries: list[Entry] = []
-    rows = data.get("entries") if isinstance(data, dict) else None
-    for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict) or not str(row.get("question") or "").strip():
-            continue
-        entries.append(
-            Entry(
-                question=str(row["question"]).strip(),
-                part=str(row.get("part") or "").strip(),
-                answer=_text(row.get("answer"), limits.QUIZ_OPEN_ANSWER_MAX),
-                points=_points(row.get("points")),
-                solution=_text(row.get("solution"), limits.QUESTION_TEXT_MAX),
-            )
-        )
-    return entries
-
-
-def _merged(
-    pieces: list[list[Entry]],
-) -> tuple[dict[tuple[str, str], Entry], list[str]]:
-    """Entries by label, from each scheme piece's entries in order. An entry
-    the scheme split across two pieces (the last of one piece and the first
-    of the next, under one label) becomes one. Any other repeat of a label is
-    another question's entry the parse named wrongly (the bench saw a later
-    question's solution named 2021 Q8(b)(ii), doubling its marks): the first
-    stays, and the repeats are returned by name."""
-    out: dict[tuple[str, str], Entry] = {}
-    repeats: list[str] = []
-    last: tuple[str, str] | None = None
-    for piece in pieces:
-        for index, entry in enumerate(piece):
-            key = (label_key(entry.question), label_key(entry.part))
-            held = out.get(key)
-            if held is None:
-                out[key] = Entry(
-                    entry.question,
-                    entry.part,
-                    entry.answer,
-                    list(entry.points),
-                    entry.solution,
-                )
-            elif index == 0 and key == last:
-                held.answer = held.answer or entry.answer
-                held.points.extend(entry.points)
-                held.solution = "\n".join(
-                    s for s in (held.solution, entry.solution) if s
-                )
-            else:
-                repeats.append(part_name(entry.question, entry.part))
-        if piece:
-            last = (label_key(piece[-1].question), label_key(piece[-1].part))
-    return out, repeats
-
-
-def _letters(answer: str, count: int) -> list[int]:
-    found = re.findall(r"(?<![A-Za-z])([A-H])(?![A-Za-z])", answer.upper())
-    indexes = sorted({ord(letter) - ord("A") for letter in found})
-    return indexes if indexes and indexes[-1] < count else []
-
-
-def _same(a: str, b: str) -> bool:
-    """Two short answers that differ only in spacing, case, $ signs or a full
-    stop."""
-
-    def norm(value: str) -> str:
-        return re.sub(r"[\s$]", "", value).rstrip(".").lower()
-
-    return norm(a) == norm(b)
-
-
-def _entry_for(
-    entries: dict[tuple[str, str], Entry], label: str, part_label: str, single: bool
-) -> Entry | None:
-    question = label_key(label)
-    found = entries.get((question, label_key(part_label)))
-    if found is None and single:
-        found = entries.get((question, ""))
-    return found
-
-
-@dataclass
-class Paired:
-    """A question after pairing: the paired copy, whether any entry matched,
-    the parts whose key disagreed with the scheme, and whether it filled every part."""
-
-    held: Recorded
-    matched: bool
-    disagreed: list[str]
-    covered: bool
-
-
-def pair(held: Recorded, entries: dict[tuple[str, str], Entry]) -> Paired:
-    """A copy of the question with its scheme entries applied: a scheme's key,
-    marking points and solution replace the model's, and a key that differs from
-    the scheme's is named. A part the model has no key for has nothing to differ."""
-    out = copy.deepcopy(held)
-    matched = False
-    disagreed: list[str] = []
-    filled = 0
-    single = len(out.part_labels) == 1
-    for part_label, part in zip(out.part_labels, out.question["parts"]):
-        entry = _entry_for(entries, out.label, part_label, single)
-        if entry is None:
-            continue
-        matched = True
-        name = part_name(out.label, part_label)
-        replaced = False
-        answer = part["answer"]
-        if answer["type"] == "mcq":
-            letters = _letters(entry.answer, len(answer["options"]))
-            if letters and answer["correct"] and letters != sorted(answer["correct"]):
-                disagreed.append(name)
-            if letters:
-                answer["correct"], replaced = letters, True
-        elif answer["type"] == "short" and entry.answer:
-            value = entry.answer
-            unit = answer.get("unit", "")
-            if unit and value.endswith(unit):
-                value = value[: -len(unit)].strip()
-            differs = answer["accepted"] and not _same(value, answer["accepted"][0])
-            answer["accepted"], replaced = [value[: limits.QUESTION_TEXT_MAX]], True
-            # The scheme's marks, as on an open part.
-            marks = sum(item["marks"] for item in _items(entry.points))
-            if entry.points and marks <= limits.QUESTION_MARKS_MAX:
-                differs = differs or marks != part["marks"]
-                part["marks"] = marks
-            if differs:
-                disagreed.append(name)
-        elif answer["type"] == "open" and entry.points:
-            items = _items(entry.points)
-            marks = sum(item["marks"] for item in items)
-            if marks <= limits.QUESTION_MARKS_MAX:
-                if marks != part["marks"]:
-                    disagreed.append(name)
-                part["markscheme"], part["marks"], replaced = items, marks, True
-                if entry.answer:
-                    answer["accepted"] = [entry.answer]
-        if replaced:
-            filled += 1
-            if entry.solution:
-                part["solution"] = [{"type": "text", "text": entry.solution}]
-    return Paired(out, matched, disagreed, filled == len(out.part_labels))
-
-
 # --------------------------------------------------------------- the run
 
 
@@ -981,7 +802,7 @@ class Run:
     # What each question's copy call sent, its keys taken out, and its pages.
     copies: dict[str, dict[str, Any]] = field(default_factory=dict)
     spans: dict[str, tuple[int, int]] = field(default_factory=dict)
-    # Questions with their answers recorded, or wholly covered by the scheme.
+    # Questions with their answers recorded.
     answered: set[str] = field(default_factory=set)
     # Printed order: a label's place is the map's, or its first record attempt.
     order: dict[str, int] = field(default_factory=dict)
@@ -1041,7 +862,7 @@ class Run:
         checked = record(_with_placeholders(kept))
         if not checked.label or not checked.question["parts"]:
             return (
-                "A question needs its printed label and at least one part, given "
+                "A question needs its label and at least one part, given "
                 "as the call's arguments themselves."
             )
         key = label_key(checked.label)
@@ -1056,7 +877,7 @@ class Run:
             and all(type(n) is int and n in numbers for n in sent)
             and sent[0] <= sent[1]
         ):
-            problem = "pages: expected [first, last], the page numbers it is printed on"
+            problem = "pages: expected [first, last], the page numbers it is on"
         elif "figures" not in item:
             problem = "figures: give [] when it needs none"
         else:
@@ -1139,7 +960,7 @@ class Run:
 
     def uncopied(self, rows: list[MapRow], pages: list[Page]) -> list[str]:
         """What a repair should copy: map rows with no copy, numbers missing inside
-        the map and the copies, and the next number when it is printed on a page past
+        the map and the copies, and the next number when it is on a page past
         the last question's: a page no row covers."""
         out = [row.label for row in rows if label_key(row.label) not in self.copies]
         labels = [*(row.label for row in rows), *self.copies]
@@ -1199,56 +1020,6 @@ class Run:
         return [held.label for held in self.held()]
 
 
-def _chunks(text: str) -> list[str]:
-    """Scheme text in pieces of at most SCHEME_CHUNK_CHARS, cut at line ends."""
-    pieces: list[str] = []
-    current = ""
-    for line in text.splitlines(keepends=True):
-        if current and len(current) + len(line) > SCHEME_CHUNK_CHARS:
-            pieces.append(current)
-            current = ""
-        current += line
-    if current.strip():
-        pieces.append(current)
-    return pieces
-
-
-async def parse_schemes(
-    files: list[SchemeFile],
-    *,
-    model: ModelConfig,
-    labels: list[tuple[str, list[str]]],
-) -> list[list[Entry]]:
-    """Each scheme or answer file piece's entries, one parse call per piece,
-    in order. ``labels`` are the map's labels with their part labels, so entries
-    are named as the questions are (Epo 2026-11-03: 2024 Q3(b) was read as b(ii))."""
-
-    async def one(name: str, text: str) -> list[Entry]:
-        message = await models.complete(
-            prompts.scheme_messages(name, text, labels),
-            model=model,
-            response_format={"type": "json_object"},
-            max_tokens=SCHEME_MAX_TOKENS,
-            reasoning=False,
-            call_purpose="extraction_scheme",
-        )
-        data = extract_json(getattr(message, "content", "") or "")
-        if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
-            # A reply cut off at the cap or not JSON is a failed attempt, not
-            # a scheme without answers.
-            raise elitellm.ProviderError(
-                "the mark scheme reply was cut off or not JSON"
-            )
-        return entries_from(data)
-
-    calls = [
-        _attempted(functools.partial(one, f.name, piece))
-        for f in files
-        for piece in _chunks(f.text)
-    ]
-    return list(await asyncio.gather(*calls))
-
-
 async def _attempted(call: Callable[[], Awaitable[Any]]) -> Any:
     for attempt in range(ATTEMPTS):
         try:
@@ -1285,8 +1056,26 @@ class EmptyMap(elitellm.ProviderError):
     """The map reply held no question."""
 
 
+async def _answer_blocks(answers: list[AnswerFile]) -> list[dict[str, Any]]:
+    """The answer files as the map's message carries them."""
+    blocks: list[dict[str, Any]] = []
+    shown = 0
+    for file in answers:
+        if not file.images:
+            blocks.append(
+                {"type": "text", "text": prompts.answer_text(file.name, file.text)}
+            )
+        for number, image in file.images:
+            shown += 1
+            heading = prompts.answer_image_heading(shown, number, file.name)
+            blocks.append({"type": "text", "text": heading})
+            blocks.append({"type": "image_url", "image_url": {"url": await image()}})
+    return blocks
+
+
 async def read_map(
     pages: list[Page],
+    answers: list[AnswerFile],
     boxes: dict[int, tuple[Page, layout.Region]],
     *,
     model: ModelConfig,
@@ -1317,6 +1106,7 @@ async def read_map(
             }
             for number, (page, region) in boxes.items()
         ],
+        await _answer_blocks(answers),
         with_text=with_text,
     )
     response = await models.complete_response(
@@ -1492,7 +1282,7 @@ def _credits_out() -> bool:
 
 async def run(
     pages: list[Page],
-    schemes: list[SchemeFile],
+    answers: list[AnswerFile],
     *,
     model: ModelConfig,
     validate: Validate,
@@ -1511,7 +1301,7 @@ async def run(
     )
     try:
         base, rows, output = await _attempted(
-            functools.partial(read_map, pages, current.boxes, model=model)
+            functools.partial(read_map, pages, answers, current.boxes, model=model)
         )
     except EmptyMap:
         base, rows, output = [], [], 0
@@ -1596,19 +1386,7 @@ async def run(
         ]
 
     tasks: list[asyncio.Task[Any]] = []
-    parsing: asyncio.Task[list[list[Entry]]] | None = None
-    if schemes and rows:
-        parsing = asyncio.create_task(
-            parse_schemes(
-                schemes,
-                model=model,
-                labels=[(row.label, row.parts) for row in rows],
-            )
-        )
-        tasks.append(parsing)
     failures: list[BaseException] = []
-    pieces: list[list[Entry]] = []
-    scheme_failed = False
     try:
         copies = [
             asyncio.create_task(copy_batch(index, [labels]))
@@ -1661,18 +1439,6 @@ async def run(
         current.in_printed_order()
         if failures and not current.copies:
             raise failures[0]
-        if parsing is not None:
-            try:
-                pieces = await parsing
-            except _THREAD_FAILURES as exc:
-                # The copies stay and the model works every answer out.
-                log.warning("extraction scheme failed: %s", exc)
-                scheme_failed = True
-        known, _ = _merged(pieces)
-        for held in current.held():
-            paired = pair(held, known)
-            if paired.covered and not await validate(paired.held.question):
-                current.answered.add(label_key(held.label))
         # A thread that ended early gets one more call for what it left out.
         for _ in range(2):
             if current.stopping:
@@ -1687,31 +1453,10 @@ async def run(
         raise
     if _credits_out():
         current.credits_out = True
-    held = current.held()
-    entries, repeats = _merged(pieces)
-    used: set[tuple[str, str]] = set()
-    disagreements: list[str] = []
-    refused: list[str] = []
-    marks_differ: list[str] = []
-    answers_missing: list[str] = []
-    finals: list[Recorded] = []
-    for question in held:
-        paired = pair(question, entries)
-        if paired.matched:
-            key = label_key(question.label)
-            used.update(k for k in entries if k[0] == key)
-            disagreements.extend(paired.disagreed)
-        # The scheme's version is checked as the quiz's creation will check it; a
-        # refusal keeps the page's keys rather than losing the question.
-        if paired.matched and await validate(_with_keys_filled(paired.held.question)):
-            refused.append(question.label)
-        else:
-            question = paired.held
-        answers_missing.extend(_parts_with_no_answer(question))
-        finals.append(question)
-        parts_total = sum(part["marks"] for part in question.question["parts"])
-        if question.total is not None and parts_total != question.total:
-            marks_differ.append(question.label)
+    finals = current.held()
+    answers_missing = [
+        name for question in finals for name in _parts_with_no_answer(question)
+    ]
     figures_left_out = await locate_figures(finals, model=model)
     figures = [question.label for question in finals if question.figures]
     crops: dict[str, str] = {}
@@ -1732,28 +1477,9 @@ async def run(
                 label for label in expected if label_key(label) not in recorded
             ],
             "recorded": current.labels(),
-            # Parts saved with no answer, a marking note in its place, because their
-            # solve call failed or the run stopped first.
+            # Parts saved with no answer, because their solve call failed or the run
+            # stopped first.
             "answersMissing": answers_missing,
-            # The answer files could not be parsed, so every answer was worked out.
-            "schemeFailed": scheme_failed,
-            # Questions with a part whose key the model worked out and no
-            # scheme replaced: their solutions carry the AI-written label.
-            # Parts whose printed or worked-out key differs from the scheme's.
-            "keyDisagreements": disagreements,
-            # Questions the validator refused with the scheme's keys; they keep
-            # the page's.
-            "schemeRefused": refused,
-            # Saved questions whose part marks do not add up to the total
-            # printed on the page.
-            "marksDiffer": marks_differ,
-            "unpaired": sorted(
-                {entries[key].question for key in entries if key not in used},
-                key=lambda label: (len(label), label),
-            ),
-            # Scheme entries named like an earlier one and not its
-            # continuation: left out rather than merged into it.
-            "schemeRepeats": repeats,
             # Questions saved with figures cropped from the page, for the
             # starter to check, and questions saved without theirs: they had
             # no box and the box call for their page failed twice (Go adds
@@ -1855,11 +1581,63 @@ async def _crop(
     return jpeg, size
 
 
+def _text_goes(layers: dict[int, str]) -> bool:
+    """Whether a PDF's text goes to the model: as for question pages, only when no page
+    is a scan and one is born digital (Epo 2026-11-05)."""
+    return set(layers.values()) - {BLANK} == {BORN_DIGITAL}
+
+
+async def _answer_file(workspace_id: str, file: dict[str, Any]) -> AnswerFile:
+    """An answer file as it goes: indexed text for a born-digital PDF, Word, PowerPoint
+    or text file, page images for a scan or an image upload (Epo 2026-11-05)."""
+    file_id, name = file["fileId"], file["name"]
+    row = await store.file_page_source(workspace_id, file_id)
+    if row is None:
+        raise ExtractionRefused(
+            "file_unavailable", f"{name} is no longer in the workspace."
+        )
+    render = functools.partial(_render, workspace_id, file_id)
+    if row.get("kind") == "image":
+        return AnswerFile(name, images=((1, functools.partial(render, 1)),))
+    passages = await store.file_passages(workspace_id, file_id)
+    if row.get("kind") == "pdf":
+        try:
+            pdf = await capture.pdf_path(workspace_id, file_id)
+        except capture.CaptureUnavailable as exc:
+            raise ExtractionRefused(exc.code, f"{name}: {exc}.") from exc
+        count = await slots.render_thread(_page_count, pdf)
+        indexed = page_texts(passages)
+        texts = {number: indexed.get(number, "") for number in range(1, count + 1)}
+        layers = await slots.render_thread(page_layers, pdf, texts)
+        if not _text_goes(layers):
+            return AnswerFile(
+                name,
+                images=tuple(
+                    (number, functools.partial(render, number))
+                    for number in texts
+                    if layers[number] != BLANK
+                ),
+            )
+    text = "\n\n".join(str(p.get("text") or "") for p in passages).strip()
+    if not text:
+        raise ExtractionRefused(
+            "no_indexed_text", f"{name} has no indexed text to read answers from."
+        )
+    if len(text) > ANSWER_TEXT_CHARS:
+        raise ExtractionRefused(
+            "answers_too_long",
+            f"{name} is longer than the {ANSWER_TEXT_CHARS:,} characters of answers a "
+            "run reads.",
+        )
+    return AnswerFile(name, text)
+
+
 async def prepare(
     workspace_id: str, paper: list[dict[str, Any]], answers: list[dict[str, Any]]
-) -> tuple[list[Page], list[SchemeFile]]:
-    """The selected pages and the scheme texts, checked before the run starts:
-    a page past its file's end or a file with no page view is refused."""
+) -> tuple[list[Page], list[AnswerFile]]:
+    """The selected pages and the answer files, checked before the run starts: a page
+    past its file's end, a file with no page view, or more page images than a run reads
+    is refused."""
     pages: list[Page] = []
     for file in paper:
         file_id, name, numbers = file["fileId"], file["name"], file["pages"]
@@ -1902,23 +1680,15 @@ async def prepare(
             )
             for number in numbers
         )
-    schemes: list[SchemeFile] = []
-    for file in answers:
-        passages = await store.file_passages(workspace_id, file["fileId"])
-        text = "\n\n".join(str(p.get("text") or "") for p in passages).strip()
-        if not text:
-            raise ExtractionRefused(
-                "no_indexed_text",
-                f"{file['name']} has no indexed text to read answers from.",
-            )
-        if len(text) > SCHEME_TEXT_CHARS:
-            raise ExtractionRefused(
-                "scheme_too_long",
-                f"{file['name']} is longer than the {SCHEME_TEXT_CHARS:,} characters "
-                "of mark scheme a run reads.",
-            )
-        schemes.append(SchemeFile(file["name"], text))
-    return pages, schemes
+    files = [await _answer_file(workspace_id, file) for file in answers]
+    images = len(pages) + sum(len(file.images) for file in files)
+    if images > limits.EXTRACTION_PAGES_MAX:
+        raise ExtractionRefused(
+            "too_many_pages",
+            f"A run reads at most {limits.EXTRACTION_PAGES_MAX} pages, answer files' "
+            f"pages included; this one has {images}.",
+        )
+    return pages, files
 
 
 async def gateway_validate(question: dict[str, Any]) -> str | None:

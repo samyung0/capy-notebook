@@ -1,5 +1,5 @@
-"""Make a quiz: the map, copy batches and solve calls, pairing the mark scheme by
-label, and the run's report (pipeline.retrieval.extraction)."""
+"""Make a quiz: the map, copy batches and solve calls, the answer files in the first
+message, and the run's report (pipeline.retrieval.extraction)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import base64
 import copy
 import io
 import json
+import re
 from types import SimpleNamespace
 
 import pymupdf
@@ -259,100 +260,6 @@ def test_a_sub_parts_lead_in_starts_its_blocks():
     assert [b["text"] for b in again] == ["It is given that AC = 25 cm.", "x"]
 
 
-def test_pairing_replaces_the_models_keys_and_names_disagreements():
-    worked = extraction.record(_mcq("12", ["a", "b", "c", "d"], 0))
-    unanswered = _mcq("13", ["a", "b"], 0)
-    del unanswered["parts"][0]["answer"]["correct"]
-    no_key = extraction.record(unanswered)
-    long = extraction.record(_open("3", [("a", 1), ("b(i)", 2)]))
-    entries, _ = extraction._merged(
-        [
-            extraction.entries_from(
-                {
-                    "entries": [
-                        {"question": "12", "part": "", "answer": "C", "solution": "C."},
-                        {"question": "13", "part": "", "answer": "B"},
-                        {
-                            "question": "3",
-                            "part": "(a)",
-                            "answer": "x = 2",
-                            "points": [{"text": "1A", "marks": 1}],
-                        },
-                        {
-                            "question": "Q3",
-                            "part": "b(i)",
-                            "points": [
-                                {"text": "1M", "marks": 1},
-                                {"text": "1A", "marks": 2},
-                            ],
-                        },
-                    ]
-                }
-            )
-        ]
-    )
-    first = extraction.pair(worked, entries)
-    assert first.held.question["parts"][0]["answer"]["correct"] == [2]
-    # The scheme's solution replaces the model's.
-    assert first.held.question["parts"][0]["solution"] == _text("C.")
-    assert first.covered and first.disagreed == ["12"]
-    # A part the model has no key for takes the scheme's, with nothing to differ.
-    second = extraction.pair(no_key, entries)
-    assert second.held.question["parts"][0]["answer"]["correct"] == [1]
-    assert second.covered and second.disagreed == []
-    third = extraction.pair(long, entries)
-    a, b = third.held.question["parts"]
-    assert a["markscheme"] == [{"text": "1A", "marks": 1}]
-    assert a["answer"]["accepted"] == ["x = 2"]
-    # The scheme's marks replace the split the model made of a printed total.
-    assert b["marks"] == 3 and third.disagreed == ["3(b(i))"]
-    # The recorded question itself is left as it was.
-    assert worked.question["parts"][0]["answer"]["correct"] == [0]
-
-
-def test_pairing_gives_a_short_part_the_schemes_marks():
-    def paired(points: list[dict]) -> tuple[int, list[str]]:
-        item = _mcq("5", ["x"])
-        item["parts"][0]["answer"] = {"type": "short", "accepted": ["7"]}
-        entry = {"question": "5", "part": "", "answer": "7", "points": points}
-        entries, _ = extraction._merged([extraction.entries_from({"entries": [entry]})])
-        out = extraction.pair(extraction.record(item), entries)
-        return out.held.question["parts"][0]["marks"], out.disagreed
-
-    # Copied at 1 mark: the scheme's 2 replace it and the difference is named.
-    two = [{"text": "1M", "marks": 1}, {"text": "1A", "marks": 1}]
-    assert paired(two) == (2, ["5"])
-    # The same marks name nothing; no points, or too many marks, keep the copy's.
-    assert paired([{"text": "1A", "marks": 1}]) == (1, [])
-    assert paired([]) == (1, [])
-    too_many = extraction.limits.QUESTION_MARKS_MAX + 1
-    assert paired([{"text": "x", "marks": too_many}]) == (1, [])
-
-
-def test_a_scheme_entry_split_across_pieces_merges_and_another_repeat_is_named():
-    """The last entry of one scheme piece and the first of the next under the
-    same label are one entry; a later entry named like an earlier one is
-    another question's (2021 Q8(b)(ii) took a cone question's solution), left
-    out and named."""
-
-    def entry(part: str, marks: int, solution: str) -> extraction.Entry:
-        return extraction.Entry(
-            "8", part, "", [{"text": solution, "marks": marks}], solution
-        )
-
-    entries, repeats = extraction._merged(
-        [
-            [entry("a", 2, "Proof"), entry("b(ii)", 1, "DE = 36")],
-            [entry("b(ii)", 1, "Area 270"), entry("c", 1, "x")],
-            [entry("b(ii)", 2, "Height of Z")],
-        ]
-    )
-    held = entries[("8", "b.ii")]
-    assert [p["text"] for p in held.points] == ["DE = 36", "Area 270"]
-    assert held.solution == "DE = 36\nArea 270"
-    assert repeats == ["8(b(ii))"]
-
-
 def test_marking_points_fit_the_quiz_item_cap():
     points = [{"text": f"step {i}", "marks": 1} for i in range(8)]
     items = extraction._items(points)
@@ -380,33 +287,6 @@ async def test_a_failing_provider_retries_once_then_fails(monkeypatch):
     with pytest.raises(TimeoutError):
         await extraction._attempted(silent)
     assert calls.count("silent") == 2
-
-
-async def test_scheme_parse_names_entries_by_the_labels_it_is_given(monkeypatch):
-    monkeypatch.setattr(extraction, "ATTEMPT_WAIT_S", 0)
-    replies = iter(
-        [
-            SimpleNamespace(content='{"entries": [{"question": "1", "answ'),
-            SimpleNamespace(content='{"entries": [{"question": "1", "answer": "B"}]}'),
-        ]
-    )
-    sent: list[str] = []
-
-    async def complete(messages, **kwargs):
-        sent.append(messages[1]["content"])
-        return next(replies)
-
-    monkeypatch.setattr(extraction.models, "complete", complete)
-    entries = await extraction.parse_schemes(
-        [extraction.SchemeFile("answers.txt", "1. B")],
-        model=MODEL,
-        labels=[("1", [""]), ("3", ["a", "b"])],
-    )
-    # A reply cut off mid-JSON is a failed attempt, parsed again.
-    assert [[(e.question, e.answer) for e in piece] for piece in entries] == [
-        [("1", "B")]
-    ]
-    assert "1; 3: a, b" in sent[0]
 
 
 def test_page_texts_spread_passages_over_their_pages():
@@ -539,7 +419,7 @@ async def _run(
     monkeypatch,
     script: Script,
     pages: list,
-    schemes=(),
+    answers=(),
     *,
     complete=_no_call,
     validate=_ok,
@@ -551,7 +431,7 @@ async def _run(
     return [
         event
         async for event in extraction.run(
-            pages, list(schemes), model=MODEL, validate=validate
+            pages, list(answers), model=MODEL, validate=validate
         )
     ]
 
@@ -736,8 +616,8 @@ async def test_a_copy_is_checked_without_its_keys(monkeypatch):
     copying = [c for c in script.sent if c["ask"] == "Copy question 1 now."][-1]
     results = [m["content"] for m in copying["messages"] if m["role"] == "tool"]
     assert results == [
-        "Question 1: pages: expected [first, last], the page numbers it is printed on. Fix it and record it again.",
-        "Question 1: pages: expected [first, last], the page numbers it is printed on. Fix it and record it again.",
+        "Question 1: pages: expected [first, last], the page numbers it is on. Fix it and record it again.",
+        "Question 1: pages: expected [first, last], the page numbers it is on. Fix it and record it again.",
         "Question 1: figures: give [] when it needs none. Fix it and record it again.",
         "Question 1: choice answers require two options. Fix it and record it again.",
         "Question 1: not yet. Copy every question first; you are asked for the answers later.",
@@ -788,129 +668,8 @@ async def test_answers_are_merged_into_the_copy_and_checked(monkeypatch):
     assert saved["parts"][1]["solution"] == [{"type": "text", "text": "Work for b."}]
 
 
-async def test_a_scheme_is_parsed_from_the_map_and_removes_the_solving_it_covers(
-    monkeypatch,
-):
-    """The parse starts when the map ends, naming the map's rows, while the copying
-    runs. Q1 is covered: no call. Q2(a) is covered and Q2(b) is not: Q2 is solved,
-    and the scheme's part stays. Q3 has no entry: worked out."""
-    one, two, three = (
-        _mcq("1", ["p", "q"], 0),
-        _open("2", [("a", 1), ("b", 2)]),
-        _mcq("3", ["r", "s"], 1),
-    )
-    parsing = asyncio.Event()
-    labels_seen: list = []
-
-    async def complete(messages, **kwargs):
-        assert kwargs["call_purpose"] == "extraction_scheme"
-        labels_seen.append(messages[1]["content"].split("\n\n")[0])
-        parsing.set()
-        return SimpleNamespace(
-            content=json.dumps(
-                {
-                    "entries": [
-                        {
-                            "question": "1",
-                            "part": "",
-                            "answer": "B",
-                            "solution": "Scheme 1.",
-                        },
-                        {
-                            "question": "2",
-                            "part": "a",
-                            "answer": "7",
-                            "points": [{"text": "1A", "marks": 1}],
-                        },
-                    ]
-                }
-            )
-        )
-
-    async def copying_waits_for_the_parse():
-        await asyncio.wait_for(parsing.wait(), 1)
-
-    script = Script(
-        "\n".join([_row("1"), _row("2", parts="a, b"), _row("3")]),
-        {
-            "Copy questions 1 to 3 now.": [
-                _tools(
-                    ("record_question", _copy(one)),
-                    ("record_question", _copy(two)),
-                    ("record_question", _copy(three)),
-                )
-            ],
-            "Give the answers to questions 2 to 3 now.": [
-                _tools(
-                    ("record_answers", _answers(two)),
-                    ("record_answers", _answers(three)),
-                )
-            ],
-        },
-        before={"Copy questions 1 to 3 now.": copying_waits_for_the_parse},
-    )
-    events = await _run(
-        monkeypatch,
-        script,
-        [_page(5)],
-        [extraction.SchemeFile("scheme.pdf", "the scheme")],
-        complete=complete,
-    )
-    assert labels_seen == [
-        (
-            "The quiz holds these questions and parts; name each entry with one of "
-            "them where it matches: 1; 2: a, b; 3"
-        )
-    ]
-    assert "Give the answers to questions 2 to 3 now." in script.asks()
-    assert not any(
-        a.startswith("Give the answers to question 1") for a in script.asks()
-    )
-    done = events[-1]
-    first, second, third = done["questions"]
-    assert first["parts"][0]["answer"]["correct"] == [1]
-    assert first["parts"][0]["solution"] == [{"type": "text", "text": "Scheme 1."}]
-    assert second["parts"][0]["markscheme"] == [{"text": "1A", "marks": 1}]
-    assert second["parts"][0]["answer"]["accepted"] == ["7"]
-    assert set(second["parts"][1]["solution"][0]) == {"type", "text"}
-    assert third["parts"][0]["answer"]["correct"] == [1]
-    report = done["report"]
-    assert report["answersMissing"] == []
-    assert report["schemeFailed"] is False
-
-
-async def test_a_scheme_covering_everything_makes_no_solve_call(monkeypatch):
-    item = _mcq("1", ["p", "q"], 0)
-
-    async def complete(messages, **kwargs):
-        return SimpleNamespace(
-            content='{"entries": [{"question": "1", "part": "", "answer": "B"}]}'
-        )
-
-    script = Script(
-        _row("1"), {"Copy question 1 now.": [_tools(("record_question", _copy(item)))]}
-    )
-    events = await _run(
-        monkeypatch,
-        script,
-        [_page(5)],
-        [extraction.SchemeFile("s.pdf", "1. B")],
-        complete=complete,
-    )
-    assert not any(a.startswith("Give the answers") for a in script.asks())
-    [saved] = events[-1]["questions"]
-    assert saved["parts"][0]["answer"]["correct"] == [1]
-    assert saved["parts"][0]["solution"] == []
-
-
-async def test_a_scheme_that_cannot_be_parsed_leaves_every_answer_to_solving(
-    monkeypatch,
-):
+async def _one_question(monkeypatch, pages, answers):
     item = _mcq("1", ["p", "q"], 1)
-
-    async def complete(messages, **kwargs):
-        raise extraction.elitellm.ProviderError("upstream error")
-
     script = Script(
         _row("1"),
         {
@@ -920,15 +679,51 @@ async def test_a_scheme_that_cannot_be_parsed_leaves_every_answer_to_solving(
             ],
         },
     )
-    events = await _run(
-        monkeypatch,
-        script,
-        [_page(5)],
-        [extraction.SchemeFile("s.pdf", "1. B")],
-        complete=complete,
+    events = await _run(monkeypatch, script, pages, answers)
+    return script, events
+
+
+async def test_answer_files_go_in_the_first_message_and_every_question_is_solved(
+    monkeypatch,
+):
+    """After the boxes and before the ask: text under its heading, an image under its
+    own, numbered apart from the question pages. No other call reads them."""
+
+    async def image():
+        return "data:image/jpeg;base64,answer"
+
+    answers = [
+        extraction.AnswerFile("key.docx", "1. B"),
+        extraction.AnswerFile("drawn.jpg", images=((3, image),)),
+    ]
+    script, events = await _one_question(monkeypatch, [_page(5)], answers)
+    content = script.sent[0]["messages"][1]["content"]
+    assert content[0]["text"] == "Page image 1: page 5 of paper.pdf."
+    assert content[2]["text"].startswith("Boxes on these pages")
+    assert content[3]["text"] == (
+        "Answer file key.docx. Its indexed text:\n<source>\n1. B\n</source>"
     )
-    assert events[-1]["report"]["schemeFailed"] is True
+    assert content[4]["text"] == "Answer file page image 1: page 3 of drawn.jpg."
+    assert content[5]["image_url"]["url"] == "data:image/jpeg;base64,answer"
+    assert content[6]["text"] == extraction.prompts.MAP_ASK
+    for call in script.sent[1:]:
+        assert call["messages"][1]["content"] == content
+    assert "Give the answers to question 1 now." in script.asks()
     assert events[-1]["questions"][0]["parts"][0]["answer"]["correct"] == [1]
+
+
+def test_no_prompt_says_how_a_question_was_made():
+    """Epo 2026-11-05: "i dont care how the quesitons is made"."""
+    read = " ".join(
+        [
+            extraction.prompts.SYSTEM,
+            extraction.prompts.SYSTEM_NO_PAGE_TEXT,
+            extraction.prompts.MAP_ASK,
+            extraction.prompts.LOCATE_SYSTEM,
+            json.dumps(extraction.prompts.TOOLS),
+        ]
+    )
+    assert not re.search(r"(?i)\bprint|handwrit", read)
 
 
 async def test_code_sends_a_repair_for_a_question_left_out(monkeypatch):
@@ -1109,54 +904,6 @@ async def test_a_solve_call_that_fails_keeps_the_copies_and_names_what_is_missin
     assert fourth["parts"][0]["answer"]["type"] == "short"
     assert fourth["parts"][0]["answer"]["accepted"] == []
     assert fourth["parts"][0]["answer"]["unit"] == "cm"
-
-
-async def test_a_scheme_key_stays_beside_a_part_with_no_answer(monkeypatch):
-    """Q1(a) has its scheme entry, and Q1(b)'s solve call fails: (a) keeps its key
-    and (b) is named, with no refusal of the scheme's version."""
-    item = _open("1", [("a", 1), ("b", 1)])
-
-    async def complete(messages, **kwargs):
-        return SimpleNamespace(
-            content=json.dumps(
-                {
-                    "entries": [
-                        {
-                            "question": "1",
-                            "part": "a",
-                            "answer": "7",
-                            "points": [{"text": "1A", "marks": 1}],
-                        }
-                    ]
-                }
-            )
-        )
-
-    ask = "Give the answers to question 1 now."
-    down = extraction.elitellm.ProviderError("upstream error")
-    script = Script(
-        _row("1", parts="a, b"),
-        {"Copy question 1 now.": [_tools(("record_question", _copy(item)))]},
-        fail={ask: [down] * 4},
-    )
-
-    async def validate(question):
-        return None if all(extraction._has_key(p) for p in question["parts"]) else "x"
-
-    events = await _run(
-        monkeypatch,
-        script,
-        [_page(5)],
-        [extraction.SchemeFile("scheme.pdf", "the scheme")],
-        complete=complete,
-        validate=validate,
-    )
-    done = events[-1]
-    assert done["report"]["answersMissing"] == ["1(b)"]
-    assert done["report"]["schemeRefused"] == []
-    first, second = done["questions"][0]["parts"]
-    assert first["markscheme"] == [{"text": "1A", "marks": 1}]
-    assert second["markscheme"] == []
 
 
 async def test_a_map_that_fails_twice_fails_the_run(monkeypatch):
@@ -1499,8 +1246,10 @@ async def test_a_scan_sends_no_page_text_on_any_call(monkeypatch):
     )
     assert events[-1]["report"]["recorded"] == ["8"]
     first_paragraph = (
-        "You copy the questions printed on exam or worksheet pages into a quiz, exactly "
-        "as printed. You see all the selected page images at once."
+        "You copy the questions on the selected pages into a quiz, exactly as they "
+        "appear. You see all the selected page images at once. After the question pages "
+        "may come answer files: a mark scheme, an answer key or someone's own answers, "
+        "in any layout."
     )
     assert {
         body["messages"][0]["content"].split("\n\n")[0] for body in script.sent
@@ -1524,38 +1273,19 @@ async def test_a_scan_sends_no_page_text_on_any_call(monkeypatch):
         (extraction.SCAN, "Page image 1: page 5 of paper.pdf."),
     ],
 )
-async def test_only_the_papers_pages_decide_and_the_scheme_reads_its_text(
+async def test_only_the_papers_pages_decide_its_page_text(
     monkeypatch, layer, page_part
 ):
-    """A scheme has no say over the paper's page text, and its parse reads its own
-    text whichever the paper is."""
-    read: list = []
-
-    async def complete(messages, **kwargs):
-        assert kwargs["call_purpose"] == "extraction_scheme"
-        read.append(messages[1]["content"])
-        return SimpleNamespace(content=json.dumps({"entries": []}))
-
-    item = _mcq("1", ["p", "q"], 0)
-    script = Script(
-        _row("1"),
-        {
-            "Copy question 1 now.": [_tools(("record_question", _copy(item)))],
-            "Give the answers to question 1 now.": [
-                _tools(("record_answers", _answers(item)))
-            ],
-        },
-    )
-    await _run(
+    """An answer file has no say over the paper's page text, and goes the same way
+    whichever the paper is."""
+    script, _ = await _one_question(
         monkeypatch,
-        script,
         [_page(5, "Paper text.", layer=layer)],
-        [extraction.SchemeFile("answers.pdf", "Scheme text.")],
-        complete=complete,
+        [extraction.AnswerFile("answers.pdf", "Scheme text.")],
     )
-    assert script.sent[0]["messages"][1]["content"][0]["text"] == page_part
-    assert len(read) == 1
-    assert "Scheme text." in read[0]
+    content = script.sent[0]["messages"][1]["content"]
+    assert content[0]["text"] == page_part
+    assert "Scheme text." in content[3]["text"]
 
 
 async def _prepared(monkeypatch, kind: str, path=None) -> list[extraction.Page]:
@@ -1589,6 +1319,85 @@ async def test_prepare_treats_an_image_upload_as_a_scan(monkeypatch):
     pages = await _prepared(monkeypatch, "image")
     assert [(page.layer, page.text) for page in pages] == [(extraction.SCAN, LINE)]
     assert extraction.sends_page_text(pages) is False
+
+
+async def _answer_files(monkeypatch, kind: str, path=None, text=LINE, pages=1):
+    """The run's answer files for one file of ``kind``, beside ``pages`` selected pages."""
+
+    async def source(workspace_id, file_id):
+        return {"kind": kind}
+
+    async def passages(workspace_id, file_id):
+        return [{"text": text, "page_start": 1, "page_end": 1}] if text else []
+
+    async def pdf_path(workspace_id, file_id):
+        return path
+
+    monkeypatch.setattr(extraction.store, "file_page_source", source)
+    monkeypatch.setattr(extraction.store, "file_passages", passages)
+    monkeypatch.setattr(extraction.capture, "pdf_path", pdf_path)
+    # The paper is images, one a file, so it only counts pages.
+    if kind != "image":
+
+        async def image_source(workspace_id, file_id):
+            return {"kind": "image" if file_id.startswith("p") else kind}
+
+        monkeypatch.setattr(extraction.store, "file_page_source", image_source)
+    paper = [{"fileId": f"p{n}", "name": "p", "pages": [1]} for n in range(pages)]
+    answers = [{"fileId": "a", "name": "answers"}]
+    _, files = await extraction.prepare("w", paper, answers)
+    return files
+
+
+async def test_a_born_digital_or_office_answer_file_goes_as_text(monkeypatch, tmp_path):
+    doc, _ = _pdf_page(LINE)
+    path = tmp_path / "answers.pdf"
+    with doc:
+        doc.save(path)
+    [pdf] = await _answer_files(monkeypatch, "pdf", path)
+    assert (pdf.text, pdf.images) == (LINE.strip(), ())
+    [word] = await _answer_files(monkeypatch, "docx")
+    assert (word.text, word.images) == (LINE.strip(), ())
+
+
+async def test_a_scan_or_image_answer_file_goes_as_page_images(monkeypatch, tmp_path):
+    """A scan needs no indexed text, and a blank page is left out."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    picture = Image.new("L", (40, 40), 200)
+    buffer = io.BytesIO()
+    picture.save(buffer, "PNG")
+    page.insert_image(page.rect, stream=buffer.getvalue())
+    doc.new_page()
+    path = tmp_path / "scan.pdf"
+    with doc:
+        doc.save(path)
+    [scan] = await _answer_files(monkeypatch, "pdf", path, text="")
+    assert (scan.text, [number for number, _ in scan.images]) == ("", [1])
+    [photo] = await _answer_files(monkeypatch, "image", text="")
+    assert [number for number, _ in photo.images] == [1]
+
+
+async def test_a_run_refuses_more_page_images_than_it_reads(monkeypatch):
+    """Paper and answer pages count together."""
+    monkeypatch.setattr(extraction.limits, "EXTRACTION_PAGES_MAX", 2)
+    assert len(await _answer_files(monkeypatch, "image", pages=1)) == 1
+    with pytest.raises(extraction.ExtractionRefused) as refused:
+        await _answer_files(monkeypatch, "image", pages=2)
+    assert refused.value.code == "too_many_pages"
+
+
+@pytest.mark.parametrize(
+    ("text", "code"),
+    [
+        ("", "no_indexed_text"),
+        ("x" * (extraction.ANSWER_TEXT_CHARS + 1), "answers_too_long"),
+    ],
+)
+async def test_an_answer_file_with_no_usable_text_is_refused(monkeypatch, text, code):
+    with pytest.raises(extraction.ExtractionRefused) as refused:
+        await _answer_files(monkeypatch, "docx", text=text)
+    assert refused.value.code == code
 
 
 async def test_the_map_message_holds_each_page_and_all_the_boxes(monkeypatch):
@@ -1883,7 +1692,7 @@ def test_extract_route_refuses_first_then_streams(monkeypatch):
     async def prepare(workspace_id, paper, answers):
         return [_page(1)], []
 
-    async def run(pages, schemes, *, model, validate):
+    async def run(pages, answers, *, model, validate):
         yield {"type": "questions", "questions": []}
         yield {"type": "done", "questions": [], "report": {"missing": []}}
 

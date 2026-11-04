@@ -126,6 +126,7 @@ func renderPythonLimits() []byte {
 	fmt.Fprintf(&out, "TAG_VALUE_MAX = %d\n", fieldlimits.TagValue)
 	fmt.Fprintf(&out, "TOPIC_NAME_MAX = %d\n", fieldlimits.TopicName)
 	fmt.Fprintf(&out, "TOPIC_DESCRIPTION_MAX = %d\n", fieldlimits.TopicDescription)
+	fmt.Fprintf(&out, "EXTRACTION_PAGES_MAX = %d\n", fieldlimits.ExtractionPages)
 	fmt.Fprintf(&out, "AUDIO_MAX_DURATION_SECONDS = %d\n", sourceupload.AudioMaxDurationSeconds)
 	fmt.Fprintf(&out, "IMAGE_MAX_SIDE = %d\n", imagecheck.MaxSide)
 	fmt.Fprintf(&out, "SOURCE_IMAGE_MAX_PIXELS = %d\n", imagecheck.SourceMaxPixels)
