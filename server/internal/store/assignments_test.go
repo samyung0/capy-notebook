@@ -1175,7 +1175,7 @@ func TestAssignedHiddenQuizOpensToItsAssignees(t *testing.T) {
 		t.Fatalf("staff's row = %+v, listed %v", row, ok)
 	}
 	page, err := f.s.ListOwnedMaterials(ctx, f.viewer, MaterialListFilter{Member: true, IDs: []string{f.quiz.ID}})
-	if err != nil || len(page.Items) != 1 || page.Items[0].AssignmentID != created.ID {
+	if err != nil || len(page.Items) != 1 || page.Items[0].AssignmentID != created.ID || page.Items[0].Hidden || page.Items[0].Preview != nil {
 		t.Fatalf("across workspaces = %+v, err %v", page.Items, err)
 	}
 	if _, ok := f.assignedRow(t, f.other); ok {

@@ -251,6 +251,14 @@ type MaterialListItem struct {
 	AssignmentID string `json:"assignmentId,omitempty"`
 }
 
+// forAssignee keeps from a quiz's assignee that it is hidden from others and its
+// preview, a question they would otherwise see before their clock starts.
+func (item *MaterialListItem) forAssignee() {
+	if item.AssignmentID != "" {
+		item.Hidden, item.Preview = false, nil
+	}
+}
+
 type MaterialPage struct {
 	Items      []MaterialListItem `json:"items" nullable:"false"`
 	NextCursor string             `json:"nextCursor,omitempty"`
@@ -332,7 +340,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 			&item.QuestionCount, &item.CardCount, &item.Preview, &item.LostAccess, &item.Hidden, &item.Assigned, &item.AssignmentID); err != nil {
 			return MaterialPage{}, err
 		}
-		item.Hidden = item.Hidden && item.AssignmentID == ""
+		item.forAssignee()
 		item.SharePath = materialSharePath(s.shareLinkSecret, string(item.Kind), item.ID, item.WorkspaceID, "")
 		if item.LostAccess {
 			item = lostMaterialItem(item)
@@ -576,7 +584,7 @@ func (s *Store) ListWorkspaceRecent(ctx context.Context, userID, wsID string, li
 			&item.TopicID, &item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes, &item.Preview, &item.Hidden, &item.Assigned, &item.AssignmentID); err != nil {
 			return out, err
 		}
-		item.Hidden = item.Hidden && item.AssignmentID == ""
+		item.forAssignee()
 		out.Materials = append(out.Materials, item)
 	}
 	return out, rows.Err()
