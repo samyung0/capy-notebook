@@ -225,6 +225,30 @@ async def page_texts(pdf: Path, pages: list[int], tag: str) -> dict[int, str]:
     return out
 
 
+def _outcome(result: str) -> str:
+    """A tool result line as a kind."""
+    if result.endswith("recorded."):
+        return "recorded"
+    if result.endswith("continued."):
+        return "continued"
+    if "Fix it and" in result:
+        return "refused"
+    if "recorded from earlier pages" in result:
+        return "duplicate"
+    if "not the open question" in result:
+        return "not_open"
+    if "at most" in result or "quiz is full" in result:
+        return "full"
+    return "other"
+
+
+def run_name(args) -> str:
+    name = f"{args.paper}-{args.model}-{args.repeat}"
+    if args.window_pages is not None:
+        name += f"-w{args.window_pages or 'all'}"
+    return name
+
+
 async def run(args) -> dict:
     from pipeline import elitellm, obs
     from pipeline.config import cfg
@@ -334,6 +358,48 @@ async def run(args) -> dict:
         await locate_figures(held, model=model)
 
     extraction.locate_figures = located
+    # The window size (0: every selected page in one window), and what each
+    # window call did: how it finished, its output, its tool calls and their
+    # results.
+    if args.window_pages is not None:
+        extraction.WINDOW_PAGES = args.window_pages or len(pages)
+    calls: list[dict] = []
+    complete_response = extraction.models.complete_response
+
+    async def counted(messages, **kwargs):
+        response = await complete_response(messages, **kwargs)
+        if kwargs.get("call_purpose") != "extraction_window":
+            return response
+        reply = elitellm.assistant_message_from_obj(
+            elitellm.message_from_response(response)
+        )
+        calls.append(
+            {
+                "finish": response.choices[0].finish_reason,
+                "output": response.usage.output_tokens,
+                "tool_calls": len(reply.get("tool_calls") or []),
+                "results": [],
+            }
+        )
+        return response
+
+    extraction.models.complete_response = counted
+    add, extend = extraction.Run.add, extraction.Run.extend
+
+    async def counted_add(self, item, window, pages_):
+        result = await add(self, item, window, pages_)
+        parts = len(item.get("parts") or []) if isinstance(item, dict) else 0
+        calls[-1]["results"].append(["record", _outcome(result), parts])
+        return result
+
+    async def counted_extend(self, args_, window, pages_):
+        result = await extend(self, args_, window, pages_)
+        calls[-1]["results"].append(
+            ["continue", _outcome(result), len(args_.get("parts") or [])]
+        )
+        return result
+
+    extraction.Run.add, extraction.Run.extend = counted_add, counted_extend
     started = time.monotonic()
     recorded: list[dict] = []
     done: dict = {}
@@ -347,7 +413,7 @@ async def run(args) -> dict:
         else:
             done = event
     seconds = time.monotonic() - started
-    crops = RESULTS / "crops" / f"{args.paper}-{args.model}-{args.repeat}"
+    crops = RESULTS / "crops" / run_name(args)
     crops.mkdir(parents=True, exist_ok=True)
     images = {f["id"]: base64.b64decode(f["image"]) for f in done.get("figures", [])}
     sizes = {
@@ -392,6 +458,8 @@ async def run(args) -> dict:
         "report": done["report"],
         "scheme_entries": parsed,
         "figures": figures,
+        "window_pages": extraction.WINDOW_PAGES,
+        "calls": calls,
     }
 
 
@@ -720,6 +788,51 @@ def box_scores(result: dict, gold: dict, key: str = "box") -> dict:
     }
 
 
+def window_scores(result: dict) -> dict | None:
+    """What the page windows did: calls, cut-offs, re-asks, tool results and
+    questions recorded per call."""
+    calls = result.get("calls")
+    if calls is None:
+        return None
+    report = result["report"]
+    kinds = collections.Counter(r[1] for c in calls for r in c["results"])
+    per_call = [
+        sum(1 for kind, outcome, _ in c["results"] if outcome == "recorded")
+        for c in calls
+    ]
+    parts_per_call = [
+        sum(n for _, outcome, n in c["results"] if outcome in ("recorded", "continued"))
+        for c in calls
+    ]
+    recording = [n for n in per_call if n]
+    output = sum(c["output"] for c in calls)
+    with_tools = sum(1 for c in calls if c["tool_calls"])
+    return {
+        "window_pages": result.get("window_pages"),
+        "windows": report["windows"],
+        "calls": len(calls),
+        # Calls with tool calls after each window's first: re-recording what
+        # was refused, continuing, or resending.
+        "re_asks": max(0, with_tools - report["windows"]),
+        # Replies with no tool call that closed a window ("DONE").
+        "closing": sum(
+            1 for c in calls if not c["tool_calls"] and c["finish"] != "length"
+        ),
+        "cut_off": sum(1 for c in calls if c["finish"] == "length"),
+        "not_json": sum(c["tool_calls"] - len(c["results"]) for c in calls),
+        "results": dict(kinds),
+        "questions_per_recording_call": round(sum(recording) / len(recording), 1)
+        if recording
+        else 0,
+        "most_questions_in_a_call": max(per_call, default=0),
+        "most_parts_in_a_call": max(parts_per_call, default=0),
+        "window_output_tokens": output,
+        "window_output_per_page": round(output / report["pages"]),
+        "most_output_in_a_call": max((c["output"] for c in calls), default=0),
+        "stopped": report["stopped"],
+    }
+
+
 def fidelity(result: dict, gold: dict, refs: Path) -> dict:
     from pipeline.retrieval.extraction import label_key
 
@@ -988,6 +1101,7 @@ def score(result: dict, gold: dict, refs: Path) -> dict:
             for label in result["report"]["figures"]
             if not gold_q.get(label_key(label), {}).get("figure")
         ],
+        "window": window_scores(result),
         "boxes": box_scores(result, gold),
         "window_boxes": box_scores(result, gold, "window_box"),
         "crops": len(result.get("figures") or []),
@@ -1011,6 +1125,11 @@ def main() -> None:
         "--score-only", action="store_true", help="rescore a saved result"
     )
     parser.add_argument(
+        "--window-pages",
+        type=int,
+        help="pages a window (production: 2); 0 puts every selected page in one",
+    )
+    parser.add_argument(
         "--effort",
         default="mid",
         choices=["low", "mid", "high"],
@@ -1018,7 +1137,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     RESULTS.mkdir(parents=True, exist_ok=True)
-    out = RESULTS / f"{args.paper}-{args.model}-{args.repeat}.json"
+    out = RESULTS / f"{run_name(args)}.json"
     if args.score_only:
         result = json.loads(out.read_text())
     else:

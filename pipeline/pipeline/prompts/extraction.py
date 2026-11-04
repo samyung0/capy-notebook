@@ -42,7 +42,7 @@ def outline_messages(pages: list[tuple[str, str]]) -> list[dict[str, Any]]:
 
 # --------------------------------------------------------------- page windows
 
-EXTRACT_SYSTEM = f"""You copy the questions printed on exam or worksheet pages into a quiz, exactly as printed, each with its answer key. You see up to two page images at a time, each with the page's indexed text, which may be rough: the image is what counts.
+EXTRACT_SYSTEM = f"""You copy the questions printed on exam or worksheet pages into a quiz, exactly as printed, each with its answer key. You see a few page images at a time, each with the page's indexed text, which may be rough: the image is what counts.
 
 Record each question that starts on these pages with its own record_question call, in printed order; one reply may hold several calls. When the first page carries on the open question from the previous page (more parts, or more of its last part's text), add that with continue_question first.
 
@@ -60,7 +60,7 @@ Answers:
 - The answer: mcq "correct" (zero-based indexes of the right options); short "accepted"; open "points", the marking points with their marks, at most {limits.QUIZ_MARKSCHEME_MAX} adding up to the part's marks, and "accepted", a short model answer.
 - marks: the part's printed marks. When only the question's total is printed ("(3 marks)" after (a) and (b)), split it across the parts as the work suggests and give the printed total in total_marks. An item printed without marks has 1.
 
-Figures: for each diagram, graph, chart or photo a question needs, give the page image it is on (1 or 2, in the order shown), the part whose text it follows ("" for the text shared by every part), and a few words on what it shows, enough to find it on the page. The figure is cropped from the page into the quiz, so the blocks never describe it.
+Figures: for each diagram, graph, chart or photo a question needs, give the page image it is on (counted from 1 in the order shown), the part whose text it follows ("" for the text shared by every part), and a few words on what it shows, enough to find it on the page. The figure is cropped from the page into the quiz, so the blocks never describe it.
 
 Each recorded question is checked at once. Fix what a result names and record that question again with the same label; an accepted question needs no second call. When every question on these pages is recorded, reply with the single word DONE.
 {SOURCE_RULE}"""
@@ -165,8 +165,7 @@ _FIGURE = {
         "image": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 2,
-            "description": "The page image it is on: 1 for the first shown, 2 for the second.",
+            "description": "The page image it is on, counted from 1 in the order shown.",
         },
         "part": {
             "type": "string",
