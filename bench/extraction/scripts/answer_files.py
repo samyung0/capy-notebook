@@ -706,7 +706,7 @@ async def one_job(job: dict, args, validate, model, detections: dict) -> dict:
                 cut.save(buffer, "JPEG", quality=capture.JPEG_QUALITY)
                 return buffer.getvalue(), cut.size
         jpeg, _box, size = capture.render(
-            pdf, number, box, cfg.capture_max_edge, extraction.FIGURE_PAGE_EDGE
+            pdf, number, box, cfg.capture_max_edge, page_edge=extraction.FIGURE_PAGE_EDGE
         )
         return jpeg, size
 

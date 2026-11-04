@@ -364,6 +364,18 @@ With the ask for answers may come answer files: a mark scheme, an answer key or 
 
 Call settings, tools and every other string are production's, in `todo-study-tracking/R6-extraction-prompt.md`.
 
+## The route as built
+
+Step 2 built the picks, with no `marks` field and no "printed". One run each through the finished code, nothing patched
+but the layout boxes, one run at a time:
+
+| Scheme sent as | Wall | Billed | Marks | Answers | Figures, missing |
+|---|---:|---:|---|---|---|
+| Text | 53 s | $0.0056 | All 19 right | All 19 right | Q8 and Q9, none |
+| Images | 65 s | $0.0080 | All 19 right | All 19 right | Q8 and Q9, none |
+
+One run each only checks that it works. These ran alone, so their wall times aren't comparable with the rows above.
+
 ## Limits and failures
 
 - 130 runs, all served by InferenceNet. No reply was cut off. One solve stream failed in a whole-paper run,
@@ -393,7 +405,7 @@ Call settings, tools and every other string are production's, in `todo-study-tra
 
 ## Spend
 
-$0.89 of the $1 stop, against the $0.60 budget, all 1017 on the extraction route. The rise came from what was added along
+$0.91 of the $1 stop, against the $0.60 budget, all 1017 on the extraction route. The rise came from what was added along
 the way: the stricter wording, the parse on the doctored files, Epo's images and the removal of "printed". One process at a time, 3 runs in
 flight at most, peak RSS about 300 MB on the one run measured. Keys stayed in the process, read only from their named lines
 in `deploy/.env.uat`. Nothing covers this script with a test.

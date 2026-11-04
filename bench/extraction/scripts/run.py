@@ -263,7 +263,7 @@ async def run(args) -> dict:
 
     async def crop(number: int, box: list[float]) -> tuple[bytes, tuple[int, int]]:
         jpeg, _box, size = capture.render(
-            pdf, number, box, cfg.capture_max_edge, extraction.FIGURE_PAGE_EDGE
+            pdf, number, box, cfg.capture_max_edge, page_edge=extraction.FIGURE_PAGE_EDGE
         )
         return jpeg, size
 
