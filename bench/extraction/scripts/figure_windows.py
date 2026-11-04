@@ -50,6 +50,7 @@ import run as bench  # noqa: E402
 OUT = bench.RESULTS / "windows"
 KATEX = Path("/Users/sam/web/capy-notebook/node_modules/katex")
 SPEND_CAP = 1.9
+AFTER_INSTALL = None
 
 BOX_RULES = (
     "Figures: a layout model looked for pictures and charts on these pages. After "
@@ -89,6 +90,8 @@ class State:
     problems: list = dataclasses.field(default_factory=list)
     scheme_entries: list = dataclasses.field(default_factory=list)
     names: list = dataclasses.field(default_factory=list)
+    # What another bench's patches keep for the result (paper_map.py).
+    extra: dict = dataclasses.field(default_factory=dict)
 
 
 STATE: contextvars.ContextVar[State] = contextvars.ContextVar("figure_window_job")
@@ -229,7 +232,7 @@ def install() -> None:
 
     def figures_from_boxes(raw, pages, part_labels):
         state = STATE.get()
-        if state.variant != "boxes":
+        if state.variant != "boxes" and not state.variant.startswith("map"):
             return read_figures(raw, pages, part_labels)
         read = []
         parts = {extraction.label_key(label) for label in part_labels}
@@ -291,7 +294,7 @@ def install() -> None:
             for q in held
             for f in q.figures
         ]
-        if state.variant != "boxes":
+        if state.variant != "boxes" and not state.variant.startswith("map"):
             state.box_calls += len({f.page.number for q in held for f in q.figures})
             return await locate_figures(held, model=model)
         # Only figures with no box go to the box call.
@@ -430,6 +433,9 @@ def pdf_of(paper: str, args) -> tuple[Path, str]:
     digital = Path(args.digital)
     if (digital / paper / "paper.pdf").exists():
         return digital, f"{paper}/paper.pdf"
+    merged = fm.OUT / "merged"
+    if (merged / f"{paper}.pdf").exists():
+        return merged, f"{paper}.pdf"
     return Path(args.scans), f"{paper}.pdf"
 
 
@@ -549,6 +555,7 @@ async def run_job(job: dict, args, det: dict, spend: fm.Spend) -> None:
         "windows": state.windows,
         "box_calls": state.box_calls,
         "problems": state.problems,
+        **state.extra,
     }
     try:
         if gold and not job["span"]:
@@ -589,6 +596,8 @@ async def run_job(job: dict, args, det: dict, spend: fm.Spend) -> None:
 async def run_jobs(args) -> None:
     fm.SPEND_CAP = SPEND_CAP
     install()
+    if AFTER_INSTALL:
+        AFTER_INSTALL()
     det = fm.load_detections(args.detections)
     # A page's boxes from another run of the detector, read after the rest.
     for path in args.override or []:
