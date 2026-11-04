@@ -286,8 +286,8 @@ the centre while nothing is open and the URL has `study=practice`
 file header (28px 36px padding); one column keeps the header for the Files
 dropdown and ⋮. The rail's Study opens it and its panel (`StudyPanel.tsx`)
 lists Study's pages: in a class, Members, Assignments and Practice for owner
-and editor members, My results, Assignments and Practice for others; in a
-personal workspace, My results and Practice for everyone. Only
+and editor members, Summary, Assignments and Practice for others; in a
+personal workspace, Summary and Practice for everyone. Only
 Practice is built; the rest show as muted rows with a "Coming soon" title
 and do nothing. Practice's row is current on the page, during a topic session
 and on its result.
@@ -311,7 +311,7 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
 - **A class's owner and teaching assistants** (P1): the title with "· N members", the Topic
   filter and the quizzes with Tried by ("5 of 6") and Group average ("74%",
   "–" under five tries). No Suggested and no own reviews: their own study
-  waits for My results. A row opens the quiz in the workspace.
+  waits for Summary. A row opens the quiz in the workspace.
 - Make my own practice (P3) and Add practice (whoever may edit: a class's
   staff, a personal workspace's owner and editors, whose quiz rows also open
   the quiz) show disabled with a "Coming soon" title; they come with their own
