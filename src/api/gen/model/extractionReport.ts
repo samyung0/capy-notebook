@@ -12,7 +12,6 @@ export interface ExtractionReport {
   figures: string[];
   figuresLeftOut: string[];
   keyDisagreements: string[];
-  keysWorkedOut: string[];
   marksDiffer: string[];
   missing: string[];
   pages: number;

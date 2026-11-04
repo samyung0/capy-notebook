@@ -5765,25 +5765,23 @@ later).
      covers and the validator accepts is done. Solve batches of `SOLVE_BATCH` (8) of the
      rest, in parallel, reasoning `mid`, runs of contiguous numbers, each continue the
      whole thread that copied their questions with "Give the answers to questions 17 to
-     24 now." `record_answers` gives each part `correct`, `accepted`, `points`,
-     `key_source` and a short worked solution: mcq `correct`, short `accepted`, open
-     marking `points` with marks and a short model answer in `accepted`. The model copies
-     a key the page prints (`key_source: printed`) and otherwise works it out
-     (`worked_out`), never changing the printed question. `accepted` is required, since
+     24 now." `record_answers` gives each part `correct`, `accepted`, `points` and a
+     short worked solution: mcq `correct`, short `accepted`, open marking `points` with
+     marks and a short model answer in `accepted`. The model copies a key the page prints
+     and otherwise works it out, never changing the printed question; nothing records which
+     (Epo 2026-11-05, "sure remove"). `accepted` is required, since
      a flat part dropped most open parts' model answers, so an mcq part sends an empty
      list, and code refuses an open part with none (Epo 2026-11-05). The merged question
      goes through the validator; what a batch left out gets one more call.
-  6. A scheme key replaces a worked-out one: an option letter becomes the printed option's
+  6. A scheme's key always replaces the model's: an option letter becomes the printed option's
      index, a short answer its value (a printed unit stripped), an open part's marking
      points its marking items (joined down to `QUIZ_MARKSCHEME_MAX`, their total replacing
      the part's marks) with the final answer as its model answer, and the scheme's worked
-     solution the AI one. A printed key stays. A key that differs from the scheme's is named
-     in `keyDisagreements` either way. A part the scheme covers with no working has no
-     solution.
-  7. Each paired question goes through the validator again; one it refuses keeps the page's
-     keys (`schemeRefused`). A worked-out key no scheme replaced keeps its solution marked
-     AI-written (the solution block's `label`, "AI-written" or "AI 撰写" by the starter's
-     locale) and its question is named in `keysWorkedOut`. A part left with no answer stays
+     solution the model's. A key that differs from the scheme's is named in
+     `keyDisagreements`; a part the model has no key for has nothing to differ. A part the
+     scheme covers with no working has no solution.
+  7. Each paired question goes through the validator again; one it refuses keeps the model's
+     keys (`schemeRefused`). A part left with no answer stays
      as copied (an mcq with `correct: []`, a short part with `accepted: []`, an open part
      with no marking items) with whatever keys its other parts got, and is named in
      `answersMissing` (Epo 2026-11-05, "allow no answers for questions then"). The
@@ -5862,7 +5860,7 @@ later).
   run its starter began: status, the questions copied so far (`recorded`),
   the quiz and the report (`expected`, the map's labels, `missing`, those with no
   copy, `recorded`, `answersMissing` and `schemeFailed`, both only when they apply,
-  `keysWorkedOut`, `keyDisagreements`, `schemeRefused`, `marksDiffer`, `unpaired`,
+  `keyDisagreements`, `schemeRefused`, `marksDiffer`, `unpaired`,
   `schemeRepeats`, `figures`, `figuresLeftOut`, `stopped`, `pages`, and `windows`, the
   copy batches, a name the screens' API keeps). `figures` names the questions saved with cropped figures, for
   the starter to check; `figuresLeftOut` those saved without theirs, because

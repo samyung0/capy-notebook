@@ -99,7 +99,6 @@ def question(label: str, **extra) -> dict:
                 "blocks": [{"type": "text", "text": "Find x."}],
                 "answer": {"type": "short", "accepted": ["1"]},
                 "marks": 1,
-                "key_source": "printed",
                 "solution": "x is 1.",
             }
         ],
@@ -111,7 +110,7 @@ def copied(label: str, **extra) -> dict:
     """A record_question call."""
     item = question(label)
     part = item["parts"][0]
-    del part["key_source"], part["solution"]
+    del part["solution"]
     part["answer"] = {"type": "short"}
     return {"pages": [5, 5], "figures": [], **item, **extra}
 
@@ -124,7 +123,6 @@ def answers(label: str, **extra) -> dict:
             {
                 "label": "a",
                 "accepted": ["1"],
-                "key_source": "printed",
                 "solution": "x is 1.",
                 **extra,
             }
@@ -177,8 +175,6 @@ async def generate(args) -> str:
     open_part = copied("13")
     open_part["parts"][0]["answer"] = {"type": "open"}
     open_part["parts"][0]["marks"] = 2
-    no_source = answers("12")
-    del no_source["parts"][0]["key_source"]
     copy_cases = [
         ("Arguments that are not JSON", call('{"label": "1"')),
         ("Arguments that are not an object", call("[1]")),
@@ -223,7 +219,6 @@ async def generate(args) -> str:
                 "record_answers",
             ),
         ),
-        ("A part with no key_source", call(no_source, "record_answers")),
         (
             "An open part with no model answer",
             call(
@@ -234,7 +229,6 @@ async def generate(args) -> str:
                             "label": "a",
                             "accepted": [],
                             "points": [{"text": "1A", "marks": 2}],
-                            "key_source": "worked_out",
                             "solution": "x is 1.",
                         }
                     ],
@@ -252,7 +246,6 @@ async def generate(args) -> str:
                             "label": "a",
                             "accepted": ["1"],
                             "points": [{"text": "1A", "marks": 1}],
-                            "key_source": "worked_out",
                             "solution": "x is 1.",
                         }
                     ],
@@ -288,7 +281,6 @@ async def generate(args) -> str:
         [],
         model=model,
         validate=validate,
-        locale="en",
     ):
         pass
     bodies = {}
@@ -506,11 +498,10 @@ async def full_strings(extraction) -> list[tuple[str, str]]:
     async def validate(q):
         return None
 
-    made = extraction.record(question("7"), "AI-written")
+    made = extraction.record(question("7"))
     made.question["parts"] = made.question["parts"] * limits.QUIZ_PARTS_MAX
     made.part_labels = ["a"] * limits.QUIZ_PARTS_MAX
-    made.sources = ["printed"] * limits.QUIZ_PARTS_MAX
-    run = extraction.Run(validate=validate, ai_label="AI-written", output_budget=BUDGET)
+    run = extraction.Run(validate=validate, output_budget=BUDGET)
     run.order["7"] = 0
     run.recorded["7"] = made
 

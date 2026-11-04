@@ -2299,10 +2299,6 @@ components:
           items:
             type: string
           type: array
-        keysWorkedOut:
-          items:
-            type: string
-          type: array
         marksDiffer:
           items:
             type: string
@@ -2346,7 +2342,6 @@ components:
         - expected
         - missing
         - recorded
-        - keysWorkedOut
         - keyDisagreements
         - schemeRefused
         - marksDiffer

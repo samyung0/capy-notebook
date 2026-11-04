@@ -766,8 +766,6 @@ class ExtractReq(LLMPin):
     paper: list[ExtractFile] = Field(min_length=1)
     answerFiles: list[ExtractFile]
     spendSessionId: str = Field(min_length=1)
-    # The starter's locale (users.locale) for the AI-written label.
-    locale: str | None = None
 
 
 @app.post("/extract")
@@ -827,7 +825,6 @@ async def _extract_events(
             schemes,
             model=model,
             validate=extraction.gateway_validate,
-            locale=req.locale,
         ):
             yield _sse(event)
     except elitellm.ProviderBusy:

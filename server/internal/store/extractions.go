@@ -29,12 +29,10 @@ type Extraction struct {
 
 // ExtractionReport is a finished run's completeness check, by printed
 // question label: the labels the map listed (Expected), those never copied
-// (Missing), those copied (Recorded), parts saved with no answer because their
-// solve call failed or the run stopped first, a marking note in its place
-// (AnswersMissing, "4(a)"), whether the answer files could not be parsed, so
-// every answer was worked out (SchemeFailed), questions with a part whose key the
-// model worked out and no mark scheme replaced (KeysWorkedOut; their solutions
-// carry the AI-written label), parts whose key differs from the mark scheme's
+// (Missing), those copied (Recorded), parts saved as copied with no answer because
+// their solve call failed or the run stopped first (AnswersMissing, "4(a)"), whether
+// the answer files could not be parsed, so every answer was worked out
+// (SchemeFailed), parts whose key differs from the mark scheme's
 // (KeyDisagreements, "4(a)"), questions that keep the page's keys because the
 // scheme's were refused (SchemeRefused), saved questions whose part marks
 // differ from the printed total (MarksDiffer), mark scheme entries no question
@@ -53,7 +51,6 @@ type ExtractionReport struct {
 	Recorded         []string `json:"recorded" nullable:"false"`
 	AnswersMissing   []string `json:"answersMissing,omitempty" nullable:"false"`
 	SchemeFailed     bool     `json:"schemeFailed,omitempty"`
-	KeysWorkedOut    []string `json:"keysWorkedOut" nullable:"false"`
 	KeyDisagreements []string `json:"keyDisagreements" nullable:"false"`
 	SchemeRefused    []string `json:"schemeRefused" nullable:"false"`
 	MarksDiffer      []string `json:"marksDiffer" nullable:"false"`

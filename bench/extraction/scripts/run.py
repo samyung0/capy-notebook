@@ -407,7 +407,7 @@ async def run(args) -> dict:
     recorded: list[dict] = []
     done: dict = {}
     async for event in extraction.run(
-        pages, schemes, model=model, validate=validate, locale="en"
+        pages, schemes, model=model, validate=validate
     ):
         if event["type"] == "questions":
             # The questions as copied, with their marks and no answers yet.
@@ -1090,7 +1090,6 @@ def score(result: dict, gold: dict, refs: Path) -> dict:
         if worked_mcq
         else None,
         "worked_out_part_marks_right": f"{worked_marks_right}/{worked_marks}",
-        "keys_worked_out_left": len(result["report"]["keysWorkedOut"]),
         "key_disagreements": result["report"]["keyDisagreements"],
         "scheme_refused": result["report"]["schemeRefused"],
         "marks_differ": result["report"]["marksDiffer"],

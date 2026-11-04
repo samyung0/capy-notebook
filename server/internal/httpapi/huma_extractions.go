@@ -211,7 +211,6 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 	}
 	body := map[string]any{
 		"workspaceId": wsID, "paper": paper, "answerFiles": answers, "spendSessionId": charge.id,
-		"locale": a.userLocale(ctx, actor),
 	}
 	llm.attach(body)
 	// The run goes on after this request returns.

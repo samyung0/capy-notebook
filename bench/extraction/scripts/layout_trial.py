@@ -353,7 +353,7 @@ async def run_job(job: dict, args, out_dir: Path) -> None:
     done: dict = {}
     started = time.monotonic()
     async for event in extraction.run(
-        pages, schemes, model=model, validate=validate, locale="en"
+        pages, schemes, model=model, validate=validate
     ):
         if event["type"] == "questions":
             recorded = copy.deepcopy(event["questions"])

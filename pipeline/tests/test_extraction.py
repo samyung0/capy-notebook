@@ -28,16 +28,13 @@ MODEL = ModelConfig(
     default_thinking="mid",
     context_window_tokens=1_000_000,
 )
-AI = extraction.AI_WRITTEN["en"]
 
 
 def _text(text: str) -> list[dict]:
     return [{"type": "text", "text": text}]
 
 
-def _mcq(
-    label: str, options: list[str], correct: int = 0, source: str = "worked_out"
-) -> dict:
+def _mcq(label: str, options: list[str], correct: int = 0) -> dict:
     return {
         "label": label,
         "stem": [],
@@ -47,7 +44,6 @@ def _mcq(
                 "blocks": _text(f"Question {label}"),
                 "answer": {"type": "mcq", "options": options, "correct": [correct]},
                 "marks": 1,
-                "key_source": source,
                 "solution": f"Why {label}.",
             }
         ],
@@ -64,7 +60,6 @@ def _open_part(label: str, marks: int) -> dict:
             "accepted": [f"answer {label}"],
         },
         "marks": marks,
-        "key_source": "worked_out",
         "solution": f"Work for {label}.",
     }
 
@@ -119,19 +114,16 @@ def test_label_key_compares_printed_labels():
     assert extraction.label_key("(b)(ii)") == extraction.label_key("b ii") == "b.ii"
 
 
-def test_record_keeps_printed_options_keys_and_ai_written_solutions():
-    held = extraction.record(_mcq("7", ["D text", "A text", "C text"], 2), AI)
+def test_record_keeps_printed_options_keys_and_solutions():
+    held = extraction.record(_mcq("7", ["D text", "A text", "C text"], 2))
     part = held.question["parts"][0]
     assert part["answer"] == {
         "type": "mcq",
         "options": ["D text", "A text", "C text"],
         "correct": [2],
     }
-    assert part["solution"] == [{"type": "text", "text": "Why 7.", "label": AI}]
-    assert held.sources == ["worked_out"]
-    printed = extraction.record(_mcq("8", ["a", "b"], 1, "printed"), AI)
-    assert "label" not in printed.question["parts"][0]["solution"][0]
-    long = extraction.record(_open("3", [("a", 2)]), AI)
+    assert part["solution"] == [{"type": "text", "text": "Why 7."}]
+    long = extraction.record(_open("3", [("a", 2)]))
     assert long.question["parts"][0]["markscheme"] == [{"text": "1A for a", "marks": 2}]
 
 
@@ -145,20 +137,20 @@ def test_option_lines_copied_into_the_text_are_taken_out():
     item["parts"][0]["blocks"] = _text(
         "Simplify $9^n$.\nA.  $3$ .\nB.  $3^{2n+6}$ .\nC. 9    D. $\\frac{1}{2}$"
     )
-    part = extraction.record(item, AI).question["parts"][0]
+    part = extraction.record(item).question["parts"][0]
     assert part["blocks"] == _text("Simplify $9^n$.")
     assert part["answer"]["options"] == options
 
     only = _mcq("3", ["52", "68"])
     only["stem"] = _text("Find the number of dots.")
     only["parts"][0]["blocks"] = _text("A. 52\nB. 68")
-    question = extraction.record(only, AI).question
+    question = extraction.record(only).question
     assert question["stem"] == []
     assert question["parts"][0]["blocks"] == _text("Find the number of dots.")
 
     other = _mcq("4", ["52", "68"])
     other["parts"][0]["blocks"] = _text("A. 52 apples\nB. 68")
-    assert extraction.record(other, AI).question["parts"][0]["blocks"] == _text(
+    assert extraction.record(other).question["parts"][0]["blocks"] == _text(
         "A. 52 apples\nB. 68"
     )
 
@@ -171,7 +163,7 @@ def test_plain_option_lines_are_taken_out_too():
     plain = _mcq("29", options)
     plain["stem"] = _text("The mean weight of the actresses is")
     plain["parts"][0]["blocks"] = _text("48 kg.\n\n50 kg.\n\n53 kg.\n\n60 kg.")
-    question = extraction.record(plain, AI).question
+    question = extraction.record(plain).question
     assert question["stem"] == []
     assert question["parts"][0]["blocks"] == _text(
         "The mean weight of the actresses is"
@@ -181,7 +173,7 @@ def test_plain_option_lines_are_taken_out_too():
     math = ["$\\frac{1}{5}$", "$\\frac{1}{7}$", "$\\frac{1}{9}$", "$\\frac{1}{10}$"]
     after = _mcq("28", math)
     after["parts"][0]["blocks"] = _text("Find the probability.\n\n" + "\n\n".join(math))
-    assert extraction.record(after, AI).question["parts"][0]["blocks"] == _text(
+    assert extraction.record(after).question["parts"][0]["blocks"] == _text(
         "Find the probability."
     )
 
@@ -193,13 +185,13 @@ def test_plain_option_lines_are_taken_out_too():
         *_text("C. $c$."),
         *_text("D. $d$."),
     ]
-    assert extraction.record(apart, AI).question["parts"][0]["blocks"] == _text(
+    assert extraction.record(apart).question["parts"][0]["blocks"] == _text(
         "In the figure,"
     )
 
     plain_apart = _mcq("25", ["1", "2"])
     plain_apart["parts"][0]["blocks"] = [*_text("Pick one."), *_text("1"), *_text("2")]
-    assert extraction.record(plain_apart, AI).question["parts"][0]["blocks"] == _text(
+    assert extraction.record(plain_apart).question["parts"][0]["blocks"] == _text(
         "Pick one."
     )
 
@@ -208,27 +200,27 @@ def test_plain_option_lines_are_taken_out_too():
     in_math["parts"][0]["blocks"] = _text(
         "Find it.\n$A.\\ (8, 60^\\circ)$.\n$B.\\ (8, 120^\\circ)$."
     )
-    assert extraction.record(in_math, AI).question["parts"][0]["blocks"] == _text(
+    assert extraction.record(in_math).question["parts"][0]["blocks"] == _text(
         "Find it."
     )
     typeset = _mcq("20", ["82 cm", "100 cm"])
     typeset["parts"][0]["blocks"] = _text(
         "Find it.\nA. $82\\text{ cm}$.\nB. $100\\text{ cm}$."
     )
-    assert extraction.record(typeset, AI).question["parts"][0]["blocks"] == _text(
+    assert extraction.record(typeset).question["parts"][0]["blocks"] == _text(
         "Find it."
     )
 
     bare_letter = _mcq("30", ["a relay", "a thermistor"])
     bare_letter["stem"] = _text("Which one?")
     bare_letter["parts"][0]["blocks"] = _text("A a relay\nB a thermistor")
-    assert extraction.record(bare_letter, AI).question["parts"][0]["blocks"] == _text(
+    assert extraction.record(bare_letter).question["parts"][0]["blocks"] == _text(
         "Which one?"
     )
 
     shuffled = _mcq("26", ["1", "2"])
     shuffled["parts"][0]["blocks"] = _text("Pick one.\n2\n1")
-    assert extraction.record(shuffled, AI).question["parts"][0]["blocks"] == _text(
+    assert extraction.record(shuffled).question["parts"][0]["blocks"] == _text(
         "Pick one.\n2\n1"
     )
 
@@ -239,18 +231,18 @@ def test_a_one_part_question_shows_its_text_once():
     item = _mcq("5", ["$540", "$600"])
     item["stem"] = _text("A fan is sold at a discount of $30\\%$.")
     item["parts"][0]["blocks"] = _text("A fan is sold at a discount of  $30\\%$.")
-    question = extraction.record(item, AI).question
+    question = extraction.record(item).question
     assert question["stem"] == []
     assert question["parts"][0]["blocks"] == _text(
         "A fan is sold at a discount of  $30\\%$."
     )
     other = _mcq("6", ["a", "b"])
     other["stem"] = _text("Given f(x).")
-    assert extraction.record(other, AI).question["stem"] == _text("Given f(x).")
+    assert extraction.record(other).question["stem"] == _text("Given f(x).")
     tail = _mcq("7", ["2", "3"])
     tail["stem"] = _text("Let 5a = 6c. Find $\\frac{a}{c}$.")
     tail["parts"][0]["blocks"] = _text("Find $\\frac{a}{c}$.")
-    assert extraction.record(tail, AI).question["stem"] == _text("Let 5a = 6c.")
+    assert extraction.record(tail).question["stem"] == _text("Let 5a = 6c.")
 
 
 def test_a_sub_parts_lead_in_starts_its_blocks():
@@ -258,25 +250,21 @@ def test_a_sub_parts_lead_in_starts_its_blocks():
     first block, once even when the blocks also hold it."""
     item = _open("8", [("a", 2), ("b(i)", 1)])
     item["parts"][1]["lead_in"] = "It is given that AC = 25 cm."
-    question = extraction.record(item, AI).question
+    question = extraction.record(item).question
     assert question["parts"][1]["blocks"] == _text(
         "It is given that AC = 25 cm."
     ) + _text("Find b(i).")
     item["parts"][1]["blocks"] = _text("It is given that AC = 25 cm.") + _text("x")
-    again = extraction.record(item, AI).question["parts"][1]["blocks"]
+    again = extraction.record(item).question["parts"][1]["blocks"]
     assert [b["text"] for b in again] == ["It is given that AC = 25 cm.", "x"]
 
 
-def test_a_part_must_say_where_its_key_came_from():
-    item = _mcq("5", ["a", "b"])
-    del item["parts"][0]["key_source"]
-    assert "key_source" in extraction._unsourced(extraction.record(item, AI))
-
-
-def test_pairing_replaces_worked_out_keys_keeps_printed_ones_and_names_disagreements():
-    worked = extraction.record(_mcq("12", ["a", "b", "c", "d"], 0), AI)
-    printed = extraction.record(_mcq("13", ["a", "b"], 0, "printed"), AI)
-    long = extraction.record(_open("3", [("a", 1), ("b(i)", 2)]), AI)
+def test_pairing_replaces_the_models_keys_and_names_disagreements():
+    worked = extraction.record(_mcq("12", ["a", "b", "c", "d"], 0))
+    unanswered = _mcq("13", ["a", "b"], 0)
+    del unanswered["parts"][0]["answer"]["correct"]
+    no_key = extraction.record(unanswered)
+    long = extraction.record(_open("3", [("a", 1), ("b(i)", 2)]))
     entries, _ = extraction._merged(
         [
             extraction.entries_from(
@@ -305,12 +293,13 @@ def test_pairing_replaces_worked_out_keys_keeps_printed_ones_and_names_disagreem
     )
     first = extraction.pair(worked, entries)
     assert first.held.question["parts"][0]["answer"]["correct"] == [2]
-    # The scheme's solution replaces the AI-written one.
+    # The scheme's solution replaces the model's.
     assert first.held.question["parts"][0]["solution"] == _text("C.")
-    assert first.held.sources == ["scheme"] and first.disagreed == ["12"]
-    second = extraction.pair(printed, entries)
-    assert second.held.question["parts"][0]["answer"]["correct"] == [0]
-    assert second.disagreed == ["13"]
+    assert first.covered and first.disagreed == ["12"]
+    # A part the model has no key for takes the scheme's, with nothing to differ.
+    second = extraction.pair(no_key, entries)
+    assert second.held.question["parts"][0]["answer"]["correct"] == [1]
+    assert second.covered and second.disagreed == []
     third = extraction.pair(long, entries)
     a, b = third.held.question["parts"]
     assert a["markscheme"] == [{"text": "1A", "marks": 1}]
@@ -453,7 +442,6 @@ def _answers(item: dict) -> dict:
         answer = part["answer"]
         given = {
             "label": part["label"],
-            "key_source": part["key_source"],
             "solution": part["solution"],
             "accepted": answer.get("accepted", []),
         }
@@ -544,7 +532,7 @@ async def _run(
     return [
         event
         async for event in extraction.run(
-            pages, list(schemes), model=MODEL, validate=validate, locale="en"
+            pages, list(schemes), model=MODEL, validate=validate
         )
     ]
 
@@ -573,7 +561,7 @@ def test_copying_carries_no_answers_and_answers_require_a_model_answer():
         "unit",
     ]
     given = record_answers["function"]["parameters"]["properties"]["parts"]["items"]
-    assert given["required"] == ["label", "accepted", "key_source", "solution"]
+    assert given["required"] == ["label", "accepted", "solution"]
     assert given["properties"]["accepted"]["description"].endswith(
         "open: a short model answer; mcq: an empty list."
     )
@@ -655,7 +643,6 @@ async def test_map_copy_and_solve_continue_one_conversation(monkeypatch):
     ]
     done = events[-1]
     assert done["report"]["recorded"] == [str(n) for n in range(1, 19)]
-    assert done["report"]["keysWorkedOut"] == [str(n) for n in range(1, 19)]
     assert done["report"]["answersMissing"] == []
     assert done["report"]["windows"] == 2
     assert all(q["parts"][0]["answer"]["correct"] == [1] for q in done["questions"])
@@ -686,7 +673,7 @@ async def test_a_copied_question_counts_as_recorded_after_its_batch(monkeypatch)
     assert saved["parts"][1]["blocks"][0] == {"type": "text", "text": "Data for (b)."}
     assert saved["parts"][0]["markscheme"] == [{"text": "1A for a", "marks": 2}]
     assert saved["parts"][0]["answer"]["accepted"] == ["answer a"]
-    assert saved["parts"][0]["solution"][0]["label"] == AI
+    assert set(saved["parts"][0]["solution"][0]) == {"type", "text"}
 
 
 async def test_a_copy_is_checked_without_its_keys(monkeypatch):
@@ -745,13 +732,10 @@ async def test_a_copy_is_checked_without_its_keys(monkeypatch):
 
 async def test_answers_are_merged_into_the_copy_and_checked(monkeypatch):
     """Refusals name what to fix; an open part needs its model answer; a question
-    already copied is not copied again; a printed key stays printed."""
+    already copied is not copied again."""
     item = _open("2", [("a", 1), ("b", 2)])
-    item["parts"][0]["key_source"] = "printed"
     no_part = _answers(item)
     no_part["parts"][0]["label"] = "z"
-    no_source = _answers(item)
-    del no_source["parts"][0]["key_source"]
     no_model = _answers(item)
     no_model["parts"][1]["accepted"] = []
     script = Script(
@@ -762,7 +746,6 @@ async def test_answers_are_merged_into_the_copy_and_checked(monkeypatch):
                 _tools(
                     ("record_answers", {"label": "7", "parts": []}),
                     ("record_answers", no_part),
-                    ("record_answers", no_source),
                     ("record_answers", no_model),
                     ("record_question", _copy(item)),
                     ("record_answers", _answers(item)),
@@ -776,7 +759,6 @@ async def test_answers_are_merged_into_the_copy_and_checked(monkeypatch):
     assert results == [
         "Question 7: no question with this label was copied. Give the label it was copied with.",
         'Question 2: it has no part "z"; its parts are a, b. Fix it and record it again.',
-        "Question 2: 2(a): key_source must be printed or worked_out. Fix it and record it again.",
         "Question 2: 2(b): invalid accepted answers. Fix it and record it again.",
         "Question 2: it is already copied; give its answers with record_answers.",
         "Question 2: recorded.",
@@ -784,7 +766,7 @@ async def test_answers_are_merged_into_the_copy_and_checked(monkeypatch):
     done = events[-1]
     [saved] = done["questions"]
     assert saved["parts"][0]["solution"] == [{"type": "text", "text": "Work for a."}]
-    assert saved["parts"][1]["solution"][0]["label"] == AI
+    assert saved["parts"][1]["solution"] == [{"type": "text", "text": "Work for b."}]
 
 
 async def test_a_scheme_is_parsed_from_the_map_and_removes_the_solving_it_covers(
@@ -871,10 +853,9 @@ async def test_a_scheme_is_parsed_from_the_map_and_removes_the_solving_it_covers
     assert first["parts"][0]["solution"] == [{"type": "text", "text": "Scheme 1."}]
     assert second["parts"][0]["markscheme"] == [{"text": "1A", "marks": 1}]
     assert second["parts"][0]["answer"]["accepted"] == ["7"]
-    assert second["parts"][1]["solution"][0]["label"] == AI
+    assert set(second["parts"][1]["solution"][0]) == {"type", "text"}
     assert third["parts"][0]["answer"]["correct"] == [1]
     report = done["report"]
-    assert report["keysWorkedOut"] == ["2", "3"]
     assert report["answersMissing"] == []
     assert report["schemeFailed"] is False
 
@@ -901,7 +882,6 @@ async def test_a_scheme_covering_everything_makes_no_solve_call(monkeypatch):
     [saved] = events[-1]["questions"]
     assert saved["parts"][0]["answer"]["correct"] == [1]
     assert saved["parts"][0]["solution"] == []
-    assert events[-1]["report"]["keysWorkedOut"] == []
 
 
 async def test_a_scheme_that_cannot_be_parsed_leaves_every_answer_to_solving(
@@ -1097,7 +1077,6 @@ async def test_a_solve_call_that_fails_keeps_the_copies_and_names_what_is_missin
     report = done["report"]
     assert report["recorded"] == ["1", "2", "3", "4"]
     assert report["answersMissing"] == ["1", "2(a)", "4"]
-    assert report["keysWorkedOut"] == ["3"]
     first, second, third, fourth = done["questions"]
     assert first["parts"][0]["answer"] == {
         "type": "mcq",
@@ -1267,7 +1246,7 @@ async def test_closing_the_stream_stops_the_threads(monkeypatch):
     monkeypatch.setattr(extraction, "ATTEMPT_WAIT_S", 0)
     monkeypatch.setattr(extraction.models, "complete_response", script)
     registry.bind_request_llm("mid")
-    stream = extraction.run([_page(5)], [], model=MODEL, validate=_ok, locale="en")
+    stream = extraction.run([_page(5)], [], model=MODEL, validate=_ok)
     first = await stream.__anext__()
     assert first["type"] == "questions"
     await stream.aclose()
@@ -1885,7 +1864,7 @@ def test_extract_route_refuses_first_then_streams(monkeypatch):
     async def prepare(workspace_id, paper, answers):
         return [_page(1)], []
 
-    async def run(pages, schemes, *, model, validate, locale):
+    async def run(pages, schemes, *, model, validate):
         yield {"type": "questions", "questions": []}
         yield {"type": "done", "questions": [], "report": {"missing": []}}
 

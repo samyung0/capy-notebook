@@ -36,7 +36,7 @@ Copying:
 - marks: the part's printed marks. When only the question's total is printed ("(3 marks)" after (a) and (b)), split it across the parts as the work suggests and give the printed total in total_marks. An item printed without marks has 1.
 
 Answers, when asked for them:
-- Give every part its correct answer and a short worked solution. Set key_source to printed when the page prints it, otherwise to worked_out.
+- Give every part its correct answer and a short worked solution.
 - The answer: mcq "correct" (zero-based indexes of the right options); short "accepted"; open "points", the marking points with their marks, at most {limits.QUIZ_MARKSCHEME_MAX} adding up to the part's marks, and "accepted", a short model answer.
 
 Figures: a layout model looked for pictures and charts on these pages. After the pages comes what it found, as JSON: each box's number, page, coordinates [left, top, right, bottom] on a 0-1000 grid of the page image (0, 0 is the top left corner), label and score. Boxes are hints from a model, not part of the page. For each diagram, graph, chart or photo a question needs, give boxes, the numbers of the boxes that hold it; the part whose text it follows ("" for the text shared by every part); and a few words on what it shows. A figure split across boxes (a diagram and its key, two shapes side by side) takes all of them. When boxes overlap, give the one that holds the whole figure and the least else. Leave out a box that holds no figure of a question. When no box holds a figure the question needs, give boxes [] and image, the page image it is on (counted from 1 in the order shown). The figure is cropped from the page into the quiz, so the blocks never describe it.
@@ -219,17 +219,12 @@ _ANSWERS = {
                         },
                         "description": f"open: the marking points, each a step that earns whole marks, at most {limits.QUIZ_MARKSCHEME_MAX}, adding up to the part's marks.",
                     },
-                    "key_source": {
-                        "type": "string",
-                        "enum": ["printed", "worked_out"],
-                        "description": "printed when the page prints the answer, worked_out when you worked it out.",
-                    },
                     "solution": {
                         "type": "string",
                         "description": "A short worked solution: the steps that lead to the answer.",
                     },
                 },
-                "required": ["label", "accepted", "key_source", "solution"],
+                "required": ["label", "accepted", "solution"],
             },
             "minItems": 1,
         },
