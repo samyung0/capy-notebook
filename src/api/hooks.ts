@@ -2432,10 +2432,10 @@ export const useWorkspaceCollaborators = (
 /** The owner's pending invites: every typed address, as typed. */
 export const useWorkspaceInvites = (
   workspaceId: string,
-  options?: QueryUiOptions
+  options?: QueryUiOptions & { enabled?: boolean }
 ) =>
   useQuery({
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && options?.enabled !== false,
     meta: queryMeta(options),
     queryFn: () =>
       api.get<PendingWorkspaceInvite[]>(`/workspaces/${workspaceId}/invites`),

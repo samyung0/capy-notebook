@@ -20,12 +20,11 @@ import type {
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
-import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
-import { Menu } from '@/components/ui/Menu';
 import {
   Select,
   SelectContent,
@@ -34,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
+import { TwoWaySwitch } from '@/components/ui/TwoWaySwitch';
 import { userToast } from '@/components/ui/userToast';
 import { getLocale, m } from '@/i18n';
 import { track } from '@/lib/analytics';
@@ -58,28 +58,29 @@ function day(iso: string) {
 
 /** A class calls its editors teaching assistants (Epo 2026-11-04): the name
  * only, the role underneath stays editor. */
-function roleOptions(
-  isClass: boolean
-): Array<{ value: AssignableRole; label: string }> {
+function roleOptions(isClass: boolean) {
   return [
     { label: m.members_role_view(), value: 'viewer' },
     {
       label: isClass ? m.role_teaching_assistant() : m.members_role_edit(),
       value: 'editor',
     },
-  ];
+  ] as const satisfies readonly { label: string; value: AssignableRole }[];
 }
 
+/** People with access, each with their role. The owner (`canManage`) also
+ * invites, changes a role and removes; an editor member reads the list. Leaving
+ * is in Workspace settings → Danger. */
 export function WorkspaceMemberManager({
+  canManage,
   workspaceId,
 }: {
+  canManage: boolean;
   workspaceId: string;
 }) {
-  const [manageTarget, setManageTarget] = useState<WorkspaceMember | null>(
-    null
-  );
-  const [managedRole, setManagedRole] = useState<AssignableRole>('viewer');
-  const { data: workspace } = useWorkspace(workspaceId);
+  const { data: workspace } = useWorkspace(workspaceId, {
+    errorBoundary: false,
+  });
   const isClass = workspace?.kind === 'class';
   const {
     data: membersData,
@@ -92,15 +93,23 @@ export function WorkspaceMemberManager({
     data: invitesData,
     error: invitesError,
     refetch: refetchInvites,
-  } = useWorkspaceInvites(workspaceId, { errorBoundary: false });
+  } = useWorkspaceInvites(workspaceId, {
+    enabled: canManage,
+    errorBoundary: false,
+  });
   const { mutateAsync: createInvite } = useCreateWorkspaceInvite(workspaceId);
   const { mutateAsync: cancelInvite } = useCancelWorkspaceInvite(workspaceId);
   const [inviteError, setInviteError] = useState<FormError | null>(null);
   const [cancelError, setCancelError] = useState<FormError | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
-  const { isPending: updateMemberIsPending, mutate: updateMember } =
-    useUpdateWorkspaceMember(workspaceId);
-  const { mutate: removeMember } = useRemoveWorkspaceMember(workspaceId);
+  const {
+    isPending: updatingRole,
+    mutate: updateMember,
+    variables: updated,
+  } = useUpdateWorkspaceMember(workspaceId);
+  const { isPending: removing, mutate: removeMember } =
+    useRemoveWorkspaceMember(workspaceId);
+  const roles = roleOptions(isClass);
 
   const {
     formState: { isValid, isSubmitting },
@@ -151,54 +160,69 @@ export function WorkspaceMemberManager({
         <InputTitle id="workspace-members-title">
           {m.members_people()}
         </InputTitle>
-        <p className="t-meta text-fg-muted">{m.members_invite_hint()}</p>
+        {canManage && (
+          <p className="t-meta text-fg-muted">{m.members_invite_hint()}</p>
+        )}
       </div>
 
-      <form className="mt-3 flex gap-2" onSubmit={formSubmit(invite)}>
-        <Controller
-          control={control}
-          name="identifier"
-          render={({ field, fieldState }) => (
-            <div className="min-w-0 flex-1">
-              <Input
-                {...field}
-                aria-invalid={fieldState.invalid}
-                disabled={isSubmitting}
-                placeholder={m.members_invite_placeholder()}
-              />
-              {fieldState.invalid && <InputError errors={[fieldState.error]} />}
-            </div>
-          )}
-        />
-        <Controller
-          control={control}
-          name="role"
-          render={({ field }) => (
-            <RoleSelect
-              className={cn(isClass ? 'w-34 sm:w-44' : 'w-22 sm:w-28')}
-              disabled={isSubmitting}
-              isClass={isClass}
-              label={m.members_invite_role()}
-              onChange={field.onChange}
-              value={field.value}
+      {canManage && (
+        <>
+          <form
+            className="mt-3 flex flex-col gap-2"
+            onSubmit={formSubmit(invite)}
+          >
+            <Controller
+              control={control}
+              name="role"
+              render={({ field }) => (
+                <TwoWaySwitch
+                  className="self-start"
+                  disabled={isSubmitting}
+                  label={m.members_invite_role()}
+                  onChange={field.onChange}
+                  options={roles}
+                  value={field.value}
+                />
+              )}
             />
-          )}
-        />
-        {/* Phones show the send icon alone. As tall as the field and select. */}
-        <Button
-          className="aspect-square px-0 sm:aspect-auto sm:px-5"
-          disabled={inviteDisabled}
-          type="submit"
-          variant="ghost-hover"
-        >
-          <span className="sr-only sm:not-sr-only">{m.members_invite()}</span>
-          {isSubmitting ? <Spinner /> : <Icon name="send" />}
-        </Button>
-      </form>
-      <FormAlert
-        errorId={inviteError?.errorId}
-        message={inviteError?.message ?? null}
-      />
+            <div className="flex gap-2">
+              <Controller
+                control={control}
+                name="identifier"
+                render={({ field, fieldState }) => (
+                  <div className="min-w-0 flex-1">
+                    <Input
+                      {...field}
+                      aria-invalid={fieldState.invalid}
+                      disabled={isSubmitting}
+                      placeholder={m.members_invite_placeholder()}
+                    />
+                    {fieldState.invalid && (
+                      <InputError errors={[fieldState.error]} />
+                    )}
+                  </div>
+                )}
+              />
+              {/* Phones show the send icon alone. As tall as the field. */}
+              <Button
+                className="aspect-square px-0 sm:aspect-auto sm:px-5"
+                disabled={inviteDisabled}
+                type="submit"
+                variant="ghost-hover"
+              >
+                <span className="sr-only sm:not-sr-only">
+                  {m.members_invite()}
+                </span>
+                {isSubmitting ? <Spinner /> : <Icon name="send" />}
+              </Button>
+            </div>
+          </form>
+          <FormAlert
+            errorId={inviteError?.errorId}
+            message={inviteError?.message ?? null}
+          />
+        </>
+      )}
 
       {!membersData && membersError && (
         <InlineErrorState
@@ -225,23 +249,36 @@ export function WorkspaceMemberManager({
               <span className="px-2 font-medium text-fg-muted text-xs">
                 {m.common_owner()}
               </span>
+            ) : canManage ? (
+              <>
+                <RoleSelect
+                  className={cn(isClass ? 'w-44' : 'w-22 sm:w-28')}
+                  disabled={updatingRole}
+                  label={m.members_role_of({ name: member.name })}
+                  onChange={(role) =>
+                    updateMember({ role, userId: member.userId })
+                  }
+                  options={roles}
+                  value={
+                    updatingRole && updated?.userId === member.userId
+                      ? updated.role
+                      : (member.role as AssignableRole)
+                  }
+                />
+                <Button
+                  aria-label={m.members_remove_named({ name: member.name })}
+                  className="aspect-square px-0"
+                  disabled={removing}
+                  onClick={() => removeMember(member.userId)}
+                  variant="danger-light"
+                >
+                  <Icon name="trash" />
+                </Button>
+              </>
             ) : (
-              <Menu
-                items={[
-                  {
-                    label: m.members_manage(),
-                    onClick: () => {
-                      setManageTarget(member);
-                      setManagedRole(member.role as AssignableRole);
-                    },
-                  },
-                  {
-                    danger: true,
-                    label: m.members_remove(),
-                    onClick: () => removeMember(member.userId),
-                  },
-                ]}
-              />
+              <span className="px-2 font-medium text-fg-muted text-xs">
+                {roles.find((role) => role.value === member.role)?.label}
+              </span>
             )}
           </div>
         ))}
@@ -249,76 +286,51 @@ export function WorkspaceMemberManager({
 
       {/* Every typed address, as typed and always as sent: whether one has
           an account never shows here. */}
-      {(!!invitesData?.length || (!invitesData && invitesError)) && (
-        <div className="mt-4 flex flex-col gap-1.5">
-          <p className="t-label text-fg-muted">{m.members_pending_title()}</p>
-          {/* A failed load is not "nothing pending". */}
-          {!invitesData && invitesError && (
-            <InlineErrorState
-              className="py-6"
-              errorId={unexpectedErrorId(invitesError)}
-              message={describeError(invitesError).title}
-              onRetry={() => void refetchInvites()}
-            />
-          )}
-          {invitesData?.map((pending) => (
-            <div className="flex items-center gap-2 py-1" key={pending.id}>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-fg text-sm">
-                  {pending.address}
-                </p>
-                <p className="t-meta text-fg-muted">
-                  {m.members_pending_meta({
-                    expires: day(pending.expiresAt),
-                    sent: day(pending.sentAt),
+      {canManage &&
+        (!!invitesData?.length || (!invitesData && invitesError)) && (
+          <div className="mt-4 flex flex-col gap-1.5">
+            <p className="t-label text-fg-muted">{m.members_pending_title()}</p>
+            {/* A failed load is not "nothing pending". */}
+            {!invitesData && invitesError && (
+              <InlineErrorState
+                className="py-6"
+                errorId={unexpectedErrorId(invitesError)}
+                message={describeError(invitesError).title}
+                onRetry={() => void refetchInvites()}
+              />
+            )}
+            {invitesData?.map((pending) => (
+              <div className="flex items-center gap-2 py-1" key={pending.id}>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-fg text-sm">
+                    {pending.address}
+                  </p>
+                  <p className="t-meta text-fg-muted">
+                    {m.members_pending_meta({
+                      expires: day(pending.expiresAt),
+                      sent: day(pending.sentAt),
+                    })}
+                  </p>
+                </div>
+                <Button
+                  aria-label={m.members_pending_cancel_label({
+                    address: pending.address,
                   })}
-                </p>
+                  disabled={cancelling !== null}
+                  onClick={() => void cancel(pending.id)}
+                  size="sm"
+                  variant="outline"
+                >
+                  {cancelling === pending.id ? <Spinner /> : m.action_cancel()}
+                </Button>
               </div>
-              <Button
-                aria-label={m.members_pending_cancel_label({
-                  address: pending.address,
-                })}
-                disabled={cancelling !== null}
-                onClick={() => void cancel(pending.id)}
-                size="sm"
-                variant="outline"
-              >
-                {cancelling === pending.id ? <Spinner /> : m.action_cancel()}
-              </Button>
-            </div>
-          ))}
-          <FormAlert
-            errorId={cancelError?.errorId}
-            message={cancelError?.message ?? null}
-          />
-        </div>
-      )}
-
-      <SimpleDialog
-        onClose={() => setManageTarget(null)}
-        open={!!manageTarget}
-        title={m.members_manage()}
-      >
-        {manageTarget && (
-          <div className="flex items-center justify-between gap-3">
-            <InputTitle>{m.common_role()}</InputTitle>
-            <RoleSelect
-              className={cn(isClass ? 'w-44' : 'w-28')}
-              disabled={updateMemberIsPending}
-              isClass={isClass}
-              label={m.common_role()}
-              onChange={(nextRole) => {
-                setManagedRole(nextRole);
-                updateMember({
-                  role: nextRole,
-                  userId: manageTarget.userId,
-                });
-              }}
-              value={managedRole}
+            ))}
+            <FormAlert
+              errorId={cancelError?.errorId}
+              message={cancelError?.message ?? null}
             />
           </div>
         )}
-      </SimpleDialog>
     </section>
   );
 }
@@ -327,7 +339,7 @@ function RoleSelect({
   value,
   onChange,
   disabled,
-  isClass,
+  options,
   label,
   className,
 }: {
@@ -335,7 +347,7 @@ function RoleSelect({
   value: AssignableRole;
   onChange: (role: AssignableRole) => void;
   disabled?: boolean;
-  isClass: boolean;
+  options: ReturnType<typeof roleOptions>;
   label: string;
 }) {
   return (
@@ -349,7 +361,7 @@ function RoleSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          {roleOptions(isClass).map((option) => (
+          {options.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}
             </SelectItem>
@@ -371,7 +383,9 @@ export function WorkspaceTransferDialog({
 }) {
   const { isPending, mutateAsync: transfer } =
     useTransferWorkspace(workspaceId);
-  const { data: workspace } = useWorkspace(workspaceId);
+  const { data: workspace } = useWorkspace(workspaceId, {
+    errorBoundary: false,
+  });
   return (
     <ConfirmDialog
       body={

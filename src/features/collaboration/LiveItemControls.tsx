@@ -31,8 +31,8 @@ const STATUS: Record<
 };
 
 /** The live status in an item dialog's footer: the note header's icons.
- * `compact` (the phone header, beside Undo and Redo) shows the icon alone,
- * at their size and ink. */
+ * `compact` (the phone header) shows the icon alone, at the toolbar's size and
+ * ink. */
 export function LiveStatus({
   status,
   compact,
@@ -66,10 +66,10 @@ export function LiveStatus({
   );
 }
 
-/** Undo and Redo of this user's own edits to one live item. `header` is the
- * file and material top bar's copy: phones go without it (Epo 2026-11-04), and
- * from lg the icons lift 1px, level with the View toggle's icon beside them.
- * `footer` lifts them half a pixel always, level with the live status. */
+/** Undo and Redo of this user's own edits to one live item. Phones go without
+ * them everywhere (Epo 2026-11-04); keyboard shortcuts stay. `header` lifts the
+ * icons 1px from lg, level with the View toggle's icon beside them; `footer`
+ * lifts them half a pixel always, level with the live status. */
 export function UndoButtons({
   manager,
   header,
@@ -94,10 +94,7 @@ export function UndoButtons({
   const held = useCollaborationHeld();
   return (
     // The tour outlines the pair.
-    <span
-      className={cn('flex items-center', header && 'hidden sm:flex')}
-      data-undo-buttons
-    >
+    <span className="hidden items-center sm:flex" data-undo-buttons>
       <ToolbarButton
         disabled={held || !canUndo}
         label={m.editor_undo()}
