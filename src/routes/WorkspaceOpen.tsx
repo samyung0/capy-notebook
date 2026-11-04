@@ -574,7 +574,7 @@ function WorkspaceOpen() {
       navigate({
         replace: true,
         resetScroll: false,
-        search: { material: citation.materialId, mode: 'view' },
+        search: { material: citation.materialId },
         to: '.',
       });
       return;

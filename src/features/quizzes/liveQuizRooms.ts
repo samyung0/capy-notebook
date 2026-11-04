@@ -19,7 +19,7 @@ function combined(a: ItemRoomStatus, b: ItemRoomStatus): ItemRoomStatus {
   const rank: ItemRoomStatus[] = [
     'unavailable',
     'offline',
-    'connecting',
+    'opening',
     'syncing',
     'saved',
   ];

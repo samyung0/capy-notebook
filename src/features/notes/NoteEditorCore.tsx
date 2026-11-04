@@ -72,10 +72,9 @@ import {
 } from '@/features/collaboration/presence';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { limitUndo } from '@/features/collaboration/undo';
-import {
-  createMaterialDocument,
-  type MaterialDocument,
-  type MaterialValue,
+import type {
+  MaterialDocument,
+  MaterialValue,
 } from '@/features/materials/document';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { MaterialPreview } from '@/features/materials/MaterialPreview';
@@ -136,7 +135,6 @@ import { EditorCommandPalette } from './EditorCommandPalette';
 import type { NoteEditorStatus } from './editorMode';
 import { EditorScrollAreaContext } from './editorScrollArea';
 import { FloatingToolbar } from './FloatingToolbar';
-import { registerLiveNote } from './liveNoteHandover';
 import { type BoundCopy, mergeAtBind } from './merge/applyBlocks';
 import {
   deleteOnceStored,
@@ -365,27 +363,6 @@ function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
   );
 }
 
-/** Puts the editor's value into the cached material, as the projection will
- * hold it. A value the document format refuses is a bug, reported; the cache
- * then keeps its copy until the projection lands. */
-function handOverLiveValue(
-  qc: ReturnType<typeof useQueryClient>,
-  materialId: string,
-  value: MaterialValue
-) {
-  let content: MaterialDocument;
-  try {
-    content = createMaterialDocument(value);
-  } catch (error) {
-    captureException(error, { tags: { component: 'note-handover' } });
-    return;
-  }
-  qc.setQueryData<Material>(
-    qk.material(materialId),
-    (cached) => cached && { ...cached, content }
-  );
-}
-
 /**
  * Before every commit React saves the focused element's selection, and for a
  * contenteditable it walks the element's whole DOM to turn the selection into
@@ -585,6 +562,7 @@ export function NoteEditorCore({
   copies,
   pieces,
   sources,
+  firstOpen = false,
   phase = 'live',
   onPainted,
   joinStartedAt,
@@ -602,6 +580,8 @@ export function NoteEditorCore({
   onUnavailable,
   seed,
 }: {
+  /** Nothing of the note's own but its paint shows while this one builds. */
+  firstOpen?: boolean;
   phase?: NoteEditorPhase;
   /** Its content first painted (once). */
   onPainted?: (view: NoteView) => void;
@@ -894,6 +874,8 @@ export function NoteEditorCore({
   const reportedSlowed = useRef(false);
   const phaseNow = useRef(phase);
   phaseNow.current = phase;
+  const firstOpenNow = useRef(firstOpen);
+  firstOpenNow.current = firstOpen;
   // A paused editor reports nothing; a standby one leaves the header's status
   // as it was, the paused note above it still on screen.
   const statusChange = useRef(onEditorStatusChange);
@@ -912,21 +894,26 @@ export function NoteEditorCore({
   const holdSteps = useRef<(() => void) | null>(null);
   const report = useCallback((saveState: NoteEditorStatus['saveState']) => {
     const slowed = reportedSlowed.current ? { slowed: true } : {};
+    // A late mount opens until its merge applied (D2: no Getting ready).
+    const late =
+      lateNow.current && saveState !== 'offline' && saveState !== 'error';
     // Its open goes on behind the note on screen, and says only that it is
-    // slowed.
-    if (phaseNow.current === 'standby') {
+    // slowed: a swap's paused note keeps its status (D2), a first open's spinner
+    // stays.
+    if (phaseNow.current === 'standby' && !late) {
       if (reportedSlowed.current)
-        statusChange.current?.({ saveState: 'opening', slowed: true });
+        statusChange.current?.({
+          saveState: firstOpenNow.current ? 'opening' : 'saved',
+          slowed: true,
+        });
       return;
     }
-    // A late mount opens until its merge applied (D2: no Getting ready).
-    const shown =
-      lateNow.current && saveState !== 'offline' && saveState !== 'error'
-        ? 'opening'
-        : (sendingNow.current || heldSteps.current) &&
-            (saveState === 'saved' || saveState === 'opening')
-          ? 'syncing-draft'
-          : saveState;
+    const shown = late
+      ? 'opening'
+      : (sendingNow.current || heldSteps.current) &&
+          (saveState === 'saved' || saveState === 'opening')
+        ? 'syncing-draft'
+        : saveState;
     statusChange.current?.({ saveState: shown, ...slowed });
   }, []);
   // Whether the merge view's choices may edit the note now (set once the
@@ -1631,6 +1618,7 @@ export function NoteEditorCore({
                       handleStatelessEvent(payload);
                     },
                     onStep1: hiddenTyping.armed,
+                    sleepsHidden: true,
                     storedFrom: seed?.version,
                     token: async (previousToken?: string) => {
                       let token: MaterialCollaborationToken;
@@ -2022,20 +2010,10 @@ export function NoteEditorCore({
       const provider = roomProvider(editor)?.provider;
       seat.attach(provider instanceof RoomProvider ? provider : null);
     }, 0);
-    // Edit to View in this tab shows the live document at once: the toggle
-    // asks for it before View renders, and the material query takes the
-    // editor's value (co-editors' changes included) until the projection
-    // refetched after unmount lands. Not edits the room refused or
-    // discarded, nor a value never synced.
-    const unregisterHandOver = registerLiveNote(material.id, () => {
-      if (hasSynced.current && !rejected.current && !discarded.current)
-        handOverLiveValue(qc, material.id, editor.children as MaterialValue);
-    });
     return () => {
       active = false;
       clearTimeout(initializeTimer);
       if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
-      unregisterHandOver();
       seat.attach(null);
       if (initialized) editor.getApi(YjsPlugin).yjs.destroy();
       // A standby editor dropped for a newer one leaves the status to it.
@@ -2207,6 +2185,22 @@ export function NoteEditorCore({
       YjsEditor.connected(yjs)
     );
   }, [editor]);
+
+  // Back from a sleep (a clean hidden tab, or idle) its rejoin reports nothing
+  // until it syncs: its 30 s start as the tab shows.
+  useEffect(() => {
+    const shown = () => {
+      if (
+        document.visibilityState === 'visible' &&
+        hasSynced.current &&
+        !roomSynced.current &&
+        !stale.current
+      )
+        reconnector.current?.disconnected();
+    };
+    document.addEventListener('visibilitychange', shown);
+    return () => document.removeEventListener('visibilitychange', shown);
+  }, []);
 
   useEffect(() => {
     // A blip the socket survived brings no provider event, so the status comes

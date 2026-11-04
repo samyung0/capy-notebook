@@ -543,9 +543,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
 
     // Full storage: the note is view-only while organizing stays in its menu.
     await launch(page, 'account-storage-full');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.getByText('A note for trying application errors.')
     ).toBeVisible({ timeout: 30_000 });
@@ -563,9 +561,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     await page.keyboard.press('Escape');
 
     await launch(page, 'account-over-quota');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.locator('[data-storage-status="frozen-self"]')
     ).toBeVisible({ timeout: 30_000 });
@@ -611,9 +607,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
       ).toHaveAttribute('data-storage-status', status);
     }
     // A frozen viewer edits nowhere, a healthy owner's workspace included.
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.getByText('A note for trying application errors.')
     ).toBeVisible({ timeout: 30_000 });
@@ -622,9 +616,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     // The owner's full storage makes its note view-only for a member, under
     // the storage strip (uploader pays).
     await launch(page, 'workspace-owner-full');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(page.getByText(m.storage_payer_full_strip())).toBeVisible({
       timeout: 30_000,
     });
@@ -633,9 +625,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     // A frozen owner's note is view-only for a member too, with no storage
     // strip (frozen is not full).
     await launch(page, 'workspace-owner-frozen');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.getByText('A note for trying application errors.')
     ).toBeVisible({ timeout: 30_000 });

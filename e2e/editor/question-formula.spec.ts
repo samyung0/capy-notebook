@@ -154,7 +154,7 @@ test('a wide display formula scrolls in its own box with an edge fade, a fitting
   // The smallest supported phone: on narrow widths the stem runs the full
   // width under the number, and the reaction equation just fits at 390 px.
   await page.setViewportSize({ height: 844, width: 360 });
-  await page.goto('/materials/qz_1?mode=edit');
+  await page.goto('/materials/qz_1');
   // The first question's reaction equation is wider than a 360 px column.
   const formula = page
     .locator('[data-question-id]')
@@ -222,7 +222,7 @@ test('a wide display formula scrolls in its own box with an edge fade, a fitting
 test('a question formula selects on click for Delete and edits on double click', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_1?mode=edit');
+  await page.goto('/materials/qz_1');
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .first()

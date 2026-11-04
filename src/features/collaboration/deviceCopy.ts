@@ -35,9 +35,13 @@ export interface RoomSeed {
 const SEED_ORIGIN = Symbol('seed');
 
 /** Mock rooms reset on a reload, so only fixtures that outlive it keep copies
- * under MSW (their rooms do): a copy of a reset room would merge back into it. */
+ * under MSW (their rooms do), and the load-test notes, whose rooms reseed the
+ * same state (bench/editor/scripts/open-paint.mjs): a copy of a reset room would
+ * merge back into it. */
 const keepsCopies = (materialId: string) =>
-  !USE_MSW || materialId.startsWith('mock-scenario-');
+  !USE_MSW ||
+  materialId.startsWith('mock-scenario-') ||
+  import.meta.env.VITE_LOAD_TEST_SEED === 'true';
 
 /** Whether this person keeps copies of `material`: a member's. */
 export const keepsCopyOf = ({

@@ -6,7 +6,7 @@ import { m } from '../i18n';
  * the editor takes over silently at the same block and caret. */
 
 const NOTE = 'mock-scenario-note';
-const SCENARIOS = `/workspaces/ws_scenarios?material=${NOTE}&mode=edit`;
+const SCENARIOS = `/workspaces/ws_scenarios?material=${NOTE}`;
 const MATRIX = 'mat_note_bio_feature_matrix';
 const SEED = 'A note for trying application errors.';
 
@@ -45,7 +45,7 @@ const release = (page: Page) =>
 test('a note paints read-only with a spinner for its status, and turns editable once its room syncs', async ({
   page,
 }) => {
-  await page.goto(`/workspaces/ws_bio?material=${MATRIX}&mode=edit`);
+  await page.goto(`/workspaces/ws_bio?material=${MATRIX}`);
   await expect(editable(page)).toBeVisible({ timeout: 30_000 });
   await reopenHeld(page);
   await expect(
@@ -63,7 +63,7 @@ test('a note paints read-only with a spinner for its status, and turns editable 
 test('the editor takes over at the block and caret the reader had', async ({
   page,
 }) => {
-  await page.goto(`/workspaces/ws_bio?material=${MATRIX}&mode=edit`);
+  await page.goto(`/workspaces/ws_bio?material=${MATRIX}`);
   await expect(editable(page)).toBeVisible({ timeout: 30_000 });
   await reopenHeld(page);
   const preview = painted(page);

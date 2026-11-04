@@ -12,19 +12,22 @@ import type { UndoTarget } from './undo';
 /** A live item's room state as the note header's save status reads it. */
 export function itemSaveState(
   status: ItemRoomStatus,
-  offline?: ItemRoomSnapshot['offline']
+  offline?: ItemRoomSnapshot['offline'],
+  sending?: boolean
 ): NoteEditorSaveState | null {
   // Refused as outdated: stopped until the page reloads, as recovery.
   if (isOutdatedBanner(offline)) return 'error';
-  return status === 'unavailable' ? null : status;
+  if (status === 'unavailable') return null;
+  // A draft send reads as such, whatever the room says meanwhile (D10).
+  return sending && status !== 'offline' ? 'syncing-draft' : status;
 }
 
 const STATUS: Record<
   ItemRoomStatus,
   { icon: IconName; label: () => string } | null
 > = {
-  connecting: { icon: 'cloudSync', label: m.editor_connecting },
   offline: { icon: 'cloudOff', label: m.editor_status_offline },
+  opening: null,
   saved: { icon: 'CloudIcon', label: m.editor_status_saved },
   syncing: { icon: 'cloudSync', label: m.editor_status_syncing },
   unavailable: null,

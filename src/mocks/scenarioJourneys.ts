@@ -234,7 +234,7 @@ export async function runJourney(
     id === 'note-frozen-while-editing' ||
     id === 'note-storage-full-while-editing'
   ) {
-    await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);
+    await go(`${scenarioPath}?material=${scenarioNote}`);
     const editable = await ui.element<HTMLElement>('[contenteditable="true"]');
     // A normal typed edit, still inside the checkpoint debounce when the
     // room turns read-only.
@@ -343,12 +343,12 @@ export async function runJourney(
         1
       ),
     ]);
-    await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);
+    await go(`${scenarioPath}?material=${scenarioNote}`);
     await ui.element('[data-testid="save-banner"][data-kind="review"]');
     return;
   }
   if (id === 'note-permission-lost') {
-    await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);
+    await go(`${scenarioPath}?material=${scenarioNote}`);
     await ui.element('[contenteditable="true"]');
     const note = db.materials.find((row) => row.id === scenarioNote)!;
     note.capabilities = {
@@ -484,7 +484,7 @@ export async function runJourney(
     'annotations-load': `${scenarioPath}?file=mock-scenario-pdf`,
     'attempt-load': `/quizzes/attempts/${db.attempts[0].id}`,
     'billing-load': '/billing',
-    'collaboration-token': `${scenarioPath}?material=${scenarioNote}&mode=edit`,
+    'collaboration-token': `${scenarioPath}?material=${scenarioNote}`,
     'dashboard-lists': '/',
     'deletion-check': '/settings?tab=danger',
     'deletion-transfer-required': '/settings?tab=danger',
@@ -658,7 +658,7 @@ export async function runJourney(
       queryClient.setQueryData(qk.eventStream, { status: 'disconnected' });
       return 'Application reconnecting preview. MSW does not open the events connection.';
     case 'collab-chaos':
-      await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);
+      await go(`${scenarioPath}?material=${scenarioNote}`);
       await ui.element('[contenteditable="true"]');
       setChaosPeers(true);
       return;

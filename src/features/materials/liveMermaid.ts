@@ -1,7 +1,7 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 import { EMBED_CATALOG } from '@/api/embeds.generated';
-import type { MaterialDocument, MermaidElement } from './document';
+import type { MermaidElement } from './document';
 import type { MermaidTheme } from './mermaidThemes';
 
 /* A standalone mindmap's or diagram's room read without Plate (live-items
@@ -125,17 +125,4 @@ export function mermaidNode(live: LiveMermaid): MermaidElement {
     ...(live.theme && { theme: live.theme }),
     ...(live.width && { width: live.width }),
   } as MermaidElement;
-}
-
-/** `content` with its mermaid block replaced by the live one. */
-export function withMermaid(
-  content: MaterialDocument,
-  live: LiveMermaid
-): MaterialDocument {
-  return {
-    ...content,
-    value: content.value.map((node) =>
-      node.type === 'mermaid' ? mermaidNode(live) : node
-    ),
-  };
 }

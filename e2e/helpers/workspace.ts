@@ -8,11 +8,9 @@ export async function openWorkspaceMaterial(
   materialId: string,
   _shared = false
 ) {
-  // Editor tests request Edit explicitly; shared roles still enforce permissions.
+  // Each reader gets the highest mode they may have.
   const base = `/workspaces/${workspaceId}`;
-  await page.goto(
-    `${base}?material=${encodeURIComponent(materialId)}&mode=edit`
-  );
+  await page.goto(`${base}?material=${encodeURIComponent(materialId)}`);
 }
 
 /** Sharing controls moved into the workspace settings dialog's Sharing tab. */

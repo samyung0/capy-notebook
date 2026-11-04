@@ -615,6 +615,7 @@ function CollaborativeNoteEditor({
       currentUserId={meData.id}
       discussions={discussionsData ?? NO_DISCUSSIONS}
       draftKey={storedKey}
+      firstOpen={swap.mounts.length === 1 && !swap.copying}
       held={mount.drafts.held}
       joinStartedAt={joinStart.current}
       late={late?.key === mount.key ? late.handed : undefined}

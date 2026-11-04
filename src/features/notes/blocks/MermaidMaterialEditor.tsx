@@ -1,9 +1,7 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
-import { qk } from '@/api/client';
 import { useMe } from '@/api/hooks';
-import type { Material, Provenance } from '@/api/types';
+import type { Provenance } from '@/api/types';
 import {
   isOutdatedBanner,
   recoveryBanner,
@@ -41,9 +39,7 @@ import {
   blockSource,
   type LiveMermaid,
   mermaidNode,
-  readMermaid,
   useMermaid,
-  withMermaid,
 } from '@/features/materials/liveMermaid';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { MediaFrame } from '@/features/materials/MediaFrame';
@@ -63,7 +59,6 @@ import {
 } from '@/features/materials/mermaidThemes';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
-import { registerLiveNote } from '@/features/notes/liveNoteHandover';
 import { MERMAID_CAPTION_CLASS } from '@/features/notes/nodeStyles';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -97,7 +92,6 @@ export default function MermaidMaterialEditor({
   onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   title: string;
 }) {
-  const qc = useQueryClient();
   const { data: me } = useMe();
   const actorId = me?.id ?? null;
   const { room, snapshot } = useItemRoom(materialId, !!actorId, { actorId });
@@ -106,32 +100,22 @@ export default function MermaidMaterialEditor({
   useEffect(() => {
     const saveState = snapshot.recovery
       ? 'error'
-      : itemSaveState(snapshot.status, snapshot.offline);
-    onStatusChange(saveState ? { saveState } : null);
-  }, [snapshot.status, snapshot.recovery, snapshot.offline, onStatusChange]);
+      : itemSaveState(snapshot.status, snapshot.offline, snapshot.sending);
+    onStatusChange(saveState ? { saveState, slowed: snapshot.slowed } : null);
+  }, [
+    snapshot.status,
+    snapshot.recovery,
+    snapshot.offline,
+    snapshot.sending,
+    snapshot.slowed,
+    onStatusChange,
+  ]);
   useEffect(() => () => onStatusChange(null), [onStatusChange]);
   useReportPresence(onPresenceChange, snapshot.presence);
   useEffect(() => {
     if (snapshot.access === 'read')
       onReadOnly(snapshot.readOnlyCode ?? undefined);
   }, [snapshot.access, snapshot.readOnlyCode, onReadOnly]);
-  // Edit to View: the live block goes into the cached material first.
-  useEffect(() => {
-    if (!room) return;
-    return registerLiveNote(materialId, () => {
-      const current = readMermaid(room.doc);
-      if (!(current && room.getSnapshot().synced)) return;
-      qc.setQueryData<Material>(
-        qk.material(materialId),
-        (cached) =>
-          cached && {
-            ...cached,
-            content: withMermaid(cached.content, current),
-          }
-      );
-    });
-  }, [room, materialId, qc]);
-
   if (snapshot.status === 'unavailable')
     return (
       <p className="t-meta p-6 text-fg-muted">{m.material_ref_unavailable()}</p>

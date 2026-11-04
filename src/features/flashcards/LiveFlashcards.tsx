@@ -78,9 +78,16 @@ export function LiveFlashcards({
   useEffect(() => {
     const saveState = snapshot.recovery
       ? 'error'
-      : itemSaveState(snapshot.status, snapshot.offline);
-    onStatusChange?.(saveState ? { saveState } : null);
-  }, [snapshot.status, snapshot.recovery, snapshot.offline, onStatusChange]);
+      : itemSaveState(snapshot.status, snapshot.offline, snapshot.sending);
+    onStatusChange?.(saveState ? { saveState, slowed: snapshot.slowed } : null);
+  }, [
+    snapshot.status,
+    snapshot.recovery,
+    snapshot.offline,
+    snapshot.sending,
+    snapshot.slowed,
+    onStatusChange,
+  ]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   useReportPresence(onPresenceChange, snapshot.presence);
 

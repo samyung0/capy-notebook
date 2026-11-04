@@ -95,7 +95,7 @@ test('a discard keeps the note on screen read-only until the next editor paints,
   await holdRooms(page, true);
   await discard(page, MATRIX);
   // Paused: the old editor stays, read-only, beside the next one building
-  // hidden; the header says Reconnecting.
+  // hidden; the header's status stays as it was.
   const paused = page.locator('[data-note-mount="paused"]');
   await expect(paused).toBeVisible();
   await expect(paused).toContainText('Text marks & styles');
@@ -104,10 +104,7 @@ test('a discard keeps the note on screen read-only until the next editor paints,
     'false'
   );
   await expect(page.locator('[data-note-mount="standby"]')).toBeHidden();
-  await expect(saveState(page)).toHaveAttribute(
-    'data-save-state',
-    'reconnecting'
-  );
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   expect(await offsetIn(page, 'paused', block)).toBe(before);
   await shot(page, 'paused-desktop');
 
@@ -135,7 +132,7 @@ test('a hidden tab swaps at once, with no paused note', async ({ page }) => {
   await discard(page, EDITOR_NOTE.id);
   // The next editor is already in place, still waiting for its room.
   const live = page.locator('[data-note-mount="live"]');
-  await expect(live.getByText(m.editor_connecting())).toBeVisible();
+  await expect(live.locator('[contenteditable="true"]')).toHaveCount(0);
   await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0);
   await expect(page.locator('[data-note-mount]')).toHaveCount(1);
   await holdRooms(page, false);
@@ -161,10 +158,7 @@ test("a note reload whose JOIN is never answered ends at the join's 30 s", async
   await discard(page, EDITOR_NOTE.id);
   const paused = page.locator('[data-note-mount="paused"]');
   await expect(paused).toBeVisible();
-  await expect(saveState(page)).toHaveAttribute(
-    'data-save-state',
-    'reconnecting'
-  );
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   await page.waitForTimeout(15_000);
   await expect(paused).toBeVisible();
   await expect(paused).toHaveCount(0, { timeout: 60_000 });
@@ -194,7 +188,7 @@ test("a first open whose token request hangs ends at the join's 30 s", async ({
       requested = Date.now();
   });
   await page.goto(
-    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}&mode=edit`
+    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}`
   );
   const failed = page.getByText(m.editor_collab_unavailable());
   await expect(failed).toBeVisible({ timeout: 90_000 });
@@ -223,7 +217,7 @@ test('a note painted before its room synced binds at the sync and takes edits an
     setCollaborationSlowed(true);
   }, EDITOR_NOTE.id);
   await page.goto(
-    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}&mode=edit`
+    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}`
   );
   const editor = page.locator('[contenteditable="true"]').first();
   const third = editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true });
@@ -312,10 +306,7 @@ test.describe('on a phone', () => {
     await expect(copy.locator('[contenteditable="true"]')).toHaveCount(0);
     await expect(page.locator('[data-note-mount]')).toHaveCount(1);
     await expect(page.locator('[data-note-mount="standby"]')).toBeAttached();
-    await expect(saveState(page)).toHaveAttribute(
-      'data-save-state',
-      'reconnecting'
-    );
+    await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
     await shot(page, 'paused-360');
     await holdRooms(page, false);
     await expect(copy).toHaveCount(0, { timeout: 30_000 });
@@ -333,9 +324,7 @@ test("a refused update's edits come back as pieces after the swap", async ({
 }) => {
   test.setTimeout(120_000);
   // Drafts are stored for the scenario documents only under MSW.
-  await page.goto(
-    '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-  );
+  await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
   const editor = page.locator('[contenteditable="true"]').first();
   await expect(editor).toContainText(SCENARIO_SEED, { timeout: 30_000 });
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');

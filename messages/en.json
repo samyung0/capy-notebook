@@ -1215,7 +1215,6 @@
   "editor_status_offline": "Offline",
   "editor_status_unavailable": "Collaboration unavailable",
   "editor_status_reconnecting": "Reconnecting…",
-  "editor_status_getting_ready": "Getting ready…",
   "editor_open_slowed": "Opening is slowed because many large files were opened recently.",
   "editor_status_unsaved": "Not saved. Retrying…",
   "editor_save_failed": "Failed to save",

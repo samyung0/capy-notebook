@@ -37,9 +37,7 @@ async function openNote(browser: Browser, stored: Uint8Array) {
     [ROOM, Array.from(stored)] as const
   );
   const page = await context.newPage();
-  await page.goto(
-    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${NOTE}&mode=edit`
-  );
+  await page.goto(`/workspaces/${EDITOR_WORKSPACE_ID}?material=${NOTE}`);
   return page;
 }
 
@@ -59,6 +57,10 @@ const roomState = (page: Page) =>
       state: number[];
     };
   }, NOTE);
+
+test.afterEach(async ({ browser }) => {
+  await Promise.all(browser.contexts().map((context) => context.close()));
+});
 
 test('two people opening a note ending in a table write nothing', async ({
   browser,

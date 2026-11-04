@@ -60,9 +60,7 @@ import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useOnlineStatus } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { usePointerDownPress } from '@/lib/usePointerDownPress';
-import { MaterialModeToggle } from './MaterialModeToggle';
 import { MaterialShareDialog } from './MaterialShareDialog';
-import { type MaterialMode, materialModePolicy } from './modePolicy';
 import type { OpenItem } from './openItem';
 import { RoomPresence } from './RoomPresence';
 
@@ -288,8 +286,6 @@ function useHeader(
   material?: Material | MaterialRef;
   materialCapabilities?: AccessCapabilities;
   showImageZoom: boolean;
-  modes?: readonly MaterialMode[];
-  defaultMode?: MaterialMode;
 } {
   const { data: fileData } = useFile(item.kind === 'file' ? item.id : null, {
     errorBoundary: false,
@@ -349,7 +345,6 @@ function useHeader(
     };
   }
   const kind = 'type' in mt ? mt.type : mt.kind;
-  const policy = materialModePolicy(capabilities);
   const embedded = 'parentMaterialId' in mt && !!mt.parentMaterialId;
   return {
     canClone:
@@ -357,11 +352,9 @@ function useHeader(
       (standalone
         ? !('workspaceId' in mt && mt.workspaceId)
         : !!workspace?.canClone),
-    defaultMode: policy.defaultMode,
     icon: materialIconName(kind),
     material: mt,
     materialCapabilities: capabilities,
-    modes: policy.modes,
     showImageZoom: false,
     title: mt.title,
   };
@@ -373,8 +366,6 @@ export function Header({
   item,
   imageZoom,
   onImageZoomChange,
-  materialMode,
-  onMaterialModeChange,
   isFullscreen,
   onDeleted,
   onToggleFullscreen,
@@ -412,8 +403,6 @@ export function Header({
   item: OpenItem;
   imageZoom: number;
   onImageZoomChange: (next: number) => void;
-  materialMode: MaterialMode | null;
-  onMaterialModeChange: (mode: MaterialMode) => void;
   isFullscreen: boolean;
   onDeleted: () => void;
   onToggleFullscreen: () => void;
@@ -430,14 +419,7 @@ export function Header({
     materialCapabilities,
     title,
     showImageZoom,
-    modes,
-    defaultMode,
   } = useHeader(item, workspaceId, standalone);
-  const activeMode = readOnly
-    ? 'view'
-    : materialMode && modes?.includes(materialMode)
-      ? materialMode
-      : defaultMode;
   const navigate = useNavigate();
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
@@ -498,9 +480,6 @@ export function Header({
       {/* A live item's Undo and Redo portal here in Edit (live-items D5). */}
       {(item.kind === 'material' || office) && fileActions}
       {item.kind === 'file' && fileControls}
-      {!readOnly && modes && modes.length > 1 && activeMode && (
-        <MaterialModeToggle mode={activeMode} onChange={onMaterialModeChange} />
-      )}
       {showImageZoom && (
         <>
           <ToolbarButton

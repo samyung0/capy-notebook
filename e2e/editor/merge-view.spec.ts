@@ -7,7 +7,7 @@ import { m } from '../i18n';
 // keeps its room and drafts across reloads (MSW stores mock-scenario
 // fixtures for the tab).
 const NOTE = 'mock-scenario-note';
-const note = `/workspaces/ws_scenarios?material=${NOTE}&mode=edit`;
+const note = `/workspaces/ws_scenarios?material=${NOTE}`;
 const seed = 'A note for trying application errors.';
 const INTRO = 'mock-scenario-note-intro';
 // Set to a folder to keep screenshots of the strip and the sheet.

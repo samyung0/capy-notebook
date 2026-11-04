@@ -68,7 +68,7 @@ import { LOCAL_EDIT } from './yText';
  * stored in the database (Epo 2026-10-19), and a room that joined with
  * nothing of this device's to store is saved too (Epo 2026-10-20). */
 export type ItemRoomStatus =
-  | 'connecting'
+  | 'opening'
   | 'syncing'
   | 'saved'
   | 'offline'
@@ -199,7 +199,7 @@ export class ItemRoom {
     recovery: null,
     sending: false,
     slowed: false,
-    status: 'connecting',
+    status: 'opening',
     synced: false,
   };
   private unsynced = 0;
@@ -401,8 +401,10 @@ export class ItemRoom {
           this.unavailable();
           return;
         }
+        // A rejoin changes nothing until its 30 s passed (D2).
         if (reason === 'socket closed') {
-          this.goOffline();
+          if (navigator.onLine) this.reconnector.disconnected();
+          else this.goOffline();
           return;
         }
         if (reason === 'read-only connection sent a document update') {
@@ -452,8 +454,9 @@ export class ItemRoom {
           queueMicrotask(() => this.hold?.());
           return;
         }
-        if (this.snapshot.status !== 'offline')
-          this.set({ status: 'connecting' });
+        // A rejoin changes nothing until its 30 s passed (D2).
+        if (!this.snapshot.synced && this.snapshot.status !== 'offline')
+          this.set({ status: 'opening' });
       },
       onUnsyncedChanges: ({ number }) => {
         this.unsynced = number;
@@ -462,7 +465,7 @@ export class ItemRoom {
         if (number === 0) this.requestReceipt();
       },
       parent: this.options.inside ?? undefined,
-      // Stored drafts not yet covered by a receipt (Q236).
+      sleepsHidden: true,
       storedFrom: this.options.seed?.version,
       token: async (previousToken) => {
         if (cached) {
@@ -492,14 +495,28 @@ export class ItemRoom {
         this.lastToken = fresh.token;
         return fresh.token;
       },
+      // Stored drafts not yet covered by a receipt (Q236).
       unsent: () => !!this.recorder?.unsaved,
       url: first.url,
     });
     if (this.provider instanceof RoomProvider)
       this.options.seat?.attach(this.provider);
     this.keepCopy();
+    globalThis.document?.addEventListener('visibilitychange', this.shown);
     this.provider.connect();
   }
+
+  /** Back from a sleep its rejoin reports nothing until it syncs: its 30 s
+   * start as the tab shows. */
+  private readonly shown = () => {
+    if (
+      globalThis.document?.visibilityState === 'visible' &&
+      this.provider instanceof RoomProvider &&
+      !this.provider.isSynced &&
+      this.snapshot.synced
+    )
+      this.reconnector.disconnected();
+  };
 
   private copyDocument() {
     return this.options.document ?? 'content';
@@ -723,7 +740,9 @@ export class ItemRoom {
       slowed: true,
       status:
         this.snapshot.status === 'offline'
-          ? 'connecting'
+          ? this.snapshot.synced
+            ? this.live()
+            : 'opening'
           : this.snapshot.status,
     });
   }
@@ -897,6 +916,7 @@ export class ItemRoom {
   }
 
   destroy() {
+    globalThis.document?.removeEventListener('visibilitychange', this.shown);
     this.keeper?.close();
     this.destroyed = true;
     this.sender?.stop();
@@ -1012,7 +1032,7 @@ const INITIAL: ItemRoomSnapshot = {
   recovery: null,
   sending: false,
   slowed: false,
-  status: 'connecting',
+  status: 'opening',
   synced: false,
 };
 const initialSnapshot = () => INITIAL;

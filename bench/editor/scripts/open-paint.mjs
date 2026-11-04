@@ -73,6 +73,7 @@ async function open(page, note, { reload = false } = {}) {
       window.__open.start = 0;
     });
   await page
+    .locator('[data-testid="material-preview"], [contenteditable="true"]')
     .getByText(note.text)
     .first()
     .waitFor({ state: 'visible', timeout: 120_000 });

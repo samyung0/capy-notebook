@@ -13,7 +13,8 @@ import type { MaterialMode } from './modePolicy';
  * clicked. It lives in the URL rather than in component state so a cited page
  * survives a reload and can be linked to. `regions` is deliberately transient:
  * regular file navigation and reloads clear the citation highlight. `mode` is
- * an optional document mode, overriding the locally saved mode. */
+ * an Office or text file's optional mode, overriding the locally saved one; a
+ * material has none (Epo 2026-11-04), and an old link's is ignored. */
 export type OpenItem =
   | {
       kind: 'file';
@@ -41,6 +42,7 @@ export type WorkspaceOpenSearch = {
   /** A question or card in the open material, e.g. from a review summary. */
   item?: string;
   page?: number;
+  /** A file's: an old material link's is dropped. */
   mode?: MaterialMode;
   /** The open item fills the page, header and side panels hidden. In the URL
    * so the back gesture leaves it. */
@@ -89,6 +91,15 @@ function parseDocumentMode(value: unknown): MaterialMode | undefined {
   return value === 'view' || value === 'edit' ? value : undefined;
 }
 
+/** A standalone material's page: full screen only (an old link's `mode` goes). */
+export function parseMaterialPageSearch(search: Record<string, unknown>): {
+  fullscreen?: true;
+  mode?: undefined;
+} {
+  const { fullscreen } = parseDocumentModeSearch(search);
+  return { mode: undefined, ...(fullscreen ? { fullscreen } : {}) };
+}
+
 export function parseDocumentModeSearch(search: Record<string, unknown>): {
   mode?: MaterialMode;
   fullscreen?: true;
@@ -132,9 +143,11 @@ function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
   if (material) {
     const item =
       typeof search.item === 'string' && search.item ? search.item : undefined;
+    const { fullscreen } = parseDocumentModeSearch(search);
     return {
       material,
-      ...parseDocumentModeSearch(search),
+      mode: undefined,
+      ...(fullscreen ? { fullscreen } : {}),
       ...(item ? { item } : {}),
     };
   }

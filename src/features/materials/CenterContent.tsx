@@ -15,7 +15,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { isMaterialContentUnreadable, qk } from '@/api/client';
+import { isApiError, isMaterialContentUnreadable, qk } from '@/api/client';
 import {
   useFile,
   useMaterial,
@@ -69,7 +69,6 @@ import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
-import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { QuizEditor } from '@/features/quizzes/QuizEditor';
@@ -101,11 +100,7 @@ import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
 import { SourcesLine } from './MaterialAttributionFooter';
 import { RemovedAssetsContext, useRemovedAssets } from './MediaAssetView';
 import { MermaidMaterialView } from './MermaidMaterialView';
-import {
-  type MaterialMode,
-  materialModePolicy,
-  resolveMaterialMode,
-} from './modePolicy';
+import type { MaterialMode } from './modePolicy';
 import {
   DocumentAttribution,
   loadPreview,
@@ -172,8 +167,10 @@ export function CenterContent({
   const [fileMenu, setFileMenu] = useState<HTMLSpanElement | null>(null);
   const [fileActions, setFileActions] = useState<HTMLSpanElement | null>(null);
   const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
-  const materialMode =
-    requestedMode ?? (item ? readDocumentMode(item) : 'view');
+  // An Office or text file's: a material opens at the highest mode its reader
+  // may have (Epo 2026-11-04).
+  const fileMode =
+    item?.kind === 'file' ? (requestedMode ?? readDocumentMode(item)) : 'view';
   // Full screen lives in the URL (`?fullscreen=true`) so the back gesture
   // leaves it; opening another item drops it with the rest of the search.
   const isFullscreen =
@@ -232,7 +229,8 @@ export function CenterContent({
   }, [isFullscreen, setFullscreen]);
 
   useEffect(() => {
-    if (item && requestedMode) saveDocumentMode(item, requestedMode);
+    if (item?.kind === 'file' && requestedMode)
+      saveDocumentMode(item, requestedMode);
   }, [item?.kind, item?.id, requestedMode]);
 
   // Each open orders Recent Files and the quick open (the hook sends at most
@@ -244,14 +242,10 @@ export function CenterContent({
     if (openKind && openId) recordOpen({ id: openId, kind: openKind });
   }, [openKind, openId, recordOpen]);
 
-  const changeMaterialMode = (nextMode: MaterialMode) => {
+  const changeFileMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
     setPresence(null);
     if (item) saveDocumentMode(item, nextMode);
-    // The open editor's live document goes into the cached material before
-    // View renders, so View renders it once.
-    if (nextMode === 'view' && item?.kind === 'material')
-      handOverLiveNote(item.id);
     onModeChange(nextMode);
   };
 
@@ -268,7 +262,7 @@ export function CenterContent({
   }
   return (
     <FileModeContext.Provider
-      value={{ mode: materialMode, onChange: changeMaterialMode }}
+      value={{ mode: fileMode, onChange: changeFileMode }}
     >
       <FileHeaderTarget.Provider value={fileHeader}>
         <FileMenuTarget.Provider value={fileMenu}>
@@ -308,7 +302,6 @@ export function CenterContent({
                           isFullscreen={isFullscreen}
                           item={item}
                           leading={leading}
-                          materialMode={materialMode}
                           menuBar={
                             <span
                               className="flex min-w-0 items-center"
@@ -319,7 +312,6 @@ export function CenterContent({
                           onDeleted={onDeleted}
                           oneColumn={oneColumn}
                           onImageZoomChange={setImageZoom}
-                          onMaterialModeChange={changeMaterialMode}
                           onToggleFullscreen={() =>
                             setFullscreen(!isFullscreen)
                           }
@@ -348,7 +340,6 @@ export function CenterContent({
                               citation={item.citation}
                               key={item.id}
                               materialId={item.id}
-                              mode={materialMode}
                               onEditorStatusChange={setEditorStatus}
                               onPresenceChange={setPresence}
                               readOnly={readOnly}
@@ -411,7 +402,6 @@ function MaterialBody({
   citation,
   materialId,
   workspaceId,
-  mode,
   allowExternalAssets,
   onEditorStatusChange,
   onPresenceChange,
@@ -422,7 +412,6 @@ function MaterialBody({
   citation?: NoteCitationTarget;
   materialId: string;
   workspaceId: string;
-  mode: MaterialMode | null;
   allowExternalAssets: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
   onPresenceChange: (connections: PresenceConnection[] | null) => void;
@@ -459,7 +448,6 @@ function MaterialBody({
       key={materialId}
       kind={reference?.type ?? listedKind(queryClient, materialId)}
       materialId={materialId}
-      mode={mode}
       onEditorStatusChange={onEditorStatusChange}
       onPresenceChange={onPresenceChange}
       staticNote={choice === 'readOnly'}
@@ -523,7 +511,6 @@ function MaterialContentBody({
   centerQuiz,
   kind,
   materialId,
-  mode,
   allowExternalAssets,
   forceReadOnly,
   onEditorStatusChange,
@@ -536,7 +523,6 @@ function MaterialContentBody({
   /** The kind the opening list or route knows, for a read that fails. */
   kind?: Material['kind'];
   materialId: string;
-  mode: MaterialMode | null;
   allowExternalAssets: boolean;
   forceReadOnly: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
@@ -589,11 +575,15 @@ function MaterialContentBody({
       staticNote={staticNote}
     />
   );
-  if (isLoading) {
-    // A device copy paints before its read answers.
-    if (seed?.row.kind === 'note') return noteBody(undefined, false);
-    return <MaterialLoading />;
-  }
+  // A device copy paints before its read answers, and while the read cannot
+  // answer (the browser offline, the server down), until it refuses.
+  if (
+    !material &&
+    seed?.row.kind === 'note' &&
+    !(isApiError(error) && error.status < 500)
+  )
+    return noteBody(undefined, false);
+  if (isLoading) return <MaterialLoading />;
   if (error || !material) {
     return isMaterialContentUnreadable(error) ? (
       <FileError
@@ -606,9 +596,11 @@ function MaterialContentBody({
       <FileError />
     );
   }
-  const policy = materialModePolicy(material.capabilities);
+  // The highest mode this reader may have.
   const activeMode =
-    forceReadOnly || readOnly ? 'view' : resolveMaterialMode(mode, policy);
+    !(forceReadOnly || readOnly) && material.capabilities.canEditContent
+      ? 'edit'
+      : 'view';
   // Its payer (whoever created it) at the storage limit opens it view-only
   // under a strip saying so (uploader pays).
   const readOnlyStrip = material.storageFull ? (

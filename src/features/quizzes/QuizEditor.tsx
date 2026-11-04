@@ -66,9 +66,16 @@ export function QuizEditor({
   useEffect(() => {
     const saveState = rooms.recovery
       ? 'error'
-      : itemSaveState(rooms.status, rooms.offline);
-    onStatusChange?.(saveState ? { saveState } : null);
-  }, [rooms.status, rooms.recovery, rooms.offline, onStatusChange]);
+      : itemSaveState(rooms.status, rooms.offline, rooms.sending);
+    onStatusChange?.(saveState ? { saveState, slowed: rooms.slowed } : null);
+  }, [
+    rooms.status,
+    rooms.recovery,
+    rooms.offline,
+    rooms.sending,
+    rooms.slowed,
+    onStatusChange,
+  ]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   useReportPresence(onPresenceChange, rooms.presence);
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   openItemFromSearch,
   parseDocumentModeSearch,
+  parseMaterialPageSearch,
   parseWorkspaceOpenSearch,
   readDocumentMode,
   saveDocumentMode,
@@ -9,11 +10,15 @@ import {
 } from './openItem';
 
 describe('parseWorkspaceOpenSearch', () => {
-  it('keeps an explicit material mode from the URL', () => {
-    expect(
-      parseWorkspaceOpenSearch({ material: 'mat_1', mode: 'view' })
-    ).toEqual({ material: 'mat_1', mode: 'view' });
-  });
+  it.each(['view', 'edit'])(
+    "ignores an old material link's %s mode",
+    (mode) => {
+      expect(parseWorkspaceOpenSearch({ material: 'mat_1', mode })).toEqual({
+        material: 'mat_1',
+      });
+      expect(parseMaterialPageSearch({ mode })).toEqual({});
+    }
+  );
 
   it('keeps the question or card a review summary opens', () => {
     const search = parseWorkspaceOpenSearch({ item: 'q4', material: 'qz_1' });
@@ -23,12 +28,6 @@ describe('parseWorkspaceOpenSearch', () => {
       kind: 'material',
       target: 'q4',
     });
-  });
-
-  it('drops an invalid material mode', () => {
-    expect(
-      parseWorkspaceOpenSearch({ material: 'mat_1', mode: 'preview' })
-    ).toEqual({ material: 'mat_1' });
   });
 
   it.each(['view', 'edit'])('keeps file %s mode and citation page', (mode) => {

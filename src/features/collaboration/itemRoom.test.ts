@@ -807,17 +807,16 @@ it('says the reload loses edits this device could not store', async () => {
 it('loads while its open is slowed, never offline, until it syncs', async () => {
   const { room } = await started();
   const [provider] = providers;
-  provider.config.onSynced?.({ state: true });
   provider.config.onClose?.({ code: 0, reason: 'socket closed' });
   expect(room.getSnapshot().status).toBe('offline');
   provider.config.onSlowed?.(true);
   expect(room.getSnapshot()).toMatchObject({
     offline: null,
     slowed: true,
-    status: 'connecting',
+    status: 'opening',
   });
   await vi.advanceTimersByTimeAsync(60_000);
-  expect(room.getSnapshot().status).toBe('connecting');
+  expect(room.getSnapshot().status).toBe('opening');
   provider.config.onSynced?.({ state: true });
   expect(room.getSnapshot().slowed).toBe(false);
   // A slowed open whose channel parked (closed as the user's oldest) shows
@@ -828,13 +827,36 @@ it('loads while its open is slowed, never offline, until it syncs', async () => 
   room.destroy();
 });
 
+// Epo 2026-11-04: a rejoin changes nothing until its 30 s passed.
+it('keeps its status through a drop until its 30 s passed', async () => {
+  vi.stubGlobal('navigator', { onLine: true });
+  const { room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  const { status } = room.getSnapshot();
+  expect(status).not.toBe('opening');
+  provider.config.onSynced?.({ state: false });
+  provider.config.onClose?.({ code: 0, reason: 'socket closed' });
+  expect(room.getSnapshot().status).toBe(status);
+  vi.advanceTimersByTime(29_999);
+  expect(room.getSnapshot().status).toBe(status);
+  provider.config.onSynced?.({ state: true });
+  vi.advanceTimersByTime(60_000);
+  expect(room.getSnapshot().status).toBe(status);
+  provider.config.onClose?.({ code: 0, reason: 'socket closed' });
+  vi.advanceTimersByTime(30_000);
+  expect(room.getSnapshot().status).toBe('offline');
+  room.destroy();
+  vi.unstubAllGlobals();
+});
+
 // Epo 2026-10-23: an item room's join has 30 s from its token request; one
 // never answered then shows the room's connection error (offline).
 it('goes offline when its join has not finished 30 s after its token request', async () => {
   vi.stubGlobal('navigator', { onLine: true });
   const { room } = await started();
   vi.advanceTimersByTime(29_999);
-  expect(room.getSnapshot().status).toBe('connecting');
+  expect(room.getSnapshot().status).toBe('opening');
   vi.advanceTimersByTime(1);
   expect(room.getSnapshot().status).toBe('offline');
   vi.unstubAllGlobals();
