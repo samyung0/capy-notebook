@@ -2227,6 +2227,10 @@ design, option d), and the nudge's release file on 2026-10-17.
   `CLIENT_PROTOCOL` to 24 and `MIN_SOURCE` to 24, so every source tab on the
   older pin (protocols 20 to 23) reloads; `MIN_MATERIAL` stays 22. Its deploy
   request names "client protocol 23 -> 24, source 20 -> 24".
+  The BetterOffice 0.5.1 pin raised `CLIENT_PROTOCOL` to 25 and `MIN_SOURCE` to
+  25, so source tabs on the older pin (protocol 24) reload; `MIN_MATERIAL` stays
+  22. `OFFICE_PROTOCOL_VERSION` stays. Its deploy request names "client protocol
+  24 -> 25, source 24 -> 25".
 
 #### When to bump
 

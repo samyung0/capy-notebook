@@ -104,7 +104,7 @@ assert(promotion.jobs.deploy_production.needs.includes('agent_visibility'));
 const job = quality.jobs.critical_paths;
 assert.equal(job.environment, 'uat');
 assert.equal(job.steps.find(s => s.uses?.startsWith('actions/checkout')).with.submodules, 'recursive');
-assert.equal(job.steps.find(s => s.uses?.startsWith('oven-sh/setup-bun')).with['bun-version'], '1.3.14');
+assert.equal(job.steps.find(s => s.uses?.startsWith('oven-sh/setup-bun')).with['bun-version'], '1.4.3');
 assert.equal(job.steps.find(s => s.uses?.startsWith('dtolnay/rust-toolchain')).with.targets, 'wasm32-unknown-unknown');
 assert(job.steps.some(s => s.uses === './vendor/betteroffice/.github/actions/wasm-toolchain'));
 assert.equal(job.steps.find(s => s.uses?.startsWith('taiki-e/install-action')).with.tool, 'wasm-pack@0.15.0');
