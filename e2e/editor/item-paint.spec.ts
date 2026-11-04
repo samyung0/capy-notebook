@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, type Page, test } from '@playwright/test';
 import { m } from '../i18n';
 
@@ -140,4 +141,74 @@ test('a diagram paints its source and picture, read-only, until its room syncs',
   await page.getByText('Ribosome --> RoughER').click();
   await page.keyboard.type('Zzqq');
   await expect(page.getByText('Zzqq').first()).toBeVisible();
+});
+
+test("an item's edits past the expiry leave it open, in a toast until dismissed", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(open(CARDS));
+  const add = page.getByText(m.flashcards_add_card());
+  await expect(add).toBeVisible({ timeout: 30_000 });
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { setCollaborationReachable } = await import(path);
+    setCollaborationReachable(false);
+  });
+  await add.click();
+  await page.getByRole('dialog').getByRole('textbox').first().fill('Old front');
+  await page.keyboard.press('Escape');
+  const rows = () =>
+    page.evaluate(async (id) => {
+      const draftsPath = '/src/lib/editDrafts.ts';
+      const dbPath = '/src/mocks/db.ts';
+      const { draftKey, readDrafts } = await import(draftsPath);
+      const { user } = await import(dbPath);
+      const stored = await readDrafts(draftKey(user.id, 'material', id));
+      return stored.length;
+    }, CARDS);
+  await expect.poll(rows).toBeGreaterThan(0);
+  // Left, so nothing writes a newer row; then their last edit is 8 days old.
+  await page.evaluate((url) => {
+    history.pushState({}, '', url);
+    dispatchEvent(new PopStateEvent('popstate'));
+  }, '/workspaces/ws_scenarios');
+  await expect(add).toHaveCount(0);
+  await page.waitForTimeout(500);
+  await page.evaluate(async (id) => {
+    const draftsPath = '/src/lib/editDrafts.ts';
+    const dbPath = '/src/mocks/db.ts';
+    const { draftKey, putDrafts, readDrafts } = await import(draftsPath);
+    const { user } = await import(dbPath);
+    const stored: { savedAt: number }[] = await readDrafts(
+      draftKey(user.id, 'material', id)
+    );
+    const old = Date.now() - 8 * 24 * 60 * 60 * 1000;
+    await putDrafts(stored.map((row) => ({ ...row, savedAt: old })));
+  }, CARDS);
+  await page.goto(open(CARDS));
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { setCollaborationReachable } = await import(path);
+    setCollaborationReachable(true);
+  });
+  await expect(add).toBeVisible({ timeout: 30_000 });
+  const toast = page
+    .getByRole('alert')
+    .filter({ hasText: m.editor_old_edits_title() });
+  await expect(toast).toBeVisible();
+  // Shown again at the next open, until it is dismissed.
+  await page.reload();
+  await expect(toast).toBeVisible({ timeout: 30_000 });
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    toast.getByRole('button', { name: m.editor_old_edits_download() }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/\.tsv$/);
+  const path = await download.path();
+  expect(readFileSync(path, 'utf8')).toContain('Old front');
+  const close = toast.getByRole('button', { name: m.action_close() });
+  if (await close.isVisible()) await close.click();
+  await expect(toast).toHaveCount(0);
+  await expect.poll(rows).toBe(0);
 });

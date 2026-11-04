@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { ApiError } from '@/api/client';
 import { COLLABORATION_LATE_REASON } from '@/features/notes/collaborationEvents';
+import { m } from '@/i18n';
 import type { RoomProviderConfig } from './roomProvider';
 
 // The room's provider, token and draft storage, recorded instead of real.
@@ -440,17 +441,19 @@ it('opens stored late edits in recovery, never applying them raw', async () => {
   room.destroy();
 });
 
-// Late merge M5 (review r1 L6): stored edits past the 7-day expiry open
-// once, copy-only and marked expired, and are dropped as they open.
-it('opens expired stored edits once in recovery and drops them', async () => {
+// D14 (Epo 2026-11-04): stored edits past the 7-day expiry leave the room to
+// open as usual, a toast offers them, and they go as it closes.
+it('opens past expired stored edits, offered in a toast until it closes', async () => {
   const row = { expired: true, lineage: 'material:q:schema:1' };
   drafts.rows = [row];
+  vi.mocked(userToast).mockClear();
   const { room } = await started();
-  expect(providers).toHaveLength(0);
-  expect(room.getSnapshot().recovery).toMatchObject({
-    expired: true,
-    refused: false,
-  });
+  expect(providers).toHaveLength(1);
+  expect(room.getSnapshot().recovery).toBeNull();
+  const toast = vi.mocked(userToast).mock.calls.at(-1)?.[0];
+  expect(toast?.button?.label).toBe(m.editor_old_edits_download());
+  expect(dropExpiredGroup).not.toHaveBeenCalled();
+  toast?.onClose?.();
   expect(dropExpiredGroup).toHaveBeenCalledWith([row], expect.any(Function));
   room.destroy();
 });

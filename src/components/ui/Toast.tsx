@@ -18,6 +18,8 @@ interface ToastOptions {
   /** A plain toast's icon (Link copied: `link`); other kinds have their own. */
   icon?: IconName;
   id?: string | number;
+  /** It closed: its × or its button (not replaced by a toast of its id). */
+  onClose?: () => void;
   title: string;
   /** `loading` is a working toast: it stays until the same id updates it. */
   variant?: ToastVariant;

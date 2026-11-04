@@ -43,6 +43,7 @@ import {
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { dropDeviceCopies } from '@/lib/sourceCache';
 import { type CopyLabel, keepDeviceCopy, type RoomSeed } from './deviceCopy';
+import { offerExpiredDrafts } from './expiredDrafts';
 import type { NoteSeat } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
@@ -76,8 +77,6 @@ export type ItemRoomStatus =
 
 export interface ItemRecovery {
   doc: Y.Doc;
-  /** Past the 7-day expiry: shown once, its rows deleted as it opened. */
-  expired: boolean;
   /** Refused for good (otherwise: the room moved on meanwhile). */
   refused: boolean;
   rows: EditDraft[];
@@ -669,14 +668,25 @@ export class ItemRoom {
       if (this.destroyed) return false;
       if (recovery.length) {
         const doc = recoveryDocument(recovery);
+        // Past the 7-day expiry: the room opens, and a toast offers them (D14).
+        if (doc && expired) {
+          offerExpiredDrafts({
+            doc,
+            document: this.options.document,
+            materialId: this.materialId,
+            onGone: () =>
+              dropExpiredGroup(
+                recovery,
+                editIncidentReporter('material', this.materialId)
+              ),
+            title: this.options.keep?.title ?? this.materialId,
+          });
+          rows = rows.filter((row) => !recovery.includes(row));
+          continue;
+        }
         if (doc) {
-          if (expired)
-            dropExpiredGroup(
-              recovery,
-              editIncidentReporter('material', this.materialId)
-            );
           this.set({
-            recovery: { doc, expired, refused, rows: recovery },
+            recovery: { doc, refused, rows: recovery },
             status: 'saved',
             synced: true,
           });
