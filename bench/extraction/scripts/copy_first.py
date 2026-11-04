@@ -13,10 +13,15 @@ questions. Around the production ``extraction.run``, through ``paper_map.py`` an
         --scans <dir> --digital <dir> --detections <pp-plus-l-onnx.json> --env-file <keys>
     python -I copy_first.py run --jobs 2023-p2@2-9:copy8-probe:1 ...   # the cache probe
     python -I copy_first.py report --scans ... --digital ... --detections ...
+    python -I copy_first.py run --set copyfirst2 --hard-stop 1.5 --jobs <paper>:mapcopy16-low:1 ...
+    python -I copy_first.py structured --set copyfirst2 --scans ... --digital ... --detections ...
 
 A job's variant is ``copy<size>`` or ``mapcopy16``, plus ``-probe`` (exactly three solve
 batches), ``-low`` (the copy calls at effort low instead of reasoning off) or ``-copyonly``
-(no solve calls: what the copy call alone reads). Each run's system
+(no solve calls: what the copy call alone reads), ``-fix`` (``accepted`` required on
+``record_answers``, and an open part without one refused), ``-scheme`` (the scheme parsed alongside
+the copying, and only the questions it does not cover solved) or ``-noscheme`` (a gold paper
+without its scheme). Each run's system
 prompt starts with a nonce, so nothing it reads from a cache was written by another run.
 Results land in ``.results/copyfirst/``, the spend in its ``spend.json``. Keys are read
 into the process only, never printed.
@@ -105,6 +110,12 @@ COPY_ASK = (
     "none."
 )
 
+# record_answers' accepted with the open-part fix: production's text, plus mcq's list.
+ACCEPTED_FIXED = (
+    "short: the correct answer (the value alone when a unit is printed beside the answer "
+    "space); open: a short model answer; mcq: an empty list."
+)
+
 # Tool results with no production wording: the checks only this flow has.
 BAD_PAGES = "pages: expected [first, last], the page numbers it is printed on"
 NO_FIGURES = "figures: give [] when it needs none"
@@ -144,9 +155,11 @@ def system_prompt(nonce: str, opening: str) -> str:
     )
 
 
-def all_tools() -> list[dict]:
+def all_tools(fix: bool = False) -> list[dict]:
     """The same list on every call: the map report's record tool without its answers,
-    and a new tool for them, with production's descriptions."""
+    and a new tool for them, with production's descriptions. ``fix`` requires
+    ``accepted``: the flat part cannot name its answer type, so mcq parts send an empty
+    list (Epo 2026-11-05)."""
     from pipeline.prompts import extraction as prompts
 
     record = _MAP_TOOLS()[0]
@@ -182,7 +195,9 @@ def all_tools() -> list[dict]:
                                 **keys,
                                 **worked,
                             },
-                            "required": ["label", "key_source", "solution"],
+                            "required": ["label", "accepted", "key_source", "solution"]
+                            if fix
+                            else ["label", "key_source", "solution"],
                         },
                         "minItems": 1,
                     },
@@ -191,6 +206,8 @@ def all_tools() -> list[dict]:
             },
         },
     }
+    if fix:
+        keys["accepted"]["description"] = ACCEPTED_FIXED
     return copy.deepcopy([record, answers])
 
 
@@ -204,6 +221,15 @@ def options_of(variant: str) -> dict:
         "probe": "probe" in flags,
         "low": "low" in flags,
         "copyonly": "copyonly" in flags,
+        # record_answers requires accepted, and an open part without one is refused.
+        "fix": "fix" in flags,
+        # A paper's scheme parsed alongside the copying, its covered questions unsolved.
+        "scheme": "scheme" in flags,
+        # Part of a question and a whole question planted out of the parsed scheme, so the
+        # solve calls for what a scheme leaves out run on a paper it otherwise covers.
+        "plant": "plant" in flags,
+        # A gold paper run without its scheme, for the comparison.
+        "noscheme": "noscheme" in flags,
     }
 
 
@@ -289,8 +315,12 @@ def install_copy() -> None:
     map_call = extraction.outline
     extraction.WINDOW_MAX_TOKENS = MAX_TOKENS
     # The map call builds its first message with these, so X has this flow's prefix.
-    TOOLS = all_tools()
-    pm.map_tools = lambda: TOOLS
+    TOOLS = {fix: all_tools(fix) for fix in (False, True)}
+
+    def tools_now() -> list[dict]:
+        return TOOLS[options_of(fw.STATE.get().variant)["fix"]]
+
+    pm.map_tools = tools_now
     pm.system_prompt = lambda nonce: system_prompt(nonce, MAP_OPENING)
 
     stream = client._stream_sse
@@ -328,10 +358,30 @@ def install_copy() -> None:
             {"role": "system", "content": system_prompt(nonce, COPY_OPENING)},
             {"role": "user", "content": content},
         ]
-        extra["tools"] = TOOLS
+        extra["tools"] = tools_now()
         return []
 
     extraction.outline = first_call
+
+    production_run = extraction.run
+
+    def run_with(pages, schemes, **kwargs):
+        options = options_of(fw.STATE.get().variant)
+        kept = [] if options["noscheme"] else schemes
+        fw.STATE.get().extra["schemes"] = kept
+        return production_run(pages, kept, **kwargs)
+
+    extraction.run = run_with
+
+    production_parse = extraction.parse_schemes
+
+    async def parse_once(files, *, model, labels):
+        extra = fw.STATE.get().extra
+        if "scheme_pieces" in extra:
+            return extra.pop("scheme_pieces")
+        return await production_parse(files, model=model, labels=labels)
+
+    extraction.parse_schemes = parse_once
 
     async def flow(run, pages, *, model):
         state = fw.STATE.get()
@@ -424,6 +474,23 @@ def install_copy() -> None:
                         answer[field] = value if isinstance(value, list) else [value]
                 part["solution"] = given.get("solution")
                 part["key_source"] = given.get("key_source")
+            if options["fix"]:
+                # The validator lets an open part go without a model answer; this route
+                # dropped most of them without this (2026-11-05).
+                missing = [
+                    extraction.part_name(label, str(p.get("label") or ""))
+                    for p in merged["parts"]
+                    if isinstance(p.get("answer"), dict)
+                    and p["answer"].get("type") == "open"
+                    and not any(
+                        str(v).strip() for v in p["answer"].get("accepted") or []
+                    )
+                ]
+                if missing:
+                    return (
+                        f"Question {label}: {', '.join(missing)}: invalid accepted "
+                        "answers. Fix it and record it again."
+                    )
             result = await run.add(merged, {key}, pages)
             if result.endswith("recorded."):
                 answered.add(key)
@@ -591,12 +658,39 @@ def install_copy() -> None:
 
         solve_groups: list[tuple[list[str], list[dict]]] = []
         map_groups: list[list[str]] = []
+        parsing = None
+
+        def bare_held(key: str):
+            """A copied question with no answers yet, as the scheme pairs it."""
+            bare = copy.deepcopy(items[key])
+            for part in bare["parts"]:
+                part["key_source"] = extraction.WORKED_OUT
+            held = extraction.record(bare, run.ai_label)
+            held.figures = run.recorded[key].figures
+            held.question["id"] = run.recorded[key].question["id"]
+            return held
         if options["map"]:
             rows = extra["map"]
             run.output_tokens += extra["x_output"]
             for n, row in enumerate(rows):
                 run.order[label_key(row["label"])] = n
             base = [*extra["prefix"], extra["reply"]]
+            if options["scheme"] and extra["schemes"]:
+
+                async def parse_scheme():
+                    start = time.monotonic()
+                    pieces = await production_parse(
+                        extra["schemes"],
+                        model=model,
+                        labels=[(r["label"], r["parts"]) for r in rows],
+                    )
+                    extra["scheme_call"] = {
+                        "at": round(start - extra["started"], 2),
+                        "seconds": round(time.monotonic() - start, 2),
+                    }
+                    return pieces
+
+                parsing = asyncio.create_task(parse_scheme())
             map_groups = [
                 [r["label"] for r in g] for g in chunks(rows, options["size"])
             ]
@@ -657,15 +751,45 @@ def install_copy() -> None:
                     threads[index] = await repair_copies(
                         threads.get(index, [*base]), batch=index, missing=wanted
                     )
+            if parsing is not None:
+                # Pairing needs no model call: a question whose every part the scheme
+                # covers and the validator accepts is done.
+                pieces = await parsing
+                if options["plant"]:
+                    pieces = [
+                        [
+                            e
+                            for e in piece
+                            if not (
+                                label_key(e.question) == "9"
+                                or (label_key(e.question), label_key(e.part)) == ("3", "b")
+                            )
+                        ]
+                        for piece in pieces
+                    ]
+                extra["scheme_pieces"] = pieces
+                entries, _ = extraction._merged(pieces)
+                for key in list(items):
+                    held = bare_held(key)
+                    paired = extraction.pair(held, entries)
+                    if all(
+                        source == extraction.SCHEME for source in paired.held.sources
+                    ) and not await run.validate(paired.held.question):
+                        run.recorded[key] = held
+                        answered.add(key)
+                extra["scheme_covered"] = [
+                    run.recorded[key].label for key in items if key in answered
+                ]
             for index in sorted(threads):
                 held = {label_key(label) for label in labels_now()}
                 labels = [
                     label
                     for label in map_groups[index]
-                    if label_key(label) in held
+                    if label_key(label) in held and label_key(label) not in answered
                 ]
-                for group in chunks(labels, options["solve"]):
-                    solve_groups.append((group, threads[index]))
+                for run_of in runs_of(labels):
+                    for group in chunks(run_of, options["solve"]):
+                        solve_groups.append((group, threads[index]))
         else:
             conversation = await thread(
                 extra["prefix"], stage="copy", batch=0, solving=False, off=True
@@ -744,16 +868,9 @@ def install_copy() -> None:
 
         # A copied question with no answers stays in the quiz with empty keys, for the
         # scheme to fill, and counts as not filled.
-        for key, item in items.items():
-            if key in answered:
-                continue
-            bare = copy.deepcopy(item)
-            for part in bare["parts"]:
-                part["key_source"] = extraction.WORKED_OUT
-            held = extraction.record(bare, run.ai_label)
-            held.figures = run.recorded[key].figures
-            held.question["id"] = run.recorded[key].question["id"]
-            run.recorded[key] = held
+        for key in items:
+            if key not in answered:
+                run.recorded[key] = bare_held(key)
 
         extra["copied"] = len(items)
         extra["answered"] = len(answered)
@@ -797,7 +914,7 @@ def install_copy() -> None:
                 p.number for p in pages if p.number not in covered
             ],
         }
-        for key in ("prefix", "tools", "reply", "started", "in_flight"):
+        for key in ("prefix", "tools", "reply", "started", "in_flight", "schemes"):
             extra.pop(key, None)
 
     extraction._window = flow
@@ -1696,6 +1813,10 @@ def report(args) -> None:
             ],
         )
 
+    write_per_call(REPORT_DIR)
+
+
+def write_per_call(folder: Path) -> None:
     lines = [
         "# Every call of the copy-first runs",
         "",
@@ -1735,11 +1856,752 @@ def report(args) -> None:
                 f"{c['cached'] / c['input']:.3f} | {c['output']} | {c['reasoning']} | {c['finish']} | {sent} | "
                 f"{c.get('provider')} | {c.get('body_bytes', 0) / 1e6:.2f} |"
             )
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    (REPORT_DIR / "per-call.md").write_text("\n".join(lines) + "\n")
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "per-call.md").write_text("\n".join(lines) + "\n")
+
+
+# ------------------------------------------------- the structured papers' report
+
+BIOLOGY = "igcse-biology-0610-2023-sp4"
+MATHS = "igcse-maths-0580-2025-sp2"
+STRUCTURED = [BIOLOGY, MATHS, "2021-p1"]
+STRUCTURED_DIR = HERE.parent / "reports" / "2026-11-05-copy-first-structured"
+
+
+def maths_marks(args) -> dict[str, list[int]]:
+    """Maths' part marks from its text layer, the bracketed marks in the margin. The two
+    brackets past a part's own (Q7's third, Q15's second) are not marks: without them
+    the paper adds up to its printed 100."""
+    import pymupdf
+
+    out: dict[str, list[int]] = {}
+    current = None
+    with pymupdf.open(Path(args.digital) / MATHS / "paper.pdf") as doc:
+        for page in doc:
+            lines: dict[tuple, list] = {}
+            for w in page.get_text("words"):
+                lines.setdefault((w[5], w[6]), []).append(w)
+            for line in sorted(lines.values(), key=lambda ws: (ws[0][1], ws[0][0])):
+                first = line[0]
+                if first[1] / page.rect.height * 1000 < 45:
+                    continue
+                if first[0] < 0.12 * page.rect.width and first[4].isdigit():
+                    current = first[4]
+                    out.setdefault(current, [])
+                if current is None:
+                    continue
+                for w in line:
+                    m = re.fullmatch(r"\[(\d+)\]", w[4])
+                    if m:
+                        out[current].append(int(m[1]))
+    out["7"], out["15"] = out["7"][:2], out["15"][:1]
+    return out
+
+
+def structure_truth(paper: str, args) -> dict[str, dict]:
+    """Each question's parts, marks and, where gold has them, answer types."""
+    if paper == MATHS:
+        marks = maths_marks(args)
+        parts = pm.maths_parts(args)
+        return {
+            q: {
+                "parts": len(parts.get(q) or []) or 1,
+                "labels": parts.get(q) or [],
+                "marks": marks[q],
+                "total": sum(marks[q]),
+                "types": None,
+            }
+            for q in marks
+        }
+    gold = (
+        json.loads((bench.GOLD / "2023-bio-p4.json").read_text())
+        if paper == BIOLOGY
+        else fw.gold_of(paper)
+    )
+    return {
+        q["label"]: {
+            "parts": len(q["parts"]),
+            "labels": [p["label"] for p in q["parts"] if p["label"]],
+            "marks": [p["marks"] for p in q["parts"]],
+            "total": q["total"],
+            "types": [p["type"] for p in q["parts"]],
+        }
+        for q in gold["questions"]
+    }
+
+
+def structure_of(j: dict, truth: dict, which: str) -> dict:
+    """A run's questions against the truth: as copied and worked out (``recorded``) or
+    as saved after any scheme (``questions``)."""
+    from pipeline.retrieval.extraction import label_key
+
+    held = {
+        label_key(label): q
+        for label, q in zip(j["report"]["recorded"], j[which], strict=False)
+    }
+    out = collections.Counter()
+    wrong = []
+    for label, want in truth.items():
+        q = held.get(label_key(label))
+        if q is None:
+            out["missing"] += 1
+            continue
+        parts = q["parts"]
+        marks = [p["marks"] for p in parts]
+        out["questions"] += 1
+        out["parts_right"] += len(parts) == want["parts"]
+        out["marks_right"] += marks == want["marks"]
+        out["total_right"] += sum(marks) == want["total"]
+        out["part_marks_right"] += sum(a == b for a, b in zip(marks, want["marks"]))
+        out["part_marks"] += len(want["marks"])
+        if want["types"] and len(parts) == want["parts"]:
+            out["types_right"] += [p["answer"]["type"] for p in parts] == want["types"]
+        if marks != want["marks"]:
+            wrong.append((label, marks, want["marks"]))
+    return {**out, "wrong": wrong}
+
+
+def answer_shape(j: dict, which: str = "recorded") -> dict:
+    out = collections.Counter()
+    for q in j[which]:
+        for p in q["parts"]:
+            answer = p["answer"]
+            kind = answer["type"]
+            out[kind] += 1
+            if kind == "open":
+                out["open_with_points"] += bool(p.get("markscheme"))
+                out["open_points"] += len(p.get("markscheme") or [])
+                out["open_with_model_answer"] += bool(answer.get("accepted"))
+            if kind == "short":
+                out["short_with_answer"] += bool(answer.get("accepted"))
+            out["with_solution"] += bool(p.get("solution"))
+            out["ai_labelled"] += any(b.get("label") for b in p.get("solution") or [])
+    return dict(out)
+
+
+def part_answers(j: dict) -> dict[tuple[str, int], str]:
+    """Each part's final answer, spacing and $ signs aside, for comparing runs."""
+    from pipeline.retrieval.extraction import label_key
+
+    out = {}
+    for label, q in zip(j["report"]["recorded"], j["recorded"], strict=False):
+        for n, p in enumerate(q["parts"]):
+            accepted = p["answer"].get("accepted") or []
+            out[(label_key(label), n)] = (
+                pm.plain(str(accepted[0])) if accepted else "",
+                p["answer"]["type"],
+            )
+    return out
+
+
+def against_scheme(j: dict, entries: list[dict], truth: dict) -> dict:
+    """Worked-out answers against a real scheme's final answers: does each number the
+    scheme's answer holds appear in what the run gave for that part? A rough check."""
+    from pipeline.retrieval.extraction import label_key
+
+    by = {(label_key(e["question"]), label_key(e["part"])): e for e in entries}
+    right, wrong = 0, []
+    for label, q, names in zip(
+        j["report"]["recorded"],
+        j["recorded"],
+        _part_names(j, truth),
+        strict=False,
+    ):
+        for p, name in zip(q["parts"], names, strict=False):
+            entry = by.get((label_key(label), label_key(name))) or (
+                by.get((label_key(label), "")) if len(q["parts"]) == 1 else None
+            )
+            if not entry or not bench.numbers(entry["answer"]):
+                continue
+            given = " ".join(
+                [
+                    *(str(v) for v in p["answer"].get("accepted") or []),
+                    *(b.get("text", "") for b in p.get("solution") or []),
+                    *(item["text"] for item in p.get("markscheme") or []),
+                ]
+            )
+            if bench.numbers(entry["answer"]) - bench.numbers(given):
+                wrong.append(f"{label}({name})" if name else label)
+            else:
+                right += 1
+    return {"right": right, "wrong": wrong}
+
+
+def _part_names(j: dict, truth: dict) -> list[list[str]]:
+    """Each recorded question's part labels: from the copy rows, else the map's, else
+    gold's when a run kept none and the count matches."""
+    from pipeline.retrieval.extraction import label_key
+
+    rows = {
+        label_key(r["label"]): r["parts"] for r in j.get("copy_rows") or j.get("map") or []
+    }
+    return [
+        rows.get(label_key(label))
+        or truth.get(label, {}).get("labels")
+        or [""] * len(q["parts"])
+        for label, q in zip(j["report"]["recorded"], j["recorded"], strict=False)
+    ]
+
+
+def structured(args) -> None:
+    from pipeline.retrieval.extraction import label_key
+
+    det = fm.load_detections(args.detections)
+    gold = ls.gold_figures()
+    eye = fm.load_eye()
+    runs = load_runs()
+    sets = {
+        paper: [
+            *((v, runs[v][paper]) for v in sorted(runs) if paper in runs[v]),
+            *((k, v) for k, v in baselines(paper).items() if v),
+        ]
+        for paper in STRUCTURED
+    }
+    truths = {paper: structure_truth(paper, args) for paper in STRUCTURED}
+    print("truth totals", {p: sum(q["total"] for q in t.values()) for p, t in truths.items()})
+
+    print("\n== cost and time, mean (lowest-highest)")
+    for paper, listed in sets.items():
+        for name, js in listed:
+            print(
+                paper,
+                name,
+                f"runs {len(js)}",
+                "wall",
+                spread([j["seconds"] for j in js]),
+                "copied by",
+                spread([j["copy_done_at"] for j in js if "copy_done_at" in j]),
+                "$",
+                spread([j["billed_usd"] for j in js], 4),
+                "credits",
+                spread([pm.credits(j["usage"]) for j in js], 1),
+                "calls",
+                spread([j["usage"]["calls"] for j in js], 1),
+                "peak",
+                [j.get("peak_in_flight") for j in js],
+                "MB",
+                spread(
+                    [
+                        sum(c.get("body_bytes", 0) for c in j.get("call_log", [])) / 1e6
+                        for j in js
+                    ],
+                    1,
+                ),
+                "output",
+                spread([j["usage"]["outputTokens"] for j in js]),
+                "reasoning",
+                spread([j["usage"].get("reasoningTokens", 0) for j in js]),
+            )
+
+    print("\n== structure, each run: as copied, then as saved")
+    for paper, listed in sets.items():
+        for name, js in listed:
+            for j in js:
+                got = structure_of(j, truths[paper], "recorded")
+                saved = structure_of(j, truths[paper], "questions")
+                print(
+                    paper,
+                    name,
+                    "of",
+                    len(truths[paper]),
+                    {k: v for k, v in got.items() if k != "wrong"},
+                    "wrong",
+                    got["wrong"],
+                    "SAVED marks",
+                    saved.get("marks_right"),
+                    "total",
+                    saved.get("total_right"),
+                    "wrong",
+                    saved["wrong"],
+                    "marksDiffer",
+                    j["report"].get("marksDiffer"),
+                )
+
+    print("\n== the known checks")
+    for name, js in sets[BIOLOGY]:
+        for j in js:
+            k = pm.known_failures(j)
+            print(
+                name,
+                j["name"],
+                "labels",
+                k["labels"],
+                "3 split",
+                k["q3_split"],
+                "marks right",
+                k["marks_right"],
+                "Q1",
+                k["q1_marks"],
+                "Q2 lead-in",
+                k["q2_monitored"],
+            )
+    for name, js in sets[MATHS]:
+        for j in js:
+            row = next(
+                (r for r in j.get("copy_rows") or j.get("map") or [] if r["label"] == "16"),
+                None,
+            )
+            held = dict(zip(j["report"]["recorded"], j["questions"], strict=False))
+            print(
+                name,
+                j["name"],
+                "Q16 pages",
+                (row["first"], row["last"]) if row else None,
+                "parts",
+                row["parts"] if row else None,
+                "marks",
+                [p["marks"] for p in held["16"]["parts"]],
+                "figures",
+                sorted(f["page"] for f in j["figures"] if f["label"] == "16"),
+            )
+
+    print("\n== the calls")
+    for paper, listed in sets.items():
+        for name, js in listed:
+            for j in js:
+                if "copy_rows" not in j:
+                    continue
+                copies = answered_calls(j, is_copy)
+                solves = answered_calls(j, lambda c: c.get("stage") == "solve")
+                first = [c for c in solves if c["round"] == 0]
+                later = [c for c in solves if c["round"] > 0]
+                top = max(solves, key=lambda c: c["output"], default=None)
+                print(
+                    j["name"],
+                    "copy output",
+                    sum(c["output"] for c in copies),
+                    "reasoning",
+                    sum(c["reasoning"] for c in copies),
+                    "tool calls a reply",
+                    [c.get("tool_calls") for c in copies],
+                    "copy share first",
+                    [round(c["cached"] / c["input"], 3) for c in copies if c["round"] == 0],
+                    "| solve first share",
+                    [round(c["cached"] / c["input"], 3) for c in first],
+                    "later min",
+                    round(min((c["cached"] / c["input"] for c in later), default=1), 3),
+                    "largest",
+                    (top["output"], top["reasoning"], top["seconds"]) if top else None,
+                    "solve reasoning",
+                    sum(c["reasoning"] for c in solves),
+                    "rounds",
+                    [t["rounds"] for t in j.get("thread_rounds", []) if t["stage"] == "solve"],
+                    "cut off",
+                    sum(1 for c in j["call_log"] if c.get("finish") == "length"),
+                    "failed",
+                    [(c.get("error") or "")[:60] for c in j["call_log"] if "input" not in c],
+                    "refusals",
+                    [re.sub(r"\d+", "N", r["result"])[:80] for r in j.get("refusals") or []],
+                    "repairs",
+                    j.get("repairs"),
+                    "odd",
+                    j.get("odd"),
+                    "answered",
+                    j.get("answered"),
+                    "of",
+                    j.get("copied"),
+                    "covered",
+                    j.get("scheme_covered"),
+                    "scheme call",
+                    j.get("scheme_call"),
+                )
+
+    print("\n== answers: shape, as copied and worked out")
+    for paper, listed in sets.items():
+        for name, js in listed:
+            for j in js:
+                print(paper, name, answer_shape(j), "SAVED", answer_shape(j, "questions"))
+
+    print("\n== answers across runs: parts whose final answer is not the commonest")
+    for paper, listed in sets.items():
+        every = [(name, part_answers(j)) for name, js in listed for j in js]
+        parts = sorted({k for _, a in every for k in a}, key=lambda k: (len(k[0]), k))
+        common = {}
+        split = []
+        for k in parts:
+            votes = collections.Counter(a[k][0] for _, a in every if k in a and a[k][0])
+            common[k] = votes.most_common(1)[0][0] if votes else ""
+            if len(votes) > 1:
+                split.append(k)
+        print(paper, "parts", len(parts), "with more than one final answer", len(split))
+        for name, js in listed:
+            print(
+                paper,
+                name,
+                "off the commonest, each run",
+                [
+                    sum(
+                        1
+                        for k in parts
+                        if k in part_answers(j)
+                        and part_answers(j)[k][0]
+                        and part_answers(j)[k][0] != common[k]
+                    )
+                    for j in js
+                ],
+                "types",
+                [
+                    dict(collections.Counter(v[1] for v in part_answers(j).values()))
+                    for j in js[:1]
+                ],
+            )
+
+    print("\n== 2021 P1: what the scheme removed, per set's runs")
+    for name, js in sets["2021-p1"]:
+        if not js or "copy_rows" not in js[0]:
+            continue
+
+        def stage(j: dict, test, field: str) -> float:
+            return sum(c.get(field) or 0 for c in j["call_log"] if test(c))
+
+        def is_solve(c: dict) -> bool:
+            return c["stage"] == "solve"
+
+        print(
+            name,
+            "wall",
+            [j["seconds"] for j in js],
+            "$",
+            [j["billed_usd"] for j in js],
+            "credits",
+            [round(pm.credits(j["usage"]), 1) for j in js],
+            "copied by",
+            [j["copy_done_at"] for j in js],
+            "scheme call",
+            [j.get("scheme_call") for j in js],
+            "calls",
+            [j["usage"]["calls"] for j in js],
+            "solve calls",
+            [sum(1 for c in j["call_log"] if is_solve(c)) for j in js],
+            "solve output",
+            [round(stage(j, is_solve, "output")) for j in js],
+            "solve reasoning",
+            [round(stage(j, is_solve, "reasoning")) for j in js],
+            "solve input",
+            [round(stage(j, is_solve, "input")) for j in js],
+            "solve seconds, longest thread end",
+            [
+                round(max((c["at"] + c["seconds"] for c in j["call_log"] if is_solve(c) and "input" in c), default=0) - j["copy_done_at"], 1)
+                for j in js
+            ],
+            "solve $",
+            [round(stage(j, is_solve, "cost"), 5) for j in js],
+            "scheme $",
+            [round(j["billed_usd"] - stage(j, lambda c: True, "cost"), 5) for j in js],
+            "MB",
+            [round(sum(c.get("body_bytes", 0) for c in j["call_log"]) / 1e6, 1) for j in js],
+            "covered",
+            [j.get("scheme_covered") for j in js],
+            "solve batches",
+            [j.get("solve_batches") for j in js],
+        )
+    print("\n== 2021 P1: lead-ins from the indexed text, each run")
+    texts = {
+        int(path.stem[-2:]): path.read_text()
+        for path in (bench.RESULTS / "text").glob("2021-p1-[0-9][0-9].txt")
+    }
+    spans = bench.spans(
+        {n: texts[n] for n in sorted(texts)}, [q for q in truths["2021-p1"]]
+    )
+
+    def tokens(text: str) -> set[str]:
+        return set(re.findall(r"[A-Za-z]{3,}|\d+", pm.plain(text).replace("\\", " ")))
+
+    leads = {
+        q: tokens(re.search(r"\(\s*b\s*\)(.*?)\(\s*i\s*\)", spans[q], re.S)[1])
+        for q in ("8", "10")
+    }
+    for name, js in sets["2021-p1"]:
+        for j in js:
+            held = dict(zip(j["report"]["recorded"], j["questions"], strict=False))
+            got = {}
+            for q, want in leads.items():
+                part = held[q]["parts"][1]
+                have = tokens(
+                    " ".join(b.get("text", "") for b in part["blocks"] if b["type"] == "text")
+                )
+                got[q] = f"{len(want & have)}/{len(want)}"
+            print(name, j["name"], "lead-ins found", got)
+
+    print("\n== 2021 P1: the scheme's entries, each run with a scheme")
+    for name, js in sets["2021-p1"]:
+        for j in js:
+            if not j.get("scheme_entries"):
+                continue
+            rows = [
+                (e["question"], e["part"], sum(p["marks"] for p in e["points"]))
+                for e in j["scheme_entries"]
+            ]
+            held = dict(zip(j["report"]["recorded"], j["questions"], strict=False))
+            eight = [
+                (sum(p["marks"] for p in e["points"]), len(e["solution"]))
+                for e in j["scheme_entries"]
+                if label_key(e["question"]) == "8" and label_key(e["part"]) == "b.ii"
+            ]
+            print(
+                name,
+                j["name"],
+                "entries",
+                len(rows),
+                "repeats",
+                j["report"]["schemeRepeats"],
+                "unpaired",
+                j["report"]["unpaired"],
+                "disagreements",
+                j["report"]["keyDisagreements"],
+                "refused",
+                j["report"]["schemeRefused"],
+                "worked out left",
+                j["report"]["keysWorkedOut"],
+                "marks differ",
+                j["report"]["marksDiffer"],
+                "8(b)(ii) entries: marks, solution chars",
+                eight,
+                "saved 8 marks",
+                [p["marks"] for p in held["8"]["parts"]],
+                "AI-labelled parts",
+                sum(
+                    any(b.get("label") for b in p.get("solution") or [])
+                    for q in j["questions"]
+                    for p in q["parts"]
+                ),
+                "parts with no solution",
+                sum(not p.get("solution") for q in j["questions"] for p in q["parts"]),
+            )
+
+    print("\n== numeric final answers across Maths runs: the numbers in each part's answer")
+    every = [(name, j) for name, js in sets[MATHS] for j in js]
+
+    def numeric(j: dict) -> dict[tuple[str, int], tuple]:
+        out = {}
+        for label, q in zip(j["report"]["recorded"], j["recorded"], strict=False):
+            for n, p in enumerate(q["parts"]):
+                accepted = p["answer"].get("accepted") or []
+                if accepted:
+                    out[(label_key(label), n)] = tuple(
+                        sorted(bench.numbers(str(accepted[0])).elements())
+                    )
+        return out
+
+    reads = [numeric(j) for _, j in every]
+    parts = sorted({k for r in reads for k in r}, key=lambda k: (len(k[0]), k))
+    common = {
+        k: collections.Counter(r[k] for r in reads if k in r).most_common(1)[0][0]
+        for k in parts
+    }
+    print("parts", len(parts), "with more than one", sum(len({r[k] for r in reads if k in r}) > 1 for k in parts))
+    for (name, j), r in zip(every, reads, strict=True):
+        print(
+            name,
+            j["name"][-1],
+            "with an answer",
+            len(r),
+            "off the commonest",
+            [f"{k[0]}.{k[1]}" for k in parts if k in r and r[k] != common[k]],
+        )
+
+    print("\n== worked-out answers against 2021 P1's real scheme, a rough number check")
+    entries = next(
+        (
+            j["scheme_entries"]
+            for _, js in sets["2021-p1"]
+            for j in js
+            if j.get("scheme_entries")
+        ),
+        [],
+    )
+    print("scheme entries", len(entries))
+    for name, js in sets["2021-p1"]:
+        for j in js:
+            s = j.get("scores") or {}
+            print(
+                name,
+                j["name"],
+                "no worked-out answers"
+                if j.get("scheme_covered") is not None
+                else against_scheme(j, entries, truths["2021-p1"]),
+                "worked-out marks",
+                s.get("worked_out_part_marks_right"),
+                "part structure",
+                s.get("part_structure"),
+                "marks",
+                s.get("part_marks_exact"),
+                "totals",
+                s.get("question_marks_total"),
+                "disagreements",
+                s.get("key_disagreements"),
+                "refused",
+                s.get("scheme_refused"),
+                "unpaired",
+                s.get("unpaired_scheme_labels"),
+                "repeats",
+                s.get("scheme_repeats"),
+                "keys worked out left",
+                s.get("keys_worked_out_left"),
+            )
+
+    print("\n== figures")
+    for paper, listed in sets.items():
+        for name, js in listed:
+            rows, unnamed = [], []
+            for j in js:
+                scored = fw.job_rows(j, det, gold, eye)
+                rows += scored["rows"]
+                unnamed += scored["unnamed"]
+            wanted = sum(
+                len(gold.get(fm.stem_of(paper, n), [])) for n in js[0]["pages"]
+            )
+            t = fm.tally([r for r in rows if r.get("status") in ("gold", "eye")])
+            bad = collections.Counter(
+                (r["page"], r["label"], r.get("whole"), r.get("tight"))
+                for r in rows
+                if r.get("status") in ("gold", "eye")
+                and (r.get("whole") is False or r.get("tight") is False)
+            )
+            print(
+                paper,
+                name,
+                f"{len(js)} runs, gold a run {wanted}",
+                "named",
+                t["named"],
+                "whole",
+                t["whole"],
+                "tight",
+                t["tight"],
+                "both",
+                t["both"],
+                "wrong",
+                t["wrong"],
+                "never named",
+                len(unnamed),
+                sorted(collections.Counter(unnamed).items()),
+                "extra",
+                sum(1 for r in rows if r.get("status") == "extra name"),
+                "not whole or tight",
+                sorted(bad.items(), key=str),
+                "figures a run",
+                [len(j["figures"]) for j in js],
+                "by box call",
+                sum(1 for j in js for f in j["figures"] if f.get("route") != "window"),
+            )
+
+    print("\n== fidelity")
+    for paper, listed in sets.items():
+        for name, js in listed:
+            line = []
+            for j in js:
+                r = fw.reading(j)
+                entry = {
+                    "\\(": sum("\\(" in bench.question_text(q) for q in j["questions"]),
+                    "katex": r["katex"],
+                    "stray": r["stray"],
+                }
+                if paper.startswith("igcse"):
+                    n = fw.printed_numbers(j, Path(args.digital), det)
+                    off = set(n["unsupported"]) | set(n["dropped"])
+                    entry |= {
+                        "unsupported": sum(len(v) for v in n["unsupported"].values()),
+                        "dropped": sum(len(v) for v in n["dropped"].values()),
+                        "exact": f"{n['compared'] - len(off)}/{n['compared']}",
+                    }
+                else:
+                    entry |= {
+                        "unsupported": r["unsupported"],
+                        "dropped": r["dropped"],
+                        "exact": r["exact"],
+                    }
+                line.append(entry)
+            print(paper, name, line)
+
+    print("\n== text lost: under 90% of the median length, answer lines aside; empty stems")
+
+    def learner_plain(q: dict) -> str:
+        return pm.plain(re.sub(r"\.{3,}|\[\d+\]", "", bench.question_text(q)))
+
+    for paper, listed in sets.items():
+        sizes: dict[str, list[int]] = {}
+        every = [(name, j) for name, js in listed for j in js]
+
+        def lengths(j: dict) -> dict[str, int]:
+            return {
+                label_key(label): len(learner_plain(q))
+                for label, q in zip(j["report"]["recorded"], j["questions"], strict=False)
+            }
+
+        stems: collections.Counter = collections.Counter()
+        for _, j in every:
+            for k, n in lengths(j).items():
+                sizes.setdefault(k, []).append(n)
+            for label, q in zip(j["report"]["recorded"], j["questions"], strict=False):
+                stems[label_key(label)] += bool(q["stem"])
+        for name, j in every:
+            short = [
+                (k, n, round(statistics.median(sizes[k])))
+                for k, n in lengths(j).items()
+                if n < 0.9 * statistics.median(sizes[k])
+            ]
+            empty = [
+                label
+                for label, q in zip(j["report"]["recorded"], j["questions"], strict=False)
+                if not q["stem"] and stems[label_key(label)] > len(every) / 2
+            ]
+            lines = [
+                label
+                for label, q in zip(j["report"]["recorded"], j["questions"], strict=False)
+                if re.search(r"\.{8,}|\\ldots|\\dots", bench.question_text(q))
+            ]
+            print(
+                paper,
+                name,
+                j["name"][-1],
+                "short",
+                short,
+                "stem empty against most",
+                empty,
+                "answer lines copied",
+                lines,
+            )
+
+    print("\n== numbers across runs")
+    for paper, listed in sets.items():
+        reads = [
+            {
+                label_key(label): tuple(
+                    sorted(bench.numbers(bench.question_text(q)).elements())
+                )
+                for label, q in zip(j["report"]["recorded"], j["questions"], strict=False)
+            }
+            for _, js in listed
+            for j in js
+        ]
+        keys = sorted({k for r in reads for k in r}, key=lambda k: (len(k), k))
+        split = [k for k in keys if len({r[k] for r in reads if k in r}) > 1]
+        print(paper, "runs", len(reads), "questions any run differs on", split)
+        common = {
+            k: collections.Counter(r[k] for r in reads if k in r).most_common(1)[0][0]
+            for k in keys
+        }
+        at = 0
+        for name, js in listed:
+            print(
+                paper,
+                name,
+                "off the commonest, each run",
+                [
+                    [k for k in keys if k in reads[at + i] and reads[at + i][k] != common[k]]
+                    for i in range(len(js))
+                ],
+            )
+            at += len(js)
+
+    write_per_call(STRUCTURED_DIR)
 
 
 def setup(args) -> None:
+    global OUT, SPEND_CAP, HARD_STOP
+    OUT = bench.RESULTS / args.set
+    HARD_STOP = args.hard_stop
+    SPEND_CAP = HARD_STOP - 0.1
     OUT.mkdir(parents=True, exist_ok=True)
     fw.OUT = OUT
     fm.Spend.path = OUT / "spend.json"
@@ -1776,14 +2638,23 @@ def main() -> None:
     p.add_argument("--env-file", required=True)
     p.add_argument("--parallel", type=int, default=3)
     p.add_argument("--override", nargs="*")
-    p = sub.add_parser("report")
-    p.add_argument("--scans", required=True)
-    p.add_argument("--digital", required=True)
-    p.add_argument("--detections", nargs="*", default=[])
+    for name in ("report", "structured"):
+        p = sub.add_parser(name)
+        p.add_argument("--scans", required=True)
+        p.add_argument("--digital", required=True)
+        p.add_argument("--detections", nargs="*", default=[])
+    for command in sub.choices.values():
+        command.add_argument(
+            "--set", default="copyfirst", help="the results folder under .results"
+        )
+        command.add_argument("--hard-stop", type=float, default=3.0)
     args = parser.parse_args()
     setup(args)
     if args.command == "report":
         report(args)
+        return
+    if args.command == "structured":
+        structured(args)
         return
     run_all(args)
 
