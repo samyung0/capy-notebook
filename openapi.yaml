@@ -404,6 +404,9 @@ components:
             - marked
             - unmarked
           type: string
+        latePenaltyPct:
+          format: int64
+          type: integer
         manage:
           $ref: "#/components/schemas/AssignmentManage"
         marks:
@@ -411,6 +414,8 @@ components:
           type: number
         mine:
           $ref: "#/components/schemas/AssignmentMine"
+        noLate:
+          type: boolean
         postedAt:
           format: date-time
           type: string
@@ -441,6 +446,8 @@ components:
         - postedBy
         - closed
         - draft
+        - noLate
+        - latePenaltyPct
         - attempts
         - questions
         - marks
@@ -513,6 +520,12 @@ components:
           type: string
         late:
           type: boolean
+        latePenaltyPct:
+          format: int64
+          type: integer
+        mark:
+          format: double
+          type: number
         now:
           format: date-time
           type: string
@@ -565,7 +578,9 @@ components:
         - now
         - autoSubmitted
         - late
+        - latePenaltyPct
         - correct
+        - mark
         - total
         - waitingMarks
         - waitingAnswers
@@ -663,6 +678,13 @@ components:
             - marked
             - unmarked
           type: string
+        latePenaltyPct:
+          format: int64
+          maximum: 50
+          minimum: 0
+          type: integer
+        noLate:
+          type: boolean
         quizId:
           type: string
         showAnswers:
@@ -682,6 +704,8 @@ components:
         - kind
         - title
         - attempts
+        - noLate
+        - latePenaltyPct
         - assignAll
         - assignees
         - draft
@@ -805,6 +829,12 @@ components:
           type: number
         late:
           type: boolean
+        latePenaltyPct:
+          format: int64
+          type: integer
+        mark:
+          format: double
+          type: number
         minutes:
           format: int64
           type: integer
@@ -830,6 +860,7 @@ components:
         - name
         - waitingAnswers
         - late
+        - latePenaltyPct
         - running
         - missing
       type: object
@@ -849,8 +880,14 @@ components:
           type: string
         late:
           type: boolean
+        latePenaltyPct:
+          format: int64
+          type: integer
         latestAttemptId:
           type: string
+        mark:
+          format: double
+          type: number
         missing:
           type: boolean
         runningAttemptId:
@@ -870,6 +907,7 @@ components:
         - waitingMarks
         - waitingAnswers
         - late
+        - latePenaltyPct
         - missing
       type: object
     AssignmentPartMark:
@@ -3966,6 +4004,10 @@ components:
     MaterialListItem:
       additionalProperties: false
       properties:
+        assigned:
+          type: boolean
+        assignmentId:
+          type: string
         cardCount:
           format: int64
           type: integer
@@ -4043,6 +4085,10 @@ components:
     MaterialRef:
       additionalProperties: false
       properties:
+        assigned:
+          type: boolean
+        assignmentId:
+          type: string
         createdAt:
           format: date-time
           type: string
@@ -6111,6 +6157,20 @@ components:
         - editor
         - viewer
       type: string
+    SharingNoticeOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SharingNoticeOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        due:
+          type: boolean
+      required:
+        - due
+      type: object
     Slot:
       enum:
         - chat
@@ -14053,6 +14113,51 @@ paths:
       summary: Update workspace sharing
       tags:
         - Workspaces
+  /api/workspaces/{id}/sharing-notice:
+    get:
+      operationId: getSharingNotice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharingNoticeOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Whether a class member is yet to be told what they share
+      tags:
+        - Assignments
+    put:
+      operationId: markSharingNoticeSeen
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Record that a class member was told what they share
+      tags:
+        - Assignments
   /api/workspaces/{id}/sources/import:
     post:
       operationId: importSources

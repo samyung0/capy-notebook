@@ -20,9 +20,11 @@ export interface Assignment {
   files: AssignmentFile[];
   id: string;
   kind: AssignmentKind;
+  latePenaltyPct: number;
   manage?: AssignmentManage;
   marks: number;
   mine?: AssignmentMine;
+  noLate: boolean;
   postedAt: string;
   postedBy: string;
   practiceQuizId?: string;

@@ -55,7 +55,7 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 	})
 	form := map[string]any{
 		"kind": "marked", "title": "Routes", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
-		"attempts": 1, "assignAll": true, "assignees": []string{}, "draft": false,
+		"attempts": 1, "noLate": false, "latePenaltyPct": 20, "assignAll": true, "assignees": []string{}, "draft": false,
 		"approveAiMarks": true, "showAnswers": true, "shuffle": false, "files": []any{},
 	}
 	for _, user := range []string{"u_viewer", "u_other"} {
@@ -134,5 +134,59 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 	// The plain attempts route never serves one.
 	if rec := doReq(t, h, http.MethodGet, "/api/attempts/"+attempt.ID, "u_viewer", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("GET /api/attempts: status = %d", rec.Code)
+	}
+
+	// While it is open its assignee gets neither the quiz nor a key, and no
+	// viewer clones in a class; staff do.
+	quizPath := "/api/quizzes/" + made.ID
+	check := map[string]any{"questionId": "q1", "answers": map[string]any{"q1:part:1": []int{1}}}
+	if rec := doReq(t, h, http.MethodGet, quizPath, "u_viewer", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("the assignee reads the quiz: status = %d", rec.Code)
+	}
+	if rec := doReq(t, h, http.MethodPost, quizPath+"/check", "u_viewer", check); rec.Code != http.StatusNotFound {
+		t.Fatalf("the assignee checks the quiz: status = %d", rec.Code)
+	}
+	if rec := doReq(t, h, http.MethodGet, quizPath, "u_editor", nil); rec.Code != http.StatusOK {
+		t.Fatalf("staff read the quiz: status = %d", rec.Code)
+	}
+	if rec := doReq(t, h, http.MethodPost, ws+"/clone", "u_viewer", map[string]any{"name": "Copy"}); rec.Code != http.StatusNotFound {
+		t.Fatalf("a class viewer clones: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec := doReq(t, h, http.MethodPost, "/api/materials/"+made.ID+"/clone", "u_viewer", map[string]any{"title": "Copy"}); rec.Code != http.StatusNotFound {
+		t.Fatalf("a class viewer clones the quiz: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec := doReq(t, h, http.MethodPut, path+"/closed", "u_owner", map[string]any{"closed": true}); rec.Code != http.StatusOK {
+		t.Fatalf("close: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec := doReq(t, h, http.MethodGet, quizPath, "u_viewer", nil); rec.Code != http.StatusOK {
+		t.Fatalf("after closing the member reads the quiz: status = %d", rec.Code)
+	}
+	if rec := doReq(t, h, http.MethodPost, quizPath+"/check", "u_viewer", check); rec.Code != http.StatusOK {
+		t.Fatalf("after closing the member checks the quiz: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// The notice, told once.
+	notice := func(user string) bool {
+		t.Helper()
+		rec := doReq(t, h, http.MethodGet, ws+"/sharing-notice", user, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("notice for %s: status = %d", user, rec.Code)
+		}
+		var got struct {
+			Due bool `json:"due"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.Due
+	}
+	if notice("u_owner") || notice("u_other") {
+		t.Fatal("the notice is due someone who shares nothing")
+	}
+	if rec := doReq(t, h, http.MethodPut, ws+"/sharing-notice", "u_viewer", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("mark the notice: status = %d", rec.Code)
+	}
+	if notice("u_viewer") {
+		t.Fatal("the notice shows twice")
 	}
 }

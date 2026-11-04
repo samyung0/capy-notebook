@@ -8,11 +8,10 @@ CREATE TABLE assignments (
   created_by       text REFERENCES users(id) ON DELETE SET NULL,
   kind             text NOT NULL CHECK (kind IN ('marked', 'unmarked')),
   title            text NOT NULL CHECK (char_length(title) BETWEEN 1 AND 120),
-  -- The quiz it was made from. Members never reach it through the assignment:
-  -- they are served the frozen copy, and the quiz shows as practice at closing.
+  -- The quiz it was made from, one row with it in every list. Its assignees are
+  -- served the frozen copy and refused the quiz until it closes; a hidden quiz
+  -- is then shown to everyone.
   source_quiz_id   text REFERENCES materials(id) ON DELETE SET NULL,
-  -- Making the assignment hid a quiz members could see; deleting it shows it again.
-  hid_source       boolean NOT NULL DEFAULT false,
   -- The frozen copy, with its keys; null until a marked assignment is published.
   questions        jsonb,
   question_count   int NOT NULL DEFAULT 0,
@@ -20,6 +19,12 @@ CREATE TABLE assignments (
   due_at           timestamptz,
   time_limit_min   int CHECK (time_limit_min BETWEEN 1 AND 1440),
   attempts_allowed int NOT NULL DEFAULT 1 CHECK (attempts_allowed BETWEEN 1 AND 10),
+  -- The due date's policy (Epo 2026-11-04). On, it closes itself at the due date
+  -- and nothing late is taken. Off, late work is open until it is closed by hand,
+  -- at this cut off the submission's mark; the penalty reads live, so changing it
+  -- or the due date applies to work already in.
+  no_late          boolean NOT NULL DEFAULT false,
+  late_penalty_pct int NOT NULL DEFAULT 0 CHECK (late_penalty_pct IN (0, 20, 50)),
   -- Every viewer member, those who join later included, on top of any named
   -- assignee; else only the named ones.
   assign_all       boolean NOT NULL DEFAULT true,
@@ -28,14 +33,18 @@ CREATE TABLE assignments (
   show_answers     boolean NOT NULL DEFAULT true,
   shuffle          boolean NOT NULL DEFAULT false,
   posted_at        timestamptz NOT NULL DEFAULT now(),
-  -- The owner closed it: late submissions stop, a running attempt is submitted.
+  -- Closed by hand: late submissions stop, a running attempt is submitted. A
+  -- No late submissions one is closed from its due date without this being set.
   closed_at        timestamptz,
   -- When its quiz was shown as practice, once; the owner can hide it again.
   released_at      timestamptz,
   created_at       timestamptz NOT NULL DEFAULT now(),
   CHECK (kind = 'marked' OR (questions IS NULL AND source_quiz_id IS NULL)),
   CHECK (kind = 'unmarked' OR draft OR questions IS NOT NULL),
-  CHECK (kind = 'unmarked' OR draft OR due_at IS NOT NULL)
+  CHECK (kind = 'unmarked' OR draft OR due_at IS NOT NULL),
+  -- The policy needs a due date, and is about marked work.
+  CHECK ((NOT no_late AND late_penalty_pct = 0) OR (kind = 'marked' AND due_at IS NOT NULL)),
+  CHECK (NOT no_late OR late_penalty_pct = 0)
 );
 CREATE INDEX assignments_workspace_idx ON assignments(workspace_id, posted_at DESC);
 -- The sweep's marked, published assignments not yet shown as practice.

@@ -11,7 +11,9 @@ export interface AssignmentMine {
   done: boolean;
   doneAt?: string;
   late: boolean;
+  latePenaltyPct: number;
   latestAttemptId?: string;
+  mark?: number;
   missing: boolean;
   runningAttemptId?: string;
   total?: number;

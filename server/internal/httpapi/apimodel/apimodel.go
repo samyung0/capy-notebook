@@ -283,7 +283,7 @@ type Workspace struct {
 	Role         *store.WorkspaceRole     `json:"role,omitempty"`
 	Capabilities store.AccessCapabilities `json:"capabilities"`
 	// CanClone: members of any role and effective editors may copy the
-	// workspace; a link/public viewer may not.
+	// workspace, of a class effective editors alone; a link/public viewer may not.
 	CanClone bool `json:"canClone"`
 }
 
@@ -321,7 +321,7 @@ func FromWorkspaceAccess(
 	out.Capabilities = store.CapabilitiesForRole(effective, true)
 	out.Capabilities.CanEdit = out.Capabilities.CanEdit && !actorReadOnly
 	out.Capabilities.CanEditContent = out.Capabilities.CanEdit
-	out.CanClone = store.CanCloneFrom(member, effective) && !actorReadOnly
+	out.CanClone = store.CanCloneFrom(w.Kind, member, effective) && !actorReadOnly
 	if member == "" {
 		out.Role = nil
 	} else {
@@ -468,6 +468,10 @@ type AssignmentFormReq struct {
 	DueAt        *time.Time `json:"dueAt,omitempty"`
 	TimeLimitMin *int       `json:"timeLimitMin,omitempty" minimum:"1" maximum:"1440"`
 	Attempts     int        `json:"attempts" minimum:"1" maximum:"10"`
+	// NoLate closes it at its due date; off, LatePenaltyPct (0, 20 or 50) comes
+	// off late work's mark. Both need a due date, and a marked assignment.
+	NoLate         bool `json:"noLate"`
+	LatePenaltyPct int  `json:"latePenaltyPct" minimum:"0" maximum:"50"`
 	// AssignAll gives it to every viewer member, those who join later included;
 	// Assignees names anyone else, or everyone when it is off.
 	AssignAll      bool                      `json:"assignAll"`

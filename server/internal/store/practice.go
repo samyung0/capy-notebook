@@ -132,6 +132,7 @@ func (s *Store) practiceQuizzes(ctx context.Context, userID, wsID string, out *P
 		LEFT JOIN topics t ON t.id=m.topic_id
 		WHERE m.workspace_id=$1 AND m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
+			AND `+quizAssignedToSQL("m.id", "$2")+` IS NULL
 		ORDER BY m.topic_id IS NULL, t.position, m.position, m.created_at DESC, m.id`, wsID, userID)
 	if err != nil {
 		return err
@@ -182,7 +183,10 @@ func (s *Store) practiceQuizzes(ctx context.Context, userID, wsID string, out *P
 
 // practiceClosedAssignments notes each quiz whose assignment has closed.
 func (s *Store) practiceClosedAssignments(ctx context.Context, wsID string, at map[string]int, out *Practice) error {
-	rows, err := s.pool.Query(ctx, `SELECT source_quiz_id, max(COALESCE(LEAST(closed_at, due_at), due_at, closed_at))
+	// Closing is what released it: at the due date under No late submissions, else
+	// by hand. A reopened one keeps the time it was released.
+	rows, err := s.pool.Query(ctx, `SELECT source_quiz_id,
+			max(COALESCE(CASE WHEN no_late THEN LEAST(closed_at, due_at) ELSE closed_at END, released_at))
 		FROM assignments WHERE workspace_id=$1 AND source_quiz_id IS NOT NULL AND released_at IS NOT NULL
 		GROUP BY source_quiz_id`, wsID)
 	if err != nil {

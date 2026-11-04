@@ -364,6 +364,7 @@ export * from './setStudyEnabledReq.ts';
 export * from './shareRedemption.ts';
 export * from './shareRedemptionKind.ts';
 export * from './shareRole.ts';
+export * from './sharingNoticeOutputBody.ts';
 export * from './slot.ts';
 export * from './source.ts';
 export * from './sourceCandidateReadOutputBody.ts';

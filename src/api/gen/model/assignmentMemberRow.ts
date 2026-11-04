@@ -10,6 +10,8 @@ export interface AssignmentMemberRow {
   avatarUrl?: string;
   correct?: number;
   late: boolean;
+  latePenaltyPct: number;
+  mark?: number;
   minutes?: number;
   missing: boolean;
   name: string;

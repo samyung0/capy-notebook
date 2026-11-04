@@ -24,6 +24,12 @@ export interface AssignmentFormReq {
   /** @maxItems 20 */
   files: AssignmentFileRef[];
   kind: AssignmentFormReqKind;
+  /**
+     * @minimum 0
+     * @maximum 50
+     */
+  latePenaltyPct: number;
+  noLate: boolean;
   quizId?: string;
   showAnswers: boolean;
   shuffle: boolean;

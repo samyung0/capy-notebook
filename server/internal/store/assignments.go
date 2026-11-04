@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"math/rand"
 	"sort"
 	"strings"
@@ -67,11 +68,16 @@ type Assignment struct {
 	// PostedBy is the name of who made it, empty once the account is gone.
 	PostedBy string     `json:"postedBy"`
 	DueAt    *time.Time `json:"dueAt,omitempty"`
-	// ClosedAt is when the owner closed it; late submissions stopped then.
+	// ClosedAt is when it closed: by hand, or at the due date under NoLate.
 	ClosedAt *time.Time `json:"closedAt,omitempty"`
-	// Closed: past its due date, or closed by the owner.
+	// Closed: as ClosedAt, and an unmarked one past its due date, which only
+	// leaves the open list.
 	Closed bool `json:"closed"`
 	Draft  bool `json:"draft"`
+	// NoLate: it closes itself at the due date. Off, late work is open until it
+	// is closed by hand, with LatePenaltyPct (0, 20 or 50) off its mark.
+	NoLate         bool `json:"noLate"`
+	LatePenaltyPct int  `json:"latePenaltyPct"`
 	// TimeLimitMin, when set, starts the server's clock at Start.
 	TimeLimitMin *int `json:"timeLimitMin,omitempty"`
 	Attempts     int  `json:"attempts"`
@@ -109,8 +115,8 @@ type AssignmentManage struct {
 	// Assigned counts who it went to; Done those who submitted or ticked it.
 	Assigned int `json:"assigned"`
 	Done     int `json:"done"`
-	// Average is the submitted members' marks over the marks decided so far (0
-	// to 1), once at least five submitted.
+	// Average is the submitted members' marks, after any late penalty, over the
+	// marks decided so far (0 to 1), once at least five submitted.
 	Average *float64 `json:"average,omitempty"`
 	// ToApprove counts answers waiting for the owner.
 	ToApprove int `json:"toApprove"`
@@ -125,13 +131,17 @@ type AssignmentMine struct {
 	RunningAttemptID *string `json:"runningAttemptId,omitempty"`
 	AttemptsUsed     int     `json:"attemptsUsed"`
 	// LatestAttemptID is the submission that counts (the latest).
-	LatestAttemptID *string  `json:"latestAttemptId,omitempty"`
-	Correct         *float64 `json:"correct,omitempty"`
-	Total           *float64 `json:"total,omitempty"`
-	WaitingMarks    float64  `json:"waitingMarks"`
-	WaitingAnswers  int      `json:"waitingAnswers"`
-	// Late: submitted after its due date.
-	Late bool `json:"late"`
+	LatestAttemptID *string `json:"latestAttemptId,omitempty"`
+	// Correct is the marks decided; Mark the same after any late penalty, which
+	// is what counts.
+	Correct        *float64 `json:"correct,omitempty"`
+	Mark           *float64 `json:"mark,omitempty"`
+	Total          *float64 `json:"total,omitempty"`
+	WaitingMarks   float64  `json:"waitingMarks"`
+	WaitingAnswers int      `json:"waitingAnswers"`
+	// Late: submitted after its due date; LatePenaltyPct is what that cost.
+	Late           bool `json:"late"`
+	LatePenaltyPct int  `json:"latePenaltyPct"`
 	// Missing: a marked one past its due date with nothing submitted.
 	Missing bool `json:"missing"`
 }
@@ -154,6 +164,8 @@ type AssignmentForm struct {
 	DueAt          *time.Time
 	TimeLimitMin   *int
 	Attempts       int
+	NoLate         bool
+	LatePenaltyPct int
 	AssignAll      bool
 	Assignees      []string
 	Draft          bool
@@ -193,7 +205,7 @@ func (s *Store) assignmentStaff(ctx context.Context, q rowQueryer, userID, wsID 
 }
 
 const assignmentCols = `a.id, a.workspace_id, a.kind, a.title, a.posted_at, COALESCE(NULLIF(u.name,''), u.id, ''),
-	a.due_at, a.closed_at, a.draft, a.time_limit_min, a.attempts_allowed, a.question_count, a.total_marks::float8,
+	a.due_at, a.closed_at, a.no_late, a.late_penalty_pct, a.draft, a.time_limit_min, a.attempts_allowed, a.question_count, a.total_marks::float8,
 	a.source_quiz_id, COALESCE(m.title,''), m.topic_id, COALESCE(m.hidden, false), m.trashed_at IS NOT NULL,
 	a.assign_all, a.approve_ai_marks, a.show_answers, a.shuffle, a.released_at`
 
@@ -221,12 +233,13 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		var manage AssignmentManage
 		var src source
 		if err := rows.Scan(&a.ID, &a.WorkspaceID, &a.Kind, &a.Title, &a.PostedAt, &a.PostedBy,
-			&a.DueAt, &a.ClosedAt, &a.Draft, &a.TimeLimitMin, &a.Attempts, &a.Questions, &a.Marks,
+			&a.DueAt, &a.ClosedAt, &a.NoLate, &a.LatePenaltyPct, &a.Draft, &a.TimeLimitMin, &a.Attempts, &a.Questions, &a.Marks,
 			&manage.QuizID, &manage.QuizTitle, &src.topicID, &src.hidden, &src.trashed,
 			&manage.AssignAll, &manage.ApproveAIMarks, &manage.ShowAnswers, &manage.Shuffle, &src.released); err != nil {
 			return nil, err
 		}
-		a.Closed = assignmentClosed(a.DueAt, a.ClosedAt, now)
+		a.ClosedAt = assignmentClosedAt(a.NoLate, a.DueAt, a.ClosedAt, now)
+		a.Closed = a.ClosedAt != nil || (a.Kind == AssignmentUnmarked && a.DueAt != nil && !a.DueAt.After(now))
 		a.TopicIDs, a.Files = []string{}, []AssignmentFile{}
 		if src.topicID != nil {
 			a.TopicIDs = []string{*src.topicID}
@@ -277,8 +290,36 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 	return mine, nil
 }
 
-func assignmentClosed(due, closed *time.Time, now time.Time) bool {
-	return closed != nil || (due != nil && !due.After(now))
+// assignmentClosedAt is when it closed, if it has: by hand, or under No late
+// submissions at its due date, the earlier of the two. A due date alone closes
+// nothing (Epo 2026-11-04): late work stays open until it is closed by hand.
+func assignmentClosedAt(noLate bool, due, closed *time.Time, now time.Time) *time.Time {
+	if noLate && due != nil && !due.After(now) && (closed == nil || due.Before(*closed)) {
+		return due
+	}
+	return closed
+}
+
+// assignmentLate is whether a submission came after the due date. Under No late
+// submissions nothing is late: a running attempt is submitted for its member.
+func assignmentLate(noLate bool, due *time.Time, submitted time.Time) bool {
+	return !noLate && due != nil && submitted.After(*due)
+}
+
+// penaltyFor is the percentage a late submission loses.
+func penaltyFor(late bool, pct int) int {
+	if late {
+		return pct
+	}
+	return 0
+}
+
+// penalisedMark is a submission's mark after a late penalty, to two places. The
+// penalty is a share of the mark itself, so it holds as open parts are marked.
+// Per-part marks, answer events and reviews keep the marks as awarded: lateness
+// says nothing about what the member knows.
+func penalisedMark(correct float64, pct int) float64 {
+	return math.Round(correct*float64(100-pct)) / 100
 }
 
 // fillAssignmentFiles adds each unmarked assignment's files the caller can see,
@@ -335,14 +376,16 @@ const assigneesSQL = `SELECT a.id AS assignment_id, wm.user_id
 func (s *Store) fillAssignmentManage(ctx context.Context, ids []string, at map[string]int, list []Assignment) error {
 	rows, err := s.pool.Query(ctx, `WITH e AS (`+assigneesSQL+`),
 		l AS (
-			SELECT DISTINCT ON (t.assignment_id, t.user_id) t.assignment_id, t.correct, t.total, t.waiting_marks, t.waiting_answers
+			SELECT DISTINCT ON (t.assignment_id, t.user_id) t.assignment_id, t.total, t.waiting_marks, t.waiting_answers,
+				t.correct * CASE WHEN t.submitted_at > s.due_at THEN (100 - s.late_penalty_pct) / 100.0 ELSE 1 END AS mark
 			FROM attempts t JOIN e ON e.assignment_id=t.assignment_id AND e.user_id=t.user_id
+			JOIN assignments s ON s.id=t.assignment_id
 			WHERE t.submitted_at IS NOT NULL
 			ORDER BY t.assignment_id, t.user_id, t.submitted_at DESC),
 		c AS (SELECT assignment_id, count(*) AS n FROM e GROUP BY 1),
 		d AS (SELECT d.assignment_id, count(*) AS n FROM assignment_done d
 			JOIN e ON e.assignment_id=d.assignment_id AND e.user_id=d.user_id GROUP BY 1),
-		r AS (SELECT assignment_id, count(*) AS n, avg(correct / NULLIF(total - waiting_marks, 0))::float8 AS mean,
+		r AS (SELECT assignment_id, count(*) AS n, avg(mark / NULLIF(total - waiting_marks, 0))::float8 AS mean,
 				sum(waiting_answers)::int AS waiting
 			FROM l GROUP BY 1)
 		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), r.mean, COALESCE(r.waiting, 0)
@@ -417,7 +460,10 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 		}
 		if submittedAt != nil {
 			mine.DoneAt = submittedAt
-			mine.Late = a.DueAt != nil && submittedAt.After(*a.DueAt)
+			mine.Late = assignmentLate(a.NoLate, a.DueAt, *submittedAt)
+			mine.LatePenaltyPct = penaltyFor(mine.Late, a.LatePenaltyPct)
+			mark := penalisedMark(*mine.Correct, mine.LatePenaltyPct)
+			mine.Mark = &mark
 		}
 		mine.Done = mine.DoneAt != nil
 		mine.Missing = a.Kind == AssignmentMarked && !mine.Done && a.DueAt != nil && !a.DueAt.After(now)
@@ -510,6 +556,9 @@ func checkAssignmentForm(ctx context.Context, tx pgx.Tx, wsID string, form Assig
 	if form.Attempts < 1 || form.Attempts > 10 {
 		return assignmentInput("attempts are 1 to 10")
 	}
+	if err := checkLatePolicy(form); err != nil {
+		return err
+	}
 	if form.TimeLimitMin != nil && (*form.TimeLimitMin < 1 || *form.TimeLimitMin > 1440) {
 		return assignmentInput("a time limit is 1 to 1440 minutes")
 	}
@@ -557,6 +606,27 @@ func checkAssignmentForm(ctx context.Context, tx pgx.Tx, wsID string, form Assig
 	return nil
 }
 
+// checkLatePolicy holds the due date's policy to what the form offers: it needs a
+// marked assignment with a due date, and a penalty only applies when late work
+// is taken.
+func checkLatePolicy(form AssignmentForm) error {
+	switch form.LatePenaltyPct {
+	case 0, 20, 50:
+	default:
+		return assignmentInput("a late penalty is none, 20% or 50%")
+	}
+	if !form.NoLate && form.LatePenaltyPct == 0 {
+		return nil
+	}
+	if form.Kind != AssignmentMarked || form.DueAt == nil {
+		return assignmentInput("a late policy needs a marked assignment with a due date")
+	}
+	if form.NoLate && form.LatePenaltyPct != 0 {
+		return assignmentInput("no late submissions leaves nothing to penalise")
+	}
+	return nil
+}
+
 func uniqueStrings(values []string) []string {
 	seen := make(map[string]bool, len(values))
 	out := make([]string, 0, len(values))
@@ -585,8 +655,40 @@ func (s *Store) lockAssignmentStaffTx(ctx context.Context, tx pgx.Tx, wsID, acto
 	return nil
 }
 
-// CreateAssignment makes an assignment. A marked one hides its quiz from members
-// (hidden quizzes aren't practice, §4) and freezes it unless it is a draft.
+// assignmentOpenSQL is a published assignment row a still taking work: neither
+// closed by hand nor past a No late submissions due date.
+const assignmentOpenSQL = `NOT a.draft AND a.closed_at IS NULL AND NOT (a.no_late AND a.due_at <= now())`
+
+// quizAssignedToSQL reads the open assignment a viewer member takes this quiz
+// through, the earliest due, or null (Epo 2026-11-04). While it reads an id the
+// row lists for them, hidden or not, and opens that assignment, while the quiz
+// itself is refused (materialEffectiveAccess) and is not their practice.
+func quizAssignedToSQL(quiz, user string) string {
+	return `(SELECT a.id FROM assignments a
+		JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
+		JOIN workspace_members am ON am.workspace_id=a.workspace_id AND am.user_id=` + user + ` AND am.role='viewer'
+		WHERE a.source_quiz_id=` + quiz + ` AND ` + assignmentOpenSQL + `
+			AND (a.assign_all OR EXISTS (SELECT 1 FROM assignment_assignees x WHERE x.assignment_id=a.id AND x.user_id=` + user + `))
+		ORDER BY a.due_at, a.id LIMIT 1)`
+}
+
+// quizAssignmentOpenSQL reads whether any open assignment uses this quiz; only
+// the workspace's owner and teaching assistants clone it then.
+func quizAssignmentOpenSQL(quiz string) string {
+	return `EXISTS (SELECT 1 FROM assignments a JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
+		WHERE a.source_quiz_id=` + quiz + ` AND ` + assignmentOpenSQL + `)`
+}
+
+// materialAssignedCols reads a materials row m's Assigned and AssignmentID for
+// the caller: the icon shows to whoever it went to and whoever edits the quiz.
+func materialAssignedCols(user string) string {
+	return `m.kind='quiz' AND m.workspace_id IS NOT NULL AND (` + quizAssignedToSQL("m.id", user) + ` IS NOT NULL
+			OR (` + quizAssignmentOpenSQL("m.id") + ` AND ` + editableWorkspaceSQL("m.workspace_id", user) + `)),
+		COALESCE(` + quizAssignedToSQL("m.id", user) + `, '')`
+}
+
+// CreateAssignment makes an assignment, freezing a marked one's quiz unless it
+// is a draft. It changes nothing about the quiz (Epo 2026-11-04).
 func (s *Store) CreateAssignment(ctx context.Context, actorID, wsID string, form AssignmentForm, now time.Time) (Assignment, error) {
 	id := uid("as")
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
@@ -596,29 +698,21 @@ func (s *Store) CreateAssignment(ctx context.Context, actorID, wsID string, form
 		if err := checkAssignmentForm(ctx, tx, wsID, form); err != nil {
 			return err
 		}
-		hid := false
 		if form.Kind == AssignmentMarked {
-			var hidden bool
-			err := tx.QueryRow(ctx, `SELECT hidden FROM materials WHERE id=$1 AND workspace_id=$2 AND kind='quiz'
-				AND trashed_at IS NULL AND parent_material_id IS NULL FOR UPDATE`, form.QuizID, wsID).Scan(&hidden)
-			if isNoRows(err) {
-				return assignmentInput("choose a quiz in this workspace")
-			}
-			if err != nil {
+			var quiz bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM materials WHERE id=$1 AND workspace_id=$2 AND kind='quiz'
+				AND trashed_at IS NULL AND parent_material_id IS NULL)`, form.QuizID, wsID).Scan(&quiz); err != nil {
 				return err
 			}
-			hid = !hidden
-			if hid {
-				if err := setItemHiddenTx(ctx, tx, "materials", form.QuizID, true); err != nil {
-					return err
-				}
+			if !quiz {
+				return assignmentInput("choose a quiz in this workspace")
 			}
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO assignments (id, workspace_id, created_by, kind, title, source_quiz_id, hid_source,
-				due_at, time_limit_min, attempts_allowed, assign_all, draft, approve_ai_marks, show_answers, shuffle, posted_at, created_at)
-			VALUES ($1,$2,$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,true,$12,$13,$14,$15,$15)`,
-			id, wsID, actorID, form.Kind, strings.TrimSpace(form.Title), form.QuizID, hid,
-			form.DueAt, form.TimeLimitMin, form.Attempts, form.AssignAll,
+		if _, err := tx.Exec(ctx, `INSERT INTO assignments (id, workspace_id, created_by, kind, title, source_quiz_id,
+				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, approve_ai_marks, show_answers, shuffle, posted_at, created_at)
+			VALUES ($1,$2,$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$16)`,
+			id, wsID, actorID, form.Kind, strings.TrimSpace(form.Title), form.QuizID,
+			form.DueAt, form.TimeLimitMin, form.Attempts, form.NoLate, form.LatePenaltyPct, form.AssignAll,
 			form.ApproveAIMarks, form.ShowAnswers, form.Shuffle, now); err != nil {
 			return err
 		}
@@ -774,9 +868,9 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE assignments SET title=$2, due_at=$3, time_limit_min=$4, attempts_allowed=$5,
-				assign_all=$6, approve_ai_marks=$7, show_answers=$8, shuffle=$9 WHERE id=$1`,
+				no_late=$6, late_penalty_pct=$7, assign_all=$8, approve_ai_marks=$9, show_answers=$10, shuffle=$11 WHERE id=$1`,
 			id, strings.TrimSpace(form.Title), form.DueAt, form.TimeLimitMin, form.Attempts,
-			form.AssignAll, form.ApproveAIMarks, form.ShowAnswers, form.Shuffle); err != nil {
+			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.ApproveAIMarks, form.ShowAnswers, form.Shuffle); err != nil {
 			return err
 		}
 		return writeAssignmentLists(ctx, tx, id, form)
@@ -839,8 +933,9 @@ func (s *Store) AssignmentSourceQuiz(ctx context.Context, id string) (string, er
 	return *quizID, nil
 }
 
-// SetAssignmentClosed closes it, stopping late submissions and submitting what
-// running attempts saved (the sweep, or the member's next request), or reopens it.
+// SetAssignmentClosed closes it by hand, stopping late submissions, submitting
+// what running attempts saved (the sweep, or the member's next request) and
+// making its quiz practice; or reopens it.
 func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, closed bool, now time.Time) (Assignment, error) {
 	wsID, err := s.assignmentWorkspace(ctx, id)
 	if err != nil {
@@ -863,8 +958,8 @@ func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, clo
 	return s.GetAssignment(ctx, actorID, id, now)
 }
 
-// DeleteAssignment deletes it with its attempts and frozen images, and shows its
-// quiz again when making it hid the quiz (the toast's Undo).
+// DeleteAssignment deletes it with its attempts and frozen images; its quiz is as
+// it was.
 func (s *Store) DeleteAssignment(ctx context.Context, actorID, id string) error {
 	wsID, err := s.assignmentWorkspace(ctx, id)
 	if err != nil {
@@ -882,11 +977,8 @@ func (s *Store) DeleteAssignment(ctx context.Context, actorID, id string) error 
 		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID, also...); err != nil {
 			return err
 		}
-		var source *string
-		var hid bool
-		var released *time.Time
-		if err := tx.QueryRow(ctx, `SELECT source_quiz_id, hid_source, released_at FROM assignments WHERE id=$1 FOR UPDATE`, id).
-			Scan(&source, &hid, &released); err != nil {
+		var found bool
+		if err := tx.QueryRow(ctx, `SELECT true FROM assignments WHERE id=$1 FOR UPDATE`, id).Scan(&found); err != nil {
 			if isNoRows(err) {
 				return ErrNotFound
 			}
@@ -898,20 +990,8 @@ func (s *Store) DeleteAssignment(ctx context.Context, actorID, id string) error 
 				return err
 			}
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM assignments WHERE id=$1`, id); err != nil {
-			return err
-		}
-		if source == nil || !hid || released != nil {
-			return nil
-		}
-		var others bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM assignments WHERE source_quiz_id=$1 AND released_at IS NULL)`, *source).Scan(&others); err != nil {
-			return err
-		}
-		if others {
-			return nil
-		}
-		return setItemHiddenTx(ctx, tx, "materials", *source, false)
+		_, err := tx.Exec(ctx, `DELETE FROM assignments WHERE id=$1`, id)
+		return err
 	})
 }
 
@@ -983,9 +1063,13 @@ type AssignmentAttempt struct {
 	SubmittedAt   *time.Time `json:"submittedAt,omitempty"`
 	AutoSubmitted bool       `json:"autoSubmitted"`
 	Late          bool       `json:"late"`
+	// Late: submitted after the due date; LatePenaltyPct is what that cost.
+	LatePenaltyPct int `json:"latePenaltyPct"`
 	// Correct of Total: every mark decided so far over the whole paper; the
-	// WaitingMarks of WaitingAnswers wait for the owner.
+	// WaitingMarks of WaitingAnswers wait for the owner. Mark is Correct after any
+	// late penalty, which is what counts.
 	Correct        float64 `json:"correct"`
+	Mark           float64 `json:"mark"`
 	Total          float64 `json:"total"`
 	WaitingMarks   float64 `json:"waitingMarks"`
 	WaitingAnswers int     `json:"waitingAnswers"`
@@ -1002,7 +1086,8 @@ type attemptRow struct {
 	id, assignmentID, userID, wsID, sourceID string
 	startedAt, deadline, submitted, dueAt    *time.Time
 	closedAt, released                       *time.Time
-	auto, showAnswers, shuffle               bool
+	noLate, auto, showAnswers, shuffle       bool
+	latePenaltyPct                           int
 	correct, total, waitingMarks             float64
 	waitingAnswers                           int
 	answers, graded, frozen                  []byte
@@ -1010,14 +1095,14 @@ type attemptRow struct {
 
 const attemptRowCols = `t.id, t.assignment_id, t.user_id, a.workspace_id, COALESCE(a.source_quiz_id,''),
 	t.started_at, t.deadline_at, t.submitted_at, a.due_at, a.closed_at, a.released_at,
-	t.auto_submitted, a.show_answers, a.shuffle, t.correct::float8, t.total::float8, t.waiting_marks::float8, t.waiting_answers,
+	a.no_late, a.late_penalty_pct, t.auto_submitted, a.show_answers, a.shuffle, t.correct::float8, t.total::float8, t.waiting_marks::float8, t.waiting_answers,
 	t.answers, t.questions, a.questions`
 
 func scanAttemptRow(row pgx.Row) (attemptRow, error) {
 	var r attemptRow
 	err := row.Scan(&r.id, &r.assignmentID, &r.userID, &r.wsID, &r.sourceID,
 		&r.startedAt, &r.deadline, &r.submitted, &r.dueAt, &r.closedAt, &r.released,
-		&r.auto, &r.showAnswers, &r.shuffle, &r.correct, &r.total, &r.waitingMarks, &r.waitingAnswers,
+		&r.noLate, &r.latePenaltyPct, &r.auto, &r.showAnswers, &r.shuffle, &r.correct, &r.total, &r.waitingMarks, &r.waitingAnswers,
 		&r.answers, &r.graded, &r.frozen)
 	if isNoRows(err) {
 		return r, ErrNotFound
@@ -1025,9 +1110,13 @@ func scanAttemptRow(row pgx.Row) (attemptRow, error) {
 	return r, err
 }
 
-// attemptExpired: the time ran out, past the grace, or the owner closed it.
+// expired: closed by hand, or its time or a No late submissions due date ran
+// out, past the grace (the browser submits at zero, and that takes a moment).
 func (r attemptRow) expired(now time.Time) bool {
 	if r.closedAt != nil {
+		return true
+	}
+	if r.noLate && r.dueAt != nil && now.After(r.dueAt.Add(assignmentGrace)) {
 		return true
 	}
 	return r.deadline != nil && now.After(r.deadline.Add(assignmentGrace))
@@ -1043,14 +1132,14 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, now time
 			return err
 		}
 		var wsID, kind, title, wsName string
-		var draft bool
-		var closedAt *time.Time
+		var draft, noLate bool
+		var due, closedAt *time.Time
 		var limit, allowed int
 		var hasLimit *int
 		var total float64
-		err := tx.QueryRow(ctx, `SELECT a.workspace_id, a.kind, a.title, w.name, a.draft, a.closed_at, a.time_limit_min, a.attempts_allowed, a.total_marks::float8
+		err := tx.QueryRow(ctx, `SELECT a.workspace_id, a.kind, a.title, w.name, a.draft, a.no_late, a.due_at, a.closed_at, a.time_limit_min, a.attempts_allowed, a.total_marks::float8
 			FROM assignments a JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1 FOR SHARE OF a`, id).
-			Scan(&wsID, &kind, &title, &wsName, &draft, &closedAt, &hasLimit, &allowed, &total)
+			Scan(&wsID, &kind, &title, &wsName, &draft, &noLate, &due, &closedAt, &hasLimit, &allowed, &total)
 		if isNoRows(err) {
 			return ErrNotFound
 		}
@@ -1085,7 +1174,7 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, now time
 		} else if !errors.Is(err, ErrNotFound) {
 			return err
 		}
-		if closedAt != nil {
+		if assignmentClosedAt(noLate, due, closedAt, now) != nil {
 			return ErrAssignmentClosed
 		}
 		var used int
@@ -1131,10 +1220,10 @@ func (s *Store) SaveAssignmentAnswers(ctx context.Context, userID, attemptID str
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		// This runs every few seconds per member: it leaves the frozen copy out.
 		var r attemptRow
-		err := tx.QueryRow(ctx, `SELECT a.workspace_id, t.submitted_at, t.deadline_at, a.closed_at
+		err := tx.QueryRow(ctx, `SELECT a.workspace_id, t.submitted_at, t.deadline_at, a.closed_at, a.no_late, a.due_at
 			FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 			WHERE t.id=$1 AND t.user_id=$2 FOR UPDATE OF t`, attemptID, userID).
-			Scan(&r.wsID, &r.submitted, &r.deadline, &r.closedAt)
+			Scan(&r.wsID, &r.submitted, &r.deadline, &r.closedAt, &r.noLate, &r.dueAt)
 		if isNoRows(err) {
 			return ErrNotFound
 		}
@@ -1468,7 +1557,9 @@ func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now t
 		return v, nil
 	}
 	v.Status = "submitted"
-	v.Late = r.dueAt != nil && r.submitted.After(*r.dueAt)
+	v.Late = assignmentLate(r.noLate, r.dueAt, *r.submitted)
+	v.LatePenaltyPct = penaltyFor(v.Late, r.latePenaltyPct)
+	v.Mark = penalisedMark(r.correct, v.LatePenaltyPct)
 	v.ShowAnswers = staff || r.showAnswers
 	graded, err := decodeFrozen(r.graded)
 	if err != nil {
@@ -1721,11 +1812,15 @@ type AssignmentMemberRow struct {
 	// SubmittedAt: the latest submission, which counts; an unmarked one's tick.
 	SubmittedAt *time.Time `json:"submittedAt,omitempty"`
 	// Minutes taken, whole minutes rounded up.
-	Minutes        *int     `json:"minutes,omitempty"`
+	Minutes *int `json:"minutes,omitempty"`
+	// Correct is the marks decided; Mark the same after any late penalty, which
+	// is what counts.
 	Correct        *float64 `json:"correct,omitempty"`
+	Mark           *float64 `json:"mark,omitempty"`
 	Total          *float64 `json:"total,omitempty"`
 	WaitingAnswers int      `json:"waitingAnswers"`
 	Late           bool     `json:"late"`
+	LatePenaltyPct int      `json:"latePenaltyPct"`
 	Running        bool     `json:"running"`
 	// Missing: past due, nothing submitted.
 	Missing bool `json:"missing"`
@@ -1798,9 +1893,12 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 		return out, ErrNotFound
 	}
 	var kind string
+	var noLate bool
+	var penalty int
 	var due *time.Time
 	var raw []byte
-	if err := s.pool.QueryRow(ctx, `SELECT kind, due_at, questions FROM assignments WHERE id=$1`, id).Scan(&kind, &due, &raw); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT kind, no_late, late_penalty_pct, due_at, questions FROM assignments WHERE id=$1`, id).
+		Scan(&kind, &noLate, &penalty, &due, &raw); err != nil {
 		return out, err
 	}
 	frozen, err := decodeFrozen(raw)
@@ -1833,7 +1931,10 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 		row := &out.Members[i]
 		row.AttemptID, row.SubmittedAt, row.Correct, row.Total = &attempt.id, &attempt.submitted, &attempt.correct, &attempt.total
 		row.WaitingAnswers = attempt.waitingAnswers
-		row.Late = due != nil && attempt.submitted.After(*due)
+		row.Late = assignmentLate(noLate, due, attempt.submitted)
+		row.LatePenaltyPct = penaltyFor(row.Late, penalty)
+		mark := penalisedMark(attempt.correct, row.LatePenaltyPct)
+		row.Mark = &mark
 		row.Missing, row.Running = false, false
 		if attempt.started != nil {
 			minutes := int(attempt.submitted.Sub(*attempt.started).Round(time.Minute).Minutes())
@@ -2063,14 +2164,14 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 /* ------------------------------------------------------------------- sweep */
 
 // SweepAssignments is the server closing what a closed tab cannot: it submits
-// what running attempts saved once their time runs out or the owner closes the
-// assignment, and shows a closed assignment's quiz as practice, once. Practice
-// stays hidden while another open assignment uses the same quiz, whose members
-// could otherwise read its keys.
+// what running attempts saved once their time runs out or the assignment closes,
+// by hand or at a No late submissions due date, and shows a closed assignment's
+// quiz as practice, once. A due date alone releases nothing (Epo 2026-11-04).
+// The quiz stays hidden while another open assignment uses it.
 func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) (finished, released int, err error) {
 	rows, err := s.pool.Query(ctx, `SELECT t.id FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 		WHERE t.assignment_id IS NOT NULL AND t.submitted_at IS NULL
-			AND (t.deadline_at <= $1 OR a.closed_at IS NOT NULL) LIMIT $2`, now.Add(-assignmentGrace), limit)
+			AND (t.deadline_at <= $1 OR a.closed_at IS NOT NULL OR (a.no_late AND a.due_at <= $1)) LIMIT $2`, now.Add(-assignmentGrace), limit)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -2085,7 +2186,7 @@ func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) 
 		finished++
 	}
 	rows, err = s.pool.Query(ctx, `SELECT id FROM assignments
-		WHERE released_at IS NULL AND kind='marked' AND NOT draft AND (due_at <= $1 OR closed_at IS NOT NULL)
+		WHERE released_at IS NULL AND kind='marked' AND NOT draft AND (closed_at IS NOT NULL OR (no_late AND due_at <= $1))
 		ORDER BY due_at LIMIT $2`, now, limit)
 	if err != nil {
 		return finished, 0, err
@@ -2103,8 +2204,9 @@ func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) 
 	return finished, released, nil
 }
 
-// releaseAssignment shows its quiz as practice and rates what its members
-// submitted (§4, §11.6).
+// releaseAssignment makes its quiz a normal visible one, practice for members,
+// and rates what they submitted (§4, §11.6, Epo 2026-11-04). The owner can hide
+// it again.
 func (s *Store) releaseAssignment(ctx context.Context, id string, now time.Time) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		var source *string
@@ -2124,7 +2226,7 @@ func (s *Store) releaseAssignment(ctx context.Context, id string, now time.Time)
 		}
 		var othersOpen bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM assignments WHERE source_quiz_id=$1 AND id<>$2 AND NOT draft
-			AND closed_at IS NULL AND due_at > $3)`, *source, id, now).Scan(&othersOpen); err != nil {
+			AND closed_at IS NULL AND NOT (no_late AND due_at <= $3))`, *source, id, now).Scan(&othersOpen); err != nil {
 			return err
 		}
 		if !othersOpen {
@@ -2147,4 +2249,23 @@ func (s *Store) releaseAssignment(ctx context.Context, id string, now time.Time)
 		}
 		return nil
 	})
+}
+
+/* ---------------------------------------------------------- sharing notice */
+
+// SharingNoticeDue reports whether this viewer member of a class is yet to be
+// told what it shares with its owner and teaching assistants (board V1).
+func (s *Store) SharingNoticeDue(ctx context.Context, userID, wsID string) (bool, error) {
+	var due bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_members wm
+		JOIN workspaces w ON w.id=wm.workspace_id AND w.kind='class'
+		WHERE wm.workspace_id=$1 AND wm.user_id=$2 AND wm.role='viewer' AND wm.sharing_notice_seen_at IS NULL)`, wsID, userID).Scan(&due)
+	return due, err
+}
+
+// MarkSharingNoticeSeen records that the member was told, so it never shows twice.
+func (s *Store) MarkSharingNoticeSeen(ctx context.Context, userID, wsID string, now time.Time) error {
+	_, err := s.pool.Exec(ctx, `UPDATE workspace_members SET sharing_notice_seen_at=$3
+		WHERE workspace_id=$1 AND user_id=$2 AND sharing_notice_seen_at IS NULL`, wsID, userID, now)
+	return err
 }

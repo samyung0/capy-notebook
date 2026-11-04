@@ -18,6 +18,8 @@ export interface AssignmentAttempt {
   deadlineAt?: string;
   id: string;
   late: boolean;
+  latePenaltyPct: number;
+  mark: number;
   now: string;
   questions: AssignmentAttemptQuestionsItem[];
   removedAssetIds: string[];

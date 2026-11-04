@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 )
 
@@ -41,14 +39,6 @@ func (s *Store) SetItemHidden(ctx context.Context, actorID string, kind agenttoo
 	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, *wsID, actorID); err != nil {
 		return err
 	}
-	if err := setItemHiddenTx(ctx, tx, table, id, hidden); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
-}
-
-// setItemHiddenTx writes the flag; hiding evicts the item's live rooms.
-func setItemHiddenTx(ctx context.Context, tx pgx.Tx, table, id string, hidden bool) error {
 	tag, err := tx.Exec(ctx, `UPDATE `+table+` SET hidden=$2 WHERE id=$1 AND trashed_at IS NULL AND hidden<>$2`, id, hidden)
 	if err != nil {
 		return err
@@ -62,5 +52,5 @@ func setItemHiddenTx(ctx context.Context, tx pgx.Tx, table, id string, hidden bo
 			return err
 		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }

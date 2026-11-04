@@ -163,6 +163,8 @@ export const GetAssignmentAttemptResponse = zod.object({
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "id": zod.string(),
   "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
+  "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
@@ -224,6 +226,8 @@ export const MarkAssignmentAnswerResponse = zod.object({
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "id": zod.string(),
   "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
+  "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
@@ -261,6 +265,8 @@ export const SubmitAssignmentAttemptResponse = zod.object({
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "id": zod.string(),
   "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
+  "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
@@ -310,6 +316,7 @@ export const GetAssignmentResponse = zod.object({
 })),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int(),
   "manage": zod.object({
   "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
@@ -330,13 +337,16 @@ export const GetAssignmentResponse = zod.object({
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
   "latestAttemptId": zod.string().optional(),
+  "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
   "total": zod.number().optional(),
   "waitingAnswers": zod.int(),
   "waitingMarks": zod.number()
 }).optional(),
+  "noLate": zod.boolean(),
   "postedAt": zod.iso.datetime({"offset":true}),
   "postedBy": zod.string(),
   "practiceQuizId": zod.string().optional(),
@@ -361,6 +371,9 @@ export const updateAssignmentBodyAttemptsMax = 10;
 
 export const updateAssignmentBodyFilesMax = 20;
 
+export const updateAssignmentBodyLatePenaltyPctMin = 0;
+export const updateAssignmentBodyLatePenaltyPctMax = 50;
+
 export const updateAssignmentBodyTimeLimitMinMax = 1440;
 
 export const updateAssignmentBodyTitleMax = 120;
@@ -379,6 +392,8 @@ export const UpdateAssignmentBody = zod.object({
   "materialId": zod.string().optional()
 })).max(updateAssignmentBodyFilesMax),
   "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int().min(updateAssignmentBodyLatePenaltyPctMin).max(updateAssignmentBodyLatePenaltyPctMax),
+  "noLate": zod.boolean(),
   "quizId": zod.string().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
@@ -401,6 +416,7 @@ export const UpdateAssignmentResponse = zod.object({
 })),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int(),
   "manage": zod.object({
   "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
@@ -421,13 +437,16 @@ export const UpdateAssignmentResponse = zod.object({
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
   "latestAttemptId": zod.string().optional(),
+  "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
   "total": zod.number().optional(),
   "waitingAnswers": zod.int(),
   "waitingMarks": zod.number()
 }).optional(),
+  "noLate": zod.boolean(),
   "postedAt": zod.iso.datetime({"offset":true}),
   "postedBy": zod.string(),
   "practiceQuizId": zod.string().optional(),
@@ -465,6 +484,7 @@ export const SetAssignmentClosedResponse = zod.object({
 })),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int(),
   "manage": zod.object({
   "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
@@ -485,13 +505,16 @@ export const SetAssignmentClosedResponse = zod.object({
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
   "latestAttemptId": zod.string().optional(),
+  "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
   "total": zod.number().optional(),
   "waitingAnswers": zod.int(),
   "waitingMarks": zod.number()
 }).optional(),
+  "noLate": zod.boolean(),
   "postedAt": zod.iso.datetime({"offset":true}),
   "postedBy": zod.string(),
   "practiceQuizId": zod.string().optional(),
@@ -539,6 +562,7 @@ export const PublishAssignmentResponse = zod.object({
 })),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int(),
   "manage": zod.object({
   "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
@@ -559,13 +583,16 @@ export const PublishAssignmentResponse = zod.object({
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
   "latestAttemptId": zod.string().optional(),
+  "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
   "total": zod.number().optional(),
   "waitingAnswers": zod.int(),
   "waitingMarks": zod.number()
 }).optional(),
+  "noLate": zod.boolean(),
   "postedAt": zod.iso.datetime({"offset":true}),
   "postedBy": zod.string(),
   "practiceQuizId": zod.string().optional(),
@@ -599,6 +626,8 @@ export const GetAssignmentReportResponse = zod.object({
   "avatarUrl": zod.string().optional(),
   "correct": zod.number().optional(),
   "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
+  "mark": zod.number().optional(),
   "minutes": zod.int().optional(),
   "missing": zod.boolean(),
   "name": zod.string(),
@@ -647,6 +676,8 @@ export const StartAssignmentResponse = zod.object({
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "id": zod.string(),
   "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
+  "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
@@ -3643,6 +3674,8 @@ export const ListOwnedMaterialsQueryParams = zod.object({
 export const ListOwnedMaterialsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
+  "assigned": zod.boolean().optional(),
+  "assignmentId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -6018,6 +6051,8 @@ export const ListRecentResponse = zod.object({
   "workspaceName": zod.string().optional()
 }).optional(),
   "material": zod.object({
+  "assigned": zod.boolean().optional(),
+  "assignmentId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -7265,6 +7300,7 @@ export const ListAssignmentsResponse = zod.object({
 })),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int(),
   "manage": zod.object({
   "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
@@ -7285,13 +7321,16 @@ export const ListAssignmentsResponse = zod.object({
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
   "latestAttemptId": zod.string().optional(),
+  "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
   "total": zod.number().optional(),
   "waitingAnswers": zod.int(),
   "waitingMarks": zod.number()
 }).optional(),
+  "noLate": zod.boolean(),
   "postedAt": zod.iso.datetime({"offset":true}),
   "postedBy": zod.string(),
   "practiceQuizId": zod.string().optional(),
@@ -7318,6 +7357,9 @@ export const createAssignmentBodyAttemptsMax = 10;
 
 export const createAssignmentBodyFilesMax = 20;
 
+export const createAssignmentBodyLatePenaltyPctMin = 0;
+export const createAssignmentBodyLatePenaltyPctMax = 50;
+
 export const createAssignmentBodyTimeLimitMinMax = 1440;
 
 export const createAssignmentBodyTitleMax = 120;
@@ -7336,6 +7378,8 @@ export const CreateAssignmentBody = zod.object({
   "materialId": zod.string().optional()
 })).max(createAssignmentBodyFilesMax),
   "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int().min(createAssignmentBodyLatePenaltyPctMin).max(createAssignmentBodyLatePenaltyPctMax),
+  "noLate": zod.boolean(),
   "quizId": zod.string().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
@@ -7358,6 +7402,7 @@ export const CreateAssignmentResponse = zod.object({
 })),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int(),
   "manage": zod.object({
   "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
@@ -7378,13 +7423,16 @@ export const CreateAssignmentResponse = zod.object({
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
   "latestAttemptId": zod.string().optional(),
+  "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
   "total": zod.number().optional(),
   "waitingAnswers": zod.int(),
   "waitingMarks": zod.number()
 }).optional(),
+  "noLate": zod.boolean(),
   "postedAt": zod.iso.datetime({"offset":true}),
   "postedBy": zod.string(),
   "practiceQuizId": zod.string().optional(),
@@ -7958,6 +8006,8 @@ export const ListMaterialsParams = zod.object({
 })
 
 export const ListMaterialsResponseItem = zod.object({
+  "assigned": zod.boolean().optional(),
+  "assignmentId": zod.string().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
   "id": zod.string(),
@@ -8359,6 +8409,8 @@ export const ListWorkspaceRecentResponse = zod.object({
   "workspaceName": zod.string().optional()
 })),
   "materials": zod.array(zod.object({
+  "assigned": zod.boolean().optional(),
+  "assignmentId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -8508,6 +8560,29 @@ export const UpdateWorkspaceSharingResponse = zod.object({
 })),
   "topicCount": zod.int()
 })
+
+
+/**
+ * @summary Whether a class member is yet to be told what they share
+ */
+export const GetSharingNoticeParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetSharingNoticeResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "due": zod.boolean()
+})
+
+
+/**
+ * @summary Record that a class member was told what they share
+ */
+export const MarkSharingNoticeSeenParams = zod.object({
+  "id": zod.string()
+})
+
+export const MarkSharingNoticeSeenResponse = zod.void()
 
 
 /**

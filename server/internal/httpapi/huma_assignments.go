@@ -64,6 +64,11 @@ type assignmentMarkInput struct {
 	ID   string `path:"id"`
 	Body store.AssignmentMark
 }
+type sharingNoticeOutput struct {
+	Body struct {
+		Due bool `json:"due"`
+	}
+}
 
 func (a *api) registerAssignments(api huma.API) {
 	const tag = "Assignments"
@@ -80,6 +85,8 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodGet, "/api/assignment-attempts/{id}", "getAssignmentAttempt", tag, "An attempt: running, or its results", http.StatusOK, a.getAssignmentAttempt)
 	regWithMaxBody(api, http.MethodPut, "/api/assignment-attempts/{id}/answers", "saveAssignmentAnswers", tag, "Save a running attempt's answers", http.StatusNoContent, answersMaxBytes, a.saveAssignmentAnswers)
 	regWithMaxBody(api, http.MethodPost, "/api/assignment-attempts/{id}/submit", "submitAssignmentAttempt", tag, "Submit a running attempt: closed parts marked, open parts left for the owner", http.StatusOK, answersMaxBytes, a.submitAssignmentAttempt)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/sharing-notice", "getSharingNotice", tag, "Whether a class member is yet to be told what they share", http.StatusOK, a.getSharingNotice)
+	reg(api, http.MethodPut, "/api/workspaces/{id}/sharing-notice", "markSharingNoticeSeen", tag, "Record that a class member was told what they share", http.StatusNoContent, a.markSharingNoticeSeen)
 	reg(api, http.MethodPost, "/api/assignment-attempts/{id}/marks", "markAssignmentAnswer", tag, "Set or change a question's marks and comment in a member's answers", http.StatusOK, a.markAssignmentAnswer)
 }
 
@@ -126,6 +133,7 @@ func (a *api) quizForFreezing(ctx context.Context, quizID string) ([]map[string]
 func assignmentForm(b apimodel.AssignmentFormReq) store.AssignmentForm {
 	return store.AssignmentForm{
 		Kind: b.Kind, Title: b.Title, QuizID: b.QuizID, DueAt: b.DueAt, TimeLimitMin: b.TimeLimitMin, Attempts: b.Attempts,
+		NoLate: b.NoLate, LatePenaltyPct: b.LatePenaltyPct,
 		AssignAll: b.AssignAll, Assignees: b.Assignees, Draft: b.Draft, ApproveAIMarks: b.ApproveAIMarks,
 		ShowAnswers: b.ShowAnswers, Shuffle: b.Shuffle, Files: b.Files,
 	}
@@ -288,4 +296,22 @@ func (a *api) markAssignmentAnswer(ctx context.Context, in *assignmentMarkInput)
 		return nil, assignmentError(err)
 	}
 	return &assignmentAttemptOutput{Body: res}, nil
+}
+
+// getSharingNotice reads the caller's own flag, so it needs no access check.
+func (a *api) getSharingNotice(ctx context.Context, in *assignmentIDInput) (*sharingNoticeOutput, error) {
+	due, err := a.s.SharingNoticeDue(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out := &sharingNoticeOutput{}
+	out.Body.Due = due
+	return out, nil
+}
+
+func (a *api) markSharingNoticeSeen(ctx context.Context, in *assignmentIDInput) (*Empty, error) {
+	if err := a.s.MarkSharingNoticeSeen(ctx, userID(ctx), in.ID, time.Now()); err != nil {
+		return nil, hErr(err)
+	}
+	return &Empty{}, nil
 }

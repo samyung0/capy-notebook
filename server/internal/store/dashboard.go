@@ -70,6 +70,7 @@ func (s *Store) WorkspaceDashboard(ctx context.Context, userID, wsID string) (Wo
 					AND ao.effect->'resource'->>'id' = m.id), m.hidden
 			FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 				AND workspace_item_visible(m.hidden, m.workspace_id, $2)
+				AND `+quizAssignedToSQL("m.id", "$2")+` IS NULL
 			ORDER BY m.created_at DESC LIMIT $3)
 			UNION ALL
 			(SELECT 'assigned', s.created_by, NULL, NULL, s.id, s.title, s.posted_at, false, false

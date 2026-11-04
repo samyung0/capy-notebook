@@ -164,6 +164,7 @@ import type {
   SetModelPrefsReq,
   SetStudyEnabledReq,
   ShareRedemption,
+  SharingNoticeOutputBody,
   SourceCandidateReadOutputBody,
   SourceCandidateResponse,
   SourceCheckpoint,
@@ -11843,6 +11844,106 @@ const res = await fetch(getUpdateWorkspaceSharingUrl(id),
 
   const data: updateWorkspaceSharingResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateWorkspaceSharingResponse
+}
+
+
+
+export type getSharingNoticeResponse200 = {
+  data: SharingNoticeOutputBody
+  status: 200
+}
+
+export type getSharingNoticeResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getSharingNoticeResponseSuccess = (getSharingNoticeResponse200) & {
+  headers: Headers;
+};
+export type getSharingNoticeResponseError = (getSharingNoticeResponseDefault) & {
+  headers: Headers;
+};
+
+export type getSharingNoticeResponse = (getSharingNoticeResponseSuccess | getSharingNoticeResponseError)
+
+export const getGetSharingNoticeUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/sharing-notice`
+}
+
+/**
+ * @summary Whether a class member is yet to be told what they share
+ */
+export const getSharingNotice = async (id: string, options?: RequestInit): Promise<getSharingNoticeResponse> => {
+
+  const res = await fetch(getGetSharingNoticeUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSharingNoticeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSharingNoticeResponse
+}
+
+
+
+export type markSharingNoticeSeenResponse204 = {
+  data: void
+  status: 204
+}
+
+export type markSharingNoticeSeenResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type markSharingNoticeSeenResponseSuccess = (markSharingNoticeSeenResponse204) & {
+  headers: Headers;
+};
+export type markSharingNoticeSeenResponseError = (markSharingNoticeSeenResponseDefault) & {
+  headers: Headers;
+};
+
+export type markSharingNoticeSeenResponse = (markSharingNoticeSeenResponseSuccess | markSharingNoticeSeenResponseError)
+
+export const getMarkSharingNoticeSeenUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/sharing-notice`
+}
+
+/**
+ * @summary Record that a class member was told what they share
+ */
+export const markSharingNoticeSeen = async (id: string, options?: RequestInit): Promise<markSharingNoticeSeenResponse> => {
+
+  const res = await fetch(getMarkSharingNoticeSeenUrl(id),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: markSharingNoticeSeenResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as markSharingNoticeSeenResponse
 }
 
 
