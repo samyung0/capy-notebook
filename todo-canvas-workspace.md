@@ -258,7 +258,9 @@ Investigated 2026-11-04, nothing built. "Connecting" only shows in Edit, and Edi
 - D11: a hidden editor with nothing unsent leaves the room at 5 min and rejoins invisibly. AFFiNE's way, keeping the connection, works only because its server holds no document in memory.
 - D12: phones same as desktop, as Google Docs' Android app and AFFiNE open editable.
 - D14: expired edits show a toast with a Download action, "download now or it will be discarded". Today non-note items open once under a banner that says to copy what you need, and notes keep them as merge pieces.
-- D4 still open: AFFiNE paints a device copy and is editable at once, which needs note bodies stored on the device (never stored today). Proposal: the stored copy read-only with a silent swap now, the device copy with the BlockSuite work.
+- D4 (Epo, 2026-11-04): check whether a device copy of notes can work, since it would solve this: paint from the device, join in the background. Being checked; findings go in the investigation report.
+- D11, amended (Epo, 2026-11-04): keep today's server model. "Connecting" must never show, however a hidden tab comes back.
+- The AFFiNE server model doesn't fit BetterOffice as it stands: Office saves and edits run in engine processes on the collaboration server, which need the document there.
 
 ### 1.10 Phones (360 px)
 
