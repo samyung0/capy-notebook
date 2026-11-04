@@ -490,6 +490,19 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
 - **Tables** become table blocks, but none of the three papers has one.
 - **Being built on `claude/study-extraction`:** figure crops saved as the question's image, a check of box accuracy on every crop, a text check of stems, options and schemes against the page's text layer, a paper with a table, and options removed from the text in code. Report: `bench/extraction/reports/2026-11-04-figures-and-fidelity.md`.
 
+**Figure boxes from ingest (Epo, 2026-11-04: plan it; a couple of figures dropped here or there is fine).** Make a quiz is a normal upload: parsed, chunked and indexed, then extracted, and extraction refuses a file not yet indexed. Today the figures come from the model alone: the batch call names each figure, then a call per page with figures, seeing that page alone, returns the boxes, and code pads and crops them.
+- **Born-digital PDFs and Office files:** the parser already reports every picture and chart with its box on the same 0–1000 grid, but ingest throws the list away. Chunks keep a figure's box only when the figure has caption or label text, and not which box is the figure.
+  1. **Ingest** keeps each figure the parser reports, with or without text: page, box, picture or chart, and caption and label text, in a small per-file list. This is the PC's area under the machine split.
+  2. **Extraction** gives each batch call the numbered figures on its pages. The model names the figure a question uses, and code crops the parser's box: no box call, and exact for embedded pictures.
+  3. **Fallback:** pages with no parser figures keep today's box call.
+  - **Check first:** how the parser boxes diagrams drawn as vector paths (Cambridge and other digital papers), on one or two such papers.
+- **Scans** have no parser figures: every page is one picture, and the page read returns text only. All four bench papers are scans. They keep the box call.
+- **Scans, the options:**
+  - **S1 (today):** the box call, one per page with figures: the same model, that page alone, reasoning off, the box padded. 12 of 14 bench figures came out whole. No new parts.
+  - **S2:** a layout-detection model on the ingest host finds figure regions on text-less pages during the normal ingest and stores them in the same per-file list, so scans and digital files work the same. Exact boxes and no model cost, but it's a new model on the shared ingest host (the PC's area), to bench against the 14 gold boxes first.
+  - **S3:** the page read at ingest also returns figure boxes in the same call. No extra call, but boxes asked beside other work were worse (the batch call's own boxes missed 3 of 10), and every scanned page's read prompt changes.
+  - **Recommendation:** S1 now, since a few drops are fine. S2 if drops turn out frequent on real uploads.
+
 **Upload: everyone or hidden from members (Epo, 2026-11-04; canvas page 10, board U1).**
 - **Scope:** owners and editors choose, when uploading, whether members see the file. Hidden works as the ⋮ menu's Hide from members does: viewers don't see the file in Files, search, the agent, Activity or any notification; owners and editors see it with the eye mark.
 - **Default:** everyone, as today. Uploads inside Make a quiz start hidden.
