@@ -80,6 +80,7 @@ import type {
   FlashcardSet,
   Generate200,
   GenerateReq,
+  GetMaterialParams,
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
   GetWorkspaceReviewParams,
@@ -5263,20 +5264,29 @@ export type getMaterialResponseError = (getMaterialResponseDefault) & {
 
 export type getMaterialResponse = (getMaterialResponseSuccess | getMaterialResponseError)
 
-export const getGetMaterialUrl = (id: string,) => {
+export const getGetMaterialUrl = (id: string,
+    params?: GetMaterialParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/materials/${id}`
+  return stringifiedParams.length > 0 ? `/api/materials/${id}?${stringifiedParams}` : `/api/materials/${id}`
 }
 
 /**
  * @summary Get a material
  */
-export const getMaterial = async (id: string, options?: RequestInit): Promise<getMaterialResponse> => {
+export const getMaterial = async (id: string,
+    params?: GetMaterialParams, options?: RequestInit): Promise<getMaterialResponse> => {
 
-  const res = await fetch(getGetMaterialUrl(id),
+  const res = await fetch(getGetMaterialUrl(id,params),
   {
     ...options,
     method: 'GET'

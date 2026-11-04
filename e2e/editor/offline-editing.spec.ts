@@ -641,6 +641,11 @@ test('a note takes the stored steps its draft send has not delivered 30 s on, an
   const saveState = page.getByTestId('editor-save-state');
   await expect(content).toContainText(seed, { timeout: 30_000 });
   await expect(saveState).toHaveAttribute('data-save-state', 'syncing-draft');
+  if (shots)
+    for (const width of [1440, 360]) {
+      await page.setViewportSize({ height: 780, width });
+      await page.screenshot({ path: `${shots}/draft-syncing-${width}.png` });
+    }
   await expect(content).toHaveAttribute('contenteditable', 'false');
   await expect(content).not.toContainText('Held steps.');
   // Another editor in the note's room, once the note joined it.

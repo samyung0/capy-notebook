@@ -23,6 +23,7 @@ import {
 } from '@/lib/analytics';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
 import { dropOpen, type OpenKey, takeOpen } from '@/lib/sentOpens';
+import { holdsNoteCopy } from '@/lib/sourceCache';
 import {
   forgetUndoPayload,
   keepUndoPayloads,
@@ -2139,9 +2140,27 @@ export const useMaterials = (wsId: string, options?: QueryUiOptions) =>
 export const materialQuery = (id: string | null) =>
   queryOptions({
     enabled: !!id,
-    queryFn: () => api.get<Material>(`/materials/${id}`),
+    // A note this device keeps a copy of reads without its body: the copy
+    // paints it and the room answers the difference (Epo 2026-11-04). A body
+    // this read already holds stays: what shows from it must not go away.
+    queryFn: async ({ client }): Promise<Material> => {
+      if (!(id && holdsNoteCopy(id))) return api.get(`/materials/${id}`);
+      const read = await api.get<Material>(`/materials/${id}?noContent=true`);
+      const held = client.getQueryData<Material>(qk.material(id));
+      return held && !held.contentOmitted
+        ? { ...read, content: held.content }
+        : { ...read, contentOmitted: true };
+    },
     queryKey: qk.material(id ?? ''),
     staleTime: 5000,
+  });
+
+/** A read that needs the body whatever the device holds (an export). */
+export const materialWithBodyQuery = (id: string) =>
+  queryOptions({
+    queryFn: () => api.get<Material>(`/materials/${id}`),
+    queryKey: [...qk.material(id), 'body'],
+    staleTime: 0,
   });
 export const useMaterial = (id: string | null, options?: QueryUiOptions) =>
   useQuery({ ...materialQuery(id), meta: queryMeta(options) });

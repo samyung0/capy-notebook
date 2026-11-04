@@ -148,6 +148,7 @@ export * from './generateDiagramType.ts';
 export * from './generateKind.ts';
 export * from './generateQuestionType.ts';
 export * from './generateReq.ts';
+export * from './getMaterialParams.ts';
 export * from './getSourceSessionParams.ts';
 export * from './getSourceUploadPolicyParams.ts';
 export * from './getWorkspaceReviewGroup.ts';

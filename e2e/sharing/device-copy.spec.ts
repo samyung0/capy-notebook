@@ -119,7 +119,13 @@ test('a reopen paints from the device copy before its token, then edits on', asy
     { timeout: 30_000 }
   );
   const release = await holdTokens(ownerPage, note.id);
+  // Only the rest of the read travels: the copy paints, the room sends the
+  // difference.
+  const bodyless = ownerPage.waitForRequest((request) =>
+    request.url().includes(`/api/materials/${note.id}?noContent=true`)
+  );
   await ownerPage.reload();
+  await bodyless;
   // The copy holds the edit, whatever the projection has reached.
   await expect(
     ownerPage.getByTestId('material-preview').getByText(`${body} and typed`)

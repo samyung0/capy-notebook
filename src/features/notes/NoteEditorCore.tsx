@@ -2266,7 +2266,7 @@ export function NoteEditorCore({
   // The embeds the document holds now, for the footer. Only a change to the
   // top-level blocks (or a whole new value, as the room's first sync) can add
   // or remove one, so typing never reaches the scan.
-  const [embeds, setEmbeds] = useState(() => embedKey(material.content.value));
+  const [embeds, setEmbeds] = useState(() => embedKey(projection));
   const changeValue = useCallback(
     ({ editor: current }: { editor: PlateEditor }) => {
       // The merge view's pieces follow the note (one frame later).

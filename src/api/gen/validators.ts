@@ -3341,6 +3341,10 @@ export const GetMaterialParams = zod.object({
   "id": zod.string()
 })
 
+export const GetMaterialQueryParams = zod.object({
+  "noContent": zod.boolean().optional().describe('Leave the document out (an empty value), for a device holding its own copy')
+})
+
 export const GetMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "audioMaxBytes": zod.int(),

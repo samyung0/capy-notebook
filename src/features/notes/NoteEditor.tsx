@@ -44,7 +44,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { draftKey, dropLostDrafts } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
-import { dropDeviceCopies } from '@/lib/sourceCache';
+import { dropDeviceCopies, forgetNoteCopy } from '@/lib/sourceCache';
 import {
   type MaterialLimitCode,
   materialLimitMessage,
@@ -505,21 +505,28 @@ function CollaborativeNoteEditor({
     ? `${collaborationTokenData.room}:${editorGeneration}`
     : null;
   const seedRead = seed !== undefined;
+  // The first mount only, on the room the copy holds: a later one (a refusal,
+  // a moved room) starts empty.
+  const mountSeed =
+    editorGeneration === 0 && !copyMoved ? (seed ?? undefined) : undefined;
+  // Read without its body, and this mount has no copy: its body comes first.
+  const bodyMissing = seedRead && !mountSeed && !!material.contentOmitted;
+  useEffect(() => {
+    if (!bodyMissing) return;
+    forgetNoteCopy(material.id);
+    void qc.invalidateQueries({ queryKey: qk.material(material.id) });
+  }, [bodyMissing, material.id, qc]);
   const ready: NoteMount | null =
     collaborationTokenData &&
     storedKey &&
     seedRead &&
+    !bodyMissing &&
     drafts &&
     drafts.for === wanted
       ? {
           drafts,
           key: wanted,
-          // The first mount only, on the room the copy holds: a later one
-          // (a refusal, a moved room) starts empty.
-          seed:
-            editorGeneration === 0 && !copyMoved
-              ? (seed ?? undefined)
-              : undefined,
+          seed: mountSeed,
           token: collaborationTokenData,
         }
       : null;

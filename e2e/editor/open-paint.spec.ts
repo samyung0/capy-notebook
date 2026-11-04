@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { m } from '../i18n';
+import { clickTextEnd } from './helpers';
 
 /* The one way a note opens (Epo 2026-11-04): painted at once, from its device
  * copy or the stored projection, read-only, with Plate building behind it, and
@@ -116,8 +117,7 @@ test('a reopen paints from the device copy, joins by difference and edits on', a
   });
   await expect(editable(page)).toBeVisible({ timeout: 30_000 });
   await saved(page);
-  await editable(page).getByText(`${SEED} kept`).click();
-  await page.keyboard.press('End');
+  await clickTextEnd(editable(page).getByText(`${SEED} kept`));
   await page.keyboard.type(' more');
   await saved(page);
   expect(
@@ -148,4 +148,46 @@ test('a refused room takes the copy with it and the next mount starts empty', as
     .poll(async () => (await keys()).some((key) => key.includes('/copy/')))
     .toBe(false);
   await expect(editable(page)).toBeVisible({ timeout: 30_000 });
+});
+
+test('a note this device holds reads without its body, and with it once its copy cannot paint', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const reads: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === `/api/materials/${NOTE}`) reads.push(url.search);
+  });
+  await page.goto(SCENARIOS);
+  await expect(editable(page)).toContainText(SEED, { timeout: 30_000 });
+  await saved(page);
+  expect(reads).not.toContain('?noContent=true');
+
+  reads.length = 0;
+  await page.reload();
+  await expect(painted(page)).toContainText(SEED, { timeout: 30_000 });
+  await expect(editable(page)).toContainText(SEED, { timeout: 30_000 });
+  expect(reads).toEqual(['?noContent=true']);
+
+  // The row stays and its bytes no longer read, once the page that would write
+  // them went.
+  await page.goto('/favicon.svg');
+  reads.length = 0;
+  await page.evaluate(async (id) => {
+    const store = await caches.open('capy-source-bytes');
+    const keys = await store.keys();
+    const key = keys.find((request) =>
+      request.url.includes(`copy/${id}/content`)
+    );
+    if (!key) throw new Error('No copy to break');
+    const { headers } = (await store.match(key)) as Response;
+    await store.put(
+      key,
+      new Response(new Uint8Array([255, 255, 255, 255]), { headers })
+    );
+  }, NOTE);
+  await page.goto(SCENARIOS);
+  await expect(editable(page)).toContainText(SEED, { timeout: 30_000 });
+  expect(reads.slice(0, 2)).toEqual(['?noContent=true', '']);
 });

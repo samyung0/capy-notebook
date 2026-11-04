@@ -10256,6 +10256,13 @@ paths:
           required: true
           schema:
             type: string
+        - description: Leave the document out (an empty value), for a device holding its own copy
+          explode: false
+          in: query
+          name: noContent
+          schema:
+            description: Leave the document out (an empty value), for a device holding its own copy
+            type: boolean
       responses:
         "200":
           content:

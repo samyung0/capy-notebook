@@ -6,6 +6,7 @@ import {
   deviceCopyMaterials,
   dropDeviceCopies,
   evictOldestSource,
+  holdsNoteCopy,
   prepareDeviceCopies,
   readCachedSource,
   readDeviceCopy,
@@ -232,6 +233,31 @@ describe('device copies', () => {
     expect(copy).toMatchObject({ room: 'material:n1:schema:1', version: 3 });
     expect(copy?.state).toEqual(state());
     expect(await deviceCopyMaterials('user_a')).toEqual(['n1']);
+  });
+
+  it('knows at once which notes it holds, from the claim on', async () => {
+    await storeDeviceCopy(row('n1'), state());
+    expect(holdsNoteCopy('n1')).toBe(true);
+    expect(holdsNoteCopy('n2')).toBe(false);
+    await storeDeviceCopy(row('n1', 'keys'), state());
+    await dropDeviceCopies('n1', 'keys');
+    expect(holdsNoteCopy('n1')).toBe(true);
+    await claimSourceCache('user_a');
+    expect(holdsNoteCopy('n1')).toBe(true);
+    await dropDeviceCopies('n1');
+    expect(holdsNoteCopy('n1')).toBe(false);
+  });
+
+  it('drops a copy whose bytes are not the size its row says', async () => {
+    await storeDeviceCopy(row('n1'), state());
+    const store = await caches.open('capy-source-bytes');
+    const [key] = (await store.keys()).filter((request) =>
+      request.url.includes('copy/n1/content')
+    );
+    const { headers } = (await store.match(key)) as Response;
+    await store.put(key, new Response(state(2), { headers }));
+    expect(await readDeviceCopy('user_a', 'n1')).toBeNull();
+    expect(holdsNoteCopy('n1')).toBe(false);
   });
 
   it('never hands a row to another signed-in user, and it goes', async () => {

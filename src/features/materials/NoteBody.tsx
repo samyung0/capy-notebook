@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import {
   type ComponentProps,
   lazy,
@@ -11,6 +12,7 @@ import {
   useState,
 } from 'react';
 import * as Y from 'yjs';
+import { qk } from '@/api/client';
 import type { Material } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { SaveBanner } from '@/components/banners/SaveBanner';
@@ -36,6 +38,7 @@ import {
 } from '@/features/notes/roomSwap';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { forgetNoteCopy } from '@/lib/sourceCache';
 import {
   type MaterialDocument,
   type MaterialValue,
@@ -123,13 +126,17 @@ function NoteCitation({ citation }: { citation: NoteCitationTarget }) {
  * a note's own and those of the embeds its content holds (useNoteFooter). Like
  * every footer ending a view here, it keeps room under the workspace's floating
  * bar where that shows, and some space above the page's end. */
-export function DocumentAttribution({ material }: { material: Material }) {
+export function DocumentAttribution({
+  material,
+  value = material.content.value,
+}: {
+  material: Material;
+  /** What the note shows: a read without its body holds none. */
+  value?: MaterialValue;
+}) {
   const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   const overBar = useContext(FloatingBarContext);
-  const embeds = useMemo(
-    () => embedKey(material.content.value),
-    [material.content]
-  );
+  const embeds = useMemo(() => embedKey(value), [value]);
   const provenance = useNoteFooter(material, embeds);
   const { kind } = material;
   return (
@@ -183,8 +190,11 @@ function PaintedNote({
     () => previewModule?.MaterialPreview ?? LazyMaterialPreview
   );
   const content = useMemo<MaterialDocument>(
-    () => material?.content ?? { schemaVersion: 1, value },
-    [material?.content, value]
+    () =>
+      material && !material.contentOmitted
+        ? material.content
+        : { schemaVersion: 1, value },
+    [material, value]
   );
   return (
     <Preview
@@ -243,12 +253,21 @@ export function NoteBody({
     () =>
       usable && !staticNote
         ? seedValue(usable)
-        : material
+        : material && !material.contentOmitted
           ? parsedDocument(material.content)
           : null,
     [material, staticNote, usable]
   );
-  if (!(painted && label)) return <NoteSkeleton />;
+  // Read without its body, and no copy to paint from after all: its body comes.
+  const bodyMissing =
+    !!material?.contentOmitted && seed !== undefined && (staticNote || !usable);
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!bodyMissing) return;
+    forgetNoteCopy(materialId);
+    void queryClient.invalidateQueries({ queryKey: qk.material(materialId) });
+  }, [bodyMissing, materialId, queryClient]);
+  if (!(painted && label) || bodyMissing) return <NoteSkeleton />;
   if (editing && material) {
     handed.current ??= 'editor';
     return (
@@ -288,7 +307,9 @@ export function NoteBody({
         ) : (
           <PaintedNote label={label} material={material} value={painted} />
         )}
-        {material && <DocumentAttribution material={material} />}
+        {material && (
+          <DocumentAttribution material={material} value={painted} />
+        )}
       </Suspense>
     </div>
   );
@@ -426,7 +447,7 @@ function EditingNote({
                     material={material}
                     value={painted}
                   />
-                  <DocumentAttribution material={material} />
+                  <DocumentAttribution material={material} value={painted} />
                 </Suspense>
               </EmbedViewContext.Provider>
             </div>

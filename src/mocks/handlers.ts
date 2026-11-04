@@ -2379,7 +2379,7 @@ export const handlers = [
     db.materials.unshift(mt);
     return HttpResponse.json(mt, { status: 201 });
   }),
-  http.get('/api/materials/:id', async ({ params }) => {
+  http.get('/api/materials/:id', async ({ params, request }) => {
     const fixture = errorMaterials.find((item) => item.id === params.id);
     if (fixture?.failure) {
       return HttpResponse.json(
@@ -2396,12 +2396,13 @@ export const handlers = [
 
     await hydrateEditorState(String(params.id));
     const mt = db.materials.find((x) => x.id === params.id);
-    return mt
-      ? HttpResponse.json({
-          ...db.learnerMaterial(mt),
-          sharePath: db.mockSharePath(mt),
-        })
-      : new HttpResponse(null, { status: 404 });
+    if (!mt) return new HttpResponse(null, { status: 404 });
+    const read = { ...db.learnerMaterial(mt), sharePath: db.mockSharePath(mt) };
+    return HttpResponse.json(
+      new URL(request.url).searchParams.get('noContent') === 'true'
+        ? { ...read, content: { ...read.content, value: [] } }
+        : read
+    );
   }),
   http.post('/api/materials/readable', async ({ request }) => {
     const { ids } = (await request.json()) as { ids: string[] };

@@ -86,15 +86,17 @@ export function QuizEditor({
   ]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   useReportPresence(onPresenceChange, rooms.presence);
-  // Once its question shows.
+  // Once its question shows, and again as the editor replaces the paint: its
+  // Edit rows move it.
   const scrolledTo = useRef<string | null>(null);
+  const place = `${target}:${!!(rooms.ready && rooms.content && rooms.keys)}`;
   useEffect(() => {
-    if (!target || scrolledTo.current === target) return;
+    if (!target || scrolledTo.current === place) return;
     const question = document.querySelector(
       `[data-question-id="${CSS.escape(target)}"]`
     );
     if (!question) return;
-    scrolledTo.current = target;
+    scrolledTo.current = place;
     question.scrollIntoView({ block: 'start' });
   });
 

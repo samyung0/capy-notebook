@@ -243,11 +243,16 @@ export async function readDeviceCopy(
     const stored = await cache.match(entryKey(key));
     if (!stored) return null;
     const row = rowOf(stored);
-    if (row?.owner !== owner || row.format !== COPY_FORMAT) {
+    const state = new Uint8Array(await stored.arrayBuffer());
+    if (
+      row?.owner !== owner ||
+      row.format !== COPY_FORMAT ||
+      row.size !== state.byteLength
+    ) {
       await removeEntries(cache, [key]);
+      heldNotes.delete(materialId);
       return null;
     }
-    const state = new Uint8Array(await stored.arrayBuffer());
     // Not waited for: this read is on its way to the first paint.
     void touch(cache, key).catch(() => undefined);
     return { ...row, state };
@@ -269,6 +274,34 @@ async function removeEntries(cache: Cache, keys: string[]) {
   const index = await readIndex(cache);
   index.entries = index.entries.filter((item) => !keys.includes(item.key));
   await writeIndex(cache, index);
+}
+
+/** The notes whose copies this account's store holds, known at once: the first
+ * read of such a note leaves its body out (`materialQuery`). Read as the store
+ * is claimed, before any route loads. */
+const heldNotes = new Set<string>();
+
+export const holdsNoteCopy = (materialId: string) => heldNotes.has(materialId);
+
+/** This open asks for the body after all (the copy went or did not read). */
+export const forgetNoteCopy = (materialId: string) =>
+  heldNotes.delete(materialId);
+
+async function loadHeldNotes(cache: Cache, owner: string) {
+  heldNotes.clear();
+  for (const request of await cache.keys()) {
+    if (
+      !new URL(request.url).pathname.startsWith(`${ENTRY_PREFIX}${COPY_PREFIX}`)
+    )
+      continue;
+    const row = rowOf(await cache.match(request));
+    if (
+      row?.owner === owner &&
+      row.kind === 'note' &&
+      row.document === 'content'
+    )
+      heldNotes.add(row.materialId);
+  }
 }
 
 /** The open store, its account and its free quota, kept ready: a write as the
@@ -323,6 +356,8 @@ export async function storeDeviceCopy(
     // Signed out meanwhile: the claim deleted the store under this handle.
     if (index.owner !== row.owner) return;
     await settle(ready.cache, index, { copy, key, size }, limit);
+    if (row.kind === 'note' && row.document === 'content')
+      heldNotes.add(row.materialId);
     await prepareDeviceCopies(row.owner);
   } catch {
     // Not stored: the next open reads the whole document from its room.
@@ -335,6 +370,8 @@ export async function dropDeviceCopies(
   document?: DeviceCopyRow['document']
 ): Promise<void> {
   try {
+    if (document !== 'keys' && document !== 'read')
+      heldNotes.delete(materialId);
     const cache = await open();
     if (!cache) return;
     await removeEntries(
@@ -410,8 +447,12 @@ export async function evictOldestSource(): Promise<boolean> {
 export async function claimSourceCache(owner: string | null): Promise<void> {
   try {
     prepared = null;
+    heldNotes.clear();
     const cache = owner ? await open() : null;
-    if (cache && (await readIndex(cache)).owner === owner) return;
+    if (owner && cache && (await readIndex(cache)).owner === owner) {
+      await loadHeldNotes(cache, owner);
+      return;
+    }
     await globalThis.caches?.delete(NAME);
     if (!owner) return;
     const fresh = await open();

@@ -4,7 +4,6 @@ import { USE_MSW } from '@/api/auth';
 import { api } from '@/api/client';
 import type { Material } from '@/api/types';
 import {
-  claimSourceCache,
   type DeviceCopyRow,
   deviceCopyMaterials,
   dropDeviceCopies,
@@ -75,8 +74,6 @@ export async function readRoomSeed(
   document: DeviceCopyRow['document'] = 'content'
 ): Promise<RoomSeed | null> {
   if (!keepsCopies(materialId)) return null;
-  // Under MSW no sign-in claims the store (AuthProvider).
-  if (USE_MSW) await claimSourceCache(owner);
   const copy = await readDeviceCopy(owner, materialId, document);
   if (!copy) return null;
   const { state, ...row } = copy;
@@ -136,7 +133,6 @@ export function useMaterialCopy(
       return;
     }
     void (async () => {
-      if (USE_MSW) await claimSourceCache(owner);
       const read = await readDeviceCopy(owner, materialId, 'read');
       if (!current) return;
       try {
@@ -217,10 +213,7 @@ export function keepDeviceCopy(
 ) {
   let changed = !seeded;
   let stopped = false;
-  // Under MSW no sign-in claims the store (AuthProvider).
-  void (USE_MSW ? claimSourceCache(owner) : Promise.resolve()).then(() =>
-    prepareDeviceCopies(owner)
-  );
+  void prepareDeviceCopies(owner);
   const onUpdate = (_update: Uint8Array, origin: unknown) => {
     if (origin !== SEED_ORIGIN) changed = true;
   };
