@@ -297,9 +297,12 @@ async def run(args) -> dict:
                 "\n\n".join(scheme_pages[n] for n in sorted(scheme_pages)),
             )
         ]
-    else:
+    elif "keys" in answers:
         lines = [f"{q['label']}. {q['parts'][0]['correct']}" for q in gold["questions"]]
         schemes = [extraction.SchemeFile("answers.txt", "\n".join(lines))]
+    else:
+        # A paper with no answer file: every key is worked out.
+        schemes = []
 
     provider, model_slug, name, rates = MODELS[args.model]
     model = spec(provider, model_slug, name, rates, "low")
@@ -355,7 +358,7 @@ async def run(args) -> dict:
             for n, figure in enumerate(question.figures, 1):
                 if figure.box:
                     window_boxes[(question.label, n)] = list(figure.box)
-        await locate_figures(held, model=model)
+        return await locate_figures(held, model=model)
 
     extraction.locate_figures = located
     # The window size (0: every selected page in one window), and what each
