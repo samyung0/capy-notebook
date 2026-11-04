@@ -46,6 +46,7 @@ validation instead of being remapped.
 | Leave the workspace (remove its own member row)                                             | No    | Yes           | No                 | Yes           | No                 | No           |
 | Member roster (`userId`, `name`, `avatarUrl`, `role`; never email)                          | Yes   | Yes           | No                 | Yes           | No                 | No           |
 | Mention directory (`userId`, `name`, `avatarUrl`)                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
+| Change the workspace's kind, class or personal (below)                                      | Yes   | No            | No                 | No            | No                 | No           |
 | Clone the workspace                                                                         | Yes   | Yes           | Yes                | Yes           | No                 | No           |
 | Clone one of its files or materials (into a workspace the cloner edits, or standalone)      | Yes   | Yes           | Yes                | Yes           | No                 | No           |
 | Clone a standalone link/public quiz, flashcards, or material                                | Yes   | —             | —                  | —             | Yes                | No           |
@@ -66,6 +67,30 @@ grace included), so organizing stays on while content is view-only; the
 workspace's `canEditContent` equals its `canEdit` (uploader pays: storage
 narrows items, not workspaces).
 The client has no frozen or storage-limit logic of its own for these.
+
+A workspace is for a class or for personal use (`workspaces.kind`, default
+`personal`; Epo 2026-11-04, board U3). It decides who sees what in Study, not
+who may do what above: the invite, hidden items and every capability in the
+table read the same in both.
+
+| | Class | Personal |
+| --- | --- | --- |
+| Study, owner and editor members | Members, Assignments, Practice: the quizzes and topics to manage, add and edit. No My results, Suggested or Practise | My results, Practice: Suggested, Practise, add and edit |
+| Study, anyone else | My results, Assignments, Practice: Suggested, Practise | My results, Practice: Suggested, Practise |
+| Dashboard, owner and editor members | Activity (AI marks and Assignments to check wait for their pages) | What to practise next, Activity |
+| Dashboard, anyone else | What to practise next, Activity (Assignments due waits for its page) | What to practise next, Activity |
+| Whose results | The owner and editor members see everyone's; a member their own | Each person their own |
+| An editor member is called | Teaching assistant, in the UI only | Editor |
+| Clone | An owner's or editor member's stays class; anyone else's is personal | Stays personal |
+| Change it | The owner, in Workspace settings → General. Nothing is deleted: assignments and reports are hidden until it changes back | The same |
+
+The server applies Practice's row: `WorkspacePractice` gives member counts and
+averages to a class's owner and editor members only, and suggestions and own
+reviews to everyone else. Recent files, on both Dashboards, is not in the
+board's lists and stays as boards H1 and H2 drew it. Not built, and belonging to
+Assignments and the grading switch: the join notice ("the owner sees your
+results", class only) and who pays for AI marking (class: the owner for
+assignments, a member for their own practice; personal: each person).
 
 Sources: [role definitions](../server/internal/store/enums.go#L62),
 [role resolution](../server/internal/store/share.go#L27), and
@@ -366,7 +391,7 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   owners and editors; Others shows with Clone, Danger for the owner.
 - **Owner and editor members** can rename/recolor/describe/tag the workspace,
   change private/link/public visibility or `shareRole`, and view workspace
-  statistics. Tags land in the owner's tag namespace whoever edits them.
+  statistics. The kind (Used for, in General) is the owner's alone. Tags land in the owner's tag namespace whoever edits them.
   Widening sharing is an edit, refused when the actor or the owner is
   frozen; narrowing (privacy toward private, share role toward viewer) stays
   open to both.

@@ -62,6 +62,7 @@ type CreateWorkspaceReq struct {
 	Description *WorkspaceDescription `json:"description,omitempty" doc:"Optional workspace description"`
 	IconID      *IconID               `json:"iconId,omitempty" minLength:"1"`
 	Name        WorkspaceName         `json:"name" minLength:"1" doc:"Workspace name"`
+	Kind        store.WorkspaceKind   `json:"kind,omitempty" doc:"What it is used for, personal when omitted. A clone ignores it: an owner's or editor's keeps the source's, anyone else's is personal"`
 	// maxItems is fieldlimits.WorkspaceTags.
 	Tags  []TagInput   `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5; reuse existing by id or create new by value"`
 	Cover *cover.Cover `json:"cover,omitempty" doc:"The card's cover art"`
@@ -70,7 +71,7 @@ type CreateWorkspaceReq struct {
 func (r CreateWorkspaceReq) ToWorkspaceCreate() store.WorkspaceCreate {
 	return store.WorkspaceCreate{
 		Name: string(r.Name), Tags: ToTagRefs(r.Tags),
-		IconID: Str(r.IconID), Description: Str(r.Description), Cover: r.Cover,
+		IconID: Str(r.IconID), Description: Str(r.Description), Cover: r.Cover, Kind: r.Kind,
 	}
 }
 
@@ -83,6 +84,7 @@ type UpdateWorkspaceReq struct {
 	Tags        *[]TagInput           `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5"`
 	Cover       *cover.Cover          `json:"cover,omitempty" doc:"Replaces the card's cover art"`
 	ClearCover  *bool                 `json:"clearCover,omitempty" doc:"true removes the cover; refused together with cover"`
+	Kind        *store.WorkspaceKind  `json:"kind,omitempty" doc:"The owner's alone; nothing is deleted when it changes"`
 }
 
 // UpdateWorkspaceSharingReq updates visibility and nonmember permissions.

@@ -386,6 +386,7 @@ export type {
   UnfinishedSession,
   WorkspaceActivity,
   WorkspaceDashboard,
+  WorkspaceKind,
 } from './gen/model';
 
 /** A suggested review's leading mode. */

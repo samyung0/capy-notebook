@@ -33,9 +33,30 @@ func TestTopicSessionPrefs(t *testing.T) {
 	}
 }
 
+// A clone keeps its kind for an owner or editor, and is personal for anyone else.
+func TestCloneKind(t *testing.T) {
+	for _, tc := range []struct {
+		source WorkspaceKind
+		member WorkspaceRole
+		want   WorkspaceKind
+	}{
+		{WorkspaceClass, RoleOwner, WorkspaceClass},
+		{WorkspaceClass, RoleEditor, WorkspaceClass},
+		{WorkspaceClass, RoleViewer, WorkspacePersonal},
+		{WorkspaceClass, "", WorkspacePersonal},
+		{WorkspacePersonal, RoleOwner, WorkspacePersonal},
+		{WorkspacePersonal, RoleViewer, WorkspacePersonal},
+	} {
+		if got := cloneKind(tc.source, tc.member); got != tc.want {
+			t.Fatalf("cloneKind(%s, %q) = %s, want %s", tc.source, tc.member, got, tc.want)
+		}
+	}
+}
+
 // The Practice page lists the quiz with its questions and the caller's best
-// attempt; owners and editors also see how many viewer members tried it, and
-// the group average once five did. Topic sessions say why each item came.
+// attempt; a class's owner and editors also see how many viewer members tried
+// it, and the group average once five did. In a personal workspace nobody
+// does. Topic sessions say why each item came.
 func TestWorkspacePractice(t *testing.T) {
 	f := newStudyFixture(t, "u_practice")
 	ctx := context.Background()
@@ -96,6 +117,18 @@ func TestWorkspacePractice(t *testing.T) {
 	addAttempt(join("u_practice_editor", "editor"), 0)
 	join("u_practice_idle", "viewer")
 
+	// A personal workspace keeps each person to their own.
+	got, err = f.s.WorkspacePractice(ctx, f.user, f.ws.ID, true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Members != nil || got.Quizzes[0].TriedBy != nil || got.Quizzes[0].Average != nil {
+		t.Fatalf("personal practice shows members: %+v", got)
+	}
+	class := WorkspaceClass
+	if _, err := f.s.UpdateWorkspace(ctx, f.user, f.ws.ID, WorkspacePatch{Kind: &class}); err != nil {
+		t.Fatal(err)
+	}
 	got, err = f.s.WorkspacePractice(ctx, f.user, f.ws.ID, true, time.Now())
 	if err != nil {
 		t.Fatal(err)

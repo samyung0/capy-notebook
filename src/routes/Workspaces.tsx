@@ -166,7 +166,7 @@ export default function Workspaces() {
         }}
         open={createOpen}
         setOpen={setCreateOpen}
-        workspace={{ name: '', tags: [] }}
+        workspace={{ kind: 'personal', name: '', tags: [] }}
       />
     </PagePanel>
   );

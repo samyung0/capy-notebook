@@ -73,6 +73,7 @@ import {
   type WorkspaceOpenSearch,
 } from '@/features/materials/openItem';
 import { StudyPanel } from '@/features/study/practice/StudyPanel';
+import { studyView } from '@/features/study/practice/studyView';
 import { VoiceFooterButton } from '@/features/voice/VoiceCard';
 import {
   AddSourceDialog,
@@ -1128,7 +1129,7 @@ function WorkspaceOpen() {
           <StudyPanel
             active={studyPage ? 'practice' : null}
             onOpen={openPractice}
-            staff={canManageWorkspaceSettings(ws)}
+            pages={studyView(ws).pages}
           />
         )}
       </div>

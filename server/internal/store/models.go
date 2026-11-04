@@ -99,6 +99,8 @@ type Workspace struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	IconID      string `json:"iconId"`
+	// Kind is what the workspace is used for, class or personal.
+	Kind WorkspaceKind `json:"kind"`
 	// Cover is the card's art; nil means no cover, the default.
 	Cover     *cover.Cover `json:"cover,omitempty"`
 	Privacy   Privacy      `json:"privacy"`

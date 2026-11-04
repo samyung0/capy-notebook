@@ -2849,8 +2849,15 @@ export const practiceQuery = (workspaceId: string) =>
     queryFn: () => api.get<Practice>(`/workspaces/${workspaceId}/practice`),
     queryKey: qk.practice(workspaceId),
   });
-export const usePractice = (workspaceId: string, options?: QueryUiOptions) =>
-  useQuery({ ...practiceQuery(workspaceId), meta: queryMeta(options) });
+export const usePractice = (
+  workspaceId: string,
+  options?: QueryUiOptions & { enabled?: boolean }
+) =>
+  useQuery({
+    ...practiceQuery(workspaceId),
+    enabled: options?.enabled,
+    meta: queryMeta(options),
+  });
 
 /** Refreshes Practice and review after practice in `workspaceId`, or in every
  * workspace when the caller does not know which. */

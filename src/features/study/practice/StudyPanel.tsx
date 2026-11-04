@@ -2,10 +2,7 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { SectionTitle } from '@/features/workspace/WorkspaceRail';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-
-/** Study's pages. Only Practice is built; the others wait for their own
- * branches (Members, Assignments, My results). */
-export type StudyPage = 'members' | 'assignments' | 'practice' | 'results';
+import type { StudyPage } from './studyView';
 
 const PAGES: Record<StudyPage, { icon: IconName; label: () => string }> = {
   assignments: { icon: 'clipboard', label: m.study_panel_assignments },
@@ -16,21 +13,17 @@ const PAGES: Record<StudyPage, { icon: IconName; label: () => string }> = {
 
 const BUILT: StudyPage[] = ['practice'];
 
-/** The Study panel (boards P1, P2): owners and editors see Members,
- * Assignments, Practice and My results; members My results, Assignments and
- * Practice. A page not built yet shows as a disabled row. */
+/** The Study panel: this person's pages (studyView). A page not built yet
+ * shows as a disabled row. */
 export function StudyPanel({
   active,
   onOpen,
-  staff,
+  pages,
 }: {
   active: StudyPage | null;
   onOpen: (page: StudyPage) => void;
-  staff: boolean;
+  pages: StudyPage[];
 }) {
-  const pages: StudyPage[] = staff
-    ? ['members', 'assignments', 'practice', 'results']
-    : ['results', 'assignments', 'practice'];
   return (
     <div className="flex h-full min-h-0 flex-col" data-study-panel>
       <SectionTitle title={m.workspace_tab_study()} />

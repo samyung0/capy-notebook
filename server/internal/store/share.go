@@ -1164,6 +1164,16 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string, input 
 	return workspace, err
 }
 
+// cloneKind is a clone's kind (Epo 2026-11-04, board U3): an owner's or editor
+// member's keeps the source's; anyone else's is personal, so a member's copy
+// of a class is theirs alone.
+func cloneKind(source WorkspaceKind, member WorkspaceRole) WorkspaceKind {
+	if RoleCanEdit(member) {
+		return source
+	}
+	return WorkspacePersonal
+}
+
 // ThumbnailCopy is a thumbnail a clone copies under its own file id once it
 // has committed (openwiki/thumbnails.md): a key's path may only name a file of
 // the same workspace, since sharing the source key would show the source
@@ -1403,7 +1413,11 @@ func (s *Store) cloneWorkspaceOnce(
 	).Scan(&srcEmbed.Pin.ProviderSlug, &srcEmbed.Pin.ModelSlug, &srcEmbed.Pin.Version, &srcEmbed.Dim); err != nil {
 		return "", nil, 0, err
 	}
-	if err := s.insertWorkspaceTx(ctx, tx, newID, userID, input.Name, input.Tags, srcEmbed); err != nil {
+	member, _, err := workspaceRoles(ctx, tx, userID, srcID)
+	if err != nil {
+		return "", nil, 0, err
+	}
+	if err := s.insertWorkspaceTx(ctx, tx, newID, userID, input.Name, input.Tags, cloneKind(src.Kind, member), srcEmbed); err != nil {
 		return "", nil, 0, err
 	}
 	if err := setWorkspaceAppearanceTx(ctx, tx, newID, input); err != nil {

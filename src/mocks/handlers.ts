@@ -1359,6 +1359,7 @@ export const handlers = [
         `waves-${String(Math.floor(Math.random() * 11) + 1).padStart(2, '0')}`,
       id,
       isOwner: true,
+      kind: body.kind ?? 'personal',
       name: body.name ?? 'Untitled workspace',
       privacy: 'private',
       role: 'owner',
@@ -1377,10 +1378,12 @@ export const handlers = [
       tags?: TagInput[];
       clearCover?: boolean;
     };
-    // Auto process is the owner's alone; the gateway answers others 404.
-    if (body.autoProcess !== undefined) {
+    // Auto process and the kind are the owner's alone; the gateway answers
+    // others 404.
+    if (body.autoProcess !== undefined || body.kind !== undefined) {
       if (!ws.isOwner) return new HttpResponse(null, { status: 404 });
-      ws.autoProcess = body.autoProcess;
+      ws.autoProcess = body.autoProcess ?? ws.autoProcess;
+      ws.kind = body.kind ?? ws.kind;
     }
     if (body.tags !== undefined) ws.tags = resolveTags('workspace', body.tags);
     if (body.name !== undefined) ws.name = body.name;
@@ -1701,6 +1704,11 @@ export const handlers = [
       iconId: body.iconId ?? source.iconId,
       id: newId,
       isOwner: true,
+      // As the server: an owner's or editor's copy keeps its kind.
+      kind:
+        source.role === 'owner' || source.role === 'editor'
+          ? source.kind
+          : 'personal',
       name: body.name,
       privacy: 'private',
       sharePath: await sharePath(DEV_SHARE_LINK_SECRET, newId),

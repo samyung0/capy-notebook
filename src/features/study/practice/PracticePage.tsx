@@ -6,7 +6,6 @@ import type {
   PracticeQuiz,
   PracticeReview,
   ReviewMode,
-  ReviewSuggestion,
   SessionScore,
   Topic,
 } from '@/api/types';
@@ -16,13 +15,13 @@ import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Menu } from '@/components/ui/Menu';
-import { canManageWorkspaceSettings } from '@/features/workspace/access';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { materialIconName } from '@/lib/fileIcons';
-import { REVIEW_MODE, reviewReason } from '../reviewText';
-import { groupLabel, questionsLabel, scoreText } from './practiceText';
+import { questionsLabel, scoreText } from './practiceText';
+import { SuggestedList } from './SuggestedList';
+import { studyView } from './studyView';
 import {
   PracticeFrame,
   PracticeResult,
@@ -39,11 +38,12 @@ export type PracticeSearch = {
   review?: string;
 };
 
-/** Study → Practice (Epo 2026-11-03, boards P1 and P2), the workspace's
- * centre page while `study=practice` is in its URL. Members get Suggested
- * and every quiz with their best score and Practise; owners and editors the
- * same list with how members use it. A topic session (F1, F1b) and its
- * result (F4) keep the page's place: the Study panel shows Practice. */
+/** Study → Practice (Epo 2026-11-03, boards P1 and P2; who sees what, board
+ * U3), the workspace's centre page while `study=practice` is in its URL. Whoever
+ * practises gets Suggested and every quiz with their best score and Practise;
+ * a class's owner and teaching assistants the same list with how members use
+ * it. A topic session (F1, F1b) and its result (F4) keep the page's place: the
+ * Study panel shows Practice. */
 export function PracticePage({
   search,
   workspaceId,
@@ -104,7 +104,7 @@ function PracticeList({
     { errorBoundary: false }
   );
   const [topic, setTopic] = useState<string | null | undefined>(undefined);
-  const staff = canManageWorkspaceSettings(ws);
+  const { canEdit, manages: staff } = studyView(ws);
   const topicName = (id?: string | null) =>
     id ? topics?.find((t) => t.id === id)?.name : undefined;
   const members = data?.members;
@@ -131,7 +131,7 @@ function PracticeList({
         {/* Not built yet (Make my own practice, P3; Add practice, P1). */}
         <span title={m.study_panel_soon()}>
           <Button disabled iconLeft="plus">
-            {staff ? m.practice_add() : m.practice_make_own()}
+            {canEdit ? m.practice_add() : m.practice_make_own()}
           </Button>
         </span>
       </div>
@@ -152,18 +152,22 @@ function PracticeList({
       ) : (
         <>
           {!staff && data.suggestions.length > 0 && (
-            <Suggested
-              list={data.suggestions}
-              onStart={(s) =>
-                onStart({
-                  group: s.group,
-                  reviewMode: s.mode,
-                  topicId: s.topicId,
-                })
-              }
-            />
+            <section className="mt-5.5">
+              <h2 className="t-subtitle">{m.practice_suggested()}</h2>
+              <SuggestedList
+                list={data.suggestions}
+                onStart={(s) =>
+                  onStart({
+                    group: s.group,
+                    reviewMode: s.mode,
+                    topicId: s.topicId,
+                  })
+                }
+              />
+            </section>
           )}
           <AllPractice
+            canEdit={canEdit}
             data={data}
             filter={topic}
             onFilter={setTopic}
@@ -179,44 +183,6 @@ function PracticeList({
   );
 }
 
-/** Up to three picks with today's suggested-review wording (P2). */
-function Suggested({
-  list,
-  onStart,
-}: {
-  list: ReviewSuggestion[];
-  onStart: (s: ReviewSuggestion) => void;
-}) {
-  return (
-    <section className="mt-5.5">
-      <h2 className="t-subtitle">{m.practice_suggested()}</h2>
-      <ul className="mt-1">
-        {list.map((s) => (
-          <li
-            className="grid min-h-11 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-divider border-b py-1.5 md:grid-cols-[260px_minmax(0,1fr)_auto]"
-            key={`${s.group}:${s.topicId ?? ''}`}
-          >
-            <span className="truncate font-semibold">
-              {groupLabel(s.group, s.topicName)}
-            </span>
-            <span className="t-meta col-start-1 row-start-2 text-fg-muted md:col-start-auto md:row-start-auto">
-              {`${REVIEW_MODE[s.mode].label()} · ${reviewReason(s)}`}
-            </span>
-            <Button
-              className="col-start-2 row-span-2 row-start-1 md:col-start-auto md:row-span-1 md:row-start-auto"
-              onClick={() => onStart(s)}
-              size="sm"
-              variant="outline"
-            >
-              {m.practice_practise()}
-            </Button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
 type Row =
   | {
       kind: 'review';
@@ -229,6 +195,7 @@ type Row =
 /** Every quiz members can see, with the member's own topic reviews first
  * ("Only you"); a Topic filter keeps the rows on that topic. */
 function AllPractice({
+  canEdit,
   data,
   filter,
   onFilter,
@@ -238,6 +205,8 @@ function AllPractice({
   topicName,
   topics,
 }: {
+  /** The owner and editors open a quiz from its row, to edit it. */
+  canEdit: boolean;
   data: Practice;
   /** undefined is every topic; null is Other files. */
   filter: string | null | undefined;
@@ -379,10 +348,11 @@ function AllPractice({
                 ) : (
                   <tr
                     className={cn(
-                      staff && 'cursor-pointer [&>td]:hover:bg-surface-hover-bg'
+                      canEdit &&
+                        'cursor-pointer [&>td]:hover:bg-surface-hover-bg'
                     )}
                     key={row.key}
-                    onClick={staff ? () => openQuiz(row.quiz.id) : undefined}
+                    onClick={canEdit ? () => openQuiz(row.quiz.id) : undefined}
                   >
                     <Td>
                       <QuizName title={row.quiz.title} />

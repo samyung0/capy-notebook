@@ -29,7 +29,8 @@ type Practice struct {
 	// Reviews are the caller's own topic reviews ("Only you"), one per topic
 	// (or Other files), latest first.
 	Reviews []PracticeReview `json:"reviews" nullable:"false"`
-	// Members counts the workspace's viewer members; owners and editors only.
+	// Members counts the workspace's viewer members; a class's owner and
+	// editors only.
 	Members *int `json:"members,omitempty"`
 }
 
@@ -41,10 +42,11 @@ type PracticeQuiz struct {
 	Questions int     `json:"questions"`
 	// Best is the caller's best attempt by share of marks.
 	Best *SessionScore `json:"best,omitempty"`
-	// TriedBy counts viewer members with an attempt; owners and editors only.
+	// TriedBy counts viewer members with an attempt; a class's owner and
+	// editors only.
 	TriedBy *int `json:"triedBy,omitempty"`
 	// Average is the mean of those members' best scores (0 to 1), once at
-	// least five of them tried; owners and editors only.
+	// least five of them tried; a class's owner and editors only.
 	Average *float64 `json:"average,omitempty"`
 }
 
@@ -60,20 +62,25 @@ type PracticeReview struct {
 	LastAt time.Time    `json:"lastAt"`
 }
 
-// WorkspacePractice reads the Practice page; staff (owners and editors) also
-// get the members' use of each quiz, never their answers.
-func (s *Store) WorkspacePractice(ctx context.Context, userID, wsID string, staff bool, now time.Time) (Practice, error) {
+// WorkspacePractice reads the Practice page. A class's owner and editors
+// (canEdit) manage it: the quizzes with the members' use of each, never their
+// answers, and nothing of their own. Everyone else, and everyone in a personal
+// workspace where each sees only their own, practises: suggestions, the quizzes
+// and their own reviews (Epo 2026-11-04, board U3).
+func (s *Store) WorkspacePractice(ctx context.Context, userID, wsID string, canEdit bool, now time.Time) (Practice, error) {
 	out := Practice{Suggestions: []ReviewSuggestion{}, Quizzes: []PracticeQuiz{}, Reviews: []PracticeReview{}}
-	if err := s.practiceSuggestions(ctx, userID, wsID, &out, now); err != nil {
+	var kind WorkspaceKind
+	if err := s.pool.QueryRow(ctx, `SELECT kind FROM workspaces WHERE id=$1`, wsID).Scan(&kind); err != nil {
 		return out, err
 	}
 	if err := s.practiceQuizzes(ctx, userID, wsID, &out); err != nil {
 		return out, err
 	}
-	if staff {
-		if err := s.practiceMembers(ctx, wsID, &out); err != nil {
-			return out, err
-		}
+	if canEdit && kind == WorkspaceClass {
+		return out, s.practiceMembers(ctx, wsID, &out)
+	}
+	if err := s.practiceSuggestions(ctx, userID, wsID, &out, now); err != nil {
+		return out, err
 	}
 	return out, s.practiceReviews(ctx, userID, wsID, &out)
 }

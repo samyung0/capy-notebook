@@ -159,8 +159,9 @@ func (a *api) getWorkspaceDashboard(ctx context.Context, in *workspaceIDInput) (
 	return &workspaceDashboardOutput{Body: res}, nil
 }
 
-// getWorkspacePractice is any reader's Practice page; owner and editor
-// members also get how members use each quiz (counts and averages only).
+// getWorkspacePractice is any reader's Practice page; a class's owner and
+// editor members get how members use each quiz (counts and averages only)
+// in place of their own practice.
 func (a *api) getWorkspacePractice(ctx context.Context, in *workspaceIDInput) (*practiceOutput, error) {
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)

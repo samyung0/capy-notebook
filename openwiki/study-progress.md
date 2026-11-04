@@ -145,7 +145,7 @@ workspace; writes need read access plus an account that can sign in
 | `GET /api/workspaces/{id}/dashboard` | `WorkspaceDashboard` (`dashboard.go`), the workspace Dashboard for any reader: the owner's name, `members` (owner included) and `activity`, the five newest of the workspace's untrashed files (`uploaded`) and top-level materials (`added`), newest first, each with its actor's name and avatar. A material the chat agent made (an `agent_operations` row of kind `create_material` naming it) reads `agent` when the caller asked for it, else `added` under the asker's name. There is no activity log: joins, edits and deletions do not show, and notifications (personal: invites, role changes, removals) are not used. |
 | `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it. Attempts, the review log and the switch stay. |
 | `GET /api/workspaces/{id}/review?group=&topicId=&mode=&items=` | A new session: a suggestion's items (mode set) or the group's (no mode: a topic, Other files or the whole workspace, new items mixed in), each with its content (card faces, or the answer-free question, `questions.LearnerView`), material title and `reason` (`new` from the new pool, `missed` with an Again among its latest answers, else `fading`), plus the group, mode and evidence to send back with each answer. `items=quiz` serves questions only whatever the review items preference, and 10 of them unless the learner picked a session size (Practice's topic sessions). A topic not in the workspace is 404. |
-| `GET /api/workspaces/{id}/practice` | `Practice` (`practice.go`), Study → Practice for any reader: `suggestions`, this workspace's suggested reviews over its questions only (`groupSuggestions` at full interest, since the learner is here; at most three, none while study progress is hidden); `quizzes`, every untrashed top-level quiz in reading order with its question count (`itemCounts`, refused content left out) and the caller's `best` attempt (best share of marks); `reviews`, the caller's topic and Other files sessions that answered a question, one row per topic: the latest one's served count and the best one's marks. Owner and editor members also get `members` (viewer members) and per quiz `triedBy` (viewer members with an attempt) and `average` (the mean of their best scores, 0 to 1, only once five tried: aggregates need five, Epo 2026-11-03 §11.8); never anyone's answers. |
+| `GET /api/workspaces/{id}/practice` | `Practice` (`practice.go`), Study → Practice for any reader, by the workspace's kind: `suggestions`, this workspace's suggested reviews over its questions only (`groupSuggestions` at full interest, since the learner is here; at most three, none while study progress is hidden); `quizzes`, every untrashed top-level quiz in reading order with its question count (`itemCounts`, refused content left out) and the caller's `best` attempt (best share of marks); `reviews`, the caller's topic and Other files sessions that answered a question, one row per topic: the latest one's served count and the best one's marks. A class's owner and editor members get neither of those but `members` (viewer members) and per quiz `triedBy` (viewer members with an attempt) and `average` (the mean of their best scores, 0 to 1, only once five tried: aggregates need five, Epo 2026-11-03 §11.8); never anyone's answers. |
 | `GET /api/review/sessions/{id}` | Continue: an unfinished session's items still to answer, read now (items that left their material drop), with answered of total. Another user's session is 404. |
 | `GET /api/review/sessions/{id}/result` | A session's result, finished or not: its Past reviews row (`ID` read), its answered items in answer order with their records (the resume read's `done`), and `better`, how many were rated above their latest `review_log` rating before the session started. Another user's session is 404. |
 | `POST /api/review/sessions/{id}/finish` | Ends a session before its last item. |
@@ -286,15 +286,19 @@ review. The chat ignores them.
 
 Study → Practice (Epo 2026-11-03, boards P1 and P2) replaced the workspace's
 centre Study page (its railway map, Continue, Quick review, Quick actions,
-Contents and plan select went with it, 2026-11-03). Every quiz members can
+Contents and plan select went with it, 2026-11-03). What each person gets
+follows the workspace's kind (board U3, the map in
+[authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md#permission-matrix)):
+`studyView` in `src/features/study/practice/studyView.ts`. Every quiz members can
 see is practice: until hidden quizzes exist, every untrashed, top-level quiz.
 The page is `src/features/study/practice/PracticePage.tsx`, lazy-loaded into
 the centre while nothing is open and the URL has `study=practice`
 (`parseWorkspaceOpenSearch`). From lg it fills the centre panel without a
 file header (28px 36px padding); one column keeps the header for the Files
 dropdown and ⋮. The rail's Study opens it and its panel (`StudyPanel.tsx`)
-lists Study's pages: Members, Assignments, Practice and My results for owner
-and editor members, My results, Assignments and Practice for others. Only
+lists Study's pages: in a class, Members, Assignments and Practice for owner
+and editor members, My results, Assignments and Practice for others; in a
+personal workspace, My results and Practice for everyone. Only
 Practice is built; the rest show as muted rows with a "Coming soon" title
 and do nothing. Practice's row is current on the page, during a topic session
 and on its result.
@@ -302,7 +306,8 @@ and on its result.
 Data: `GET /api/workspaces/{id}/practice` (`qk.practice`, under the
 workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
 
-- **Members** (P2): the title with the workspace's name, then **Suggested**:
+- **Whoever practises** (P2: a class's members, and everyone in a personal
+  workspace): the title with the workspace's name, then **Suggested**:
   up to three suggestions, each its group (topic, Other files or Whole
   workspace), the mode's label and today's reason in words (`reviewReason`),
   and Practise, which starts the suggestion's session (its mode, so due
@@ -314,12 +319,14 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   marks kept; "–" before any attempt) and Practise. A review's Practise
   starts a new topic session on its topic; a quiz's opens its attempt page
   (`/quizzes/$quizId/attempt`, outside the workspace).
-- **Owners and editors** (P1): the title with "· N members", the Topic
+- **A class's owner and teaching assistants** (P1): the title with "· N members", the Topic
   filter and the quizzes with Tried by ("5 of 6") and Group average ("74%",
   "–" under five tries). No Suggested and no own reviews: their own study
   waits for My results. A row opens the quiz in the workspace.
-- Make my own practice (members, P3) and Add practice (owners) show disabled
-  with a "Coming soon" title; they come with their own branches.
+- Make my own practice (P3) and Add practice (whoever may edit: a class's
+  staff, a personal workspace's owner and editors, whose quiz rows also open
+  the quiz) show disabled with a "Coming soon" title; they come with their own
+  branches.
 - Below md the table becomes one row per item with its facts under the
   title (topic, questions, tried), the score and Practise on the right.
 
@@ -605,8 +612,9 @@ MSW mirrors this in `src/mocks/study.ts`: `keptWhenFrozen` keeps
 `/api/review/ratings` and `/api/workspaces/*/study/*` open inside a frozen
 owner's workspace. Its `/practice` mock seeds Biology 101 with a Membranes &
 transport review and fixed member counts (six members, an average once five
-tried); the `workspace-member` scenario (`src/mocks/scenarios.ts`, kept across
-reloads) opens workspaces as a viewer member, for Practice's member view.
+tried); Biology 101 is the mock's class, the other workspaces personal; the
+`workspace-member` and `workspace-editor` scenarios (`src/mocks/scenarios.ts`,
+kept across reloads) open workspaces as a viewer or an editor member.
 
 ## Chat agent
 

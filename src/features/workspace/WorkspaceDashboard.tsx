@@ -1,6 +1,10 @@
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { Fragment, type ReactNode } from 'react';
-import { useWorkspaceDashboard, useWorkspaceRecent } from '@/api/hooks';
+import {
+  usePractice,
+  useWorkspaceDashboard,
+  useWorkspaceRecent,
+} from '@/api/hooks';
 import type { Workspace, WorkspaceActivity } from '@/api/types';
 import { PreviewCard } from '@/components/app/PreviewCard';
 import { Avatar } from '@/components/ui/Avatar';
@@ -8,6 +12,8 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { recentIcon, recentThumbnail } from '@/features/home/RecentItemsCard';
 import { mergeRecentItems, type RecentItem } from '@/features/home/recentItems';
+import { SuggestedList } from '@/features/study/practice/SuggestedList';
+import { studyView } from '@/features/study/practice/studyView';
 import { getLocale, m } from '@/i18n';
 import { isWorkspaceReadOnly } from './access';
 
@@ -16,18 +22,25 @@ const RECENT = 4;
 
 /** The workspace's front page (Epo 2026-11-02, boards H1 owner, H2 member):
  * its name with the owner and member count, Upload and Make a quiz from a
- * file for those who may add, then Recent files and Activity. To do waits
- * for assignments: with nothing in it, it is not shown, as every empty
- * section (Epo 2026-11-02). */
+ * file for those who may add, What to practise next for whoever practises here
+ * (board U3), then Recent files and Activity. To do, assignments and AI marks
+ * wait for their pages: with nothing in it, a section is not shown (Epo
+ * 2026-11-02). */
 export function WorkspaceDashboard({
   onUpload,
   workspace,
 }: {
   onUpload: () => void;
-  workspace: Pick<Workspace, 'capabilities' | 'id' | 'name'>;
+  workspace: Pick<Workspace, 'capabilities' | 'id' | 'kind' | 'name' | 'role'>;
 }) {
   const { data } = useWorkspaceDashboard(workspace.id);
   const { data: recent } = useWorkspaceRecent(workspace.id);
+  const practises = !studyView(workspace).manages;
+  const { data: practice } = usePractice(workspace.id, {
+    enabled: practises,
+    errorBoundary: false,
+  });
+  const navigate = useNavigate();
   const items = mergeRecentItems(
     recent?.files ?? [],
     recent?.materials ?? [],
@@ -66,6 +79,25 @@ export function WorkspaceDashboard({
           </div>
         )}
       </header>
+      {practises && !!practice?.suggestions.length && (
+        <section className="flex flex-col">
+          <h2 className="t-subtitle">{m.dashboard_practise_next()}</h2>
+          <SuggestedList
+            list={practice.suggestions}
+            onStart={(s) =>
+              navigate({
+                search: {
+                  group: s.group,
+                  reviewMode: s.mode,
+                  study: 'practice' as const,
+                  topicId: s.topicId,
+                },
+                to: '.',
+              })
+            }
+          />
+        </section>
+      )}
       {items.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="t-subtitle">{m.dashboard_recent_files()}</h2>

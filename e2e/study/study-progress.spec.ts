@@ -460,12 +460,25 @@ test.describe('study progress', () => {
     );
     await placeInTopic(ownerApi, ws.id, topic.id, [quiz.id]);
 
-    // Every quiz members can see is practice; the owner sees its use.
+    // Every quiz members can see is practice. In a personal workspace, the
+    // default, the owner practises too; in a class they see its use instead.
     await ownerPage.goto(`/workspaces/${ws.id}?study=practice`);
     await expect(ownerPage.getByText('Osmosis check').first()).toBeVisible();
     await expect(
+      ownerPage.getByText(m.practice_col_best()).first()
+    ).toBeVisible();
+    const setKind = async (kind: 'class' | 'personal') =>
+      expect(
+        (
+          await ownerApi.patch(`/api/workspaces/${ws.id}`, { data: { kind } })
+        ).status()
+      ).toBe(200);
+    await setKind('class');
+    await ownerPage.reload();
+    await expect(
       ownerPage.getByText(m.practice_col_tried()).first()
     ).toBeVisible();
+    await setKind('personal');
 
     // Practise on the topic: its question not seen yet, then marked.
     await ownerPage.goto(

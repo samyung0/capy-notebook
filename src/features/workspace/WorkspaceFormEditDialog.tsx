@@ -15,12 +15,14 @@ export function WorkspaceFormEditDialog({
     <WorkspaceFormDialog
       {...props}
       mode="edit"
-      // None goes out as clearCover; the API refuses cover: null.
-      onSubmit={({ cover, ...values }) =>
+      // None goes out as clearCover; the API refuses cover: null. The kind is
+      // the owner's alone.
+      onSubmit={({ cover, kind, ...values }) =>
         onSubmit({
           ...values,
           tags: values.tags ?? [],
           ...(cover ? { cover } : { clearCover: true }),
+          ...(props.workspace.isOwner ? { kind } : {}),
         })
       }
     />

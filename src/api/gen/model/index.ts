@@ -433,6 +433,7 @@ export * from './workspaceActivityKind.ts';
 export * from './workspaceAttemptsOutputBody.ts';
 export * from './workspaceCollaborator.ts';
 export * from './workspaceDashboard.ts';
+export * from './workspaceKind.ts';
 export * from './workspaceMember.ts';
 export * from './workspaceRecent.ts';
 export * from './workspaceRole.ts';

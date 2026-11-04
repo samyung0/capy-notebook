@@ -31,6 +31,8 @@ type WorkspacePatch struct {
 	Name        *string   `json:"name"`
 	IconID      *string   `json:"iconId"`
 	Tags        *[]TagRef `json:"tags"`
+	// Kind is the owner's alone.
+	Kind *WorkspaceKind `json:"kind"`
 	// Cover replaces the card's cover; ClearCover removes it.
 	Cover      *cover.Cover `json:"cover"`
 	ClearCover bool         `json:"clearCover"`
@@ -42,6 +44,8 @@ type WorkspaceCreate struct {
 	Description *string
 	IconID      *string
 	Cover       *cover.Cover
+	// Kind defaults to personal; a clone takes its own (cloneKind).
+	Kind WorkspaceKind
 }
 type TopicPatch struct {
 	Name        *string `json:"name"`
@@ -202,7 +206,7 @@ const wsCols = `w.id, w.name, w.description, w.privacy, w.share_role,
 		 FROM users u WHERE u.id=w.user_id),
 	(SELECT count(*) FROM topics c WHERE c.workspace_id=w.id),
 	(SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL),
-	w.created_at, w.auto_process, w.icon_id, w.cover`
+	w.created_at, w.auto_process, w.icon_id, w.cover, w.kind`
 
 // memberRoleCol resolves the requester's ($1) persisted role next to wsCols;
 // the query must LEFT JOIN workspace_members AS me on that user.
@@ -213,7 +217,7 @@ func (s *Store) scanWorkspace(row pgx.Row, extra ...any) (Workspace, error) {
 	var w Workspace
 	dest := append([]any{&w.ID, &w.Name, &w.Description, &w.Privacy, &w.ShareRole, &w.Tags,
 		&w.OwnerUserID, &w.OwnerPlanTier, &w.TopicCount,
-		&w.FileCount, &w.CreatedAt, &w.AutoProcess, &w.IconID, &w.Cover}, extra...)
+		&w.FileCount, &w.CreatedAt, &w.AutoProcess, &w.IconID, &w.Cover, &w.Kind}, extra...)
 	err := row.Scan(dest...)
 	if err != nil {
 		return w, err
@@ -399,7 +403,11 @@ func (s *Store) createWorkspaceTx(ctx context.Context, tx pgx.Tx, userID string,
 		return "", err
 	}
 	id := uid("ws")
-	if err := s.insertWorkspaceTx(ctx, tx, id, userID, input.Name, input.Tags, embed); err != nil {
+	kind := input.Kind
+	if kind == "" {
+		kind = WorkspacePersonal
+	}
+	if err := s.insertWorkspaceTx(ctx, tx, id, userID, input.Name, input.Tags, kind, embed); err != nil {
 		return "", err
 	}
 	if err := setWorkspaceAppearanceTx(ctx, tx, id, input); err != nil {
@@ -424,13 +432,14 @@ func (s *Store) insertWorkspaceTx(
 	tx pgx.Tx,
 	id, userID, name string,
 	tags []TagRef,
+	kind WorkspaceKind,
 	embed workspaceEmbedding,
 ) error {
 	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
-			(id, user_id, name, privacy, share_role,
+			(id, user_id, name, privacy, share_role, kind,
 			 embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		id, userID, name, PrivacyPrivate, ShareViewer,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		id, userID, name, PrivacyPrivate, ShareViewer, kind,
 		embed.Pin.ProviderSlug, embed.Pin.ModelSlug, embed.Pin.Version, embed.Dim); err != nil {
 		return err
 	}
@@ -567,9 +576,10 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 	if err != nil {
 		return Workspace{}, err
 	}
-	// Auto process is the owner's alone (human frontend error-handling,
-	// 2026-10-21); editors keep every other setting here.
-	if p.AutoProcess != nil && userID != ownerID {
+	// Auto process (human frontend error-handling, 2026-10-21) and the kind
+	// (Epo 2026-11-04) are the owner's alone; editors keep every other setting
+	// here.
+	if (p.AutoProcess != nil || p.Kind != nil) && userID != ownerID {
 		return Workspace{}, ErrForbidden
 	}
 	if err := s.assertEditableTx(ctx, tx, ownerID, userID); err != nil {
@@ -579,8 +589,9 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 	ct, err := tx.Exec(ctx, `UPDATE workspaces SET
 		name=COALESCE($2,name), description=COALESCE($3,description),
 		auto_process=COALESCE($4,auto_process), icon_id=COALESCE($5,icon_id),
-		cover=CASE WHEN $7 THEN NULL ELSE COALESCE($6::jsonb,cover) END WHERE id=$1`,
-		id, p.Name, p.Description, p.AutoProcess, p.IconID, p.Cover, p.ClearCover)
+		cover=CASE WHEN $7 THEN NULL ELSE COALESCE($6::jsonb,cover) END,
+		kind=COALESCE($8,kind) WHERE id=$1`,
+		id, p.Name, p.Description, p.AutoProcess, p.IconID, p.Cover, p.ClearCover, p.Kind)
 	if err != nil {
 		return Workspace{}, err
 	}

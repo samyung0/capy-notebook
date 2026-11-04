@@ -9,6 +9,7 @@ import type { Cover } from './cover.ts';
 import type { Privacy } from './privacy.ts';
 import type { ShareRole } from './shareRole.ts';
 import type { Tag } from './tag.ts';
+import type { WorkspaceKind } from './workspaceKind.ts';
 import type { WorkspaceRole } from './workspaceRole.ts';
 
 export interface PublicWorkspace {
@@ -26,6 +27,8 @@ export interface PublicWorkspace {
   iconId: string;
   id: string;
   isOwner: boolean;
+  /** What it is used for: decides who sees what in Study and how an editor is named */
+  kind: WorkspaceKind;
   name: string;
   privacy: Privacy;
   role?: WorkspaceRole;

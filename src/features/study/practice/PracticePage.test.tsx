@@ -4,10 +4,12 @@ import type { Practice } from '@/api/types';
 import { m } from '@/i18n';
 import { PracticePage } from './PracticePage';
 import { StudyPanel } from './StudyPanel';
+import { studyView } from './studyView';
 
 const page = vi.hoisted(() => ({
   data: undefined as Practice | undefined,
-  role: 'viewer' as 'owner' | 'viewer',
+  kind: 'class' as 'class' | 'personal',
+  role: 'viewer' as 'owner' | 'editor' | 'viewer',
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -21,7 +23,9 @@ vi.mock('@/api/hooks', () => ({
       { description: '', fileIds: [], id: 't1', name: 'Osmosis', order: 0 },
     ],
   }),
-  useWorkspace: () => ({ data: { name: 'Biology 101', role: page.role } }),
+  useWorkspace: () => ({
+    data: { kind: page.kind, name: 'Biology 101', role: page.role },
+  }),
 }));
 
 const practice = (members?: number): Practice => ({
@@ -71,6 +75,7 @@ const render = () =>
   renderToStaticMarkup(<PracticePage search={{}} workspaceId="ws" />);
 
 it('shows a member Suggested, their own review and every quiz with their best', () => {
+  page.kind = 'class';
   page.role = 'viewer';
   page.data = practice();
   const html = render();
@@ -85,7 +90,8 @@ it('shows a member Suggested, their own review and every quiz with their best', 
   expect(html).not.toContain(m.practice_col_average());
 });
 
-it('shows owners how members use each quiz', () => {
+it("shows a class's owner how members use each quiz", () => {
+  page.kind = 'class';
   page.role = 'owner';
   page.data = practice(6);
   const html = render();
@@ -96,19 +102,44 @@ it('shows owners how members use each quiz', () => {
   expect(html).not.toContain(m.practice_only_you());
 });
 
-it('lists Study pages by role, Practice the one built', () => {
-  const member = renderToStaticMarkup(
-    <StudyPanel active="practice" onOpen={() => {}} staff={false} />
+it('lets the owner of a personal workspace practise, add and edit', () => {
+  page.kind = 'personal';
+  page.role = 'owner';
+  page.data = practice();
+  const html = render();
+  expect(html).toContain(m.practice_suggested());
+  expect(html).toContain(m.practice_practise());
+  expect(html).toContain(m.practice_add());
+  expect(html).not.toContain(m.practice_col_average());
+});
+
+it('lists Study pages for each of the four people, Practice the one built', () => {
+  const panel = (kind: 'class' | 'personal', role: 'owner' | 'viewer') =>
+    renderToStaticMarkup(
+      <StudyPanel
+        active="practice"
+        onOpen={() => {}}
+        pages={studyView({ kind, role }).pages}
+      />
+    );
+  const teacher = panel('class', 'owner');
+  expect(teacher.indexOf(m.study_panel_members())).toBeLessThan(
+    teacher.indexOf(m.study_panel_assignments())
   );
+  expect(teacher).not.toContain(m.study_panel_my_results());
+  expect(teacher).toContain('aria-current="page"');
+  const member = panel('class', 'viewer');
   expect(member.indexOf(m.study_panel_my_results())).toBeLessThan(
-    member.indexOf(m.study_panel_practice())
+    member.indexOf(m.study_panel_assignments())
   );
   expect(member).not.toContain(m.study_panel_members());
-  const owner = renderToStaticMarkup(
-    <StudyPanel active="practice" onOpen={() => {}} staff />
-  );
-  expect(owner.indexOf(m.study_panel_members())).toBeLessThan(
-    owner.indexOf(m.study_panel_assignments())
-  );
-  expect(owner).toContain('aria-current="page"');
+  for (const personal of [
+    panel('personal', 'owner'),
+    panel('personal', 'viewer'),
+  ]) {
+    expect(personal).toContain(m.study_panel_my_results());
+    expect(personal).toContain(m.study_panel_practice());
+    expect(personal).not.toContain(m.study_panel_assignments());
+    expect(personal).not.toContain(m.study_panel_members());
+  }
 });

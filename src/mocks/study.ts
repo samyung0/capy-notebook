@@ -1039,7 +1039,10 @@ export const studyHandlers = [
     const wsId = String(params.id);
     const ws = db.workspaces.find((w) => w.id === wsId);
     return HttpResponse.json(
-      practiceBody(wsId, ws?.role === 'owner' || ws?.role === 'editor')
+      practiceBody(
+        wsId,
+        ws?.kind === 'class' && (ws.role === 'owner' || ws.role === 'editor')
+      )
     );
   }),
   http.get('/api/workspaces/:id/study/attempts', ({ params }) => {

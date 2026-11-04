@@ -1739,6 +1739,9 @@ components:
           minLength: 1
           pattern: ^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
           type: string
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+          description: "What it is used for, personal when omitted. A clone ignores it: an owner's or editor's keeps the source's, anyone else's is personal"
         name:
           description: Workspace name
           maxLength: 80
@@ -4306,6 +4309,9 @@ components:
           type: string
         isOwner:
           type: boolean
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+          description: "What it is used for: decides who sees what in Study and how an editor is named"
         name:
           type: string
         privacy:
@@ -4331,6 +4337,7 @@ components:
         - id
         - name
         - iconId
+        - kind
         - privacy
         - shareRole
         - sharePath
@@ -6971,6 +6978,9 @@ components:
           minLength: 1
           pattern: ^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
           type: string
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+          description: The owner's alone; nothing is deleted when it changes
         name:
           maxLength: 80
           minLength: 1
@@ -7214,6 +7224,9 @@ components:
           type: string
         isOwner:
           type: boolean
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+          description: "What it is used for: decides who sees what in Study and how an editor is named"
         name:
           type: string
         privacy:
@@ -7237,6 +7250,7 @@ components:
         - id
         - name
         - iconId
+        - kind
         - privacy
         - shareRole
         - sharePath
@@ -7330,6 +7344,11 @@ components:
         - members
         - activity
       type: object
+    WorkspaceKind:
+      enum:
+        - class
+        - personal
+      type: string
     WorkspaceMember:
       additionalProperties: false
       properties:

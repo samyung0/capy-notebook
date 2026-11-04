@@ -266,6 +266,7 @@ type Workspace struct {
 	ID           string                   `json:"id"`
 	Name         string                   `json:"name"`
 	IconID       string                   `json:"iconId"`
+	Kind         store.WorkspaceKind      `json:"kind" doc:"What it is used for: decides who sees what in Study and how an editor is named"`
 	Cover        *cover.Cover             `json:"cover,omitempty" doc:"The card's cover art; absent means none"`
 	Privacy      store.Privacy            `json:"privacy"`
 	ShareRole    store.ShareRole          `json:"shareRole"`
@@ -291,6 +292,7 @@ func FromWorkspace(w store.Workspace) Workspace {
 	role := store.RoleOwner
 	out := Workspace{
 		AutoProcess: w.AutoProcess,
+		Kind:        w.Kind,
 		ID:          w.ID, Name: w.Name, Description: w.Description, IconID: w.IconID, Cover: w.Cover, Privacy: w.Privacy, ShareRole: w.ShareRole,
 		SharePath: w.SharePath,
 		Tags:      WrapTags(w.Tags), TopicCount: w.TopicCount, FileCount: w.FileCount,
