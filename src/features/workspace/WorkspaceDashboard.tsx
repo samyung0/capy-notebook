@@ -88,6 +88,7 @@ export function WorkspaceDashboard({
               <ActivityRow
                 key={`${row.fileId ?? row.materialId}-${row.at}`}
                 row={row}
+                workspaceId={workspace.id}
               />
             ))}
           </ul>
@@ -125,8 +126,15 @@ function RecentCard({
   );
 }
 
-/** "Cara uploaded Week 2 slides.pptx", the actor and the item in bold. */
-function ActivityRow({ row }: { row: WorkspaceActivity }) {
+/** "Cara uploaded Week 2 slides.pptx", the actor and the item in bold; the row
+ * opens the item. */
+function ActivityRow({
+  row,
+  workspaceId,
+}: {
+  row: WorkspaceActivity;
+  workspaceId: string;
+}) {
   const name = row.actorName || m.dashboard_someone();
   const text =
     row.kind === 'agent'
@@ -138,21 +146,33 @@ function ActivityRow({ row }: { row: WorkspaceActivity }) {
           { name, title: row.title }
         );
   return (
-    <li className="flex min-h-12 items-center gap-3 border-divider border-t py-1.5 first:border-t-0">
-      {row.kind === 'agent' ? (
-        <span className="grid size-7.5 shrink-0 place-items-center rounded-full bg-tint-accent-1 text-tint-accent-1-fg">
-          <Icon name="ai" size={14} />
+    <li className="-mx-1.5 border-divider border-t first:border-t-0">
+      <Link
+        className="flex min-h-12 items-center gap-3 px-1.5 py-1.5 hover:bg-surface-hover-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
+        params={{ workspaceId }}
+        preload="intent"
+        search={
+          row.materialId ? { material: row.materialId } : { file: row.fileId }
+        }
+        to="/workspaces/$workspaceId"
+      >
+        {row.kind === 'agent' ? (
+          <span className="grid size-7.5 shrink-0 place-items-center rounded-full bg-tint-accent-1 text-tint-accent-1-fg">
+            <Icon name="ai" size={14} />
+          </span>
+        ) : (
+          <Avatar
+            aria-hidden
+            className="size-7.5 shrink-0 text-[11px]"
+            name={name}
+            src={row.actorAvatarUrl || undefined}
+          />
+        )}
+        <span className="min-w-0 flex-1">{text}</span>
+        <span className="t-meta shrink-0 text-fg-muted">
+          {shortTime(row.at)}
         </span>
-      ) : (
-        <Avatar
-          aria-hidden
-          className="size-7.5 shrink-0 text-[11px]"
-          name={name}
-          src={row.actorAvatarUrl || undefined}
-        />
-      )}
-      <span className="min-w-0 flex-1">{text}</span>
-      <span className="t-meta shrink-0 text-fg-muted">{shortTime(row.at)}</span>
+      </Link>
     </li>
   );
 }
