@@ -497,6 +497,13 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   3. **Fallback:** pages with no parser figures keep today's box call.
   - **Check first:** how the parser boxes diagrams drawn as vector paths (Cambridge and other digital papers), on one or two such papers.
 - **Tested before building (Epo, 2026-11-04): the box call works on born-digital pages too.** On 26 figures from three Cambridge IGCSE specimen papers (maths, physics, biology; vector drawings and photographs), it gave 22 and 21 of 26 whole after the pad, none missed, nothing from the next question, at $0.0006 a paper. Every miss is a label outside the drawn lines. So keeping the parser's boxes at ingest isn't needed; a layout model is being benched on the ingest host against the same figures (`claude/bench-layout-figures`).
+- **Layout model wins (2026-11-04, `claude/bench-layout-figures` f278ae3ca, `bench/extraction/reports/2026-11-04-layout-models.md`).** Run on the ingest host in a throwaway container, removed afterwards.
+  - **PP-DocLayout_plus-L** (Apache-2.0 weights, PaddlePaddle's ONNX export under onnxruntime) found all 40 gold figures. 1017 picks the right numbered box: 26 of 28 on scans and 26 of 26 born-digital, with reasoning off, at about $0.009 for 128 calls.
+  - **Crops:** 76 of 80 whole and 72 tight, against the box call's 64 and 42. The one wrong pick is Q14, where the outer box with the options was chosen over the tight one.
+  - **Cost to run:** 0.22 s a page at 8 threads, 0.55 s at 2; 540 MB peak memory; about 165 MB of runtime plus a 130 MB model.
+  - **Captions:** every model leaves a chart title or a "Figure 1" caption outside its box; taking in an adjacent caption box fixes it.
+  - **Proposal:** run it at extraction time on the pages with named figures, inside retrieval, with the box call as fallback.
+  - **Open for Epo:** where it runs (retrieval or ingest), the memory in UAT's 1.5 GiB retrieval limit, and keeping captions in crops.
 - **Decided (Epo, 2026-11-04):** a failed box call or a full quota saves the quiz without those figures, named in the report (`figuresLeftOut`). The top pad stays, and wide figures stay clipped for now (`claude/study-extraction` 34de172f4).
 - **Scans** have no parser figures: every page is one picture, and the page read returns text only. All four bench papers are scans. They keep the box call.
 - **Scans, the options:**
