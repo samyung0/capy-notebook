@@ -110,7 +110,9 @@ function ItemCloneLink({
   const refusal = material?.parentMaterialId
     ? m.clone_embedded_not_allowed()
     : workspace && !workspace.canClone
-      ? m.clone_item_not_allowed()
+      ? workspace.kind === 'class'
+        ? m.clone_item_not_allowed_class()
+        : m.clone_item_not_allowed()
       : null;
   if (material && !refusal && (!material.workspaceId || workspace)) {
     return (
@@ -170,7 +172,9 @@ function WorkspaceCloneLink({
       <WarningBanner
         message={
           workspace
-            ? m.clone_workspace_not_allowed()
+            ? workspace.kind === 'class'
+              ? m.clone_workspace_not_allowed_class()
+              : m.clone_workspace_not_allowed()
             : errorCopy(error, m.source_try_again())
         }
       />

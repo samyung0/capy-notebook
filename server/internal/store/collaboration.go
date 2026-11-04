@@ -116,20 +116,23 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, actorID, w
 
 	var updatedRole WorkspaceRole
 	var updatedAt time.Time
+	var kind WorkspaceKind
 	err = tx.QueryRow(ctx, `UPDATE workspace_members wm
 		SET role=$3, updated_at=now()
 		FROM workspaces w
 		WHERE wm.workspace_id=$1 AND wm.user_id=$2 AND wm.role<>'owner'
 			AND w.id=wm.workspace_id
-		RETURNING w.name, wm.role, wm.updated_at`,
+		RETURNING w.name, wm.role, wm.updated_at, w.kind`,
 		wsID, memberID, role).
-		Scan(&workspaceName, &updatedRole, &updatedAt)
+		Scan(&workspaceName, &updatedRole, &updatedAt, &kind)
 	if err != nil {
 		return nil, false, err
 	}
 	data, err := json.Marshal(map[string]any{
 		"workspaceId":   wsID,
 		"workspaceName": workspaceName,
+		// The notification names the role as this kind does (Epo 2026-11-04).
+		"workspaceKind": kind,
 		"role":          updatedRole,
 		"updatedAt":     updatedAt.UTC().Format(time.RFC3339Nano),
 	})

@@ -374,7 +374,7 @@ func markProgressTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, 
 		return nil
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO study_progress (user_id, workspace_id, material_id, state) VALUES ($1,$2,$3,$4)
-		ON CONFLICT (user_id, material_id) WHERE material_id IS NOT NULL
+		ON CONFLICT (user_id, material_id)
 		DO UPDATE SET state=CASE WHEN study_progress.state='done' THEN 'done' ELSE EXCLUDED.state END, updated_at=now()`,
 		userID, mt.WorkspaceID, mt.ID, state)
 	return err
@@ -793,100 +793,6 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string) ([]ranked, err
 			it.MaterialTitle = qm.title
 			out = append(out, ranked{studyItem: it, topicID: qm.topicID})
 		}
-	}
-	return out, nil
-}
-
-/* ------------------------------------------------------------ agent read */
-
-// AgentProgress is what the chat agent reads of the requester's progress in a
-// workspace. The agent never writes progress.
-type AgentProgress struct {
-	Enabled        bool                `json:"enabled"`
-	Items          []AgentProgressItem `json:"items"`
-	RecentAttempts []Attempt           `json:"recentAttempts"`
-	WeakTopics     []WeakTopic         `json:"weakTopics"`
-}
-
-type AgentProgressItem struct {
-	ID    string `json:"id"`
-	Kind  string `json:"kind"`
-	Title string `json:"title"`
-	State string `json:"state"`
-}
-
-// WeakTopic is a topic whose rated questions and cards are least retained.
-type WeakTopic struct {
-	Topic     string  `json:"topic"`
-	Retention float64 `json:"retention"`
-	Items     int     `json:"items"`
-}
-
-func (s *Store) AgentStudyProgress(ctx context.Context, userID, wsID string, now time.Time) (AgentProgress, error) {
-	summary, err := s.StudySummary(ctx, userID, wsID, now)
-	if err != nil {
-		return AgentProgress{}, err
-	}
-	out := AgentProgress{Enabled: summary.Enabled, Items: []AgentProgressItem{}, RecentAttempts: summary.RecentAttempts, WeakTopics: []WeakTopic{}}
-	rows, err := s.pool.Query(ctx, `SELECT COALESCE(sp.file_id, sp.material_id),
-			CASE WHEN sp.file_id IS NULL THEN 'material' ELSE 'file' END,
-			COALESCE(f.name, m.title, ''), sp.state
-		FROM study_progress sp
-		LEFT JOIN files f ON f.id=sp.file_id LEFT JOIN materials m ON m.id=sp.material_id
-		WHERE sp.user_id=$1 AND sp.workspace_id=$2 AND f.trashed_at IS NULL AND m.trashed_at IS NULL
-		ORDER BY sp.updated_at DESC`, userID, wsID)
-	if err != nil {
-		return out, err
-	}
-	for rows.Next() {
-		var it AgentProgressItem
-		if err := rows.Scan(&it.ID, &it.Kind, &it.Title, &it.State); err != nil {
-			rows.Close()
-			return out, err
-		}
-		out.Items = append(out.Items, it)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return out, err
-	}
-	// ponytail: averages stored states without re-reading documents, so an
-	// edited item still counts until it is rated again; read the documents if
-	// the ranking ever needs to be exact.
-	rows, err = s.pool.Query(ctx, `SELECT COALESCE(c.name, ''), rs.stability, rs.difficulty, rs.reps, rs.lapses, rs.fsrs_state, rs.last_review
-		FROM review_states rs JOIN materials m ON m.id=rs.material_id
-		LEFT JOIN topics c ON c.id=m.topic_id
-		WHERE rs.user_id=$1 AND m.workspace_id=$2 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL`, userID, wsID)
-	if err != nil {
-		return out, err
-	}
-	sums := map[string]*WeakTopic{}
-	for rows.Next() {
-		var topic string
-		var st review.State
-		if err := rows.Scan(&topic, &st.Stability, &st.Difficulty, &st.Reps, &st.Lapses, &st.FSRSState, &st.LastReview); err != nil {
-			rows.Close()
-			return out, err
-		}
-		w := sums[topic]
-		if w == nil {
-			w = &WeakTopic{Topic: topic}
-			sums[topic] = w
-		}
-		w.Retention += review.Retrievability(st, now)
-		w.Items++
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return out, err
-	}
-	for _, w := range sums {
-		w.Retention /= float64(w.Items)
-		out.WeakTopics = append(out.WeakTopics, *w)
-	}
-	sort.Slice(out.WeakTopics, func(i, j int) bool { return out.WeakTopics[i].Retention < out.WeakTopics[j].Retention })
-	if len(out.WeakTopics) > 3 {
-		out.WeakTopics = out.WeakTopics[:3]
 	}
 	return out, nil
 }

@@ -81,7 +81,7 @@ table read the same in both.
 | Dashboard, owner and editor members | Activity (AI marks and Assignments to check wait for their pages) | What to practise next, Activity |
 | Dashboard, anyone else | What to practise next, Activity (Assignments due waits for its page) | What to practise next, Activity |
 | Whose results | The owner and editor members see everyone's; a member their own | Each person their own |
-| An editor member is called | Teaching assistant, in the UI only | Editor |
+| An editor member is called | Teaching assistant, in the UI only (invite and Manage member dropdowns, the role-changed notification, the transfer confirmation, clone refusals); API, role value and anything sent to a model say editor | Editor |
 | Clone | An owner's or editor member's stays class; anyone else's is personal | Stays personal |
 | Change it | The owner, in Workspace settings → General. Nothing is deleted: assignments and reports are hidden until it changes back | The same |
 
@@ -702,9 +702,6 @@ topicName?}` (`MoveFiles` in `store/file_move.go`).
   running (409 `file_processing`), or already in the target (409) is refused.
   A topic move inside one workspace stays `PATCH /api/files/{id}`. Locks
   follow every workspace write: workspace rows by id, accounts, then files.
-- The workspaces it leaves lose any study progress row on it, without asking:
-  only practice records progress since 2026-11-03, and practice is on quizzes
-  and sets, which do not move.
 - Thumbnail keys stay inside their workspace: a moved file drops a key
   borrowed from another file, and files that borrowed the moved file's key
   drop theirs (the next capture redraws them).
@@ -1107,13 +1104,13 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
 
 Details live in [study-progress.md](study-progress.md).
 
-- Study progress (read, started, stopped tracking), FSRS review state and the
+- Study progress (started, done), FSRS review state and the
   review log are private to their user. Any signed-in user who can read the
   workspace records their own with read access only: owners, members of every
   role, and link or public visitors, viewers included. Ratings need read
   access to the rated material. Reads and writes never show another user's
-  rows; the chat agent reads only the requester's, and only while their
-  study progress shows (Hide study progress is per user and workspace).
+  rows, and the chat agent reads none (Hide study progress is per user and
+  workspace).
 - Frozen accounts record progress, ratings, Reset and the progress switches
   like anyone else (`requireAccountMutate`), since the rows are their own and
   charge no storage. Suspended, deletion-pending and deleted accounts have no
@@ -1123,7 +1120,7 @@ Details live in [study-progress.md](study-progress.md).
   lost (unreadable until it returns) and when a workspace is transferred
   (`study_progress` and `workspace_study` are in the transfer test's
   `notOwnership`). Trashed items keep their rows, hidden until restored. Rows
-  cascade with their file, material or workspace, and `PurgeUser` deletes all
+  cascade with their material or workspace, and `PurgeUser` deletes all
   four tables at account purge.
 - Question-bank progress (`bank_progress`, see
   [question-bank.md](question-bank.md#learner-progress-and-retraction)) is

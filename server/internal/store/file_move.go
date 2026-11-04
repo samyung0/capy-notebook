@@ -27,8 +27,8 @@ type movingFile struct{ id, workspaceID, payerID string }
 // MoveFiles puts files into a workspace, never out of one (Epo 2026-10-27):
 // a standalone file by its owner, a workspace file by that workspace's owner
 // or the file's payer, the actor editing the target. The payer stays. The
-// left workspaces' progress rows for the files go. The index follows when the
-// target embeds in the same space, else the file is ingested there.
+// index follows when the target embeds in the same space, else the file is
+// ingested there.
 //
 // Locks follow every workspace write: workspace rows (by id), then accounts,
 // then the file rows, re-read under their locks.
@@ -108,10 +108,6 @@ func (s *Store) MoveFiles(ctx context.Context, actorID string, fileIDs []string,
 	}
 	topicID, err := s.resolveUploadTopicID(ctx, tx, target.WorkspaceID, target.TopicID, target.TopicName)
 	if err != nil {
-		return nil, err
-	}
-
-	if _, err := tx.Exec(ctx, `DELETE FROM study_progress WHERE file_id = ANY($1)`, ids); err != nil {
 		return nil, err
 	}
 

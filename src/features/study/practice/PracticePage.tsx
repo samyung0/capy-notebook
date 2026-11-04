@@ -105,6 +105,7 @@ function PracticeList({
   );
   const [topic, setTopic] = useState<string | null | undefined>(undefined);
   const { canEdit, manages: staff } = studyView(ws);
+  const suggested = !staff && !!data?.suggestions.length;
   const topicName = (id?: string | null) =>
     id ? topics?.find((t) => t.id === id)?.name : undefined;
   const members = data?.members;
@@ -122,14 +123,25 @@ function PracticeList({
   return (
     <PracticeFrame>
       {/* Spread apart on one line; wrapped, the action starts its own line
-          at the left. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          at the left, 16px from the text above and whatever follows. Suggested
+          has more over it (its top margin), which the action's negative margins
+          take back; on one line the title's height decides, so they cancel
+          out. */}
+      <div
+        className={cn(
+          'flex flex-wrap items-center justify-between gap-x-3',
+          suggested ? 'gap-y-4.75' : 'gap-y-2.25'
+        )}
+      >
         <div className="flex min-w-0 flex-wrap items-center gap-x-3">
           <h1 className="t-page-title">{m.study_panel_practice()}</h1>
           <span className="t-meta mt-1.5 text-fg-muted">{meta}</span>
         </div>
         {/* Not built yet (Make my own practice, P3; Add practice, P1). */}
-        <span title={m.study_panel_soon()}>
+        <span
+          className={cn(suggested && '-my-2.5')}
+          title={m.study_panel_soon()}
+        >
           <Button disabled iconLeft="plus">
             {canEdit ? m.practice_add() : m.practice_make_own()}
           </Button>
@@ -151,7 +163,7 @@ function PracticeList({
         />
       ) : (
         <>
-          {!staff && data.suggestions.length > 0 && (
+          {suggested && (
             <section className="mt-5.5">
               <h2 className="t-subtitle">{m.practice_suggested()}</h2>
               <SuggestedList
@@ -270,8 +282,10 @@ function AllPractice({
     });
 
   return (
-    <section className={cn(title ? 'mt-6.5' : 'mt-4')}>
-      <div className="mb-1.5 flex items-center gap-2">
+    <section className="mt-4">
+      {/* 16px to the first text under it: phones' first row holds 11px above
+          its text, the table's header 8px. */}
+      <div className="mb-1.25 flex items-center gap-2 md:mb-2">
         {title && <h2 className="t-subtitle mr-2">{m.practice_all()}</h2>}
         {options.length > 0 && (
           <Menu

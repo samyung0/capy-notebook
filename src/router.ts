@@ -314,6 +314,7 @@ const appRoutes = [
   blocksRedirect('/flashcards'),
   createRoute({
     beforeLoad: ({ search }) => {
+      if (!features.learning) throw redirect({ replace: true, to: '/' });
       const saved =
         search.tab === 'results'
           ? savedSort('results', RESULT_SORTS, RESULT_SORT_DEFAULT, search)

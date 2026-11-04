@@ -191,8 +191,7 @@ func TestToolScopes(t *testing.T) {
 	want := map[string][]Scope{
 		"search_workspace":     {ScopeWorkspace},
 		"search_files_summary": {ScopeAccount}, "create_workspace": {ScopeAccount}, "list_workspaces": {ScopeAccount}, "search_files_content": {ScopeAccount},
-		"read_study_progress": {ScopeWorkspace},
-		"trash_file":          {ScopeWorkspace}, "list_trashed_files": {ScopeWorkspace}, "restore_file": {ScopeWorkspace},
+		"trash_file": {ScopeWorkspace}, "list_trashed_files": {ScopeWorkspace}, "restore_file": {ScopeWorkspace},
 	}
 	for _, def := range Definitions() {
 		scopes, ok := want[def.Name]
@@ -219,7 +218,7 @@ func TestRetentionBetweenMessages(t *testing.T) {
 		RetainCitedPassages: {"search_workspace", "read_document", "search_web", "search_files_content"},
 		RetainUsedExcerpts:  {"read_library"},
 		RetainNone: {
-			"capture_page", "read_study_progress", "capture_library_page", "read_skill",
+			"capture_page", "capture_library_page", "read_skill",
 			"resolve_source_change", "inspect_document", "list_trashed_files", "inspect_office_document",
 		},
 	}

@@ -152,7 +152,6 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
     ],
     [
       { arguments: { file_id: pdf }, name: 'read_document' },
-      { arguments: {}, name: 'read_study_progress' },
       { arguments: {}, name: 'list_trashed_files' },
     ],
     [
@@ -191,9 +190,9 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
   assert(cited.length, 'the answer has no citations');
   assert.equal(cited[0].n, 1);
   assert([pdf, text].includes(cited[0].fileId));
-  const noteId = effect(first.ends[8], 'created');
-  const quizId = effect(first.ends[9], 'created');
-  const cardsId = effect(first.ends[10], 'created');
+  const noteId = effect(first.ends[7], 'created');
+  const quizId = effect(first.ends[8], 'created');
+  const cardsId = effect(first.ends[9], 'created');
   for (const [id, expected] of [
     [noteId, 'note'],
     [quizId, 'quiz'],

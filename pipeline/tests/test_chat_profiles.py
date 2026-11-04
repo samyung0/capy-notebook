@@ -46,7 +46,9 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # in a chapter" instead of "unfiled" (Epo 2026-10-30; the owner schemas keys
 # alone), chapters renamed topics with create_topic's description (Epo
 # 2026-11-03; the schemas, skills and turn_context keys alone),
-# the owner schemas and skills/editing keys alone.
+# the owner schemas and skills/editing keys alone, read_study_progress removed
+# (Epo 2026-11-04; schemas/owner_office alone, which was
+# schemas/owner_office_progress).
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 
 OWNER = frozenset(
@@ -128,11 +130,10 @@ def test_the_workspace_profile_shows_the_model_what_it_did_before():
     profile = profiles.workspace.PROFILE
     contexts = {
         "owner": _ctx(library_catalog=CATALOG, edit_tools=True),
-        "owner_office_progress": _ctx(
+        "owner_office": _ctx(
             library_catalog=CATALOG,
             office_tools=True,
             edit_tools=True,
-            study_progress=True,
         ),
         "owner_no_library": _ctx(),
         "viewer": _ctx(operations=VIEWER, role="viewer", library_catalog=CATALOG),

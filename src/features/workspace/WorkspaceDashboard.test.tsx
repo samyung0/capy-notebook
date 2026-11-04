@@ -33,12 +33,12 @@ vi.mock('@/api/hooks', () => ({
   useWorkspaceRecent: () => ({ data: { files: [], materials: [] } }),
 }));
 
-const render = () =>
+const render = (canEdit = true) =>
   renderToStaticMarkup(
     <WorkspaceDashboard
       onUpload={() => undefined}
       workspace={{
-        capabilities: { canEdit: true } as never,
+        capabilities: { canEdit } as never,
         id: 'ws',
         kind: page.kind,
         name: 'Biology 101',
@@ -90,12 +90,18 @@ it('marks a hidden item on its activity row', () => {
   expect(render()).toContain(m.content_hidden_from_members());
 });
 
-it('leaves out an empty section, with no hint in its place', () => {
+it('shows an empty workspace its art, a short title and one button', () => {
   page.data = { activity: [], members: 1, ownerName: 'Ms Wong' };
   const html = render();
   expect(html).toContain('Biology 101');
+  expect(html).toContain(m.workspace_empty_title());
+  expect(html).toContain(m.action_add_file());
+  expect(html).not.toContain(m.action_upload());
+  expect(html).not.toContain(m.dashboard_make_quiz());
   expect(html).not.toContain(m.dashboard_activity());
   expect(html).not.toContain(m.dashboard_recent_files());
+  // Those who may not add get no button.
+  expect(render(false)).not.toContain(m.action_add_file());
 });
 
 it('shows What to practise next to whoever practises, not to a class owner', () => {

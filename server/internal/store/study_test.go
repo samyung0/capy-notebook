@@ -211,17 +211,6 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: set, ItemID: cards[0].ID, Score: &score}, time.Now()); !errors.Is(err, ErrStudyRating) {
 		t.Fatalf("a card scored like a question: %v", err)
 	}
-
-	// What the chat agent reads: the quiz and the set, the one workspace quiz
-	// attempt, and the unfiled topic holding all four rated items.
-	progress, err := f.s.AgentStudyProgress(ctx, f.user, f.ws.ID, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !progress.Enabled || len(progress.Items) != 2 || len(progress.RecentAttempts) != 1 ||
-		len(progress.WeakTopics) != 1 || progress.WeakTopics[0].Items != 4 {
-		t.Fatalf("agent progress = %+v", progress)
-	}
 }
 
 func TestWorkspaceReviewSelection(t *testing.T) {

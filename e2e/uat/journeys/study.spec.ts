@@ -179,7 +179,7 @@ test('study progress: a quiz finished, a set studied and a short review are reco
     page.getByRole('button', { name: m.flashcards_study_again() })
   ).toBeVisible();
 
-  // A whole-workspace review, as Learning's Workspaces row opens one. A
+  // A whole-workspace review. A
   // manual session gives 60% of its places (12 of a new account's 20) to
   // never-rated items and the rest to practised ones, each side filling
   // what the other leaves (store.withNew): here the quiz not yet taken's one
@@ -240,7 +240,7 @@ test('study progress: a quiz finished, a set studied and a short review are reco
   // The deployed database holds each record.
   const materials = [finishedQuiz, set, nextQuiz];
   const progress = await run.query<{ id: string; state: string }>(
-    `SELECT coalesce(file_id, material_id) AS id, state FROM study_progress
+    `SELECT material_id AS id, state FROM study_progress
     WHERE user_id=%s AND workspace_id=%s`,
     [run.owner.id, workspaceId]
   );

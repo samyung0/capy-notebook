@@ -8,6 +8,7 @@ import {
   useRemoveWorkspaceMember,
   useTransferWorkspace,
   useUpdateWorkspaceMember,
+  useWorkspace,
   useWorkspaceInvites,
   useWorkspaceMembers,
 } from '@/api/hooks';
@@ -36,6 +37,7 @@ import {
 import { userToast } from '@/components/ui/userToast';
 import { getLocale, m } from '@/i18n';
 import { track } from '@/lib/analytics';
+import { cn } from '@/lib/cn';
 import { describeError, errorCopy, unexpectedErrorId } from '@/lib/errors';
 
 type FormError = { errorId: string | null; message: string };
@@ -54,10 +56,17 @@ function day(iso: string) {
   });
 }
 
-function roleOptions(): Array<{ value: AssignableRole; label: string }> {
+/** A class calls its editors teaching assistants (Epo 2026-11-04): the name
+ * only, the role underneath stays editor. */
+function roleOptions(
+  isClass: boolean
+): Array<{ value: AssignableRole; label: string }> {
   return [
     { label: m.members_role_view(), value: 'viewer' },
-    { label: m.members_role_edit(), value: 'editor' },
+    {
+      label: isClass ? m.role_teaching_assistant() : m.members_role_edit(),
+      value: 'editor',
+    },
   ];
 }
 
@@ -70,6 +79,8 @@ export function WorkspaceMemberManager({
     null
   );
   const [managedRole, setManagedRole] = useState<AssignableRole>('viewer');
+  const { data: workspace } = useWorkspace(workspaceId);
+  const isClass = workspace?.kind === 'class';
   const {
     data: membersData,
     error: membersError,
@@ -164,8 +175,9 @@ export function WorkspaceMemberManager({
           name="role"
           render={({ field }) => (
             <RoleSelect
-              className="w-22 sm:w-28"
+              className={cn(isClass ? 'w-34 sm:w-44' : 'w-22 sm:w-28')}
               disabled={isSubmitting}
+              isClass={isClass}
               label={m.members_invite_role()}
               onChange={field.onChange}
               value={field.value}
@@ -291,7 +303,9 @@ export function WorkspaceMemberManager({
           <div className="flex items-center justify-between gap-3">
             <InputTitle>{m.common_role()}</InputTitle>
             <RoleSelect
+              className={cn(isClass ? 'w-44' : 'w-28')}
               disabled={updateMemberIsPending}
+              isClass={isClass}
               label={m.common_role()}
               onChange={(nextRole) => {
                 setManagedRole(nextRole);
@@ -313,13 +327,15 @@ function RoleSelect({
   value,
   onChange,
   disabled,
+  isClass,
   label,
-  className = 'w-28',
+  className,
 }: {
-  className?: string;
+  className: string;
   value: AssignableRole;
   onChange: (role: AssignableRole) => void;
   disabled?: boolean;
+  isClass: boolean;
   label: string;
 }) {
   return (
@@ -333,7 +349,7 @@ function RoleSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          {roleOptions().map((option) => (
+          {roleOptions(isClass).map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}
             </SelectItem>
@@ -355,9 +371,14 @@ export function WorkspaceTransferDialog({
 }) {
   const { isPending, mutateAsync: transfer } =
     useTransferWorkspace(workspaceId);
+  const { data: workspace } = useWorkspace(workspaceId);
   return (
     <ConfirmDialog
-      body={m.workspace_transfer_confirm_body({ name: member.name })}
+      body={
+        workspace?.kind === 'class'
+          ? m.workspace_transfer_confirm_body_class({ name: member.name })
+          : m.workspace_transfer_confirm_body({ name: member.name })
+      }
       closeOnConfirm={false}
       confirmLabel={m.workspace_transfer_confirm()}
       danger

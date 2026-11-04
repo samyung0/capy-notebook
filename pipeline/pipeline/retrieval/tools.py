@@ -217,9 +217,6 @@ class ToolContext:
     # read editing, or an earlier turn was offered them (the gateway's
     # editTools).
     edit_tools: bool = False
-    # The requester's study progress is on in this workspace, so the agent may
-    # read it.
-    study_progress: bool = False
     library_evidence: LibraryEvidence = field(default_factory=LibraryEvidence)
     # The library's subjects that hold excerpts, fetched once per turn for
     # search_library's description; its subject argument takes their ids.
@@ -4593,56 +4590,6 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return result
 
 
-def render_progress(progress: dict[str, Any]) -> str:
-    """The learner's progress as the model reads it."""
-    lines: list[str] = []
-    for state in ("done", "started", "removed"):
-        items = [i for i in progress.get("items") or [] if i.get("state") == state]
-        if items:
-            lines.append(f"{state.capitalize()}:")
-            lines.extend(f"- {i['title']} ({i['kind']} {i['id']})" for i in items)
-    attempts = progress.get("recentAttempts") or []
-    if attempts:
-        lines.append("Recent quizzes:")
-        lines.extend(
-            f"- {a['quizName']}: {a['pct']}% on {str(a['takenAt'])[:10]}"
-            + (f" ({', '.join(a['topics'])})" if a.get("topics") else "")
-            for a in attempts
-        )
-    weak = progress.get("weakTopics") or []
-    if weak:
-        lines.append("Least retained topics:")
-        lines.extend(
-            f"- {w['topic'] or 'Not in a topic'}: {round(100 * w['retention'])}% retained "
-            f"across {w['items']} rated questions and cards"
-            for w in weak
-        )
-    return "\n".join(lines) or "No study progress recorded in this workspace yet."
-
-
-async def _read_study_progress(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    if not _gateway_ready() or not ctx.user_id:
-        return _refused(
-            "Study progress is unavailable for this user.", code="lifecycle_rejected"
-        )
-
-    def _post() -> requests.Response:
-        return requests.post(
-            _material_url("/api/internal/study-progress"),
-            headers=_material_headers(),
-            data=json.dumps({"workspaceId": ctx.workspace_id, "userId": ctx.user_id}),
-            timeout=10,
-        )
-
-    resp = await asyncio.to_thread(_post)
-    if resp.status_code >= 300:
-        return _refused(
-            f"Study progress could not be read: {_response_detail(resp)}",
-            code="unavailable_target",
-        )
-    return _result(render_progress(resp.json()))
-
-
 REGISTRY: dict[str, ToolSpec] = {}
 
 
@@ -4659,7 +4606,6 @@ _register("read_library", _read_library)
 _register("search_images", _search_images)
 _register("search_web", _search_web)
 _register("read_skill", _read_skill)
-_register("read_study_progress", _read_study_progress)
 _register("capture_library_page", _capture_library_page)
 _register("list_sources", _list_sources)
 _register("search_files_summary", _search_files_summary)
@@ -4726,8 +4672,6 @@ def _available(spec: ToolSpec, ctx: ToolContext) -> bool:
         return False
     if definition["mutates"] and not (_gateway_ready() and ctx.user_id):
         return False
-    if spec.name == "read_study_progress":
-        return ctx.study_progress
     if spec.name == KNOWLEDGE_CAPTURE:
         # Without the knowledge-base bucket there is nothing to render.
         return _library_ready(ctx) and bool(cfg.knowledge_base_b2_bucket)

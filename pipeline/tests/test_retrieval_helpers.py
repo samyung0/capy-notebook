@@ -1441,45 +1441,6 @@ def test_one_prompt_holds_the_all_sources_rules_in_both_modes():
         )
 
 
-def test_study_progress_is_offered_only_when_progress_is_on():
-    ctx = ToolContext(workspace_id="ws", user_id="u_1", operations=_READ)
-    assert "read_study_progress" not in _names(ctx)
-    ctx.study_progress = True
-    assert "read_study_progress" in _names(ctx)
-
-
-def test_study_progress_renders_states_quizzes_and_weak_topics():
-    text = tools.render_progress(
-        {
-            "items": [
-                {"id": "f_1", "kind": "file", "title": "Cells.pdf", "state": "done"},
-                {
-                    "id": "m_2",
-                    "kind": "material",
-                    "title": "Organelles",
-                    "state": "started",
-                },
-            ],
-            "recentAttempts": [
-                {
-                    "quizName": "Cell quiz",
-                    "pct": 62,
-                    "takenAt": "2026-10-03T09:00:00Z",
-                    "topics": ["Cells"],
-                }
-            ],
-            "weakTopics": [{"topic": "", "retention": 0.41, "items": 7}],
-        }
-    )
-    assert "Done:\n- Cells.pdf (file f_1)" in text
-    assert "Started:\n- Organelles (material m_2)" in text
-    assert "- Cell quiz: 62% on 2026-10-03 (Cells)" in text
-    assert "- Not in a topic: 41% retained across 7" in text
-    assert (
-        tools.render_progress({}) == "No study progress recorded in this workspace yet."
-    )
-
-
 def test_inspect_shows_a_notes_quiz_as_its_fence_and_edits_expect_it_back():
     """An embedded quiz shows as the fence an edit writes; an edit expecting that
     text expects the stored one (Epo 2026-10-14)."""

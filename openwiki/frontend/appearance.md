@@ -46,7 +46,11 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   (`GET /api/workspaces/{id}/dashboard`, see
   [study-progress.md](../study-progress.md#endpoints)), each row opening its
   file or material. An empty section does not show, so To do, assignments and
-  AI marks (not built) never do yet, and an empty Dashboard has no hint. The old
+  AI marks (not built) never do yet. A workspace with nothing in it shows
+  `WorkspaceEmpty` instead of the actions and sections: the map's ink book, "No
+  files yet" and Add file, which opens the upload dialog, for those who may add.
+  Wrapped actions sit 16px from the visible text above and below them, as
+  Practice's do: negative margins that a one-line header cancels out. The old
   landing's Add file, Quick open, Workspace settings and Practice cards went.
 
 ## Workspace rail

@@ -94,9 +94,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # preference_text: a field=value name (writingStyle=brief) to the line
     # that value adds to the turn context, in place of preferences.py's.
     "preference_text": {},
-    # study_progress: null leaves read_study_progress unoffered; a dict is the
-    # fixture it returns, shaped like /api/internal/study-progress.
-    "study_progress": None,
     # history_mode: "evidence" is production (earlier turns replay their
     # messages and packed evidence); "full" replays the previous turn's last
     # request and final response verbatim, every tool exchange kept until
@@ -1490,7 +1487,6 @@ class Turn:
             "workspace_only": workspace_only,
             "assistant_message_id": self.id,
             "study_preferences": dict(c["study_preferences"] or {}),
-            "study_progress": bool(c["study_progress"]),
             "office_tools": office_tools,
             "edit_tools": edit_tools,
         }
@@ -1613,8 +1609,6 @@ class Turn:
             elif name == "list_sources" and not ctx_.account:
                 # Account chat lists through production with account.Gateway.
                 result = await list_sources_locally(ctx_, state)
-            elif name == "read_study_progress":
-                result = tools._result(tools.render_progress(c["study_progress"]))
             elif name in deck.NAMES:
                 result = await deck_locally(name, args, ctx_, state, self.id)
             elif name in tools.contract.HANDLER_CHECKED:

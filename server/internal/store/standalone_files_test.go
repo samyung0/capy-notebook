@@ -262,8 +262,8 @@ func TestStandaloneFileMovesIntoAWorkspaceWithItsIndex(t *testing.T) {
 	}
 }
 
-// Between workspaces the source owner or the payer moves a file, an editor
-// who is neither cannot, and a progress row on it goes.
+// Between workspaces the source owner or the payer moves a file, and an editor
+// who is neither cannot.
 func TestWorkspaceFileMoveAuthority(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -282,10 +282,6 @@ func TestWorkspaceFileMoveAuthority(t *testing.T) {
 	addWorkspaceEditor(t, s, src.ID, editor)
 	addWorkspaceEditor(t, s, dst.ID, editor)
 	file := uploadWorkspaceFile(t, s, member, src.ID)
-	if _, err := s.pool.Exec(ctx, `INSERT INTO study_progress (user_id, workspace_id, file_id, state) VALUES ($1,$2,$3,'done')`,
-		owner, src.ID, file.ID); err != nil {
-		t.Fatal(err)
-	}
 
 	if _, err := s.MoveFiles(ctx, editor, []string{file.ID}, MoveTarget{WorkspaceID: dst.ID}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("editor move = %v, want not found", err)
@@ -296,10 +292,6 @@ func TestWorkspaceFileMoveAuthority(t *testing.T) {
 	}
 	if moved[0].WorkspaceID != dst.ID {
 		t.Fatalf("moved = %+v", moved[0])
-	}
-	var progressLeft bool
-	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM study_progress WHERE file_id=$1)`, file.ID).Scan(&progressLeft); err != nil || progressLeft {
-		t.Fatalf("progress kept after a move: %v, %v", progressLeft, err)
 	}
 }
 

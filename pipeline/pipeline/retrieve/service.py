@@ -290,8 +290,6 @@ class ChatStreamReq(LLMPin):
     openResource: dict | None = None
     # The requester's saved study preferences; missing fields take defaults.
     studyPreferences: dict | None = None
-    # Study progress is on for the requester in this workspace.
-    studyProgress: bool = False
     # An earlier turn of the conversation was offered the Office tools.
     officeTools: bool = False
     # An earlier turn was offered the writes the editing skill covers.
@@ -492,7 +490,6 @@ async def _chat_events(req: ChatStreamReq):
         workspace_only=req.workspaceOnly,
         open_resource=dict(req.openResource or {}),
         study_preferences=dict(req.studyPreferences or {}),
-        study_progress=req.studyProgress,
         office_tools=req.officeTools,
         edit_tools=req.editTools,
         **({"role": req.role} if req.role else {}),
