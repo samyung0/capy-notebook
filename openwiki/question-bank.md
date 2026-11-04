@@ -248,7 +248,8 @@ the dialog is a fixed
 tabs, and a row click switches to Body first.
 Each part's worked solution is always listed in the outline (its Worked
 solution row is a 36px header, not a toggle), at the outline's normal row
-spacing with no wavy lines (Epo 2026-11-04), and shown in the body under the
+spacing with no wavy lines (Epo 2026-11-04), its first row 2px under the title
+as a row's meta sits under its title, and shown in the body under the
 part's answer, below a `wavy-rule` line reading "Hidden until checked", since
 learners only get the solution after checking.
 Its title names the question ("Edit question 10").

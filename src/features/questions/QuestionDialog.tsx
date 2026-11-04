@@ -928,6 +928,13 @@ function QuestionDialogSession({
       issueRows.has(key) ||
       (!!headLocation &&
         issueRows.has(rowKey({ kind: 'block', location: headLocation })));
+    // A worked solution's title sits as close over its first row as a row's
+    // title over its meta (2px, Epo 2026-11-04).
+    const closeBelow = item.kind === 'solution' && !!part?.solution.length;
+    const closeAbove =
+      item.kind === 'block' &&
+      item.location.solution &&
+      item.location.index === 0;
     // Stem rows sit flush; a part's rows share the column its label sits in.
     const indented =
       labelled &&
@@ -981,8 +988,11 @@ function QuestionDialogSession({
               (draft.groups?.length
                 ? 'grid-cols-[1.75rem_minmax(0,1fr)]'
                 : 'grid-cols-[1.5rem_minmax(0,1fr)]'),
-            // A header row: tall enough for its menu button.
-            item.kind === 'solution' && 'min-h-9 content-center'
+            // A header row: tall enough for its menu button; with rows under
+            // it, its text stays where that height centres it.
+            item.kind === 'solution' && !closeBelow && 'min-h-9 content-center',
+            closeBelow && 'pt-[9.25px] pb-0',
+            closeAbove && 'pt-0.5'
           )}
           onClick={() => {
             // Brings the block (or the part's answer or worked solution) into
@@ -1053,7 +1063,7 @@ function QuestionDialogSession({
           <div className="scroll-fade-x absolute inset-y-0 right-0 animate-none! rounded-r-lg bg-overlay pt-0.5 pr-0.5 pl-3 transition-opacity ease-(--motion-ease-smooth-out) [--scroll-fade-on:1] [--scroll-fade-start:12px] group-hover:bg-surface-hover-bg has-data-[state=open]:opacity-100 md:opacity-0 md:has-focus-visible:opacity-100 md:group-hover:opacity-100">
             <PopoverTrigger asChild>
               <ToolbarButton
-                className="hover:bg-transparent"
+                className={cn('hover:bg-transparent', closeAbove && '-mt-1')}
                 label={m.question_ui_actions({ label })}
                 tooltip={false}
               >
