@@ -80,7 +80,7 @@ table read the same in both.
 | Dashboard, owner and editor members | Activity (AI marks and Assignments to check wait for their pages) | What to practise next, Activity |
 | Dashboard, anyone else | What to practise next, Activity (Assignments due waits for its page) | What to practise next, Activity |
 | Whose results | The owner and editor members see everyone's; a member their own | Each person their own |
-| An editor member is called | Teaching assistant, in the UI only | Editor |
+| An editor member is called | Teaching assistant, in the UI only (invite and Manage member dropdowns, the role-changed notification, the transfer confirmation, clone refusals); API, role value and anything sent to a model say editor | Editor |
 | Clone | An owner's or editor member's stays class; anyone else's is personal | Stays personal |
 | Change it | The owner, in Workspace settings → General. Nothing is deleted: assignments and reports are hidden until it changes back | The same |
 
