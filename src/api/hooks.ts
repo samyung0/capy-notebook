@@ -62,6 +62,7 @@ import type {
   CreateDiscussionReq,
   CreateEmbeddedMaterialReq,
   CreateEventReq,
+  CreateExtractionReq,
   CreateFlashcardSetReq,
   CreateMaterialReq,
   CreateQuizReq,
@@ -72,6 +73,7 @@ import type {
   EditableQuiz,
   EditorAssetAccess,
   EditorAssetPage,
+  Extraction,
   FileLinks,
   FileListParams,
   FilePage,
@@ -415,6 +417,16 @@ export function applyNotificationEvent(
     applyChatTurn(qc, event.conversationId, event.status);
     return;
   }
+  if (event.type === 'extraction') {
+    void qc
+      .fetchQuery({ ...extractionQuery(event.extractionId), staleTime: 0 })
+      .then((run) => {
+        void qc.invalidateQueries({ queryKey: qk.materials(run.workspaceId) });
+        extractionEndListener?.(run);
+      })
+      .catch(() => undefined);
+    return;
+  }
   // Stripe or the reload worker changed billing. A pending billing save
   // refetches when it settles, so it is left to that refetch.
   if (event.type === 'billing') {
@@ -515,7 +527,16 @@ function applyChatTurn(
 export function useEventStream(wsId: string) {
   const qc = useQueryClient();
   useEffect(() => {
-    if (USE_MSW) return;
+    if (USE_MSW) {
+      // The mock's stand-in for the stream, for what a mock run reports.
+      const heard = (event: Event) =>
+        applyNotificationEvent(
+          qc,
+          (event as CustomEvent<NotificationStreamEvent>).detail
+        );
+      window.addEventListener('capy:mock-stream', heard);
+      return () => window.removeEventListener('capy:mock-stream', heard);
+    }
     let stopped = false;
     let controller: AbortController | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1280,6 +1301,46 @@ export const useFiles = (wsId: string, options?: QueryUiOptions) =>
     meta: queryMeta(options),
     refetchOnWindowFocus: true,
   });
+
+/** A Make a quiz run's row: its status, the questions read so far, and at
+ * the end its quiz or error. */
+export const extractionQuery = (id: string) =>
+  queryOptions({
+    queryFn: () => api.get<Extraction>(`/extractions/${id}`),
+    queryKey: qk.extraction(id),
+  });
+
+const EXTRACTION_POLL_MS = 3000;
+
+/** Follows a run: the event stream says when it ends, and the count of
+ * questions read so far is only on the row, so it is read while running. */
+export const useExtraction = (id: string, options?: QueryUiOptions) =>
+  useQuery({
+    ...extractionQuery(id),
+    meta: queryMeta(options),
+    refetchInterval: (query) =>
+      query.state.data?.status === 'running' ? EXTRACTION_POLL_MS : false,
+  });
+
+/** Starts a run; refusals are shown beside the page picker's button. */
+export function useCreateExtraction(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (body: CreateExtractionReq) =>
+      api.post<Extraction>(`/workspaces/${wsId}/extractions`, body),
+    onSuccess: (run) => qc.setQueryData(qk.extraction(run.id), run),
+  });
+}
+
+/** Who hears a run end: the app's toast, set once at the start. */
+let extractionEndListener: ((run: Extraction) => void) | undefined;
+export function onExtractionEnd(listener: (run: Extraction) => void) {
+  extractionEndListener = listener;
+  return () => {
+    if (extractionEndListener === listener) extractionEndListener = undefined;
+  };
+}
 
 /** The empty viewer's quick-open grid: the workspace's four newest files and
  * materials with thumbnails and previews, for members and link readers alike. */

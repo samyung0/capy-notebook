@@ -661,25 +661,23 @@ function MaterialContentBody({
   );
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return (
-      <div className="h-full min-h-0 overflow-auto">
-        <TabContent fill>
-          <QuizEditor
-            action={<StudyButton kind="quiz" materialId={materialId} />}
-            copy={roomCopy}
-            key={materialId}
-            onPresenceChange={onPresenceChange}
-            onStatusChange={onEditorStatusChange}
-            quizId={materialId}
-            stored={storedQuestions(material.content)}
-            target={target}
-            title={material.title}
-          />
+      <QuizEditor
+        action={<StudyButton kind="quiz" materialId={materialId} />}
+        copy={roomCopy}
+        key={materialId}
+        onPresenceChange={onPresenceChange}
+        onStatusChange={onEditorStatusChange}
+        quizId={materialId}
+        sources={
           <SourcesLine
-            className={cn('mt-16 pb-4', overBar && 'pb-20')}
+            className={cn('pb-4', overBar && 'pb-20')}
             provenance={material.provenance}
           />
-        </TabContent>
-      </div>
+        }
+        stored={storedQuestions(material.content)}
+        target={target}
+        title={material.title}
+      />
     );
   }
   if (material.kind === 'flashcards') {

@@ -127,7 +127,10 @@ function gapsAnswer(part: QuestionPart): QuestionPart {
 }
 /** Open answers carry a marking scheme worth the part's marks; closed ones
  * drop it. Turned away from blanks, the text blocks holding them go. */
-function withAnswer(part: QuestionPart, answer: QuestionAnswer): QuestionPart {
+export function withAnswer(
+  part: QuestionPart,
+  answer: QuestionAnswer
+): QuestionPart {
   if (answer.type === 'gaps')
     return part.answer.type === 'gaps'
       ? { ...part, answer, itemAwards: undefined, markscheme: undefined }
@@ -270,7 +273,7 @@ function sectionBlocks(
       ] ?? [])
     : question.stem;
 }
-function changeBlocks(
+export function changeBlocks(
   question: Question,
   section: BlockSection,
   blocks: QuestionBlock[]

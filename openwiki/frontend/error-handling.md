@@ -84,6 +84,11 @@ inline, not as a toast, so the draft and its context stay on screen:
 - Such a mutation opts out of the global toast (`errorToast: false`), so the
   failure is reported once.
 
+Make a quiz follows the same rule on a page: a refused start shows in the page
+picker's `FormAlert`, selection kept. A run that fails shows the run's own error
+as a page `ErrorState` with Back to the pages; there is no automatic retry beyond
+the server's one. A file that couldn't be added or read says so on its dialog row.
+
 A file's trash confirmation (`TrashConfirmDialog` from `ContentActions`)
 follows the same rule: it stays open with a spinner while the delete runs
 and shows a refusal in its `FormAlert` (`trashErrorMessage`), such as an

@@ -1,4 +1,5 @@
 import { expect, type Locator, test } from '@playwright/test';
+import { openQuestionDialog } from '../helpers/quizEditor';
 import { m } from '../i18n';
 
 /** A part's answer row in the question: the answer key under the waves
@@ -12,10 +13,7 @@ test('undoing the add of a chart still open in its editor goes back to the quest
   page,
 }) => {
   await page.goto('/materials/qz_2');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
   await page
@@ -74,10 +72,7 @@ test('closing an open answer editor goes back to the question', async ({
   page,
 }) => {
   await page.goto('/materials/qz_2');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   const answer = partAnswers(dialog);
   await answer.dblclick();
@@ -97,10 +92,7 @@ test('a part’s marks step and type within 1 to the marks cap', async ({
   page,
 }) => {
   await page.goto('/materials/qz_2');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   await partAnswers(dialog).dblclick();
   const marks = dialog.getByRole('textbox', {
@@ -121,10 +113,7 @@ test('a multiple choice option is marked correct with its toggle', async ({
   page,
 }) => {
   await page.goto('/materials/qz_2');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   await partAnswers(dialog).dblclick();
   const first = dialog.getByRole('button', {
@@ -144,10 +133,7 @@ test('a table adds a column and removes a row from its own controls', async ({
   page,
 }) => {
   await page.goto('/materials/qz_2');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
   await page
@@ -173,10 +159,7 @@ test('adding a part shows it in the question instead of opening its answer', asy
   page,
 }) => {
   await page.goto('/materials/qz_2');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: m.question_ui_add_part() }).click();
   await page
@@ -190,10 +173,7 @@ test('a group adds a sub-part, ungroups and goes with its parts', async ({
   page,
 }) => {
   await page.goto('/materials/qz_2');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   const menuItem = (name: string) =>
     page.getByRole('button', { exact: true, name });

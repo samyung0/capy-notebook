@@ -2511,8 +2511,9 @@ for connection" (C9).
 
 A quiz, a set or a diagram opens like a note (Epo 2026-11-04): painted at once from
 its device copy or its read, as the editor lays it out and taking no input, its
-status the same spinner, until its room synced. A quiz is the question list its
-editor shows; the Edit and Remove rows join at the sync. A set is the editor's
+status the same spinner, until its room synced. A quiz is its questions in one
+column; at the sync the editor's page (the question list and the open question)
+replaces them, opening at a link's question. A set is the editor's
 turned tiles. A diagram is the split, source left and preview right, read-only.
 An item room has no saved-copy path: it stays read-only until it joined, and at
 its 30 s goes offline under its banner, still showing what it painted.
@@ -3671,10 +3672,12 @@ Esc. Undo spans both documents (`pairedUndo` in
 `src/features/collaboration/undo.ts`: the latest step of either, and steps of
 both made together, such as an answer type change, as one). Inputs stop at
 their caps (`maxLength`; a text editor takes back an edit past its cap). A
-quiz edits on its material page (`QuizEditor` in the center pane's Edit) with
+quiz edits on its material page (`QuizEditor`, for whoever may edit) with
 no Save or Reset: the cloud status follows the title in the header, Undo and
-Redo sit beside the View switch, renaming goes through the item's Rename,
-Edit (ghost-hover) and Remove (danger-light) sit on a row under each question
+Redo sit there with Study, renaming goes through the item's Rename, the page
+holds the question list and the open question (see
+[question-bank.md](../question-bank.md#editing-and-assets)), a note's embed has
+Edit (ghost-hover) and Remove (danger-light) on a row under each question
 at the right, and an
 incomplete question shows a line under it saying what it lacks
 (`incomplete.ts`); empty text blocks, a blank short-answer unit and blank

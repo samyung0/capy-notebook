@@ -26,6 +26,15 @@ describe('parseWorkspaceOpenSearch', () => {
     }
   );
 
+  it("keeps Make a quiz's page picker and run, with what was chosen", () => {
+    expect(
+      parseWorkspaceOpenSearch({ answers: 'f_2', make: 'pages', paper: 'f_1' })
+    ).toEqual({ answers: 'f_2', make: 'pages', paper: 'f_1' });
+    expect(
+      parseWorkspaceOpenSearch({ make: 'run', paper: 'f_1', run: 'ex_1' })
+    ).toEqual({ make: 'run', paper: 'f_1', run: 'ex_1' });
+  });
+
   it('keeps the question or card a review summary opens', () => {
     const search = parseWorkspaceOpenSearch({ item: 'q4', material: 'qz_1' });
     expect(search).toEqual({ item: 'q4', material: 'qz_1' });

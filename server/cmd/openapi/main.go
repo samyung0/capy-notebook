@@ -150,6 +150,8 @@ func renderTypeScriptLimits() []byte {
 	fmt.Fprintf(&out, "export const COMMENT_CHARACTER_LIMIT = %d;\n", fieldlimits.Comment)
 	fmt.Fprintf(&out, "export const FILE_NAME_CHARACTER_LIMIT = %d;\n", fieldlimits.FileName)
 	fmt.Fprintf(&out, "export const VOICE_INPUT_MAX_SECONDS = %d;\n", fieldlimits.VoiceInputSeconds)
+	fmt.Fprintf(&out, "export const EXTRACTION_PAGES_MAX = %d;\n", fieldlimits.ExtractionPages)
+	fmt.Fprintf(&out, "export const EXTRACTION_FILES_MAX = %d;\n", fieldlimits.ExtractionFiles)
 	fmt.Fprintf(&out, "export const IMAGE_MAX_SIDE = %d;\n", imagecheck.MaxSide)
 	fmt.Fprintf(&out, "export const SOURCE_IMAGE_MAX_PIXELS = %d;\n", imagecheck.SourceMaxPixels)
 	return out.Bytes()

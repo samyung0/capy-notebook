@@ -39,6 +39,7 @@ vi.mock('@/api/hooks', () => ({
 const render = (canEdit = true) =>
   renderToStaticMarkup(
     <WorkspaceDashboard
+      onMakeQuiz={() => undefined}
       onUpload={() => undefined}
       workspace={{
         capabilities: { canEdit } as never,

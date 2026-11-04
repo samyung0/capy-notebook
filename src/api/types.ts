@@ -623,6 +623,11 @@ import type {
    source material. The backend resolves topic ids to their member files (for
    retrieval) and to names (for display + the LLM scope hint). Empty scope means
    the whole workspace. */
+export type {
+  CreateExtractionReq,
+  Extraction,
+  ExtractionReport,
+} from './gen/model';
 export type GenerateKind = Exclude<MaterialKind, 'note'>;
 
 /** A quiz written from sources (Make my own practice). */

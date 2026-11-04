@@ -34,12 +34,12 @@ const copies = (page: Page, id: string) =>
 
 const status = (page: Page) => page.getByTestId('editor-save-state');
 
-test('a quiz paints without its Edit rows until its rooms sync, then keeps its copies', async ({
+test('a quiz paints its questions until its rooms sync, then shows its page and keeps its copies', async ({
   page,
 }) => {
   test.setTimeout(90_000);
   await page.goto(open(QUIZ));
-  await expect(page.locator('[data-question-edit]').first()).toBeVisible({
+  await expect(page.locator('[data-question-row]').first()).toBeVisible({
     timeout: 30_000,
   });
   await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
@@ -48,13 +48,13 @@ test('a quiz paints without its Edit rows until its rooms sync, then keeps its c
   await expect(page.locator('[data-question-id]').first()).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.locator('[data-question-edit]')).toHaveCount(0);
+  await expect(page.locator('[data-question-row]')).toHaveCount(0);
   await expect(status(page)).toHaveAttribute('data-save-state', 'opening');
   await expect
     .poll(() => copies(page, QUIZ))
     .toEqual(['content', 'keys', 'read']);
   await holdTokens(page, null);
-  await expect(page.locator('[data-question-edit]').first()).toBeVisible({
+  await expect(page.locator('[data-question-row]').first()).toBeVisible({
     timeout: 30_000,
   });
   await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
@@ -65,11 +65,11 @@ test('someone gone from editing to viewing loses the answer keys copy', async ({
 }) => {
   test.setTimeout(90_000);
   await page.goto(open(QUIZ));
-  await expect(page.locator('[data-question-edit]').first()).toBeVisible({
+  await expect(page.locator('[data-question-row]').first()).toBeVisible({
     timeout: 30_000,
   });
   await page.reload();
-  await expect(page.locator('[data-question-edit]').first()).toBeVisible({
+  await expect(page.locator('[data-question-row]').first()).toBeVisible({
     timeout: 30_000,
   });
   await expect.poll(() => copies(page, QUIZ)).toContain('keys');
@@ -93,7 +93,7 @@ test('someone gone from editing to viewing loses the answer keys copy', async ({
   await expect(page.locator('[data-question-id]').first()).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.locator('[data-question-edit]')).toHaveCount(0);
+  await expect(page.locator('[data-question-row]')).toHaveCount(0);
   await expect.poll(() => copies(page, QUIZ)).not.toContain('keys');
 });
 

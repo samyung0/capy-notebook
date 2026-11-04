@@ -4,22 +4,25 @@ import { openEditorNote } from './helpers';
 
 /* Links into an item work in the one mode an editor has (Epo 2026-11-04). */
 
-test('a link to a question scrolls to it in the quiz editor', async ({
+test('a link to a question opens it in the quiz editor, its row in view', async ({
   page,
 }) => {
   await page.setViewportSize({ height: 500, width: 1000 });
   await page.goto('/workspaces/ws_bio?material=qz_1');
-  await expect(page.locator('[data-question-edit]').first()).toBeVisible({
-    timeout: 30_000,
-  });
-  const rows = page.locator('[data-question-id]');
-  const last = await rows.last().getAttribute('data-question-id');
+  const rows = page.locator('[data-question-row]');
+  await expect(rows.first()).toBeVisible({ timeout: 30_000 });
+  const number = await rows.count();
+  const last = await rows.last().getAttribute('data-question-row');
   await expect(rows.last()).not.toBeInViewport();
   await page.goto(`/workspaces/ws_bio?material=qz_1&item=${last}`);
-  await expect(page.locator('[data-question-edit]').first()).toBeAttached({
+  const row = page.locator(`[data-question-row="${last}"]`);
+  await expect(row).toHaveAttribute('aria-current', 'true', {
     timeout: 30_000,
   });
-  await expect(page.locator(`[data-question-id="${last}"]`)).toBeInViewport();
+  await expect(row).toBeInViewport();
+  await expect(
+    page.getByRole('region', { name: m.quiz_editor_question({ number }) })
+  ).toBeVisible();
 });
 
 test("a note's embed answers in Preview from its menu, and edits again", async ({

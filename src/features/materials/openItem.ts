@@ -56,6 +56,14 @@ export type WorkspaceOpenSearch = {
   reviewMode?: ReviewMode;
   /** Practice's result of a finished topic session. */
   review?: string;
+  /** Make a quiz's pages while nothing is open: the page picker, or a run. */
+  make?: 'pages' | 'run';
+  /** The question paper's files and the mark scheme or answer files, comma
+   * separated, kept so a reload or Back returns to the same choice. */
+  paper?: string;
+  answers?: string;
+  /** The run its page follows. */
+  run?: string;
   /** Workspace settings open at this tab, over whatever the page shows. */
   settings?: SettingsView;
   /** What its search holds. */
@@ -120,9 +128,13 @@ export function parseWorkspaceOpenSearch(
   // Invalid values are cleared explicitly: the router keeps raw keys the
   // parser leaves out.
   return {
+    answers: undefined,
     group: undefined,
+    make: undefined,
+    paper: undefined,
     review: undefined,
     reviewMode: undefined,
+    run: undefined,
     study: undefined,
     topicId: undefined,
     ...parseOpenPage(search),
@@ -160,7 +172,19 @@ function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
     };
   }
   if (search.study === 'summary') return { study: 'summary' };
-  return search.study === 'practice' ? parsePractice(search) : {};
+  if (search.study === 'practice') return parsePractice(search);
+  return parseMakeQuiz(search);
+}
+
+/** Make a quiz's page: pages need their paper, a run its id. */
+function parseMakeQuiz(search: Record<string, unknown>): WorkspaceOpenSearch {
+  const paper = text(search.paper);
+  const answers = text(search.answers);
+  const run = text(search.run);
+  if (search.make === 'pages' && paper)
+    return { answers, make: 'pages', paper };
+  if (search.make === 'run' && run) return { answers, make: 'run', paper, run };
+  return {};
 }
 
 const text = (value: unknown) =>

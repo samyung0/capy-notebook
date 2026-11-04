@@ -61,6 +61,7 @@ import {
   registerTourPanels,
   type TourPanels,
 } from '@/features/guide/tourStore';
+import type { MakeQuizChoice } from '@/features/makeQuiz/MakeQuizDialog';
 import { CenterContent } from '@/features/materials/CenterContent';
 import type { OneColumnChrome } from '@/features/materials/CenterContentHeader';
 import {
@@ -115,6 +116,25 @@ const SummaryPage = lazy(() =>
     default: mod.SummaryPage,
   }))
 );
+const MakeQuizDialog = lazy(() =>
+  import('@/features/makeQuiz/MakeQuizDialog').then((mod) => ({
+    default: mod.MakeQuizDialog,
+  }))
+);
+const PagePicker = lazy(() =>
+  import('@/features/makeQuiz/PagePicker').then((mod) => ({
+    default: mod.PagePicker,
+  }))
+);
+const ExtractionProgress = lazy(() =>
+  import('@/features/makeQuiz/ExtractionProgress').then((mod) => ({
+    default: mod.ExtractionProgress,
+  }))
+);
+/** A search value's ids: the paper's or the answer files'. */
+const splitIds = (ids: string | undefined) =>
+  ids ? ids.split(',').filter(Boolean) : [];
+
 const PracticePage = lazy(() =>
   import('@/features/study/practice/PracticePage').then((mod) => ({
     default: mod.PracticePage,
@@ -331,6 +351,10 @@ function WorkspaceOpen() {
   const oneColumnLayout = !lg;
   const searchedOpenItem = openItemFromSearch(search);
   const studyPage = !searchedOpenItem && !!search.study;
+  // Make a quiz's pages (X1 and the run) keep the rail and take the panel's
+  // place (Epo 2026-11-02).
+  const makePage =
+    !readOnly && !searchedOpenItem && !search.study && !!search.make;
   // Agent shows its chat rather than the history (Epo 2026-11-04, option A). A
   // chat on screen comes back after a reload or a closed tab, with the thread
   // the chat panel keeps.
@@ -338,14 +362,14 @@ function WorkspaceOpen() {
     readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean)
   );
   // The rail's section: that chat, a Study page in the URL shows Study, an open
-  // item Files, else the Dashboard (no panel). Pressing the shown section again
-  // closes or reopens its panel.
+  // item or a Make a quiz page Files, else the Dashboard (no panel). Pressing the
+  // shown section again closes or reopens its panel.
   const [section, setSection] = useState<WorkspaceSection>(() =>
     chatShown
       ? 'agent'
       : studyPage
         ? 'study'
-        : searchedOpenItem
+        : searchedOpenItem || makePage
           ? 'files'
           : 'dashboard'
   );
@@ -359,7 +383,8 @@ function WorkspaceOpen() {
   // the landing (Back) shows the Dashboard.
   useEffect(() => {
     if (studyPage) setSection((was) => (was === 'agent' ? was : 'study'));
-  }, [studyPage]);
+    else if (makePage) setSection((was) => (was === 'agent' ? was : 'files'));
+  }, [makePage, studyPage]);
   useEffect(() => {
     if (openKey)
       setSection((was) =>
@@ -368,7 +393,7 @@ function WorkspaceOpen() {
     else if (!studyPage)
       setSection((was) => (was === 'study' ? 'dashboard' : was));
   }, [openKey, studyPage]);
-  const leftOpen = section !== 'dashboard' && panelOpen;
+  const leftOpen = section !== 'dashboard' && panelOpen && !makePage;
   const leftShown = lg && leftOpen;
   const chatOnScreen = leftShown && section === 'agent' && chatShown;
   useEffect(() => {
@@ -486,6 +511,7 @@ function WorkspaceOpen() {
   function openDashboard() {
     setCitationTarget(null);
     setFilesOpen(false);
+    setSection((was) => (was === 'agent' ? was : 'dashboard'));
     navigate({ search: {}, to: '.' });
   }
 
@@ -495,7 +521,16 @@ function WorkspaceOpen() {
   function selectSection(next: WorkspaceSection) {
     if (next === 'dashboard') {
       setSection('dashboard');
-      if (searchedOpenItem || search.study) openDashboard();
+      if (searchedOpenItem || search.study || search.make) openDashboard();
+      return;
+    }
+    // A Make a quiz page has no panel: picking a section leaves it for that
+    // section's panel.
+    if (makePage) {
+      if (next === 'study') openPractice();
+      else openDashboard();
+      setSection(next);
+      setPanelOpen(true);
       return;
     }
     if (next === section) {
@@ -563,6 +598,7 @@ function WorkspaceOpen() {
     { mode: 'add' } | { mode: 'rename'; id: string; name: string } | null
   >(null);
   const [resumeProvider] = useState(() => resumedConnect(workspaceId));
+  const [makeQuiz, setMakeQuiz] = useState<MakeQuizChoice | null>(null);
   const [addSource, setAddSource] = useState<AddSourceMode | null>(
     resumeProvider ? 'import' : null
   );
@@ -843,11 +879,69 @@ function WorkspaceOpen() {
         />
       </Suspense>
     ));
+  const makeSearch = {
+    answers: search.answers,
+    paper: search.paper,
+  };
+  const makeQuizContent =
+    makePage &&
+    (search.make === 'pages' ? (
+      <Suspense fallback={null}>
+        <PagePicker
+          answers={splitIds(search.answers)}
+          onBack={() => {
+            setMakeQuiz({
+              answers: splitIds(search.answers),
+              paper: splitIds(search.paper),
+            });
+            openDashboard();
+          }}
+          onCancel={openDashboard}
+          onStarted={(run) =>
+            void navigate({
+              replace: true,
+              search: { ...makeSearch, make: 'run', run },
+              to: '.',
+            })
+          }
+          paper={splitIds(search.paper)}
+          workspaceId={workspaceId}
+        />
+      </Suspense>
+    ) : (
+      search.run && (
+        <Suspense fallback={null}>
+          <ExtractionProgress
+            onBackToPages={
+              search.paper
+                ? () =>
+                    void navigate({
+                      replace: true,
+                      search: { ...makeSearch, make: 'pages' },
+                      to: '.',
+                    })
+                : undefined
+            }
+            onDone={(quizId) => {
+              void navigate({
+                replace: true,
+                search: { material: quizId },
+                to: '.',
+              });
+            }}
+            onLeave={openDashboard}
+            runId={search.run}
+          />
+        </Suspense>
+      )
+    ));
   // The landing is the workspace's Dashboard (boards H1, H2).
   const pageContent =
     studyContent ||
+    makeQuizContent ||
     (!openItem && (
       <WorkspaceDashboard
+        onMakeQuiz={() => setMakeQuiz({ answers: [], paper: [] })}
         onUpload={() => setAddSource('upload')}
         workspace={ws}
       />
@@ -1087,7 +1181,8 @@ function WorkspaceOpen() {
                   {viewer}
                 </OfficeInsetContext.Provider>
               </FloatingBarContext.Provider>
-              {oneColumnLayout && (
+              {/* The page picker's footer takes the dock's corner on phones. */}
+              {oneColumnLayout && !makePage && (
                 <AppErrorBoundary resetKeys={[workspaceId]}>
                   <ChatPanel
                     canReprocess={ws.isOwner}
@@ -1175,6 +1270,27 @@ function WorkspaceOpen() {
           }
           title={topicForm.mode === 'add' ? m.topic_new() : m.topic_rename()}
         />
+      )}
+      {makeQuiz && (
+        <Suspense fallback={null}>
+          <MakeQuizDialog
+            initial={makeQuiz}
+            onClose={() => setMakeQuiz(null)}
+            onContinue={(choice) => {
+              setMakeQuiz(null);
+              void navigate({
+                search: {
+                  answers: choice.answers.join(',') || undefined,
+                  make: 'pages',
+                  paper: choice.paper.join(','),
+                },
+                to: '.',
+              });
+            }}
+            workspaceId={workspaceId}
+            workspaceName={ws.name}
+          />
+        </Suspense>
       )}
       {addSource && (
         <AddSourceDialog

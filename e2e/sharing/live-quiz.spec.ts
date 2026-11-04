@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '../fixtures/actors';
+import { openQuestionDialog } from '../helpers/quizEditor';
 import { m } from '../i18n';
 
 const question = (id: string, text: string, answer: object) => ({
@@ -55,13 +56,16 @@ test('editors edit a quiz together and a learner follows it live', async ({
     editorPage.goto(`/materials/${quizId}`),
     viewerPage.goto(`/quizzes/${quizId}/attempt`),
   ]);
-  for (const page of [ownerPage, editorPage, viewerPage])
-    await expect(page.getByText('Mitochondria', { exact: true })).toBeVisible();
+  // An editor's page holds the option in its field (board X2).
+  const editorOption = editorPage.getByRole('textbox', {
+    name: m.question_ui_option_number({ number: 2 }),
+  });
+  await expect(editorOption).toHaveValue('Mitochondria');
+  await expect(
+    viewerPage.getByText('Mitochondria', { exact: true })
+  ).toBeVisible();
 
-  await ownerPage
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click();
+  await openQuestionDialog(ownerPage);
   const dialog = ownerPage.getByRole('dialog');
   // The outline row focuses its section; Enter edits it (main's dialog).
   await dialog
@@ -75,9 +79,7 @@ test('editors edit a quiz together and a learner follows it live', async ({
     .fill('Mitochondrion');
 
   // The other editor and the learner see the option change as it is made.
-  await expect(
-    editorPage.getByText('Mitochondrion', { exact: true })
-  ).toBeVisible();
+  await expect(editorOption).toHaveValue('Mitochondrion');
   await expect(
     viewerPage.getByText('Mitochondrion', { exact: true })
   ).toBeVisible();

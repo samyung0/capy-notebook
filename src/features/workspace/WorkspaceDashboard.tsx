@@ -29,9 +29,11 @@ const RECENT = 4;
  * wait for their pages: with nothing in it, a section is not shown (Epo
  * 2026-11-02). */
 export function WorkspaceDashboard({
+  onMakeQuiz,
   onUpload,
   workspace,
 }: {
+  onMakeQuiz: () => void;
   onUpload: () => void;
   workspace: Pick<Workspace, 'capabilities' | 'id' | 'kind' | 'name' | 'role'>;
 }) {
@@ -77,10 +79,7 @@ export function WorkspaceDashboard({
             <Button iconLeft="upload" onClick={onUpload} variant="outline">
               {m.action_upload()}
             </Button>
-            {/* Not on this branch yet: the Make a quiz dialog (X0a, X0b). */}
-            <span title={m.study_panel_soon()}>
-              <Button disabled>{m.dashboard_make_quiz()}</Button>
-            </span>
+            <Button onClick={onMakeQuiz}>{m.dashboard_make_quiz()}</Button>
           </div>
         )}
       </header>

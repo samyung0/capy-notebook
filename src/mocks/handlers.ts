@@ -82,6 +82,7 @@ import {
 import * as db from './db';
 import { uid } from './db';
 import { editorAssetHandlers } from './editorAssets';
+import { extractionHandlers, seedExtractionFiles } from './extraction';
 import { questionBankHandlers } from './questionBank';
 import {
   blankOffice,
@@ -714,7 +715,35 @@ function gradeOne(
   });
 }
 
+seedExtractionFiles();
+
 export const handlers = [
+  ...extractionHandlers(
+    (workspaceId, title, questions) => {
+      const quiz = db.makeMaterial({
+        ...ownerMaterialAccess,
+        content: quizDocument(questions),
+        createdAt: new Date().toISOString(),
+        hidden: true,
+        id: uid('qz'),
+        kind: 'quiz',
+        privacy: 'private',
+        scopeFileNames: [],
+        scopeTopics: [],
+        title,
+        topicId: null,
+        workspaceId,
+        workspaceName:
+          db.workspaces.find((row) => row.id === workspaceId)?.name ?? '',
+      });
+      db.materials.unshift(quiz);
+      return quiz.id;
+    },
+    (workspaceId, title) =>
+      db.materials.some(
+        (row) => row.workspaceId === workspaceId && row.title === title
+      )
+  ),
   ...questionBankHandlers,
   ...editorAssetHandlers,
   ...voiceInputHandlers,

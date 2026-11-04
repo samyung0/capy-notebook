@@ -49,6 +49,7 @@ import {
 } from '@/features/quizzes/liveQuiz';
 import { bytesToBase64 } from '@/lib/base64';
 import * as db from './db';
+import { draftQuizQuestions } from './extraction';
 
 /** In-page stand-in for the collaboration sidecar. A room is one Y.Doc that
  * every participant (the app's editor, the source editor, chaos peers) merges
@@ -1485,7 +1486,12 @@ function itemRoom(name: string): Room {
   if (!checkpoints.has(name) && material?.kind === 'quiz') {
     const content = new Y.Doc();
     const keys = new Y.Doc();
-    seedQuiz(content, keys, db.quizFromMaterial(material).questions);
+    seedQuiz(
+      content,
+      keys,
+      draftQuizQuestions.get(material.id) ??
+        db.quizFromMaterial(material).questions
+    );
     const own = name.startsWith('keys:') ? keys : content;
     Y.applyUpdate(room.document, Y.encodeStateAsUpdate(own));
     const other = name.startsWith('keys:') ? content : keys;
