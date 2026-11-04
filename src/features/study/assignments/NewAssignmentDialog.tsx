@@ -58,6 +58,7 @@ import {
   localInputValue,
   minutesText,
 } from './assignmentText';
+import { NoAnswersWarning } from './NoAnswersWarning';
 
 const TIME_LIMITS = [15, 30, 45, 60, 90, 120, 180];
 const ATTEMPTS = [1, 2, 3, 5];
@@ -270,6 +271,7 @@ export function NewAssignmentDialog({
                   quizzes={quizzes}
                   value={quizId}
                 />
+                {quizId && <NoAnswersWarning quizId={quizId} />}
               </Field>
             ))}
           <Field

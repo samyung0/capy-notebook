@@ -2769,6 +2769,8 @@
   "assignment_delete_confirm": "Delete with its results?",
   "assignment_more": "More",
   "assignment_draft_note": "Members can't see this yet. Publishing freezes the quiz as it is then.",
+  "assignment_quiz_no_answers_one": "1 question has no answers configured and won't be in this assignment.",
+  "assignment_quiz_no_answers": "{count} questions have no answers configured and won't be in this assignment.",
   "assignment_publish": "Publish",
   "assignment_done_on": "Done {date}",
   "assignment_not_done": "Not done",

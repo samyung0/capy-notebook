@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest';
 import type { AssignmentGradedQuestion } from '@/api/types';
+import { materialCanClone } from '@/features/files/fileUtils';
 import { parseWorkspaceOpenSearch } from '@/features/materials/openItem';
 import { m } from '@/i18n';
-import { materialCanClone } from '@/features/files/fileUtils';
 import {
   advancedStartsOpen,
   closedItself,
@@ -16,6 +16,7 @@ import {
   questionOutcome,
   takesLateWork,
 } from './assignmentText';
+import { questionsWithNoAnswers } from './NoAnswersWarning';
 import { paperMeta } from './useAssignmentStart';
 
 const graded = (
@@ -141,4 +142,9 @@ it('opens Advanced only for what a saved assignment holds there', () => {
   expect(advancedStartsOpen({ ...plain, draft: true })).toBe(true);
   expect(advancedStartsOpen({ ...plain, noLate: true })).toBe(true);
   expect(advancedStartsOpen({ ...plain, latePenaltyPct: 20 })).toBe(true);
+});
+
+it('counts the questions a room holds that the quiz does not project', () => {
+  const q = (id: string) => ({ id });
+  expect(questionsWithNoAnswers([q('a'), q('b'), q('c')], [q('b')])).toBe(2);
 });

@@ -25,8 +25,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { answerLabels } from '@/features/questions/editorFields';
-import { TextView } from '@/features/questions/QuestionView';
-import { optionLetter } from '@/features/questions/QuestionView';
+import { optionLetter, TextView } from '@/features/questions/QuestionView';
 import { type Question, questionMarks } from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
@@ -47,6 +46,7 @@ import {
   takesLateWork,
 } from './assignmentText';
 import { NewAssignmentDialog } from './NewAssignmentDialog';
+import { NoAnswersWarning } from './NoAnswersWarning';
 
 /** Questions the report opens with, as the board draws them. */
 const OPEN_FIRST = 3;
@@ -263,6 +263,9 @@ function DraftBody({ assignment }: { assignment: Assignment }) {
   return (
     <div className="mt-6 flex flex-col items-start gap-3">
       <p className="text-fg-secondary">{m.assignment_draft_note()}</p>
+      {assignment.manage?.quizId && (
+        <NoAnswersWarning quizId={assignment.manage.quizId} />
+      )}
       <Button
         disabled={isPending}
         onClick={() =>

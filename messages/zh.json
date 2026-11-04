@@ -2769,6 +2769,8 @@
   "assignment_delete_confirm": "连同结果一起删除？",
   "assignment_more": "更多",
   "assignment_draft_note": "成员还看不到它。发布时会固定当时的测验内容。",
+  "assignment_quiz_no_answers_one": "1 道题没有设置答案，不会包含在这份作业中。",
+  "assignment_quiz_no_answers": "{count} 道题没有设置答案，不会包含在这份作业中。",
   "assignment_publish": "发布",
   "assignment_done_on": "{date} 完成",
   "assignment_not_done": "未完成",
