@@ -90,7 +90,7 @@ network and no pin.
 | --- | --- | --- |
 | `chat.py` | `chat` | Agent system prompt (one prompt for every turn and both modes of the Workspace only switch) and full message list, a message led by a mode note where the switch is first known or changes; the Q221 send-back texts; the checkpoint compaction prompt |
 | `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
-| `extraction.py` | `chat` (default pin) | Make a quiz: the outline, the page-window system prompt with `record_question` / `continue_question`, and the mark scheme parse |
+| `extraction.py` | `extraction` (default pin) | Make a quiz: the system prompt the map, copy and solve calls share, with `record_question` and `record_answers`, the mark scheme parse and the box call |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
 | `ingest.py` | `ingest` | File descriptor |
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
@@ -5677,8 +5677,9 @@ later).
   paper file a PDF or an image (Office files later). The gateway checks those,
   that the title is free, the account can edit and has storage, then opens a
   provider session on surface `generate` (the starter pays, Epo 2026-11-03;
-  its calls' purposes are `extraction_outline`, `extraction_window` and
-  `extraction_scheme`, so the Usage tab counts it under Generate),
+  its calls' purposes are `extraction_map`, `extraction_copy`,
+  `extraction_solve`, `extraction_scheme` and `extraction_figures`, so the Usage
+  tab counts it under Generate),
   posts `/extract` to the retrieval service and answers 202 with the run
   (`store.Extraction`) once the service has accepted it. The service refuses
   before streaming, as a 400 with its code, a page past its file's end
@@ -5687,109 +5688,115 @@ later).
   past its turn slots it answers provider_busy (503) at once, as for
   `/generate`.
 - **The run** (`pipeline/retrieval/extraction.py`, prompts in
-  `prompts/extraction.py`; one prompt reads questions and keys, Epo
-  2026-11-03, `todo-study-tracking/R6-extraction-prompt.md`, generated from the
-  code by `bench/extraction/scripts/prompt_doc.py`):
+  `prompts/extraction.py`; map, copy, solve, Epo 2026-11-05,
+  `todo-study-tracking/R6-extraction-prompt.md`, generated from the code by
+  `bench/extraction/scripts/prompt_doc.py`; findings in
+  [`2026-11-04-copy-first.md`](../bench/extraction/reports/2026-11-04-copy-first.md)
+  and [`2026-11-05-copy-first-structured.md`](../bench/extraction/reports/2026-11-05-copy-first-structured.md)):
   0. Layout, before anything else (`retrieval/layout.py`, Epo 2026-11-04): one
      request a page to the layout service (`CAPY_LAYOUT_URL`, one pool on the
-     ingest host, runbook §7.6), at most 3 in flight a run, with the windows' page
-     image (long side 1,568 px). The answer is every region PP-DocLayout_plus-L
+     ingest host, runbook §7.6), at most 3 in flight a run, with the page image
+     (long side 1,568 px). The answer is every region PP-DocLayout_plus-L
      finds. A 429 waits about 2 s and tries again, 4 tries in all; a request has
      30 s and all the run's pages 90 s. A page whose request fails, stays busy or
      runs out of time has no regions, and the run goes on. With no
      `CAPY_LAYOUT_URL` no page has regions, so every figure takes the box call.
      The layout service bills nothing. `layout.figure_boxes` turns regions into
-     the boxes a window sees: `image` and `chart` at 0.5 or more, one of any pair
-     with an IoU of 0.8 or more, and a box dropped when it holds a smaller box
-     (at least 90% inside) plus `text` regions of its own outside it.
-  1. The outline: one call, reasoning off, lists the question labels the
-     selected pages' indexed text holds (`store.file_passages`).
-  2. Page windows of up to two pages in selected order. Each call gets the two
-     page images (`capture.render_file` at `CAPY_CAPTURE_MAX_EDGE`, rendered when
-     the window runs; a page is rendered a second time for its layout request),
-     each page's indexed text followed by its boxes as JSON (number, page,
-     coordinates on the 0-1000 grid, label, score; numbers run across the window,
-     and nothing is drawn on the images), the expected labels, the
-     labels recorded so far and the open question (the last one recorded,
-     which may run onto the next page), with the tools `record_question` (one
-     question a call, several calls a reply: label, stem, parts with printed
-     labels, blocks, answer, marks, `key_source` and a short worked solution,
-     a printed total and figures) and `continue_question` (the open
-     question's next parts or more of its last part). Every part carries its
-     key: mcq `correct`, short `accepted`, open marking `points` with marks
-     and a short model answer. The model copies a key the page prints
-     (`key_source: printed`) and otherwise works it out (`worked_out`),
-     never changing the printed question; no question is left out for lack
-     of a key. Each recorded question is converted to the shared format in
-     paper layout and goes through Go's quiz validator at once
-     (`POST /api/internal/questions/check`, `materialdoc.QuizDocument`, the
-     check a quiz's creation makes); a refusal, a part without `key_source`
-     or arguments that are not JSON (the tool result names the parse error)
-     go back to the model, which sends that call again, up to six calls a
-     window. `continue_question` also accepts the last question recorded in
-     its own window, so a question continued there keeps its parts instead of
-     being recorded again over them. A reply cut off at the 24,000-token output
-     cap is asked again for fewer questions a reply. Printed option order is
-     kept, and option lines the model also copied into a part's text are taken
-     out in code when they match the options in order, lettered or plain, in or
-     out of the math, in one block or one a block (a one-part question whose part
-     held only them takes its stem as its text); a one-part question whose stem
-     repeats its part's text, or whose part repeats the stem's last sentence,
-     keeps it once. Sub-parts
-     flatten: (b)(i) and (b)(ii) are two parts, the (b) lead-in text (the first
-     sub-part's `lead_in` field, which code puts first in its blocks)
-     starting the first. Text printed at the very end of the last page shown, for
-     parts on the next page, goes in the call's `trailing_text` (Epo 2026-11-04):
-     code holds it, the next window sees it in the open question, and it goes in
-     front of what that window continues the question with. A window never sees
-     the previous page, so without this that text has nowhere to go. Recorded
-     questions leave the conversation: the next window carries labels and the open
-     question only.
-  3. After the windows, the answer files are parsed as text, in pieces of
-     12,000 characters, reasoning off, into entries
-     `{question, part, answer, points, solution}`; they never share a request
-     with the pages. The parse is given the recorded questions with their part
-     labels and names entries with them (2024 Q3(b) had been read as b(ii)).
-     Code pairs entries with parts by normalised label (`label_key`: "Q3." is
-     "3", "(b)(ii)" is "b ii"). A scheme key replaces a worked-out one: an
-     option letter becomes the printed option's index, a short answer its
-     value (a printed unit stripped), an open part's marking points its
-     marking items (joined down to `QUIZ_MARKSCHEME_MAX`, their total
-     replacing the part's marks) with the final answer as its model answer,
-     and the scheme's worked solution the AI one. A printed key stays. A key
-     that differs from the scheme's is named in `keyDisagreements` either way.
-  4. Each paired question goes through the validator again; one it refuses
-     keeps the page's keys (`schemeRefused`). A worked-out key no scheme
-     replaced keeps its solution marked AI-written (the solution block's
-     `label`, "AI-written" or "AI 撰写" by the starter's locale) and its
-     question is named in `keysWorkedOut`. A saved question whose part marks
-     do not add up to the total printed on the page is named in `marksDiffer`.
-  5. Figures (Epo 2026-11-04). Each figure a call names gives the numbers of
-     the boxes that hold it, several for a split figure, the part whose text it
-     follows ("" for the stem) and a few words on what it shows; a number that is
-     no box, boxes on two pages, or a part the question lacks go back to the
-     model. Code crops the chosen boxes together, adds an adjacent caption (a
-     `figure_title` region at 0.5 or more within 2.5% of the page above or below,
-     with its middle over them) and pads 1% of the page all round
-     (`layout.crop_box`). A figure no box holds gives `boxes: []` and its page
-     image in the window. After pairing, those figures alone take the box call:
-     one call a page, reasoning off, sees that page alone with its figures listed
-     (question label and description) and answers a box on a 0-1000 grid for each
-     (`locate_figures`, purpose `extraction_figures`; a reply that is not one
-     box a figure is a failed attempt; a page whose call fails twice keeps
-     its questions without those figures, named in `figuresLeftOut`). Coordinates
-     asked of the window itself were too far off to crop from (2022 Paper 2: 3 of
-     10 whole, 3 missing the figure; bench report 2026-11-04). The box call's box is
-     grown to the ink around it on the page image the call saw
-     (`layout.grown_to_ink`, Epo 2026-11-04): each edge moves out while the strip
-     just outside holds ink, up to 6 blank grid units and 80 units from where it
-     started, and 0.5% of the page goes on at the end. That took the box call from
-     63 whole, 40 tight and 36 both of 80 with a fixed pad to 68, 64 and 56
-     ([report](../bench/extraction/reports/2026-11-04-hosted-figure-boxes.md)). Each figure is then cropped from its page (`capture.render_file` with `page_edge`
-     `FIGURE_PAGE_EDGE`: the page's long side at 2,200 px, so labels read and
-     a small figure stays small) and placed after that part's text as an
-     image block whose asset is `figure:<id>` and whose description is the
-     model's words; the `done` event carries the JPEGs (`figures`).
+     the boxes the calls see, numbered once across the selection: `image` and
+     `chart` at 0.5 or more, one of any pair with an IoU of 0.8 or more, and a box
+     dropped when it holds a smaller box (at least 90% inside) plus `text` regions
+     of its own outside it.
+  1. The map: one call, reasoning `mid`, sees each selected page's indexed text
+     (`store.file_passages`) and image (`capture.render_file` at
+     `CAPY_CAPTURE_MAX_EDGE`), then every box as JSON (number, page, coordinates
+     on the 0-1000 grid, label, score; nothing is drawn on the images), and
+     answers one plain line a question: label, first and last page, part labels,
+     box numbers (`parse_map`). A reply that calls a tool, is cut off or holds no
+     line is a failed attempt; with no line twice the run has no questions.
+  2. Copy batches of `COPY_BATCH` (16) of the map's questions, in parallel,
+     reasoning `low`, each continuing the map's messages and reply with
+     "Copy questions 1 to 16 now." `record_question` (one question a call, several
+     calls a reply) gives its label, stem, parts with printed labels, blocks, answer
+     type and mcq options, marks, a printed total, `pages` and `figures`, and no
+     answers. Reasoning off would copy with less, but makes every solve call miss the
+     cache (Epo 2026-11-05). The copy goes through Go's quiz validator at once
+     (`POST /api/internal/questions/check`, `materialdoc.QuizDocument`) with
+     placeholder keys, which are never saved, so only what was copied can be refused;
+     a refusal, or arguments that are not JSON (the tool result names the parse
+     error), go back to the model. Sub-parts flatten: (b)(i) and (b)(ii) are two parts,
+     the (b) lead-in text (the first sub-part's `lead_in`) starting the first. Printed
+     option order is kept, and option lines the model also copied into a part's text
+     are taken out in code when they match the options in order, lettered or plain, in
+     or out of the math, in one block or one a block (a one-part question whose part
+     held only them takes its stem as its text); a one-part question whose stem repeats
+     its part's text, or whose part repeats the stem's last sentence, keeps it once. A
+     thread has `THREAD_ROUNDS` (12) calls, each up to `MAX_TOKENS` (48,000), and a reply
+     cut off at the cap is asked again for fewer questions a reply.
+  3. The answer files are parsed from the moment the map ends, beside the copying, as
+     text, in pieces of 12,000 characters, reasoning off, into entries
+     `{question, part, answer, points, solution}`; they never share a request with the
+     pages. The parse is given the map's questions with their part labels and names
+     entries with them (2024 Q3(b) had been read as b(ii)). A parse that fails twice
+     leaves every answer to the solve calls (`schemeFailed`).
+  4. Code checks the copies: a map row with no copy, a number missing inside the map and
+     the copies, or the next number printed on a page past the last question's (a page
+     no row covers) gets a repair in the thread that should hold it ("Copy question 8
+     now."), up to two passes. A question the map gives figures and its batch gave none
+     takes the map's boxes, one figure a page (`fill_figures`).
+  5. Code pairs entries with parts by normalised label (`label_key`: "Q3." is "3",
+     "(b)(ii)" is "b ii"), with no model call. A question whose every part the scheme
+     covers and the validator accepts is done. Solve batches of `SOLVE_BATCH` (8) of the
+     rest, in parallel, reasoning `mid`, runs of contiguous numbers, each continue the
+     whole thread that copied their questions with "Give the answers to questions 17 to
+     24 now." `record_answers` gives each part `correct`, `accepted`, `points`,
+     `key_source` and a short worked solution: mcq `correct`, short `accepted`, open
+     marking `points` with marks and a short model answer in `accepted`. The model copies
+     a key the page prints (`key_source: printed`) and otherwise works it out
+     (`worked_out`), never changing the printed question. `accepted` is required, since
+     a flat part dropped most open parts' model answers, so an mcq part sends an empty
+     list, and code refuses an open part with none (Epo 2026-11-05). The merged question
+     goes through the validator; what a batch left out gets one more call.
+  6. A scheme key replaces a worked-out one: an option letter becomes the printed option's
+     index, a short answer its value (a printed unit stripped), an open part's marking
+     points its marking items (joined down to `QUIZ_MARKSCHEME_MAX`, their total replacing
+     the part's marks) with the final answer as its model answer, and the scheme's worked
+     solution the AI one. A printed key stays. A key that differs from the scheme's is named
+     in `keyDisagreements` either way. A part the scheme covers with no working has no
+     solution.
+  7. Each paired question goes through the validator again; one it refuses keeps the page's
+     keys (`schemeRefused`). A worked-out key no scheme replaced keeps its solution marked
+     AI-written (the solution block's `label`, "AI-written" or "AI 撰写" by the starter's
+     locale) and its question is named in `keysWorkedOut`. A part left with no answer is
+     saved as an open part whose one marking item says so, `ANSWER_MISSING` by locale, an
+     mcq's options as lettered lines in its text, since the validator has no other form with
+     no key, and is named in `answersMissing`. A saved question whose part marks do not add
+     up to the total printed on the page is named in `marksDiffer`. Math written `\(...\)`
+     or `\[...\]`, which a page read writes and the quiz would show as raw text, is saved as
+     `$...$` in text, options, answers, marking items and solutions (`dollar_math`); a code
+     span, math already between $ signs, a bare $ beside it and table cells stay as they are.
+  8. Figures (Epo 2026-11-04). Each figure a copy names gives the numbers of the boxes that
+     hold it, several for a split figure, the part whose text it follows ("" for the stem) and
+     a few words on what it shows; a number that is no box, boxes on two pages, or a part the
+     question lacks go back to the model. Code crops the chosen boxes together, adds an
+     adjacent caption (a `figure_title` region at 0.5 or more within 2.5% of the page above or
+     below, with its middle over them) and pads 1% of the page all round (`layout.crop_box`). A
+     figure no box holds gives `boxes: []` and its page image. After pairing, those figures alone
+     take the box call: one call a page, reasoning off, sees that page alone with its figures
+     listed (question label and description) and answers a box on a 0-1000 grid for each
+     (`locate_figures`, purpose `extraction_figures`; a reply that is not one box a figure is a
+     failed attempt; a page whose call fails twice keeps its questions without those figures,
+     named in `figuresLeftOut`). Coordinates asked of a call beside other pages were too far off
+     to crop from (2022 Paper 2: 3 of 10 whole, 3 missing the figure; bench report 2026-11-04). The
+     box call's box is grown to the ink around it on the page image the call saw
+     (`layout.grown_to_ink`, Epo 2026-11-04): each edge moves out while the strip just outside
+     holds ink, up to 6 blank grid units and 80 units from where it started, and 0.5% of the page
+     goes on at the end. That took the box call from 63 whole, 40 tight and 36 both of 80 with a
+     fixed pad to 68, 64 and 56
+     ([report](../bench/extraction/reports/2026-11-04-hosted-figure-boxes.md)). Each figure is then
+     cropped from its page (`capture.render_file` with `page_edge` `FIGURE_PAGE_EDGE`: the page's
+     long side at 2,200 px, so labels read and a small figure stays small) and placed after that
+     part's text as an image block whose asset is `figure:<id>` and whose description is the model's
+     words; the `done` event carries the JPEGs (`figures`).
 - **Models.** The `extraction` slot's default pin (`extractionLLM`;
   migration `0138`), which needs vision: OpenRouter's
   `deepseek/deepseek-v4.1-flash-1017` on the extraction slot's own route,
@@ -5797,16 +5804,18 @@ later).
   (Epo 2026-11-04; the model's other calls go Wafer first), the same pin
   that reads pages, captions images and
   writes ghost text, so one image model serves them all. Never direct
-  DeepSeek, which costs too much (Epo 2026-11-03). Windows reason at mid (sent
-  to OpenRouter as `medium`), and the outline and answer files run with
-  reasoning off. 0731, Epo's first pick, reads text only (OpenRouter lists
+  DeepSeek, which costs too much (Epo 2026-11-03). The map and solve calls reason at
+  mid (sent to OpenRouter as `medium`), copy calls at low, and the answer files and
+  box calls with reasoning off. The pin needs both low and mid. 0731, Epo's first pick, reads text only (OpenRouter lists
   `input_modalities: ["text"]` on every endpoint and an image request answers
   404). The bench compared 1017 with the unpinned V4.1 Flash and with direct
   Flash
   ([report](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md)).
 - **Progress and the end.** The service streams `questions` (every question
-  recorded so far) after each window, which the gateway saves on the row, and
-  then `done` with the quiz's questions and the report, or `error`. The relay
+  copied so far, with no answers yet) after each copy batch and repair, which the
+  gateway saves on the row, so `recorded` counts copies and stops moving while the
+  solve calls run, and then `done` with the quiz's questions and the report, or
+  `error`. The relay
   runs in the API process on a detached context, like a chat turn; a restart
   fails what was running (`FailOrphanedExtractions` at boot, code
   `interrupted`). On `done` the gateway creates the quiz under the run's title
@@ -5820,11 +5829,12 @@ later).
   It then records the quiz id and report, settles the session and sends `{type:
   extraction, extractionId, status}` on the starter's event stream. No
   question saved is `extraction_empty`. `GET /api/extractions/{id}` reads a
-  run its starter began: status, the questions recorded so far (`recorded`),
-  the quiz and the report (`expected`, `missing`, `recorded`, `keysWorkedOut`,
-  `keyDisagreements`, `schemeRefused`, `marksDiffer`, `unpaired`,
-  `schemeRepeats`, `figures`, `figuresLeftOut`, `stopped`, `pages`,
-  `windows`). `figures` names the questions saved with cropped figures, for
+  run its starter began: status, the questions copied so far (`recorded`),
+  the quiz and the report (`expected`, the map's labels, `missing`, those with no
+  copy, `recorded`, `answersMissing` and `schemeFailed`, both only when they apply,
+  `keysWorkedOut`, `keyDisagreements`, `schemeRefused`, `marksDiffer`, `unpaired`,
+  `schemeRepeats`, `figures`, `figuresLeftOut`, `stopped`, `pages`, and `windows`, the
+  copy batches, a name the screens' API keeps). `figures` names the questions saved with cropped figures, for
   the starter to check; `figuresLeftOut` those saved without theirs, because
   they had no box and their page's box call failed twice, or the figures did not fit in the
   starter's storage (then the quiz is saved without any figures; Epo
@@ -5833,20 +5843,31 @@ later).
   their label and they were not its continuation across two scheme pieces
   (the bench saw a later question's solution named 2021 Q8(b)(ii), which
   merged in had doubled the part's marks).
-- **Attempts.** The server retries a failed step once, silently (Epo
-  2026-11-03): the outline, each window and each scheme piece get a second
-  attempt 20 s after a busy, failing or silent provider (a scheme reply cut
-  off or not JSON counts as failed). The retrieval service has no job queue,
-  so the retry runs in the same request. A retried window records again over
-  what it recorded, and a definitive client error (400, 401, 403, 404, 422)
-  fails the run at once. The starter sees only progress and the final error.
+- **Attempts.** The server retries a failed call once, silently (Epo
+  2026-11-03): the map, each thread's round and each scheme piece get a second
+  attempt 20 s after a busy, failing or silent provider (a scheme reply cut off or
+  not JSON counts as failed). The retrieval service has no job queue, so the retry
+  runs in the same request. A round is retried where it is, keeping its thread, so a
+  failed stream costs that round. A thread that fails twice ends alone: what it
+  recorded stays, a copy batch's other questions are named in `missing`, a solve
+  batch's in `answersMissing`, and the rest of the run goes on. A map that fails twice,
+  or a run left with no copies after a failure, fails the run, as does a definitive
+  client error (400, 401, 403, 404, 422) on the map. The starter sees only progress and
+  the final error. When the stream goes away the running threads are cancelled.
+- **Credits and load.** A session reserves nothing, so `MAX_TOKENS` holds no credits;
+  each call settles what it used, and a failed stream settles what it reported or is
+  abandoned unbilled (`_tracked_call`). Threads stop before their next call once a
+  settlement says credits ran out, but calls in flight finish, so a run can pass zero by
+  what those use. A run is one session, so one of `ConcurrentLLMLeases`, while its calls
+  in flight run from 3 to 8 on a 45-question paper, plus up to one a scheme piece. Each
+  waits its turn at the model's gate and for `CALL_SLOTS` like a chat's.
 - **Stops.** A run stops early when the quiz would pass `QUIZ_PARTS_MAX` (100)
   or `QUIZ_OPEN_PARTS_MAX` (100 AI-marked parts, raised from 20 for every quiz,
   Epo 2026-11-03) (`stopped: quiz_full`), when the starter's credits run
-  out (`credits`), or when its page windows have written more than 8,000
-  output tokens per selected page (`output_limit`, `WINDOW_OUTPUT_PER_PAGE`:
-  normal runs wrote at most 3,400 a page, and a runaway on Wafer 21,700 at 17
-  times a normal run's cost; Epo 2026-11-04), and saves what it has.
+  out (`credits`), or when its calls have written more than 8,000
+  output tokens per selected page (`output_limit`, `OUTPUT_PER_PAGE`: a runaway on
+  Wafer wrote 21,700 at 17 times a normal run's cost; Epo 2026-11-04), and saves what it
+  has, naming the answers left out.
 - **Stored.** `question_extractions` (migration 0136) keeps the run: starter,
   title, status, the recorded questions, report, quiz, error. Nothing links a
   question, the quiz or the run to the files, pages or regions it was read
@@ -5858,8 +5879,10 @@ later).
   [`2026-11-03-first-cut.md`](../bench/extraction/reports/2026-11-03-first-cut.md),
   [`2026-11-03-keys-in-one-prompt.md`](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md)
   [`2026-11-04-figures-and-fidelity.md`](../bench/extraction/reports/2026-11-04-figures-and-fidelity.md),
-  [`2026-11-04-window-size.md`](../bench/extraction/reports/2026-11-04-window-size.md)
-  and [`2026-11-04-layout-first-trial.md`](../bench/extraction/reports/2026-11-04-layout-first-trial.md).
+  [`2026-11-04-window-size.md`](../bench/extraction/reports/2026-11-04-window-size.md),
+  [`2026-11-04-layout-first-trial.md`](../bench/extraction/reports/2026-11-04-layout-first-trial.md),
+  and on `claude/bench-copy-first` the map report and the two copy-first reports the route
+  came from, with `scripts/copy_first.py`.
 
 ## Citations and the frontend
 

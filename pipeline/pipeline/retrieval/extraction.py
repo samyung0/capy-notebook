@@ -1,38 +1,43 @@
 """Questions read from the selected pages of an uploaded paper into a quiz
 (todo-study-tracking.md §8, Make a quiz).
 
-A fixed pipeline, like /generate, not the chat agent:
+A fixed pipeline, like /generate, not the chat agent (Epo 2026-11-05, map, copy,
+solve; bench/extraction/reports/2026-11-05-copy-first-structured.md):
 
 0. The layout service's regions on every selected page (``layout``), which
-   number the boxes figures are picked from.
-1. The outline: the question labels the selected pages' indexed text lists,
-   for the completeness check at the end.
-2. Page windows of up to two pages, in selected order. Each call sees the two
-   page images, their text and their boxes as JSON, the outline, the labels
-   recorded so far and the open question (the last one recorded, which may run
-   onto the next page), and records questions with ``record_question`` /
-   ``continue_question``,
-   each part with its answer key, marking points for an open part and a short
-   worked solution: copied when the page prints them, otherwise worked out
-   (Epo 2026-11-03). Every recorded question goes through the Go validator at
-   once and a problem goes back to the model. Questions are kept outside the
-   conversation as they come, so the next window carries labels and the open
-   question only.
-3. The mark scheme and answer files are parsed as text, each on its own and
-   never beside the pages, after the windows, with the recorded questions'
-   labels to name entries by. Code pairs them with the questions by label:
-   their keys, marking points and solutions replace worked-out ones, a printed
-   key stays, and any disagreement is named in the report.
+   number the boxes figures are picked from, once across the selection.
+1. The map: one call sees every selected page and its boxes and answers one
+   line a question: label, pages, parts, figures.
+2. Copy batches of 16 of the map's questions, in parallel, each continuing the
+   map's conversation at low reasoning. ``record_question`` carries no answers.
+   The mark scheme and answer files are parsed as text from the moment the map
+   ends, each on its own and never beside the pages, naming entries by the map's
+   labels and parts.
+3. Code checks the copies against the map and sends a repair for a question left
+   out: a map row not copied, a gap in the numbers, or the next number printed on
+   a page no row covers. A figure the map lists and a batch left out is added
+   from the map's boxes.
+4. Code pairs the scheme with the copies by label: a question whose every part
+   it covers needs no model call. Solve batches of up to 8 of the rest, in
+   parallel at medium reasoning, each continue the copy batch holding their
+   questions and give ``record_answers``: copied when the page prints them,
+   otherwise worked out (Epo 2026-11-03). A printed key stays, a scheme's replaces
+   a worked-out one, and any disagreement is named in the report.
+
+Every recorded question and answer goes through the Go validator at once and a
+problem goes back to the model. A call that fails is tried once more where it is
+in its own thread; a thread that still fails ends alone. Its copied questions
+stay, and a part left with no answer is named in the report.
 
 The printed option order is kept (``add_questions`` shuffles; this does not),
 and option lines the model also copied into a part's text are taken out. No
 question is left out for want of a key. A worked-out solution carries an
-"AI-written" label. Each figure a question needs is recorded in its window by
-box number (Epo 2026-11-04). One with no box is boxed at the end by a call that
-sees its page alone. Each is cropped from its page and placed after the text of
-the part it names, as an image block whose asset is ``figure:<id>``; the
-``done`` event carries the crops and Go stores them as the quiz's own editor
-assets. Nothing links a question to its file, page or region (§8 item 7).
+"AI-written" label. Each figure a question needs is recorded by box number (Epo
+2026-11-04). One with no box is boxed at the end by a call that sees its page
+alone. Each is cropped from its page and placed after the text of the part it
+names, as an image block whose asset is ``figure:<id>``; the ``done`` event
+carries the crops and Go stores them as the quiz's own editor assets. Nothing
+links a question to its file, page or region (§8 item 7).
 """
 
 from __future__ import annotations
@@ -51,7 +56,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .. import elitellm
+from .. import elitellm, registry
 from ..config import cfg
 from ..generated import limits
 from ..prompts import extraction as prompts
@@ -63,24 +68,30 @@ from .workflows import extract_json
 
 log = logging.getLogger("capy.retrieval.extraction")
 
-# Two pages a call (Epo 2026-11-03): small enough that a window stays far under
-# any context limit, large enough for a question that runs onto the next page.
-WINDOW_PAGES = 2
-# Model calls per window: the first records (one record_question call a
-# question), the rest send again what the validator refused or what was not
-# valid JSON, or what a reply cut off at the output cap left out.
-WINDOW_STEPS = 6
-# Thinking at medium works answers out as well as copying (Epo 2026-11-03).
-WINDOW_MAX_TOKENS = 24_000
-# The windows' output tokens a run may spend per selected page before it stops
-# (stopped: output_limit) and saves what it has. Normal runs wrote at most
-# 3,400 a page; a runaway on Wafer wrote 21,700 and cost 17 times a normal run
+# Questions a copy batch holds and a solve batch holds, each a thread of its own
+# (Epo 2026-11-05).
+COPY_BATCH = 16
+SOLVE_BATCH = 8
+# Model calls a thread may make: the first records, the rest send again what the
+# validator refused or what was not valid JSON, or what a reply cut off at the
+# output cap left out.
+THREAD_ROUNDS = 12
+# The map and every thread. Hard multiple choice reasons up to 21,000 tokens in one
+# reply before it records anything (bench/extraction/reports/2026-11-04-copy-first.md).
+MAX_TOKENS = 48_000
+# Copying reasons low and solving at the run's bound level, mid. Reasoning off on the
+# copy calls makes every solve call miss the cache (2026-11-04-copy-first.md).
+COPY_THINKING = "low"
+# Passes of repairs for questions a batch left out.
+COPY_REPAIR_PASSES = 2
+# The output tokens a run may spend per selected page before it stops
+# (stopped: output_limit) and saves what it has. A runaway on Wafer wrote 21,700 a
+# page and cost 17 times a normal run
 # (bench/extraction/reports/2026-11-03-keys-in-one-prompt.md, Epo 2026-11-04).
-WINDOW_OUTPUT_PER_PAGE = 8_000
-OUTLINE_MAX_TOKENS = 2_000
+OUTPUT_PER_PAGE = 8_000
 SCHEME_MAX_TOKENS = 12_000
 # A figure is cropped at the scale that gives its page's long side this many
-# pixels (about 190 DPI on A4, against the windows' 1,568), so its labels read
+# pixels (about 190 DPI on A4, against the page images' 1,568), so its labels read
 # and a small figure stays small; the crop's long side is still at most
 # CAPY_CAPTURE_MAX_EDGE.
 FIGURE_PAGE_EDGE = 2_200
@@ -93,16 +104,23 @@ SCHEME_CHUNK_CHARS = 12_000
 # a longer one is refused rather than cut.
 SCHEME_TEXT_CHARS = 200_000
 
-# A busy, failing or silent provider costs a step one silent retry (Epo
-# 2026-11-03): the outline, a window or a scheme piece runs once more before
-# the run fails. A definitive client error does not retry.
+# A busy, failing or silent provider costs a call one silent retry (Epo
+# 2026-11-03): the map, a thread's round or a scheme piece runs once more. A
+# definitive client error does not retry.
 ATTEMPTS = 2
 ATTEMPT_WAIT_S = 20.0
 
 PRINTED, WORKED_OUT, SCHEME = "printed", "worked_out", "scheme"
+# A part left with no answer: its failed solve call could not be made up.
+NO_ANSWER = "none"
 # The label a worked-out solution carries in the saved quiz, in the starter's
 # language (QuestionView draws a text block's label before its text).
 AI_WRITTEN = {"en": "AI-written", "zh": "AI 撰写"}
+# The marking note on a part saved with no answer, which the report names too.
+ANSWER_MISSING = {
+    "en": "No answer was worked out for this part. Add one before using this question.",
+    "zh": "这一部分还没有答案。使用这道题之前请先补上。",
+}
 
 Validate = Callable[[dict[str, Any]], Awaitable[str | None]]
 
@@ -110,9 +128,8 @@ Validate = Callable[[dict[str, Any]], Awaitable[str | None]]
 @dataclass(frozen=True)
 class Page:
     """One selected page: its number in its file, the file's name, the
-    page's indexed text, its image as a data URL, rendered when its window
-    runs, a box on it as a JPEG with its pixel size, for a figure, and what
-    the layout model found on it."""
+    page's indexed text, its image as a data URL, a box on it as a JPEG with
+    its pixel size, for a figure, and what the layout model found on it."""
 
     number: int
     file_name: str
@@ -130,7 +147,7 @@ class Page:
 class Figure:
     """A figure a question needs: its page, the part whose text it follows
     ("" for the stem), its description, and its crop on the 0-1000 grid: from
-    the boxes its window picked, or from the box call (``locate_figures``)."""
+    the boxes picked for it, or from the box call (``locate_figures``)."""
 
     page: Page
     part: str
@@ -156,9 +173,18 @@ class Recorded:
     figures: list[Figure] = field(default_factory=list)
     # The question's printed total, when the page prints only a total.
     total: int | None = None
-    # Text printed at the end of the page its window ended on, for the part
-    # that comes next: the next window cannot see that page.
-    held_text: str = ""
+
+
+@dataclass(frozen=True)
+class MapRow:
+    """One line of the map: a question's label, the pages it is printed on, its
+    part labels and the boxes that hold its figures."""
+
+    label: str
+    first: int
+    last: int
+    parts: list[str]
+    figures: list[int]
 
 
 @dataclass
@@ -469,8 +495,8 @@ def _drop_repeated_stem(question: dict[str, Any]) -> None:
 
 
 def record(item: Any, ai_label: str) -> Recorded:
-    """A ``record_question`` item as a quiz question in paper layout; its
-    figures are read against the window's pages (``read_figures``)."""
+    """A question's call as a quiz question in paper layout; its figures are
+    read against the selection's pages (``read_figures``)."""
     item = item if isinstance(item, dict) else {}
     parsed = [_part(p, ai_label) for p in item.get("parts") or []]
     labels = [label for label, _, _ in parsed]
@@ -490,7 +516,6 @@ def record(item: Any, ai_label: str) -> Recorded:
         part_labels=labels,
         sources=[source for _, source, _ in parsed],
         total=_whole(item.get("total_marks")),
-        held_text=_text(item.get("trailing_text"), limits.QUESTION_TEXT_MAX),
     )
 
 
@@ -508,7 +533,7 @@ def _box(raw: Any) -> list[float] | None:
 
 
 def numbered_boxes(pages: list[Page]) -> dict[int, tuple[Page, layout.Region]]:
-    """The boxes figures are picked from, numbered across a window."""
+    """The boxes figures are picked from, numbered once across the selection."""
     boxes: dict[int, tuple[Page, layout.Region]] = {}
     for page in pages:
         for region in layout.figure_boxes(page.regions):
@@ -522,8 +547,8 @@ def read_figures(
     part_labels: list[str],
     boxes: dict[int, tuple[Page, layout.Region]],
 ) -> tuple[list[Figure], str | None]:
-    """A call's figures, by the window's box numbers (cropped from them) or,
-    with no box, by page image (for the box call), or the tool-result problem
+    """A call's figures, by box number (cropped from them) or, with no box, by
+    page image (for the box call), or the tool-result problem
     naming the first that cannot be read."""
     read: list[Figure] = []
     parts = {label_key(label) for label in part_labels}
@@ -612,6 +637,187 @@ def _unsourced(held: Recorded) -> str | None:
     if not missing:
         return None
     return f"{', '.join(missing)}: key_source must be printed or worked_out"
+
+
+_MAP_LINE = re.compile(
+    r"^\s*(?:\*\*)?(?P<label>[^|]+?)(?:\*\*)?\s*\|\s*pages?\s*(?P<first>\d+)(?:\s*-\s*(?P<last>\d+))?"
+    r"\s*\|\s*parts?\s*(?P<parts>[^|]*?)\s*\|\s*figures?\s*(?P<figures>.*?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_map(text: str) -> list[MapRow]:
+    """The map reply's rows; a line not in its form is not a row."""
+    rows = []
+    for line in text.splitlines():
+        match = _MAP_LINE.match(line)
+        if not match:
+            continue
+        parts = match["parts"].strip()
+        rows.append(
+            MapRow(
+                match["label"].strip(),
+                int(match["first"]),
+                int(match["last"] or match["first"]),
+                []
+                if parts.lower() in ("none", "-", "")
+                else [p.strip() for p in parts.split(",") if p.strip()],
+                [int(n) for n in re.findall(r"\d+", match["figures"])],
+            )
+        )
+    return rows
+
+
+def _number(label: str) -> int | None:
+    digits = re.findall(r"\d+", label)
+    return int(digits[-1]) if digits else None
+
+
+def _runs_of(labels: list[str]) -> list[list[str]]:
+    """Labels in runs of contiguous numbers."""
+    runs: list[list[str]] = []
+    for label in labels:
+        number = _number(label)
+        last = _number(runs[-1][-1]) if runs else None
+        if runs and number is not None and last is not None and number == last + 1:
+            runs[-1].append(label)
+        else:
+            runs.append([label])
+    return runs
+
+
+def _chunks_of(items: list[Any], size: int) -> list[list[Any]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _keyless(item: dict[str, Any]) -> dict[str, Any]:
+    """A copy call as code keeps it, anything it sent of a key taken out."""
+    out = copy.deepcopy(item)
+    for part in out.get("parts") or []:
+        if not isinstance(part, dict):
+            continue
+        part.pop("solution", None)
+        part.pop("key_source", None)
+        if isinstance(part.get("answer"), dict):
+            for name in ("correct", "accepted", "points"):
+                part["answer"].pop(name, None)
+    return out
+
+
+def _with_placeholders(item: dict[str, Any]) -> dict[str, Any]:
+    """A copy with placeholder keys, so the validator checks what was copied and
+    nothing that comes later. It is never saved."""
+    out = copy.deepcopy(item)
+    for part in out.get("parts") or []:
+        if not isinstance(part, dict) or not isinstance(part.get("answer"), dict):
+            continue
+        answer = part["answer"]
+        kind = answer.get("type")
+        if kind == "mcq":
+            answer["correct"] = [0]
+        elif kind == "short":
+            answer["accepted"] = ["0"]
+        elif kind == "open":
+            answer["points"] = [{"text": "-", "marks": part.get("marks")}]
+    return out
+
+
+def _worked_out(item: dict[str, Any]) -> dict[str, Any]:
+    """A copy with no answers yet, which a scheme entry can replace."""
+    out = copy.deepcopy(item)
+    for part in out.get("parts") or []:
+        if isinstance(part, dict):
+            part["key_source"] = WORKED_OUT
+    return out
+
+
+def _has_key(part: dict[str, Any]) -> bool:
+    answer = part["answer"]
+    kind = answer["type"]
+    if kind == "mcq":
+        return bool(answer["correct"])
+    if kind == "short":
+        return bool(answer["accepted"])
+    return bool(part.get("markscheme"))
+
+
+def _mark_no_answer(held: Recorded, note: str) -> list[str]:
+    """Keep a part with no answer as an open part whose marking note says so, the
+    only form with no key the validator takes; an mcq's options go in its text. The
+    part names, for the report."""
+    names: list[str] = []
+    for index, (label, part) in enumerate(
+        zip(held.part_labels, held.question["parts"])
+    ):
+        if _has_key(part):
+            continue
+        answer = part["answer"]
+        if answer["type"] == "mcq":
+            lines = [
+                f"{chr(ord('A') + n)}. {option}"
+                for n, option in enumerate(answer.get("options") or [])
+            ]
+            part["blocks"] = [
+                *part["blocks"],
+                {"type": "text", "text": "\n".join(lines)},
+            ]
+        part["answer"] = {"type": "open", "accepted": [], "hints": []}
+        part["markscheme"] = [{"text": note, "marks": part["marks"]}]
+        part["solution"] = []
+        held.sources[index] = NO_ANSWER
+        names.append(part_name(held.label, label))
+    return names
+
+
+# A code span, math already between $ signs, or math between \( \) or \[ \].
+_MATH_SPANS = re.compile(
+    r"```.*?```|`[^`\n]*`"
+    r"|\$\$.*?\$\$|(?<!\\)\$(?:\\.|[^$\\])+?\$"
+    r"|(?<!\\)\\\((?P<inline>.+?)(?<!\\)\\\)"
+    r"|(?<!\\)\\\[(?P<display>.+?)(?<!\\)\\\]",
+    re.DOTALL,
+)
+
+
+def dollar_math(text: str) -> str:
+    r"""``\(...\)`` and ``\[...\]`` as ``$...$``: the quiz's text shows nothing else
+    as math (``parseMathText``), and a page read writes them so
+    (bench/extraction/reports/2026-11-05-copy-first-structured.md). A code span,
+    math already between $ signs, an escaped ``\\(``, a pair holding a bare $ and any
+    text with a bare $ beside it stay as they are."""
+
+    # A bare $ left over would pair with the ones added here.
+    if re.search(r"(?<!\\)\$", _MATH_SPANS.sub("", text)):
+        return text
+
+    def replace(match: re.Match[str]) -> str:
+        inner = match["inline"] if match["inline"] is not None else match["display"]
+        if inner is None or not inner.strip() or re.search(r"(?<!\\)\$", inner):
+            return match[0]
+        return f"${inner.strip()}$"
+
+    return _MATH_SPANS.sub(replace, text)
+
+
+def _dollar_math_in(question: dict[str, Any]) -> None:
+    """Every text a saved question shows, in place. A table's cells stay as they
+    are: a table can hold a literal, as a code or regular expression column does."""
+
+    def in_blocks(blocks: list[dict[str, Any]]) -> None:
+        for block in blocks:
+            if block["type"] == "text":
+                block["text"] = dollar_math(block["text"])
+
+    in_blocks(question["stem"])
+    for part in question["parts"]:
+        in_blocks(part["blocks"])
+        in_blocks(part.get("solution") or [])
+        answer = part["answer"]
+        for name in ("options", "accepted", "hints"):
+            if isinstance(answer.get(name), list):
+                answer[name] = [dollar_math(str(value)) for value in answer[name]]
+        for item in part.get("markscheme") or []:
+            item["text"] = dollar_math(item["text"])
 
 
 def _counts(question: dict[str, Any]) -> tuple[int, int]:
@@ -769,28 +975,40 @@ def pair(held: Recorded, entries: dict[tuple[str, str], Entry]) -> Paired:
 
 @dataclass
 class Run:
-    """What one extraction holds between windows."""
+    """What one extraction holds across its threads."""
 
     validate: Validate
     ai_label: str
-    expected: list[str] = field(default_factory=list)
+    # The boxes figures are picked from, by number.
+    boxes: dict[int, tuple[Page, layout.Region]] = field(default_factory=dict)
     recorded: dict[str, Recorded] = field(default_factory=dict)
-    # Printed order: a label's place is its first record attempt, so a
-    # question refused once and recorded after its neighbours keeps its place.
+    # What each question's copy call sent, its keys taken out, and its pages.
+    copies: dict[str, dict[str, Any]] = field(default_factory=dict)
+    spans: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # Questions with their answers recorded, or wholly covered by the scheme.
+    answered: set[str] = field(default_factory=set)
+    # Printed order: a label's place is the map's, or its first record attempt.
     order: dict[str, int] = field(default_factory=dict)
-    open_label: str | None = None
     full: bool = False
-    # The windows' output budget for the run and what they have spent.
+    credits_out: bool = False
+    # The run's output budget and what it has spent.
     output_budget: int = 0
     output_tokens: int = 0
-    # The current window's boxes by number.
-    boxes: dict[int, tuple[Page, layout.Region]] = field(default_factory=dict)
-    # The key of the question last recorded or continued in the current window.
-    window_last: str | None = None
 
     @property
     def over_budget(self) -> bool:
         return self.output_tokens > self.output_budget
+
+    @property
+    def stopping(self) -> bool:
+        return self.full or self.credits_out or self.over_budget
+
+    def stopped(self) -> str:
+        if self.full:
+            return "quiz_full"
+        if self.credits_out:
+            return "credits"
+        return "output_limit" if self.over_budget else ""
 
     def held(self) -> list[Recorded]:
         return sorted(
@@ -813,143 +1031,177 @@ class Run:
             and opened + o <= limits.QUIZ_OPEN_PARTS_MAX
         )
 
-    async def add(self, item: Any, window: set[str], pages: list[Page]) -> str:
-        """Record one question; the tool result line for it."""
-        new = record(item, self.ai_label)
-        if not new.label or not new.question["parts"]:
+    def _not_fitting(self, label: str) -> str:
+        self.full = True
+        return (
+            f"Question {label} was not recorded: a quiz holds at most "
+            f"{limits.QUIZ_PARTS_MAX} parts and {limits.QUIZ_OPEN_PARTS_MAX} "
+            "AI-marked parts. Record nothing more."
+        )
+
+    async def copy_question(self, item: dict[str, Any], pages: list[Page]) -> str:
+        """Keep one question as copied, with no answers; the tool result line."""
+        kept = _keyless(item)
+        checked = record(_with_placeholders(_worked_out(kept)), self.ai_label)
+        if not checked.label or not checked.question["parts"]:
             return (
                 "A question needs its printed label and at least one part, given "
                 "as the call's arguments themselves."
             )
-        key = label_key(new.label)
+        key = label_key(checked.label)
         self.order.setdefault(key, len(self.order))
-        held = self.recorded.get(key)
-        if (
-            held is not None
-            and key not in window
-            and key != label_key(self.open_label or "")
+        sent = item.get("pages")
+        numbers = {page.number for page in pages}
+        figures: list[Figure] = []
+        problem = None
+        if not (
+            isinstance(sent, list)
+            and len(sent) == 2
+            and all(type(n) is int and n in numbers for n in sent)
+            and sent[0] <= sent[1]
         ):
-            return (
-                f"Question {new.label}: a question with this label was recorded from "
-                "earlier pages. If this is another question with the same number, "
-                "put its section in the label (B3)."
+            problem = "pages: expected [first, last], the page numbers it is printed on"
+        elif "figures" not in item:
+            problem = "figures: give [] when it needs none"
+        else:
+            figures, problem = read_figures(
+                item.get("figures"), pages, checked.part_labels, self.boxes
             )
+        problem = problem or await self.validate(checked.question)
+        if problem:
+            return f"Question {checked.label}: {problem}. Fix it and record it again."
+        if not self._fits(key, checked.question):
+            return self._not_fitting(checked.label)
+        new = record(_worked_out(kept), self.ai_label)
+        new.figures = figures
+        held = self.recorded.get(key)
+        if held is not None:
+            new.question["id"] = held.question["id"]
+        self.recorded[key] = new
+        self.copies[key] = kept
+        self.spans[key] = (sent[0], sent[1])
+        return f"Question {checked.label}: recorded."
+
+    async def record_answers(self, args: dict[str, Any], pages: list[Page]) -> str:
+        """Merge one question's answers into its copy; the tool result line."""
+        label = str(args.get("label") or "").strip()
+        key = label_key(label)
+        kept = self.copies.get(key)
+        if kept is None:
+            return (
+                f"Question {label}: no question with this label was copied. "
+                "Give the label it was copied with."
+            )
+        merged = copy.deepcopy(kept)
+        by_part = {label_key(str(p.get("label") or "")): p for p in merged["parts"]}
+        for given in args.get("parts") or []:
+            given = given if isinstance(given, dict) else {}
+            name = str(given.get("label") or "")
+            part = by_part.get(label_key(name))
+            if part is None:
+                names = ", ".join(
+                    str(p.get("label") or "") or '""' for p in merged["parts"]
+                )
+                return (
+                    f'Question {label}: it has no part "{name}"; its parts are '
+                    f"{names}. Fix it and record it again."
+                )
+            answer = part["answer"] if isinstance(part.get("answer"), dict) else {}
+            part["answer"] = answer
+            for field_name in ("correct", "accepted", "points"):
+                if field_name in given:
+                    value = given[field_name]
+                    answer[field_name] = value if isinstance(value, list) else [value]
+            part["solution"] = given.get("solution")
+            part["key_source"] = given.get("key_source")
+        # The validator lets an open part go without a model answer; a flat part
+        # dropped most of them without this (Epo 2026-11-05).
+        no_model_answer = [
+            part_name(label, str(p.get("label") or ""))
+            for p in merged["parts"]
+            if isinstance(p.get("answer"), dict)
+            and p["answer"].get("type") == "open"
+            and not any(str(v).strip() for v in p["answer"].get("accepted") or [])
+        ]
+        if no_model_answer:
+            return (
+                f"Question {label}: {', '.join(no_model_answer)}: invalid accepted "
+                "answers. Fix it and record it again."
+            )
+        new = record(merged, self.ai_label)
         new.figures, problem = read_figures(
-            item.get("figures"), pages, new.part_labels, self.boxes
+            merged.get("figures"), pages, new.part_labels, self.boxes
         )
         problem = problem or _unsourced(new) or await self.validate(new.question)
         if problem:
             return f"Question {new.label}: {problem}. Fix it and record it again."
         if not self._fits(key, new.question):
-            self.full = True
-            return (
-                f"Question {new.label} was not recorded: a quiz holds at most "
-                f"{limits.QUIZ_PARTS_MAX} parts and {limits.QUIZ_OPEN_PARTS_MAX} "
-                "AI-marked parts. Record nothing more."
-            )
-        if held is not None:
-            new.question["id"] = held.question["id"]
+            return self._not_fitting(new.label)
+        new.question["id"] = self.recorded[key].question["id"]
         self.recorded[key] = new
-        window.add(key)
-        self.window_last = key
+        self.answered.add(key)
         return f"Question {new.label}: recorded."
 
-    async def extend(
-        self, args: dict[str, Any], window: set[str], pages: list[Page]
-    ) -> str:
-        label = str(args.get("label") or "")
-        key = label_key(label)
-        # The open question, or the one this window recorded last: refused, the
-        # model records it again and that replaces its earlier parts
-        # (bench/extraction/reports/2026-11-04-window-size.md).
-        opened = None if self.open_label is None else label_key(self.open_label)
-        if key not in (opened, self.window_last):
-            return (
-                f"Question {label} is not the open question; record a new question "
-                "with record_question."
-            )
-        merged = copy.deepcopy(self.recorded[key])
-        more = _blocks(args.get("blocks"))
-        added = [_part(raw, self.ai_label) for raw in args.get("parts") or []]
-        # What the last window held goes in front of what comes next.
-        held = _blocks([{"text": merged.held_text}])
-        following = more or (added[0][2]["blocks"] if added else None)
-        if held and following is not None:
-            if not _same_blocks(following[:1], held):
-                following.insert(0, held[0])
-            merged.held_text = ""
-        merged.held_text = (
-            _text(args.get("trailing_text"), limits.QUESTION_TEXT_MAX)
-            or merged.held_text
+    def uncopied(self, rows: list[MapRow], pages: list[Page]) -> list[str]:
+        """What a repair should copy: map rows with no copy, numbers missing inside
+        the map and the copies, and the next number when it is printed on a page past
+        the last question's: a page no row covers."""
+        out = [row.label for row in rows if label_key(row.label) not in self.copies]
+        labels = [*(row.label for row in rows), *self.copies]
+        numbers = {_number(label) for label in labels} - {None}
+        if not numbers:
+            return out
+        known = {label_key(label) for label in out}
+        out += [
+            str(n)
+            for n in sorted(set(range(min(numbers), max(numbers) + 1)) - numbers)
+            if str(n) not in known
+        ]
+        last_page = max(
+            [*(row.last for row in rows), *(span[1] for span in self.spans.values())],
+            default=pages[0].number,
         )
-        if more:
-            merged.question["parts"][-1]["blocks"].extend(more)
-        for part_label, source, part in added:
-            merged.question["parts"].append(part)
-            merged.part_labels.append(part_label)
-            merged.sources.append(source)
-        _drop_option_lines(merged.question)
-        _drop_repeated_stem(merged.question)
-        more_figures, problem = read_figures(
-            args.get("figures"), pages, merged.part_labels, self.boxes
-        )
-        merged.figures.extend(more_figures)
-        problem = problem or _unsourced(merged) or await self.validate(merged.question)
-        if problem:
-            return f"Question {label}: {problem}. Fix it and continue it again."
-        if not self._fits(key, merged.question):
-            self.full = True
-            return "The quiz is full: record nothing more."
-        self.recorded[key] = merged
-        window.add(key)
-        self.window_last = key
-        return f"Question {label}: continued."
+        following = re.compile(rf"(?m)^\W*{max(numbers) + 1}\s*[.)]?(\s|$)")
+        if any(
+            page.number > last_page and following.search(page.text) for page in pages
+        ):
+            out.append(str(max(numbers) + 1))
+        return sorted(out, key=lambda label: _number(label) or 0)
 
-    def open_question(self) -> dict[str, Any] | None:
-        """The open question as the next window shows it."""
-        if self.open_label is None:
-            return None
-        held = self.recorded[label_key(self.open_label)]
-        shown: dict[str, Any] = {
-            "label": held.label,
-            "parts": [
-                {"label": label, "blocks": part["blocks"]}
-                for label, part in zip(held.part_labels, held.question["parts"])
-            ],
-        }
-        if held.held_text:
-            shown["trailing_text"] = held.held_text
-        return shown
+    def fill_figures(self, rows: list[MapRow], pages: list[Page]) -> None:
+        """A question the map gives figures and its batch gave none takes the map's
+        boxes, one figure a page (28 of 536 bench rows left one out). The boxes go in
+        its copy, so its answers keep them."""
+        for row in rows:
+            key = label_key(row.label)
+            held = self.recorded.get(key)
+            if held is None or held.figures:
+                continue
+            by_page: dict[int, list[int]] = {}
+            for number in row.figures:
+                if number in self.boxes:
+                    by_page.setdefault(self.boxes[number][0].number, []).append(number)
+            if not by_page:
+                continue
+            items = [
+                {"boxes": numbers, "part": "", "description": ""}
+                for numbers in by_page.values()
+            ]
+            figures, problem = read_figures(items, pages, held.part_labels, self.boxes)
+            if problem is None:
+                held.figures = figures
+                self.copies[key]["figures"] = items
+
+    def in_printed_order(self) -> None:
+        """By number once repairs may have come late, unless numbers repeat."""
+        keys = list(self.order)
+        numbers = [_number(key) for key in keys]
+        if None not in numbers and len(set(numbers)) == len(numbers):
+            keys.sort(key=lambda key: _number(key) or 0)
+        self.order = {key: n for n, key in enumerate(keys)}
 
     def labels(self) -> list[str]:
         return [held.label for held in self.held()]
-
-
-async def outline(pages: list[Page], *, model: ModelConfig) -> list[str]:
-    """Expected question labels from the pages' indexed text; none without text."""
-    texts = [
-        (prompts.page_heading(p.number, p.file_name), p.text[:PAGE_TEXT_CHARS])
-        for p in pages
-        if p.text.strip()
-    ]
-    if not texts:
-        return []
-    message = await models.complete(
-        prompts.outline_messages(texts),
-        model=model,
-        response_format={"type": "json_object"},
-        max_tokens=OUTLINE_MAX_TOKENS,
-        reasoning=False,
-        call_purpose="extraction_outline",
-    )
-    data = extract_json(getattr(message, "content", "") or "")
-    found = data.get("questions") if isinstance(data, dict) else None
-    labels: list[str] = []
-    for label in found if isinstance(found, list) else []:
-        text = str(label).strip()
-        if text and label_key(text) not in {label_key(seen) for seen in labels}:
-            labels.append(text)
-    return labels
 
 
 def _chunks(text: str) -> list[str]:
@@ -973,9 +1225,8 @@ async def parse_schemes(
     labels: list[tuple[str, list[str]]],
 ) -> list[list[Entry]]:
     """Each scheme or answer file piece's entries, one parse call per piece,
-    in order. ``labels`` are the recorded questions' labels with their part labels, so
-    entries are named as the questions are (Epo 2026-11-03: 2024 Q3(b) was
-    read as b(ii))."""
+    in order. ``labels`` are the map's labels with their part labels, so entries
+    are named as the questions are (Epo 2026-11-03: 2024 Q3(b) was read as b(ii))."""
 
     async def one(name: str, text: str) -> list[Entry]:
         message = await models.complete(
@@ -1035,88 +1286,131 @@ def _call_args(call: dict[str, Any]) -> tuple[str, dict[str, Any] | str]:
     return name, args
 
 
-def _box_rows(run: Run, page: Page) -> list[dict[str, Any]]:
-    """A page's boxes as the window's prompt lists them."""
-    return [
-        {
-            "box": number,
-            "page": page.number,
-            "coordinates": [round(value) for value in region.box],
-            "label": region.label,
-            "score": round(region.score, 2),
-        }
-        for number, (on, region) in run.boxes.items()
-        if on is page
-    ]
+class EmptyMap(elitellm.ProviderError):
+    """The map reply held no question."""
 
 
-async def _window(run: Run, pages: list[Page], *, model: ModelConfig) -> None:
-    run.boxes = numbered_boxes(pages)
-    run.window_last = None
-    intro = prompts.window_intro(
-        expected=run.expected, recorded=run.labels(), open_question=run.open_question()
-    )
-    messages = prompts.window_messages(
-        intro,
+async def read_map(
+    pages: list[Page],
+    boxes: dict[int, tuple[Page, layout.Region]],
+    *,
+    model: ModelConfig,
+) -> tuple[list[dict[str, Any]], list[MapRow], int]:
+    """The map call: its messages with its reply, for every thread to continue,
+    its rows, and its output tokens. A reply that calls a tool or is cut off is a
+    failed attempt."""
+    messages = prompts.map_messages(
         [
             (
                 prompts.page_text(
-                    index,
-                    p.number,
-                    p.file_name,
-                    p.text[:PAGE_TEXT_CHARS],
-                    _box_rows(run, p),
+                    index, p.number, p.file_name, p.text[:PAGE_TEXT_CHARS]
                 ),
                 await p.image(),
             )
             for index, p in enumerate(pages, 1)
         ],
+        [
+            {
+                "box": number,
+                "page": page.number,
+                "coordinates": [round(value) for value in region.box],
+                "label": region.label,
+                "score": round(region.score, 2),
+            }
+            for number, (page, region) in boxes.items()
+        ],
     )
-    window: set[str] = set()
-    for _ in range(WINDOW_STEPS):
-        response = await models.complete_response(
-            messages,
-            model=model,
-            tools=prompts.TOOLS,
-            max_tokens=WINDOW_MAX_TOKENS,
-            call_purpose="extraction_window",
+    response = await models.complete_response(
+        messages,
+        model=model,
+        tools=prompts.TOOLS,
+        max_tokens=MAX_TOKENS,
+        call_purpose="extraction_map",
+    )
+    reply = elitellm.assistant_message_from_obj(
+        elitellm.message_from_response(response)
+    )
+    if reply.get("tool_calls") or response.choices[0].finish_reason == "length":
+        raise elitellm.ProviderError("the map reply was cut off or called a tool")
+    rows = parse_map(str(reply.get("content") or ""))
+    if not rows:
+        raise EmptyMap("the map reply held no map lines")
+    return [*messages, reply], rows, response.usage.output_tokens
+
+
+Handle = Callable[[str, dict[str, Any]], Awaitable[str]]
+
+
+async def _rounds(
+    run: Run,
+    messages: list[dict[str, Any]],
+    *,
+    model: ModelConfig,
+    purpose: str,
+    handle: Handle,
+) -> None:
+    """One thread's calls, up to THREAD_ROUNDS, added to ``messages``. A failed call
+    is tried once more where it is, so a failed stream costs its own round; what the
+    thread already recorded stays when it fails for good."""
+    for _ in range(THREAD_ROUNDS):
+        if _credits_out():
+            run.credits_out = True
+        if run.stopping:
+            return
+        response = await _attempted(
+            functools.partial(
+                models.complete_response,
+                messages,
+                model=model,
+                tools=prompts.TOOLS,
+                max_tokens=MAX_TOKENS,
+                call_purpose=purpose,
+            )
         )
         run.output_tokens += response.usage.output_tokens
         if run.over_budget:
-            break
+            return
         if response.choices[0].finish_reason == "length":
-            # Cut off at the output cap, its calls unfinished (the bench lost
-            # two windows of a paper this way): ask again for smaller calls.
+            # Cut off at the output cap, its calls unfinished: ask again for
+            # smaller calls.
             messages.append({"role": "user", "content": prompts.CUT_OFF})
             continue
         reply = elitellm.assistant_message_from_obj(
             elitellm.message_from_response(response)
         )
+        messages.append(reply)
         calls = reply.get("tool_calls") or []
         if not calls:
-            break
-        messages.append(reply)
+            return
         for call in calls:
             name, args = _call_args(call)
-            if isinstance(args, str):
-                result = args
-            elif name == "record_question":
-                result = await run.add(args, window, pages)
-            elif name == "continue_question":
-                result = await run.extend(args, window, pages)
-            else:
-                result = f"There is no tool {name}."
+            result = args if isinstance(args, str) else await handle(name, args)
             messages.append(
                 {"role": "tool", "tool_call_id": call.get("id"), "content": result}
             )
         if run.full:
-            break
-    # The last question recorded in this window may run onto the next page.
-    recorded_here = [
-        held.label for held in run.held() if label_key(held.label) in window
-    ]
-    if recorded_here:
-        run.open_label = recorded_here[-1]
+            return
+
+
+_THREAD_FAILURES = (elitellm.ProviderError, TimeoutError)
+
+
+def _kept_going(results: list[Any]) -> list[BaseException]:
+    """A thread that failed on the provider ends alone; anything else fails the
+    run. The failures, for a run left with nothing."""
+    failures = [r for r in results if isinstance(r, BaseException)]
+    for failure in failures:
+        if not isinstance(failure, _THREAD_FAILURES):
+            raise failure
+        log.warning("extraction thread failed: %s", failure)
+    return failures
+
+
+async def _cancelled(tasks: list[asyncio.Task[Any]]) -> None:
+    """Stop what is still running when the run's stream goes away."""
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def locate(
@@ -1205,9 +1499,8 @@ async def run(
     validate: Validate,
     locale: str | None,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Events: ``questions`` after each window (every question recorded so
-    far, before pairing), then ``done`` with the quiz's questions and the
-    report."""
+    """Events: ``questions`` after each copy batch (every question copied so far,
+    with no answers yet), then ``done`` with the quiz's questions and the report."""
     found = await layout.read_regions([page.image for page in pages])
     pages = [
         dataclasses.replace(page, regions=regions)
@@ -1216,63 +1509,214 @@ async def run(
     current = Run(
         validate=validate,
         ai_label=AI_WRITTEN[normalize_locale(locale)],
-        output_budget=WINDOW_OUTPUT_PER_PAGE * len(pages),
+        boxes=numbered_boxes(pages),
+        output_budget=OUTPUT_PER_PAGE * len(pages),
     )
-    current.expected = await _attempted(functools.partial(outline, pages, model=model))
-    stopped = ""
-    windows = 0
-    for start in range(0, len(pages), WINDOW_PAGES):
-        if _credits_out():
-            stopped = "credits"
-            break
-        # A retried window records again over what it recorded before.
-        await _attempted(
-            functools.partial(
-                _window, current, pages[start : start + WINDOW_PAGES], model=model
-            )
+    note = ANSWER_MISSING[normalize_locale(locale)]
+    try:
+        base, rows, output = await _attempted(
+            functools.partial(read_map, pages, current.boxes, model=model)
         )
-        windows += 1
-        yield {
-            "type": "questions",
-            "questions": [held.question for held in current.held()],
-        }
-        if current.full:
-            stopped = "quiz_full"
-            break
-        if current.over_budget:
-            stopped = "output_limit"
-            break
-    held = current.held()
-    entries, repeats = (
-        _merged(
-            await parse_schemes(
+    except EmptyMap:
+        base, rows, output = [], [], 0
+    current.output_tokens += output
+    current.order = {label_key(row.label): n for n, row in enumerate(rows)}
+    batches = [[row.label for row in group] for group in _chunks_of(rows, COPY_BATCH)]
+    threads: list[list[dict[str, Any]]] = [list(base) for _ in batches]
+    # The thread that copied each question: its solve call continues that one.
+    copied_in: dict[str, int] = {}
+
+    def copying(index: int) -> Handle:
+        async def handle(name: str, args: dict[str, Any]) -> str:
+            if name == "record_question":
+                result = await current.copy_question(args, pages)
+                if result.endswith("recorded."):
+                    copied_in[label_key(str(args.get("label") or ""))] = index
+                return result
+            if name == "record_answers":
+                label = str(args.get("label") or "").strip()
+                return (
+                    f"Question {label}: not yet. Copy every question first; you are "
+                    "asked for the answers later."
+                )
+            return f"There is no tool {name}."
+
+        return handle
+
+    async def copy_batch(index: int, asks: list[list[str]]) -> None:
+        # Its own task, so the level stays with this thread.
+        registry.bind_request_llm(COPY_THINKING)
+        for labels in asks:
+            threads[index].append({"role": "user", "content": prompts.copy_ask(labels)})
+            await _rounds(
+                current,
+                threads[index],
+                model=model,
+                purpose="extraction_copy",
+                handle=copying(index),
+            )
+
+    def solving(index: int) -> Handle:
+        async def handle(name: str, args: dict[str, Any]) -> str:
+            if name == "record_answers":
+                return await current.record_answers(args, pages)
+            if name == "record_question":
+                label = str(args.get("label") or "").strip()
+                if label_key(label) in current.copies:
+                    return (
+                        f"Question {label}: it is already copied; give its answers "
+                        "with record_answers."
+                    )
+                return await copying(index)(name, args)
+            return f"There is no tool {name}."
+
+        return handle
+
+    async def solve_batch(index: int, labels: list[str]) -> None:
+        await _rounds(
+            current,
+            [
+                *threads[index],
+                {"role": "user", "content": prompts.solve_ask(labels)},
+            ],
+            model=model,
+            purpose="extraction_solve",
+            handle=solving(index),
+        )
+
+    def solve_tasks() -> list[asyncio.Task[None]]:
+        """Solve batches for what has no answers yet: runs of contiguous numbers, in
+        the thread that copied them."""
+        by_thread: dict[int, list[str]] = {}
+        for held in current.held():
+            key = label_key(held.label)
+            if key not in current.answered and key in copied_in:
+                by_thread.setdefault(copied_in[key], []).append(held.label)
+        return [
+            asyncio.create_task(solve_batch(index, group))
+            for index, labels in by_thread.items()
+            for contiguous in _runs_of(labels)
+            for group in _chunks_of(contiguous, SOLVE_BATCH)
+        ]
+
+    tasks: list[asyncio.Task[Any]] = []
+    parsing: asyncio.Task[list[list[Entry]]] | None = None
+    if schemes and rows:
+        parsing = asyncio.create_task(
+            parse_schemes(
                 schemes,
                 model=model,
-                labels=[(h.label, h.part_labels) for h in held],
+                labels=[(row.label, row.parts) for row in rows],
             )
         )
-        if schemes and held
-        else ({}, [])
-    )
+        tasks.append(parsing)
+    failures: list[BaseException] = []
+    pieces: list[list[Entry]] = []
+    scheme_failed = False
+    try:
+        copies = [
+            asyncio.create_task(copy_batch(index, [labels]))
+            for index, labels in enumerate(batches)
+        ]
+        tasks.extend(copies)
+        for finished in asyncio.as_completed(copies):
+            try:
+                await finished
+            except _THREAD_FAILURES as exc:
+                failures.append(exc)
+                log.warning("extraction copy batch failed: %s", exc)
+            yield {
+                "type": "questions",
+                "questions": [held.question for held in current.held()],
+            }
+        tried: set[str] = set()
+        for _ in range(COPY_REPAIR_PASSES):
+            missing = [
+                label for label in current.uncopied(rows, pages) if label not in tried
+            ]
+            if not missing or current.stopping or not threads:
+                break
+            tried.update(missing)
+            asks: dict[int, list[list[str]]] = {}
+            for labels in _runs_of(missing):
+                number = _number(labels[0]) or 0
+                index = next(
+                    (
+                        i
+                        for i, batch in enumerate(batches)
+                        if max(_number(label) or 0 for label in batch) >= number
+                    ),
+                    len(batches) - 1,
+                )
+                asks.setdefault(index, []).append(labels)
+            repairs = [
+                asyncio.create_task(copy_batch(index, runs))
+                for index, runs in asks.items()
+            ]
+            tasks.extend(repairs)
+            failures += _kept_going(
+                await asyncio.gather(*repairs, return_exceptions=True)
+            )
+            yield {
+                "type": "questions",
+                "questions": [held.question for held in current.held()],
+            }
+        current.fill_figures(rows, pages)
+        current.in_printed_order()
+        if failures and not current.copies:
+            raise failures[0]
+        if parsing is not None:
+            try:
+                pieces = await parsing
+            except _THREAD_FAILURES as exc:
+                # The copies stay and the model works every answer out.
+                log.warning("extraction scheme failed: %s", exc)
+                scheme_failed = True
+        known, _ = _merged(pieces)
+        for held in current.held():
+            paired = pair(held, known)
+            if all(
+                source == SCHEME for source in paired.held.sources
+            ) and not await validate(paired.held.question):
+                current.answered.add(label_key(held.label))
+        # A thread that ended early gets one more call for what it left out.
+        for _ in range(2):
+            if current.stopping:
+                break
+            solves = solve_tasks()
+            if not solves:
+                break
+            tasks.extend(solves)
+            _kept_going(await asyncio.gather(*solves, return_exceptions=True))
+    except BaseException:
+        await _cancelled(tasks)
+        raise
+    if _credits_out():
+        current.credits_out = True
+    held = current.held()
+    entries, repeats = _merged(pieces)
     used: set[tuple[str, str]] = set()
     worked_out: list[str] = []
     disagreements: list[str] = []
     refused: list[str] = []
     marks_differ: list[str] = []
+    answers_missing: list[str] = []
     finals: list[Recorded] = []
     for question in held:
         paired = pair(question, entries)
+        missing_here = _mark_no_answer(paired.held, note)
         if paired.matched:
             key = label_key(question.label)
             used.update(k for k in entries if k[0] == key)
             disagreements.extend(paired.disagreed)
-            # The scheme's version is checked as the quiz's creation will
-            # check it; a refusal keeps the page's keys rather than losing the
-            # question.
-            if await validate(paired.held.question):
-                refused.append(question.label)
-            else:
-                question = paired.held
+        # The scheme's version is checked as the quiz's creation will check it; a
+        # refusal keeps the page's keys rather than losing the question.
+        if paired.matched and await validate(paired.held.question):
+            refused.append(question.label)
+            missing_here = _mark_no_answer(question, note)
+        else:
+            question = paired.held
+        answers_missing.extend(missing_here)
         finals.append(question)
         if WORKED_OUT in question.sources:
             worked_out.append(question.label)
@@ -1283,18 +1727,27 @@ async def run(
     figures = [question.label for question in finals if question.figures]
     crops: dict[str, str] = {}
     saved = [await placed(question, crops) for question in finals]
+    for question in saved:
+        _dollar_math_in(question)
     recorded = {label_key(label) for label in current.labels()}
+    expected = [row.label for row in rows]
     yield {
         "type": "done",
         "questions": saved,
         # The crops the questions' image blocks name (figure:<id>), base64.
         "figures": [{"id": key, "image": image} for key, image in crops.items()],
         "report": {
-            "expected": current.expected,
+            # The map's questions, those with no copy, and those copied.
+            "expected": expected,
             "missing": [
-                label for label in current.expected if label_key(label) not in recorded
+                label for label in expected if label_key(label) not in recorded
             ],
             "recorded": current.labels(),
+            # Parts saved with no answer, a marking note in its place, because their
+            # solve call failed or the run stopped first.
+            "answersMissing": answers_missing,
+            # The answer files could not be parsed, so every answer was worked out.
+            "schemeFailed": scheme_failed,
             # Questions with a part whose key the model worked out and no
             # scheme replaced: their solutions carry the AI-written label.
             "keysWorkedOut": worked_out,
@@ -1319,9 +1772,10 @@ async def run(
             # those whose figures did not fit in the starter's storage).
             "figures": figures,
             "figuresLeftOut": figures_left_out,
-            "stopped": stopped,
+            "stopped": current.stopped(),
             "pages": len(pages),
-            "windows": windows,
+            # The copy batches: the name stays for the screens' API.
+            "windows": len(batches),
         },
     }
 

@@ -1,8 +1,9 @@
-"""Make a quiz: recording page windows with their keys, pairing the mark
-scheme by label, and the run's report (pipeline.retrieval.extraction)."""
+"""Make a quiz: the map, copy batches and solve calls, pairing the mark scheme by
+label, and the run's report (pipeline.retrieval.extraction)."""
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import copy
 import io
@@ -12,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
+from pipeline import registry
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import extraction
 
@@ -229,57 +231,6 @@ def test_plain_option_lines_are_taken_out_too():
     )
 
 
-async def test_the_last_question_of_a_window_can_be_continued_in_that_window():
-    """Q1 recorded with a(i) and a(ii), then continued in the same window: all
-    its parts stay. A refusal here sent the model back to record it again, and
-    that record replaced the earlier parts."""
-
-    async def validate(question):
-        return None
-
-    run = extraction.Run(validate=validate, ai_label=AI)
-    window: set[str] = set()
-    pages = [_page(1)]
-    first = _open("1", [("a(i)", 1), ("a(ii)", 1)])
-    assert await run.add(first, window, pages) == "Question 1: recorded."
-    more = {"label": "1", "parts": [_open_part("a(iii)", 2), _open_part("b", 4)]}
-    assert await run.extend(more, window, pages) == "Question 1: continued."
-    assert run.recorded["1"].part_labels == ["a(i)", "a(ii)", "a(iii)", "b"]
-    assert [p["marks"] for p in run.recorded["1"].question["parts"]] == [1, 1, 2, 4]
-
-
-async def test_trailing_text_goes_in_front_of_the_next_windows_first_part():
-    """A sentence at the end of the page a window ended on: held, shown to the
-    next window with the open question, and put in front of the part continued
-    there. Only once when the model copied it there too."""
-
-    async def validate(question):
-        return None
-
-    run = extraction.Run(validate=validate, ai_label=AI)
-    pages = [_page(4)]
-    first = _open("2", [("a", 1)])
-    first["trailing_text"] = "Person A and person B were monitored."
-    await run.add(first, set(), pages)
-    run.open_label = "2"
-    assert run.open_question()["trailing_text"] == first["trailing_text"]
-
-    more = {"label": "2", "parts": [_open_part("b(i)", 1)]}
-    assert await run.extend(more, set(), pages) == "Question 2: continued."
-    blocks = run.recorded["2"].question["parts"][1]["blocks"]
-    assert blocks == [*_text(first["trailing_text"]), *_text("Find b(i).")]
-    assert "trailing_text" not in run.open_question()
-
-    copied = _open("3", [("a", 1)])
-    copied["trailing_text"] = "Data for (b)."
-    await run.add(copied, set(), pages)
-    run.open_label = "3"
-    part = _open_part("b(i)", 1)
-    part["blocks"] = _text("Data for (b).")
-    await run.extend({"label": "3", "parts": [part]}, set(), pages)
-    assert run.recorded["3"].question["parts"][1]["blocks"] == _text("Data for (b).")
-
-
 def test_a_one_part_question_shows_its_text_once():
     """A one-part question whose stem repeats its part's text keeps it once,
     in the part; a stem that differs stays."""
@@ -421,7 +372,7 @@ async def test_a_failing_provider_retries_once_then_fails(monkeypatch):
     assert calls.count("silent") == 2
 
 
-async def test_scheme_parse_names_entries_by_the_recorded_labels(monkeypatch):
+async def test_scheme_parse_names_entries_by_the_labels_it_is_given(monkeypatch):
     monkeypatch.setattr(extraction, "ATTEMPT_WAIT_S", 0)
     replies = iter(
         [
@@ -459,345 +410,6 @@ def test_page_texts_spread_passages_over_their_pages():
     assert texts == {1: "one\n\ncaption", 2: "one\n\ntwo"}
 
 
-async def test_run_records_keys_continues_pairs_and_reports(monkeypatch):
-    """Two windows (pages 1-2, page 3): question 1 is refused once and
-    recorded again, question 2's first call is not JSON and is sent again,
-    then runs onto page 3, question 3 is never recorded and question 4 has no
-    scheme entry, so it keeps its worked-out key."""
-    replies = iter(
-        [
-            # Outline.
-            SimpleNamespace(content='{"questions": ["1", "2", "3", "4"]}'),
-            # Window 1: 1 is refused (no options) and 2's call closes early.
-            {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    _call("record_question", _mcq("1", [])),
-                    {
-                        "id": "call_cut",
-                        "type": "function",
-                        "function": {
-                            "name": "record_question",
-                            "arguments": json.dumps(_open("2", [("a", 2)])) + "}",
-                        },
-                    },
-                ],
-            },
-            {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    _call("record_question", _mcq("1", ["p", "q"]), 1),
-                    _call("record_question", _open("2", [("a", 2)], total=4), 3),
-                ],
-            },
-            {"role": "assistant", "content": "DONE"},
-            # Window 2: a reply cut off at the cap is asked again; then 2
-            # continues with part b and 4 is recorded.
-            {"role": "assistant", "content": "", "finish": "length"},
-            {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    _call(
-                        "continue_question",
-                        {"label": "2", "parts": [_open_part("b", 1)]},
-                    ),
-                    _call("record_question", _mcq("4", ["r", "s"], 1), 2),
-                ],
-            },
-            {"role": "assistant", "content": "DONE"},
-        ]
-    )
-    windows: list[str] = []
-    results: set[str] = set()
-
-    async def complete(messages, **kwargs):
-        return next(replies)
-
-    async def complete_response(messages, **kwargs):
-        windows.append(messages[1]["content"][0]["text"])
-        results.update(m["content"] for m in messages if m["role"] == "tool")
-        reply = next(replies)
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    finish_reason=reply.pop("finish", "stop"), message=reply
-                )
-            ],
-            usage=SimpleNamespace(output_tokens=100),
-        )
-
-    labels_seen: list = []
-
-    async def scheme(files, *, model, labels):
-        labels_seen.append(labels)
-        return [
-            extraction.entries_from(
-                {
-                    "entries": [
-                        {"question": "1", "part": "", "answer": "B"},
-                        {
-                            "question": "2",
-                            "part": "a",
-                            "points": [{"text": "1M", "marks": 2}],
-                        },
-                        {
-                            "question": "2",
-                            "part": "b",
-                            "points": [{"text": "1A", "marks": 1}],
-                        },
-                        {"question": "9", "part": "", "answer": "A"},
-                    ]
-                }
-            )
-        ]
-
-    async def validate(question):
-        options = question["parts"][0]["answer"].get("options")
-        return (
-            "invalid question: choice answers require two options"
-            if options == []
-            else None
-        )
-
-    monkeypatch.setattr(extraction.models, "complete", complete)
-    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
-    monkeypatch.setattr(extraction, "parse_schemes", scheme)
-    events = [
-        event
-        async for event in extraction.run(
-            [_page(1, "1. ... 2. ..."), _page(2), _page(3)],
-            [extraction.SchemeFile("scheme.pdf", "1. B")],
-            model=MODEL,
-            validate=validate,
-            locale="en",
-        )
-    ]
-    assert [e["type"] for e in events] == ["questions", "questions", "done"]
-    # Only labels and the open question carry into the second window.
-    assert "Already recorded: 1, 2." in windows[-1] and '"label": "2"' in windows[-1]
-    assert windows.count(windows[-1]) == 3  # the cut-off reply was asked again
-    assert any(
-        r.startswith("The arguments were not valid JSON (Extra data") for r in results
-    )
-    assert labels_seen == [[("1", [""]), ("2", ["a", "b"]), ("4", [""])]]
-    done = events[-1]
-    report = done["report"]
-    assert report["recorded"] == ["1", "2", "4"]
-    assert report["missing"] == ["3"]
-    assert report["keysWorkedOut"] == ["4"]
-    assert report["keyDisagreements"] == ["1"]
-    assert report["unpaired"] == ["9"]
-    # Question 2 prints 4 marks in all; the scheme's parts add up to 3.
-    assert report["marksDiffer"] == ["2"]
-    first, second, fourth = done["questions"]
-    assert first["parts"][0]["answer"]["correct"] == [1]
-    assert [p["markscheme"] for p in second["parts"]] == [
-        [{"text": "1M", "marks": 2}],
-        [{"text": "1A", "marks": 1}],
-    ]
-    assert fourth["parts"][0]["answer"]["correct"] == [1]
-    assert fourth["parts"][0]["solution"][0]["label"] == AI
-
-
-async def test_a_run_past_its_output_budget_stops_and_keeps_what_it_has(monkeypatch):
-    """A window whose replies run on past the run's output budget (8,000 tokens
-    a selected page) ends the run as output_limit; the questions recorded so far
-    are saved and the rest are missing."""
-    replies = iter(
-        [
-            {"tool_calls": [_call("record_question", _mcq("1", ["p", "q"]))]},
-            {"finish": "length", "tokens": 24_000},
-        ]
-    )
-
-    async def complete(messages, **kwargs):
-        return SimpleNamespace(content='{"questions": ["1", "2"]}')
-
-    async def complete_response(messages, **kwargs):
-        reply = next(replies)
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    finish_reason=reply.get("finish", "tool_calls"),
-                    message={"role": "assistant", "content": "", **reply},
-                )
-            ],
-            usage=SimpleNamespace(output_tokens=reply.get("tokens", 500)),
-        )
-
-    async def validate(question):
-        return None
-
-    monkeypatch.setattr(extraction.models, "complete", complete)
-    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
-    events = [
-        event
-        async for event in extraction.run(
-            [_page(1, "1. ... 2. ..."), _page(2), _page(3)],
-            [],
-            model=MODEL,
-            validate=validate,
-            locale="en",
-        )
-    ]
-    report = events[-1]["report"]
-    assert report["stopped"] == "output_limit"
-    assert report["recorded"] == ["1"] and report["missing"] == ["2"]
-    assert report["windows"] == 1
-
-
-async def test_figures_are_cropped_from_their_page_and_placed_after_their_part(
-    monkeypatch,
-):
-    """A figure with no box names its page image in the window and the part it
-    follows; a call that sees that page alone gives its box, and the done event
-    crops it from that page and places an image block after that part's text
-    (the stem for ""), with the crop beside the questions. A figure naming a
-    part the question lacks goes back to the model."""
-    with_figures = _open("8", [("a", 2), ("b", 2)])
-    with_figures["figures"] = [
-        {"boxes": [], "image": 2, "part": "", "description": "Triangle ABC"},
-        {"boxes": [], "image": 1, "part": "b"},
-    ]
-    wrong = copy.deepcopy(with_figures)
-    wrong["figures"] = [{"boxes": [], "image": 1, "part": "c"}]
-    replies = iter(
-        [
-            {"tool_calls": [_call("record_question", wrong)]},
-            {"tool_calls": [_call("record_question", with_figures, 1)]},
-            {"content": "DONE"},
-        ]
-    )
-    results: list[str] = []
-
-    located: list[str] = []
-
-    async def complete(messages, **kwargs):
-        if kwargs["call_purpose"] != "extraction_figures":
-            return SimpleNamespace(content='{"questions": ["8"]}')
-        listed = messages[1]["content"][0]["text"]
-        located.append(listed)
-        box = [100, 180, 920, 1005] if "Triangle ABC" in listed else [10, 0, 480, 500]
-        return SimpleNamespace(content=json.dumps({"boxes": [box]}))
-
-    async def complete_response(messages, **kwargs):
-        results.extend(m["content"] for m in messages if m["role"] == "tool")
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    finish_reason="stop",
-                    message={"role": "assistant", "content": "", **next(replies)},
-                )
-            ],
-            usage=SimpleNamespace(output_tokens=100),
-        )
-
-    async def validate(question):
-        return None
-
-    monkeypatch.setattr(extraction.models, "complete", complete)
-    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
-    crops: list = []
-    events = [
-        event
-        async for event in extraction.run(
-            [_page(5, crops=crops), _page(6, crops=crops)],
-            [],
-            model=MODEL,
-            validate=validate,
-            locale="en",
-        )
-    ]
-    assert any("figures[0].part: the question has no part c" in r for r in results)
-    done = events[-1]
-    [question] = done["questions"]
-    stem_figure = question["stem"][-1]
-    assert stem_figure == {
-        "type": "image",
-        "image": {"assetId": "figure:q8-1"},
-        "width": 400,
-        "height": 300,
-        "description": "Triangle ABC",
-    }
-    assert question["parts"][1]["blocks"][-1]["image"] == {"assetId": "figure:q8-2"}
-    # One locate call a page, naming its figures; the located box, grown to ink
-    # (none on these pages), its margin on and held to the page, is cropped from
-    # that page.
-    assert sorted(located) == [
-        "The figures on this page:\n1. Question 8: Triangle ABC",
-        "The figures on this page:\n1. Question 8: its figure",
-    ]
-    assert sorted(crops) == [
-        (5, [5.0, 0.0, 486.0, 506.0]),
-        (6, [95.0, 175.0, 926.0, 1000.0]),
-    ]
-    assert done["figures"] == [
-        {"id": "q8-1", "image": base64.b64encode(b"jpeg 6").decode()},
-        {"id": "q8-2", "image": base64.b64encode(b"jpeg 5").decode()},
-    ]
-    assert done["report"]["figures"] == ["8"]
-
-
-async def test_a_page_whose_figure_boxes_fail_saves_its_questions_without_them(
-    monkeypatch,
-):
-    """The box call for a page fails, and fails again on its one retry: the
-    question is saved without that page's figure and the report names it,
-    while a figure on another page is still placed (Epo 2026-11-04)."""
-    item = _open("8", [("a", 2)])
-    item["figures"] = [
-        {"image": 1, "part": "", "description": "Triangle"},
-        {"image": 2, "part": "a", "description": "Graph"},
-    ]
-    replies = iter(
-        [{"tool_calls": [_call("record_question", item)]}, {"content": "DONE"}]
-    )
-    attempts: list[str] = []
-
-    async def complete(messages, **kwargs):
-        if kwargs["call_purpose"] != "extraction_figures":
-            return SimpleNamespace(content='{"questions": ["8"]}')
-        listed = messages[1]["content"][0]["text"]
-        attempts.append(listed)
-        if "Triangle" in listed:
-            raise extraction.elitellm.ProviderError("upstream error")
-        return SimpleNamespace(content='{"boxes": [[100, 100, 500, 500]]}')
-
-    async def complete_response(messages, **kwargs):
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    finish_reason="stop",
-                    message={"role": "assistant", "content": "", **next(replies)},
-                )
-            ],
-            usage=SimpleNamespace(output_tokens=100),
-        )
-
-    async def validate(question):
-        return None
-
-    monkeypatch.setattr(extraction, "ATTEMPT_WAIT_S", 0)
-    monkeypatch.setattr(extraction.models, "complete", complete)
-    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
-    events = [
-        event
-        async for event in extraction.run(
-            [_page(5), _page(6)], [], model=MODEL, validate=validate, locale="en"
-        )
-    ]
-    done = events[-1]
-    assert sum("Triangle" in a for a in attempts) == 2
-    [question] = done["questions"]
-    assert [b["type"] for b in question["stem"]] == ["text"]
-    assert question["parts"][0]["blocks"][-1]["image"] == {"assetId": "figure:q8-1"}
-    assert done["report"]["figuresLeftOut"] == ["8"]
-    assert done["report"]["figures"] == ["8"]
-
-
 def _figure_regions() -> tuple[tuple, tuple]:
     """Page 5: a figure in two boxes with its caption. Page 6: a chart."""
     region = extraction.layout.Region
@@ -809,91 +421,940 @@ def _figure_regions() -> tuple[tuple, tuple]:
     ), (region("chart", 0.884, [50.4, 60.6, 700.0, 800.0]),)
 
 
-def _replies(*replies: dict):
-    """A complete_response giving each reply in turn, with what it was sent."""
-    remaining = iter(replies)
-    sent: list[tuple[list[dict], dict]] = []
-
-    async def complete_response(messages, **kwargs):
-        sent.append((copy.deepcopy(messages), kwargs))
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    finish_reason="stop",
-                    message={"role": "assistant", "content": "", **next(remaining)},
-                )
-            ],
-            usage=SimpleNamespace(output_tokens=100),
-        )
-
-    return complete_response, sent
+# ------------------------------------------------------------ map, copy, solve
 
 
 async def _ok(question):
     return None
 
 
-async def test_a_window_gets_its_boxes_as_json_and_records_figures_by_number(
+def _row(
+    label: str,
+    first: int = 5,
+    last: int = 5,
+    parts: str = "none",
+    figures: str = "none",
+) -> str:
+    return f"{label} | pages {first}-{last} | parts {parts} | figures {figures}"
+
+
+def _copy(item: dict, first: int = 5, last: int = 5, **extra) -> dict:
+    """A copy call for ``item``: its answers are not sent."""
+    out = extraction._keyless(item)
+    return {"figures": [], "pages": [first, last], **out, **extra}
+
+
+def _answers(item: dict) -> dict:
+    """The record_answers call that goes with ``item``."""
+    parts = []
+    for part in item["parts"]:
+        answer = part["answer"]
+        given = {
+            "label": part["label"],
+            "key_source": part["key_source"],
+            "solution": part["solution"],
+            "accepted": answer.get("accepted", []),
+        }
+        for name in ("correct", "points"):
+            if name in answer:
+                given[name] = answer[name]
+        parts.append(given)
+    return {"label": item["label"], "parts": parts}
+
+
+def _tools(*calls: tuple[str, dict]) -> dict:
+    return {
+        "tool_calls": [_call(name, args, n) for n, (name, args) in enumerate(calls)]
+    }
+
+
+class Script:
+    """models.complete_response by the thread's last user message: the map's reply,
+    then each ask's replies in turn, then DONE. ``fail`` gives an ask exceptions to
+    raise before its next reply, ``before`` something to await first."""
+
+    def __init__(
+        self,
+        map_text: str,
+        replies: dict | None = None,
+        fail: dict | None = None,
+        before: dict | None = None,
+    ):
+        self.map_text = map_text
+        self.replies = {ask: list(r) for ask, r in (replies or {}).items()}
+        self.fail = {ask: list(r) for ask, r in (fail or {}).items()}
+        self.before = before or {}
+        self.sent: list[dict] = []
+
+    async def __call__(self, messages, **kwargs):
+        last = next(m["content"] for m in reversed(messages) if m["role"] == "user")
+        ask = last if isinstance(last, str) else "map"
+        self.sent.append(
+            {
+                "ask": ask,
+                "messages": copy.deepcopy(messages),
+                "thinking": registry.current_request_llm().thinking,
+                **kwargs,
+            }
+        )
+        if ask in self.before:
+            await self.before[ask]()
+        if self.fail.get(ask):
+            raise self.fail[ask].pop(0)
+        if ask == "map":
+            reply = {"content": self.map_text}
+        else:
+            remaining = self.replies.get(ask) or []
+            reply = dict(remaining.pop(0)) if remaining else {"content": "DONE"}
+        finish = reply.pop("finish", "stop")
+        tokens = reply.pop("tokens", 100)
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason=finish,
+                    message={"role": "assistant", "content": "", **reply},
+                )
+            ],
+            usage=SimpleNamespace(output_tokens=tokens),
+        )
+
+    def asks(self) -> list[str]:
+        return [call["ask"] for call in self.sent]
+
+
+def _no_call(*args, **kwargs):
+    raise AssertionError("no other call is expected")
+
+
+async def _run(
+    monkeypatch,
+    script: Script,
+    pages: list,
+    schemes=(),
+    *,
+    complete=_no_call,
+    validate=_ok,
+):
+    monkeypatch.setattr(extraction, "ATTEMPT_WAIT_S", 0)
+    monkeypatch.setattr(extraction.models, "complete_response", script)
+    monkeypatch.setattr(extraction.models, "complete", complete)
+    registry.bind_request_llm("mid")
+    return [
+        event
+        async for event in extraction.run(
+            pages, list(schemes), model=MODEL, validate=validate, locale="en"
+        )
+    ]
+
+
+def test_the_map_reads_its_lines_and_leaves_the_rest():
+    rows = extraction.parse_map(
+        "Here is the map.\n"
+        "1 | pages 2-3 | parts a(i), a(ii), b | figures 1, 2\n"
+        "**2** | page 4 | parts none | figures none\n"
+    )
+    assert rows == [
+        extraction.MapRow("1", 2, 3, ["a(i)", "a(ii)", "b"], [1, 2]),
+        extraction.MapRow("2", 4, 4, [], []),
+    ]
+
+
+def test_copying_carries_no_answers_and_answers_require_a_model_answer():
+    record_question, record_answers = extraction.prompts.TOOLS
+    question = record_question["function"]["parameters"]
+    assert question["required"] == ["label", "stem", "parts", "pages", "figures"]
+    part = question["properties"]["parts"]["items"]
+    assert part["required"] == ["label", "blocks", "answer", "marks"]
+    assert sorted(part["properties"]["answer"]["properties"]) == [
+        "options",
+        "type",
+        "unit",
+    ]
+    given = record_answers["function"]["parameters"]["properties"]["parts"]["items"]
+    assert given["required"] == ["label", "accepted", "key_source", "solution"]
+    assert given["properties"]["accepted"]["description"].endswith(
+        "open: a short model answer; mcq: an empty list."
+    )
+
+
+async def test_map_copy_and_solve_continue_one_conversation(monkeypatch):
+    """18 questions: copy batches of 16 at low, each from the map's messages and
+    reply, then solve batches of 8 at mid, each continuing the batch that copied
+    them. 48,000 tokens on every call and the same tools."""
+    items = {str(n): _mcq(str(n), ["p", "q"], 1) for n in range(1, 19)}
+    script = Script(
+        "\n".join(_row(label) for label in items),
+        {
+            "Copy questions 1 to 16 now.": [
+                _tools(
+                    *(("record_question", _copy(items[str(n)])) for n in range(1, 17))
+                )
+            ],
+            "Copy questions 17 to 18 now.": [
+                _tools(*(("record_question", _copy(items[str(n)])) for n in (17, 18)))
+            ],
+            "Give the answers to questions 1 to 8 now.": [
+                _tools(
+                    *(("record_answers", _answers(items[str(n)])) for n in range(1, 9))
+                )
+            ],
+            "Give the answers to questions 9 to 16 now.": [
+                _tools(
+                    *(("record_answers", _answers(items[str(n)])) for n in range(9, 17))
+                )
+            ],
+            "Give the answers to questions 17 to 18 now.": [
+                _tools(*(("record_answers", _answers(items[str(n)])) for n in (17, 18)))
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(5, "Text.")])
+    firsts = {}
+    for call in script.sent:
+        firsts.setdefault(call["ask"], call)
+    assert list(firsts) == [
+        "map",
+        "Copy questions 1 to 16 now.",
+        "Copy questions 17 to 18 now.",
+        "Give the answers to questions 1 to 8 now.",
+        "Give the answers to questions 9 to 16 now.",
+        "Give the answers to questions 17 to 18 now.",
+    ]
+    assert firsts["map"]["thinking"] == "mid"
+    assert firsts["map"]["call_purpose"] == "extraction_map"
+    assert firsts["Copy questions 1 to 16 now."]["thinking"] == "low"
+    assert firsts["Copy questions 1 to 16 now."]["call_purpose"] == "extraction_copy"
+    solve = firsts["Give the answers to questions 9 to 16 now."]
+    assert solve["thinking"] == "mid" and solve["call_purpose"] == "extraction_solve"
+    assert {call["max_tokens"] for call in script.sent} == {48_000}
+    assert {
+        tuple(tool["function"]["name"] for tool in call["tools"])
+        for call in script.sent
+    } == {("record_question", "record_answers")}
+    # Each copy batch starts from the map's messages and its reply.
+    map_messages = firsts["map"]["messages"]
+    copy_first = firsts["Copy questions 17 to 18 now."]["messages"]
+    assert copy_first[:2] == map_messages
+    assert copy_first[2]["content"] == "\n".join(_row(label) for label in items)
+    # A solve batch continues the whole copy thread that holds its questions.
+    conversation = solve["messages"]
+    asked = [m["content"] for m in conversation if m["role"] == "user"][1:]
+    assert asked == [
+        "Copy questions 1 to 16 now.",
+        "Give the answers to questions 9 to 16 now.",
+    ]
+    roles = [m["role"] for m in conversation[3:-1]]
+    assert roles.count("tool") == 16 and roles[-1] == "assistant"
+    assert conversation[-2]["content"] == "DONE"
+    other = firsts["Give the answers to questions 17 to 18 now."]["messages"]
+    assert [m["content"] for m in other if m["role"] == "user"][1:] == [
+        "Copy questions 17 to 18 now.",
+        "Give the answers to questions 17 to 18 now.",
+    ]
+    done = events[-1]
+    assert done["report"]["recorded"] == [str(n) for n in range(1, 19)]
+    assert done["report"]["keysWorkedOut"] == [str(n) for n in range(1, 19)]
+    assert done["report"]["answersMissing"] == []
+    assert done["report"]["windows"] == 2
+    assert all(q["parts"][0]["answer"]["correct"] == [1] for q in done["questions"])
+
+
+async def test_a_copied_question_counts_as_recorded_after_its_batch(monkeypatch):
+    """``questions`` goes out after each copy batch, holding the copies, with no
+    answers yet: what the screens count as recorded."""
+    item = _open("8", [("a", 2), ("b(i)", 1)], total=3)
+    item["parts"][1]["lead_in"] = "Data for (b)."
+    script = Script(
+        _row("8", parts="a, b(i)"),
+        {
+            "Copy question 8 now.": [_tools(("record_question", _copy(item)))],
+            "Give the answers to question 8 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(5)])
+    assert [e["type"] for e in events] == ["questions", "done"]
+    [copied] = events[0]["questions"]
+    assert copied["parts"][0]["answer"] == {"type": "open", "accepted": [], "hints": []}
+    assert (
+        copied["parts"][0]["markscheme"] == [] and copied["parts"][0]["solution"] == []
+    )
+    [saved] = events[1]["questions"]
+    assert saved["parts"][1]["blocks"][0] == {"type": "text", "text": "Data for (b)."}
+    assert saved["parts"][0]["markscheme"] == [{"text": "1A for a", "marks": 2}]
+    assert saved["parts"][0]["answer"]["accepted"] == ["answer a"]
+    assert saved["parts"][0]["solution"][0]["label"] == AI
+
+
+async def test_a_copy_is_checked_without_its_keys(monkeypatch):
+    """The validator sees placeholder keys, so only what was copied can be refused.
+    Pages and figures are required, a key sent anyway is dropped, and answers wait."""
+    seen: list[dict] = []
+
+    async def validate(question):
+        seen.append(copy.deepcopy(question))
+        options = question["parts"][0]["answer"].get("options")
+        return "choice answers require two options" if options == ["only"] else None
+
+    good = _mcq("1", ["p", "q"], 1)
+    no_pages = extraction._keyless(_mcq("1", ["p", "q"]))
+    no_pages["figures"] = []
+    outside = _copy(_mcq("1", ["p", "q"]), first=5, last=9)
+    no_figures = extraction._keyless(_mcq("1", ["p", "q"]))
+    no_figures["pages"] = [5, 5]
+    refused = _copy(_mcq("1", ["only"]))
+    sent_a_key = {"figures": [], "pages": [5, 5], **good}
+    script = Script(
+        _row("1"),
+        {
+            "Copy question 1 now.": [
+                _tools(
+                    ("record_question", no_pages),
+                    ("record_question", outside),
+                    ("record_question", no_figures),
+                    ("record_question", refused),
+                    ("record_answers", _answers(good)),
+                    ("other_tool", {}),
+                    ("record_question", sent_a_key),
+                )
+            ],
+            "Give the answers to question 1 now.": [
+                _tools(("record_answers", _answers(good)))
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(5)], validate=validate)
+    copying = [c for c in script.sent if c["ask"] == "Copy question 1 now."][-1]
+    results = [m["content"] for m in copying["messages"] if m["role"] == "tool"]
+    assert results == [
+        "Question 1: pages: expected [first, last], the page numbers it is printed on. Fix it and record it again.",
+        "Question 1: pages: expected [first, last], the page numbers it is printed on. Fix it and record it again.",
+        "Question 1: figures: give [] when it needs none. Fix it and record it again.",
+        "Question 1: choice answers require two options. Fix it and record it again.",
+        "Question 1: not yet. Copy every question first; you are asked for the answers later.",
+        "There is no tool other_tool.",
+        "Question 1: recorded.",
+    ]
+    assert seen[0]["parts"][0]["answer"]["correct"] == [0]
+    assert events[0]["questions"][0]["parts"][0]["answer"]["correct"] == []
+    assert events[-1]["questions"][0]["parts"][0]["answer"]["correct"] == [1]
+
+
+async def test_answers_are_merged_into_the_copy_and_checked(monkeypatch):
+    """Refusals name what to fix; an open part needs its model answer; a question
+    already copied is not copied again; a printed key stays printed."""
+    item = _open("2", [("a", 1), ("b", 2)])
+    item["parts"][0]["key_source"] = "printed"
+    no_part = _answers(item)
+    no_part["parts"][0]["label"] = "z"
+    no_source = _answers(item)
+    del no_source["parts"][0]["key_source"]
+    no_model = _answers(item)
+    no_model["parts"][1]["accepted"] = []
+    script = Script(
+        _row("2", parts="a, b"),
+        {
+            "Copy question 2 now.": [_tools(("record_question", _copy(item)))],
+            "Give the answers to question 2 now.": [
+                _tools(
+                    ("record_answers", {"label": "7", "parts": []}),
+                    ("record_answers", no_part),
+                    ("record_answers", no_source),
+                    ("record_answers", no_model),
+                    ("record_question", _copy(item)),
+                    ("record_answers", _answers(item)),
+                )
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(5)])
+    solving = script.sent[-1]["messages"]
+    results = [m["content"] for m in solving if m["role"] == "tool"][1:]
+    assert results == [
+        "Question 7: no question with this label was copied. Give the label it was copied with.",
+        'Question 2: it has no part "z"; its parts are a, b. Fix it and record it again.',
+        "Question 2: 2(a): key_source must be printed or worked_out. Fix it and record it again.",
+        "Question 2: 2(b): invalid accepted answers. Fix it and record it again.",
+        "Question 2: it is already copied; give its answers with record_answers.",
+        "Question 2: recorded.",
+    ]
+    done = events[-1]
+    [saved] = done["questions"]
+    assert saved["parts"][0]["solution"] == [{"type": "text", "text": "Work for a."}]
+    assert saved["parts"][1]["solution"][0]["label"] == AI
+
+
+async def test_a_scheme_is_parsed_from_the_map_and_removes_the_solving_it_covers(
     monkeypatch,
 ):
-    """After each page's text come its boxes as JSON, numbered across the
-    window, and the images stay as they are. A split figure takes its boxes
-    together with the caption beside them and a 1% pad, and no box call runs.
-    A number that is no box, or boxes on two pages, go back to the model."""
+    """The parse starts when the map ends, naming the map's rows, while the copying
+    runs. Q1 is covered: no call. Q2(a) is covered and Q2(b) is not: Q2 is solved,
+    and the scheme's part stays. Q3 has no entry: worked out."""
+    one, two, three = (
+        _mcq("1", ["p", "q"], 0),
+        _open("2", [("a", 1), ("b", 2)]),
+        _mcq("3", ["r", "s"], 1),
+    )
+    parsing = asyncio.Event()
+    labels_seen: list = []
+
+    async def complete(messages, **kwargs):
+        assert kwargs["call_purpose"] == "extraction_scheme"
+        labels_seen.append(messages[1]["content"].split("\n\n")[0])
+        parsing.set()
+        return SimpleNamespace(
+            content=json.dumps(
+                {
+                    "entries": [
+                        {
+                            "question": "1",
+                            "part": "",
+                            "answer": "B",
+                            "solution": "Scheme 1.",
+                        },
+                        {
+                            "question": "2",
+                            "part": "a",
+                            "answer": "7",
+                            "points": [{"text": "1A", "marks": 1}],
+                        },
+                    ]
+                }
+            )
+        )
+
+    async def copying_waits_for_the_parse():
+        await asyncio.wait_for(parsing.wait(), 1)
+
+    script = Script(
+        "\n".join([_row("1"), _row("2", parts="a, b"), _row("3")]),
+        {
+            "Copy questions 1 to 3 now.": [
+                _tools(
+                    ("record_question", _copy(one)),
+                    ("record_question", _copy(two)),
+                    ("record_question", _copy(three)),
+                )
+            ],
+            "Give the answers to questions 2 to 3 now.": [
+                _tools(
+                    ("record_answers", _answers(two)),
+                    ("record_answers", _answers(three)),
+                )
+            ],
+        },
+        before={"Copy questions 1 to 3 now.": copying_waits_for_the_parse},
+    )
+    events = await _run(
+        monkeypatch,
+        script,
+        [_page(5)],
+        [extraction.SchemeFile("scheme.pdf", "the scheme")],
+        complete=complete,
+    )
+    assert labels_seen == [
+        (
+            "The quiz holds these questions and parts; name each entry with one of "
+            "them where it matches: 1; 2: a, b; 3"
+        )
+    ]
+    assert "Give the answers to questions 2 to 3 now." in script.asks()
+    assert not any(
+        a.startswith("Give the answers to question 1") for a in script.asks()
+    )
+    done = events[-1]
+    first, second, third = done["questions"]
+    assert first["parts"][0]["answer"]["correct"] == [1]
+    assert first["parts"][0]["solution"] == [{"type": "text", "text": "Scheme 1."}]
+    assert second["parts"][0]["markscheme"] == [{"text": "1A", "marks": 1}]
+    assert second["parts"][0]["answer"]["accepted"] == ["7"]
+    assert second["parts"][1]["solution"][0]["label"] == AI
+    assert third["parts"][0]["answer"]["correct"] == [1]
+    report = done["report"]
+    assert report["keysWorkedOut"] == ["2", "3"]
+    assert report["answersMissing"] == []
+    assert report["schemeFailed"] is False
+
+
+async def test_a_scheme_covering_everything_makes_no_solve_call(monkeypatch):
+    item = _mcq("1", ["p", "q"], 0)
+
+    async def complete(messages, **kwargs):
+        return SimpleNamespace(
+            content='{"entries": [{"question": "1", "part": "", "answer": "B"}]}'
+        )
+
+    script = Script(
+        _row("1"), {"Copy question 1 now.": [_tools(("record_question", _copy(item)))]}
+    )
+    events = await _run(
+        monkeypatch,
+        script,
+        [_page(5)],
+        [extraction.SchemeFile("s.pdf", "1. B")],
+        complete=complete,
+    )
+    assert not any(a.startswith("Give the answers") for a in script.asks())
+    [saved] = events[-1]["questions"]
+    assert saved["parts"][0]["answer"]["correct"] == [1]
+    assert saved["parts"][0]["solution"] == []
+    assert events[-1]["report"]["keysWorkedOut"] == []
+
+
+async def test_a_scheme_that_cannot_be_parsed_leaves_every_answer_to_solving(
+    monkeypatch,
+):
+    item = _mcq("1", ["p", "q"], 1)
+
+    async def complete(messages, **kwargs):
+        raise extraction.elitellm.ProviderError("upstream error")
+
+    script = Script(
+        _row("1"),
+        {
+            "Copy question 1 now.": [_tools(("record_question", _copy(item)))],
+            "Give the answers to question 1 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
+    )
+    events = await _run(
+        monkeypatch,
+        script,
+        [_page(5)],
+        [extraction.SchemeFile("s.pdf", "1. B")],
+        complete=complete,
+    )
+    assert events[-1]["report"]["schemeFailed"] is True
+    assert events[-1]["questions"][0]["parts"][0]["answer"]["correct"] == [1]
+
+
+async def test_code_sends_a_repair_for_a_question_left_out(monkeypatch):
+    """A map row its batch left out, a number the map skips, and the next number
+    printed on a page no row covers each get a repair in the thread, ordered by
+    number; an answer a batch left out gets one more call."""
+    items = {n: _mcq(str(n), ["p", "q"], 1) for n in (1, 2, 3, 4, 5)}
+    script = Script(
+        "\n".join([_row("1"), _row("2"), _row("4")]),
+        {
+            "Copy questions 1 to 4 now.": [
+                _tools(
+                    ("record_question", _copy(items[1])),
+                    ("record_question", _copy(items[4])),
+                )
+            ],
+            "Copy questions 2 to 3 now.": [
+                _tools(
+                    ("record_question", _copy(items[2])),
+                    ("record_question", _copy(items[3])),
+                )
+            ],
+            "Copy question 5 now.": [
+                _tools(("record_question", _copy(items[5], 6, 6)))
+            ],
+            "Give the answers to questions 1 to 5 now.": [
+                _tools(*(("record_answers", _answers(items[n])) for n in (1, 2, 3, 5)))
+            ],
+            "Give the answers to question 4 now.": [
+                _tools(("record_answers", _answers(items[4])))
+            ],
+        },
+    )
+    pages = [_page(5, "1. x\n2. y\n3. z\n4. w"), _page(6, "5. tail")]
+    events = await _run(monkeypatch, script, pages)
+    asks = script.asks()
+    assert "Copy questions 2 to 3 now." in asks
+    assert "Copy question 5 now." in asks
+    assert asks.index("Give the answers to question 4 now.") > asks.index(
+        "Give the answers to questions 1 to 5 now."
+    )
+    done = events[-1]
+    assert done["report"]["recorded"] == ["1", "2", "3", "4", "5"]
+    assert done["report"]["expected"] == ["1", "2", "4"]
+    assert done["report"]["missing"] == []
+    assert done["report"]["answersMissing"] == []
+
+
+async def test_a_figure_a_batch_leaves_out_is_filled_from_the_map(monkeypatch):
+    """The map lists boxes for a question whose batch named none: its boxes are
+    cropped and placed with its text, and stay when its answers arrive."""
+    first, _ = _figure_regions()
+    item = _mcq("1", ["p", "q"], 1)
+
+    async def read_regions(images):
+        return [first]
+
+    monkeypatch.setattr(extraction.layout, "read_regions", read_regions)
+    script = Script(
+        _row("1", figures="1, 2"),
+        {
+            "Copy question 1 now.": [_tools(("record_question", _copy(item)))],
+            "Give the answers to question 1 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
+    )
+    crops: list = []
+    events = await _run(monkeypatch, script, [_page(5, crops=crops)])
+    done = events[-1]
+    assert crops == [(5, [90.0, 190.0, 510.0, 430.0])]
+    assert done["report"]["figures"] == ["1"]
+    assert done["questions"][0]["parts"][0]["blocks"][-1]["image"] == {
+        "assetId": "figure:q1-1"
+    }
+
+
+async def test_a_failed_stream_is_tried_again_where_it_is(monkeypatch):
+    """A round that fails costs that round: the thread's earlier replies stay and
+    nothing else restarts."""
+    one, two = _mcq("1", ["p", "q"], 1), _mcq("2", ["p", "q"], 1)
+    ask = "Copy questions 1 to 2 now."
+    script = Script(
+        "\n".join([_row("1"), _row("2")]),
+        {
+            ask: [
+                _tools(("record_question", _copy(one))),
+                _tools(("record_question", _copy(two))),
+            ],
+            "Give the answers to questions 1 to 2 now.": [
+                _tools(
+                    ("record_answers", _answers(one)), ("record_answers", _answers(two))
+                )
+            ],
+        },
+        fail={ask: [TimeoutError("provider sent no first event within 15 s")]},
+    )
+    events = await _run(monkeypatch, script, [_page(5)])
+    assert script.asks().count("map") == 1
+    # The ask's rounds: the failed call, the same call again, and the two after it.
+    rounds = [c for c in script.sent if c["ask"] == ask]
+    assert len(rounds) == 4
+    assert rounds[0]["messages"] == rounds[1]["messages"]
+    assert events[-1]["report"]["recorded"] == ["1", "2"]
+
+
+async def test_a_copy_batch_that_fails_ends_alone_and_its_questions_are_named(
+    monkeypatch,
+):
+    items = {str(n): _mcq(str(n), ["p", "q"], 1) for n in range(1, 18)}
+    ask = "Copy questions 1 to 16 now."
+    down = extraction.elitellm.ProviderError("upstream error")
+    script = Script(
+        "\n".join(_row(label) for label in items),
+        {
+            "Copy question 17 now.": [_tools(("record_question", _copy(items["17"])))],
+            "Give the answers to question 17 now.": [
+                _tools(("record_answers", _answers(items["17"])))
+            ],
+        },
+        fail={ask: [down] * 2},
+    )
+    monkeypatch.setattr(extraction, "COPY_REPAIR_PASSES", 0)
+    events = await _run(monkeypatch, script, [_page(5)])
+    report = events[-1]["report"]
+    assert report["recorded"] == ["17"]
+    assert report["missing"] == [str(n) for n in range(1, 17)]
+    assert report["answersMissing"] == []
+
+
+async def test_a_solve_call_that_fails_keeps_the_copies_and_names_what_is_missing(
+    monkeypatch,
+):
+    """A failed solve call leaves its questions in the quiz, as open parts whose
+    marking note says so, an mcq's options in its text. Others are unaffected."""
+    one, two, three = (
+        _mcq("1", ["p", "q"], 1),
+        _open("2", [("a", 2)]),
+        _mcq("3", ["r", "s"], 1),
+    )
+    short = _mcq("4", ["x"], 0)
+    short["parts"][0]["answer"] = {"type": "short", "accepted": ["7"], "unit": "cm"}
+    ask = "Give the answers to questions 1 to 2 now."
+    down = extraction.elitellm.ProviderError("upstream error")
+    monkeypatch.setattr(extraction, "SOLVE_BATCH", 2)
+    script = Script(
+        "\n".join(_row(str(n)) for n in (1, 2, 3, 4)),
+        {
+            "Copy questions 1 to 4 now.": [
+                _tools(
+                    ("record_question", _copy(one)),
+                    ("record_question", _copy(two)),
+                    ("record_question", _copy(three)),
+                    ("record_question", _copy(short)),
+                )
+            ],
+            "Give the answers to questions 3 to 4 now.": [
+                _tools(("record_answers", _answers(three)))
+            ],
+        },
+        fail={ask: [down] * 4},
+    )
+    events = await _run(monkeypatch, script, [_page(5)])
+    done = events[-1]
+    report = done["report"]
+    assert report["recorded"] == ["1", "2", "3", "4"]
+    assert report["answersMissing"] == ["1", "2(a)", "4"]
+    assert report["keysWorkedOut"] == ["3"]
+    note = extraction.ANSWER_MISSING["en"]
+    first, second, third, fourth = done["questions"]
+    assert first["parts"][0]["answer"] == {"type": "open", "accepted": [], "hints": []}
+    assert first["parts"][0]["markscheme"] == [{"text": note, "marks": 1}]
+    assert first["parts"][0]["blocks"][-1]["text"] == "A. p\nB. q"
+    assert second["parts"][0]["markscheme"] == [{"text": note, "marks": 2}]
+    assert third["parts"][0]["answer"]["correct"] == [1]
+    assert fourth["parts"][0]["answer"] == {"type": "open", "accepted": [], "hints": []}
+
+
+async def test_a_map_that_fails_twice_fails_the_run(monkeypatch):
+    down = extraction.elitellm.ProviderError("upstream error")
+    script = Script("", fail={"map": [down, down]})
+    with pytest.raises(extraction.elitellm.ProviderError):
+        await _run(monkeypatch, script, [_page(5)])
+    assert script.asks() == ["map", "map"]
+
+
+async def test_a_run_with_no_copies_after_a_failure_fails(monkeypatch):
+    down = extraction.elitellm.ProviderError("upstream error")
+    ask = "Copy question 1 now."
+    script = Script(_row("1"), fail={ask: [down] * 6})
+    with pytest.raises(extraction.elitellm.ProviderError):
+        await _run(monkeypatch, script, [_page(5)])
+
+
+async def test_a_map_with_no_questions_saves_nothing(monkeypatch):
+    events = await _run(monkeypatch, Script("No questions here."), [_page(5)])
+    assert events[-1]["questions"] == []
+    assert events[-1]["report"]["expected"] == []
+
+
+async def test_a_reply_cut_off_at_the_cap_is_asked_again(monkeypatch):
+    item = _mcq("1", ["p", "q"], 1)
+    ask = "Copy question 1 now."
+    script = Script(
+        _row("1"),
+        {
+            ask: [{"finish": "length", "tokens": 100}],
+            extraction.prompts.CUT_OFF: [_tools(("record_question", _copy(item)))],
+            "Give the answers to question 1 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(5)])
+    assert extraction.prompts.CUT_OFF in script.asks()
+    assert events[-1]["report"]["answersMissing"] == []
+
+
+async def test_a_run_past_its_output_budget_stops_and_keeps_what_it_has(monkeypatch):
+    """Output past 8,000 tokens a selected page ends the run as output_limit: what
+    was copied is saved and the rest is named."""
+    item = _mcq("1", ["p", "q"], 1)
+    ask = "Copy questions 1 to 2 now."
+    script = Script(
+        "\n".join([_row("1"), _row("2")]),
+        {
+            ask: [
+                _tools(("record_question", _copy(item))),
+                {"finish": "length", "tokens": 24_000},
+            ]
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(5, "1. ... 2. ...")])
+    report = events[-1]["report"]
+    assert report["stopped"] == "output_limit"
+    assert report["recorded"] == ["1"] and report["missing"] == ["2"]
+    assert report["answersMissing"] == ["1"]
+    assert not any(a.startswith("Give the answers") for a in script.asks())
+
+
+async def test_running_out_of_credits_stops_the_threads(monkeypatch):
+    item = _mcq("1", ["p", "q"], 1)
+    ask = "Copy question 1 now."
+    state = SimpleNamespace(credits_exhausted=False)
+
+    async def copy_then_out():
+        state.credits_exhausted = True
+
+    script = Script(
+        _row("1"),
+        {ask: [_tools(("record_question", _copy(item)))]},
+        before={ask: copy_then_out},
+    )
+    monkeypatch.setattr(extraction.accounting, "current", lambda: state)
+    events = await _run(monkeypatch, script, [_page(5)])
+    report = events[-1]["report"]
+    assert report["stopped"] == "credits"
+    assert report["recorded"] == ["1"] and report["answersMissing"] == ["1"]
+    assert not any(a.startswith("Give the answers") for a in script.asks())
+
+
+async def test_closing_the_stream_stops_the_threads(monkeypatch):
+    never = asyncio.Event()
+    cancelled: list[bool] = []
+
+    async def hang():
+        try:
+            await never.wait()
+        except asyncio.CancelledError:
+            cancelled.append(True)
+            raise
+
+    script = Script(
+        "\n".join([_row(str(n)) for n in range(1, 18)]),
+        {
+            "Copy question 17 now.": [
+                _tools(("record_question", _copy(_mcq("17", ["p", "q"]))))
+            ]
+        },
+        before={"Copy questions 1 to 16 now.": hang},
+    )
+    monkeypatch.setattr(extraction, "ATTEMPT_WAIT_S", 0)
+    monkeypatch.setattr(extraction.models, "complete_response", script)
+    registry.bind_request_llm("mid")
+    stream = extraction.run([_page(5)], [], model=MODEL, validate=_ok, locale="en")
+    first = await stream.__anext__()
+    assert first["type"] == "questions"
+    await stream.aclose()
+    assert cancelled == [True]
+
+
+def test_dollar_math_turns_backslash_math_into_dollars():
+    assert extraction.dollar_math(r"Find \(x^2\) and \[y\].") == "Find $x^2$ and $y$."
+    assert extraction.dollar_math(r"Two\( a \)lines\[ b\nc \]") == "Two$a$lines$b\\nc$"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Code stays code.
+        r"Run `grep '\(a\)' file` now.",
+        '```\nprintf("\\(x\\)")\n```',
+        # Math already between $ signs, and a printed dollar beside new math.
+        r"$\left\(x\right\)$",
+        r"Costs $5 and \(x\) more.",
+        # A pair holding a bare $, an escaped backslash, and half a pair.
+        r"\(a $ b\)",
+        r"a \\(b\\) c",
+        r"Swift says \(name) here.",
+        r"\(\)",
+    ],
+)
+def test_dollar_math_leaves_literals_alone(text):
+    assert extraction.dollar_math(text) == text
+
+
+async def test_saved_questions_show_no_backslash_math_and_tables_stay(monkeypatch):
+    item = _open("2", [("a", 2)])
+    item["stem"] = [
+        {"type": "text", "text": r"Let \(x\) be."},
+        {"type": "table", "header": False, "rows": [[r"\(\d+\)", "b"]]},
+    ]
+    item["parts"][0]["blocks"] = _text(r"Find \[y\].")
+    item["parts"][0]["answer"]["points"] = [{"text": r"Use \(x\)", "marks": 2}]
+    item["parts"][0]["answer"]["accepted"] = [r"\(7\)"]
+    item["parts"][0]["solution"] = r"So \(y=7\)."
+    mcq = _mcq("3", [r"\(a\)", r"\(b\)"], 1)
+    script = Script(
+        "\n".join([_row("2", parts="a"), _row("3")]),
+        {
+            "Copy questions 2 to 3 now.": [
+                _tools(
+                    ("record_question", _copy(item)), ("record_question", _copy(mcq))
+                )
+            ],
+            "Give the answers to questions 2 to 3 now.": [
+                _tools(
+                    ("record_answers", _answers(item)),
+                    ("record_answers", _answers(mcq)),
+                )
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(5)])
+    second, third = events[-1]["questions"]
+    assert second["stem"][0]["text"] == "Let $x$ be."
+    assert second["stem"][1]["rows"] == [[r"\(\d+\)", "b"]]
+    part = second["parts"][0]
+    assert part["blocks"][0]["text"] == "Find $y$."
+    assert part["markscheme"][0]["text"] == "Use $x$"
+    assert part["answer"]["accepted"] == ["$7$"]
+    assert part["solution"][0]["text"] == "So $y=7$."
+    assert third["parts"][0]["answer"]["options"] == ["$a$", "$b$"]
+
+
+async def test_the_map_message_holds_each_page_and_all_the_boxes(monkeypatch):
+    """Each page's text then its image, then every box as JSON, numbered once across
+    the selection, then the ask. A split figure takes its boxes with the caption
+    beside them and a 1% pad, and no box call runs. A number that is no box, or boxes
+    on two pages, go back to the model."""
     first, second = _figure_regions()
     item = _open("8", [("a", 2), ("b", 2)])
-    item["figures"] = [
+    figures = [
         {"boxes": [1, 2], "part": "", "description": "Split figure"},
         {"boxes": [3], "part": "b", "description": "A chart"},
     ]
-    unknown = copy.deepcopy(item)
-    unknown["figures"] = [{"boxes": [4], "part": "", "description": "Nothing"}]
-    across = copy.deepcopy(item)
-    across["figures"] = [{"boxes": [1, 3], "part": "", "description": "Two pages"}]
-    complete_response, sent = _replies(
-        {"tool_calls": [_call("record_question", unknown)]},
-        {"tool_calls": [_call("record_question", across, 1)]},
-        {"tool_calls": [_call("record_question", item, 2)]},
-        {"content": "DONE"},
+    ask = "Copy question 8 now."
+    script = Script(
+        _row("8", 5, 6, "a, b", "1, 2, 3"),
+        {
+            ask: [
+                _tools(
+                    (
+                        "record_question",
+                        _copy(
+                            item,
+                            5,
+                            6,
+                            figures=[{"boxes": [4], "part": "", "description": "None"}],
+                        ),
+                    ),
+                    (
+                        "record_question",
+                        _copy(
+                            item,
+                            5,
+                            6,
+                            figures=[
+                                {"boxes": [1, 3], "part": "", "description": "Two"}
+                            ],
+                        ),
+                    ),
+                    ("record_question", _copy(item, 5, 6, figures=figures)),
+                )
+            ],
+            "Give the answers to question 8 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
     )
-
-    async def complete(messages, **kwargs):
-        assert kwargs["call_purpose"] != "extraction_figures"
-        return SimpleNamespace(content='{"questions": ["8"]}')
 
     async def read_regions(images):
         return [first, second]
 
     monkeypatch.setattr(extraction.layout, "read_regions", read_regions)
-    monkeypatch.setattr(extraction.models, "complete", complete)
-    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
     crops: list = []
-    events = [
-        event
-        async for event in extraction.run(
-            [_page(5, "Text.", crops=crops), _page(6, crops=crops)],
-            [],
-            model=MODEL,
-            validate=_ok,
-            locale="en",
-        )
-    ]
-    content = sent[0][0][1]["content"]
-    assert content[1]["text"].endswith(
-        "\nBoxes on this page, as JSON: "
-        '[{"box": 1, "page": 5, "coordinates": [100, 200, 300, 400], '
-        '"label": "image", "score": 0.97}, '
-        '{"box": 2, "page": 5, "coordinates": [320, 210, 500, 390], '
-        '"label": "image", "score": 0.9}]'
+    events = await _run(
+        monkeypatch, script, [_page(5, "Text.", crops=crops), _page(6, crops=crops)]
     )
-    assert content[3]["text"] == (
-        "Page image 2: page 6 of paper.pdf. It has no indexed text.\n"
-        "Boxes on this page, as JSON: "
-        '[{"box": 3, "page": 6, "coordinates": [50, 61, 700, 800], '
-        '"label": "chart", "score": 0.88}]'
+    content = script.sent[0]["messages"][1]["content"]
+    assert content[0]["text"] == (
+        "Page image 1: page 5 of paper.pdf. Its indexed text:\n<source>\nText.\n</source>"
     )
-    assert content[2]["image_url"]["url"] == BLANK_PAGE
-    results = [m["content"] for m in sent[-1][0] if m["role"] == "tool"]
+    assert content[1]["image_url"]["url"] == BLANK_PAGE
+    assert (
+        content[2]["text"]
+        == "Page image 2: page 6 of paper.pdf. It has no indexed text."
+    )
+    assert content[4]["text"] == (
+        "Boxes on these pages, as JSON: "
+        '[{"box": 1, "page": 5, "coordinates": [100, 200, 300, 400], "label": "image", "score": 0.97}, '
+        '{"box": 2, "page": 5, "coordinates": [320, 210, 500, 390], "label": "image", "score": 0.9}, '
+        '{"box": 3, "page": 6, "coordinates": [50, 61, 700, 800], "label": "chart", "score": 0.88}]'
+    )
+    assert content[5]["text"] == extraction.prompts.MAP_ASK
+    copying = [c for c in script.sent if c["ask"] == ask][-1]["messages"]
+    results = [m["content"] for m in copying if m["role"] == "tool"]
     assert results[0] == (
         "Question 8: figures[0].boxes: there is no box 4 on these pages; the boxes "
         "are 1, 2, 3. Fix it and record it again."
@@ -902,10 +1363,7 @@ async def test_a_window_gets_its_boxes_as_json_and_records_figures_by_number(
         "Question 8: figures[0].boxes: a figure's boxes are on one page. Fix it and "
         "record it again."
     )
-    assert crops == [
-        (5, [90.0, 190.0, 510.0, 430.0]),
-        (6, [40.4, 50.6, 710.0, 810.0]),
-    ]
+    assert crops == [(5, [90.0, 190.0, 510.0, 430.0]), (6, [40.4, 50.6, 710.0, 810.0])]
     done = events[-1]
     assert done["report"]["figures"] == ["8"]
     assert done["report"]["figuresLeftOut"] == []
@@ -917,25 +1375,43 @@ async def test_a_window_gets_its_boxes_as_json_and_records_figures_by_number(
 async def test_a_figure_with_no_box_takes_the_box_call_beside_one_that_has_a_box(
     monkeypatch,
 ):
-    """Boxes [] with its page image sends that figure alone to the box call,
-    whose box is grown to ink; so do those of a page whose layout call failed. A
-    figure with a box is not asked about."""
+    """Boxes [] with its page image sends that figure alone to the box call, whose box
+    is grown to ink; a figure with a box is not asked about. A part the question lacks
+    goes back to the model."""
     first, _ = _figure_regions()
     item = _open("8", [("a", 2)])
-    item["figures"] = [
+    figures = [
         {"boxes": [1], "part": "", "description": "Picked"},
         {"boxes": [], "image": 1, "part": "", "description": "No box on its page"},
         {"boxes": [], "image": 2, "part": "a", "description": "Layout failed"},
     ]
-    complete_response, _ = _replies(
-        {"tool_calls": [_call("record_question", item)]},
-        {"content": "DONE"},
+    ask = "Copy question 8 now."
+    script = Script(
+        _row("8", 5, 6, "a"),
+        {
+            ask: [
+                _tools(
+                    (
+                        "record_question",
+                        _copy(
+                            item,
+                            5,
+                            6,
+                            figures=[{"boxes": [1], "part": "z", "description": "x"}],
+                        ),
+                    ),
+                    ("record_question", _copy(item, 5, 6, figures=figures)),
+                )
+            ],
+            "Give the answers to question 8 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
     )
     located: list[str] = []
 
     async def complete(messages, **kwargs):
-        if kwargs["call_purpose"] != "extraction_figures":
-            return SimpleNamespace(content='{"questions": ["8"]}')
+        assert kwargs["call_purpose"] == "extraction_figures"
         located.append(messages[1]["content"][0]["text"])
         return SimpleNamespace(content='{"boxes": [[300, 300, 400, 400]]}')
 
@@ -943,19 +1419,19 @@ async def test_a_figure_with_no_box_takes_the_box_call_beside_one_that_has_a_box
         return [first, ()]
 
     monkeypatch.setattr(extraction.layout, "read_regions", read_regions)
-    monkeypatch.setattr(extraction.models, "complete", complete)
-    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
     crops: list = []
-    events = [
-        event
-        async for event in extraction.run(
-            [_page(5, crops=crops), _page(6, crops=crops)],
-            [],
-            model=MODEL,
-            validate=_ok,
-            locale="en",
-        )
-    ]
+    events = await _run(
+        monkeypatch,
+        script,
+        [_page(5, crops=crops), _page(6, crops=crops)],
+        complete=complete,
+    )
+    copying = [c for c in script.sent if c["ask"] == ask][-1]["messages"]
+    assert any(
+        "figures[0].part: the question has no part z" in m["content"]
+        for m in copying
+        if m["role"] == "tool"
+    )
     assert sorted(located) == [
         "The figures on this page:\n1. Question 8: Layout failed",
         "The figures on this page:\n1. Question 8: No box on its page",
@@ -968,9 +1444,50 @@ async def test_a_figure_with_no_box_takes_the_box_call_beside_one_that_has_a_box
     assert events[-1]["report"]["figuresLeftOut"] == []
 
 
+async def test_a_page_whose_figure_boxes_fail_saves_its_questions_without_them(
+    monkeypatch,
+):
+    """The box call for a page fails, and fails again on its one retry: the question
+    is saved without that figure and the report names it, while a figure on another
+    page is still placed (Epo 2026-11-04)."""
+    item = _open("8", [("a", 2)])
+    figures = [
+        {"boxes": [], "image": 1, "part": "", "description": "Triangle"},
+        {"boxes": [], "image": 2, "part": "a", "description": "Graph"},
+    ]
+    script = Script(
+        _row("8", 5, 6, "a"),
+        {
+            "Copy question 8 now.": [
+                _tools(("record_question", _copy(item, 5, 6, figures=figures)))
+            ],
+            "Give the answers to question 8 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
+    )
+    attempts: list[str] = []
+
+    async def complete(messages, **kwargs):
+        listed = messages[1]["content"][0]["text"]
+        attempts.append(listed)
+        if "Triangle" in listed:
+            raise extraction.elitellm.ProviderError("upstream error")
+        return SimpleNamespace(content='{"boxes": [[100, 100, 500, 500]]}')
+
+    events = await _run(monkeypatch, script, [_page(5), _page(6)], complete=complete)
+    done = events[-1]
+    assert sum("Triangle" in a for a in attempts) == 2
+    [question] = done["questions"]
+    assert [b["type"] for b in question["stem"]] == ["text"]
+    assert question["parts"][0]["blocks"][-1]["image"] == {"assetId": "figure:q8-1"}
+    assert done["report"]["figuresLeftOut"] == ["8"]
+    assert done["report"]["figures"] == ["8"]
+
+
 async def test_a_failed_layout_call_leaves_every_figure_to_the_box_call(monkeypatch):
-    """The layout service refuses every page: the run still finishes, and its
-    figure comes from the box call."""
+    """The layout service refuses every page: the run still finishes, and its figure
+    comes from the box call."""
     monkeypatch.setattr(extraction.layout.cfg, "layout_url", "http://10.77.0.2:8092")
     monkeypatch.setattr(extraction.layout.cfg, "layout_token", "t" * 40)
     client = extraction.layout.httpx.AsyncClient
@@ -988,29 +1505,28 @@ async def test_a_failed_layout_call_leaves_every_figure_to_the_box_call(monkeypa
         ),
     )
     item = _open("8", [("a", 2)])
-    item["figures"] = [{"boxes": [], "image": 1, "part": "", "description": "Graph"}]
-    complete_response, sent = _replies(
-        {"tool_calls": [_call("record_question", item)]},
-        {"content": "DONE"},
+    figures = [{"boxes": [], "image": 1, "part": "", "description": "Graph"}]
+    script = Script(
+        _row("8", parts="a"),
+        {
+            "Copy question 8 now.": [
+                _tools(("record_question", _copy(item, figures=figures)))
+            ],
+            "Give the answers to question 8 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
     )
 
     async def complete(messages, **kwargs):
-        if kwargs["call_purpose"] != "extraction_figures":
-            return SimpleNamespace(content='{"questions": ["8"]}')
         return SimpleNamespace(content='{"boxes": [[300, 300, 400, 400]]}')
 
-    monkeypatch.setattr(extraction.models, "complete", complete)
-    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
     crops: list = []
-    events = [
-        event
-        async for event in extraction.run(
-            [_page(5, crops=crops)], [], model=MODEL, validate=_ok, locale="en"
-        )
-    ]
+    events = await _run(monkeypatch, script, [_page(5, crops=crops)], complete=complete)
     assert len(asked) == 1
-    assert sent[0][0][1]["content"][1]["text"].endswith(
-        "Boxes on this page, as JSON: []"
+    assert (
+        script.sent[0]["messages"][1]["content"][2]["text"]
+        == "Boxes on these pages, as JSON: []"
     )
     assert crops == [(5, [295.0, 295.0, 406.0, 406.0])]
     assert events[-1]["report"]["figures"] == ["8"]

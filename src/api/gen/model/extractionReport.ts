@@ -7,6 +7,7 @@
 import type { ExtractionReportStopped } from './extractionReportStopped.ts';
 
 export interface ExtractionReport {
+  answersMissing?: string[];
   expected: string[];
   figures: string[];
   figuresLeftOut: string[];
@@ -16,6 +17,7 @@ export interface ExtractionReport {
   missing: string[];
   pages: number;
   recorded: string[];
+  schemeFailed?: boolean;
   schemeRefused: string[];
   schemeRepeats: string[];
   stopped: ExtractionReportStopped;

@@ -774,7 +774,7 @@ class ExtractReq(LLMPin):
 async def extract(req: ExtractReq):
     """Make a quiz (todo-study-tracking.md §8): read the selected pages into
     questions and pair the answer files with them, as events: ``questions``
-    after each page window, then ``done`` with the quiz and its report, or
+    after each copy batch, then ``done`` with the quiz and its report, or
     ``error``. The request is checked first, so a page past its file's end
     is a 400 before the stream starts. The run holds a turn slot from then on
     (provider_busy at once when there is none, as for /generate); its model

@@ -18,6 +18,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
@@ -157,6 +158,34 @@ func TestFiguresLeftOutOfAQuiz(t *testing.T) {
 	}
 	if len(report.Figures) != 0 || strings.Join(report.FiguresLeftOut, ",") != "3,8,9" {
 		t.Fatalf("report = %+v", report)
+	}
+}
+
+// The report names parts saved with no answer and a scheme that could not be
+// parsed, and says nothing of either when they did not happen; a question with
+// no key travels as an open part whose one marking item says so, which the
+// quiz's validator takes.
+func TestAReportNamesMissingAnswers(t *testing.T) {
+	var report store.ExtractionReport
+	raw := `{"recorded":["1","2"],"answersMissing":["2(a)"],"schemeFailed":true,"windows":1}`
+	if err := json.Unmarshal([]byte(raw), &report); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(report.AnswersMissing, ",") != "2(a)" || !report.SchemeFailed {
+		t.Fatalf("report = %+v", report)
+	}
+	empty, err := json.Marshal(store.ExtractionReport{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(empty), "answersMissing") || strings.Contains(string(empty), "schemeFailed") {
+		t.Fatalf("empty report = %s", empty)
+	}
+	question := `[{"id":"q2","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p","blocks":[{"type":"text","text":"Pick.\nA. p\nB. q"}],` +
+		`"answer":{"type":"open","accepted":[],"hints":[]},"marks":2,` +
+		`"markscheme":[{"text":"No answer was worked out for this part.","marks":2}],"solution":[]}]}]`
+	if _, err := materialdoc.QuizDocument(json.RawMessage(question), nil); err != nil {
+		t.Fatalf("no-answer form refused: %v", err)
 	}
 }
 

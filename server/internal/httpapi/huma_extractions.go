@@ -24,9 +24,10 @@ import (
 )
 
 // Make a quiz (todo-study-tracking.md §8): the retrieval service reads the
-// selected pages of a paper into questions, two pages a call, and pairs the
-// mark scheme and answer files with them by label; this gateway starts the
-// run, keeps the questions as each window ends and saves the quiz at the end.
+// selected pages of a paper into questions, a map call, then copy batches, then
+// solve batches, and pairs the mark scheme and answer files with them by label;
+// this gateway starts the run, keeps the questions as each copy batch ends and
+// saves the quiz at the end.
 // The run outlives the request, like a chat turn: it relays on a detached
 // context in this process, and FailOrphanedExtractions fails what a restart
 // cut short.
@@ -92,8 +93,8 @@ func checkExtractionRequest(req apimodel.CreateExtractionReq) error {
 
 // extractionLLM is the run's model: the extraction slot's default pin, a vision
 // model on OpenRouter (never direct DeepSeek, Epo 2026-11-03), with reasoning
-// at mid for the page windows, which work keys out as well as copying them;
-// outline and scheme calls turn it off. The run's starter pays.
+// at mid for the map and solve calls and low for the copy calls (Epo 2026-11-05);
+// scheme calls turn it off. The run's starter pays.
 func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, error) {
 	var out resolvedLLM
 	if a.modelReg == nil {
@@ -103,8 +104,8 @@ func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, er
 	if err != nil {
 		return out, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
 	}
-	if !slices.Contains(cfg.ThinkingLevels, models.ThinkingMid) {
-		return out, fmt.Errorf("%w: %s has no mid thinking", store.ErrModelUnavailable, cfg.Ref())
+	if !slices.Contains(cfg.ThinkingLevels, models.ThinkingMid) || !slices.Contains(cfg.ThinkingLevels, models.ThinkingLow) {
+		return out, fmt.Errorf("%w: %s lacks low or mid thinking", store.ErrModelUnavailable, cfg.Ref())
 	}
 	out.Cfg, out.Rates, out.UserID, out.Thinking = cfg, store.RatesFromConfig(cfg), userID, models.ThinkingMid
 	return out, nil
@@ -277,8 +278,8 @@ type extractionEvent struct {
 	Message   string          `json:"message"`
 }
 
-// relayExtraction follows a run to its end: it keeps the recorded questions
-// after each page window, then saves the quiz, or fails the run. Credits were
+// relayExtraction follows a run to its end: it keeps the copied questions
+// after each copy batch, then saves the quiz, or fails the run. Credits were
 // charged per model call, so the session closes as settled either way.
 func (a *api) relayExtraction(ctx context.Context, stream io.ReadCloser, charge *spend, run store.Extraction, actor, wsName string) {
 	defer stream.Close()
@@ -447,7 +448,7 @@ func figuresLeftOut(raw json.RawMessage) json.RawMessage {
 }
 
 // internalCheckQuestion validates one extracted question the way a quiz's
-// creation does, for the retrieval service's page windows: 200 with the
+// creation does, for the retrieval service's copy and solve calls: 200 with the
 // refusal in "problem", or with none.
 func (a *api) internalCheckQuestion(w http.ResponseWriter, r *http.Request) {
 	var req struct {

@@ -2279,6 +2279,10 @@ components:
     ExtractionReport:
       additionalProperties: false
       properties:
+        answersMissing:
+          items:
+            type: string
+          type: array
         expected:
           items:
             type: string
@@ -2314,6 +2318,8 @@ components:
           items:
             type: string
           type: array
+        schemeFailed:
+          type: boolean
         schemeRefused:
           items:
             type: string

@@ -289,8 +289,8 @@ async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
     )
 
 
-def test_1017_reasons_at_the_extraction_windows_effort():
-    """Make a quiz's page windows run on 1017 at mid (Epo 2026-11-03), sent as
+def test_1017_reasons_at_the_extraction_solve_effort():
+    """Make a quiz's map and solve calls run on 1017 at mid (Epo 2026-11-03), sent as
     OpenRouter's medium effort, on the extraction slot's own route,
     InferenceNet first (Epo 2026-11-04)."""
     spec = _spec(

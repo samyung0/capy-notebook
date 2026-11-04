@@ -1793,6 +1793,7 @@ export const GetExtractionResponse = zod.object({
   "quizId": zod.string().optional(),
   "recorded": zod.int(),
   "report": zod.object({
+  "answersMissing": zod.array(zod.string()).optional(),
   "expected": zod.array(zod.string()),
   "figures": zod.array(zod.string()),
   "figuresLeftOut": zod.array(zod.string()),
@@ -1802,6 +1803,7 @@ export const GetExtractionResponse = zod.object({
   "missing": zod.array(zod.string()),
   "pages": zod.int(),
   "recorded": zod.array(zod.string()),
+  "schemeFailed": zod.boolean().optional(),
   "schemeRefused": zod.array(zod.string()),
   "schemeRepeats": zod.array(zod.string()),
   "stopped": zod.enum(['', 'quiz_full', 'credits', 'output_limit']),
@@ -7204,6 +7206,7 @@ export const CreateExtractionResponse = zod.object({
   "quizId": zod.string().optional(),
   "recorded": zod.int(),
   "report": zod.object({
+  "answersMissing": zod.array(zod.string()).optional(),
   "expected": zod.array(zod.string()),
   "figures": zod.array(zod.string()),
   "figuresLeftOut": zod.array(zod.string()),
@@ -7213,6 +7216,7 @@ export const CreateExtractionResponse = zod.object({
   "missing": zod.array(zod.string()),
   "pages": zod.int(),
   "recorded": zod.array(zod.string()),
+  "schemeFailed": zod.boolean().optional(),
   "schemeRefused": zod.array(zod.string()),
   "schemeRepeats": zod.array(zod.string()),
   "stopped": zod.enum(['', 'quiz_full', 'credits', 'output_limit']),
