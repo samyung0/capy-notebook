@@ -743,19 +743,16 @@ export async function runJourney(
     case 'member-save':
     case 'member-remove':
       await share();
+      fail();
       ui.activate(
         await ui.element(
-          'section[aria-labelledby="workspace-members-title"] button[aria-haspopup="menu"]'
+          id === 'member-remove'
+            ? 'section[aria-labelledby="workspace-members-title"] button[data-variant="danger-light"]'
+            : 'section[aria-labelledby="workspace-members-title"] [role="combobox"]'
         )
       );
-      fail();
-      await ui.click(
-        id === 'member-remove' ? m.members_remove() : m.members_manage()
-      );
-      if (id === 'member-save') {
-        await ui.click(m.common_role(), '[role="combobox"]');
+      if (id === 'member-save')
         await ui.click(m.members_role_view(), '[role="option"]');
-      }
       return;
     case 'ownership-transfer':
       await go(scenarioPath);

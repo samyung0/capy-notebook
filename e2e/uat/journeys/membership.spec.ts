@@ -83,8 +83,8 @@ function browserToken(
 }
 
 /**
- * The owner's members UI: Workspace settings → Sharing → the member's menu →
- * Manage member → Role → View, or Remove. Returns the API's status.
+ * The owner's members UI: Workspace settings → Sharing → the member's role
+ * dropdown → View, or their trash. Returns the API's status.
  */
 async function changeMember(
   run: UatRun,
@@ -116,18 +116,16 @@ async function changeMember(
   const response = page.waitForResponse(
     (r) => new URL(r.url()).pathname === path && r.request().method() === method
   );
-  // The member is the only row with a menu (the owner's has none).
-  await people.getByRole('button', { name: m.a11y_open_menu() }).click();
   if (change === 'remove')
-    await page
-      .getByRole('menuitem', { exact: true, name: m.members_remove() })
+    await people
+      .getByRole('button', {
+        exact: true,
+        name: m.members_remove_named({ name }),
+      })
       .click();
   else {
-    await page
-      .getByRole('menuitem', { exact: true, name: m.members_manage() })
-      .click();
-    await page
-      .getByRole('combobox', { exact: true, name: m.common_role() })
+    await people
+      .getByRole('combobox', { exact: true, name: m.members_role_of({ name }) })
       .click();
     await page
       .getByRole('option', { exact: true, name: m.members_role_view() })

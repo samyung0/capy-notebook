@@ -80,7 +80,7 @@ table read the same in both.
 | Dashboard, owner and editor members | Activity (AI marks and Assignments to check wait for their pages) | What to practise next, Activity |
 | Dashboard, anyone else | What to practise next, Activity (Assignments due waits for its page) | What to practise next, Activity |
 | Whose results | The owner and editor members see everyone's; a member their own | Each person their own |
-| An editor member is called | Teaching assistant, in the UI only (invite and Manage member dropdowns, the role-changed notification, the transfer confirmation, clone refusals); API, role value and anything sent to a model say editor | Editor |
+| An editor member is called | Teaching assistant, in the UI only (the invite's role switch, member rows' role dropdowns and text, the role-changed notification, the transfer confirmation, clone refusals); API, role value and anything sent to a model say editor | Editor |
 | Clone | An owner's or editor member's stays class; anyone else's is personal | Stays personal |
 | Change it | The owner, in Workspace settings → General. Nothing is deleted: assignments and reports are hidden until it changes back | The same |
 
@@ -385,6 +385,12 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   may edit, share-role editors included, can read the collaborator directory
   behind mention autocomplete, which carries only user id, display name, and
   avatar. A user whose display name is empty is shown by user id.
+- **People with access** in Workspace settings → Sharing (Epo 2026-11-04): the
+  owner's row reads Owner; for the owner each other row has its role dropdown,
+  applied at once, and a trash that removes at once, and a role switch sits
+  above the invite's email field and Invite. An editor member sees the list
+  with each role as text, no invite and no pending invitations; they leave from
+  Danger. Viewer members have no Sharing tab.
 - **Everyone signed in with access** (members and share-role visitors)
   opens Workspace settings: its Study tab holds their own Hide study
   progress. General, Sharing, Indexing and Statistics are for

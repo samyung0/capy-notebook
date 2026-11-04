@@ -342,10 +342,13 @@ export function ShareDialog({
             )}
           </div>
         )}
-        {workspaceId && canManageMembers && (
+        {workspaceId && (
           <>
             <Separator />
-            <WorkspaceMemberManager workspaceId={workspaceId} />
+            <WorkspaceMemberManager
+              canManage={canManageMembers}
+              workspaceId={workspaceId}
+            />
           </>
         )}
       </div>
