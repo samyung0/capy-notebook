@@ -1,6 +1,6 @@
 # Learning page plan
 
-Status 2026-11-04: nothing built. Epo picked layout A and gave two rounds of changes (below). The rest waits for §8.
+Status 2026-11-04: built on this branch except the Dashboard's Start review, which waits for Epo's pick (canvas page 2). Go DB tests and e2e need CI. §8 lists what is left.
 
 Epo's ask: "i want ot see if we cna start planning what the learning page at home do, ideally i dont want to use AI to do a lot of suggestion, rather i want to use the algorithms/scores to decide".
 
@@ -77,19 +77,14 @@ A workspace counts when all of these hold:
 
 ### What to do next
 
-At most 4 rows (Epo 2026-11-04). Each row is one link: the whole row hovers, square, with no link at its end. It leads with what it is (Epo): assignment quill in teal, quiz bolt, set icon, or the review arrow for a suggestion. The workspace is named beside the title.
-
-Order (Epo 2026-11-04): assignments, then quizzes and sets not done, then suggestions. The caps are Claude's values, for §8.
+At most 4 rows (Epo 2026-11-04). Each row is one link: the whole row hovers, square, with no link at its end, and leads with what it is. Assignments stay off this list.
 
 | Kind | Rule | Row says | Opens |
 |---|---|---|---|
-| **1. Assignments** (after Assignments lands) | Assigned to you in a class where you are a member, not submitted, overdue or due within 7 days, soonest first. At most 2 | "Due Fri 7 Nov · 12 questions", "Late, was due Mon 2 Nov" | The assignment |
-| **2. Quizzes and sets not done** | At most 2, one per workspace. A quiz with fewer questions checked than it holds, last answer within 14 days ("Continue · 2 of 10 checked"), then the first quiz or set in reading order with no `study_progress` row ("Not started · 12 questions"), where you are the owner or a member and opened or practised it in the last 30 days | As quoted | The quiz or set |
-| **3. Suggestions** | An unfinished review session, last answer within 14 days ("Continue · 3 of 10 answered"), then today's engine: item = (1 − R) × (1 + tricky + learned), items at R ≤ 0.9, summed per topic, × interest. Shows at 3 or more, largest first, at most 2 per workspace. A topic with an unfinished session is skipped. One keeps the last row if any exists | Mode label, one sentence, "N items" | The session |
+| **Practice**, at most 3 | Continue first, newest first: a session with `finished_at` empty, or a quiz whose newest attempt checked fewer questions than it holds, last answer within 14 days. Then new: the first quiz or set in reading order with no `study_progress` row, one per workspace, where you are the owner or a member and opened or practised it in the last 30 days | "Continue · 3 of 10 answered · 2 h ago", "Not started · 12 questions" | The session, quiz or set |
+| **Suggestions** fill the rest | Today's engine, unchanged: item = (1 − R) × (1 + tricky + learned), items at R ≤ 0.9, summed per topic, × interest. Shows at 3 or more, largest first, at most 2 per workspace. A topic with an unfinished session is skipped | Mode label, one sentence, "N items" | The session |
 
-If a kind runs short, the others fill its rows in the same order. So: nothing due gives Quiz, Quiz, Suggestion, Suggestion. Two due gives Assignment, Assignment, Quiz, Suggestion.
-
-The last row stays for a suggestion because a class with many unstarted quizzes would otherwise never show what is being forgotten.
+Nothing lists a member's assignments across workspaces: Home has no such list today, and the Dashboard's To do is per workspace. Decide that when Assignments lands.
 
 Reasons are one sentence (Epo 2026-11-04): "4 of these were challenging for you.", "Last practised 3 weeks ago.", "You learned these yesterday." `reviewReason` is shared, so Practice's Suggested and the Dashboard change too. The tricky "repeated" count is no longer worded.
 
@@ -98,7 +93,7 @@ Reasons are one sentence (Epo 2026-11-04): "4 of these were challenging for you.
 
 ### Workspaces
 
-One row per workspace in scope that holds a quiz or set, newest practice first. A row opens that workspace's Summary.
+One row per workspace in scope that holds a quiz or set, newest practice first. A row opens that workspace's Dashboard, where the actions live (Epo 2026-11-04).
 
 - **Topic labels:** counts per label ("2 Needs practice").
 - **Items tried:** rated items with current content, of all items ("38 of 120 items tried"), from `reviewPool` and `itemCounts`.
@@ -223,31 +218,12 @@ Each needs Epo's yes and a line in `human/study-progress.md`:
 
 ## 8. Questions for Epo
 
-Answered 2026-11-04: layout A; rows as links with kind icons; 4 rows; order assignments, quizzes not done, suggestions; one-sentence reasons; Refresher in the UI; bordered buttons in AGENTS.md, with existing ones removed by Epo as they come up; Start rows (implied by the order); Learning comes back with no AI and `read_study_progress` stays gone.
+Answered 2026-11-04: layout A; rows as links with kind icons; 4 rows, practice at most 3, no assignments; one-sentence reasons; Refresher in the UI; bordered buttons in AGENTS.md; Learning with no AI; labels and Summary built together; Continue rows kept; threshold kept; actions on the Dashboard.
 
-Each has a recommendation, so "as recommended" is a full answer.
+Built on my recommendation, so say if not: You teach rows (O2), flashcards in suggestions, the This week line, Past reviews as its own tab, the words.
 
-**Decides whether and when this gets built**
+Still open:
 
-1. **Topic labels now or later?** Not Started, Attempted, Needs practice, Familiar, Proficient, Mastered. Epo approved them and their thresholds on 2026-11-03, but they exist only in mocks: no branch has them in code. Count them now as in §4, or wait for the mastery model after its simulator? Now, replacing the count when the model lands.
-2. **Summary.** Study → Summary is a disabled row marked Coming soon; only its mock boards exist (G5 and M1 on the study canvas, under the old name My results). Workspaces rows on Learning open it. Build Summary with this page, or open Practice until it exists? Together, since both need the labels.
-
-**Rules**
-
-3. **Caps for the 4 rows.** 2 assignments, 2 quizzes, last row kept for a suggestion? Yes.
-4. **Continue rows.** Keep them: a quiz left partway with the quizzes, an unfinished session with the suggestions? Keep. The session half is the only way back to an unfinished session while Learning is hidden and the workspace Study page is gone.
-5. **Review threshold.** Keep 3? A 5-question quiz answered right waits 17 days, while a 20-question quiz answered wrong comes back in about 10 hours. Keep.
-6. **Whole-workspace review.** Today's Learning rows start one. Drop it, or keep it in a row ⋮? Drop: Suggested and topic sessions cover it.
-7. **Flashcards in suggestions.** Keep cards in Learning's suggestions while Practice stays on questions? Keep: this would be the only place sets get suggested.
-
-**Who sees what**
-
-8. **Class owner with nothing to study (canvas page 3).** O1 empty page, or O2 You teach rows that open Study → Members? O2, so a teacher does not land on a dead end.
-9. **Question bank.** Add one row for the last bank topic, or keep the bank off this page? Off: it has its own landing.
-10. **Topic with nothing new to serve.** Link to Make my own practice (AI, credits, on click) from this page? No, leave it on Practice.
-
-**Small**
-
-11. **This week line.** Keep or drop? You did not ask for it. Keep, as the one line that shows the work adding up.
-12. **Past reviews as its own tab (canvas page 4).** Keep? It moves out of the old Review tab. Keep.
-13. **Words.** Are "Overview", "What to do next" and "items tried" right? Yes, unless you prefer others.
+1. **Dashboard Start review (canvas page 2).** A section button or B a last row? I recommend B.
+2. **Question bank.** Keep it off this page? I recommend yes: it has its own landing.
+3. **Topic with nothing new to serve.** Link to Make my own practice (AI, credits, on click)? I recommend no: leave it on Practice.

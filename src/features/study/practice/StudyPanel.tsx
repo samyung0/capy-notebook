@@ -11,7 +11,8 @@ const PAGES: Record<StudyPage, { icon: IconName; label: () => string }> = {
   summary: { icon: 'profile', label: m.study_panel_summary },
 };
 
-const BUILT: StudyPage[] = ['practice'];
+const built = (page: StudyPage): page is 'practice' | 'summary' =>
+  page === 'practice' || page === 'summary';
 
 /** The Study panel: this person's pages (studyView). A page not built yet
  * shows as a disabled row. */
@@ -21,7 +22,7 @@ export function StudyPanel({
   pages,
 }: {
   active: StudyPage | null;
-  onOpen: (page: StudyPage) => void;
+  onOpen: (page: 'practice' | 'summary') => void;
   pages: StudyPage[];
 }) {
   return (
@@ -32,23 +33,23 @@ export function StudyPanel({
         className="flex flex-col gap-0.5 px-2.5"
       >
         {pages.map((page) => {
-          const built = BUILT.includes(page);
+          const open = built(page);
           const on = active === page;
           return (
             <button
               aria-current={on ? 'page' : undefined}
               // Not disabled, so the Coming soon title still shows on hover.
-              aria-disabled={!built || undefined}
+              aria-disabled={!open || undefined}
               className={cn(
                 'flex min-h-8 items-center gap-2 rounded-button px-1.5 py-1 text-left font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action',
                 on && 'bg-page-hover',
-                built
+                open
                   ? 'cursor-pointer hover:bg-page-hover'
                   : 'cursor-default text-fg-muted'
               )}
               key={page}
-              onClick={() => built && onOpen(page)}
-              title={built ? undefined : m.study_panel_soon()}
+              onClick={() => built(page) && onOpen(page)}
+              title={open ? undefined : m.study_panel_soon()}
               type="button"
             >
               <Icon className="shrink-0" name={PAGES[page].icon} size={18} />

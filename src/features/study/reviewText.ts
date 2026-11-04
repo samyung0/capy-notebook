@@ -35,11 +35,6 @@ export function reviewReason(s: ReviewSuggestion): string {
   const { evidence: ev } = s;
   if (s.mode === 'tricky') {
     if (ev.missed === 1) return m.review_reason_tricky_missed_one();
-    if (ev.missed > 0 && ev.repeated > 0)
-      return m.review_reason_tricky_both({
-        missed: ev.missed,
-        repeated: ev.repeated,
-      });
     if (ev.missed > 0)
       return m.review_reason_tricky_missed({ missed: ev.missed });
     return m.review_reason_tricky_before();

@@ -1,19 +1,40 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useLearningOverview } from '@/api/hooks';
 import { PageHeader, PagePanel } from '@/components/app/layout';
 import { TabContent } from '@/components/app/tabPanel';
 import { Tabs } from '@/components/ui/Tabs';
 import { AllResults } from '@/features/study/AllResults';
-import { ReviewTab } from '@/features/study/ReviewTab';
+import {
+  LearningOverviewTab,
+  weekLine,
+} from '@/features/study/LearningOverview';
+import { PastReviews } from '@/features/study/PastReviews';
 import { m } from '@/i18n';
 import type { LearningTab } from '@/lib/tabSearch';
 
 export default function Learning() {
-  const { tab = 'review' } = useSearch({ strict: false }) as {
+  const { tab = 'overview' } = useSearch({ strict: false }) as {
     tab?: LearningTab;
   };
   const navigate = useNavigate();
+  const { data } = useLearningOverview({ errorBoundary: false });
+  const week =
+    tab === 'overview' && data
+      ? weekLine(data.weekQuestions, data.weekCards)
+      : '';
   return (
-    <PagePanel header={<PageHeader title={m.nav_learning()} />}>
+    <PagePanel
+      header={
+        <PageHeader
+          title={
+            <div className="flex flex-wrap items-baseline gap-x-3">
+              <h1 className="t-page-title">{m.nav_learning()}</h1>
+              {week && <span className="t-meta text-fg-muted">{week}</span>}
+            </div>
+          }
+        />
+      }
+    >
       <Tabs
         className="page-tabs-px"
         onChange={(next) =>
@@ -24,7 +45,8 @@ export default function Learning() {
           })
         }
         tabs={[
-          { label: m.learning_tab_review(), value: 'review' },
+          { label: m.learning_tab_overview(), value: 'overview' },
+          { label: m.learning_tab_past(), value: 'past' },
           { label: m.learning_tab_results(), value: 'results' },
         ]}
         value={tab}
@@ -35,7 +57,7 @@ export default function Learning() {
         <AllResults />
       ) : (
         <TabContent fill>
-          <ReviewTab />
+          {tab === 'past' ? <PastReviews /> : <LearningOverviewTab />}
         </TabContent>
       )}
     </PagePanel>

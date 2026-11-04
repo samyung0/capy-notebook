@@ -1,7 +1,7 @@
 ---
 type: Backend
 title: "Study Progress and Review"
-description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), Hide study progress, Learning's Review (past reviews at its end) and All results tabs, the workspace Dashboard's activity, the answer events log, lifecycle and access."
+description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), Hide study progress, Study → Summary and its topic labels, Learning's Overview, Past reviews and All results tabs, the workspace Dashboard's activity, the answer events log, lifecycle and access."
 tags: [backend, frontend, study, review, fsrs, flashcards, quizzes, progress]
 ---
 
@@ -14,8 +14,8 @@ shows by default; Hide study progress hides it per workspace while recording
 goes on. The workspace's Study section (the rail's Study, its panel listing
 Study's pages) shows Practice: suggested topics, every quiz members can see
 as practice and the learner's own topic reviews, each started as a review
-session in the page's place; Learning's Review tab lists every workspace with
-progress and what a review would draw on.
+session in the page's place, and Summary: the learner's label per topic.
+Learning's Overview says what to do next across workspaces and how each stands.
 Read progress (Mark as read, Stop tracking, read marks, "done" counts,
 Learning's Progress tab and its railway map) went on 2026-11-03 (Epo): only
 practice records progress now. Study plans, cross-workspace lists with their
@@ -24,8 +24,8 @@ dropped their tables). FSRS runs in Go and
 nothing is scheduled by date: no due date, due count or interval preview is
 stored or shown for signed-in users. Review orders items by how likely the
 learner is to have forgotten them (retrievability) and by their latest
-answers, and Learning's Review tab suggests what to review with a reason in
-words. Every review session is recorded with its first answer.
+answers, and Practice, the Dashboard and Learning suggest what to review with a
+reason in words. Every review session is recorded with its first answer.
 
 Who may record, frozen accounts and the lifecycle rules are summarised in
 [authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md);
@@ -59,9 +59,11 @@ rows are tombstoned; `PurgeUser` deletes the four tables and `review_sessions`
 
 What still reads `study_progress`, so the table stays:
 
-- `reviewableWorkspaces` (`review_sessions.go`): the workspaces with a row
-  are the ones Learning's Review tab and suggestions consider, and their
-  latest `updated_at` is the suggestions' interest.
+- `learningScope` and `learningStart` (`learning_overview.go`): a row brings a
+  link or public visitor's workspace into Learning, its latest `updated_at` is
+  the suggestions' interest and the workspace's last practice, and no row means
+  a quiz or set is not started. `state` has no reader: a quiz's first check
+  writes `done`.
 - `ResetStudy` and `PurgeUser` delete rows; `markProgressTx` writes them.
 
 Embedded quizzes and sets (`parent_material_id` set) are quick checks that
@@ -151,7 +153,8 @@ own list and a quiz attempt from the quiz's. Answered items and the result are
 graded copies: a missing image there keeps the plain empty box (Q270), the
 result body resetting the session's list.
 | `GET /api/review/sessions?sort=&dir=&workspaceId=&has=&offset=&limit=` | Past reviews: finished sessions with their quiz marks and cards remembered (Good or Easy). Sort date, quiz, cards or time; `has` quiz and/or flashcards. |
-| `GET /api/review/overview` | Learning's Review tab, below. |
+| `GET /api/learning/overview` | `LearningOverview`, Learning's Overview tab, below. |
+| `GET /api/workspaces/{id}/study/topics` | `StudyTopics`, Study → Summary: `enabled` and each topic's standing. Refused (403) to a class's owner and editors. |
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?, attempt?}` for a card; `attempt` (`{id, startedAt}`, minted by the study page when a run begins) adds the rating to that flashcard attempt for a workspace set, creating it with the first rating (`recordCardTx`, under the account lock, as quiz attempts, and the rating lock); another user's, another set's or a quiz attempt's id is 422 (`ErrFlashcardAttempt`); a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
 | `POST /api/review/check` | `{materialId, itemId, answers, session?}` for a question: grades it on the server (open parts with Jev), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
 | `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}`: grades one question on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)) and adds it to the learner's attempt, whose `AttemptDetail` so far it returns; a missing or unknown `attemptId` (another user's, another quiz's, deleted) starts a new attempt, a question already checked in the attempt is 409. Its side effect is below. |
@@ -172,7 +175,7 @@ Side effects, in the same transaction as the write:
   2026-10-25), and `taken_at` is its latest check. On a workspace quiz that is
   not embedded the check also rates the question if it is still in the
   document, has marks and was not left wholly blank, and sets the quiz `done`
-  (progress rows, read by the Review tab).
+  (progress rows, read by Learning).
   Attempts on standalone quizzes record no review state. An embedded quiz's
   check is graded and returned in an attempt without an id and stores
   nothing: no Past attempts entry, and the try lives only on the page.
@@ -201,7 +204,7 @@ not know which); the review session refreshes once at the end instead.
 
 Migration `0143_answer_events.sql` (todo-study-tracking.md §5, step 3 of its
 order of work). `answer_events` is an append-only log of every graded part,
-kept for the per-topic mastery model still to come; nothing reads it yet. It
+read by the topic labels (below) and kept for the mastery model still to come. It
 keeps partial credit, which `review_log`'s ratings drop.
 
 - **Written** by `logAnswerTx` (`server/internal/store/answer_events.go`) in
@@ -253,8 +256,7 @@ Learning's count. It reads only materials the user has rated, states included,
 in one query, and parses a document only when the cache misses its revision.
 A quiz or set whose stored content the current rules refuse (`refused` in
 `study.go`) is left out of the pool, the attempts list (`itemCounts`) and a
-resumed session (its served items read as gone), so Practice, Learning's
-Review tab and review sessions show everything else (Epo 2026-10-20). Rating a
+resumed session (its served items read as gone), so Practice, Learning and review sessions show everything else (Epo 2026-10-20). Rating a
 card or checking a question of it still answers 422
 `material_content_unreadable`, and opening it shows the center file error,
 which names the quiz or flashcard set by the kind its list gave (the workspace
@@ -291,8 +293,8 @@ signals, since `1 - R` scales every part alike and would leave time out of
 it: fading `2 x (1 - R)` against the bare tricky and learned weights, summed
 over the group, largest wins. So the same answers read Tricky or Just learned
 while recent and Fading once mostly forgotten (a single first miss below about
-60% recall); the focus preference changes ranking, not labels. Learning lists the top 5 across workspaces with progress on, at most
-2 per workspace. The evidence words the reason: items whose last answer was a
+60% recall); the focus preference changes ranking, not labels. Learning fills
+What to do next with them, at most 2 per workspace. The evidence words the reason: items whose last answer was a
 miss, items missed twice or more, probably forgotten items (the sum of
 `1 - R`, rounded), items answered at most twice, and the latest practice.
 
@@ -338,8 +340,8 @@ file header (28px 36px padding); one column keeps the header for the Files
 dropdown and ⋮. The rail's Study opens it and its panel (`StudyPanel.tsx`)
 lists Study's pages: in a class, Members, Assignments and Practice for owner
 and editor members, Summary, Assignments and Practice for others; in a
-personal workspace, Summary and Practice for everyone. Only
-Practice is built; the rest show as muted rows with a "Coming soon" title
+personal workspace, Summary and Practice for everyone. Practice
+and Summary are built; the rest show as muted rows with a "Coming soon" title
 and do nothing. Practice's row is current on the page, during a topic session
 and on its result.
 
@@ -369,6 +371,40 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   branches.
 - Below md the table becomes one row per item with its facts under the
   title (topic, questions, tried), the score and Practise on the right.
+
+### Summary
+
+`SummaryPage.tsx`, `study=summary` (boards G5, M1), for whoever practises: one
+row per topic holding a quiz the caller can see, in reading order with Other files
+last: its label, "9 of 10 right" (each question's latest check, full marks), the
+latest six results as squares, and Practise, which starts that topic's session.
+Assignments' overall joins it once they exist. While study progress is hidden it
+says so, with a Workspace settings button.
+
+### Topic labels
+
+`review.TopicLabel` (Epo 2026-11-04, names and thresholds 2026-11-03) counts a
+topic's labels from `answer_events` on read, with no tables and no fitted model:
+success follows Beta(1 + right, 1 + wrong) over weighted marks. A part weighs
+`repeat x parts x age`: `repeat` 1 for a question's first check, 0.5 a day or more
+after its previous one, 0 for a same-day repeat with `key_seen`; `parts`
+min(1, 3 / parts in the question); `age` 0.5^(days / 30). Only a question's latest
+content counts. A question's topic is its quiz's, questions having none of their
+own yet, so a quiz spanning topics counts wholly to one and a moved quiz takes its
+history along. Flashcards stay out (2026-11-03).
+
+| Label | Rule |
+| --- | --- |
+| Not started | No answers |
+| Attempted | Fewer than 3 different questions |
+| Needs practice | P(success < 0.6) at least 0.8; holds until that falls below 0.5 |
+| Familiar | Between |
+| Proficient | P(success > 0.7) at least 0.8 |
+| Mastered | Proficient, then a question at least 3 days later scored 0.7 or more |
+
+It ignores question difficulty, so once sessions adapt a weak learner served easier
+questions reads better than they are; the mastery model replaces it without
+touching the UI.
 
 ### Topic sessions
 
@@ -520,55 +556,44 @@ the browser. Embedded sets study there too and send no ratings
 
 ## Learning
 
-Hidden since 2026-11-04 (Epo, `features.learning`, `VITE_FEATURE_LEARNING`) until
-AI analysis of study progress is decided: no sidebar or phone-nav row, `/learning`
-redirects Home, and nothing links to it. The code stays. The session and result
-pages (`/learning/review/$workspaceId`, `/learning/reviews/$sessionId`) stay
-under their old paths, and with the flag off Back on them and on an attempt's
-result goes to the workspace's Practice, or Home for an attempt with no
-workspace.
+Rules and scores, no AI (Epo 2026-11-04; `features.learning`, on). Tabs:
+Overview (default), Past reviews and All results; `src/routes/Learning.tsx`. The
+title carries "This week: 41 questions, 18 cards", `review_log` rows in scope in
+the last seven days, on Overview only. The session and result pages stay under
+`/learning/review/$workspaceId` and `/learning/reviews/$sessionId`.
 
-Learning has two tabs: Review (default, ending with past reviews, the
-recorded review sessions) and All results (quiz attempts). The title,
-tabs and tab padding follow Settings (`TabContent`), without its width cap.
-Its Progress tab (the railway map, Continue, done counts, Finished and the
-finish toast) went with read progress on 2026-11-03; the page is redesigned
-later (Epo).
+### Overview
 
-### Review tab
+`src/features/study/LearningOverview.tsx` over `GET /api/learning/overview`
+(`server/internal/store/learning_overview.go`). Scope (`learningScope`): the
+workspaces the user owns, has joined, or practised in while they can still read
+them, minus a class they own or edit (Practice's own test) and Hide study progress.
+A row is the link: it hovers whole and square and has no action at its end.
 
-`src/features/study/ReviewTab.tsx` over `GET /api/review/overview`, for the
-workspaces the user has a `study_progress` row in (practised a quiz or set),
-can still read and has progress on. Rows lead with the 32px workspace icon (`rounded-button`,
-as on workspace cards).
+**What to do next**, at most 4 rows, led by what each is (the quiz or set's file
+icon, the retry arrow for a session or suggestion). Assignments stay off it.
 
-- **Worth reviewing**: the suggestions (above), each with its group (topic,
-  Other files, or the workspace with "Whole workspace"), the reason in words
-  (`reviewReason` in `reviewText.ts`; phrasing to be tuned), the mode label in
-  its theme colour (Tricky warning, Fading info, Just learned success) and
-  "N items", and Start, which opens the session straight away. Study
-  preferences links to Settings → Study.
-- **Continue review**: unfinished sessions, newest answer first, with
-  "answered of total · when"; the row continues it.
-- **Workspaces**: each workspace's name and last review or "Not reviewed
-  yet" / "Nothing practised yet" / "No quizzes or flashcards yet", with no
-  count; the row starts a whole-workspace review.
+1. Practice, at most 3. What was left partway, newest first: an unfinished
+   session, or a quiz whose newest attempt checked fewer questions than it holds,
+   last answer within 14 days. Then new: each workspace's first quiz or set in
+   reading order with no `study_progress` row, where the user is the owner or a
+   member and opened or practised it in the last 30 days, the latest first.
+2. Suggestions fill what is left: the engine above, at most 2 per workspace, past a
+   topic with an unfinished session.
 
-Those rows hover as a whole (no radius) and open on a click, with no
-Continue or Review link. `canReview` (practised items, or any quiz or
-set in scope of a kind the "review items" preference takes; a cheap EXISTS)
-decides: a row without it still opens and
-raises an info toast, "Nothing to review yet", asking for a quiz or flashcards
-first. Suggestions keep their Start. With no workspace or unfinished
-session the tab says "Nothing to review yet." instead.
-- **Past reviews**: the table below, hidden until a first session finishes
-  (Epo 2026-10-29); a filter that hides every row keeps it, saying nothing
-  matches, so the filter can be reset.
+**Workspaces**, newest practice first, each workspace holding a quiz or set: counts
+per topic label, weakest first, "38 of 120 items tried" (rated items with current
+content, of all items) and the last practice. A row opens the workspace's Dashboard.
+
+**You teach** lists a class's owner or editor's classes with their member count; a
+row opens the class's Practice until Members exists.
+
+With nothing in any section the page shows the ink book, "No quizzes or flashcards
+yet" and an outline Go to Workspaces. An empty section is not shown.
 
 ### Past reviews
 
-`src/features/study/PastReviews.tsx`, the Review tab's last section, its
-filter beside the heading: finished sessions in Billing's plain table
+`src/features/study/PastReviews.tsx`, its own tab, its filter at the top right: finished sessions in Billing's plain table
 (`BillingTable`, no border, scrolls sideways) at every width (Date,
 Workspace, Topic, Quiz, Flashcards, Time, Status; Time and Status
 from xl; no row menu: a click anywhere on a row opens the result, which has
@@ -592,7 +617,7 @@ number columns, and every column shares the leftover width.
 ### Review result
 
 `/learning/reviews/$sessionId` (`src/routes/ReviewResult.tsx`, breadcrumb
-Learning / Review), and the end of a session, draw `ReviewResultBody`
+Learning / Past reviews), and the end of a session, draw `ReviewResultBody`
 (`src/features/study/ReviewResult.tsx`) over `GET /api/review/sessions/{id}/result`.
 The title is the group (topic, Other files, or the workspace), the meta the
 start's date and time, workspace and minutes. "N better than last time" (plain
@@ -682,6 +707,9 @@ account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
 
 - `server/internal/review/review_test.go` also holds the answer-history
   order Epo signed off (`TestHistoryWeightsOrder`).
+- `server/internal/review/topic_label_test.go`: the label counts Epo reviewed, a
+  same-day repeat, an edited question, a long question's cap, Mastered, and Needs
+  practice holding.
 - `server/internal/store/review_sessions_test.go`: suggestion groups (a
   passing topic, the whole-workspace fallback, a workspace without topics,
   interest discounting), session picks interleaving modes and cutting recalled
@@ -712,12 +740,13 @@ account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
   question scoring; `src/features/study/practice/PracticePage.test.tsx`:
   Practice for a member (Suggested, Only you, best scores) and an owner
   (members, tried by, group average), and the Study panel's rows by role.
-- `server/internal/store/practice_test.go`: served items' reasons,
+- `server/internal/store/practice_test.go`: Learning's Overview for a learner and
+  a class's owner; served items' reasons,
   Practice's quizzes, best attempt and the staff counts and average, and the
   Dashboard's owner, member count and activity (`TestWorkspaceDashboard`).
 - `e2e/study/study-progress.spec.ts` (Docker stack, the detailed checks):
   quizzes and sets practised through the attempt and study pages becoming
-  reviewable, and Learning → Review's whole-workspace row; a mixed review
+  reviewable; a mixed review
   session; a Practice topic session to its result and its row; Hide study
   progress in Workspace settings.
 - `e2e/uat/journeys/study.spec.ts` (deployed stack, thin): one quiz finished,
@@ -736,4 +765,6 @@ Sources: [migration](../server/migrations/0051_study_progress.sql),
 [topic sessions](../src/features/study/practice/TopicPractice.tsx),
 [Dashboard store](../server/internal/store/dashboard.go),
 [review session](../src/routes/ReviewSession.tsx) and
-[Learning](../src/routes/Learning.tsx).
+[Learning](../src/routes/Learning.tsx),
+[Learning's store](../server/internal/store/learning_overview.go) and
+[topic labels](../server/internal/review/topic_label.go).

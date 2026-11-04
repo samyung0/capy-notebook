@@ -94,6 +94,7 @@ import type {
   IntegrationsStatus,
   InvoiceList,
   Label,
+  LearningOverview,
   LibraryFigure,
   ListAccountConversationsParams,
   ListAttemptsParams,
@@ -146,7 +147,6 @@ import type {
   ReportEditIncidentReq,
   RequestAccountDeletionReq,
   RetryProcessingInputBody,
-  ReviewOverview,
   ReviewResult,
   ReviewSession,
   SearchParams,
@@ -176,6 +176,7 @@ import type {
   SpendingLimitReq,
   StudyPreferences,
   StudySummary,
+  StudyTopics,
   Syllabus,
   Tag,
   Task,
@@ -4948,6 +4949,56 @@ const res = await fetch(getUpdateLabelUrl(id),
 
 
 
+export type getLearningOverviewResponse200 = {
+  data: LearningOverview
+  status: 200
+}
+
+export type getLearningOverviewResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getLearningOverviewResponseSuccess = (getLearningOverviewResponse200) & {
+  headers: Headers;
+};
+export type getLearningOverviewResponseError = (getLearningOverviewResponseDefault) & {
+  headers: Headers;
+};
+
+export type getLearningOverviewResponse = (getLearningOverviewResponseSuccess | getLearningOverviewResponseError)
+
+export const getGetLearningOverviewUrl = () => {
+
+
+
+
+  return `/api/learning/overview`
+}
+
+/**
+ * @summary Learning's Overview: what to do next across workspaces and how each stands
+ */
+export const getLearningOverview = async ( options?: RequestInit): Promise<getLearningOverviewResponse> => {
+
+  const res = await fetch(getGetLearningOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getLearningOverviewResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getLearningOverviewResponse
+}
+
+
+
 export type getLibraryFigureResponse200 = {
   data: LibraryFigure
   status: 200
@@ -7882,56 +7933,6 @@ const res = await fetch(getCheckReviewItemUrl(),
 
   const data: checkReviewItemResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as checkReviewItemResponse
-}
-
-
-
-export type getReviewOverviewResponse200 = {
-  data: ReviewOverview
-  status: 200
-}
-
-export type getReviewOverviewResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type getReviewOverviewResponseSuccess = (getReviewOverviewResponse200) & {
-  headers: Headers;
-};
-export type getReviewOverviewResponseError = (getReviewOverviewResponseDefault) & {
-  headers: Headers;
-};
-
-export type getReviewOverviewResponse = (getReviewOverviewResponseSuccess | getReviewOverviewResponseError)
-
-export const getGetReviewOverviewUrl = () => {
-
-
-
-
-  return `/api/review/overview`
-}
-
-/**
- * @summary Learning's Review tab: suggested reviews, sessions to continue, every workspace
- */
-export const getReviewOverview = async ( options?: RequestInit): Promise<getReviewOverviewResponse> => {
-
-  const res = await fetch(getGetReviewOverviewUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getReviewOverviewResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getReviewOverviewResponse
 }
 
 
@@ -11476,6 +11477,56 @@ export const resetWorkspaceStudy = async (id: string, options?: RequestInit): Pr
 
   const data: resetWorkspaceStudyResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as resetWorkspaceStudyResponse
+}
+
+
+
+export type getWorkspaceStudyTopicsResponse200 = {
+  data: StudyTopics
+  status: 200
+}
+
+export type getWorkspaceStudyTopicsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getWorkspaceStudyTopicsResponseSuccess = (getWorkspaceStudyTopicsResponse200) & {
+  headers: Headers;
+};
+export type getWorkspaceStudyTopicsResponseError = (getWorkspaceStudyTopicsResponseDefault) & {
+  headers: Headers;
+};
+
+export type getWorkspaceStudyTopicsResponse = (getWorkspaceStudyTopicsResponseSuccess | getWorkspaceStudyTopicsResponseError)
+
+export const getGetWorkspaceStudyTopicsUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/study/topics`
+}
+
+/**
+ * @summary Study → Summary: the caller's own standing per topic
+ */
+export const getWorkspaceStudyTopics = async (id: string, options?: RequestInit): Promise<getWorkspaceStudyTopicsResponse> => {
+
+  const res = await fetch(getGetWorkspaceStudyTopicsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getWorkspaceStudyTopicsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspaceStudyTopicsResponse
 }
 
 

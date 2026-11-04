@@ -118,6 +118,11 @@ type PanelTab = 'files' | 'chat';
 const isPanelTab = (value: unknown): value is PanelTab =>
   value === 'files' || value === 'chat';
 
+const SummaryPage = lazy(() =>
+  import('@/features/study/practice/SummaryPage').then((mod) => ({
+    default: mod.SummaryPage,
+  }))
+);
 const PracticePage = lazy(() =>
   import('@/features/study/practice/PracticePage').then((mod) => ({
     default: mod.PracticePage,
@@ -546,11 +551,12 @@ function WorkspaceOpen() {
   }
 
   /** Study → Practice takes the centre pane; Back returns here. */
-  function openPractice() {
+  function openStudy(study: 'practice' | 'summary') {
     setCitationTarget(null);
     setFilesOpen(false);
-    navigate({ search: { study: 'practice' }, to: '.' });
+    navigate({ search: { study }, to: '.' });
   }
+  const openPractice = () => openStudy('practice');
 
   /** The landing: the workspace's Dashboard. */
   function openDashboard() {
@@ -976,19 +982,25 @@ function WorkspaceOpen() {
 
   // Study's pages fill the centre without a file header from lg (boards P1,
   // P2); one column keeps its header for the Files dropdown and ⋮.
-  const studyContent = studyPage && search.study === 'practice' && (
-    <Suspense fallback={null}>
-      <PracticePage
-        search={{
-          group: search.group,
-          review: search.review,
-          reviewMode: search.reviewMode,
-          topicId: search.topicId,
-        }}
-        workspaceId={workspaceId}
-      />
-    </Suspense>
-  );
+  const studyContent =
+    studyPage &&
+    (search.study === 'summary' && studyView(ws).pages.includes('summary') ? (
+      <Suspense fallback={null}>
+        <SummaryPage workspaceId={workspaceId} />
+      </Suspense>
+    ) : (
+      <Suspense fallback={null}>
+        <PracticePage
+          search={{
+            group: search.group,
+            review: search.review,
+            reviewMode: search.reviewMode,
+            topicId: search.topicId,
+          }}
+          workspaceId={workspaceId}
+        />
+      </Suspense>
+    ));
   // The landing is the workspace's Dashboard (boards H1, H2).
   const pageContent =
     studyContent ||
@@ -1145,8 +1157,15 @@ function WorkspaceOpen() {
           </>
         ) : (
           <StudyPanel
-            active={studyPage ? 'practice' : null}
-            onOpen={openPractice}
+            active={
+              studyPage
+                ? search.study === 'summary' &&
+                  studyView(ws).pages.includes('summary')
+                  ? 'summary'
+                  : 'practice'
+                : null
+            }
+            onOpen={openStudy}
             pages={studyView(ws).pages}
           />
         )}

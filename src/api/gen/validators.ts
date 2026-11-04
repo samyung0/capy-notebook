@@ -3078,6 +3078,65 @@ export const UpdateLabelResponse = zod.object({
 
 
 /**
+ * @summary Learning's Overview: what to do next across workspaces and how each stands
+ */
+export const GetLearningOverviewResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "next": zod.array(zod.object({
+  "answered": zod.int(),
+  "at": zod.iso.datetime({"offset":true}).optional(),
+  "group": zod.enum(['topic', 'others', 'workspace', '']).optional(),
+  "kind": zod.enum(['session', 'quiz', 'start', 'review']),
+  "materialId": zod.string().optional(),
+  "materialKind": zod.enum(['quiz', 'flashcards', '']).optional(),
+  "sessionId": zod.string().optional(),
+  "suggestion": zod.object({
+  "evidence": zod.object({
+  "forgotten": zod.int(),
+  "lastPractisedAt": zod.iso.datetime({"offset":true}),
+  "missed": zod.int(),
+  "repeated": zod.int(),
+  "young": zod.int()
+}),
+  "group": zod.enum(['topic', 'others', 'workspace']),
+  "iconId": zod.string(),
+  "items": zod.int(),
+  "mode": zod.enum(['tricky', 'fading', 'learned']),
+  "topicId": zod.string().optional(),
+  "topicName": zod.string().optional(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+}).optional(),
+  "title": zod.string().optional(),
+  "topicName": zod.string().optional(),
+  "total": zod.int(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})),
+  "teaches": zod.array(zod.object({
+  "iconId": zod.string(),
+  "members": zod.int(),
+  "name": zod.string(),
+  "workspaceId": zod.string()
+})),
+  "weekCards": zod.int(),
+  "weekQuestions": zod.int(),
+  "workspaces": zod.array(zod.object({
+  "iconId": zod.string(),
+  "items": zod.int(),
+  "labels": zod.array(zod.object({
+  "count": zod.int(),
+  "label": zod.enum(['not_started', 'attempted', 'needs_practice', 'familiar', 'proficient', 'mastered'])
+})),
+  "lastPractisedAt": zod.iso.datetime({"offset":true}).optional(),
+  "name": zod.string(),
+  "tried": zod.int(),
+  "workspaceId": zod.string()
+}))
+})
+
+
+/**
  * @summary A library figure for a chat answer
  */
 export const getLibraryFigurePathIdMax = 128;
@@ -5570,50 +5629,6 @@ export const CheckReviewItemResponse = zod.object({
 
 
 /**
- * @summary Learning's Review tab: suggested reviews, sessions to continue, every workspace
- */
-export const GetReviewOverviewResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "suggestions": zod.array(zod.object({
-  "evidence": zod.object({
-  "forgotten": zod.int(),
-  "lastPractisedAt": zod.iso.datetime({"offset":true}),
-  "missed": zod.int(),
-  "repeated": zod.int(),
-  "young": zod.int()
-}),
-  "group": zod.enum(['topic', 'others', 'workspace']),
-  "iconId": zod.string(),
-  "items": zod.int(),
-  "mode": zod.enum(['tricky', 'fading', 'learned']),
-  "topicId": zod.string().optional(),
-  "topicName": zod.string().optional(),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})),
-  "unfinished": zod.array(zod.object({
-  "answered": zod.int(),
-  "group": zod.enum(['topic', 'others', 'workspace']),
-  "iconId": zod.string(),
-  "id": zod.string(),
-  "lastAnswerAt": zod.iso.datetime({"offset":true}),
-  "topicName": zod.string().optional(),
-  "total": zod.int(),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})),
-  "workspaces": zod.array(zod.object({
-  "canReview": zod.boolean(),
-  "iconId": zod.string(),
-  "lastReviewedAt": zod.iso.datetime({"offset":true}).optional(),
-  "name": zod.string(),
-  "reviewable": zod.int(),
-  "workspaceId": zod.string()
-}))
-})
-
-
-/**
  * @summary Record a flashcard's review rating
  */
 
@@ -8082,6 +8097,29 @@ export const ResetWorkspaceStudyParams = zod.object({
 })
 
 export const ResetWorkspaceStudyResponse = zod.void()
+
+
+/**
+ * @summary Study → Summary: the caller's own standing per topic
+ */
+export const GetWorkspaceStudyTopicsParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetWorkspaceStudyTopicsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "enabled": zod.boolean(),
+  "topics": zod.array(zod.object({
+  "asked": zod.int(),
+  "group": zod.enum(['topic', 'others']),
+  "label": zod.enum(['not_started', 'attempted', 'needs_practice', 'familiar', 'proficient', 'mastered']),
+  "lastAt": zod.iso.datetime({"offset":true}).optional(),
+  "name": zod.string().optional(),
+  "recent": zod.array(zod.enum(['right', 'partial', 'wrong'])),
+  "right": zod.int(),
+  "topicId": zod.string().optional()
+}))
+})
 
 
 /**

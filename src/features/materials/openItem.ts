@@ -45,9 +45,8 @@ export type WorkspaceOpenSearch = {
   /** The open item fills the page, header and side panels hidden. In the URL
    * so the back gesture leaves it. */
   fullscreen?: true;
-  /** A Study page in the centre while nothing is open; Practice is the one
-   * built so far. */
-  study?: 'practice';
+  /** A Study page in the centre while nothing is open. */
+  study?: 'practice' | 'summary';
   /** Practice's topic session to start: its group, topic and, from a
    * suggestion, its mode. */
   group?: 'topic' | 'others' | 'workspace';
@@ -143,6 +142,7 @@ function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
       ...(item ? { item } : {}),
     };
   }
+  if (search.study === 'summary') return { study: 'summary' };
   return search.study === 'practice' ? parsePractice(search) : {};
 }
 

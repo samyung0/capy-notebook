@@ -1,6 +1,6 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useMemo } from 'react';
-import { usePastReviews, useReviewOverview } from '@/api/hooks';
+import { useLearningOverview, usePastReviews } from '@/api/hooks';
 import type { PastReview, PastReviewSort, SessionScore } from '@/api/types';
 import { ListEnd } from '@/components/app/ListEnd';
 import { FilterPopover, toggleValue } from '@/components/app/ListToolbar';
@@ -48,7 +48,7 @@ export function PastReviews() {
     isFetchingNextPage,
     isLoading,
   } = usePastReviews(params);
-  const { data: overview } = useReviewOverview({ errorBoundary: false });
+  const { data: overview } = useLearningOverview({ errorBoundary: false });
   const revealRef = useLoadingReveal(isLoading);
   const rows = data?.pages.flatMap((page) => page.items) ?? [];
   const sorting: ColumnSort<PastReviewSort> = {
@@ -58,17 +58,16 @@ export function PastReviews() {
       setSearch(sortSearch('pastReviews', next, asc, PAST_REVIEW_SORT_DEFAULT)),
     sort,
   };
-  // No past reviews: the section stays hidden until the first one finishes.
-  // A filter that hides every row keeps it, so the filter can be reset.
+  // No past reviews yet says so. A filter that hides every row keeps the
+  // table, so the filter can be reset.
   const filtered = has.length > 0 || workspaceIds.length > 0;
-  if (!filtered && (isLoading || (data && rows.length === 0))) return null;
+  if (!filtered && isLoading) return null;
+  if (!filtered && data && rows.length === 0)
+    return <p className="py-8 text-center text-fg-muted">{m.past_empty()}</p>;
 
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <h3 className="font-bold text-fg-muted text-sm">
-          {m.learning_tab_past()}
-        </h3>
+      <div className="mb-3 flex items-center justify-end gap-4">
         <FilterPopover
           filters={[
             {

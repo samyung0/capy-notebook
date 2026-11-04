@@ -20,6 +20,7 @@ import {
   filesQuery,
   flashcardSetQuery,
   labelsQuery,
+  learningOverviewQuery,
   materialQuery,
   materialsQuery,
   meQuery,
@@ -29,7 +30,6 @@ import {
   ownedMaterialsQuery,
   quizQuery,
   recentQuery,
-  reviewOverviewQuery,
   tasksQuery,
   topicsQuery,
   usageQuery,
@@ -318,12 +318,14 @@ const appRoutes = [
       const saved =
         search.tab === 'results'
           ? savedSort('results', RESULT_SORTS, RESULT_SORT_DEFAULT, search)
-          : savedSort(
-              'pastReviews',
-              PAST_REVIEW_SORTS,
-              PAST_REVIEW_SORT_DEFAULT,
-              search
-            );
+          : search.tab === 'past'
+            ? savedSort(
+                'pastReviews',
+                PAST_REVIEW_SORTS,
+                PAST_REVIEW_SORT_DEFAULT,
+                search
+              )
+            : null;
       if (saved)
         throw redirect({
           replace: true,
@@ -335,7 +337,7 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       void qc.prefetchInfiniteQuery(attemptsQuery());
-      void qc.prefetchQuery(reviewOverviewQuery());
+      void qc.prefetchQuery(learningOverviewQuery());
     },
     path: '/learning',
     validateSearch: (search: Record<string, unknown>) => {
@@ -344,7 +346,9 @@ const appRoutes = [
         ...tab,
         ...(tab.tab === 'results'
           ? parseResultsSearch(search)
-          : parsePastReviewsSearch(search)),
+          : tab.tab === 'past'
+            ? parsePastReviewsSearch(search)
+            : {}),
       };
     },
   }),

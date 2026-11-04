@@ -5,11 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ReviewWorkspace {
-  canReview: boolean;
+export interface LearningTeach {
   iconId: string;
-  lastReviewedAt?: string;
+  members: number;
   name: string;
-  reviewable: number;
   workspaceId: string;
 }

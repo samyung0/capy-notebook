@@ -35,7 +35,7 @@ export const parseBillingSearch = (
   ...(search.reload === 'method' ? { reload: 'method' as const } : {}),
 });
 
-export const LEARNING_TABS = ['review', 'results'] as const;
+export const LEARNING_TABS = ['overview', 'past', 'results'] as const;
 export type LearningTab = (typeof LEARNING_TABS)[number];
 export const parseLearningSearch = tabSearch(LEARNING_TABS);
 

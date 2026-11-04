@@ -9,9 +9,9 @@ import { useEffect, useState } from 'react';
 import {
   invalidateStudy,
   useFinishReviewSession,
+  useLearningOverview,
   useRateReviewItem,
   useResumeReviewSession,
-  useReviewOverview,
   useReviewResult,
   useWorkspace,
   useWorkspaceReview,
@@ -226,18 +226,20 @@ function Session({
     if (!ended || !answeredAny || !sessionId) return;
     void ratings.saved().then(() => finish(sessionId));
   }, [ended, answeredAny, sessionId, ratings, finish]);
-  const { data: overview } = useReviewOverview();
+  const { data: overview } = useLearningOverview();
   // Images their uploader deleted read as removed (M16). No recheck: fetching
   // a new session again would replace this one.
   const removed = useRemovedAssets(data?.removedAssetIds);
-  const nextSuggestion = overview?.suggestions.find(
-    (s) =>
-      !(
-        s.workspaceId === workspaceId &&
-        s.group === session?.ref.group &&
-        s.topicId === session?.ref.topicId
-      )
-  );
+  const nextSuggestion = overview?.next
+    .flatMap((row) => row.suggestion ?? [])
+    .find(
+      (s) =>
+        !(
+          s.workspaceId === workspaceId &&
+          s.group === session?.ref.group &&
+          s.topicId === session?.ref.topicId
+        )
+    );
 
   /** A card swipes away only over another card. */
   function animate(after: Steps<ItemRecord>, back: boolean, from = item) {
@@ -255,7 +257,7 @@ function Session({
   const studySearch = { study: 'practice' as const };
   function back() {
     if (features.learning && search.from === 'review')
-      navigate({ search: { tab: 'review' }, to: '/learning' });
+      navigate({ search: { tab: 'overview' }, to: '/learning' });
     else
       navigate({
         params: { workspaceId },
@@ -297,7 +299,7 @@ function Session({
                 ? {
                     label: m.nav_learning(),
                     link: linkOptions({
-                      search: { tab: 'review' },
+                      search: { tab: 'overview' },
                       to: '/learning',
                     }),
                   }

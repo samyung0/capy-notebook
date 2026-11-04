@@ -26,8 +26,11 @@ type reviewOutput struct {
 type reviewResultOutput struct {
 	Body store.ReviewResult
 }
-type reviewOverviewOutput struct {
-	Body store.ReviewOverview
+type learningOverviewOutput struct {
+	Body store.LearningOverview
+}
+type studyTopicsOutput struct {
+	Body store.StudyTopics
 }
 type practiceOutput struct {
 	Body store.Practice
@@ -91,7 +94,8 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodGet, "/api/review/sessions", "listPastReviews", tag, "Finished review sessions with their quiz and flashcard results", http.StatusOK, a.listPastReviews)
 	reg(api, http.MethodPost, "/api/review/ratings", "rateReviewItem", tag, "Record a flashcard's review rating", http.StatusNoContent, a.rateReviewItem)
 	regWithMaxBody(api, http.MethodPost, "/api/review/check", "checkReviewItem", tag, "Grade and rate one question of a review session", http.StatusOK, answersMaxBytes, a.checkReviewItem)
-	reg(api, http.MethodGet, "/api/review/overview", "getReviewOverview", tag, "Learning's Review tab: suggested reviews, sessions to continue, every workspace", http.StatusOK, a.getReviewOverview)
+	reg(api, http.MethodGet, "/api/learning/overview", "getLearningOverview", tag, "Learning's Overview: what to do next across workspaces and how each stands", http.StatusOK, a.getLearningOverview)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/study/topics", "getWorkspaceStudyTopics", tag, "Study → Summary: the caller's own standing per topic", http.StatusOK, a.getWorkspaceStudyTopics)
 	reg(api, http.MethodPatch, "/api/me/study-preferences", "setStudyPreferences", tag, "Save study preferences", http.StatusNoContent, a.setStudyPreferences)
 }
 
@@ -291,12 +295,29 @@ func commaValues(v string) []string {
 	return out
 }
 
-func (a *api) getReviewOverview(ctx context.Context, _ *struct{}) (*reviewOverviewOutput, error) {
-	res, err := a.s.ReviewOverview(ctx, userID(ctx), time.Now())
+func (a *api) getLearningOverview(ctx context.Context, _ *struct{}) (*learningOverviewOutput, error) {
+	res, err := a.s.LearningOverview(ctx, userID(ctx), time.Now())
 	if err != nil {
 		return nil, storedContentError(ctx, "", err)
 	}
-	return &reviewOverviewOutput{Body: res}, nil
+	return &learningOverviewOutput{Body: res}, nil
+}
+
+// getWorkspaceStudyTopics is for whoever practises here: a class's owner and
+// editors manage it and have no results of their own (Epo 2026-11-04, board U3).
+func (a *api) getWorkspaceStudyTopics(ctx context.Context, in *workspaceIDInput) (*studyTopicsOutput, error) {
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	role, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.WorkspaceStudyTopics(ctx, userID(ctx), in.ID, store.RoleCanEdit(role), time.Now())
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &studyTopicsOutput{Body: res}, nil
 }
 
 // sessionAnswer is the store's view of an answer's session, nil without one.

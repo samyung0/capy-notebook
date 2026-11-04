@@ -65,11 +65,7 @@ export default function ReviewResult() {
           action={
             <ErrorAction asChild back>
               {features.learning ? (
-                <Link
-                  preload="intent"
-                  search={{ tab: 'review' }}
-                  to="/learning"
-                >
+                <Link preload="intent" search={{ tab: 'past' }} to="/learning">
                   {m.quiz_back()}
                 </Link>
               ) : (
@@ -101,7 +97,7 @@ export default function ReviewResult() {
           metaClassName="text-fg-secondary text-sm"
           onBack={() =>
             features.learning
-              ? void navigate({ search: { tab: 'review' }, to: '/learning' })
+              ? void navigate({ search: { tab: 'past' }, to: '/learning' })
               : void navigate(practice)
           }
           title={groupName(s.group, s.topicName) || s.workspaceName}
@@ -113,9 +109,9 @@ export default function ReviewResult() {
                     link: linkOptions({ to: '/learning' }),
                   },
                   {
-                    label: m.learning_tab_review(),
+                    label: m.learning_tab_past(),
                     link: linkOptions({
-                      search: { tab: 'review' },
+                      search: { tab: 'past' },
                       to: '/learning',
                     }),
                   },

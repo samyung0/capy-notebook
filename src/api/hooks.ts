@@ -84,6 +84,7 @@ import type {
   IntegrationsStatus,
   InvoiceList,
   Label,
+  LearningOverview,
   LibraryFigure,
   Material,
   MaterialCollaborationToken,
@@ -114,7 +115,6 @@ import type {
   RecentPage,
   RequestAccountDeletionReq,
   RetryProcessingReq,
-  ReviewOverview,
   ReviewResult,
   ReviewSession,
   ReviewStart,
@@ -125,6 +125,7 @@ import type {
   SpendingLimitReq,
   StudyPreferences,
   StudySummary,
+  StudyTopics,
   Tag,
   Task,
   Topic,
@@ -2983,15 +2984,24 @@ export function useFinishReviewSession() {
   });
 }
 
-/** Learning → Review: suggestions, sessions to continue, every workspace. */
-export const reviewOverviewQuery = () =>
+/** Learning → Overview: what to do next across workspaces, how each stands. */
+export const learningOverviewQuery = () =>
   queryOptions({
     ...persisted,
-    queryFn: () => api.get<ReviewOverview>('/review/overview'),
-    queryKey: qk.reviewOverview,
+    queryFn: () => api.get<LearningOverview>('/learning/overview'),
+    queryKey: qk.learningOverview,
   });
-export const useReviewOverview = (options?: QueryUiOptions) =>
-  useQuery({ ...reviewOverviewQuery(), meta: queryMeta(options) });
+export const useLearningOverview = (options?: QueryUiOptions) =>
+  useQuery({ ...learningOverviewQuery(), meta: queryMeta(options) });
+
+/** Study → Summary: the caller's own standing per topic. */
+export const useStudyTopics = (workspaceId: string, options?: QueryUiOptions) =>
+  useQuery({
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<StudyTopics>(`/workspaces/${workspaceId}/study/topics`),
+    queryKey: qk.studyTopics(workspaceId),
+  });
 
 const PAST_REVIEWS_PAGE = 30;
 /** Learning → Past reviews: finished sessions, newest first by default. */

@@ -194,11 +194,11 @@ func TestReviewSessionRecords(t *testing.T) {
 	if len(resumed.Done) != 1 || resumed.Done[0].ItemID != cards[0].ID || resumed.Done[0].Rating != 1 || resumed.Done[0].Front != "Golgi" {
 		t.Fatalf("resumed done = %+v", resumed.Done)
 	}
-	overview, err := f.s.ReviewOverview(ctx, f.user, time.Now())
+	overview, err := f.s.LearningOverview(ctx, f.user, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(overview.Unfinished) != 1 || overview.Unfinished[0].Answered != 1 || overview.Workspaces[0].LastReviewedAt == nil {
+	if len(overview.Next) == 0 || overview.Next[0].Kind != LearningSession || overview.Next[0].Answered != 1 || overview.Workspaces[0].LastPractisedAt == nil {
 		t.Fatalf("overview = %+v", overview)
 	}
 	// The Study tab continues the same whole-workspace session.

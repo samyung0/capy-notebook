@@ -361,6 +361,8 @@ export const qk = {
   integrations: ['integrations'] as const,
   invoices: ['billing', 'invoices'] as const,
   labels: ['labels'] as const,
+  /** Learning's Overview. */
+  learningOverview: ['review', 'learning'] as const,
   libraryFigure: (id: string) => ['library-figure', id] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
@@ -383,15 +385,17 @@ export const qk = {
   quiz: (id: string) => ['quiz', id] as const,
   /** GET /recent: Recent Files and the quick open share it. */
   recent: ['recent'] as const,
-  reviewOverview: ['review', 'overview'] as const,
   reviewResult: (id: string) => ['review', 'result', id] as const,
-  /** Everything under Learning's Review tab, past reviews included. */
+  /** Everything under Learning, past reviews included. */
   reviewRoot: ['review'] as const,
   reviewSession: (id: string) => ['review', 'session', id] as const,
   search: (q: string) => ['search', q] as const,
   sourceUploadPolicy: (wsId?: string) =>
     ['source-upload-policy', wsId ?? null] as const,
   study: (wsId: string) => ['workspace', wsId, 'study'] as const,
+  /** Study → Summary; refreshed with the rest of study. */
+  studyTopics: (wsId: string) =>
+    ['workspace', wsId, 'study', 'topics'] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
   topics: (wsId: string) => ['workspace', wsId, 'topics'] as const,

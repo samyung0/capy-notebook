@@ -188,3 +188,35 @@ func TestWorkspaceDashboard(t *testing.T) {
 		t.Fatalf("the owner's activity = %+v", got.Activity)
 	}
 }
+
+// Learning's Overview offers a member their class and leaves a class's owner
+// only its Members row; a first answer moves the quiz from Start to Workspaces
+// with its topic's standing, and what was left partway leads the list.
+func TestLearningOverview(t *testing.T) {
+	f := newStudyFixture(t, "u_learning")
+	ctx := context.Background()
+	quiz := f.quiz(t)
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_visits (user_id, workspace_id) VALUES ($1,$2)`, f.user, f.ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.s.LearningOverview(ctx, f.user, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Next) != 1 || got.Next[0].Kind != LearningStart || *got.Next[0].MaterialID != quiz.ID || got.Next[0].Total != 2 {
+		t.Fatalf("before an answer, next = %+v", got.Next)
+	}
+	if len(got.Workspaces) != 1 || got.Workspaces[0].Tried != 0 || got.Workspaces[0].Items < 2 || len(got.Teaches) != 0 {
+		t.Fatalf("before an answer, overview = %+v", got)
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE workspaces SET kind='class' WHERE id=$1`, f.ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err = f.s.LearningOverview(ctx, f.user, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Next) != 0 || len(got.Workspaces) != 0 || len(got.Teaches) != 1 || got.Teaches[0].WorkspaceID != f.ws.ID {
+		t.Fatalf("a class's owner, overview = %+v", got)
+	}
+}

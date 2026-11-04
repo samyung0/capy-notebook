@@ -91,7 +91,7 @@ vi.mock('@/api/hooks', () => ({
   }),
   useRateReviewItem: () => ({ mutateAsync: vi.fn() }),
   useResumeReviewSession: () => ({ data: undefined }),
-  useReviewOverview: () => ({ data: undefined }),
+  useLearningOverview: () => ({ data: undefined }),
   useWorkspace: () => ({ data: undefined }),
   useWorkspaceReview: () => ({
     data: {

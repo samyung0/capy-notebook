@@ -11,6 +11,7 @@ import type {
   ReviewSessionRef,
   ReviewSuggestion,
   StudySummary,
+  SummaryTopic,
 } from '@/api/types';
 import { parseFlashcardsBlock } from '@/features/materials/blocks';
 import {
@@ -503,50 +504,137 @@ const isQuiz = (id: string) =>
       (mt.kind === 'quiz' || mt.kind === 'flashcards')
   );
 
-function overview() {
+/** Learning's Overview: the same order as the server, from the mock's state
+ * and the showcase rows. */
+function learningOverview() {
   const real = [...progress.keys()].filter(
     (wsId) => (enabled.get(wsId) ?? true) && items(wsId).size > 0
   );
-  const lastReviewed = (wsId: string) => {
-    const times = [...sessions.values()]
-      .filter((s) => s.workspaceId === wsId)
-      .map((s) => s.lastAnswerAt);
-    return times.length
-      ? new Date(Math.max(...times)).toISOString()
-      : undefined;
-  };
+  const continued = unfinished().map((u) => ({
+    answered: u.answered,
+    at: u.lastAnswerAt,
+    group: u.group,
+    kind: 'session' as const,
+    sessionId: u.id,
+    topicName: u.topicName,
+    total: u.total,
+    workspaceId: u.workspaceId,
+    workspaceName: u.workspaceName,
+  }));
+  const started = db.workspaces.flatMap((ws) => {
+    const quiz = db.materials.find(
+      (mt) =>
+        mt.workspaceId === ws.id &&
+        isQuiz(mt.id) &&
+        !progress.get(ws.id)?.has(mt.id)
+    );
+    return quiz
+      ? [
+          {
+            answered: 0,
+            kind: 'start' as const,
+            materialId: quiz.id,
+            materialKind: quiz.kind as 'quiz' | 'flashcards',
+            title: quiz.title,
+            total: 10,
+            workspaceId: ws.id,
+            workspaceName: ws.name,
+          },
+        ]
+      : [];
+  });
+  const suggested = [
+    ...real.flatMap(suggestionsOf),
+    ...SHOWCASE_SUGGESTIONS,
+  ].map((suggestion) => ({
+    answered: 0,
+    kind: 'review' as const,
+    suggestion,
+    total: 0,
+    workspaceId: suggestion.workspaceId,
+    workspaceName: suggestion.workspaceName,
+  }));
   return {
-    suggestions: [
-      ...real.flatMap(suggestionsOf),
-      ...SHOWCASE_SUGGESTIONS,
-    ].slice(0, 5),
-    unfinished: unfinished(),
+    next: [...[...continued, ...started].slice(0, 3), ...suggested].slice(0, 4),
+    teaches: [],
+    weekCards: 18,
+    weekQuestions: 41,
     workspaces: [
       ...real.map((wsId) => {
         const ws = db.workspaces.find((w) => w.id === wsId);
         return {
-          canReview:
-            pool(wsId).length > 0 ||
-            db.materials.some((mt) => mt.workspaceId === wsId && isQuiz(mt.id)),
           iconId: ws?.iconId ?? '',
-          lastReviewedAt: lastReviewed(wsId),
+          items: Math.max(pool(wsId).length, 12),
+          labels: studyTopics(wsId).reduce<
+            { count: number; label: TopicLabel }[]
+          >((all, t) => {
+            const hit = all.find((l) => l.label === t.label);
+            if (hit) hit.count++;
+            else all.push({ count: 1, label: t.label });
+            return all;
+          }, []),
+          lastPractisedAt: daysAgo(1),
           name: ws?.name ?? wsId,
-          reviewable: pool(wsId).length,
+          tried: pool(wsId).length,
           workspaceId: wsId,
         };
       }),
       ...SHOWCASE.filter((ws) => !real.includes(ws.workspaceId))
-        .slice(0, 4)
+        .slice(0, 3)
         .map((ws, i) => ({
-          canReview: i !== 3,
           iconId: ws.iconId,
-          lastReviewedAt: i % 2 ? daysAgo(i * 5) : undefined,
+          items: 40 + i * 25,
+          labels: [
+            { count: 2, label: 'needs_practice' as const },
+            { count: 3 - i, label: 'familiar' as const },
+            { count: 1, label: 'proficient' as const },
+          ],
+          lastPractisedAt: daysAgo(2 + i * 5),
           name: ws.name,
-          reviewable: i === 3 ? 0 : 6 + i * 7,
+          tried: 22 + i * 9,
           workspaceId: ws.workspaceId,
         })),
-    ].sort((a, b) => a.name.localeCompare(b.name)),
+    ],
   };
+}
+
+type TopicLabel = SummaryTopic['label'];
+
+/** Study → Summary's rows: a fixed spread over the workspace's topics. */
+function studyTopics(wsId: string): SummaryTopic[] {
+  const spread: Pick<SummaryTopic, 'asked' | 'label' | 'recent' | 'right'>[] = [
+    {
+      asked: 10,
+      label: 'proficient',
+      recent: ['right', 'right', 'wrong', 'right'],
+      right: 9,
+    },
+    {
+      asked: 8,
+      label: 'familiar',
+      recent: ['right', 'partial', 'wrong', 'right'],
+      right: 5,
+    },
+    {
+      asked: 4,
+      label: 'needs_practice',
+      recent: ['wrong', 'wrong', 'right', 'wrong'],
+      right: 1,
+    },
+    { asked: 2, label: 'attempted', recent: ['wrong', 'right'], right: 1 },
+  ];
+  const quizTopics = db.topics.filter((t) => t.workspaceId === wsId);
+  return quizTopics.map((t, i) => ({
+    group: 'topic' as const,
+    name: t.name,
+    topicId: t.id,
+    ...(spread[i] ?? {
+      asked: 0,
+      label: 'not_started' as const,
+      recent: [],
+      right: 0,
+    }),
+  }));
 }
 
 const SHOWCASE_PAST: PastReview[] = [
@@ -981,7 +1069,16 @@ export const studyHandlers = [
       total: list.length,
     });
   }),
-  http.get('/api/review/overview', () => HttpResponse.json(overview())),
+  http.get('/api/learning/overview', () =>
+    HttpResponse.json(learningOverview())
+  ),
+  http.get('/api/workspaces/:id/study/topics', ({ params }) => {
+    const wsId = String(params.id);
+    return HttpResponse.json({
+      enabled: enabled.get(wsId) ?? true,
+      topics: studyTopics(wsId),
+    });
+  }),
   http.get('/api/review/sessions', ({ request }) =>
     HttpResponse.json(pastReviews(new URL(request.url).searchParams))
   ),

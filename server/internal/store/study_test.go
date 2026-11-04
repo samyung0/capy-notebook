@@ -259,12 +259,12 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	if summary.Reviewable != 1 || len(summary.QuickReview) != 1 || summary.QuickReview[0].Front != "Golgi" || summary.QuickReview[0].Back != "Ships proteins" {
 		t.Fatalf("quick review = %+v", summary)
 	}
-	overview, err := f.s.ReviewOverview(ctx, f.user, time.Now())
+	overview, err := f.s.LearningOverview(ctx, f.user, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if listed := overview.Workspaces; len(listed) != 1 || listed[0].WorkspaceID != f.ws.ID || listed[0].Reviewable != 1 || listed[0].LastReviewedAt != nil {
-		t.Fatalf("review workspaces = %+v", listed)
+	if listed := overview.Workspaces; len(listed) != 1 || listed[0].WorkspaceID != f.ws.ID || listed[0].Tried == 0 {
+		t.Fatalf("learning workspaces = %+v", listed)
 	}
 
 	if err := f.s.ResetStudy(ctx, f.user, f.ws.ID); err != nil {
