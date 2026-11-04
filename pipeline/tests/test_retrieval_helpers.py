@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 
+import pydantic
 import pytest
 
 from pipeline.registry import ModelConfig
@@ -766,29 +767,14 @@ def test_extract_json_returns_none_for_prose():
     assert workflows.extract_json("") is None
 
 
-def test_strip_fence_unwraps_mermaid():
-    assert workflows.strip_fence("```mermaid\nflowchart LR\n A-->B\n```") == (
-        "flowchart LR\n A-->B"
-    )
-    assert workflows.strip_fence("flowchart LR") == "flowchart LR"
-
-
 def test_require_helpers_reject_empty_model_output():
-    assert workflows.require_mermaid("```mermaid\nmindmap\n  root((X))\n```", "mindmap")
-    assert workflows.require_json_list('[{"front": "a"}]', "flashcards") == [
-        {"front": "a"}
-    ]
-    assert workflows.require_text("  bullets  ", "summary") == "bullets"
+    assert workflows.require_json_list('[{"stem": "a"}]', "quiz") == [{"stem": "a"}]
 
     for fn, args in (
-        (workflows.require_mermaid, ("", "mindmap")),
-        (workflows.require_mermaid, ("   ", "diagram")),
-        (workflows.require_json_list, ("", "flashcards")),
+        (workflows.require_json_list, ("", "quiz")),
         (workflows.require_json_list, ("[]", "quiz")),
         (workflows.require_json_list, ("not json", "quiz")),
-        (workflows.require_json_list, ('{"front": "a"}', "flashcards")),
-        (workflows.require_text, ("", "summary")),
-        (workflows.require_text, ("  \n", "summary")),
+        (workflows.require_json_list, ('{"stem": "a"}', "quiz")),
     ):
         try:
             fn(*args)
@@ -924,7 +910,7 @@ async def test_generate_refuses_empty_indexed_scope_before_model(monkeypatch):
         await service._generate(req)
 
 
-async def test_generate_takes_the_panels_count(monkeypatch):
+async def test_generate_takes_the_dialogs_count(monkeypatch):
     from pipeline.retrieve import service
 
     spec = ModelConfig(
@@ -938,7 +924,7 @@ async def test_generate_takes_the_panels_count(monkeypatch):
         context_window_tokens=100_000,
     )
 
-    def req(kind: str, **extra) -> service.GenerateReq:
+    def req(**extra) -> service.GenerateReq:
         return service.GenerateReq(
             providerSlug=spec.provider_slug,
             modelSlug=spec.model_slug,
@@ -946,17 +932,13 @@ async def test_generate_takes_the_panels_count(monkeypatch):
             userId="u_1",
             thinking="instant",
             workspaceId="ws_1",
-            kind=kind,
             types=["mcq"],
-            detail="standard",
-            diagramType="auto",
             **extra,
         )
 
-    # The panel's More or Less is the count; the study preferences never set it.
-    assert service._count(req("quiz", count=10)) == 10
-    with pytest.raises(ValueError, match="needs a count"):
-        service._count(req("flashcards"))
+    # The dialog's Questions is the count; the study preferences never set it.
+    with pytest.raises(pydantic.ValidationError):
+        req()
 
     asked: list[str] = []
 
@@ -965,14 +947,30 @@ async def test_generate_takes_the_panels_count(monkeypatch):
 
     async def _produce(*, instruction, **_kwargs):
         asked.append(instruction)
-        return '[{"front": "f", "back": "b"}]'
+        return json.dumps(
+            [
+                {
+                    "stem": [],
+                    "parts": [
+                        {
+                            "blocks": [{"type": "text", "text": "True?"}],
+                            "answer": {"type": "boolean", "correct": True},
+                            "marks": 1,
+                            "solution": [],
+                        }
+                    ],
+                    "layout": "paper",
+                    "labels": "letters",
+                }
+            ]
+        )
 
     monkeypatch.setattr(service, "_bind_llm", lambda _req: None)
     monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a, **_k: spec)
     monkeypatch.setattr(service.workflows, "generation_context", _context)
     monkeypatch.setattr(service.workflows, "produce", _produce)
-    await service._generate(req("flashcards", count=5))
-    assert asked[0].startswith("Create 5 study flashcards")
+    await service._generate(req(count=5))
+    assert asked[0].startswith("Create a 5-question quiz")
 
 
 @pytest.mark.parametrize("character", ["a", "光", "😀"])

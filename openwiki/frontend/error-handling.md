@@ -421,7 +421,7 @@ inside a workspace (a stale capability, or creation at the limit) shows only
 the workspace status toast: `deferStorageRefusal` (in `src/lib/errors.ts`,
 called first by the mutation cache and by surfaces with their own error toast
 or strip: the source transfer runner, sharing, clone, note media uploads, the PDF
-annotation strip and the generate panel) hands each refusal once to
+annotation strip and Make my own practice) hands each refusal once to
 `WorkspaceHealth`. A quota refusal carries its numbers only for the charged
 account, so one without numbers is another payer's item and keeps its own
 toast, worded like the strip. The

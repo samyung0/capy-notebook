@@ -10,6 +10,7 @@ export interface PracticeQuiz {
   average?: number;
   best?: SessionScore;
   id: string;
+  onlyYou?: boolean;
   questions: number;
   title: string;
   topicId?: string;

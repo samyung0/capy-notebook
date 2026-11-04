@@ -305,10 +305,10 @@ func (s *Store) learningContinue(ctx context.Context, userID string, ids []strin
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	rows, err = s.pool.Query(ctx, `SELECT DISTINCT ON (a.material_id) a.material_id, m.workspace_id, m.title,
+	rows, err = s.pool.Query(ctx, `SELECT DISTINCT ON (a.material_id) a.material_id, COALESCE(m.workspace_id, m.practice_workspace_id), m.title,
 			jsonb_array_length(a.questions), a.taken_at
 		FROM attempts a JOIN materials m ON m.id=a.material_id
-		WHERE a.user_id=$1 AND a.kind='quiz' AND m.workspace_id = ANY($2) AND a.taken_at >= $3
+		WHERE a.user_id=$1 AND a.kind='quiz' AND COALESCE(m.workspace_id, m.practice_workspace_id) = ANY($2) AND a.taken_at >= $3
 			AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 			AND workspace_item_visible(m.hidden, m.workspace_id, $1)
 		ORDER BY a.material_id, a.taken_at DESC`, userID, ids, since)
@@ -440,7 +440,7 @@ func continuing(rows []LearningRow, sg *ReviewSuggestion) bool {
 func (s *Store) learningWeek(ctx context.Context, userID string, ids []string, now time.Time) (questions, cards int, err error) {
 	err = s.pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE m.kind='quiz'), count(*) FILTER (WHERE m.kind='flashcards')
 		FROM review_log rl JOIN materials m ON m.id=rl.material_id
-		WHERE rl.user_id=$1 AND rl.reviewed_at >= $2 AND m.workspace_id = ANY($3)`, userID, now.Add(-learningWeek), ids).Scan(&questions, &cards)
+		WHERE rl.user_id=$1 AND rl.reviewed_at >= $2 AND COALESCE(m.workspace_id, m.practice_workspace_id) = ANY($3)`, userID, now.Add(-learningWeek), ids).Scan(&questions, &cards)
 	return questions, cards, err
 }
 
@@ -503,11 +503,11 @@ func (s *Store) topicStandings(ctx context.Context, userID, wsID string, now tim
 	for _, it := range sizes {
 		size[it.MaterialID] = it.Size
 	}
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.topic_id, t.name
-		FROM materials m LEFT JOIN topics t ON t.id=m.topic_id
-		WHERE m.workspace_id=$1 AND m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.topic_id, m.practice_topic_id), t.name
+		FROM materials m LEFT JOIN topics t ON t.id=COALESCE(m.topic_id, m.practice_topic_id)
+		WHERE (m.workspace_id=$1 OR (m.practice_workspace_id=$1 AND m.owner_user_id=$2)) AND m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
-		ORDER BY m.topic_id IS NULL, t.position, m.id`, wsID, userID)
+		ORDER BY t.id IS NULL, t.position, m.id`, wsID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -537,7 +537,7 @@ func (s *Store) topicStandings(ctx context.Context, userID, wsID string, now tim
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	rows, err = s.pool.Query(ctx, `SELECT m.topic_id, ae.material_id, ae.question_id, ae.item_hash, ae.awarded, ae.marks, ae.key_seen, ae.created_at
+	rows, err = s.pool.Query(ctx, `SELECT COALESCE(m.topic_id, m.practice_topic_id), ae.material_id, ae.question_id, ae.item_hash, ae.awarded, ae.marks, ae.key_seen, ae.created_at
 		FROM answer_events ae JOIN materials m ON m.id=ae.material_id
 		WHERE ae.workspace_id=$1 AND ae.user_id=$2 AND m.kind='quiz' AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL AND workspace_item_visible(m.hidden, m.workspace_id, $2)

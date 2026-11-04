@@ -1,4 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
+import { useState } from 'react';
 import { useStudyTopics, useWorkspace } from '@/api/hooks';
 import type { SummaryTopic } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
@@ -8,6 +9,8 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { LabelChip, topicSquares } from '../topicLabels';
+import { MakePractice } from './MakePractice';
+import { studyView } from './studyView';
 import { PracticeFrame } from './TopicPractice';
 
 const RESULT: Record<string, string> = {
@@ -28,6 +31,7 @@ export function SummaryPage({ workspaceId }: { workspaceId: string }) {
     workspaceId,
     { errorBoundary: false }
   );
+  const [making, setMaking] = useState(false);
   const practise = (topic: SummaryTopic) =>
     navigate({
       search: {
@@ -44,12 +48,9 @@ export function SummaryPage({ workspaceId }: { workspaceId: string }) {
           <h1 className="t-page-title">{m.study_panel_summary()}</h1>
           <span className="t-meta text-fg-muted">{ws?.name}</span>
         </div>
-        {/* Not built yet (Make my own practice, P3), as on Practice. */}
-        <span title={m.study_panel_soon()}>
-          <Button disabled iconLeft="plus">
-            {m.practice_make_own()}
-          </Button>
-        </span>
+        <Button iconLeft="plus" onClick={() => setMaking(true)}>
+          {m.practice_make_own()}
+        </Button>
       </div>
       {isPending ? (
         <SkeletonList count={4} rowHeight={44} />
@@ -87,8 +88,26 @@ export function SummaryPage({ workspaceId }: { workspaceId: string }) {
           </Button>
         </div>
       )}
+      {making && (
+        <MakePractice
+          initialTopicId={weakestTopicId(data?.topics ?? [])}
+          onClose={() => setMaking(false)}
+          onlyYou={!studyView(ws).canEdit}
+          workspaceId={workspaceId}
+        />
+      )}
     </PracticeFrame>
   );
+}
+
+/** Where Make my own practice starts: a weak topic with nothing unseen left,
+ * then the weak topic with the fewest right. */
+function weakestTopicId(topics: SummaryTopic[]) {
+  const weak = topics.filter((t) => t.label === 'needs_practice' && t.topicId);
+  return (
+    weak.find((t) => t.unattempted === 0) ??
+    [...weak].sort((a, b) => a.right - b.right)[0]
+  )?.topicId;
 }
 
 function TopicRow({

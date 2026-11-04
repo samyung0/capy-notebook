@@ -365,10 +365,9 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   filter and the quizzes with Tried by ("5 of 6") and Group average ("74%",
   "–" under five tries). No Suggested and no own reviews: their own study
   waits for Summary. A row opens the quiz in the workspace.
-- Make my own practice (P3) and Add practice (whoever may edit: a class's
-  staff, a personal workspace's owner and editors, whose quiz rows also open
-  the quiz) show disabled with a "Coming soon" title; they come with their own
-  branches.
+- Add practice (whoever may edit: a class's staff, a personal workspace's owner
+  and editors, whose quiz rows also open the quiz) shows disabled with a "Coming
+  soon" title. Everyone else gets Make my own practice (below).
 - Below md the table becomes one row per item with its facts under the
   title (topic, questions, tried), the score and Practise on the right.
 
@@ -389,8 +388,27 @@ squares for every question (right, partly, wrong by its latest answer, grey when
 not attempted, a quiz left partway included; above 10 they scale to 10 and any
 unattempted question keeps at least 1 grey; `topicSquares`), and Practise, which starts that topic's session.
 Assignments' overall joins it once they exist. While study progress is hidden it
-says so, with a Workspace settings button. Make my own practice sits at the top right,
-disabled and marked Coming soon until it is built, as on Practice.
+says so, with a Workspace settings button. Make my own practice sits at the top right.
+
+### Make my own practice
+
+`MakePractice` (Epo 2026-11-04, boards P3 and T5) writes a quiz from sources with
+the learner's credits, through `/generate`, and opens it ready to answer: From
+(Topics or Files), the picks, Questions (5, 10, 15, 20), Question types (Mixed,
+Multiple choice, Short answer, Open answer) and Mix in questions I have answered.
+Only topics holding indexed files or notes are offered, and Summary starts on the
+weakest. Only the quiz is kept. Mix in takes about 30% of the count
+(`generateMixShare`) from `MixInQuestions`: the learner's own weak questions in
+scope, copied into the new quiz.
+
+Who can edit the workspace gets an ordinary quiz file there. A member of a class
+gets one only they can reach: their own standalone material, charged to them,
+linked by `materials.practice_workspace_id` and `practice_topic_id`. Those links
+count only for its maker (`reviewPool`, `newPool`, `itemCounts`,
+`Material.StudyWorkspaceID`), so it feeds their labels and reviews, shows on their
+Practice marked Only you, and lists in their own Files. Its sources are what they
+can read (`VisibleSourceItems`), and the pipeline reads hidden items only for an
+editor (`readsHidden`).
 
 ### Topic labels
 

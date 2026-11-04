@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -24,19 +26,27 @@ type generateOutput struct {
 	Body map[string]any
 }
 
+// generateMixShare is how much of a quiz "Mix in questions I have answered"
+// takes (Claude's value).
+const generateMixShare = 0.3
+
 func (a *api) registerGenerate(api huma.API) {
-	reg(api, http.MethodPost, "/api/workspaces/{id}/generate", "generate", "Generate", "Generate a quiz, flashcards, mindmap, or diagram", http.StatusOK, a.generate)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/generate", "generate", "Generate", "Generate a quiz from workspace sources", http.StatusOK, a.generate)
 }
 
+// generate writes a quiz from workspace sources (Make my own practice, Epo
+// 2026-11-04). Anyone who can read the workspace may, on their own credits. An
+// owner's or editor's quiz is a file of the workspace; anyone else's is their
+// own standalone material linked to it, which nobody else can reach.
 func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput, error) {
-	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	// The panel picks how many (Epo 2026-10-14: no study preference here).
-	if kind := in.Body.Kind.MaterialKind(); in.Body.Count == 0 &&
-		(kind == store.MaterialQuiz || kind == store.MaterialFlashcards) {
-		return nil, huma.Error400BadRequest("count is required for a quiz or a flashcard set")
+	role, err := a.s.WorkspaceEffectiveRole(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
 	}
+	canEdit := store.RoleCanEdit(role)
 	// Refuse a frozen actor, or one at its storage limit (it pays for the
 	// material), before credits are reserved or spent; the material insert
 	// would refuse it anyway.
@@ -68,12 +78,10 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	taken, err := a.s.MaterialTitleTaken(ctx, wsID, title)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	if taken {
-		return nil, hErr(store.ErrTitleTaken)
+	if canEdit {
+		if title, err = a.freeGenerateTitle(ctx, wsID, title); err != nil {
+			return nil, hErr(err)
+		}
 	}
 	ws, err := a.s.GetWorkspaceShared(ctx, wsID)
 	if err != nil {
@@ -84,6 +92,7 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 		return nil, hErr(errAIUnavailable)
 	}
 	opts := generateOptsFrom(in.Body, title)
+	opts.CanEdit = canEdit
 	payload, _, err := a.generateViaPipe(ctx, actor, wsID, ws.Name, &opts, llm, charge.id)
 	if err != nil {
 		var unknown unknownScopeIDError
@@ -107,15 +116,16 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 }
 
 type generateOpts struct {
-	Kind        store.MaterialKind
-	Count       int // questions or cards; required for a quiz or flashcard set
-	Types       []string
-	Levels      []string
-	Topics      []string
-	FileIds     []string
-	Detail      string
-	DiagramType string
-	Title       string
+	Count   int
+	Types   []string
+	Levels  []string
+	Topics  []string
+	FileIds []string
+	Title   string
+	// Mix adds the caller's answered questions to the new ones.
+	Mix bool
+	// CanEdit makes the quiz a file of the workspace.
+	CanEdit bool
 }
 
 func generateOptsFrom(req apimodel.GenerateReq, title string) generateOpts {
@@ -128,15 +138,25 @@ func generateOptsFrom(req apimodel.GenerateReq, title string) generateOpts {
 		levels[i] = string(lvl)
 	}
 	return generateOpts{
-		Kind:        req.Kind.MaterialKind(),
-		Count:       req.Count,
-		Types:       types,
-		Levels:      levels,
-		Topics:      req.Topics,
-		FileIds:     req.FileIds,
-		Detail:      string(req.Detail),
-		DiagramType: string(req.DiagramType),
-		Title:       title,
+		Count:   req.Count,
+		Types:   types,
+		Levels:  levels,
+		Topics:  req.Topics,
+		FileIds: req.FileIds,
+		Title:   title,
+		Mix:     req.Mix,
+	}
+}
+
+// freeGenerateTitle numbers a title the workspace already holds: nobody typed it.
+func (a *api) freeGenerateTitle(ctx context.Context, wsID, title string) (string, error) {
+	candidate := title
+	for n := 2; ; n++ {
+		taken, err := a.s.MaterialTitleTaken(ctx, wsID, candidate)
+		if err != nil || !taken {
+			return candidate, err
+		}
+		candidate = fmt.Sprintf("%s %d", title, n)
 	}
 }
 
@@ -150,12 +170,12 @@ func normalizeGenerateTitle(title string) (string, error) {
 	return title, nil
 }
 
-// resolveScope resolves the Generate panel's ids: any untrashed file or
-// top-level material of the workspace, and topics, which add every item
-// filed in them. No ids means every item. Items without indexed text
+// resolveScope resolves the dialog's ids: any untrashed file or top-level
+// material the caller can read, and topics, which add every such item filed in
+// them. No ids means every item. Items without indexed text
 // contribute none; a scope with no text at all is refused.
 func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts) (fileIDs, fileNames, topicNames []string, err error) {
-	items, err := a.s.SourceItems(ctx, wsID)
+	items, err := a.s.VisibleSourceItems(ctx, wsID, userID(ctx))
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -240,15 +260,22 @@ func (a *api) generateViaPipe(
 	if err != nil {
 		return nil, pipeUsage{}, err
 	}
+	// Nothing readable to draw on: an empty list would read as the whole workspace.
+	if len(fileIDs) == 0 {
+		return nil, pipeUsage{}, errGenerateEmpty
+	}
+	mixed := []map[string]any{}
+	if opts.Mix {
+		if mixed, err = a.s.MixInQuestions(ctx, userID, wsID, opts.Topics, int(math.Round(float64(opts.Count)*generateMixShare)), time.Now()); err != nil {
+			return nil, pipeUsage{}, err
+		}
+		opts.Count -= len(mixed)
+	}
 	body := map[string]any{
-		"workspaceId": wsID, "kind": opts.Kind, "types": opts.Types, "levels": opts.Levels,
+		"workspaceId": wsID, "readsHidden": opts.CanEdit, "count": opts.Count, "types": opts.Types, "levels": opts.Levels,
 		"topics": topicNames, "fileIds": fileIDs, "fileNames": fileNames,
-		"detail": opts.Detail, "diagramType": opts.DiagramType,
 		"locale":         a.userLocale(ctx, userID),
 		"spendSessionId": spendSessionID,
-	}
-	if opts.Count > 0 {
-		body["count"] = opts.Count
 	}
 	llm.attach(body)
 	var usage pipeUsage
@@ -266,122 +293,41 @@ func (a *api) generateViaPipe(
 		return nil, usage, &aiServiceError{cause: err}
 	}
 	usage = usageFrom(raw)
-	var head struct {
-		Kind string `json:"kind"`
+	var qp struct {
+		Questions []map[string]any `json:"questions"`
 	}
-	if json.Unmarshal(raw, &head) != nil {
+	if json.Unmarshal(raw, &qp) != nil {
 		return nil, usage, fmt.Errorf("%w: invalid generate response", errAIUnavailable)
 	}
-	switch head.Kind {
-	case "quiz":
-		var qp struct {
-			Name      string          `json:"name"`
-			Questions json.RawMessage `json:"questions"`
-		}
-		_ = json.Unmarshal(raw, &qp)
-		name := opts.Title
-		qs := strings.TrimSpace(string(qp.Questions))
-		if qs == "" || qs == "[]" || qs == "null" {
-			return nil, usage, errGenerateEmpty
-		}
-		mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
-			ActorUserID: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "quiz", Title: name,
-			Questions:   qp.Questions,
-			ScopeTopics: topicNames, ScopeFileNames: fileNames,
-		})
-		if err != nil {
-			return nil, usage, err
-		}
-		quiz, err := a.s.GetQuiz(ctx, mt.ID)
-		if err != nil {
-			return nil, usage, err
-		}
-		role, err := a.s.MaterialEffectiveRole(ctx, userID, mt.ID)
-		if err != nil {
-			return nil, usage, err
-		}
-		quiz.IsOwner = role == store.RoleOwner
-		quiz.CanEdit, quiz.CanEditContent = true, true
-		return map[string]any{"kind": "quiz", "quiz": quiz}, usage, nil
-	case "flashcards":
-		var fp struct {
-			Cards []struct {
-				Front string `json:"front"`
-				Back  string `json:"back"`
-			} `json:"cards"`
-		}
-		_ = json.Unmarshal(raw, &fp)
-		fronts := make([][2]string, 0, len(fp.Cards))
-		for _, c := range fp.Cards {
-			fronts = append(fronts, [2]string{c.Front, c.Back})
-		}
-		res, err := a.persistFlashcardSet(ctx, userID, wsID, wsName, opts.Title, fronts, topicNames, fileNames)
-		if err != nil {
-			return nil, usage, err
-		}
-		return res, usage, nil
-	case "mindmap", "diagram":
-		var mp struct {
-			Title   string `json:"title"`
-			Content string `json:"content"`
-		}
-		_ = json.Unmarshal(raw, &mp)
-		res, err := a.persistMaterial(ctx, userID, wsID, wsName, store.MaterialKind(head.Kind), opts.Title, mp.Content, topicNames, fileNames)
-		if err != nil {
-			return nil, usage, err
-		}
-		return res, usage, nil
+	if len(qp.Questions) == 0 {
+		return nil, usage, errGenerateEmpty
 	}
-	var m map[string]any
-	if json.Unmarshal(raw, &m) != nil {
-		return nil, usage, fmt.Errorf("%w: invalid generate response", errAIUnavailable)
-	}
-	return m, usage, nil
-}
-
-func (a *api) persistFlashcardSet(
-	ctx context.Context,
-	userID, wsID, wsName, title string,
-	cards [][2]string,
-	topicNames, fileNames []string,
-) (any, error) {
-	if len(cards) == 0 {
-		return nil, errGenerateEmpty
-	}
-	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
-		ActorUserID: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "flashcards", Title: title,
-		Cards: cards, ScopeTopics: topicNames, ScopeFileNames: fileNames, Color: "green",
-	})
+	questions, err := json.Marshal(append(qp.Questions, mixed...))
 	if err != nil {
-		return nil, err
+		return nil, usage, err
 	}
-	out, err := a.s.ListCards(ctx, mt.ID)
+	draft := store.MaterialDraft{
+		ActorUserID: userID, Kind: "quiz", Title: opts.Title, Questions: questions,
+		ScopeTopics: topicNames, ScopeFileNames: fileNames,
+	}
+	if opts.CanEdit {
+		draft.WorkspaceID, draft.WorkspaceName = wsID, wsName
+		if len(opts.Topics) == 1 {
+			draft.TopicID = &opts.Topics[0]
+		}
+	} else {
+		draft.PracticeWorkspaceID = wsID
+		if len(opts.Topics) == 1 {
+			draft.PracticeTopicID = &opts.Topics[0]
+		}
+	}
+	mt, err := a.s.CreateMaterialDraft(ctx, draft)
 	if err != nil {
-		return nil, err
+		return nil, usage, err
 	}
-	flashcardSet, err := a.s.GetFlashcardSet(ctx, mt.ID)
+	quiz, err := a.s.GetQuiz(ctx, mt.ID)
 	if err != nil {
-		return nil, err
+		return nil, usage, err
 	}
-	role, err := a.s.MaterialEffectiveRole(ctx, userID, mt.ID)
-	if err != nil {
-		return nil, err
-	}
-	flashcardSet.IsOwner = role == store.RoleOwner
-	flashcardSet.CanEdit, flashcardSet.CanEditContent = true, true
-	return map[string]any{"kind": "flashcards", "material": flashcardSet, "cards": out}, nil
-}
-
-func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName string, kind store.MaterialKind, title, content string, topicNames, fileNames []string) (any, error) {
-	if strings.TrimSpace(content) == "" {
-		return nil, errGenerateEmpty
-	}
-	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
-		ActorUserID: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: kind, Title: title,
-		Content: content, ScopeTopics: topicNames, ScopeFileNames: fileNames,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"kind": kind, "material": mt}, nil
+	return map[string]any{"quiz": quiz}, usage, nil
 }

@@ -2627,28 +2627,6 @@ components:
         - canEdit
         - canEditContent
       type: object
-    GenerateDetail:
-      enum:
-        - brief
-        - standard
-        - detailed
-      type: string
-    GenerateDiagramType:
-      enum:
-        - auto
-        - flowchart
-        - sequence
-        - class
-        - state
-        - er
-      type: string
-    GenerateKind:
-      enum:
-        - flashcards
-        - quiz
-        - mindmap
-        - diagram
-      type: string
     GenerateQuestionType:
       enum:
         - mcq
@@ -2672,22 +2650,17 @@ components:
           maximum: 50
           minimum: 1
           type: integer
-        detail:
-          $ref: "#/components/schemas/GenerateDetail"
-          default: standard
-        diagramType:
-          $ref: "#/components/schemas/GenerateDiagramType"
-          default: auto
         fileIds:
           items:
             type: string
           type: array
-        kind:
-          $ref: "#/components/schemas/GenerateKind"
         levels:
           items:
             $ref: "#/components/schemas/CognitiveLevel"
           type: array
+        mix:
+          description: Add the caller's answered questions to the new ones
+          type: boolean
         title:
           maxLength: 120
           minLength: 1
@@ -2704,7 +2677,7 @@ components:
           minItems: 1
           type: array
       required:
-        - kind
+        - count
         - title
       type: object
     GradeAnonymousQuizReq:
@@ -4330,6 +4303,8 @@ components:
           $ref: "#/components/schemas/SessionScore"
         id:
           type: string
+        onlyYou:
+          type: boolean
         questions:
           format: int64
           type: integer
@@ -12955,7 +12930,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Generate a quiz, flashcards, mindmap, or diagram
+      summary: Generate a quiz from workspace sources
       tags:
         - Generate
   /api/workspaces/{id}/invites:

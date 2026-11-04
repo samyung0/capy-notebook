@@ -370,13 +370,13 @@ func (s *Store) ResetStudy(ctx context.Context, userID, wsID string) error {
 // markProgressTx records practice on a workspace material that is not
 // embedded. A done set stays done.
 func markProgressTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, state string) error {
-	if mt.WorkspaceID == "" || mt.ParentMaterialID != "" {
+	if mt.StudyWorkspaceID() == "" || mt.ParentMaterialID != "" {
 		return nil
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO study_progress (user_id, workspace_id, material_id, state) VALUES ($1,$2,$3,$4)
 		ON CONFLICT (user_id, material_id)
 		DO UPDATE SET state=CASE WHEN study_progress.state='done' THEN 'done' ELSE EXCLUDED.state END, updated_at=now()`,
-		userID, mt.WorkspaceID, mt.ID, state)
+		userID, mt.StudyWorkspaceID(), mt.ID, state)
 	return err
 }
 
@@ -558,7 +558,7 @@ func lockRating(ctx context.Context, tx pgx.Tx, userID, materialID string) error
 // skip says nothing about recall. Embedded and standalone quizzes record
 // nothing. The caller holds lockRating.
 func rateQuestionTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, q, given map[string]any, now time.Time) error {
-	if mt.Kind != "quiz" || mt.WorkspaceID == "" || mt.ParentMaterialID != "" {
+	if mt.Kind != "quiz" || mt.StudyWorkspaceID() == "" || mt.ParentMaterialID != "" {
 		return nil
 	}
 	items, err := itemsOf(mt)
@@ -596,11 +596,11 @@ type ranked struct {
 // embedded whose content still matches what was rated, least retained first. Only rated materials are read, in one query, and a
 // document is loaded and parsed only when the cache misses its revision.
 func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Time) ([]ranked, error) {
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, m.topic_id, rs.item_id, rs.item_hash,
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, COALESCE(m.topic_id, m.practice_topic_id), rs.item_id, rs.item_hash,
 			rs.stability, rs.difficulty, rs.reps, rs.lapses, rs.fsrs_state, rs.last_review
 		FROM materials m
 		JOIN review_states rs ON rs.material_id=m.id AND rs.user_id=$1
-		WHERE m.workspace_id=$2 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
+		WHERE (m.workspace_id=$2 OR (m.practice_workspace_id=$2 AND m.owner_user_id=$1)) AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL
 			AND workspace_item_visible(m.hidden, m.workspace_id, $1)
 		ORDER BY m.position, m.created_at, m.id`, userID, wsID)
@@ -699,12 +699,12 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string) ([]ranked, err
 		topicID   *string
 		items     []studyItem
 	}
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, m.topic_id FROM materials m
-		LEFT JOIN topics c ON c.id=m.topic_id
-		WHERE m.workspace_id=$2 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, COALESCE(m.topic_id, m.practice_topic_id) FROM materials m
+		LEFT JOIN topics c ON c.id=COALESCE(m.topic_id, m.practice_topic_id)
+		WHERE (m.workspace_id=$2 OR (m.practice_workspace_id=$2 AND m.owner_user_id=$1)) AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL
 			AND workspace_item_visible(m.hidden, m.workspace_id, $1)
-		ORDER BY m.topic_id IS NULL, c.position, m.position, m.created_at DESC, m.id`, userID, wsID)
+		ORDER BY c.id IS NULL, c.position, m.position, m.created_at DESC, m.id`, userID, wsID)
 	if err != nil {
 		return nil, err
 	}
@@ -916,7 +916,7 @@ func (s *Store) WorkspaceAttempts(ctx context.Context, userID, wsID string) ([]I
 // the item cache does not hold; hidden ones only for owners and editors.
 func (s *Store) itemCounts(ctx context.Context, userID, wsID string) ([]ItemAttempts, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id, revision FROM materials
-		WHERE workspace_id=$1 AND kind IN ('quiz','flashcards') AND trashed_at IS NULL AND parent_material_id IS NULL
+		WHERE (workspace_id=$1 OR (practice_workspace_id=$1 AND owner_user_id=$2)) AND kind IN ('quiz','flashcards') AND trashed_at IS NULL AND parent_material_id IS NULL
 			AND workspace_item_visible(hidden, workspace_id, $2)`, wsID, userID)
 	if err != nil {
 		return nil, err

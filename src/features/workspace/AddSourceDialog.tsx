@@ -83,8 +83,6 @@ import {
 } from '@/lib/useProviderConnect';
 import { audioLengthOrRefuse } from './audioDuration';
 import { CreateFilePanel } from './CreateFilePanel';
-import { GenerateFilePanel } from './GenerateFilePanel';
-import type { GenerateMode } from './GenerateForm';
 import { retryStartedToast } from './retryProcessing';
 import { ProviderIcon } from './SourceTransferPanel';
 import {
@@ -354,12 +352,7 @@ function localRows(
   });
 }
 
-export type AddSourceMode =
-  | 'upload'
-  | 'import'
-  | 'create'
-  | 'files'
-  | 'generate';
+export type AddSourceMode = 'upload' | 'import' | 'create' | 'files';
 
 /* Connecting a drive sends the whole tab through the provider's consent
  * screen and back, which drops the dialog. The workspace page reopens it on
@@ -1083,7 +1076,6 @@ export function AddSourceDialog({
   initialMode = 'upload',
   initialSources = [],
   onOpenItem,
-  onGeneratingChange,
   resumeProvider,
   retryFile,
   defaultTopicId = null,
@@ -1099,8 +1091,6 @@ export function AddSourceDialog({
   initialMode?: AddSourceMode;
   /** Rows to start with, for the dev dialog previews. */
   initialSources?: PendingSource[];
-  /** AI generate runs after the dialog closes; the tree shows it meanwhile. */
-  onGeneratingChange?: (mode: GenerateMode | null) => void;
   /** Provider the user just connected through a full-tab redirect. */
   resumeProvider?: Provider | null;
   /** A failed file to process again: the dialog shows only its row, read
@@ -1750,8 +1740,6 @@ export function AddSourceDialog({
                   { label: m.source_tab_your_files(), value: 'files' },
                 ]
               : []),
-            // TODO: refine with agentic harness. AI generate is hidden until
-            // then; its panel below still opens for initialMode 'generate'.
           ]}
           value={mode}
         />
@@ -1893,14 +1881,7 @@ export function AddSourceDialog({
             )}
           </div>
         )}
-        {workspaceId && mode === 'generate' ? (
-          <GenerateFilePanel
-            onClose={onClose}
-            onGeneratingChange={onGeneratingChange}
-            onOpenItem={onOpenItem}
-            workspaceId={workspaceId}
-          />
-        ) : workspaceId && mode === 'files' ? (
+        {workspaceId && mode === 'files' ? (
           <YourFilesPanel
             defaultTopicId={defaultTopicId}
             onMoved={onClose}

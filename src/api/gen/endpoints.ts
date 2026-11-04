@@ -10400,7 +10400,7 @@ export const getGenerateUrl = (id: string,) => {
 }
 
 /**
- * @summary Generate a quiz, flashcards, mindmap, or diagram
+ * @summary Generate a quiz from workspace sources
  */
 export const generate = async (id: string,
     generateReq: NonReadonly<GenerateReq>, options?: RequestInit): Promise<generateResponse> => {

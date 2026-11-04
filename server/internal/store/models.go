@@ -454,6 +454,10 @@ type Material struct {
 	// Hidden from members: only the workspace's owners and editors list,
 	// open or search it (Epo 2026-11-03). An embedded item follows its note.
 	Hidden bool `json:"hidden,omitempty"`
+	// A reader's generated quiz (Make my own practice): a standalone material
+	// its maker's study reads count in this workspace and topic. Never exposed.
+	PracticeWorkspaceID string  `json:"-"`
+	PracticeTopicID     *string `json:"-"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`
@@ -768,4 +772,13 @@ type WorkspaceStats struct {
 	Quizzes         int          `json:"quizzes"`
 	Attempts        int          `json:"attempts"`
 	AvgScore        int          `json:"avgScore"`
+}
+
+// StudyWorkspaceID is the workspace a material's practice counts in: its own,
+// or the one a generated quiz is linked to.
+func (m Material) StudyWorkspaceID() string {
+	if m.WorkspaceID != "" {
+		return m.WorkspaceID
+	}
+	return m.PracticeWorkspaceID
 }

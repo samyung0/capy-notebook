@@ -89,7 +89,7 @@ network and no pin.
 | Module | Slot | What it builds |
 | --- | --- | --- |
 | `chat.py` | `chat` | Agent system prompt (one prompt for every turn and both modes of the Workspace only switch) and full message list, a message led by a mode note where the switch is first known or changes; the Q221 send-back texts; the checkpoint compaction prompt |
-| `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
+| `generate.py` | `generate` | Material grounding rules, plus the quiz instruction |
 | `extraction.py` | `chat` (default pin) | Make a quiz: the outline, the page-window system prompt with `record_question` / `continue_question`, and the mark scheme parse |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
 | `ingest.py` | `ingest` | File descriptor |
@@ -640,7 +640,7 @@ leaves the figure list. Parsed books keep their chunks; only new parses gain
 placeholders. Nothing transcribes formula pictures at parse time: the chat
 prompt says `[formula]` marks a formula printed as a picture, to be
 read from a page capture when a question needs it and never presented as
-content, and the generate prompt (flashcards, quizzes, diagrams, mindmaps)
+content, and the generate prompt
 says never to copy it into a generated item and to skip items whose answer
 needs that formula. Known gaps, accepted (decision 2026-09-29): the detector is about 76%
 precise on the regression set (Rice logos, grey calculator key caps and a few
@@ -5670,10 +5670,14 @@ for life so the provider prompt cache holds.
 ## Generate workflow
 
 `/generate` is **not** an agent loop. Scope is already known, the output shape
-is fixed, and the gateway must persist a parseable artifact.
+is fixed, and the gateway must persist a parseable artifact. It writes quizzes
+only (Epo 2026-11-04), for Make my own practice
+([study-progress.md](study-progress.md)): anyone who can read the workspace may
+call it, and a caller who cannot edit gets a quiz only they can reach.
 
 1. The gateway resolves item and topic ids atomically (`resolveScope`
-   over `store.SourceItems`). An item id may name any untrashed file or
+   over `store.VisibleSourceItems`, what the caller can read; `readsHidden` tells
+   the pipeline the same). An item id may name any untrashed file or
    top-level material, notes, quizzes and flashcard sets included; a topic
    adds every item filed in it; omitted ids expand to every item in the
    workspace (Epo 2026-10-21). One invalid id rejects the request, naming it
@@ -5693,22 +5697,16 @@ is fixed, and the gateway must persist a parseable artifact.
    forwards that exact pin; the browser `model` field is ignored. An unresolvable preference
    fails as `model_unavailable`.
    `/generate` never reads the study preferences (Epo 2026-10-14: people
-   open the panel to customize what they generate). A quiz or flashcard set
-   takes the panel's amount as `count`, Less 5 or More 10 (Less picked
-   first); Go refuses one without a count before reserving credits, and the
-   pipeline's `_count` refuses it too.
+   choose what they generate). The dialog's Questions is `count`, required by
+   both Go and the pipeline.
 2. One `produce` call receives the bounded, evenly sampled context. There is no
-   unused map-reduce branch. `produce` appends a language rule from the gateway's `locale` so quiz copy,
-   flashcard text, and diagram labels match the user's Settings language.
-   JSON keys and Mermaid syntax stay English. The grounding rule also says
+   unused map-reduce branch. `produce` appends a language rule from the gateway's `locale` so quiz copy
+   matches the user's Settings language. JSON keys stay English. The grounding rule also says
    `[formula]` marks a formula printed as a picture (parser v12): it is never
    copied into an item, and items whose answer needs that formula are skipped.
-3. Kind-specific normalizers (`extract_json`, `strip_fence`,
-   `normalize_questions`) coerce the model reply into the shapes the Go
-   persistence layer already expects: flashcards, quiz questions, mindmap /
-   diagram mermaid, notes. An empty or unparseable reply is
-   `generate_empty` (502), not a canned stub. Go refuses to persist an
-   empty quiz, flashcards, or mermaid document for the same reason.
+3. `normalize_questions` coerces the model reply into the questions Go persists.
+   An empty or unparseable reply is `generate_empty` (502), not a canned stub.
+   Go refuses to persist an empty quiz for the same reason.
 
 Response shapes are part of the contract with Go — do not change them lightly.
 

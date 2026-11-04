@@ -376,12 +376,12 @@ func TestContentWeGenerateOrAreSentIsNeverUnreadable(t *testing.T) {
 	generator := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// Two questions with one id: our generator's bug, not the user's.
-		_, _ = fmt.Fprintf(w, `{"kind":"quiz","name":"n","questions":[%s,%s]}`, question, question)
+		_, _ = fmt.Fprintf(w, `{"questions":[%s,%s]}`, question, question)
 	}))
 	t.Cleanup(generator.Close)
 	h, st, _, _ := openInternalHTTPWithPipeline(t, pipeline.New(generator.URL, ""))
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate", "u_editor",
-		generateBody("quiz", "Duplicate question ids"))
+		generateBody("Duplicate question ids"))
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("generate = %d %s, want 500", rec.Code, rec.Body.String())
 	}

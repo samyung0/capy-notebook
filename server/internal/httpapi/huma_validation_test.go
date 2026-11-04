@@ -137,22 +137,22 @@ func TestRequestBodyValidation(t *testing.T) {
 			body:   `{"confirmEmail":""}`,
 		},
 		{
-			name:   "generate missing kind",
+			name:   "generate missing count",
 			method: http.MethodPost,
 			path:   "/api/workspaces/ws_1/generate",
-			body:   `{"count":1,"levels":["recall"],"title":"t"}`,
+			body:   `{"levels":["recall"],"title":"t"}`,
 		},
 		{
 			name:   "generate count zero",
 			method: http.MethodPost,
 			path:   "/api/workspaces/ws_1/generate",
-			body:   `{"kind":"quiz","count":0,"levels":["recall"],"title":"t"}`,
+			body:   `{"count":0,"levels":["recall"],"title":"t"}`,
 		},
 		{
 			name:   "generate invalid level",
 			method: http.MethodPost,
 			path:   "/api/workspaces/ws_1/generate",
-			body:   `{"kind":"quiz","count":1,"levels":["easy"],"title":"t"}`,
+			body:   `{"count":1,"levels":["easy"],"title":"t"}`,
 		},
 		{
 			name:   "create material missing kind",

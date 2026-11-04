@@ -11,12 +11,7 @@ import {
   useTopics,
   useWorkspace,
 } from '@/api/hooks';
-import type {
-  ContentOrderItem,
-  MaterialRef,
-  MaterialRefType,
-  Topic,
-} from '@/api/types';
+import type { ContentOrderItem, MaterialRef, Topic } from '@/api/types';
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
@@ -24,7 +19,6 @@ import { FileListItem } from '@/features/files/FileListItem';
 import { fileCanMoveTo, fileIsIngesting } from '@/features/files/fileUtils';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
 import type { OpenItem } from '@/features/materials/openItem';
-import type { GenerateMode } from '@/features/workspace/GenerateForm';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
@@ -37,16 +31,6 @@ import {
   contentFor as sharedContentFor,
   type WorkspaceContentItem,
 } from './workspaceContent';
-
-const GENERATING_MATERIAL: Record<
-  GenerateMode,
-  { type: MaterialRefType; title: () => string }
-> = {
-  diagram: { title: m.generating_diagram, type: 'diagram' },
-  flashcards: { title: m.generating_flashcards, type: 'flashcards' },
-  mindmap: { title: m.generating_mindmap, type: 'mindmap' },
-  quiz: { title: m.generating_quiz, type: 'quiz' },
-};
 
 // Native drag-and-drop: rows expose their content type and id. Drops on a
 // content row insert before/after that row; topic and tree backgrounds append.
@@ -69,7 +53,6 @@ export function FilesPanel({
   openItem,
   onOpenItem,
   onNavigate,
-  generating,
   onRenameTopic,
   onAddSource,
   onAddTopic,
@@ -86,7 +69,6 @@ export function FilesPanel({
   openItem: OpenItem | null;
   onOpenItem: (item: OpenItem | null) => void;
   onNavigate: () => void;
-  generating: GenerateMode | null;
   onRenameTopic: (topic: Topic) => void;
   /** The New file or topic row under the search; left out where adding is
    * not allowed. */
@@ -607,9 +589,7 @@ export function FilesPanel({
 
             {(searching
               ? shownUnfiled.length > 0
-              : unfiled.length > 0 ||
-                unfiledMaterials.length > 0 ||
-                generating) && (
+              : unfiled.length > 0 || unfiledMaterials.length > 0) && (
               <div className="rounded-button" data-workspace-other-files>
                 {topics.length > 0 && (
                   <div
@@ -638,28 +618,6 @@ export function FilesPanel({
                     )}
                   >
                     {shownUnfiled.map((item) => renderContentItem(item, null))}
-                    {generating && (
-                      <MaterialListItem
-                        active={false}
-                        color="purple"
-                        data={{
-                          createdAt: new Date().toISOString(),
-                          id: '__generating__',
-                          maxDepth: 0,
-                          nodeCount: 0,
-                          position: Number.MAX_SAFE_INTEGER,
-                          sizeBytes: 0,
-                          title: GENERATING_MATERIAL[generating].title(),
-                          topicId: null,
-                          type: GENERATING_MATERIAL[generating].type,
-                        }}
-                        generating
-                        indent={grouped}
-                        readOnly
-                        topics={topics}
-                        workspaceId={workspaceId}
-                      />
-                    )}
                   </div>
                 )}
               </div>

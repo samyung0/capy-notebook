@@ -5,9 +5,6 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CognitiveLevel } from './cognitiveLevel.ts';
-import type { GenerateDetail } from './generateDetail.ts';
-import type { GenerateDiagramType } from './generateDiagramType.ts';
-import type { GenerateKind } from './generateKind.ts';
 import type { GenerateQuestionType } from './generateQuestionType.ts';
 
 export interface GenerateReq {
@@ -17,12 +14,11 @@ export interface GenerateReq {
      * @minimum 1
      * @maximum 50
      */
-  count?: number;
-  detail?: GenerateDetail;
-  diagramType?: GenerateDiagramType;
+  count: number;
   fileIds?: string[];
-  kind: GenerateKind;
   levels?: CognitiveLevel[];
+  /** Add the caller's answered questions to the new ones */
+  mix?: boolean;
   /**
      * @minLength 1
      * @maxLength 120

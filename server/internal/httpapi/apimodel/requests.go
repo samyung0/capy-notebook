@@ -301,15 +301,13 @@ type CreateFlashcardSetReq struct {
 // preferences. detail, diagramType, and types have explicit defaults so
 // OpenAPI/orval capture them; the handler does not invent values after the gate.
 type GenerateReq struct {
-	Kind        store.GenerateKind           `json:"kind"`
-	Count       int                          `json:"count,omitempty" minimum:"1" maximum:"50"`
-	Levels      []store.CognitiveLevel       `json:"levels,omitempty" nullable:"false"`
-	Types       []store.GenerateQuestionType `json:"types,omitempty" minItems:"1" default:"[\"mcq\"]" nullable:"false"`
-	Detail      store.GenerateDetail         `json:"detail,omitempty" default:"standard"`
-	DiagramType store.GenerateDiagramType    `json:"diagramType,omitempty" default:"auto"`
-	Topics      []string                     `json:"topics,omitempty" nullable:"false"`
-	FileIds     []string                     `json:"fileIds,omitempty" nullable:"false"`
-	Title       MaterialTitle                `json:"title" minLength:"1"`
+	Count   int                          `json:"count" minimum:"1" maximum:"50"`
+	Levels  []store.CognitiveLevel       `json:"levels,omitempty" nullable:"false"`
+	Types   []store.GenerateQuestionType `json:"types,omitempty" minItems:"1" default:"[\"mcq\"]" nullable:"false"`
+	Topics  []string                     `json:"topics,omitempty" nullable:"false"`
+	FileIds []string                     `json:"fileIds,omitempty" nullable:"false"`
+	Title   MaterialTitle                `json:"title" minLength:"1"`
+	Mix     bool                         `json:"mix,omitempty" doc:"Add the caller's answered questions to the new ones"`
 }
 
 // CreateExtractionReq starts a Make a quiz run (todo-study-tracking.md §8):

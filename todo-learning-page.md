@@ -1,6 +1,6 @@
 # Learning page plan
 
-Status 2026-11-04: built on this branch except Make my own practice's generation, which waits for §8. Go DB tests and e2e need CI.
+Status 2026-11-04: built on this branch, Make my own practice included. Go DB tests and e2e need CI.
 
 Epo's ask: "i want ot see if we cna start planning what the learning page at home do, ideally i dont want to use AI to do a lot of suggestion, rather i want to use the algorithms/scores to decide".
 
@@ -218,11 +218,10 @@ Each needs Epo's yes and a line in `human/study-progress.md`:
 
 ## 8. Questions for Epo
 
-Answered 2026-11-04: Make my own practice is one button at the top right of Summary, disabled until built; the question bank stays off this page; Workspace review as the Dashboard's last row (D2); Learning's suggestions through the start dialog, so sets are not suggested for now; layout A; rows as links with kind icons; 4 rows, practice at most 3, no assignments; one-sentence reasons; Refresher in the UI; bordered buttons in AGENTS.md; Learning with no AI; labels and Summary built together; Continue rows kept; threshold kept; actions on the Dashboard.
+Answered 2026-11-04: Make my own practice is one button at the top right of Summary, and a class member's quiz is in the class, only them; the question bank stays off this page; Workspace review as the Dashboard's last row (D2); Learning's suggestions through the start dialog, so sets are not suggested for now; layout A; rows as links with kind icons; 4 rows, practice at most 3, no assignments; one-sentence reasons; Refresher in the UI; bordered buttons in AGENTS.md; Learning with no AI; labels and Summary built together; Continue rows kept; threshold kept; actions on the Dashboard.
 
 Built on my recommendation, so say if not: You teach rows (O2), the This week line, Past reviews as its own tab, the words.
 
 Still open:
 
-1. **Where a class member's generated quiz lives.** Generation keeps only the quiz file, but members cannot add files to a class and the generate route allows owners and editors only. In a personal workspace it is a normal quiz file. For a class: a) a quiz in the class that only its maker sees, charged to them, or b) a quiz in their own Files outside the class, whose answers then feed no topic label. I recommend a.
-2. **Timer at zero.** The session ends and opens its result. Keep, or let the learner carry on past zero? I recommend keeping it.
+1. **Timer at zero.** The session ends and opens its result. Keep, or let the learner carry on past zero? I recommend keeping it.

@@ -89,7 +89,6 @@ import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog'
 import { ArchivedChatsDialog } from '@/features/workspace/chat/ArchivedChatsDialog';
 import { ConversationList } from '@/features/workspace/chat/ConversationList';
 import { FilesPanel } from '@/features/workspace/FilesPanel';
-import type { GenerateMode } from '@/features/workspace/GenerateForm';
 import { PanelTabRow, type TabAction } from '@/features/workspace/PanelTabRow';
 import {
   PanelTitleMenu,
@@ -634,7 +633,6 @@ function WorkspaceOpen() {
     navigate({ replace: true, resetScroll: false, search, to: '.' });
   }
 
-  const [generating, setGenerating] = useState<GenerateMode | null>(null);
   const [topicForm, setTopicForm] = useState<
     { mode: 'add' } | { mode: 'rename'; id: string; name: string } | null
   >(null);
@@ -870,7 +868,6 @@ function WorkspaceOpen() {
     );
   const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
     <FilesPanel
-      generating={generating}
       header={picker}
       onAddSource={readOnly ? undefined : setAddSource}
       onAddTopic={readOnly ? undefined : () => setTopicForm({ mode: 'add' })}
@@ -926,7 +923,6 @@ function WorkspaceOpen() {
           ))}
         </div>
       }
-      generating={generating}
       header={
         <div className="mt-1.5 flex items-center gap-1.5 px-2 py-1.5">
           <img
@@ -1086,7 +1082,6 @@ function WorkspaceOpen() {
       <div className="flex h-full min-h-0 flex-col" data-workspace-left-panel>
         {section === 'files' ? (
           <FilesPanel
-            generating={generating}
             onAddSource={readOnly ? undefined : setAddSource}
             onAddTopic={
               readOnly ? undefined : () => setTopicForm({ mode: 'add' })
@@ -1358,7 +1353,6 @@ function WorkspaceOpen() {
           defaultTopicId={openTopicId}
           initialMode={addSource}
           onClose={() => setAddSource(null)}
-          onGeneratingChange={setGenerating}
           onOpenItem={setOpenItem}
           open
           resumeProvider={resumeProvider}

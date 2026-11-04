@@ -1,8 +1,6 @@
 package httpapi_test
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -54,7 +52,7 @@ func TestChatErrorsWhenPipelineHTTPFails(t *testing.T) {
 func TestGenerateErrorsWhenPipelineMissing(t *testing.T) {
 	h := openShareHTTP(t)
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-		"u_editor", generateBody("quiz", "No pipe quiz"))
+		"u_editor", generateBody("No pipe quiz"))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -71,42 +69,27 @@ func TestGenerateErrorsWhenPipelineHTTPFails(t *testing.T) {
 
 	h := openShareAPI(t, pipeline.New(down.URL, ""))
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-		"u_editor", generateBody("quiz", "Down pipe quiz"))
+		"u_editor", generateBody("Down pipe quiz"))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
-func TestGenerateRejectsEmptyMaterial(t *testing.T) {
-	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var in struct {
-			Kind string `json:"kind"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&in)
+func TestGenerateRejectsEmptyQuiz(t *testing.T) {
+	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		switch in.Kind {
-		case "mindmap", "diagram":
-			_, _ = fmt.Fprintf(w, `{"kind":%q,"title":"t","content":""}`, in.Kind)
-		case "flashcards":
-			_, _ = w.Write([]byte(`{"kind":"flashcards","cards":[]}`))
-		case "quiz":
-			_, _ = w.Write([]byte(`{"kind":"quiz","questions":[]}`))
-		default:
-			http.Error(w, "unsupported", http.StatusBadRequest)
-		}
+		_, _ = w.Write([]byte(`{"questions":[]}`))
 	}))
 	t.Cleanup(empty.Close)
 
 	h := openShareAPI(t, pipeline.New(empty.URL, ""))
-	for _, kind := range []string{"mindmap", "diagram", "flashcards", "quiz"} {
-		rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-			"u_editor", generateBody(kind, kind+" empty"))
-		if rec.Code != http.StatusBadGateway {
-			t.Fatalf("%s status = %d body=%s", kind, rec.Code, rec.Body.String())
-		}
-		if errorCode(t, rec) != "generate_empty" {
-			t.Fatalf("%s code = %s body=%s", kind, errorCode(t, rec), rec.Body.String())
-		}
+	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
+		"u_editor", generateBody("Empty quiz"))
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if errorCode(t, rec) != "generate_empty" {
+		t.Fatalf("code = %s body=%s", errorCode(t, rec), rec.Body.String())
 	}
 }
 
@@ -114,13 +97,13 @@ func TestGenerateMapsPipelineEmptyCode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte(`{"code":"generate_empty","message":"The model returned no usable mindmap."}`))
+		_, _ = w.Write([]byte(`{"code":"generate_empty","message":"The model returned no usable quiz."}`))
 	}))
 	t.Cleanup(srv.Close)
 
 	h := openShareAPI(t, pipeline.New(srv.URL, ""))
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-		"u_editor", generateBody("mindmap", "Empty from pipeline"))
+		"u_editor", generateBody("Empty from pipeline"))
 	if rec.Code != http.StatusBadGateway || errorCode(t, rec) != "generate_empty" {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}

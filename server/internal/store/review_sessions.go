@@ -577,6 +577,31 @@ func topUp(items, more []ReviewItem, size int) []ReviewItem {
 	return items
 }
 
+// MixInQuestions are up to n of the caller's answered questions, those most
+// worth another look first, within topics when any are named: Make my own
+// practice's "Mix in questions I have answered". Graded with their keys, since
+// they become a quiz the caller owns.
+func (s *Store) MixInQuestions(ctx context.Context, userID, wsID string, topics []string, n int, now time.Time) ([]map[string]any, error) {
+	items, _, err := s.scoredWorkspace(ctx, userID, wsID, ReviewPrefs{Size: n, Items: "quiz", Focus: "balanced"}, now)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].score() > items[j].score() })
+	out := []map[string]any{}
+	for _, it := range items {
+		if len(out) == n {
+			break
+		}
+		if len(topics) > 0 && (it.topicID == nil || !slices.Contains(topics, *it.topicID)) {
+			continue
+		}
+		if it.Question != nil {
+			out = append(out, it.Question)
+		}
+	}
+	return out, nil
+}
+
 // StudyQuestionCount is how many questions a group holds, which caps a session's
 // size in its start dialog.
 func (s *Store) StudyQuestionCount(ctx context.Context, userID, wsID, group string, topicID *string, now time.Time) (int, error) {
@@ -693,7 +718,7 @@ func (st storedSession) takes(userID, itemWS string, a *SessionAnswer) bool {
 // insertSessionTx writes the session with its first answer, checked against
 // the workspace it draws from.
 func insertSessionTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, a *SessionAnswer, now time.Time) error {
-	if mt.WorkspaceID != a.WorkspaceID {
+	if mt.StudyWorkspaceID() != a.WorkspaceID {
 		return ErrReviewSession
 	}
 	items, err := json.Marshal(a.Items)
@@ -734,7 +759,7 @@ func recordAnswerTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, 
 	if err != nil {
 		return err
 	}
-	if !stored.takes(userID, mt.WorkspaceID, a) {
+	if !stored.takes(userID, mt.StudyWorkspaceID(), a) {
 		return ErrReviewSession
 	}
 	total := stored.total
@@ -814,7 +839,7 @@ func (s *Store) ResumeReviewSession(ctx context.Context, userID, id string) (Rev
 			if err != nil && !errors.Is(err, ErrNotFound) {
 				return studyItem{}, false, err
 			}
-			if err == nil && mt.WorkspaceID == wsID && mt.ParentMaterialID == "" {
+			if err == nil && mt.StudyWorkspaceID() == wsID && mt.ParentMaterialID == "" {
 				parsed, err := itemsOf(mt)
 				if err != nil && !refused(err) {
 					return studyItem{}, false, err

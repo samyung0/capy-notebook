@@ -36,10 +36,8 @@ CHAT = {
 GENERATE = {
     "thinking": "low",
     "workspaceId": "ws_1",
-    "kind": "mindmap",
+    "count": 5,
     "types": ["recall"],
-    "detail": "brief",
-    "diagramType": "flowchart",
 }
 
 
@@ -58,7 +56,7 @@ def test_generate_answers_busy_past_the_turn_ceiling(monkeypatch):
 
     async def generate(_req):
         runs.append("generate")
-        return {"kind": "mindmap"}
+        return {"questions": []}
 
     monkeypatch.setattr(service, "_chat_events", events)
     monkeypatch.setattr(service, "_generate", generate)
@@ -493,7 +491,7 @@ def test_a_generate_call_answers_busy_past_the_call_slots(monkeypatch):
     async def generate(_req):
         USER.set("G")
         await models.complete_text([{"role": "user", "content": "q"}], model=_model())
-        return {"kind": "mindmap"}
+        return {"questions": []}
 
     monkeypatch.setattr(service, "_generate", generate)
     http = TestClient(service.app)  # no lifespan: no database

@@ -1109,6 +1109,35 @@ func (s *Store) SourceItems(ctx context.Context, wsID string) ([]SourceItem, err
 	return out, rows.Err()
 }
 
+// VisibleSourceItems is SourceItems as viewer may read them: a reader's
+// generation draws on nothing hidden from them.
+func (s *Store) VisibleSourceItems(ctx context.Context, wsID, viewer string) ([]SourceItem, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, name, topic_id, indexed FROM (
+		SELECT f.id, f.name, f.topic_id, f.indexed, 0 AS src, f.position, f.added_at AS at
+		FROM files f WHERE f.workspace_id=$1 AND f.trashed_at IS NULL
+			AND workspace_item_visible(f.hidden, f.workspace_id, $2)
+		UNION ALL
+		SELECT m.id, m.title, m.topic_id, EXISTS(
+			SELECT 1 FROM rag_material_contents mc JOIN rag_chunks c ON c.content_id=mc.content_id
+			WHERE mc.material_id=m.id), 1, m.position, m.created_at
+		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
+	) items ORDER BY src, position, at`, wsID, viewer)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SourceItem{}
+	for rows.Next() {
+		var item SourceItem
+		if err := rows.Scan(&item.ID, &item.Name, &item.TopicID, &item.Indexed); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) GetFile(ctx context.Context, id string) (File, error) {
 	f, err := scanFile(s.pool.QueryRow(ctx, `SELECT `+fileCols+` FROM files WHERE id=$1 AND trashed_at IS NULL`, id))
 	if isNoRows(err) {
@@ -1203,13 +1232,13 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 
 /* ------------------------------------------------------------- materials */
 
-const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, topic_id, position, scope_topics, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance, COALESCE(parent_material_id,''), hidden`
-const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.topic_id, m.position, m.scope_topics, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance, COALESCE(m.parent_material_id,''), m.hidden`
+const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, topic_id, position, scope_topics, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance, COALESCE(parent_material_id,''), hidden, COALESCE(practice_workspace_id,''), practice_topic_id`
+const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.topic_id, m.position, m.scope_topics, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance, COALESCE(m.parent_material_id,''), m.hidden, COALESCE(m.practice_workspace_id,''), m.practice_topic_id`
 
 func scanMaterial(row pgx.Row) (Material, error) {
 	var mt Material
 	var provenance []byte
-	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.TopicID, &mt.Position, &mt.ScopeTopics, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance, &mt.ParentMaterialID, &mt.Hidden)
+	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.TopicID, &mt.Position, &mt.ScopeTopics, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance, &mt.ParentMaterialID, &mt.Hidden, &mt.PracticeWorkspaceID, &mt.PracticeTopicID)
 	if mt.ScopeTopics == nil {
 		mt.ScopeTopics = []string{}
 	}
@@ -1343,12 +1372,12 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	_, err = tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 		 topic_id, scope_topics, scope_file_names, privacy, color, node_count, max_depth, updated_by, provenance,
-		 parent_material_id, index_dirty_at, preview, hidden)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+		 parent_material_id, index_dirty_at, preview, hidden, practice_workspace_id, practice_topic_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
 		mt.ID, creatorID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind,
 		mt.Title, json.RawMessage(mt.Content), mt.TopicID, mt.ScopeTopics,
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID,
-		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview, mt.Hidden)
+		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview, mt.Hidden, nullStr(mt.PracticeWorkspaceID), mt.PracticeTopicID)
 	if err != nil {
 		if uniqueConstraintName(err) == "materials_pkey" {
 			return "", ErrMaterialIDTaken
@@ -1413,6 +1442,10 @@ type MaterialDraft struct {
 	// Hidden from the workspace's members from the start (a quiz made from
 	// files, Epo 2026-11-03).
 	Hidden bool
+	// A reader's generated quiz: standalone, linked to this workspace and topic
+	// for its maker's study reads (Material.PracticeWorkspaceID).
+	PracticeWorkspaceID string
+	PracticeTopicID     *string
 	// Library attribution; nil for a material built from workspace sources.
 	Provenance *Provenance
 }
@@ -1426,7 +1459,7 @@ func (d MaterialDraft) material() (Material, error) {
 		ID: d.ID, CreatedBy: d.ActorUserID, WorkspaceID: d.WorkspaceID, WorkspaceName: d.WorkspaceName,
 		Kind: d.Kind, Title: d.Title, ScopeTopics: d.ScopeTopics, ScopeFileNames: d.ScopeFileNames,
 		Privacy: "private", Color: d.Color, Provenance: d.Provenance, TopicID: d.TopicID,
-		Hidden: d.Hidden,
+		Hidden: d.Hidden, PracticeWorkspaceID: d.PracticeWorkspaceID, PracticeTopicID: d.PracticeTopicID,
 	}
 	switch d.Kind {
 	case "quiz":
@@ -2254,7 +2287,7 @@ func (s *Store) CheckQuizQuestion(ctx context.Context, userID, materialID string
 			d.ID, d.Correct, d.Total, d.Pct, d.TakenAt, []byte(d.Answers), []byte(d.Questions))
 	} else {
 		_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, workspace_id, user_id, quiz_name, workspace_name, topics, correct, total, pct, started_at, taken_at, answers, questions)
-			VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, d.ID, d.MaterialID, mt.WorkspaceID, userID, d.QuizName, d.WorkspaceName, d.Topics, d.Correct, d.Total, d.Pct, d.StartedAt, d.TakenAt, []byte(d.Answers), []byte(d.Questions))
+			VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, d.ID, d.MaterialID, mt.StudyWorkspaceID(), userID, d.QuizName, d.WorkspaceName, d.Topics, d.Correct, d.Total, d.Pct, d.StartedAt, d.TakenAt, []byte(d.Answers), []byte(d.Questions))
 	}
 	if err != nil {
 		return AttemptDetail{}, err

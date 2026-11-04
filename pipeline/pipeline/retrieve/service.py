@@ -225,10 +225,6 @@ async def request_context(request: Request, call_next):
 app.include_router(plate_ai_router)
 
 
-def _uid(prefix: str) -> str:
-    return f"{prefix}_{secrets.token_hex(5)}"
-
-
 ThinkingLevel = Literal["instant", "low", "mid", "high", "max"]
 
 
@@ -335,14 +331,11 @@ def _reset_accounting(token) -> None:
 
 class GenerateReq(LLMPin):
     workspaceId: str
-    kind: str  # flashcards | quiz | mindmap | diagram
-    # The panel's More or Less; required for a quiz or flashcard set (Go
-    # refuses one without it), never taken from the study preferences.
-    count: int | None = Field(default=None, ge=1, le=50)
+    readsHidden: bool = False
+    # The dialog's Questions, required (the gateway refuses a request without it).
+    count: int = Field(ge=1, le=50)
     levels: list[str] | None = None
     types: list[str] = Field(min_length=1)
-    detail: str
-    diagramType: str
     topics: list[str] | None = None
     fileIds: list[str] | None = None
     # The names of fileIds, for the prompt's scope line.
@@ -352,13 +345,6 @@ class GenerateReq(LLMPin):
 
 
 _VALID_LEVELS = {"recall", "application", "analysis"}
-
-
-def _count(req: GenerateReq) -> int:
-    """The panel's count for a quiz or flashcard set."""
-    if not req.count:
-        raise ValueError(f"a {req.kind} needs a count")
-    return req.count
 
 
 def _cognitive_levels(req: GenerateReq) -> list[str]:
@@ -638,16 +624,14 @@ async def library_figure(req: LibraryFigureReq):
 
 @app.post("/generate")
 async def generate(req: GenerateReq) -> dict[str, Any]:
-    """Produce a material and report what it cost.
-
-    The usage envelope is attached here rather than inside each workflow so
-    every generate kind reports it the same way.
-    """
+    """Write a quiz's questions and report what it cost."""
     _take_turn_slot()
     # Its one model call answers provider_busy at once past the call slots too.
     slots_token = limits.bind_call_slots(limits.CallSlotPolicy(wait_s=0))
-    # Only the workspace's editors generate (Go), so hidden items are theirs.
-    hidden_token = store.bind_hidden_readers([req.workspaceId])
+    # Go says whether the caller may read hidden items: an editor, not a member.
+    hidden_token = store.bind_hidden_readers(
+        [req.workspaceId] if req.readsHidden else []
+    )
     try:
         accounting_token = _bind_accounting(req.spendSessionId)
         try:
@@ -674,18 +658,9 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
     )
     topics = req.topics or []
     file_ids = req.fileIds or []
-    if req.kind == "flashcards":
-        instruction = generate_prompts.flashcards_instruction(_count(req))
-    elif req.kind == "mindmap":
-        instruction = generate_prompts.mindmap_instruction(req.detail)
-    elif req.kind == "diagram":
-        instruction = generate_prompts.diagram_instruction(req.diagramType)
-    elif req.kind == "quiz":
-        instruction = generate_prompts.quiz_instruction(
-            count=_count(req), types=req.types, levels=_cognitive_levels(req)
-        )
-    else:
-        raise ValueError(f"unsupported generate kind {req.kind!r}")
+    instruction = generate_prompts.quiz_instruction(
+        count=req.count, types=req.types, levels=_cognitive_levels(req)
+    )
     scope = workflows.scope_label(topics, req.fileNames or [])
     context, _passages, changes = await workflows.generation_context(
         workspace_id=req.workspaceId,
@@ -704,48 +679,10 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         pending_sources=changes,
     )
 
-    if req.kind == "flashcards":
-        data = workflows.require_json_list(raw, "flashcards")
-        cards = [
-            {
-                "id": _uid("c"),
-                "front": str(item.get("front", "")),
-                "back": str(item.get("back", "")),
-            }
-            for item in data
-            if isinstance(item, dict)
-        ]
-        if not cards:
-            raise workflows.GenerateEmpty("flashcards")
-        return {"kind": "flashcards", "cards": cards}
-
-    if req.kind == "mindmap":
-        code = workflows.require_mermaid(raw, "mindmap")
-        return {
-            "kind": "mindmap",
-            "title": "Mindmap",
-            "content": f"# Mindmap\n\n```mermaid\n{code}\n```",
-        }
-
-    if req.kind == "diagram":
-        code = workflows.require_mermaid(raw, "diagram")
-        return {
-            "kind": "diagram",
-            "title": "Diagram",
-            "content": f"# Diagram\n\n```mermaid\n{code}\n```",
-        }
-
-    if req.kind != "quiz":
-        raise ValueError(f"unsupported generate kind {req.kind!r}")
     questions = workflows.normalize_questions(workflows.require_json_list(raw, "quiz"))
     if not questions:
         raise workflows.GenerateEmpty("quiz")
-    return {
-        "kind": "quiz",
-        "name": "Workspace quiz",
-        "topics": topics,
-        "questions": questions,
-    }
+    return {"questions": questions}
 
 
 # ----------------------------------------------------------------- extraction

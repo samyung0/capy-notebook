@@ -1009,8 +1009,7 @@ export async function runJourney(
       return 'Chat history currently suppresses its read error.';
     case 'generation-failed':
     case 'ai-context':
-      // TODO: refine with agentic harness, then walk the AI generate tab again.
-      return 'The AI generate tab is hidden, so nothing in the app sends this request.';
+      return 'Sent by Make my own practice in Study; this journey does not walk it yet.';
     case 'quiz-check':
       // Checking grades on the server, so one request covers grading too.
       await go(`/quizzes/${scenarioQuiz}/attempt`);

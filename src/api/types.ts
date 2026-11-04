@@ -604,7 +604,6 @@ export type {
 export { QUESTION_TYPES } from '@/features/questions/types';
 
 import type {
-  CognitiveLevel,
   LearnerQuestion,
   Question,
   QuestionType,
@@ -626,42 +625,15 @@ import type {
    the whole workspace. */
 export type GenerateKind = Exclude<MaterialKind, 'note'>;
 
-export interface GenerateScope {
-  fileIds: string[]; // file ids
-  levels?: CognitiveLevel[];
+/** A quiz written from sources (Make my own practice). */
+export interface GenerateOptions {
+  count: number;
+  fileIds: string[];
+  mix?: boolean;
   title: string;
   topics: string[]; // topic ids
-}
-/** The panel's More (10) or Less (5); never the study preferences. */
-export interface GenerateFlashcardsOptions extends GenerateScope {
-  count: number;
-  kind: 'flashcards';
-}
-export interface GenerateQuizOptions extends GenerateScope {
-  count: number;
-  kind: 'quiz';
   types: QuestionType[];
 }
-export type DiagramType =
-  | 'auto'
-  | 'flowchart'
-  | 'sequence'
-  | 'class'
-  | 'state'
-  | 'er';
-export interface GenerateMindmapOptions extends GenerateScope {
-  detail: 'brief' | 'standard' | 'detailed';
-  kind: 'mindmap';
-}
-export interface GenerateDiagramOptions extends GenerateScope {
-  diagramType: DiagramType;
-  kind: 'diagram';
-}
-export type GenerateOptions =
-  | GenerateFlashcardsOptions
-  | GenerateQuizOptions
-  | GenerateMindmapOptions
-  | GenerateDiagramOptions;
 
 /* ---------------- Study materials ----------------
    Persisted, workspace-scoped (not topic-scoped) study artifacts rendered

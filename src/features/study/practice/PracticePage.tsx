@@ -19,6 +19,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { materialIconName } from '@/lib/fileIcons';
+import { MakePractice } from './MakePractice';
 import { questionsLabel, scoreText } from './practiceText';
 import { SuggestedList } from './SuggestedList';
 import { studyView } from './studyView';
@@ -104,6 +105,7 @@ function PracticeList({
     { errorBoundary: false }
   );
   const [topic, setTopic] = useState<string | null | undefined>(undefined);
+  const [making, setMaking] = useState(false);
   const { canEdit, manages: staff } = studyView(ws);
   const suggested = !staff && !!data?.suggestions.length;
   const topicName = (id?: string | null) =>
@@ -137,12 +139,16 @@ function PracticeList({
           <h1 className="t-page-title">{m.study_panel_practice()}</h1>
           <span className="t-meta mt-1.5 text-fg-muted">{meta}</span>
         </div>
-        {/* Not built yet (Make my own practice, P3; Add practice, P1). */}
+        {/* Not built yet: Add practice (P1). */}
         <span
           className={cn(suggested && '-my-2.5')}
-          title={m.study_panel_soon()}
+          title={canEdit ? m.study_panel_soon() : undefined}
         >
-          <Button disabled iconLeft="plus">
+          <Button
+            disabled={canEdit}
+            iconLeft="plus"
+            onClick={() => setMaking(true)}
+          >
             {canEdit ? m.practice_add() : m.practice_make_own()}
           </Button>
         </span>
@@ -190,6 +196,13 @@ function PracticeList({
             topics={topics ?? []}
           />
         </>
+      )}
+      {making && (
+        <MakePractice
+          onClose={() => setMaking(false)}
+          onlyYou={!canEdit}
+          workspaceId={workspaceId}
+        />
       )}
     </PracticeFrame>
   );
@@ -369,7 +382,10 @@ function AllPractice({
                     onClick={canEdit ? () => openQuiz(row.quiz.id) : undefined}
                   >
                     <Td>
-                      <QuizName title={row.quiz.title} />
+                      <QuizName
+                        onlyYou={row.quiz.onlyYou}
+                        title={row.quiz.title}
+                      />
                     </Td>
                     <Td muted>{topicCell(row.topicId)}</Td>
                     <Td muted>{row.quiz.questions}</Td>
@@ -433,7 +449,10 @@ function AllPractice({
                     {review ? (
                       <ReviewName compact title={reviewTitle(review)} />
                     ) : (
-                      <QuizName title={quiz?.title ?? ''} />
+                      <QuizName
+                        onlyYou={quiz?.onlyYou}
+                        title={quiz?.title ?? ''}
+                      />
                     )}
                     <div className="t-meta mt-0.5 flex min-w-0 items-center gap-1 pl-6 text-fg-muted">
                       {review && <OnlyYou />}
@@ -511,11 +530,12 @@ function Td({
   );
 }
 
-function QuizName({ title }: { title: string }) {
+function QuizName({ onlyYou, title }: { onlyYou?: boolean; title: string }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
       <FileIcon className="size-4 shrink-0" name={materialIconName('quiz')} />
       <span className="truncate font-semibold">{title}</span>
+      {onlyYou && <OnlyYou />}
     </div>
   );
 }

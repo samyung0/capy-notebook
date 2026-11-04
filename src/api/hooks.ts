@@ -2105,17 +2105,18 @@ export function useGenerate(wsId: string, options?: MutationUiOptions) {
     meta: mutationMeta(options),
     mutationFn: (opts: GenerateOptions) =>
       api.post<unknown>(`/workspaces/${wsId}/generate`, opts),
-    onError: (error, opts) => {
+    onError: (error) => {
       track('material_generate_failed', {
-        kind: opts.kind,
+        kind: 'quiz',
         reason: failureReason(error),
       });
     },
-    onSuccess: async (_data, opts) => {
-      track('material_generated', { kind: opts.kind, workspaceId: wsId });
+    onSuccess: async () => {
+      track('material_generated', { kind: 'quiz', workspaceId: wsId });
       await Promise.all([
         qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
         qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot }),
+        qc.invalidateQueries({ queryKey: qk.practice(wsId) }),
       ]);
     },
   });

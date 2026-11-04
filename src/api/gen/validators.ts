@@ -7237,7 +7237,7 @@ export const CreateBlankFileResponse = zod.object({
 
 
 /**
- * @summary Generate a quiz, flashcards, mindmap, or diagram
+ * @summary Generate a quiz from workspace sources
  */
 export const GenerateParams = zod.object({
   "id": zod.string()
@@ -7245,20 +7245,16 @@ export const GenerateParams = zod.object({
 
 export const generateBodyCountMax = 50;
 
-export const generateBodyDetailDefault = `standard`;
-export const generateBodyDiagramTypeDefault = `auto`;
 export const generateBodyTitleMax = 120;
 
 
 
 
 export const GenerateBody = zod.object({
-  "count": zod.int().min(1).max(generateBodyCountMax).optional(),
-  "detail": zod.enum(['brief', 'standard', 'detailed']).default(generateBodyDetailDefault),
-  "diagramType": zod.enum(['auto', 'flowchart', 'sequence', 'class', 'state', 'er']).default(generateBodyDiagramTypeDefault),
+  "count": zod.int().min(1).max(generateBodyCountMax),
   "fileIds": zod.array(zod.string()).optional(),
-  "kind": zod.enum(['flashcards', 'quiz', 'mindmap', 'diagram']),
   "levels": zod.array(zod.enum(['recall', 'application', 'analysis'])).optional(),
+  "mix": zod.boolean().optional().describe('Add the caller\'s answered questions to the new ones'),
   "title": zod.string().min(1).max(generateBodyTitleMax),
   "topics": zod.array(zod.string()).optional(),
   "types": zod.array(zod.enum(['mcq', 'boolean', 'short', 'open', 'ordering', 'matching'])).min(1).default([`mcq`])
@@ -7598,6 +7594,7 @@ export const GetWorkspacePracticeResponse = zod.object({
   "total": zod.number()
 }).optional(),
   "id": zod.string(),
+  "onlyYou": zod.boolean().optional(),
   "questions": zod.int(),
   "title": zod.string(),
   "topicId": zod.string().optional(),

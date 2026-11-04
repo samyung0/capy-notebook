@@ -50,7 +50,6 @@ import {
   type FlashcardsElement,
   flashcardsElementToCards,
   flashcardsNode,
-  mermaidNode,
   quizNode,
 } from '@/features/materials/document';
 import {
@@ -130,12 +129,6 @@ const meBody = () => ({
   ...db.user,
   account: { ...db.accountStatus, userId: db.user.id },
 });
-const GENERATE_KINDS: GenerateOptions['kind'][] = [
-  'flashcards',
-  'quiz',
-  'mindmap',
-  'diagram',
-];
 function mockCatalogModels() {
   const thinking = {
     default: 'high',
@@ -2860,30 +2853,10 @@ export const handlers = [
     const wsId = String(params.id);
     const ws = db.workspaces.find((w) => w.id === wsId);
     if (!ws) return new HttpResponse(null, { status: 404 });
-    const count = 'count' in opts ? opts.count : 0;
-    if (!opts.kind || ('count' in opts && count < 1)) {
+    const { count } = opts;
+    if (!count || !opts.types?.length) {
       return HttpResponse.json(
-        { message: 'kind is required and count at least 1' },
-        { status: 400 }
-      );
-    }
-    // Like the server: a quiz or set takes the panel's count, never a study
-    // preference.
-    if ((opts.kind === 'quiz' || opts.kind === 'flashcards') && !count) {
-      return HttpResponse.json(
-        { message: 'count is required for a quiz or a flashcard set' },
-        { status: 400 }
-      );
-    }
-    if (!GENERATE_KINDS.includes(opts.kind)) {
-      return HttpResponse.json(
-        { message: `unsupported generate kind "${opts.kind}"` },
-        { status: 400 }
-      );
-    }
-    if (opts.kind === 'quiz' && !opts.types?.length) {
-      return HttpResponse.json(
-        { message: 'types is required' },
+        { message: 'count and types are required' },
         { status: 400 }
       );
     }
@@ -2948,66 +2921,6 @@ export const handlers = [
       );
     }
 
-    if (opts.kind === 'flashcards') {
-      // Persist a flashcards markdown material; its card -> set lookup lives in flashcardCards.
-      const id = uid('dk');
-      const name = title;
-      const cardContents = Array.from({ length: count }, (_, i) => ({
-        back: `Definition for term ${i + 1}.`,
-        front: `Term ${i + 1}`,
-        id: uid('c'),
-      }));
-      const material = db.makeMaterial({
-        ...ownerMaterialAccess,
-        color: 'green',
-        content: flashcardsDocument(cardContents, id),
-        createdAt: new Date().toISOString(),
-        id,
-        kind: 'flashcards',
-        privacy: 'private',
-        scopeFileNames,
-        scopeTopics: scopeTopicNames,
-        title: name,
-        topicId: null,
-        workspaceId: wsId,
-        workspaceName: wsName,
-      });
-      db.materials.unshift(material);
-      for (const c of cardContents)
-        db.flashcardCards[c.id] = { materialId: id };
-      return HttpResponse.json({
-        cards: db.cardsFromMaterial(material),
-        kind: 'flashcards',
-        material: db.flashcardSetFromMaterial(material),
-      });
-    }
-
-    if (opts.kind === 'mindmap' || opts.kind === 'diagram') {
-      const material = db.makeMaterial({
-        ...ownerMaterialAccess,
-        content: createMaterialDocument([
-          mermaidNode(
-            opts.kind === 'mindmap'
-              ? 'mindmap\n  root((Topic))\n    Key idea A\n      Detail 1\n      Detail 2\n    Key idea B\n      Detail 3'
-              : 'flowchart LR\n  A[Start] --> B[Process]\n  B --> C{Decision}\n  C -->|Yes| D[Outcome 1]\n  C -->|No| E[Outcome 2]'
-          ),
-        ]),
-        createdAt: new Date().toISOString(),
-        id: uid('mat'),
-        kind: opts.kind,
-        privacy: 'private',
-        scopeFileNames,
-        scopeTopics: scopeTopicNames,
-        title,
-        topicId: null,
-        workspaceId: wsId,
-        workspaceName: wsName,
-      });
-      db.materials.unshift(material);
-      return HttpResponse.json({ kind: opts.kind, material });
-    }
-
-    // quiz
     const qs: Question[] = Array.from({ length: count }, (_, i) => {
       const type = opts.types[i % opts.types.length];
       const answer = structuredClone(
@@ -3035,10 +2948,7 @@ export const handlers = [
       workspaceName: wsName,
     });
     db.materials.unshift(quizMat);
-    return HttpResponse.json({
-      kind: 'quiz',
-      quiz: db.quizFromMaterial(quizMat),
-    });
+    return HttpResponse.json({ quiz: db.quizFromMaterial(quizMat) });
   }),
   /* ---------------- quizzes & attempts ---------------- */
   http.post('/api/quizzes', async ({ request }) => {

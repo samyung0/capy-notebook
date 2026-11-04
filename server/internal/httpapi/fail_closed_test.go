@@ -16,7 +16,7 @@ import (
 // them. That only helps if Huma actually fills them in before the handler runs:
 // otherwise the request reaches the pipeline with an empty types list and the
 // gateway is back to inventing a value somewhere downstream. A quiz's count is
-// the panel's and is required; the study preferences never reach /generate.
+// the dialog's and is required; the study preferences never reach /generate.
 func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 	seen := make(chan map[string]any, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,12 +27,12 @@ func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 		default:
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"quiz","name":"n","questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"mcq","options":["a","b"],"correct":[0]},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]}`))
+		_, _ = w.Write([]byte(`{"questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"mcq","options":["a","b"],"correct":[0]},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]}`))
 	}))
 	t.Cleanup(srv.Close)
 
 	h := openShareAPI(t, pipeline.New(srv.URL, ""))
-	req := generateBody("quiz", "Default carrying quiz")
+	req := generateBody("Default carrying quiz")
 	delete(req, "count")
 	if rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate", "u_editor", req); rec.Code != http.StatusBadRequest {
 		t.Fatalf("a quiz without a count: status = %d body=%s", rec.Code, rec.Body.String())
@@ -51,11 +51,8 @@ func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 	if got := body["types"]; !reflect.DeepEqual(got, []any{"mcq"}) {
 		t.Errorf("types = %#v, want [mcq]", got)
 	}
-	if got := body["detail"]; got != "standard" {
-		t.Errorf("detail = %#v, want standard", got)
-	}
-	if got := body["diagramType"]; got != "auto" {
-		t.Errorf("diagramType = %#v, want auto", got)
+	if got := body["readsHidden"]; got != true {
+		t.Errorf("readsHidden = %#v for an editor", got)
 	}
 	// An omitted scope is every workspace item, notes included.
 	if got, ok := body["fileIds"].([]any); !ok || !slices.Contains(got, any("f_e2e_private")) ||
@@ -63,7 +60,7 @@ func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 		t.Errorf("omitted scope did not expand to every workspace item: %#v", body["fileIds"])
 	}
 	if got := body["count"]; got != float64(5) {
-		t.Errorf("count = %#v, want the panel's 5", got)
+		t.Errorf("count = %#v, want the dialog's 5", got)
 	}
 	if _, sent := body["studyPreferences"]; sent {
 		t.Errorf("studyPreferences were sent: %#v", body["studyPreferences"])
@@ -74,7 +71,7 @@ func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 // must not paper over it.
 func TestGenerateRejectsAnExplicitlyEmptyTypesList(t *testing.T) {
 	h := openShareAPI(t, stubRetrieval(t))
-	body := generateBody("quiz", "Empty types quiz")
+	body := generateBody("Empty types quiz")
 	body["types"] = []string{}
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
 		"u_editor", body)
@@ -86,7 +83,7 @@ func TestGenerateRejectsAnExplicitlyEmptyTypesList(t *testing.T) {
 func TestGenerateRejectsUnknownScopeIDs(t *testing.T) {
 	h := openShareAPI(t, stubRetrieval(t))
 
-	unknownFile := generateBody("quiz", "Unknown file")
+	unknownFile := generateBody("Unknown file")
 	unknownFile["fileIds"] = []string{"f_does_not_exist"}
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
 		"u_editor", unknownFile)
@@ -105,7 +102,7 @@ func TestGenerateRejectsUnknownScopeIDs(t *testing.T) {
 		t.Fatalf("foreign file = %d body=%s, missing body=%s", foreign.Code, foreign.Body.String(), rec.Body.String())
 	}
 
-	unknownTopic := generateBody("quiz", "Unknown topic")
+	unknownTopic := generateBody("Unknown topic")
 	unknownTopic["topics"] = []string{"ch_does_not_exist"}
 	rec = doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
 		"u_editor", unknownTopic)
@@ -124,12 +121,12 @@ func TestGenerateTakesAnyItemButNeedsSomeText(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		seen <- in
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"flashcards","cards":[{"front":"a","back":"b"}]}`))
+		_, _ = w.Write([]byte(`{"questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]}`))
 	}))
 	t.Cleanup(srv.Close)
 	h := openShareAPI(t, pipeline.New(srv.URL, ""))
 
-	noText := generateBody("flashcards", "No text cards")
+	noText := generateBody("No text cards")
 	noText["fileIds"] = []string{"qz_e2e_private", "note_e2e_private"}
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate", "u_editor", noText)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "scope_has_no_indexed_content") ||
@@ -137,7 +134,7 @@ func TestGenerateTakesAnyItemButNeedsSomeText(t *testing.T) {
 		t.Fatalf("no text = %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	mixed := generateBody("flashcards", "Quiz and file cards")
+	mixed := generateBody("Quiz and file cards")
 	mixed["fileIds"] = []string{"qz_e2e_private", "f_e2e_private"}
 	rec = doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate", "u_editor", mixed)
 	if rec.Code != http.StatusOK {

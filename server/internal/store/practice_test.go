@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -143,6 +144,38 @@ func TestWorkspacePractice(t *testing.T) {
 	// Best scores 1, 1, 0.5, 0.5 and 1 average 0.8.
 	if q.Average == nil || *q.Average < 0.799 || *q.Average > 0.801 {
 		t.Fatalf("average = %v", q.Average)
+	}
+}
+
+// A member's own practice quiz is theirs alone: it counts in their Practice and
+// stays off the class's files, its owner's Practice included.
+func TestMemberPracticeQuiz(t *testing.T) {
+	f := newStudyFixture(t, "u_own_practice")
+	ctx := context.Background()
+	member := newBlobTestUser(t, f.s, "u_own_practice_member")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, member); err != nil {
+		t.Fatal(err)
+	}
+	made, err := f.s.CreateMaterialDraft(ctx, MaterialDraft{
+		ActorUserID: member, Kind: "quiz", Title: "My practice",
+		Questions: json.RawMessage(studyQuestions), PracticeWorkspaceID: f.ws.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine, err := f.s.WorkspacePractice(ctx, member, f.ws.ID, false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mine.Quizzes) != 1 || mine.Quizzes[0].ID != made.ID || !mine.Quizzes[0].OnlyYou {
+		t.Fatalf("the member's practice = %+v", mine.Quizzes)
+	}
+	theirs, err := f.s.WorkspacePractice(ctx, f.user, f.ws.ID, true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(theirs.Quizzes) != 0 {
+		t.Fatalf("the owner's practice = %+v", theirs.Quizzes)
 	}
 }
 

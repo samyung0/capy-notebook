@@ -17,7 +17,6 @@ export function addSourceMenuItems(
       label: m.action_new_file(),
       onClick: () => onAddSource('create'),
     },
-    // TODO: refine with agentic harness. AI generate is hidden until then.
     ...(onAddTopic
       ? [
           {

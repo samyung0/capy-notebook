@@ -62,7 +62,7 @@ func logAnswerTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, gra
 					AND questions @> jsonb_build_array(jsonb_build_object('id', $4::text))),
 			$8::timestamptz, p.id, p.type, p.awarded, p.marks, p.grader
 		FROM unnest($9::text[], $10::text[], $11::float8[], $12::float8[], $13::text[]) AS p(id, type, awarded, marks, grader)`,
-		userID, mt.WorkspaceID, mt.ID, questionID, review.QuestionHash(graded), source, attemptID, now,
+		userID, mt.StudyWorkspaceID(), mt.ID, questionID, review.QuestionHash(graded), source, attemptID, now,
 		ids, types, awarded, marks, graders)
 	return err
 }

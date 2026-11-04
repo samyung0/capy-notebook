@@ -40,6 +40,8 @@ type PracticeQuiz struct {
 	Title     string  `json:"title"`
 	TopicID   *string `json:"topicId,omitempty"`
 	Questions int     `json:"questions"`
+	// OnlyYou is the caller's own generated quiz (Make my own practice).
+	OnlyYou bool `json:"onlyYou,omitempty"`
 	// Best is the caller's best attempt by share of marks.
 	Best *SessionScore `json:"best,omitempty"`
 	// TriedBy counts viewer members with an attempt; a class's owner and
@@ -125,18 +127,20 @@ func (s *Store) practiceQuizzes(ctx context.Context, userID, wsID string, out *P
 	for _, it := range sizes {
 		size[it.MaterialID] = it.Size
 	}
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.topic_id FROM materials m
-		LEFT JOIN topics t ON t.id=m.topic_id
-		WHERE m.workspace_id=$1 AND m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.topic_id, m.practice_topic_id), m.workspace_id IS NULL
+		FROM materials m
+		LEFT JOIN topics t ON t.id=COALESCE(m.topic_id, m.practice_topic_id)
+		WHERE (m.workspace_id=$1 OR (m.practice_workspace_id=$1 AND m.owner_user_id=$2))
+			AND m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
-		ORDER BY m.topic_id IS NULL, t.position, m.position, m.created_at DESC, m.id`, wsID, userID)
+		ORDER BY t.id IS NULL, t.position, m.position, m.created_at DESC, m.id`, wsID, userID)
 	if err != nil {
 		return err
 	}
 	var ids []string
 	for rows.Next() {
 		var q PracticeQuiz
-		if err := rows.Scan(&q.ID, &q.Title, &q.TopicID); err != nil {
+		if err := rows.Scan(&q.ID, &q.Title, &q.TopicID, &q.OnlyYou); err != nil {
 			rows.Close()
 			return err
 		}
