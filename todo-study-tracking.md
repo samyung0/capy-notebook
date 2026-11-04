@@ -496,6 +496,8 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   2. **Extraction** gives each batch call the numbered figures on its pages. The model names the figure a question uses, and code crops the parser's box: no box call, and exact for embedded pictures.
   3. **Fallback:** pages with no parser figures keep today's box call.
   - **Check first:** how the parser boxes diagrams drawn as vector paths (Cambridge and other digital papers), on one or two such papers.
+- **Tested before building (Epo, 2026-11-04): the box call works on born-digital pages too.** On 26 figures from three Cambridge IGCSE specimen papers (maths, physics, biology; vector drawings and photographs), it gave 22 and 21 of 26 whole after the pad, none missed, nothing from the next question, at $0.0006 a paper. Every miss is a label outside the drawn lines. So keeping the parser's boxes at ingest isn't needed; a layout model is being benched on the ingest host against the same figures (`claude/bench-layout-figures`).
+- **Decided (Epo, 2026-11-04):** a failed box call or a full quota saves the quiz without those figures, named in the report (`figuresLeftOut`). The top pad stays, and wide figures stay clipped for now (`claude/study-extraction` 34de172f4).
 - **Scans** have no parser figures: every page is one picture, and the page read returns text only. All four bench papers are scans. They keep the box call.
 - **Scans, the options:**
   - **S1 (today):** the box call, one per page with figures: the same model, that page alone, reasoning off, the box padded. 12 of 14 bench figures came out whole. No new parts.
