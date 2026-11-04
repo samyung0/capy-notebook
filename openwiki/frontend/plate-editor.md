@@ -1479,7 +1479,8 @@ popovers, dropdown and context menus, selects, floating toolbars and popups
 (`useEditorHeld` in `src/components/ui`) turn inert, an open one included
 (it stays open and takes input again once sent; its overlay and Escape still
 close it, dropping only the dialog's own form state, never document edits); the Ctrl+K palette neither
-opens nor runs a command (its listener is on `window`); the quiz and flashcard Undo and Redo buttons in the page header are
+opens nor runs a command (its listener is on `window`); the quiz and flashcard Undo and Redo buttons in the page header (not shown on
+phones, Epo 2026-11-04) are
 disabled. A DOCX or PPTX editor pauses as for any other pause
 (`set-capabilities` with `canEdit: false`: read-only, selectable), and the
 XLSX editor takes the runtime's `sending` message instead: the runtime keeps
