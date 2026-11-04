@@ -244,6 +244,8 @@ AFFiNE waits only on a device with no local copy, and for non-admin members' fir
 
 Investigated 2026-11-04, nothing built. "Connecting" only shows in Edit, and Edit is opt-in today, so the real change is making Edit's slower, heavier open the default for everyone who can edit. Findings: people with edit rights lose their reading layouts (quiz answers show at once, flashcards open turned over, embeds lose Start quiz, Markdown and CSV show source); offline reading worsens unless the stored copy paints before the token; a plain open can write to the document through normalizing and the trailing paragraph (read in code, not run); a near-limit note opens in 15.2 s editable against 3.1 s read-only; Office is the capacity problem and collides with the ribbon decisions. Recommended: paint the stored copy, build the editor behind it, swap silently, and at 30 s show the saved copy with a red status. Leave Office until the ribbon lands. Fourteen decisions wait on Epo.
 
+**Correction (Epo, 2026-11-04):** there's no separate reading layout to keep. The report's "quizzes open with answers" was wrong: the quiz editor's list shows no key; keys show only after pressing Edit on a question, and in the read-only fallback and recovery. Study is in the top right in both modes. So D3 and D6 are dropped. The real differences left: flashcards show turned cards, note embeds lose in-place Start quiz and Study (a Preview item in the ⋮ menu if needed), Markdown and CSV have no preview in Edit, Mermaid opens as a split, and citations and deep links only work in View.
+
 ### 1.10 Phones (360 px)
 
 **How others do it:**
