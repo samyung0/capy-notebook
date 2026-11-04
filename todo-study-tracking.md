@@ -884,6 +884,8 @@ Steps 2, 3 and 7 can run side by side.
   - `claude/study-make-quiz` and `claude/study-assignments` are starting now.
   - `learning-page-plan` is planning only.
 - **Keep:** no deploy without Epo; prompt changes get shown to Epo first.
+- **When (Epo, Q609 B, 2026-11-04):** the study rework lands as one piece, together with extraction, once Epo has decided on the paper map. Until then the PC session won't land `claude/study-all`. When the route is settled and the branch is final, send it the SHA and the list of model-read changes Epo has and hasn't seen with exact wording. `claude/study-make-quiz` and `claude/study-assignments` stay out unless Epo says otherwise.
+- **Office (Epo, Q608 A, 2026-11-04):** the PC session builds Office's always-highest-permission together with the ribbon, after the 0.5.1 pin. The Office, text and CSV switch and `FileModeControl.tsx`, `OfficeMenuBar.tsx`, `CenterContentHeader.tsx`, `prefetchOfficeFile.ts` stay with it.
 
 **Next after this rework's mocks (Epo, 2026-11-03): the AFFiNE canvas** (`todo-canvas-workspace.md`, on hold since 2026-11-02). Drawing answers and the note tool build on the same BlockSuite edgeless editor, so they are planned with it.
 
