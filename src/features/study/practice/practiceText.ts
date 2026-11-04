@@ -1,4 +1,10 @@
 import type { ReviewReason, SessionScore } from '@/api/types';
+import type {
+  LearnerQuestion,
+  Question,
+  QuestionBlock,
+  TextBlock,
+} from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 
@@ -43,4 +49,20 @@ export function groupLabel(
   if (group === 'others') return m.topic_other_files();
   if (group === 'workspace') return m.practice_whole_workspace();
   return topicName ?? '';
+}
+
+const blockText = (blocks: QuestionBlock[] = []) =>
+  blocks.find((b): b is TextBlock => b.type === 'text' && b.text.trim() !== '')
+    ?.text;
+
+/** A question's first line: its stem's, else its first part's. */
+export function questionLine(
+  q?: Pick<Question | LearnerQuestion, 'stem' | 'parts'>
+) {
+  if (!q) return '';
+  return (
+    blockText(q.stem) ??
+    q.parts.map((p) => blockText(p.blocks)).find(Boolean) ??
+    ''
+  );
 }

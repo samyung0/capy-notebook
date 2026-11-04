@@ -45,9 +45,21 @@ export type WorkspaceOpenSearch = {
   /** The open item fills the page, header and side panels hidden. In the URL
    * so the back gesture leaves it. */
   fullscreen?: true;
-  /** A Study page in the centre while nothing is open; Practice is the one
-   * built so far. */
-  study?: 'practice';
+  /** A Study page in the centre while nothing is open. */
+  study?: 'practice' | 'assignments';
+  /** Assignments' open assignment, and a try at it: running, or results. */
+  assignment?: string;
+  attempt?: string;
+  /** An assignment given to its own owner or teaching assistant: their page,
+   * not its report. */
+  own?: true;
+  /** An assignment's report: its tab, and on Approve AI marks a question or
+   * member to open at. */
+  tab?: 'questions' | 'members' | 'approve';
+  question?: string;
+  member?: string;
+  /** Assignments' New assignment, opened with this quiz (board A1). */
+  newFromQuiz?: string;
   /** Practice's topic session to start: its group, topic and, from a
    * suggestion, its mode. */
   group?: 'topic' | 'others' | 'workspace';
@@ -106,10 +118,17 @@ export function parseWorkspaceOpenSearch(
   // Invalid values are cleared explicitly: the router keeps raw keys the
   // parser leaves out.
   return {
+    assignment: undefined,
+    attempt: undefined,
     group: undefined,
+    member: undefined,
+    newFromQuiz: undefined,
+    own: undefined,
+    question: undefined,
     review: undefined,
     reviewMode: undefined,
     study: undefined,
+    tab: undefined,
     topicId: undefined,
     ...parseOpenPage(search),
     add: search.add === 'upload' ? 'upload' : undefined,
@@ -143,6 +162,7 @@ function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
       ...(item ? { item } : {}),
     };
   }
+  if (search.study === 'assignments') return parseAssignments(search);
   return search.study === 'practice' ? parsePractice(search) : {};
 }
 
@@ -150,6 +170,38 @@ const text = (value: unknown) =>
   typeof value === 'string' && value ? value : undefined;
 const GROUPS = ['topic', 'others', 'workspace'] as const;
 const MODES: readonly ReviewMode[] = ['tricky', 'fading', 'learned'];
+
+const TABS = ['questions', 'members', 'approve'] as const;
+
+/** Assignments, one assignment (its report's view), or a try at one. Unknown
+ * tabs clear; ids are the page's to answer. */
+function parseAssignments(
+  search: Record<string, unknown>
+): WorkspaceOpenSearch {
+  const assignment = text(search.assignment);
+  if (!assignment) {
+    const newFromQuiz = text(search.newFromQuiz);
+    return {
+      study: 'assignments',
+      ...(newFromQuiz ? { newFromQuiz } : {}),
+    };
+  }
+  const attempt = text(search.attempt);
+  if (attempt) return { assignment, attempt, study: 'assignments' };
+  const tab = TABS.find((t) => t === search.tab);
+  const question = tab === 'approve' ? text(search.question) : undefined;
+  const member = tab === 'approve' ? text(search.member) : undefined;
+  return {
+    assignment,
+    study: 'assignments',
+    ...(search.own === true || search.own === 'true'
+      ? { own: true as const }
+      : {}),
+    ...(tab ? { tab } : {}),
+    ...(question ? { question } : {}),
+    ...(member ? { member } : {}),
+  };
+}
 
 /** Practice, a topic session to start on it, or a session's result. */
 function parsePractice(search: Record<string, unknown>): WorkspaceOpenSearch {

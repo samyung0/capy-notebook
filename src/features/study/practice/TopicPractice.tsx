@@ -31,12 +31,7 @@ import {
 } from '@/features/materials/MediaAssetView';
 import { answerLabels } from '@/features/questions/editorFields';
 import { TextView } from '@/features/questions/TextView';
-import type {
-  LearnerQuestion,
-  Question,
-  QuestionBlock,
-  TextBlock,
-} from '@/features/questions/types';
+import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -45,9 +40,11 @@ import { CheckedQuestion, QuestionItem } from '../ReviewQuestion';
 import {
   groupLabel,
   minutesLabel,
+  questionLine,
   questionsLabel,
   REASON,
 } from './practiceText';
+import { PracticeFrame } from './studyPage';
 
 /** A topic session's start, as the Practice page's URL holds it. */
 export type PracticeStart = {
@@ -56,32 +53,8 @@ export type PracticeStart = {
   reviewMode?: ReviewMode;
 };
 
-/** The page's padding: the boards' 28px 36px, the phone gutter below sm. */
-export function PracticeFrame({ children }: { children: ReactNode }) {
-  return (
-    // One column leaves room under the page for the floating chat button.
-    <div className="min-h-0 flex-1 overflow-auto px-4 pt-5 pb-24 sm:px-6 lg:px-9 lg:pt-7 lg:pb-10">
-      {children}
-    </div>
-  );
-}
-
 const keyOf = (it: { materialId: string; itemId: string }) =>
   `${it.materialId}/${it.itemId}`;
-
-const blockText = (blocks: QuestionBlock[] = []) =>
-  blocks.find((b): b is TextBlock => b.type === 'text' && b.text.trim() !== '')
-    ?.text;
-
-/** A question's first line: its stem's, else its first part's. */
-function questionLine(q?: Question | LearnerQuestion) {
-  if (!q) return '';
-  return (
-    blockText(q.stem) ??
-    q.parts.map((p) => blockText(p.blocks)).find(Boolean) ??
-    ''
-  );
-}
 
 export function ReasonChip({ reason }: { reason?: ReviewReason }) {
   if (!reason) return null;

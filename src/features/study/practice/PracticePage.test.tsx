@@ -4,7 +4,6 @@ import type { Practice } from '@/api/types';
 import { m } from '@/i18n';
 import { PracticePage } from './PracticePage';
 import { StudyPanel } from './StudyPanel';
-import { studyView } from './studyView';
 
 const page = vi.hoisted(() => ({
   data: undefined as Practice | undefined,
@@ -18,6 +17,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/api/hooks', () => ({
   usePractice: () => ({ data: page.data, isError: false, isPending: false }),
+  useAssignments: () => ({ data: undefined }),
   useTopics: () => ({
     data: [
       { description: '', fileIds: [], id: 't1', name: 'Osmosis', order: 0 },
@@ -113,13 +113,13 @@ it('lets the owner of a personal workspace practise, add and edit', () => {
   expect(html).not.toContain(m.practice_col_average());
 });
 
-it('lists Study pages for each of the four people, Practice the one built', () => {
+it('lists Study pages for each of the four people', () => {
   const panel = (kind: 'class' | 'personal', role: 'owner' | 'viewer') =>
     renderToStaticMarkup(
       <StudyPanel
         active="practice"
         onOpen={() => {}}
-        pages={studyView({ kind, role }).pages}
+        workspace={{ id: 'ws', kind, role }}
       />
     );
   const teacher = panel('class', 'owner');

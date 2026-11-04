@@ -73,7 +73,7 @@ import {
   type WorkspaceOpenSearch,
 } from '@/features/materials/openItem';
 import { StudyPanel } from '@/features/study/practice/StudyPanel';
-import { studyView } from '@/features/study/practice/studyView';
+import { type StudyPage, studyView } from '@/features/study/practice/studyView';
 import { VoiceFooterButton } from '@/features/voice/VoiceCard';
 import {
   AddSourceDialog,
@@ -118,6 +118,11 @@ type PanelTab = 'files' | 'chat';
 const isPanelTab = (value: unknown): value is PanelTab =>
   value === 'files' || value === 'chat';
 
+const AssignmentsPage = lazy(() =>
+  import('@/features/study/assignments/AssignmentsPage').then((mod) => ({
+    default: mod.AssignmentsPage,
+  }))
+);
 const PracticePage = lazy(() =>
   import('@/features/study/practice/PracticePage').then((mod) => ({
     default: mod.PracticePage,
@@ -547,9 +552,15 @@ function WorkspaceOpen() {
 
   /** Study → Practice takes the centre pane; Back returns here. */
   function openPractice() {
+    openStudyPage('practice');
+  }
+
+  /** A Study page in the centre pane. */
+  function openStudyPage(page: StudyPage) {
+    if (page !== 'practice' && page !== 'assignments') return;
     setCitationTarget(null);
     setFilesOpen(false);
-    navigate({ search: { study: 'practice' }, to: '.' });
+    navigate({ search: { study: page }, to: '.' });
   }
 
   /** The landing: the workspace's Dashboard. */
@@ -785,6 +796,16 @@ function WorkspaceOpen() {
       label: m.workspace_tab_study(),
       onClick: openPractice,
     },
+    // Phones have no Study panel: a class's Assignments sits beside Study.
+    ...(studyView(ws).pages.includes('assignments')
+      ? [
+          {
+            icon: 'clipboard' as const,
+            label: m.study_panel_assignments(),
+            onClick: () => openStudyPage('assignments'),
+          },
+        ]
+      : []),
     {
       icon: 'settings',
       label: m.workspace_settings(),
@@ -976,17 +997,32 @@ function WorkspaceOpen() {
 
   // Study's pages fill the centre without a file header from lg (boards P1,
   // P2); one column keeps its header for the Files dropdown and ⋮.
-  const studyContent = studyPage && search.study === 'practice' && (
+  const studyContent = studyPage && (
     <Suspense fallback={null}>
-      <PracticePage
-        search={{
-          group: search.group,
-          review: search.review,
-          reviewMode: search.reviewMode,
-          topicId: search.topicId,
-        }}
-        workspaceId={workspaceId}
-      />
+      {search.study === 'assignments' ? (
+        <AssignmentsPage
+          search={{
+            assignment: search.assignment,
+            attempt: search.attempt,
+            member: search.member,
+            newFromQuiz: search.newFromQuiz,
+            own: search.own,
+            question: search.question,
+            tab: search.tab,
+          }}
+          workspaceId={workspaceId}
+        />
+      ) : (
+        <PracticePage
+          search={{
+            group: search.group,
+            review: search.review,
+            reviewMode: search.reviewMode,
+            topicId: search.topicId,
+          }}
+          workspaceId={workspaceId}
+        />
+      )}
     </Suspense>
   );
   // The landing is the workspace's Dashboard (boards H1, H2).
@@ -1145,9 +1181,9 @@ function WorkspaceOpen() {
           </>
         ) : (
           <StudyPanel
-            active={studyPage ? 'practice' : null}
-            onOpen={openPractice}
-            pages={studyView(ws).pages}
+            active={studyPage ? (search.study ?? null) : null}
+            onOpen={openStudyPage}
+            workspace={ws}
           />
         )}
       </div>

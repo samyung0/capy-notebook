@@ -53,6 +53,7 @@ import {
   OfflineStatus,
   WorkspaceStatusButton,
 } from '@/features/workspace/WorkspaceHealth';
+import { studyView } from '@/features/study/practice/studyView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
@@ -423,6 +424,9 @@ export function Header({
       ? materialMode
       : defaultMode;
   const navigate = useNavigate();
+  const { data: studyWorkspace } = useWorkspace(standalone ? '' : workspaceId, {
+    errorBoundary: false,
+  });
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
   const office = !!file && !!officeFormatOf(file);
@@ -529,6 +533,25 @@ export function Header({
         key={`${item.kind}:${item.id}`}
         leadingItems={[
           ...(oneColumn?.addItems ?? []),
+          // A quiz opens New assignment with itself set (board A1).
+          ...(item.kind === 'material' &&
+          icon === materialIconName('quiz') &&
+          studyView(studyWorkspace).manages
+            ? [
+                {
+                  icon: 'clipboard',
+                  label: m.assignment_new(),
+                  onClick: () =>
+                    void navigate({
+                      search: {
+                        newFromQuiz: item.id,
+                        study: 'assignments' as const,
+                      },
+                      to: '.',
+                    }),
+                } satisfies MenuItem,
+              ]
+            : []),
           ...(sm
             ? [
                 {

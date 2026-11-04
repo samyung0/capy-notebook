@@ -1,8 +1,8 @@
 import type { Workspace } from '@/api/types';
 import { canManageWorkspaceSettings } from '@/features/workspace/access';
 
-/** Study's pages. Only Practice is built; the others wait for their own
- * branches (Members, Assignments, Summary). */
+/** Study's pages. Practice and Assignments are built; the others wait for
+ * their own branches (Members, Summary). */
 export type StudyPage = 'members' | 'assignments' | 'practice' | 'summary';
 
 /** What Study gives this person (Epo 2026-11-04, board U3). In a class the

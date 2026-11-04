@@ -291,6 +291,24 @@ const appRoutes = [
     staticData: { hideSidebar: true },
     validateSearch: parseWorkspaceOpenSearch,
   }),
+  // The report's links (todo-study-tracking.md §9): the page itself lives in
+  // the workspace's own URL, whose rail and panels stay mounted.
+  createRoute({
+    beforeLoad: ({ params, search }) => {
+      throw redirect({
+        params: { workspaceId: params.workspaceId },
+        replace: true,
+        search: {
+          ...(search as Record<string, unknown>),
+          assignment: params.assignmentId,
+          study: 'assignments',
+        },
+        to: '/workspaces/$workspaceId',
+      });
+    },
+    getParentRoute: () => authShellRoute,
+    path: '/workspaces/$workspaceId/study/assignments/$assignmentId',
+  }),
   // Chat across all the user's files; the optional id keeps the page mounted
   // (and its streams running) while the shown conversation changes.
   createRoute({
