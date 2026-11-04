@@ -275,7 +275,8 @@ MODEL_LINES: dict[str, ModelLine] = {}
 
 def model_line(key: str, admit: Admit) -> ModelLine:
     """The line at one gate (``provider:model``, or a gate of its own such as
-    ``vlm_page``); ``admit`` serves it from its first caller on."""
+    the audio transcription tasks'); ``admit`` serves it from its first caller
+    on."""
     line = MODEL_LINES.get(key)
     if line is None:
         line = MODEL_LINES[key] = ModelLine(admit)

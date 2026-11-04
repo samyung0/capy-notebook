@@ -8,6 +8,7 @@ the call at once instead of sleeping for nothing.
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from pipeline import elitellm, registry
@@ -219,6 +220,74 @@ async def test_agent_stream_retries_only_before_the_first_byte(monkeypatch, slee
     assert sleeps == [0.25]
 
 
+# Epo 2026-11-04: a timeout is never tried again; only a busy answer is.
+
+
+@pytest.mark.parametrize(
+    "timeout",
+    [TimeoutError("provider sent no first event"), httpx.ConnectTimeout("slow")],
+)
+async def test_a_chat_call_that_times_out_is_not_tried_again(
+    monkeypatch, sleeps, timeout
+):
+    attempts = 0
+
+    async def stream(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise timeout
+
+    monkeypatch.setattr(models, "_stream_via_adapter", stream)
+    with pytest.raises(type(timeout)):
+        await models.stream_agent_response(
+            [{"role": "user", "content": "hi"}], model=_spec()
+        )
+    assert attempts == 1 and sleeps == []
+
+
+async def test_an_ingest_call_that_times_out_is_not_tried_again(
+    monkeypatch, sleeps, ingest_mode
+):
+    """A 500 is still tried again (parts design Q7); a timeout is not."""
+    monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
+    calls = 0
+
+    async def complete(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout("no answer")
+
+    monkeypatch.setattr(models.elitellm, "complete", complete)
+    assert await models.caption_image("data:image/png;base64,AA==", "say") == ""
+    assert (
+        await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1) is None
+    )
+    assert calls == 2 and sleeps == []
+
+
+async def test_a_line_wait_that_runs_out_is_not_tried_again(monkeypatch, sleeps):
+    """The chat's 60 s in its model's line is the bound: no second wait."""
+    from pipeline.retrieval import limits
+
+    token = limits.bind_call_slots(limits.CallSlotPolicy(limits.CHAT_SLOT_WAIT_S))
+    opened = 0
+
+    async def open_call(*_args, **_kwargs):
+        nonlocal opened
+        opened += 1
+        raise accounting.GateFull("full", retry_after=1)
+
+    monkeypatch.setattr(models.accounting, "open_call", open_call)
+    try:
+        with pytest.raises(accounting.GateFull):
+            await models.stream_agent_response(
+                [{"role": "user", "content": "hi"}], model=_spec()
+            )
+    finally:
+        limits.reset_call_slots(token)
+    assert opened == 1 and sleeps == []
+
+
 async def test_a_stopped_turn_starts_no_retry_of_its_model_call(monkeypatch, sleeps):
     attempts = 0
 
@@ -320,14 +389,13 @@ async def test_vlm_page_retries_an_unusable_answer_and_charges_only_a_usable_rea
     monkeypatch, sleeps, ingest_mode, first_text, first_finish
 ):
     monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
-    # Each attempt leases the page-read gate at CAPY_VLM_PAGE_CAPACITY.
-    monkeypatch.setattr(models.cfg, "vlm_page_capacity", 64)
     answers = iter([(first_text, first_finish), ("page text", "stop")])
     opened: list = []
     charged: list = []
 
     async def open_call(*_args, **kwargs):
-        opened.append(kwargs["capacity"])
+        # Page reads wait in the captioning model's own line (Epo 2026-11-04).
+        opened.append((kwargs["spec"].model_slug, kwargs["capacity"]))
 
     async def settle(**kwargs):
         charged.append(kwargs["credit_micros"])
@@ -346,7 +414,7 @@ async def test_vlm_page_retries_an_unusable_answer_and_charges_only_a_usable_rea
     monkeypatch.setattr(models.elitellm, "complete", complete)
     read = await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1_000)
     assert read == "page text"
-    assert opened == [("vlm_page", 64)] * 2
+    assert opened == [("deepseek-v4-flash", None)] * 2
     assert charged == [0, 1_000]
 
 

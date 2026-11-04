@@ -423,9 +423,10 @@ class ConfigTest(unittest.TestCase):
                     limits,
                 )
 
-    def test_render_gives_only_production_its_page_read_gates(self):
-        """Production's page-read gates (64/40, Epo 2026-10-21) come from its
-        configuration; UAT's ingest Compose fixes its own 20/10."""
+    def test_render_gives_only_production_its_page_read_limit(self):
+        """Production's per-job page reads (40) come from its configuration;
+        UAT's ingest Compose fixes its own 10. Across jobs page reads wait in
+        the captioning model's line (Epo 2026-11-04)."""
         values = {
             key: "explicit"
             for key, rule in config.MANIFEST.items()
@@ -436,10 +437,9 @@ class ConfigTest(unittest.TestCase):
             CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
             CLERK_PUBLISHABLE_KEY="pk_public",
             DEPLOYMENT_APP_URL="https://app.example.com",
-            CAPY_VLM_PAGE_CAPACITY="40",
             CAPY_VLM_PAGES_PER_JOB="40",
         )
-        gates = {"CAPY_VLM_PAGE_CAPACITY": "40", "CAPY_VLM_PAGES_PER_JOB": "40"}
+        gates = {"CAPY_VLM_PAGES_PER_JOB": "40"}
         with tempfile.TemporaryDirectory() as temp:
             with contextlib.redirect_stdout(io.StringIO()):
                 config.render(values, "production", temp, "a" * 40)

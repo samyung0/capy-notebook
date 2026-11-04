@@ -24,6 +24,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
+
 from .. import elitellm, obs, registry
 from ..config import cfg
 from ..prompts.captioning import VLM_PAGE_PROMPT
@@ -186,7 +188,7 @@ async def _retake_slot(
         if not await slots.wait_for(waiter, deadline - time.monotonic(), left):
             if left is not None and left.is_set():
                 raise CallNotStarted("the client left while the call waited")
-            raise elitellm.ProviderBusy(
+            raise accounting.GateFull(
                 CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
             )
     slot[0] = True
@@ -334,6 +336,18 @@ def busy_error(exc: BaseException) -> BaseException | None:
     return None
 
 
+def timed_out(exc: BaseException) -> bool:
+    """Whether a timeout is behind ``exc``, following cause links."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, (TimeoutError, httpx.TimeoutException)):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 def _provider_retry_after(busy: BaseException) -> float | None:
     """The wait the provider itself asked for, never a synthesized one."""
     if isinstance(busy, elitellm.ProviderBusy):
@@ -361,7 +375,12 @@ async def _retry_or_raise(
 
     ``retry_any`` also retries failures that are not busy answers; streaming
     callers use it for pre-byte failures, whose cause is usually transport.
+    A timeout, the provider's or our own wait's (the model's line, a call
+    slot), ends the call at once: only a busy answer is waited for and tried
+    again (Epo 2026-11-04).
     """
+    if isinstance(exc, accounting.GateFull) or timed_out(exc):
+        raise exc
     busy = busy_error(exc)
     last = attempt >= policy.attempts - 1
     if busy is None:
@@ -1154,9 +1173,6 @@ async def read_page(
             context=context,
             spec=spec,
             deadline=deadline,
-            # A gate of its own beside the captioning model's row: at most
-            # CAPY_VLM_PAGE_CAPACITY in flight across every worker.
-            capacity=("vlm_page", cfg.vlm_page_capacity),
         ) as call_id:
             if scripted is None:
                 resp = await elitellm.complete(

@@ -1234,8 +1234,12 @@ the summary, standalone image caption and VLM page calls also retry a
 transient error (5xx, a connection reset) and an empty
 or cut-off answer (settled, so its tokens are billed), and end at once on a
 definitive client error (400, 401, 403, 404, 422; parts design Q7).
-Chat planning retries any pre-byte failure under that policy, each failed
-attempt closed at once as above. A failure after the first provider chunk —
+Chat planning retries any pre-byte failure but a timeout under that policy,
+each failed attempt closed at once as above. **Nothing retries a timeout**
+(Epo 2026-11-04): a provider call that times out (no first event, silence, the
+whole-call bound), a wait in a model's line or for a call slot that runs out,
+and the gateway's 90 s pipeline timeout each end the call; neither Go nor the
+browser sends it again (`models.timed_out`, `accounting.GateFull`). A failure after the first provider chunk —
 even if the browser has not received SSE yet — is final for that response and
 is not retried; its call settles the usage the stream sent, or is abandoned. Settlement retries retain the same call id and in-memory receipt
 across transient database or gateway failures until it applies or its stored
@@ -1891,8 +1895,9 @@ The wait is bounded as chat's always was: an interactive call waits up to
 `CHAT_SLOT_WAIT_S` (60 s), past its three-second busy-retry budget; a rerank
 only its search's 5 s, after which the search keeps fused order; an ingest
 call its 120 s retry budget, after which the job re-pends as before. Past the
-bound the call fails as `provider_busy` (`accounting.GateFull`). Waiting in
-line is not a retry: the line holds the call before anything is sent. The Go
+bound the call fails as `provider_busy` (`accounting.GateFull`) and is not
+tried again, a chat call included. Waiting in line is not a retry: the line
+holds the call before anything is sent. The Go
 gateway's pipeline client allows a synchronous call 90 s (`syncTimeout`: the
 line's 60 s plus the 30 s it had before), so a generate or ghost-text request
 that waited out the line answers `provider_busy` instead of a timeout. A call
@@ -1900,21 +1905,22 @@ with no deadline (an audio transcription task) is busy at once when it cannot
 go straight through.
 
 Leases use the call id and receipt deadline and are released when the call
-ends. The VLM read of text-less document pages has a gate of its own: its
-leases use the fixed key `vlm_page` with a limit of `CAPY_VLM_PAGE_CAPACITY`
-across every worker (40 in production since 2026-10-29, 20 in UAT and local)
-in place of the captioning row, with its own line round-robin by job, so those
-reads need no `model_capacities` row and do not count against 1017's total.
+ends. The VLM read of text-less document pages has no gate of its own (Epo
+2026-11-04, replacing the `vlm_page` gate and `CAPY_VLM_PAGE_CAPACITY`): it
+leases the captioning model's row and waits in that model's line, round-robin
+by job, with ghost text, captions and every other call on it. One job still
+sends at most `CAPY_VLM_PAGES_PER_JOB` reads at once.
 
 Before enabling traffic, configure the environment's limits in Ops. The opt-in
 `deploy/model-capacities.sql` fills only missing rows: DeepSeek Flash 40 (on
 DeepSeek's API, whose account allows 2500; chat and Generate only, Epo
 2026-10-29), GLM 150 (still keyed `zai/glm-5.3-flash`), OpenRouter DeepSeek V4
-Flash 0731 32 and V4.1 Flash 1017 100 (Epo 2026-11-04, raised from 40 with 20
+Flash 0731 32 and V4.1 Flash 1017 84 (Epo 2026-11-04, raised from 40 with 20
 kept for interactive calls: Wafer took 100 grading calls at once with no error,
 its latency doubling from about 60 in flight, and InferenceNet takes the
-overflow past about 100; page reads lease the `vlm_page` gate instead; UAT and
-local 8), MiniMax 3.1 Flash 16 (chat only; Together and DigitalOcean each held
+overflow past about 100; the shared OpenRouter account's 100 is split
+production 84, UAT 16, local development not counted; page reads count in it),
+MiniMax 3.1 Flash 16 (chat only; Together and DigitalOcean each held
 16 calls at once in the 2026-10-30 probe), Qwen embedding 200, Alibaba
 qwen3-rerank 64. Existing settings remain, so an environment that already has
 rows changes them in Ops. DeepSeek and DeepInfra totals follow their published

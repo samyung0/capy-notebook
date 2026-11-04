@@ -284,7 +284,9 @@ def model_capacity(cur, provider: str, model: str) -> int:
 
 
 class GateFull(elitellm.ProviderBusy):
-    """The model's capacity gate stayed full until the call's deadline."""
+    """A wait of ours for capacity ran out: the model's line until the call's
+    deadline, or the process call slot a call in line gave back. Final: the
+    call is never tried again (Epo 2026-11-04)."""
 
 
 @dataclass(frozen=True)

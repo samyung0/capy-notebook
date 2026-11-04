@@ -1696,24 +1696,22 @@ one read (decided 2026-10-15, replacing the second read of the same day's OCR
 decision): the ingest retry policy's three calls. An empty answer, one that
 stops at the cap (finish `length`, both settled at 0 credits) and a transient
 provider error (5xx, a connection reset) take the next call, as for the file
-descriptor (parts design Q7); after the third, or at once on a definitive
-client error (400, 401, 403, 404, 422), the page is unread. A busy provider
+descriptor (parts design Q7); after the third, at once on a definitive
+client error (400, 401, 403, 404, 422), or at once on a timeout (Epo
+2026-11-04), the page is unread. A busy provider
 past its budget raises `ProviderBusy` instead and the job re-pends once; pages
 already read are cached. On the re-claim (`last_wait`: the job's
 `provider_waits` at `PROVIDER_WAITS_MAX`) a page still busy is unread instead,
 so the file ends partial rather than failing `provider_busy` (parts design
-§6). One job reads at most `CAPY_VLM_PAGES_PER_JOB` pages at once, and all
-ingest workers share a gate of its own: capacity leases under the fixed key
-`vlm_page`, at most `CAPY_VLM_PAGE_CAPACITY` calls in flight, taken in place of
-the captioning model's `model_capacities` row, so page reads neither need that
-row nor count against its total; page reads past it wait in that gate's own
-line, round-robin by job (Epo 2026-11-04). Both are per-environment settings
-(decision 2026-10-21): production allows 64 in flight and 40 per job
-(`docker-compose.ingest-host.yml`, a production input in the env manifest),
-UAT and local keep 20 and 10 (fixed in their Compose files, and the code's
-fallback); the per-job limit must be between 1 and the overall one. A scan's
-reads take far longer than its parse (a 500-page scan renders in about 13 s),
-so these gates, not the parser, bound scan-heavy ingest.
+§6). One job reads at most `CAPY_VLM_PAGES_PER_JOB` pages at once
+(production 40, a production input in the env manifest; UAT and local 10,
+fixed in their Compose files and the code's fallback; at least 1 or the worker
+refuses to start). Across jobs, page reads have no gate of their own (Epo
+2026-11-04): they lease the captioning model's `model_capacities` row like its
+other calls and, past its total, wait in its one line, round-robin by job and
+user ([observability-metering.md](observability-metering.md)). A scan's reads
+take far longer than its parse (a 500-page scan renders in about 13 s), so the
+captioning model's line, not the parser, bounds scan-heavy ingest.
 
 Reads use the ingest worker's `OPENROUTER_API_KEY`, also when the slot points
 at GLM, since GLM is served through OpenRouter too (decision 2026-10-21; Z.AI's
@@ -2020,7 +2018,8 @@ exists; the local bundle is gone once the first ingest finished.
   have). Within the call's three attempts (parts design Q7, 2026-10-15), an
   empty reply or one cut off at that cap is a failed attempt, a transient
   provider error (5xx, a connection reset) takes the next attempt, and a
-  definitive client error (400, 401, 403, 404, 422) ends the call at once.
+  definitive client error (400, 401, 403, 404, 422) or a timeout (Epo
+  2026-11-04) ends the call at once.
   The descriptor is a part (see "Parts" below): a failure writes no row and
   never fails the file. A reindex of a file with a ready descriptor first measures the net text change between the
   published chunks and the candidate (`text_change_tokens`: chunk overlap and
@@ -6513,7 +6512,7 @@ chunk, with full coverage in the large-document reduction path.
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, 16 images per user message |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on InferenceNet then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
-| VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 40 and 40 (64 overall until 2026-10-29; a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |
+| VLM page reads per job | `CAPY_VLM_PAGES_PER_JOB` | Page reads one job sends at once. Production 40 (a production input; the production ingest Compose sets it), UAT and local 10 (fixed in their Compose files; also the code's fallback); at least 1 or the worker refuses to start. Across jobs page reads wait in the captioning model's line with its other calls; their own gate, `CAPY_VLM_PAGE_CAPACITY`, is gone (Epo 2026-11-04). |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION`, `ALIBABA_MODELSTUDIO_KEY`, `ALIBABA_MODELSTUDIO_URL` | Image decoding is capped at 100M pixels. Audio transcription needs both Alibaba values (all or none, and the URL ending in `/compatible-mode/v1`, checked at startup by the pipeline and the API; unset fails an audio ingest terminally); its two-hour cap, 12-task gate, hour-long task hold and ten-minute source link are code constants. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |
 | UAT scripted VLM page reads | `INGEST_UAT_SCRIPTED_VLM` | Gated like `CAPY_UAT_FAIL_PARTS`. With it on, each text-less page of a file whose name contains `[uat-scripted-vlm]` is read as `UAT scripted page <n>: <token>` (1-based page; the token is the file name without its extension and the three markers, whitespace collapsed), with no provider call but its `vlm_page` call settled at the `vlm_ingest_page` rate. Scripted reads are cached under the marker and the token, so a file whose name repeats an earlier run's reads from the cache and writes no usage row: give each run a fresh token. `[uat-fail-pages]` wins when both apply. |

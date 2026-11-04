@@ -24,16 +24,17 @@
 -- requests/min (p95 5.5 s), while 96 queued (p95 25 s), so the gate stops at
 -- 32. Each current provider held 32 in flight without a 429 on 2026-10-20.
 -- OpenRouter DeepSeek V4.1 Flash 1017 (InferenceNet, then Cloudflare, since
--- 2026-10-21) captions standalone images and, from 2026-10-28, writes note
--- ghost text: 100 in flight (Epo 2026-11-04, raised from 40 with 20 kept for
--- interactive calls). Wafer took 100 grading calls at once with no error on
+-- 2026-10-21) captions standalone images, reads text-less pages and, from
+-- 2026-10-28, writes note ghost text, all in its one line (page reads have
+-- no gate of their own since 2026-11-04). The shared OpenRouter account takes
+-- 100 in flight on it (Epo 2026-11-04, raised from 40 with 20 kept for
+-- interactive calls): Wafer took 100 grading calls at once with no error on
 -- 2026-11-04 (its latency doubles from about 60 in flight, and InferenceNet
 -- takes the overflow past about 100); InferenceNet answered 128 page reads at
 -- once (p95 8.6 s) and Cloudflare 64 (p95 10.1 s); a 2026-10-28 ghost-text
 -- probe from the ingest host held 64 in flight at about 5,000 calls a minute
--- with no 429. UAT and local keep 8 on the shared account. Page reads lease the
--- vlm_page gate instead of this row (CAPY_VLM_PAGE_CAPACITY: 40 in production
--- since 2026-10-29, 20 in UAT and local), so the gates add up on this route.
+-- with no 429. Epo's split (2026-11-04): production 84, the value below, and
+-- UAT 16, set in Ops at deploy; local development is not counted.
 -- OpenRouter MiniMax 3.1 Flash (Together, then DigitalOcean since 2026-10-30; a
 -- chat choice since 2026-10-24) serves chat alone. Together held 16 calls at
 -- once in the 2026-10-23 probe (total p95 3.0 s) and both held 16 in the
@@ -50,7 +51,7 @@ WITH capacities(provider, model, concurrency_total) AS (
     ('deepseek', 'deepseek-flash', 40),
     ('zai', 'glm-5.3-flash', 150),
     ('openrouter', 'deepseek/deepseek-v4-flash-0731', 32),
-    ('openrouter', 'deepseek/deepseek-v4.1-flash-1017', 100),
+    ('openrouter', 'deepseek/deepseek-v4.1-flash-1017', 84),
     ('openrouter', 'minimax/minimax-m3.1-flash', 16),
     ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200),
     ('alibaba', 'qwen3-rerank', 64)
