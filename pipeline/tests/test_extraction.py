@@ -81,7 +81,12 @@ def _call(name: str, args: dict, n: int = 0) -> dict:
     }
 
 
-def _page(number: int, text: str = "", crops: list | None = None) -> extraction.Page:
+def _page(
+    number: int,
+    text: str = "",
+    crops: list | None = None,
+    regions: tuple = (),
+) -> extraction.Page:
     async def image() -> str:
         return "data:image/jpeg;base64,AA=="
 
@@ -90,7 +95,7 @@ def _page(number: int, text: str = "", crops: list | None = None) -> extraction.
             crops.append((number, box))
         return b"jpeg %d" % number, (400, 300)
 
-    return extraction.Page(number, "paper.pdf", text, image, crop)
+    return extraction.Page(number, "paper.pdf", text, image, crop, regions)
 
 
 def test_label_key_compares_printed_labels():
@@ -140,6 +145,72 @@ def test_option_lines_copied_into_the_text_are_taken_out():
     assert extraction.record(other, AI).question["parts"][0]["blocks"] == _text(
         "A. 52 apples\nB. 68"
     )
+
+
+def test_plain_option_lines_are_taken_out_too():
+    """2022 Paper 2, run 81 at window 3: the options again as plain lines with
+    no letter, the part holding only them. Also one a block, lettered or not,
+    and after the part's own text; lines out of order stay."""
+    options = ["48 kg.", "50 kg.", "53 kg.", "60 kg."]
+    plain = _mcq("29", options)
+    plain["stem"] = _text("The mean weight of the actresses is")
+    plain["parts"][0]["blocks"] = _text("48 kg.\n\n50 kg.\n\n53 kg.\n\n60 kg.")
+    question = extraction.record(plain, AI).question
+    assert question["stem"] == []
+    assert question["parts"][0]["blocks"] == _text(
+        "The mean weight of the actresses is"
+    )
+    assert question["parts"][0]["answer"]["options"] == options
+
+    math = ["$\\frac{1}{5}$", "$\\frac{1}{7}$", "$\\frac{1}{9}$", "$\\frac{1}{10}$"]
+    after = _mcq("28", math)
+    after["parts"][0]["blocks"] = _text("Find the probability.\n\n" + "\n\n".join(math))
+    assert extraction.record(after, AI).question["parts"][0]["blocks"] == _text(
+        "Find the probability."
+    )
+
+    apart = _mcq("24", ["$a$.", "$b$.", "$c$.", "$d$."])
+    apart["parts"][0]["blocks"] = [
+        *_text("In the figure,"),
+        *_text("A. $a$."),
+        *_text("B. $b$."),
+        *_text("C. $c$."),
+        *_text("D. $d$."),
+    ]
+    assert extraction.record(apart, AI).question["parts"][0]["blocks"] == _text(
+        "In the figure,"
+    )
+
+    plain_apart = _mcq("25", ["1", "2"])
+    plain_apart["parts"][0]["blocks"] = [*_text("Pick one."), *_text("1"), *_text("2")]
+    assert extraction.record(plain_apart, AI).question["parts"][0]["blocks"] == _text(
+        "Pick one."
+    )
+
+    shuffled = _mcq("26", ["1", "2"])
+    shuffled["parts"][0]["blocks"] = _text("Pick one.\n2\n1")
+    assert extraction.record(shuffled, AI).question["parts"][0]["blocks"] == _text(
+        "Pick one.\n2\n1"
+    )
+
+
+async def test_the_last_question_of_a_window_can_be_continued_in_that_window():
+    """Q1 recorded with a(i) and a(ii), then continued in the same window: all
+    its parts stay. A refusal here sent the model back to record it again, and
+    that record replaced the earlier parts."""
+
+    async def validate(question):
+        return None
+
+    run = extraction.Run(validate=validate, ai_label=AI)
+    window: set[str] = set()
+    pages = [_page(1)]
+    first = _open("1", [("a(i)", 1), ("a(ii)", 1)])
+    assert await run.add(first, window, pages) == "Question 1: recorded."
+    more = {"label": "1", "parts": [_open_part("a(iii)", 2), _open_part("b", 4)]}
+    assert await run.extend(more, window, pages) == "Question 1: continued."
+    assert run.recorded["1"].part_labels == ["a(i)", "a(ii)", "a(iii)", "b"]
+    assert [p["marks"] for p in run.recorded["1"].question["parts"]] == [1, 1, 2, 4]
 
 
 def test_a_one_part_question_shows_its_text_once():
@@ -514,18 +585,18 @@ async def test_a_run_past_its_output_budget_stops_and_keeps_what_it_has(monkeypa
 async def test_figures_are_cropped_from_their_page_and_placed_after_their_part(
     monkeypatch,
 ):
-    """A figure names its page image in the window and the part it follows; a
-    call that sees that page alone gives its box, and the done event crops it
-    from that page and places an image block after that part's text (the stem
-    for ""), with the crop beside the questions. A figure naming a part the
-    question lacks goes back to the model."""
+    """A figure with no box names its page image in the window and the part it
+    follows; a call that sees that page alone gives its box, and the done event
+    crops it from that page and places an image block after that part's text
+    (the stem for ""), with the crop beside the questions. A figure naming a
+    part the question lacks goes back to the model."""
     with_figures = _open("8", [("a", 2), ("b", 2)])
     with_figures["figures"] = [
-        {"image": 2, "part": "", "description": "Triangle ABC"},
-        {"image": 1, "part": "b"},
+        {"boxes": [], "image": 2, "part": "", "description": "Triangle ABC"},
+        {"boxes": [], "image": 1, "part": "b"},
     ]
     wrong = copy.deepcopy(with_figures)
-    wrong["figures"] = [{"image": 1, "part": "c"}]
+    wrong["figures"] = [{"boxes": [], "image": 1, "part": "c"}]
     replies = iter(
         [
             {"tool_calls": [_call("record_question", wrong)]},
@@ -657,6 +728,224 @@ async def test_a_page_whose_figure_boxes_fail_saves_its_questions_without_them(
     assert question["parts"][0]["blocks"][-1]["image"] == {"assetId": "figure:q8-1"}
     assert done["report"]["figuresLeftOut"] == ["8"]
     assert done["report"]["figures"] == ["8"]
+
+
+def _figure_regions() -> tuple[tuple, tuple]:
+    """Page 5: a figure in two boxes with its caption. Page 6: a chart."""
+    region = extraction.layout.Region
+    return (
+        region("image", 0.97, [100.0, 200.0, 300.0, 400.0]),
+        region("image", 0.9, [320.0, 210.0, 500.0, 390.0]),
+        region("figure_title", 0.8, [200.0, 405.0, 400.0, 420.0]),
+        region("text", 0.9, [100.0, 500.0, 900.0, 600.0]),
+    ), (region("chart", 0.884, [50.4, 60.6, 700.0, 800.0]),)
+
+
+def _replies(*replies: dict):
+    """A complete_response giving each reply in turn, with what it was sent."""
+    remaining = iter(replies)
+    sent: list[tuple[list[dict], dict]] = []
+
+    async def complete_response(messages, **kwargs):
+        sent.append((copy.deepcopy(messages), kwargs))
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message={"role": "assistant", "content": "", **next(remaining)},
+                )
+            ],
+            usage=SimpleNamespace(output_tokens=100),
+        )
+
+    return complete_response, sent
+
+
+async def _ok(question):
+    return None
+
+
+async def test_a_window_gets_its_boxes_as_json_and_records_figures_by_number(
+    monkeypatch,
+):
+    """After each page's text come its boxes as JSON, numbered across the
+    window, and the images stay as they are. A split figure takes its boxes
+    together with the caption beside them and a 1% pad, and no box call runs.
+    A number that is no box, or boxes on two pages, go back to the model."""
+    first, second = _figure_regions()
+    item = _open("8", [("a", 2), ("b", 2)])
+    item["figures"] = [
+        {"boxes": [1, 2], "part": "", "description": "Split figure"},
+        {"boxes": [3], "part": "b", "description": "A chart"},
+    ]
+    unknown = copy.deepcopy(item)
+    unknown["figures"] = [{"boxes": [4], "part": "", "description": "Nothing"}]
+    across = copy.deepcopy(item)
+    across["figures"] = [{"boxes": [1, 3], "part": "", "description": "Two pages"}]
+    complete_response, sent = _replies(
+        {"tool_calls": [_call("record_question", unknown)]},
+        {"tool_calls": [_call("record_question", across, 1)]},
+        {"tool_calls": [_call("record_question", item, 2)]},
+        {"content": "DONE"},
+    )
+
+    async def complete(messages, **kwargs):
+        assert kwargs["call_purpose"] != "extraction_figures"
+        return SimpleNamespace(content='{"questions": ["8"]}')
+
+    async def read_regions(images):
+        return [first, second]
+
+    monkeypatch.setattr(extraction.layout, "read_regions", read_regions)
+    monkeypatch.setattr(extraction.models, "complete", complete)
+    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
+    crops: list = []
+    events = [
+        event
+        async for event in extraction.run(
+            [_page(5, "Text.", crops=crops), _page(6, crops=crops)],
+            [],
+            model=MODEL,
+            validate=_ok,
+            locale="en",
+        )
+    ]
+    content = sent[0][0][1]["content"]
+    assert content[1]["text"].endswith(
+        "\nBoxes on this page, as JSON: "
+        '[{"box": 1, "page": 5, "coordinates": [100, 200, 300, 400], '
+        '"label": "image", "score": 0.97}, '
+        '{"box": 2, "page": 5, "coordinates": [320, 210, 500, 390], '
+        '"label": "image", "score": 0.9}]'
+    )
+    assert content[3]["text"] == (
+        "Page image 2: page 6 of paper.pdf. It has no indexed text.\n"
+        "Boxes on this page, as JSON: "
+        '[{"box": 3, "page": 6, "coordinates": [50, 61, 700, 800], '
+        '"label": "chart", "score": 0.88}]'
+    )
+    assert content[2]["image_url"]["url"] == "data:image/jpeg;base64,AA=="
+    results = [m["content"] for m in sent[-1][0] if m["role"] == "tool"]
+    assert results[0] == (
+        "Question 8: figures[0].boxes: there is no box 4 on these pages; the boxes "
+        "are 1, 2, 3. Fix it and record it again."
+    )
+    assert results[1] == (
+        "Question 8: figures[0].boxes: a figure's boxes are on one page. Fix it and "
+        "record it again."
+    )
+    assert crops == [
+        (5, [90.0, 190.0, 510.0, 430.0]),
+        (6, [40.4, 50.6, 710.0, 810.0]),
+    ]
+    done = events[-1]
+    assert done["report"]["figures"] == ["8"]
+    assert done["report"]["figuresLeftOut"] == []
+    [question] = done["questions"]
+    assert question["stem"][-1]["description"] == "Split figure"
+    assert question["parts"][1]["blocks"][-1]["description"] == "A chart"
+
+
+async def test_a_figure_with_no_box_takes_the_box_call_beside_one_that_has_a_box(
+    monkeypatch,
+):
+    """Boxes [] with its page image sends that figure alone to the box call,
+    padded by FIGURE_PAD; so do those of a page whose layout call failed. A
+    figure with a box is not asked about."""
+    first, _ = _figure_regions()
+    item = _open("8", [("a", 2)])
+    item["figures"] = [
+        {"boxes": [1], "part": "", "description": "Picked"},
+        {"boxes": [], "image": 1, "part": "", "description": "No box on its page"},
+        {"boxes": [], "image": 2, "part": "a", "description": "Layout failed"},
+    ]
+    complete_response, _ = _replies(
+        {"tool_calls": [_call("record_question", item)]},
+        {"content": "DONE"},
+    )
+    located: list[str] = []
+
+    async def complete(messages, **kwargs):
+        if kwargs["call_purpose"] != "extraction_figures":
+            return SimpleNamespace(content='{"questions": ["8"]}')
+        located.append(messages[1]["content"][0]["text"])
+        return SimpleNamespace(content='{"boxes": [[300, 300, 400, 400]]}')
+
+    async def read_regions(images):
+        return [first, ()]
+
+    monkeypatch.setattr(extraction.layout, "read_regions", read_regions)
+    monkeypatch.setattr(extraction.models, "complete", complete)
+    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
+    crops: list = []
+    events = [
+        event
+        async for event in extraction.run(
+            [_page(5, crops=crops), _page(6, crops=crops)],
+            [],
+            model=MODEL,
+            validate=_ok,
+            locale="en",
+        )
+    ]
+    assert sorted(located) == [
+        "The figures on this page:\n1. Question 8: Layout failed",
+        "The figures on this page:\n1. Question 8: No box on its page",
+    ]
+    assert crops == [
+        (5, [90.0, 190.0, 410.0, 430.0]),
+        (5, [280.0, 270.0, 420.0, 405.0]),
+        (6, [280.0, 270.0, 420.0, 405.0]),
+    ]
+    assert events[-1]["report"]["figuresLeftOut"] == []
+
+
+async def test_a_failed_layout_call_leaves_every_figure_to_the_box_call(monkeypatch):
+    """The layout service refuses every page: the run still finishes, and its
+    figure comes from the box call."""
+    monkeypatch.setattr(extraction.layout.cfg, "layout_url", "http://10.77.0.2:8092")
+    monkeypatch.setattr(extraction.layout.cfg, "layout_token", "t" * 40)
+    client = extraction.layout.httpx.AsyncClient
+    asked: list = []
+
+    async def refused(request):
+        asked.append(request)
+        raise extraction.layout.httpx.ConnectError("refused")
+
+    monkeypatch.setattr(
+        extraction.layout.httpx,
+        "AsyncClient",
+        lambda **kwargs: client(
+            transport=extraction.layout.httpx.MockTransport(refused), **kwargs
+        ),
+    )
+    item = _open("8", [("a", 2)])
+    item["figures"] = [{"boxes": [], "image": 1, "part": "", "description": "Graph"}]
+    complete_response, sent = _replies(
+        {"tool_calls": [_call("record_question", item)]},
+        {"content": "DONE"},
+    )
+
+    async def complete(messages, **kwargs):
+        if kwargs["call_purpose"] != "extraction_figures":
+            return SimpleNamespace(content='{"questions": ["8"]}')
+        return SimpleNamespace(content='{"boxes": [[300, 300, 400, 400]]}')
+
+    monkeypatch.setattr(extraction.models, "complete", complete)
+    monkeypatch.setattr(extraction.models, "complete_response", complete_response)
+    crops: list = []
+    events = [
+        event
+        async for event in extraction.run(
+            [_page(5, crops=crops)], [], model=MODEL, validate=_ok, locale="en"
+        )
+    ]
+    assert len(asked) == 1
+    assert sent[0][0][1]["content"][1]["text"].endswith(
+        "Boxes on this page, as JSON: []"
+    )
+    assert crops == [(5, [280.0, 270.0, 420.0, 405.0])]
+    assert events[-1]["report"]["figures"] == ["8"]
 
 
 def test_extract_route_refuses_first_then_streams(monkeypatch):

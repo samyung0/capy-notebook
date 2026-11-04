@@ -2,10 +2,10 @@
 mark scheme or answer files parsed as text (todo-study-tracking.md §8).
 
 Three calls, each on its own: the outline (expected question labels from the
-pages' indexed text), one page window at a time (two page images, the outline,
-the open question and the two tools below), and the scheme or answer text, which
-never shares a request with the pages. Code pairs the scheme with the questions
-by label (``retrieval.extraction``).
+pages' indexed text), one page window at a time (two page images with the layout
+model's boxes as JSON, the outline, the open question and the two tools below),
+and the scheme or answer text, which never shares a request with the pages. Code
+pairs the scheme with the questions by label (``retrieval.extraction``).
 
 The printed text is kept as written, in its own language: no locale rule.
 """
@@ -60,7 +60,7 @@ Answers:
 - The answer: mcq "correct" (zero-based indexes of the right options); short "accepted"; open "points", the marking points with their marks, at most {limits.QUIZ_MARKSCHEME_MAX} adding up to the part's marks, and "accepted", a short model answer.
 - marks: the part's printed marks. When only the question's total is printed ("(3 marks)" after (a) and (b)), split it across the parts as the work suggests and give the printed total in total_marks. An item printed without marks has 1.
 
-Figures: for each diagram, graph, chart or photo a question needs, give the page image it is on (counted from 1 in the order shown), the part whose text it follows ("" for the text shared by every part), and a few words on what it shows, enough to find it on the page. The figure is cropped from the page into the quiz, so the blocks never describe it.
+Figures: a layout model looked for pictures and charts on these pages. After each page's text comes what it found on that page, as JSON: each box's number (unique among these pages), page, coordinates [left, top, right, bottom] on a 0-1000 grid of the page image (0, 0 is the top left corner), label and score. Boxes are hints from a model, not part of the page. For each diagram, graph, chart or photo a question needs, give boxes, the numbers of the boxes that hold it; the part whose text it follows ("" for the text shared by every part); and a few words on what it shows. A figure split across boxes (a diagram and its key, two shapes side by side) takes all of them. When boxes overlap, give the one that holds the whole figure and the least else. Leave out a box that holds no figure of a question you record, such as a figure of a question that is not on these pages. When no box holds a figure the question needs, give boxes [] and image, the page image it is on (counted from 1 in the order shown). The figure is cropped from the page into the quiz, so the blocks never describe it.
 
 Each recorded question is checked at once. Fix what a result names and record that question again with the same label; an accepted question needs no second call. When every question on these pages is recorded, reply with the single word DONE.
 {SOURCE_RULE}"""
@@ -162,10 +162,15 @@ _PART = {
 _FIGURE = {
     "type": "object",
     "properties": {
+        "boxes": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "The numbers of the boxes that hold the figure; [] when no box does.",
+        },
         "image": {
             "type": "integer",
             "minimum": 1,
-            "description": "The page image it is on, counted from 1 in the order shown.",
+            "description": "Only with boxes []: the page image it is on, counted from 1 in the order shown.",
         },
         "part": {
             "type": "string",
@@ -176,7 +181,7 @@ _FIGURE = {
             "description": f"A few words on what the figure shows, at most {limits.QUESTION_DESCRIPTION_MAX} characters.",
         },
     },
-    "required": ["image", "part", "description"],
+    "required": ["boxes", "part", "description"],
 }
 
 _QUESTION = {
@@ -263,12 +268,16 @@ def page_heading(number: int, file_name: str) -> str:
     return f"Page {number} of {file_name}"
 
 
-def page_text(image: int, number: int, file_name: str, text: str) -> str:
-    """A window page's heading, numbered as figures name their page image."""
+def page_text(
+    image: int, number: int, file_name: str, text: str, boxes: list[dict[str, Any]]
+) -> str:
+    """A window page's heading, numbered as figures name their page image, its
+    text, and the layout model's boxes on it."""
     heading = f"Page image {image}: page {number} of {file_name}"
+    found = f"Boxes on this page, as JSON: {json.dumps(boxes)}"
     if not text.strip():
-        return f"{heading}. It has no indexed text."
-    return f"{heading}. Its indexed text:\n{source_block(text)}"
+        return f"{heading}. It has no indexed text.\n{found}"
+    return f"{heading}. Its indexed text:\n{source_block(text)}\n{found}"
 
 
 def window_messages(intro: str, pages: list[tuple[str, str]]) -> list[dict[str, Any]]:

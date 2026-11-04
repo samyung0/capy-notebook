@@ -293,6 +293,14 @@
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
+    "CAPY_LAYOUT_TOKEN": {
+      "kind": "secret",
+      "targets": ["app", "local"]
+    },
+    "CAPY_LAYOUT_URL": {
+      "kind": "variable",
+      "targets": ["app", "local"]
+    },
     "CAPY_PARSER": {
       "kind": "variable",
       "targets": ["app"]

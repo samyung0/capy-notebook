@@ -3,12 +3,15 @@
 
 A fixed pipeline, like /generate, not the chat agent:
 
+0. The layout service's regions on every selected page (``layout``), which
+   number the boxes figures are picked from.
 1. The outline: the question labels the selected pages' indexed text lists,
    for the completeness check at the end.
 2. Page windows of up to two pages, in selected order. Each call sees the two
-   page images and their text, the outline, the labels recorded so far and the
-   open question (the last one recorded, which may run onto the next page),
-   and records questions with ``record_question`` / ``continue_question``,
+   page images, their text and their boxes as JSON, the outline, the labels
+   recorded so far and the open question (the last one recorded, which may run
+   onto the next page), and records questions with ``record_question`` /
+   ``continue_question``,
    each part with its answer key, marking points for an open part and a short
    worked solution: copied when the page prints them, otherwise worked out
    (Epo 2026-11-03). Every recorded question goes through the Go validator at
@@ -24,12 +27,12 @@ A fixed pipeline, like /generate, not the chat agent:
 The printed option order is kept (``add_questions`` shuffles; this does not),
 and option lines the model also copied into a part's text are taken out. No
 question is left out for want of a key. A worked-out solution carries an
-"AI-written" label. Each figure a question needs is named in its window, boxed
-at the end by a call that sees its page alone, cropped from that page and
-placed after the text of the part it names, as an image block whose asset is
-``figure:<id>``; the ``done`` event carries the crops and Go stores them as the
-quiz's own editor assets. Nothing links a question to its file, page or region
-(§8 item 7).
+"AI-written" label. Each figure a question needs is recorded in its window by
+box number (Epo 2026-11-04). One with no box is boxed at the end by a call that
+sees its page alone. Each is cropped from its page and placed after the text of
+the part it names, as an image block whose asset is ``figure:<id>``; the
+``done`` event carries the crops and Go stores them as the quiz's own editor
+assets. Nothing links a question to its file, page or region (§8 item 7).
 """
 
 from __future__ import annotations
@@ -54,7 +57,7 @@ from ..generated import limits
 from ..prompts import extraction as prompts
 from ..prompts.locale import normalize_locale
 from ..registry import ModelConfig
-from . import accounting, capture, models, store, tools
+from . import accounting, capture, layout, models, store, tools
 from . import limits as slots
 from .workflows import extract_json
 
@@ -83,8 +86,9 @@ SCHEME_MAX_TOKENS = 12_000
 FIGURE_PAGE_EDGE = 2_200
 # The locate call's reply: a few boxes.
 LOCATE_MAX_TOKENS = 1_000
-# Padding added to a located box on the 0-1000 grid (left, top, right,
-# bottom). The boxes sit a little low: on the bench's 14 figures, tops cut off
+# Padding added to the box call's box on the 0-1000 grid (left, top, right,
+# bottom); a box a window picks takes layout.CROP_PAD and its caption instead
+# (Epo 2026-11-04). The boxes sit a little low: on the bench's 14 figures, tops cut off
 # labels above the figure while bottoms were already loose; this pad took
 # whole figures from 5 to 12 of 14 and kept 11 of 14 at least 70% figure
 # (bench/extraction/reports/2026-11-04-figures-and-fidelity.md).
@@ -114,13 +118,15 @@ Validate = Callable[[dict[str, Any]], Awaitable[str | None]]
 class Page:
     """One selected page: its number in its file, the file's name, the
     page's indexed text, its image as a data URL, rendered when its window
-    runs, and a box on it as a JPEG with its pixel size, for a figure."""
+    runs, a box on it as a JPEG with its pixel size, for a figure, and what
+    the layout model found on it."""
 
     number: int
     file_name: str
     text: str
     image: Callable[[], Awaitable[str]]
     crop: Callable[[list[float]], Awaitable[tuple[bytes, tuple[int, int]]]]
+    regions: tuple[layout.Region, ...] = ()
 
     def __deepcopy__(self, memo: dict[int, Any]) -> Page:
         # A recorded question's copies share its figures' pages.
@@ -130,8 +136,8 @@ class Page:
 @dataclass(frozen=True)
 class Figure:
     """A figure a question needs: its page, the part whose text it follows
-    ("" for the stem), its description, and its box on the 0-1000 grid once
-    located (``locate_figures``)."""
+    ("" for the stem), its description, and its crop on the 0-1000 grid: from
+    the boxes its window picked, or from the box call (``locate_figures``)."""
 
     page: Page
     part: str
@@ -346,6 +352,53 @@ def _without_options(text: str, options: list[str]) -> str:
     return text
 
 
+def _option_line(line: str, letter: str) -> str:
+    """A line as an option is compared with it, its own letter aside."""
+    line = line.strip()
+    mark = _OPTION_LETTER.match(line)
+    if mark and mark.group(1) == letter:
+        line = line[mark.end() :]
+    return _option_text(line)
+
+
+def _without_option_lines(
+    blocks: list[dict[str, Any]], options: list[str]
+) -> list[dict[str, Any]]:
+    """The blocks without a run of lines that are the options, in order, one a
+    line, in one block or one a block, with or without their letters (2022
+    Paper 2: "48 kg.\n\n50 kg.\n\n53 kg.\n\n60 kg." beside the same options)."""
+    wanted = [_option_text(option) for option in options]
+    if len(wanted) < 2 or not all(wanted):
+        return blocks
+    letters = [chr(ord("A") + i) for i in range(len(options))]
+    lines = [
+        (at, number, line)
+        for at, block in enumerate(blocks)
+        if block["type"] == "text"
+        for number, line in enumerate(block["text"].split("\n"))
+        if line.strip()
+    ]
+    for start in range(len(lines) - len(options) + 1):
+        run = lines[start : start + len(options)]
+        if [_option_line(r[2], letter) for r, letter in zip(run, letters)] != wanted:
+            continue
+        taken = {(at, number) for at, number, _ in run}
+        kept = []
+        for at, block in enumerate(blocks):
+            if block["type"] == "text" and any(where == at for where, _ in taken):
+                text = "\n".join(
+                    line
+                    for number, line in enumerate(block["text"].split("\n"))
+                    if (at, number) not in taken
+                ).strip()
+                if not text:
+                    continue
+                block = {**block, "text": text}
+            kept.append(block)
+        return kept
+    return blocks
+
+
 def _blocks_without_options(
     blocks: list[dict[str, Any]], options: list[str]
 ) -> list[dict[str, Any]]:
@@ -357,7 +410,7 @@ def _blocks_without_options(
                 continue
             block = {**block, "text": text}
         kept.append(block)
-    return kept
+    return _without_option_lines(kept, options)
 
 
 def _drop_option_lines(question: dict[str, Any]) -> None:
@@ -452,22 +505,29 @@ def _box(raw: Any) -> list[float] | None:
     return box if box[0] < box[2] and box[1] < box[3] else None
 
 
+def numbered_boxes(pages: list[Page]) -> dict[int, tuple[Page, layout.Region]]:
+    """The boxes figures are picked from, numbered across a window."""
+    boxes: dict[int, tuple[Page, layout.Region]] = {}
+    for page in pages:
+        for region in layout.figure_boxes(page.regions):
+            boxes[len(boxes) + 1] = (page, region)
+    return boxes
+
+
 def read_figures(
-    raw: Any, pages: list[Page], part_labels: list[str]
+    raw: Any,
+    pages: list[Page],
+    part_labels: list[str],
+    boxes: dict[int, tuple[Page, layout.Region]],
 ) -> tuple[list[Figure], str | None]:
-    """A call's figures on the window's page images, or the tool-result
-    problem naming the first that cannot be read."""
+    """A call's figures, by the window's box numbers (cropped from them) or,
+    with no box, by page image (for the box call), or the tool-result problem
+    naming the first that cannot be read."""
     read: list[Figure] = []
     parts = {label_key(label) for label in part_labels}
     for index, item in enumerate(raw if isinstance(raw, list) else []):
         name = f"figures[{index}]"
         item = item if isinstance(item, dict) else {}
-        image = _whole(item.get("image"))
-        if image is None or not 1 <= image <= len(pages):
-            return (
-                [],
-                f"{name}.image: expected {' or '.join(str(n + 1) for n in range(len(pages)))}, the page image it is on",
-            )
         part = str(item.get("part") or "").strip()
         if part and label_key(part) not in parts:
             return [], (
@@ -480,7 +540,29 @@ def read_figures(
                 f"{name}.description: expected at most "
                 f"{limits.QUESTION_DESCRIPTION_MAX} characters; sent {len(description)}"
             )
-        read.append(Figure(pages[image - 1], part, description))
+        numbers = item.get("boxes")
+        numbers = numbers if isinstance(numbers, list) else []
+        if not numbers:
+            image = _whole(item.get("image"))
+            if image is None or not 1 <= image <= len(pages):
+                choices = " or ".join(str(n + 1) for n in range(len(pages)))
+                return [], f"{name}: with boxes [] give image, {choices}"
+            read.append(Figure(pages[image - 1], part, description))
+            continue
+        unknown = [number for number in numbers if number not in boxes]
+        if unknown:
+            shown = ", ".join(str(number) for number in boxes) or "none"
+            return [], (
+                f"{name}.boxes: there is no box {unknown[0]} on these pages; "
+                f"the boxes are {shown}"
+            )
+        page = boxes[numbers[0]][0]
+        if any(boxes[number][0] is not page for number in numbers):
+            return [], f"{name}.boxes: a figure's boxes are on one page"
+        crop = layout.crop_box(
+            [boxes[number][1].box for number in numbers], page.regions
+        )
+        read.append(Figure(page, part, description, crop))
     return read, None
 
 
@@ -699,6 +781,10 @@ class Run:
     # The windows' output budget for the run and what they have spent.
     output_budget: int = 0
     output_tokens: int = 0
+    # The current window's boxes by number.
+    boxes: dict[int, tuple[Page, layout.Region]] = field(default_factory=dict)
+    # The key of the question last recorded or continued in the current window.
+    window_last: str | None = None
 
     @property
     def over_budget(self) -> bool:
@@ -746,7 +832,9 @@ class Run:
                 "earlier pages. If this is another question with the same number, "
                 "put its section in the label (B3)."
             )
-        new.figures, problem = read_figures(item.get("figures"), pages, new.part_labels)
+        new.figures, problem = read_figures(
+            item.get("figures"), pages, new.part_labels, self.boxes
+        )
         problem = problem or _unsourced(new) or await self.validate(new.question)
         if problem:
             return f"Question {new.label}: {problem}. Fix it and record it again."
@@ -761,6 +849,7 @@ class Run:
             new.question["id"] = held.question["id"]
         self.recorded[key] = new
         window.add(key)
+        self.window_last = key
         return f"Question {new.label}: recorded."
 
     async def extend(
@@ -768,7 +857,11 @@ class Run:
     ) -> str:
         label = str(args.get("label") or "")
         key = label_key(label)
-        if self.open_label is None or key != label_key(self.open_label):
+        # The open question, or the one this window recorded last: refused, the
+        # model records it again and that replaces its earlier parts
+        # (bench/extraction/reports/2026-11-04-window-size.md).
+        opened = None if self.open_label is None else label_key(self.open_label)
+        if key not in (opened, self.window_last):
             return (
                 f"Question {label} is not the open question; record a new question "
                 "with record_question."
@@ -785,7 +878,7 @@ class Run:
         _drop_option_lines(merged.question)
         _drop_repeated_stem(merged.question)
         more_figures, problem = read_figures(
-            args.get("figures"), pages, merged.part_labels
+            args.get("figures"), pages, merged.part_labels, self.boxes
         )
         merged.figures.extend(more_figures)
         problem = problem or _unsourced(merged) or await self.validate(merged.question)
@@ -796,6 +889,7 @@ class Run:
             return "The quiz is full: record nothing more."
         self.recorded[key] = merged
         window.add(key)
+        self.window_last = key
         return f"Question {label}: continued."
 
     def open_question(self) -> dict[str, Any] | None:
@@ -925,7 +1019,24 @@ def _call_args(call: dict[str, Any]) -> tuple[str, dict[str, Any] | str]:
     return name, args
 
 
+def _box_rows(run: Run, page: Page) -> list[dict[str, Any]]:
+    """A page's boxes as the window's prompt lists them."""
+    return [
+        {
+            "box": number,
+            "page": page.number,
+            "coordinates": [round(value) for value in region.box],
+            "label": region.label,
+            "score": round(region.score, 2),
+        }
+        for number, (on, region) in run.boxes.items()
+        if on is page
+    ]
+
+
 async def _window(run: Run, pages: list[Page], *, model: ModelConfig) -> None:
+    run.boxes = numbered_boxes(pages)
+    run.window_last = None
     intro = prompts.window_intro(
         expected=run.expected, recorded=run.labels(), open_question=run.open_question()
     )
@@ -934,7 +1045,11 @@ async def _window(run: Run, pages: list[Page], *, model: ModelConfig) -> None:
         [
             (
                 prompts.page_text(
-                    index, p.number, p.file_name, p.text[:PAGE_TEXT_CHARS]
+                    index,
+                    p.number,
+                    p.file_name,
+                    p.text[:PAGE_TEXT_CHARS],
+                    _box_rows(run, p),
                 ),
                 await p.image(),
             )
@@ -1011,18 +1126,19 @@ async def locate(
 
 
 async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> list[str]:
-    """Give each saved figure the box a call seeing its page alone answers:
-    boxes asked of the window, beside two pages and the whole extraction,
-    were too far off to crop from (2022 Paper 2: 3 of 10 whole, 3 missing the
-    figure; bench/extraction/reports/2026-11-04-figures-and-fidelity.md).
-    A page whose call fails twice keeps its questions without its figures
+    """Give each saved figure with no box the box a call seeing its page alone
+    answers: coordinates asked of the window, beside two pages and the whole
+    extraction, were too far off to crop from (2022 Paper 2: 3 of 10 whole, 3
+    missing the figure; bench/extraction/reports/2026-11-04-figures-and-fidelity.md).
+    A page whose call fails twice keeps its questions without those figures
     (Epo 2026-11-04); the labels of those questions are returned."""
     pages: dict[int, tuple[Page, list[tuple[Recorded, int]]]] = {}
     for question in held:
         for index, figure in enumerate(question.figures):
-            pages.setdefault(id(figure.page), (figure.page, []))[1].append(
-                (question, index)
-            )
+            if figure.box is None:
+                pages.setdefault(id(figure.page), (figure.page, []))[1].append(
+                    (question, index)
+                )
 
     failed: set[tuple[int, int]] = set()
 
@@ -1079,6 +1195,11 @@ async def run(
     """Events: ``questions`` after each window (every question recorded so
     far, before pairing), then ``done`` with the quiz's questions and the
     report."""
+    found = await layout.read_regions([page.image for page in pages])
+    pages = [
+        dataclasses.replace(page, regions=regions)
+        for page, regions in zip(pages, found)
+    ]
     current = Run(
         validate=validate,
         ai_label=AI_WRITTEN[normalize_locale(locale)],
@@ -1180,9 +1301,9 @@ async def run(
             # continuation: left out rather than merged into it.
             "schemeRepeats": repeats,
             # Questions saved with figures cropped from the page, for the
-            # starter to check, and questions saved without theirs: the box
-            # call for their page failed twice (Go adds those whose figures
-            # did not fit in the starter's storage).
+            # starter to check, and questions saved without theirs: they had
+            # no box and the box call for their page failed twice (Go adds
+            # those whose figures did not fit in the starter's storage).
             "figures": figures,
             "figuresLeftOut": figures_left_out,
             "stopped": stopped,
