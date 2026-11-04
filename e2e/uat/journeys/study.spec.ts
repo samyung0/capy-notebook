@@ -240,7 +240,7 @@ test('study progress: a quiz finished, a set studied and a short review are reco
   // The deployed database holds each record.
   const materials = [finishedQuiz, set, nextQuiz];
   const progress = await run.query<{ id: string; state: string }>(
-    `SELECT coalesce(file_id, material_id) AS id, state FROM study_progress
+    `SELECT material_id AS id, state FROM study_progress
     WHERE user_id=%s AND workspace_id=%s`,
     [run.owner.id, workspaceId]
   );

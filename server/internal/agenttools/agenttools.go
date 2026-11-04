@@ -163,7 +163,9 @@ import (
 // Chapter (n), in both scopes; account chat's copy names its workspace_id.
 // v47: chapters become topics (Epo 2026-11-03): create_topic and topic_id,
 // and create_topic takes an optional one-line description.
-const ContractVersion = 47
+// v48: read_study_progress goes until AI analysis of study progress is decided
+// (Epo 2026-11-04).
+const ContractVersion = 48
 
 // Scope is the kind of chat a tool is offered in: a workspace's, or the
 // account's across the user's own files (Epo 2026-10-27). A conversation keeps
@@ -1024,16 +1026,6 @@ func Definitions() []Definition {
 				"page":    map[string]any{"type": "integer", "minimum": 1},
 				"bbox":    bboxSchema(),
 			}, "file_id", "page"),
-			Concurrency:        "read",
-			RequiredOperations: []Operation{OpSourceRead},
-		}),
-		chatTool(Definition{
-			Name:      "read_study_progress",
-			Scopes:    workspaceOnly,
-			Retention: RetainNone,
-			Description: "Read the learner's study progress in this workspace: files and " +
-				"materials done or started, recent quiz results, and the topics they retain least.",
-			InputSchema:        obj(map[string]any{}),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpSourceRead},
 		}),

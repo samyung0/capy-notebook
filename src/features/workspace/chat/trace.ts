@@ -196,12 +196,6 @@ const COPY: Record<string, Copy> = {
     (count) => m.chat_step_read_guides_group({ count }),
     m.chat_step_fallback_guide
   ),
-  read_study_progress: {
-    done: () => m.chat_step_progress_done(),
-    fail: () => m.chat_step_progress_fail(),
-    group: (count) => m.chat_step_progress_group({ count }),
-    run: () => m.chat_step_progress_run(),
-  },
   resolve_source_change: {
     done: (label) => m.chat_step_resolve_done({ label }),
     fail: (label) => m.chat_step_resolve_fail({ label }),

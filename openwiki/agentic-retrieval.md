@@ -2698,7 +2698,7 @@ keeps what its `retention` contract field says
   excerpt ID and start at the latest owning turn. Replay revalidates them with
   read-only library queries. Full text remaining after compaction counts as read;
   changed/missing text or a compacted summary does not.
-- `none`: `inspect_document`, `inspect_office_document`, `read_study_progress`,
+- `none`: `inspect_document`, `inspect_office_document`,
   `list_trashed_files`, both captures and
   `resolve_source_change` (no image bytes), and `read_skill` (the skill itself
   replays by name, below).
@@ -3567,12 +3567,10 @@ materials are sources.
   (`server/internal/httpapi/chat_stream.go`) looks the title up itself
   (`store.ChatOpenResource` in `server/internal/store/chat.go`): only an
   untrashed file or material of this workspace, under the kind given, is kept,
-  and anything else reaches the pipeline as `null`. It also reads
-  `studyProgress` (`store.StudyEnabled`: the workspace override, else the
-  account default). Go appends `library.read` to every turn's operations for
+  and anything else reaches the pipeline as `null`. Go appends `library.read` to every turn's operations for
   any role that can chat, viewers included; writes still follow the role and
   account state (a frozen or full actor loses `material.create` and
-  `document.edit`). Go sends `workspaceOnly`, `openResource`, `studyProgress` and
+  `document.edit`). Go sends `workspaceOnly`, `openResource` and
   `studyPreferences` (the requester's `users.study_preferences`, saved with
   `PATCH /api/me/study-preferences`; unset fields take
   `prompts/preferences.py`'s defaults) with the stream request
@@ -3840,14 +3838,8 @@ materials are sources.
   request; changed or missing text, or a compacted summary, does not. Library
   excerpts carry no citation numbers: a library-built material's attribution
   is its provenance footer.
-- **Study progress.** `read_study_progress` (contract: `source.read`) is offered
-  only when the turn's `studyProgress` is true. It posts `{workspaceId,
-  userId}` to Go `/api/internal/study-progress` (`internal_study.go`; pipeline
-  secret, account access, any workspace role, and progress on for that user in
-  that workspace, else 403), which answers with
-  `store.AgentStudyProgress`: items marked done, started or removed, recent
-  quiz results, and the topics whose rated questions and cards are least
-  retained. `tools.render_progress` turns it into the text the model reads.
+- **Study progress.** The agent cannot read it: `read_study_progress` went at
+  contract v48 (Epo 2026-11-04) until AI analysis of study progress is decided.
 - **Question bank.** The chat agent has no bank tools (contract v26, Epo
   2026-10-14): it listed, read and copied bank questions from contract v11 to
   v25, and no playground run ever copied one. Learners copy from the bank
@@ -4071,7 +4063,6 @@ materials are sources.
 | `read_library` | none | As `search_library`. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes The page comes back as one numbered passage of kind `library` (Epo 2026-10-30): the model reads `[n] Library: <book> › pp.` and cites it like a file's passage, and the answer's citation carries `kind: library`, the excerpt id, the book's title and the excerpt's pages, shown under the answer as a book badge that opens nothing. Excerpt ids read `excerpt_id=<id>` everywhere, never bracketed, so none passes for a citation. Retained reads match on the page's own text, not the numbered tool output |
 | `search_web` | none | DeepSeek's web search (`retrieval/websearch.py`, `POST https://api.deepseek.com/v1/tools/search` on the platform `DEEPSEEK_API_KEY`): one focused query of at most 128 characters, 5 results, no retry; only the query is sent (never the learner's question or IP), and the description asks for it in the model's own words rather than copied from the learner's files (Epo 2026-10-24, Q289). Each result is a `Passage(kind="web")` (`chunk_id` `web:<url>`, the link in `file_id`, title, site, the date parsed from DeepSeek's RFC 3339 value to YYYY-MM-DD and left out when it does not parse, DeepSeek's summary as the text and its snippet for display) in one source block, numbered like passages, with a data-not-instructions note and the searches left. A user message gets 3 searches: an empty one counts and is free, a failed one (an error, a timeout, a non-2xx answer or a body without a results list) is free and the first 2 failures do not count, so at most 5 calls run (Epo 2026-10-24); results that miss the point are an ordinary search the model judges, since DeepSeek answers even a nonsense query with 5 results (2026-10-24 probe); the parser keeps only title, url, snippet, summary, site_name and date; calls of one response hold their places while they run. The same query again in one message (compared without case or extra spaces) reuses that message's answer, neither charged nor counted; a search whose settlement fails keeps its results and is neither charged nor counted, its call row left to the receipt sweep (Editor 2026-10-24). A search with results costs 1.8 credits ([observability-metering.md](observability-metering.md)). Answers as not available while Workspace only is on. Retains cited results, which replay from their saved copy |
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
-| `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained topics |
 | `search_images` | full | As `search_library` (Epo 2026-10-30). Images by what they show: the library's excerpt search (ten excerpts deep) runs underneath and lists the shown, described figures of those excerpts in rank order, at most eight, each with its id, label, description, book, page and credit. The result names no excerpt or library tool: the model learns only that it can place one by id in its answer, a note or a quiz question. A listed figure may be placed this turn without a `read_library`, credited with the excerpt that lists it (`ToolContext.shown_figures`). A chat answer's `![caption](figure:<id>)` line draws it through `GET /api/library/figures/{id}` (Go → pipeline `POST /library/figure`, `tools.answer_figure`): the JPEG of its box as base64 with its label and printed credit, 404 for a figure the library does not show; any signed-in user may read it. The learner's own images join as a second group once their pictures carry descriptions |
 | `capture_library_page` | none | As `search_library`, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF, or an uploaded image as its single page 1, as a JPEG for the model; a Word, Excel or PowerPoint file is refused first, naming `inspect_office_document` (`unsupported_format`; Q283); refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_library_page` and `resolve_source_change`; adds no citation |

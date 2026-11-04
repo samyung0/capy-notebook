@@ -1,5 +1,5 @@
 {
-  "version": 47,
+  "version": 48,
   "operations": [
     "source.read",
     "material.read",
@@ -355,29 +355,6 @@
       "scopes": [
         "workspace",
         "account"
-      ],
-      "requiredOperations": [
-        "source.read"
-      ],
-      "retention": "none"
-    },
-    {
-      "name": "read_study_progress",
-      "version": 1,
-      "description": "Read the learner's study progress in this workspace: files and materials done or started, recent quiz results, and the topics they retain least.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {},
-        "type": "object"
-      },
-      "mutates": false,
-      "usesEmbedding": false,
-      "concurrency": "read",
-      "allowedSlots": [
-        "chat"
-      ],
-      "scopes": [
-        "workspace"
       ],
       "requiredOperations": [
         "source.read"

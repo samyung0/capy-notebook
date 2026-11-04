@@ -41,7 +41,7 @@ clone or charged to storage.
 | Table / column | Holds |
 | --- | --- |
 | `workspace_study (user_id, workspace_id, enabled)` | Hide study progress for one workspace (`enabled` false hides); no row shows progress (`StudyEnabled`). Migration `0108_study_plans.sql` dropped the old global default `users.study_progress`. |
-| `study_progress (user_id, workspace_id, file_id \| material_id, state, updated_at)` | One row per practised quiz or set (`markProgressTx`: a check or a rating writes it); `state` is `started` or `done`. No row means untouched. Unique per (user, file) and (user, material). The table still allows `file_id` and `removed`, which only Mark as read and Stop tracking wrote; nothing writes either since 2026-11-03, and no legacy rows exist. |
+| `study_progress (user_id, material_id, workspace_id, state, updated_at)` | One row per practised quiz or set (`markProgressTx`: a check or a rating writes it); `state` is `started` or `done`. No row means untouched. Migration `0139_study_progress_practice_only.sql` dropped what Mark as read and Stop tracking left behind: `file_id` and `removed`. |
 | `review_states (user_id, material_id, item_id, item_hash, stability, difficulty, reps, lapses, fsrs_state, last_review)` | FSRS state per quiz question or card. The key includes `material_id`, so a cloned quiz that keeps its question ids stays separate. |
 | `review_log (user_id, material_id, item_id, rating, reviewed_at)` | Append-only, rating 1–4 for every rating and every rated attempt question. Suggestions read each item's last 8 (`review_log_item_idx`); kept for offline merge and parameter fitting later too. |
 | `review_sessions (id, user_id, workspace_id, topic_id, group_kind, mode, evidence, items, started_at, last_answer_at, finished_at)` | Migration `0071_review_sessions.sql` (chapters renamed topics, group `topic`, in `0136_topics.sql`). One recorded session, written with its first answer: what it drew from (`group_kind` topic, others or workspace; `topic_id` for a topic, set NULL when the topic goes), the suggestion's `mode` (NULL from the workspace list) and `evidence`, every served item in order (`items`, for Continue, each with the `reason` it was served for: `new`, `missed` or `fading`), and `finished_at` once every served item is answered or Done ends it. The id is minted by the browser. |
@@ -50,28 +50,18 @@ clone or charged to storage.
 | `flashcard_cards (card_id, material_id)` | The old `card_stats` without its review columns: the card-to-set lookup card edits, deletes, listing counts and clone use. `card_id` is a global key, so clones mint new card ids. |
 
 `study_progress` and `workspace_study` cascade with their workspace;
-`study_progress` also with its file or material; `review_states` and
+`study_progress` also with its material; `review_states` and
 `review_log` with their material. User foreign keys never cascade because user
 rows are tombstoned; `PurgeUser` deletes the four tables and `review_sessions`
 (answers cascade) explicitly. `review_sessions` cascades with its workspace,
 `review_answers` with its session or material.
 
-What still reads `study_progress` (2026-11-03), so the table stays:
+What still reads `study_progress`, so the table stays:
 
 - `reviewableWorkspaces` (`review_sessions.go`): the workspaces with a row
   are the ones Learning's Review tab and suggestions consider, and their
   latest `updated_at` is the suggestions' interest.
-- `AgentStudyProgress` (`study.go`): the chat agent's `read_study_progress`
-  lists the rows with titles and states.
-- `ResetStudy`, `PurgeUser` and `MoveFiles` (a moved file's rows) delete rows;
-  `markProgressTx` writes them.
-
-Rows Mark as read and Stop tracking left behind (`file_id` set, or `removed`)
-are still read: `AgentStudyProgress` passes them to the chat agent, whose
-`read_study_progress` renders a state's rows under Done, Started or Removed
-with `(file f_1)`, and `reviewableWorkspaces` counts any row. So they stay, and
-the agent tool's description still says "files and materials", until Epo
-decides (2026-11-04).
+- `ResetStudy` and `PurgeUser` delete rows; `markProgressTx` writes them.
 
 Embedded quizzes and sets (`parent_material_id` set) are quick checks that
 record nothing (Epo, 2026-10-06): no `study_progress` row, no review, no
@@ -162,7 +152,6 @@ result body resetting the session's list.
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?, attempt?}` for a card; `attempt` (`{id, startedAt}`, minted by the study page when a run begins) adds the rating to that flashcard attempt for a workspace set, creating it with the first rating (`recordCardTx`, under the account lock, as quiz attempts, and the rating lock); another user's, another set's or a quiz attempt's id is 422 (`ErrFlashcardAttempt`); a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
 | `POST /api/review/check` | `{materialId, itemId, answers, session?}` for a question: grades it on the server (open parts with Jev), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
 | `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}`: grades one question on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)) and adds it to the learner's attempt, whose `AttemptDetail` so far it returns; a missing or unknown `attemptId` (another user's, another quiz's, deleted) starts a new attempt, a question already checked in the attempt is 409. Its side effect is below. |
-| `POST /api/internal/study-progress` | The chat agent's `read_study_progress`, below. |
 
 Side effects, in the same transaction as the write:
 
@@ -180,7 +169,7 @@ Side effects, in the same transaction as the write:
   2026-10-25), and `taken_at` is its latest check. On a workspace quiz that is
   not embedded the check also rates the question if it is still in the
   document, has marks and was not left wholly blank, and sets the quiz `done`
-  (progress rows, read by the Review tab and the agent).
+  (progress rows, read by the Review tab).
   Attempts on standalone quizzes record no review state. An embedded quiz's
   check is graded and returned in an attempt without an id and stores
   nothing: no Past attempts entry, and the try lives only on the page.
@@ -590,7 +579,7 @@ Past reviews or All results without a sort in the URL redirects to it.
 | Review session opened and left unanswered | Nothing is written. |
 | Topic deleted | Its sessions keep their answers with no topic. |
 | File or material trashed | Rows stay; every read skips trashed items; restore brings them back. |
-| File or material purged | `study_progress`, `review_states` and `review_log` cascade. |
+| Material purged | `study_progress`, `review_states` and `review_log` cascade. |
 | Item removed from a document | Its `review_states` row is ignored until the item returns. |
 | Question prompt or card face edited | That item's state resets on its next rating; until then it is out of the practised pool and comes back in a manual review as a new item. |
 | Workspace deleted | All four workspace-scoped tables go by cascade. |
@@ -618,14 +607,8 @@ kept across reloads) open workspaces as a viewer or an editor member.
 
 ## Chat agent
 
-`read_study_progress` (requires `source.read`) calls
-`POST /api/internal/study-progress`, which refuses with 403 when progress is
-off for that user and workspace; the pipeline offers the tool only when the
-turn's `studyProgress` is on. `AgentStudyProgress` returns `enabled`, the
-practised quizzes and sets with titles and states, recent attempts, and the three topics
-with the lowest mean retrievability. That average uses the stored states
-without re-reading documents, so an edited item counts until it is rated
-again. The agent never writes progress.
+The chat agent cannot read study progress: `read_study_progress` went on
+2026-11-04 (Epo, contract v48) until AI analysis of study progress is decided.
 
 ## Signed-out study
 
