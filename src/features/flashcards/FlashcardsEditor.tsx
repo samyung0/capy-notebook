@@ -134,7 +134,14 @@ export function FlashcardsEditor({
         createPortal(<UndoButtons header manager={undo} />, headerActions)}
       {(showTitle || (showUndo && !headerActions)) && (
         // Lined up with the set's View grid, so Study holds still across modes.
-        <div className={cn('flex items-center', action ? 'gap-4' : 'gap-2')}>
+        <div
+          className={cn(
+            'items-center',
+            action ? 'gap-4' : 'gap-2',
+            // With only Undo and Redo in it, phones have nothing to show.
+            showTitle || action ? 'flex' : 'hidden sm:flex'
+          )}
+        >
           {showTitle && (
             <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
           )}

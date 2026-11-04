@@ -56,7 +56,7 @@ const centrePanel = () => find('#viewer [data-slot="card"]');
 const leftPanel = () =>
   find('[data-workspace-left-panel]')?.closest('[data-slot="card"]');
 const questionDialog = () =>
-  find('[role="dialog"] [data-undo-buttons]')?.closest('[role="dialog"]');
+  find('[role="dialog"] [data-save-state]')?.closest('[role="dialog"]');
 
 const box = (element: Element): Box => {
   const r = element.getBoundingClientRect();

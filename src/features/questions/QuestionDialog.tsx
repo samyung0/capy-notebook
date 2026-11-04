@@ -1434,17 +1434,10 @@ function QuestionDialogSession({
         : m.question_ui_remove_block()}
     </Button>
   );
-  // The phone header drops its action 2px for a lone button; live, Undo,
-  // Redo and Back go back up 2px to sit level with the title and the cloud.
+  // The phone header drops its action 2px for a lone button; live, Back goes
+  // back up 2px to sit level with the title and the cloud.
   const phoneAction = live ? (
-    <>
-      {live.undo && (
-        <span className="-translate-y-0.5">
-          <UndoButtons manager={live.undo} />
-        </span>
-      )}
-      {doneButton('-translate-y-0.5')}
-    </>
+    doneButton('-translate-y-0.5')
   ) : (
     <Button
       disabled={pending || (editing?.kind === 'block' && blockInvalid)}
