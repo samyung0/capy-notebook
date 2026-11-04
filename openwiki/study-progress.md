@@ -700,13 +700,14 @@ draft or published: a draft is invisible to members, and publishing posts it.
 
 | Table or column | Holds |
 | --- | --- |
-| `assignments` | Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `assign_all`, `draft`, `approve_ai_marks`, `show_answers`, `shuffle`, `posted_at`, `closed_at` (the owner closed it), `released_at` (its quiz showed as practice, once), `hid_source` |
+| `assignments` | Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `approve_ai_marks`, `show_answers`, `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its quiz became practice, once) |
 | `assignment_assignees` | Picked names and a staff member's own "You" |
 | `assignment_files` | An unmarked assignment's files and materials, in order |
 | `assignment_done` | A member's tick |
 | `editor_assets.assignment_id` | A frozen copy's image rows |
 | `attempts` (kind `assignment`) | A try: `assignment_id`, `deadline_at`, `submitted_at`, `auto_submitted`, `waiting_marks`, `waiting_answers`, with no `material_id`, so no practice read (best score, tried by, averages, review pool) ever sees it, and `GET /api/attempts` and its list leave it out |
 | `answer_events` | Source `assignment`, grader `owner`: closed parts at submit, open parts when marked; a changed mark is a new row, and the latest per attempt and part stands |
+| `workspace_members.sharing_notice_seen_at` | When this member was told what they share (migration `0147_sharing_notice.sql`) |
 
 **Who it went to.** `assign_all` is every viewer member, later joiners included,
 and never an editor. Named lists fix who; a removed member drops out of the
@@ -722,9 +723,32 @@ workspace clone leaves them out. They are charged to whoever published, as a clo
 is, and the Embeds tab doesn't list them; the questions JSON itself isn't charged,
 as an attempt's snapshot isn't. Members are only ever served this copy:
 answer-free while running (`questions.LearnerViews`), with keys only after
-submitting if Show answers is on. Making a marked assignment hides its quiz from
-members, since a hidden quiz isn't practice; Delete (the toast's Undo) shows it
-again if making it did the hiding and no other assignment holds it.
+submitting if Show answers is on.
+
+**One row** (Epo 2026-11-04). A quiz and its assignment are the same content: lists
+hold one row, and making an assignment changes nothing about the quiz. Whether it
+is hidden stays the owner's choice, and a draft does nothing at all. While a
+published assignment is open (not closed by hand, not past a No late submissions
+due date):
+
+| Who | Their row | The quiz itself |
+| --- | --- | --- |
+| Owner, teaching assistant | The assignment icon (`assigned`), and it opens their usual view | Theirs as always |
+| A link or public editor | The assignment icon, no Clone | Theirs to read and edit; they can't clone it |
+| A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `AccountDocumentAccess`), and it is off Practice, reviews and new items |
+| A viewer it did not go to | A normal quiz if it is visible; no row if hidden | As it was, the owner's choice |
+
+`quizAssignedToSQL` and `quizAssignmentOpenSQL` in `store/assignments.go` are the
+two reads; `materialIconName(kind, assigned)` is the icon, a quill in the file-icon
+sprite, on the file tree, Recent, Blocks cards and the open file's header. A direct
+link to the quiz sends its assignee to the assignment (`CenterContent`). Delete
+(the toast's Undo) restores nothing, since nothing changed. Clones: see
+[authorization](authorization-permissions-lifecycles.md#class-clones).
+
+What this leaves open: an unassigned member of a visible quiz keeps normal access
+with its checks. A signed-out browser on a public or link workspace's share page is
+nobody in particular, so an assignee could open it there. An attempt made before
+the assignment stays readable by whoever took it.
 
 **Taking it.** `POST /api/assignments/{id}/start` starts an attempt, or returns
 the one running (one per member: `attempts_assignment_running_idx`). A time limit
@@ -743,26 +767,47 @@ keeps it. Bookmarks stay in this browser.
 Go scoring as a quiz (`questions.Graded`). An answered open part is left
 `pending` ("Not marked") with no model call; a blank one earns 0. At zero the
 page submits; a closed tab is the server's: past `deadline_at` by a 15 s grace, or
-once the owner closes, the next request or `SweepAssignments` (each minute, in
-`cmd/api`) submits what was saved, `auto_submitted`.
+once it closes, by hand or at a No late submissions due date, the next request or
+`SweepAssignments` (each minute, in `cmd/api`) submits what was saved,
+`auto_submitted`.
 
-**Late and missing** (Epo, §11.5). Past the due date a submission is accepted and
-labelled Late until the owner closes the assignment (report ⋮, reversible);
-nothing submitted reads Missing. Attempts default to 1. With more than one, the
-latest submission counts (Claude's pick).
+**The due date's policy** (Epo 2026-11-04, supersedes §11.5's close by the owner
+alone). Set per assignment in the create dialog, under the due date; marked work
+with a due date only (the store refuses anything else, `checkLatePolicy`).
+
+- **No late submissions on.** It closes itself at the due date: nothing starts, an
+  attempt still running is submitted as saved, and nothing reads Late. The menu has
+  no Reopen once it has closed itself (`closedItself`), though staff can still close
+  it early.
+- **Off, the default.** Late work is open until an owner or teaching assistant
+  closes it (report ⋮, with a confirm since it shows the keys, and reversible); a
+  note on Members says so. The late penalty (No penalty, −20%, −50%) comes off the
+  mark of a submission past the due date: `Mark` is `Correct` less the penalty,
+  which stays raw. It reads live, so changing it or the due date applies to work
+  already in, and an open part marked later is penalised with the rest. Late work
+  shows "Late −20%" on Results, Submitted and the report's Members, and Results adds
+  "30 / 40 before the late penalty"; the class Average uses the penalised mark. A
+  timed attempt submitted after the due date counts as late, and answer events,
+  per-part marks and reviews keep the raw marks.
+
+Nothing submitted past the due date reads Missing for staff and Overdue for the
+member, with the penalty on it (Overdue −20%). An unmarked assignment has no policy
+and leaves the open list at its due date. Attempts default to 1. With more than
+one, the latest submission counts (Claude's pick).
 
 **Results** (A5). The mark top right is marks decided over marks decided, so a
 waiting part never reads as lost; Submitted (A4) says the same as "Your mark so
 far". Right, partly, wrong and not marked counts sit above every question, which
 opens to its answer, marking points and worked solution. Show answers off leaves
 marks and comments and removes keys, marking points and solutions on the server
-(`gradedWithoutKeys`). Practise again shows once its quiz is practice.
+(`gradedWithoutKeys`). Practise again shows once its quiz is practice. The top right
+shows the mark after any late penalty, with the unpenalised mark under it.
 
 **The report** (G3, G3m, A3; `GET /api/assignments/{id}/report`, owner and editor
 members only). Chips, then three tabs, each with its link: Questions (`tab` absent:
 percent correct and answer frequencies, common wrong answers, how often each
 marking point was awarded, "Often missed" under half), Members (`tab=members`:
-submitted, Late, Missing, minutes taken, mark, "n to approve"; a row opens that
+submitted, Late with its penalty, Missing, minutes taken, mark, "n to approve"; a row opens that
 member's Results, where any mark and comment can change) and Approve AI marks
 (`tab=approve`, `&question=`, `&member=`; A3 by question, A3b by member). Percent,
 average and the table's Average need five results (§11.8). The links
@@ -774,14 +819,25 @@ Totals move in the same transaction. Until the grading switch no model marks
 anything: rows waiting read Not marked, the AI column reads "–", Approve saves the
 owner's marks and Approve all stays disabled with a reason.
 
-**Closing becomes practice** (Epo 2026-11-03). Once the due date passes or the
-owner closes it, the sweep sets `released_at` and shows its quiz (`hidden=false`)
-unless another open assignment holds the same quiz, whose members could read its
-keys; Practice notes "Assignment, closed 24 Oct" (`assignmentClosedAt`). The owner
-can hide it again from its ⋮, and the sweep leaves that alone. Marked answers join
-reviews at that moment (§11.6): each attempt's fully marked questions are rated on
-the quiz, a later-marked one when it stops waiting, and a late submission when it
-comes.
+**Closing becomes practice** (Epo 2026-11-03, 2026-11-04: closing, not the due date
+alone). Once it has closed, by hand or at a No late submissions due date, the sweep
+(within a minute) sets `released_at` and makes the quiz a normal visible one
+(`hidden=false`) unless another open assignment still holds it; the icon and the
+assignee's refusal end at the close itself. A hidden quiz's row can so go missing
+for that minute. Practice notes "Assignment, closed 24 Oct" (`assignmentClosedAt`).
+The owner can hide it again from its ⋮, and the sweep leaves that alone. Marked
+answers join reviews at that moment (§11.6): each attempt's fully marked questions
+are rated on the quiz, a later-marked one when it stops waiting.
+
+**Sharing notice** (Epo 2026-11-04, board V1). A simple dialog, on a viewer member's
+first open of a class after joining or once for those already in one: "You are
+sharing the following data:", then what this branch really shares with its owner and
+teaching assistants, results on assignments and practice on each quiz as part of a
+class count and average, and one button (`SharingNotice.tsx`, `GET` and `PUT
+/api/workspaces/{id}/sharing-notice`). Dismissing it counts as told, once per member
+row, so leaving and rejoining tells again. Staff and personal workspaces never see
+it. The board's own line about topic labels waits for topic summaries, and its Join
+step and "What members see" link for an invite preview and board G5.
 
 **Dashboard.** `TodoSection` (H1, H2, H2b). A member's To do is what went to them:
 quizzes with Start (Before you start opens over the Dashboard), the rest with a
@@ -791,8 +847,7 @@ Empty, the section doesn't show. Activity gains "assigned" rows, to whoever it
 went to and staff.
 
 **Not built.** The grading switch and everything behind it (AI marks, Mark with
-AI, Approve all, quoted highlights, charging). The join notice (V1). Home's To
-approve list and the bell. Topic labels and mastery on Results. Regrade one
+AI, Approve all, quoted highlights, charging). Home's To approve list and the bell. Topic labels and mastery on Results. Regrade one
 question. Per-member extra time and excused work. New quiz, Make a quiz from a
 file and Generate questions in the picker show Coming soon behind the `newQuiz`
 seam until `claude/study-make-quiz` lands.

@@ -48,8 +48,8 @@ validation instead of being remapped.
 | Member roster (`userId`, `name`, `avatarUrl`, `role`; never email)                          | Yes   | Yes           | No                 | Yes           | No                 | No           |
 | Mention directory (`userId`, `name`, `avatarUrl`)                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Change the workspace's kind, class or personal (below)                                      | Yes   | No            | No                 | No            | No                 | No           |
-| Clone the workspace                                                                         | Yes   | Yes           | Yes                | Yes           | No                 | No           |
-| Clone one of its files or materials (into a workspace the cloner edits, or standalone)      | Yes   | Yes           | Yes                | Yes           | No                 | No           |
+| Clone the workspace (a class: [viewers don't](#class-clones))                               | Yes   | Yes           | Yes                | Yes           | No                 | No           |
+| Clone one of its files or materials (into a workspace the cloner edits, or standalone; a class: [viewers don't](#class-clones)) | Yes   | Yes           | Yes                | Yes           | No                 | No           |
 | Clone a standalone link/public quiz, flashcards, or material                                | Yes   | —             | —                  | —             | Yes                | No           |
 | Take a standalone link/public quiz or study its flashcards through the signed link           | Yes   | —             | —                  | —             | Yes                | Yes, kept in the browser |
 | Record own study progress and review ratings ([study-progress.md](study-progress.md))        | Yes   | Yes           | Yes                | Yes           | Yes                | No           |
@@ -83,8 +83,27 @@ table read the same in both.
 | Whose results | The owner and editor members see everyone's; a member their own | Each person their own |
 | An editor member is called | Teaching assistant, in the UI only (the invite's role switch, member rows' role dropdowns and text, the role-changed notification, the transfer confirmation, clone refusals); API, role value and anything sent to a model say editor | Editor |
 | A viewer member is called | Member, in the UI only (the invite's role switch, member rows' role dropdowns and text, the role-changed notification); API, role value and anything sent to a model say viewer | View in the role controls, Viewer in the notification |
-| Clone | An owner's or editor member's stays class; anyone else's is personal | Stays personal |
+| Clone | Owner, editor members and link or public editors alone, never a viewer member. An owner's or editor member's stays class; a link or public editor's is personal | Any member or editor; stays personal |
 | Change it | The owner, in Workspace settings → General. Nothing is deleted: assignments and reports are hidden until it changes back | The same |
+
+#### Class clones
+
+Students should not clone as viewers (Epo 2026-11-04), enforced on the server first,
+at two levels:
+
+- **Permission.** A viewer member of a class clones neither the workspace nor any
+  file or material in it. `CanCloneFrom(kind, member, effective)` is the one rule:
+  in a class an effective editor grant is needed, so owners, teaching assistants and
+  link or public editors keep cloning, and a viewer member who also holds a link's
+  editor grant counts as an editor. `canClone`, Explore's `canClone`, a file row's
+  `rights.clone` and `assertCloneSourceTx` agree with it. A personal workspace
+  doesn't change, viewers included. A refusal answers the usual non-disclosing 404.
+- **Assignment.** A quiz under a published assignment that hasn't closed is cloned
+  only by the workspace's owner and teaching assistants (`assertAssignedQuizCloneTx`),
+  which covers link and public editors too. Their workspace clone leaves that quiz
+  out and counts it in the toast, and Explore's row and their item menu drop Clone.
+  After closing the normal rules are back. On a quiz's own page Clone still shows
+  for them, and the dialog answers the server's refusal.
 
 The server applies Practice's row: `WorkspacePractice` gives member counts and
 averages to a class's owner and editor members only, and suggestions and own
@@ -348,7 +367,8 @@ Important boundaries:
   view-only link.
 - A link/public viewer reads and chats but cannot clone the workspace, nor
   any file or material in it one by one (Epo 2026-10-11); members of any role
-  and share-role editors can. Workspaces are large and cloning is kept rare;
+  and share-role editors can, except a class's viewer members
+  ([below](#class-clones)). Workspaces are large and cloning is kept rare;
   sources remain downloadable one file at a time. Workspace responses, Explore
   rows included, carry `canClone` computed server-side from the caller's
   effective grant (`CanCloneFrom`); the client offers the workspace action in
@@ -497,7 +517,8 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
 - **Everyone signed in with access** (members and share-role visitors)
   opens Workspace settings: its Study tab holds their own Hide study
   progress. General, Sharing, Indexing and Statistics are for
-  owners and editors; Others shows with Clone, Danger for the owner.
+  owners and editors; Others shows with Clone, so not for a class's viewer
+  member, Danger for the owner.
 - **The dialog's layout** (Epo 2026-11-04): the tabs sit in a left column under
   the file tree's search (`PanelSearch`). On phones the search and tabs fill
   the page, and a tab opens as its own page with an arrow back to them. The
@@ -1038,7 +1059,8 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 - Cloning a readable standalone quiz, flashcards, or material is open to every
   signed-in reader. A file or material inside a workspace, and the workspace
   itself, additionally require membership of any role or an effective editor
-  grant (`assertCloneSourceTx` in `store/share.go`); refusals answer 404.
+  grant (`assertCloneSourceTx` in `store/share.go`), or in a class an effective
+  editor grant alone ([below](#class-clones)); refusals answer 404.
 - One file or material clones through `CloneItemDialog` (file and material row
   menus in the workspace, Files and Blocks lists, quiz and flashcard pages,
   Explore, the public page link): a destination workspace the cloner edits
