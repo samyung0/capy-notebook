@@ -1,0 +1,31 @@
+{
+ "note": "Pages with no gold boxes, read by eye on 2026-11-04. Each entry is one of PP-DocLayout_plus-L's boxes on that page (Mac run, after the same-box and figure-plus-text rules, in reading order) with the question whose figure it holds; null when it holds no question's figure. A crop is whole and tight unless marked.",
+ "pages": {
+  "2021-p2-p05": [{"label": "13"}],
+  "2021-p2-p07": [{"label": "18"}, {"label": "19"}, {"label": "20"}],
+  "2021-p2-p08": [{"label": "22"}],
+  "2021-p2-p09": [{"label": "24"}],
+  "2021-p2-p10": [{"label": "29"}],
+  "2021-p2-p12": [{"label": "34"}],
+  "2021-p2-p13": [{"label": "38"}, {"label": "39"}],
+  "2023-p2-p06": [{"label": "16"}, {"label": "17"}, {"label": "18"}],
+  "2023-p2-p07": [{"label": "20"}, {"label": "21"}],
+  "2023-p2-p08": [{"label": "22"}, {"label": "23", "tight": false, "note": "the box holds options A-D beside the figure"}],
+  "2023-p2-p10": [{"label": "29"}],
+  "2023-p2-p13": [{"label": "38", "tight": false, "note": "the box holds options A-D beside the figure"}],
+  "2025-p2-p05": [{"label": "14"}],
+  "2025-p2-p06": [{"label": "17"}],
+  "2025-p2-p07": [{"label": "18"}, {"label": "19"}],
+  "2025-p2-p08": [{"label": "21"}, {"label": "22"}, {"label": "23"}],
+  "2025-p2-p10": [{"label": "29"}],
+  "2025-p2-p13": [{"label": "38"}],
+  "igcse-biology-0610-2023-sp4-p08": [{"label": "3"}],
+  "igcse-maths-0580-2025-sp2-p02": [{"label": null, "note": "the triangle on the formula list"}],
+  "igcse-maths-0580-2025-sp2-p03": [{"label": "4"}],
+  "igcse-maths-0580-2025-sp2-p15": [{"label": "22"}],
+  "igcse-maths-0580-2025-sp2-p17": [{"label": "26"}],
+  "igcse-physics-0625-2023-sp2-p04": [{"label": "8"}],
+  "igcse-physics-0625-2023-sp2-p07": [{"label": "20"}],
+  "igcse-physics-0625-2023-sp2-p11": [{"label": "30"}]
+ }
+}
