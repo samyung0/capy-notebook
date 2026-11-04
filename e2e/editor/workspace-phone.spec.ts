@@ -57,6 +57,26 @@ test('the title opens Files from the top and ⋮ carries the workspace actions',
   await expect(header.getByRole('button', { name: /Osmosis/ })).toBeVisible();
 });
 
+test('Workspace settings shows the tabs first, reached by the URL with its search', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio?settings=menu&settingsQuery=invite');
+  const list = page.getByRole('dialog', { name: m.workspace_settings() });
+  await expect(
+    list.getByRole('textbox', { name: m.workspace_settings_search() })
+  ).toHaveValue('invite', { timeout: 60_000 });
+  await expect(list.getByRole('tab')).toHaveCount(1);
+
+  await list.getByRole('tab', { name: m.workspace_sharing() }).click();
+  const sharing = page.getByRole('dialog', { name: m.workspace_sharing() });
+  await expect(sharing.getByText(m.members_people())).toBeVisible();
+  await expect(page).toHaveURL(/settings=sharing&settingsQuery=invite/);
+
+  await sharing.getByRole('button', { name: m.action_back() }).click();
+  await expect(list.getByRole('tab')).toHaveCount(1);
+  await expect(page).toHaveURL(/settings=menu&settingsQuery=invite/);
+});
+
 test('chat docks as a button, keeps a draft, and grows into its page on send', async ({
   page,
 }) => {

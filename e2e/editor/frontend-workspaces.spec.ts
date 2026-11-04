@@ -56,6 +56,8 @@ test('workspace creation and editing share icon and description fields', async (
   });
   await submit.click();
   await expect(create).toHaveCount(0);
+  // A phone opens settings on its tab list; General shows at once from here.
+  await page.setViewportSize({ height: 720, width: 1280 });
   const card = page
     .getByRole('link', { name: /Metadata workspace/ })
     .locator('..');

@@ -9,6 +9,8 @@ export interface TabsProps {
   bottomBorder?: boolean;
   className?: string;
   onChange?: (value: string) => void;
+  /** Vertical: a column of rows without the underline; arrows up and down. */
+  orientation?: 'horizontal' | 'vertical';
   tabs: Tab[];
   value: string;
 }
@@ -22,7 +24,10 @@ export function Tabs({
   onChange,
   className,
   bottomBorder = true,
+  orientation = 'horizontal',
 }: TabsProps) {
+  const vertical = orientation === 'vertical';
+  const underline = bottomBorder && !vertical;
   const rowRef = useRef<HTMLDivElement>(null);
   useHorizontalWheelScroll(rowRef);
   const press = usePointerDownPress();
@@ -39,8 +44,8 @@ export function Tabs({
   ) => {
     const last = items.length - 1;
     const next = {
-      ArrowLeft: index === 0 ? last : index - 1,
-      ArrowRight: index === last ? 0 : index + 1,
+      [vertical ? 'ArrowUp' : 'ArrowLeft']: index === 0 ? last : index - 1,
+      [vertical ? 'ArrowDown' : 'ArrowRight']: index === last ? 0 : index + 1,
       End: last,
       Home: 0,
     }[event.key];
@@ -54,11 +59,14 @@ export function Tabs({
 
   return (
     <div
+      aria-orientation={orientation}
       className={cn(
-        'scroll-fade-x flex w-full shrink-0 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+        vertical
+          ? 'flex w-full flex-col gap-0.5'
+          : 'scroll-fade-x flex w-full shrink-0 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
         // --divider itself: --color-divider resolves on the root, so it would
         // miss a frosted panel's translucent divider.
-        bottomBorder && 'inset-shadow-[0_-1px_var(--divider)]',
+        underline && 'inset-shadow-[0_-1px_var(--divider)]',
         className
       )}
       ref={rowRef}
@@ -71,11 +79,20 @@ export function Tabs({
           <button
             aria-selected={active}
             className={cn(
-              'shrink-0 px-3 py-2 font-semibold text-sm transition-colors focus-visible:ring-inset',
-              bottomBorder && 'border-b-2',
+              'shrink-0 font-semibold transition-colors focus-visible:ring-inset',
+              vertical
+                ? 'rounded-button px-3.5 py-3 text-left text-base sm:py-2 sm:text-sm'
+                : 'px-3 py-2 text-sm',
+              underline && 'border-b-2',
               active
-                ? 'border-action font-bold text-fg'
-                : 'border-transparent text-fg-muted hover:text-fg',
+                ? cn(
+                    'font-bold text-fg',
+                    vertical ? 'bg-surface-hover-bg' : 'border-action'
+                  )
+                : cn(
+                    'border-transparent text-fg-muted hover:text-fg',
+                    vertical && 'hover:bg-surface-hover-bg'
+                  ),
               t.tone === 'danger' &&
                 (active
                   ? 'border-solid-error text-solid-error'
@@ -85,13 +102,14 @@ export function Tabs({
             onClick={onClick}
             onKeyDown={(event) => onKeyDown(event, index)}
             onPointerDown={(event) => {
-              // A swipe across an overflowing row scrolls it; that touch
-              // switches tabs on release instead.
+              // A swipe across an overflowing row scrolls it, as a swipe down a
+              // column may scroll its page; that touch switches tabs on release
+              // instead.
               const row = rowRef.current;
               if (
                 event.pointerType === 'touch' &&
                 row &&
-                row.scrollWidth > row.clientWidth
+                (vertical || row.scrollWidth > row.clientWidth)
               )
                 return;
               onPointerDown(event);

@@ -10,5 +10,9 @@ export const SETTINGS_TABS = [
 ] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
-export const isSettingsTab = (value: unknown): value is SettingsTab =>
-  SETTINGS_TABS.some((tab) => tab === value);
+/** `settings=menu` opens Workspace settings with no tab picked: phones show the
+ * tab list, wider screens the first tab. */
+export type SettingsView = SettingsTab | 'menu';
+
+export const isSettingsView = (value: unknown): value is SettingsView =>
+  value === 'menu' || SETTINGS_TABS.some((tab) => tab === value);

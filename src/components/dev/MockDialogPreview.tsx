@@ -88,17 +88,7 @@ export default function MockDialogPreview({
     );
   if (dialog === 'ownership-transfer')
     return (
-      <WorkspaceTransferDialog
-        member={{
-          createdAt: '2026-09-15T00:00:00Z',
-          name: 'Morgan Lee',
-          role: 'editor',
-          userId: 'u_mock_collaborator',
-          workspaceId,
-        }}
-        onClose={onClose}
-        workspaceId={workspaceId}
-      />
+      <WorkspaceTransferDialog onClose={onClose} workspaceId={workspaceId} />
     );
   return (
     <AppErrorBoundary>

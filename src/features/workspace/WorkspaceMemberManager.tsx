@@ -254,8 +254,9 @@ export function WorkspaceMemberManager({
             ) : canManage ? (
               <>
                 <RoleSelect
-                  // Phones ellipsize Teaching assistant to leave room for the name.
-                  className={cn(isClass ? 'w-32 sm:w-44' : 'w-22 sm:w-28')}
+                  // Narrow columns ellipsize Teaching assistant to leave room for
+                  // the name.
+                  className={cn(isClass ? 'w-32 md:w-44' : 'w-22 sm:w-28')}
                   disabled={updatingRole}
                   label={m.members_role_of({ name: member.name })}
                   onChange={(role) =>
@@ -417,13 +418,12 @@ function RoleSelect({
   );
 }
 
+/** Workspace settings → Danger: hands the workspace to a member picked here. */
 export function WorkspaceTransferDialog({
   workspaceId,
-  member,
   onClose,
 }: {
   workspaceId: string;
-  member: WorkspaceMember;
   onClose: () => void;
 }) {
   const { isPending, mutateAsync: transfer } =
@@ -431,23 +431,31 @@ export function WorkspaceTransferDialog({
   const { data: workspace } = useWorkspace(workspaceId, {
     errorBoundary: false,
   });
+  const {
+    data: members,
+    error,
+    refetch,
+  } = useWorkspaceMembers(workspaceId, true, { errorBoundary: false });
+  const candidates = members?.filter((member) => member.role !== 'owner');
+  const [recipient, setRecipient] = useState('');
   return (
     <ConfirmDialog
       body={
         workspace?.kind === 'class'
-          ? m.workspace_transfer_confirm_body_class({ name: member.name })
-          : m.workspace_transfer_confirm_body({ name: member.name })
+          ? m.workspace_transfer_confirm_body_class()
+          : m.workspace_transfer_confirm_body()
       }
       closeOnConfirm={false}
       confirmLabel={m.workspace_transfer_confirm()}
       danger
+      disabled={!recipient}
       isSubmitting={isPending}
       onClose={() => {
         if (!isPending) onClose();
       }}
       onConfirm={async () => {
         try {
-          await transfer(member.userId);
+          await transfer(recipient);
           onClose();
           userToast({
             title: m.workspace_transfer_success(),
@@ -459,6 +467,41 @@ export function WorkspaceTransferDialog({
       }}
       open
       title={m.workspace_transfer_title()}
-    />
+    >
+      {!members && error ? (
+        <InlineErrorState
+          className="py-6"
+          errorId={unexpectedErrorId(error)}
+          message={describeError(error).title}
+          onRetry={() => void refetch()}
+        />
+      ) : candidates?.length === 0 ? (
+        <p className="mt-4 text-fg-muted text-sm">
+          {m.workspace_transfer_no_members()}
+        </p>
+      ) : (
+        <div className="mt-4 flex flex-col gap-1.5">
+          <InputTitle>{m.workspace_transfer_recipient()}</InputTitle>
+          <Select
+            disabled={!candidates || isPending}
+            onValueChange={setRecipient}
+            value={recipient}
+          >
+            <SelectTrigger aria-label={m.workspace_transfer_recipient()}>
+              <SelectValue placeholder={m.workspace_transfer_pick()} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {candidates?.map((member) => (
+                  <SelectItem key={member.userId} value={member.userId}>
+                    {member.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </ConfirmDialog>
   );
 }

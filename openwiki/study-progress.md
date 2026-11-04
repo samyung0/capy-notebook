@@ -355,9 +355,9 @@ session.
 
 Hide study progress (a switch in Workspace settings → Study, on while
 progress is hidden) keeps recording; Practice then shows no Suggested. Everyone signed in with access
-opens Workspace settings: owner and editor members on General, everyone else
-(viewers, share-role visitors) on Study, their only tab beside Others when
-they may clone. The rail avatar's menu carries Workspace settings.
+opens Workspace settings: phones on the tab list, wider screens on the first
+tab, General for owner and editor members and Study for everyone else (viewers,
+share-role visitors), their only tab beside Others when they may clone. The rail avatar's menu carries Workspace settings.
 
 ### Flashcard results
 

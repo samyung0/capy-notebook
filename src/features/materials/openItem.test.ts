@@ -9,6 +9,12 @@ import {
 } from './openItem';
 
 describe('parseWorkspaceOpenSearch', () => {
+  it('keeps Workspace settings with no tab picked and its search', () => {
+    expect(
+      parseWorkspaceOpenSearch({ settings: 'menu', settingsQuery: 'invite' })
+    ).toMatchObject({ settings: 'menu', settingsQuery: 'invite' });
+  });
+
   it('keeps an explicit material mode from the URL', () => {
     expect(
       parseWorkspaceOpenSearch({ material: 'mat_1', mode: 'view' })
