@@ -772,8 +772,17 @@ once it closes, by hand or at a No late submissions due date, the next request o
 `auto_submitted`.
 
 **The due date's policy** (Epo 2026-11-04, supersedes §11.5's close by the owner
-alone). Set per assignment in the create dialog, under the due date; marked work
-with a due date only (the store refuses anything else, `checkLatePolicy`).
+alone). Set per assignment in New assignment's Advanced; marked work with a due
+date only (the store refuses anything else, `checkLatePolicy`), so with no due date
+Advanced holds Draft only.
+
+Advanced (Epo 2026-11-04, `AdvancedSection.tsx`) is an accordion holding the policy
+and Draft only, with the app's `motion-accordion` recipe. It starts closed unless a
+saved assignment holds something other than the defaults there, a draft, No late
+submissions or a penalty (`advancedStartsOpen`, Claude's pick). Once opened it
+scrolls itself into view, since it opens at the dialog's foot, below the fold on a
+phone. Editing a published assignment has no Draft only, and one with no due date
+has no Advanced at all.
 
 - **No late submissions on.** It closes itself at the due date: nothing starts, an
   attempt still running is submitted as saved, and nothing reads Late. The menu has
@@ -829,12 +838,15 @@ The owner can hide it again from its ⋮, and the sweep leaves that alone. Marke
 answers join reviews at that moment (§11.6): each attempt's fully marked questions
 are rated on the quiz, a later-marked one when it stops waiting.
 
-**Sharing notice** (Epo 2026-11-04, board V1). A simple dialog, on a viewer member's
-first open of a class after joining or once for those already in one: "You are
-sharing the following data:", then what this branch really shares with its owner and
-teaching assistants, results on assignments and practice on each quiz as part of a
-class count and average, and one button (`SharingNotice.tsx`, `GET` and `PUT
-/api/workspaces/{id}/sharing-notice`). Dismissing it counts as told, once per member
+**Sharing notice** (Epo 2026-11-04, board V1). A simple compact dialog, 540px wide
+from `sm` and the width of the page less its gutters on a phone, on a viewer member's
+first open of a class after joining or once for those already in one: the workspace's
+name, its owner as public pages show one (avatar left of the name, read with the
+notice only while it is due, supersedes the 2026-11-03 "doesn't name the owner"),
+"You are sharing the following data:", then what this branch really shares with its
+owner and teaching assistants, results on assignments and practice on each quiz as
+part of a class count and average, and one button (`SharingNotice.tsx`, `GET` and
+`PUT /api/workspaces/{id}/sharing-notice`). Dismissing it counts as told, once per member
 row, so leaving and rejoining tells again. Staff and personal workspaces never see
 it. The board's own line about topic labels waits for topic summaries, and its Join
 step and "What members see" link for an invite preview and board G5.
