@@ -1,10 +1,10 @@
 # Learning page plan
 
-Status 2026-11-04: proposal only, nothing built. It waits for Epo's answers in §8.
+Status 2026-11-04: nothing built. Epo picked layout A and gave round 2 changes (below). The rest waits for §8.
 
 Epo's ask: "i want ot see if we cna start planning what the learning page at home do, ideally i dont want to use AI to do a lot of suggestion, rather i want to use the algorithms/scores to decide".
 
-Mocks: Design canvas https://claude.ai/artifact/QCQEdnhKxg1PnPP41Q1y7W. It is private until shared from its Share menu. Pages: 1 layouts A, B, C; 2 too little data; 3 class and personal; 4 after Assignments and tabs. Every state has a 360px board. Sticky notes hold the rules.
+Mocks: Design canvas https://claude.ai/artifact/QCQEdnhKxg1PnPP41Q1y7W. It is private until shared from its Share menu. Pages: 1 the page (A) and names; 2 too little data; 3 class and personal; 4 after Assignments and tabs; B and C kept under Earlier. Every state has a 360px board. Sticky notes hold the rules.
 
 ## 1. What is there today
 
@@ -77,14 +77,20 @@ A workspace counts when all of these hold:
 
 ### What to do next
 
-Fixed order by kind, 6 rows at most. Kinds are never scored against each other, because a single number across them would hide why a row is there.
+At most 4 rows (Epo 2026-11-04). Each row is one link: the whole row hovers, square, with no Continue, Review or Start link at its end. Rows fill in this order:
 
 | Kind | Rule | Row says | Opens |
 |---|---|---|---|
-| **Due** (after Assignments) | Assigned to you in a class where you are a member, not submitted, overdue or due within 7 days, soonest first. At most 3 | "Due Fri 7 Nov · 12 questions", "Late, was due Mon 2 Nov" | The assignment |
-| **Continue** | A session with `finished_at` empty, or the newest attempt on a quiz with fewer questions checked than it holds; last answer within 14 days; newest first. At most 2 | "3 of 10 answered · 2 h ago" | The session or the attempt |
-| **Review** | Today's engine, unchanged: item = (1 − R) × (1 + tricky + learned), items at R ≤ 0.9, summed per topic, × interest. Shows at 3 or more, largest first, at most 5 and 2 per workspace. A topic under Continue is skipped | Today's mode label, `reviewReason` and "N items" | The session |
-| **Start** | The first quiz or set in reading order with no `study_progress` row, one per workspace, where you are the owner or a member and opened or practised it in the last 30 days. Newest visit first. At most 2, and it keeps 1 of the 6 rows if any exists | "Not started · 12 questions" | The quiz or set |
+| **Due** (after Assignments) | Assigned to you in a class where you are a member, not submitted, overdue or due within 7 days, soonest first. At most 2 | "Due Fri 7 Nov · 12 questions", "Late, was due Mon 2 Nov" | The assignment |
+| **Continue** | The newest of: a session with `finished_at` empty, or the newest attempt on a quiz with fewer questions checked than it holds; last answer within 14 days. At most 1 | "Continue · 3 of 10 answered · 2 h ago" | The session or the attempt |
+| **Review** | Today's engine, unchanged: item = (1 − R) × (1 + tricky + learned), items at R ≤ 0.9, summed per topic, × interest. Shows at 3 or more, largest first, at most 2 per workspace. A topic under Continue is skipped | Mode label, one sentence, "N items" | The session |
+| **Start** | The first quiz or set in reading order with no `study_progress` row, where you are the owner or a member and opened or practised it in the last 30 days. Newest visit first. At most 1. It keeps the last row unless a Due row shows | "Not started · 12 questions" | The quiz or set |
+
+So: nothing due gives Continue, Review, Review, Start. Two due gives Due, Due, Continue, Review.
+
+Why assignments, practice and reviews are not weighed on one score: a due date is a fact, Start has no answers to score, and any constant between them would be a guess with no learner data. Only Review rows are weighed, against each other. §8 asks Epo to confirm.
+
+Reasons are one sentence (Epo 2026-11-04): "4 of these were challenging for you.", "Last practised 3 weeks ago.", "You learned these yesterday." `reviewReason` is shared, so Practice's Suggested and the Dashboard change too. The tricky "repeated" count is no longer worded.
 
 - A session older than 14 days leaves the list and Past reviews shows it as Stopped. Today Past reviews lists finished sessions only, so its query changes.
 - Sets stay out of Continue for now: a run's place lives in the browser, so another device could not resume it. Quiz attempts need a small `attempt` search param for the same reason.
@@ -135,7 +141,9 @@ The trade-off: it ignores question difficulty, so once sessions adapt, a weak le
 
 ### Tabs
 
-Overview, Past reviews, All results. Both tables stay as they are.
+Overview, Past reviews, All results. Both tables stay as they are; their workspace cells already show the icon (`WorkspaceCell`).
+
+Links on this page are outline buttons, not underlined (Epo 2026-11-04): Study preferences and Go to Workspaces.
 
 ### Too little data
 
@@ -143,7 +151,7 @@ Boards on canvas page 2.
 
 | State | Detected by | Shows |
 |---|---|---|
-| Nothing to study | No workspace in scope holds a quiz or set | The ink book, "No quizzes or flashcards yet", Go to Workspaces |
+| Nothing to study | No workspace in scope holds a quiz or set | The ink book, "No quizzes or flashcards yet", an outline Go to Workspaces |
 | Just joined | Quizzes exist, no progress rows | Start rows. Workspaces rows read "Not started · 0 of 120 items tried" |
 | A little practice | Fewer than 3 questions on a topic, no group at 3 | Continue and Start. Attempted with its count |
 | Caught up | Nothing to continue or start, no group at 3 | No Next section, only Workspaces |
@@ -203,23 +211,36 @@ Each needs Epo's yes and a line in `human/study-progress.md`:
 
 - 2026-10-19: Past reviews is the Review tab's last section. Becomes its own tab.
 - 2026-10-10, 2026-10-25: Learning's workspace rows start a whole-workspace review and show no item count. Become rows that open Summary and show items tried.
-- 2026-10-10: suggestions read Start. Become Review, because Start now means a new quiz.
+- 2026-10-10: suggestions end with a Start link. Done: rows are links with no action word (Epo 2026-11-04).
+- 2026-10-10: top 5 suggestions on Learning. Done: at most 4 rows (Epo 2026-11-04).
+- 2026-10-19: the Fading reason's wording. Done: one sentence (Epo 2026-11-04).
+- AGENTS.md: links use underlines and borders are for same-page actions. Epo asked for outline buttons here; §8 asks how far that goes.
 - 2026-10-10: "not tested yet" is Continue's job. Continue went with read progress, so Start rows take it.
 - 2026-11-04: Learning stays hidden until AI analysis of study progress is decided. This plan brings it back with none.
 - Plan §10: "perhaps to show the AI suggestions across workspaces". Replaced by rules.
 
 ## 8. Questions for Epo
 
-1. **Layout (canvas page 1).** A one list, B grouped by workspace, or C with Topics to practise beside it? I recommend A: it is the only one that answers "what first" across workspaces.
-2. **Bring Learning back with no AI?** It was hidden until AI analysis is decided. If yes, `read_study_progress` stays gone too. I recommend yes.
-3. **Topic labels now or later?** Count them now as in §4, or wait for the mastery model after its simulator? I recommend now, replacing the count when the model lands.
-4. **Summary.** Workspaces rows open Summary, which is not built. Build Summary with this page, or open Practice until it exists? I recommend building them together, since both need the labels.
-5. **Class owner with nothing to study (canvas page 3).** O1 empty page, or O2 You teach rows that open Study → Members? I recommend O2, so a teacher does not land on a dead end.
-6. **Start rows.** Suggest the first not-started quiz or set per workspace? I recommend yes: without it a new member's page is empty.
-7. **Review threshold.** Keep 3? A 5-question quiz answered right waits 17 days, while a 20-question quiz answered wrong comes back in about 10 hours. I recommend keeping it, with Start and Practice covering the wait.
-8. **Whole-workspace review.** Today's Learning rows start one. Drop it, or keep it in a row ⋮? I recommend dropping it: Suggested and topic sessions cover it.
-9. **Flashcards in Review rows.** Keep cards in Learning's suggestions while Practice stays on questions? I recommend keeping them: this would be the only place sets get suggested.
-10. **Question bank.** Add one Continue row for the last bank topic, or keep the bank off this page? I recommend keeping it off: it has its own landing.
-11. **This week line.** Keep or drop? You did not ask for it. I would keep it, as the one line that shows the work adding up.
-12. **Topic with nothing new to serve.** Link to Make my own practice (AI, credits, on click) from this page? I recommend no: leave it on Practice.
-13. **Words.** Are "Overview", "What to do next" and "items tried" right?
+Answered 2026-11-04: layout A; rows as links; 4 rows; one-sentence reasons; outline buttons on this page.
+
+New:
+
+1. **The name for Fading (canvas page 1, board N1).** Refresher, Ready for review or Getting rusty? I recommend Refresher. No app I could check says Fading. Memrise has Ready for Review, Busuu has Weak, Medium and Strong, Quizlet has Still Learning, Duolingo has Mistakes and Words. Ready for review reads as if Tricky and Just learned were not ready.
+2. **Rename everywhere?** The word is also on Practice's Suggested, the Dashboard, the session chip and Settings → Study's focus. I recommend all of them, UI only: the API value stays `fading`.
+3. **Fill order for the 4 rows.** Fixed order with one score only among Review rows (§4), or one score across assignments, practice and reviews? I recommend fixed order.
+4. **Outline buttons.** Only on Learning, or also change the AGENTS.md rule that links are underlined? I applied it to Learning only.
+
+Still open:
+
+5. **Bring Learning back with no AI?** It was hidden until AI analysis is decided. If yes, `read_study_progress` stays gone too. I recommend yes.
+6. **Topic labels now or later?** Count them now as in §4, or wait for the mastery model after its simulator? I recommend now, replacing the count when the model lands.
+7. **Summary.** Workspaces rows open Summary, which is not built. Build Summary with this page, or open Practice until it exists? I recommend building them together, since both need the labels.
+8. **Class owner with nothing to study (canvas page 3).** O1 empty page, or O2 You teach rows that open Study → Members? I recommend O2, so a teacher does not land on a dead end.
+9. **Start rows.** Suggest the first not-started quiz or set? I recommend yes: without it a new member's page is empty.
+10. **Review threshold.** Keep 3? A 5-question quiz answered right waits 17 days, while a 20-question quiz answered wrong comes back in about 10 hours. I recommend keeping it, with Start and Practice covering the wait.
+11. **Whole-workspace review.** Today's Learning rows start one. Drop it, or keep it in a row ⋮? I recommend dropping it: Suggested and topic sessions cover it.
+12. **Flashcards in Review rows.** Keep cards in Learning's suggestions while Practice stays on questions? I recommend keeping them: this would be the only place sets get suggested.
+13. **Question bank.** Add one Continue row for the last bank topic, or keep the bank off this page? I recommend keeping it off: it has its own landing.
+14. **This week line.** Keep or drop? You did not ask for it. I would keep it, as the one line that shows the work adding up.
+15. **Topic with nothing new to serve.** Link to Make my own practice (AI, credits, on click) from this page? I recommend no: leave it on Practice.
+16. **Words.** Are "Overview", "What to do next" and "items tried" right?
