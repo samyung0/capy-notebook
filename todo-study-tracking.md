@@ -78,7 +78,7 @@ Chapters are already one flat level, so the tree, drag and drop, and upload-into
 - The owner sees tests and assignments in full.
 - From practice, the owner sees only a per-topic summary (label, questions tried, last active), never the answers. Epo's "strengths and weaknesses" mostly come from practice, so A alone would hide them.
 - Members are told once, when they join (and existing members once). "What the owner sees" previews their own page (G5).
-  - **The join notice (Epo, 2026-11-03; V1):** "You are sharing the following data:" with the list of what is shared. It doesn't name the owner and has no "doesn't see" list.
+  - **The join notice (Epo, 2026-11-03; V1):** "You are sharing the following data:" with the list of what is shared. It names the workspace's owner (avatar and name, Epo 2026-11-04) and has no "doesn't see" list.
 - Peers see their own results only. Aggregates such as a question's percent correct need at least 5 members with results. Leaderboards are not built.
 - Editors see what members see, until a teacher or co-owner role exists.
 - **Hide study progress** keeps hiding the member's own view. It cannot hide data from the owner.
