@@ -539,6 +539,7 @@ func main() {
 	}()
 
 	go runTrashSweep(ctx, st)
+	go runAssignmentSweep(ctx, st)
 	go runBlobReaper(ctx, st, blobStore, artifactTTL{
 		CaptionDays: envInt("CAPY_CAPTION_CACHE_TTL_DAYS", 90),
 	})

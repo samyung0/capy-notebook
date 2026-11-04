@@ -221,7 +221,7 @@ func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
 	msgID := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)
 	body := map[string]any{
 		"workspaceId": fx.ws, "userId": fx.editor, "assistantMessageId": msgID, "toolCallId": "call_create",
-		"format": "xlsx", "title": "Term 1 / grades", "chapterId": fx.ch,
+		"format": "xlsx", "title": "Term 1 / grades", "topicId": fx.ch,
 		"commands": []map[string]any{{"type": "set_range", "sheet": "Sheet1", "range": "A1", "expected": [][]string{{""}}, "values": [][]string{{"Name"}}}},
 	}
 	rec := doInternal(t, fx.h, http.MethodPost, "/api/internal/documents/office/create", pipeSecret, body)
@@ -239,7 +239,7 @@ func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
 		t.Fatalf("authority got %v", sent)
 	}
 	file, err := fx.st.GetFile(context.Background(), receipt.Effect.Resource.ID)
-	if err != nil || file.SizeBytes != int64(len(content)) || file.ChapterID == nil || *file.ChapterID != fx.ch {
+	if err != nil || file.SizeBytes != int64(len(content)) || file.TopicID == nil || *file.TopicID != fx.ch {
 		t.Fatalf("file = %+v err = %v", file, err)
 	}
 	if receipt.Effect.Undo == nil || receipt.Effect.Undo.OperationID != receipt.OperationID {
@@ -269,7 +269,7 @@ func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
 	}
 }
 
-// A viewer, an editor of another workspace, and a chapter not in the
+// A viewer, an editor of another workspace, and a topic not in the
 // workspace are refused before the collaboration server builds anything, and
 // nothing is stored.
 func TestOfficeCreateRefusalsBuildAndStoreNothing(t *testing.T) {
@@ -292,17 +292,17 @@ func TestOfficeCreateRefusalsBuildAndStoreNothing(t *testing.T) {
 		_, _ = fx.st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, stranger)
 	})
 	for _, tc := range []struct {
-		name, user, ws, chapter string
-		status                  int
+		name, user, ws, topic string
+		status                int
 	}{
 		{"viewer", fx.viewer, fx.ws, "", http.StatusForbidden},
 		{"editor of another workspace", fx.editor, elsewhere.ID, "", http.StatusForbidden},
-		{"chapter not in the workspace", fx.editor, fx.ws, "ch_elsewhere", http.StatusBadRequest},
+		{"topic not in the workspace", fx.editor, fx.ws, "ch_elsewhere", http.StatusBadRequest},
 	} {
 		msgID := seedAssistantMessage(t, fx.st, tc.user, tc.ws)
 		rec := doInternal(t, fx.h, http.MethodPost, "/api/internal/documents/office/create", pipeSecret, map[string]any{
 			"workspaceId": tc.ws, "userId": tc.user, "assistantMessageId": msgID, "toolCallId": "call_create",
-			"format": "xlsx", "title": "Grades", "chapterId": tc.chapter, "commands": []map[string]any{},
+			"format": "xlsx", "title": "Grades", "topicId": tc.topic, "commands": []map[string]any{},
 		})
 		if rec.Code != tc.status {
 			t.Fatalf("%s: %d %s", tc.name, rec.Code, rec.Body.String())

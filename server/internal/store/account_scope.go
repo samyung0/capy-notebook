@@ -123,7 +123,7 @@ func (s *Store) AccountDocumentAccess(ctx context.Context, userID string, items 
 				CASE WHEN req.kind='source_file' THEN f.user_id ELSE COALESCE(p.owner_user_id, m.owner_user_id) END AS owner,
 				COALESCE(f.name, m.title, '') AS title, COALESCE(f.kind, '') AS file_kind,
 				COALESCE(m.kind, '') AS material_kind,
-				COALESCE(f.hidden, p.hidden, m.hidden, false) AS hidden
+				COALESCE(f.hidden, p.hidden, m.hidden, false) OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$1")+` IS NOT NULL) AS hidden
 			FROM req
 			LEFT JOIN files f ON req.kind='source_file' AND f.id=req.id AND f.trashed_at IS NULL
 			LEFT JOIN materials m ON req.kind='material' AND m.id=req.id AND m.trashed_at IS NULL
@@ -200,7 +200,7 @@ func (s *Store) accountChatEditedElsewhere(ctx context.Context, userID string, f
 }
 
 // AccountDocument is one row of an account chat's file listing: a file or
-// top-level material of the scope, with its workspace and chapter ("" and nil
+// top-level material of the scope, with its workspace and topic ("" and nil
 // for No workspace), its descriptor (empty when it has none) and whether the
 // caller may edit it there.
 type AccountDocument struct {
@@ -208,8 +208,8 @@ type AccountDocument struct {
 	ID, Title     string
 	FileKind      string // a file's kind
 	MaterialKind  string // a material's kind
-	ChapterID     *string
-	ChapterName   string
+	TopicID       *string
+	TopicName     string
 	WorkspaceID   string
 	WorkspaceName string
 	CanEdit       bool
@@ -243,25 +243,25 @@ func (s *Store) AccountDocuments(ctx context.Context, userID string, place Accou
 	// An item with no workspace is the caller's own, so they edit it.
 	rows, err := s.pool.Query(ctx, `
 		WITH scope AS (`+accountScopeSQL("$1")+`)
-		SELECT d.kind, d.id, d.title, d.file_kind, d.material_kind, d.chapter_id, COALESCE(ch.name, ''),
+		SELECT d.kind, d.id, d.title, d.file_kind, d.material_kind, d.topic_id, COALESCE(ch.name, ''),
 			COALESCE(sc.id, '') AS ws, COALESCE(sc.name, '') AS ws_name, COALESCE(sc.can_edit, true),
 			COALESCE(rs.descriptor, '')
 		FROM (
 			SELECT 0 AS part, 'source_file' AS kind, f.id, f.name AS title, f.kind AS file_kind,
-				'' AS material_kind, f.chapter_id, f.workspace_id AS ws_id, f.position, f.added_at AS at,
+				'' AS material_kind, f.topic_id, f.workspace_id AS ws_id, f.position, f.added_at AS at,
 				fc.content_id, f.hidden
 			FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id=f.id
 			WHERE f.trashed_at IS NULL
 				AND (f.workspace_id IN (SELECT id FROM scope) OR (f.workspace_id IS NULL AND f.user_id=$1))
 			UNION ALL
-			SELECT 1, 'material', m.id, m.title, '', m.kind, m.chapter_id, m.workspace_id, m.position,
-				m.created_at, mc.content_id, m.hidden
+			SELECT 1, 'material', m.id, m.title, '', m.kind, m.topic_id, m.workspace_id, m.position,
+				m.created_at, mc.content_id, m.hidden OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$1")+` IS NOT NULL)
 			FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id=m.id
 			WHERE m.trashed_at IS NULL AND m.parent_material_id IS NULL
 				AND (m.workspace_id IN (SELECT id FROM scope) OR (m.workspace_id IS NULL AND m.owner_user_id=$1))
 		) d
 		LEFT JOIN scope sc ON sc.id=d.ws_id
-		LEFT JOIN chapters ch ON ch.id=d.chapter_id
+		LEFT JOIN topics ch ON ch.id=d.topic_id
 		LEFT JOIN rag_content_summaries rs ON rs.content_id=d.content_id
 		WHERE `+liveCallerSQL("$1")+` AND `+where+`
 			AND (NOT d.hidden OR COALESCE(sc.can_edit, true))
@@ -276,7 +276,7 @@ func (s *Store) AccountDocuments(ctx context.Context, userID string, place Accou
 			d    AccountDocument
 			kind string
 		)
-		if err := rows.Scan(&kind, &d.ID, &d.Title, &d.FileKind, &d.MaterialKind, &d.ChapterID, &d.ChapterName,
+		if err := rows.Scan(&kind, &d.ID, &d.Title, &d.FileKind, &d.MaterialKind, &d.TopicID, &d.TopicName,
 			&d.WorkspaceID, &d.WorkspaceName, &d.CanEdit, &d.Descriptor); err != nil {
 			return nil, err
 		}

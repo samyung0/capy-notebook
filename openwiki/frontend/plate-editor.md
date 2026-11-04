@@ -1,7 +1,7 @@
 ---
 type: Frontend
 title: "Frontend: Plate.js and Yjs Editor"
-description: "Plate v53, the Rust collaboration server as Yjs authority, comment anchors, projections, and local AI previews."
+description: "Plate v53, the Rust collaboration server as Yjs authority, comment anchors, projections, opening an item, and device copies."
 tags: [frontend, plate, slate, yjs, collaboration, ai]
 ---
 
@@ -13,9 +13,12 @@ durable authority for material content after a room is initialized.
 - Yjs owns live material content.
 - Go/PostgreSQL own metadata, permissions, comments, and content projections.
 - `materials.content` is an eventually consistent Plate JSON read projection.
-- Note View and signed-out or public pages render that projection without
-  joining Yjs.
-- Editors edit and comment in Edit mode; View is a static preview without comments.
+- A note opens one way (see [opening a note](#opening-a-note)): it paints static
+  from its device copy or that projection, then a signed-in reader follows its
+  room on a read channel and an editor's Plate takes over. Signed-out and public
+  pages render the projection and join nothing.
+- Everyone gets the highest mode they may have, with no Edit/View switch
+  (materials; Office and text files keep theirs until the ribbon lands).
 - Flashcard sets and quizzes are live everywhere (live-items, Epo 2026-10-10):
   their editors, View, study and attempt pages and note embeds join the item's
   own rooms; signed-in viewers join read-only, with no presence and no comment
@@ -52,12 +55,16 @@ PostgreSQL advisory/row lock in the collaboration server.
 
 ## Material surfaces and permissions
 
-`materialModePolicy` exposes two modes:
-
-- `view`: static `MaterialPreview`; no token, WebSocket, awareness, or editor;
-- `edit`: live editable Plate with a `write` room token.
-
-Files and materials remember their last View/Edit mode separately in localStorage, keyed by item kind and ID. Explicit URL modes take precedence; otherwise the saved mode is used, with View as the default for an uncached item. Viewers only get `view`. The header toggles View/Edit showing the mode it switches to (the Edit icon and label while viewing, View while editing; pressed still means editing) with identical styling in both states, for materials and uploaded files at every viewport size. Workspace and standalone document URLs accept `mode=view|edit`; a successful toggle replaces that query parameter, so reload and shared links retain the mode. File transitions retain their save/export gates, and a failed transition keeps the editor and URL in their previous mode.
+A material has no mode to choose (Epo 2026-11-04): `canEditContent` decides. An
+editor gets the live Plate with a `write` room token, a viewer the static renderer
+following the room on a read token. `view` remains only as what an editor drops
+to when the room turns read-only (frozen, full, an unsupported block), under its
+strip. `?mode=` on a material's link is dropped and the saved per-item mode is
+gone, so old links open as any link does; the question bank keeps its own Edit
+button. Office and text files keep theirs: they remember their last View/Edit in
+localStorage, keyed by item kind and ID, take `mode=view|edit` from the URL, and
+the header toggle shows the mode it switches to; a successful toggle replaces
+that query parameter and a failed transition keeps the editor and URL as they were.
 
 The permission boundary is layered:
 
@@ -75,7 +82,7 @@ The permission boundary is layered:
    (its creator, uploader pays) is at its storage limit) read-only: a step 2 or update holding
    anything new closes the channel, so a modified browser cannot send Yjs
    document updates.
-5. View mounts only the static preview, without editor plugins or comment controls.
+5. A viewer mounts only the static preview, without editor plugins or comment controls.
 6. Comment REST endpoints independently enforce the editor ACL.
 
 `MaterialEffectiveRole` is the union of the caller's membership and the
@@ -127,9 +134,8 @@ contexts live in `fileModeContext.ts`, separate from the hot-reloaded control
 component, so the header and lazy file viewers retain the same context identity.
 
 Materials opened from Create use the same `CenterContent` frame as workspace
-materials, using the same per-item mode preference. The `/materials/:id` route retains the app
-sidebar, uses only the navigation back icon before the title, and hides
-workspace actions. A newly created standalone note requests `?mode=edit`.
+materials. The `/materials/:id` route retains the app sidebar, uses only the
+navigation back icon before the title, and hides workspace actions.
 
 The interactive path is:
 
@@ -199,7 +205,6 @@ exit lifetime. Their controls become inert on close. The workspace overrides
 padding to 6px and buttons/icons to 40px/20px through className; other floating
 actions use 32px/16px.
 
-`NoteEditor` requests the room token only for Edit mode.
 `NoteEditorCore` owns one garbage-collected `Y.Doc`, sends its caret in the
 compact [presence](#presence-payloads) shape, and calls Yjs `init` with the
 canonical room and `value: null`.
@@ -245,6 +250,28 @@ data. After sync, Slate-Yjs replaces editor children from the shared root.
 Yjs-aware history is installed by `YjsPlugin`; ordinary Slate history must not
 be layered on top. Normalizers must be deterministic and idempotent because
 they run for remote operations too.
+
+**Opening writes nothing** (Epo 2026-11-04, `roomBinding.ts`). Binding
+force-normalizes the whole tree, and each remote change normalizes the blocks
+it touched, as local operations slate-yjs sends to the room. Measured in the
+browser: a note ending in a table got a trailing paragraph from whoever opened
+it (two people opening together left two), and an ordered list without its
+`listStart`s got them. So until the person's first real edit in this mount
+(`edited`: a local operation outside a normalization that is not a selection)
+only Slate's own normalizer runs, and only with operations Yjs holds nothing of
+(an empty leaf beside an inline, two leaves of equal marks merging); any other
+is dropped. The plugins' normalizers wait for that edit and then see only what
+it dirtied. The trailing paragraph comes with the first edit, written straight
+into the document under its own origin so it is no part of that edit's Undo
+(as an ordinary edit, the Undo would bring it back as a new edit and empty
+Redo). Later, `trailingBlockPlugin` adds one only behind a real edit in the same
+batch, never for a co-editor's or an agent's change. A click below the last
+block, where a note not ending in a paragraph has nothing to click on, adds the
+paragraph and puts the caret in it (`openTrailingParagraph`), which counts as
+the first edit; from the keyboard Mod+Enter leaves the last block as before. The
+checkpoint debounce starts only for a real edit (this person's or an Undo's,
+`takeLocalEdit`): a co-editor's change no longer reads Syncing or asks for a
+receipt here.
 The toolbar subscribes directly to Yjs UndoManager stack events, including
 undo/redo and clear, so availability updates without editor focus or selection.
 Its actions use the same Yjs history as note editing.
@@ -1253,9 +1280,14 @@ not mean PostgreSQL durably stored the state.
 
 The editor reports:
 
-- `Connecting…`: the first handshake (the note body waits for it);
-- `Reconnecting…`: a later drop while the browser is online; the editor stays
-  mounted and editable;
+- a spinner with no words (`opening`): the first handshake, behind the painted
+  note. Only Office and text files still read `Connecting…` and `Reconnecting…`,
+  until the ribbon lands;
+- nothing new for a later drop while the browser is online (Epo 2026-11-04): the
+  last state stays for 30 s and the editor stays mounted and editable, and
+  unsent work reads `Syncing…`;
+- `Syncing your draft…` with the spinner (`syncing-draft`): a stored draft's send
+  while it opens, view-only, with no strip;
 - `Syncing…`: edits waiting for the checkpoint debounce or durable acknowledgment;
 - `Saved`: the server confirmed that a state containing this client's work was
   committed, or the room synced with nothing of this client's to store (Epo
@@ -1270,7 +1302,7 @@ The editor reports:
 
 The header shows these as Hugeicons cloud icons beside the title, on its
 top row at every width, phones included (Epo 2026-10-20): CloudUpload
-for Connecting, Reconnecting and Syncing, the plain Cloud for Saved (and the
+for Syncing (and a source's Connecting and Reconnecting), the plain Cloud for Saved (and the
 PDF's Synced), CloudOff for Offline, and a red CloudAlert for Not saved and
 Collaboration unavailable; a live item's footer status uses the same icons.
 Office and text sources report the same states into the same slot
@@ -1280,7 +1312,7 @@ Every file's header (notes, quizzes, flashcards, diagrams, text, Office and
 other files) also shows the label beside the icon from md up (Epo
 2026-10-22; `EditorSaveStatus` `labelFromMd`: one span, screen-reader text
 below md and visible from md).
-Pending work preserves Connecting, Offline and error indicators. An older
+Pending work preserves Offline and error indicators. An older
 checkpoint acknowledgment cannot report Saved while newer edits are debouncing.
 
 Saved means stored in the database (Epo 2026-10-19): the debounced store's
@@ -1320,10 +1352,11 @@ sync it turns the status red). A join, first or after a reload, has the same
 30 s from its start, which is its collaboration-token request (or the new
 mount, for a new mount of the same room; Epo 2026-10-23): `NoteEditor` keeps
 that start and the editor's `roomReconnector` counts from it (`started(at)`).
-A first open whose token has not answered by then shows the collaboration
-unavailable panel with Retry instead of loading for ever; an editor not
+A first open whose token has not answered by then shows a strip with Retry over
+the painted note instead of loading for ever (Epo 2026-11-04); an editor not
 synced by then, a JOIN never answered on the open socket included, turns the
-status red, and after a reload that failing editor replaces the paused one.
+status red under the same strip, and after a reload that failing editor replaces
+the paused one.
 The editor binds to the room's document (`YjsEditor.connect`) only at the
 room's first sync (`roomBinding.ts`, CAPY-WEB-7). Plate's init binds after
 waiting at most 5 s; bound to a document the room had not filled, the editor
@@ -1344,8 +1377,8 @@ answered, so a reload whose token hangs keeps the old editor on screen,
 unpaused and editable. A discard evicts the old room, so its own reconnect
 (whose token request hangs too) goes Offline at about 30 s like any lost
 room, its edits kept on the device, and the swap runs once a token answers;
-no e2e waits for the Offline part. A failed first token request shows the panel for its status (not found,
-no access, or unavailable with Retry). A member removed from the workspace gets
+no e2e waits for the Offline part. A failed first token request shows the panel for its status (not found or no
+access), or the strip with Retry. A member removed from the workspace gets
 the server's hidden `404`, so their editor shows the file-missing panel, not
 no access: by decision (Epo, 2026-10-14) the app never tells a user whether
 something they can't reach is blocked or gone.
@@ -1413,14 +1446,11 @@ A step 1 that begins to wait tells its channel once (a stateless
 `{"type": "open-slowed"}`, `OPEN_SLOWED_TYPE`, with no numbers), also when it
 joins the wait of its JOIN's awareness (rate-limit review r7 S-1). The editor
 keeps its normal loading state, and after 5 s it adds the line "Opening is
-slowed because many large files were opened recently." (`SlowedOpenLine`,
-`useSlowedLine`): under a note's or a live Mermaid diagram's Connecting
-(`FileLoading`), under a quiz's, a set's or an embed's skeleton, and for an Office or text
-source in the header's sync indicator tooltip on the top row
-(`useReportEditorStatus`, Epo 2026-10-20). A note already on screen
-whose reconnect is slowed keeps its editor and holds its header's sync
-indicator tooltip open with the line (`NoteEditorStatus.slowed`,
-`EditorSaveStatus`; Epo 2026-10-20). The room is reachable, so the
+slowed because many large files were opened recently." in the header's sync
+indicator tooltip, held open (`NoteEditorStatus.slowed`, `EditorSaveStatus`,
+`useSlowedLine`; Epo 2026-10-20, 2026-11-04): a note, a quiz, a set or a diagram
+opening or reconnecting, and an Office or text source. Under an embed's skeleton
+it stays a line of its own (`SlowedOpenLine`). The room is reachable, so the
 reconnector never counts the wait as stuck (`roomReconnector().slowed`), and
 an editor that went offline before (a socket drop) leaves offline mode when
 the notice arrives instead of when the answer does: notes, items and sources
@@ -1480,7 +1510,8 @@ popovers, dropdown and context menus, selects, floating toolbars and popups
 (it stays open and takes input again once sent; its overlay and Escape still
 close it, dropping only the dialog's own form state, never document edits); the Ctrl+K palette neither
 opens nor runs a command (its listener is on `window`); the quiz and flashcard Undo and Redo buttons in the page header are
-disabled. A DOCX or PPTX editor pauses as for any other pause
+disabled (no Undo or Redo button shows on phones, in any editor or dialog but
+Office's; Epo 2026-11-04, and their keyboard shortcuts stay). A DOCX or PPTX editor pauses as for any other pause
 (`set-capabilities` with `canEdit: false`: read-only, selectable), and the
 XLSX editor takes the runtime's `sending` message instead: the runtime keeps
 it in state and passes it to `XlsxEditorHost` and the fork's `XlsxEditor`,
@@ -2372,6 +2403,135 @@ save-delay warning and each offline episode (after the reconnect) are
 reported as editing incidents; the service records its discards, refusals and
 lineage moves itself (see
 [observability](../observability-metering.md#editing-incidents)).
+
+### Device copies
+
+Epo decided on 2026-11-04 (C1, ahead of the offline round's order) that a device
+keeps the Yjs state of what it opened, so an item paints at once and only the
+difference downloads. "Copy" alone means Q229's rows below; this one is a device
+copy (`src/features/collaboration/deviceCopy.ts`, stored by
+`src/lib/sourceCache.ts`).
+
+- **Who** (C2): members, viewers included (`keepsCopyOf`: `isOwner` or a `role`,
+  which a link visitor's read does not carry). Not someone who came through a
+  link. Under MSW only `mock-scenario-` fixtures keep one, since only their rooms
+  survive a reload, and the load-test notes, whose rooms reseed the same state; a
+  copy of a reset room would merge back into it.
+- **Which** (C8): a note's room; a set's and a diagram's room; a quiz's content
+  and keys rooms for whoever may read keys, since they already have them. Every
+  item also keeps its last material read (`document: 'read'`, `useMaterialCopy`),
+  the answer-free one, which paints it before its read answers. That read is a
+  viewer's whole copy of a quiz, a set or a diagram: a quiz's ordering and matching
+  lists reach a reader outside Yjs (`quiz-items`), and a diagram's reader joins no
+  room. Someone gone from editing to viewing loses the keys copy when the quiz
+  next opens for them (`QuizPreview`).
+- **Limits** (C6): the source cache's. One budget of 200 MiB with the source
+  bytes, least recently opened out first, a store that would leave under 100 MB
+  free is skipped, and a draft write the quota refuses deletes entries here. No
+  count, per-note cap or age limit.
+- **Owner** (C1, C7): every row names its account and a read for anyone else
+  deletes it. Signing out wipes the store with the source bytes
+  (`claimSourceCache`, `claimAccountData`). No separate account-switch rule.
+- **Lost access** (C3): a brief stale glimpse is accepted and there is no remote
+  wipe. A person refused on connecting loses the copy (`dropDeviceCopies`), and
+  at each page load `POST /api/materials/readable` answers which kept ids the
+  account can still read, in one query, and the rest go (`sweepDeviceCopies`). A
+  material read answered 403 or 404 removes them at once, the last read included.
+
+- **What a copy is.** The room's state as one row per document, written whole:
+  never per key, and only when nothing of this device's is unsent
+  (`keepDeviceCopy`), so a discarded or refused edit cannot come back. A note
+  writes on hide, on `pagehide` and as its mount goes, one encode (30-80 ms on a
+  near-limit note), only if the document changed since it was seeded or last
+  written (a document that did not start from a copy writes once even if nothing
+  changed, as its room may have filled it first). Its row travels with its bytes in one response, so a write as the page
+  goes lands whole: Chromium drops a `Cache.put` after an `await` in `pagehide`
+  and keeps one issued in the event's own task (measured on reload, navigation
+  and close), which is why the open store and its quota are kept ready
+  (`prepareDeviceCopies`). The index learns of such a copy at the next store.
+- **Joining from one.** The document is seeded before the room joins and takes
+  the token's fresh client id as any new one does (the seed is no write of this
+  session). The JOIN names the copy's stored version (`storedFrom`), and the room
+  answers what lies past its state. A token naming another room drops the copy
+  and starts empty (the lineage moved). A refusal (unassigned or a store's
+  rejection, not-found, forbidden, a read channel closed for what it holds, or a
+  late answer to a clean copy) drops the copy and remounts or rejoins with none,
+  so it can never fail twice; a server crash that lost a co-editor's update ends
+  this way.
+- **The read without its body.** A note this account's store holds reads
+  `GET /api/materials/{id}?noContent=true`: everything but its document, and the
+  room is not asked for a fresh projection. So a reopen downloads the copy's
+  difference and no body. The store's note ids are read when it is claimed, before
+  any route loads (`holdsNoteCopy`); a read in another tab that does not know of a
+  copy just reads the body. A body a read already holds stays. When the copy cannot
+  paint after all (evicted, bytes that no longer read, a moved room, a refusal, a
+  heavy note opened read-only), the mount waits for one full read
+  (`forgetNoteCopy`). An export always reads the body (`materialWithBodyQuery`).
+  Items read in full: their reads are small, and a viewer's copy is that read.
+
+### Opening a note
+
+Epo decided on 2026-11-04 that a note opens one way (`NoteBody`). It paints at
+once, static and read-only: from the device copy when there is one, before its
+material read answers and while that read cannot answer (the browser offline, the
+server down; a refusal shows its panel), else the stored projection, else a
+wordless skeleton (`NoteSkeleton`). Offline with nothing to paint it reads "Waiting
+for connection" (C9).
+
+- **A viewer** stays on the paint, which follows its room on a read channel
+  (`LiveNote`, `readNoteLive`, Q158), from its copy when it has one. No cue says
+  it is read-only (D9).
+- **An editor** builds Plate behind the paint: `NoteEditor` mounts `invisible
+  absolute inset-0` and `inert`, and asks for its token, discussions and drafts
+  meanwhile. Edits are held until there is an editor (C4, no spare client ids):
+  keys are dropped and a phone shows no keyboard. Plate stays static until the
+  first sync (C5): no early bind. Once `NoteEditorCore` painted (`onShown`) the
+  paint goes and the editor shows in the same commit, at the block under the top
+  edge (the paint's blocks by value order, `paintedPosition`) and with a caret
+  placed in the paint moved onto it. Embeds in that paint hold their place
+  (`HeldEmbed`): the editor's own join theirs, and a study view would flash.
+- **So it is no slower than before** (near-limit and small notes,
+  `bench/editor/reports/2026-11-04-open-paint.md`): one frame holds the paint
+  before the read answers and for an editor, so it is never painted twice
+  (`PaintedFrame`); the token and the editor's chunk start next to the paint, not
+  behind one another (`materialTokenQuery`); the frame paints the first 100 blocks
+  until the reader nears their end (`PAINT_BLOCKS`, a citation paints them all);
+  the editor shows as it finishes, with no wait on a paint behind the note; and the
+  paint's DOM goes when the page is idle, hidden meanwhile.
+- **The status** beside the title is a spinner with no words while it opens
+  (`opening`) and, with the draft's words, during a draft send (`syncing-draft`,
+  D10, no strip). A slowed open says so in its tooltip.
+- **At 30 s** a strip with Retry shows over whichever is on screen (`unreachable`,
+  D5). A token that never answered or failed leaves the paint and a red status;
+  a token that answered with a join that never did paints the editable saved copy
+  (Q229), its base the copy's value where it started from one. A refused token
+  (403, 404) shows the panel, as before.
+
+### Opening an item
+
+A quiz, a set or a diagram opens like a note (Epo 2026-11-04): painted at once from
+its device copy or its read, as the editor lays it out and taking no input, its
+status the same spinner, until its room synced. A quiz is its questions in one
+column; at the sync the editor's page (the question list and the open question)
+replaces them, opening at a link's question. A set is the editor's
+turned tiles. A diagram is the split, source left and preview right, read-only.
+An item room has no saved-copy path: it stays read-only until it joined, and at
+its 30 s goes offline under its banner, still showing what it painted.
+
+**Hidden tabs** (D11). The server model is unchanged. A tab hidden for 5 minutes
+with nothing unsent in any note or item room, and no Office or text room on its
+socket, sleeps through `CollabSocket.sleep` (`watchIdle`'s `mayHide`), never
+`disconnect()`: a clean Leave would expire the session's ids. It wakes when it
+shows, and the room rejoins from its in-memory document with the previous token's
+id, by its step 1. The status does not move; its 30 s start as the tab shows.
+A tab holding unsent edits asks again every 30 s. A reader's rooms keep their own
+5 minutes (`whileVisible`), rejoining from the copy they wrote as they left.
+
+**Citations and deep links** work in the one mode: a chat citation scrolls and
+flashes its passage in the paint, and again in the editor once it shows; a
+question or card from a review summary scrolls into view in the quiz's list or
+the set's grid. A note's embed offers Preview in its ⋮ (top right on hover), which
+swaps its editor for the study view, to answer or study in place; Edit goes back.
 
 ### The editable saved copy
 
@@ -3431,10 +3591,19 @@ the keys document (`keys:<id>:schema:<n>`), which only editors who can write
 join (`POST /api/materials/{id}/collaboration-token` with `{document: 'keys'}`;
 a viewer or a read-only editor gets 403, and the collaboration server refuses a
 read token for a keys room at JOIN and at refresh). The content document holds
-`questions`: question id to `{order, layout, labels, level?, stem, parts}`,
-part id to `{order, marks, blocks, answer}`, the answer map holding the type
-and what a learner may see (mcq options, a short answer's unit,
-matching left items). The keys document holds `keys`: part id to `{type,
+`questions`: question id to `{order, layout, labels, level?, stem, groups?,
+parts}`, group id to `{blocks}`, part id to `{order, marks, blocks, answer,
+group?}`, the answer map holding the type and what a learner may see (mcq
+options, a short answer's unit, matching left items). A group has no order of
+its own and no keys, so its text and figures merge entry by entry as a stem's do.
+What a merge leaves reads repaired (Epo 2026-11-04; `repairGroups` in the
+browser, `questions::repair_groups` in Rust, both on
+`testdata/repairs/groups.json`): a part naming a group that is gone has no group,
+a group with no parts goes, and a group's parts come together at the first one's
+place, in their order. Admission holds structure and caps only, as for the rest
+of the document, and the next write settles the order keys and takes a group no
+part names. The limits still measure such a group and its images stay in use
+(`held_question_json`) until then. The keys document holds `keys`: part id to `{type,
 solution, correct | accepted | hints | markscheme | gaps | options | pairs |
 items}`; an mcq's `correct` is a map of ticks by option id (one or more,
 Epo 2026-10-15), a boolean's a plain true or false, and an open part's
@@ -3474,7 +3643,8 @@ caps and counts only (`collaboration-rs/crates/items/src/quiz.rs`): texts,
 units, labels and attributions (`QUESTION_METADATA_MAX`), image and graph
 descriptions (`QUESTION_DESCRIPTION_MAX`, 500 in quizzes and notes; the bank
 keeps `QUESTION_TEXT_MAX`, Epo 2026-10-14), image sizes and ids, whole marks, list and table counts, questions, parts per question and per
-quiz, open parts, marking items, ticks and matching pairs, and each chart,
+quiz, a question's groups (no more than its parts may be), open parts, marking
+items, ticks and matching pairs, and each chart,
 plot and graph value against its kind's caps (`notes::questions::figure_caps`,
 sizes only: an unfinished figure is admitted; the block's type and value are
 read from the update or the held block, whichever writes them). Nothing past a
@@ -3502,10 +3672,12 @@ Esc. Undo spans both documents (`pairedUndo` in
 `src/features/collaboration/undo.ts`: the latest step of either, and steps of
 both made together, such as an answer type change, as one). Inputs stop at
 their caps (`maxLength`; a text editor takes back an edit past its cap). A
-quiz edits on its material page (`QuizEditor` in the center pane's Edit) with
+quiz edits on its material page (`QuizEditor`, for whoever may edit) with
 no Save or Reset: the cloud status follows the title in the header, Undo and
-Redo sit beside the View switch, renaming goes through the item's Rename,
-Edit (ghost-hover) and Remove (danger-light) sit on a row under each question
+Redo sit there with Study, renaming goes through the item's Rename, the page
+holds the question list and the open question (see
+[question-bank.md](../question-bank.md#editing-and-assets)), a note's embed has
+Edit (ghost-hover) and Remove (danger-light) on a row under each question
 at the right, and an
 incomplete question shows a line under it saying what it lacks
 (`incomplete.ts`); empty text blocks, a blank short-answer unit and blank
@@ -3561,7 +3733,7 @@ text in a face or an image that is not `{assetId}` closes the writer), caps a
 front at 200 and a back at 1,000 characters, measures the limits on every
 card, blank ones included, and projects the set to its Plate envelope with blank
 cards left out (a set keeps one card). `FlashcardsEditor` edits it in the
-workspace file's edit mode (a standalone set at `/materials/$id?mode=edit`; the
+workspace file's editor (a standalone set at `/materials/$id`; the
 old `/flashcards/$id/edit` page is gone) and inside a note. The card dialog
 (front, back on ruled lines like a quiz's written answer, one optional image
 under the front; the study card as a preview, at the study size, beside them
@@ -3809,7 +3981,7 @@ Plate's chunk rendering. Width changes do not recreate the editor.
 
 `editorCommands.ts` is the shared command catalog. Editors can open commands by
 typing `/`, through toolbar menus, or with `mod+k`. Commands, document mutations
-and commenting are available only in Edit mode.
+and commenting are for those who may edit.
 
 `mod+shift+m` opens the comment workflow for an active selection.
 
@@ -3907,8 +4079,8 @@ validation and are not rendered.
 
 ## Operational boundaries
 
-- Signed-out visitors and note View never connect; signed-in viewers of a set
-  hold read channels (no stores, projections or markers of their own).
+- Signed-out visitors never connect; signed-in viewers of a note or a set hold
+  read channels (no stores, projections or markers of their own).
 - Run one collaboration server per environment, with Redis available.
 - Persistence uses bounded debounce/max-debounce (notes 2 s / 10 s, sources
   5 s / 30 s) and runs one store at a time per room; a failed store retries

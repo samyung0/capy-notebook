@@ -22,7 +22,7 @@ formats may be uploaded within the plan byte limit, but remain store-only.
 Create cards open `/materials/:id` and Files cards open `/files/:id` through SPA router Links, as do dashboard recent rows and workspace file/material rows. Each item remembers its own View/Edit mode in localStorage (`capy.document.mode.<kind>.<id>`); an explicit URL mode wins, followed by the saved mode, then View.
 Both routes use the workspace's `CenterContent` header and renderers, with
 the app sidebar and a back icon. They omit workspace navigation and Move to
-chapter; a file's payer still gets Move to…. `FileModeControl` portals the file View/Edit toggle (the note's
+topic; a file's payer still gets Move to…. `FileModeControl` portals the file View/Edit toggle (the note's
 `MaterialModeToggle`, labelled from lg) into that shared header while each
 runtime retains its save and collaboration lifecycle. Text files have no Save
 button: the room saves edits after a second idle, and Ctrl+S or leaving Edit
@@ -2131,6 +2131,20 @@ citation scrolling.
 
 ## Upload and import analysis
 
+**The Upload tab is board T4** (Epo 2026-11-03): under the drop area, a Files
+list with one row per file (icon, name, size, remove), then one Topic dropdown
+for the whole upload (the open item's topic, else Other files; topics in order
+with Other files last and no New topic), then Cancel and Upload. There is no
+parse-mode choice, File Details heading or cost summary: each file goes with
+`defaultParseMode`, or with no parsing when the browser's analysis below
+refuses fast parsing (the row says it is added without processing) or the
+uploader is out of AI credits (`outOfCredits` in `features/billing/credits.ts`:
+nothing available and auto-reload off), when one line says files won't be
+processed and every file goes store-only. A row still shows what stops it (a
+name over the limit, an audio length past the cap, analysis still running)
+and Upload waits for it. The Import tab keeps the per-row topic and parse-mode
+pickers and the cost summary described below.
+
 Local selection and Google Drive/OneDrive selection both lead to the same
 details dialog. Files above the uploader's 10 MiB/30 MiB cap are
 rejected before they enter the list, except DOCX, PPTX, XLSX and raster
@@ -2215,7 +2229,7 @@ reason in the row and is final. A warning toast after the upload names how many 
 were removed. Cloud imports get the same treatment in the import worker before
 the file is stored, and the import status carries the same count.
 
-The same dialog submits each cloud row with its own chapter and parse mode;
+The same dialog submits each cloud row with its own topic and parse mode;
 there is no caption toggle, because embedded figure captioning was retired.
 Browser analysis is advisory and does not replace ingest or decide whether a
 source is searchable.

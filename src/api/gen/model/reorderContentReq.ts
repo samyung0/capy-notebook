@@ -10,14 +10,14 @@ export interface ReorderContentReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   /**
-     * Destination chapter; null means the unfiled bucket
-     * @nullable
-     */
-  chapterId: string | null;
-  /**
      * Destination content in the desired mixed order
      * @minItems 1
      * @nullable
      */
   items: ContentOrderItem[] | null;
+  /**
+     * Destination topic; null means the unfiled bucket
+     * @nullable
+     */
+  topicId: string | null;
 }

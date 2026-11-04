@@ -8,7 +8,7 @@ import { CardBackFace, CardFront } from './CardView';
 
 /* The study card, shared by flashcard study (study page, shared page, note
    embed), the review session and the card dialog's preview. Its front reads
-   the card's chapter where the page shows it nowhere else, the text and
+   the card's topic where the page shows it nowhere else, the text and
    "Click to flip". */
 
 type Leaving = { card: FlashcardContent; flipped: boolean };
@@ -48,7 +48,7 @@ export function CardStack({
   stack,
 }: {
   card: FlashcardContent;
-  /** The front's label: the card's chapter, where the page names it
+  /** The front's label: the card's topic, where the page names it
    * nowhere else. */
   label?: string;
   onRate: (rating: SrsRating) => void;

@@ -203,7 +203,7 @@ export function table(headers: string[], rows: string[][]) {
 }
 
 export type SeedNote = {
-  chapterId: string | null;
+  topicId: string | null;
   daysAgo: number;
   id: string;
   title: string;

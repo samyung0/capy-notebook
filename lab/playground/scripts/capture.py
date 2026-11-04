@@ -402,8 +402,8 @@ def check_pixels_capture() -> None:
         handler = make_handler(config, Resolver(), state, "q")
         ctx = tools.ToolContext(workspace_id="ws", file_ids=["f_1"])
         ctx._scope_outline = {
-            "chapters": [],
-            "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 1}],
+            "topics": [],
+            "files": [{"id": "f_1", "name": "one.pdf", "topic_id": None, "chunks": 1}],
         }
         ctx.citations.append(
             Passage("c_1", "f_1", "one.pdf", 0, "", "hello", page_start=1, page_end=1)

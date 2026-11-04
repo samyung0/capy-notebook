@@ -26,25 +26,32 @@ type reviewOutput struct {
 type reviewResultOutput struct {
 	Body store.ReviewResult
 }
-type reviewOverviewOutput struct {
-	Body store.ReviewOverview
+type learningOverviewOutput struct {
+	Body store.LearningOverview
+}
+type studyTopicsOutput struct {
+	Body store.StudyTopics
+}
+type practiceOutput struct {
+	Body store.Practice
+}
+type workspaceDashboardOutput struct {
+	Body store.WorkspaceDashboard
 }
 type workspaceReviewInput struct {
-	ID        string `path:"id"`
-	Group     string `query:"group" enum:"chapter,others,workspace,plan" default:"workspace"`
-	ChapterID string `query:"chapterId" doc:"The chapter of a chapter group"`
-	PlanID    string `query:"planId" doc:"The plan of a plan group, one of the user's plans kept in this workspace"`
-	Mode      string `query:"mode" enum:"tricky,fading,learned" doc:"A suggestion's mode; omitted for a review from the workspace list"`
-}
-type workspaceStudyInput struct {
-	ID     string `path:"id"`
-	PlanID string `query:"planId" doc:"Draw Reviewable, QuickReview and Unfinished from this plan of the user's, kept in this workspace"`
+	ID      string `path:"id"`
+	Group   string `query:"group" enum:"topic,others,workspace" default:"workspace"`
+	TopicID string `query:"topicId" doc:"The topic of a topic group"`
+	Mode    string `query:"mode" enum:"tricky,fading,learned" doc:"A suggestion's mode; omitted for a review from the workspace list"`
+	Items   string `query:"items" enum:"quiz" doc:"quiz serves questions only, whatever the review items preference (Practice's topic sessions)"`
+	Count   int    `query:"count" minimum:"0" maximum:"1000" doc:"The session's size, picked in its start dialog"`
+	Order   string `query:"order" enum:"recommended,unattempted,incorrect" doc:"Which items come first; recommended by default"`
 }
 type reviewSessionIDInput struct {
 	ID string `path:"id" format:"uuid"`
 }
 type pastReviewsInput struct {
-	Sort        string `query:"sort" enum:"date,quiz,cards,time,workspace,plan,chapter,status" default:"date"`
+	Sort        string `query:"sort" enum:"date,quiz,cards,time,workspace,topic,status" default:"date"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
 	Has         string `query:"has" doc:"Comma-separated: quiz, flashcards; a session with either passes"`
@@ -57,33 +64,9 @@ type pastReviewsOutput struct {
 		More  bool               `json:"more"`
 	}
 }
-type learningProgressOutput struct {
-	Body store.LearningProgress
-}
-type studyPlansOutput struct {
-	Body store.StudyPlans
-}
-type studyPlanOutput struct {
-	Body store.StudyPlan
-}
-type createStudyPlanInput struct {
-	ID   string `path:"id"`
-	Body apimodel.CreateStudyPlanReq
-}
-type studyPlanIDInput struct {
-	ID string `path:"id" format:"uuid"`
-}
-type updateStudyPlanInput struct {
-	ID   string `path:"id" format:"uuid"`
-	Body apimodel.UpdateStudyPlanReq
-}
 type studyEnabledInput struct {
 	ID   string `path:"id"`
 	Body apimodel.SetStudyEnabledReq
-}
-type studyItemInput struct {
-	ID   string `path:"id"`
-	Body apimodel.SetStudyItemReq
 }
 type reviewRatingInput struct {
 	Body apimodel.RateReviewItemReq
@@ -103,13 +86,9 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study", "getWorkspaceStudy", tag, "Study progress in a workspace", http.StatusOK, a.getWorkspaceStudy)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study/attempts", "getWorkspaceAttempts", tag, "Each quiz's and set's attempt count and latest attempts", http.StatusOK, a.getWorkspaceAttempts)
 	reg(api, http.MethodPut, "/api/workspaces/{id}/study/enabled", "setWorkspaceStudy", tag, "Show or hide study progress in a workspace", http.StatusNoContent, a.setWorkspaceStudy)
-	reg(api, http.MethodGet, "/api/workspaces/{id}/study/plans", "listWorkspacePlans", tag, "Plans kept in a workspace, then plans elsewhere with a step in it", http.StatusOK, a.listWorkspacePlans)
-	reg(api, http.MethodPost, "/api/workspaces/{id}/study/plans", "createStudyPlan", tag, "Add an empty study plan to a workspace", http.StatusCreated, a.createStudyPlan)
-	reg(api, http.MethodPatch, "/api/study/plans/{id}", "updateStudyPlan", tag, "Rename a study plan or replace its steps", http.StatusNoContent, a.updateStudyPlan)
-	reg(api, http.MethodDelete, "/api/study/plans/{id}", "deleteStudyPlan", tag, "Delete a study plan", http.StatusNoContent, a.deleteStudyPlan)
-	reg(api, http.MethodGet, "/api/learning/plans", "listLearningPlans", tag, "Every study plan of the user", http.StatusOK, a.listLearningPlans)
-	reg(api, http.MethodPut, "/api/workspaces/{id}/study/items", "setStudyItem", tag, "Mark a file or material read, unread or removed", http.StatusNoContent, a.setStudyItem)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/study/reset", "resetWorkspaceStudy", tag, "Clear study progress in a workspace", http.StatusNoContent, a.resetWorkspaceStudy)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/dashboard", "getWorkspaceDashboard", tag, "The workspace's Dashboard: its owner, member count and latest activity", http.StatusOK, a.getWorkspaceDashboard)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/practice", "getWorkspacePractice", tag, "The workspace's Practice page: suggestions, quizzes and the caller's topic reviews", http.StatusOK, a.getWorkspacePractice)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/review", "getWorkspaceReview", tag, "A new review session: a suggestion's items, or the whole workspace's", http.StatusOK, a.getWorkspaceReview)
 	reg(api, http.MethodGet, "/api/review/sessions/{id}", "resumeReviewSession", tag, "An unfinished review session's items still to answer", http.StatusOK, a.resumeReviewSession)
 	reg(api, http.MethodGet, "/api/review/sessions/{id}/result", "getReviewResult", tag, "A review session's result: its scores and every answered item", http.StatusOK, a.getReviewResult)
@@ -117,25 +96,17 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodGet, "/api/review/sessions", "listPastReviews", tag, "Finished review sessions with their quiz and flashcard results", http.StatusOK, a.listPastReviews)
 	reg(api, http.MethodPost, "/api/review/ratings", "rateReviewItem", tag, "Record a flashcard's review rating", http.StatusNoContent, a.rateReviewItem)
 	regWithMaxBody(api, http.MethodPost, "/api/review/check", "checkReviewItem", tag, "Grade and rate one question of a review session", http.StatusOK, answersMaxBytes, a.checkReviewItem)
-	reg(api, http.MethodGet, "/api/review/overview", "getReviewOverview", tag, "Learning's Review tab: suggested reviews, sessions to continue, every workspace", http.StatusOK, a.getReviewOverview)
-	reg(api, http.MethodGet, "/api/learning/progress", "getLearningProgress", tag, "Learning's Progress tab: workspaces in progress and finished, the leading one's items", http.StatusOK, a.getLearningProgress)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/study/question-count", "getStudyQuestionCount", tag, "How many questions a practice group holds, for its start dialog", http.StatusOK, a.getStudyQuestionCount)
+	reg(api, http.MethodGet, "/api/learning/overview", "getLearningOverview", tag, "Learning's Overview: what to do next across workspaces and how each stands", http.StatusOK, a.getLearningOverview)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/study/topics", "getWorkspaceStudyTopics", tag, "Study → Summary: the caller's own standing per topic", http.StatusOK, a.getWorkspaceStudyTopics)
 	reg(api, http.MethodPatch, "/api/me/study-preferences", "setStudyPreferences", tag, "Save study preferences", http.StatusNoContent, a.setStudyPreferences)
 }
 
-func (a *api) getWorkspaceStudy(ctx context.Context, in *workspaceStudyInput) (*studyOutput, error) {
+func (a *api) getWorkspaceStudy(ctx context.Context, in *workspaceIDInput) (*studyOutput, error) {
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	var res store.StudySummary
-	var err error
-	if in.PlanID != "" {
-		res, err = a.s.PlanStudySummary(ctx, userID(ctx), in.ID, in.PlanID, time.Now())
-	} else {
-		res, err = a.s.StudySummary(ctx, userID(ctx), in.ID, time.Now())
-	}
-	if errors.Is(err, store.ErrReviewGroup) {
-		return nil, huma.Error404NotFound(err.Error())
-	}
+	res, err := a.s.StudySummary(ctx, userID(ctx), in.ID, time.Now())
 	if err != nil {
 		return nil, storedContentError(ctx, "", err)
 	}
@@ -174,20 +145,6 @@ func (a *api) setWorkspaceStudy(ctx context.Context, in *studyEnabledInput) (*Em
 	return &Empty{}, hErr(a.s.SetWorkspaceStudy(ctx, userID(ctx), in.ID, in.Body.Enabled))
 }
 
-func (a *api) setStudyItem(ctx context.Context, in *studyItemInput) (*Empty, error) {
-	if (in.Body.FileID == nil) == (in.Body.MaterialID == nil) {
-		return nil, huma.Error422UnprocessableEntity("send exactly one of fileId and materialId")
-	}
-	if err := a.requireStudyWrite(ctx, in.ID); err != nil {
-		return nil, err
-	}
-	err := a.s.SetStudyItem(ctx, userID(ctx), in.ID, in.Body.FileID, in.Body.MaterialID, in.Body.State)
-	if errors.Is(err, store.ErrStudyTarget) {
-		return nil, huma.Error404NotFound(err.Error())
-	}
-	return &Empty{}, hErr(err)
-}
-
 func (a *api) resetWorkspaceStudy(ctx context.Context, in *workspaceIDInput) (*Empty, error) {
 	if err := a.requireStudyWrite(ctx, in.ID); err != nil {
 		return nil, err
@@ -195,21 +152,50 @@ func (a *api) resetWorkspaceStudy(ctx context.Context, in *workspaceIDInput) (*E
 	return &Empty{}, hErr(a.s.ResetStudy(ctx, userID(ctx), in.ID))
 }
 
+// getWorkspaceDashboard is any reader's Dashboard header and Activity: files
+// and materials every reader of the workspace can already list, with who
+// added them.
+func (a *api) getWorkspaceDashboard(ctx context.Context, in *workspaceIDInput) (*workspaceDashboardOutput, error) {
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.WorkspaceDashboard(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &workspaceDashboardOutput{Body: res}, nil
+}
+
+// getWorkspacePractice is any reader's Practice page; a class's owner and
+// editor members get how members use each quiz (counts and averages only)
+// in place of their own practice.
+func (a *api) getWorkspacePractice(ctx context.Context, in *workspaceIDInput) (*practiceOutput, error) {
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	role, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.WorkspacePractice(ctx, userID(ctx), in.ID, store.RoleCanEdit(role), time.Now())
+	if err != nil {
+		return nil, storedContentError(ctx, "", err)
+	}
+	return &practiceOutput{Body: res}, nil
+}
+
 func (a *api) getWorkspaceReview(ctx context.Context, in *workspaceReviewInput) (*reviewOutput, error) {
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
 	info := store.ReviewSessionInfo{Group: in.Group}
-	if in.ChapterID != "" {
-		info.ChapterID = &in.ChapterID
+	if in.TopicID != "" {
+		info.TopicID = &in.TopicID
 	}
 	if in.Mode != "" {
 		info.Mode = &in.Mode
 	}
-	if in.PlanID != "" {
-		info.PlanID = &in.PlanID
-	}
-	res, err := a.s.WorkspaceReview(ctx, userID(ctx), in.ID, info, time.Now())
+	res, err := a.s.WorkspaceReview(ctx, userID(ctx), in.ID, info, in.Items == "quiz", store.ReviewOptions{Count: in.Count, Order: in.Order}, time.Now())
 	if errors.Is(err, store.ErrReviewGroup) {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -312,123 +298,65 @@ func commaValues(v string) []string {
 	return out
 }
 
-func (a *api) getReviewOverview(ctx context.Context, _ *struct{}) (*reviewOverviewOutput, error) {
-	res, err := a.s.ReviewOverview(ctx, userID(ctx), time.Now())
-	if err != nil {
-		return nil, storedContentError(ctx, "", err)
+type studyQuestionCountInput struct {
+	ID      string `path:"id"`
+	Group   string `query:"group" enum:"topic,others,workspace" default:"workspace"`
+	TopicID string `query:"topicId" doc:"The topic of a topic group"`
+}
+type studyQuestionCountOutput struct {
+	Body struct {
+		Total int `json:"total"`
 	}
-	return &reviewOverviewOutput{Body: res}, nil
 }
 
-// sessionAnswer is the store's view of an answer's session, nil without one.
-// A plan session needs its parent workspace readable; its first answer also
-// carries the plan's scope, which must be one of the user's plans kept there.
-// Later answers are checked against the recorded session instead, so it
-// keeps going once the plan changes or is deleted.
-func (a *api) sessionAnswer(ctx context.Context, ref *apimodel.ReviewSessionRef) (*store.SessionAnswer, error) {
-	if ref == nil {
-		return nil, nil
-	}
-	out := &store.SessionAnswer{ID: ref.ID, WorkspaceID: ref.WorkspaceID, Info: ref.ReviewSessionInfo, Items: ref.Items}
-	if ref.Group != store.GroupPlan {
-		out.Info.PlanID = nil
-		return out, nil
-	}
-	if _, err := a.workspaceRead(ctx, ref.WorkspaceID); err != nil {
-		return nil, hErr(err)
-	}
-	recorded, err := a.s.ReviewSessionRecorded(ctx, ref.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	if recorded {
-		return out, nil
-	}
-	if ref.PlanID == nil {
-		return nil, huma.Error422UnprocessableEntity("a new plan session needs its planId")
-	}
-	plan, err := a.s.PlanScopeOf(ctx, userID(ctx), *ref.PlanID)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && plan.Parent != ref.WorkspaceID) {
-		return nil, huma.Error422UnprocessableEntity(store.ErrReviewSession.Error())
-	}
-	if err != nil {
-		return nil, hErr(err)
-	}
-	out.Plan = &plan
-	return out, nil
-}
-
-type learningProgressInput struct {
-	Lead string `query:"lead" doc:"A listed workspace whose map to return instead of the most recently studied one"`
-	All  bool   `query:"all" doc:"Also list workspaces hiding study progress, marked hidden"`
-}
-
-func (a *api) getLearningProgress(ctx context.Context, in *learningProgressInput) (*learningProgressOutput, error) {
-	res, err := a.s.LearningProgress(ctx, userID(ctx), in.Lead, in.All)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &learningProgressOutput{Body: res}, nil
-}
-
-func (a *api) listWorkspacePlans(ctx context.Context, in *workspaceIDInput) (*studyPlansOutput, error) {
+func (a *api) getStudyQuestionCount(ctx context.Context, in *studyQuestionCountInput) (*studyQuestionCountOutput, error) {
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.WorkspacePlans(ctx, userID(ctx), in.ID)
+	var topicID *string
+	if in.TopicID != "" {
+		topicID = &in.TopicID
+	}
+	n, err := a.s.StudyQuestionCount(ctx, userID(ctx), in.ID, in.Group, topicID, time.Now())
+	if err != nil {
+		return nil, storedContentError(ctx, "", err)
+	}
+	out := &studyQuestionCountOutput{}
+	out.Body.Total = n
+	return out, nil
+}
+
+func (a *api) getLearningOverview(ctx context.Context, _ *struct{}) (*learningOverviewOutput, error) {
+	res, err := a.s.LearningOverview(ctx, userID(ctx), time.Now())
+	if err != nil {
+		return nil, storedContentError(ctx, "", err)
+	}
+	return &learningOverviewOutput{Body: res}, nil
+}
+
+// getWorkspaceStudyTopics is for whoever practises here: a class's owner and
+// editors manage it and have no results of their own (Epo 2026-11-04, board U3).
+func (a *api) getWorkspaceStudyTopics(ctx context.Context, in *workspaceIDInput) (*studyTopicsOutput, error) {
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	role, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &studyPlansOutput{Body: res}, nil
-}
-
-func (a *api) listLearningPlans(ctx context.Context, _ *struct{}) (*studyPlansOutput, error) {
-	res, err := a.s.LearningPlans(ctx, userID(ctx))
+	res, err := a.s.WorkspaceStudyTopics(ctx, userID(ctx), in.ID, store.RoleCanEdit(role), time.Now())
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &studyPlansOutput{Body: res}, nil
+	return &studyTopicsOutput{Body: res}, nil
 }
 
-// Plans are private, so any reader of the parent workspace may keep them.
-func (a *api) createStudyPlan(ctx context.Context, in *createStudyPlanInput) (*studyPlanOutput, error) {
-	if err := a.requireStudyWrite(ctx, in.ID); err != nil {
-		return nil, err
+// sessionAnswer is the store's view of an answer's session, nil without one.
+func sessionAnswer(ref *apimodel.ReviewSessionRef) *store.SessionAnswer {
+	if ref == nil {
+		return nil
 	}
-	res, err := a.s.CreateStudyPlan(ctx, userID(ctx), in.ID, strings.TrimSpace(string(in.Body.Name)))
-	if errors.Is(err, store.ErrStudyPlanCap) {
-		return nil, huma.Error409Conflict(err.Error())
-	}
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &studyPlanOutput{Body: res}, nil
-}
-
-func (a *api) updateStudyPlan(ctx context.Context, in *updateStudyPlanInput) (*Empty, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
-		return nil, err
-	}
-	var name *string
-	if in.Body.Name != nil {
-		n := strings.TrimSpace(string(*in.Body.Name))
-		if n == "" {
-			return nil, huma.Error422UnprocessableEntity("a plan needs a name")
-		}
-		name = &n
-	}
-	err := a.s.UpdateStudyPlan(ctx, userID(ctx), in.ID, name, in.Body.Steps)
-	if errors.Is(err, store.ErrStudyPlanStep) || errors.Is(err, store.ErrStudyPlanSize) {
-		return nil, huma.Error422UnprocessableEntity(err.Error())
-	}
-	return &Empty{}, hErr(err)
-}
-
-func (a *api) deleteStudyPlan(ctx context.Context, in *studyPlanIDInput) (*Empty, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
-		return nil, err
-	}
-	return &Empty{}, hErr(a.s.DeleteStudyPlan(ctx, userID(ctx), in.ID))
+	return &store.SessionAnswer{ID: ref.ID, WorkspaceID: ref.WorkspaceID, Info: ref.ReviewSessionInfo, Items: ref.Items}
 }
 
 func (a *api) rateReviewItem(ctx context.Context, in *reviewRatingInput) (*Empty, error) {
@@ -442,13 +370,9 @@ func (a *api) rateReviewItem(ctx context.Context, in *reviewRatingInput) (*Empty
 	if ref := in.Body.Attempt; ref != nil {
 		attempt = &store.FlashcardAttemptRef{ID: ref.ID, StartedAt: ref.StartedAt}
 	}
-	session, err := a.sessionAnswer(ctx, in.Body.Session)
-	if err != nil {
-		return nil, err
-	}
-	err = a.s.RateItem(ctx, userID(ctx), store.Rating{
+	err := a.s.RateItem(ctx, userID(ctx), store.Rating{
 		MaterialID: in.Body.MaterialID, ItemID: in.Body.ItemID, Rating: &in.Body.Rating,
-		Session: session, Attempt: attempt,
+		Session: sessionAnswer(in.Body.Session), Attempt: attempt,
 	}, time.Now())
 	if errors.Is(err, store.ErrStudyRating) || errors.Is(err, store.ErrStudyEmbedded) || errors.Is(err, store.ErrReviewSession) || errors.Is(err, store.ErrFlashcardAttempt) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
@@ -468,11 +392,7 @@ func (a *api) checkReviewItem(ctx context.Context, in *reviewCheckInput) (*grade
 	if _, err := a.materialRead(ctx, in.Body.MaterialID); err != nil {
 		return nil, hErr(err)
 	}
-	// The session is checked before grading, which may cost a model call.
-	session, err := a.sessionAnswer(ctx, in.Body.Session)
-	if err != nil {
-		return nil, err
-	}
+	session := sessionAnswer(in.Body.Session)
 	q, workspaceID, err := a.s.ReviewQuestion(ctx, in.Body.MaterialID, in.Body.ItemID)
 	if errors.Is(err, store.ErrStudyRating) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
@@ -498,6 +418,7 @@ func (a *api) checkReviewItem(ctx context.Context, in *reviewCheckInput) (*grade
 	}
 	if err := a.s.RateItem(ctx, userID(ctx), store.Rating{
 		MaterialID: in.Body.MaterialID, ItemID: in.Body.ItemID, Score: &score, Session: session,
+		Graded: graded[0], Answers: in.Body.Answers,
 	}, time.Now()); errors.Is(err, store.ErrStudyEmbedded) || errors.Is(err, store.ErrReviewSession) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	} else if err != nil {

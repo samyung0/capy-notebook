@@ -764,7 +764,7 @@ pub const ELEMENTS: &[Element] = &[
         shared_text: &[],
         shared_map: &[],
         shared_lists: &[],
-        assets: &["question.stem[].image.assetId", "question.parts[].blocks[].image.assetId", "question.parts[].solution[].image.assetId"],
+        assets: &["question.stem[].image.assetId", "question.groups[].blocks[].image.assetId", "question.parts[].blocks[].image.assetId", "question.parts[].solution[].image.assetId"],
         resizable: false,
         children: &[],
         materials: &["quiz"],

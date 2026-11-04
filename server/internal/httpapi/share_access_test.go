@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -46,9 +45,8 @@ func openShareAPI(t *testing.T, pipe *pipeline.Client) http.Handler {
 	})
 }
 
-func generateBody(kind, title string) map[string]any {
+func generateBody(title string) map[string]any {
 	return map[string]any{
-		"kind":   kind,
 		"count":  1,
 		"levels": []string{"recall"},
 		"title":  title,
@@ -57,22 +55,9 @@ func generateBody(kind, title string) map[string]any {
 
 func stubRetrieval(t *testing.T) *pipeline.Client {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var in struct {
-			Kind string `json:"kind"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&in)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		switch in.Kind {
-		case "quiz":
-			_, _ = w.Write([]byte(`{"kind":"quiz","name":"n","questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]}`))
-		case "flashcards":
-			_, _ = w.Write([]byte(`{"kind":"flashcards","cards":[{"front":"a","back":"b"}]}`))
-		case "mindmap", "diagram":
-			_, _ = fmt.Fprintf(w, `{"kind":%q,"title":"t","content":"# t"}`, in.Kind)
-		default:
-			http.Error(w, "unsupported", http.StatusBadRequest)
-		}
+		_, _ = w.Write([]byte(`{"questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]}`))
 	}))
 	t.Cleanup(srv.Close)
 	return pipeline.New(srv.URL, "")
@@ -123,7 +108,7 @@ func TestShareHTTPReads(t *testing.T) {
 		{"anon link flashcards", "", "/api/flashcards/dk_e2e_link", 401},
 		{"anon public flashcards", "", "/api/flashcards/dk_e2e_public", 401},
 		{"anon link cards", "", "/api/flashcards/dk_e2e_link/cards", 401},
-		{"anon link chapters", "", "/api/workspaces/ws_e2e_link/chapters", 401},
+		{"anon link topics", "", "/api/workspaces/ws_e2e_link/topics", 401},
 		{"anon link files", "", "/api/workspaces/ws_e2e_link/files", 401},
 		{"anon link materials", "", "/api/workspaces/ws_e2e_link/materials", 401},
 		{"anon file", "", "/api/files/f_missing", 401},

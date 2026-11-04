@@ -1,6 +1,21 @@
 import { Icon } from '@/components/ui/Icon';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+
+/** The eye mark on a row of an item hidden from members (boards T3 and U1):
+ * only the workspace's owners and editors ever get such a row. */
+export function HiddenMark({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn('inline-flex shrink-0 text-fg-muted', className)}
+      title={m.content_hidden_from_members()}
+    >
+      <Icon aria-hidden name="viewOffSlash" size={14} />
+      <span className="sr-only">{m.content_hidden_from_members()}</span>
+    </span>
+  );
+}
 
 /** "Hidden from members" after an item's name (X2, Epo 2026-11-03): an item
  * only the workspace's owners and editors see. With onShow (an owner or

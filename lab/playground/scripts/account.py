@@ -103,24 +103,24 @@ def receipt(body: dict[str, Any], ctx, args: dict[str, Any]):
     return tools._receipt_result(body, ctx)
 
 
-async def chapter_refusal(ctx, args: dict[str, Any], state: dict[str, Any]):
-    """An account create's chapter_id must be a chapter of the workspace it
+async def topic_refusal(ctx, args: dict[str, Any], state: dict[str, Any]):
+    """An account create's topic_id must be a topic of the workspace it
     names (Go checks it where the item lands)."""
     from pipeline.retrieval import store, tools
 
-    if (refused := tools.unknown_chapter(ctx, args)) is not None:
+    if (refused := tools.unknown_topic(ctx, args)) is not None:
         return refused
-    chapter, workspace = str(args.get("chapter_id") or ""), args.get("_workspace_id")
-    if not chapter or not workspace:
+    topic, workspace = str(args.get("topic_id") or ""), args.get("_workspace_id")
+    if not topic or not workspace:
         return None
     outline = await store.workspace_outline(workspace)
-    known = {c["id"] for c in outline["chapters"]} | {
-        c["id"] for c in state.get("chapters", []) if c.get("workspace_id") == workspace
+    known = {c["id"] for c in outline["topics"]} | {
+        c["id"] for c in state.get("topics", []) if c.get("workspace_id") == workspace
     }
-    if chapter in known:
+    if topic in known:
         return None
     return tools._refused(
-        "chapter_id is not a chapter of that workspace; list_sources lists them."
+        "topic_id is not a topic of that workspace; list_sources lists them."
     )
 
 
@@ -154,7 +154,7 @@ class Gateway:
                     "title": m["title"],
                     "format": "plate",
                     "materialKind": m["kind"],
-                    "chapterId": m.get("chapter_id"),
+                    "topicId": m.get("topic_id"),
                     "editable": can_edit,
                     "workspaceId": ws,
                     "workspaceName": ws_name,
@@ -235,26 +235,26 @@ class Gateway:
         async with pool.connection() as conn:
             cur = await conn.execute(
                 f"""WITH scope AS ({SCOPE_SQL})
-                SELECT d.kind, d.id, d.title, d.file_kind, d.material_kind, d.chapter_id,
-                    COALESCE(ch.name, '') AS chapter_name, COALESCE(sc.id, '') AS ws,
+                SELECT d.kind, d.id, d.title, d.file_kind, d.material_kind, d.topic_id,
+                    COALESCE(ch.name, '') AS topic_name, COALESCE(sc.id, '') AS ws,
                     COALESCE(sc.name, '') AS ws_name, COALESCE(sc.can_edit, true) AS can_edit,
                     COALESCE(rs.descriptor, '') AS descriptor
                 FROM (
                     SELECT 0 AS part, 'source_file' AS kind, f.id, f.name AS title, f.kind AS file_kind,
-                        '' AS material_kind, f.chapter_id, f.workspace_id AS ws_id, f.position, f.added_at AS at,
+                        '' AS material_kind, f.topic_id, f.workspace_id AS ws_id, f.position, f.added_at AS at,
                         fc.content_id
                     FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
                     WHERE f.trashed_at IS NULL
                         AND (f.workspace_id IN (SELECT id FROM scope) OR (f.workspace_id IS NULL AND f.user_id = %(u)s))
                     UNION ALL
-                    SELECT 1, 'material', m.id, m.title, '', m.kind, m.chapter_id, m.workspace_id, m.position,
+                    SELECT 1, 'material', m.id, m.title, '', m.kind, m.topic_id, m.workspace_id, m.position,
                         m.created_at, mc.content_id
                     FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
                     WHERE m.trashed_at IS NULL AND m.parent_material_id IS NULL
                         AND (m.workspace_id IN (SELECT id FROM scope) OR (m.workspace_id IS NULL AND m.owner_user_id = %(u)s))
                 ) d
                 LEFT JOIN scope sc ON sc.id = d.ws_id
-                LEFT JOIN chapters ch ON ch.id = d.chapter_id
+                LEFT JOIN topics ch ON ch.id = d.topic_id
                 LEFT JOIN rag_content_summaries rs ON rs.content_id = d.content_id
                 WHERE {LIVE_CALLER} AND {where}
                 ORDER BY {order}{limit}""",
@@ -263,7 +263,7 @@ class Gateway:
             docs = await cur.fetchall()
         items: list[dict[str, Any]] = []
         for d in docs:
-            item: dict[str, Any] = {"kind": d["kind"], "id": d["id"], "title": d["title"], "chapterId": d["chapter_id"]}
+            item: dict[str, Any] = {"kind": d["kind"], "id": d["id"], "title": d["title"], "topicId": d["topic_id"]}
             if d["kind"] == "material":
                 item.update(format="plate", materialKind=d["material_kind"], editable=True)
             else:
@@ -271,8 +271,8 @@ class Gateway:
             if item.get("editable") and not d["can_edit"]:
                 item.update(editable=False, reason=VIEW_ONLY)
             item.update(workspaceId=d["ws"], workspaceName=d["ws_name"])
-            if d["chapter_name"]:
-                item["chapterName"] = d["chapter_name"]
+            if d["topic_name"]:
+                item["topicName"] = d["topic_name"]
             if d["descriptor"]:
                 item["descriptor"] = d["descriptor"]
             items.append({"editable": False, **item})
@@ -304,17 +304,17 @@ class Gateway:
 
 
 def outline_with_run(original, state: dict[str, Any]):
-    """store.workspace_outline plus the chapters this run created in that
+    """store.workspace_outline plus the topics this run created in that
     workspace; a workspace the run created starts empty."""
 
     async def outline(workspace_id: str) -> dict[str, Any]:
         made = {w["id"] for w in state.get("workspaces", [])}
         base = (
-            {"chapters": [], "files": [], "materials": []}
+            {"topics": [], "files": [], "materials": []}
             if workspace_id in made
             else await original(workspace_id)
         )
-        extra = [c for c in state.get("chapters", []) if c.get("workspace_id") == workspace_id]
-        return {**base, "chapters": [*base["chapters"], *extra]}
+        extra = [c for c in state.get("topics", []) if c.get("workspace_id") == workspace_id]
+        return {**base, "topics": [*base["topics"], *extra]}
 
     return outline

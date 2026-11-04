@@ -152,7 +152,7 @@ def provider(workspace, monkeypatch):
     capacity = (spec.provider_slug, spec.model_slug)
     with workspace._connect() as conn:
         added = conn.execute(
-            "INSERT INTO model_capacities VALUES (%s, %s, 4, 1) ON CONFLICT DO NOTHING",
+            "INSERT INTO model_capacities VALUES (%s, %s, 4) ON CONFLICT DO NOTHING",
             capacity,
         ).rowcount
 
@@ -433,7 +433,7 @@ async def test_a_failed_note_summary_publishes_the_chunks_and_the_next_index_wri
     spec = registry.current_job_pins().ingest
     with workspace._connect() as conn:
         added = conn.execute(
-            "INSERT INTO model_capacities VALUES (%s, %s, 4, 1) ON CONFLICT DO NOTHING",
+            "INSERT INTO model_capacities VALUES (%s, %s, 4) ON CONFLICT DO NOTHING",
             (spec.provider_slug, spec.model_slug),
         ).rowcount
 

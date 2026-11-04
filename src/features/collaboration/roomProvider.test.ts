@@ -313,6 +313,18 @@ it('joins with its token, syncs both ways and counts unacknowledged updates', as
 // Q451 (review L4, Q443/Q444): an update the room answers late on a joined
 // channel ends that channel and tells the editor once, which then goes the
 // late way. Fails if a mid-session refusal is dropped or told twice.
+it('lets a hidden page sleep only when it asked to, with nothing unsent', async () => {
+  expect((await joined()).provider.mayHide()).toBe(false);
+  let unsent = true;
+  const { provider } = await joined({
+    sleepsHidden: true,
+    unsent: () => unsent,
+  });
+  expect(provider.mayHide()).toBe(false);
+  unsent = false;
+  expect(provider.mayHide()).toBe(true);
+});
+
 it('reports a late answer on a joined channel once and ends the channel', async () => {
   const { document, events, join, provider, socket } = await joined();
   const server = new Y.Doc();

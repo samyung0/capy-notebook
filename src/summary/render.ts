@@ -26,13 +26,13 @@ const file = z.object({
 export const summarySchema = z.object({
   author: z.string(),
   authorAvatarUrl: z.string().optional(),
-  chapters: z.array(z.object({ files: z.array(file), name: z.string() })),
   description: z.string(),
   files: z.array(file),
   iconId: z.string().regex(/^[a-z]+-[0-9]+$/),
   name: z.string(),
   privacy: z.enum(['public', 'link']),
   tags: z.array(z.string()),
+  topics: z.array(z.object({ files: z.array(file), name: z.string() })),
 });
 
 const fileIcon = (name: string) =>
@@ -62,20 +62,17 @@ export function renderSummary(
   const openURL = `/open/${token}`;
   const fileCount =
     summary.files.length +
-    summary.chapters.reduce(
-      (count, chapter) => count + chapter.files.length,
-      0
-    );
+    summary.topics.reduce((count, topic) => count + topic.files.length, 0);
   const dateFormat = new Intl.DateTimeFormat('en', { dateStyle: 'medium' });
   const fileMeta = (entry: WorkspaceSummary['files'][number]) =>
     `${formatBytes(entry.sizeBytes)} · ${dateFormat.format(new Date(entry.addedAt))}`;
   const files = (entries: WorkspaceSummary['files']) =>
     `<ul class="summary-files">${entries.map((entry) => `<li>${fileIcon(fileIconName({ kind: 'unknown', name: entry.name }))}<span>${escapeHTML(entry.name)}</span><small>${escapeHTML(fileMeta(entry))}</small></li>`).join('')}</ul>`;
   const section = (name: string, entries: WorkspaceSummary['files']) =>
-    `<section class="summary-chapter"><h2>${fileIcon('_folder_open')}<span>${escapeHTML(name)}</span></h2>${files(entries)}</section>`;
+    `<section class="summary-topic"><h2>${fileIcon('_folder_open')}<span>${escapeHTML(name)}</span></h2>${files(entries)}</section>`;
   const counts = m.workspace_card_meta({
-    chapters: String(summary.chapters.length),
     files: String(fileCount),
+    topics: String(summary.topics.length),
   });
   const header = seoHead({
     author: summary.author || undefined,
@@ -102,7 +99,7 @@ export function renderSummary(
   const actionMenu = renderToString(
     createElement(PublicActionMenu, { kind: 'workspace', token })
   );
-  const body = `<div class="summary-shell"><header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a>${publicNav()}</header><main class="summary-panel"><div class="summary-meta"><img class="summary-icon" src="${escapeHTML(iconUrl(summary.iconId))}" alt="" width="60" height="60"><div class="summary-title"><h1>${escapeHTML(summary.name)}</h1><div id="summary-actions" data-workspace-id="${escapeHTML(id)}">${actionMenu}</div></div>${summary.author ? `<p class="summary-byline">${summary.authorAvatarUrl ? `<img class="summary-avatar" src="${escapeHTML(summary.authorAvatarUrl)}" alt="" width="24" height="24">` : ''}${escapeHTML(summary.author)}</p>` : ''}${summary.description ? `<p class="summary-description">${escapeHTML(summary.description)}</p>` : ''}<ul class="summary-tags">${summary.tags.map((tag) => `<li># ${escapeHTML(tag)}</li>`).join('')}</ul>${openButton}</div><p class="summary-counts">${escapeHTML(counts)}</p><div class="summary-outline">${summary.chapters.map((chapter) => section(chapter.name, chapter.files)).join('')}${summary.files.length ? `<div class="summary-chapter">${files(summary.files)}</div>` : ''}${!summary.chapters.length && !fileCount ? `<p class="summary-empty">${escapeHTML(m.summary_empty())}</p>` : ''}</div></main><footer class="summary-footer">Capy Notebook</footer></div>`;
+  const body = `<div class="summary-shell"><header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a>${publicNav()}</header><main class="summary-panel"><div class="summary-meta"><img class="summary-icon" src="${escapeHTML(iconUrl(summary.iconId))}" alt="" width="60" height="60"><div class="summary-title"><h1>${escapeHTML(summary.name)}</h1><div id="summary-actions" data-workspace-id="${escapeHTML(id)}">${actionMenu}</div></div>${summary.author ? `<p class="summary-byline">${summary.authorAvatarUrl ? `<img class="summary-avatar" src="${escapeHTML(summary.authorAvatarUrl)}" alt="" width="24" height="24">` : ''}${escapeHTML(summary.author)}</p>` : ''}${summary.description ? `<p class="summary-description">${escapeHTML(summary.description)}</p>` : ''}<ul class="summary-tags">${summary.tags.map((tag) => `<li># ${escapeHTML(tag)}</li>`).join('')}</ul>${openButton}</div><p class="summary-counts">${escapeHTML(counts)}</p><div class="summary-outline">${summary.topics.map((topic) => section(topic.name, topic.files)).join('')}${summary.files.length ? `<div class="summary-topic">${files(summary.files)}</div>` : ''}${!summary.topics.length && !fileCount ? `<p class="summary-empty">${escapeHTML(m.summary_empty())}</p>` : ''}</div></main><footer class="summary-footer">Capy Notebook</footer></div>`;
   return template
     .replace('<!--capy-summary-head-->', () => header)
     .replace('<!--capy-summary-body-->', () => body);

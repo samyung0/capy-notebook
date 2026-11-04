@@ -15,8 +15,6 @@ export interface File {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   addedAt: string;
-  /** @nullable */
-  chapterId: string | null;
   errorId?: string;
   hasBytes: boolean;
   hidden?: boolean;
@@ -39,6 +37,8 @@ export interface File {
   status?: FileStatus;
   /** Hour-stable presigned GET of the page-1 thumbnail; list rows only */
   thumbnailUrl?: string;
+  /** @nullable */
+  topicId: string | null;
   workspaceId: string;
   workspaceName?: string;
 }

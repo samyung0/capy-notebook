@@ -17,6 +17,8 @@ const flag = (key: string, fallback: boolean): boolean => {
 export const features = {
   /** Community explore page. */
   explore: flag('VITE_FEATURE_EXPLORE', false),
+  /** Learning page: rules and scores, no AI (Epo 2026-11-04). */
+  learning: flag('VITE_FEATURE_LEARNING', true),
   /** Calendar / schedule page. */
   schedule: flag('VITE_FEATURE_SCHEDULE', false),
   /** Tasks page. */

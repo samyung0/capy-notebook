@@ -374,3 +374,67 @@ it('asks for a row in a chart without one', () => {
     m.question_issue_chart_rows(),
   ]);
 });
+
+it('names a part inside a group by its computed label and a group block by its row', () => {
+  const part = (id: string, group?: string) => ({
+    ...exampleQuestions[0].parts[0],
+    blocks: [empty],
+    id,
+    ...(group ? { group } : {}),
+  });
+  const question: Question = {
+    ...exampleQuestions[0],
+    groups: [
+      {
+        blocks: [
+          empty,
+          {
+            description: 'x'.repeat(limits.QUESTION_DESCRIPTION_MAX + 1),
+            height: 10,
+            image: { assetId: 'asset' },
+            type: 'image',
+            width: 10,
+          },
+        ],
+        id: 'g',
+      },
+    ],
+    parts: [part('a'), part('b1', 'g'), part('b2', 'g'), part('c')],
+    stem: [],
+  };
+  const issues = questionIssues(question);
+  expect(issueMessages(issues)).toContain(
+    m.question_issue_text_part({ label: 'A' })
+  );
+  expect(issueMessages(issues)).toContain(
+    m.question_issue_text_part({ label: 'B(i)' })
+  );
+  expect(issueMessages(issues)).toContain(
+    m.question_issue_text_part({ label: 'B(ii)' })
+  );
+  expect(issueMessages(issues)).toContain(
+    m.question_issue_text_part({ label: 'C' })
+  );
+  // The group's image, on its own row (its index among the typed blocks), reads
+  // in order: before the group's first part.
+  const generic = issues.findIndex(
+    (issue) => issue.message === m.question_issue_generic()
+  );
+  expect(issues[generic].row).toEqual({
+    kind: 'block',
+    location: { groupId: 'g', index: 1 },
+  });
+  const first = issues.findIndex(
+    (issue) => issue.message === m.question_issue_text_part({ label: 'B(i)' })
+  );
+  expect(generic).toBeLessThan(first);
+  // Numbers: "2(i)".
+  expect(
+    issueMessages(questionIssues({ ...question, labels: 'numbers' }))
+  ).toContain(m.question_issue_text_part({ label: '2(i)' }));
+  // A lone part inside a group still has a label to name.
+  const lone = { ...question, parts: [part('b1', 'g')] };
+  expect(issueMessages(questionIssues(lone))).toContain(
+    m.question_issue_text_part({ label: 'A(i)' })
+  );
+});

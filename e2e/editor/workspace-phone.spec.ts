@@ -28,16 +28,10 @@ test('the title opens Files from the top and ⋮ carries the workspace actions',
   const header = page.getByTestId('content-header');
   const title = header.getByRole('button', { name: TITLE });
   await expect(title).toBeVisible({ timeout: 60_000 });
-  // Phones keep the header to the title, view/edit and ⋮.
-  await expect(
-    header.getByRole('button', { name: m.study_mark_read() })
-  ).toHaveCount(0);
-
   await header.getByRole('button', { name: m.a11y_open_menu() }).click();
   for (const item of [
     m.action_add_file(),
-    m.action_add_chapter(),
-    m.study_mark_read(),
+    m.action_add_topic(),
     m.workspace_settings(),
   ])
     await expect(page.getByRole('menuitem', { name: item })).toBeVisible();
@@ -61,6 +55,26 @@ test('the title opens Files from the top and ⋮ carries the workspace actions',
   await files.getByText('Osmosis notes.txt').click();
   await expect(files).toBeHidden();
   await expect(header.getByRole('button', { name: /Osmosis/ })).toBeVisible();
+});
+
+test('Workspace settings shows the tabs first, reached by the URL with its search', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio?settings=menu&settingsQuery=invite');
+  const list = page.getByRole('dialog', { name: m.workspace_settings() });
+  await expect(
+    list.getByRole('textbox', { name: m.workspace_settings_search() })
+  ).toHaveValue('invite', { timeout: 60_000 });
+  await expect(list.getByRole('tab')).toHaveCount(1);
+
+  await list.getByRole('tab', { name: m.workspace_sharing() }).click();
+  const sharing = page.getByRole('dialog', { name: m.workspace_sharing() });
+  await expect(sharing.getByText(m.members_people())).toBeVisible();
+  await expect(page).toHaveURL(/settings=sharing&settingsQuery=invite/);
+
+  await sharing.getByRole('button', { name: m.action_back() }).click();
+  await expect(list.getByRole('tab')).toHaveCount(1);
+  await expect(page).toHaveURL(/settings=menu&settingsQuery=invite/);
 });
 
 test('chat docks as a button, keeps a draft, and grows into its page on send', async ({
@@ -125,4 +139,25 @@ test('chat docks as a button, keeps a draft, and grows into its page on send', a
   await close.click();
   await expect(close).toHaveCount(0);
   await expect(button).toBeVisible();
+});
+
+test('the chat page lists past chats in its history dialog, with See archived', async ({
+  page,
+}) => {
+  await open(page);
+  const dock = page.locator('[data-workspace-chat-dock]');
+  await dock
+    .getByRole('button', { exact: true, name: m.workspace_tab_chat() })
+    .click({ timeout: 60_000 });
+  await dock.getByRole('button', { name: m.chat_history() }).click();
+  const history = page.getByRole('dialog', { name: m.chat_history() });
+  await expect(
+    history.getByRole('button', { name: 'Exam plan for the cell unit' })
+  ).toBeVisible();
+  await history.getByRole('button', { name: m.chat_see_archived() }).click();
+  await expect(
+    page
+      .getByRole('dialog', { name: m.chat_archived_title() })
+      .getByText('Lab report draft questions')
+  ).toBeVisible();
 });

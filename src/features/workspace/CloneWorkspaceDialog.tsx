@@ -30,10 +30,9 @@ export function CloneWorkspaceDialog({
   setOpen: (open: boolean) => void;
   workspace: Pick<
     PublicWorkspace,
-    | 'chapterCount'
+    | 'topicCount'
     | 'cover'
     | 'description'
-    | 'fileCount'
     | 'iconId'
     | 'id'
     | 'isOwner'
@@ -50,10 +49,8 @@ export function CloneWorkspaceDialog({
   // No id: the copy's cover art previews and saves with a fresh seed.
   const draft = useMemo(
     () => ({
-      chapterCount: workspace.chapterCount,
       cover: workspace.cover,
       description: workspace.description,
-      fileCount: workspace.fileCount,
       iconId: workspace.iconId,
       // An owner's copy sits next to the source, so its name tells them apart.
       name: workspace.isOwner
@@ -61,6 +58,7 @@ export function CloneWorkspaceDialog({
         : workspace.name,
       // Tag ids are the source owner's; the copy reuses or creates by value.
       tags: workspace.tags.map(({ value }) => ({ value })),
+      topicCount: workspace.topicCount,
     }),
     [workspace]
   );

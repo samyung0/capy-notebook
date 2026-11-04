@@ -6,6 +6,7 @@
  */
 import type { Cover } from './cover.ts';
 import type { TagInput } from './tagInput.ts';
+import type { WorkspaceKind } from './workspaceKind.ts';
 
 export interface CreateWorkspaceReq {
   /** A URL to the JSON Schema for this object. */
@@ -22,6 +23,8 @@ export interface CreateWorkspaceReq {
      * @pattern ^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
      */
   iconId?: string;
+  /** What it is used for, personal when omitted. A clone ignores it: an owner's or editor's keeps the source's, anyone else's is personal */
+  kind?: WorkspaceKind;
   /**
      * Workspace name
      * @minLength 1

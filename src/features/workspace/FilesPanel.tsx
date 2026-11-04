@@ -1,36 +1,28 @@
 import { type MouseEvent, type ReactNode, useRef, useState } from 'react';
 import {
-  useChapters,
-  useDeleteChapter,
+  useDeleteTopic,
   useFiles,
   useMaterials,
   useMoveMaterial,
-  useReorderChapters,
   useReorderContent,
+  useReorderTopics,
   useRetryFileProcessing,
   useRetryingFileIds,
+  useTopics,
   useWorkspace,
 } from '@/api/hooks';
-import type {
-  Chapter,
-  ContentOrderItem,
-  MaterialRef,
-  MaterialRefType,
-} from '@/api/types';
+import type { ContentOrderItem, MaterialRef, Topic } from '@/api/types';
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
 import { FileListItem } from '@/features/files/FileListItem';
-import { fileCanMoveTo, fileIsIngesting } from '@/features/files/fileUtils';
+import {
+  fileCanMoveTo,
+  fileIsIngesting,
+  materialCanClone,
+} from '@/features/files/fileUtils';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
 import type { OpenItem } from '@/features/materials/openItem';
-import {
-  type StudyRow,
-  type StudyTarget,
-  useStudyActions,
-  useStudyStates,
-} from '@/features/study/studyItems';
-import type { GenerateMode } from '@/features/workspace/GenerateForm';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
@@ -44,56 +36,48 @@ import {
   type WorkspaceContentItem,
 } from './workspaceContent';
 
-const GENERATING_MATERIAL: Record<
-  GenerateMode,
-  { type: MaterialRefType; title: () => string }
-> = {
-  diagram: { title: m.generating_diagram, type: 'diagram' },
-  flashcards: { title: m.generating_flashcards, type: 'flashcards' },
-  mindmap: { title: m.generating_mindmap, type: 'mindmap' },
-  quiz: { title: m.generating_quiz, type: 'quiz' },
-};
-
 // Native drag-and-drop: rows expose their content type and id. Drops on a
-// content row insert before/after that row; chapter and tree backgrounds append.
-const isChapterMap = (value: unknown): value is Record<string, boolean> =>
+// content row insert before/after that row; topic and tree backgrounds append.
+const isTopicMap = (value: unknown): value is Record<string, boolean> =>
   typeof value === 'object' &&
   value !== null &&
   Object.values(value).every((open) => typeof open === 'boolean');
 
 const DND_TYPES = ['application/x-capy-material', 'application/x-capy-file'];
 
-/** The chapter tree with its files and materials. Lives in the right panel's
- * Files tab, as its own column when pinned, or in the header's dropdown below lg;
- * `renderTabRow` draws whichever header that placement needs. */
+/** Other files' key in the open-groups map; topic ids never take it. */
+const OTHER_FILES = 'other-files';
+
+/** The topic tree with its files and materials. Lives in the rail's Files
+ * section from lg, or in the header's dropdown below lg; `renderTabRow` draws
+ * whichever header that placement needs. */
 export function FilesPanel({
   workspaceId,
   readOnly,
   openItem,
   onOpenItem,
   onNavigate,
-  generating,
-  onRenameChapter,
+  onRenameTopic,
   onAddSource,
-  onAddChapter,
+  onAddTopic,
   renderTabRow,
   header,
   footer,
   className,
   rowMenus = true,
   searchable = false,
+  uploadTopic,
 }: {
   workspaceId: string;
   readOnly: boolean;
   openItem: OpenItem | null;
   onOpenItem: (item: OpenItem | null) => void;
   onNavigate: () => void;
-  generating: GenerateMode | null;
-  onRenameChapter: (chapter: Chapter) => void;
-  /** The New file or chapter row under the search; left out where adding is
+  onRenameTopic: (topic: Topic) => void;
+  /** The New file or topic row under the search; left out where adding is
    * not allowed. */
   onAddSource?: (mode: AddSourceMode) => void;
-  onAddChapter?: () => void;
+  onAddTopic?: () => void;
   renderTabRow: (actions: TabAction[]) => ReactNode;
   /** The tree's first row, scrolling with it, e.g. the workspace switcher. */
   header?: ReactNode;
@@ -104,26 +88,30 @@ export function FilesPanel({
   rowMenus?: boolean;
   /** A search above the tree that filters it by name (the side panels). */
   searchable?: boolean;
+  /** While the Add file dialog is open: the topic its upload starts in (null
+   * for Other files), whose row is highlighted in place of the open item's
+   * (board T4). */
+  uploadTopic?: string | null;
 }) {
-  const { data: chapters } = useChapters(workspaceId);
+  const { data: topics } = useTopics(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const { data: workspace } = useWorkspace(workspaceId, {
     errorBoundary: false,
   });
   const { data: materials } = useMaterials(workspaceId);
-  const { mutate: reorder } = useReorderChapters(workspaceId);
+  const { mutate: reorder } = useReorderTopics(workspaceId);
   // One Retry processing mutation for every row.
   const { mutateAsync: retryProcessing } = useRetryFileProcessing(workspaceId);
   const retryingIds = useRetryingFileIds(workspaceId);
-  const { mutate: delChapter } = useDeleteChapter(workspaceId);
+  const { mutate: delTopic } = useDeleteTopic(workspaceId);
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: reorderContent } = useReorderContent(workspaceId);
 
-  // Chapters start open; the ones this viewer closed stay closed per workspace.
-  const [openChapters, setOpenChapters] = useLocalPref(
-    PREF_KEYS.openChapters(workspaceId),
+  // Topics start open; the ones this viewer closed stay closed per workspace.
+  const [openTopics, setOpenTopics] = useLocalPref(
+    PREF_KEYS.openTopics(workspaceId),
     {},
-    isChapterMap
+    isTopicMap
   );
   const [dragging, setDragging] = useState(false);
   // Drop-target line while dragging workspace content.
@@ -135,21 +123,19 @@ export function FilesPanel({
   const [query, setQuery] = useState('');
   const searching = searchable && query.trim() !== '';
   const draggedItemRef = useRef<ContentOrderItem | null>(null);
-  const draggedChapterRef = useRef<string | null>(null);
+  const draggedTopicRef = useRef<string | null>(null);
 
-  const unfiled = files?.filter((f) => f.chapterId === null) ?? [];
-  const unfiledMaterials =
-    materials?.filter((mt) => mt.chapterId == null) ?? [];
+  const unfiled = files?.filter((f) => f.topicId === null) ?? [];
+  const unfiledMaterials = materials?.filter((mt) => mt.topicId == null) ?? [];
 
-  function contentFor(chapterId: string | null): WorkspaceContentItem[] {
-    return sharedContentFor(files, materials, chapterId);
+  function contentFor(topicId: string | null): WorkspaceContentItem[] {
+    return sharedContentFor(files, materials, topicId);
   }
-  // While searching: the rows whose name matches, or a matching chapter's
-  // every row; chapters without either hide and the rest show open.
-  function shownFor(chapter: Chapter | null): WorkspaceContentItem[] {
-    const items = contentFor(chapter?.id ?? null);
-    if (!searching || (chapter && matchesSearch(chapter.name, query)))
-      return items;
+  // While searching: the rows whose name matches, or a matching topic's
+  // every row; topics without either hide and the rest show open.
+  function shownFor(topic: Topic | null): WorkspaceContentItem[] {
+    const items = contentFor(topic?.id ?? null);
+    if (!searching || (topic && matchesSearch(topic.name, query))) return items;
     return items.filter((item) =>
       matchesSearch(
         item.type === 'file' ? item.data.name : item.data.title,
@@ -157,11 +143,11 @@ export function FilesPanel({
       )
     );
   }
-  const shownChapters = searching
-    ? chapters?.filter(
+  const shownTopics = searching
+    ? topics?.filter(
         (ch) => matchesSearch(ch.name, query) || shownFor(ch).length > 0
       )
-    : chapters;
+    : topics;
   const shownUnfiled = shownFor(null);
 
   function hasDraggedContent(e: React.DragEvent) {
@@ -181,31 +167,31 @@ export function FilesPanel({
   function clearDragState() {
     setDragging(false);
     draggedItemRef.current = null;
-    draggedChapterRef.current = null;
+    draggedTopicRef.current = null;
     setDropTarget(null);
     setInsertTarget(null);
   }
   function moveContent(
     dragged: ContentOrderItem,
-    chapterId: string | null,
+    topicId: string | null,
     targetIndex: number
   ) {
-    const items = contentFor(chapterId)
+    const items = contentFor(topicId)
       .map(({ id, type }) => ({ id, type }))
       .filter((item) => item.id !== dragged.id || item.type !== dragged.type);
     items.splice(Math.max(0, Math.min(targetIndex, items.length)), 0, dragged);
-    reorderContent({ chapterId, items });
-    if (chapterId) setOpenChapters({ ...openChapters, [chapterId]: true });
+    reorderContent({ items, topicId });
+    if (topicId) setOpenTopics({ ...openTopics, [topicId]: true });
   }
-  function onItemDrop(chapterId: string | null, e: React.DragEvent) {
+  function onItemDrop(topicId: string | null, e: React.DragEvent) {
     if (readOnly || !hasDraggedContent(e)) return;
     e.preventDefault();
     e.stopPropagation();
     const dragged = draggedContent(e);
     clearDragState();
-    if (dragged) moveContent(dragged, chapterId, contentFor(chapterId).length);
+    if (dragged) moveContent(dragged, topicId, contentFor(topicId).length);
   }
-  function dropZone(key: string, chapterId: string | null) {
+  function dropZone(key: string, topicId: string | null) {
     if (readOnly) return {};
     return {
       onDragLeave: (e: React.DragEvent) => {
@@ -223,13 +209,10 @@ export function FilesPanel({
           setInsertTarget(null);
         }
       },
-      onDrop: (e: React.DragEvent) => onItemDrop(chapterId, e),
+      onDrop: (e: React.DragEvent) => onItemDrop(topicId, e),
     };
   }
-  function contentDropZone(
-    item: WorkspaceContentItem,
-    chapterId: string | null
-  ) {
+  function contentDropZone(item: WorkspaceContentItem, topicId: string | null) {
     const key = `${item.type}:${item.id}`;
     if (readOnly) return {};
     return {
@@ -260,7 +243,7 @@ export function FilesPanel({
         clearDragState();
         if (dragged) {
           if (dragged.id === item.id && dragged.type === item.type) return;
-          const destination = contentFor(chapterId).filter(
+          const destination = contentFor(topicId).filter(
             (content) =>
               content.id !== dragged.id || content.type !== dragged.type
           );
@@ -274,19 +257,19 @@ export function FilesPanel({
             targetIndex < 0
               ? destination.length
               : targetIndex + (edge === 'after' ? 1 : 0);
-          moveContent(dragged, chapterId, insertionIndex);
+          moveContent(dragged, topicId, insertionIndex);
         }
       },
     };
   }
-  function chapterDropZone(chapter: Chapter) {
-    const key = `chapter:${chapter.id}`;
-    const contentZone = dropZone(key, chapter.id);
+  function topicDropZone(topic: Topic) {
+    const key = `topic:${topic.id}`;
+    const contentZone = dropZone(key, topic.id);
     if (readOnly) return {};
     return {
       ...contentZone,
       onDragOver: (e: React.DragEvent) => {
-        if (!draggedChapterRef.current) return contentZone.onDragOver?.(e);
+        if (!draggedTopicRef.current) return contentZone.onDragOver?.(e);
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
@@ -301,16 +284,16 @@ export function FilesPanel({
         );
       },
       onDrop: (e: React.DragEvent) => {
-        const dragged = draggedChapterRef.current;
+        const dragged = draggedTopicRef.current;
         if (!dragged) return contentZone.onDrop?.(e);
         e.preventDefault();
         e.stopPropagation();
         clearDragState();
-        if (dragged === chapter.id || !chapters) return;
-        const ids = chapters.map((ch) => ch.id).filter((id) => id !== dragged);
+        if (dragged === topic.id || !topics) return;
+        const ids = topics.map((ch) => ch.id).filter((id) => id !== dragged);
         const rect = e.currentTarget.getBoundingClientRect();
         const after = e.clientY >= rect.top + rect.height / 2;
-        ids.splice(ids.indexOf(chapter.id) + (after ? 1 : 0), 0, dragged);
+        ids.splice(ids.indexOf(topic.id) + (after ? 1 : 0), 0, dragged);
         reorder(ids);
       },
     };
@@ -329,8 +312,13 @@ export function FilesPanel({
       )
     );
   }
+  // Board T4: while the Add file dialog is open, the upload's topic row is
+  // highlighted and the open item's row is not.
+  const highlighting = uploadTopic !== undefined;
   const isFileActive = (id: string) =>
-    openItem?.kind === 'file' && openItem.id === id;
+    !highlighting && openItem?.kind === 'file' && openItem.id === id;
+  // Rows inside a topic or Other files start under the group's name (T3).
+  const grouped = !!topics?.length;
   function openLink(event: MouseEvent<HTMLAnchorElement>) {
     if (
       event.button !== 0 ||
@@ -345,22 +333,18 @@ export function FilesPanel({
   function onFileDeleted(id: string) {
     if (isFileActive(id)) onOpenItem(null);
   }
-  // The reader's own progress marks and menu items, while progress is on.
-  const { enabled: studying, states } = useStudyStates(workspaceId);
-  const { menuItems: studyMenu } = useStudyActions(workspaceId);
-  function studyRow(target: StudyTarget): StudyRow | undefined {
-    if (!studying) return;
-    const state = states.get(target.id);
-    return { menuItems: studyMenu(target, state), state };
-  }
   function renderMaterial(mt: MaterialRef) {
     return (
       <MaterialListItem
-        active={openItem?.kind === 'material' && openItem.id === mt.id}
-        canClone={!!workspace?.canClone}
-        chapters={chapters ?? []}
+        active={
+          !highlighting &&
+          openItem?.kind === 'material' &&
+          openItem.id === mt.id
+        }
+        canClone={materialCanClone(workspace, mt.assigned)}
         color="purple"
         data={mt}
+        indent={grouped}
         key={`${mt.type}:${mt.id}`}
         menu={rowMenus}
         onDeleted={() => {
@@ -368,17 +352,17 @@ export function FilesPanel({
             onOpenItem(null);
           }
         }}
-        onMove={(chapterId) => moveMaterial({ chapterId, id: mt.id })}
+        onMove={(topicId) => moveMaterial({ id: mt.id, topicId })}
         onOpen={openLink}
         readOnly={readOnly}
-        study={studyRow({ id: mt.id, kind: 'material' })}
+        topics={topics ?? []}
         workspaceId={workspaceId}
       />
     );
   }
   function renderContentItem(
     item: WorkspaceContentItem,
-    chapterId: string | null
+    topicId: string | null
   ) {
     const key = `${item.type}:${item.id}`;
     const draggable =
@@ -386,7 +370,7 @@ export function FilesPanel({
     return (
       <div
         key={key}
-        {...contentDropZone(item, chapterId)}
+        {...contentDropZone(item, topicId)}
         className="relative"
         data-workspace-content-row={key}
         draggable={draggable}
@@ -416,16 +400,16 @@ export function FilesPanel({
             active={isFileActive(item.id)}
             canClone={!!workspace?.canClone}
             canMoveTo={fileCanMoveTo(item.data, workspace)}
-            chapters={chapters}
             color="purple"
             file={item.data}
+            indent={grouped}
             menu={rowMenus}
             onDeleted={onFileDeleted}
             onOpen={openLink}
             readOnly={readOnly}
             retry={workspace?.isOwner ? retryProcessing : undefined}
             retryPending={retryingIds.includes(item.id)}
-            study={studyRow({ id: item.id, kind: 'file' })}
+            topics={topics}
             workspaceId={workspaceId}
           />
         ) : (
@@ -434,27 +418,36 @@ export function FilesPanel({
       </div>
     );
   }
-  function moveChapter(idx: number, dir: -1 | 1) {
-    if (!chapters) return;
-    const ids = chapters.map((c) => c.id);
+  function moveTopic(idx: number, dir: -1 | 1) {
+    if (!topics) return;
+    const ids = topics.map((c) => c.id);
     const j = idx + dir;
     if (j < 0 || j >= ids.length) return;
     [ids[idx], ids[j]] = [ids[j], ids[idx]];
     reorder(ids);
   }
 
-  // Collapses all chapters, or expands them all once every one is collapsed.
+  // Other files opens and closes like a topic (Epo 2026-11-03), keyed
+  // apart from topic ids in the same map.
+  const othersExpanded =
+    searching || !topics?.length || (openTopics[OTHER_FILES] ?? true);
+  // Collapses all groups, or expands them all once every topic is collapsed.
   const allCollapsed =
-    !!chapters?.length && chapters.every((c) => openChapters[c.id] === false);
+    !!topics?.length && topics.every((c) => openTopics[c.id] === false);
   const actions: TabAction[] = [
     {
       icon: allCollapsed ? 'folderExpand' : 'folderCollapse',
       label: allCollapsed
-        ? m.workspace_expand_chapters()
-        : m.workspace_collapse_chapters(),
+        ? m.workspace_expand_topics()
+        : m.workspace_collapse_topics(),
       onClick: () =>
-        setOpenChapters(
-          Object.fromEntries((chapters ?? []).map((c) => [c.id, allCollapsed]))
+        setOpenTopics(
+          Object.fromEntries(
+            [...(topics ?? []).map((c) => c.id), OTHER_FILES].map((id) => [
+              id,
+              allCollapsed,
+            ])
+          )
         ),
     },
   ];
@@ -482,8 +475,8 @@ export function FilesPanel({
         <div className="contents" data-workspace-add-menu>
           <PanelNewRow
             icon="plus"
-            label={m.action_new_file_or_chapter()}
-            menu={addSourceMenuItems(onAddSource, onAddChapter)}
+            label={m.action_new_file_or_topic()}
+            menu={addSourceMenuItems(onAddSource, onAddTopic)}
           />
         </div>
       )}
@@ -493,33 +486,38 @@ export function FilesPanel({
         data-workspace-file-tree
       >
         {header}
-        {!chapters && (
+        {!topics && (
           <SkeletonList className="px-1.5 py-2" count={5} rowHeight={36} />
         )}
-        {searching && !shownChapters?.length && !shownUnfiled.length && (
+        {searching && !shownTopics?.length && !shownUnfiled.length && (
           <p className="px-2 py-1.5 text-fg-muted text-sm">
             {m.workspace_no_files_match()}
           </p>
         )}
-        {chapters && shownChapters && (
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col empty:hidden">
-              {shownChapters.map((ch) => {
-                const idx = chapters.indexOf(ch);
-                const expanded = searching || (openChapters[ch.id] ?? true);
+        {topics && shownTopics && (
+          <div className="flex flex-col gap-px">
+            <div className="flex flex-col gap-px empty:hidden">
+              {shownTopics.map((ch) => {
+                const idx = topics.indexOf(ch);
+                const expanded = searching || (openTopics[ch.id] ?? true);
                 return (
                   <div
-                    {...chapterDropZone(ch)}
+                    {...topicDropZone(ch)}
                     className={cn(
                       'relative rounded-button',
-                      dropTarget === `chapter:${ch.id}` && 'bg-tint-accent-1/70'
+                      dropTarget === `topic:${ch.id}` && 'bg-tint-accent-1/70'
                     )}
-                    data-workspace-chapter={ch.id}
+                    data-workspace-topic={ch.id}
                     key={ch.id}
                   >
-                    {insertionLine(`chapter:${ch.id}`)}
+                    {insertionLine(`topic:${ch.id}`)}
                     <div
-                      className="group relative flex items-center rounded-button py-1.5 pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!"
+                      className={cn(
+                        'group relative flex min-h-8 items-center rounded-button hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+                        highlighting &&
+                          uploadTopic === ch.id &&
+                          'bg-surface-hover-bg'
+                      )}
                       draggable={!readOnly}
                       onDragEnd={clearDragState}
                       onDragStart={(e) => {
@@ -529,44 +527,22 @@ export function FilesPanel({
                         }
                         e.stopPropagation();
                         setDragging(true);
-                        draggedChapterRef.current = ch.id;
+                        draggedTopicRef.current = ch.id;
                         e.dataTransfer.setData(
-                          'application/x-capy-chapter',
+                          'application/x-capy-topic',
                           ch.id
                         );
                         e.dataTransfer.effectAllowed = 'move';
                       }}
                     >
-                      <button
-                        aria-expanded={expanded}
-                        className="flex min-w-0 flex-1 items-center gap-2 px-1.5 text-left"
-                        onClick={() =>
-                          setOpenChapters({
-                            ...openChapters,
-                            [ch.id]: !expanded,
-                          })
+                      <GroupToggle
+                        count={contentFor(ch.id).length}
+                        expanded={expanded}
+                        name={ch.name}
+                        onToggle={() =>
+                          setOpenTopics({ ...openTopics, [ch.id]: !expanded })
                         }
-                        type="button"
-                      >
-                        <Icon
-                          className="shrink-0 text-fg-secondary"
-                          name="chapter"
-                          size={15}
-                        />
-                        <span className="line-clamp-1 translate-y-px truncate font-semibold">
-                          {ch.name}
-                        </span>
-                        {/* Drawn like the workspace picker's chevron above. */}
-                        <Icon
-                          className="shrink-0 -translate-y-px text-fg-muted"
-                          name={expanded ? 'chevronDown' : 'chevronRight'}
-                        />
-                        {!expanded && (
-                          <span className="ml-auto pr-1 font-semibold text-fg-muted text-xs">
-                            {contentFor(ch.id).length}
-                          </span>
-                        )}
-                      </button>
+                      />
                       {!readOnly && (
                         <HoverActions
                           className="absolute top-1/2 right-1 -translate-y-1/2"
@@ -574,37 +550,37 @@ export function FilesPanel({
                             {
                               icon: 'write',
                               label: m.action_rename(),
-                              onClick: () => onRenameChapter(ch),
+                              onClick: () => onRenameTopic(ch),
                             },
                             {
                               disabled: idx === 0,
                               icon: 'chevronUp',
                               label: m.workspace_move_up(),
-                              onClick: () => moveChapter(idx, -1),
+                              onClick: () => moveTopic(idx, -1),
                             },
                             {
-                              disabled: idx === chapters.length - 1,
+                              disabled: idx === topics.length - 1,
                               icon: 'chevronDown',
                               label: m.workspace_move_down(),
-                              onClick: () => moveChapter(idx, 1),
+                              onClick: () => moveTopic(idx, 1),
                             },
                             {
                               danger: true,
                               icon: 'trash',
                               label: m.action_delete(),
-                              onClick: () => delChapter(ch.id),
+                              onClick: () => delTopic(ch.id),
                             },
                           ]}
                         />
                       )}
                     </div>
                     {expanded && (
-                      <div className="flex flex-col pl-3">
+                      <div className="mt-px flex flex-col gap-px">
                         {shownFor(ch).map((item) =>
                           renderContentItem(item, ch.id)
                         )}
                         {contentFor(ch.id).length === 0 && (
-                          <p className="px-1.5 py-1 pl-2 font-semibold text-fg-muted text-xs">
+                          <p className="py-1 pr-1.5 pl-7 font-semibold text-fg-muted text-xs">
                             {m.common_empty()}
                           </p>
                         )}
@@ -617,39 +593,37 @@ export function FilesPanel({
 
             {(searching
               ? shownUnfiled.length > 0
-              : unfiled.length > 0 ||
-                unfiledMaterials.length > 0 ||
-                generating) && (
-              <div className="rounded-button">
-                {chapters.length > 0 && (
-                  <div className="t-label px-1.5 py-1.5 text-fg-muted">
-                    {m.nav_section_others()}
+              : unfiled.length > 0 || unfiledMaterials.length > 0) && (
+              <div className="rounded-button" data-workspace-other-files>
+                {topics.length > 0 && (
+                  <div
+                    className={cn(
+                      'flex min-h-8 items-center rounded-button hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+                      uploadTopic === null && 'bg-surface-hover-bg'
+                    )}
+                  >
+                    <GroupToggle
+                      count={contentFor(null).length}
+                      expanded={othersExpanded}
+                      name={m.topic_other_files()}
+                      onToggle={() =>
+                        setOpenTopics({
+                          ...openTopics,
+                          [OTHER_FILES]: !othersExpanded,
+                        })
+                      }
+                    />
                   </div>
                 )}
-                <div>
-                  {shownUnfiled.map((item) => renderContentItem(item, null))}
-                  {generating && (
-                    <MaterialListItem
-                      active={false}
-                      chapters={chapters}
-                      color="purple"
-                      data={{
-                        chapterId: null,
-                        createdAt: new Date().toISOString(),
-                        id: '__generating__',
-                        maxDepth: 0,
-                        nodeCount: 0,
-                        position: Number.MAX_SAFE_INTEGER,
-                        sizeBytes: 0,
-                        title: GENERATING_MATERIAL[generating].title(),
-                        type: GENERATING_MATERIAL[generating].type,
-                      }}
-                      generating
-                      readOnly
-                      workspaceId={workspaceId}
-                    />
-                  )}
-                </div>
+                {othersExpanded && (
+                  <div
+                    className={cn(
+                      topics.length > 0 && 'mt-px flex flex-col gap-px'
+                    )}
+                  >
+                    {shownUnfiled.map((item) => renderContentItem(item, null))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -657,5 +631,40 @@ export function FilesPanel({
       </div>
       {footer}
     </div>
+  );
+}
+
+/** A group row's toggle (a topic or Other files) as mock T3 draws it (Epo
+ * 2026-11-03): no icon, a 16px chevron, the name in bold and its count; its
+ * items start under the name. A topic row only opens and closes; there is no
+ * topic page. */
+function GroupToggle({
+  count,
+  expanded,
+  name,
+  onToggle,
+}: {
+  count: number;
+  expanded: boolean;
+  name: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      aria-expanded={expanded}
+      className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch px-1.5 text-left font-bold text-fg"
+      onClick={onToggle}
+      type="button"
+    >
+      <Icon
+        className="shrink-0"
+        name={expanded ? 'chevronDown' : 'chevronRight'}
+        size={16}
+      />
+      <span className="line-clamp-1 translate-y-px truncate">{name}</span>
+      <span className="ml-auto translate-y-px font-semibold text-fg-muted text-xs">
+        {count}
+      </span>
+    </button>
   );
 }

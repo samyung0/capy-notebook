@@ -8,11 +8,11 @@ import type { UnfinishedSessionGroup } from './unfinishedSessionGroup.ts';
 
 export interface UnfinishedSession {
   answered: number;
-  chapterName?: string;
   group: UnfinishedSessionGroup;
   iconId: string;
   id: string;
   lastAnswerAt: string;
+  topicName?: string;
   total: number;
   workspaceId: string;
   workspaceName: string;

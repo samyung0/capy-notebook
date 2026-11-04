@@ -1,11 +1,11 @@
 import { Link } from '@tanstack/react-router';
 import type { MouseEventHandler } from 'react';
-import type { Chapter, MaterialRef, UserColor } from '@/api/types';
+import type { MaterialRef, Topic, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Spinner } from '@/components/ui/feedback';
-import { StudyMark, type StudyRow } from '@/features/study/studyItems';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toMaterialActionTarget } from '@/features/workspace/contentActionTarget';
+import { HiddenMark } from '@/features/workspace/HiddenChip';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { materialIconName } from '@/lib/fileIcons';
@@ -15,72 +15,79 @@ export function MaterialListItem({
   active,
   onOpen,
   onDeleted,
-  chapters,
+  topics,
   color,
   onMove,
   workspaceId,
   generating = false,
   readOnly = false,
   canClone = false,
-  study,
   menu = true,
+  indent = false,
 }: {
   data: MaterialRef;
   active: boolean;
   onOpen?: MouseEventHandler<HTMLAnchorElement>;
   onDeleted?: () => void;
-  /** All workspace chapters, for the "Move to…" menu. */
-  chapters: Chapter[];
+  /** All workspace topics, for the "Move to…" menu. */
+  topics: Topic[];
   color?: UserColor;
-  /** File this material under a chapter (null = unfile). */
-  onMove?: (chapterId: string | null) => void;
+  /** File this material under a topic (null = unfile). */
+  onMove?: (topicId: string | null) => void;
   workspaceId: string;
   generating?: boolean;
   readOnly?: boolean;
   /** Members and editors may copy the material elsewhere (workspace.canClone). */
   canClone?: boolean;
   /** The reader's own progress on this material, while progress is on. */
-  study?: StudyRow;
   /** The hover ⋮; touch lists (the top Files drawer) leave it out. */
   menu?: boolean;
+  /** Inside a topic or Other files: the icon starts under the group's name. */
+  indent?: boolean;
 }) {
   const hoverMenu = menu && (!readOnly || canClone) && !generating;
   return (
     <div
       className={cn(
-        'group relative flex items-center rounded-button px-2 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+        'group relative flex min-h-7.5 items-center rounded-button pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+        indent ? 'pl-7' : 'pl-2',
         active && 'bg-surface-hover-bg'
       )}
     >
+      {/* Board T3's row, as FileListItem's; a quiz reads "<title> · quiz". */}
       <Link
         className={cn(
-          'flex w-full items-center gap-2 rounded-button py-1.5 text-left',
-          active && 'font-bold'
+          'flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-button text-left font-medium text-fg-secondary',
+          active && 'text-fg'
         )}
         disabled={generating}
         draggable={false}
         onClick={onOpen}
         params={{ workspaceId }}
         replace
-        search={{ material: matRef.id }}
+        // An assignee's row opens the assignment; the quiz is refused until it closes.
+        search={
+          matRef.assignmentId
+            ? { assignment: matRef.assignmentId, study: 'assignments' as const }
+            : { material: matRef.id }
+        }
         to="/workspaces/$workspaceId"
       >
-        <FileIcon className="size-3.75" name={materialIconName(matRef.type)} />
-        <span
-          className={cn(
-            'line-clamp-2 flex-1 translate-y-px',
-            study?.state === 'removed' && 'text-fg-muted'
-          )}
-        >
-          {matRef.title}
+        <FileIcon
+          className="size-4"
+          name={materialIconName(matRef.type, matRef.assigned)}
+        />
+        <span className="min-w-0 flex-1 translate-y-px truncate">
+          {matRef.type === 'quiz'
+            ? m.files_quiz_row({ title: matRef.title })
+            : matRef.title}
         </span>
-        <StudyMark hoverMenu={hoverMenu} state={study?.state} />
+        {matRef.hidden && <HiddenMark />}
         {generating && <Spinner className="size-4 shrink-0" />}
       </Link>
       {hoverMenu && (
         <ContentActions
           canClone={canClone}
-          chapters={chapters}
           color={color}
           confirmInMenu
           content={toMaterialActionTarget(matRef)}
@@ -90,11 +97,11 @@ export function MaterialListItem({
             active && 'bg-surface-hover-bg'
           )}
           hoverIconContainerClassName="p-1 focus-visible:ring-inset"
-          leadingItems={readOnly ? [] : study?.menuItems}
           onDeleted={onDeleted}
-          onMove={(chapterId) => onMove?.(chapterId)}
+          onMove={(topicId) => onMove?.(topicId)}
           readOnly={readOnly}
           renameTitle={m.material_rename()}
+          topics={topics}
           workspaceId={workspaceId}
         />
       )}

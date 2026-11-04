@@ -6,14 +6,12 @@
  */
 import type { Attempt } from './attempt.ts';
 import type { ReviewItem } from './reviewItem.ts';
-import type { StudyItem } from './studyItem.ts';
 import type { UnfinishedSession } from './unfinishedSession.ts';
 
 export interface StudySummary {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   enabled: boolean;
-  items: StudyItem[];
   quickReview: ReviewItem[];
   recentAttempts: Attempt[];
   reviewable: number;

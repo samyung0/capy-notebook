@@ -9,7 +9,7 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
 
 - The page panel (`PagePanel`, `src/components/app/layout.tsx`) has no notch.
   Its header and body scroll together at every width.
-- There is no top bar. From `lg`, the sidebar (`Sidebar account`) carries
+- There is no top bar. From `lg`, the app sidebar (`Sidebar account`) carries
   Search and Notifications under the app name. Its foot is your profile row,
   which opens the profile menu upwards: Settings, Billing & usage, Theme and
   Log out (`ProfileMenu trigger="row"`).
@@ -26,8 +26,89 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   `[data-frosted]`), so the frost shows through. A row's hover ⋮
   (`HoverActions`) drops its fill there and the row's label fades out under
   it instead.
-- The opened workspace has no app sidebar. Its 1-2-3 panels sit straight on
-  the shell, so the frame shows around and between them.
+- The opened workspace has no app sidebar. Its panels sit straight on the
+  shell, 8px apart, so the frame shows around and between them.
+- **Names (Epo, 2026-11-03):** the app's front page (`/`, `src/routes/Home.tsx`,
+  `nav_home`, the house icon) is **Home**; a workspace's front page, its
+  landing with no file open, is its **Dashboard**. "Home" always means the
+  app's own home.
+- **Dashboard (Epo 2026-11-03, boards H1 owner, H2 member, H3):**
+  `WorkspaceDashboard.tsx`, the centre with nothing open (from lg without a
+  file header; one column keeps it). The workspace's name with "owner · N
+  members", Upload and a disabled "Make a quiz from a file" ("Coming soon")
+  for those who may add; **What to practise next**, Practice's suggestions for
+  whoever practises here (`studyView`, board U3), each with Practise, which
+  opens its topic session; **Recent files**, the newest four as bordered
+  preview cards with the name under each (`PreviewCard bordered`); and
+  **Activity**, the five newest uploads and added materials with who and
+  when, the agent's own rows under the AI icon, a hidden item's with the eye
+  after its name for the owners and editors who get it
+  (`GET /api/workspaces/{id}/dashboard`, see
+  [study-progress.md](../study-progress.md#endpoints)), each row opening its
+  file or material. An empty section does not show, so To do, assignments and
+  AI marks (not built) never do yet. A workspace with nothing in it shows
+  `WorkspaceEmpty` instead of the actions and sections: the map's ink book, "No
+  files yet" and Add file, which opens the upload dialog, for those who may add.
+  Wrapped actions sit 16px from the visible text above and below them, as
+  Practice's do: negative margins that a one-line header cancels out. The old
+  landing's Add file, Quick open, Workspace settings and Practice cards went.
+
+## Workspace rail
+
+From lg (1260px) every workspace page leads with a labelled icon rail
+(`WorkspaceRail.tsx`): 60px wide, straight on the shell with no panel of its own
+(Epo 2026-11-04), so it has the app sidebar's page colour and a frame shows
+through behind it, with
+← Home (to `/`), the workspace's icon as a 34px badge that only
+says where you are, then Dashboard (Hugeicons' `DashboardSquare01Icon`),
+Files (a folder), Agent (the AI icon) and Study (an open book), each icon
+over its 11px label in a 56px item that takes the sidebar's dark fill while
+current.
+Your avatar sits at its foot and opens the profile menu upwards, headed by
+the workspace's part: Invite member (owners and editors), Workspace
+settings, and Clone for readers who may.
+
+There is no right panel (Epo 2026-11-04). One panel sits beside the rail for
+every section but the Dashboard: 340px by default, resizable from 220px up to
+half the group, so the viewer never drops under its 400px least width. A drag
+past its least width closes it on release. It keeps its width between
+sections and between Agent's history and a chat, and comes back at the width it
+closed at until the page is left:
+
+- **Files:** the topic tree under its search and the New file or topic row,
+  with Collapse all topics on the title row.
+- **Agent:** the chat history, with voice and Archived chats on the title row
+  and New chat over the list. A chat row or New chat shows that chat in this
+  panel in place of the history, with a back arrow to the history and New chat
+  on its title row. **The centre keeps what it showed**: a file stays open
+  beside the chat, and a citation or resource link opens in the centre with the
+  section still on Agent.
+- **Study:** Study's pages (`StudyPanel`), see
+  [study-progress.md](../study-progress.md#practice).
+
+The chat stays mounted from lg whichever section shows, the panel closed too,
+so it keeps its thread, draft and stream; a thread that moves on while hidden
+shows its end on return. Every way into a chat goes to Agent (`openChat`):
+`?chat=new` from Get started, the history's rows and New chat, and voice. A chat
+on screen comes back after a reload or a closed tab (`capy.workspace.chatShown.<id>`,
+kept with the thread in `capy.chat.open.<id>`, T19); leaving the page forgets it.
+
+The section starts from that chat or the URL (a Study page shows Study, an open
+item Files, else the Dashboard). From the Dashboard or Study an item moves it to
+Files; a Study page moves it to Study unless Agent shows; leaving Study for the
+landing shows the Dashboard. Pressing the current section closes or reopens its
+panel; Dashboard opens the landing and Study opens Practice. With the rail the
+centre header has no back arrow or panel toggle; Study's pages fill the centre
+without a header. Below lg the one-column layout stays as before: the header's
+title opens the Files dropdown, its ⋮ (and the dropdown's foot) carry Dashboard,
+Study and Workspace settings, and chat is the dock and its chat page.
+
+A page has one `h1`: the Dashboard, Study's pages, a quiz and a flashcards set
+head themselves; with anything else open it is an `sr-only` workspace name.
+
+The AI icon (`ai` in `Icon.tsx`, a curved four-point star stroked like the
+rest; Epo picks the final shape from a mock) marks the agent: the rail's
+Agent, the sidebar's Chat, the chat panel's title and empty state, and Generate in the AI generate form.
 
 ## Styles
 
@@ -61,6 +142,41 @@ its light or dark palette. Settings → Customizations → Theme chooses it.
 
 A stored or synced style the app no longer knows (an old `classroom`) is
 ignored, and the default applies.
+
+## Shared pieces
+
+Built screens copy the mock boards exactly (Epo, 2026-11-03; boards K2, K3
+and K5 of the study-tracking canvas). Choices a board does not settle go back
+to Epo as visual options, not a call made in code.
+
+- **Toast** (`Toast` in `src/components/ui/Toast.tsx`, board K2): every kind
+  is the same pill: `#222`, white 14px semibold text, 44px tall with a 44px
+  icon slot, 22px corners, 20px right padding, `0 8px 24px` shadow. Only the
+  icon and its colour change: done is a check (`#86d6a8`), plain is info or
+  the caller's `icon` (white, I1), working a ring spinner (white, S1),
+  warning a triangle (`#f2c46d`), error a circled ! (`#ff9b9b`). An action
+  is an underlined link 20px after the copy; errors end with a 16px × (Z1),
+  16px after the action (A1) or 12px after the copy; a repeat shows `×2` in
+  a white 16% capsule. An open error sits at the bottom with the other toast
+  8px above it (E2), centred on phones too and drawn over the chat button
+  (P3). A description or a title that wraps takes more
+  lines in the same pill, 384px wide (less on phones), with 18px corners and
+  the description at 13px, white 72%. Dark themes draw it as an overlay
+  surface (`--surface-overlay-bg` with an `--border-overlay` ring and
+  `text-fg`), so it stands apart from the dark page (T2). Behaviour (one at a
+  time, counts, timers) is in `error-handling.md`; motion in `motion.md`.
+- **Workspace card** (`WorkspaceCardFace` in `src/components/ui/WorkspaceCard.tsx`,
+  board K3 row H2): the cover is a 76px banner across the top (plain
+  `--surface-page-hover` without one, N1), the 36px icon sits on its
+  bottom-left edge in a 2px card-coloured ring, and the ⋮ is a 28px white
+  circle on the banner: from desktop widths with a mouse it shows on the
+  card's hover, focus or open menu, and below them and on touch screens it
+  always shows (V2). Below: the name (14px bold, one line, L1), the topic
+  count (`chapterCount` until chapters become topics), then access and tags as
+  22px boxes with 6px corners. The card border is `--divider`. The settings
+  cover picker previews the same face; covers and the picker are unchanged.
+- **Answer boxes** (board K5): options, True / False and ordering items; see
+  `question-bank.md` § Answer keys and server grading.
 
 ## Theme drawer
 
@@ -96,11 +212,15 @@ strength, frosted }`:
 - **Frosted:** which panels frost over the frame, any of Left, Centre and
   Right (a toggle row under Strength). Left is the default; an empty list
   frosts none. A frame stored before the field existed takes the default.
-- **Default:** a device with no stored frame draws Arc in Mist with the left
-  panel frosted. A frame the user stored or synced, None included, wins.
-  The pre-paint scripts only copy a stored frame; `ThemeProvider` applies
-  the frame in a layout effect, so a brand new device still shows it with
-  the shell's first paint.
+- **Default (Epo, 2026-11-03):** None. It lives in one place,
+  `DEFAULT_PAGE_FRAME` in `pageFrame.ts`, which also stands in for any
+  invalid stored field. A device with no stored frame, and an account that
+  never synced (`users.customization` NULL; the server keeps no default of
+  its own), shows the page colour with opaque panels. Picking a pattern
+  from there starts on Mist with the left panel frosted. A frame the user
+  stored or synced wins. The pre-paint scripts only copy a stored frame's
+  paint (`capy.pageFrameCss`), so with nothing stored they paint nothing,
+  which is the default.
 - **Shuffle** (right of Sync) moves every dot and Strength to random values,
   as custom colours.
 
@@ -126,7 +246,7 @@ How it is drawn:
   sets `data-frosted` only when the frame lists that place, so the stylesheet
   has one rule for all three. Left is the sidebar and the workspace's left
   panel; centre is the page panel, the workspace viewer and the bank's
-  questions; right is the workspace's right panel and the bank's topics.
+  questions; right is the bank's topics.
   The rail sidebar (640–1023px) overlays the page and never frosts.
 - Inside a frosted panel a few tokens turn translucent, the same for every
   panel: hovers, `--divider` (Tabs' line, rules), `--border-default`, and

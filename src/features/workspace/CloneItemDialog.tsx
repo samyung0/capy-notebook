@@ -87,7 +87,7 @@ function cloneTitle(item: CloneItem) {
 
 /**
  * Clone a file or material: a destination workspace the user edits or No
- * workspace, a chapter in the workspace, and the copy's name,
+ * workspace, a topic in the workspace, and the copy's name,
  * `Name (copy)` while it sits next to its source. Clone spins and the dialog
  * stays open until the copy opens; a taken name shows under the field and any
  * other refusal under the form.
@@ -149,11 +149,11 @@ export function CloneItemDialog({
 
   const submit = handleSubmit(async ({ name }) => {
     setFormError(null);
-    // A chapter name still being typed counts, so Clone never drops it.
-    const { chapterId, chapterName } = dest.resolve();
+    // A topic name still being typed counts, so Clone never drops it.
+    const { topicId, topicName } = dest.resolve();
     const where = {
-      chapterId: chapterId ?? undefined,
-      chapterName: chapterName ?? undefined,
+      topicId: topicId ?? undefined,
+      topicName: topicName ?? undefined,
       workspaceId,
     };
     try {

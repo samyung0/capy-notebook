@@ -9,10 +9,9 @@ import type { MaterialListItemPreview } from './materialListItemPreview.ts';
 import type { Privacy } from './privacy.ts';
 
 export interface MaterialListItem {
+  assigned?: boolean;
+  assignmentId?: string;
   cardCount?: number;
-  /** @nullable */
-  chapterId: string | null;
-  chapterName: string;
   createdAt: string;
   hidden?: boolean;
   id: string;
@@ -26,6 +25,9 @@ export interface MaterialListItem {
   sharePath?: string;
   sizeBytes: number;
   title: string;
+  /** @nullable */
+  topicId: string | null;
+  topicName: string;
   updatedAt: string;
   workspaceId: string;
   workspaceName: string;

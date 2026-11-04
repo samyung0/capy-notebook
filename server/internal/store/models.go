@@ -73,11 +73,11 @@ type PageFrameColor struct {
 // (openwiki/study-progress.md). Zero values are unset, so the pipeline's defaults
 // apply to them.
 type StudyPreferences struct {
-	// MainFormat is the output file that explains each chapter (Capy Note or
+	// MainFormat is the output file that explains each topic (Capy Note or
 	// Powerpoint); the agent still makes other files when needed.
 	MainFormat   string `json:"mainFormat,omitempty" enum:"note,deck"`
 	WritingStyle string `json:"writingStyle,omitempty" enum:"brief,normal,story"`
-	// How much of each practice item a chapter gets (more 10, less 5).
+	// How much of each practice item a topic gets (more 10, less 5).
 	Quiz       string `json:"quiz,omitempty" enum:"more,less,off"`
 	Flashcards string `json:"flashcards,omitempty" enum:"more,less,off"`
 	VisualAids string `json:"visualAids,omitempty" enum:"fewer,more"`
@@ -99,6 +99,8 @@ type Workspace struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	IconID      string `json:"iconId"`
+	// Kind is what the workspace is used for, class or personal.
+	Kind WorkspaceKind `json:"kind"`
 	// Cover is the card's art; nil means no cover, the default.
 	Cover     *cover.Cover `json:"cover,omitempty"`
 	Privacy   Privacy      `json:"privacy"`
@@ -115,11 +117,11 @@ type Workspace struct {
 	OwnerPlanTier PlanTier `json:"-"`
 	// MemberRole is the requester's persisted membership ("" for a visitor),
 	// filled by the listing queries so capabilities need no second lookup.
-	MemberRole   WorkspaceRole `json:"-"`
-	ChapterCount int           `json:"chapterCount"`
-	FileCount    int           `json:"fileCount"`
-	FilesLimit   int           `json:"filesLimit"`
-	CreatedAt    time.Time     `json:"createdAt"`
+	MemberRole WorkspaceRole `json:"-"`
+	TopicCount int           `json:"topicCount"`
+	FileCount  int           `json:"fileCount"`
+	FilesLimit int           `json:"filesLimit"`
+	CreatedAt  time.Time     `json:"createdAt"`
 }
 
 // AccessCapabilities is request-scoped authorization metadata. It is never
@@ -160,10 +162,13 @@ func tagsFromNames(names []string) []Tag {
 	return out
 }
 
-type Chapter struct {
-	ID          string   `json:"id"`
-	WorkspaceID string   `json:"workspaceId"`
-	Name        string   `json:"name"`
+type Topic struct {
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspaceId"`
+	Name        string `json:"name"`
+	// Description is one optional line on what the topic covers, for tagging
+	// questions with it later (Epo 2026-11-03).
+	Description string   `json:"description"`
 	Order       int      `json:"order"`
 	FileIDs     []string `json:"fileIds" nullable:"false"`
 }
@@ -171,7 +176,7 @@ type Chapter struct {
 type File struct {
 	ID          string     `json:"id"`
 	WorkspaceID string     `json:"workspaceId"`
-	ChapterID   *string    `json:"chapterId"` // null = unfiled (not omitempty)
+	TopicID     *string    `json:"topicId"` // null = unfiled (not omitempty)
 	Position    int64      `json:"position"`
 	Name        string     `json:"name"`
 	Kind        FileKind   `json:"kind"`
@@ -289,7 +294,7 @@ type Quiz struct {
 	Name           string          `json:"name"`
 	WorkspaceID    string          `json:"workspaceId"`
 	WorkspaceName  string          `json:"workspaceName"`
-	Chapters       []string        `json:"chapters"`
+	Topics         []string        `json:"topics"`
 	ScopeFileNames []string        `json:"-"`
 	Questions      json.RawMessage `json:"questions"`
 	CreatedAt      time.Time       `json:"createdAt"`
@@ -324,7 +329,7 @@ type Attempt struct {
 	Kind          string   `json:"kind" enum:"quiz,flashcards"`
 	QuizName      string   `json:"quizName"`
 	WorkspaceName string   `json:"workspaceName"`
-	Chapters      []string `json:"chapters" nullable:"false"`
+	Topics        []string `json:"topics" nullable:"false"`
 	// Correct of Total: marks for a quiz, cards first rated Good or Easy of
 	// cards rated for a set.
 	Correct float64 `json:"correct"`
@@ -407,11 +412,11 @@ type Flashcard struct {
 	Image      *materialdoc.CardImage `json:"image,omitempty"`
 }
 
-// Material is a persisted versioned Plate document scoped to chapters and/or
+// Material is a persisted versioned Plate document scoped to topics and/or
 // files. Every material kind shares this universal envelope.
 //
-// ScopeChapters/ScopeFileNames record *provenance* (what a generated artifact was
-// built from). ChapterID is the orthogonal *membership* link — which chapter
+// ScopeTopics/ScopeFileNames record *provenance* (what a generated artifact was
+// built from). TopicID is the orthogonal *membership* link — which topic
 // the material is filed under in the tree (null = unfiled), mirroring File.
 type Material struct {
 	ID string `json:"id"`
@@ -427,9 +432,9 @@ type Material struct {
 	// Content is the encoded materialdoc.Envelope stored as jsonb. The API
 	// model decodes it so clients receive an object rather than a JSON string.
 	Content        string    `json:"-"`
-	ChapterID      *string   `json:"chapterId"` // null = unfiled (not omitempty)
+	TopicID        *string   `json:"topicId"` // null = unfiled (not omitempty)
 	Position       int64     `json:"position"`
-	ScopeChapters  []string  `json:"scopeChapters" nullable:"false"`
+	ScopeTopics    []string  `json:"scopeTopics" nullable:"false"`
 	ScopeFileNames []string  `json:"scopeFileNames" nullable:"false"`
 	Privacy        Privacy   `json:"privacy"`
 	Color          UserColor `json:"color,omitempty"` // flashcardSets only; presentation tint
@@ -449,6 +454,10 @@ type Material struct {
 	// Hidden from members: only the workspace's owners and editors list,
 	// open or search it (Epo 2026-11-03). An embedded item follows its note.
 	Hidden bool `json:"hidden,omitempty"`
+	// A reader's generated quiz (Make my own practice): a standalone material
+	// its maker's study reads count in this workspace and topic. Never exposed.
+	PracticeWorkspaceID string  `json:"-"`
+	PracticeTopicID     *string `json:"-"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`
@@ -602,13 +611,13 @@ type Comment struct {
 }
 
 // MaterialRef is one row in the unified left-panel materials list, aggregating
-// markdown materials plus the workspace's quizzes and flashcardSets. ChapterID lets the
-// tree group refs under their chapter (null = unfiled).
+// markdown materials plus the workspace's quizzes and flashcardSets. TopicID lets the
+// tree group refs under their topic (null = unfiled).
 type MaterialRef struct {
 	ID        string          `json:"id"`
 	Type      MaterialRefType `json:"type"`
 	Title     string          `json:"title"`
-	ChapterID *string         `json:"chapterId"`
+	TopicID   *string         `json:"topicId"`
 	Position  int64           `json:"position"`
 	CreatedAt time.Time       `json:"createdAt"`
 	// SizeBytes lets the client decide how to open a document before paying to
@@ -620,6 +629,12 @@ type MaterialRef struct {
 	Provenance *Provenance `json:"provenance,omitempty"`
 	// Hidden from members (Material.Hidden).
 	Hidden bool `json:"hidden,omitempty"`
+	// Assigned: a quiz under an open assignment, for whoever it went to and
+	// whoever edits it; it shows the assignment icon (Epo 2026-11-04).
+	Assigned bool `json:"assigned,omitempty"`
+	// AssignmentID is the assignment a viewer takes this quiz through; the row
+	// opens it, and the quiz itself is refused until it closes.
+	AssignmentID string `json:"assignmentId,omitempty"`
 }
 
 type ContentOrderItem struct {
@@ -758,9 +773,18 @@ type WorkspaceStats struct {
 	// workspace; MoreNoteChanges counts the notes past that cap.
 	NoteChanges     []NoteChange `json:"noteChanges" nullable:"false"`
 	MoreNoteChanges int          `json:"moreNoteChanges"`
-	Chapters        int          `json:"chapters"`
+	Topics          int          `json:"topics"`
 	Files           int          `json:"files"`
 	Quizzes         int          `json:"quizzes"`
 	Attempts        int          `json:"attempts"`
 	AvgScore        int          `json:"avgScore"`
+}
+
+// StudyWorkspaceID is the workspace a material's practice counts in: its own,
+// or the one a generated quiz is linked to.
+func (m Material) StudyWorkspaceID() string {
+	if m.WorkspaceID != "" {
+		return m.WorkspaceID
+	}
+	return m.PracticeWorkspaceID
 }

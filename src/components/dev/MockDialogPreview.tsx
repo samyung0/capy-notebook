@@ -16,8 +16,6 @@ import type { MockDialogId } from './mockDialogOptions';
 
 const source: PendingSource = {
   analysisStatus: 'ready',
-  chapterId: null,
-  chapterName: null,
   contentType: 'text/plain',
   fileId: 'mock_drive_file',
   key: 'mock-dialog-source',
@@ -28,6 +26,8 @@ const source: PendingSource = {
   provider: 'google',
   sizeBytes: 2048,
   sizeEstimate: false,
+  topicId: null,
+  topicName: null,
 };
 
 export default function MockDialogPreview({
@@ -88,17 +88,7 @@ export default function MockDialogPreview({
     );
   if (dialog === 'ownership-transfer')
     return (
-      <WorkspaceTransferDialog
-        member={{
-          createdAt: '2026-09-15T00:00:00Z',
-          name: 'Morgan Lee',
-          role: 'editor',
-          userId: 'u_mock_collaborator',
-          workspaceId,
-        }}
-        onClose={onClose}
-        workspaceId={workspaceId}
-      />
+      <WorkspaceTransferDialog onClose={onClose} workspaceId={workspaceId} />
     );
   return (
     <AppErrorBoundary>

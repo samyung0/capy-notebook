@@ -14,8 +14,8 @@ import (
 )
 
 // item is a scored pool item: r is its recall, misses its latest answers
-// (true a miss, newest first), chapter "" outside chapters.
-func item(id, chapter string, r float64, misses ...bool) (scored, []review.Rating) {
+// (true a miss, newest first), topic "" outside topics.
+func item(id, topic string, r float64, misses ...bool) (scored, []review.Rating) {
 	var history []review.Rating
 	for _, m := range misses {
 		if m {
@@ -25,8 +25,8 @@ func item(id, chapter string, r float64, misses ...bool) (scored, []review.Ratin
 		}
 	}
 	it := ranked{studyItem: studyItem{ReviewItem: ReviewItem{MaterialID: "m", ItemID: id, Kind: "card"}}, r: r, reps: len(history)}
-	if chapter != "" {
-		it.chapterID = &chapter
+	if topic != "" {
+		it.topicID = &topic
 	}
 	return scoreItems([]ranked{it}, map[string][]review.Rating{"m/" + id: history}, ReviewPrefs{Items: "both", Focus: "balanced"})[0], history
 }
@@ -42,12 +42,12 @@ func pool(items ...func() (scored, []review.Rating)) ([]scored, map[string][]rev
 	return out, history
 }
 
-func mk(id, chapter string, r float64, misses ...bool) func() (scored, []review.Rating) {
-	return func() (scored, []review.Rating) { return item(id, chapter, r, misses...) }
+func mk(id, topic string, r float64, misses ...bool) func() (scored, []review.Rating) {
+	return func() (scored, []review.Rating) { return item(id, topic, r, misses...) }
 }
 
 func TestGroupSuggestions(t *testing.T) {
-	// Chapter A has four missed items, chapter B two faded ones that pass
+	// Topic A has four missed items, topic B two faded ones that pass
 	// nothing alone, and an item the learner still recalls counts for nothing.
 	items, history := pool(
 		mk("a1", "A", 0.4, true), mk("a2", "A", 0.4, true), mk("a3", "A", 0.4, true), mk("a4", "A", 0.4, true),
@@ -55,7 +55,7 @@ func TestGroupSuggestions(t *testing.T) {
 		mk("b3", "B", 0.95, true),
 	)
 	got := groupSuggestions(items, history, 1)
-	if len(got) != 1 || got[0].Group != GroupChapter || *got[0].ChapterID != "A" || got[0].Items != 4 {
+	if len(got) != 1 || got[0].Group != GroupTopic || *got[0].TopicID != "A" || got[0].Items != 4 {
 		t.Fatalf("suggestions = %+v", got)
 	}
 	if ev := got[0].Evidence; ev.Missed != 4 || ev.Young != 4 {
@@ -66,14 +66,14 @@ func TestGroupSuggestions(t *testing.T) {
 		t.Fatalf("an old workspace suggested %+v", got)
 	}
 
-	// No chapter passes alone, the workspace does: one whole-workspace group.
+	// No topic passes alone, the workspace does: one whole-workspace group.
 	spread, history := pool(mk("a1", "A", 0.3, false, false), mk("b1", "B", 0.3, false, false),
 		mk("c1", "C", 0.3, false, false), mk("o1", "", 0.3, false, false))
 	if got := groupSuggestions(spread, history, 1); len(got) != 1 || got[0].Group != GroupWorkspace || got[0].Mode != ModeFading {
 		t.Fatalf("spread suggestions = %+v", got)
 	}
 
-	// A workspace without chapters is always one group.
+	// A workspace without topics is always one group.
 	flat, history := pool(mk("1", "", 0.6, false), mk("2", "", 0.6, true), mk("3", "", 0.6, false), mk("4", "", 0.6, false), mk("5", "", 0.6, true))
 	if got := groupSuggestions(flat, history, 1); len(got) != 1 || got[0].Group != GroupWorkspace || got[0].Mode != ModeFading {
 		t.Fatalf("flat suggestions = %+v", got)
@@ -194,11 +194,11 @@ func TestReviewSessionRecords(t *testing.T) {
 	if len(resumed.Done) != 1 || resumed.Done[0].ItemID != cards[0].ID || resumed.Done[0].Rating != 1 || resumed.Done[0].Front != "Golgi" {
 		t.Fatalf("resumed done = %+v", resumed.Done)
 	}
-	overview, err := f.s.ReviewOverview(ctx, f.user, time.Now())
+	overview, err := f.s.LearningOverview(ctx, f.user, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(overview.Unfinished) != 1 || overview.Unfinished[0].Answered != 1 || overview.Workspaces[0].LastReviewedAt == nil {
+	if len(overview.Next) == 0 || overview.Next[0].Kind != LearningSession || overview.Next[0].Answered != 1 || overview.Workspaces[0].LastPractisedAt == nil {
 		t.Fatalf("overview = %+v", overview)
 	}
 	// The Study tab continues the same whole-workspace session.
@@ -268,144 +268,6 @@ func TestReviewSessionRecords(t *testing.T) {
 	}
 }
 
-func TestPlanReviewSession(t *testing.T) {
-	f := newStudyFixture(t, "u_plan_review")
-	ctx := context.Background()
-	other, err := f.s.CreateWorkspace(ctx, f.user, WorkspaceCreate{Name: "Chemistry", Tags: []TagRef{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	inPlan := f.set(t, [2]string{"Golgi", "Ships proteins"}, [2]string{"Lysosome", "Digests waste"})
-	outside := f.set(t, [2]string{"Ribosome", "Makes proteins"})
-	elsewhere := studyFixture{f.s, f.user, other}.set(t, [2]string{"Ion", "Charged atom"})
-	for _, c := range append(append(append([]Flashcard{}, inPlan...), outside...), elsewhere...) {
-		f.rate(t, c, 1)
-	}
-	plan, err := f.s.CreateStudyPlan(ctx, f.user, f.ws.ID, "Winter exams")
-	if err != nil {
-		t.Fatal(err)
-	}
-	steps := []PlanStepInput{
-		{Kind: "material", WorkspaceID: f.ws.ID, TargetID: inPlan[0].MaterialID},
-		{Kind: "material", WorkspaceID: other.ID, TargetID: elsewhere[0].MaterialID},
-	}
-	if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &steps); err != nil {
-		t.Fatal(err)
-	}
-	later := time.Now().Add(72 * time.Hour)
-	keys := func(items []ReviewItem) map[string]bool {
-		out := map[string]bool{}
-		for _, it := range items {
-			out[it.ItemID] = true
-		}
-		return out
-	}
-
-	// The plan's Quick review and review draw from both workspaces, only its steps.
-	summary, err := f.s.PlanStudySummary(ctx, f.user, f.ws.ID, plan.ID, later)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := keys(summary.QuickReview); summary.Reviewable != 3 || !got[elsewhere[0].ID] || got[outside[0].ID] {
-		t.Fatalf("plan summary = %d %+v", summary.Reviewable, summary.QuickReview)
-	}
-	review, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupPlan, PlanID: &plan.ID}, later)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := keys(review.Items); len(review.Items) != 3 || got[outside[0].ID] {
-		t.Fatalf("plan review = %+v", review.Items)
-	}
-	// The Review tab lists the plan with its review's pool.
-	overview, err := f.s.ReviewOverview(ctx, f.user, later)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(overview.Plans) != 1 || overview.Plans[0].PlanID != plan.ID || overview.Plans[0].Reviewable != 3 || !overview.Plans[0].CanReview {
-		t.Fatalf("overview plans = %+v", overview.Plans)
-	}
-	// A plan holding only a file has nothing to review, though its workspace
-	// has sets.
-	fileID := uid("f")
-	if _, err := f.s.pool.Exec(ctx, `INSERT INTO files (id, workspace_id, user_id, name, kind) VALUES ($1,$2,$3,'notes.md','md')`, fileID, f.ws.ID, f.user); err != nil {
-		t.Fatal(err)
-	}
-	reading, err := f.s.CreateStudyPlan(ctx, f.user, f.ws.ID, "Reading")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fileSteps := []PlanStepInput{{Kind: "file", WorkspaceID: f.ws.ID, TargetID: fileID}}
-	if err := f.s.UpdateStudyPlan(ctx, f.user, reading.ID, nil, &fileSteps); err != nil {
-		t.Fatal(err)
-	}
-	overview, err = f.s.ReviewOverview(ctx, f.user, later)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(overview.Plans) != 2 || overview.Plans[0].PlanID != reading.ID || overview.Plans[0].CanReview {
-		t.Fatalf("file-only plan = %+v", overview.Plans)
-	}
-
-	// Answers from either workspace record into the plan session; the plan
-	// continues it, the workspace does not.
-	scope, err := f.s.PlanScopeOf(ctx, f.user, plan.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := &SessionAnswer{ID: uuid.NewString(), WorkspaceID: f.ws.ID, Info: ReviewSessionInfo{Group: GroupPlan, PlanID: &plan.ID}, Plan: &scope}
-	for _, it := range review.Items {
-		a.Items = append(a.Items, SessionItem{MaterialID: it.MaterialID, ItemID: it.ItemID})
-	}
-	good := 3
-	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: elsewhere[0].MaterialID, ItemID: elsewhere[0].ID, Rating: &good, Session: a}, later); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: outside[0].MaterialID, ItemID: outside[0].ID, Rating: &good, Session: a}, later); err != nil {
-		t.Fatal(err)
-	}
-	resumed, err := f.s.ResumeReviewSession(ctx, f.user, a.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resumed.Group != GroupPlan || resumed.PlanID == nil || *resumed.PlanID != plan.ID || len(resumed.Done) != 2 || len(resumed.Items) != 2 {
-		t.Fatalf("resumed = %+v", resumed)
-	}
-	if summary, err := f.s.PlanStudySummary(ctx, f.user, f.ws.ID, plan.ID, later); err != nil || summary.Unfinished == nil || summary.Unfinished.ID != a.ID || summary.Unfinished.ChapterName != "Winter exams" || len(summary.Items) != 0 {
-		t.Fatalf("plan unfinished = %+v, %v", summary.Unfinished, err)
-	}
-	if summary, err := f.s.StudySummary(ctx, f.user, f.ws.ID, later); err != nil || summary.Unfinished != nil {
-		t.Fatalf("workspace unfinished = %+v, %v", summary.Unfinished, err)
-	}
-
-	// An answer naming another plan kept here is refused.
-	otherPlan, err := f.s.CreateStudyPlan(ctx, f.user, f.ws.ID, "Spring quiz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	wrong := &SessionAnswer{ID: a.ID, WorkspaceID: f.ws.ID, Info: ReviewSessionInfo{Group: GroupPlan, PlanID: &otherPlan.ID}, Items: a.Items}
-	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: inPlan[0].MaterialID, ItemID: inPlan[0].ID, Rating: &good, Session: wrong}, later); !errors.Is(err, ErrReviewSession) {
-		t.Fatalf("answer naming another plan: %v", err)
-	}
-
-	// A plan is reviewed only from its own workspace.
-	if _, err := f.s.PlanStudySummary(ctx, f.user, other.ID, plan.ID, later); !errors.Is(err, ErrReviewGroup) {
-		t.Fatalf("plan from another workspace: %v", err)
-	}
-	// The session keeps its plan's name once the plan is deleted.
-	if err := f.s.DeleteStudyPlan(ctx, f.user, plan.ID); err != nil {
-		t.Fatal(err)
-	}
-	// It keeps taking answers, as resumed without a plan.
-	resumedAnswer := &SessionAnswer{ID: a.ID, WorkspaceID: f.ws.ID, Info: ReviewSessionInfo{Group: GroupPlan}, Items: a.Items}
-	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: inPlan[1].MaterialID, ItemID: inPlan[1].ID, Rating: &good, Session: resumedAnswer}, later); err != nil {
-		t.Fatalf("answer after the plan's deletion: %v", err)
-	}
-	rows, _, err := f.s.PastReviews(ctx, f.user, PastReviewParams{ID: a.ID, Limit: 1})
-	if err != nil || len(rows) != 1 || rows[0].Group != GroupPlan || rows[0].ChapterName != "Winter exams" {
-		t.Fatalf("deleted plan's session = %+v, %v", rows, err)
-	}
-}
-
 // A manual session takes 60% new items and 40% practised ones, spread
 // through it; a short side leaves its places to the other.
 func TestWithNewShares(t *testing.T) {
@@ -441,28 +303,28 @@ func TestWithNewShares(t *testing.T) {
 	}
 }
 
-// New items come in reading order (chapters in order, then unfiled); a set
+// New items come in reading order (topics in order, then unfiled); a set
 // marked unread keeps its rated cards in the practised pool.
 func TestReviewPoolsOrderAndUnread(t *testing.T) {
 	f := newStudyFixture(t, "u_review_pools")
 	ctx := context.Background()
-	first, err := f.s.AddChapter(ctx, f.ws.ID, f.user, "First")
+	first, err := f.s.AddTopic(ctx, f.ws.ID, f.user, "First", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := f.s.AddChapter(ctx, f.ws.ID, f.user, "Second")
+	second, err := f.s.AddTopic(ctx, f.ws.ID, f.user, "Second", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	late := f.set(t, [2]string{"Late", "In the second chapter"})
-	early := f.set(t, [2]string{"Early", "In the first chapter"})
-	loose := f.set(t, [2]string{"Loose", "Outside chapters"})
+	late := f.set(t, [2]string{"Late", "In the second topic"})
+	early := f.set(t, [2]string{"Early", "In the first topic"})
+	loose := f.set(t, [2]string{"Loose", "Outside topics"})
 	for ch, set := range map[string][]Flashcard{second.ID: late, first.ID: early} {
-		if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET chapter_id=$1 WHERE id=$2`, ch, set[0].MaterialID); err != nil {
+		if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET topic_id=$1 WHERE id=$2`, ch, set[0].MaterialID); err != nil {
 			t.Fatal(err)
 		}
 	}
-	fresh, err := f.s.newPool(ctx, f.user, f.ws.ID, nil)
+	fresh, err := f.s.newPool(ctx, f.user, f.ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,14 +333,46 @@ func TestReviewPoolsOrderAndUnread(t *testing.T) {
 	}
 
 	f.rate(t, loose[0], 3)
-	if err := f.s.SetStudyItem(ctx, f.user, f.ws.ID, nil, &loose[0].MaterialID, nil); err != nil {
-		t.Fatal(err)
-	}
 	pool, err := f.s.reviewPool(ctx, f.user, f.ws.ID, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(pool) != 1 || pool[0].ItemID != loose[0].ID {
-		t.Fatalf("practised pool after Mark as unread = %+v", pool)
+		t.Fatalf("practised pool = %+v", pool)
+	}
+}
+
+// A start dialog's order: never answered first, or latest misses first, each
+// then the rest, cut to the session's size.
+func TestOrderedItems(t *testing.T) {
+	item := func(id string) ReviewItem { return ReviewItem{MaterialID: "m", ItemID: id, Kind: "question"} }
+	practised := []scored{
+		{ranked: ranked{studyItem: studyItem{ReviewItem: item("fine")}}, parts: [3]float64{0.1}},
+		{ranked: ranked{studyItem: studyItem{ReviewItem: item("missed")}}, parts: [3]float64{0.2}},
+		{ranked: ranked{studyItem: studyItem{ReviewItem: item("fading")}}, parts: [3]float64{0.9}},
+	}
+	fresh := []ranked{{studyItem: studyItem{ReviewItem: item("new")}}}
+	history := map[string][]review.Rating{"m/fine": {review.Good}, "m/missed": {review.Again, review.Good}, "m/fading": {review.Good}}
+	ids := func(list []ReviewItem) string {
+		out := []string{}
+		for _, it := range list {
+			out = append(out, it.ItemID)
+		}
+		return strings.Join(out, " ")
+	}
+	prefs := ReviewPrefs{Size: 10, Items: "quiz"}
+	g := reviewGroup{kind: GroupWorkspace}
+	if got := ids(orderedItems(ReviewOrderUnattempted, practised, fresh, history, g, prefs)); got != "new missed fading fine" {
+		t.Fatalf("unattempted first = %s", got)
+	}
+	if got := ids(orderedItems(ReviewOrderIncorrect, practised, fresh, history, g, prefs)); got != "missed fading fine new" {
+		t.Fatalf("incorrect first = %s", got)
+	}
+	prefs.Size = 2
+	if got := ids(orderedItems(ReviewOrderIncorrect, practised, fresh, history, g, prefs)); got != "missed fading" {
+		t.Fatalf("cut to size = %s", got)
+	}
+	if got := ids(topUp([]ReviewItem{item("a")}, []ReviewItem{item("a"), item("b"), item("c")}, 2)); got != "a b" {
+		t.Fatalf("top up = %s", got)
 	}
 }

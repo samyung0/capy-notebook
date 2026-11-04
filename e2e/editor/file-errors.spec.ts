@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, type Page, test } from '@playwright/test';
 import { expectErrorSurface } from '../helpers/errors';
 import { showPanelView } from '../helpers/panelView';
+import { openWorkspaceSettings } from '../helpers/workspace';
 import { m } from '../i18n';
 
 async function openWorkspace(page: Page) {
@@ -183,12 +184,7 @@ test('workspace statistics and indexing share a recoverable inline error', async
       )
     );
   });
-  // The rail's gear (its aria-label); the empty viewer's quick action shares
-  // the name as text and appears once the recent files load.
-  await page
-    .getByLabel(m.workspace_settings(), { exact: true })
-    .first()
-    .click();
+  await openWorkspaceSettings(page);
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_stats_title() })
@@ -304,7 +300,7 @@ test.fixme('PDF annotation load toast shows before the PDF loads', async ({
     .click();
   await expect(panel).toHaveAttribute('data-scenario-status', 'ready');
   const canvas = page.locator('[data-page="1"] canvas');
-  const toast = page.locator('[data-sonner-toast]').filter({
+  const toast = page.locator('[data-toast]').filter({
     hasText: m.pdf_annotations_failed(),
   });
   await expect(toast).toHaveCount(1, { timeout: 15_000 });

@@ -435,7 +435,9 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
             ? { clientPort: 443, host: devHost, protocol: 'wss' }
             : undefined,
       host: serveLocalUat ? '127.0.0.1' : true,
-      open: !serveLocalUat,
+      // Agents start dev servers for tests and benches; only a developer's own
+      // terminal opens a browser tab.
+      open: !serveLocalUat && !env.CLAUDECODE,
       port: serveLocalUat ? 5173 : Number.parseInt(env.VITE_PORT, 10) || 5173,
       // Only proxy when hitting the real Go gateway. With MSW on, the service
       // worker normally intercepts /api in the browser — but during HMR / SW

@@ -52,7 +52,8 @@ ENV_KEYS = (
     "LIBRARY_DATABASE_URL",
     "DEEPINFRA_API_KEY",
     *KNOWLEDGE_B2_KEYS,
-    # Only the source upload at publish uses these (ingest.writer_client).
+    # Only publish uses these: the source upload and the figure crops
+    # (knowledge_base_library.writer_client).
     "KNOWLEDGE_BASE_B2_WRITER_KEY_ID",
     "KNOWLEDGE_BASE_B2_WRITER_APP_KEY",
 )

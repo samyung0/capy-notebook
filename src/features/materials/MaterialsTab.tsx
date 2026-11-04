@@ -124,7 +124,7 @@ export function MaterialsTab({
       value: 'title',
     },
     {
-      icon: 'chapter',
+      icon: 'topic',
       label: m.create_sort_kind(),
       value: 'kind',
     },
@@ -231,7 +231,6 @@ export function MaterialsTab({
             onSuccess: (material) =>
               navigate({
                 params: { materialId: material.id },
-                search: { mode: 'edit' },
                 to: '/materials/$materialId',
               }),
           }
@@ -247,7 +246,6 @@ export function MaterialsTab({
             onSuccess: (quiz) =>
               navigate({
                 params: { materialId: quiz.id },
-                search: { mode: 'edit' },
                 to: '/materials/$materialId',
               }),
           }

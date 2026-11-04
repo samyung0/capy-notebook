@@ -260,7 +260,6 @@ export function cloneCatalogToDraft(
     contextWindowTokens: config.contextWindowTokens,
     defaultThinking: config.defaultThinking,
     id,
-    interactiveReserve: config.interactiveReserve,
     microsPerCachedInputToken: config.microsPerCachedInputToken,
     microsPerInputToken: config.microsPerInputToken,
     microsPerOutputToken: config.microsPerOutputToken,
@@ -280,7 +279,6 @@ export function emptyDraft(id: string): DraftConfig {
     contextWindowTokens: 0,
     defaultThinking: 'instant',
     id,
-    interactiveReserve: null,
     microsPerCachedInputToken: 0,
     microsPerInputToken: 0,
     microsPerOutputToken: 0,
@@ -399,7 +397,7 @@ export function assembleRegistryRequest(
     if (!capacity.success) {
       issues.push({
         code: 'capacity',
-        message: `${modelRefLabel(source)} needs a positive concurrency total and a reserve below it.`,
+        message: `${modelRefLabel(source)} needs a positive concurrency total.`,
         rowId,
       });
       continue;

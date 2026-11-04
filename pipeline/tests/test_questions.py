@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from test_capture import _jpeg
+
 from pipeline.retrieval import library, questions, tools
 from pipeline.retrieval.tools import QuizStore, ToolContext, ToolResult
 
@@ -194,14 +196,14 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
         )
     ]
     # Every place problem at once, not the first of them.
-    placed = questions.check({"questions": [MCQ], "chapter_id": "ch"})
+    placed = questions.check({"questions": [MCQ], "topic_id": "ch"})
     assert placed.call == [
         (
             "quiz_id, title: expected exactly one, quiz_id to add to a quiz or title to "
             "create one; sent neither"
         ),
         (
-            "chapter_id: files a new quiz, so it goes with title; adding to a quiz takes "
+            "topic_id: files a new quiz, so it goes with title; adding to a quiz takes "
             "quiz_id alone"
         ),
     ]
@@ -215,7 +217,7 @@ def test_a_blank_field_is_left_out_unless_the_kind_needs_it():
     sent = {
         "title": "T",
         "quiz_id": "null",
-        "chapter_id": "",
+        "topic_id": "",
         "questions": [
             {**MCQ, "accepted": [], "unit": "", "explanation": None, "back": ""},
             {**SHORT, "accepted": [], "options": None},
@@ -326,14 +328,14 @@ def _store(quiz: list[dict], written: list) -> QuizStore:
 
 async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkeypatch):
     """The valid questions land after the quiz's last question, in order; the
-    left-out one is named for resending in its place. A chapter_id beside
+    left-out one is named for resending in its place. A topic_id beside
     quiz_id is ignored and said so."""
     ctx = _ctx(monkeypatch)
     written: list = []
     store = _store([{"id": "q_old", "stem": [], "parts": []}], written)
     args = {
         "quiz_id": "mat_q",
-        "chapter_id": "ch_1",
+        "topic_id": "ch_1",
         "questions": [MCQ, {**SHORT, "accepted": ["minus seventy"]}, SHORT],
         "_tool_call_id": "call_1",
     }
@@ -356,7 +358,7 @@ async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkey
         "- questions[1].accepted[0]: expected a plain number because unit is set"
         in text
     )
-    assert text.endswith("chapter_id ignored: quiz mat_q keeps its chapter.")
+    assert text.endswith("topic_id ignored: quiz mat_q keeps its topic.")
 
     # Nothing valid: nothing is written and every problem comes back at once.
     refused = await tools.write_questions(
@@ -534,16 +536,20 @@ async def test_a_library_figure_goes_after_the_question_text(monkeypatch):
     figure = library.Figure(
         id="fig_1", book_title="B", page=3, bbox=[0, 0, 500, 500],
         label="Figure 2.1: A cell", description="", credit="CC BY 4.0", decorative=False,
-        excluded=False, withheld=False, object_key="books/x.pdf", bytes=1,
-        excerpt_ids=["e_1"],
+        excluded=False, withheld=False, object_key="books/x.pdf", excerpt_ids=["e_1"],
+        blank=[],
     )  # fmt: skip
     credited: list = []
 
     async def figures(ids):
         return {i: figure for i in ids if i == "fig_1"}
 
-    async def render(*_args):
-        return b"\xff\xd8\xffjpeg", [0, 0, 500, 500], (640, 480)
+    crop = _jpeg(640, 480)
+    read: list = []
+
+    def stored(key):
+        read.append(key)
+        return crop
 
     async def provenance(ids):
         credited.extend(ids)
@@ -551,7 +557,7 @@ async def test_a_library_figure_goes_after_the_question_text(monkeypatch):
 
     monkeypatch.setattr(tools.library, "figures", figures)
     monkeypatch.setattr(tools.library, "provenance", provenance)
-    monkeypatch.setattr(tools.capture, "render_knowledge", render)
+    monkeypatch.setattr(tools.blobstore, "library_read_bytes", stored)
     written: list = []
     store = _store([questions.expand("mcq", MCQ, "q_1")], written)
     args = {"quiz_id": "mat_q", "question_id": "q_1", "_tool_call_id": "c"}
@@ -583,7 +589,8 @@ async def test_a_library_figure_goes_after_the_question_text(monkeypatch):
         "description": "Figure 2.1: A cell",
         "attribution": "Figure 2.1: A cell (CC BY 4.0)",
     }
-    assert images == {"fig_1": b"\xff\xd8\xffjpeg"}
+    assert images == {"fig_1": crop}, "the stored crop, sized from its header"
+    assert read[-1] == "figures/x/3_0_0_500_500.jpg"
     assert credited == ["e_1"], "the figure's excerpt is credited without being named"
 
 
@@ -851,7 +858,10 @@ def test_an_inspected_quiz_fence_reads_back_as_the_items_it_was_written_from():
 
     assert [same(q) for q in again] == [same(q) for q in stored]
     assert "model_answer" not in questions.authored(stored[3])
-    # A question the fence form cannot write leaves the block as stored.
+    # A question the fence form cannot write leaves the block as stored: a
+    # group would be lost on the way back, as a stem would.
+    grouped = {**stored[1], "groups": [{"id": "g", "blocks": []}]}
+    assert questions.authored(grouped) is None
     stored[0]["stem"] = [{"type": "text", "text": "Context"}]
     assert (
         questions.quiz_fence_view(

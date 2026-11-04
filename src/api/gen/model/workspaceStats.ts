@@ -12,7 +12,6 @@ export interface WorkspaceStats {
   readonly $schema?: string;
   attempts: number;
   avgScore: number;
-  chapters: number;
   fileChanges: FileChange[];
   files: number;
   indexed: number;
@@ -21,4 +20,5 @@ export interface WorkspaceStats {
   notIndexed: number;
   noteChanges: NoteChange[];
   quizzes: number;
+  topics: number;
 }

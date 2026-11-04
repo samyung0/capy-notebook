@@ -20,10 +20,10 @@ import {
 /** Calculus II — showcase math (block + inline), tables, code, structured lists. */
 export const calcNotes: SeedNote[] = [
   {
-    chapterId: 'ch_c1',
     daysAgo: 1,
     id: 'mat_note_calc_ibp',
     title: 'Integration by parts workshop',
+    topicId: 'ch_c1',
     value: [
       heading(1, 'Integration by parts'),
       toc(),
@@ -114,10 +114,10 @@ export const calcNotes: SeedNote[] = [
     workspaceName: 'Calculus II',
   },
   {
-    chapterId: 'ch_c2',
     daysAgo: 4,
     id: 'mat_note_calc_series',
     title: 'Sequences & series — convergence map',
+    topicId: 'ch_c2',
     value: [
       heading(1, 'Sequences & series'),
       p(

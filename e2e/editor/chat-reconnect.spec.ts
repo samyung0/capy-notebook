@@ -9,6 +9,11 @@ const leftPanel = (page: Page) => page.locator('[data-workspace-left-panel]');
 test('a reload reopens a running answer, live with Stop', async ({ page }) => {
   await page.setViewportSize({ height: 900, width: 1600 });
   await page.goto('/workspaces/ws_bio');
+  // The rail's Agent shows the chats.
+  await page
+    .getByRole('navigation', { name: m.workspace_rail_label() })
+    .getByRole('button', { exact: true, name: m.workspace_section_agent() })
+    .click({ timeout: 60_000 });
   const row = leftPanel(page).getByRole('button', { name: RUNNING_CHAT.title });
   await expect(row.getByRole('status', { name: m.chat_running() })).toBeVisible(
     { timeout: 60_000 }

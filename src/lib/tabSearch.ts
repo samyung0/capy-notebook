@@ -14,7 +14,14 @@ export const SETTINGS_TABS = [
   'danger',
 ] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
-export const parseSettingsSearch = tabSearch(SETTINGS_TABS);
+const settingsTab = tabSearch(SETTINGS_TABS);
+/** `q` is what the phone list's search holds. */
+export const parseSettingsSearch = (
+  search: Record<string, unknown>
+): { tab?: SettingsTab; q?: string } => ({
+  ...settingsTab(search),
+  ...(typeof search.q === 'string' && search.q ? { q: search.q } : {}),
+});
 
 export const BILLING_TABS = ['usage', 'details', 'subscription'] as const;
 export type BillingTab = (typeof BILLING_TABS)[number];
@@ -28,7 +35,7 @@ export const parseBillingSearch = (
   ...(search.reload === 'method' ? { reload: 'method' as const } : {}),
 });
 
-export const LEARNING_TABS = ['progress', 'review', 'results'] as const;
+export const LEARNING_TABS = ['overview', 'past', 'results'] as const;
 export type LearningTab = (typeof LEARNING_TABS)[number];
 export const parseLearningSearch = tabSearch(LEARNING_TABS);
 

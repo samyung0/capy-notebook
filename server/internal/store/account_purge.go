@@ -248,7 +248,7 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM pdf_annotations WHERE author_id=$1`, userID); err != nil {
 		return err
 	}
-	for _, table := range []string{"review_sessions", "study_plans", "study_progress", "workspace_study", "review_states", "review_log", "bank_progress", "edit_incidents", "workspace_link_grants", "material_link_grants", "bank_comment_notices",
+	for _, table := range []string{"review_sessions", "study_progress", "workspace_study", "review_states", "review_log", "answer_events", "bank_progress", "edit_incidents", "workspace_link_grants", "material_link_grants", "bank_comment_notices",
 		// Open Checkout pages and the daily grading and invite counters
 		// (Q315).
 		"credit_checkouts", "grading_usage", "invite_usage",
@@ -257,7 +257,9 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		// takes them.
 		"material_yjs_client_ids", "source_document_client_ids",
 		// Make a quiz runs it started, in any workspace.
-		"question_extractions"} {
+		"question_extractions",
+		// Assignments given to it and its ticks; its attempts went above.
+		"assignment_assignees", "assignment_done"} {
 		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE user_id=$1`, userID); err != nil {
 			return err
 		}
@@ -325,6 +327,7 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		`UPDATE files SET trashed_by=NULL WHERE trashed_by=$1`,
 		`UPDATE materials SET trashed_by=NULL WHERE trashed_by=$1`,
 		`UPDATE editor_assets SET created_by=NULL WHERE created_by=$1`,
+		`UPDATE assignments SET created_by=NULL WHERE created_by=$1`,
 		`UPDATE materials SET created_by=NULL WHERE created_by=$1`,
 		`UPDATE materials SET updated_by=NULL WHERE updated_by=$1`,
 		`UPDATE material_discussions SET created_by=NULL WHERE created_by=$1`,

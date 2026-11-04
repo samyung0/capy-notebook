@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
 import {
-  useChapters,
+  useMoveFiles,
   useOwnedFiles,
-  useWorkspace,
+  useTopics,
   useWorkspaces,
 } from '@/api/hooks';
 import type { SourceFile } from '@/api/types';
@@ -20,8 +20,8 @@ import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 import { useDebounced } from '@/lib/useDebounced';
-import { ChapterSelect, chapterByName, NewChapterInput } from './ChapterSelect';
-import { moveErrorMessage, useMoveFilesFlow } from './MoveFileDialog';
+import { moveErrorMessage } from './MoveFileDialog';
+import { NewTopicInput, TopicSelect, topicByName } from './TopicSelect';
 
 /** POST /files/move takes at most this many files at once. */
 const MOVE_MAX = 20;
@@ -30,13 +30,16 @@ const MOVE_MAX = 20;
  * The Add file dialog's Your files tab: the files the user pays for (lost
  * access left out), searched by name on the server, as the shared cards with
  * each file's workspace. A pick of several moves them into this workspace
- * and the chapter in the footer; files already here are dimmed and cannot be
+ * and the topic in the footer; files already here are dimmed and cannot be
  * picked.
  */
 export function YourFilesPanel({
+  defaultTopicId = null,
   onMoved,
   workspaceId,
 }: {
+  /** The topic the footer starts on: the open one. */
+  defaultTopicId?: string | null;
   onMoved: () => void;
   workspaceId: string;
 }) {
@@ -54,15 +57,14 @@ export function YourFilesPanel({
     .flatMap((page) => page.items)
     .filter((file) => !file.lostAccess);
   const { data: workspaces } = useWorkspaces();
-  const { data: workspace } = useWorkspace(workspaceId);
-  const { data: chapters } = useChapters(workspaceId);
-  const { confirm, move } = useMoveFilesFlow(workspace?.name ?? '');
+  const { data: topics } = useTopics(workspaceId);
+  const { mutateAsync: moveFiles } = useMoveFiles({ errorToast: false });
   const [picked, setPicked] = useState<Map<string, SourceFile>>(new Map());
-  const [chapter, setChapter] = useState<{
-    chapterId: string | null;
-    chapterName: string | null;
-  }>({ chapterId: null, chapterName: null });
-  const [newChapter, setNewChapter] = useState<string | null>(null);
+  const [topic, setTopic] = useState<{
+    topicId: string | null;
+    topicName: string | null;
+  }>({ topicId: defaultTopicId, topicName: null });
+  const [newTopic, setNewTopic] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [formError, setFormError] = useState<{
     errorId: string | null;
@@ -85,26 +87,20 @@ export function YourFilesPanel({
     if (moving || selected.length === 0) return;
     setFormError(null);
     setMoving(true);
-    // A chapter name still being typed counts, so Move never drops it.
-    const typed = newChapter?.trim();
-    const { chapterId, chapterName } = typed
-      ? chapterByName(chapters, typed)
-      : chapter;
-    const only = selected.length === 1 ? selected[0] : undefined;
+    // A topic name still being typed counts, so Move never drops it.
+    const typed = newTopic?.trim();
+    const { topicId, topicName } = typed ? topicByName(topics, typed) : topic;
     try {
-      const moved = await move(
-        {
-          chapterId: chapterId ?? undefined,
-          chapterName: chapterName ?? undefined,
+      await moveFiles({
+        body: {
           fileIds: selected.map((file) => file.id),
+          topicId: topicId ?? undefined,
+          topicName: topicName ?? undefined,
           workspaceId,
         },
-        selected.map((file) => file.workspaceId),
-        only
-          ? { name: only.name, workspaceName: only.workspaceName ?? '' }
-          : { count: selected.length }
-      );
-      if (moved) onMoved();
+        from: selected.map((file) => file.workspaceId),
+      });
+      onMoved();
     } catch (error) {
       setFormError({
         errorId: unexpectedErrorId(error),
@@ -202,30 +198,28 @@ export function YourFilesPanel({
       />
       <DialogFooter className="shrink-0">
         <div className="mr-auto">
-          {newChapter === null ? (
-            <ChapterSelect
-              chapterName={chapter.chapterName}
-              chapters={chapters ?? []}
+          {newTopic === null ? (
+            <TopicSelect
               disabled={moving}
               field
-              onChange={(chapterId) =>
-                setChapter({ chapterId, chapterName: null })
-              }
-              onCreateRequest={() => setNewChapter('')}
-              value={chapter.chapterId}
+              onChange={(topicId) => setTopic({ topicId, topicName: null })}
+              onCreateRequest={() => setNewTopic('')}
+              topicName={topic.topicName}
+              topics={topics ?? []}
+              value={topic.topicId}
             />
           ) : (
-            <NewChapterInput
+            <NewTopicInput
               field
-              onCancel={() => setNewChapter(null)}
-              onChange={setNewChapter}
+              onCancel={() => setNewTopic(null)}
+              onChange={setNewTopic}
               onConfirm={() => {
-                const name = newChapter.trim();
+                const name = newTopic.trim();
                 if (!name) return;
-                setChapter(chapterByName(chapters, name));
-                setNewChapter(null);
+                setTopic(topicByName(topics, name));
+                setNewTopic(null);
               }}
-              value={newChapter}
+              value={newTopic}
             />
           )}
         </div>
@@ -248,7 +242,6 @@ export function YourFilesPanel({
           </Button>
         </DialogPrimary>
       </DialogFooter>
-      {confirm}
     </div>
   );
 }

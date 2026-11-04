@@ -242,7 +242,7 @@ decimal, the shortest that reads back exactly, never with an exponent
 - **mermaid**: the caption's text, then ```` ```mermaid ````, the source as
   stored and ```` ``` ```` on their own lines.
 - **question**: the stem's blocks, then each part's blocks and options, a
-  blank line between them. A text block gives its label and text on two
+  group's blocks once before its first part, a blank line between them. A text block gives its label and text on two
   lines, a chart, plot or graph the figure formats above, a table one
   `| a | b |` row per row, an image its description. Options: an mcq part's
   options and a matching part's prompts, then its choices, each as a `- `

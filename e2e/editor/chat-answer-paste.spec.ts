@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
+import { showChatHistory } from '../helpers/panelView';
 import { m } from '../i18n';
 import { clickTextEnd, openEditorNote } from './helpers';
 
@@ -16,7 +17,8 @@ async function openChat(page: Page, label: string) {
     EDITOR_NOTE.id,
     EDITOR_NOTE.thirdParagraph
   );
-  await page.getByText(label, { exact: true }).first().click();
+  await showChatHistory(page);
+  await page.getByRole('button', { name: label }).click();
   await expect(page.locator('[data-chat-answer]').first()).toBeVisible();
   return editor;
 }

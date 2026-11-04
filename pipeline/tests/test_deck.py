@@ -88,7 +88,7 @@ def decks(monkeypatch, tmp_path):
         user_id="u",
         operations=_EDITOR,
         assistant_message_id="m_1",
-        chapters=[{"id": "ch_1", "name": "Circles"}],
+        topics=[{"id": "ch_1", "name": "Circles"}],
         skills_read={skills.EDITING, skills.DECK_BUILDING},
         deck_dir=str(tmp_path),
     )
@@ -100,7 +100,7 @@ async def _outline(ctx: ToolContext, slides: int = 2) -> str:
         "create_deck",
         {
             "title": "Tangents",
-            "chapter_id": "ch_1",
+            "topic_id": "ch_1",
             "sources": ["Lecture 3, 14 Oct", "f_1"],
             "slides": [
                 {"title": f"Slide {n}", "brief": "b"} for n in range(1, slides + 1)
@@ -206,7 +206,7 @@ async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks
     )
     assert not exports and not posts
 
-    ctx._scope_outline = {"chapters": [], "files": []}
+    ctx._scope_outline = {"topics": [], "files": []}
     last = await _write(ctx, rid, 2, _slide())
     assert not last.refused, last.text()
     # A same-turn read finds the stored deck (Q536).
@@ -217,7 +217,7 @@ async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks
     [post] = posts
     assert post["path"] == "/api/internal/files" and post["timeout"] > 10
     payload = post["payload"]
-    assert payload["name"] == "Tangents.pptx" and payload["chapterId"] == "ch_1"
+    assert payload["name"] == "Tangents.pptx" and payload["topicId"] == "ch_1"
     assert payload["toolCallId"] == "c_2" and "provenance" not in payload
     # The deck's made-from line goes to Go as written (Epo 2026-10-21).
     assert payload["sources"] == ["Lecture 3, 14 Oct", "f_1"]

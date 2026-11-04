@@ -213,8 +213,8 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrTitleTaken) {
 		return conflictError("title_taken", "a material with this name already exists in this workspace")
 	}
-	if errors.Is(err, store.ErrTooManyChapters) {
-		return conflictError("too_many_chapters", "this workspace already has the maximum number of chapters")
+	if errors.Is(err, store.ErrTooManyTopics) {
+		return conflictError("too_many_topics", "this workspace already has the maximum number of topics")
 	}
 	// The specific conflicts wrap ErrConflict, so they come first.
 	if errors.Is(err, store.ErrAccountDeletionBusy) {
@@ -607,6 +607,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerQuizzes(api)
 	a.registerFlashcards(api)
 	a.registerStudy(api)
+	a.registerAssignments(api)
 	a.registerSchedule(api)
 	a.registerExplore(api)
 	a.registerShare(api)

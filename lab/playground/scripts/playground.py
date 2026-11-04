@@ -94,9 +94,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # preference_text: a field=value name (writingStyle=brief) to the line
     # that value adds to the turn context, in place of preferences.py's.
     "preference_text": {},
-    # study_progress: null leaves read_study_progress unoffered; a dict is the
-    # fixture it returns, shaped like /api/internal/study-progress.
-    "study_progress": None,
     # history_mode: "evidence" is production (earlier turns replay their
     # messages and packed evidence); "full" replays the previous turn's last
     # request and final response verbatim, every tool exchange kept until
@@ -437,7 +434,7 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
     from pipeline.retrieval import store, tools
 
     outline = await store.workspace_outline(ctx.workspace_id)
-    outline = {**outline, "chapters": [*outline["chapters"], *state.get("chapters", [])]}
+    outline = {**outline, "topics": [*outline["topics"], *state.get("topics", [])]}
     # Office files are edited in the run (office.py); other sources are not.
     documents = [
         {
@@ -451,7 +448,7 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
     pool = await store.pool()
     async with pool.connection() as conn:
         cursor = await conn.execute(
-            "SELECT id, title, kind, chapter_id FROM materials WHERE workspace_id = %s "
+            "SELECT id, title, kind, topic_id FROM materials WHERE workspace_id = %s "
             "AND trashed_at IS NULL AND parent_material_id IS NULL ORDER BY position, created_at",
             (ctx.workspace_id,),
         )
@@ -463,7 +460,7 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
                 "title": m["title"],
                 "kind": "material",
                 "materialKind": m["kind"],
-                "chapterId": m.get("chapter_id"),
+                "topicId": m.get("topic_id"),
                 "editable": editable,
             }
             for m in items
@@ -471,31 +468,41 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
     return tools._source_listing(outline, documents, ctx.file_ids)
 
 
-async def create_chapter_locally(
+async def create_topic_locally(
     args: dict[str, Any], ctx, state: dict[str, Any], message_id: str
 ):
-    """create_chapter without a gateway: the chapter lives in the run's state,
-    named and given its id as Go would, and joins the turn's chapters (in
+    """create_topic without a gateway: the topic lives in the run's state,
+    named and given its id as Go would, and joins the turn's topics (in
     account chat, those of the workspace the call names)."""
     from pipeline.retrieval import store, tools
 
     workspace = args.get("_workspace_id") or ctx.workspace_id
     if not workspace:
-        return tools._refused(tools.CHAPTER_NEEDS_ITS_WORKSPACE)
+        return tools._refused(tools.TOPIC_NEEDS_ITS_WORKSPACE)
     outline = await store.workspace_outline(workspace)
-    chapters = state.setdefault("chapters", [])
+    topics = state.setdefault("topics", [])
     notes: list[str] = []
-    name = tools._cut(args.get("name"), tools.CHAPTER_NAME_MAX, "name", notes)
+    name = tools._cut(args.get("name"), tools.TOPIC_NAME_MAX, "name", notes)
     if not name:
-        taken = {c["name"] for c in [*outline["chapters"], *chapters]}
+        taken = {c["name"] for c in [*outline["topics"], *topics]}
         n = 1
-        while f"Chapter ({n})" in taken:
+        while f"Topic ({n})" in taken:
             n += 1
-        name = f"Chapter ({n})"
+        name = f"Topic ({n})"
+    description = tools._cut(
+        args.get("description"), tools.TOPIC_DESCRIPTION_MAX, "description", notes
+    )
     op = tools.operation_id(message_id, str(args.get("_tool_call_id") or ""))
-    chapters.append({"id": tools.chapter_id(op), "name": name, "workspace_id": workspace})
+    topics.append(
+        {
+            "id": tools.topic_id(op),
+            "name": name,
+            "description": description,
+            "workspace_id": workspace,
+        }
+    )
     result = tools._receipt_result(
-        {"operationId": op, "kind": "create_chapter", "outcome": "succeeded", "name": name},
+        {"operationId": op, "kind": "create_topic", "outcome": "succeeded", "name": name},
         ctx,
     )
     result.text_parts.extend(notes)
@@ -516,9 +523,9 @@ async def create_material_locally(
 
     kind, call_id = str(args.get("kind") or ""), str(args.get("_tool_call_id") or "")
     unknown = (
-        await account.chapter_refusal(ctx, args, state)
+        await account.topic_refusal(ctx, args, state)
         if ctx.account
-        else tools.unknown_chapter(ctx, args)
+        else tools.unknown_topic(ctx, args)
     )
     if unknown is not None:
         return unknown
@@ -557,7 +564,7 @@ async def create_material_locally(
         "excerpt_ids": credited,
         "provenance": {"books": books} if books else None,
         "figures": saved,
-        "chapter_id": args.get("chapter_id") or None,
+        "topic_id": args.get("topic_id") or None,
         "size": material_size(kind, args),
         "edits": [],
     }
@@ -986,13 +993,13 @@ async def deck_locally(
     if problem:
         return tools._refused(problem)
     if name == "create_deck":
-        chapter = str(clean.get("chapter_id") or "")
+        topic = str(clean.get("topic_id") or "")
         if ctx.account:
-            if (refused := await account.chapter_refusal(ctx, args, state)) is not None:
+            if (refused := await account.topic_refusal(ctx, args, state)) is not None:
                 return refused
-        elif chapter and chapter not in {c["id"] for c in ctx.chapters}:
+        elif topic and topic not in {c["id"] for c in ctx.topics}:
             return tools._refused(
-                "chapter_id is not a chapter of this workspace; the turn context lists them."
+                "topic_id is not a topic of this workspace; the turn context lists them."
             )
         prepared = await tools.write_sources(ctx, "create_deck", clean)
         if isinstance(prepared, tools.ToolResult):
@@ -1179,7 +1186,7 @@ async def questions_locally(
             "questions": written,
             "excerpt_ids": [str(e) for e in (clean.get("excerpt_ids") or [])],
             "provenance": {"books": books} if books else None,
-            "chapter_id": clean.get("chapter_id") or None,
+            "topic_id": clean.get("topic_id") or None,
             "edits": [],
         }
         record["size"] = material_size("quiz", record)
@@ -1480,7 +1487,6 @@ class Turn:
             "workspace_only": workspace_only,
             "assistant_message_id": self.id,
             "study_preferences": dict(c["study_preferences"] or {}),
-            "study_progress": bool(c["study_progress"]),
             "office_tools": office_tools,
             "edit_tools": edit_tools,
         }
@@ -1603,8 +1609,6 @@ class Turn:
             elif name == "list_sources" and not ctx_.account:
                 # Account chat lists through production with account.Gateway.
                 result = await list_sources_locally(ctx_, state)
-            elif name == "read_study_progress":
-                result = tools._result(tools.render_progress(c["study_progress"]))
             elif name in deck.NAMES:
                 result = await deck_locally(name, args, ctx_, state, self.id)
             elif name in tools.contract.HANDLER_CHECKED:
@@ -1619,8 +1623,8 @@ class Turn:
                 result = local
             elif name == "create_material":
                 result = await create_material_locally(args, ctx_, state, self.id)
-            elif name == "create_chapter":
-                result = await create_chapter_locally(args, ctx_, state, self.id)
+            elif name == "create_topic":
+                result = await create_topic_locally(args, ctx_, state, self.id)
             elif name == "edit_document":
                 result = await edit_material_locally(args, ctx_, state)
             else:
@@ -1905,7 +1909,7 @@ class Turn:
                     tool_call.arguments or ""
                 )
             state["provider_calls"][-1]["output_split"] = written
-            # The turn context this call carried: open file, chapters,
+            # The turn context this call carried: open file, topics,
             # preferences, library reads. It is last in the request.
             turn_context = next(
                 (
@@ -2764,12 +2768,15 @@ def check_questions() -> None:
 
 
 def check_figures() -> None:
-    """A note placing a library figure keeps its render under the run's
+    """A note placing a library figure keeps its stored crop under the run's
     assets/ and records it for the preview; an edit adds its own, and a quiz
     question takes one through add_question_media as an image block."""
+    import io
     from dataclasses import replace
     from tempfile import TemporaryDirectory
     from unittest.mock import patch
+
+    from PIL import Image
 
     from pipeline.retrieval import library, tools
 
@@ -2777,14 +2784,17 @@ def check_figures() -> None:
         id="fig_1", book_title="B", page=3, bbox=[0, 0, 500, 500], label="Figure 1",
         description="",
         credit="CC BY 4.0", decorative=False, excluded=False, withheld=False,
-        object_key="books/x.pdf", bytes=1, excerpt_ids=["exc_1"],
+        object_key="books/x.pdf", excerpt_ids=["exc_1"], blank=[],
     )
+    buffer = io.BytesIO()
+    Image.new("RGB", (1, 1), "white").save(buffer, "JPEG")
+    crop = buffer.getvalue()
 
     async def figures(ids):
         return {i: replace(figure, id=i) for i in ids}
 
-    async def render(*_args):
-        return b"\xff\xd8\xffjpeg", [0, 0, 500, 500], (1, 1)
+    def stored(key):
+        return crop
 
     async def provenance(excerpt_ids):
         return [{"id": "b", "title": "B", "excerptIds": list(excerpt_ids), "version": 1}]
@@ -2799,8 +2809,8 @@ def check_figures() -> None:
         assert not made.refused, made.text()
         note = state["materials"][-1]
         assert note["content"] == "# A\n\n![Figure 1 (CC BY 4.0)](figure:fig_1)"
-        assert note["figures"] == {"fig_1": {"file": "assets/fig_1.jpg", "bytes": 7}}
-        assert (run_dir / "assets" / "fig_1.jpg").read_bytes() == b"\xff\xd8\xffjpeg"
+        assert note["figures"] == {"fig_1": {"file": "assets/fig_1.jpg", "bytes": len(crop)}}
+        assert (run_dir / "assets" / "fig_1.jpg").read_bytes() == crop
         assert note["provenance"]["books"][0]["excerptIds"] == ["exc_1"]
         edited = await edit_material_locally(
             {"target": {"kind": "material", "id": note["id"]}, "excerpt_ids": ["exc_1"],
@@ -2834,7 +2844,7 @@ def check_figures() -> None:
         TemporaryDirectory() as tmp,
         patch.object(library, "figures", new=figures),
         patch.object(library, "provenance", new=provenance),
-        patch("pipeline.retrieval.capture.render_knowledge", new=render),
+        patch("pipeline.store.blobstore.library_read_bytes", new=stored),
     ):
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))
 

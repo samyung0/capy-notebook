@@ -1,4 +1,5 @@
 import { expect, type Locator, test } from '@playwright/test';
+import { openQuestionDialog } from '../helpers/quizEditor';
 import { m } from '../i18n';
 
 /** A part's answer row in the question: the answer key under the waves
@@ -11,15 +12,10 @@ const partAnswers = (dialog: Locator) =>
 test('undoing the add of a chart still open in its editor goes back to the question', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await page.goto('/materials/qz_2');
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', { name: m.question_ui_add_block_or_part() })
-    .click();
+  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
   await page
     .getByRole('button', { exact: true, name: m.question_ui_chart() })
     .click();
@@ -37,7 +33,7 @@ test('undoing the add of a chart still open in its editor goes back to the quest
 test('a quiz embedded in a note keeps its question dialog open through an edit', async ({
   page,
 }) => {
-  await page.goto('/workspaces/ws_bio?material=mat_note_1&mode=edit');
+  await page.goto('/workspaces/ws_bio?material=mat_note_1');
   await page
     .getByRole('heading', { name: 'Self-check' })
     .scrollIntoViewIfNeeded({ timeout: 30_000 });
@@ -53,9 +49,7 @@ test('a quiz embedded in a note keeps its question dialog open through an edit',
     .first()
     .click();
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', { name: m.question_ui_add_block_or_part() })
-    .click();
+  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
   // The edit reprojects the quiz and invalidates its read, which the note's
   // footer also observes: the refetch must reach the network and the embed
   // (with its dialog) stay mounted.
@@ -77,11 +71,8 @@ test('a quiz embedded in a note keeps its question dialog open through an edit',
 test('closing an open answer editor goes back to the question', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await page.goto('/materials/qz_2');
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   const answer = partAnswers(dialog);
   await answer.dblclick();
@@ -100,11 +91,8 @@ test('closing an open answer editor goes back to the question', async ({
 test('a part’s marks step and type within 1 to the marks cap', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await page.goto('/materials/qz_2');
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   await partAnswers(dialog).dblclick();
   const marks = dialog.getByRole('textbox', {
@@ -124,11 +112,8 @@ test('a part’s marks step and type within 1 to the marks cap', async ({
 test('a multiple choice option is marked correct with its toggle', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await page.goto('/materials/qz_2');
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   await partAnswers(dialog).dblclick();
   const first = dialog.getByRole('button', {
@@ -147,15 +132,10 @@ test('a multiple choice option is marked correct with its toggle', async ({
 test('a table adds a column and removes a row from its own controls', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await page.goto('/materials/qz_2');
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', { name: m.question_ui_add_block_or_part() })
-    .click();
+  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
   await page
     .getByRole('button', { exact: true, name: m.question_ui_table() })
     .click();
@@ -178,17 +158,47 @@ test('a table adds a column and removes a row from its own controls', async ({
 test('adding a part shows it in the question instead of opening its answer', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2?mode=edit');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await page.goto('/materials/qz_2');
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', { name: m.question_ui_add_block_or_part() })
-    .click();
+  await dialog.getByRole('button', { name: m.question_ui_add_part() }).click();
   await page
     .getByRole('button', { exact: true, name: m.question_ui_part() })
     .click();
   await expect(partAnswers(dialog)).toHaveCount(2);
+});
+
+// Grouped parts (board U2): Add part's Group, then the group's own menu.
+test('a group adds a sub-part, ungroups and goes with its parts', async ({
+  page,
+}) => {
+  await page.goto('/materials/qz_2');
+  await openQuestionDialog(page);
+  const dialog = page.getByRole('dialog');
+  const menuItem = (name: string) =>
+    page.getByRole('button', { exact: true, name });
+  const groupMenu = () =>
+    dialog
+      .getByRole('button', {
+        name: m.question_ui_actions({
+          label: m.question_ui_question_placeholder(),
+        }),
+      })
+      .first();
+  await dialog.getByRole('button', { name: m.question_ui_add_part() }).click();
+  await menuItem(m.question_ui_group()).click();
+  // A group starts with its first part: the question now has two answers.
+  await expect(partAnswers(dialog)).toHaveCount(2);
+  await expect(dialog.locator('[data-group-id]')).toHaveCount(1);
+  await expect(dialog.locator('[data-group-id]')).toContainText('(b)');
+  await groupMenu().click({ force: true });
+  await menuItem(m.question_ui_add_sub_part()).click();
+  await expect(partAnswers(dialog)).toHaveCount(3);
+  await expect(
+    dialog.locator('strong').filter({ hasText: '(ii)' })
+  ).toBeVisible();
+  await groupMenu().click({ force: true });
+  await menuItem(m.question_ui_ungroup()).click();
+  await expect(dialog.locator('[data-group-id]')).toHaveCount(0);
+  await expect(partAnswers(dialog)).toHaveCount(3);
 });

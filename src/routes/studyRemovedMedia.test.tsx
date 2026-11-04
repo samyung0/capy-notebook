@@ -78,6 +78,7 @@ vi.mock('@/api/hooks', () => ({
     },
     ...loaded,
   }),
+  useLearningOverview: () => ({ data: undefined }),
   useMe: () => ({ data: { id: 'u_1' } }),
   useQuiz: () => ({
     data: {
@@ -91,7 +92,6 @@ vi.mock('@/api/hooks', () => ({
   }),
   useRateReviewItem: () => ({ mutateAsync: vi.fn() }),
   useResumeReviewSession: () => ({ data: undefined }),
-  useReviewOverview: () => ({ data: undefined }),
   useWorkspace: () => ({ data: undefined }),
   useWorkspaceReview: () => ({
     data: {
@@ -127,8 +127,8 @@ vi.mock('@/features/flashcards/liveReads', () => ({
 vi.mock('@/features/workspace/WorkspaceHealth', () => ({
   useAccountFrozen: () => false,
 }));
-vi.mock('@/features/study/useChapterNames', () => ({
-  useChapterNames: () => () => undefined,
+vi.mock('@/features/study/useTopicNames', () => ({
+  useTopicNames: () => () => undefined,
 }));
 const { default: QuizAttempt } = await import('./QuizAttempt');
 const { default: FlashcardStudy } = await import('./FlashcardStudy');

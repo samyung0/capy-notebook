@@ -29,22 +29,22 @@ test.beforeEach(async ({ page }) => {
   await showPanelView(page, m.workspace_tab_files());
 });
 
-test('files and materials move between chapters, reorder together, and unfile on the outer tree', async ({
+test('files and materials move between topics, reorder together, and unfile on the outer tree', async ({
   page,
 }) => {
   const tree = page.locator('[data-workspace-file-tree]');
   const panel = tree.locator('..');
-  const chapter = (id: string) =>
-    tree.locator(`[data-workspace-chapter="${id}"]`);
+  const topic = (id: string) => tree.locator(`[data-workspace-topic="${id}"]`);
   const row = (key: string) =>
     tree.locator(`[data-workspace-content-row="${key}"]`);
   const file = row('file:f_1');
   const material = row('material:mat_1');
-  const destination = chapter('ch_2');
+  const destination = topic('ch_2');
 
-  // A collapsed chapter accepts content and opens after the drop.
+  // A collapsed topic accepts content and opens after the drop.
   await destination
-    .getByRole('button', { exact: true, name: 'Membranes & transport' })
+    // The group's name, then its count.
+    .getByRole('button', { name: /^Membranes & transport \d+$/ })
     .click();
   await dragOver(page, file, destination, { x: 45, y: 12 });
   await expect(destination).toHaveClass(/bg-tint-accent-1/);
@@ -84,7 +84,7 @@ test('files and materials move between chapters, reorder together, and unfile on
     })
     .toBe(true);
 
-  // The outer gutter is outside every chapter even when all rows fill the tree.
+  // The outer gutter is outside every topic even when all rows fill the tree.
   for (const item of [file, material]) {
     await dragOver(page, item, tree, { x: 3, y: 45 });
     await expect(panel).toHaveClass(/outline-2 outline-solid-accent-1/);
@@ -103,35 +103,32 @@ test('files and materials move between chapters, reorder together, and unfile on
     await expect
       .poll(async () => {
         const result = await editorApi<
-          { id: string; chapterId: string | null }[]
+          { id: string; topicId: string | null }[]
         >(page, `/api/workspaces/${EDITOR_WORKSPACE_ID}/${kind}`);
-        return result.body.find((item) => item.id === id)?.chapterId;
+        return result.body.find((item) => item.id === id)?.topicId;
       })
       .toBeNull();
   }
 });
 
-test('chapters reorder in both directions while a note editor is open', async ({
+test('topics reorder in both directions while a note editor is open', async ({
   page,
 }) => {
   const tree = page.locator('[data-workspace-file-tree]');
-  const chapters = tree.locator('[data-workspace-chapter]');
+  const topics = tree.locator('[data-workspace-topic]');
   await page
-    .getByRole('button', { exact: true, name: m.workspace_collapse_chapters() })
+    .getByRole('button', { exact: true, name: m.workspace_collapse_topics() })
     .click();
-  const first = tree.locator('[data-workspace-chapter="ch_1"]');
-  const last = tree.locator('[data-workspace-chapter="ch_3"]');
+  const first = tree.locator('[data-workspace-topic="ch_1"]');
+  const last = tree.locator('[data-workspace-topic="ch_3"]');
   await dragOver(page, last.locator('[draggable="true"]'), first, {
     x: 45,
     y: 2,
   });
   await expect(first.locator('.border-solid-accent-1')).toHaveClass(/top-0/);
   await page.mouse.up();
-  await expect(chapters.first()).toHaveAttribute(
-    'data-workspace-chapter',
-    'ch_3'
-  );
-  const second = tree.locator('[data-workspace-chapter="ch_2"]');
+  await expect(topics.first()).toHaveAttribute('data-workspace-topic', 'ch_3');
+  const second = tree.locator('[data-workspace-topic="ch_2"]');
   await dragOver(page, last.locator('[draggable="true"]'), second, {
     x: 45,
     y: 25,
@@ -140,10 +137,7 @@ test('chapters reorder in both directions while a note editor is open', async ({
     /bottom-0/
   );
   await page.mouse.up();
-  await expect(chapters.last()).toHaveAttribute(
-    'data-workspace-chapter',
-    'ch_3'
-  );
+  await expect(topics.last()).toHaveAttribute('data-workspace-topic', 'ch_3');
   await expect(tree.locator('.border-solid-accent-1')).toHaveCount(0);
 });
 
@@ -152,11 +146,11 @@ test('tree drags hide row actions until Escape cancels them', async ({
 }) => {
   const tree = page.locator('[data-workspace-file-tree]');
   const panel = tree.locator('..');
-  const destination = tree.locator('[data-workspace-chapter="ch_2"]');
+  const destination = tree.locator('[data-workspace-topic="ch_2"]');
   for (const selector of [
     '[data-workspace-content-row="file:f_1"]',
     '[data-workspace-content-row="material:mat_1"]',
-    '[data-workspace-chapter="ch_3"] > [draggable="true"]',
+    '[data-workspace-topic="ch_3"] > [draggable="true"]',
   ]) {
     const source = tree.locator(selector);
     await dragOver(page, source, destination, { x: 45, y: 12 });

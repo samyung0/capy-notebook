@@ -117,7 +117,7 @@ async def test_a_notes_text_and_chart_changes_reach_its_inspect(stack, turn):
 
 
 async def test_an_agent_note_and_its_quiz_edit_reach_the_next_turn(stack, turn):
-    """T6: a note create_material wrote lists under its chapter and inspects
+    """T6: a note create_material wrote lists under its topic and inspects
     block by block; a member's save of its quiz shows in the note's changes
     at the quiz's block."""
     ws = stack.workspace()
@@ -161,7 +161,7 @@ async def test_an_agent_note_and_its_quiz_edit_reach_the_next_turn(stack, turn):
                 {
                     "kind": "note",
                     "title": f"Marsh {chart}",
-                    "chapter_id": f"ch_{ws}",
+                    "topic_id": f"ch_{ws}",
                     "content": content,
                 },
             )
@@ -194,7 +194,7 @@ async def test_an_agent_note_and_its_quiz_edit_reach_the_next_turn(stack, turn):
     )
 
     listed = done.result("list")
-    assert listed.index(f"Chapter {ws}") < listed.index(note)
+    assert listed.index(f"Topic {ws}") < listed.index(note)
     read = done.result("read")
     assert chart in read and flow in read
     assert f"embedded quiz material id={quiz}" in read

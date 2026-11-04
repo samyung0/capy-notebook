@@ -53,15 +53,11 @@ test('a note credits its embedded quiz inside the embed and in its footer', asyn
   };
 
   const base = `/workspaces/${seed.privateWorkspace.id}?material=${note.id}`;
-  await ownerPage.goto(`${base}&mode=view`);
-  await expect(ownerPage.getByText(note.quizPrompt)).toBeVisible();
-  await check(ownerPage);
-
   // The quiz's own page ends with the same line.
   await ownerPage.goto(`/quizzes/${note.quizId}/attempt`);
   await openSources(ownerPage);
 
-  await ownerPage.goto(`${base}&mode=edit`);
+  await ownerPage.goto(`${base}`);
   await expectEditorLive(ownerPage);
   await showNoteToolbar(ownerPage);
   await check(ownerPage);

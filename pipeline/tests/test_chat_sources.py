@@ -37,14 +37,14 @@ def quiet_stores(monkeypatch):
     async def load(*_args, **_kwargs):
         return pending.PendingSources()
 
-    async def chapters(*_args, **_kwargs):
+    async def topics(*_args, **_kwargs):
         return [], None
 
     async def titles(*_args, **_kwargs):
         return {}
 
     monkeypatch.setattr(pending, "load", load)
-    monkeypatch.setattr(agent.store, "workspace_chapters", chapters)
+    monkeypatch.setattr(agent.store, "workspace_topics", topics)
     monkeypatch.setattr(agent.store, "resource_titles", titles)
 
 
@@ -548,7 +548,7 @@ async def test_a_read_only_first_reply_goes_back_for_the_answer_alone(monkeypatc
     ask = ToolCall(
         id="ask_1",
         name="AskUser",
-        arguments=json.dumps({"question": "Which chapter?", "choices": ["1"]}),
+        arguments=json.dumps({"question": "Which topic?", "choices": ["1"]}),
     )
     stream, seen = _script(
         [AssembledResponse(tool_calls=[ask]), AssembledResponse(text="The answer.")]
@@ -723,7 +723,7 @@ async def test_askuser_beside_other_calls_runs_them_and_ends_the_turn(monkeypatc
 
 
 async def test_a_fresh_turn_can_write_with_its_write_tools_locked(monkeypatch):
-    """The editing skill unlocks the writes, so create_chapter keeps can_write
+    """The editing skill unlocks the writes, so create_topic keeps can_write
     true and the read-only rule out of the first request."""
     stream, seen = _script([AssembledResponse(text="The answer.")])
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
@@ -746,7 +746,13 @@ async def test_a_fresh_turn_can_write_with_its_write_tools_locked(monkeypatch):
 async def test_a_figure_the_library_does_not_show_is_no_answer_figure(
     monkeypatch, figure
 ):
-    shown = {"decorative": False, "excluded": False, "withheld": False, "bbox": [1, 2]}
+    shown = {
+        "decorative": False,
+        "excluded": False,
+        "withheld": False,
+        "bbox": [1, 2, 3, 4],
+        "blank": [],
+    }
     found = {} if figure is None else {"f": SimpleNamespace(**{**shown, **figure})}
 
     async def _figures(_refs):

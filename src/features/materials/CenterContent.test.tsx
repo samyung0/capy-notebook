@@ -125,6 +125,7 @@ vi.mock('@/api/hooks', async () => {
             error: null,
             isLoading: false,
           },
+    useMe: () => ({ data: { id: 'u_1' } }),
   };
 });
 vi.mock('@tanstack/react-router', async (original) => ({
@@ -176,7 +177,6 @@ describe('material attribution placement', () => {
         centerQuiz={false}
         forceReadOnly={false}
         materialId={id}
-        mode="view"
         onEditorStatusChange={() => {}}
       />
     );
@@ -203,7 +203,6 @@ it('credits the embeds the note holds in its footer', async () => {
       centerQuiz={false}
       forceReadOnly={false}
       materialId="noteWithEmbed"
-      mode="view"
       onEditorStatusChange={() => {}}
     />
   );
@@ -224,7 +223,6 @@ it('shows the center file error, named by the kind it opened, for a material who
       forceReadOnly={false}
       kind="quiz"
       materialId="unreadable"
-      mode="view"
       onEditorStatusChange={() => {}}
     />
   );

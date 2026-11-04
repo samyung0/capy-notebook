@@ -9,7 +9,7 @@ export async function openEditorNote(
   readyText: string
 ): Promise<Locator> {
   await page.goto(
-    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${encodeURIComponent(materialId)}&mode=edit`
+    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${encodeURIComponent(materialId)}`
   );
   const editor = page.locator('[contenteditable="true"]').first();
   await expect(editor).toBeVisible({ timeout: 30_000 });

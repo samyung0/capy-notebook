@@ -18,18 +18,15 @@ export const coverBackground = (paint: CoverPaint) => ({
 });
 
 /**
- * A cover's art filling its positioned parent. `strip` adds the bottom shade
- * busy art needs under a one-line label; `card` washes the whole cover so a
- * card's name, counts and tags stay readable anywhere on it. Covers look the
- * same in every theme, so text over them follows `paint.light`, not tokens.
+ * A cover's art filling its positioned parent, with the bottom shade busy
+ * art needs under a one-line label (`paint.shade`). Covers look the same in
+ * every theme, so text over them follows `paint.light`, not tokens.
  */
 export function CoverArt({
   paint,
-  shade = 'strip',
   className,
 }: {
   paint: CoverPaint;
-  shade?: 'strip' | 'card';
   className?: string;
 }) {
   return (
@@ -39,21 +36,10 @@ export function CoverArt({
         className={cn('absolute inset-0', className)}
         style={coverBackground(paint)}
       />
-      {shade === 'strip' && paint.shade && (
+      {paint.shade && (
         <span
           aria-hidden
           className="absolute inset-0 bg-linear-to-t from-black/50 to-80% to-transparent"
-        />
-      )}
-      {shade === 'card' && (
-        <span
-          aria-hidden
-          className={cn(
-            'absolute inset-0 bg-linear-to-b',
-            paint.light
-              ? 'from-white/55 to-white/25'
-              : 'from-black/55 to-black/35'
-          )}
         />
       )}
     </>

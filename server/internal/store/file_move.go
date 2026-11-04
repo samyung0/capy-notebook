@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 
 	"github.com/jackc/pgx/v5"
@@ -12,23 +11,11 @@ import (
 )
 
 // MoveTarget is where MoveFiles puts files: a workspace and an optional
-// chapter, existing or new by name.
+// topic, existing or new by name.
 type MoveTarget struct {
 	WorkspaceID string
-	ChapterID   *string
-	ChapterName string
-}
-
-// ProgressLossError refuses a move that would drop someone's started or
-// finished study progress in the workspaces the files leave, until the caller
-// confirms it (Epo 2026-10-27). PlanSteps counts the plan steps that go too.
-type ProgressLossError struct {
-	People    int
-	PlanSteps int
-}
-
-func (e *ProgressLossError) Error() string {
-	return fmt.Sprintf("moving drops study progress of %d people and %d plan steps", e.People, e.PlanSteps)
+	TopicID     *string
+	TopicName   string
 }
 
 // ErrFileProcessing refuses to move a file whose pipeline job (parse, ingest
@@ -40,14 +27,12 @@ type movingFile struct{ id, workspaceID, payerID string }
 // MoveFiles puts files into a workspace, never out of one (Epo 2026-10-27):
 // a standalone file by its owner, a workspace file by that workspace's owner
 // or the file's payer, the actor editing the target. The payer stays. The
-// left workspaces' study progress and plan steps for the files go, refused
-// with ProgressLossError until confirmLoss when someone's progress would. The
 // index follows when the target embeds in the same space, else the file is
 // ingested there.
 //
 // Locks follow every workspace write: workspace rows (by id), then accounts,
 // then the file rows, re-read under their locks.
-func (s *Store) MoveFiles(ctx context.Context, actorID string, fileIDs []string, target MoveTarget, confirmLoss bool) ([]File, error) {
+func (s *Store) MoveFiles(ctx context.Context, actorID string, fileIDs []string, target MoveTarget) ([]File, error) {
 	if actorID == "" || target.WorkspaceID == "" || len(fileIDs) == 0 {
 		return nil, ErrNotFound
 	}
@@ -121,31 +106,13 @@ func (s *Store) MoveFiles(ctx context.Context, actorID string, fileIDs []string,
 	if err := s.gateWorkspaceFilesTx(ctx, tx, target.WorkspaceID, len(files)); err != nil {
 		return nil, err
 	}
-	chapterID, err := resolveUploadChapterID(ctx, tx, target.WorkspaceID, target.ChapterID, target.ChapterName)
+	topicID, err := s.resolveUploadTopicID(ctx, tx, target.WorkspaceID, target.TopicID, target.TopicName)
 	if err != nil {
 		return nil, err
 	}
 
-	// Only progress someone started or finished asks first (Epo 2026-10-27,
-	// R10); plan steps and removed progress go with it either way.
-	var people, steps int
-	if err := tx.QueryRow(ctx, `SELECT
-		(SELECT count(DISTINCT user_id) FROM study_progress WHERE file_id = ANY($1) AND state IN ('started','done')),
-		(SELECT count(*) FROM study_plan_steps WHERE file_id = ANY($1))`, ids).Scan(&people, &steps); err != nil {
-		return nil, err
-	}
-	if people > 0 && !confirmLoss {
-		return nil, &ProgressLossError{People: people, PlanSteps: steps}
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM study_progress WHERE file_id = ANY($1)`, ids); err != nil {
-		return nil, err
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM study_plan_steps WHERE file_id = ANY($1)`, ids); err != nil {
-		return nil, err
-	}
-
 	for _, f := range files {
-		if err := s.moveFileTx(ctx, tx, actorID, f.id, target.WorkspaceID, chapterID); err != nil {
+		if err := s.moveFileTx(ctx, tx, actorID, f.id, target.WorkspaceID, topicID); err != nil {
 			return nil, err
 		}
 	}
@@ -209,7 +176,7 @@ func readMovingFilesTx(ctx context.Context, tx pgx.Tx, ids []string, lock bool) 
 // building that content, the file is ingested there, paid by the mover as a
 // cross-space clone is. The alias is dropped before the file row changes (its
 // composite key names the old workspace) and after the copy read it.
-func (s *Store) moveFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID, workspaceID string, chapterID *string) error {
+func (s *Store) moveFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID, workspaceID string, topicID *string) error {
 	var contentID, contentHash string
 	var src models.Pin
 	var srcDim *int
@@ -284,12 +251,12 @@ func (s *Store) moveFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID, work
 		// The orphan trigger drops the old content once nothing holds it.
 		return err
 	}
-	position, err := nextContentPosition(ctx, tx, workspaceID, chapterID)
+	position, err := nextContentPosition(ctx, tx, workspaceID, topicID)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE files SET workspace_id=$2, chapter_id=$3, position=$4 WHERE id=$1`,
-		fileID, workspaceID, chapterID, position); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE files SET workspace_id=$2, topic_id=$3, position=$4 WHERE id=$1`,
+		fileID, workspaceID, topicID, position); err != nil {
 		return err
 	}
 	// A key borrowed from another file names that file's workspace, and a key
