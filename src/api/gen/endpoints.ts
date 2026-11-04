@@ -13,6 +13,15 @@ import type {
   AnonymousFlashcards,
   AnonymousNote,
   AnonymousQuiz,
+  Assignment,
+  AssignmentAnswersInputBody,
+  AssignmentAttempt,
+  AssignmentClosedInputBody,
+  AssignmentDoneInputBody,
+  AssignmentFormReq,
+  AssignmentList,
+  AssignmentMark,
+  AssignmentReport,
   AttemptDetail,
   AttemptsOutputBody,
   AutoReloadReq,
@@ -361,6 +370,696 @@ const res = await fetch(getRequestAccountDeletionUrl(),
 
   const data: requestAccountDeletionResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as requestAccountDeletionResponse
+}
+
+
+
+export type getAssignmentAttemptResponse200 = {
+  data: AssignmentAttempt
+  status: 200
+}
+
+export type getAssignmentAttemptResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getAssignmentAttemptResponseSuccess = (getAssignmentAttemptResponse200) & {
+  headers: Headers;
+};
+export type getAssignmentAttemptResponseError = (getAssignmentAttemptResponseDefault) & {
+  headers: Headers;
+};
+
+export type getAssignmentAttemptResponse = (getAssignmentAttemptResponseSuccess | getAssignmentAttemptResponseError)
+
+export const getGetAssignmentAttemptUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}`
+}
+
+/**
+ * @summary An attempt: running, or its results
+ */
+export const getAssignmentAttempt = async (id: string, options?: RequestInit): Promise<getAssignmentAttemptResponse> => {
+
+  const res = await fetch(getGetAssignmentAttemptUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAssignmentAttemptResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAssignmentAttemptResponse
+}
+
+
+
+export type saveAssignmentAnswersResponse204 = {
+  data: void
+  status: 204
+}
+
+export type saveAssignmentAnswersResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type saveAssignmentAnswersResponseSuccess = (saveAssignmentAnswersResponse204) & {
+  headers: Headers;
+};
+export type saveAssignmentAnswersResponseError = (saveAssignmentAnswersResponseDefault) & {
+  headers: Headers;
+};
+
+export type saveAssignmentAnswersResponse = (saveAssignmentAnswersResponseSuccess | saveAssignmentAnswersResponseError)
+
+export const getSaveAssignmentAnswersUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}/answers`
+}
+
+/**
+ * @summary Save a running attempt's answers
+ */
+export const saveAssignmentAnswers = async (id: string,
+    assignmentAnswersInputBody: NonReadonly<AssignmentAnswersInputBody>, options?: RequestInit): Promise<saveAssignmentAnswersResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSaveAssignmentAnswersUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentAnswersInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: saveAssignmentAnswersResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as saveAssignmentAnswersResponse
+}
+
+
+
+export type markAssignmentAnswerResponse200 = {
+  data: AssignmentAttempt
+  status: 200
+}
+
+export type markAssignmentAnswerResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type markAssignmentAnswerResponseSuccess = (markAssignmentAnswerResponse200) & {
+  headers: Headers;
+};
+export type markAssignmentAnswerResponseError = (markAssignmentAnswerResponseDefault) & {
+  headers: Headers;
+};
+
+export type markAssignmentAnswerResponse = (markAssignmentAnswerResponseSuccess | markAssignmentAnswerResponseError)
+
+export const getMarkAssignmentAnswerUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}/marks`
+}
+
+/**
+ * @summary Set or change a question's marks and comment in a member's answers
+ */
+export const markAssignmentAnswer = async (id: string,
+    assignmentMark: NonReadonly<AssignmentMark>, options?: RequestInit): Promise<markAssignmentAnswerResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getMarkAssignmentAnswerUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentMark)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: markAssignmentAnswerResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as markAssignmentAnswerResponse
+}
+
+
+
+export type submitAssignmentAttemptResponse200 = {
+  data: AssignmentAttempt
+  status: 200
+}
+
+export type submitAssignmentAttemptResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type submitAssignmentAttemptResponseSuccess = (submitAssignmentAttemptResponse200) & {
+  headers: Headers;
+};
+export type submitAssignmentAttemptResponseError = (submitAssignmentAttemptResponseDefault) & {
+  headers: Headers;
+};
+
+export type submitAssignmentAttemptResponse = (submitAssignmentAttemptResponseSuccess | submitAssignmentAttemptResponseError)
+
+export const getSubmitAssignmentAttemptUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}/submit`
+}
+
+/**
+ * @summary Submit a running attempt: closed parts marked, open parts left for the owner
+ */
+export const submitAssignmentAttempt = async (id: string,
+    assignmentAnswersInputBody: NonReadonly<AssignmentAnswersInputBody>, options?: RequestInit): Promise<submitAssignmentAttemptResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSubmitAssignmentAttemptUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentAnswersInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: submitAssignmentAttemptResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as submitAssignmentAttemptResponse
+}
+
+
+
+export type deleteAssignmentResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteAssignmentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deleteAssignmentResponseSuccess = (deleteAssignmentResponse204) & {
+  headers: Headers;
+};
+export type deleteAssignmentResponseError = (deleteAssignmentResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteAssignmentResponse = (deleteAssignmentResponseSuccess | deleteAssignmentResponseError)
+
+export const getDeleteAssignmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}`
+}
+
+/**
+ * @summary Delete an assignment with its results
+ */
+export const deleteAssignment = async (id: string, options?: RequestInit): Promise<deleteAssignmentResponse> => {
+
+  const res = await fetch(getDeleteAssignmentUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteAssignmentResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteAssignmentResponse
+}
+
+
+
+export type getAssignmentResponse200 = {
+  data: Assignment
+  status: 200
+}
+
+export type getAssignmentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getAssignmentResponseSuccess = (getAssignmentResponse200) & {
+  headers: Headers;
+};
+export type getAssignmentResponseError = (getAssignmentResponseDefault) & {
+  headers: Headers;
+};
+
+export type getAssignmentResponse = (getAssignmentResponseSuccess | getAssignmentResponseError)
+
+export const getGetAssignmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}`
+}
+
+/**
+ * @summary An assignment
+ */
+export const getAssignment = async (id: string, options?: RequestInit): Promise<getAssignmentResponse> => {
+
+  const res = await fetch(getGetAssignmentUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAssignmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAssignmentResponse
+}
+
+
+
+export type updateAssignmentResponse200 = {
+  data: Assignment
+  status: 200
+}
+
+export type updateAssignmentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateAssignmentResponseSuccess = (updateAssignmentResponse200) & {
+  headers: Headers;
+};
+export type updateAssignmentResponseError = (updateAssignmentResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateAssignmentResponse = (updateAssignmentResponseSuccess | updateAssignmentResponseError)
+
+export const getUpdateAssignmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}`
+}
+
+/**
+ * @summary Change an assignment's settings
+ */
+export const updateAssignment = async (id: string,
+    assignmentFormReq: NonReadonly<AssignmentFormReq>, options?: RequestInit): Promise<updateAssignmentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getUpdateAssignmentUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentFormReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateAssignmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateAssignmentResponse
+}
+
+
+
+export type setAssignmentClosedResponse200 = {
+  data: Assignment
+  status: 200
+}
+
+export type setAssignmentClosedResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type setAssignmentClosedResponseSuccess = (setAssignmentClosedResponse200) & {
+  headers: Headers;
+};
+export type setAssignmentClosedResponseError = (setAssignmentClosedResponseDefault) & {
+  headers: Headers;
+};
+
+export type setAssignmentClosedResponse = (setAssignmentClosedResponseSuccess | setAssignmentClosedResponseError)
+
+export const getSetAssignmentClosedUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/closed`
+}
+
+/**
+ * @summary Close an assignment to late submissions, or reopen it
+ */
+export const setAssignmentClosed = async (id: string,
+    assignmentClosedInputBody: NonReadonly<AssignmentClosedInputBody>, options?: RequestInit): Promise<setAssignmentClosedResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSetAssignmentClosedUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentClosedInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setAssignmentClosedResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as setAssignmentClosedResponse
+}
+
+
+
+export type setAssignmentDoneResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setAssignmentDoneResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setAssignmentDoneResponseSuccess = (setAssignmentDoneResponse204) & {
+  headers: Headers;
+};
+export type setAssignmentDoneResponseError = (setAssignmentDoneResponseDefault) & {
+  headers: Headers;
+};
+
+export type setAssignmentDoneResponse = (setAssignmentDoneResponseSuccess | setAssignmentDoneResponseError)
+
+export const getSetAssignmentDoneUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/done`
+}
+
+/**
+ * @summary A member's tick on an unmarked assignment
+ */
+export const setAssignmentDone = async (id: string,
+    assignmentDoneInputBody: NonReadonly<AssignmentDoneInputBody>, options?: RequestInit): Promise<setAssignmentDoneResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSetAssignmentDoneUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentDoneInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setAssignmentDoneResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setAssignmentDoneResponse
+}
+
+
+
+export type publishAssignmentResponse200 = {
+  data: Assignment
+  status: 200
+}
+
+export type publishAssignmentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type publishAssignmentResponseSuccess = (publishAssignmentResponse200) & {
+  headers: Headers;
+};
+export type publishAssignmentResponseError = (publishAssignmentResponseDefault) & {
+  headers: Headers;
+};
+
+export type publishAssignmentResponse = (publishAssignmentResponseSuccess | publishAssignmentResponseError)
+
+export const getPublishAssignmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/publish`
+}
+
+/**
+ * @summary Give a draft to its members
+ */
+export const publishAssignment = async (id: string, options?: RequestInit): Promise<publishAssignmentResponse> => {
+
+  const res = await fetch(getPublishAssignmentUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: publishAssignmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as publishAssignmentResponse
+}
+
+
+
+export type getAssignmentReportResponse200 = {
+  data: AssignmentReport
+  status: 200
+}
+
+export type getAssignmentReportResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getAssignmentReportResponseSuccess = (getAssignmentReportResponse200) & {
+  headers: Headers;
+};
+export type getAssignmentReportResponseError = (getAssignmentReportResponseDefault) & {
+  headers: Headers;
+};
+
+export type getAssignmentReportResponse = (getAssignmentReportResponseSuccess | getAssignmentReportResponseError)
+
+export const getGetAssignmentReportUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/report`
+}
+
+/**
+ * @summary An assignment's report: its questions, members and answers to mark
+ */
+export const getAssignmentReport = async (id: string, options?: RequestInit): Promise<getAssignmentReportResponse> => {
+
+  const res = await fetch(getGetAssignmentReportUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAssignmentReportResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAssignmentReportResponse
+}
+
+
+
+export type startAssignmentResponse200 = {
+  data: AssignmentAttempt
+  status: 200
+}
+
+export type startAssignmentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type startAssignmentResponseSuccess = (startAssignmentResponse200) & {
+  headers: Headers;
+};
+export type startAssignmentResponseError = (startAssignmentResponseDefault) & {
+  headers: Headers;
+};
+
+export type startAssignmentResponse = (startAssignmentResponseSuccess | startAssignmentResponseError)
+
+export const getStartAssignmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/start`
+}
+
+/**
+ * @summary Start an attempt, starting its clock, or return the one running
+ */
+export const startAssignment = async (id: string, options?: RequestInit): Promise<startAssignmentResponse> => {
+
+  const res = await fetch(getStartAssignmentUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: startAssignmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as startAssignmentResponse
 }
 
 
@@ -9655,6 +10354,121 @@ const res = await fetch(getUpdateWorkspaceUrl(id),
 
   const data: updateWorkspaceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateWorkspaceResponse
+}
+
+
+
+export type listAssignmentsResponse200 = {
+  data: AssignmentList
+  status: 200
+}
+
+export type listAssignmentsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listAssignmentsResponseSuccess = (listAssignmentsResponse200) & {
+  headers: Headers;
+};
+export type listAssignmentsResponseError = (listAssignmentsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listAssignmentsResponse = (listAssignmentsResponseSuccess | listAssignmentsResponseError)
+
+export const getListAssignmentsUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/assignments`
+}
+
+/**
+ * @summary A class's assignments: all of them for its owner and teaching assistants, a member's own otherwise
+ */
+export const listAssignments = async (id: string, options?: RequestInit): Promise<listAssignmentsResponse> => {
+
+  const res = await fetch(getListAssignmentsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listAssignmentsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listAssignmentsResponse
+}
+
+
+
+export type createAssignmentResponse201 = {
+  data: Assignment
+  status: 201
+}
+
+export type createAssignmentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createAssignmentResponseSuccess = (createAssignmentResponse201) & {
+  headers: Headers;
+};
+export type createAssignmentResponseError = (createAssignmentResponseDefault) & {
+  headers: Headers;
+};
+
+export type createAssignmentResponse = (createAssignmentResponseSuccess | createAssignmentResponseError)
+
+export const getCreateAssignmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/assignments`
+}
+
+/**
+ * @summary Give a class an assignment, freezing its quiz
+ */
+export const createAssignment = async (id: string,
+    assignmentFormReq: NonReadonly<AssignmentFormReq>, options?: RequestInit): Promise<createAssignmentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateAssignmentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentFormReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createAssignmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createAssignmentResponse
 }
 
 

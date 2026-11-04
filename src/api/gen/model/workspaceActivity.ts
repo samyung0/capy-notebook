@@ -10,6 +10,7 @@ export interface WorkspaceActivity {
   actorAvatarUrl?: string;
   actorId?: string;
   actorName?: string;
+  assignmentId?: string;
   at: string;
   fileId?: string;
   hidden?: boolean;

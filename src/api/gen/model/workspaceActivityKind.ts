@@ -12,4 +12,5 @@ export const WorkspaceActivityKind = {
   uploaded: 'uploaded',
   added: 'added',
   agent: 'agent',
+  assigned: 'assigned',
 } as const;

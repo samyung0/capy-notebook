@@ -2110,7 +2110,7 @@ func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams
 	}
 	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT `+attemptCols+`
 		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
-		WHERE a.user_id=$1 AND ($2::text[] IS NULL OR m.workspace_id = ANY($2)) AND ($5::text[] IS NULL OR a.kind = ANY($5))
+		WHERE a.user_id=$1 AND a.kind <> 'assignment' AND ($2::text[] IS NULL OR m.workspace_id = ANY($2)) AND ($5::text[] IS NULL OR a.kind = ANY($5))
 		ORDER BY %s %s NULLS LAST, a.taken_at DESC, a.id
 		LIMIT $3 OFFSET $4`, order, dir), userID, workspaces, p.Limit+1, p.Offset, kinds)
 	if err != nil {
@@ -2353,7 +2353,7 @@ func (s *Store) GetAttempt(ctx context.Context, id, userID string) (AttemptDetai
 	var d AttemptDetail
 	err := s.pool.QueryRow(ctx, `SELECT `+attemptCols+`, a.answers, a.questions
 		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
-		WHERE a.id=$1 AND a.user_id=$2`, id, userID).
+		WHERE a.id=$1 AND a.user_id=$2 AND a.kind <> 'assignment'`, id, userID).
 		Scan(append(attemptDest(&d.Attempt), &d.Answers, &d.Questions)...)
 	if isNoRows(err) {
 		return d, ErrNotFound

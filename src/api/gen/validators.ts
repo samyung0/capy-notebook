@@ -148,6 +148,523 @@ export const RequestAccountDeletionResponse = zod.object({
 
 
 /**
+ * @summary An attempt: running, or its results
+ */
+export const GetAssignmentAttemptParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetAssignmentAttemptResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "assignmentId": zod.string(),
+  "autoSubmitted": zod.boolean(),
+  "correct": zod.number(),
+  "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
+  "id": zod.string(),
+  "late": zod.boolean(),
+  "now": zod.iso.datetime({"offset":true}),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()),
+  "showAnswers": zod.boolean(),
+  "startedAt": zod.iso.datetime({"offset":true}).optional(),
+  "status": zod.enum(['running', 'submitted']),
+  "submittedAt": zod.iso.datetime({"offset":true}).optional(),
+  "title": zod.string(),
+  "total": zod.number(),
+  "userAvatarUrl": zod.string().optional(),
+  "userId": zod.string(),
+  "userName": zod.string(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+})
+
+
+/**
+ * @summary Save a running attempt's answers
+ */
+export const SaveAssignmentAnswersParams = zod.object({
+  "id": zod.string()
+})
+
+export const SaveAssignmentAnswersBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown())
+})
+
+export const SaveAssignmentAnswersResponse = zod.void()
+
+
+/**
+ * @summary Set or change a question's marks and comment in a member's answers
+ */
+export const MarkAssignmentAnswerParams = zod.object({
+  "id": zod.string()
+})
+
+export const markAssignmentAnswerBodyCommentMax = 2000;
+
+
+
+export const MarkAssignmentAnswerBody = zod.object({
+  "comment": zod.string().max(markAssignmentAnswerBodyCommentMax),
+  "parts": zod.array(zod.object({
+  "items": zod.array(zod.number()).nullish(),
+  "mark": zod.number().optional(),
+  "partId": zod.string()
+})),
+  "questionId": zod.string()
+})
+
+export const MarkAssignmentAnswerResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "assignmentId": zod.string(),
+  "autoSubmitted": zod.boolean(),
+  "correct": zod.number(),
+  "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
+  "id": zod.string(),
+  "late": zod.boolean(),
+  "now": zod.iso.datetime({"offset":true}),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()),
+  "showAnswers": zod.boolean(),
+  "startedAt": zod.iso.datetime({"offset":true}).optional(),
+  "status": zod.enum(['running', 'submitted']),
+  "submittedAt": zod.iso.datetime({"offset":true}).optional(),
+  "title": zod.string(),
+  "total": zod.number(),
+  "userAvatarUrl": zod.string().optional(),
+  "userId": zod.string(),
+  "userName": zod.string(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+})
+
+
+/**
+ * @summary Submit a running attempt: closed parts marked, open parts left for the owner
+ */
+export const SubmitAssignmentAttemptParams = zod.object({
+  "id": zod.string()
+})
+
+export const SubmitAssignmentAttemptBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown())
+})
+
+export const SubmitAssignmentAttemptResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "assignmentId": zod.string(),
+  "autoSubmitted": zod.boolean(),
+  "correct": zod.number(),
+  "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
+  "id": zod.string(),
+  "late": zod.boolean(),
+  "now": zod.iso.datetime({"offset":true}),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()),
+  "showAnswers": zod.boolean(),
+  "startedAt": zod.iso.datetime({"offset":true}).optional(),
+  "status": zod.enum(['running', 'submitted']),
+  "submittedAt": zod.iso.datetime({"offset":true}).optional(),
+  "title": zod.string(),
+  "total": zod.number(),
+  "userAvatarUrl": zod.string().optional(),
+  "userId": zod.string(),
+  "userName": zod.string(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+})
+
+
+/**
+ * @summary Delete an assignment with its results
+ */
+export const DeleteAssignmentParams = zod.object({
+  "id": zod.string()
+})
+
+export const DeleteAssignmentResponse = zod.void()
+
+
+/**
+ * @summary An assignment
+ */
+export const GetAssignmentParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetAssignmentResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "attempts": zod.int(),
+  "closed": zod.boolean(),
+  "closedAt": zod.iso.datetime({"offset":true}).optional(),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "kind": zod.string(),
+  "materialId": zod.string().optional(),
+  "name": zod.string()
+})),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "manage": zod.object({
+  "approveAiMarks": zod.boolean(),
+  "assignAll": zod.boolean(),
+  "assigned": zod.int(),
+  "assignees": zod.array(zod.string()),
+  "average": zod.number().optional(),
+  "done": zod.int(),
+  "quizId": zod.string().optional(),
+  "quizTitle": zod.string().optional(),
+  "showAnswers": zod.boolean(),
+  "shuffle": zod.boolean(),
+  "toApprove": zod.int()
+}).optional(),
+  "marks": zod.number(),
+  "mine": zod.object({
+  "attemptsUsed": zod.int(),
+  "correct": zod.number().optional(),
+  "done": zod.boolean(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "late": zod.boolean(),
+  "latestAttemptId": zod.string().optional(),
+  "missing": zod.boolean(),
+  "runningAttemptId": zod.string().optional(),
+  "total": zod.number().optional(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+}).optional(),
+  "postedAt": zod.iso.datetime({"offset":true}),
+  "postedBy": zod.string(),
+  "practiceQuizId": zod.string().optional(),
+  "questions": zod.int(),
+  "timeLimitMin": zod.int().optional(),
+  "title": zod.string(),
+  "topicIds": zod.array(zod.string()),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary Change an assignment's settings
+ */
+export const UpdateAssignmentParams = zod.object({
+  "id": zod.string()
+})
+
+export const updateAssignmentBodyAssigneesMax = 500;
+
+export const updateAssignmentBodyAttemptsMax = 10;
+
+export const updateAssignmentBodyFilesMax = 20;
+
+export const updateAssignmentBodyTimeLimitMinMax = 1440;
+
+export const updateAssignmentBodyTitleMax = 120;
+
+
+
+export const UpdateAssignmentBody = zod.object({
+  "approveAiMarks": zod.boolean(),
+  "assignAll": zod.boolean(),
+  "assignees": zod.array(zod.string()).max(updateAssignmentBodyAssigneesMax),
+  "attempts": zod.int().min(1).max(updateAssignmentBodyAttemptsMax),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "materialId": zod.string().optional()
+})).max(updateAssignmentBodyFilesMax),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "quizId": zod.string().optional(),
+  "showAnswers": zod.boolean(),
+  "shuffle": zod.boolean(),
+  "timeLimitMin": zod.int().min(1).max(updateAssignmentBodyTimeLimitMinMax).optional(),
+  "title": zod.string().min(1).max(updateAssignmentBodyTitleMax)
+})
+
+export const UpdateAssignmentResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "attempts": zod.int(),
+  "closed": zod.boolean(),
+  "closedAt": zod.iso.datetime({"offset":true}).optional(),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "kind": zod.string(),
+  "materialId": zod.string().optional(),
+  "name": zod.string()
+})),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "manage": zod.object({
+  "approveAiMarks": zod.boolean(),
+  "assignAll": zod.boolean(),
+  "assigned": zod.int(),
+  "assignees": zod.array(zod.string()),
+  "average": zod.number().optional(),
+  "done": zod.int(),
+  "quizId": zod.string().optional(),
+  "quizTitle": zod.string().optional(),
+  "showAnswers": zod.boolean(),
+  "shuffle": zod.boolean(),
+  "toApprove": zod.int()
+}).optional(),
+  "marks": zod.number(),
+  "mine": zod.object({
+  "attemptsUsed": zod.int(),
+  "correct": zod.number().optional(),
+  "done": zod.boolean(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "late": zod.boolean(),
+  "latestAttemptId": zod.string().optional(),
+  "missing": zod.boolean(),
+  "runningAttemptId": zod.string().optional(),
+  "total": zod.number().optional(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+}).optional(),
+  "postedAt": zod.iso.datetime({"offset":true}),
+  "postedBy": zod.string(),
+  "practiceQuizId": zod.string().optional(),
+  "questions": zod.int(),
+  "timeLimitMin": zod.int().optional(),
+  "title": zod.string(),
+  "topicIds": zod.array(zod.string()),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary Close an assignment to late submissions, or reopen it
+ */
+export const SetAssignmentClosedParams = zod.object({
+  "id": zod.string()
+})
+
+export const SetAssignmentClosedBody = zod.object({
+  "closed": zod.boolean()
+})
+
+export const SetAssignmentClosedResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "attempts": zod.int(),
+  "closed": zod.boolean(),
+  "closedAt": zod.iso.datetime({"offset":true}).optional(),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "kind": zod.string(),
+  "materialId": zod.string().optional(),
+  "name": zod.string()
+})),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "manage": zod.object({
+  "approveAiMarks": zod.boolean(),
+  "assignAll": zod.boolean(),
+  "assigned": zod.int(),
+  "assignees": zod.array(zod.string()),
+  "average": zod.number().optional(),
+  "done": zod.int(),
+  "quizId": zod.string().optional(),
+  "quizTitle": zod.string().optional(),
+  "showAnswers": zod.boolean(),
+  "shuffle": zod.boolean(),
+  "toApprove": zod.int()
+}).optional(),
+  "marks": zod.number(),
+  "mine": zod.object({
+  "attemptsUsed": zod.int(),
+  "correct": zod.number().optional(),
+  "done": zod.boolean(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "late": zod.boolean(),
+  "latestAttemptId": zod.string().optional(),
+  "missing": zod.boolean(),
+  "runningAttemptId": zod.string().optional(),
+  "total": zod.number().optional(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+}).optional(),
+  "postedAt": zod.iso.datetime({"offset":true}),
+  "postedBy": zod.string(),
+  "practiceQuizId": zod.string().optional(),
+  "questions": zod.int(),
+  "timeLimitMin": zod.int().optional(),
+  "title": zod.string(),
+  "topicIds": zod.array(zod.string()),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary A member's tick on an unmarked assignment
+ */
+export const SetAssignmentDoneParams = zod.object({
+  "id": zod.string()
+})
+
+export const SetAssignmentDoneBody = zod.object({
+  "done": zod.boolean()
+})
+
+export const SetAssignmentDoneResponse = zod.void()
+
+
+/**
+ * @summary Give a draft to its members
+ */
+export const PublishAssignmentParams = zod.object({
+  "id": zod.string()
+})
+
+export const PublishAssignmentResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "attempts": zod.int(),
+  "closed": zod.boolean(),
+  "closedAt": zod.iso.datetime({"offset":true}).optional(),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "kind": zod.string(),
+  "materialId": zod.string().optional(),
+  "name": zod.string()
+})),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "manage": zod.object({
+  "approveAiMarks": zod.boolean(),
+  "assignAll": zod.boolean(),
+  "assigned": zod.int(),
+  "assignees": zod.array(zod.string()),
+  "average": zod.number().optional(),
+  "done": zod.int(),
+  "quizId": zod.string().optional(),
+  "quizTitle": zod.string().optional(),
+  "showAnswers": zod.boolean(),
+  "shuffle": zod.boolean(),
+  "toApprove": zod.int()
+}).optional(),
+  "marks": zod.number(),
+  "mine": zod.object({
+  "attemptsUsed": zod.int(),
+  "correct": zod.number().optional(),
+  "done": zod.boolean(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "late": zod.boolean(),
+  "latestAttemptId": zod.string().optional(),
+  "missing": zod.boolean(),
+  "runningAttemptId": zod.string().optional(),
+  "total": zod.number().optional(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+}).optional(),
+  "postedAt": zod.iso.datetime({"offset":true}),
+  "postedBy": zod.string(),
+  "practiceQuizId": zod.string().optional(),
+  "questions": zod.int(),
+  "timeLimitMin": zod.int().optional(),
+  "title": zod.string(),
+  "topicIds": zod.array(zod.string()),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary An assignment's report: its questions, members and answers to mark
+ */
+export const GetAssignmentReportParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetAssignmentReportResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answers": zod.array(zod.object({
+  "attemptId": zod.string(),
+  "awarded": zod.number(),
+  "marks": zod.number(),
+  "questionId": zod.string(),
+  "userId": zod.string(),
+  "waiting": zod.boolean()
+})),
+  "members": zod.array(zod.object({
+  "attemptId": zod.string().optional(),
+  "avatarUrl": zod.string().optional(),
+  "correct": zod.number().optional(),
+  "late": zod.boolean(),
+  "minutes": zod.int().optional(),
+  "missing": zod.boolean(),
+  "name": zod.string(),
+  "running": zod.boolean(),
+  "submittedAt": zod.iso.datetime({"offset":true}).optional(),
+  "total": zod.number().optional(),
+  "userId": zod.string(),
+  "waitingAnswers": zod.int()
+})),
+  "questions": zod.array(zod.object({
+  "average": zod.number().optional(),
+  "parts": zod.array(zod.object({
+  "items": zod.array(zod.object({
+  "awarded": zod.int(),
+  "marked": zod.int(),
+  "marks": zod.number(),
+  "text": zod.string()
+})).nullish(),
+  "options": zod.array(zod.int()).nullish(),
+  "partId": zod.string(),
+  "wrongAnswers": zod.array(zod.object({
+  "count": zod.int(),
+  "text": zod.string()
+})).nullish()
+})),
+  "percent": zod.number().optional(),
+  "question": zod.record(zod.string(), zod.unknown()),
+  "submitted": zod.int()
+}))
+})
+
+
+/**
+ * @summary Start an attempt, starting its clock, or return the one running
+ */
+export const StartAssignmentParams = zod.object({
+  "id": zod.string()
+})
+
+export const StartAssignmentResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "assignmentId": zod.string(),
+  "autoSubmitted": zod.boolean(),
+  "correct": zod.number(),
+  "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
+  "id": zod.string(),
+  "late": zod.boolean(),
+  "now": zod.iso.datetime({"offset":true}),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()),
+  "showAnswers": zod.boolean(),
+  "startedAt": zod.iso.datetime({"offset":true}).optional(),
+  "status": zod.enum(['running', 'submitted']),
+  "submittedAt": zod.iso.datetime({"offset":true}).optional(),
+  "title": zod.string(),
+  "total": zod.number(),
+  "userAvatarUrl": zod.string().optional(),
+  "userId": zod.string(),
+  "userName": zod.string(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+})
+
+
+/**
  * @summary List attempts
  */
 export const listAttemptsQuerySortDefault = `date`;
@@ -6725,6 +7242,161 @@ export const UpdateWorkspaceResponse = zod.object({
 
 
 /**
+ * @summary A class's assignments: all of them for its owner and teaching assistants, a member's own otherwise
+ */
+export const ListAssignmentsParams = zod.object({
+  "id": zod.string()
+})
+
+export const ListAssignmentsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "attempts": zod.int(),
+  "closed": zod.boolean(),
+  "closedAt": zod.iso.datetime({"offset":true}).optional(),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "kind": zod.string(),
+  "materialId": zod.string().optional(),
+  "name": zod.string()
+})),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "manage": zod.object({
+  "approveAiMarks": zod.boolean(),
+  "assignAll": zod.boolean(),
+  "assigned": zod.int(),
+  "assignees": zod.array(zod.string()),
+  "average": zod.number().optional(),
+  "done": zod.int(),
+  "quizId": zod.string().optional(),
+  "quizTitle": zod.string().optional(),
+  "showAnswers": zod.boolean(),
+  "shuffle": zod.boolean(),
+  "toApprove": zod.int()
+}).optional(),
+  "marks": zod.number(),
+  "mine": zod.object({
+  "attemptsUsed": zod.int(),
+  "correct": zod.number().optional(),
+  "done": zod.boolean(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "late": zod.boolean(),
+  "latestAttemptId": zod.string().optional(),
+  "missing": zod.boolean(),
+  "runningAttemptId": zod.string().optional(),
+  "total": zod.number().optional(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+}).optional(),
+  "postedAt": zod.iso.datetime({"offset":true}),
+  "postedBy": zod.string(),
+  "practiceQuizId": zod.string().optional(),
+  "questions": zod.int(),
+  "timeLimitMin": zod.int().optional(),
+  "title": zod.string(),
+  "topicIds": zod.array(zod.string()),
+  "workspaceId": zod.string()
+})),
+  "members": zod.int().optional()
+})
+
+
+/**
+ * @summary Give a class an assignment, freezing its quiz
+ */
+export const CreateAssignmentParams = zod.object({
+  "id": zod.string()
+})
+
+export const createAssignmentBodyAssigneesMax = 500;
+
+export const createAssignmentBodyAttemptsMax = 10;
+
+export const createAssignmentBodyFilesMax = 20;
+
+export const createAssignmentBodyTimeLimitMinMax = 1440;
+
+export const createAssignmentBodyTitleMax = 120;
+
+
+
+export const CreateAssignmentBody = zod.object({
+  "approveAiMarks": zod.boolean(),
+  "assignAll": zod.boolean(),
+  "assignees": zod.array(zod.string()).max(createAssignmentBodyAssigneesMax),
+  "attempts": zod.int().min(1).max(createAssignmentBodyAttemptsMax),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "materialId": zod.string().optional()
+})).max(createAssignmentBodyFilesMax),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "quizId": zod.string().optional(),
+  "showAnswers": zod.boolean(),
+  "shuffle": zod.boolean(),
+  "timeLimitMin": zod.int().min(1).max(createAssignmentBodyTimeLimitMinMax).optional(),
+  "title": zod.string().min(1).max(createAssignmentBodyTitleMax)
+})
+
+export const CreateAssignmentResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "attempts": zod.int(),
+  "closed": zod.boolean(),
+  "closedAt": zod.iso.datetime({"offset":true}).optional(),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "kind": zod.string(),
+  "materialId": zod.string().optional(),
+  "name": zod.string()
+})),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "manage": zod.object({
+  "approveAiMarks": zod.boolean(),
+  "assignAll": zod.boolean(),
+  "assigned": zod.int(),
+  "assignees": zod.array(zod.string()),
+  "average": zod.number().optional(),
+  "done": zod.int(),
+  "quizId": zod.string().optional(),
+  "quizTitle": zod.string().optional(),
+  "showAnswers": zod.boolean(),
+  "shuffle": zod.boolean(),
+  "toApprove": zod.int()
+}).optional(),
+  "marks": zod.number(),
+  "mine": zod.object({
+  "attemptsUsed": zod.int(),
+  "correct": zod.number().optional(),
+  "done": zod.boolean(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "late": zod.boolean(),
+  "latestAttemptId": zod.string().optional(),
+  "missing": zod.boolean(),
+  "runningAttemptId": zod.string().optional(),
+  "total": zod.number().optional(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+}).optional(),
+  "postedAt": zod.iso.datetime({"offset":true}),
+  "postedBy": zod.string(),
+  "practiceQuizId": zod.string().optional(),
+  "questions": zod.int(),
+  "timeLimitMin": zod.int().optional(),
+  "title": zod.string(),
+  "topicIds": zod.array(zod.string()),
+  "workspaceId": zod.string()
+})
+
+
+/**
  * @summary Clone a shared workspace
  */
 export const CloneWorkspaceParams = zod.object({
@@ -6949,10 +7621,11 @@ export const GetWorkspaceDashboardResponse = zod.object({
   "actorAvatarUrl": zod.string().optional(),
   "actorId": zod.string().optional(),
   "actorName": zod.string().optional(),
+  "assignmentId": zod.string().optional(),
   "at": zod.iso.datetime({"offset":true}),
   "fileId": zod.string().optional(),
   "hidden": zod.boolean().optional(),
-  "kind": zod.enum(['uploaded', 'added', 'agent']),
+  "kind": zod.enum(['uploaded', 'added', 'agent', 'assigned']),
   "materialId": zod.string().optional(),
   "title": zod.string()
 })),
@@ -7556,6 +8229,7 @@ export const GetWorkspacePracticeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "members": zod.int().optional(),
   "quizzes": zod.array(zod.object({
+  "assignmentClosedAt": zod.iso.datetime({"offset":true}).optional(),
   "average": zod.number().optional(),
   "best": zod.object({
   "correct": zod.number(),

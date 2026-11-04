@@ -257,7 +257,9 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		// takes them.
 		"material_yjs_client_ids", "source_document_client_ids",
 		// Make a quiz runs it started, in any workspace.
-		"question_extractions"} {
+		"question_extractions",
+		// Assignments given to it and its ticks; its attempts went above.
+		"assignment_assignees", "assignment_done"} {
 		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE user_id=$1`, userID); err != nil {
 			return err
 		}
@@ -325,6 +327,7 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		`UPDATE files SET trashed_by=NULL WHERE trashed_by=$1`,
 		`UPDATE materials SET trashed_by=NULL WHERE trashed_by=$1`,
 		`UPDATE editor_assets SET created_by=NULL WHERE created_by=$1`,
+		`UPDATE assignments SET created_by=NULL WHERE created_by=$1`,
 		`UPDATE materials SET created_by=NULL WHERE created_by=$1`,
 		`UPDATE materials SET updated_by=NULL WHERE updated_by=$1`,
 		`UPDATE material_discussions SET created_by=NULL WHERE created_by=$1`,

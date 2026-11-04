@@ -20,6 +20,9 @@ const (
 	ActivityAdded    = "added"
 	// ActivityAgent is a material the chat agent made for the caller.
 	ActivityAgent = "agent"
+	// ActivityAssigned is an assignment given to the caller, or any assignment
+	// for a class's owner and editor members.
+	ActivityAssigned = "assigned"
 )
 
 type WorkspaceDashboard struct {
@@ -33,12 +36,13 @@ type WorkspaceDashboard struct {
 // WorkspaceActivity is one file uploaded or material added, newest first.
 // Actor fields are empty once the account is gone.
 type WorkspaceActivity struct {
-	Kind           string    `json:"kind" enum:"uploaded,added,agent"`
+	Kind           string    `json:"kind" enum:"uploaded,added,agent,assigned"`
 	ActorID        string    `json:"actorId,omitempty"`
 	ActorName      string    `json:"actorName,omitempty"`
 	ActorAvatarURL string    `json:"actorAvatarUrl,omitempty"`
 	FileID         *string   `json:"fileId,omitempty"`
 	MaterialID     *string   `json:"materialId,omitempty"`
+	AssignmentID   *string   `json:"assignmentId,omitempty"`
 	Title          string    `json:"title"`
 	At             time.Time `json:"at"`
 	// Hidden: the item is hidden from members; only owners and editors get it.
@@ -54,23 +58,31 @@ func (s *Store) WorkspaceDashboard(ctx context.Context, userID, wsID string) (Wo
 		return out, err
 	}
 	rows, err := s.pool.Query(ctx, `WITH a AS (
-			(SELECT 'uploaded' AS kind, f.created_by AS actor, f.id AS file_id, NULL::text AS material_id,
+			(SELECT 'uploaded' AS kind, f.created_by AS actor, f.id AS file_id, NULL::text AS material_id, NULL::text AS assignment_id,
 				f.name AS title, f.added_at AS at, false AS agent, f.hidden AS hidden
 			FROM files f WHERE f.workspace_id=$1 AND f.trashed_at IS NULL
 				AND workspace_item_visible(f.hidden, f.workspace_id, $2)
 			ORDER BY f.added_at DESC LIMIT $3)
 			UNION ALL
-			(SELECT 'added', m.created_by, NULL, m.id, m.title, m.created_at,
+			(SELECT 'added', m.created_by, NULL, m.id, NULL, m.title, m.created_at,
 				EXISTS (SELECT 1 FROM agent_operations ao WHERE ao.workspace_id=m.workspace_id
 					AND ao.kind='create_material' AND ao.outcome='succeeded'
 					AND ao.effect->'resource'->>'id' = m.id), m.hidden
 			FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 				AND workspace_item_visible(m.hidden, m.workspace_id, $2)
-			ORDER BY m.created_at DESC LIMIT $3))
+			ORDER BY m.created_at DESC LIMIT $3)
+			UNION ALL
+			(SELECT 'assigned', s.created_by, NULL, NULL, s.id, s.title, s.posted_at, false, false
+			FROM assignments s JOIN workspaces w ON w.id=s.workspace_id
+			JOIN workspace_members wm ON wm.workspace_id=s.workspace_id AND wm.user_id=$2
+			WHERE s.workspace_id=$1 AND NOT s.draft AND w.kind='class' AND (wm.role IN ('owner', 'editor')
+				OR (s.assign_all AND wm.role='viewer')
+				OR EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=s.id AND aa.user_id=$2))
+			ORDER BY s.posted_at DESC LIMIT $3))
 		SELECT CASE WHEN a.agent AND a.actor = $2 THEN 'agent' ELSE a.kind END,
 			COALESCE(a.actor, ''), COALESCE(NULLIF(u.name,''), u.id, ''),
 			COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url, ''),
-			a.file_id, a.material_id, a.title, a.at, a.hidden
+			a.file_id, a.material_id, a.assignment_id, a.title, a.at, a.hidden
 		FROM a LEFT JOIN users u ON u.id=a.actor
 		ORDER BY a.at DESC LIMIT $3`, wsID, userID, dashboardActivity)
 	if err != nil {
@@ -80,7 +92,7 @@ func (s *Store) WorkspaceDashboard(ctx context.Context, userID, wsID string) (Wo
 	for rows.Next() {
 		var it WorkspaceActivity
 		if err := rows.Scan(&it.Kind, &it.ActorID, &it.ActorName, &it.ActorAvatarURL,
-			&it.FileID, &it.MaterialID, &it.Title, &it.At, &it.Hidden); err != nil {
+			&it.FileID, &it.MaterialID, &it.AssignmentID, &it.Title, &it.At, &it.Hidden); err != nil {
 			return out, err
 		}
 		out.Activity = append(out.Activity, it)
