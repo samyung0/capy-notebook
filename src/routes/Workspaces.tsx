@@ -135,7 +135,7 @@ export default function Workspaces() {
         ) : isLoading ? (
           <div
             aria-label={m.a11y_loading()}
-            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
+            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-2.5 sm:gap-4"
             role="status"
           >
             {Array.from({ length: 6 }, (_, i) => (
@@ -144,7 +144,7 @@ export default function Workspaces() {
           </div>
         ) : (
           <div
-            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
+            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-2.5 sm:gap-4"
             ref={revealRef}
           >
             {sortedWorkspaces?.map((w) => (
@@ -152,7 +152,7 @@ export default function Workspaces() {
             ))}
             <Card
               border="dashed"
-              className="min-h-34 cursor-pointer items-center justify-center frosted:bg-transparent focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none"
+              className="min-h-16 cursor-pointer items-center justify-center frosted:bg-transparent p-2 focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-34 sm:p-5.5"
               interactive
               onClick={() => setCreateOpen(true)}
               radius="card-lg"
