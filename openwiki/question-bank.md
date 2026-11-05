@@ -248,7 +248,7 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   from a menu of the workspace's indexed files other than Excel and audio or a new upload.
   Files have no stored page count, so the browser reads "16 pages"
   (`filePages.ts`): a PDF's table through pdf.js with range requests once its row scrolls
-  into view, a Word or PowerPoint file through the upload analysis on the chosen rows only.
+  into view, a Word or PowerPoint file through the upload analysis, on its bytes read from its link, since the analysis worker takes only same-origin URLs and a link is the bucket's. A count that can't be read shows none.
   An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden from
   members and in no topic, and shows "Reading pages" until it is indexed. Continue waits for
   each upload to have started, since the browser's page count happens in the dialog, and for
