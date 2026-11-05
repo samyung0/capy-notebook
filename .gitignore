@@ -102,6 +102,10 @@ bench/editor/.results/
 bench/collaboration/.results/
 bench/share-pages/.results/
 bench/gateway/.results/
+bench/extraction/.results/
+# Exam text and figures: local only.
+bench/extraction/fixtures/
+bench/extraction/reports/*/*.jpg
 bench/gateway/.tls/
 blob-report/
 playwright/.cache/

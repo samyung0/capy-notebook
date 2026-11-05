@@ -28,7 +28,7 @@ are not approvals.
 ## UI and company identity
 
 The developer selected layout A, a single reading column with workspace metadata
-above the chapter/file outline. Mockups: https://pyd4moxcoz68.postplan.dev.
+above the topic/file outline. Mockups: https://pyd4moxcoz68.postplan.dev.
 Support uses `support@capynotebook.com`; the company is Stable Studio Limited
 and the product is Capy Notebook.
 

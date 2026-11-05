@@ -1,0 +1,275 @@
+{
+  "name": "group-blocks-over-limit-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Blood contains several types of cell."
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Line 0."
+          },
+          {
+            "type": "text",
+            "text": "Line 1."
+          },
+          {
+            "type": "text",
+            "text": "Line 2."
+          },
+          {
+            "type": "text",
+            "text": "Line 3."
+          },
+          {
+            "type": "text",
+            "text": "Line 4."
+          },
+          {
+            "type": "text",
+            "text": "Line 5."
+          },
+          {
+            "type": "text",
+            "text": "Line 6."
+          },
+          {
+            "type": "text",
+            "text": "Line 7."
+          },
+          {
+            "type": "text",
+            "text": "Line 8."
+          },
+          {
+            "type": "text",
+            "text": "Line 9."
+          },
+          {
+            "type": "text",
+            "text": "Line 10."
+          },
+          {
+            "type": "text",
+            "text": "Line 11."
+          },
+          {
+            "type": "text",
+            "text": "Line 12."
+          },
+          {
+            "type": "text",
+            "text": "Line 13."
+          },
+          {
+            "type": "text",
+            "text": "Line 14."
+          },
+          {
+            "type": "text",
+            "text": "Line 15."
+          },
+          {
+            "type": "text",
+            "text": "Line 16."
+          },
+          {
+            "type": "text",
+            "text": "Line 17."
+          },
+          {
+            "type": "text",
+            "text": "Line 18."
+          },
+          {
+            "type": "text",
+            "text": "Line 19."
+          },
+          {
+            "type": "text",
+            "text": "Line 20."
+          },
+          {
+            "type": "text",
+            "text": "Line 21."
+          },
+          {
+            "type": "text",
+            "text": "Line 22."
+          },
+          {
+            "type": "text",
+            "text": "Line 23."
+          },
+          {
+            "type": "text",
+            "text": "Line 24."
+          },
+          {
+            "type": "text",
+            "text": "Line 25."
+          },
+          {
+            "type": "text",
+            "text": "Line 26."
+          },
+          {
+            "type": "text",
+            "text": "Line 27."
+          },
+          {
+            "type": "text",
+            "text": "Line 28."
+          },
+          {
+            "type": "text",
+            "text": "Line 29."
+          },
+          {
+            "type": "text",
+            "text": "Line 30."
+          },
+          {
+            "type": "text",
+            "text": "Line 31."
+          },
+          {
+            "type": "text",
+            "text": "Line 32."
+          },
+          {
+            "type": "text",
+            "text": "Line 33."
+          },
+          {
+            "type": "text",
+            "text": "Line 34."
+          },
+          {
+            "type": "text",
+            "text": "Line 35."
+          },
+          {
+            "type": "text",
+            "text": "Line 36."
+          },
+          {
+            "type": "text",
+            "text": "Line 37."
+          },
+          {
+            "type": "text",
+            "text": "Line 38."
+          },
+          {
+            "type": "text",
+            "text": "Line 39."
+          },
+          {
+            "type": "text",
+            "text": "Line 40."
+          }
+        ]
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-a",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "State the function of red blood cells."
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["oxygen"]
+        },
+        "marks": 1,
+        "solution": []
+      },
+      {
+        "id": "part-b1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Fill in the two empty boxes."
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["fibrin"]
+        },
+        "marks": 2,
+        "solution": [],
+        "group": "g1"
+      },
+      {
+        "id": "part-b2",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "State two roles of clotting."
+          }
+        ],
+        "answer": {
+          "type": "open",
+          "accepted": [],
+          "hints": []
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "A correct reason",
+            "marks": 2
+          }
+        ],
+        "solution": [
+          {
+            "type": "text",
+            "text": "Worked solution."
+          }
+        ],
+        "group": "g1"
+      },
+      {
+        "id": "part-c",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Explain why the wound stops bleeding."
+          }
+        ],
+        "answer": {
+          "type": "open",
+          "accepted": [],
+          "hints": []
+        },
+        "marks": 3,
+        "markscheme": [
+          {
+            "text": "A correct reason",
+            "marks": 3
+          }
+        ],
+        "solution": [
+          {
+            "type": "text",
+            "text": "Worked solution."
+          }
+        ]
+      }
+    ]
+  }
+}

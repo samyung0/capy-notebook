@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -764,17 +765,26 @@ func (s *Store) PersistCheckpoint(ctx context.Context, convID string, cp Convers
 }
 
 // ChatOpenResource is the title of the file or material the learner has open,
-// when it is a live item of this workspace. found is false for anything else:
-// the open item is context for the turn, and a stale one is simply not sent.
-func (s *Store) ChatOpenResource(ctx context.Context, wsID, kind, id string) (title string, found bool, err error) {
+// when it is a live item of this workspace they can read. found is false for
+// anything else: the open item is context for the turn, and a stale one is simply
+// not sent, nor is the id of one hidden from them or assigned to them.
+func (s *Store) ChatOpenResource(ctx context.Context, userID, wsID, kind, id string) (title string, found bool, err error) {
 	var q string
 	switch kind {
 	case "file":
+		_, err = s.FileEffectiveRole(ctx, userID, id)
 		q = `SELECT name FROM files WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL`
 	case "material":
+		_, err = s.MaterialEffectiveRole(ctx, userID, id)
 		q = `SELECT title FROM materials WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL`
 	default:
 		return "", false, nil
+	}
+	if errors.Is(err, ErrNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
 	}
 	err = s.pool.QueryRow(ctx, q, id, wsID).Scan(&title)
 	if isNoRows(err) {

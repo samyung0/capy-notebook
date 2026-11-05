@@ -123,7 +123,7 @@ test.describe('workspace sharing', () => {
           page.getByRole('button', { name: m.action_clone_workspace() })
         ).toHaveCount(0);
         await expect(
-          page.getByRole('button', { name: m.action_new_file_or_chapter() })
+          page.getByRole('button', { name: m.action_new_file_or_topic() })
         ).toHaveCount(0);
         expect(
           await page.locator('meta[name="robots"]').getAttribute('content')
@@ -203,7 +203,8 @@ test.describe('workspace sharing', () => {
     );
     await viewerPage.goto(`/workspaces/${seed.privateWorkspace.id}`);
     await viewerPage
-      .getByRole('button', { exact: true, name: seed.privateWorkspace.name })
+      .getByRole('navigation', { name: m.workspace_rail_label() })
+      .getByRole('button', { name: m.workspace_account_menu() })
       .click();
     await viewerPage
       .getByRole('menuitem', { name: m.action_clone_workspace() })
@@ -251,13 +252,13 @@ test.describe('workspace sharing', () => {
     );
     expect(patch.status()).toBe(404);
 
-    const chapter = await otherApi.post(
-      `/api/workspaces/${seed.linkWorkspace.id}/chapters`,
+    const topic = await otherApi.post(
+      `/api/workspaces/${seed.linkWorkspace.id}/topics`,
       {
         data: { name: 'Injected' },
       }
     );
-    expect(chapter.status()).toBe(404);
+    expect(topic.status()).toBe(404);
   });
 
   test('share roles grant content authority but never workspace settings', async ({
@@ -325,15 +326,15 @@ test.describe('workspace sharing', () => {
       }
     );
     expect(metadataEdit.status()).toBe(200);
-    const chapter = await otherApi.post(
-      `/api/workspaces/${seed.editableWorkspace.id}/chapters`,
-      { data: { name: 'Shared editor chapter' } }
+    const topic = await otherApi.post(
+      `/api/workspaces/${seed.editableWorkspace.id}/topics`,
+      { data: { name: 'Shared editor topic' } }
     );
-    expect(chapter.status()).toBe(201);
-    const removedChapter = await otherApi.delete(
-      `/api/chapters/${(await chapter.json()).id}`
+    expect(topic.status()).toBe(201);
+    const removedTopic = await otherApi.delete(
+      `/api/topics/${(await topic.json()).id}`
     );
-    expect(removedChapter.status()).toBe(204);
+    expect(removedTopic.status()).toBe(204);
     const remove = await otherApi.delete(`/api/materials/${editorFixture.id}`);
     expect(remove.status()).toBe(204);
 

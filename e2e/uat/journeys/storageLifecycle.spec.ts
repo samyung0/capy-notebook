@@ -205,7 +205,7 @@ async function readOnlyNote(
 ) {
   const { page } = actor;
   await page.goto(
-    `${run.env.appUrl}/workspaces/${workspaceId}?material=${noteId}&mode=edit`
+    `${run.env.appUrl}/workspaces/${workspaceId}?material=${noteId}`
   );
   await expect(page.getByText(line, { exact: true })).toBeVisible({
     timeout: 60_000,

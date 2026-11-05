@@ -41,34 +41,28 @@ async function editPdf(page: Page) {
   ).toBeEnabled();
 }
 
-test('Blocks and Files open the shared document page in View', async ({
-  page,
-}) => {
+test('Blocks and Files open the shared document page', async ({ page }) => {
   await page.goto('/files?tab=blocks');
   await openItem(page, 'Study journal 001');
   await expect(page).toHaveURL(/\/materials\/mat_pagination_1$/);
-  await expect(
-    page.getByRole('button', { name: m.material_mode() })
-  ).toHaveAttribute('aria-pressed', 'false');
   const header = page
     .getByRole('heading', { exact: true, name: 'Study journal 001' })
     .locator('..')
     .locator('..');
   await expect(header.locator('use')).toHaveAttribute('href', /#java-enum$/);
-  const mode = header.getByRole('button', { name: m.material_mode() });
-  await mode.click();
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
-  await expect(page).toHaveURL(/mode=edit/);
-  await page.reload();
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
+  // At the highest mode its reader may have, with no switch; an old link's mode
+  // goes.
   await expect(
     page.locator('[data-slate-editor="true"][contenteditable="true"]')
   ).toBeVisible({ timeout: 30_000 });
-  await mode.focus();
-  await page.keyboard.press('Space');
-  await expect(mode).toHaveAttribute('aria-pressed', 'false');
-  await expect(page).toHaveURL(/mode=view/);
-  await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+  await expect(
+    header.getByRole('button', { name: m.material_mode() })
+  ).toHaveCount(0);
+  await page.goto('/materials/mat_pagination_1?mode=view');
+  await expect(
+    page.locator('[data-slate-editor="true"][contenteditable="true"]')
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page).not.toHaveURL(/mode=/);
 
   await header.getByRole('button', { name: m.a11y_open_menu() }).click();
   await expect(
@@ -659,19 +653,15 @@ test.fixme('Blocks, Files and recent links use saved modes without reloading the
   await page.getByRole('link', { exact: true, name: m.nav_files() }).click();
   await openItem(page, 'Cell structure.pdf');
   await expect(mode).toHaveAttribute('aria-pressed', 'true');
-  await page
-    .getByRole('link', { exact: true, name: m.nav_dashboard() })
-    .click();
+  await page.getByRole('link', { exact: true, name: m.nav_home() }).click();
   const recent = page
-    .getByRole('heading', { name: m.dashboard_recent() })
+    .getByRole('heading', { name: m.home_recent() })
     .locator('xpath=../..');
   await recent.getByRole('link', { name: /Cell structure.pdf/ }).click();
   await expect(page).toHaveURL('/workspaces/ws_bio?file=f_1');
   await expect(mode).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('button', { name: m.workspace_back_to() }).click();
-  await page
-    .getByRole('link', { exact: true, name: m.nav_dashboard() })
-    .click();
+  // The workspace rail's Home goes back to the app's Home.
+  await page.getByRole('link', { exact: true, name: m.nav_home() }).click();
   await recent.getByRole('link', { name: /Editor matrix note/ }).click();
   await expect(page).toHaveURL('/workspaces/ws_bio?material=mat_e2e_editor');
   await expect(mode).toHaveAttribute('aria-pressed', 'true');

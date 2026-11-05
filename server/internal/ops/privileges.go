@@ -41,7 +41,6 @@ var readRequiredPrivileges = []columnPrivilege{
 	{"model_capacities", "provider", "SELECT"},
 	{"model_capacities", "model", "SELECT"},
 	{"model_capacities", "concurrency_total", "SELECT"},
-	{"model_capacities", "interactive_reserve", "SELECT"},
 
 	{"plan_limits", "plan_tier", "SELECT"},
 	{"plan_limits", "storage_limit_bytes", "SELECT"},
@@ -51,6 +50,7 @@ var readRequiredPrivileges = []columnPrivilege{
 	{"plan_limits", "files_per_workspace", "SELECT"},
 	{"plan_limits", "files_per_upload", "SELECT"},
 	{"plan_limits", "image_max_bytes", "SELECT"},
+	{"plan_limits", "topics_per_workspace", "SELECT"},
 	{"resource_credit_rates", "resource_key", "SELECT"},
 	{"resource_credit_rates", "version", "SELECT"},
 	{"resource_credit_rates", "unit", "SELECT"},
@@ -327,9 +327,6 @@ var registryRequiredPrivileges = []columnPrivilege{
 	{"model_capacities", "concurrency_total", "SELECT"},
 	{"model_capacities", "concurrency_total", "INSERT"},
 	{"model_capacities", "concurrency_total", "UPDATE"},
-	{"model_capacities", "interactive_reserve", "SELECT"},
-	{"model_capacities", "interactive_reserve", "INSERT"},
-	{"model_capacities", "interactive_reserve", "UPDATE"},
 
 	{"model_configs", "version", "SELECT"},
 	{"model_configs", "provider_name", "SELECT"},

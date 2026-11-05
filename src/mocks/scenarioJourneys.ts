@@ -114,7 +114,7 @@ export async function runJourney(
     doc.destroy();
     return text;
   };
-  const share = async () => {
+  const seedMember = () => {
     if (
       !mockWorkspaceMembers.some((row) => row.workspaceId === scenarioWorkspace)
     )
@@ -125,12 +125,16 @@ export async function runJourney(
         userId: 'u_mock_collaborator',
         workspaceId: scenarioWorkspace,
       });
+  };
+  const share = async () => {
+    seedMember();
     await go(scenarioPath);
     await dialog('workspace-sharing');
   };
   const chat = async () => {
     await go(scenarioPath);
-    await ui.panelView(m.workspace_tab_chat());
+    await ui.railSection(m.workspace_section_agent());
+    await ui.click(m.chat_new());
     await ui.fill(
       `textarea[aria-label="${m.chat_placeholder()}"]`,
       'Explain the source for this scenario.'
@@ -234,7 +238,7 @@ export async function runJourney(
     id === 'note-frozen-while-editing' ||
     id === 'note-storage-full-while-editing'
   ) {
-    await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);
+    await go(`${scenarioPath}?material=${scenarioNote}`);
     const editable = await ui.element<HTMLElement>('[contenteditable="true"]');
     // A normal typed edit, still inside the checkpoint debounce when the
     // room turns read-only.
@@ -343,12 +347,12 @@ export async function runJourney(
         1
       ),
     ]);
-    await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);
+    await go(`${scenarioPath}?material=${scenarioNote}`);
     await ui.element('[data-testid="save-banner"][data-kind="review"]');
     return;
   }
   if (id === 'note-permission-lost') {
-    await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);
+    await go(`${scenarioPath}?material=${scenarioNote}`);
     await ui.element('[contenteditable="true"]');
     const note = db.materials.find((row) => row.id === scenarioNote)!;
     note.capabilities = {
@@ -467,25 +471,26 @@ export async function runJourney(
     return;
   }
 
+  // An own-account status in a workspace opens a file: its header holds the
+  // triangle, and the Dashboard has no header.
   const readRoutes: Partial<Record<JourneyId, string>> = {
     'account-deleted': '/settings',
     'account-deletion-pending': '/settings',
     'account-frozen-create': '/workspaces',
-    'account-frozen-member': scenarioPath,
-    'account-frozen-workspace': scenarioPath,
+    'account-frozen-member': `${scenarioPath}?material=${scenarioNote}`,
+    'account-frozen-workspace': `${scenarioPath}?material=${scenarioNote}`,
     'account-grace': '/',
-    'account-grace-workspace': scenarioPath,
+    'account-grace-workspace': `${scenarioPath}?material=${scenarioNote}`,
     'account-over-quota': '/',
-    'account-storage-full': scenarioPath,
+    'account-storage-full': `${scenarioPath}?material=${scenarioNote}`,
     'account-storage-full-dashboard': '/',
-    'account-storage-near': scenarioPath,
+    'account-storage-near': `${scenarioPath}?material=${scenarioNote}`,
     'account-storage-near-dashboard': '/',
     'account-suspended': '/settings',
     'annotations-load': `${scenarioPath}?file=mock-scenario-pdf`,
     'attempt-load': `/quizzes/attempts/${db.attempts[0].id}`,
     'billing-load': '/billing',
-    'chapters-load': scenarioPath,
-    'collaboration-token': `${scenarioPath}?material=${scenarioNote}&mode=edit`,
+    'collaboration-token': `${scenarioPath}?material=${scenarioNote}`,
     'dashboard-lists': '/',
     'deletion-check': '/settings?tab=danger',
     'deletion-transfer-required': '/settings?tab=danger',
@@ -507,6 +512,7 @@ export async function runJourney(
     schedule: '/schedule',
     'service-503': '/workspaces',
     tasks: '/tasks',
+    'topics-load': scenarioPath,
     'trash-load': '/files?tab=trash',
     'workspace-401': scenarioPath,
     'workspace-404': scenarioPath,
@@ -599,8 +605,8 @@ export async function runJourney(
         return "Your own frozen account keeps this healthy owner's workspace read-only; the header shows your status.";
       if (id.startsWith('workspace-owner-'))
         return "The owner's note opens view-only under the storage strip; what the member adds is its own.";
-      return route === scenarioPath
-        ? 'The workspace header triangle and entry toast show your storage status.'
+      return route.startsWith(scenarioPath)
+        ? 'The file header triangle and entry toast show your storage status.'
         : 'The dashboard banner slot or the blocked-account page shows the account status.';
     }
     if (id === 'workspace-timeout')
@@ -658,7 +664,7 @@ export async function runJourney(
       queryClient.setQueryData(qk.eventStream, { status: 'disconnected' });
       return 'Application reconnecting preview. MSW does not open the events connection.';
     case 'collab-chaos':
-      await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);
+      await go(`${scenarioPath}?material=${scenarioNote}`);
       await ui.element('[contenteditable="true"]');
       setChaosPeers(true);
       return;
@@ -743,31 +749,32 @@ export async function runJourney(
     case 'member-save':
     case 'member-remove':
       await share();
+      fail();
       ui.activate(
         await ui.element(
-          'section[aria-labelledby="workspace-members-title"] button[aria-haspopup="menu"]'
+          id === 'member-remove'
+            ? 'section[aria-labelledby="workspace-members-title"] button[data-variant="danger-light"]'
+            : 'section[aria-labelledby="workspace-members-title"] [role="combobox"]'
         )
       );
-      fail();
-      await ui.click(
-        id === 'member-remove' ? m.members_remove() : m.members_manage()
-      );
-      if (id === 'member-save') {
-        await ui.click(m.common_role(), '[role="combobox"]');
-        await ui.click(m.members_role_view(), '[role="option"]');
-      }
+      if (id === 'member-save')
+        await ui.click(m.role_member(), '[role="option"]');
+      else await ui.click(m.action_remove());
       return;
     case 'ownership-transfer':
+      seedMember();
       await go(scenarioPath);
       await dialog('ownership-transfer');
       fail();
+      ui.activate(await ui.element('[role="dialog"] [role="combobox"]'));
+      await ui.click('Morgan Lee', '[role="option"]');
       await ui.click(m.workspace_transfer_confirm());
       return;
-    case 'chapter-save':
+    case 'topic-save':
       await go(scenarioPath);
       await ui.click(m.action_add_file());
-      await ui.click(m.action_add_chapter());
-      await ui.fill('[role="dialog"] input', 'Scenario chapter');
+      await ui.click(m.action_add_topic());
+      await ui.fill('[role="dialog"] input', 'Scenario topic');
       fail();
       await ui.submit('[role="dialog"] form');
       return;
@@ -1000,13 +1007,11 @@ export async function runJourney(
     case 'conversations-load':
       fail();
       await go(scenarioPath);
-      await ui.panelView(m.workspace_tab_chat());
-      await ui.click(m.chat_history());
+      await ui.railSection(m.workspace_section_agent());
       return 'Chat history currently suppresses its read error.';
     case 'generation-failed':
     case 'ai-context':
-      // TODO: refine with agentic harness, then walk the AI generate tab again.
-      return 'The AI generate tab is hidden, so nothing in the app sends this request.';
+      return 'Sent by Make my own practice in Study; this journey does not walk it yet.';
     case 'quiz-check':
       // Checking grades on the server, so one request covers grading too.
       await go(`/quizzes/${scenarioQuiz}/attempt`);

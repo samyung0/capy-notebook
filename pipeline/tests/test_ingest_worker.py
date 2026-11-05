@@ -2372,30 +2372,18 @@ async def test_one_job_reads_at_most_its_configured_pages_at_once(
     assert unread == [] and peak == 3
 
 
-@pytest.mark.parametrize(
-    ("capacity", "per_job", "started"),
-    [("64", "40", True), ("64", "65", False), ("20", "0", False)],
-)
-def test_the_page_read_gates_need_a_per_job_limit_within_the_overall_one(
-    capacity: str, per_job: str, started: bool
-):
+@pytest.mark.parametrize(("per_job", "started"), [("40", True), ("0", False)])
+def test_the_per_job_page_reads_need_at_least_one(per_job: str, started: bool):
     import os
     import subprocess
     import sys
 
-    env = {
-        **os.environ,
-        "CAPY_VLM_PAGE_CAPACITY": capacity,
-        "CAPY_VLM_PAGES_PER_JOB": per_job,
-    }
+    env = {**os.environ, "CAPY_VLM_PAGES_PER_JOB": per_job}
     run = subprocess.run(
         [
             sys.executable,
             "-c",
-            (
-                "from pipeline.config import cfg; "
-                "print(cfg.vlm_page_capacity, cfg.vlm_pages_per_job)"
-            ),
+            "from pipeline.config import cfg; print(cfg.vlm_pages_per_job)",
         ],
         env=env,
         capture_output=True,
@@ -2403,9 +2391,9 @@ def test_the_page_read_gates_need_a_per_job_limit_within_the_overall_one(
         check=False,
     )
     if started:
-        assert run.stdout.split() == [capacity, per_job]
+        assert run.stdout.split() == [per_job]
     else:
-        assert "CAPY_VLM_PAGES_PER_JOB must be between 1 and" in run.stderr
+        assert "CAPY_VLM_PAGES_PER_JOB must be at least 1" in run.stderr
 
 
 async def test_refresh_reads_vlm_pages_through_the_caption_cache(

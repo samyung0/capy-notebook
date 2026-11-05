@@ -8,7 +8,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { FrostedSurface } from '@/theme/theme';
-import { Button } from './Button';
+import { Button, type ButtonVariantProps } from './Button';
 import { Spinner } from './feedback';
 import { IconButton } from './IconButton';
 
@@ -96,8 +96,6 @@ function DialogContent({
         )}
         data-slot="dialog-content"
         inert={held}
-        // check github issues for pointer event collisions between dialog and sonner
-        // https://github.com/radix-ui/primitives/issues/2690#issuecomment-1945449832
         onOpenAutoFocus={(event) => {
           onOpenAutoFocus?.(event);
           // Phones: the first tabbable is the header's close, whose focus ring
@@ -108,10 +106,8 @@ function DialogContent({
           (event.currentTarget as HTMLElement).focus();
         }}
         onPointerDownOutside={(e) => {
-          if (
-            e.target instanceof Element &&
-            e.target.closest('[data-sonner-toast]')
-          ) {
+          // A press on a toast (its action or close) is not a press outside.
+          if (e.target instanceof Element && e.target.closest('[data-toast]')) {
             e.preventDefault();
           }
           onPointerDownOutside?.(e);
@@ -180,6 +176,7 @@ function DialogTitle({
   status,
   closable = true,
   closeDisabled,
+  onBack,
   onCloseClick,
   className,
   ...props
@@ -189,6 +186,8 @@ function DialogTitle({
   status?: React.ReactNode;
   closable?: boolean;
   closeDisabled?: boolean;
+  /** A page inside the dialog: the header's button is an arrow going back. */
+  onBack?: () => void;
   /** Replaces closing, for a dialog whose way out is an action (Skip). */
   onCloseClick?: () => void;
 }) {
@@ -196,12 +195,14 @@ function DialogTitle({
     <IconButton
       className="shrink-0 -translate-y-px sm:hidden"
       disabled={closeDisabled}
-      icon="x"
-      onClick={onCloseClick}
+      icon={onBack ? 'navigationBack' : 'x'}
+      onClick={onBack ?? onCloseClick}
       size="sm"
       variant="ghost-hover"
     >
-      <span className="sr-only">{m.action_close()}</span>
+      <span className="sr-only">
+        {onBack ? m.action_back() : m.action_close()}
+      </span>
     </IconButton>
   );
   const { setSlot } = React.useContext(ActionSlotContext);
@@ -210,7 +211,7 @@ function DialogTitle({
       className="max-sm:sticky max-sm:top-0 max-sm:z-20 max-sm:-mx-4 max-sm:mb-2 max-sm:flex max-sm:min-h-14 max-sm:shrink-0 max-sm:items-start max-sm:gap-1 max-sm:bg-overlay max-sm:pt-3 max-sm:pr-4 max-sm:pb-1 max-sm:pl-1.5 sm:contents"
       data-slot="dialog-header"
     >
-      {onCloseClick
+      {onBack || onCloseClick
         ? closeButton
         : closable && (
             <DialogPrimitive.Close asChild>{closeButton}</DialogPrimitive.Close>
@@ -253,16 +254,18 @@ function DialogHeaderAction({ children }: { children: React.ReactNode }) {
 function DialogCancel({
   disabled,
   label,
+  size = 'lg',
 }: {
   disabled?: boolean;
   label?: string;
+  size?: ButtonVariantProps['size'];
 }) {
   return (
     <DialogPrimitive.Close asChild>
       <Button
         className="max-sm:hidden"
         disabled={disabled}
-        size="lg"
+        size={size}
         type="button"
         variant="ghost-hover"
       >
@@ -279,15 +282,18 @@ function DialogCancel({
 function DialogPrimary({
   children,
   pending,
+  cancelSize,
 }: {
   children: React.ReactNode;
   pending?: boolean;
+  /** Cancel's size, matching a primary smaller than lg. */
+  cancelSize?: ButtonVariantProps['size'];
 }) {
   return useIsPhone() ? (
     <DialogHeaderAction>{children}</DialogHeaderAction>
   ) : (
     <>
-      <DialogCancel disabled={pending} />
+      <DialogCancel disabled={pending} size={cancelSize} />
       {children}
     </>
   );
@@ -340,6 +346,7 @@ function SimpleDialog({
   className,
   showCloseButton = true,
   pending,
+  onBack,
   onCloseClick,
   onCloseAutoFocus,
   onOpenAutoFocus,
@@ -372,6 +379,9 @@ function SimpleDialog({
   showCloseButton?: boolean;
   /** While the action runs: closing is disabled (the corner close hides). */
   pending?: boolean;
+  /** Phones: a page inside the dialog; the header shows an arrow running this
+   * instead of the close. */
+  onBack?: () => void;
   /** Phones: the header close runs this instead of closing (Onboarding's
    * Skip), shown even without `showCloseButton`. */
   onCloseClick?: () => void;
@@ -426,6 +436,7 @@ function SimpleDialog({
           className="pb-2"
           closable={showCloseButton}
           closeDisabled={pending}
+          onBack={onBack}
           onCloseClick={onCloseClick}
           status={phone && status}
         >

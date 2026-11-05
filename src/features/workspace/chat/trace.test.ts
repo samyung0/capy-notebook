@@ -55,7 +55,6 @@ describe('toolIcon', () => {
     expect(toolIcon('edit_office_document')).toBe('edit');
     expect(toolIcon('trash_file')).toBe('trash');
     expect(toolIcon('restore_file')).toBe('restore');
-    expect(toolIcon('read_study_progress')).toBe('bouncy');
     expect(toolIcon('a_future_tool')).toBe('bouncy');
   });
 });

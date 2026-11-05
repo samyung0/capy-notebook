@@ -584,7 +584,7 @@ export const chatFixtures = [
 ] as const satisfies readonly ChatFixture[];
 
 export const chatFixtureOptions = chatFixtures.map(({ hint, id, label }) => ({
-  hint: `Open a workspace's Chat tab and send any message. ${hint}`,
+  hint: `Open a workspace's Agent, start a chat and send any message. ${hint}`,
   id,
   label,
 }));

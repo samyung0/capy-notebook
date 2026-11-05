@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, type Page, test } from '@playwright/test';
 import { expectErrorSurface } from '../helpers/errors';
 import { showPanelView } from '../helpers/panelView';
+import { openWorkspaceSettings } from '../helpers/workspace';
 import { m } from '../i18n';
 
 async function openWorkspace(page: Page) {
@@ -183,12 +184,7 @@ test('workspace statistics and indexing share a recoverable inline error', async
       )
     );
   });
-  // The rail's gear (its aria-label); the empty viewer's quick action shares
-  // the name as text and appears once the recent files load.
-  await page
-    .getByLabel(m.workspace_settings(), { exact: true })
-    .first()
-    .click();
+  await openWorkspaceSettings(page);
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_stats_title() })
@@ -247,33 +243,32 @@ test('User scenarios opens seeded material errors in the workspace and survives 
 }) => {
   await openWorkspace(page);
   const panel = page.getByTestId('mock-scenario-panel');
-  for (const [label, id, message] of [
-    ['Material load error', 'mock-material-load', m.error_file_title()],
+  // An editor's diagram opens in the split editor, which marks the blamed line
+  // and shows no message (Epo 2026-10-09, 2026-11-04).
+  const blamedLine = page.locator('.cm-error-line');
+  for (const [label, id, shown] of [
+    [
+      'Material load error',
+      'mock-material-load',
+      page.getByText(m.error_file_title(), { exact: true }),
+    ],
     [
       'Unreadable material',
       'mock-material-unreadable',
-      m.material_decode_title(),
+      page.getByText(m.material_decode_title(), { exact: true }),
     ],
-    [
-      'Broken diagram',
-      'mock-material-diagram',
-      m.mermaid_syntax_error({ line: 2 }),
-    ],
-  ]) {
+    ['Broken diagram', 'mock-material-diagram', blamedLine],
+  ] as const) {
     await panel.locator('summary').click();
     await panel.getByRole('button', { exact: true, name: label }).click();
     await expect(page).toHaveURL(
       new RegExp(`/workspaces/ws_bio\\?material=${id}$`)
     );
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.getByText(message, { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(shown).toBeVisible({ timeout: 30_000 });
   }
   await page.reload();
-  await expect(
-    page.getByText(m.mermaid_syntax_error({ line: 2 }), { exact: true })
-  ).toBeVisible({ timeout: 30_000 });
+  await expect(blamedLine).toHaveText('  A[Unclosed node', { timeout: 30_000 });
 });
 
 // biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
@@ -304,7 +299,7 @@ test.fixme('PDF annotation load toast shows before the PDF loads', async ({
     .click();
   await expect(panel).toHaveAttribute('data-scenario-status', 'ready');
   const canvas = page.locator('[data-page="1"] canvas');
-  const toast = page.locator('[data-sonner-toast]').filter({
+  const toast = page.locator('[data-toast]').filter({
     hasText: m.pdf_annotations_failed(),
   });
   await expect(toast).toHaveCount(1, { timeout: 15_000 });

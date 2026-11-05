@@ -1,12 +1,12 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { type MouseEventHandler, useState } from 'react';
-import type { Chapter, SourceFile, UserColor } from '@/api/types';
+import type { SourceFile, Topic, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { StudyMark, type StudyRow } from '@/features/study/studyItems';
 import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
+import { HiddenMark } from '@/features/workspace/HiddenChip';
 import {
   type RetryProcessing,
   retryFailedFile,
@@ -16,39 +16,39 @@ import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
 import { fileCanClone, fileIsIngesting } from './fileUtils';
 
-/** A file row in the workspace sidebar. Opens the file in the center pane, shows
- * ingest progress, and exposes a hover action menu (rename / properties /
- * delete) mirroring the chapter row pattern. */
+/** A file row in the workspace Files panel (board T3). Opens the file in the
+ * center pane, shows ingest progress, and exposes a hover action menu (rename /
+ * properties / delete). */
 export function FileListItem({
   file,
   active,
   onOpen,
   workspaceId,
   color,
-  chapters = [],
+  topics = [],
   onDeleted,
   readOnly = false,
   canClone = false,
   canMoveTo = false,
   retry,
   retryPending = false,
-  study,
   menu = true,
+  indent = false,
 }: {
   file: SourceFile;
   active: boolean;
   onOpen: MouseEventHandler<HTMLAnchorElement>;
   workspaceId: string;
-  /** Workspace chapters, for the "Move to chapter…" picker. */
-  chapters?: Chapter[];
+  /** Workspace topics, for the "Move to topic…" picker. */
+  topics?: Topic[];
   color?: UserColor;
   onDeleted?: (id: string) => void;
   /** Shared workspace viewers can open files but cannot mutate them. */
   readOnly?: boolean;
   /** Members and editors may copy the file elsewhere (workspace.canClone). */
   canClone?: boolean;
-  /** Move to… into another workspace or chapter (fileCanMoveTo); others get
-   * the chapter-only Move. */
+  /** Move to… into another workspace or topic (fileCanMoveTo); others get
+   * the topic-only Move. */
   canMoveTo?: boolean;
   /** The owner's Retry processing for a failed file, one mutation for the
    * whole list; absent when the reader may not retry. */
@@ -56,10 +56,11 @@ export function FileListItem({
   /** This file's Retry processing is still running (useRetryingFileIds). */
   retryPending?: boolean;
   /** The reader's own progress on this file, while progress is on. */
-  study?: StudyRow;
   /** The hover ⋮; touch lists (the top Files drawer) leave it out and act
    * from the open file's header instead. */
   menu?: boolean;
+  /** Inside a topic or Other files: the icon starts under the group's name. */
+  indent?: boolean;
 }) {
   const ingesting = fileIsIngesting(file.status);
   const waitingForBytes = ingesting && !file.hasBytes;
@@ -72,14 +73,17 @@ export function FileListItem({
     <div className="relative flex flex-col">
       <div
         className={cn(
-          'group relative flex items-center rounded-button px-2 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+          'group relative flex min-h-7.5 items-center rounded-button pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+          indent ? 'pl-7' : 'pl-2',
           active && 'bg-surface-hover-bg'
         )}
       >
+        {/* Board T3's row: 30px, a 16px icon, one truncated line; the open
+            file shows by the row's background, not its weight. */}
         <Link
           className={cn(
-            'flex w-full items-center gap-2 rounded-button py-1.5 text-left',
-            active && 'font-bold',
+            'flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-button text-left font-medium text-fg-secondary',
+            active && 'text-fg',
             waitingForBytes && 'cursor-default'
           )}
           disabled={waitingForBytes}
@@ -90,23 +94,21 @@ export function FileListItem({
           search={{ file: file.id }}
           to="/workspaces/$workspaceId"
         >
-          <FileIcon className="size-3.75" name={fileIconName(file)} />
+          <FileIcon className="size-4" name={fileIconName(file)} />
           <span
             className={cn(
-              'line-clamp-2 flex-1 translate-y-px',
-              study?.state === 'removed' && 'text-fg-muted',
+              'min-w-0 flex-1 translate-y-px truncate',
               failed && 'text-solid-error'
             )}
           >
             {file.name}
           </span>
-          <StudyMark hoverMenu={hoverMenu} state={study?.state} />
+          {file.hidden && <HiddenMark />}
         </Link>
         {hoverMenu && (
           <ContentActions
             canClone={canClone && fileCanClone(file)}
             canMoveTo={canMoveTo}
-            chapters={chapters}
             color={color}
             confirmInMenu
             content={toFileActionTarget(file)}
@@ -134,7 +136,6 @@ export function FileListItem({
                           },
                         ]
                       : []),
-                    ...(study?.menuItems ?? []),
                   ]
             }
             onDeleted={() => onDeleted?.(file.id)}
@@ -154,6 +155,7 @@ export function FileListItem({
             propertyLabelClassName="text-fg-secondary"
             readOnly={readOnly}
             renameTitle={m.files_rename()}
+            topics={topics}
             workspaceId={workspaceId}
           />
         )}
@@ -167,12 +169,19 @@ export function FileListItem({
         />
       )}
       {failed && (
-        <div className="t-label z-10 -mt-1 mb-0.5 px-2 font-medium text-fg-muted tracking-normal">
+        <div
+          className={cn(
+            't-label z-10 mb-0.5 font-medium text-fg-muted tracking-normal',
+            indent ? 'pr-2 pl-7' : 'px-2'
+          )}
+        >
           {m.files_processing_error()}
         </div>
       )}
       {ingesting && (
-        <div className="z-10 -mt-0.5 mr-1.5 mb-0.5 px-2">
+        <div
+          className={cn('z-10 mr-1.5 mb-0.5', indent ? 'pr-2 pl-7' : 'px-2')}
+        >
           <ProgressBar height={4} tone={color} value={50} />
         </div>
       )}

@@ -190,8 +190,15 @@ export type QuestionAnswer =
 /** An open part's marking item; harder steps can carry more whole marks. */
 export type MarkItem = { text: string; marks: number };
 
+/** Text and figures over the parts that name it (Epo 2026-11-04): a stem's
+ * block kinds and caps, no answer or marks. One level: a group holds parts,
+ * never another group, and a part names its group in `group`. */
+export type QuestionGroup = { id: string; blocks: QuestionBlock[] };
+
 export type QuestionPart = {
   id: string;
+  /** The group it sits in; a group's parts are next to each other in `parts`. */
+  group?: string;
   blocks: QuestionBlock[];
   answer: QuestionAnswer;
   marks: number;
@@ -208,6 +215,8 @@ export type QuestionPart = {
 export type Question = {
   id: string;
   stem: QuestionBlock[];
+  /** Absent when it has none. Labels and places come from `parts`. */
+  groups?: QuestionGroup[];
   parts: QuestionPart[];
   layout: 'paper' | 'split';
   labels: 'letters' | 'numbers';
@@ -223,6 +232,7 @@ export type LearnerAnswer =
   | { type: 'gaps'; gaps: number };
 export type LearnerPart = {
   id: string;
+  group?: string;
   blocks: QuestionBlock[];
   answer: LearnerAnswer;
   marks: number;
@@ -429,6 +439,12 @@ export function withoutBlanks(question: Question): Question {
   };
   return {
     ...question,
+    ...(question.groups && {
+      groups: question.groups.map((group) => ({
+        ...group,
+        blocks: keep(group.blocks),
+      })),
+    }),
     parts: question.parts.map((part) => ({
       ...part,
       answer: answer(part.answer),
@@ -452,6 +468,12 @@ export function replaceAssetIds(
   };
   return {
     ...question,
+    ...(question.groups && {
+      groups: question.groups.map((group) => ({
+        ...group,
+        blocks: group.blocks.map(swap),
+      })),
+    }),
     parts: question.parts.map((part) => ({
       ...part,
       blocks: part.blocks.map(swap),
@@ -465,6 +487,7 @@ export function replaceAssetIds(
 export function questionAssetIds(question: Question): string[] {
   return [
     ...question.stem,
+    ...(question.groups ?? []).flatMap((group) => group.blocks),
     ...question.parts.flatMap((part) => [...part.blocks, ...part.solution]),
   ].flatMap((block) =>
     block.type === 'image' && 'assetId' in block.image

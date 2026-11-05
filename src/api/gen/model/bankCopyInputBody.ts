@@ -8,13 +8,6 @@
 export interface BankCopyInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** Where a new quiz is filed; goes with quizName */
-  chapterId?: string;
-  /**
-     * Files a new quiz in the chapter of this name (any case), created when missing; goes with quizName, exclusive with chapterId
-     * @maxLength 60
-     */
-  chapterName?: string;
   /**
      * Bank questions to copy, in this order
      * @minItems 1
@@ -28,6 +21,13 @@ export interface BankCopyInputBody {
      * @maxLength 120
      */
   quizName?: string;
+  /** Where a new quiz is filed; goes with quizName */
+  topicId?: string;
+  /**
+     * Files a new quiz in the topic of this name (any case), created when missing; goes with quizName, exclusive with topicId
+     * @maxLength 60
+     */
+  topicName?: string;
   /** @minLength 1 */
   workspaceId: string;
 }

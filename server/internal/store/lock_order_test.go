@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -155,4 +157,166 @@ func TestSourceAccessCheckTakesNoLocks(t *testing.T) {
 	if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); err != nil {
 		t.Fatalf("edit admission behind a workspace writer: %v", err)
 	}
+}
+
+// lockStep is one row a writer locks: its statement and the row's id.
+type lockStep struct{ sql, id string }
+
+const (
+	lockWorkspaceRow  = `SELECT 1 FROM workspaces WHERE id=$1 FOR UPDATE`
+	lockAccountRow    = `SELECT 1 FROM users WHERE id=$1 FOR NO KEY UPDATE`
+	lockAttemptRow    = `SELECT 1 FROM attempts WHERE id=$1 FOR UPDATE`
+	lockAssignmentRow = `SELECT 1 FROM assignments WHERE id=$1 FOR UPDATE`
+	lockMaterialRow   = `SELECT 1 FROM materials WHERE id=$1 FOR UPDATE`
+)
+
+// holdThenRun locks first as a writer does, waits until run is blocked behind
+// it, then goes on to lock next. A run that took any of next before waiting
+// deadlocks here (40P01), and one of the two is refused.
+func holdThenRun(t *testing.T, s *Store, first lockStep, next []lockStep, run func(context.Context) error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	writer, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Rollback(context.Background())
+	if _, err := writer.Exec(ctx, first.sql, first.id); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- run(ctx) }()
+	waitBlockedBy(t, ctx, s, writer)
+	for _, step := range next {
+		if _, err := writer.Exec(ctx, step.sql, step.id); err != nil {
+			t.Errorf("writer: %v", err)
+			break
+		}
+	}
+	_ = writer.Rollback(context.Background())
+	if err := <-done; err != nil {
+		t.Errorf("run after the writer: %v", err)
+	}
+}
+
+// TestStudyWritesTakeTheWorkspaceFirst: staff writes and teardown take the
+// workspace FOR UPDATE and then accounts and rows, so a learner's write whose
+// foreign key waits on that row while it holds its account or its attempt
+// deadlocks with them. Each takes the row FOR KEY SHARE before anything else.
+func TestStudyWritesTakeTheWorkspaceFirst(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	answers := map[string]any{"p1": []any{float64(1)}, "p2": "osmosis"}
+	assigned := func(t *testing.T, label string) (assignmentFixture, Assignment) {
+		t.Helper()
+		f := newAssignmentFixture(t, label)
+		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f, created
+	}
+	running := func(t *testing.T, label string) (assignmentFixture, Assignment, AssignmentAttempt) {
+		t.Helper()
+		f, created := assigned(t, label)
+		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f, created, run
+	}
+	// A running attempt with something saved, past its time because it closed.
+	overrun := func(t *testing.T, label string) (assignmentFixture, AssignmentAttempt) {
+		t.Helper()
+		f, created, run := running(t, label)
+		if err := f.s.SaveAssignmentAnswers(ctx, f.viewer, run.ID, answers, now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
+			t.Fatal(err)
+		}
+		return f, run
+	}
+	workspace := func(f assignmentFixture) lockStep { return lockStep{lockWorkspaceRow, f.ws.ID} }
+
+	t.Run("start", func(t *testing.T) {
+		f, created := assigned(t, "locks-start")
+		holdThenRun(t, f.s, workspace(f), []lockStep{{lockAccountRow, f.viewer}}, func(ctx context.Context) error {
+			_, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+			return err
+		})
+	})
+	t.Run("submit", func(t *testing.T) {
+		f, _, run := running(t, "locks-submit")
+		holdThenRun(t, f.s, workspace(f), []lockStep{{lockAccountRow, f.viewer}, {lockAttemptRow, run.ID}}, func(ctx context.Context) error {
+			_, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, answers, now)
+			return err
+		})
+	})
+	t.Run("sweep", func(t *testing.T) {
+		f, run := overrun(t, "locks-sweep")
+		holdThenRun(t, f.s, workspace(f), []lockStep{{lockAttemptRow, run.ID}}, func(ctx context.Context) error {
+			return f.s.finishAttemptIfRunning(ctx, run.ID, now)
+		})
+		var submitted *time.Time
+		if err := f.s.pool.QueryRow(ctx, `SELECT submitted_at FROM attempts WHERE id=$1`, run.ID).Scan(&submitted); err != nil || submitted == nil {
+			t.Errorf("the sweep left it running: %v, %v", submitted, err)
+		}
+	})
+	t.Run("save past its time", func(t *testing.T) {
+		f, run := overrun(t, "locks-save")
+		holdThenRun(t, f.s, workspace(f), []lockStep{{lockAttemptRow, run.ID}}, func(ctx context.Context) error {
+			if err := f.s.SaveAssignmentAnswers(ctx, f.viewer, run.ID, answers, now); !errors.Is(err, ErrAttemptFinished) {
+				return fmt.Errorf("save = %w", err)
+			}
+			return nil
+		})
+	})
+	t.Run("review check", func(t *testing.T) {
+		f := newAssignmentFixture(t, "locks-review")
+		graded, given := gradeAttempt(frozenFixture(t), answers)
+		score := 1.0
+		holdThenRun(t, f.s, workspace(f), []lockStep{{lockAccountRow, f.viewer}}, func(ctx context.Context) error {
+			return f.s.RateItem(ctx, f.viewer, Rating{MaterialID: f.quiz.ID, ItemID: "q1", Score: &score, Graded: graded[0], Answers: given}, now)
+		})
+	})
+	t.Run("quiz check", func(t *testing.T) {
+		f := newAssignmentFixture(t, "locks-quiz")
+		graded, given := gradeAttempt(frozenFixture(t), answers)
+		holdThenRun(t, f.s, workspace(f), []lockStep{{lockAccountRow, f.viewer}}, func(ctx context.Context) error {
+			_, err := f.s.CheckQuizQuestion(ctx, f.viewer, f.quiz.ID, QuizCheck{
+				Answers: given, Question: graded[0], Order: []string{"q1", "q2", "q3"}, Marks: map[string]float64{"q1": 1, "q2": 2, "q3": 3},
+			}, now)
+			return err
+		})
+	})
+	closed := func(t *testing.T, label string) (assignmentFixture, Assignment) {
+		t.Helper()
+		f, created, run := running(t, label)
+		if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, answers, now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
+			t.Fatal(err)
+		}
+		return f, created
+	}
+	t.Run("release", func(t *testing.T) {
+		f, created := closed(t, "locks-release")
+		holdThenRun(t, f.s, workspace(f), []lockStep{{lockAssignmentRow, created.ID}}, func(ctx context.Context) error {
+			return f.s.releaseAssignment(ctx, created.ID, now)
+		})
+	})
+	// Purging a quiz deletes the material and its foreign key then takes the
+	// assignment; an account purge does that with no workspace row held.
+	t.Run("release against a purge of its quiz", func(t *testing.T) {
+		f, created := closed(t, "locks-release-purge")
+		if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET hidden=true WHERE id=$1`, f.quiz.ID); err != nil {
+			t.Fatal(err)
+		}
+		holdThenRun(t, f.s, lockStep{lockMaterialRow, f.quiz.ID}, []lockStep{{lockAssignmentRow, created.ID}}, func(ctx context.Context) error {
+			return f.s.releaseAssignment(ctx, created.ID, now)
+		})
+	})
 }

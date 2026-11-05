@@ -24,7 +24,7 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 	}
 	defer pool.Close()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
-	owner, ws, chapter, file := "u_summary_"+suffix, "ws_summary_"+suffix, "ch_summary_"+suffix, "f_summary_"+suffix
+	owner, ws, topic, file := "u_summary_"+suffix, "ws_summary_"+suffix, "ch_summary_"+suffix, "f_summary_"+suffix
 	exec := func(query string, args ...any) {
 		t.Helper()
 		if _, err := pool.Exec(ctx, query, args...); err != nil {
@@ -34,8 +34,8 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 	exec(`INSERT INTO users (id,name,email) VALUES ($1,'Summary author','summary@example.test')`, owner)
 	defer pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, owner)
 	exec(`INSERT INTO workspaces (id,user_id,name,description,privacy,icon_id) VALUES ($1,$2,'<script>title</script>','Only metadata','public','waves-03')`, ws, owner)
-	exec(`INSERT INTO chapters (id,workspace_id,name) VALUES ($1,$2,'Chapter A')`, chapter, ws)
-	exec(`INSERT INTO files (id,workspace_id,user_id,name,kind,chapter_id) VALUES ($1,$2,$3,'Source.pdf','pdf',$4)`, file, ws, owner, chapter)
+	exec(`INSERT INTO topics (id,workspace_id,name) VALUES ($1,$2,'Topic A')`, topic, ws)
+	exec(`INSERT INTO files (id,workspace_id,user_id,name,kind,topic_id) VALUES ($1,$2,$3,'Source.pdf','pdf',$4)`, file, ws, owner, topic)
 	// The API takes the share token; the bare id never reaches it (Sam
 	// 2026-10-18).
 	if rec := doReq(t, h, http.MethodGet, "/api/public/workspaces/"+ws+"/summary", "", nil); rec.Code != 404 {
@@ -53,7 +53,7 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &summary); err != nil {
 		t.Fatal(err)
 	}
-	if summary.Name != "<script>title</script>" || summary.Description != "Only metadata" || summary.Author != "Summary author" || summary.Privacy != store.PrivacyPublic || len(summary.Chapters) != 1 || len(summary.Chapters[0].Files) != 1 || summary.Chapters[0].Files[0].Name != "Source.pdf" || summary.Chapters[0].Files[0].AddedAt.IsZero() || summary.Files == nil || summary.Tags == nil {
+	if summary.Name != "<script>title</script>" || summary.Description != "Only metadata" || summary.Author != "Summary author" || summary.Privacy != store.PrivacyPublic || len(summary.Topics) != 1 || len(summary.Topics[0].Files) != 1 || summary.Topics[0].Files[0].Name != "Source.pdf" || summary.Topics[0].Files[0].AddedAt.IsZero() || summary.Files == nil || summary.Tags == nil {
 		t.Fatalf("summary = %#v", summary)
 	}
 	var keys map[string]json.RawMessage
@@ -66,7 +66,7 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 	if len(keys) != 8 {
 		t.Fatalf("unexpected projection keys: %v", keys)
 	}
-	for _, secret := range []string{owner, ws, chapter, file, "summary@example.test", "workspaceId", "content", "blob"} {
+	for _, secret := range []string{owner, ws, topic, file, "summary@example.test", "workspaceId", "content", "blob"} {
 		if strings.Contains(rec.Body.String(), secret) {
 			t.Fatalf("summary leaked %q", secret)
 		}
@@ -80,7 +80,7 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"privacy":"link"`) || !strings.Contains(rec.Body.String(), "Renamed") {
 		t.Fatalf("live summary %d %s", rec.Code, rec.Body.String())
 	}
-	exec(`INSERT INTO chapters (id,workspace_id,name) SELECT $1 || n::text,$2,'Bounded chapter' FROM generate_series(1,1000) n`, chapter+"_extra_", ws)
+	exec(`INSERT INTO topics (id,workspace_id,name) SELECT $1 || n::text,$2,'Bounded topic' FROM generate_series(1,1000) n`, topic+"_extra_", ws)
 	rec = doReq(t, h, http.MethodGet, path, "", nil)
 	if rec.Code != 422 {
 		t.Fatalf("oversized outline: %d %s", rec.Code, rec.Body.String())
@@ -92,7 +92,7 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 			t.Fatalf("private summary %d", rec.Code)
 		}
 	}
-	exec(`DELETE FROM chapters WHERE workspace_id=$1 AND id<>$2`, ws, chapter)
+	exec(`DELETE FROM topics WHERE workspace_id=$1 AND id<>$2`, ws, topic)
 	exec(`UPDATE workspaces SET privacy='public' WHERE id=$1`, ws)
 	for _, state := range []string{"suspended", "pending", "deleted"} {
 		switch state {

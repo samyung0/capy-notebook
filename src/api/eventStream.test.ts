@@ -41,7 +41,6 @@ afterEach(() => {
 
 const pending: SourceFile = {
   addedAt: '2026-09-10T00:00:00Z',
-  chapterId: null,
   hasBytes: true,
   id: 'f_stream',
   indexed: false,
@@ -52,6 +51,7 @@ const pending: SourceFile = {
   revision: 0,
   sizeBytes: 20,
   status: 'processing',
+  topicId: null,
   workspaceId: 'ws_stream',
 };
 

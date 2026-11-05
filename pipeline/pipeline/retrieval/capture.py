@@ -340,6 +340,7 @@ async def render_file(
     page: int,
     bbox: list[float] | None,
     max_edge: int,
+    page_edge: int | None = None,
 ) -> tuple[bytes, list[float], tuple[int, int]]:
     row = await store.file_page_source(workspace_id, file_id)
     if row is None:
@@ -349,11 +350,12 @@ async def render_file(
             raise CaptureUnavailable(
                 "the source has no stored bytes", "unavailable_target"
             )
+        # An image is never enlarged, so page_edge has nothing to bound.
         return await limits.render_thread(_image_capture, row, page, bbox, max_edge)
     if is_office(row):
         raise CaptureUnavailable(OFFICE_NO_PAGES)
     pdf = await pdf_path(workspace_id, file_id)
-    return await limits.render_thread(render, pdf, page, bbox, max_edge)
+    return await limits.render_thread(render, pdf, page, bbox, max_edge, (), page_edge)
 
 
 # --------------------------------------------------------------------- render
@@ -365,11 +367,14 @@ def render(
     bbox: list[float] | None,
     max_edge: int,
     blank: Sequence[list[float]] = (),
+    page_edge: int | None = None,
 ) -> tuple[bytes, list[float], tuple[int, int]]:
     """JPEG of the page or box, the box actually rendered on the 0-1000 grid,
-    and the pixel size. Each ``blank`` box (an excluded library figure's) is
-    painted white where it overlaps (Epo 2026-11-04), in a page capture and a
-    stored figure crop alike."""
+    and the pixel size. The box's long side is ``max_edge`` pixels; with
+    ``page_edge``, at most the scale that gives the whole page's long side
+    that many, so a small box keeps its size relative to the page. Each
+    ``blank`` box (an excluded library figure's) is painted white where it
+    overlaps (Epo 2026-11-04), in a page capture and a stored figure crop alike."""
     import pymupdf
 
     with pymupdf.open(pdf) as doc:
@@ -397,6 +402,8 @@ def render(
         else:
             clip, bbox = rect, [0, 0, 1000, 1000]
         scale = max_edge / max(clip.width, clip.height)
+        if page_edge:
+            scale = min(scale, page_edge / max(rect.width, rect.height))
         matrix = pymupdf.Matrix(scale, scale)
         pix = pg.get_pixmap(matrix=matrix, clip=clip, alpha=False)
         for box in blank:

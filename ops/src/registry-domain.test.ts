@@ -25,7 +25,6 @@ function config(
     embeddingDefaultEligible: slots.includes('retrieval'),
     embeddingValidationError: '',
     enabled: true,
-    interactiveReserve: 2,
     isDefaultFor: defaults,
     microsPerCachedInputToken: 1,
     microsPerInputToken: 2,
@@ -178,7 +177,6 @@ describe('registry request assembly', () => {
     let state = createRegistryState(snapshot);
     const draft = cloneCatalogToDraft(snapshot.configs[0], 'capacity-edit');
     draft.concurrencyTotal = 4;
-    draft.interactiveReserve = 1;
     state = registryReducer(state, { draft, type: 'upsert-draft' });
     const rowId = modelRefId(draft);
     for (const slot of snapshot.configs[0].slots) {
@@ -198,13 +196,11 @@ describe('registry request assembly', () => {
     if (assembled.valid) {
       expect(assembled.request.active[0]).toMatchObject({
         concurrencyTotal: 4,
-        interactiveReserve: 1,
       });
     }
     for (const invalid of [
-      { concurrencyTotal: null, interactiveReserve: 1 },
-      { concurrencyTotal: 4, interactiveReserve: null },
-      { concurrencyTotal: 4, interactiveReserve: 4 },
+      { concurrencyTotal: null },
+      { concurrencyTotal: 0 },
     ]) {
       state = registryReducer(state, {
         draft: { ...draft, ...invalid },

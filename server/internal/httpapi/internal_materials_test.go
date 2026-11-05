@@ -363,7 +363,7 @@ func TestInternalMaterialConcurrentSameIDConverges(t *testing.T) {
 }
 
 // An agent's sources are its made-from line (Epo 2026-10-21): the id or exact
-// name of a workspace item of any kind, or of a chapter, is stored as its
+// name of a workspace item of any kind, or of a topic, is stored as its
 // current name and any other string as written; a blank one is dropped.
 // Nothing in the private workspace's quiz, flashcard set or note is indexed,
 // and none is refused.
@@ -423,11 +423,11 @@ func TestInternalMaterialStoresItsSourcesAsNames(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := []string{
-				"Secret private title", "E2E Private Quiz", "E2E Private Flashcards", "Private chapter",
+				"Secret private title", "E2E Private Quiz", "E2E Private Flashcards", "Private topic",
 				"Lecture 3, 14 Oct", "https://example.org/cells",
 			}
-			if !slices.Equal(material.ScopeFileNames, want) || len(material.ScopeChapters) != 0 {
-				t.Errorf("sources = %#v, chapters = %#v", material.ScopeFileNames, material.ScopeChapters)
+			if !slices.Equal(material.ScopeFileNames, want) || len(material.ScopeTopics) != 0 {
+				t.Errorf("sources = %#v, topics = %#v", material.ScopeFileNames, material.ScopeTopics)
 			}
 		})
 	}
@@ -449,8 +449,8 @@ func TestInternalMaterialWithoutSourcesStoresNone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(material.ScopeFileNames) != 0 || len(material.ScopeChapters) != 0 {
-		t.Fatalf("sources = %#v, chapters = %#v", material.ScopeFileNames, material.ScopeChapters)
+	if len(material.ScopeFileNames) != 0 || len(material.ScopeTopics) != 0 {
+		t.Fatalf("sources = %#v, topics = %#v", material.ScopeFileNames, material.ScopeTopics)
 	}
 }
 
@@ -890,27 +890,27 @@ func TestInternalCreateNoteCreatesItsMiniChecks(t *testing.T) {
 	}
 }
 
-// create_material files the material in the chapter it names, and only in a
-// chapter of the same workspace.
-func TestInternalCreateMaterialFilesItInTheChapter(t *testing.T) {
+// create_material files the material in the topic it names, and only in a
+// topic of the same workspace.
+func TestInternalCreateMaterialFilesItInTheTopic(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
-	body := noteBody(msgID, "call_chapter", "Filed "+msgID, "Filed note.")
-	body["chapterId"] = "ch_e2e_private"
+	body := noteBody(msgID, "call_topic", "Filed "+msgID, "Filed note.")
+	body["topicId"] = "ch_e2e_private"
 	if rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body); rec.Code != http.StatusOK {
 		t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	mt, err := st.GetMaterial(t.Context(), store.ChatMaterialID(msgID, "call_chapter"))
+	mt, err := st.GetMaterial(t.Context(), store.ChatMaterialID(msgID, "call_topic"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	cleanupMaterial(t, st, mt.ID)
-	if mt.ChapterID == nil || *mt.ChapterID != "ch_e2e_private" {
-		t.Fatalf("chapter = %v", mt.ChapterID)
+	if mt.TopicID == nil || *mt.TopicID != "ch_e2e_private" {
+		t.Fatalf("topic = %v", mt.TopicID)
 	}
-	foreign := noteBody(msgID, "call_foreign_chapter", "Foreign "+msgID, "Foreign.")
-	foreign["chapterId"] = "ch_e2e_public"
+	foreign := noteBody(msgID, "call_foreign_topic", "Foreign "+msgID, "Foreign.")
+	foreign["topicId"] = "ch_e2e_public"
 	if rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, foreign); rec.Code != http.StatusBadRequest {
-		t.Fatalf("foreign chapter: status = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("foreign topic: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }

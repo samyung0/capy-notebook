@@ -14,7 +14,7 @@ This page is the accounting contract.
 
 ## Product plan limits
 
-`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`, 2 MiB on every plan since `0114`) is the canonical backend
+`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`, 2 MiB on every plan since `0114`, topics per workspace in `0136`) is the canonical backend
 catalog for every numeric limit that may vary by subscription plan:
 
 | Limit                           |                       Free |                        Pro |
@@ -27,6 +27,7 @@ catalog for every numeric limit that may vary by subscription plan:
 | Files per workspace             |                        100 |                        100 |
 | Files per upload/import request |                         20 |                         20 |
 | One uploaded image              |                      2 MiB |                      2 MiB |
+| Topics per workspace            |                         10 |                         20 |
 
 Files per workspace counts nothing outside a workspace: a standalone file
 (no workspace, its uploader's alone) takes no count cap for now, only the
@@ -80,6 +81,7 @@ Storage is charged once per logical row owned by a user:
 | Source files  | `files.size_bytes`         | row exists                    |
 | Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only       |
 | Materials     | `materials.size_bytes`     | always; set from content JSON |
+| An assignment's frozen questions | `assignments.frozen_bytes` | once published, to `frozen_by` |
 | Trashed rows  | same as above              | until the 30-day purge        |
 | Chat Undo     | none                       | never: the browser keeps its payload, the server stores only the receipt (Epo 2026-10-21) |
 
@@ -156,6 +158,22 @@ workspaces too (`PurgeUser`), its images and audio in other people's notes
 included, which then read as removed. For a workspace material, `owner_user_id` is only the payer:
 access, the owner role and the owner's lifecycle (deleted, suspended) follow
 the workspace (`materialEffectiveAccess`, `live_access`).
+
+An assignment's frozen copy (Epo 2026-11-05) is charged to whoever published it,
+not whoever drafted it. Its images are new `editor_assets` rows of the workspace
+with no material and an `assignment_id`, checked by `gateStorageTx` as a clone's
+are. Its question JSON is `assignments.frozen_bytes`, measured as a material's
+content is and checked by the same gate, so publishing past the limit is refused
+as any creation is, images or not; a trigger moves the charge through the deltas
+(migration `0149_assignment_storage.sql`). Nothing edits a published copy, and the
+trigger moves any change to `frozen_bytes` or `frozen_by` anyway. Deleting the
+assignment or the workspace releases both, and a workspace clone leaves them out.
+Purging the publisher deletes the images, as it deletes everything it pays for, but
+keeps the questions, so the class keeps the paper and its members' work, charged to
+nobody. The Embeds tab joins through a material and doesn't list any of this, so
+such a payer's meter runs ahead of that tab by its size
+([study-progress.md](study-progress.md#assignments)). An attempt's snapshot isn't
+charged.
 
 A curated material's `provenance` record is **never charged** — `size_bytes` is
 the content JSON alone — and its marshalled bytes are counted by `gateStorageTx`
@@ -669,7 +687,15 @@ transaction, or one before an edit's blocks are sent). The bytes are known
 before the transaction, so there is no reservation; an object whose row was
 never inserted is deleted by the handler, and a refused edit's unreferenced
 figures are trashed at once. From then on the 60-second rule, pruning, trash
-and clones treat it like an upload.
+and clones treat it like an upload. A Make a quiz run's figures, crops of the
+paper's pages, are stored the same way: the done event carries the JPEGs, Go
+checks each against the starter's plan image cap, writes it to
+`editor-assets/{id}/…` (ids from the run id, `store.ChatAssetID`) and inserts
+it with the quiz in the quiz's creating transaction (`CreateMaterialDraft`
+with `Assets`), charged to the starter (M16). A quiz whose figures go over the
+starter's quota is saved as the quiz alone, its figures named in the
+report's `figuresLeftOut` (Epo 2026-11-04); only a quiz that does not fit by
+itself fails the run as `storage_full`.
 
 An image another note's or quiz's id brings into a material (a paste, undo,
 cut and paste, replayed draft, AI edit) is made the material's own by the
@@ -1192,7 +1218,8 @@ direction.
 | Field | Runes |
 | --- | ---: |
 | Workspace name / description | 80 / 500 |
-| Chapter name (add, update, upload, import) | 60 |
+| Topic name (add, update, upload, import) | 60 |
+| Topic description (add, update, chat's `create_topic`) | 200 |
 | File name (upload, import, rename, editor asset) | 120 |
 | Material, quiz, flashcard set, generate title | 120 |
 | Conversation title | 60 |
@@ -1213,8 +1240,14 @@ LLM-authored material titles and editor asset names (both
 extension-preserving), workspace clone names (suffix-preserving), and
 auto-derived conversation titles.
 
-A workspace holds at most 20 chapters (`MaxChaptersPerWorkspace` in
-`store/store.go`), checked when a chapter is added and when an upload creates
-one by name; the 21st is refused as 409 `too_many_chapters`. The chat agent
-lists every chapter on each model call, which is what the cap bounds. A clone
-copies its source's chapters as they are.
+A workspace holds at most its owner's plan's topics per workspace (10 on
+Free, 20 on Pro; `plan_limits.topics_per_workspace`, Epo 2026-11-03), checked
+under the workspace row's lock when a topic is added (the Files panel, chat's
+`create_topic`) and when an upload, move, clone into a workspace or bank copy
+creates one by name (`nextTopicPositionTx` in `store/upload_topics.go`); one
+past it is refused as 409 `too_many_topics`. A workspace past the cap after a
+downgrade keeps its topics and adds no more. A workspace clone copies its
+source's topics with their descriptions and is refused with
+`too_many_topics` when they are more than the cloner's plan allows, as it is
+for files. The chat agent lists every topic on each model call, which the cap
+also bounds.

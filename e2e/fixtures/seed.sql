@@ -5,9 +5,9 @@ BEGIN;
 
 DELETE FROM attempts WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM review_log WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
+DELETE FROM answer_events WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM review_states WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM study_progress WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
-DELETE FROM study_plans WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM workspace_study WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM materials WHERE created_by IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM workspace_members WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
@@ -52,17 +52,17 @@ INSERT INTO workspace_members (workspace_id, user_id, role) VALUES
   ('ws_e2e_edit', 'u_viewer', 'viewer')
 ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role;
 
-INSERT INTO chapters (id, workspace_id, name, position) VALUES
-  ('ch_e2e_private', 'ws_e2e_private', 'Private chapter', 0),
-  ('ch_e2e_link',    'ws_e2e_link',    'Link chapter',    0),
-  ('ch_e2e_public',  'ws_e2e_public',  'Public chapter',  0),
-  ('ch_e2e_edit',    'ws_e2e_edit',    'Editable link chapter', 0),
-  ('ch_e2e_invite',  'ws_e2e_invite',  'Invite only chapter', 0),
-  ('ch_e2e_mutate',  'ws_e2e_mutate',  'Mutate chapter',  0),
-  ('ch_e2e_agent',   'ws_e2e_agent',   'Agent writes chapter', 0)
+INSERT INTO topics (id, workspace_id, name, position) VALUES
+  ('ch_e2e_private', 'ws_e2e_private', 'Private topic', 0),
+  ('ch_e2e_link',    'ws_e2e_link',    'Link topic',    0),
+  ('ch_e2e_public',  'ws_e2e_public',  'Public topic',  0),
+  ('ch_e2e_edit',    'ws_e2e_edit',    'Editable link topic', 0),
+  ('ch_e2e_invite',  'ws_e2e_invite',  'Invite only topic', 0),
+  ('ch_e2e_mutate',  'ws_e2e_mutate',  'Mutate topic',  0),
+  ('ch_e2e_agent',   'ws_e2e_agent',   'Agent writes topic', 0)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO files (id, workspace_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, indexed) VALUES
+INSERT INTO files (id, workspace_id, created_by, topic_id, name, kind, size_bytes, added_at, status, indexed) VALUES
   ('f_e2e_private', 'ws_e2e_private', 'u_owner', 'ch_e2e_private', 'secret-notes.md', 'md', 1024, now(), 'ready', true),
   ('f_e2e_link', 'ws_e2e_link', 'u_owner', 'ch_e2e_link', 'shared-notes.md', 'md', 1024, now(), 'ready', true),
   ('f_e2e_public', 'ws_e2e_public', 'u_owner', 'ch_e2e_public', 'public-notes.md', 'md', 1024, now(), 'ready', true),
@@ -82,13 +82,13 @@ ON CONFLICT (id) DO NOTHING;
 -- Minimal Plate quiz / flashcard documents.
 INSERT INTO materials (
   id, created_by, workspace_id, workspace_name, kind, title, content,
-  chapter_id, scope_chapters, scope_file_names, privacy, color, created_at, updated_at, revision, updated_by
+  topic_id, scope_topics, scope_file_names, privacy, color, created_at, updated_at, revision, updated_by
 ) VALUES
   (
     'qz_e2e_private', 'u_owner', 'ws_e2e_private', 'E2E Private Workspace', 'quiz',
     'E2E Private Quiz',
     '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_private:quiz","children":[{"type":"quiz_question","id":"q_priv_1","question":{"id":"q_priv_1","stem":[],"parts":[{"id":"q_priv_1:part:1","blocks":[{"type":"text","text":"Private quiz prompt?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]}]}]}'::jsonb,
-    'ch_e2e_private', '{Private chapter}', '{}', 'private', 'green', now(), now(), 1, 'u_owner'
+    'ch_e2e_private', '{Private topic}', '{}', 'private', 'green', now(), now(), 1, 'u_owner'
   ),
   (
     'qz_e2e_link', 'u_owner', NULL, '', 'quiz',
@@ -188,7 +188,7 @@ ON CONFLICT (card_id) DO NOTHING;
 -- another (embedded rows record their own provenance).
 INSERT INTO materials (
   id, created_by, workspace_id, workspace_name, kind, title, content,
-  chapter_id, scope_chapters, scope_file_names, privacy, color, created_at, updated_at, revision, updated_by,
+  topic_id, scope_topics, scope_file_names, privacy, color, created_at, updated_at, revision, updated_by,
   parent_material_id, provenance
 ) VALUES
   (

@@ -307,8 +307,7 @@ services:
       # Must match the gateway: whichever process sweeps first applies its own.
       CAPY_CAPTION_CACHE_TTL_DAYS: ${CAPY_CAPTION_CACHE_TTL_DAYS:-90}
       CAPY_PARSE_SPOOL_TTL_HOURS: ${CAPY_PARSE_SPOOL_TTL_HOURS:-2}
-      # VLM page reads in flight: across the workers, and within one job.
-      CAPY_VLM_PAGE_CAPACITY: "20"
+      # VLM page reads one job sends at once.
       CAPY_VLM_PAGES_PER_JOB: "10"
     command: ["python", "-m", "pipeline.ingest.worker"]
     deploy:
@@ -392,6 +391,9 @@ services:
       KNOWLEDGE_BASE_B2_BUCKET: ${KNOWLEDGE_BASE_B2_BUCKET:-}
       KNOWLEDGE_BASE_B2_KEY_ID: ${KNOWLEDGE_BASE_B2_KEY_ID:-}
       KNOWLEDGE_BASE_B2_APP_KEY: ${KNOWLEDGE_BASE_B2_APP_KEY:-}
+      # Make a quiz's layout service. Unset: every figure takes the box call.
+      CAPY_LAYOUT_URL: ${CAPY_LAYOUT_URL:-}
+      CAPY_LAYOUT_TOKEN: ${CAPY_LAYOUT_TOKEN:-}
       CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S: ${CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S:-15}
       CAPY_INTERACTIVE_STREAM_IDLE_S: ${CAPY_INTERACTIVE_STREAM_IDLE_S:-120}
       CAPY_INTERACTIVE_STREAM_MAX_S: ${CAPY_INTERACTIVE_STREAM_MAX_S:-600}

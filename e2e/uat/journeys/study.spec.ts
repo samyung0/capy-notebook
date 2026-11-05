@@ -1,25 +1,16 @@
 /* biome-ignore-all lint/suspicious/noMisplacedAssertion: The helpers execute only inside this test. */
 // Study progress (openwiki/study-progress.md) on the deployed stack: one
 // owner, progress on, and enough steps to prove each record is written. The
-// detailed cases (unread, started items, skipping, counts) live in the Docker
-// suite, e2e/study/study-progress.spec.ts. The file is store-only and the
-// quiz part true/false, which the server grades without Jev, so those steps
-// make no parser, embedding or LLM call. A last quiz with one open part is
+// detailed cases (review sessions, Practice) live in the Docker suite,
+// e2e/study/study-progress.spec.ts. The quiz parts are true/false, which the
+// server grades without Jev, so those steps make no parser, embedding or LLM
+// call. A last quiz with one open part is
 // graded by Jev: the journey's one real grading call.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
-import { showPanelView } from '../../helpers/panelView';
 import { m } from '../../i18n';
-import {
-  api,
-  fixture,
-  noProviderCalls,
-  object,
-  string,
-  upload,
-  workspace,
-} from './files';
+import { api, noProviderCalls, object, string, workspace } from './files';
 import { expect, test, type UatRun } from './runtime';
 
 const prompt = 'Wetland plants absorb carbon.';
@@ -128,28 +119,19 @@ async function clicked(page: Page, path: string, button: string) {
   return (await response).status();
 }
 
-test('study progress: a file read, a quiz finished, a set studied, Continue and a short review are recorded', async ({
+test('study progress: a quiz finished, a set studied and a short review are recorded', async ({
   run,
 }) => {
   test.setTimeout(600_000);
   const page = run.owner.page;
   const workspaceId = await workspace(run, 'study');
-  const marker = `UAT_${randomUUID().replaceAll('-', '')}`;
-  const file = await upload(
-    run,
-    workspaceId,
-    'lesson.docx',
-    await fixture('lesson.docx', marker),
-    true
-  );
   const finishedQuiz = await quiz(run, workspaceId, 'Finished quiz');
   const set = await cards(run, workspaceId);
-  const nextTitle = 'Next quiz';
-  const nextQuiz = await quiz(run, workspaceId, nextTitle);
-  const chapter = object(
+  const nextQuiz = await quiz(run, workspaceId, 'Next quiz');
+  const topic = object(
     await api(
       run.owner,
-      `/api/workspaces/${workspaceId}/chapters`,
+      `/api/workspaces/${workspaceId}/topics`,
       'POST',
       { name: 'Week 1' },
       201
@@ -160,13 +142,12 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     `/api/workspaces/${workspaceId}/content/reorder`,
     'POST',
     {
-      chapterId: string(chapter.id),
       items: [
-        { id: file, type: 'file' },
         { id: finishedQuiz, type: 'material' },
         { id: set, type: 'material' },
         { id: nextQuiz, type: 'material' },
       ],
+      topicId: string(topic.id),
     },
     204
   );
@@ -176,28 +157,6 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
       .enabled,
     true
   );
-
-  // The file read from its Files panel row.
-  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await showPanelView(page, m.workspace_tab_files());
-  const row = page
-    .locator('[data-workspace-file-tree]')
-    .getByRole('link', { name: /^lesson\.docx/ });
-  await row.locator('xpath=..').hover();
-  await row
-    .locator('xpath=..')
-    .getByRole('button', { name: m.a11y_open_menu() })
-    .click();
-  const marked = page.waitForResponse(
-    (r) => r.url().endsWith('/study/items') && r.request().method() === 'PUT'
-  );
-  await page
-    .getByRole('menuitem', { exact: true, name: m.study_mark_read() })
-    .click();
-  assert.equal((await marked).status(), 204);
-  await expect(
-    row.getByLabel(m.study_state_done(), { exact: true })
-  ).toBeVisible();
 
   // The quiz finished, the set studied to its end.
   await page.goto(`${run.env.appUrl}/quizzes/${finishedQuiz}/attempt`);
@@ -220,32 +179,15 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     page.getByRole('button', { name: m.flashcards_study_again() })
   ).toBeVisible();
 
-  // Continue opens the first item that is not done: the quiz not yet taken.
-  // The tab first paints the last visit's progress (the persisted query
-  // cache) while it refetches, so wait for the row to name that quiz.
-  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}?study=true`);
-  const continueButton = page.getByRole('button', {
-    exact: true,
-    name: m.study_continue(),
-  });
-  await expect(
-    continueButton.locator('xpath=..').getByText(nextTitle, { exact: true })
-  ).toBeVisible();
-  await continueButton.click();
-  await expect(page).toHaveURL(new RegExp(`[?&]material=${nextQuiz}(&|$)`));
-
-  // A workspace review from the Study tab. A manual session gives 60% of its
-  // places (12 of a new account's 20) to never-rated items and the rest to
-  // practised ones, each side filling what the other leaves
-  // (store.withNew): here the quiz not yet taken's one question, served
-  // first, then the card and the question already practised.
+  // A whole-workspace review. A
+  // manual session gives 60% of its places (12 of a new account's 20) to
+  // never-rated items and the rest to practised ones, each side filling
+  // what the other leaves (store.withNew): here the quiz not yet taken's one
+  // question, served first, then the card and the question already
+  // practised.
   const reviewTotal = 3;
-  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}?study=true`);
-  await page
-    .getByRole('link', { name: m.study_start_workspace_review() })
-    .click();
-  await expect(page).toHaveURL(
-    new RegExp(`/learning/review/${workspaceId}\\?.*from=workspace`)
+  await page.goto(
+    `${run.env.appUrl}/learning/review/${workspaceId}?group=workspace&from=workspace`
   );
   await expect(
     page.getByRole('progressbar', {
@@ -283,7 +225,9 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
       await clicked(page, '/api/review/check', m.review_check()),
       200
     );
-    await expect(page.getByText(m.question_ui_your_answer())).toBeVisible();
+    await expect(
+      page.getByText(m.question_ui_result_right(), { exact: true })
+    ).toBeVisible();
     await page
       .getByRole('button', { exact: true, name: m.action_next() })
       .click();
@@ -298,12 +242,11 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   // The deployed database holds each record.
   const materials = [finishedQuiz, set, nextQuiz];
   const progress = await run.query<{ id: string; state: string }>(
-    `SELECT coalesce(file_id, material_id) AS id, state FROM study_progress
+    `SELECT material_id AS id, state FROM study_progress
     WHERE user_id=%s AND workspace_id=%s`,
     [run.owner.id, workspaceId]
   );
   assert.deepEqual(Object.fromEntries(progress.map((r) => [r.id, r.state])), {
-    [file]: 'done',
     [finishedQuiz]: 'done',
     [set]: 'done',
     // Its one question rated in the review.

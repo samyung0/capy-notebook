@@ -53,6 +53,37 @@ func TestQuestionHashCoversThePromptTextOnly(t *testing.T) {
 	}
 }
 
+// A group's text counts as the stem's does; its figures and a group with no
+// text do not, so grouping parts alone keeps the learner's progress.
+func TestQuestionHashTreatsGroupTextAsStemText(t *testing.T) {
+	text := func(s string) map[string]any { return map[string]any{"type": "text", "text": s} }
+	question := func(group []any) map[string]any {
+		q := map[string]any{
+			"stem":  []any{text("Stem.")},
+			"parts": []any{map[string]any{"blocks": []any{text("Prompt.")}}},
+		}
+		if group != nil {
+			q["groups"] = []any{map[string]any{"id": "g", "blocks": group}}
+			q["parts"].([]any)[0].(map[string]any)["group"] = "g"
+		}
+		return q
+	}
+	plain := QuestionHash(question(nil))
+	if plain != QuestionHash(question([]any{})) {
+		t.Error("grouping parts alone changed the hash")
+	}
+	if plain != QuestionHash(question([]any{map[string]any{"type": "image"}})) {
+		t.Error("a group's figure changed the hash")
+	}
+	shared := QuestionHash(question([]any{text("Shared.")}))
+	if shared == plain {
+		t.Error("a group's text left the hash alone")
+	}
+	if shared == QuestionHash(question([]any{text("Other.")})) {
+		t.Error("editing a group's text left the hash alone")
+	}
+}
+
 func TestFirstMissIsALapse(t *testing.T) {
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	missed := Rate(nil, Again, now)

@@ -280,17 +280,12 @@ func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, store.ErrNotFound)
 		return
 	}
-	if asset.WorkspaceID != "" {
-		if _, err := a.s.WorkspaceAccess(r.Context(), uid(r), asset.WorkspaceID); err != nil {
-			a.fail(w, err)
-			return
-		}
-	} else if asset.MaterialID != "" {
-		if _, err := a.s.MaterialEffectiveRole(r.Context(), uid(r), asset.MaterialID); err != nil {
-			a.fail(w, err)
-			return
-		}
-	} else {
+	readable, err := a.s.EditorAssetReadable(r.Context(), uid(r), asset)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if !readable {
 		a.fail(w, store.ErrNotFound)
 		return
 	}

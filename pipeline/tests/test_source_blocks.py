@@ -118,8 +118,8 @@ def _source_ctx(monkeypatch) -> ToolContext:
         skills_read={"editing"},
     )
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "a.md", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "a.md", "topic_id": None, "chunks": 1}],
     }
     return ctx
 

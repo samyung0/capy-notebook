@@ -65,8 +65,15 @@ export interface RoomProviderConfig {
   /** An embedded quiz's or set's room: it joins inside its note's channel
    * (Epo 2026-10-20), only while the note is joined. */
   parent?: NoteSeat;
+  /** Its tab may sleep once hidden 5 minutes while nothing is unsent (notes
+   * and items, Epo 2026-11-04; not an Office or text room). */
+  sleepsHidden?: boolean;
   /** The socket to join on; the tab's shared one for the URL by default. */
   socket?: CollabSocket;
+  /** A device copy seeded the document, at this stored version: the JOIN
+   * names it and the room answers what lies past its state. Unlike
+   * `unsentFrom` it marks nothing as unsent. */
+  storedFrom?: number;
   /** A room token. `previous`, the last one this provider used (even
    * expired), asks for its client ids again (Q236): a reconnect keeps them. */
   token: (previous?: string) => Promise<string>;
@@ -219,7 +226,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
-    this.storedVersion = config.unsentFrom ?? 0;
+    this.storedVersion = config.storedFrom ?? config.unsentFrom ?? 0;
     this.unsentAt = config.unsentFrom ?? null;
     this.document = config.document;
     this.awareness = config.awareness ?? new Awareness(config.document);
@@ -404,6 +411,15 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     this.isAuthenticated = false;
     this.noteSeat?.ended();
     void this.sendJoin(channel);
+  }
+
+  mayHide() {
+    return (
+      this.config.sleepsHidden === true &&
+      this.unsyncedChanges === 0 &&
+      this.unsentAt === null &&
+      this.config.unsent?.() !== true
+    );
   }
 
   /** The page went idle (`idle.ts`, Epo 2026-10-20): the channel ends with

@@ -10,18 +10,18 @@ import (
 // WorkspaceSummary contains only metadata intended for anonymous readers.
 // It deliberately does not embed Workspace or any content-bearing model.
 type WorkspaceSummary struct {
-	Name            string                    `json:"name"`
-	IconID          string                    `json:"iconId"`
-	Author          string                    `json:"author"`
-	AuthorAvatarURL string                    `json:"authorAvatarUrl,omitempty"`
-	Description     string                    `json:"description"`
-	Privacy         Privacy                   `json:"privacy"`
-	Tags            []string                  `json:"tags" nullable:"false"`
-	Chapters        []WorkspaceSummaryChapter `json:"chapters" nullable:"false"`
-	Files           []WorkspaceSummaryFile    `json:"files" nullable:"false" doc:"Unfiled files"`
+	Name            string                  `json:"name"`
+	IconID          string                  `json:"iconId"`
+	Author          string                  `json:"author"`
+	AuthorAvatarURL string                  `json:"authorAvatarUrl,omitempty"`
+	Description     string                  `json:"description"`
+	Privacy         Privacy                 `json:"privacy"`
+	Tags            []string                `json:"tags" nullable:"false"`
+	Topics          []WorkspaceSummaryTopic `json:"topics" nullable:"false"`
+	Files           []WorkspaceSummaryFile  `json:"files" nullable:"false" doc:"Unfiled files"`
 }
 
-type WorkspaceSummaryChapter struct {
+type WorkspaceSummaryTopic struct {
 	Name  string                 `json:"name"`
 	Files []WorkspaceSummaryFile `json:"files" nullable:"false"`
 }
@@ -45,14 +45,14 @@ func (s *Store) PublicWorkspaceSummary(ctx context.Context, id string) (Workspac
    'name', w.name, 'iconId', w.icon_id, 'author', COALESCE(owner.name, ''), 'authorAvatarUrl', COALESCE('/icons/' || NULLIF(owner.avatar_icon_id,'') || '.svg', owner.avatar_url, ''), 'description', w.description, 'privacy', w.privacy,
    'tags', COALESCE((SELECT jsonb_agg(t.name ORDER BY t.name)
      FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.workspace_id=w.id), '[]'::jsonb),
-   'chapters', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', c.name,
+   'topics', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', c.name,
      'files', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', f.name, 'sizeBytes', f.size_bytes, 'addedAt', f.added_at) ORDER BY f.position, f.id)
-       FROM files f WHERE f.workspace_id=w.id AND f.chapter_id=c.id AND f.trashed_at IS NULL), '[]'::jsonb))
+       FROM files f WHERE f.workspace_id=w.id AND f.topic_id=c.id AND f.trashed_at IS NULL AND NOT f.hidden), '[]'::jsonb))
      ORDER BY c.position, c.id)
-     FROM (SELECT id, name, position FROM chapters WHERE workspace_id=w.id
+     FROM (SELECT id, name, position FROM topics WHERE workspace_id=w.id
        ORDER BY position, id LIMIT 1001) c), '[]'::jsonb),
    'files', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', f.name, 'sizeBytes', f.size_bytes, 'addedAt', f.added_at) ORDER BY f.position, f.id)
-     FROM files f WHERE f.workspace_id=w.id AND f.chapter_id IS NULL AND f.trashed_at IS NULL), '[]'::jsonb)
+     FROM files f WHERE f.workspace_id=w.id AND f.topic_id IS NULL AND f.trashed_at IS NULL AND NOT f.hidden), '[]'::jsonb)
  )
  FROM workspaces w JOIN users owner ON owner.id=w.user_id
  WHERE w.id=$1 AND w.privacy IN ('link','public')
@@ -71,7 +71,7 @@ func (s *Store) PublicWorkspaceSummary(ctx context.Context, id string) (Workspac
 	if err := json.Unmarshal(body, &out); err != nil {
 		return WorkspaceSummary{}, err
 	}
-	if len(out.Chapters) > 1000 {
+	if len(out.Topics) > 1000 {
 		return WorkspaceSummary{}, ErrSummaryTooLarge
 	}
 	return out, nil

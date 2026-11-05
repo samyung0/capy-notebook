@@ -8,19 +8,19 @@
 export interface CloneMaterialReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** A chapter of the workspace; exclusive with chapterName */
-  chapterId?: string;
-  /**
-     * A chapter of this name (any case), created when missing
-     * @maxLength 60
-     */
-  chapterName?: string;
   /**
      * The copy's title, unique in its workspace
      * @minLength 1
      * @maxLength 120
      */
   title: string;
+  /** A topic of the workspace; exclusive with topicName */
+  topicId?: string;
+  /**
+     * A topic of this name (any case), created when missing
+     * @maxLength 60
+     */
+  topicName?: string;
   /** Omitted for a standalone copy */
   workspaceId?: string;
 }

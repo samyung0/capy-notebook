@@ -54,7 +54,7 @@ export function TabHeader({
   badge?: ReactNode;
 }) {
   return (
-    <div className="mb-7 flex flex-col gap-1">
+    <div className="mb-7 flex flex-col gap-1" data-slot="tab-header">
       <div className="flex items-center gap-2.5">
         <h2 className="t-card-title">{title}</h2>
         {badge}
@@ -80,9 +80,9 @@ export function DangerZone({ children }: { children: ReactNode }) {
   );
 }
 
-/** Title and hint on the left, control on the right, as in the workspace
- * sharing dialog, phones included. A control too wide to share the line
- * (a full-width picker) wraps under the text. */
+/** Title on the left, control on the right. Phones put the hint on its own line
+ * under both; wider screens keep it under the title. A control too wide to share
+ * the line (a full-width picker) wraps under the title. */
 export function SettingRow({
   title,
   hint,
@@ -93,10 +93,21 @@ export function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 sm:flex-nowrap sm:gap-6">
-      <div className="flex min-w-24 flex-1 basis-0 flex-col gap-1">
-        <InputTitle>{title}</InputTitle>
-        {hint && <p className="t-meta text-fg-muted">{hint}</p>}
+    <div
+      className={cn(
+        'flex flex-wrap items-center justify-between gap-x-3 sm:flex-nowrap sm:gap-6',
+        hint ? 'gap-y-1' : 'gap-y-3'
+      )}
+    >
+      <div className="contents sm:flex sm:min-w-24 sm:flex-1 sm:basis-0 sm:flex-col sm:gap-1">
+        <InputTitle className="min-w-24 flex-1 basis-0 sm:flex-none sm:basis-auto">
+          {title}
+        </InputTitle>
+        {hint && (
+          <p className="t-meta order-last basis-full text-fg-muted sm:order-none sm:basis-auto">
+            {hint}
+          </p>
+        )}
       </div>
       {children}
     </div>

@@ -1,8 +1,10 @@
 import { ClerkProvider, Show, useAuth } from '@clerk/react';
 import { useEffect, useRef, useState } from 'react';
 import { setAuthTokenGetter, USE_MSW } from '@/api/auth';
+import { api } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import { startQueryPersistence } from '@/api/queryPersistence';
+import type { User } from '@/api/types';
 import { Spinner } from '@/components/ui/feedback';
 import { signInHref } from '@/features/auth/clerk';
 import { dropSourceOpens } from '@/features/files/sourceOpen';
@@ -77,11 +79,42 @@ function AuthTokenBridge({ children, pending }: AuthProviderProps) {
   return <>{children}</>;
 }
 
+/** No Clerk (the real-stack browser specs, a local run with no key): the server
+ * says whose browser this is, and what it keeps is claimed before any read, as
+ * sign-in does. Otherwise nothing is ever kept and a reopen reads whole. */
+function ServerAccountBridge({ children, pending }: AuthProviderProps) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .get<User>('/me')
+      .then(
+        ({ id }) => claimAccountData(id),
+        () => claimAccountData(null)
+      )
+      .then(() => {
+        if (!cancelled) setReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (ready) return <>{children}</>;
+  if (pending !== undefined) return <>{pending}</>;
+  return (
+    <div className="flex h-dvh items-center justify-center">
+      <Spinner className="size-7" />
+    </div>
+  );
+}
+
 export function AppAuthProvider({ children, pending }: AuthProviderProps) {
   if (USE_MSW) return <>{children}</>;
   if (!PUBLISHABLE_KEY) {
     console.warn('VITE_CLERK_PUBLISHABLE_KEY missing — auth disabled');
-    return <>{children}</>;
+    return (
+      <ServerAccountBridge pending={pending}>{children}</ServerAccountBridge>
+    );
   }
   return (
     <ClerkProvider

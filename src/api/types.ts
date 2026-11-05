@@ -11,7 +11,7 @@
        `{ [k]: unknown }` on the wire — the frontend owns the polymorphism).
      - a couple of client-only fields (e.g. `SourceFile.ingestPct`).
 
-   Array fields (tags, chapters, fileIds, labelIds, questions) are
+   Array fields (tags, topics, fileIds, labelIds, questions) are
    non-nullable on the wire: the backend pins them with `nullable:"false"`
    and always emits `[]`, so no null narrowing is needed here.
 
@@ -26,6 +26,9 @@ import type {
   AnonymousEmbed as GenAnonymousEmbed,
   AnonymousNote as GenAnonymousNote,
   AnonymousQuiz as GenAnonymousQuiz,
+  AssignmentAttempt as GenAssignmentAttempt,
+  AssignmentQuestionReport as GenAssignmentQuestionReport,
+  AssignmentReport as GenAssignmentReport,
   AttemptDetail as GenAttemptDetail,
   Citation as GenCitation,
   Comment as GenComment,
@@ -83,13 +86,12 @@ export type ModelSlot = GeneratedModelSlot;
 export type {
   AccessCapabilities,
   AccountStatus,
-  AddChapterReq,
+  AddTopicReq,
   Attempt,
   AutoReloadReq,
   AutoReloadResp,
   BillingCheckoutReq,
   BillingInfo,
-  Chapter,
   CloneFileReq,
   CloneMaterialReq,
   CloneWorkspaceResp as CloneWorkspaceResult,
@@ -106,6 +108,7 @@ export type {
   FileChange,
   Flashcard,
   FlashcardSet,
+  HiddenBody,
   ImportSourcesAccepted as SourceImportAcceptedResponse,
   InspectedSourceImport,
   InspectSourceImportRejected,
@@ -140,8 +143,8 @@ export type {
   Ref as ModelRef,
   Region,
   ReloadState,
-  ReorderChaptersReq,
   ReorderContentReq,
+  ReorderTopicsReq,
   ReportEditIncidentReq,
   RequestAccountDeletionReq,
   RetryProcessingInputBody as RetryProcessingReq,
@@ -155,9 +158,9 @@ export type {
   Tag,
   TagInput,
   Task,
+  Topic,
   TopUpReq,
   TransferWorkspaceReq,
-  UpdateChapterReq,
   UpdateConversationReq,
   UpdateEventReq,
   UpdateFileReq,
@@ -168,6 +171,7 @@ export type {
   UpdateQuizMetadataReq,
   UpdateStandaloneSharingReq,
   UpdateTaskReq,
+  UpdateTopicReq,
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
   URLResp,
@@ -364,46 +368,94 @@ export type StudySummary = Omit<GenStudySummary, 'quickReview'> & {
   quickReview: ReviewItem[];
 };
 export type {
+  Assignment,
+  AssignmentAnswerRow,
+  AssignmentFile,
+  AssignmentFileRef,
+  AssignmentFormReq,
+  AssignmentItemReport,
+  AssignmentList,
+  AssignmentManage,
+  AssignmentMark,
+  AssignmentMemberRow,
+  AssignmentMine,
+  AssignmentPartMark,
+  AssignmentPartReport,
+  AssignmentWrongAnswer,
   BankMarksOutputBody as BankTopicMarks,
   BankProgressOutputBody as BankProgress,
   BankSummaryOutputBody as BankTopicSummary,
   BankSummaryQuestion,
   Cover as CoverConfig,
-  LearningProgress,
+  LearningOverview,
+  LearningRow,
+  LearningWorkspace,
   PastReview,
-  PlanStep,
-  PlanStepInput,
-  PlanWorkspace,
-  ProgressItem,
-  ProgressMap,
-  ProgressWorkspace,
+  Practice,
+  PracticeQuiz,
+  PracticeReview,
   RateReviewItemReq,
   ReviewEvidence,
-  ReviewOverview,
   ReviewSessionRef,
   ReviewSuggestion,
-  ReviewWorkspace,
   Row as BankListRow,
   SessionScore,
   SetStudyEnabledReq,
-  SetStudyItemReq,
-  StudyItem,
-  StudyPlan,
-  StudyPlans,
+  SharingNotice,
+  StudyTopics,
+  SummaryTopic,
   TopicProgress as BankTopicProgress,
   UnfinishedSession,
+  WorkspaceActivity,
+  WorkspaceDashboard,
+  WorkspaceKind,
 } from './gen/model';
+
+/** A graded question of a submitted assignment: a part left waiting for the
+ * owner is `pending`; a comment and who wrote it sit on the question. */
+export type AssignmentGradedPart = QuestionPart & {
+  pending?: boolean;
+  markedBy?: string;
+};
+export type AssignmentGradedQuestion = Omit<Question, 'parts'> & {
+  parts: AssignmentGradedPart[];
+  comment?: string;
+  commentBy?: string;
+  commentByName?: string;
+  commentByAvatarUrl?: string;
+};
+/** A try at a marked assignment. Running, its questions are answer-free;
+ * submitted, they are graded, and hold no keys unless `showAnswers`. */
+export type AssignmentAttempt = Omit<
+  GenAssignmentAttempt,
+  'answers' | 'questions'
+> & {
+  answers: Answers;
+  questions: (AssignmentGradedQuestion | LearnerQuestion)[];
+};
+export type AssignmentQuestionReport = Omit<
+  GenAssignmentQuestionReport,
+  'question'
+> & { question: Question };
+export type AssignmentReport = Omit<GenAssignmentReport, 'questions'> & {
+  questions: AssignmentQuestionReport[];
+};
 
 /** A suggested review's leading mode. */
 export type ReviewMode = NonNullable<GenReviewSession['mode']>;
+/** Why a session served an item: never rated, missed before, or fading. */
+export type ReviewReason = NonNullable<GenReviewItem['reason']>;
 /** What a new review session draws from: a suggestion's group and mode, or
  * the whole workspace without a mode. */
 export interface ReviewStart {
-  chapterId?: string;
+  /** The start dialog's choices: the session's size and which come first. */
+  count?: number;
   group: GenReviewSession['group'];
+  /** `quiz` serves questions only (Practice's topic sessions). */
+  items?: 'quiz';
   mode?: ReviewMode;
-  /** A plan group's plan, kept in the session's workspace. */
-  planId?: string;
+  order?: 'recommended' | 'unattempted' | 'incorrect';
+  topicId?: string;
 }
 export type AttemptSort = ListAttemptsSort;
 export type AttemptKind = import('./gen/model').Attempt['kind'];
@@ -600,9 +652,9 @@ export type {
 export { QUESTION_TYPES } from '@/features/questions/types';
 
 import type {
-  CognitiveLevel,
   LearnerQuestion,
   Question,
+  QuestionPart,
   QuestionType,
 } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
@@ -616,55 +668,35 @@ import type {
 } from './gen/model';
 
 /* ---------------- Generate (request options, not wire response types) ----------------
-   Every generation is scoped: `chapters` (ids) and/or `fileIds` narrow the
-   source material. The backend resolves chapter ids to their member files (for
+   Every generation is scoped: `topics` (ids) and/or `fileIds` narrow the
+   source material. The backend resolves topic ids to their member files (for
    retrieval) and to names (for display + the LLM scope hint). Empty scope means
    the whole workspace. */
+export type {
+  CreateExtractionReq,
+  Extraction,
+  ExtractionReport,
+} from './gen/model';
 export type GenerateKind = Exclude<MaterialKind, 'note'>;
 
-export interface GenerateScope {
-  chapters: string[]; // chapter ids
-  fileIds: string[]; // file ids
-  levels?: CognitiveLevel[];
+/** A quiz written from sources (Make my own practice). */
+export interface GenerateOptions {
+  count: number;
+  fileIds: string[];
+  mix?: boolean;
   title: string;
-}
-/** The panel's More (10) or Less (5); never the study preferences. */
-export interface GenerateFlashcardsOptions extends GenerateScope {
-  count: number;
-  kind: 'flashcards';
-}
-export interface GenerateQuizOptions extends GenerateScope {
-  count: number;
-  kind: 'quiz';
+  topics: string[]; // topic ids
   types: QuestionType[];
 }
-export type DiagramType =
-  | 'auto'
-  | 'flowchart'
-  | 'sequence'
-  | 'class'
-  | 'state'
-  | 'er';
-export interface GenerateMindmapOptions extends GenerateScope {
-  detail: 'brief' | 'standard' | 'detailed';
-  kind: 'mindmap';
-}
-export interface GenerateDiagramOptions extends GenerateScope {
-  diagramType: DiagramType;
-  kind: 'diagram';
-}
-export type GenerateOptions =
-  | GenerateFlashcardsOptions
-  | GenerateQuizOptions
-  | GenerateMindmapOptions
-  | GenerateDiagramOptions;
 
 /* ---------------- Study materials ----------------
-   Persisted, workspace-scoped (not chapter-scoped) study artifacts rendered
+   Persisted, workspace-scoped (not topic-scoped) study artifacts rendered
    in-pane. Mindmaps and diagrams are markdown documents (mermaid fences);
    quizzes and flashcardSets are referenced by the unified materials index. */
 /** `content` is the rich Plate document; the wire keeps its nodes opaque. */
 export type Material = Omit<GenMaterial, 'content'> & {
+  /** Read without its body: this device holds its own copy of the note. */
+  contentOmitted?: boolean;
   content: import('@/features/materials/document').MaterialDocument;
 };
 
@@ -731,8 +763,8 @@ export type {
   SourceCollaborationToken,
   SourceProcessResult,
   WorkspaceSummary,
-  WorkspaceSummaryChapter,
   WorkspaceSummaryFile,
+  WorkspaceSummaryTopic,
 } from './gen/model';
 export type PDFAnnotationBody = Omit<
   import('./gen/model').PDFAnnotationBody,

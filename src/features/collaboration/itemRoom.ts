@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { getMaterialCollaborationToken } from '@/api/hooks';
@@ -41,6 +41,9 @@ import {
   splitOpenDrafts,
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
+import { dropDeviceCopies } from '@/lib/sourceCache';
+import { type CopyLabel, keepDeviceCopy, type RoomSeed } from './deviceCopy';
+import { offerExpiredDrafts } from './expiredDrafts';
 import type { NoteSeat } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
@@ -66,7 +69,7 @@ import { LOCAL_EDIT } from './yText';
  * stored in the database (Epo 2026-10-19), and a room that joined with
  * nothing of this device's to store is saved too (Epo 2026-10-20). */
 export type ItemRoomStatus =
-  | 'connecting'
+  | 'opening'
   | 'syncing'
   | 'saved'
   | 'offline'
@@ -74,8 +77,6 @@ export type ItemRoomStatus =
 
 export interface ItemRecovery {
   doc: Y.Doc;
-  /** Past the 7-day expiry: shown once, its rows deleted as it opened. */
-  expired: boolean;
   /** Refused for good (otherwise: the room moved on meanwhile). */
   refused: boolean;
   rows: EditDraft[];
@@ -166,6 +167,8 @@ export interface ItemRoomOptions {
   /** An embedded quiz's or set's room: it joins inside its note's channel
    * (Epo 2026-10-20). */
   inside?: NoteSeat | null;
+  /** Keeps a device copy of this room under this label (a member's page). */
+  keep?: CopyLabel;
   /** The room ended for good here (refused, moved): mount a fresh one. */
   onReplace?: () => void;
   /** A reader (a View, a study page): asks for a read channel even when the
@@ -173,10 +176,13 @@ export interface ItemRoomOptions {
   read?: boolean;
   /** A note's own room (its View): the seat its embeds join inside. */
   seat?: NoteSeat;
+  /** The device copy this room starts from: its document, and the version
+   * its JOIN names, so the room answers only the difference. */
+  seed?: RoomSeed | null;
 }
 
 export class ItemRoom {
-  readonly doc = new Y.Doc();
+  readonly doc: Y.Doc;
   readonly undo: Y.UndoManager;
   /** What the item's Undo and Redo buttons act on. */
   readonly history: UndoTarget;
@@ -192,7 +198,7 @@ export class ItemRoom {
     recovery: null,
     sending: false,
     slowed: false,
-    status: 'connecting',
+    status: 'opening',
     synced: false,
   };
   private unsynced = 0;
@@ -243,10 +249,13 @@ export class ItemRoom {
   private hold: (() => void) | null = null;
   /** Clears its timer and its offline watch, at the send's end or teardown. */
   private stopHold: (() => void) | null = null;
+  /** Writes the device copy on hide and at the end (`ItemRoomOptions.keep`). */
+  private keeper: ReturnType<typeof keepDeviceCopy> | null = null;
 
   constructor(materialId: string, options: ItemRoomOptions = {}) {
     this.materialId = materialId;
     this.options = options;
+    this.doc = options.seed?.doc ?? new Y.Doc();
     // The document holds only this item: Undo covers this user's own edits
     // to it, never others' or the server's.
     this.undo = new Y.UndoManager(this.doc, {
@@ -327,6 +336,11 @@ export class ItemRoom {
       return;
     }
     if (this.destroyed) return;
+    // The room threw away the state the copy holds: a fresh room joins.
+    if (this.options.seed && this.options.seed.room !== first.room) {
+      this.moved();
+      return;
+    }
     this.room = first.room;
     const access = first.access === 'write' ? 'write' : 'read';
     this.set({ access });
@@ -386,8 +400,10 @@ export class ItemRoom {
           this.unavailable();
           return;
         }
+        // A rejoin changes nothing until its 30 s passed (D2).
         if (reason === 'socket closed') {
-          this.goOffline();
+          if (navigator.onLine) this.reconnector.disconnected();
+          else this.goOffline();
           return;
         }
         if (reason === 'read-only connection sent a document update') {
@@ -437,8 +453,9 @@ export class ItemRoom {
           queueMicrotask(() => this.hold?.());
           return;
         }
-        if (this.snapshot.status !== 'offline')
-          this.set({ status: 'connecting' });
+        // A rejoin changes nothing until its 30 s passed (D2).
+        if (!this.snapshot.synced && this.snapshot.status !== 'offline')
+          this.set({ status: 'opening' });
       },
       onUnsyncedChanges: ({ number }) => {
         this.unsynced = number;
@@ -447,6 +464,8 @@ export class ItemRoom {
         if (number === 0) this.requestReceipt();
       },
       parent: this.options.inside ?? undefined,
+      sleepsHidden: true,
+      storedFrom: this.options.seed?.version,
       token: async (previousToken) => {
         if (cached) {
           this.lastToken = cached;
@@ -481,7 +500,59 @@ export class ItemRoom {
     });
     if (this.provider instanceof RoomProvider)
       this.options.seat?.attach(this.provider);
+    this.keepCopy();
+    globalThis.document?.addEventListener('visibilitychange', this.shown);
     this.provider.connect();
+  }
+
+  /** Back from a sleep its rejoin reports nothing until it syncs: its 30 s
+   * start as the tab shows. */
+  private readonly shown = () => {
+    if (
+      globalThis.document?.visibilityState === 'visible' &&
+      this.provider instanceof RoomProvider &&
+      !this.provider.isSynced &&
+      this.snapshot.synced
+    )
+      this.reconnector.disconnected();
+  };
+
+  private copyDocument() {
+    return this.options.document ?? 'content';
+  }
+
+  /** The room's confirmed state goes on the device: on hide and at the end,
+   * when nothing of this device's is unsent. */
+  private keepCopy() {
+    const { keep } = this.options;
+    if (!keep) return;
+    this.keeper = keepDeviceCopy(this.doc, {
+      clean: () =>
+        this.snapshot.synced &&
+        !this.ended &&
+        !this.snapshot.recovery &&
+        this.unsynced === 0 &&
+        !this.recorder?.unsaved,
+      owner: keep.owner,
+      row: () => ({
+        ...keep,
+        document: this.copyDocument(),
+        materialId: this.materialId,
+        room: this.room,
+        version:
+          this.provider instanceof RoomProvider
+            ? this.provider.reportedVersion
+            : 0,
+      }),
+      seeded: !!this.options.seed,
+    });
+  }
+
+  /** A refusal: this copy goes, and nothing writes it back. */
+  private dropCopy() {
+    this.keeper?.stop();
+    this.keeper = null;
+    void dropDeviceCopies(this.materialId, this.options.document);
   }
 
   /** Sends the never-accepted stored steps while the room joins (Q319,
@@ -597,14 +668,25 @@ export class ItemRoom {
       if (this.destroyed) return false;
       if (recovery.length) {
         const doc = recoveryDocument(recovery);
+        // Past the 7-day expiry: the room opens, and a toast offers them (D14).
+        if (doc && expired) {
+          offerExpiredDrafts({
+            doc,
+            document: this.options.document,
+            materialId: this.materialId,
+            onGone: () =>
+              dropExpiredGroup(
+                recovery,
+                editIncidentReporter('material', this.materialId)
+              ),
+            title: this.options.keep?.title ?? this.materialId,
+          });
+          rows = rows.filter((row) => !recovery.includes(row));
+          continue;
+        }
         if (doc) {
-          if (expired)
-            dropExpiredGroup(
-              recovery,
-              editIncidentReporter('material', this.materialId)
-            );
           this.set({
-            recovery: { doc, expired, refused, rows: recovery },
+            recovery: { doc, refused, rows: recovery },
             status: 'saved',
             synced: true,
           });
@@ -669,7 +751,9 @@ export class ItemRoom {
       slowed: true,
       status:
         this.snapshot.status === 'offline'
-          ? 'connecting'
+          ? this.snapshot.synced
+            ? this.live()
+            : 'opening'
           : this.snapshot.status,
     });
   }
@@ -753,6 +837,7 @@ export class ItemRoom {
   private refused() {
     if (this.ended || this.destroyed) return;
     this.ended = true;
+    this.dropCopy();
     const kept = this.recorder?.unsaved ?? false;
     if (kept && this.recorder) {
       this.recorder.refuse();
@@ -772,6 +857,7 @@ export class ItemRoom {
   private moved() {
     if (this.ended || this.destroyed) return;
     this.ended = true;
+    this.dropCopy();
     void this.recorder?.dispose();
     this.recorder = null;
     this.end();
@@ -791,6 +877,11 @@ export class ItemRoom {
    * demotion, a block this version cannot edit): unsaved edits are
    * discarded, as a note's are. */
   private readOnly(code?: ReadOnlyCode) {
+    // The document may hold what this discards.
+    if (this.recorder?.unsaved) {
+      this.keeper?.stop();
+      this.keeper = null;
+    }
     this.set({ access: 'read', readOnlyCode: code ?? null });
     void this.recorder?.discard();
     this.recorder = null;
@@ -821,6 +912,7 @@ export class ItemRoom {
   /** The item is gone or no longer this user's: the room stops for good. */
   private unavailable() {
     if (this.destroyed) return;
+    this.dropCopy();
     this.reconnector.dispose();
     this.provider?.disconnect();
     this.set({ status: 'unavailable' });
@@ -835,6 +927,8 @@ export class ItemRoom {
   }
 
   destroy() {
+    globalThis.document?.removeEventListener('visibilitychange', this.shown);
+    this.keeper?.close();
     this.destroyed = true;
     this.sender?.stop();
     this.stopHold?.();
@@ -890,25 +984,36 @@ export function useItemRoom(
     actorId,
     document,
     inside,
+    keep,
+    seed,
     wake,
   }: {
     actorId?: string | null;
     document?: 'keys';
     /** An embed's note seat (`ItemRoomOptions.inside`). */
     inside?: NoteSeat | null;
+    /** `ItemRoomOptions.keep`; read once, as the room starts. */
+    keep?: CopyLabel;
+    /** `ItemRoomOptions.seed`, for the first room only. */
+    seed?: RoomSeed | null;
     /** Bumped when an embed comes near the screen again (`ItemRoom.wake`). */
     wake?: number;
   } = {}
 ) {
   const [room, setRoom] = useState<ItemRoom | null>(null);
   const [generation, setGeneration] = useState(0);
+  const start = useRef({ keep, seed });
+  start.current = { keep, seed };
   useEffect(() => {
     if (!(materialId && enabled)) return;
     const { close, room: created } = openItemRoom(materialId, {
       document,
       drafts: actorId ? { actorId } : undefined,
       inside,
+      keep: start.current.keep,
       onReplace: () => setGeneration((value) => value + 1),
+      // Unusable once a room ended on it (its document went with the room).
+      seed: start.current.seed?.doc.isDestroyed ? null : start.current.seed,
     });
     setRoom(created);
     return () => {
@@ -938,7 +1043,7 @@ const INITIAL: ItemRoomSnapshot = {
   recovery: null,
   sending: false,
   slowed: false,
-  status: 'connecting',
+  status: 'opening',
   synced: false,
 };
 const initialSnapshot = () => INITIAL;

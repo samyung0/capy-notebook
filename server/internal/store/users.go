@@ -531,7 +531,7 @@ func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) (Star
 		}
 		id := uid("ws")
 		if err := s.insertWorkspaceTx(
-			ctx, tx, id, userID, starterWorkspaceName, nil, embed,
+			ctx, tx, id, userID, starterWorkspaceName, nil, WorkspacePersonal, embed,
 		); err != nil {
 			return starter, err
 		}

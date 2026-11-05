@@ -28,16 +28,10 @@ test('the title opens Files from the top and ⋮ carries the workspace actions',
   const header = page.getByTestId('content-header');
   const title = header.getByRole('button', { name: TITLE });
   await expect(title).toBeVisible({ timeout: 60_000 });
-  // Phones keep the header to the title, view/edit and ⋮.
-  await expect(
-    header.getByRole('button', { name: m.study_mark_read() })
-  ).toHaveCount(0);
-
   await header.getByRole('button', { name: m.a11y_open_menu() }).click();
   for (const item of [
     m.action_add_file(),
-    m.action_add_chapter(),
-    m.study_mark_read(),
+    m.action_add_topic(),
     m.workspace_settings(),
   ])
     await expect(page.getByRole('menuitem', { name: item })).toBeVisible();
@@ -61,6 +55,26 @@ test('the title opens Files from the top and ⋮ carries the workspace actions',
   await files.getByText('Osmosis notes.txt').click();
   await expect(files).toBeHidden();
   await expect(header.getByRole('button', { name: /Osmosis/ })).toBeVisible();
+});
+
+test('Workspace settings shows the tabs first, reached by the URL with its search', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio?settings=menu&settingsQuery=invite');
+  const list = page.getByRole('dialog', { name: m.workspace_settings() });
+  await expect(
+    list.getByRole('textbox', { name: m.workspace_settings_search() })
+  ).toHaveValue('invite', { timeout: 60_000 });
+  await expect(list.getByRole('tab')).toHaveCount(1);
+
+  await list.getByRole('tab', { name: m.workspace_sharing() }).click();
+  const sharing = page.getByRole('dialog', { name: m.workspace_sharing() });
+  await expect(sharing.getByText(m.members_people())).toBeVisible();
+  await expect(page).toHaveURL(/settings=sharing&settingsQuery=invite/);
+
+  await sharing.getByRole('button', { name: m.action_back() }).click();
+  await expect(list.getByRole('tab')).toHaveCount(1);
+  await expect(page).toHaveURL(/settings=menu&settingsQuery=invite/);
 });
 
 test('chat docks as a button, keeps a draft, and grows into its page on send', async ({
@@ -125,4 +139,83 @@ test('chat docks as a button, keeps a draft, and grows into its page on send', a
   await close.click();
   await expect(close).toHaveCount(0);
   await expect(button).toBeVisible();
+});
+
+test('Make a quiz hides the dock, and the chat comes back with its draft and thread', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio');
+  await page.addStyleTag({
+    content: '[data-testid=mock-scenario-panel] { display: none }',
+  });
+  const dock = page.locator('[data-workspace-chat-dock]');
+  const button = dock.getByRole('button', {
+    exact: true,
+    name: m.workspace_tab_chat(),
+  });
+  const field = dock.getByRole('textbox', { name: m.chat_placeholder() });
+  await button.click({ timeout: 60_000 });
+  await field.fill('What do mitochondria do?');
+  await dock.getByRole('button', { name: m.chat_send() }).click();
+  const chat = page.locator('[data-workspace-chat-page]');
+  await chat.getByRole('button', { name: m.action_back() }).click();
+  await button.click();
+  await field.fill('And ATP?');
+
+  await page.getByRole('button', { name: m.dashboard_make_quiz() }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: m.make_quiz_choose_file() }).click();
+  await page.getByRole('option', { name: /Past paper 2025 P1\.pdf/ }).click();
+  await dialog.getByRole('button', { name: m.action_continue() }).click();
+  await expect(
+    page.getByRole('heading', { name: m.make_quiz_pages_title() })
+  ).toBeVisible();
+  await expect(dock).toHaveCount(0);
+
+  await page.getByRole('button', { name: m.action_cancel() }).click();
+  await button.click();
+  await expect(field).toHaveValue('And ATP?');
+  await dock.getByRole('button').first().click();
+  await expect(
+    chat.getByRole('heading', { name: 'What do mitochondria do?' })
+  ).toBeVisible();
+});
+
+// A personal workspace: a class's owner and editors have no Summary.
+test('⋮ reaches Summary, which one column has no panel for', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_calc?material=f_7');
+  await page.addStyleTag({
+    content: '[data-testid=mock-scenario-panel] { display: none }',
+  });
+  await page
+    .getByTestId('content-header')
+    .getByRole('button', { name: m.a11y_open_menu() })
+    .click({ timeout: 60_000 });
+  await page.getByRole('menuitem', { name: m.study_panel_summary() }).click();
+  await expect(
+    page.getByRole('heading', { level: 1, name: m.study_panel_summary() })
+  ).toBeVisible();
+});
+
+test('the chat page lists past chats in its history dialog, with See archived', async ({
+  page,
+}) => {
+  await open(page);
+  const dock = page.locator('[data-workspace-chat-dock]');
+  await dock
+    .getByRole('button', { exact: true, name: m.workspace_tab_chat() })
+    .click({ timeout: 60_000 });
+  await dock.getByRole('button', { name: m.chat_history() }).click();
+  const history = page.getByRole('dialog', { name: m.chat_history() });
+  await expect(
+    history.getByRole('button', { name: 'Exam plan for the cell unit' })
+  ).toBeVisible();
+  await history.getByRole('button', { name: m.chat_see_archived() }).click();
+  await expect(
+    page
+      .getByRole('dialog', { name: m.chat_archived_title() })
+      .getByText('Lab report draft questions')
+  ).toBeVisible();
 });

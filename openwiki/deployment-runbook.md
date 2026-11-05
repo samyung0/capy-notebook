@@ -60,6 +60,12 @@ routes change in step. A collaboration service ahead of its gateway can, for
 example, misread the gateway's `epoch-reset` answer and keep a discarded room
 refused until the gateway catches up.
 
+The release that brings migration `0144` (one line per model) deploys the app,
+the ingest host and Ops together, right after the migration (Epo 2026-11-04):
+the migration drops `model_capacities.interactive_reserve`, which the previous
+release's ingest workers and Ops registry still read, so they fail admissions
+and the registry until they run the new release.
+
 Where the two must be split (a manual rollout, a partial rollback), the
 gateway goes first or with the collaboration service, never after it. A text
 checkpoint now carries `preview` (2026-10-13, `thumbnails.md`): a gateway
@@ -989,10 +995,14 @@ Ops model catalog before allowing platform model calls. Each environment stores
 its own provider/model limits in `model_capacities`; new databases start
 without limits and missing capacity fails explicitly. GLM-5.3-Flash keeps its
 `zai/glm-5.3-flash` capacity row but runs through OpenRouter on DigitalOcean,
-then Z.AI (decision 2026-10-21): production and UAT get 150 total / 125
-interactive reserve, local development 8 / 4. Rows already in a database keep
-their values (UAT had 48 / 40 from migration 0097), so raise them in Ops.
-Production's Qwen embedding is 200 / 80.
+then Z.AI (decision 2026-10-21): production and UAT get 150 in flight, local
+development 8. Rows already in a database keep their values (UAT had 48 from
+migration 0097), so raise them in Ops. Production's Qwen embedding is 200.
+A total is the model's whole capacity, shared by every use with no reserve
+(Epo 2026-11-04); calls past it wait their turn. DeepSeek V4.1 Flash 1017
+(`openrouter` / `deepseek/deepseek-v4.1-flash-1017`) shares one OpenRouter
+account's 100 in flight between environments: set it in Ops at deploy to 84 in
+production and 16 in UAT; local development is not counted (Epo 2026-11-04).
 UAT and full local development must use limits appropriate to their own
 provider accounts.
 `deploy/model-capacities.sql` is an opt-in bootstrap after migrations. It inserts
@@ -1005,7 +1015,7 @@ Apply to one explicitly selected database with
 an account, divide its quota among them before applying the script.
 
 Migration `0134_alibaba_rerank.sql` makes Alibaba `qwen3-rerank` the `rerank`
-default with a capacity of 64 (32 reserved), replacing DeepInfra
+default with a capacity of 64, replacing DeepInfra
 `Qwen/Qwen3-Reranker-4B` from `0030_rerank_slot.sql`. It reuses the
 environment's `ALIBABA_MODELSTUDIO_KEY` and `ALIBABA_MODELSTUDIO_URL` (the
 Singapore workspace's `.../compatible-mode/v1` base), now also passed to the
@@ -2053,7 +2063,7 @@ those services start.
    worker. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
    embedding route, `OPENROUTER_API_KEY` for the file-descriptor pin
    (DeepSeek V4 Flash 0731 on Reka, DigitalOcean or StreamLake), the captioning pin (DeepSeek
-   V4.1 Flash 1017 on InferenceNet, then Cloudflare: standalone-image captions
+   V4.1 Flash 1017 on Wafer's US endpoint, then InferenceNet, then Cloudflare: standalone-image captions
    and the VLM read of text-less document pages) and GLM-5.3-Flash, the same
    key the app host's `retrieval` and `ops` containers carry (Ops reads it too,
    to flag a missing credential). No Z.AI key is read since 2026-10-21. The
@@ -2096,10 +2106,11 @@ those services start.
    Configure its platform model capacities through Ops (§1.3) before ingest.
    `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
-   So are the VLM page-read gates, `CAPY_VLM_PAGE_CAPACITY` (page reads in
-   flight across the workers) and `CAPY_VLM_PAGES_PER_JOB`: production 40 and
-   40 (the production ingest Compose's values when the GitHub variables are
-   blank; 64 overall until 2026-10-29, lowered so 1017's route holds at most 120), local/UAT Compose fixes 20 and 10.
+   So is `CAPY_VLM_PAGES_PER_JOB`, the page reads one job sends at once:
+   production 40 (the production ingest Compose's value when the GitHub
+   variable is blank), local/UAT Compose fixes 10. Across jobs page reads wait
+   in 1017's line with its other calls; the `CAPY_VLM_PAGE_CAPACITY` gate is
+   gone (Epo 2026-11-04), so delete that GitHub variable if it is set.
    Production limits are eight coordinator processes, seven parse children
    (`CAPY_PARSE_WORKERS`), parser depth 8 (`CAPY_PARSE_QUEUE_DEPTH`, parsing
    plus waiting) and 500 text-less pages per document
@@ -2733,6 +2744,51 @@ docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # 
 
 ---
 
+### 7.6 Layout service
+
+Make a quiz finds figures with PP-DocLayout_plus-L's ONNX export under
+onnxruntime (`layout/app.py`). One pool runs on this host and serves UAT and
+production together, with no split and no queue of its own (Epo 2026-11-04). The
+service is stateless: a JPEG in, regions out, nothing stored, only counts and
+timings logged. It is its own compose project under `/opt/capy-layout`, outside
+the UAT and production projects and the release workflows, like the library
+database (§7.3). The image holds the model: `layout/Dockerfile` adds it from a
+pinned Hugging Face revision and checks its SHA-256 at build, so the build needs
+the network and the running service does not.
+
+1. Check out the reviewed commit under `/opt/capy-layout/src`.
+2. Create `/opt/capy-layout/.env` (mode 0600) from `deploy/layout.env.example`.
+   `LAYOUT_REVISION` is that commit, `LAYOUT_BIND_ADDRESS` the host's WireGuard
+   address `10.77.0.2`, and `CAPY_LAYOUT_TOKEN` comes from `openssl rand -hex 32`.
+3. Build and start:
+
+   ```bash
+   docker compose --project-name capy-layout --env-file /opt/capy-layout/.env \
+     -f /opt/capy-layout/src/deploy/docker-compose.layout.yml up -d --build
+   ```
+
+4. Check it. `docker inspect --format '{{.State.Health.Status}}' capy-layout`
+   reports `healthy`, `curl http://10.77.0.2:8092/healthz` answers `ok`, `ss -tlnp
+   | grep 8092` shows the WireGuard address alone, and a probe of the public
+   address is refused. The container uses host networking like the parser, because
+   the host firewall drops forwarded traffic into Docker bridges.
+5. Give both environments the service. In `deploy/.env.uat` and `deploy/.env.prod`
+   set `CAPY_LAYOUT_URL=http://10.77.0.2:8092` and the same `CAPY_LAYOUT_TOKEN`,
+   then push them (§12.7) and deploy the app. Retrieval makes the calls, over
+   WireGuard, as it reads the library database.
+
+The container runs as uid 10003 with no capabilities, no privilege gain, Docker's
+default seccomp profile, a read-only root and `pids_limit: 128`. The body is capped
+by `LAYOUT_MAX_BYTES` and the image by `LAYOUT_MAX_PIXELS`.
+
+**Without it, nothing breaks.** Past `LAYOUT_QUEUE_DEPTH` requests in the service,
+the next is answered 429; the client waits about 2 s and tries again, 4 tries in
+all. A page whose request fails, stays busy or runs out of time, or any page while
+`CAPY_LAYOUT_URL` is unset, takes the box call for its figures: one more
+model call a page, with looser crops (68 whole, 64 tight and 56 both of 80, against 76, 73 and 70)
+([report](../bench/extraction/reports/2026-11-04-figure-matching.md)). `/healthz`
+counts `served`, `busy` and each refusal; a rising `busy` means the pool is short.
+
 ## 8. Database
 
 1. Apply migrations with `/migrate` from the **same image / git SHA** as the
@@ -2870,7 +2926,7 @@ docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # 
 ## 9. Changing models in the registry
 
 Most slots are safe to retarget from the ops dashboard: chat,
-editor, ingest and captioning all resolve a pin per request or per job, so a new
+editor, ingest, extraction and captioning all resolve a pin per request or per job, so a new
 default applies to the next one and everything in flight keeps what it had.
 
 The dashboard deliberately disallows aliases: each grid row is the natural

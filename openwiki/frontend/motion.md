@@ -76,6 +76,14 @@ The workspace creation form stays mounted to preserve dismissal motion. It reset
 on a closed-to-open transition, independently of autofocus; failed submissions
 keep their current input.
 
+Accordions use `motion-accordion` and `motion-accordion-chevron`, on the question
+bank's tree (`QuestionBank`) and New assignment's Advanced (`AdvancedSection`): the
+panel stays mounted and `inert` while closed, its grid row grows from `0fr` to `1fr`
+over `--motion-duration-fast` with `--motion-ease-smooth-out`, its one child clips,
+fades and unblurs, and the chevron turns on the same timing. Padding goes inside that
+child, since padding can't collapse. Under reduced motion the global transition rule
+leaves the fade alone, so the height and chevron jump.
+
 Reduced motion disables keyframes globally. Custom exits use the actual browser
 animation lifetime and remove immediately when no animation runs. Reopening
 cancels pending removal. Foreground filters settle back to `none`.
@@ -88,9 +96,10 @@ validation clears it, with no timer or delayed removal. Reduced motion disables
 both animations. Repeated submission of an unchanged invalid field does not
 restart the shake.
 
-Sonner still owns its wrapper exit and 200ms removal lifetime. Changing its CSS
-alone to a 350ms exit would truncate the animation; that lifecycle change remains
-separate. Toast copy updates use the same compact swap as other changing text.
+Toasts fade in and out with `motion-fade` (250ms in, 150ms out) and never
+grow or slide. The next toast waits for the shown one's fade-out to finish,
+read from its browser animations, so with reduced motion it swaps at once.
+Toast copy updates use the same compact swap as other changing text.
 
 Browser checks: `pnpm run e2e:msw:editor --workers=1 ui-motion.spec.ts`.
 

@@ -339,16 +339,16 @@ class Workspace:
 
         return psycopg.connect(self.dsn, autocommit=True)
 
-    def add_chapter(self, name: str) -> str:
-        chapter_id = f"ch_{secrets.token_hex(6)}"
+    def add_topic(self, name: str) -> str:
+        topic_id = f"ch_{secrets.token_hex(6)}"
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO chapters (id, workspace_id, name) VALUES (%s, %s, %s)",
-                (chapter_id, self.id, name),
+                "INSERT INTO topics (id, workspace_id, name) VALUES (%s, %s, %s)",
+                (topic_id, self.id, name),
             )
-        return chapter_id
+        return topic_id
 
-    def add_file(self, name: str, chapter_id: str | None = None) -> str:
+    def add_file(self, name: str, topic_id: str | None = None) -> str:
         """Register a source file row. Indexing it is the test's job.
 
         user_id is omitted on purpose: a trigger derives the storage owner from
@@ -359,12 +359,12 @@ class Workspace:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO files (id, workspace_id, user_id, chapter_id, name,
+                INSERT INTO files (id, workspace_id, user_id, topic_id, name,
                                    kind, size_bytes, status, blob_path)
                 SELECT %s, w.id, w.user_id, %s, %s, 'txt', 1024, 'ready', %s
                 FROM workspaces w WHERE w.id = %s
                 """,
-                (file_id, chapter_id, name, f"sources/{file_id}", self.id),
+                (file_id, topic_id, name, f"sources/{file_id}", self.id),
             )
         return file_id
 

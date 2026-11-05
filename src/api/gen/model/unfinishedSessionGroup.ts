@@ -9,8 +9,7 @@ export type UnfinishedSessionGroup = typeof UnfinishedSessionGroup[keyof typeof 
 
 
 export const UnfinishedSessionGroup = {
-  chapter: 'chapter',
+  topic: 'topic',
   others: 'others',
   workspace: 'workspace',
-  plan: 'plan',
 } as const;

@@ -49,6 +49,7 @@ func TestReadRoleRequiresEveryPlanLimitsStartupColumn(t *testing.T) {
 		"files_per_workspace":   true,
 		"files_per_upload":      true,
 		"image_max_bytes":       true,
+		"topics_per_workspace":  true,
 	}
 	got := map[string]bool{}
 	for _, privilege := range readRequiredPrivileges {
@@ -300,7 +301,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			plan_tier, storage_limit_bytes, credit_limit_micros,
 			source_file_max_bytes,
 			owned_workspace_limit, files_per_workspace, files_per_upload,
-			image_max_bytes
+			image_max_bytes, topics_per_workspace
 		) ON plan_limits TO %s;
 		GRANT SELECT (
 			resource_key, version, unit, credit_micros_per_unit, active, created_at
@@ -367,9 +368,9 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	})
 
 	if _, err := owner.Exec(ctx, fmt.Sprintf(`
-        GRANT SELECT (provider, model, concurrency_total, interactive_reserve) ON model_capacities TO %s, %s;
-        GRANT INSERT (provider, model, concurrency_total, interactive_reserve) ON model_capacities TO %s;
-        GRANT UPDATE (concurrency_total, interactive_reserve) ON model_capacities TO %s;
+        GRANT SELECT (provider, model, concurrency_total) ON model_capacities TO %s, %s;
+        GRANT INSERT (provider, model, concurrency_total) ON model_capacities TO %s;
+        GRANT UPDATE (concurrency_total) ON model_capacities TO %s;
     `, readIdent, adminIdent, adminIdent, adminIdent)); err != nil {
 		t.Fatal(err)
 	}

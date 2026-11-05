@@ -28,6 +28,9 @@ type Limits struct {
 	// ImageBytes caps one uploaded image (2 MiB on every plan, Epo
 	// 2026-10-24); the browser compresses every image to fit.
 	ImageBytes int64
+	// TopicsPerWorkspace caps a workspace's topics by its owner's plan (10
+	// on Free, 20 on Pro, Epo 2026-11-03).
+	TopicsPerWorkspace int
 }
 
 // EditorAssetBytes caps one editor asset of the purpose: an image takes the
@@ -49,7 +52,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool) (Catalog, error) {
 	rows, err := pool.Query(ctx, `SELECT plan_tier, storage_limit_bytes,
 		credit_limit_micros, source_file_max_bytes,
 		owned_workspace_limit, files_per_workspace, files_per_upload,
-		image_max_bytes
+		image_max_bytes, topics_per_workspace
 		FROM plan_limits ORDER BY plan_tier`)
 	if err != nil {
 		return Catalog{}, fmt.Errorf("load plan limits: %w", err)
@@ -72,6 +75,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool) (Catalog, error) {
 			&limits.FilesPerWorkspace,
 			&limits.FilesPerUpload,
 			&limits.ImageBytes,
+			&limits.TopicsPerWorkspace,
 		); err != nil {
 			return Catalog{}, fmt.Errorf("scan plan limits: %w", err)
 		}
@@ -107,7 +111,8 @@ func validate(tier string, limits Limits) error {
 	if limits.StorageBytes <= 0 || limits.CreditMicros <= 0 ||
 		limits.SourceFileBytes <= 0 ||
 		limits.OwnedWorkspaces < 0 || limits.FilesPerWorkspace <= 0 ||
-		limits.FilesPerUpload <= 0 || limits.ImageBytes <= 0 {
+		limits.FilesPerUpload <= 0 || limits.ImageBytes <= 0 ||
+		limits.TopicsPerWorkspace <= 0 {
 		return fmt.Errorf("plan %q contains a non-positive limit", tier)
 	}
 	if limits.FilesPerUpload > limits.FilesPerWorkspace {
@@ -122,7 +127,8 @@ func validateUpgrade(free, pro Limits) error {
 		pro.SourceFileBytes < free.SourceFileBytes ||
 		pro.FilesPerWorkspace < free.FilesPerWorkspace ||
 		pro.FilesPerUpload < free.FilesPerUpload ||
-		pro.ImageBytes < free.ImageBytes {
+		pro.ImageBytes < free.ImageBytes ||
+		pro.TopicsPerWorkspace < free.TopicsPerWorkspace {
 		return errors.New("pro plan limits cannot be lower than free plan limits")
 	}
 	if free.OwnedWorkspaces == 0 && pro.OwnedWorkspaces != 0 {

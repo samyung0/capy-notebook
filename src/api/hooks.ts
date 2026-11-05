@@ -11,6 +11,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
+import type { Answers } from '@/features/quizzes/grade';
 import {
   durationBucket,
   failureReason,
@@ -23,6 +24,7 @@ import {
 } from '@/lib/analytics';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
 import { dropOpen, type OpenKey, takeOpen } from '@/lib/sentOpens';
+import { holdsNoteCopy } from '@/lib/sourceCache';
 import {
   forgetUndoPayload,
   keepUndoPayloads,
@@ -40,6 +42,12 @@ import {
 import { persisted } from './queryPersistence';
 import type {
   AccountStatus,
+  Assignment,
+  AssignmentAttempt,
+  AssignmentFormReq,
+  AssignmentList,
+  AssignmentMark,
+  AssignmentReport,
   Attempt,
   AttemptDetail,
   AttemptParams,
@@ -48,7 +56,6 @@ import type {
   BillingCheckoutReq,
   BillingInfo,
   CalendarEvent,
-  Chapter,
   ChatPrefs,
   ChatStatus,
   CheckQuizQuestionReq,
@@ -62,6 +69,7 @@ import type {
   CreateDiscussionReq,
   CreateEmbeddedMaterialReq,
   CreateEventReq,
+  CreateExtractionReq,
   CreateFlashcardSetReq,
   CreateMaterialReq,
   CreateQuizReq,
@@ -72,20 +80,21 @@ import type {
   EditableQuiz,
   EditorAssetAccess,
   EditorAssetPage,
+  Extraction,
   FileLinks,
   FileListParams,
   FilePage,
   Flashcard,
   FlashcardSet,
   GenerateOptions,
+  HiddenBody,
   IngestSlots,
   InspectSourceImportsReq,
   InspectSourceImportsResponse,
   IntegrationsStatus,
   InvoiceList,
-  ItemAttempts,
   Label,
-  LearningProgress,
+  LearningOverview,
   LibraryFigure,
   Material,
   MaterialCollaborationToken,
@@ -106,7 +115,7 @@ import type {
   PastReview,
   PastReviewParams,
   PendingWorkspaceInvite,
-  PlanStepInput,
+  Practice,
   Privacy,
   PublicFlashcardSetPage,
   PublicQuizPage,
@@ -116,29 +125,27 @@ import type {
   RecentPage,
   RequestAccountDeletionReq,
   RetryProcessingReq,
-  ReviewOverview,
   ReviewResult,
   ReviewSession,
   ReviewStart,
   SearchResult,
   SetModelPrefsReq,
-  SetStudyItemReq,
+  SharingNotice,
   SourceFile,
   SourceUploadPolicy,
   SpendingLimitReq,
-  StudyPlan,
-  StudyPlans,
   StudyPreferences,
   StudySummary,
+  StudyTopics,
   Tag,
   Task,
+  Topic,
   TopUpReq,
   TrashActionReq,
   TrashItem,
   TrashPage,
   UndoEditReq,
   UndoPayload,
-  UpdateChapterReq,
   UpdateCommentReq,
   UpdateConversationReq,
   UpdateEventReq,
@@ -149,6 +156,7 @@ import type {
   UpdateMeReq,
   UpdateStandaloneSharingReq,
   UpdateTaskReq,
+  UpdateTopicReq,
   UpdateWorkspaceMemberReq,
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
@@ -161,6 +169,7 @@ import type {
   WireMessage,
   Workspace,
   WorkspaceCollaborator,
+  WorkspaceDashboard,
   WorkspaceMember,
   WorkspaceRecent,
   WorkspaceStats,
@@ -198,7 +207,7 @@ function refetchIfLast(
   return qc.isMutating({ mutationKey }) === 1 ? refetch() : undefined;
 }
 
-/** Shared key for optimistic file, material and chapter ordering writes. */
+/** Shared key for optimistic file, material and topic ordering writes. */
 const contentMutationKey = (wsId: string) =>
   ['workspace', wsId, 'content'] as const;
 
@@ -207,7 +216,7 @@ function refetchContentIfLast(qc: QueryClient, wsId: string) {
     Promise.all([
       qc.invalidateQueries({ queryKey: qk.files(wsId) }),
       qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
-      qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
+      qc.invalidateQueries({ queryKey: qk.topics(wsId) }),
     ])
   );
 }
@@ -416,6 +425,16 @@ export function applyNotificationEvent(
     applyChatTurn(qc, event.conversationId, event.status);
     return;
   }
+  if (event.type === 'extraction') {
+    void qc
+      .fetchQuery({ ...extractionQuery(event.extractionId), staleTime: 0 })
+      .then((run) => {
+        void qc.invalidateQueries({ queryKey: qk.materials(run.workspaceId) });
+        extractionEndListener?.(run);
+      })
+      .catch(() => undefined);
+    return;
+  }
   // Stripe or the reload worker changed billing. A pending billing save
   // refetches when it settles, so it is left to that refetch.
   if (event.type === 'billing') {
@@ -516,7 +535,16 @@ function applyChatTurn(
 export function useEventStream(wsId: string) {
   const qc = useQueryClient();
   useEffect(() => {
-    if (USE_MSW) return;
+    if (USE_MSW) {
+      // The mock's stand-in for the stream, for what a mock run reports.
+      const heard = (event: Event) =>
+        applyNotificationEvent(
+          qc,
+          (event as CustomEvent<NotificationStreamEvent>).detail
+        );
+      window.addEventListener('capy:mock-stream', heard);
+      return () => window.removeEventListener('capy:mock-stream', heard);
+    }
     let stopped = false;
     let controller: AbortController | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -536,7 +564,7 @@ export function useEventStream(wsId: string) {
         qk.ownedFilesRoot,
       ];
       if (wsId) {
-        keys.push(qk.files(wsId), qk.materials(wsId), qk.chapters(wsId));
+        keys.push(qk.files(wsId), qk.materials(wsId), qk.topics(wsId));
       }
       for (const queryKey of keys) {
         void qc.refetchQueries({ queryKey, type: 'active' });
@@ -546,14 +574,14 @@ export function useEventStream(wsId: string) {
     };
     // One ingest raises several tree events seconds apart and a bulk write
     // raises one per transaction, so a trailing debounce per kind collapses a
-    // burst into one refetch. Chapters ride along: a row that arrives in a
-    // chapter this tab has not loaded would otherwise render nowhere. A
+    // burst into one refetch. Topics ride along: a row that arrives in a
+    // topic this tab has not loaded would otherwise render nowhere. A
     // hidden tab only marks the lists stale; refetch-on-focus reads them when
     // it comes back.
     const refetchTree = (kind: 'files' | 'materials') => {
       const keys: QueryKey[] = [
         kind === 'files' ? qk.files(wsId) : qk.materials(wsId),
-        qk.chapters(wsId),
+        qk.topics(wsId),
       ];
       for (const queryKey of keys) {
         void qc.invalidateQueries({
@@ -955,20 +983,24 @@ export function useImportSources(
       /** The submission and its picked-item count; one notification for all. */
       batchId: string;
       batchTotal: number;
-      chapterId?: string | null;
-      chapterName?: string | null;
+      topicId?: string | null;
+      topicName?: string | null;
       driveIds?: string[];
       fileIds: string[];
+      /** The files start hidden from members; a workspace import only. */
+      hidden?: boolean;
       parseMode?: 'fast' | 'none';
       provider: 'google' | 'microsoft';
       requestId?: string;
       signal?: AbortSignal;
     }) => {
-      const { signal, chapterId, chapterName, ...request } = body;
+      const { signal, topicId, topicName, hidden, ...request } = body;
       return api.post<unknown>(
         `${sourcesPath(workspaceId)}/import`,
-        // A standalone file has no chapter.
-        workspaceId ? { ...request, chapterId, chapterName } : request,
+        // A standalone file has no topic or members.
+        workspaceId
+          ? { ...request, hidden: hidden || undefined, topicId, topicName }
+          : request,
         { signal }
       );
     },
@@ -1191,7 +1223,7 @@ export function useRecordOpen() {
   );
 }
 
-/* ---------------- chapters & files ---------------- */
+/* ---------------- topics & files ---------------- */
 /** A presigned pair is read once, at fetch time, by whichever consumer mounts
  * it: nothing tracks expiresAt, nothing invalidates it, and neither focus nor
  * reconnect refetches, so a mounted view never sees a changed URL. gcTime 0
@@ -1226,16 +1258,16 @@ export const useSourceUploadPolicy = (
   options?: QueryUiOptions
 ) => useQuery({ ...sourceUploadPolicyQuery(wsId), meta: queryMeta(options) });
 
-export const chaptersQuery = (wsId: string) =>
+export const topicsQuery = (wsId: string) =>
   queryOptions({
     ...persisted,
     enabled: !!wsId,
-    queryFn: () => api.get<Chapter[]>(`/workspaces/${wsId}/chapters`),
-    queryKey: qk.chapters(wsId),
+    queryFn: () => api.get<Topic[]>(`/workspaces/${wsId}/topics`),
+    queryKey: qk.topics(wsId),
   });
-export const useChapters = (wsId: string, options?: QueryUiOptions) =>
+export const useTopics = (wsId: string, options?: QueryUiOptions) =>
   useQuery({
-    ...chaptersQuery(wsId),
+    ...topicsQuery(wsId),
     meta: queryMeta(options),
     refetchOnWindowFocus: true,
   });
@@ -1278,8 +1310,56 @@ export const useFiles = (wsId: string, options?: QueryUiOptions) =>
     refetchOnWindowFocus: true,
   });
 
+/** A Make a quiz run's row: its status, the questions read so far, and at
+ * the end its quiz or error. */
+export const extractionQuery = (id: string) =>
+  queryOptions({
+    queryFn: () => api.get<Extraction>(`/extractions/${id}`),
+    queryKey: qk.extraction(id),
+  });
+
+const EXTRACTION_POLL_MS = 3000;
+
+/** Follows a run: the event stream says when it ends, and the count of
+ * questions read so far is only on the row, so it is read while running. */
+export const useExtraction = (id: string, options?: QueryUiOptions) =>
+  useQuery({
+    ...extractionQuery(id),
+    meta: queryMeta(options),
+    refetchInterval: (query) =>
+      query.state.data?.status === 'running' ? EXTRACTION_POLL_MS : false,
+  });
+
+/** Starts a run; refusals are shown beside the page picker's button. */
+export function useCreateExtraction(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (body: CreateExtractionReq) =>
+      api.post<Extraction>(`/workspaces/${wsId}/extractions`, body),
+    onSuccess: (run) => qc.setQueryData(qk.extraction(run.id), run),
+  });
+}
+
+/** Who hears a run end: the app's toast, set once at the start. */
+let extractionEndListener: ((run: Extraction) => void) | undefined;
+export function onExtractionEnd(listener: (run: Extraction) => void) {
+  extractionEndListener = listener;
+  return () => {
+    if (extractionEndListener === listener) extractionEndListener = undefined;
+  };
+}
+
 /** The empty viewer's quick-open grid: the workspace's four newest files and
  * materials with thumbnails and previews, for members and link readers alike. */
+/** The workspace Dashboard's header and Activity (boards H1, H2). */
+export const useWorkspaceDashboard = (wsId: string) =>
+  useQuery({
+    meta: queryMeta({ errorBoundary: false }),
+    queryFn: () => api.get<WorkspaceDashboard>(`/workspaces/${wsId}/dashboard`),
+    queryKey: qk.workspaceDashboard(wsId),
+  });
+
 export const useWorkspaceRecent = (wsId: string) =>
   useQuery({
     meta: queryMeta({ errorBoundary: false }),
@@ -1389,33 +1469,33 @@ export function useUpdateFile(wsId: string) {
       qc.invalidateQueries({ queryKey: qk.files(wsId) });
       qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       qc.invalidateQueries({ queryKey: qk.file(file.id) });
-      qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+      qc.invalidateQueries({ queryKey: qk.topics(wsId) });
     },
   });
 }
-/** File a source under a chapter (membership), or unfile it (chapterId=null).
+/** File a source under a topic (membership), or unfile it (topicId=null).
  * The API uses an empty-string sentinel to unfile; null maps to "". Optimistic:
- * patches the files cache, rolls back on error, reconciles chapters on settle. */
+ * patches the files cache, rolls back on error, reconciles topics on settle. */
 export function useMoveFile(wsId: string) {
   const qc = useQueryClient();
   return useMutation<
     SourceFile,
     Error,
-    { id: string; chapterId: string | null },
+    { id: string; topicId: string | null },
     { prev?: SourceFile[] }
   >({
     meta: { errorToast: false },
-    mutationFn: ({ id, chapterId }: { id: string; chapterId: string | null }) =>
-      api.patch<SourceFile>(`/files/${id}`, { chapterId: chapterId ?? '' }),
+    mutationFn: ({ id, topicId }: { id: string; topicId: string | null }) =>
+      api.patch<SourceFile>(`/files/${id}`, { topicId: topicId ?? '' }),
     mutationKey: contentMutationKey(wsId),
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.files(wsId), ctx.prev);
     },
-    onMutate: async ({ id, chapterId }) => {
+    onMutate: async ({ id, topicId }) => {
       await qc.cancelQueries({ queryKey: qk.files(wsId) });
       const prev = qc.getQueryData<SourceFile[]>(qk.files(wsId));
       qc.setQueryData<SourceFile[]>(qk.files(wsId), (list) =>
-        list?.map((f) => (f.id === id ? { ...f, chapterId } : f))
+        list?.map((f) => (f.id === id ? { ...f, topicId } : f))
       );
       return { prev };
     },
@@ -1423,9 +1503,7 @@ export function useMoveFile(wsId: string) {
   });
 }
 /** Move files into a workspace the caller edits (never out of one). `from`
- * holds the workspaces they leave, whose lists, chapters, stats and study
- * progress change too. A 409 `progress_loss` asks before dropping study
- * progress: resend with `confirmProgressLoss`. */
+ * holds the workspaces they leave, whose lists, topics and stats change too. */
 export function useMoveFiles(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
@@ -1439,15 +1517,13 @@ export function useMoveFiles(options?: MutationUiOptions) {
         qc.invalidateQueries({ queryKey: qk.file(file.id) });
       qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       qc.invalidateQueries({ queryKey: qk.recent });
-      // The left workspaces' progress and plan steps for the files are gone.
-      void invalidateStudy(qc);
     },
   });
 }
 function invalidateAfterFileDelete(qc: QueryClient, wsId: string) {
   qc.invalidateQueries({ queryKey: qk.files(wsId) });
   qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
-  qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+  qc.invalidateQueries({ queryKey: qk.topics(wsId) });
   qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
   qc.invalidateQueries({ queryKey: qk.trash() });
 }
@@ -1572,7 +1648,7 @@ function invalidateAfterTrashChange(qc: QueryClient, item: TrashItem) {
   if (item.workspaceId) {
     qc.invalidateQueries({ queryKey: qk.files(item.workspaceId) });
     qc.invalidateQueries({ queryKey: qk.materials(item.workspaceId) });
-    qc.invalidateQueries({ queryKey: qk.chapters(item.workspaceId) });
+    qc.invalidateQueries({ queryKey: qk.topics(item.workspaceId) });
     qc.invalidateQueries({ queryKey: qk.workspaceStats(item.workspaceId) });
     qc.invalidateQueries({ queryKey: qk.workspace(item.workspaceId) });
   }
@@ -1607,40 +1683,40 @@ export function usePurgeTrashed() {
   });
 }
 
-export function useAddChapter(wsId: string) {
+export function useAddTopic(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (name: string) =>
-      api.post<Chapter>(`/workspaces/${wsId}/chapters`, { name }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
+      api.post<Topic>(`/workspaces/${wsId}/topics`, { name }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.topics(wsId) }),
   });
 }
-export function useUpdateChapter(wsId: string) {
+export function useUpdateTopic(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: UpdateChapterReq & { id: string }) =>
-      api.patch<Chapter>(`/chapters/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
+    mutationFn: ({ id, ...body }: UpdateTopicReq & { id: string }) =>
+      api.patch<Topic>(`/topics/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.topics(wsId) }),
   });
 }
-export function useReorderChapters(wsId: string) {
+export function useReorderTopics(wsId: string) {
   const qc = useQueryClient();
-  return useMutation<void, Error, string[], { prev?: Chapter[] }>({
+  return useMutation<void, Error, string[], { prev?: Topic[] }>({
     mutationFn: (ids) =>
-      api.post<void>(`/workspaces/${wsId}/chapters/reorder`, { ids }),
+      api.post<void>(`/workspaces/${wsId}/topics/reorder`, { ids }),
     mutationKey: contentMutationKey(wsId),
     onError: (_error, _ids, context) => {
-      if (context?.prev) qc.setQueryData(qk.chapters(wsId), context.prev);
+      if (context?.prev) qc.setQueryData(qk.topics(wsId), context.prev);
     },
     onMutate: async (ids) => {
-      await qc.cancelQueries({ queryKey: qk.chapters(wsId) });
-      const prev = qc.getQueryData<Chapter[]>(qk.chapters(wsId));
+      await qc.cancelQueries({ queryKey: qk.topics(wsId) });
+      const prev = qc.getQueryData<Topic[]>(qk.topics(wsId));
       const positions = new Map(ids.map((id, order) => [id, order]));
-      qc.setQueryData<Chapter[]>(qk.chapters(wsId), (list) =>
+      qc.setQueryData<Topic[]>(qk.topics(wsId), (list) =>
         list
-          ?.map((chapter) => {
-            const order = positions.get(chapter.id);
-            return order === undefined ? chapter : { ...chapter, order };
+          ?.map((topic) => {
+            const order = positions.get(topic.id);
+            return order === undefined ? topic : { ...topic, order };
           })
           .sort((a, b) => a.order - b.order)
       );
@@ -1656,20 +1732,20 @@ export function useReorderContent(wsId: string) {
   return useMutation<
     void,
     Error,
-    { chapterId: string | null; items: ContentOrderItem[] },
+    { topicId: string | null; items: ContentOrderItem[] },
     { prevFiles?: SourceFile[]; prevMaterials?: MaterialRef[] }
   >({
     meta: { errorToast: false },
     mutationFn: ({
-      chapterId,
+      topicId,
       items,
     }: {
-      chapterId: string | null;
+      topicId: string | null;
       items: ContentOrderItem[];
     }) =>
       api.post<void>(`/workspaces/${wsId}/content/reorder`, {
-        chapterId,
         items,
+        topicId,
       }),
     mutationKey: contentMutationKey(wsId),
     onError: (_error, _variables, context) => {
@@ -1678,7 +1754,7 @@ export function useReorderContent(wsId: string) {
       if (context?.prevMaterials)
         qc.setQueryData(qk.materials(wsId), context.prevMaterials);
     },
-    onMutate: async ({ chapterId, items }) => {
+    onMutate: async ({ topicId, items }) => {
       await Promise.all([
         qc.cancelQueries({ queryKey: qk.files(wsId) }),
         qc.cancelQueries({ queryKey: qk.materials(wsId) }),
@@ -1691,9 +1767,7 @@ export function useReorderContent(wsId: string) {
       qc.setQueryData<SourceFile[]>(qk.files(wsId), (list) =>
         list?.map((file) => {
           const position = positions.get(`file:${file.id}`);
-          return position === undefined
-            ? file
-            : { ...file, chapterId, position };
+          return position === undefined ? file : { ...file, position, topicId };
         })
       );
       qc.setQueryData<MaterialRef[]>(qk.materials(wsId), (list) =>
@@ -1701,7 +1775,7 @@ export function useReorderContent(wsId: string) {
           const position = positions.get(`material:${material.id}`);
           return position === undefined
             ? material
-            : { ...material, chapterId, position };
+            : { ...material, position, topicId };
         })
       );
       return { prevFiles, prevMaterials };
@@ -1710,12 +1784,12 @@ export function useReorderContent(wsId: string) {
   });
 }
 
-export function useDeleteChapter(wsId: string) {
+export function useDeleteTopic(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/chapters/${id}`),
+    mutationFn: (id: string) => api.del<void>(`/topics/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+      qc.invalidateQueries({ queryKey: qk.topics(wsId) });
       qc.invalidateQueries({ queryKey: qk.files(wsId) });
     },
   });
@@ -1828,14 +1902,15 @@ export function useUploadSource(wsId: string | null) {
     mutationFn: async ({
       file,
       kind,
-      chapterId,
-      chapterName,
+      topicId,
+      topicName,
       parseMode,
       estimatedCreditMicros,
       pageCount,
       durationSeconds,
       batchId,
       batchTotal,
+      hidden,
       onQueued,
       onUploadProgress,
       signal,
@@ -1846,8 +1921,11 @@ export function useUploadSource(wsId: string | null) {
        * sends one notification once every file of the batch settles. */
       batchId: string;
       batchTotal: number;
-      chapterId?: string | null;
-      chapterName?: string | null;
+      topicId?: string | null;
+      topicName?: string | null;
+      /** The file starts hidden from members (Who can see it); a workspace
+       * upload only. */
+      hidden?: boolean;
       /** fast = OpenDataLoader, with OCR on text-less pages; none = store-only
        * for non-text kinds (no parse, not indexed). Text kinds (txt/md/json)
        * still index under none — there is no parse route to pick. */
@@ -1871,9 +1949,13 @@ export function useUploadSource(wsId: string | null) {
       const metadata = {
         batchId,
         batchTotal,
-        // A standalone file has no chapter: the fields stay out.
+        // A standalone file has no topic or members: the fields stay out.
         ...(wsId
-          ? { chapterId: chapterId ?? null, chapterName: chapterName ?? null }
+          ? {
+              hidden: hidden || undefined,
+              topicId: topicId ?? null,
+              topicName: topicName ?? null,
+            }
           : {}),
         contentType: file.type || 'application/octet-stream',
         durationSeconds: durationSeconds || undefined,
@@ -1915,7 +1997,7 @@ export function useUploadSource(wsId: string | null) {
           if (!next.some((f) => f.id === file.id)) next.push(added);
           return next;
         });
-        qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+        qc.invalidateQueries({ queryKey: qk.topics(wsId) });
         // The file counts against the workspace from upload, not from ingest.
         qc.invalidateQueries({ queryKey: qk.workspace(wsId) });
         qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
@@ -2092,17 +2174,18 @@ export function useGenerate(wsId: string, options?: MutationUiOptions) {
     meta: mutationMeta(options),
     mutationFn: (opts: GenerateOptions) =>
       api.post<unknown>(`/workspaces/${wsId}/generate`, opts),
-    onError: (error, opts) => {
+    onError: (error) => {
       track('material_generate_failed', {
-        kind: opts.kind,
+        kind: 'quiz',
         reason: failureReason(error),
       });
     },
-    onSuccess: async (_data, opts) => {
-      track('material_generated', { kind: opts.kind, workspaceId: wsId });
+    onSuccess: async () => {
+      track('material_generated', { kind: 'quiz', workspaceId: wsId });
       await Promise.all([
         qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
         qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot }),
+        qc.invalidateQueries({ queryKey: qk.practice(wsId) }),
       ]);
     },
   });
@@ -2110,7 +2193,7 @@ export function useGenerate(wsId: string, options?: MutationUiOptions) {
 
 /* ---------------- study materials ---------------- */
 /** Unified, workspace-scoped list of study materials (mindmaps, diagrams,
- * quizzes, flashcardSets) for the left panel. Not chapter-scoped. */
+ * quizzes, flashcardSets) for the left panel. Not topic-scoped. */
 export const materialsQuery = (wsId: string) =>
   queryOptions({
     ...persisted,
@@ -2128,9 +2211,27 @@ export const useMaterials = (wsId: string, options?: QueryUiOptions) =>
 export const materialQuery = (id: string | null) =>
   queryOptions({
     enabled: !!id,
-    queryFn: () => api.get<Material>(`/materials/${id}`),
+    // A note this device keeps a copy of reads without its body: the copy
+    // paints it and the room answers the difference (Epo 2026-11-04). A body
+    // this read already holds stays: what shows from it must not go away.
+    queryFn: async ({ client }): Promise<Material> => {
+      if (!(id && holdsNoteCopy(id))) return api.get(`/materials/${id}`);
+      const read = await api.get<Material>(`/materials/${id}?noContent=true`);
+      const held = client.getQueryData<Material>(qk.material(id));
+      return held && !held.contentOmitted
+        ? { ...read, content: held.content }
+        : { ...read, contentOmitted: true };
+    },
     queryKey: qk.material(id ?? ''),
     staleTime: 5000,
+  });
+
+/** A read that needs the body whatever the device holds (an export). */
+export const materialWithBodyQuery = (id: string) =>
+  queryOptions({
+    queryFn: () => api.get<Material>(`/materials/${id}`),
+    queryKey: [...qk.material(id), 'body'],
+    staleTime: 0,
   });
 export const useMaterial = (id: string | null, options?: QueryUiOptions) =>
   useQuery({ ...materialQuery(id), meta: queryMeta(options) });
@@ -2176,7 +2277,7 @@ export function useCreateStandaloneNote() {
   });
 }
 
-/** Copy a material into a workspace the caller edits (in a chapter, an
+/** Copy a material into a workspace the caller edits (in a topic, an
  * existing one or one named), or with no workspace into a private copy. */
 export function useCloneMaterial(options?: MutationUiOptions) {
   const qc = useQueryClient();
@@ -2194,13 +2295,13 @@ export function useCloneMaterial(options?: MutationUiOptions) {
       // Explore lists clone counts.
       qc.invalidateQueries({ queryKey: qk.exploreQuizzes });
       qc.invalidateQueries({ queryKey: qk.exploreFlashcardSets });
-      if (body.chapterName && material.workspaceId)
-        qc.invalidateQueries({ queryKey: qk.chapters(material.workspaceId) });
+      if (body.topicName && material.workspaceId)
+        qc.invalidateQueries({ queryKey: qk.topics(material.workspaceId) });
     },
   });
 }
 
-/** Copy a file into a workspace the caller edits, in a chapter or none, or
+/** Copy a file into a workspace the caller edits, in a topic or none, or
  * into No workspace (no workspaceId). */
 export function useCloneFile(options?: MutationUiOptions) {
   const qc = useQueryClient();
@@ -2213,8 +2314,8 @@ export function useCloneFile(options?: MutationUiOptions) {
       if (file.workspaceId)
         qc.invalidateQueries({ queryKey: qk.files(file.workspaceId) });
       qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
-      if (body.chapterName)
-        qc.invalidateQueries({ queryKey: qk.chapters(file.workspaceId) });
+      if (body.topicName)
+        qc.invalidateQueries({ queryKey: qk.topics(file.workspaceId) });
     },
   });
 }
@@ -2245,6 +2346,32 @@ export function useUpdateMaterialSharing() {
     onSuccess: (material) => {
       qc.setQueryData<Material>(qk.material(material.id), material);
       invalidateOwnedMaterials(qc);
+    },
+  });
+}
+
+/** Hide a workspace file or material from the workspace's members, or show
+ * it again (Epo 2026-11-03): owners and editors, from the item's menu. */
+export function useSetHidden(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      type,
+      hidden,
+    }: HiddenBody & { id: string; type: 'file' | 'material' }) =>
+      api.put<HiddenBody>(
+        `/${type === 'file' ? 'files' : 'materials'}/${id}/hidden`,
+        { hidden }
+      ),
+    onSuccess: (_result, { id, type }) => {
+      if (type === 'file') {
+        qc.invalidateQueries({ queryKey: qk.files(wsId) });
+        qc.invalidateQueries({ queryKey: qk.file(id) });
+      } else {
+        qc.invalidateQueries({ queryKey: qk.materials(wsId) });
+        qc.invalidateQueries({ queryKey: qk.material(id) });
+      }
     },
   });
 }
@@ -2322,9 +2449,9 @@ export function useUpdateMaterial(wsId: string) {
           ? {
               ...current,
               ...(patch.title === undefined ? {} : { title: patch.title }),
-              ...(patch.scopeChapters === undefined
+              ...(patch.scopeTopics === undefined
                 ? {}
-                : { scopeChapters: patch.scopeChapters }),
+                : { scopeTopics: patch.scopeTopics }),
               ...(patch.scopeFileNames === undefined
                 ? {}
                 : { scopeFileNames: patch.scopeFileNames }),
@@ -2336,7 +2463,7 @@ export function useUpdateMaterial(wsId: string) {
       );
       if (
         patch.title !== undefined ||
-        patch.scopeChapters !== undefined ||
+        patch.scopeTopics !== undefined ||
         patch.scopeFileNames !== undefined
       ) {
         qc.invalidateQueries({ queryKey: qk.materials(wsId) });
@@ -2395,10 +2522,10 @@ export const useWorkspaceCollaborators = (
 /** The owner's pending invites: every typed address, as typed. */
 export const useWorkspaceInvites = (
   workspaceId: string,
-  options?: QueryUiOptions
+  options?: QueryUiOptions & { enabled?: boolean }
 ) =>
   useQuery({
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && options?.enabled !== false,
     meta: queryMeta(options),
     queryFn: () =>
       api.get<PendingWorkspaceInvite[]>(`/workspaces/${workspaceId}/invites`),
@@ -2590,21 +2717,28 @@ export const getMaterialCollaborationToken = (
       return token;
     });
 
+/** A material's room token, as its editor asks for it. */
+export const materialTokenQuery = (materialId: string) =>
+  queryOptions({
+    meta: queryMeta({ errorBoundary: false }),
+    queryFn: () => getMaterialCollaborationToken(materialId),
+    queryKey: ['material', materialId, 'collaboration-token'],
+    staleTime: 3 * 60 * 1000,
+  });
+
 export function useMaterialCollaborationToken(
   materialId: string,
   enabled = true,
   options?: QueryUiOptions
 ) {
   return useQuery({
+    ...materialTokenQuery(materialId),
     enabled: !!materialId && enabled,
     meta: queryMeta(options),
-    queryFn: () => getMaterialCollaborationToken(materialId),
-    queryKey: ['material', materialId, 'collaboration-token'],
-    staleTime: 3 * 60 * 1000,
   });
 }
 
-/** File a material under a chapter (membership), or unfile it (chapterId=null).
+/** File a material under a topic (membership), or unfile it (topicId=null).
  * The API uses an empty-string sentinel to unfile; null maps to "". Optimistic:
  * patches the materials list + single-material caches, rolls back on error. */
 export function useMoveMaterial(wsId: string) {
@@ -2612,28 +2746,28 @@ export function useMoveMaterial(wsId: string) {
   return useMutation<
     MaterialUpdateResult,
     Error,
-    { id: string; chapterId: string | null },
+    { id: string; topicId: string | null },
     { prevList?: MaterialRef[]; prevMaterial?: Material }
   >({
     meta: { errorToast: false },
-    mutationFn: ({ id, chapterId }: { id: string; chapterId: string | null }) =>
+    mutationFn: ({ id, topicId }: { id: string; topicId: string | null }) =>
       api.patch<MaterialUpdateResult>(`/materials/${id}/metadata`, {
-        chapterId: chapterId ?? '',
+        topicId: topicId ?? '',
       }),
     mutationKey: contentMutationKey(wsId),
     onError: (_e, { id }, ctx) => {
       if (ctx?.prevList) qc.setQueryData(qk.materials(wsId), ctx.prevList);
       if (ctx?.prevMaterial) qc.setQueryData(qk.material(id), ctx.prevMaterial);
     },
-    onMutate: async ({ id, chapterId }) => {
+    onMutate: async ({ id, topicId }) => {
       await qc.cancelQueries({ queryKey: qk.materials(wsId) });
       const prevList = qc.getQueryData<MaterialRef[]>(qk.materials(wsId));
       const prevMaterial = qc.getQueryData<Material>(qk.material(id));
       qc.setQueryData<MaterialRef[]>(qk.materials(wsId), (prev) =>
-        prev?.map((r) => (r.id === id ? { ...r, chapterId } : r))
+        prev?.map((r) => (r.id === id ? { ...r, topicId } : r))
       );
       qc.setQueryData<Material>(qk.material(id), (prev) =>
-        prev ? { ...prev, chapterId } : prev
+        prev ? { ...prev, topicId } : prev
       );
       return { prevList, prevMaterial };
     },
@@ -2836,107 +2970,240 @@ export const workspaceStudyQuery = (workspaceId: string) =>
     queryFn: () => api.get<StudySummary>(`/workspaces/${workspaceId}/study`),
     queryKey: qk.study(workspaceId),
   });
-/** The requester's own progress in a workspace: marks, Study tab, Continue. */
+/** The requester's own progress in a workspace; Workspace settings → Study
+ * reads `enabled` (Hide study progress). */
 export const useWorkspaceStudy = (
   workspaceId: string,
   options?: QueryUiOptions
 ) =>
   useQuery({ ...workspaceStudyQuery(workspaceId), meta: queryMeta(options) });
 
-/** The workspace's summary with its review parts (Reviewable, Quick review,
- * Continue review) drawn from one of the user's plans kept in it. */
-export const usePlanStudy = (
-  workspaceId: string,
-  planId: string | undefined,
-  options?: QueryUiOptions
-) =>
-  useQuery({
-    ...persisted,
-    enabled: !!planId,
-    meta: queryMeta(options),
-    queryFn: () =>
-      api.get<StudySummary>(
-        `/workspaces/${workspaceId}/study${listSearch({ planId }, '')}`
-      ),
-    queryKey: qk.planStudy(workspaceId, planId ?? ''),
-  });
-
-/** Each quiz's and set's attempt count and latest attempts in a workspace,
- * for the Study progress page; refreshed with the Study tab. */
-export const workspaceAttemptsQuery = (workspaceId: string) =>
+/** The workspace's Practice page: suggestions, every quiz members can see
+ * and the caller's own topic reviews; owners and editors also get counts. */
+export const practiceQuery = (workspaceId: string) =>
   queryOptions({
-    queryFn: () =>
-      api.get<{ items: ItemAttempts[] }>(
-        `/workspaces/${workspaceId}/study/attempts`
-      ),
-    queryKey: qk.studyAttempts(workspaceId),
+    queryFn: () => api.get<Practice>(`/workspaces/${workspaceId}/practice`),
+    queryKey: qk.practice(workspaceId),
   });
-export const useWorkspaceAttempts = (
+export const usePractice = (
   workspaceId: string,
-  options?: QueryUiOptions
+  options?: QueryUiOptions & { enabled?: boolean }
 ) =>
   useQuery({
-    ...workspaceAttemptsQuery(workspaceId),
+    ...practiceQuery(workspaceId),
+    enabled: options?.enabled,
     meta: queryMeta(options),
   });
 
-/** Refreshes the Study tab, marks, review and Learning after practice in
- * `workspaceId`, or in every workspace when the caller does not know which. */
+/** A class's assignments: all of them for its owner and teaching assistants,
+ * a member's own otherwise. */
+export const useAssignments = (
+  workspaceId: string,
+  options?: QueryUiOptions & { enabled?: boolean }
+) =>
+  useQuery({
+    enabled: options?.enabled,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<AssignmentList>(`/workspaces/${workspaceId}/assignments`),
+    queryKey: qk.assignments(workspaceId),
+  });
+
+/** Whether this class member is yet to be told what they share (board V1). */
+export const useSharingNotice = (workspaceId: string, enabled: boolean) =>
+  useQuery({
+    enabled,
+    meta: queryMeta({ errorBoundary: false }),
+    queryFn: () =>
+      api.get<SharingNotice>(`/workspaces/${workspaceId}/sharing-notice`),
+    queryKey: qk.sharingNotice(workspaceId),
+  });
+
+export function useMarkSharingNoticeSeen(workspaceId: string) {
+  return useMutation({
+    mutationFn: () =>
+      api.put<void>(`/workspaces/${workspaceId}/sharing-notice`),
+  });
+}
+
+export const useAssignment = (id: string, options?: QueryUiOptions) =>
+  useQuery({
+    enabled: !!id,
+    meta: queryMeta(options),
+    queryFn: () => api.get<Assignment>(`/assignments/${id}`),
+    queryKey: qk.assignment(id),
+  });
+
+export const useAssignmentReport = (id: string, options?: QueryUiOptions) =>
+  useQuery({
+    meta: queryMeta(options),
+    queryFn: () => api.get<AssignmentReport>(`/assignments/${id}/report`),
+    queryKey: qk.assignmentReport(id),
+  });
+
+export const useAssignmentAttempt = (
+  id: string,
+  options?: QueryUiOptions & { enabled?: boolean }
+) =>
+  useQuery({
+    enabled: options?.enabled,
+    meta: queryMeta(options),
+    queryFn: () => api.get<AssignmentAttempt>(`/assignment-attempts/${id}`),
+    queryKey: qk.assignmentAttempt(id),
+    // Every opening reads it afresh: a running attempt's answers and the clock
+    // its timer counts from must not come from a cache. It holds typed answers,
+    // so a refocus doesn't replace them.
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
+  });
+
+/** After a write: the workspace's lists, the Dashboard and this assignment. */
+function refreshAssignment(
+  qc: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  id?: string
+) {
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: qk.study(workspaceId) }),
+    qc.invalidateQueries({ queryKey: qk.workspaceDashboard(workspaceId) }),
+    // A quiz's row shows its assignment's icon while it is open.
+    qc.invalidateQueries({ queryKey: qk.materials(workspaceId) }),
+    qc.invalidateQueries({ queryKey: qk.recent }),
+    id
+      ? qc.invalidateQueries({ queryKey: qk.assignment(id) })
+      : Promise.resolve(),
+  ]);
+}
+
+export function useCreateAssignment(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (body: AssignmentFormReq) =>
+      api.post<Assignment>(`/workspaces/${workspaceId}/assignments`, body),
+    onSuccess: () => refreshAssignment(qc, workspaceId),
+  });
+}
+
+export function useUpdateAssignment(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (body: AssignmentFormReq) =>
+      api.put<Assignment>(`/assignments/${id}`, body),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
+export function useDeleteAssignment(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/assignments/${id}`),
+    onSuccess: () => refreshAssignment(qc, workspaceId),
+  });
+}
+
+export function usePublishAssignment(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<Assignment>(`/assignments/${id}/publish`, {}),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
+export function useSetAssignmentClosed(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (closed: boolean) =>
+      api.put<Assignment>(`/assignments/${id}/closed`, { closed }),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
+export function useSetAssignmentDone(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ done, id }: { done: boolean; id: string }) =>
+      api.put<void>(`/assignments/${id}/done`, { done }),
+    onSettled: (_data, _error, { id }) =>
+      refreshAssignment(qc, workspaceId, id),
+  });
+}
+
+export function useStartAssignment(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.post<AssignmentAttempt>(`/assignments/${id}/start`, {}),
+    onSuccess: (attempt) => {
+      qc.setQueryData(qk.assignmentAttempt(attempt.id), attempt);
+      return refreshAssignment(qc, workspaceId, attempt.assignmentId);
+    },
+  });
+}
+
+/** Saves a running attempt's answers: no toast, the page says Saved or not. */
+export const saveAssignmentAnswers = (attemptId: string, answers: Answers) =>
+  api.put<void>(`/assignment-attempts/${attemptId}/answers`, { answers });
+
+export function useSubmitAssignmentAttempt(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ answers, id }: { answers: Answers; id: string }) =>
+      api.post<AssignmentAttempt>(`/assignment-attempts/${id}/submit`, {
+        answers,
+      }),
+    onSuccess: (attempt) => {
+      qc.setQueryData(qk.assignmentAttempt(attempt.id), attempt);
+      return refreshAssignment(qc, workspaceId, attempt.assignmentId);
+    },
+  });
+}
+
+export function useMarkAssignmentAnswer(
+  workspaceId: string,
+  assignmentId: string
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      attemptId,
+      mark,
+    }: {
+      attemptId: string;
+      mark: AssignmentMark;
+    }) =>
+      api.post<AssignmentAttempt>(
+        `/assignment-attempts/${attemptId}/marks`,
+        mark
+      ),
+    onSuccess: (attempt) => {
+      qc.setQueryData(qk.assignmentAttempt(attempt.id), attempt);
+      return Promise.all([
+        refreshAssignment(qc, workspaceId, assignmentId),
+        qc.invalidateQueries({ queryKey: qk.assignmentReport(assignmentId) }),
+      ]);
+    },
+  });
+}
+
+/** Refreshes Practice and review after practice in `workspaceId`, or in every
+ * workspace when the caller does not know which. */
 export function invalidateStudy(
   qc: ReturnType<typeof useQueryClient>,
   workspaceId?: string
 ) {
-  // qk.study and qk.workspaceReview: ['workspace', id, 'study' | 'review'];
-  // every workspace's plans and plan summaries, since a plan counts steps
-  // and draws review items from other workspaces.
+  // qk.study, qk.practice and qk.workspaceReview: ['workspace', id,
+  // 'study' | 'review', ...].
   return Promise.all([
     qc.invalidateQueries({
-      predicate: ({ queryKey: [scope, id, kind, part] }) =>
+      predicate: ({ queryKey: [scope, id, kind] }) =>
         scope === 'workspace' &&
-        (((!workspaceId || id === workspaceId) &&
-          (kind === 'study' || kind === 'review')) ||
-          (kind === 'study' && (part === 'plans' || part === 'plan'))),
+        (!workspaceId || id === workspaceId) &&
+        (kind === 'study' || kind === 'review'),
     }),
     qc.invalidateQueries({ queryKey: qk.reviewRoot }),
-    qc.invalidateQueries({ queryKey: qk.learningRoot }),
   ]);
-}
-
-/** Mark as read (done), Stop tracking (removed), or untouched again (null). */
-export function useSetStudyItem(workspaceId: string) {
-  const qc = useQueryClient();
-  return useMutation<void, Error, SetStudyItemReq, { prev?: StudySummary }>({
-    mutationFn: (body) =>
-      api.put<void>(`/workspaces/${workspaceId}/study/items`, body),
-    mutationKey: qk.study(workspaceId),
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(qk.study(workspaceId), ctx.prev);
-    },
-    // The read toggle and row marks flip at once; the refetch settles it.
-    onMutate: async ({ fileId, materialId, state }) => {
-      await qc.cancelQueries({ queryKey: qk.study(workspaceId) });
-      const prev = qc.getQueryData<StudySummary>(qk.study(workspaceId));
-      qc.setQueryData<StudySummary>(qk.study(workspaceId), (summary) => {
-        if (!summary) return summary;
-        const items = summary.items.filter((it) =>
-          fileId ? it.fileId !== fileId : it.materialId !== materialId
-        );
-        if (state)
-          items.push({
-            fileId,
-            materialId,
-            state,
-            updatedAt: new Date().toISOString(),
-          });
-        return { ...summary, items };
-      });
-      return { prev };
-    },
-    onSettled: () =>
-      refetchIfLast(qc, qk.study(workspaceId), () =>
-        invalidateStudy(qc, workspaceId)
-      ),
-  });
 }
 
 export function useSetWorkspaceStudyEnabled(workspaceId: string) {
@@ -2948,21 +3215,13 @@ export function useSetWorkspaceStudyEnabled(workspaceId: string) {
   });
 }
 
-export function useResetWorkspaceStudy(workspaceId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.post<void>(`/workspaces/${workspaceId}/study/reset`),
-    onSuccess: () => invalidateStudy(qc, workspaceId),
-  });
-}
-
 /** A new review session: a suggestion's items, or the whole workspace's
  * without a mode. Fetched fresh for each session. */
 export const workspaceReviewQuery = (workspaceId: string, start: ReviewStart) =>
   queryOptions({
     queryFn: () =>
       api.get<ReviewSession>(
-        `/workspaces/${workspaceId}/review${listSearch({ ...start }, '')}`
+        `/workspaces/${workspaceId}/review${listSearch({ ...start, count: start.count ? String(start.count) : undefined }, '')}`
       ),
     queryKey: qk.workspaceReview(workspaceId, start),
     staleTime: 0,
@@ -2970,12 +3229,15 @@ export const workspaceReviewQuery = (workspaceId: string, start: ReviewStart) =>
 export const useWorkspaceReview = (
   workspaceId: string,
   start: ReviewStart,
-  options?: QueryUiOptions & { enabled?: boolean }
+  options?: QueryUiOptions & { enabled?: boolean; keepPrevious?: boolean }
 ) =>
   useQuery({
     ...workspaceReviewQuery(workspaceId, start),
     enabled: options?.enabled,
     meta: queryMeta(options),
+    placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
+    // The batch on screen is the session: a refocus must not redraw it.
+    refetchOnWindowFocus: false,
   });
 
 /** An unfinished session's items still to answer, for Continue. */
@@ -3013,15 +3275,39 @@ export function useFinishReviewSession() {
   });
 }
 
-/** Learning → Review: suggestions, sessions to continue, every workspace. */
-export const reviewOverviewQuery = () =>
+/** Learning → Overview: what to do next across workspaces, how each stands. */
+export const learningOverviewQuery = () =>
   queryOptions({
     ...persisted,
-    queryFn: () => api.get<ReviewOverview>('/review/overview'),
-    queryKey: qk.reviewOverview,
+    queryFn: () => api.get<LearningOverview>('/learning/overview'),
+    queryKey: qk.learningOverview,
   });
-export const useReviewOverview = (options?: QueryUiOptions) =>
-  useQuery({ ...reviewOverviewQuery(), meta: queryMeta(options) });
+export const useLearningOverview = (options?: QueryUiOptions) =>
+  useQuery({ ...learningOverviewQuery(), meta: queryMeta(options) });
+
+/** How many questions a practice group holds, for its start dialog. */
+export const useStudyQuestionCount = (
+  workspaceId: string,
+  group: ReviewStart['group'],
+  topicId?: string
+) =>
+  useQuery({
+    meta: queryMeta({ errorBoundary: false }),
+    queryFn: () =>
+      api.get<{ total: number }>(
+        `/workspaces/${workspaceId}/study/question-count${listSearch({ group, topicId }, '')}`
+      ),
+    queryKey: [...qk.study(workspaceId), 'question-count', group, topicId],
+  });
+
+/** Study → Summary: the caller's own standing per topic. */
+export const useStudyTopics = (workspaceId: string, options?: QueryUiOptions) =>
+  useQuery({
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<StudyTopics>(`/workspaces/${workspaceId}/study/topics`),
+    queryKey: qk.studyTopics(workspaceId),
+  });
 
 const PAST_REVIEWS_PAGE = 30;
 /** Learning → Past reviews: finished sessions, newest first by default. */
@@ -3052,135 +3338,6 @@ export const usePastReviews = (params: PastReviewParams = {}) =>
     ...pastReviewsQuery(params),
     placeholderData: keepPreviousData,
   });
-
-/** Learning → Progress: workspaces in progress and finished, the leading
- * one's items; `lead` asks for that listed workspace's map instead. */
-export const learningProgressQuery = (lead?: string, all = false) =>
-  queryOptions({
-    ...persisted,
-    queryFn: () =>
-      api.get<LearningProgress>(
-        `/learning/progress${listSearch({ all: all ? 'true' : undefined, lead }, '')}`
-      ),
-    queryKey: [...qk.learningProgress, lead ?? null, all],
-  });
-/** `all` (Show all) also lists workspaces hiding study progress. */
-export const useLearningProgress = (
-  lead?: string,
-  all = false,
-  options?: QueryUiOptions
-) =>
-  useQuery({
-    ...learningProgressQuery(lead, all),
-    meta: queryMeta(options),
-    placeholderData: keepPreviousData,
-  });
-
-/* ---------------- study plans ---------------- */
-/** Plans kept in a workspace, then the user's plans elsewhere with a step in it. */
-export const workspacePlansQuery = (workspaceId: string) =>
-  queryOptions({
-    ...persisted,
-    queryFn: () =>
-      api.get<StudyPlans>(`/workspaces/${workspaceId}/study/plans`),
-    queryKey: qk.studyPlans(workspaceId),
-  });
-export const useWorkspacePlans = (
-  workspaceId: string,
-  options?: QueryUiOptions
-) =>
-  useQuery({ ...workspacePlansQuery(workspaceId), meta: queryMeta(options) });
-
-/** Every plan of the user, for Learning → Progress. */
-export const useLearningPlans = (options?: QueryUiOptions) =>
-  useQuery({
-    meta: queryMeta(options),
-    queryFn: () => api.get<StudyPlans>('/learning/plans'),
-    queryKey: qk.learningPlans,
-  });
-
-const invalidatePlans = (qc: QueryClient) =>
-  Promise.all([
-    qc.invalidateQueries({
-      // The plans, and each plan's review parts its steps feed.
-      predicate: ({ queryKey: [scope, , kind, part] }) =>
-        scope === 'workspace' &&
-        kind === 'study' &&
-        (part === 'plans' || part === 'plan'),
-    }),
-    qc.invalidateQueries({ queryKey: qk.learningPlans }),
-  ]);
-
-export function useCreateStudyPlan(workspaceId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) =>
-      api.post<StudyPlan>(`/workspaces/${workspaceId}/study/plans`, { name }),
-    onSettled: () => invalidatePlans(qc),
-  });
-}
-
-/** Renames a plan and/or replaces its steps. Optimistic in the workspace's
- * list, so a dragged row lands at once; the refetch settles it. */
-export function useUpdateStudyPlan(workspaceId: string) {
-  const qc = useQueryClient();
-  type Patch = { id: string; name?: string; steps?: PlanStepInput[] };
-  return useMutation<void, Error, Patch, { prev?: StudyPlans }>({
-    mutationFn: ({ id, ...body }) =>
-      api.patch<void>(`/study/plans/${id}`, body),
-    mutationKey: qk.studyPlans(workspaceId),
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(qk.studyPlans(workspaceId), ctx.prev);
-    },
-    onMutate: async ({ id, name, steps }) => {
-      await qc.cancelQueries({ queryKey: qk.studyPlans(workspaceId) });
-      const prev = qc.getQueryData<StudyPlans>(qk.studyPlans(workspaceId));
-      qc.setQueryData<StudyPlans>(qk.studyPlans(workspaceId), (list) => {
-        if (!list) return list;
-        return {
-          ...list,
-          plans: list.plans.map((p) => {
-            if (p.id !== id) return p;
-            // Held steps keep their titles; new ones are in the list at once
-            // (a save before the refetch must keep them) and get theirs then.
-            const held = new Map(
-              p.steps.map((st) => [stepKey(st), st] as const)
-            );
-            return {
-              ...p,
-              name: name ?? p.name,
-              steps: steps
-                ? steps.map(
-                    (st) =>
-                      held.get(stepKey(st)) ?? {
-                        ...st,
-                        locked: false,
-                        title: '',
-                      }
-                  )
-                : p.steps,
-            };
-          }),
-        };
-      });
-      return { prev };
-    },
-    onSettled: () =>
-      refetchIfLast(qc, qk.studyPlans(workspaceId), () => invalidatePlans(qc)),
-  });
-}
-
-/** One identity per step target, the server's uniqueness. */
-export const stepKey = (st: PlanStepInput) =>
-  `${st.kind}:${st.workspaceId}:${st.targetId}`;
-
-export function useDeleteStudyPlan() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/study/plans/${id}`),
-    onSettled: () => invalidatePlans(qc),
-  });
-}
 
 /** Records one rating; the study page toasts a failure once. Each rating
  * refreshes `workspaceId`'s progress, or every workspace's when omitted; a
@@ -3400,7 +3557,7 @@ export const useExploreFlashcardSets = () =>
 
 /* ---------------- sharing & cloning ---------------- */
 
-/** Deep-copy a shared workspace (chapters, files, materials and — via the
+/** Deep-copy a shared workspace (topics, files, materials and — via the
  * pipeline — the parsed knowledge graph) into the caller's account, under the
  * name, description, icon, tags and cover in `body`. */
 export function useCloneWorkspace(options?: MutationUiOptions) {

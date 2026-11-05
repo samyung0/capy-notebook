@@ -25,7 +25,9 @@ export type NotificationStreamEvent =
   | (IngestEvent & { type: 'ingest' })
   /** A conversation's turn started (`streaming`) or saved its ending, for
    * the running mark in the conversation lists (Epo 2026-10-27, T19). */
-  | { conversationId: string; status: ChatStatus; type: 'chat_turn' };
+  | { conversationId: string; status: ChatStatus; type: 'chat_turn' }
+  /** A Make a quiz run its reader started ended. */
+  | { extractionId: string; status: string; type: 'extraction' };
 
 export type StreamEvent =
   | { data: NotificationStreamEvent; name: 'notification' }
@@ -67,6 +69,8 @@ function parseEvent(chunk: string): StreamEvent | null {
         (typeof value.conversationId !== 'string' ||
           typeof value.status !== 'string')
       )
+        return null;
+      if (value.type === 'extraction' && typeof value.extractionId !== 'string')
         return null;
       return {
         data: value as unknown as NotificationStreamEvent,

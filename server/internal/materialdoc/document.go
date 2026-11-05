@@ -1167,7 +1167,52 @@ func quizQuestionNode(question map[string]any) (map[string]any, error) {
 	if err := questions.Validate(question, questions.Policy{}); err != nil {
 		return nil, err
 	}
-	return map[string]any{"type": "quiz_question", "id": question["id"], "question": question, "children": []any{textLeaf("")}}, nil
+	return quizNodeOf(question), nil
+}
+
+func quizNodeOf(question map[string]any) map[string]any {
+	return map[string]any{"type": "quiz_question", "id": question["id"], "question": question, "children": []any{textLeaf("")}}
+}
+
+// IncompleteQuestion is a question QuizDocument refuses, as the node a quiz room's
+// insert_child takes, with the id of the question before it ("" for the first).
+type IncompleteQuestion struct {
+	After string
+	Node  map[string]any
+}
+
+// SplitIncomplete separates questions QuizDocument takes from those it refuses,
+// for Make a quiz alone: a room holds a question with parts still to answer and
+// projects only the complete ones (D4, Epo 2026-11-05).
+func SplitIncomplete(raw json.RawMessage) (json.RawMessage, []IncompleteQuestion, error) {
+	values, err := decodeArray(raw)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	complete := make([]any, 0, len(values))
+	var incomplete []IncompleteQuestion
+	after := ""
+	for i, value := range values {
+		question, ok := value.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("%w: questions[%d] must be an object", ErrInvalid, i)
+		}
+		id, _ := question["id"].(string)
+		if strings.TrimSpace(id) == "" {
+			return nil, nil, fmt.Errorf("%w: questions[%d].id is required", ErrInvalid, i)
+		}
+		if _, err := quizQuestionNode(question); err == nil {
+			complete = append(complete, question)
+		} else {
+			incomplete = append(incomplete, IncompleteQuestion{After: after, Node: quizNodeOf(question)})
+		}
+		after = id
+	}
+	out, err := json.Marshal(complete)
+	if err != nil {
+		return nil, nil, err
+	}
+	return out, incomplete, nil
 }
 
 func FlashcardsDocument(cards []Card) (string, error) {

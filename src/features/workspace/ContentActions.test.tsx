@@ -21,10 +21,10 @@ function deleteItem(content: ContentActionTarget, confirmInMenu = false) {
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <ContentActions
-        chapters={[]}
         confirmInMenu={confirmInMenu}
         content={content}
         display="menu"
+        topics={[]}
         workspaceId="ws_1"
       />
     </QueryClientProvider>
@@ -34,12 +34,12 @@ function deleteItem(content: ContentActionTarget, confirmInMenu = false) {
 
 const file = (kind: string, status: ContentActionTarget['status']) =>
   ({
-    chapterId: null,
     createdAt: '2026-10-24T00:00:00Z',
     id: 'f_1',
     kind,
     name: 'lecture.mp3',
     status,
+    topicId: null,
     type: 'file',
   }) satisfies ContentActionTarget;
 
@@ -87,9 +87,9 @@ describe('moving a file', () => {
       <QueryClientProvider client={new QueryClient()}>
         <ContentActions
           canClone
-          chapters={[]}
           content={file('pdf', 'ready')}
           display="menu"
+          topics={[]}
           workspaceId="ws_1"
           {...props}
         />
@@ -98,15 +98,45 @@ describe('moving a file', () => {
     return menus[0]?.map((item) => item.label);
   }
 
-  it('offers Move to… in place of the chapter move, before Clone to… and Download', () => {
+  it('offers Move to… in place of the topic move, before Clone to… and Download', () => {
     expect(labels({ canMoveTo: true })).toEqual([
       m.action_rename(),
       m.action_move_to(),
+      m.content_hide_from_members(),
       m.action_clone_to(),
       m.action_download(),
       m.content_properties(),
       m.action_delete(),
     ]);
     expect(labels({})).toContain(m.content_move_file());
+  });
+});
+
+describe('hiding an item from members', () => {
+  function items(content: ContentActionTarget, readOnly = false) {
+    menus.length = 0;
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <ContentActions
+          content={content}
+          display="menu"
+          readOnly={readOnly}
+          topics={[]}
+          workspaceId="ws_1"
+        />
+      </QueryClientProvider>
+    );
+    return (menus[0] ?? []).map((item) => item.label);
+  }
+
+  it('offers Hide to owners and editors, Show once hidden, nothing to viewers', () => {
+    expect(items(file('pdf', 'ready'))).toContain(
+      m.content_hide_from_members()
+    );
+    expect(items({ ...file('pdf', 'ready'), hidden: true })).toContain(
+      m.content_show_to_members()
+    );
+    const viewer = items(file('pdf', 'ready'), true);
+    expect(viewer).not.toContain(m.content_hide_from_members());
   });
 });

@@ -27,6 +27,7 @@ test.beforeEach(async ({ page }) => {
 test('a ready file offers Clone and its copy opens in the workspace', async ({
   page,
 }) => {
+  await showPanelView(page, m.workspace_tab_files());
   const row = page.locator('[data-workspace-content-row="file:f_1"]');
   await row.hover({ timeout: 30_000 });
   await row.getByRole('button', { name: m.a11y_open_menu() }).click();
@@ -51,7 +52,7 @@ test('a material cloned into a workspace opens there, not on the standalone page
     .getByRole('dialog', { name: m.action_clone_note() })
     .getByRole('button', { exact: true, name: m.action_clone() })
     .click();
-  // The copy lands in the source's workspace, with no chapter by default.
+  // The copy lands in the source's workspace, with no topic by default.
   await expect(page).toHaveURL(
     /\/workspaces\/ws_bio\?material=(?!mat_note_1\b)\w+$/
   );
@@ -86,7 +87,7 @@ test('one click fails a real source save and retry preserves the mounted editor'
   // editor keeps its edits.
   const banner = page.getByTestId('save-banner');
   await expect(banner.getByText(m.editor_save_delayed())).toBeVisible();
-  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+  await expect(page.locator('[data-toast]')).toHaveCount(0);
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
     'unsaved'
@@ -402,7 +403,7 @@ test('page retry and form retry remain usable after the one-click fault retires'
   ).toBeVisible();
   await expect(
     page
-      .locator('[data-sonner-toast]')
+      .locator('[data-toast]')
       .getByText(m.source_import_failed(), { exact: true })
   ).toBeVisible();
 });
@@ -543,9 +544,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
 
     // Full storage: the note is view-only while organizing stays in its menu.
     await launch(page, 'account-storage-full');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.getByText('A note for trying application errors.')
     ).toBeVisible({ timeout: 30_000 });
@@ -563,9 +562,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     await page.keyboard.press('Escape');
 
     await launch(page, 'account-over-quota');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.locator('[data-storage-status="frozen-self"]')
     ).toBeVisible({ timeout: 30_000 });
@@ -611,9 +608,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
       ).toHaveAttribute('data-storage-status', status);
     }
     // A frozen viewer edits nowhere, a healthy owner's workspace included.
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.getByText('A note for trying application errors.')
     ).toBeVisible({ timeout: 30_000 });
@@ -622,9 +617,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     // The owner's full storage makes its note view-only for a member, under
     // the storage strip (uploader pays).
     await launch(page, 'workspace-owner-full');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(page.getByText(m.storage_payer_full_strip())).toBeVisible({
       timeout: 30_000,
     });
@@ -633,9 +626,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     // A frozen owner's note is view-only for a member too, with no storage
     // strip (frozen is not full).
     await launch(page, 'workspace-owner-frozen');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.getByText('A note for trying application errors.')
     ).toBeVisible({ timeout: 30_000 });
@@ -712,7 +703,10 @@ test('a frozen account or full storage mid-edit drops open editors to view and d
   await expect(
     page.getByRole('textbox', { name: m.source_edit_raw() })
   ).toHaveCount(0);
-  await expect(page.getByRole('alert')).toHaveCount(0);
+  // Nothing beside the frozen account's entry toast, an error toast's alert.
+  await expect(
+    page.getByRole('alert').and(page.locator(':not([data-toast])'))
+  ).toHaveCount(0);
   await expect(page.getByText(savedMarker)).toBeVisible();
   await expect(page.getByText(marker)).toHaveCount(0);
   await expect(page.locator('[data-source-status]')).not.toHaveAttribute(

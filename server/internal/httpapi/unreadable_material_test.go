@@ -225,13 +225,13 @@ func TestStudyLeavesOutAQuizARuleRefuses(t *testing.T) {
 		"/api/workspaces/" + ws.ID + "/study/attempts",
 		"/api/workspaces/" + ws.ID + "/review",
 		"/api/review/sessions/" + session,
-		"/api/review/overview",
+		"/api/learning/overview",
 	} {
 		rec := doReq(t, h, http.MethodGet, path, "u_owner", nil)
 		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), broken) {
 			t.Errorf("%s = %d %s, want 200 without the broken quiz", path, rec.Code, rec.Body.String())
 		}
-		if path != "/api/review/overview" && !strings.Contains(rec.Body.String(), good) {
+		if path != "/api/learning/overview" && !strings.Contains(rec.Body.String(), good) {
 			t.Errorf("%s = %s, want the good quiz", path, rec.Body.String())
 		}
 	}
@@ -376,12 +376,12 @@ func TestContentWeGenerateOrAreSentIsNeverUnreadable(t *testing.T) {
 	generator := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// Two questions with one id: our generator's bug, not the user's.
-		_, _ = fmt.Fprintf(w, `{"kind":"quiz","name":"n","questions":[%s,%s]}`, question, question)
+		_, _ = fmt.Fprintf(w, `{"questions":[%s,%s]}`, question, question)
 	}))
 	t.Cleanup(generator.Close)
 	h, st, _, _ := openInternalHTTPWithPipeline(t, pipeline.New(generator.URL, ""))
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate", "u_editor",
-		generateBody("quiz", "Duplicate question ids"))
+		generateBody("Duplicate question ids"))
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("generate = %d %s, want 500", rec.Code, rec.Body.String())
 	}

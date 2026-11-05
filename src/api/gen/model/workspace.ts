@@ -9,6 +9,7 @@ import type { Cover } from './cover.ts';
 import type { Privacy } from './privacy.ts';
 import type { ShareRole } from './shareRole.ts';
 import type { Tag } from './tag.ts';
+import type { WorkspaceKind } from './workspaceKind.ts';
 import type { WorkspaceRole } from './workspaceRole.ts';
 
 export interface Workspace {
@@ -17,7 +18,6 @@ export interface Workspace {
   autoProcess: boolean;
   canClone: boolean;
   capabilities: AccessCapabilities;
-  chapterCount: number;
   /** The card's cover art; absent means none */
   cover?: Cover;
   createdAt: string;
@@ -27,10 +27,13 @@ export interface Workspace {
   iconId: string;
   id: string;
   isOwner: boolean;
+  /** What it is used for: decides who sees what in Study and how an editor is named */
+  kind: WorkspaceKind;
   name: string;
   privacy: Privacy;
   role?: WorkspaceRole;
   sharePath: string;
   shareRole: ShareRole;
   tags: Tag[];
+  topicCount: number;
 }

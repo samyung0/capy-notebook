@@ -177,7 +177,7 @@ async def _published(workspace_id: str, file_id: str) -> dict[str, Any] | None:
     pool = await store.pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT id, name, kind, blob_path, chapter_id FROM files "
+            "SELECT id, name, kind, blob_path, topic_id FROM files "
             "WHERE id = %s AND workspace_id = %s AND trashed_at IS NULL",
             (file_id, workspace_id),
         )
@@ -220,7 +220,7 @@ async def _open(
         "id": file_id,
         "name": row["name"],
         "format": fmt,
-        "chapter_id": row["chapter_id"],
+        "topic_id": row["topic_id"],
         "base": base,
         "checkpoint": await call("seedOffice", fmt, wire(base)),
         "edits": [],
@@ -367,7 +367,7 @@ async def _create(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
         "id": fid,
         "name": f"{title}.{fmt}",
         "format": fmt,
-        "chapter_id": payload.get("chapterId") or None,
+        "topic_id": payload.get("topicId") or None,
         "base": data,
         "checkpoint": await call("seedOffice", fmt, wire(data)),
         "edits": list(payload["commands"]),
@@ -455,7 +455,7 @@ def local_gateway(state: dict[str, Any]):
             {
                 "id": f["id"],
                 "name": f["name"],
-                "chapter_id": f["chapter_id"],
+                "topic_id": f["topic_id"],
                 "status": "pending",
                 "descriptor": "",
                 "chunks": 0,

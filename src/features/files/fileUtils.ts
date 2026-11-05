@@ -1,4 +1,4 @@
-import type { SourceFile } from '@/api/types';
+import type { SourceFile, Workspace } from '@/api/types';
 import { m } from '@/i18n';
 
 const IMAGE_EXTS = new Set([
@@ -96,9 +96,19 @@ export function fileCanClone(file: Pick<SourceFile, 'status' | 'indexed'>) {
   return file.status === 'ready' || (file.status === 'failed' && file.indexed);
 }
 
-/** Whether Move to… (another workspace or chapter) is offered on a workspace
+/** Whether Clone is offered on a workspace's material: while a quiz is under an
+ * open assignment, to the owner and teaching assistants alone (Epo 2026-11-04). */
+export function materialCanClone(
+  workspace: Pick<Workspace, 'canClone' | 'role'> | undefined,
+  assigned?: boolean
+) {
+  if (!workspace?.canClone) return false;
+  return !assigned || workspace.role === 'owner' || workspace.role === 'editor';
+}
+
+/** Whether Move to… (another workspace or topic) is offered on a workspace
  * file: its workspace's owner or its payer moves it; other editors keep the
- * chapter-only Move (Epo 2026-10-27). */
+ * topic-only Move (Epo 2026-10-27). */
 export function fileCanMoveTo(
   file: Pick<SourceFile, 'isPayer'>,
   workspace: { isOwner: boolean } | undefined

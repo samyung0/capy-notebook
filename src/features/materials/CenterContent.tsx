@@ -4,7 +4,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import {
-  Link,
+  Navigate,
   useNavigate,
   useRouter,
   useSearch,
@@ -17,29 +17,27 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from 'react';
-import { isMaterialContentUnreadable, qk } from '@/api/client';
+import { isApiError, isMaterialContentUnreadable, qk } from '@/api/client';
 import {
   useFile,
   useMaterial,
   useMaterials,
+  useMe,
   useRecordOpen,
-  useWorkspaceRecent,
 } from '@/api/hooks';
 import type {
-  Chapter,
   Material,
   MaterialListItem,
   MaterialPage,
   Provenance,
   Region,
+  Topic,
   UserColor,
 } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
-import { PreviewCard } from '@/components/app/PreviewCard';
 import { TabContent } from '@/components/app/tabPanel';
 import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
 import { Button } from '@/components/ui/Button';
@@ -48,19 +46,18 @@ import { Icon } from '@/components/ui/Icon';
 import { Menu } from '@/components/ui/Menu';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
+import {
+  copyLabel,
+  keepsCopyOf,
+  type RoomCopy,
+  useKeepMaterialCopy,
+  useMaterialCopy,
+  useRoomSeed,
+} from '@/features/collaboration/deviceCopy';
 import {
   createPresenceStore,
   type PresenceConnection,
 } from '@/features/collaboration/presence';
-import {
-  recentIcon,
-  recentThumbnail,
-} from '@/features/dashboard/RecentItemsCard';
-import {
-  mergeRecentItems,
-  type RecentItem,
-} from '@/features/dashboard/recentItems';
 import {
   FileError,
   FileLoading,
@@ -84,9 +81,6 @@ import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
-import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
-import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
-import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { QuizEditor } from '@/features/quizzes/QuizEditor';
@@ -97,7 +91,10 @@ import {
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { unexpectedErrorId } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
+import { useOnlineStatus } from '@/lib/online';
+import { dropDeviceCopies } from '@/lib/sourceCache';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import {
   createEditorStatusStore,
@@ -110,122 +107,81 @@ import {
   type FlashcardsElement,
   flashcardsElementToCards,
   type MaterialDocument,
-  type MaterialValue,
-  parseMaterialDocument,
   type QuizElement,
 } from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
-import {
-  MaterialAttributionFooter,
-  SourcesLine,
-} from './MaterialAttributionFooter';
+import { SourcesLine } from './MaterialAttributionFooter';
 import { RemovedAssetsContext, useRemovedAssets } from './MediaAssetView';
 import { MermaidMaterialView } from './MermaidMaterialView';
+import type { MaterialMode } from './modePolicy';
 import {
-  type MaterialMode,
-  materialModePolicy,
-  resolveMaterialMode,
-} from './modePolicy';
-import { showNoteCitation } from './noteCitation';
+  DocumentAttribution,
+  loadPreview,
+  NoteBody,
+  NoteSkeleton,
+} from './NoteBody';
 import {
   type NoteCitationTarget,
   type OpenItem,
   readDocumentMode,
   saveDocumentMode,
 } from './openItem';
-import { embedKey, useNoteFooter } from './useNoteFooter';
-
-/* Interactive Plate is the heaviest chunk in this route. View mode
- * deliberately never loads it. */
-const NoteEditor = lazy(() =>
-  import('@/features/notes/NoteEditor').then((m) => ({
-    default: m.NoteEditor,
-  }))
-);
 
 /* A standalone mindmap's or diagram's live editor: CodeMirror, no Plate. */
 const MermaidMaterialEditor = lazy(
   () => import('@/features/notes/blocks/MermaidMaterialEditor')
 );
 
-/* Static Plate preview is still heavy — keep it out of the PDF / media path. */
-let previewModule: typeof import('./MaterialPreview') | undefined;
-const loadPreview = () =>
-  import('./MaterialPreview').then((module) => {
-    previewModule = module;
-    return module;
-  });
-const LazyMaterialPreview = lazy(() =>
-  loadPreview().then((m) => ({ default: m.MaterialPreview }))
+/* The static renderer of what is not a note (a note's is in NoteBody). */
+const MaterialPreview = lazy(() =>
+  loadPreview().then((module) => ({ default: module.MaterialPreview }))
 );
-const StudyPage = lazy(() =>
-  import('@/features/study/StudyPage').then((mod) => ({
-    default: mod.StudyPage,
-  }))
-);
-type PreviewComponent =
-  | typeof LazyMaterialPreview
-  | typeof import('./MaterialPreview').MaterialPreview;
 
 /** The center pane. Dispatches on the currently-open item — a source file or a
  * study material — and renders a consistent header plus the item body. Quiz and
  * flashcards materials get view actions in the header; mindmaps/diagrams render inline.
  * User-authored notes take over the whole pane with the editable Plate editor. */
 export function CenterContent({
-  chapters,
+  topics,
   item,
   readOnly = false,
   color,
   onDeleted,
-  onAddFile,
   onModeChange,
-  onOpenSettings,
-  onOpenItem,
-  onOpenProgress,
-  plan,
-  study = false,
+  page,
   requestedMode = null,
   workspaceId,
   leading,
-  trailing,
   oneColumn,
   standalone = false,
 }: {
-  /** Opens an item from the Study page or a plan. */
-  onOpenItem?: (item: OpenItem) => void;
-  /** Opens the Study page; a quick action when no file is open. */
-  onOpenProgress?: () => void;
-  /** The Study page's picked plan. */
-  plan?: string;
-  /** Shows the Study page while no file is open. */
-  study?: boolean;
+  /** The page shown under the header while no file is open: the
+   * workspace's Dashboard or a Study page (one column; from lg the
+   * workspace draws it without the header). */
+  page?: ReactNode;
   /** Below lg: the title opens Files and ⋮ carries the workspace actions. */
   oneColumn?: OneColumnChrome;
   standalone?: boolean;
   /** Workspace chrome drawn before the file name in the header. */
   leading?: ReactNode;
-  /** Workspace chrome at the header's right end. */
-  trailing?: ReactNode;
-  chapters: Chapter[];
+  topics: Topic[];
   item: OpenItem | null;
   readOnly?: boolean;
   color?: UserColor;
   onDeleted: () => void;
   requestedMode?: MaterialMode | null;
   onModeChange: (mode: MaterialMode) => void;
-  /** Opens the add file dialog; an empty workspace shows it as a card. */
-  onAddFile?: () => void;
-  /** Opens workspace settings; shown as a quick action when no file is open. */
-  onOpenSettings?: () => void;
   workspaceId: string;
 }) {
   const [fileHeader, setFileHeader] = useState<HTMLSpanElement | null>(null);
   const [fileMenu, setFileMenu] = useState<HTMLSpanElement | null>(null);
   const [fileActions, setFileActions] = useState<HTMLSpanElement | null>(null);
   const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
-  const materialMode =
-    requestedMode ?? (item ? readDocumentMode(item) : 'view');
+  // An Office or text file's: a material opens at the highest mode its reader
+  // may have (Epo 2026-11-04).
+  const fileMode =
+    item?.kind === 'file' ? (requestedMode ?? readDocumentMode(item)) : 'view';
   // Full screen lives in the URL (`?fullscreen=true`) so the back gesture
   // leaves it; opening another item drops it with the rest of the search.
   const isFullscreen =
@@ -284,7 +240,8 @@ export function CenterContent({
   }, [isFullscreen, setFullscreen]);
 
   useEffect(() => {
-    if (item && requestedMode) saveDocumentMode(item, requestedMode);
+    if (item?.kind === 'file' && requestedMode)
+      saveDocumentMode(item, requestedMode);
   }, [item?.kind, item?.id, requestedMode]);
 
   // Each open orders Recent Files and the quick open (the hook sends at most
@@ -296,14 +253,10 @@ export function CenterContent({
     if (openKind && openId) recordOpen({ id: openId, kind: openKind });
   }, [openKind, openId, recordOpen]);
 
-  const changeMaterialMode = (nextMode: MaterialMode) => {
+  const changeFileMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
     setPresence(null);
-    if (item) saveDocumentMode(item, nextMode);
-    // The open editor's live document goes into the cached material before
-    // View renders, so View renders it once.
-    if (nextMode === 'view' && item?.kind === 'material')
-      handOverLiveNote(item.id);
+    if (item?.kind === 'file') saveDocumentMode(item, nextMode);
     onModeChange(nextMode);
   };
 
@@ -311,21 +264,15 @@ export function CenterContent({
     return (
       <EmptyCenter
         leading={leading}
-        onAddFile={onAddFile}
         oneColumn={oneColumn}
-        onOpenItem={onOpenItem}
-        onOpenProgress={onOpenProgress}
-        onOpenSettings={onOpenSettings}
-        plan={plan}
-        study={study}
-        trailing={trailing}
+        page={page}
         workspaceId={standalone ? '' : workspaceId}
       />
     );
   }
   return (
     <FileModeContext.Provider
-      value={{ mode: materialMode, onChange: changeMaterialMode }}
+      value={{ mode: fileMode, onChange: changeFileMode }}
     >
       <FileHeaderTarget.Provider value={fileHeader}>
         <FileMenuTarget.Provider value={fileMenu}>
@@ -347,7 +294,6 @@ export function CenterContent({
                        * into the header's slots. */}
                       <div className={isFullscreen ? 'hidden' : 'contents'}>
                         <Header
-                          chapters={chapters}
                           color={color}
                           editorStatus={editorStatus}
                           fileActions={
@@ -366,7 +312,6 @@ export function CenterContent({
                           isFullscreen={isFullscreen}
                           item={item}
                           leading={leading}
-                          materialMode={materialMode}
                           menuBar={
                             <span
                               className="flex min-w-0 items-center"
@@ -377,14 +322,13 @@ export function CenterContent({
                           onDeleted={onDeleted}
                           oneColumn={oneColumn}
                           onImageZoomChange={setImageZoom}
-                          onMaterialModeChange={changeMaterialMode}
                           onToggleFullscreen={() =>
                             setFullscreen(!isFullscreen)
                           }
                           presence={presence}
                           readOnly={readOnly}
                           standalone={standalone}
-                          trailing={trailing}
+                          topics={topics}
                           workspaceId={workspaceId}
                         />
                       </div>
@@ -405,7 +349,6 @@ export function CenterContent({
                               citation={item.citation}
                               key={item.id}
                               materialId={item.id}
-                              mode={materialMode}
                               onEditorStatusChange={setEditorStatus}
                               onPresenceChange={setPresence}
                               readOnly={readOnly}
@@ -468,7 +411,6 @@ function MaterialBody({
   citation,
   materialId,
   workspaceId,
-  mode,
   allowExternalAssets,
   onEditorStatusChange,
   onPresenceChange,
@@ -479,7 +421,6 @@ function MaterialBody({
   citation?: NoteCitationTarget;
   materialId: string;
   workspaceId: string;
-  mode: MaterialMode | null;
   allowExternalAssets: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
   onPresenceChange: (connections: PresenceConnection[] | null) => void;
@@ -493,9 +434,23 @@ function MaterialBody({
   // Wait for the list before deciding. Rendering first and gating afterwards
   // would download the very document the gate exists to avoid, then throw the
   // mounted editor away.
-  if (workspaceId && isPending) return <FileLoading />;
+  if (workspaceId && isPending) return <MaterialLoading />;
 
   const reference = materials?.find((entry) => entry.id === materialId);
+  // A direct link to a quiz assigned to the reader opens the assignment.
+  if (reference?.assignmentId) {
+    return (
+      <Navigate
+        params={{ workspaceId }}
+        replace
+        search={{
+          assignment: reference.assignmentId,
+          study: 'assignments' as const,
+        }}
+        to="/workspaces/$workspaceId"
+      />
+    );
+  }
   const heavy = heavyMaterial(reference);
   if (heavy && !choice) {
     return (
@@ -516,7 +471,6 @@ function MaterialBody({
       key={materialId}
       kind={reference?.type ?? listedKind(queryClient, materialId)}
       materialId={materialId}
-      mode={mode}
       onEditorStatusChange={onEditorStatusChange}
       onPresenceChange={onPresenceChange}
       staticNote={choice === 'readOnly'}
@@ -525,16 +479,31 @@ function MaterialBody({
   );
 }
 
-/** Shows a chat citation's passage in the note beside it. Each click brings
- * a new citation object, so a repeat scrolls and flashes again. */
-function NoteCitation({ citation }: { citation: NoteCitationTarget }) {
-  const anchor = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const scroller = anchor.current?.parentElement;
-    return scroller ? showNoteCitation(scroller, citation) : undefined;
-  }, [citation]);
-  return <span hidden ref={anchor} />;
+/** Nothing to paint yet: a wordless skeleton (Epo 2026-11-04), or while offline
+ * the one true thing to say (C9). */
+function MaterialLoading() {
+  const online = useOnlineStatus();
+  return online ? <NoteSkeleton /> : <FileLoading />;
 }
+
+const storedCards = (material: Material) =>
+  flashcardsElementToCards(
+    material.content.value.find(
+      (node): node is FlashcardsElement => node.type === 'flashcards'
+    ) ?? { children: [], id: '', type: 'flashcards' }
+  );
+
+/** A quiz's questions as its read stored them: no answer key. */
+const storedQuestions = (content: MaterialDocument) => {
+  const quiz = content.value.find(
+    (node): node is QuizElement => node.type === 'quiz'
+  );
+  return (quiz?.children ?? []).flatMap((node) =>
+    'type' in node && node.type === 'quiz_question'
+      ? [node.question as unknown as LearnerQuestion]
+      : []
+  );
+};
 
 /** A set's View: the stored cards, then the room's as they change. */
 function LiveSetGrid({
@@ -547,12 +516,7 @@ function LiveSetGrid({
   /** A card to open at once (a link to it). */
   openCardId?: string;
 }) {
-  const stored = flashcardsElementToCards(
-    material.content.value.find(
-      (node): node is FlashcardsElement => node.type === 'flashcards'
-    ) ?? { children: [], id: '', type: 'flashcards' }
-  );
-  const cards = useLiveSetCards(material.id, stored);
+  const cards = useLiveSetCards(material.id, storedCards(material));
   return (
     <FlashcardGrid
       action={action}
@@ -584,7 +548,6 @@ function MaterialContentBody({
   centerQuiz,
   kind,
   materialId,
-  mode,
   allowExternalAssets,
   forceReadOnly,
   onEditorStatusChange,
@@ -597,7 +560,6 @@ function MaterialContentBody({
   /** The kind the opening list or route knows, for a read that fails. */
   kind?: Material['kind'];
   materialId: string;
-  mode: MaterialMode | null;
   allowExternalAssets: boolean;
   forceReadOnly: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
@@ -612,9 +574,10 @@ function MaterialContentBody({
   citation?: NoteCitationTarget;
 }) {
   const {
-    data: material,
+    data: loaded,
     error,
-    isLoading,
+    isPending,
+    refetch,
   } = useMaterial(materialId, {
     errorBoundary: false,
   });
@@ -629,14 +592,69 @@ function MaterialContentBody({
     []
   );
   const overBar = useContext(FloatingBarContext);
+  // The static renderer ahead of the paint, for a note or what may turn out to
+  // be one: no other kind draws it.
   useEffect(() => {
-    if (mode === 'edit') void loadPreview();
-  }, [mode]);
-  const previewType = useRef<PreviewComponent>(undefined);
-  if (isLoading) {
-    return <FileLoading />;
+    if (!kind || kind === 'note') void loadPreview();
+  }, [kind]);
+  const { data: me } = useMe({ errorBoundary: false });
+  // A heavy note opened read-only reads nothing of its own beyond its read.
+  const seed = useRoomSeed(materialId, staticNote ? null : me?.id);
+  // An item's last read, painting until this one answers.
+  const copied = useMaterialCopy(materialId, staticNote ? null : me?.id);
+  // A rate limit or a timeout says nothing about this item: such a read could
+  // not answer, as a server error could not.
+  const refused =
+    isApiError(error) &&
+    error.status < 500 &&
+    error.status !== 408 &&
+    error.status !== 429;
+  // No access, or gone: what this device kept of it goes too.
+  const lost =
+    isApiError(error) && (error.status === 403 || error.status === 404);
+  useEffect(() => {
+    if (lost) void dropDeviceCopies(materialId);
+  }, [lost, materialId]);
+  // A refusal ends what shows; a read that could not answer leaves it, an open
+  // editor included.
+  const material = refused ? undefined : (loaded ?? copied ?? undefined);
+  useKeepMaterialCopy(
+    loaded?.kind === 'note' ? undefined : loaded,
+    me?.id,
+    copied
+  );
+  const noteBody = (loaded: Material | undefined, editing: boolean) => (
+    <NoteBody
+      allowExternalAssets={allowExternalAssets}
+      citation={citation}
+      editing={editing}
+      material={loaded}
+      materialId={materialId}
+      onEditorStatusChange={onEditorStatusChange}
+      onPresenceChange={onPresenceChange}
+      onReadOnly={onReadOnly}
+      owner={me?.id}
+      seed={staticNote ? null : seed}
+      staticNote={staticNote}
+    />
+  );
+  // A device copy paints before its read answers, and while the read cannot
+  // answer (the browser offline, the server down), until it refuses.
+  // Keyed as the note below: the paint keeps its DOM as the read answers.
+  if (!material && seed?.row.kind === 'note' && !refused)
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1" key="note">
+          {noteBody(undefined, false)}
+        </div>
+      </div>
+    );
+  if (isPending && !material) {
+    // Nothing shows for the few milliseconds the store takes.
+    if (me && (seed === undefined || copied === undefined)) return null;
+    return <MaterialLoading />;
   }
-  if (error || !material) {
+  if (!material) {
     return isMaterialContentUnreadable(error) ? (
       <FileError
         message={m.material_decode_body()}
@@ -645,12 +663,21 @@ function MaterialContentBody({
         }
       />
     ) : (
-      <FileError />
+      <FileError
+        errorId={refused ? null : unexpectedErrorId(error)}
+        onRetry={refused ? undefined : () => void refetch()}
+      />
     );
   }
-  const policy = materialModePolicy(material.capabilities);
+  // The highest mode this reader may have.
   const activeMode =
-    forceReadOnly || readOnly ? 'view' : resolveMaterialMode(mode, policy);
+    !(forceReadOnly || readOnly) && material.capabilities.canEditContent
+      ? 'edit'
+      : 'view';
+  const roomCopy: RoomCopy = {
+    keep: me && keepsCopyOf(material) ? copyLabel(material, me.id) : undefined,
+    seed,
+  };
   // Its payer (whoever created it) at the storage limit opens it view-only
   // under a strip saying so (uploader pays).
   const readOnlyStrip = material.storageFull ? (
@@ -666,34 +693,25 @@ function MaterialContentBody({
       />
     )
   );
-  // Edit to View shows the note at once (NoteEditorCore hands over its live
-  // value), so View must not suspend on loading its renderer: Edit loads it,
-  // and View then renders it directly. The type is chosen once per mount, at
-  // the first View: swapping the lazy wrapper for the loaded component later
-  // would remount the whole document (frames reload, quiz attempts reset).
-  if (activeMode === 'view')
-    previewType.current ??=
-      previewModule?.MaterialPreview ?? LazyMaterialPreview;
-  const MaterialPreview = previewType.current ?? LazyMaterialPreview;
-
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return (
-      <div className="h-full min-h-0 overflow-auto">
-        <TabContent fill>
-          <QuizEditor
-            action={<StudyButton kind="quiz" materialId={materialId} />}
-            key={materialId}
-            onPresenceChange={onPresenceChange}
-            onStatusChange={onEditorStatusChange}
-            quizId={materialId}
-            title={material.title}
-          />
+      <QuizEditor
+        action={<StudyButton kind="quiz" materialId={materialId} />}
+        copy={roomCopy}
+        key={materialId}
+        onPresenceChange={onPresenceChange}
+        onStatusChange={onEditorStatusChange}
+        quizId={materialId}
+        sources={
           <SourcesLine
-            className={cn('mt-16 pb-4', overBar && 'pb-20')}
+            className={cn('pb-4', overBar && 'pb-20')}
             provenance={material.provenance}
           />
-        </TabContent>
-      </div>
+        }
+        stored={storedQuestions(material.content)}
+        target={target}
+        title={material.title}
+      />
     );
   }
   if (material.kind === 'flashcards') {
@@ -706,9 +724,12 @@ function MaterialContentBody({
                 action={
                   <StudyButton kind="flashcards" materialId={materialId} />
                 }
+                copy={roomCopy}
                 onPresenceChange={onPresenceChange}
                 onStatusChange={onEditorStatusChange}
+                openCardId={target}
                 setId={materialId}
+                stored={storedCards(material)}
                 title={material.title}
               />
             ) : (
@@ -739,6 +760,8 @@ function MaterialContentBody({
         <AppErrorBoundary resetKeys={[materialId, activeMode]}>
           <Suspense fallback={<FileLoading />}>
             <MermaidMaterialEditor
+              content={material.content}
+              copy={roomCopy}
               kind={material.kind}
               materialId={materialId}
               onPresenceChange={onPresenceChange}
@@ -775,13 +798,11 @@ function MaterialContentBody({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {readOnlyStrip}
-      <div className="min-h-0 flex-1">
-        {activeMode === 'view' && (
+      <div className="min-h-0 flex-1" key="note">
+        {material.kind === 'note' ? (
+          noteBody(material, activeMode === 'edit')
+        ) : (
           <div className="relative h-full min-h-0 overflow-auto">
-            {material.kind === 'note' && <NoteDisplayToggles />}
-            {material.kind === 'note' && citation ? (
-              <NoteCitation citation={citation} />
-            ) : null}
             {material.kind === 'quiz' ? (
               <QuizPreview
                 content={material.content}
@@ -791,119 +812,20 @@ function MaterialContentBody({
                 title={material.title}
               />
             ) : (
-              <Suspense fallback={<FileLoading />}>
-                {material.kind === 'note' && !staticNote ? (
-                  <LiveNotePreview
-                    material={material}
-                    Preview={MaterialPreview}
-                  />
-                ) : (
-                  <MaterialPreview
-                    content={material.content}
-                    isStandalone={!material.workspaceId}
-                    kind={material.kind}
-                    title={material.title}
-                  />
-                )}
+              <Suspense fallback={<MaterialLoading />}>
+                <MaterialPreview
+                  content={material.content}
+                  isStandalone={!material.workspaceId}
+                  kind={material.kind}
+                  title={material.title}
+                />
                 <DocumentAttribution material={material} />
               </Suspense>
             )}
           </div>
         )}
-        {activeMode === 'edit' && (
-          <AppErrorBoundary resetKeys={[materialId, activeMode]}>
-            <Suspense fallback={<FileLoading />}>
-              <NoteEditor
-                allowExternalAssets={allowExternalAssets}
-                key={`${materialId}:${activeMode}`}
-                materialId={materialId}
-                onEditorStatusChange={onEditorStatusChange}
-                onPresenceChange={onPresenceChange}
-                onReadOnly={onReadOnly}
-              />
-            </Suspense>
-          </AppErrorBoundary>
-        )}
       </div>
     </div>
-  );
-}
-
-/** A material's credits after its document, in the reading column the static
- * renderer uses for it, so View and Edit (NoteEditorCore) end alike: a note's
- * own and those of the embeds its content holds (useNoteFooter). Like every
- * footer ending a view here, it keeps room under the workspace's floating bar
- * where that shows, and some space above the page's end. */
-function DocumentAttribution({ material }: { material: Material }) {
-  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
-  const overBar = useContext(FloatingBarContext);
-  const embeds = useMemo(
-    () => embedKey(material.content.value),
-    [material.content]
-  );
-  const provenance = useNoteFooter(material, embeds);
-  const { kind } = material;
-  return (
-    <MaterialAttributionFooter
-      className={cn(
-        'mx-auto w-full px-5 sm:px-10',
-        overBar ? 'pb-28' : 'pb-12',
-        (kind !== 'note' || displayWidth === 'half') && 'md:max-w-3xl'
-      )}
-      inline
-      provenance={provenance}
-    />
-  );
-}
-
-/** A note's View (Epo 2026-10-10): the projection paints first; then the
- * live-read module loads, outside the first paint and every other bundle, and
- * the note follows its room on a read channel. The room's value replaces the
- * painted one block by block, keeping each block the room has not changed, so
- * nothing flashes and a remote keystroke redraws one block. */
-function LiveNotePreview({
-  material,
-  Preview,
-}: {
-  material: Material;
-  Preview: PreviewComponent;
-}) {
-  const painted = useMemo<MaterialValue>(
-    () =>
-      parseMaterialDocument(material.content)?.value ?? material.content.value,
-    [material.content]
-  );
-  const [live, setLive] = useState<MaterialValue | null>(null);
-  const first = useRef(painted);
-  first.current = painted;
-  // The note's read channel, inside which its embeds join (Epo 2026-10-20).
-  const [seat] = useState(() => new NoteSeat());
-  useEffect(() => {
-    setLive(null);
-    let leave: (() => void) | undefined;
-    let gone = false;
-    const timer = setTimeout(() => {
-      void import('@/features/notes/liveNoteRead').then(({ readNoteLive }) => {
-        if (!gone)
-          leave = readNoteLive(material.id, first.current, setLive, seat);
-      });
-    });
-    return () => {
-      gone = true;
-      clearTimeout(timer);
-      leave?.();
-    };
-  }, [material.id, seat]);
-  return (
-    <NoteSeatContext.Provider value={seat}>
-      <Preview
-        content={material.content}
-        isStandalone={!material.workspaceId}
-        kind={material.kind}
-        title={material.title}
-        value={live ?? painted}
-      />
-    </NoteSeatContext.Provider>
   );
 }
 
@@ -932,16 +854,12 @@ function QuizPreview({
       .querySelector(`[data-question-id="${CSS.escape(target)}"]`)
       ?.scrollIntoView({ block: 'start' });
   }, [target]);
-  const quiz = content.value.find(
-    (node): node is QuizElement => node.type === 'quiz'
-  );
-  const stored = (quiz?.children ?? []).flatMap((node) =>
-    'type' in node && node.type === 'quiz_question'
-      ? [node.question as unknown as LearnerQuestion]
-      : []
-  );
+  // Someone gone from editing to viewing keeps no answers on this device.
+  useEffect(() => {
+    void dropDeviceCopies(quizId, 'keys');
+  }, [quizId]);
   // The stored questions paint first; the live room follows (live-items).
-  const questions = useLiveQuizQuestions(quizId, stored);
+  const questions = useLiveQuizQuestions(quizId, storedQuestions(content));
   return (
     <TabContent fill>
       <div className="mb-7 flex items-center gap-4">
@@ -989,28 +907,17 @@ function StudyButton({
 }
 
 /** No file open: the header row keeps the workspace picker, then the offline
- * and workspace status icons. No strip renders, since strips belong to a file. */
+ * and workspace status icons. No strip renders, since strips belong to a file.
+ * `leading` null leaves the row's start empty (the rail carries Home). */
 function EmptyCenter({
   leading,
-  trailing,
   oneColumn,
-  onAddFile,
-  onOpenItem,
-  onOpenProgress,
-  onOpenSettings,
-  plan,
-  study,
+  page,
   workspaceId,
 }: {
   leading?: ReactNode;
-  trailing?: ReactNode;
   oneColumn?: OneColumnChrome;
-  onAddFile?: () => void;
-  onOpenItem?: (item: OpenItem) => void;
-  onOpenProgress?: () => void;
-  onOpenSettings?: () => void;
-  plan?: string;
-  study?: boolean;
+  page?: ReactNode;
   workspaceId: string;
 }) {
   const sm = useMediaQuery('(min-width: 640px)');
@@ -1029,11 +936,13 @@ function EmptyCenter({
         )}
         data-slot="center-header"
       >
-        {leading ?? (
+        {leading === undefined ? (
           <>
             <Icon className="size-5.5" name="files" />
             <h2 className="t-subtitle translate-y-px truncate">--</h2>
           </>
+        ) : (
+          leading
         )}
         {oneColumn && (
           // Pulled in to a 10px ink gap after the back arrow, as in a file's.
@@ -1059,187 +968,36 @@ function EmptyCenter({
             <WorkspaceStatusButton />
           </>
         )}
-        {(menuItems.length > 0 || trailing) && (
+        {menuItems.length > 0 && (
           <div className="ml-auto flex items-center">
-            {menuItems.length > 0 && (
-              <Menu
-                items={menuItems}
-                trigger={
-                  <ToolbarButton label={m.a11y_open_menu()}>
-                    <Icon name="moreVertical" />
-                  </ToolbarButton>
-                }
-              />
-            )}
-            {trailing}
+            <Menu
+              items={menuItems}
+              trigger={
+                <ToolbarButton label={m.a11y_open_menu()}>
+                  <Icon name="moreVertical" />
+                </ToolbarButton>
+              }
+            />
           </div>
         )}
       </div>
-      {(plan || study) && workspaceId && onOpenItem ? (
-        <div className="min-h-0 flex-1 overflow-auto">
-          <Suspense fallback={null}>
-            <StudyPage
-              onOpenItem={onOpenItem}
-              planId={plan}
-              workspaceId={workspaceId}
-            />
-          </Suspense>
-        </div>
+      {page && workspaceId ? (
+        page
       ) : (
         <div className="grid flex-1 place-items-center p-4 sm:p-6">
-          {workspaceId ? (
-            <RecentInWorkspace
-              actions={
-                <QuickActions
-                  onOpenProgress={onOpenProgress}
-                  onOpenSettings={onOpenSettings}
-                />
-              }
-              onAddFile={onAddFile}
-              workspaceId={workspaceId}
-            />
-          ) : (
-            <PickAFile />
-          )}
+          <PickAFile />
         </div>
       )}
     </>
   );
 }
 
-function PickAFile({ actions }: { actions?: ReactNode }) {
+function PickAFile() {
   return (
     <div className="flex flex-col items-center gap-3">
       <Icon className="non-scaling-svg size-8" name="files" />
       <p>{m.material_select()}</p>
-      {actions && <div className="mt-6">{actions}</div>}
     </div>
-  );
-}
-
-/** Workspace shortcuts under the recent files: as tall as a file tree row,
- * muted until hovered. */
-function QuickActions({
-  onOpenProgress,
-  onOpenSettings,
-}: {
-  onOpenProgress?: () => void;
-  onOpenSettings?: () => void;
-}) {
-  return (
-    <div className="flex flex-col items-start">
-      {onOpenSettings && (
-        <Button
-          className="h-8 px-3 text-xs"
-          iconLeft="settings"
-          onClick={onOpenSettings}
-          size="sm"
-          variant="ghost-muted"
-        >
-          {m.workspace_settings()}
-        </Button>
-      )}
-      <Button
-        className="h-8 px-3 text-xs"
-        iconLeft="knowledge"
-        onClick={onOpenProgress}
-        size="sm"
-        variant="ghost-muted"
-      >
-        {m.workspace_study_plan()}
-      </Button>
-    </div>
-  );
-}
-
-/** The workspace's four newest files and materials as cards for a quick
- * open. Blank while loading; an empty workspace gets a dashed add file card
- * instead, or the plain prompt when the viewer cannot add. */
-function RecentInWorkspace({
-  actions,
-  onAddFile,
-  workspaceId,
-}: {
-  actions: ReactNode;
-  onAddFile?: () => void;
-  workspaceId: string;
-}) {
-  const { data, isLoading } = useWorkspaceRecent(workspaceId);
-  if (isLoading) return null;
-  const items = mergeRecentItems(
-    data?.files ?? [],
-    data?.materials ?? [],
-    [],
-    4
-  );
-  if (!items.length && !onAddFile) return <PickAFile actions={actions} />;
-  const single = items.length <= 1;
-  return (
-    // Lifted by half the subtitle row so the grid, not the block, sits centred.
-    <div className="flex w-full max-w-[400px] -translate-y-4 flex-col gap-2.5">
-      <h3 className="t-subtitle px-1">{m.dashboard_recent()}</h3>
-      <div
-        className={cn(
-          'grid gap-1',
-          // A lone card keeps its two-column width, centred.
-          single ? 'grid-cols-[calc(50%-2px)] justify-center' : 'grid-cols-2'
-        )}
-      >
-        {items.map((item) => (
-          <QuickOpenCard
-            item={item}
-            key={`${item.kind}-${item.id}`}
-            workspaceId={workspaceId}
-          />
-        ))}
-        {!items.length && onAddFile && <AddFileCard onClick={onAddFile} />}
-      </div>
-      <div className="mt-6">{actions}</div>
-    </div>
-  );
-}
-
-/** The empty workspace's only card: a dashed tile the size of a preview,
- * as the dashed new workspace card on Workspaces. */
-function AddFileCard({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      className="cursor-pointer rounded-[calc(var(--radius-tile)+1px)] p-1 outline-none focus-visible:ring-2 focus-visible:ring-action"
-      onClick={onClick}
-      type="button"
-    >
-      <span className="flex aspect-[16/10] flex-col items-center justify-center gap-2 rounded-[calc(var(--radius-tile)-1px)] text-fg-muted transition-colors hover:bg-surface-hover-bg">
-        <Icon name="plus" size={20} />
-        <span className="t-meta">{m.action_add_file()}</span>
-      </span>
-    </button>
-  );
-}
-
-/** A Recent Files card: the shared preview card as a link to the item. */
-function QuickOpenCard({
-  item,
-  workspaceId,
-}: {
-  item: RecentItem;
-  workspaceId: string;
-}) {
-  return (
-    <PreviewCard
-      asChild
-      icon={recentIcon(item)}
-      thumbnail={recentThumbnail(item)}
-      title={item.title}
-    >
-      <Link
-        params={{ workspaceId }}
-        preload="intent"
-        search={
-          item.kind === 'material' ? { material: item.id } : { file: item.id }
-        }
-        to="/workspaces/$workspaceId"
-      />
-    </PreviewCard>
   );
 }
 
@@ -1274,7 +1032,7 @@ function FileBody({
     return (
       <div className="grid h-full place-items-center">
         <div className="flex w-64 -translate-y-1/2 flex-col items-center gap-3">
-          <Icon className="non-scaling-svg size-7" name="sparkles" />
+          <Icon className="non-scaling-svg size-7" name="ai" />
           <p>
             {waiting
               ? m.files_pending_named({ name: file.name })

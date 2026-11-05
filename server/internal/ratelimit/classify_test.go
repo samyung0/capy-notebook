@@ -16,6 +16,8 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/chat/stream":                 classAI,
 		"/api/conversations/c_1/messages/m_1/stream":        classDefault,
 		"/api/workspaces/ws_1/generate":                     classAI,
+		"/api/workspaces/ws_1/extractions":                  classAI,
+		"/api/extractions/run_1":                            classDefault,
 		"/api/quizzes/mat_1/check":                          classAI,
 		"/api/attempts":                                     classDefault,
 		"/api/review/check":                                 classAI,
@@ -41,6 +43,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/workspaces/ws_1/voice-transcriptions":         classVoice,
 		"/api/voice-transcriptions":                         classVoice,
 		"/api/workspaces/ws_1/review":                       classReview,
+		"/api/workspaces/ws_1/study/question-count":         classReview,
 		"/api/review/sessions/rs_1":                         classDefault,
 	}
 	for path, want := range cases {

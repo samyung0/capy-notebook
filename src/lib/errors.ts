@@ -12,6 +12,7 @@ import {
 // summary page, whose script builds no Zod schema (zodJitless.ts).
 import { FILE_NAME_CHARACTER_LIMIT } from '@/api/limits.generated';
 import type { IconName } from '@/components/ui/Icon';
+import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import { m } from '@/i18n';
 import { CopyError } from './copyError';
 
@@ -163,10 +164,13 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_title_taken_body(),
         title: m.error_title_taken_title(),
       };
-    case 'too_many_chapters':
+    case 'too_many_topics':
       return {
-        description: m.error_too_many_chapters_body(),
-        title: m.error_too_many_chapters_title(),
+        description: m.error_too_many_topics_body({
+          free: PLAN_LIMITS.free.topicsPerWorkspace,
+          pro: PLAN_LIMITS.pro.topicsPerWorkspace,
+        }),
+        title: m.error_too_many_topics_title(),
       };
     case 'transfer_self':
       return {

@@ -1,15 +1,16 @@
 import { m } from '@/i18n';
 
-/** The header save/connection status of every editable file: notes, Office
- * and text sources. `connecting` is the first handshake only (the note body
- * waits for it); later drops read `reconnecting` and keep the editor.
- * `preparing`: a late note shows its own copy until its merge applied
- * (Getting ready, Q295). */
+/** The header save/connection status of every editable file. A note or an
+ * item opens painted (Epo 2026-11-04): `opening` is a spinner with no words
+ * until its room's first sync, a rejoin changes nothing until its 30 s passed,
+ * and `syncing-draft` is a stored draft on its way while it opens. Office and
+ * text sources still read `connecting` and `reconnecting`, until the ribbon. */
 export type NoteEditorSaveState =
   | 'connecting'
-  | 'preparing'
+  | 'opening'
   | 'reconnecting'
   | 'syncing'
+  | 'syncing-draft'
   | 'synced'
   | 'saved'
   | 'offline'
@@ -32,12 +33,14 @@ export function noteEditorStatusLabel(
   switch (status.saveState) {
     case 'connecting':
       return m.editor_connecting();
-    case 'preparing':
-      return m.editor_status_getting_ready();
+    case 'opening':
+      return m.a11y_loading();
     case 'reconnecting':
       return m.editor_status_reconnecting();
     case 'syncing':
       return m.editor_status_syncing();
+    case 'syncing-draft':
+      return m.editor_status_syncing_draft();
     case 'synced':
       return m.editor_status_synced();
     case 'saved':

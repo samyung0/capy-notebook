@@ -72,12 +72,14 @@ export interface SourceTransfer {
 }
 
 interface TransferRequest {
-  chapterId: string | null;
-  chapterName: string | null;
+  /** Who can see it: hidden from members from the file's first moment. */
+  hidden: boolean;
   key: string;
   kind: FileKind;
   name: string;
   parseMode: ParseMode;
+  topicId: string | null;
+  topicName: string | null;
 }
 
 export interface LocalTransferRequest extends TransferRequest {
@@ -466,11 +468,10 @@ export function startSourceTransfer(start: StartTransfer) {
             const file = await start.uploadSource({
               batchId,
               batchTotal: requests.length,
-              chapterId: request.chapterId,
-              chapterName: request.chapterName,
               durationSeconds: request.durationSeconds,
               estimatedCreditMicros: request.estimatedCreditMicros,
               file: picked,
+              hidden: request.hidden,
               kind: request.kind,
               onQueued: (queuePosition) => {
                 ticketed = true;
@@ -481,6 +482,8 @@ export function startSourceTransfer(start: StartTransfer) {
               pageCount: request.pageCount,
               parseMode: request.parseMode,
               signal: cancel,
+              topicId: request.topicId,
+              topicName: request.topicName,
             });
             patchTransfer(request.key, {
               fileId: file.id,
@@ -573,12 +576,13 @@ export function startSourceTransfer(start: StartTransfer) {
                     await start.importSources({
                       batchId,
                       batchTotal: requests.length,
-                      chapterId: request.chapterId,
-                      chapterName: request.chapterName,
+                      topicId: request.topicId,
+                      topicName: request.topicName,
                       ...(request.driveId
                         ? { driveIds: [request.driveId] }
                         : {}),
                       fileIds: [request.fileId],
+                      hidden: request.hidden,
                       parseMode: request.parseMode,
                       provider: request.provider,
                       requestId,

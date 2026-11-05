@@ -77,6 +77,19 @@ func conflictError(code, detail string) error {
 	}
 }
 
+// noAnswersConfiguredError is a check of a question that is not projected: a
+// reader shows every question a room holds, and only complete ones are projected
+// (D4), so the page says it has no answers rather than showing an error (Epo
+// 2026-11-05).
+func noAnswersConfiguredError() error {
+	return &huma.ErrorModel{
+		Status: http.StatusNotFound,
+		Title:  http.StatusText(http.StatusNotFound),
+		Detail: "the question is not in this quiz",
+		Errors: []*huma.ErrorDetail{{Message: "question_no_answers"}},
+	}
+}
+
 // limitError is a 429 carrying a machine code the browser maps to copy.
 func limitError(code, detail string) error {
 	return &huma.ErrorModel{
@@ -200,8 +213,8 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrTitleTaken) {
 		return conflictError("title_taken", "a material with this name already exists in this workspace")
 	}
-	if errors.Is(err, store.ErrTooManyChapters) {
-		return conflictError("too_many_chapters", "this workspace already has the maximum number of chapters")
+	if errors.Is(err, store.ErrTooManyTopics) {
+		return conflictError("too_many_topics", "this workspace already has the maximum number of topics")
 	}
 	// The specific conflicts wrap ErrConflict, so they come first.
 	if errors.Is(err, store.ErrAccountDeletionBusy) {
@@ -587,11 +600,14 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerThumbnails(api)
 	a.registerSourceUploads(api)
 	a.registerGenerate(api)
+	a.registerExtractions(api)
+	a.registerHidden(api)
 	a.registerMaterials(api)
 	a.registerOpens(api)
 	a.registerQuizzes(api)
 	a.registerFlashcards(api)
 	a.registerStudy(api)
+	a.registerAssignments(api)
 	a.registerSchedule(api)
 	a.registerExplore(api)
 	a.registerShare(api)

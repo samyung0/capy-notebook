@@ -433,6 +433,7 @@ export function AnswerEditor({
   bank,
   onChange,
   gapsText,
+  typeField = true,
 }: {
   answer: QuestionAnswer;
   /** A bank question: open answers take the bank's longer text bound. */
@@ -440,19 +441,23 @@ export function AnswerEditor({
   onChange: (answer: QuestionAnswer) => void;
   /** A gaps part's text holding its blanks, shown above their answers. */
   gapsText?: ReactNode;
+  /** False where the answer type is chosen beside this editor (board X2). */
+  typeField?: boolean;
 }) {
   return (
     <div className="space-y-4">
-      <SelectField
-        className="w-44"
-        label={m.question_ui_answer_type()}
-        onChange={(value) => onChange(emptyAnswer(value as QuestionType))}
-        options={QUESTION_TYPES.map((value) => ({
-          label: answerLabels[value](),
-          value,
-        }))}
-        value={answer.type}
-      />
+      {typeField && (
+        <SelectField
+          className="w-44"
+          label={m.question_ui_answer_type()}
+          onChange={(value) => onChange(emptyAnswer(value as QuestionType))}
+          options={QUESTION_TYPES.map((value) => ({
+            label: answerLabels[value](),
+            value,
+          }))}
+          value={answer.type}
+        />
+      )}
       {answer.type === 'mcq' && (
         <div className="space-y-2">
           <p className="t-label">

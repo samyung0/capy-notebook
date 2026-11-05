@@ -19,10 +19,12 @@ import logging
 import math
 import random
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
+
+import httpx
 
 from .. import elitellm, obs, registry
 from ..config import cfg
@@ -142,82 +144,51 @@ def _slotted_stream(stream):
 
 
 def _chat_wait() -> limits.CallSlotPolicy | None:
-    """The chat's slot policy when this call may wait (a chat turn's calls;
-    generate and editor bind a zero wait, ingest none)."""
+    """The chat's slot policy, whose model calls a busy provider puts back
+    in line (generate and editor bind a zero wait, ingest none)."""
     policy = limits.call_slot_policy()
     if policy is None or policy.wait_s <= 0 or not _interactive():
         return None
     return policy
 
 
-def _gate_key(spec: ModelConfig) -> str:
-    return f"{spec.provider_slug}:{spec.model_slug}"
-
-
-async def _open_in_line(
-    open_call: Callable[..., Awaitable[None]],
-    chat: limits.CallSlotPolicy,
-    key: str,
-    deadline: float,
-) -> None:
-    """Open a chat call past its model's capacity in arrival order (Epo
-    2026-10-29): straight through when nobody waits and the gate has room,
-    else behind the calls already waiting, the head trying the gate until
-    ``deadline``. The waiting status shows while it waits."""
-    queue = limits.model_queue(key)
-    if not queue.waiting:
-        try:
-            await open_call(deadline=None)
-            return
-        except accounting.GateFull:
-            pass
-
-    async def pause(seconds: float) -> None:
-        await queue.pause(seconds)
-        if chat.left is not None and chat.left.is_set():
-            raise CallNotStarted("the client left while the call waited")
-
-    if chat.on_wait is not None:
-        chat.on_wait()
-    queue.waiting += 1
-    # Waiting in line holds no process call slot, so one full model cannot
-    # fill them for every other model and route (review M2).
+@asynccontextmanager
+async def _in_line(policy: limits.CallSlotPolicy | None, deadline: float):
+    """While a call waits its turn in its model's line (Epo 2026-11-04): a
+    chat shows the waiting status, and the call holds no process call slot,
+    so one full model cannot fill them for every other model and route
+    (review M2). With its turn it takes a slot again, in the slots' own
+    arrival order, and a chat leaves the waiting status. A call whose client
+    left starts nothing."""
+    left = policy.left if policy is not None else None
+    if policy is not None and policy.on_wait is not None:
+        policy.on_wait()
     slot = _held_slot.get()
     if slot is not None and slot[0]:
         slot[0] = False
         limits.CALL_SLOTS.release()
     try:
-        if not await queue.head(deadline - time.monotonic(), chat.left):
-            if chat.left is not None and chat.left.is_set():
-                raise CallNotStarted("the client left while the call waited")
-            raise accounting.GateFull(
-                f"{key} is at its concurrency cap",
-                retry_after=accounting.BUSY_RETRY_AFTER_S,
-            )
-        try:
-            if slot is not None:
-                await _retake_slot(slot, deadline, chat)
-            await open_call(deadline=deadline, pause=pause)
-        finally:
-            queue.leave()
-    finally:
-        queue.waiting -= 1
-    if chat.on_granted is not None:
-        chat.on_granted()
+        yield
+    except accounting.GateFull:
+        if left is not None and left.is_set():
+            raise CallNotStarted("the client left while the call waited") from None
+        raise
+    if slot is not None:
+        await _retake_slot(slot, deadline, left)
+    if policy is not None and policy.on_granted is not None:
+        policy.on_granted()
 
 
 async def _retake_slot(
-    slot: list[bool], deadline: float, chat: limits.CallSlotPolicy
+    slot: list[bool], deadline: float, left: asyncio.Event | None
 ) -> None:
-    """The head of a model's line takes a process call slot again, in the
-    slots' own arrival order, before it tries the gate."""
     slots = limits.CALL_SLOTS
     if not slots.take():
         waiter = slots.join()
-        if not await slots.wait_for(waiter, deadline - time.monotonic(), chat.left):
-            if chat.left is not None and chat.left.is_set():
+        if not await slots.wait_for(waiter, deadline - time.monotonic(), left):
+            if left is not None and left.is_set():
                 raise CallNotStarted("the client left while the call waited")
-            raise elitellm.ProviderBusy(
+            raise accounting.GateFull(
                 CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
             )
     slot[0] = True
@@ -234,35 +205,38 @@ async def _tracked_call(
     deadline: float | None = None,
     capacity: tuple[str, int] | None = None,
     stream: _StreamReceipt | None = None,
+    bound: bool = False,
 ):
     """Open one provider call around its request; free its lease on the way out.
 
+    ``deadline`` bounds the call's wait in its model's line; an interactive
+    call's wait is at least a chat's, unless ``bound`` makes ``deadline`` the
+    call's own limit (a rerank, which its search stops waiting for).
     ``stream`` marks a streamed call. A stream that fails at any point (no
     first event, silence, an error event, transport loss, cancellation) is
     over, and nothing can settle its call id later, so it closes at once: the
     usage it sent is billed, and with none it is abandoned unbilled.
     """
     call_id = accounting.new_call_id()
-    open_call = functools.partial(
-        accounting.open_call,
+    policy = limits.call_slot_policy()
+    if deadline is not None and not bound and _interactive():
+        # Every interactive call may wait its turn in its model's line as
+        # long as a chat call, past its busy-retry budget (Epo 2026-11-04).
+        deadline = max(deadline, time.monotonic() + limits.CHAT_SLOT_WAIT_S)
+    await accounting.open_call(
         call_id,
         kind=kind,
         purpose=purpose,
         thinking=thinking,
         context=context,
         spec=spec,
+        deadline=deadline,
         capacity=capacity,
+        left=policy.left if policy is not None else None,
+        waiting=None
+        if deadline is None
+        else functools.partial(_in_line, policy, deadline),
     )
-    # A chat model call on its model's own gate waits in that model's line.
-    chat = (
-        _chat_wait()
-        if kind == accounting.KIND_LLM and spec is not None and capacity is None
-        else None
-    )
-    if chat is None or spec is None or deadline is None:
-        await open_call(deadline=deadline)
-    else:
-        await _open_in_line(open_call, chat, _gate_key(spec), deadline)
     try:
         yield call_id
     except accounting.SettlementError:
@@ -294,10 +268,9 @@ async def _tracked_call(
         # The attempt is over whichever way it ended; free its slot so the
         # next waiter is not held behind an abandoned or settled call.
         await accounting.release_call(call_id)
-        if spec is not None and capacity is None:
-            queue = limits.MODEL_QUEUES.get(_gate_key(spec))
-            if queue is not None:
-                queue.freed()
+        line = limits.MODEL_LINES.get(accounting.gate_key(spec, capacity))
+        if line is not None:
+            line.freed()
 
 
 @dataclass(frozen=True)
@@ -306,14 +279,15 @@ class RetryPolicy:
 
     Every attempt is its own call id. A busy answer (429, 503, 529) waits for
     the provider's Retry-After, else a jittered backoff; a wait that would run
-    past the budget ends the call at once. Waiting at a capped model's gate
-    spends the same budget.
+    past the budget ends the call at once. An ingest call's wait in its
+    model's line spends the same budget; an interactive call's has a chat's
+    wait of its own (``_tracked_call``).
     """
 
     attempts: int
     budget_s: float
-    # A chat model call's slot policy: it waits in line and once behind a
-    # busy provider, with the waiting status (Epo 2026-10-29).
+    # A chat model call's slot policy: a busy provider puts it back in line
+    # once, with the waiting status (Epo 2026-10-29).
     wait: limits.CallSlotPolicy | None = None
 
 
@@ -328,9 +302,8 @@ def _interactive() -> bool:
 
 def retry_policy(*, llm: bool = True) -> RetryPolicy:
     """A chat model call keeps its two attempts but may wait its turn's whole
-    wait: in its model's line, and once behind a busy provider (Epo
-    2026-10-29). Embeddings and reranks (``llm`` False) keep the interactive
-    budget (review L2, L3)."""
+    wait once behind a busy provider (Epo 2026-10-29). Embeddings and reranks
+    (``llm`` False) keep the interactive busy budget (review L2, L3)."""
     if not _interactive():
         return INGEST_RETRY
     chat = _chat_wait() if llm else None
@@ -363,6 +336,18 @@ def busy_error(exc: BaseException) -> BaseException | None:
     return None
 
 
+def timed_out(exc: BaseException) -> bool:
+    """Whether a timeout is behind ``exc``, following cause links."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, (TimeoutError, httpx.TimeoutException)):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 def _provider_retry_after(busy: BaseException) -> float | None:
     """The wait the provider itself asked for, never a synthesized one."""
     if isinstance(busy, elitellm.ProviderBusy):
@@ -390,7 +375,12 @@ async def _retry_or_raise(
 
     ``retry_any`` also retries failures that are not busy answers; streaming
     callers use it for pre-byte failures, whose cause is usually transport.
+    For an interactive call a timeout, the provider's or our own wait's (the
+    model's line, a call slot), ends the call at once (Epo 2026-11-04); an
+    ingest call keeps its retries within its budget (AGENTS.md).
     """
+    if _interactive() and (isinstance(exc, accounting.GateFull) or timed_out(exc)):
+        raise exc
     busy = busy_error(exc)
     last = attempt >= policy.attempts - 1
     if busy is None:
@@ -462,7 +452,8 @@ async def _call_with_retry(
     ``retry_any`` also retries failures that are not busy answers, for calls
     where one dropped attempt is a permanent loss rather than a user retry.
     ``transient`` does the same except for a definitive client error.
-    ``llm`` False marks an embedding or rerank, which never waits in line.
+    ``llm`` False marks an embedding or rerank, which a busy provider never
+    puts back in line.
     """
     policy = retry_policy(llm=llm)
     deadline = time.monotonic() + policy.budget_s
@@ -619,6 +610,7 @@ async def rerank(query: str, documents: list[str], *, spec: ModelConfig) -> list
             purpose=accounting.KIND_RERANK,
             spec=spec,
             deadline=min(deadline, bound),
+            bound=True,
         ) as call_id:
             raw = await elitellm.rerank(spec, query, documents)
             accounting.settle_in_background(
@@ -1181,9 +1173,6 @@ async def read_page(
             context=context,
             spec=spec,
             deadline=deadline,
-            # A gate of its own, apart from the captioning model's ingest share:
-            # at most CAPY_VLM_PAGE_CAPACITY in flight across every worker.
-            capacity=("vlm_page", cfg.vlm_page_capacity),
         ) as call_id:
             if scripted is None:
                 resp = await elitellm.complete(

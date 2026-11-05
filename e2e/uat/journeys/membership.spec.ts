@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
+import { openWorkspaceSettings } from '../../helpers/workspace';
 import { m } from '../../i18n';
 import {
   api,
@@ -83,8 +84,8 @@ function browserToken(
 }
 
 /**
- * The owner's members UI: Workspace settings → Sharing → the member's menu →
- * Manage member → Role → View, or Remove. Returns the API's status.
+ * The owner's members UI: Workspace settings → Sharing → the member's role
+ * dropdown → View, or their trash. Returns the API's status.
  */
 async function changeMember(
   run: UatRun,
@@ -101,10 +102,7 @@ async function changeMember(
   );
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page
-    .getByRole('button', { exact: true, name: m.workspace_settings() })
-    .first()
-    .click();
+  await openWorkspaceSettings(page);
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_sharing() })
@@ -116,18 +114,20 @@ async function changeMember(
   const response = page.waitForResponse(
     (r) => new URL(r.url()).pathname === path && r.request().method() === method
   );
-  // The member is the only row with a menu (the owner's has none).
-  await people.getByRole('button', { name: m.a11y_open_menu() }).click();
-  if (change === 'remove')
-    await page
-      .getByRole('menuitem', { exact: true, name: m.members_remove() })
-      .click();
-  else {
-    await page
-      .getByRole('menuitem', { exact: true, name: m.members_manage() })
+  if (change === 'remove') {
+    await people
+      .getByRole('button', {
+        exact: true,
+        name: m.members_remove_named({ name }),
+      })
       .click();
     await page
-      .getByRole('combobox', { exact: true, name: m.common_role() })
+      .getByRole('dialog', { name: m.members_remove_confirm_title({ name }) })
+      .getByRole('button', { exact: true, name: m.action_remove() })
+      .click();
+  } else {
+    await people
+      .getByRole('combobox', { exact: true, name: m.members_role_of({ name }) })
       .click();
     await page
       .getByRole('option', { exact: true, name: m.members_role_view() })

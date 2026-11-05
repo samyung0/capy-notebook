@@ -12,27 +12,30 @@ import type { UndoTarget } from './undo';
 /** A live item's room state as the note header's save status reads it. */
 export function itemSaveState(
   status: ItemRoomStatus,
-  offline?: ItemRoomSnapshot['offline']
+  offline?: ItemRoomSnapshot['offline'],
+  sending?: boolean
 ): NoteEditorSaveState | null {
   // Refused as outdated: stopped until the page reloads, as recovery.
   if (isOutdatedBanner(offline)) return 'error';
-  return status === 'unavailable' ? null : status;
+  if (status === 'unavailable') return null;
+  // A draft send reads as such, whatever the room says meanwhile (D10).
+  return sending && status !== 'offline' ? 'syncing-draft' : status;
 }
 
 const STATUS: Record<
   ItemRoomStatus,
   { icon: IconName; label: () => string } | null
 > = {
-  connecting: { icon: 'cloudSync', label: m.editor_connecting },
   offline: { icon: 'cloudOff', label: m.editor_status_offline },
+  opening: null,
   saved: { icon: 'CloudIcon', label: m.editor_status_saved },
   syncing: { icon: 'cloudSync', label: m.editor_status_syncing },
   unavailable: null,
 };
 
 /** The live status in an item dialog's footer: the note header's icons.
- * `compact` (the phone header, beside Undo and Redo) shows the icon alone,
- * at their size and ink. */
+ * `compact` (the phone header) shows the icon alone, at the toolbar's size and
+ * ink. */
 export function LiveStatus({
   status,
   compact,
@@ -66,9 +69,10 @@ export function LiveStatus({
   );
 }
 
-/** Undo and Redo of this user's own edits to one live item. `header` lifts
- * the icons 1px from lg, level with the View toggle's icon beside them;
- * `footer` lifts them half a pixel always, level with the live status. */
+/** Undo and Redo of this user's own edits to one live item. Phones go without
+ * them everywhere (Epo 2026-11-04); keyboard shortcuts stay. `header` lifts the
+ * icons 1px from lg, level with the View toggle's icon beside them; `footer`
+ * lifts them half a pixel always, level with the live status. */
 export function UndoButtons({
   manager,
   header,
@@ -93,7 +97,7 @@ export function UndoButtons({
   const held = useCollaborationHeld();
   return (
     // The tour outlines the pair.
-    <span className="flex items-center" data-undo-buttons>
+    <span className="hidden items-center sm:flex" data-undo-buttons>
       <ToolbarButton
         disabled={held || !canUndo}
         label={m.editor_undo()}

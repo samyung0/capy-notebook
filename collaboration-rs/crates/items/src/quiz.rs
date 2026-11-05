@@ -4,9 +4,11 @@
 //! editors with write access join, so answer keys never reach a reader.
 //!
 //! Content: `questions`, question id to `{order, layout, labels, level?,
-//! stem, parts}`; part id to `{order, marks, blocks, answer}`; the answer map
-//! holds the type and what a learner may see: mcq `options`, a
-//! short answer's `unit` and matching `left` items.
+//! stem, groups?, parts}`; group id to `{blocks}`; part id to `{order, marks,
+//! blocks, answer, group?}`; the answer map holds the type and what a learner
+//! may see: mcq `options`, a short answer's `unit` and matching `left` items.
+//! A group has no order of its own: it sits where its first part sits, and a
+//! merge's leftovers read repaired (`q::repair_groups`, Epo 2026-11-04).
 //!
 //! Keys: `keys`, part id to `{type, solution, correct | accepted | hints |
 //! markscheme | gaps | options | pairs | items}`. Editors type ordering items
@@ -278,6 +280,9 @@ pub fn holds_unknown_block<T: ReadTxn>(txn: &T) -> bool {
     let keys = ordered(txn, txn.get_map(KEYS_ROOT).as_ref());
     questions.iter().any(|question| {
         unknown(map_at(txn, &question.map, "stem"))
+            || ordered(txn, map_at(txn, &question.map, "groups").as_ref())
+                .iter()
+                .any(|group| unknown(map_at(txn, &group.map, "blocks")))
             || ordered(txn, map_at(txn, &question.map, "parts").as_ref())
                 .iter()
                 .any(|part| unknown(map_at(txn, &part.map, "blocks")))
@@ -471,7 +476,8 @@ fn read_answer<C: ReadTxn, K: ReadTxn>(
 }
 
 /// Every question as editors see it (with keys) or as the content document
-/// alone holds it (`keys` none), in order, as the shared question JSON.
+/// alone holds it (`keys` none), in order, as the shared question JSON, a
+/// merge's leftover groups repaired.
 pub fn questions_json<C: ReadTxn, K: ReadTxn>(
     content: &C,
     keys: Option<&KeysRead<'_, K>>,
@@ -483,7 +489,21 @@ pub fn questions_json<C: ReadTxn, K: ReadTxn>(
         .collect()
 }
 
+/// A question as the shared JSON, a merge's leftover groups repaired.
 fn question_json<C: ReadTxn, K: ReadTxn>(
+    content: &C,
+    keys: Option<&KeysRead<'_, K>>,
+    id: &str,
+    map: &MapRef,
+) -> Value {
+    let mut question = held_question_json(content, keys, id, map);
+    q::repair_groups(&mut question);
+    question
+}
+
+/// A question as its documents hold it, a group no part names included: what
+/// the limits measure and what keeps an image in use.
+fn held_question_json<C: ReadTxn, K: ReadTxn>(
     content: &C,
     keys: Option<&KeysRead<'_, K>>,
     id: &str,
@@ -519,6 +539,9 @@ fn question_json<C: ReadTxn, K: ReadTxn>(
             if let Some(markscheme) = markscheme {
                 value["markscheme"] = markscheme;
             }
+            if let Some(group) = str_at(content, &part.map, "group") {
+                value["group"] = json!(group);
+            }
             value
         })
         .collect();
@@ -529,10 +552,34 @@ fn question_json<C: ReadTxn, K: ReadTxn>(
         "stem": read_blocks(content, map_at(content, map, "stem").as_ref()),
         "parts": parts,
     });
+    let groups: Vec<Value> = ordered(content, map_at(content, map, "groups").as_ref())
+        .iter()
+        .map(|group| {
+            json!({
+                "id": group.id,
+                "blocks": read_blocks(content, map_at(content, &group.map, "blocks").as_ref()),
+            })
+        })
+        .collect();
+    if !groups.is_empty() {
+        value["groups"] = Value::Array(groups);
+    }
     if let Some(level) = str_at(content, map, "level") {
         value["level"] = json!(level);
     }
     value
+}
+
+/// Every question as its documents hold it ([held_question_json]).
+fn held_questions_json<C: ReadTxn, K: ReadTxn>(
+    content: &C,
+    keys: Option<&KeysRead<'_, K>>,
+) -> Vec<Value> {
+    let root = content.get_map(QUESTIONS_ROOT);
+    ordered(content, root.as_ref())
+        .iter()
+        .map(|question| held_question_json(content, keys, &question.id, &question.map))
+        .collect()
 }
 
 fn question_node(question: Value) -> Value {
@@ -599,6 +646,11 @@ fn without_blanks(mut question: Value) -> Value {
         }
     };
     keep(&mut question["stem"]);
+    if let Some(groups) = question.get_mut("groups").and_then(Value::as_array_mut) {
+        for group in groups {
+            keep(&mut group["blocks"]);
+        }
+    }
     if let Some(parts) = question["parts"].as_array_mut() {
         for part in parts {
             keep(&mut part["blocks"]);
@@ -681,7 +733,7 @@ pub fn asset_ids<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K) -> Vec<String> {
         }
     }
     let mut ids = std::collections::BTreeSet::new();
-    for question in questions_json(content, Some(&KeysRead::new(keys))) {
+    for question in held_questions_json(content, Some(&KeysRead::new(keys))) {
         walk(&question, &mut ids);
     }
     ids.into_iter().collect()
@@ -703,7 +755,7 @@ pub fn editor_value<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K) -> Vec<Value>
 /// limits measure.
 pub fn content_document_value<T: ReadTxn>(txn: &T) -> Vec<Value> {
     quiz_block(
-        questions_json::<T, T>(txn, None)
+        held_questions_json::<T, T>(txn, None)
             .into_iter()
             .map(question_node)
             .collect(),
@@ -1163,6 +1215,7 @@ fn sync_question(
         sync_plain(content, &map, field, value);
     }
     sync_blocks(content, &map, "stem", array_of(question, "stem"));
+    sync_groups(content, &map, array_of(question, "groups"));
     let parts_map = child_map(content, &map, "parts");
     let parts = array_of(question, "parts");
     let wanted: HashSet<&str> = parts.iter().map(|part| str_of(part, "id")).collect();
@@ -1184,8 +1237,25 @@ fn sync_question(
         last = Some(order);
         let marks = part.get("marks").and_then(Value::as_f64).map(Any::Number);
         sync_plain(content, &entry, "marks", marks);
+        let group = part.get("group").and_then(Value::as_str).map(string_any);
+        sync_plain(content, &entry, "group", group);
         sync_blocks(content, &entry, "blocks", array_of(part, "blocks"));
         sync_answer(content, &entry, keys, key_root, part);
+    }
+}
+
+/// A question's groups, written as what differs; a question that has none and
+/// never had gets no map.
+fn sync_groups(content: &mut TransactionMut, question: &MapRef, groups: &[Value]) {
+    if groups.is_empty() && !question.contains_key(content, "groups") {
+        return;
+    }
+    let map = child_map(content, question, "groups");
+    let wanted: HashSet<&str> = groups.iter().map(|group| str_of(group, "id")).collect();
+    remove_keys(content, &map, |id| wanted.contains(id));
+    for group in groups {
+        let entry = child_map(content, &map, str_of(group, "id"));
+        sync_blocks(content, &entry, "blocks", array_of(group, "blocks"));
     }
 }
 
@@ -1694,15 +1764,32 @@ fn content_shape(
             tally.value(content);
             Ok(())
         }
-        ([R, _], Some("stem" | "parts")) if is_map(content) => {
+        ([R, _], Some("stem" | "groups" | "parts")) if is_map(content) => {
             tally.structure(16);
             Ok(())
         }
-        ([R, _, "stem"], Some(id)) | ([R, _, "parts", _, "blocks"], Some(id)) => {
-            new_entry(content, id, full, tally)
+        ([R, _, "stem"], Some(id))
+        | ([R, _, "groups"], Some(id))
+        | ([R, _, "groups", _, "blocks"], Some(id))
+        | ([R, _, "parts", _, "blocks"], Some(id)) => new_entry(content, id, full, tally),
+        ([R, _, "stem", _, rest @ ..], key)
+        | ([R, _, "groups", _, "blocks", _, rest @ ..], key) => {
+            block_shape(rest, key, content, full, tally)
         }
-        ([R, _, "stem", _, rest @ ..], key) => block_shape(rest, key, content, full, tally),
+        ([R, _, "groups", _], Some("blocks")) if is_map(content) => {
+            tally.structure(16);
+            Ok(())
+        }
         ([R, _, "parts"], Some(id)) => new_entry(content, id, full, tally),
+        // Names a group of any id the validators let it have: a stored one may hold
+        // what a key a client creates may not (`new_entry`), as a part's id may.
+        ([R, _, "parts", _], Some("group")) => match one_any(content) {
+            Some(Any::String(group)) if !group.is_empty() && group.chars().count() <= MAX_ID => {
+                tally.value(content);
+                Ok(())
+            }
+            _ => refuse("a part's group that does not name one"),
+        },
         ([R, _, "parts", _], Some("order")) if order_key(content) => {
             tally.value(content);
             Ok(())
@@ -1834,6 +1921,7 @@ fn list_cap(path: &[&str]) -> Option<usize> {
     const K: &str = KEYS_ROOT;
     let table = match path {
         [R, _, "stem", _, field]
+        | [R, _, "groups", _, "blocks", _, field]
         | [R, _, "parts", _, "blocks", _, field]
         | [K, _, "solution", _, field] => Some(*field),
         _ => None,
@@ -1847,11 +1935,13 @@ fn list_cap(path: &[&str]) -> Option<usize> {
         };
     }
     Some(match path {
-        [R, _, "stem"] | [R, _, "parts", _, "blocks"] | [K, _, "solution"] => {
-            q::QUESTION_BLOCKS_MAX
-        }
+        [R, _, "stem"]
+        | [R, _, "groups", _, "blocks"]
+        | [R, _, "parts", _, "blocks"]
+        | [K, _, "solution"] => q::QUESTION_BLOCKS_MAX,
         [R] => q::QUIZ_PARTS_MAX,
-        [R, _, "parts"] => q::QUIZ_QUESTION_PARTS_MAX,
+        // A group has at least one part, so no more groups than parts.
+        [R, _, "parts"] | [R, _, "groups"] => q::QUIZ_QUESTION_PARTS_MAX,
         [R, _, "parts", _, "answer", "options" | "left"] => q::QUESTION_ANSWERS_MAX,
         [K] => q::QUIZ_PARTS_MAX * 2,
         [
@@ -2156,6 +2246,15 @@ pub fn check_content_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
     let (mut parts, mut open) = (0usize, 0usize);
     for question in &questions {
         check_blocks(txn, map_at(txn, &question.map, "stem").as_ref())?;
+        let groups = ordered(txn, map_at(txn, &question.map, "groups").as_ref());
+        check_count(
+            groups.len(),
+            q::QUIZ_QUESTION_PARTS_MAX,
+            "a question's groups",
+        )?;
+        for group in &groups {
+            check_blocks(txn, map_at(txn, &group.map, "blocks").as_ref())?;
+        }
         let question_parts = ordered(txn, map_at(txn, &question.map, "parts").as_ref());
         check_count(
             question_parts.len(),
@@ -2187,7 +2286,7 @@ pub fn check_content_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
         }
     }
     check_count(parts, q::QUIZ_PARTS_MAX, "a quiz's parts")?;
-    check_count(open, q::QUIZ_OPEN_PARTS_MAX, "a quiz's open parts")
+    check_count(open, q::QUIZ_OPEN_PARTS_MAX, "a quiz's AI-marked parts")
 }
 
 /// The keys document's caps, exactly.

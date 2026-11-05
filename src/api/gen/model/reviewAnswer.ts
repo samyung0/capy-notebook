@@ -8,6 +8,7 @@ import type { CardImage } from './cardImage.ts';
 import type { ReviewAnswerAnswers } from './reviewAnswerAnswers.ts';
 import type { ReviewAnswerKind } from './reviewAnswerKind.ts';
 import type { ReviewAnswerQuestion } from './reviewAnswerQuestion.ts';
+import type { ReviewAnswerReason } from './reviewAnswerReason.ts';
 
 export interface ReviewAnswer {
   answers?: ReviewAnswerAnswers;
@@ -25,5 +26,6 @@ export interface ReviewAnswer {
      * @maximum 4
      */
   rating: number;
+  reason?: ReviewAnswerReason;
   total?: number;
 }

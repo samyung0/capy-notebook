@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { frameInput, IDLE_MS, watchIdle } from './idle';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { frameInput, HIDDEN_SLEEP_MS, IDLE_MS, watchIdle } from './idle';
 
 let stop: (() => void) | undefined;
 // The page's window, as an event target (the tests run without a DOM).
@@ -62,4 +62,54 @@ it('counts input inside an Office frame', () => {
   expect(sleep).toHaveBeenCalledTimes(1);
   frameInput(page);
   expect(wake).toHaveBeenCalledTimes(1);
+});
+
+/** A clean hidden tab sleeps at 5 minutes and rejoins invisibly when it shows
+ * (Epo 2026-11-04). */
+describe('a hidden page', () => {
+  function hideable(mayHide: () => boolean) {
+    const target = new EventTarget();
+    const shown = Object.assign(target, {
+      visibilityState: 'visible' as DocumentVisibilityState,
+    });
+    const calls = { mayHide, sleep: vi.fn(), wake: vi.fn() };
+    stop = watchIdle(calls, page, shown as never);
+    const set = (state: DocumentVisibilityState) => {
+      shown.visibilityState = state;
+      target.dispatchEvent(new Event('visibilitychange'));
+    };
+    return { calls, set };
+  }
+
+  it('sleeps at 5 minutes hidden, and wakes when it shows', () => {
+    const { calls, set } = hideable(() => true);
+    set('hidden');
+    vi.advanceTimersByTime(HIDDEN_SLEEP_MS - 1);
+    expect(calls.sleep).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(calls.sleep).toHaveBeenCalledTimes(1);
+    set('visible');
+    expect(calls.wake).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays while something forbids it, and sleeps once nothing does', () => {
+    let clean = false;
+    const { calls, set } = hideable(() => clean);
+    set('hidden');
+    vi.advanceTimersByTime(HIDDEN_SLEEP_MS);
+    expect(calls.sleep).not.toHaveBeenCalled();
+    clean = true;
+    vi.advanceTimersByTime(30_000);
+    expect(calls.sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing when it shows again in time', () => {
+    const { calls, set } = hideable(() => true);
+    set('hidden');
+    vi.advanceTimersByTime(HIDDEN_SLEEP_MS - 1);
+    set('visible');
+    vi.advanceTimersByTime(HIDDEN_SLEEP_MS);
+    expect(calls.sleep).not.toHaveBeenCalled();
+    expect(calls.wake).not.toHaveBeenCalled();
+  });
 });
