@@ -22,7 +22,13 @@ Windows lands and deploys these, one landing per deploy.
 Started 2026-11-06. Plan: `todo-study-tracking.md`, "Drawing answers" (agreed 2026-11-03),
 boards K6, K7 and K8 on the study Design canvas. Scanned submissions build on its marking path.
 
-- [ ] Try the real BlockSuite edgeless editor as the board: chunk size, open time, tools against K6–K8, drawing to an image
+- [x] Try the real BlockSuite edgeless editor as the board (2026-11-06; `src/features/blocksuite/drawingBoard.ts`, dev route `/dev/drawing`, branch `blocksuite-notes`). It works, on a production build:
+  - **Download:** 1.16 MB gzipped, loaded only when the board opens (1.81 MB with every editor part, 1.03 MB without note cards).
+  - **Open:** about 0.25 s, or 0.8 s at 4x CPU slowdown, not counting the download.
+  - **Answer size:** about 2 KB for a sketch with a label, 30 KB for 42 long strokes. Image for marking: about 115 KB.
+  - **Worked:** pen, typed labels and note cards in the image, a saved answer reopening, the axes sheet that no tool can erase, touch drawing at 360 px.
+  - **Only tried on mocks:** Chromium on this Mac with simulated touch, no real phone or pen.
+- [ ] Fix what the try found: a typed label throws a `ZodError` from `recordLastProps` (probably zod 4 on the vendored schema); the zoom bar covers the toolbar at 360 px; the sheet opens small on phones; the note image and attachment items need removing; undo, redo and the formula and graph presets aren't in AFFiNE's toolbar and need adding; note cards need drawing onto the sheet in the image
 - [ ] Bring `vendor/blocksuite` to `main` in a lazy chunk (today it's only on `blocksuite-notes`)
 - [ ] `drawing` answer type with its background (blank, squared grid, axes, figure) in the shared question format: Go, Rust, TypeScript, pipeline
 - [ ] The board: full screen, question pinned at top left, Done returning to a preview and "Edit drawing", phones

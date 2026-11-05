@@ -22,6 +22,9 @@
       "@/features/blocksuite/pageEditor": [
         "./src/features/blocksuite/pageEditor.boundary.d.ts"
       ],
+      "@/features/blocksuite/drawingBoard": [
+        "./src/features/blocksuite/drawingBoard.boundary.d.ts"
+      ],
       "@/*": ["./src/*"],
       "@paraglide/*": ["./src/i18n/paraglide/*"],
       "@betteroffice/docx": ["./vendor/betteroffice/packages/docx/src/core.ts"],

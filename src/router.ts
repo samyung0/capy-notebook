@@ -160,6 +160,11 @@ const publicRoutes = [
           getParentRoute: () => rootRoute,
           path: '/dev/blocksuite',
         }),
+        createRoute({
+          component: lazyPage(() => import('@/routes/DevDrawingBoard')),
+          getParentRoute: () => rootRoute,
+          path: '/dev/drawing',
+        }),
       ]
     : []),
   createRoute({
