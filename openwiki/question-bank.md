@@ -252,7 +252,10 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden from
   members and in no topic, and shows "Reading pages" until it is indexed. Continue waits
   for the paper's pages and for each answer file to have an id; an answer file may still
-  be reading, and one that failed or was stored without parsing holds it until removed.
+  be reading, and one that failed or was stored without parsing holds it until removed. An
+  upload has the Add dialog's checks: size, compression, name length and the workspace's file
+  room. One that would be stored with no text (a password, too many pages, or no credits for
+  its parse) isn't sent: an error names it and its row goes.
 - **Pages** (`usePageStep`, Epo 2026-11-05, "use the 2 column design ... like what we did for
   workspace settings"). Two columns in a tall frame: the files with their counts on the left, a
   divider between Questions and Mark schemes and answers when there are both, one file's pages on the right, and on phones the same as settings, a list and then a file,

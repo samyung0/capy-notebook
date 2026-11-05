@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/Button';
 import { DialogCancel, SimpleDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
-import { Input } from '@/components/ui/Input';
 import {
   Popover,
   PopoverContent,
@@ -17,7 +16,10 @@ import {
 } from '@/components/ui/Popover';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { selectTriggerVariants } from '@/components/ui/Select';
-import { matchesSearch } from '@/features/workspace/PanelSearch';
+import {
+  matchesSearch,
+  PanelSearchField,
+} from '@/features/workspace/PanelSearch';
 import {
   type SourceTransfer,
   useSourceTransfers,
@@ -113,12 +115,15 @@ function PagesMeta({
 function FileRow({
   end,
   files,
+  last,
   metaAtEnd,
   picked,
   policy,
 }: {
   end: React.ReactNode;
   files: SourceFile[] | undefined;
+  /** The list's last row has no line under it. */
+  last: boolean;
   /** The count beside the action rather than the name (the answers' rows). */
   metaAtEnd?: boolean;
   picked: Picked;
@@ -126,7 +131,12 @@ function FileRow({
 }) {
   const state = useRowState(picked, files);
   return (
-    <div className="flex min-h-10 min-w-0 items-center gap-2 border-divider border-b py-1">
+    <div
+      className={cn(
+        'flex min-h-10 min-w-0 items-center gap-2 py-1',
+        !last && 'border-divider border-b'
+      )}
+    >
       <FileIcon
         className="size-4 shrink-0"
         name={fileIconName({ kind: picked.kind, name: picked.name })}
@@ -253,14 +263,13 @@ function FileMenu({
           wide && 'w-[550px] max-w-[calc(100vw-2rem)]'
         )}
       >
-        <Input
-          aria-label={m.make_quiz_search_files()}
-          leftIcon="search"
-          maxLength={120}
-          onChange={(event) => setQuery(event.target.value)}
-          value={query}
-          wrapperClassName="mb-1 shrink-0"
-        />
+        <div className="mb-1 shrink-0">
+          <PanelSearchField
+            label={m.make_quiz_search_files()}
+            onChange={setQuery}
+            value={query}
+          />
+        </div>
         <MenuRow disabled={!policy} onClick={onUpload}>
           <Icon name="upload" size={16} />
           {m.make_quiz_upload_file()}
@@ -367,7 +376,11 @@ export function MakeQuizDialog({
   workspaceName: string;
 }) {
   const { data: files } = useFiles(workspaceId, { errorBoundary: false });
-  const { add, cancel, policy } = useQuizUpload(workspaceId);
+  const { add, cancel, policy } = useQuizUpload(workspaceId, (key) => {
+    const others = (rows: Picked[]) => rows.filter((row) => row.key !== key);
+    setPaper(others);
+    setAnswers(others);
+  });
   const fromFiles = (ids: string[]): Picked[] =>
     ids.flatMap((id) => {
       const file = files?.find((row) => row.id === id);
@@ -506,7 +519,7 @@ export function MakeQuizDialog({
           setAnswers((current) => [...current, ...rows]);
         }}
       />
-      <div className="flex flex-col gap-4 pb-1">
+      <div className="flex flex-col gap-7 pb-1">
         <p className="t-meta text-fg-muted">{m.make_quiz_no_spreadsheets()}</p>
         <div className="flex min-w-0 flex-col gap-1.5">
           <p className="t-meta font-semibold text-fg-secondary">
@@ -544,7 +557,7 @@ export function MakeQuizDialog({
             />
           ) : (
             <>
-              {paper.map((row) => (
+              {paper.map((row, i) => (
                 <FileRow
                   end={
                     paper.length > 1 ? (
@@ -573,6 +586,7 @@ export function MakeQuizDialog({
                   }
                   files={files}
                   key={row.key}
+                  last={i === paper.length - 1}
                   picked={row}
                   policy={policy}
                 />
@@ -615,11 +629,12 @@ export function MakeQuizDialog({
               {m.make_quiz_up_to({ count: EXTRACTION_ANSWER_FILES_MAX })}
             </span>
           </p>
-          {answers.map((row) => (
+          {answers.map((row, i) => (
             <FileRow
               end={removeButton(setAnswers, row)}
               files={files}
               key={row.key}
+              last={i === answers.length - 1}
               metaAtEnd
               picked={row}
               policy={policy}
@@ -686,7 +701,7 @@ export function MakeQuizDialog({
             ),
             onCloseClick: onClose,
             title: m.make_quiz_title(),
-            width: 600,
+            width: 720,
           };
   return (
     <SimpleDialog
@@ -706,6 +721,11 @@ export function MakeQuizDialog({
       onInteractOutside={
         step.guarded ? (event) => event.preventDefault() : undefined
       }
+      // The dialog takes focus, not its first button.
+      onOpenAutoFocus={(event) => {
+        event.preventDefault();
+        (event.currentTarget as HTMLElement).focus();
+      }}
       open
       showCloseButton={step.closable ?? true}
       title={step.title}
