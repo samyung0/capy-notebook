@@ -16263,3 +16263,228 @@ async fn a_fold_drops_an_unreadable_agent_holds_record() {
     }
     assert_eq!(held, None);
 }
+
+/// A writer of `room` that holds its seed.
+async fn office_writer(port: u16, room: &str, user: &str) -> Client {
+    let mut client = Client::open(port).await;
+    client.joined(room, &token(room, user, "write")).await;
+    let seeded = |c: &Client| c.doc.transact().state_vector() != StateVector::default();
+    assert!(client.settle(seeded).await, "the room's seed");
+    client
+}
+
+/// The room's next update to `client`, as it arrived.
+async fn next_update(client: &mut Client) -> Vec<u8> {
+    loop {
+        let payload = client.until(5).await.expect("an update from the room");
+        let mut at = 0;
+        let kind = read_var(&payload, &mut at);
+        let len = read_var(&payload, &mut at) as usize;
+        if kind == 2 {
+            return payload[at..at + len].to_vec();
+        }
+    }
+}
+
+fn holds(bytes: &[u8], text: &str) -> bool {
+    bytes.windows(text.len()).any(|at| at == text.as_bytes())
+}
+
+/// Q549: one writer deletes a table, the other's typing made before it heard reaches the room
+/// after the delete. The room's commit collects the typing and keeps nothing of it, yet relays
+/// it as the writer sent it, so the first writer's Undo brings the table back with the typing,
+/// for both writers and for whoever joins next.
+#[tokio::test]
+async fn a_docx_undo_gets_the_peers_typing_back_through_the_relay() {
+    use docx_edit::{EditCtx, EngineSession, FormatPolicy, Position, TableLocator, UndoSession};
+    const TYPED: &str = "QPEERTEXT";
+    const CELL: &str = "body:t0:r0c0";
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file, _) = office_file(&env, &gateway, "docx").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut undoer = office_writer(server.port, &room, &user).await;
+    let mut peer = office_writer(server.port, &room, &user).await;
+    let engine_of = |client: &Client| {
+        let state = client
+            .doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let engine = EngineSession::new(client.id());
+        engine.doc().apply_update_v1(&state).expect("the seed");
+        engine
+    };
+    let (left, right) = (engine_of(&undoer), engine_of(&peer));
+    let undo = UndoSession::new();
+    undo.track(left.doc());
+    let ctx = EditCtx::local("Ada", "2026-11-05T00:00:00Z");
+    let text = |engine: &EngineSession| {
+        engine
+            .doc()
+            .paragraphs(CELL)
+            .expect("the cell")
+            .remove(0)
+            .text
+    };
+    let before = text(&right);
+
+    let base = left.doc().encode_state_vector_v1();
+    left.doc()
+        .delete_table(&ctx, &TableLocator::new("body", 0))
+        .expect("the delete");
+    undo.add_undo_barrier();
+    let delete = left
+        .doc()
+        .encode_diff_v1(&base)
+        .expect("the delete's update");
+    undoer.send(5, &sync(2, &delete)).await;
+    undoer.until(6).await.expect("the delete's ack");
+
+    let base = right.doc().encode_state_vector_v1();
+    right
+        .doc()
+        .insert_text(&ctx, Position::new(CELL, 0), TYPED, FormatPolicy::Plain)
+        .expect("the typing");
+    let typing = right
+        .doc()
+        .encode_diff_v1(&base)
+        .expect("the typing's update");
+    peer.send(5, &sync(2, &typing)).await;
+
+    // The undoer hears what the room's own commit lost.
+    loop {
+        let frame = next_update(&mut undoer).await;
+        left.doc()
+            .applying_peer_update(|| left.doc().apply_update_v1(&frame).expect("the frame"));
+        if holds(&frame, TYPED) {
+            break;
+        }
+    }
+    let joiner = office_writer(server.port, &room, &user).await;
+    assert!(
+        !holds(&joiner.received, TYPED),
+        "kept out of the room's state"
+    );
+
+    let base = left.doc().encode_state_vector_v1();
+    assert!(undo.undo());
+    let restore = left.doc().encode_diff_v1(&base).expect("the Undo's update");
+    undoer.send(5, &sync(2, &restore)).await;
+    undoer.until(6).await.expect("the Undo's ack");
+    assert_eq!(text(&left), format!("{TYPED}{before}"));
+
+    // The peer hears the delete and the Undo.
+    let cell_back = |engine: &EngineSession| engine.doc().paragraphs(CELL).is_ok();
+    let mut heard_delete = false;
+    while !heard_delete || !cell_back(&right) {
+        let frame = next_update(&mut peer).await;
+        right
+            .doc()
+            .applying_peer_update(|| right.doc().apply_update_v1(&frame).expect("the frame"));
+        heard_delete |= !cell_back(&right);
+    }
+    assert_eq!(text(&right), format!("{TYPED}{before}"));
+
+    let joiner = office_writer(server.port, &room, &user).await;
+    assert_eq!(text(&engine_of(&joiner)), format!("{TYPED}{before}"));
+}
+
+/// [a_docx_undo_gets_the_peers_typing_back_through_the_relay] for a deleted slide: the peer's
+/// text and its move of a shape.
+#[tokio::test]
+async fn a_pptx_undo_gets_the_peers_edits_back_through_the_relay() {
+    use pptx_edit::{DeckSession, EditCtx, TextStyle};
+    const TYPED: &str = "QPEERTEXT";
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file, _) = office_file(&env, &gateway, "pptx").await;
+    let base_file = gateway
+        .blobs
+        .lock()
+        .expect("blobs")
+        .get(&file)
+        .cloned()
+        .expect("the file");
+    let room = format!("source:{file}:epoch:1");
+    let mut undoer = office_writer(server.port, &room, &user).await;
+    let mut peer = office_writer(server.port, &room, &user).await;
+    let open = |client: &Client| {
+        let state = client
+            .doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        DeckSession::open_from_update_with_source(&state, &base_file, client.id())
+            .expect("the deck")
+    };
+    let (left, right) = (open(&undoer), open(&peer));
+    let snapshot = left.snapshot().expect("the deck's snapshot");
+    let (slide, shape, story) = snapshot
+        .slides
+        .iter()
+        .find_map(|slide| {
+            slide
+                .shapes
+                .iter()
+                .find(|shape| !shape.text_stories.is_empty())
+                .map(|shape| (&slide.id, &shape.id, &shape.text_stories[0].id))
+        })
+        .expect("a shape with text");
+    let context = EditCtx::local("user");
+
+    let base = left.encode_state_vector_v1();
+    left.delete_slide(&context, slide).expect("the delete");
+    left.add_undo_barrier();
+    let delete = left.encode_diff_v1(&base).expect("the delete's update");
+    undoer.send(5, &sync(2, &delete)).await;
+    undoer.until(6).await.expect("the delete's ack");
+
+    let end = right.story(story).expect("the story").length - 1;
+    let base = right.encode_state_vector_v1();
+    right
+        .insert_text(&context, story, end, TYPED, &TextStyle::default())
+        .expect("the typing");
+    right
+        .move_shape(&context, slide, shape, 1_234_567, 2_345_678)
+        .expect("the move");
+    let edits = right.encode_diff_v1(&base).expect("the edits' update");
+    peer.send(5, &sync(2, &edits)).await;
+
+    loop {
+        let frame = next_update(&mut undoer).await;
+        left.apply_update_v1(&frame).expect("the frame");
+        if holds(&frame, TYPED) {
+            break;
+        }
+    }
+    let joiner = office_writer(server.port, &room, &user).await;
+    assert!(
+        !holds(&joiner.received, TYPED),
+        "kept out of the room's state"
+    );
+
+    let base = left.encode_state_vector_v1();
+    assert!(left.undo());
+    let restore = left.encode_diff_v1(&base).expect("the Undo's update");
+    undoer.send(5, &sync(2, &restore)).await;
+    undoer.until(6).await.expect("the Undo's ack");
+    let shows = |deck: &DeckSession| {
+        deck.story(story)
+            .is_ok_and(|story| story.plain_text().contains(TYPED))
+    };
+    assert!(shows(&left));
+
+    let mut heard_delete = false;
+    while !heard_delete || !shows(&right) {
+        let frame = next_update(&mut peer).await;
+        right.apply_update_v1(&frame).expect("the frame");
+        heard_delete |= !shows(&right);
+    }
+    assert_eq!(
+        left.snapshot().expect("left"),
+        right.snapshot().expect("right")
+    );
+    let joiner = office_writer(server.port, &room, &user).await;
+    assert!(shows(&open(&joiner)), "the room's state holds the text");
+}

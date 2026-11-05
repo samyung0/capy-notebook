@@ -41,6 +41,8 @@ export interface SourceProviderConfig {
   /** The room closed; on an open socket the server closed only this room. */
   onClose?: () => void;
   onDisconnect?: () => void;
+  /** A room update as it arrived (`RoomProvider`, Q549). */
+  onFrame?: (update: Uint8Array) => void;
   /** The room's other editors (`RoomProvider`). */
   onPresence?: (connections: PresenceConnection[]) => void;
   /** The room's answer waits on the user's open budget (`RoomProvider`). */

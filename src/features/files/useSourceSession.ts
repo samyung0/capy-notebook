@@ -114,6 +114,23 @@ export function sourceChangesCovered(
   return Math.max(state.acknowledged, handedOff) >= state.sequence;
 }
 
+/** The room's updates as they arrived (Q549). */
+export function createRoomFrames() {
+  const listeners = new Set<(update: Uint8Array) => void>();
+  return {
+    emit: (update: Uint8Array) => {
+      for (const listener of listeners) listener(update);
+    },
+    subscribe: (listener: (update: Uint8Array) => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+export type RoomFrames = ReturnType<typeof createRoomFrames>;
+
 /**
  * Whether a refusal is the Office maintenance pause: the gateway's
  * `office_editing_paused` answer (token or session) or the collaboration
@@ -235,6 +252,8 @@ export function useSourceSession(
   reportPresence.current = presence;
   // Office co-editors' cursors, under the presence's names (Epo 2026-10-20).
   const [cursors] = useState(createOfficeCursors);
+  // The room's updates as they arrived, for the Office editor's engine (Q549).
+  const [frames] = useState(createRoomFrames);
   const actorId = me?.id;
   const [loaded, setLoaded] = useState<{
     session: SourceSession;
@@ -898,6 +917,7 @@ export function useSourceSession(
               setStatus(everSynced ? 'reconnecting' : 'connecting');
           }
         },
+        onFrame: frames.emit,
         onPresence: (connections) => {
           if (cancelled) return;
           reportPresence.current?.(connections);
@@ -1246,7 +1266,7 @@ export function useSourceSession(
       for (const waiter of flushWaiters.current.splice(0))
         waiter.reject(new SourceSessionError(m.source_edit_save_failed()));
     };
-  }, [fileId, actorId, enabled, generation, pendingInput, cursors]);
+  }, [fileId, actorId, enabled, generation, pendingInput, cursors, frames]);
 
   // Closing or reloading the tab loses edits only while this device's
   // storage fails and the room has not acknowledged one of them: only then
@@ -1273,6 +1293,7 @@ export function useSourceSession(
     draftsSending,
     error,
     flushHandler,
+    frames,
     handoff,
     offlineLimit,
     outdated,

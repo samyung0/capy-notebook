@@ -472,6 +472,8 @@ Cursors cross the same way: the editor's own goes to the room's awareness and
 the co-editors' come back under the names the room's presence gives them
 ([plate-editor](plate-editor.md#office-cursors)). Input in the frame reaches
 Capy's idle close as an `activity` message ([plate-editor](plate-editor.md#idle-close)).
+A DOCX or PPTX replica takes the room's updates as they arrived, not the
+parent's Y.Doc events ([Undo of what a co-editor changed](#undo-of-what-a-co-editor-changed)).
 
 The parent's Y.Doc runs no formatting cleanup, matching yrs in the DOCX and
 PPTX editors (`docx-edit`, `pptx-edit`) and the room. Stock Yjs, after every remote update to a text with formatting,
@@ -3021,6 +3023,70 @@ linear memory to about 1.9 GiB on the 16,000-row gradebook, which WASM never
 returns; it now stays near the opened workbook (338 MiB). Measurements:
 [2026-10-05 replica report](../bench/collaboration/reports/2026-10-05-office-engine-replicas.md),
 [2026-10-05 effects reader report](../bench/collaboration/reports/2026-10-05-office-engine-effects.md).
+
+### Undo of what a co-editor changed
+
+One person deletes a DOCX table or a PPTX slide or shape, another types or moves
+something inside it, and the first presses Undo: the content comes back with the
+other's edit, for both of them and for whoever joins after (Epo 2026-11-04, Q549 A;
+landed 2026-11-05, Q623). Room state, seeds, joiner payloads and readers are
+unchanged: before the Undo the room holds nothing of the kept text, and the Undo's
+update is ordinary growth under the room's cap.
+
+- **Engine.** `UndoManager::adopt_concurrent_edits` in the vendored yrs, opt-in, on
+  for the DOCX and PPTX engines only. What a peer's update lands in content a step
+  deleted joins the step and is kept; a map value replaces the key's earlier value
+  in the step; what the update names as deleted inside that content, without naming
+  the content and with no later value for the key, leaves the step as the peer's
+  deliberate delete. While restoring, a value its writer's collection emptied does
+  not block the one before it (Q625). `forward_concurrent_edits` copies what lands
+  after an Undo into the restored copy, as a system edit outside Undo. The server's
+  own `ydoc::undo` (agent edits) does not opt in.
+- **Room.** Yrs collects an item landing in deleted content in the commit that
+  brought it, so the room's own update would not carry it. `ydoc::apply_freeing`
+  reports it (`Lost`), and `Room::apply_update` then relays the writer's bytes in
+  yrs's own encoding (`yrs::merge_updates_v1`), as it does for a delete of what the
+  room already holds deleted; a reconnect's step 2 names its whole delete set, so
+  there only what landed counts. Frames the commit lost nothing of keep the room's
+  encoding.
+- **Host.** `RoomProvider.onFrame` hands the frame over before the parent's Y.Doc
+  applies it, since Yjs reports an update after collecting it; `deliverToEngine`
+  (`useOfficeRuntime.ts`) gives DOCX and PPTX engines those frames and keeps XLSX on
+  the document's update event. Host documents keep garbage collection (Q431).
+
+The other person's caret in a deleted DOCX table no longer resolves, so the
+session's `selection()` reads null and the editor places it again at the start of
+the body's first paragraph (`ensureSelection`); it stays there after the Undo.
+
+Limits the developer accepted (Q623, Q626):
+
+- The undoer's socket is down while the typing passes: the Undo restores without
+  it, and everyone reads alike.
+- The undoer's tab closed or reloaded: its Undo stack is gone anyway.
+- The other person's own Undo after the restore does nothing; the text stays.
+- An agent's delete undone from its payload does not carry a person's edit made
+  meanwhile.
+- The other person heard the delete before their typing left the browser: their
+  own collection took the text.
+- Another person's slide reorder or z-order move of deleted content is not kept.
+- A co-editor's delete arriving after the Undo is not forwarded to the restored copy.
+- Undoing further back, past the restore, overrides the other person's value.
+- Restored text is written under the undoer's client id.
+
+**A cell with no stored content (Epo 2026-11-05, Q624).** A table's `rows` value can
+name a story nobody holds: two people insert rows and the first undoes, or a kept
+`rows` value names a story a third person deleted. The cell reads as empty and the
+document keeps working, with no error, as Sheets and Excel treat a cell with no
+content. `lower_table` gives it one empty paragraph with no positions, so the row
+keeps a line's height and no caret lands in it; the position projection, the
+sidebar's index, Find and `yrsCellStory` pass over it; the save writes the `<w:p/>`
+every `w:tc` needs. A click in the cell lands on the nearest paragraph someone
+holds, and Tab stops before it. Merging a selection that holds such a cell is refused
+as an operation error.
+
+Older and queued apart (Q626): Undo of concurrent row operations can lose a table's
+`grid`, and when both people delete a DOCX table and both undo, the body holds it
+twice.
 
 ## Maintenance window
 

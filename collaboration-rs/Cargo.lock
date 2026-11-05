@@ -206,7 +206,7 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "betteroffice-docx-edit"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-docx-layout",
  "betteroffice-docx-parse",
@@ -220,10 +220,12 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-docx-layout"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-ooxml-text",
+ "foldhash",
+ "js-sys",
  "serde",
  "serde_json",
  "unicode-segmentation",
@@ -233,12 +235,13 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-docx-parse"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
  "betteroffice-opc",
  "indexmap",
+ "memchr",
  "quick-xml",
  "ryu-js",
  "serde",
@@ -249,7 +252,7 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-drawingml"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "crc32fast",
  "flate2",
@@ -261,7 +264,7 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-office-service"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-docx-edit",
@@ -287,8 +290,9 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-ooxml-text"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
+ "betteroffice-drawingml",
  "rustybuzz",
  "serde",
  "serde_json",
@@ -299,15 +303,16 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-opc"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
+ "js-sys",
  "quick-xml",
  "zip",
 ]
 
 [[package]]
 name = "betteroffice-pptx-edit"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
@@ -322,7 +327,7 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-pptx-parse"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
@@ -334,7 +339,7 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-xlsx"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-opc",
@@ -351,21 +356,21 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-xlsx-calc"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-xlsx-model",
 ]
 
 [[package]]
 name = "betteroffice-xlsx-model"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "betteroffice-xlsx-ops"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-xlsx-calc",
  "betteroffice-xlsx-model",
@@ -374,7 +379,7 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-xlsx-parse"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-xlsx-model",
@@ -383,12 +388,13 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-xlsx-render"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-xlsx-model",
  "hashbrown 0.17.1",
  "serde",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -3005,6 +3011,8 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "betteroffice-docx-edit",
+ "betteroffice-pptx-edit",
  "bytes",
  "deadpool-postgres",
  "flate2",
@@ -3172,6 +3180,7 @@ dependencies = [
  "betteroffice-docx-edit",
  "betteroffice-office-service",
  "betteroffice-opc",
+ "betteroffice-pptx-edit",
  "betteroffice-xlsx",
  "cpu-time",
  "deadpool-postgres",
