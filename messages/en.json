@@ -2717,6 +2717,7 @@
   "assignment_field_due": "Due",
   "assignment_field_time_limit": "Time limit",
   "assignment_field_attempts": "Attempts",
+  "assignment_highest_counts": "The highest attempt counts.",
   "assignment_field_assign_to": "Assign to",
   "assignment_kind_marked": "Marked",
   "assignment_kind_unmarked": "Unmarked",

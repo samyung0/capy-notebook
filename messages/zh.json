@@ -2717,6 +2717,7 @@
   "assignment_field_due": "截止",
   "assignment_field_time_limit": "时限",
   "assignment_field_attempts": "次数",
+  "assignment_highest_counts": "以最高分的一次为准。",
   "assignment_field_assign_to": "分配给",
   "assignment_kind_marked": "计分",
   "assignment_kind_unmarked": "不计分",
