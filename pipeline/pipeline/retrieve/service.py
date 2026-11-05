@@ -9,6 +9,7 @@ Run: ``uvicorn pipeline.retrieve.service:app --host 0.0.0.0 --port 8001``
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import secrets
@@ -700,6 +701,8 @@ class ExtractFile(BaseModel):
 
 class ExtractReq(LLMPin):
     workspaceId: str = Field(min_length=1)
+    # The run's row in Go's store, which holds the starter's answer after the map.
+    runId: str = Field(min_length=1)
     paper: list[ExtractFile] = Field(min_length=1)
     answerFiles: list[ExtractFile]
     spendSessionId: str = Field(min_length=1)
@@ -762,8 +765,17 @@ async def _extract_events(
             answers,
             model=model,
             validate=extraction.gateway_validate,
+            confirm=functools.partial(extraction.starter_confirm, req.runId),
         ):
             yield _sse(event)
+    except extraction.ConfirmExpired:
+        yield _sse(
+            {
+                "type": "error",
+                "code": "confirm_expired",
+                "message": "Nobody confirmed the questions in time.",
+            }
+        )
     except elitellm.ProviderBusy:
         yield _sse(
             {

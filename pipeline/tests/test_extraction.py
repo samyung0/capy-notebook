@@ -580,7 +580,7 @@ def test_a_text_paper_counts_its_whole_text_in_the_output_budget():
         return extraction._pages_worth(extraction.Page(1, "a", "x" * chars, None, None))
 
     assert (worth(1), worth(3_856)) == (1, 8)
-    assert worth(extraction.FILE_TEXT_CHARS) == extraction.limits.EXTRACTION_PAGES_MAX
+    assert worth(extraction.RUN_TEXT_CHARS) == extraction.limits.EXTRACTION_PAGES_MAX
 
 
 async def test_prepare_reads_a_text_paper_whole(monkeypatch):
@@ -1501,8 +1501,8 @@ async def test_prepare_treats_an_image_upload_as_a_scan(monkeypatch):
     assert extraction.sends_page_text(pages) is False
 
 
-async def _answer_files(monkeypatch, kind: str, path=None, text=LINE, pages=1):
-    """The run's answer files for one file of ``kind``, beside ``pages`` selected pages."""
+async def _answer_files(monkeypatch, kind: str, path=None, text=LINE, picked=(1,)):
+    """The run's answer files for one file of ``kind``, its pages ``picked``."""
 
     async def source(workspace_id, file_id):
         return {"kind": kind}
@@ -1516,16 +1516,8 @@ async def _answer_files(monkeypatch, kind: str, path=None, text=LINE, pages=1):
     monkeypatch.setattr(extraction.store, "file_page_source", source)
     monkeypatch.setattr(extraction.store, "file_passages", passages)
     monkeypatch.setattr(extraction.capture, "pdf_path", pdf_path)
-    # The paper is images, one a file, so it only counts pages.
-    if kind != "image":
-
-        async def image_source(workspace_id, file_id):
-            return {"kind": "image" if file_id.startswith("p") else kind}
-
-        monkeypatch.setattr(extraction.store, "file_page_source", image_source)
-    paper = [{"fileId": f"p{n}", "name": "p", "pages": [1]} for n in range(pages)]
-    answers = [{"fileId": "a", "name": "answers"}]
-    _, files = await extraction.prepare("w", paper, answers)
+    answers = [{"fileId": "a", "name": "answers", "pages": list(picked)}]
+    _, files = await extraction.prepare("w", [], answers)
     return files
 
 
@@ -1558,42 +1550,172 @@ async def test_a_scan_or_image_answer_file_goes_as_page_images(monkeypatch, tmp_
     assert [number for number, _ in photo.images] == [1]
 
 
-async def test_a_run_refuses_more_page_images_than_it_reads(monkeypatch):
-    """Paper and answer pages count together."""
-    monkeypatch.setattr(extraction.limits, "EXTRACTION_PAGES_MAX", 2)
-    assert len(await _answer_files(monkeypatch, "image", pages=1)) == 1
-    with pytest.raises(extraction.ExtractionRefused) as refused:
-        await _answer_files(monkeypatch, "image", pages=2)
-    assert refused.value.code == "too_many_pages"
-
-
-async def test_a_scan_past_the_page_images_left_goes_as_its_text(monkeypatch, tmp_path):
-    """A long scheme with scanned pages goes as its indexed text, rather than being
-    refused or sending more images than a run takes (a 71-page one stalled the provider)."""
-    monkeypatch.setattr(extraction.limits, "EXTRACTION_PAGES_MAX", 1)
+async def test_only_an_answer_file_s_picked_pages_go(monkeypatch, tmp_path):
     doc = pymupdf.open()
-    page = doc.new_page()
-    buffer = io.BytesIO()
-    Image.new("L", (40, 40), 200).save(buffer, "PNG")
-    page.insert_image(page.rect, stream=buffer.getvalue())
+    for _ in range(3):
+        page = doc.new_page()
+        buffer = io.BytesIO()
+        Image.new("L", (40, 40), 200).save(buffer, "PNG")
+        page.insert_image(page.rect, stream=buffer.getvalue())
     path = tmp_path / "scan.pdf"
     with doc:
         doc.save(path)
-    [scan] = await _answer_files(monkeypatch, "pdf", path)
-    assert (scan.text, scan.images) == (LINE.strip(), ())
-
-
-@pytest.mark.parametrize(
-    ("text", "code"),
-    [
-        ("", "no_indexed_text"),
-        ("x" * (extraction.FILE_TEXT_CHARS + 1), "file_too_long"),
-    ],
-)
-async def test_an_answer_file_with_no_usable_text_is_refused(monkeypatch, text, code):
+    [scan] = await _answer_files(monkeypatch, "pdf", path, text="", picked=(1, 3))
+    assert [number for number, _ in scan.images] == [1, 3]
     with pytest.raises(extraction.ExtractionRefused) as refused:
-        await _answer_files(monkeypatch, "docx", text=text)
-    assert refused.value.code == code
+        await _answer_files(monkeypatch, "pdf", path, text="", picked=(4,))
+    assert refused.value.code == "page_out_of_range"
+
+
+async def test_a_word_answer_file_goes_as_the_pages_the_browser_drew():
+    jpeg = base64.b64encode(b"jpeg").decode()
+    _, [word] = await extraction.prepare(
+        "w",
+        [],
+        [{"fileId": "a", "name": "answers.docx", "pages": [2], "images": [jpeg]}],
+    )
+    assert word.text == ""
+    assert [number for number, _ in word.images] == [2]
+
+
+async def test_an_answer_file_with_no_usable_text_is_refused(monkeypatch):
+    with pytest.raises(extraction.ExtractionRefused) as refused:
+        await _answer_files(monkeypatch, "docx", text="", picked=())
+    assert refused.value.code == "no_indexed_text"
+
+
+async def test_a_run_refuses_more_text_than_it_reads(monkeypatch):
+    """Whole files and answer text count together; one that fits on its own isn't enough."""
+    half = "x" * (extraction.RUN_TEXT_CHARS // 2 + 1)
+
+    async def source(workspace_id, file_id):
+        return {"kind": "md"}
+
+    async def passages(workspace_id, file_id):
+        return [{"text": half}]
+
+    monkeypatch.setattr(extraction.store, "file_page_source", source)
+    monkeypatch.setattr(extraction.store, "file_passages", passages)
+    one = {"fileId": "p", "name": "paper.md", "pages": []}
+    await extraction.prepare("w", [one], [])
+    with pytest.raises(extraction.ExtractionRefused) as refused:
+        await extraction.prepare("w", [one], [{**one, "fileId": "a"}])
+    assert refused.value.code == "too_much_text"
+
+
+def _confirm_script(*copied: str) -> tuple[dict, Script]:
+    items = {n: _mcq(n, ["p", "q"], 1) for n in ("1", "2", "3")}
+    ask = (
+        f"Copy question {copied[0]} now."
+        if len(copied) == 1
+        else f"Copy questions {copied[0]} to {copied[-1]} now."
+    )
+    return items, Script(
+        "\n".join(_row(n, parts="a, b" if n == "2" else "none") for n in items),
+        {
+            ask: [_tools(*(("record_question", _copy(items[n])) for n in copied))],
+            **{
+                f"Give the answers to question {n} now.": [
+                    _tools(("record_answers", _answers(items[n])))
+                ]
+                for n in copied
+            },
+            **(
+                {
+                    f"Give the answers to questions {copied[0]} to {copied[-1]} now.": [
+                        _tools(
+                            *(("record_answers", _answers(items[n])) for n in copied)
+                        )
+                    ]
+                }
+                if len(copied) > 1
+                else {}
+            ),
+        },
+    )
+
+
+async def _confirmed_run(monkeypatch, script, confirm) -> list[dict]:
+    monkeypatch.setattr(extraction.models, "complete_response", script)
+    monkeypatch.setattr(extraction.models, "complete", _no_call)
+    registry.bind_request_llm("mid")
+    return [
+        event
+        async for event in extraction.run(
+            [_page(5)], [], model=MODEL, validate=_ok, confirm=confirm
+        )
+    ]
+
+
+async def test_a_run_says_what_it_found_and_waits_for_its_starter(monkeypatch):
+    found: list[int] = []
+
+    async def confirm(count):
+        found.append(count)
+        return count
+
+    _, script = _confirm_script("1", "2", "3")
+    events = await _confirmed_run(monkeypatch, script, confirm)
+    assert found == [3]
+    assert events[0] == {
+        "type": "map",
+        "questions": [
+            {"label": "1", "first": 5, "last": 5, "parts": []},
+            {"label": "2", "first": 5, "last": 5, "parts": ["a", "b"]},
+            {"label": "3", "first": 5, "last": 5, "parts": []},
+        ],
+    }
+    progress = [event for event in events if event["type"] == "progress"]
+    assert progress[-1] == {"type": "progress", "copied": 3, "answered": 3}
+    assert events[-1]["report"]["recorded"] == ["1", "2", "3"]
+
+
+async def test_a_starter_who_affords_fewer_gets_only_those(monkeypatch):
+    """The next printed number on a later page is no reason to copy past them."""
+
+    async def confirm(count):
+        return 2
+
+    _, script = _confirm_script("1", "2")
+    events = await _confirmed_run(monkeypatch, script, confirm)
+    report = events[-1]["report"]
+    assert report["recorded"] == report["expected"] == ["1", "2"]
+    assert report["missing"] == []
+
+
+async def test_a_cancelled_run_stops_with_the_map_paid_for(monkeypatch):
+    async def confirm(count):
+        return None
+
+    _, script = _confirm_script("1", "2", "3")
+    events = await _confirmed_run(monkeypatch, script, confirm)
+    assert [event["type"] for event in events] == ["map"]
+    assert len(script.sent) == 1
+
+
+async def test_the_starter_s_answer_is_read_from_the_run(monkeypatch):
+    monkeypatch.setattr(extraction, "CONFIRM_POLL_S", 0)
+    answers = iter([("running", None), ("confirming", None), ("running", 2)])
+
+    async def decision(run_id):
+        return next(answers)
+
+    monkeypatch.setattr(extraction.store, "extraction_decision", decision)
+    assert await extraction.starter_confirm("r", 3) == 2
+
+    async def cancelled(run_id):
+        return ("cancelled", None)
+
+    monkeypatch.setattr(extraction.store, "extraction_decision", cancelled)
+    assert await extraction.starter_confirm("r", 3) is None
+
+    async def waiting(run_id):
+        return ("confirming", None)
+
+    monkeypatch.setattr(extraction.store, "extraction_decision", waiting)
+    monkeypatch.setattr(extraction, "CONFIRM_WAIT_S", 0)
+    with pytest.raises(extraction.ConfirmExpired):
+        await extraction.starter_confirm("r", 3)
 
 
 async def test_the_map_message_holds_each_page_and_all_the_boxes(monkeypatch):
@@ -2079,6 +2201,7 @@ def test_extract_route_refuses_first_then_streams(monkeypatch):
         "workspaceId": "ws_1",
         "paper": [{"fileId": "f_1", "name": "paper.pdf", "pages": [17]}],
         "answerFiles": [],
+        "runId": "run",
         "spendSessionId": "ps_1",
     }
     http = TestClient(service.app)  # no lifespan: no database
@@ -2098,7 +2221,7 @@ def test_extract_route_refuses_first_then_streams(monkeypatch):
     async def prepare(workspace_id, paper, answers):
         return [_page(1)], []
 
-    async def run(pages, answers, *, model, validate):
+    async def run(pages, answers, *, model, validate, confirm):
         yield {"type": "questions", "questions": []}
         yield {"type": "done", "questions": [], "report": {"missing": []}}
 

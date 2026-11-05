@@ -2017,6 +2017,22 @@ components:
         - computational
         - probability
       type: object
+    ConfirmExtractionReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ConfirmExtractionReq.json
+          format: uri
+          readOnly: true
+          type: string
+        questions:
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - questions
+      type: object
     ContentOrderItem:
       additionalProperties: false
       properties:
@@ -2273,16 +2289,12 @@ components:
           format: uri
           readOnly: true
           type: string
-        answerFileIds:
+        answers:
           items:
-            type: string
+            $ref: "#/components/schemas/ExtractionFile"
           type: array
         paper:
-          items:
-            $ref: "#/components/schemas/ExtractionPaperFile"
-          minItems: 1
-          nullable: true
-          type: array
+          $ref: "#/components/schemas/ExtractionFile"
         title:
           maxLength: 120
           minLength: 1
@@ -2845,6 +2857,12 @@ components:
           format: uri
           readOnly: true
           type: string
+        answered:
+          format: int64
+          type: integer
+        confirmed:
+          format: int64
+          type: integer
         createdAt:
           format: date-time
           type: string
@@ -2855,6 +2873,8 @@ components:
         finishedAt:
           format: date-time
           type: string
+        found:
+          $ref: "#/components/schemas/ExtractionFound"
         id:
           type: string
         quizId:
@@ -2867,8 +2887,10 @@ components:
         status:
           enum:
             - running
+            - confirming
             - done
             - failed
+            - cancelled
           type: string
         title:
           type: string
@@ -2880,9 +2902,10 @@ components:
         - title
         - status
         - recorded
+        - answered
         - createdAt
       type: object
-    ExtractionPaperFile:
+    ExtractionFile:
       additionalProperties: false
       properties:
         fileId:
@@ -2896,12 +2919,64 @@ components:
           items:
             format: int64
             type: integer
-          minItems: 1
-          nullable: true
           type: array
       required:
         - fileId
-        - pages
+      type: object
+    ExtractionFound:
+      additionalProperties: false
+      properties:
+        answerFiles:
+          format: int64
+          type: integer
+        availableCredits:
+          format: int64
+          type: integer
+        chargedCredits:
+          format: int64
+          type: integer
+        paperName:
+          type: string
+        paperPages:
+          format: int64
+          type: integer
+        questions:
+          items:
+            $ref: "#/components/schemas/ExtractionFoundQuestion"
+          type: array
+        unreadAnswers:
+          items:
+            type: string
+          type: array
+      required:
+        - questions
+        - chargedCredits
+        - availableCredits
+        - unreadAnswers
+        - paperName
+        - paperPages
+        - answerFiles
+      type: object
+    ExtractionFoundQuestion:
+      additionalProperties: false
+      properties:
+        first:
+          format: int64
+          type: integer
+        label:
+          type: string
+        last:
+          format: int64
+          type: integer
+        parts:
+          items:
+            type: string
+          type: array
+      required:
+        - label
+        - first
+        - last
+        - parts
       type: object
     ExtractionReport:
       additionalProperties: false
@@ -10294,6 +10369,62 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: A Make a quiz run its starter began
+      tags:
+        - Generate
+  /api/extractions/{id}/cancel:
+    post:
+      operationId: cancelExtraction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extraction"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: End a run waiting on its starter
+      tags:
+        - Generate
+  /api/extractions/{id}/confirm:
+    post:
+      operationId: confirmExtraction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmExtractionReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extraction"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Make the first questions of a run waiting on its starter
       tags:
         - Generate
   /api/files:

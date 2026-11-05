@@ -10,6 +10,8 @@ export type ExtractionStatus = typeof ExtractionStatus[keyof typeof ExtractionSt
 
 export const ExtractionStatus = {
   running: 'running',
+  confirming: 'confirming',
   done: 'done',
   failed: 'failed',
+  cancelled: 'cancelled',
 } as const;

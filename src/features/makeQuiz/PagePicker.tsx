@@ -7,15 +7,18 @@ import {
   useFiles,
   useMaterials,
 } from '@/api/hooks';
-import { EXTRACTION_PAGES_MAX } from '@/api/limits.generated';
+import {
+  EXTRACTION_PAGES_MAX,
+  EXTRACTION_QUESTION_CREDITS,
+} from '@/api/limits.generated';
 import type { SourceFile } from '@/api/types';
-import { ErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
+import { useIsPhone } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
-import { ToolbarButton } from '@/components/ui/ToolbarButton';
+
 import { useOfficeRuntime } from '@/features/files/useOfficeRuntime';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -24,13 +27,15 @@ import { fileIconName } from '@/lib/fileIcons';
 import { type DrawnPage, drawnPage } from './drawnPages';
 import {
   drawnPaperFormat,
-  estimatedCredits,
   extractionRefusal,
   extractionRequest,
   isReadingFile,
-  type PaperPage,
+  isUnreadable,
+  isWholeFile,
   pageKey,
+  pickedPages,
   quizTitleFrom,
+  toggleAllPages,
   togglePage,
 } from './makeQuiz';
 
@@ -43,7 +48,6 @@ const SHEET_RATIO = 220 / 296;
 
 /** One page: a large sheet, one click selects it (Epo 2026-11-02). */
 function Sheet({
-  caption,
   children,
   disabled,
   number,
@@ -52,8 +56,6 @@ function Sheet({
   selected,
   sheetRef,
 }: {
-  /** After the number: what a tile that isn't a page stands for. */
-  caption?: string;
   children: React.ReactNode;
   /** The cap is reached and this page isn't one of them. */
   disabled: boolean;
@@ -109,7 +111,7 @@ function Sheet({
           selected && 'text-tint-accent-1-fg'
         )}
       >
-        {caption ? `${number} · ${caption}` : number}
+        {number}
       </span>
     </button>
   );
@@ -169,17 +171,15 @@ function PdfSheet({
   );
 }
 
-/** One file's sheets. Numbers run across the paper's files. */
+/** A PDF's or an image's sheets. */
 function PaperSheets({
   file,
-  firstNumber,
   full,
   onCount,
   onToggle,
   selected,
 }: {
   file: SourceFile;
-  firstNumber: number;
   full: boolean;
   onCount: (fileId: string, pages: number) => void;
   onToggle: (key: string) => void;
@@ -191,45 +191,22 @@ function PaperSheets({
   const [count, setCount] = useState(0);
   const url = links?.url;
   const image = file.kind === 'image';
-  const pdf = file.kind === 'pdf';
   useEffect(() => {
-    if (!pdf) onCount(file.id, 1);
-  }, [file.id, onCount, pdf]);
+    if (image) onCount(file.id, 1);
+  }, [file.id, image, onCount]);
   if (isError)
     return (
       <p className="t-meta col-span-full text-tint-error-fg" role="alert">
         {m.make_quiz_pages_unavailable()}
       </p>
     );
-  if (!image && !pdf) {
-    // A text file has no pages: the run reads all of it, as one tile.
-    const key = pageKey({ fileId: file.id, page: 1 });
-    const on = selected.has(key);
-    return (
-      <Sheet
-        caption={m.make_quiz_whole_file()}
-        disabled={full && !on}
-        number={firstNumber}
-        onToggle={() => onToggle(key)}
-        ratio={SHEET_RATIO}
-        selected={on}
-      >
-        <span className="flex h-full flex-col items-center justify-center gap-3 p-4">
-          <FileIcon className="size-11 shrink-0" name={fileIconName(file)} />
-          <span className="wrap-anywhere text-center font-semibold text-sm">
-            {file.name}
-          </span>
-        </span>
-      </Sheet>
-    );
-  }
   if (image) {
     const key = pageKey({ fileId: file.id, page: 1 });
     const on = selected.has(key);
     return (
       <Sheet
         disabled={full && !on}
-        number={firstNumber}
+        number={1}
         onToggle={() => onToggle(key)}
         ratio={SHEET_RATIO}
         selected={on}
@@ -272,7 +249,7 @@ function PaperSheets({
           <PdfSheet
             disabled={full && !on}
             key={page}
-            number={firstNumber + i}
+            number={page}
             onToggle={() => onToggle(key)}
             page={page}
             selected={on}
@@ -297,7 +274,6 @@ function OfficeSheets(props: Omit<OfficeDrawingProps, 'onRetry'>) {
 
 interface OfficeDrawingProps {
   file: SourceFile;
-  firstNumber: number;
   format: 'docx' | 'pptx';
   full: boolean;
   onCount: (fileId: string, pages: number) => void;
@@ -313,7 +289,6 @@ interface OfficeDrawingProps {
  * otherwise go on drawing, and it shares the app's main thread, so the wait is still. */
 function OfficeDrawing({
   file,
-  firstNumber,
   format,
   full,
   onCount,
@@ -389,7 +364,7 @@ function OfficeDrawing({
             <Sheet
               disabled={full && !on}
               key={key}
-              number={firstNumber + i}
+              number={i + 1}
               onToggle={() => onToggle(key)}
               ratio={page.width / page.height}
               selected={on}
@@ -412,35 +387,84 @@ function OfficeDrawing({
   );
 }
 
+/** A text file's tile: no pages, the run reads all of it. */
+function WholeFileTile({ file }: { file: SourceFile }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-3 rounded-[3px] border border-[#dcdfdf] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.08)]"
+      style={{ aspectRatio: SHEET_RATIO }}
+    >
+      <FileIcon className="size-11 shrink-0" name={fileIconName(file)} />
+      <span className="wrap-anywhere text-center font-semibold text-sm">
+        {file.name}
+      </span>
+    </div>
+  );
+}
+
+type TabKind = 'pages' | 'reading' | 'unread' | 'whole';
+
+function tabKind(file: SourceFile): TabKind {
+  if (isReadingFile(file) && !file.indexed) return 'reading';
+  if (isUnreadable(file)) return 'unread';
+  return isWholeFile(file) ? 'whole' : 'pages';
+}
+
+const FILE_EXTENSION = /\.[^.]+$/;
+const fileTitle = (name: string) => name.replace(FILE_EXTENSION, '');
+
+/** What a step of the Make a quiz dialog puts in it. */
+export interface DialogStep {
+  action?: React.ReactNode;
+  body: React.ReactNode;
+  closable?: boolean;
+  footer?: React.ReactNode;
+  /** Keeps a stray click or Escape from ending the step. */
+  guarded?: boolean;
+  onBack?: () => void;
+  onCloseClick?: () => void;
+  title: React.ReactNode;
+  width: number;
+}
+
 /**
- * Click the pages with questions (Epo 2026-11-02, board X1): pages shown large,
- * one click selects one, up to 40 in a run, and pages left unclicked are
- * skipped. The rail stays beside it; the Files panel doesn't.
+ * Click the pages with questions, then with answers (Epo 2026-11-02, board X1;
+ * 2026-11-05, boards B to E): pages shown large, one click selects one, up to 40 across
+ * a run's files, and pages left unclicked are skipped. A text file goes whole. A step of
+ * the Make a quiz dialog, so going back to the files keeps the picks of files left in.
  */
-export function PagePicker({
+export function usePageStep({
+  active,
   answers,
-  onBack,
   onCancel,
+  onChangeFiles,
   onStarted,
   paper,
   workspaceId,
 }: {
+  active: boolean;
   answers: string[];
-  /** Back to the dialog, with what it chose. */
-  onBack: () => void;
   onCancel: () => void;
+  /** Back to the files, with what was chosen and picked. */
+  onChangeFiles: () => void;
   onStarted: (runId: string) => void;
-  paper: string[];
+  paper: string | undefined;
   workspaceId: string;
-}) {
+}): DialogStep {
+  const phone = useIsPhone();
   const { data: files } = useFiles(workspaceId, { errorBoundary: false });
   const { data: materials } = useMaterials(workspaceId, {
     errorBoundary: false,
   });
   const { mutate: start, isPending, error } = useCreateExtraction(workspaceId);
+  const chosen = paper ? [paper, ...answers] : answers;
+  const chosenKey = chosen.join(',');
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [drawn, setDrawn] = useState<ReadonlyMap<string, string>>(new Map());
+  const [activeId, setActiveId] = useState<string>();
+  // A tab's sheets stay mounted once opened, so a file isn't drawn twice.
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
   const onDrawn = useCallback(
     (fileId: string, pages: readonly DrawnPage[]) =>
       setDrawn((current) => {
@@ -463,118 +487,274 @@ export function PagePicker({
     (key: string) => setSelected((current) => togglePage(current, key)),
     []
   );
-  const paperFiles = paper.flatMap((id) => {
+  // A file taken out of the dialog takes its picks with it.
+  useEffect(() => {
+    const ids = chosenKey.split(',');
+    setSelected((current) => {
+      const next = [...current].filter((key) =>
+        ids.some((id) => key.startsWith(`${id}:`))
+      );
+      return next.length === current.size ? current : new Set(next);
+    });
+  }, [chosenKey]);
+  const rows = chosen.flatMap((id) => {
     const file = files?.find((row) => row.id === id);
     return file ? [file] : [];
   });
-  const answerFiles = answers.flatMap((id) => {
-    const file = files?.find((row) => row.id === id);
-    return file ? [file] : [];
+  const first = rows.find((row) => row.id === paper);
+  const answerFiles = rows.filter((row) => row.id !== paper);
+  // An image is its one page, picked until unclicked.
+  const imagesPicked = useRef(new Set<string>());
+  useEffect(() => {
+    if (!active) return;
+    for (const file of rows) {
+      if (file.kind !== 'image' || imagesPicked.current.has(file.id)) continue;
+      if (tabKind(file) !== 'pages') continue;
+      imagesPicked.current.add(file.id);
+      const key = pageKey({ fileId: file.id, page: 1 });
+      setSelected((current) =>
+        current.has(key) ? current : togglePage(current, key)
+      );
+    }
   });
-  const total = paper.reduce((sum, id) => sum + (counts[id] ?? 0), 0);
-  const allPages: PaperPage[] = paperFiles.flatMap((file) =>
-    Array.from({ length: counts[file.id] ?? 0 }, (_, i) => ({
-      fileId: file.id,
-      page: i + 1,
-    }))
-  );
   const full = selected.size >= EXTRACTION_PAGES_MAX;
-  // An answer file may still be reading after the dialog (X0b). One that then
-  // fails doesn't hold Extract: the server's refusal shows in the footer.
-  const answersReading = answerFiles.some(isReadingFile);
-  const first = paperFiles[0];
-
-  if (files && (paperFiles.length < paper.length || !first))
+  const answersReading = answerFiles.some(
+    (file) => tabKind(file) === 'reading'
+  );
+  const unpicked = rows.find(
+    (file) =>
+      tabKind(file) === 'pages' && pickedPages(selected, file.id).length === 0
+  );
+  const drawing = rows.some(
+    (file) =>
+      drawnPaperFormat(file) &&
+      pickedPages(selected, file.id).some(
+        (page) => !drawn.has(pageKey({ fileId: file.id, page }))
+      )
+  );
+  const current = rows.find((row) => row.id === activeId) ?? first;
+  const kind = current && tabKind(current);
+  const activeCount = current ? counts[current.id] : undefined;
+  const activePicked = current ? pickedPages(selected, current.id).length : 0;
+  const allPicked = !!activeCount && activePicked === activeCount;
+  const shown = new Set(opened);
+  if (current) shown.add(current.id);
+  const tabCount = (file: SourceFile) => {
+    const tab = tabKind(file);
+    if (tab === 'whole') return m.make_quiz_tab_whole();
+    if (tab === 'unread') return m.make_quiz_tab_unread();
+    if (tab === 'reading') return m.make_quiz_reading_pages();
+    const count = pickedPages(selected, file.id).length;
     return (
-      <ErrorState
-        action={
-          <Button onClick={onBack} type="button" variant="outline">
-            {m.action_back()}
-          </Button>
-        }
-        description={m.make_quiz_file_gone()}
-        title={m.make_quiz_pages_unavailable()}
-        variant="page"
-      />
+      <>
+        <span className="sm:hidden">{count}</span>
+        <span className="max-sm:hidden">
+          {count === 1 ? m.make_quiz_one_page() : m.source_pages({ count })}
+        </span>
+      </>
     );
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center gap-x-3.5 gap-y-2 px-4 pt-4 pb-3 sm:px-10 sm:pt-5.5 sm:pb-3.5">
-        <ToolbarButton label={m.action_back()} onClick={onBack}>
-          <Icon name="navigationBack" />
-        </ToolbarButton>
-        <div className="min-w-0 flex-1">
-          <h1 className="font-extrabold text-[22px] leading-tight tracking-[-.01rem]">
-            {m.make_quiz_pages_title()}
-          </h1>
-          <p className="t-meta truncate text-fg-muted">
-            {[
-              paperFiles.map((file) => file.name).join(', '),
-              total > 0 &&
-                (total === 1
-                  ? m.make_quiz_one_page()
-                  : m.source_pages({ count: total })),
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </p>
-        </div>
-        {answerFiles.length > 0 && (
-          <span className="inline-flex h-7.5 min-w-0 items-center gap-1.5 rounded-md bg-page-hover px-2.5 font-semibold text-[12.5px] text-fg-secondary">
-            {answerFiles.slice(0, 3).map((file) => (
-              <FileIcon
-                className="size-4 shrink-0"
-                key={file.id}
-                name={fileIconName(file)}
-              />
-            ))}
-            <span className="truncate">
-              {answerFiles.length === 1
-                ? m.make_quiz_with_one_file()
-                : m.make_quiz_with_files({ count: answerFiles.length })}
-            </span>
-          </span>
+  };
+  const held = answersReading || (unpicked && selected.size > 0) || drawing;
+  const counter = (
+    <p className="flex min-w-0 flex-wrap items-baseline gap-x-2.5">
+      <strong className="font-semibold">
+        {m.make_quiz_pages_count({
+          count: selected.size,
+          max: EXTRACTION_PAGES_MAX,
+        })}
+      </strong>
+      <span
+        className={cn(
+          't-meta text-fg-muted',
+          !held && full && 'text-tint-error-fg'
         )}
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div
-          aria-label={m.make_quiz_pages_title()}
-          className="grid grid-cols-2 gap-x-3 gap-y-5 px-4 pt-2.5 pb-6 sm:grid-cols-[repeat(auto-fill,220px)] sm:justify-center sm:gap-x-7.5 sm:gap-y-6.5 sm:px-10"
-          role="group"
-        >
-          {paperFiles.map((file, i) => {
-            const firstNumber =
-              1 +
-              paper.slice(0, i).reduce((sum, id) => sum + (counts[id] ?? 0), 0);
-            const format = drawnPaperFormat(file);
-            return format ? (
-              <OfficeSheets
-                file={file}
-                firstNumber={firstNumber}
-                format={format}
-                full={full}
-                key={file.id}
-                onCount={onCount}
-                onDrawn={onDrawn}
-                onToggle={onToggle}
-                selected={selected}
-              />
-            ) : (
-              <PaperSheets
-                file={file}
-                firstNumber={firstNumber}
-                full={full}
-                key={file.id}
-                onCount={onCount}
-                onToggle={onToggle}
-                selected={selected}
-              />
-            );
-          })}
+      >
+        {answersReading
+          ? m.make_quiz_waiting_answers()
+          : unpicked && selected.size > 0
+            ? m.make_quiz_pick_in({ name: unpicked.name })
+            : drawing
+              ? m.make_quiz_drawing_picks()
+              : full
+                ? m.make_quiz_at_cap()
+                : m.make_quiz_question_price({
+                    price: EXTRACTION_QUESTION_CREDITS,
+                  })}
+      </span>
+    </p>
+  );
+  const gone = !!files && !first;
+  return {
+    action: !gone && (
+      <Button
+        disabled={!!unpicked || answersReading || drawing || isPending}
+        onClick={() => {
+          if (!first) return;
+          start(
+            extractionRequest(
+              quizTitleFrom(
+                first.name,
+                (materials ?? []).map((row) => row.title)
+              ),
+              first.id,
+              answerFiles.map((file) => file.id),
+              selected,
+              drawn
+            ),
+            { onSuccess: (run) => onStarted(run.id) }
+          );
+        }}
+        type="button"
+      >
+        {isPending ? <Spinner /> : m.make_quiz_extract()}
+      </Button>
+    ),
+    body: gone ? (
+      <div className="flex flex-col gap-3 pb-1">
+        <p className="t-meta text-fg-muted">{m.make_quiz_file_gone()}</p>
+        <div>
+          <Button
+            onClick={onChangeFiles}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {m.make_quiz_change_files()}
+          </Button>
         </div>
       </div>
-      <footer className="border-divider border-t px-4 py-3 sm:px-10 sm:py-4">
+    ) : (
+      <div className="flex min-h-0 flex-col sm:h-[min(66dvh,640px)]">
+        <div className="z-10 bg-overlay max-sm:sticky max-sm:top-14 max-sm:-mx-4 max-sm:px-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <p className="t-meta min-w-0 flex-1 basis-40 truncate text-fg-muted">
+              {[
+                current?.name,
+                kind === 'whole'
+                  ? m.make_quiz_whole_note({ max: EXTRACTION_PAGES_MAX })
+                  : activeCount &&
+                    (activeCount === 1
+                      ? m.make_quiz_one_page()
+                      : m.source_pages({ count: activeCount })),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+            <div className="flex items-center gap-2">
+              {kind === 'pages' && (
+                <Button
+                  disabled={
+                    !activeCount || (full && !allPicked && activePicked === 0)
+                  }
+                  onClick={() =>
+                    current &&
+                    activeCount &&
+                    setSelected((picks) =>
+                      toggleAllPages(picks, current.id, activeCount)
+                    )
+                  }
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {allPicked
+                    ? m.make_quiz_clear_all()
+                    : m.make_quiz_select_all()}
+                </Button>
+              )}
+              <Button
+                onClick={onChangeFiles}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {m.make_quiz_change_files()}
+              </Button>
+            </div>
+          </div>
+          <div
+            aria-label={m.make_quiz_title()}
+            className="mt-1.5 flex gap-4.5 overflow-x-auto border-divider border-b sm:gap-6"
+            role="tablist"
+          >
+            {rows.map((file) => (
+              <button
+                aria-selected={file.id === current?.id}
+                className={cn(
+                  'flex h-10 shrink-0 cursor-pointer items-center gap-1.5 border-transparent border-b-2 px-0.5 font-medium text-fg-muted text-sm outline-none focus-visible:text-fg sm:gap-2',
+                  file.id === current?.id && 'border-fg text-fg'
+                )}
+                key={file.id}
+                onClick={() => {
+                  setActiveId(file.id);
+                  setOpened((was) => new Set(was).add(file.id));
+                }}
+                role="tab"
+                type="button"
+              >
+                <span className="max-w-52 truncate">
+                  {file.id === paper
+                    ? m.make_quiz_tab_questions()
+                    : fileTitle(file.name)}
+                </span>
+                <span className="t-meta font-normal text-fg-muted">
+                  {tabCount(file)}
+                </span>
+              </button>
+            ))}
+          </div>
+          {phone && <div className="py-2">{counter}</div>}
+        </div>
+        <div className="min-h-0 flex-1 sm:overflow-y-auto">
+          {rows
+            .filter((file) => shown.has(file.id))
+            .map((file) => {
+              const tab = tabKind(file);
+              const format = drawnPaperFormat(file);
+              return (
+                <div
+                  aria-label={file.name}
+                  className="grid grid-cols-2 gap-x-3 gap-y-5 pt-3 pb-5 sm:grid-cols-[repeat(auto-fill,190px)] sm:justify-center sm:gap-x-6 sm:gap-y-6 sm:pt-5"
+                  hidden={file.id !== current?.id}
+                  key={file.id}
+                  role="group"
+                >
+                  {tab === 'whole' ? (
+                    <WholeFileTile file={file} />
+                  ) : tab === 'unread' ? (
+                    <p className="t-meta col-span-full text-center text-fg-muted">
+                      {m.make_quiz_unread_note()}
+                    </p>
+                  ) : tab === 'reading' ? (
+                    <p
+                      className="t-meta col-span-full text-center text-fg-muted"
+                      role="status"
+                    >
+                      {m.make_quiz_waiting_answers()}
+                    </p>
+                  ) : format ? (
+                    <OfficeSheets
+                      file={file}
+                      format={format}
+                      full={full}
+                      onCount={onCount}
+                      onDrawn={onDrawn}
+                      onToggle={onToggle}
+                      selected={selected}
+                    />
+                  ) : (
+                    <PaperSheets
+                      file={file}
+                      full={full}
+                      onCount={onCount}
+                      onToggle={onToggle}
+                      selected={selected}
+                    />
+                  )}
+                </div>
+              );
+            })}
+        </div>
         <FormAlert
           errorId={unexpectedErrorId(error)}
           message={
@@ -584,53 +764,28 @@ export function PagePicker({
               : null
           }
         />
-        <div className="mt-0 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <p className="flex min-w-0 flex-wrap items-baseline gap-x-2.5">
-            <strong className="font-semibold">
-              {m.make_quiz_pages_count({
-                count: selected.size,
-                max: EXTRACTION_PAGES_MAX,
-              })}
-            </strong>
-            <span className="t-meta text-fg-muted">
-              {full
-                ? m.make_quiz_at_cap({ max: EXTRACTION_PAGES_MAX })
-                : answersReading
-                  ? m.make_quiz_waiting_answers()
-                  : m.make_quiz_credits({
-                      count: estimatedCredits(selected.size),
-                    })}
-            </span>
-          </p>
-          <div className="ml-auto flex items-center gap-1">
-            <Button onClick={onCancel} type="button" variant="ghost-hover">
-              {m.action_cancel()}
-            </Button>
-            <Button
-              disabled={selected.size === 0 || answersReading || isPending}
-              onClick={() =>
-                first &&
-                start(
-                  extractionRequest(
-                    quizTitleFrom(
-                      first.name,
-                      (materials ?? []).map((row) => row.title)
-                    ),
-                    allPages,
-                    selected,
-                    answers,
-                    drawn
-                  ),
-                  { onSuccess: (run) => onStarted(run.id) }
-                )
-              }
-              type="button"
-            >
-              {isPending ? <Spinner /> : m.make_quiz_extract()}
-            </Button>
-          </div>
-        </div>
-      </footer>
-    </div>
-  );
+      </div>
+    ),
+    closable: false,
+    footer: (
+      <>
+        {!phone && <div className="mr-auto self-center">{counter}</div>}
+        <span className="contents max-sm:hidden">
+          <Button onClick={onCancel} type="button" variant="ghost-hover">
+            {m.action_cancel()}
+          </Button>
+        </span>
+      </>
+    ),
+    onBack: onChangeFiles,
+    title:
+      kind === 'whole'
+        ? m.make_quiz_whole_title()
+        : kind === 'unread'
+          ? m.make_quiz_unread_title()
+          : current && current.id !== paper
+            ? m.make_quiz_answers_title()
+            : m.make_quiz_pages_title(),
+    width: 1040,
+  };
 }

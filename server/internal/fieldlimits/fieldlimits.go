@@ -103,11 +103,12 @@ const (
 	QuizOpenParts     = 100
 	QuizMarkscheme    = 5
 	QuizOpenAnswer    = 5_000
-	// A Make a quiz run reads at most ExtractionPages selected pages from at
-	// most ExtractionFiles files, mark scheme and answer files included
-	// (todo-study-tracking.md §8, Epo 2026-11-03).
-	ExtractionPages = 40
-	ExtractionFiles = 10
+	// A Make a quiz run reads one question paper and at most ExtractionAnswerFiles
+	// answer files, and at most ExtractionPages picked pages across them (Epo
+	// 2026-11-05). Each saved question costs ExtractionQuestionCredits.
+	ExtractionPages           = 40
+	ExtractionAnswerFiles     = 3
+	ExtractionQuestionCredits = 4
 	// AnonymousLocalID bounds the reporting id a signed-out browser sends.
 	AnonymousLocalID = 64
 	// A flashcard's front and back (human/frontend/plate-editor.md for the

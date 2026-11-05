@@ -301,8 +301,7 @@ def _answers(job: Job, args, extraction, capture, cfg) -> list:
     with pymupdf.open(pdf) as doc:
         texts = {n + 1: doc[n].get_text() for n in range(len(doc))}
     layers = extraction.page_layers(pdf, texts)
-    pictured = sum(1 for path, numbers, _ in job.paper for _ in numbers)
-    if extraction._text_goes(layers, extraction.limits.EXTRACTION_PAGES_MAX - pictured):
+    if extraction._text_goes(layers):
         return [extraction.AnswerFile(pdf.name, "\n\n".join(texts.values()))]
 
     async def image(number):

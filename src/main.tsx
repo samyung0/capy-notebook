@@ -63,12 +63,30 @@ enableMocks().finally(() => {
   if (document.querySelector('#root > .boot-loader[role="alert"]')) return;
   listenForExtractionEnds(
     () => (router.state.location.search as { run?: string }).run,
-    (workspaceId, quizId) =>
-      void router.navigate({
-        params: { workspaceId },
-        search: { material: quizId },
-        to: '/workspaces/$workspaceId',
-      })
+    {
+      openQuiz: (workspaceId, quizId) =>
+        void router.navigate({
+          params: { workspaceId },
+          search: { material: quizId },
+          to: '/workspaces/$workspaceId',
+        }),
+      pickAgain: ({ answers, paper, workspaceId }) =>
+        void router.navigate({
+          params: { workspaceId },
+          search: {
+            answers: answers.join(',') || undefined,
+            make: 'pages',
+            paper: paper.join(','),
+          },
+          to: '/workspaces/$workspaceId',
+        }),
+      review: (workspaceId, run) =>
+        void router.navigate({
+          params: { workspaceId },
+          search: { make: 'run', run },
+          to: '/workspaces/$workspaceId',
+        }),
+    }
   );
   createRoot(document.getElementById('root')!, {
     onCaughtError: reportReactError,

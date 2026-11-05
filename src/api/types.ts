@@ -673,8 +673,12 @@ import type {
    retrieval) and to names (for display + the LLM scope hint). Empty scope means
    the whole workspace. */
 export type {
+  ConfirmExtractionReq,
   CreateExtractionReq,
   Extraction,
+  ExtractionFile,
+  ExtractionFound,
+  ExtractionFoundQuestion,
   ExtractionReport,
 } from './gen/model';
 export type GenerateKind = Exclude<MaterialKind, 'note'>;

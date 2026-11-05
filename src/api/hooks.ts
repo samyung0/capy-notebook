@@ -62,6 +62,7 @@ import type {
   CloneFileReq,
   CloneMaterialReq,
   CloneWorkspaceResult,
+  ConfirmExtractionReq,
   ContentOrderItem,
   Conversation,
   CreateBlankFileReq,
@@ -1320,14 +1321,21 @@ export const extractionQuery = (id: string) =>
 
 const EXTRACTION_POLL_MS = 3000;
 
-/** Follows a run: the event stream says when it ends, and the count of
- * questions read so far is only on the row, so it is read while running. */
-export const useExtraction = (id: string, options?: QueryUiOptions) =>
+/** Follows a run: the event stream says when it pauses or ends, and how far it has got
+ * is only on the row, so it is read while running. */
+export const useExtraction = (
+  id: string,
+  options?: QueryUiOptions & { enabled?: boolean }
+) =>
   useQuery({
     ...extractionQuery(id),
+    enabled: options?.enabled,
     meta: queryMeta(options),
     refetchInterval: (query) =>
       query.state.data?.status === 'running' ? EXTRACTION_POLL_MS : false,
+    // A run waiting on its starter shows their balance, which a top-up changes.
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
 
 /** Starts a run; refusals are shown beside the page picker's button. */
@@ -1341,7 +1349,28 @@ export function useCreateExtraction(wsId: string) {
   });
 }
 
-/** Who hears a run end: the app's toast, set once at the start. */
+/** Sets a run waiting on its starter going with its first questions. */
+export function useConfirmExtraction(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (body: ConfirmExtractionReq) =>
+      api.post<Extraction>(`/extractions/${id}/confirm`, body),
+    onSuccess: (run) => qc.setQueryData(qk.extraction(run.id), run),
+  });
+}
+
+/** Ends a run waiting on its starter. */
+export function useCancelExtraction(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: () => api.post<Extraction>(`/extractions/${id}/cancel`, {}),
+    onSuccess: (run) => qc.setQueryData(qk.extraction(run.id), run),
+  });
+}
+
+/** Who hears a run pause on its starter or end: the app's toast, set once at the start. */
 let extractionEndListener: ((run: Extraction) => void) | undefined;
 export function onExtractionEnd(listener: (run: Extraction) => void) {
   extractionEndListener = listener;

@@ -6,6 +6,7 @@ import type { Extraction } from './types';
 
 it('reads a run that ended and refreshes its workspace materials', async () => {
   const ended: Extraction = {
+    answered: 12,
     createdAt: '2026-11-04T10:00:00Z',
     id: 'ex_1',
     quizId: 'qz_1',

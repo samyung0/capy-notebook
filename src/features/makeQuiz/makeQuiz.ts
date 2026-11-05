@@ -1,11 +1,14 @@
 import { isApiError } from '@/api/client';
 import { createExtractionBodyTitleMax } from '@/api/gen/validators';
 import {
-  EXTRACTION_FILES_MAX,
+  EXTRACTION_ANSWER_FILES_MAX,
   EXTRACTION_PAGES_MAX,
+  EXTRACTION_QUESTION_CREDITS,
 } from '@/api/limits.generated';
 import type {
   CreateExtractionReq,
+  Extraction,
+  ExtractionFoundQuestion,
   ExtractionReport,
   SourceFile,
 } from '@/api/types';
@@ -44,17 +47,21 @@ export function isOfferable(file: Pick<SourceFile, 'indexed' | 'status'>) {
   return file.indexed || isReadingFile(file);
 }
 
-/** Past the 10-file cap, mark scheme and answer files included (Epo
- * 2026-11-03), Add a file stops offering more. */
-export function hasFileRoom(paperCount: number, answerCount: number) {
-  return paperCount + answerCount < EXTRACTION_FILES_MAX;
+/** Past the answer-file cap (Epo 2026-11-05: one paper, up to three more), Add a file
+ * stops offering more. */
+export function hasFileRoom(answerCount: number) {
+  return answerCount < EXTRACTION_ANSWER_FILES_MAX;
 }
 
-/** Board X1's "6 pages, about 60 credits". */
-const CREDITS_PER_PAGE = 10;
-export const estimatedCredits = (pages: number) => pages * CREDITS_PER_PAGE;
+/** A file with no pages to pick: the run reads all of it, and it counts for none of the
+ * pages (Epo 2026-11-05). */
+export function isWholeFile(file: Pick<SourceFile, 'kind' | 'name'>) {
+  return (
+    file.kind !== 'pdf' && file.kind !== 'image' && !drawnPaperFormat(file)
+  );
+}
 
-/** One page of the paper, counted from 1 in its own file. */
+/** One page of a file, counted from 1. */
 export interface PaperPage {
   fileId: string;
   page: number;
@@ -68,35 +75,125 @@ export function togglePage(selected: ReadonlySet<string>, key: string) {
   return next;
 }
 
-/** The run's request: pages grouped by file in their own order, each file
- * once. A file with no page selected stays out. */
+/** Select all on a file: every page up to the cap, or none when all were on. */
+export function toggleAllPages(
+  selected: ReadonlySet<string>,
+  fileId: string,
+  count: number
+) {
+  const keys = Array.from({ length: count }, (_, i) =>
+    pageKey({ fileId, page: i + 1 })
+  );
+  const next = new Set(selected);
+  if (keys.every((key) => next.has(key))) {
+    for (const key of keys) next.delete(key);
+    return next;
+  }
+  for (const key of keys) {
+    if (next.size >= EXTRACTION_PAGES_MAX) break;
+    next.add(key);
+  }
+  return next;
+}
+
+/** A file's picked pages, in order. */
+export function pickedPages(selected: ReadonlySet<string>, fileId: string) {
+  const prefix = `${fileId}:`;
+  return [...selected]
+    .filter((key) => key.startsWith(prefix))
+    .map((key) => Number(key.slice(prefix.length)))
+    .sort((a, b) => a - b);
+}
+
+function extractionFile(
+  fileId: string,
+  selected: ReadonlySet<string>,
+  drawn: ReadonlyMap<string, string>
+) {
+  const pages = pickedPages(selected, fileId);
+  const images = pages.flatMap(
+    (page) => drawn.get(pageKey({ fileId, page })) ?? []
+  );
+  return { fileId, pages, ...(images.length > 0 ? { images } : {}) };
+}
+
+/** The run's request: each file with its picked pages and any page the browser drew. */
 export function extractionRequest(
   title: string,
-  pages: readonly PaperPage[],
-  selected: ReadonlySet<string>,
+  paperFileId: string,
   answerFileIds: readonly string[],
+  selected: ReadonlySet<string>,
   /** Each browser-drawn page's base64 JPEG, by its page key. */
   drawn: ReadonlyMap<string, string> = new Map()
 ): CreateExtractionReq {
-  const byFile = new Map<string, number[]>();
-  for (const page of pages) {
-    if (!selected.has(pageKey(page))) continue;
-    byFile.set(page.fileId, [...(byFile.get(page.fileId) ?? []), page.page]);
-  }
   return {
-    answerFileIds: [...answerFileIds],
-    paper: [...byFile].map(([fileId, list]) => {
-      const images = list.flatMap(
-        (page) => drawn.get(pageKey({ fileId, page })) ?? []
-      );
-      return {
-        fileId,
-        pages: list,
-        ...(images.length > 0 ? { images } : {}),
-      };
-    }),
+    answers: answerFileIds.map((fileId) =>
+      extractionFile(fileId, selected, drawn)
+    ),
+    paper: extractionFile(paperFileId, selected, drawn),
     title,
   };
+}
+
+/** How many questions the credits left pay for, from the first. */
+export function affordableQuestions(total: number, availableCredits: number) {
+  return Math.min(
+    total,
+    Math.floor(availableCredits / EXTRACTION_QUESTION_CREDITS)
+  );
+}
+
+/** "Page 3 · parts a, b", a question's line in the confirm dialog. */
+export function foundPagesLabel({
+  first,
+  last,
+  parts,
+}: Pick<ExtractionFoundQuestion, 'first' | 'last' | 'parts'>) {
+  return [
+    first === last
+      ? m.make_quiz_found_page({ page: first })
+      : m.make_quiz_found_pages({ first, last }),
+    parts.length > 0 && m.make_quiz_found_parts({ parts: parts.join(', ') }),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** A running run on the panel's bar: copying takes the first half, answers the rest. */
+export function runProgress(
+  run: Pick<Extraction, 'answered' | 'confirmed' | 'recorded'>
+) {
+  const total = run.confirmed ?? 0;
+  if (total === 0) return { label: m.make_quiz_panel_starting(), value: 0 };
+  const copied = Math.min(run.recorded, total);
+  if (copied < total)
+    return {
+      label: m.make_quiz_panel_copying({ count: copied, total }),
+      value: (copied / total) * 50,
+    };
+  const answered = Math.min(run.answered, total);
+  return {
+    label: m.make_quiz_panel_answers({ count: answered, total }),
+    value: 50 + (answered / total) * 50,
+  };
+}
+
+/** How many questions a finished run saved. */
+export const savedCount = (report: ExtractionReport | undefined) =>
+  report?.recorded.length ?? 0;
+
+/** What a refused start says, chosen by the retrieval service's code; null for
+ * any other error. */
+export function extractionRefusal(error: unknown): string | null {
+  if (!isApiError(error)) return null;
+  switch (error.code) {
+    case 'too_much_text':
+      return m.make_quiz_refused_text();
+    case 'no_indexed_text':
+      return m.make_quiz_refused_no_text();
+    default:
+      return null;
+  }
 }
 
 const FILE_EXTENSION = /\.[^.]+$/;
@@ -128,26 +225,12 @@ export function extractionFailure(code: string | undefined): string {
       return m.make_quiz_failed_empty();
     case 'interrupted':
       return m.make_quiz_failed_interrupted();
+    case 'confirm_expired':
+      return m.make_quiz_failed_expired();
     case 'quiz_invalid':
       return m.make_quiz_failed_invalid();
     default:
       return m.make_quiz_failed_fallback();
-  }
-}
-
-/** What a refused start says, chosen by the retrieval service's code; null for
- * any other error. */
-export function extractionRefusal(error: unknown): string | null {
-  if (!isApiError(error)) return null;
-  switch (error.code) {
-    case 'too_many_pages':
-      return m.make_quiz_refused_pages({ max: EXTRACTION_PAGES_MAX });
-    case 'file_too_long':
-      return m.make_quiz_refused_long();
-    case 'no_indexed_text':
-      return m.make_quiz_refused_no_text();
-    default:
-      return null;
   }
 }
 

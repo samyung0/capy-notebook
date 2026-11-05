@@ -5,13 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ExtractionPaperFile {
+export interface ExtractionFile {
   /** @minLength 1 */
   fileId: string;
   images?: string[];
-  /**
-     * @minItems 1
-     * @nullable
-     */
-  pages: number[] | null;
+  pages?: number[];
 }

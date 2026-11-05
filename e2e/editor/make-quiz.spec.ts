@@ -1,11 +1,12 @@
 import { expect, type Page, test } from '@playwright/test';
 import { m } from '../i18n';
 
-// Make a quiz on the mock (boards X0a, X0b, X1, X2): the mock reads a paper at
-// about a question a second and saves the quiz hidden from members.
+// Make a quiz on the mock (one dialog from the files to the questions found, then the
+// upload panel): the mock reads a paper at about a question a second and saves the quiz
+// hidden from members.
 const dialog = (page: Page) => page.getByRole('dialog');
 const pageSheet = (page: Page, number: number) =>
-  page.locator(`[data-page-sheet="${number}"]`);
+  page.locator(`[role=group]:not([hidden]) [data-page-sheet="${number}"]`);
 
 /** A two-page PDF with nothing on its pages. */
 function emptyPdf() {
@@ -41,6 +42,14 @@ async function extract(page: Page) {
   await page.getByRole('button', { name: m.make_quiz_extract() }).click();
 }
 
+/** The questions found, confirmed: the dialog goes and the panel follows the run. */
+async function confirmQuestions(page: Page) {
+  await dialog(page)
+    .getByRole('button', { name: m.make_quiz_make() })
+    .click({ timeout: 30_000 });
+  await expect(page.getByTestId('source-transfer-panel')).toBeVisible();
+}
+
 test('a paper and its mark scheme become a hidden quiz, open in its editor', async ({
   page,
 }) => {
@@ -67,24 +76,47 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   await expect(
     page.getByRole('heading', { name: m.make_quiz_pages_title() })
   ).toBeVisible();
-  await expect(page.getByText(m.make_quiz_with_one_file())).toBeVisible();
   await pickPages(page, 2, 3, 4);
   await expect(
     page.getByText(m.make_quiz_pages_count({ count: 3, max: 40 }))
-  ).toBeVisible();
-  await expect(
-    page.getByText(m.make_quiz_credits({ count: 30 }))
   ).toBeVisible();
   // A second click skips the page again.
   await pickPages(page, 4);
   await expect(
     page.getByText(m.make_quiz_pages_count({ count: 2, max: 40 }))
   ).toBeVisible();
+  // An answer file holds the run until a page of it is picked, and counts.
+  await expect(
+    page.getByRole('button', { name: m.make_quiz_extract() })
+  ).toBeDisabled();
+  await dialog(page)
+    .getByRole('tab', { name: /mark scheme/ })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: m.make_quiz_answers_title() })
+  ).toBeVisible();
+  await pickPages(page, 1);
+  await expect(
+    page.getByText(m.make_quiz_pages_count({ count: 3, max: 40 }))
+  ).toBeVisible();
+  await expect(
+    page.getByText(m.make_quiz_question_price({ price: 4 }))
+  ).toBeVisible();
 
   await extract(page);
   await expect(
     page.getByRole('heading', { name: m.make_quiz_reading_title() })
   ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: m.make_quiz_found_title({ count: 12 }) })
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    dialog(page).getByText(m.make_quiz_price_total({ count: 48 }))
+  ).toBeVisible();
+  await confirmQuestions(page);
+  await page
+    .getByRole('button', { name: m.make_quiz_open_quiz() })
+    .click({ timeout: 60_000 });
 
   await expect(page).toHaveURL(/material=/, { timeout: 30_000 });
   await expect(page.getByTestId('hidden-chip')).toBeVisible();
@@ -102,10 +134,81 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   ).toHaveValue('Metaphase');
 });
 
+test('Change files keeps the picks of files left in', async ({ page }) => {
+  await page.goto(
+    '/workspaces/ws_bio?make=pages&paper=f_paper_2025&answers=f_paper_scheme'
+  );
+  await pageSheet(page, 2).click({ timeout: 30_000 });
+  await page.getByRole('button', { name: m.make_quiz_change_files() }).click();
+  await dialog(page)
+    .getByRole('button', {
+      name: m.make_quiz_remove_file({
+        name: 'Past paper 2025 P1 mark scheme.pdf',
+      }),
+    })
+    .click();
+  await dialog(page).getByRole('button', { name: m.action_continue() }).click();
+  await expect(pageSheet(page, 2)).toHaveAttribute('aria-pressed', 'true');
+  await expect(
+    page.getByRole('button', { name: m.make_quiz_extract() })
+  ).toBeEnabled();
+});
+
+test('cancelling the questions found goes back to the picks', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio?make=pages&paper=f_paper_2025');
+  await pageSheet(page, 2).click({ timeout: 30_000 });
+  await extract(page);
+  await dialog(page)
+    .getByRole('button', { name: m.action_cancel() })
+    .click({ timeout: 30_000 });
+  await expect(pageSheet(page, 2)).toHaveAttribute('aria-pressed', 'true', {
+    timeout: 30_000,
+  });
+});
+
+test('credits short of the questions found offer the ones they afford', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('capy:mock-quiz-credits', '21')
+  );
+  await page.goto('/workspaces/ws_bio?make=pages&paper=f_paper_2025');
+  await pageSheet(page, 2).click({ timeout: 30_000 });
+  await extract(page);
+  await expect(
+    dialog(page).getByText(m.make_quiz_enough({ count: 5 }))
+  ).toBeVisible({ timeout: 30_000 });
+  await dialog(page)
+    .getByRole('button', { name: m.make_quiz_make_count({ count: 5 }) })
+    .click();
+  await expect(page.getByTestId('source-transfer-panel')).toBeVisible();
+});
+
+test('an answer file that failed to read is named, and the run goes on', async ({
+  page,
+}) => {
+  await page.goto(
+    '/workspaces/ws_bio?make=pages&paper=f_paper_2025&answers=f_scheme_unread'
+  );
+  await pageSheet(page, 2).click({ timeout: 30_000 });
+  await extract(page);
+  await expect(
+    dialog(page).getByText(
+      m.make_quiz_found_unread({ names: 'Unreadable mark scheme.pdf' })
+    )
+  ).toBeVisible({ timeout: 30_000 });
+});
+
 test('an edit on the page reaches the question list', async ({ page }) => {
   await page.goto('/workspaces/ws_bio?make=pages&paper=f_paper_2025');
   await pageSheet(page, 2).click({ timeout: 30_000 });
   await extract(page);
+  await confirmQuestions(page);
+  await page
+    .getByRole('button', { name: m.make_quiz_open_quiz() })
+    .click({ timeout: 60_000 });
   await expect(page.locator('[data-question-row]')).toHaveCount(12, {
     timeout: 40_000,
   });
@@ -120,14 +223,16 @@ test('an edit on the page reaches the question list', async ({ page }) => {
   );
 });
 
-test('a failed run says so and goes back to the pages', async ({ page }) => {
+test('a failed run says so in the panel and goes back to the pages', async ({
+  page,
+}) => {
   await page.goto('/workspaces/ws_bio?make=pages&paper=f_paper_fails');
   await pageSheet(page, 1).click({ timeout: 30_000 });
   await extract(page);
-  await expect(
-    page.getByRole('heading', { name: m.make_quiz_failed_title() })
-  ).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: m.make_quiz_back_to_pages() }).click();
+  await confirmQuestions(page);
+  await page
+    .getByRole('button', { name: m.make_quiz_try_again() })
+    .click({ timeout: 30_000 });
   await expect(pageSheet(page, 1)).toBeVisible({ timeout: 30_000 });
 });
 
@@ -135,7 +240,7 @@ test('a run takes at most 40 pages', async ({ page }) => {
   await page.goto('/workspaces/ws_bio?make=pages&paper=f_paper_long');
   await expect(pageSheet(page, 60)).toBeAttached({ timeout: 30_000 });
   await pickPages(page, ...Array.from({ length: 40 }, (_, i) => i + 1));
-  await expect(page.getByText(m.make_quiz_at_cap({ max: 40 }))).toBeVisible();
+  await expect(page.getByText(m.make_quiz_at_cap())).toBeVisible();
   await pageSheet(page, 41).click({ force: true });
   await expect(pageSheet(page, 41)).toHaveAttribute('aria-pressed', 'false');
 });

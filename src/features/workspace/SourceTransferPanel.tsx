@@ -14,6 +14,8 @@ import { IconButton } from '@/components/ui/IconButton';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { userToast } from '@/components/ui/userToast';
 import { fileIsIngesting } from '@/features/files/fileUtils';
+import { QuizRunRows } from '@/features/makeQuiz/QuizRunRows';
+import { dismissQuizRuns, useQuizRuns } from '@/features/makeQuiz/quizRuns';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
@@ -242,7 +244,8 @@ export function SourceTransferPanel() {
     const timer = setTimeout(dismissSourceTransfers, 3000);
     return () => clearTimeout(timer);
   }, [allDone]);
-  if (transfers.length === 0) return null;
+  const quizRuns = useQuizRuns((state) => state.runs);
+  if (transfers.length === 0 && quizRuns.length === 0) return null;
   const finished = kinds.filter(
     (kind) =>
       kind !== 'progress' && kind !== 'indeterminate' && kind !== 'queued'
@@ -260,23 +263,31 @@ export function SourceTransferPanel() {
         className="absolute -top-2.5 -left-2.5 size-6.5 rounded-full border border-divider bg-surface p-0 text-fg-secondary shadow-card hover:bg-surface-hover-bg"
         icon="x"
         label={m.action_close()}
-        onClick={dismissSourceTransfers}
+        onClick={() => {
+          dismissSourceTransfers();
+          dismissQuizRuns();
+        }}
         size="xs"
         strokeWidth={2}
       />
-      <div className="flex h-9 items-center border-divider border-b px-4 py-2">
-        <span className="t-label text-fg-muted">
-          {m.source_transfers_heading({
-            count: transfers.length,
-            done: finished,
-          })}
-        </span>
-      </div>
-      <ul className="max-h-60 overflow-y-auto">
-        {rows.map(({ file, transfer }) => (
-          <TransferRow file={file} key={transfer.key} transfer={transfer} />
-        ))}
-      </ul>
+      {transfers.length > 0 && (
+        <>
+          <div className="flex h-9 items-center border-divider border-b px-4 py-2">
+            <span className="t-label text-fg-muted">
+              {m.source_transfers_heading({
+                count: transfers.length,
+                done: finished,
+              })}
+            </span>
+          </div>
+          <ul className="max-h-60 overflow-y-auto">
+            {rows.map(({ file, transfer }) => (
+              <TransferRow file={file} key={transfer.key} transfer={transfer} />
+            ))}
+          </ul>
+        </>
+      )}
+      <QuizRunRows />
     </Card>,
     document.body
   );

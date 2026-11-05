@@ -5724,15 +5724,15 @@ job. The screens (boards X0a, X0b, X1, X2) are in
 [Make a quiz screens](question-bank.md#make-a-quiz-screens).
 
 - **Start.** `POST /api/workspaces/{id}/extractions` (workspace editors) takes
-  a title, the question paper as `paper: [{fileId, pages}]` (pages counted
-  from 1; an image is page 1, so a photographed worksheet is several image
-  files) and `answerFileIds`, the mark scheme or answer files, read whole and
-  never page-picked. At most `fieldlimits.ExtractionPages` (40) selected pages
-  and `ExtractionFiles` (10) files in all, answer files included (Epo
-  2026-11-03); every file must be the workspace's, untrashed and indexed, and a
-  paper file a PDF, an image, a Word or PowerPoint file with its selected pages drawn
-  in the browser and sent as JPEGs (`images`), or any other indexed file read whole as
-  page 1. An Excel file or audio is refused as a paper and as an answer file. The gateway checks those,
+  a title, the question paper as `paper: {fileId, pages, images}` and up to
+  `ExtractionAnswerFiles` (3) `answers` of the same shape (Epo 2026-11-05). Pages count
+  from 1 and every picked page counts towards `fieldlimits.ExtractionPages` (40) across
+  the files, however it is sent. A PDF takes any of its pages, an image page 1, a Word
+  or PowerPoint file its picked pages as browser-drawn JPEGs (`images`), and any other
+  indexed file no pages: it goes whole. Every file must be the workspace's and untrashed.
+  A paper must be indexed. An answer file still being read is refused, and one that
+  failed to read is left out and named in the run's `unread_answers` (Q613), and the
+  run goes on as one without it. An Excel file or audio is refused as a paper and as an answer file. The gateway checks those,
   that the title is free, the account can edit and has storage, then opens a
   provider session on surface `generate` (the starter pays, Epo 2026-11-03;
   its calls' purposes are `extraction_map`, `extraction_copy`,
@@ -5742,8 +5742,8 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   (`store.Extraction`) once the service has accepted it. The service refuses
   before streaming, as a 400 with its code, a page past its file's end
   (`page_out_of_range`), a file gone, a file sent as text with no indexed text
-  (`no_indexed_text`) or over 200,000 characters (`file_too_long`), and more than 40
-  page images, paper and answer pages together (`too_many_pages`);
+  (`no_indexed_text`), and more than `RUN_TEXT_CHARS` (200,000) characters of whole-file
+  and answer text across the run (`too_much_text`);
   past its turn slots it answers provider_busy (503) at once, as for
   `/generate`.
 - **The run** (`pipeline/retrieval/extraction.py`, prompts in
@@ -5931,7 +5931,29 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   or a run left with no copies after a failure, fails the run, as does a definitive
   client error (400, 401, 403, 404, 422) on the map. The starter sees only progress and
   the final error. When the stream goes away the running threads are cancelled.
-- **Credits and load.** A session reserves nothing, so `MAX_TOKENS` holds no credits;
+- **The confirm** (Epo 2026-11-05). When the map found questions the run sends a `map`
+  event and waits: Go sets the row to `confirming` with the questions (`found`) and what
+  the map call cost, and tells the starter's stream. `extraction.starter_confirm` reads
+  the row each second for up to `CONFIRM_WAIT_S` (600 s; past it `confirm_expired`), so
+  it needs no route back into the process, and the wait holds a turn slot. A restart
+  fails a waiting run as `interrupted`. `POST /api/extractions/{id}/confirm`
+  takes how many to make from the first; `.../cancel` ends the run as `cancelled`, the
+  starter having paid for the map alone. Fewer than the map found cuts the rows, and the
+  number repairs (gaps, the next number on a later page) stay off so nothing past them is
+  copied. The prompts don't change: a copy ask just lists fewer labels. The provider's
+  cache may expire during the wait, which costs nothing extra to the starter, since the
+  calls after it are free to them, and hasn't been measured.
+- **What a run costs** (Epo 2026-11-05). The map call bills by its tokens like any call.
+  Confirming holds `ExtractionQuestionCredits` (4) per question on the session and takes
+  its token rates to zero, so copy, solve and figure calls still write `usage_events`,
+  for what they cost us, at no credits. At the end Go charges 4 per saved question, one
+  with no answer included, up to the number confirmed (`extraction_question`, keyed by
+  the run), then settling lets the hold go; a run that saves none pays nothing more.
+  Bench numbers per question excluding the map: 1.5 to 3.2 on ordinary papers, 4.2 and
+  4.6 on the two very small selections.
+- **Progress.** While copying and solving the run sends `progress` (`copied`, `answered`)
+  about every 2 s, kept on the row for the upload panel.
+- **Load.** A session reserves nothing until the confirm, so `MAX_TOKENS` holds no credits;
   each call settles what it used, and a failed stream settles what it reported or is
   abandoned unbilled (`_tracked_call`). Threads stop before their next call once a
   settlement says credits ran out, but calls in flight finish, so a run can pass zero by

@@ -10,7 +10,9 @@ solve; bench/extraction/reports/2026-11-05-copy-first-structured.md):
    line a question: label, pages, parts, figures.
    The answer files go with it (Epo 2026-11-05, "dont use code for pairing, send the
    files directly"), as indexed text or page images, so every later call reads them
-   from the cache.
+   from the cache. The run then waits for its starter to confirm the questions found
+   (``confirm``, Epo 2026-11-05): the map is charged by its tokens, and they pay per
+   question from here.
 2. Copy batches of 16 of the map's questions, at most 4 at once, each continuing
    the map's conversation at low reasoning. ``record_question`` carries no answers.
 3. Code checks the copies against the map and sends a repair for a question left
@@ -48,6 +50,7 @@ import json
 import logging
 import math
 import re
+import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
@@ -106,9 +109,15 @@ LOCATE_MAX_TOKENS = 1_000
 PAGE_TEXT_CHARS = 6_000
 # A file with no page view counts one page of output budget per this much text.
 TEXT_PAGE_CHARS = 500
-# The longest file a run sends as text, about 60 dense pages; a longer one is refused
-# rather than cut.
-FILE_TEXT_CHARS = 200_000
+# The most whole-file and answer text a run sends, about 60 dense pages (Epo
+# 2026-11-05); more is refused rather than cut.
+RUN_TEXT_CHARS = 200_000
+# How long a run waits for its starter to confirm the questions found, and how often it
+# looks at their answer. The wait holds a turn slot.
+CONFIRM_WAIT_S = 600
+CONFIRM_POLL_S = 1.0
+# How often a run says how far it has got, for its panel.
+PROGRESS_EVERY_S = 2.0
 
 # A busy, failing or silent provider costs a call one silent retry (Epo
 # 2026-11-03): the map or a thread's round runs once more. A
@@ -117,6 +126,8 @@ ATTEMPTS = 2
 ATTEMPT_WAIT_S = 20.0
 
 Validate = Callable[[dict[str, Any]], Awaitable[str | None]]
+# Given how many questions the map found, how many to make; None ends the run.
+Confirm = Callable[[int], Awaitable[int | None]]
 
 # What a selected page is, for whether its text goes to the model (Epo 2026-11-05).
 BORN_DIGITAL, SCAN, BLANK = "born_digital", "scan", "blank"
@@ -835,6 +846,8 @@ class Run:
     # What each question's copy call sent, its keys taken out, and its pages.
     copies: dict[str, dict[str, Any]] = field(default_factory=dict)
     spans: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # The starter confirmed fewer questions than the map found: the rest stay out.
+    capped: bool = False
     # Questions whose map boxes could not fill in for what their batch left out.
     figures_refused: list[str] = field(default_factory=list)
     # Questions with their answers recorded.
@@ -1003,6 +1016,8 @@ class Run:
         the map and the copies, and the next number when it is on a page past
         the last question's: a page no row covers."""
         out = [row.label for row in rows if label_key(row.label) not in self.copies]
+        if self.capped:
+            return out
         labels = [*(row.label for row in rows), *self.copies]
         numbers = {_number(label) for label in labels} - {None}
         if not numbers:
@@ -1026,6 +1041,14 @@ class Run:
         ):
             out.append(str(max(numbers) + 1))
         return sorted(out, key=lambda label: _number(label) or 0)
+
+    def progress(self) -> dict[str, Any]:
+        """How far the run has got, for its panel."""
+        return {
+            "type": "progress",
+            "copied": len(self.copies),
+            "answered": len(self.answered),
+        }
 
     def fill_figures(self, rows: list[MapRow], pages: list[Page]) -> None:
         """A question the map gives figures and its batch gave none takes the map's
@@ -1366,9 +1389,12 @@ async def run(
     *,
     model: ModelConfig,
     validate: Validate,
+    confirm: Confirm | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Events: ``questions`` after each copy batch (every question copied so far,
-    with no answers yet), then ``done`` with the quiz's questions and the report."""
+    """Events: ``map`` with the questions found when ``confirm`` is given, which then
+    says how many to make (None ends the run), ``progress`` while it copies and solves,
+    ``questions`` after each copy batch (every question copied so far, with no answers
+    yet), then ``done`` with the quiz's questions and the report."""
     found = iter(
         await layout.read_regions([page.image for page in pages if page.image])
     )
@@ -1388,6 +1414,25 @@ async def run(
     except EmptyMap:
         base, rows, output = [], [], 0
     current.output_tokens += output
+    if confirm and rows:
+        yield {
+            "type": "map",
+            "questions": [
+                {
+                    "label": row.label,
+                    "first": row.first,
+                    "last": row.last,
+                    "parts": row.parts,
+                }
+                for row in rows
+            ],
+        }
+        chosen = await confirm(len(rows))
+        if chosen is None:
+            return
+        # Fewer than the map found: what the starter afforded is all it copies.
+        current.capped = chosen < len(rows)
+        rows = rows[:chosen]
     current.order = {label_key(row.label): n for n, row in enumerate(rows)}
     batches = [[row.label for row in group] for group in _chunks_of(rows, COPY_BATCH)]
     threads: list[list[dict[str, Any]]] = [list(base) for _ in batches]
@@ -1481,16 +1526,25 @@ async def run(
             for index, labels in enumerate(batches)
         ]
         tasks.extend(copies)
-        for finished in asyncio.as_completed(copies):
-            try:
-                await finished
-            except _THREAD_FAILURES as exc:
-                failures.append(exc)
-                log.warning("extraction copy batch failed: %s", exc)
-            yield {
-                "type": "questions",
-                "questions": [held.question for held in current.held()],
-            }
+        copying_now = set(copies)
+        while copying_now:
+            finished, copying_now = await asyncio.wait(
+                copying_now,
+                timeout=PROGRESS_EVERY_S,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in finished:
+                try:
+                    task.result()
+                except _THREAD_FAILURES as exc:
+                    failures.append(exc)
+                    log.warning("extraction copy batch failed: %s", exc)
+                yield {
+                    "type": "questions",
+                    "questions": [held.question for held in current.held()],
+                }
+            if confirm:
+                yield current.progress()
         tried: set[str] = set()
         for _ in range(COPY_REPAIR_PASSES):
             missing = [
@@ -1536,6 +1590,13 @@ async def run(
             if not solves:
                 break
             tasks.extend(solves)
+            solving_now = set(solves)
+            while solving_now:
+                _, solving_now = await asyncio.wait(
+                    solving_now, timeout=PROGRESS_EVERY_S
+                )
+                if confirm:
+                    yield current.progress()
             _kept_going(await asyncio.gather(*solves, return_exceptions=True))
     except BaseException:
         await _cancelled(tasks)
@@ -1593,6 +1654,24 @@ async def run(
 
 
 # ------------------------------------------------- the request, from the store
+
+
+class ConfirmExpired(Exception):
+    """The starter did not answer in time."""
+
+
+async def starter_confirm(run_id: str, found: int) -> int | None:
+    """How many questions the starter confirmed, read from the run's row: None when
+    they cancelled. ``found`` is what the map found, which the row's answer can't pass."""
+    deadline = time.monotonic() + CONFIRM_WAIT_S
+    while time.monotonic() < deadline:
+        status, confirmed = await store.extraction_decision(run_id)
+        if confirmed is not None:
+            return min(confirmed, found)
+        if status not in ("running", "confirming"):
+            return None
+        await asyncio.sleep(CONFIRM_POLL_S)
+    raise ConfirmExpired
 
 
 class ExtractionRefused(ValueError):
@@ -1679,36 +1758,41 @@ async def _crop(
     return jpeg, size
 
 
-def _text_goes(layers: dict[int, str], room: int) -> bool:
+def _text_goes(layers: dict[int, str]) -> bool:
     """Whether a PDF's text goes to the model: as for question pages, when no page is a
-    scan and one is born digital (Epo 2026-11-05), and when its pages would not fit the
-    page images left, which is every run's cap and not a reason to refuse a long scheme."""
-    pictures = sum(layer != BLANK for layer in layers.values())
-    return set(layers.values()) - {BLANK} == {BORN_DIGITAL} or pictures > room
+    scan and one is born digital (Epo 2026-11-05)."""
+    return set(layers.values()) - {BLANK} == {BORN_DIGITAL}
 
 
-def _whole_text(name: str, passages: list[dict[str, Any]]) -> str:
-    """A file's whole indexed text, refused when it has none or too much."""
-    text = "\n\n".join(str(p.get("text") or "") for p in passages).strip()
+def _usable_text(name: str, text: str) -> str:
+    """A file's indexed text, refused when it has none."""
+    text = text.strip()
     if not text:
         raise ExtractionRefused(
             "no_indexed_text", f"{name} has no indexed text to read from."
         )
-    if len(text) > FILE_TEXT_CHARS:
-        raise ExtractionRefused(
-            "file_too_long",
-            f"{name} is longer than the {FILE_TEXT_CHARS:,} characters a run reads.",
-        )
     return text
 
 
-async def _answer_file(
-    workspace_id: str, file: dict[str, Any], room: int
-) -> AnswerFile:
-    """An answer file as it goes: indexed text for a born-digital PDF, Word, PowerPoint
-    or text file, page images for a scan or an image upload (Epo 2026-11-05). ``room`` is
-    the page images the run has left."""
-    file_id, name = file["fileId"], file["name"]
+def _whole_text(name: str, passages: list[dict[str, Any]]) -> str:
+    return _usable_text(name, "\n\n".join(str(p.get("text") or "") for p in passages))
+
+
+async def _answer_file(workspace_id: str, file: dict[str, Any]) -> AnswerFile:
+    """An answer file's picked pages as they go: indexed text for a born-digital PDF,
+    page images for a scan, an image upload or a Word or PowerPoint file the browser
+    drew; a text file goes whole (Epo 2026-11-05)."""
+    file_id, name, numbers = file["fileId"], file["name"], file["pages"]
+    if file.get("images"):
+        return AnswerFile(
+            name,
+            images=tuple(
+                (number, functools.partial(_drawn_image, jpeg))
+                for number, jpeg in zip(
+                    numbers, (base64.b64decode(image) for image in file["images"])
+                )
+            ),
+        )
     row = await store.file_page_source(workspace_id, file_id)
     if row is None:
         raise ExtractionRefused(
@@ -1724,18 +1808,27 @@ async def _answer_file(
         except capture.CaptureUnavailable as exc:
             raise ExtractionRefused(exc.code, f"{name}: {exc}.") from exc
         count = await slots.render_thread(_page_count, pdf)
-        indexed = page_texts(passages)
-        texts = {number: indexed.get(number, "") for number in range(1, count + 1)}
-        layers = await slots.render_thread(page_layers, pdf, texts)
-        if not _text_goes(layers, room):
-            return AnswerFile(
-                name,
-                images=tuple(
-                    (number, functools.partial(render, number))
-                    for number in texts
-                    if layers[number] != BLANK
-                ),
+        past = [number for number in numbers if number > count]
+        if past:
+            raise ExtractionRefused(
+                "page_out_of_range",
+                f"{name} has {count} pages; page {past[0]} is past its end.",
             )
+        indexed = page_texts(passages)
+        texts = {number: indexed.get(number, "") for number in numbers}
+        layers = await slots.render_thread(page_layers, pdf, texts)
+        if _text_goes(layers):
+            return AnswerFile(
+                name, _usable_text(name, "\n\n".join(texts[n] for n in numbers))
+            )
+        return AnswerFile(
+            name,
+            images=tuple(
+                (number, functools.partial(render, number))
+                for number in numbers
+                if layers[number] != BLANK
+            ),
+        )
     return AnswerFile(name, _whole_text(name, passages))
 
 
@@ -1787,9 +1880,9 @@ def _drawn_pages(file: dict[str, Any]) -> list[Page]:
 async def prepare(
     workspace_id: str, paper: list[dict[str, Any]], answers: list[dict[str, Any]]
 ) -> tuple[list[Page], list[AnswerFile]]:
-    """The selected pages and the answer files, checked before the run starts: a page
-    past its file's end, a text file with no usable text, or more page images than a run
-    reads is refused."""
+    """The picked pages and the answer files, checked before the run starts: a page
+    past its file's end, a file with no usable text, or more text than a run reads is
+    refused. Go holds the run to its picked pages."""
     pages: list[Page] = []
     for file in paper:
         if file.get("images"):
@@ -1844,18 +1937,15 @@ async def prepare(
             )
             for number in numbers
         )
-    images = sum(1 for page in pages if page.image)
-    files: list[AnswerFile] = []
-    for file in answers:
-        files.append(
-            await _answer_file(workspace_id, file, limits.EXTRACTION_PAGES_MAX - images)
-        )
-        images += len(files[-1].images)
-    if images > limits.EXTRACTION_PAGES_MAX:
+    files = [await _answer_file(workspace_id, file) for file in answers]
+    text = sum(len(file.text) for file in files) + sum(
+        len(page.text) for page in pages if not page.image
+    )
+    if text > RUN_TEXT_CHARS:
         raise ExtractionRefused(
-            "too_many_pages",
-            f"A run reads at most {limits.EXTRACTION_PAGES_MAX} pages, answer files' "
-            f"pages included; this one has {images}.",
+            "too_much_text",
+            f"A run reads at most {RUN_TEXT_CHARS:,} characters of text; "
+            f"these files hold {text:,}.",
         )
     return pages, files
 

@@ -310,23 +310,29 @@ type GenerateReq struct {
 	Mix     bool                         `json:"mix,omitempty" doc:"Add the caller's answered questions to the new ones"`
 }
 
-// CreateExtractionReq starts a Make a quiz run (todo-study-tracking.md §8):
-// the question paper's files with their selected pages (counted from 1; an
-// image is page 1), and the mark scheme or answer files, read whole. The
-// handler holds the run to fieldlimits.ExtractionPages selected pages and
-// fieldlimits.ExtractionFiles files in all.
+// CreateExtractionReq starts a Make a quiz run (todo-study-tracking.md §8): the
+// question paper and any answer files. The handler holds the run to
+// fieldlimits.ExtractionAnswerFiles answer files and fieldlimits.ExtractionPages
+// picked pages in all.
 type CreateExtractionReq struct {
-	Title         MaterialTitle         `json:"title" minLength:"1"`
-	Paper         []ExtractionPaperFile `json:"paper" minItems:"1"`
-	AnswerFileIDs []string              `json:"answerFileIds,omitempty" nullable:"false"`
+	Title   MaterialTitle    `json:"title" minLength:"1"`
+	Paper   ExtractionFile   `json:"paper"`
+	Answers []ExtractionFile `json:"answers,omitempty" nullable:"false"`
 }
 
-// ExtractionPaperFile is one question-paper file and the pages selected in it.
-// A Word or PowerPoint file has no stored pages: the browser draws them (Epo
-// 2026-11-05) and sends each selected page here as a base64 JPEG, in Pages' order.
-type ExtractionPaperFile struct {
+// ConfirmExtractionReq says how many of the questions a paused run found to make, from
+// the first.
+type ConfirmExtractionReq struct {
+	Questions int `json:"questions" minimum:"1"`
+}
+
+// ExtractionFile is one file of a run and the pages picked in it, counted from 1; an
+// image is page 1, and a text file goes whole with none. A Word or PowerPoint file
+// has no stored pages: the browser draws them (Epo 2026-11-05) and sends each picked
+// page here as a base64 JPEG, in Pages' order.
+type ExtractionFile struct {
 	FileID string   `json:"fileId" minLength:"1"`
-	Pages  []int    `json:"pages" minItems:"1"`
+	Pages  []int    `json:"pages,omitempty" nullable:"false"`
 	Images []string `json:"images,omitempty" nullable:"false"`
 }
 

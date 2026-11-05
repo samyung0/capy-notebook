@@ -1,6 +1,7 @@
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import { useFiles } from '@/api/hooks';
-import type { SourceFile, SourceUploadPolicy } from '@/api/types';
+import { EXTRACTION_ANSWER_FILES_MAX } from '@/api/limits.generated';
+import type { Extraction, SourceFile, SourceUploadPolicy } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { DialogCancel, SimpleDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -13,7 +14,6 @@ import {
 } from '@/components/ui/Popover';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { selectTriggerVariants } from '@/components/ui/Select';
-import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { matchesSearch } from '@/features/workspace/PanelSearch';
 import {
   type SourceTransfer,
@@ -22,8 +22,10 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
+import { useRunStep } from './ExtractionProgress';
 import { useFilePages, useSeen } from './filePages';
 import { hasFileRoom, isOfferable, isQuizFile, isUnreadable } from './makeQuiz';
+import { type DialogStep, usePageStep } from './PagePicker';
 import { useQuizUpload } from './useQuizUpload';
 
 /** A file on the dialog: from Files, or an upload, whose transfer row `key`
@@ -37,7 +39,7 @@ interface Picked {
   name: string;
 }
 
-/** What the dialog hands on: the paper's files and the answer files. */
+/** A run's files: the question paper and the answer files. */
 export interface MakeQuizChoice {
   answers: string[];
   paper: string[];
@@ -311,39 +313,62 @@ function UploadInput({
 }
 
 /**
- * Make a quiz from a file (Epo 2026-11-03, boards X0a, X0b): the question paper
- * from Files or a new upload, and any mark scheme or answer files. Continue
- * goes on to the page picker once the paper's pages are ready; an answer file
- * may still be reading then. Also the New quiz route of New assignment's quiz
- * picker (A1c): `onContinue` decides where the choice goes.
+ * Make a quiz from a file (Epo 2026-11-03, boards X0a, X0b; 2026-11-05, "make the select
+ * pages from files the same dialog rather than inside a page"): one dialog, from the
+ * files through their pages and the run's map to the questions found, then the upload
+ * panel. The question paper and any mark scheme or answer files come from Files or a new
+ * upload. Continue goes on to the pages once the paper's are ready; an answer file may
+ * still be reading then.
  */
 export function MakeQuizDialog({
   initial,
   onClose,
-  onContinue,
+  onConfirmed,
+  onDone,
+  onRunBack,
+  onStarted,
+  runId,
+  startOnPages,
   workspaceId,
   workspaceName,
 }: {
-  /** Back from the page picker with what was chosen. */
-  initial?: MakeQuizChoice;
+  /** From a link, or a run started over. */
+  initial: MakeQuizChoice;
   onClose: () => void;
-  onContinue: (choice: MakeQuizChoice) => void;
+  /** The questions are confirmed: the dialog gives way to the upload panel. */
+  onConfirmed: (run: Extraction, choice: MakeQuizChoice) => void;
+  onDone: (quizId: string) => void;
+  /** A run failed or was cancelled: back to its pages, picks and all. */
+  onRunBack: () => void;
+  onStarted: (runId: string, choice: MakeQuizChoice) => void;
+  /** The run this dialog is on, from the address. */
+  runId?: string;
+  startOnPages: boolean;
   workspaceId: string;
   workspaceName: string;
 }) {
   const { data: files } = useFiles(workspaceId, { errorBoundary: false });
   const { add, cancel, policy } = useQuizUpload(workspaceId);
-  const fromFiles = (ids: string[] | undefined): Picked[] =>
-    (ids ?? []).flatMap((id) => {
+  const fromFiles = (ids: string[]): Picked[] =>
+    ids.flatMap((id) => {
       const file = files?.find((row) => row.id === id);
       return file ? [pickedOf(file)] : [];
     });
-  const [paper, setPaper] = useState<Picked[]>(() => fromFiles(initial?.paper));
+  const [paper, setPaper] = useState<Picked[]>(() => fromFiles(initial.paper));
   const [answers, setAnswers] = useState<Picked[]>(() =>
-    fromFiles(initial?.answers)
+    fromFiles(initial.answers)
   );
-  // Which menu is open: the paper's, or Add a file under either list.
-  const [menu, setMenu] = useState<'answers' | 'paper' | 'pages' | null>(null);
+  const [onPages, setOnPages] = useState(startOnPages);
+  // A link opens before the files arrive.
+  const seeded = useRef(!!files);
+  useEffect(() => {
+    if (seeded.current || !files) return;
+    seeded.current = true;
+    setPaper(fromFiles(initial.paper));
+    setAnswers(fromFiles(initial.answers));
+  });
+  // Which menu is open: the paper's, or Add a file under the answers.
+  const [menu, setMenu] = useState<'answers' | 'paper' | null>(null);
   const paperInput = useRef<HTMLInputElement>(null);
   const answersInput = useRef<HTMLInputElement>(null);
 
@@ -354,10 +379,7 @@ export function MakeQuizDialog({
     (file) => isOfferable(file) && !usedIds.has(file.id)
   );
   const quizFiles = offered.filter(isQuizFile);
-  const room = hasFileRoom(paper.length, answers.length);
-  // A photographed paper can be several images, one a page (§8).
-  const imagePaper =
-    paper.length > 0 && paper.every((row) => row.kind === 'image');
+  const room = hasFileRoom(answers.length);
 
   // An upload's file id or failure, as its transfer learns them.
   const transfers = useSourceTransfers((state) => state.transfers);
@@ -396,76 +418,63 @@ export function MakeQuizDialog({
   const canContinue =
     paper.length > 0 && paper.every(readyFile) && answers.every(answerUsable);
 
-  // Which menu asked for the upload, kept past the menu closing.
-  const uploadFor = useRef<'pages' | 'paper'>('paper');
   const addPaperFiles = (list: File[]) => {
-    const rows = add(list);
-    if (rows.length === 0) return;
-    setPaper((current) =>
-      uploadFor.current === 'pages' ? [...current, ...rows] : rows
-    );
+    const rows = add(list.slice(0, 1));
+    if (rows.length > 0) setPaper(rows);
   };
-  const startUpload = (target: 'answers' | 'pages' | 'paper') => {
+  const startUpload = (target: 'answers' | 'paper') => {
     setMenu(null);
     if (target === 'answers') answersInput.current?.click();
-    else {
-      uploadFor.current = target;
-      paperInput.current?.click();
-    }
+    else paperInput.current?.click();
   };
-  const removeButton = (set: typeof setPaper, row: Picked) => (
-    <ToolbarButton
-      className="size-7"
-      label={m.make_quiz_remove_file({ name: row.name })}
+  const removeButton = (row: Picked) => (
+    <Button
+      aria-label={m.make_quiz_remove_file({ name: row.name })}
       onClick={() => {
         cancel(row.key);
-        set((current) => current.filter((item) => item.key !== row.key));
+        setAnswers((current) => current.filter((item) => item.key !== row.key));
       }}
+      size="sm"
+      type="button"
+      variant="outline"
     >
-      <Icon name="x" size={16} />
-    </ToolbarButton>
+      {m.make_quiz_remove()}
+    </Button>
   );
 
-  return (
-    <SimpleDialog
-      action={
-        <Button
-          disabled={!canContinue}
-          onClick={() =>
-            onContinue({
-              answers: answers.flatMap((row) => row.fileId ?? []),
-              paper: paper.flatMap((row) => row.fileId ?? []),
-            })
-          }
-          type="button"
-        >
-          {m.action_continue()}
-        </Button>
-      }
-      footer={
-        <>
-          <p className="t-meta mr-auto flex min-w-0 items-center gap-2 self-center text-fg-muted">
-            <Icon className="shrink-0" name="viewOffSlash" size={16} />
-            {m.make_quiz_hidden_note()}
-          </p>
-          <span className="contents max-sm:hidden">
-            <DialogCancel />
-          </span>
-        </>
-      }
-      onClose={onClose}
-      onCloseClick={onClose}
-      open
-      showCloseButton={false}
-      title={m.make_quiz_title()}
-      width={600}
-    >
+  const choice = {
+    answers: answers.flatMap((row) => row.fileId ?? []),
+    paper: paper.flatMap((row) => row.fileId ?? []),
+  };
+  const pages = usePageStep({
+    active: onPages && !runId,
+    answers: choice.answers,
+    onCancel: onClose,
+    onChangeFiles: () => setOnPages(false),
+    onStarted: (id) => {
+      setOnPages(true);
+      onStarted(id, choice);
+    },
+    paper: choice.paper[0],
+    workspaceId,
+  });
+  const run = useRunStep({
+    onBack: choice.paper.length > 0 ? onRunBack : onClose,
+    onConfirmed: (next) => onConfirmed(next, choice),
+    onDone,
+    onLeave: onClose,
+    runId,
+  });
+  const filesBody = (
+    <>
       <UploadInput inputRef={paperInput} onFiles={addPaperFiles} />
       <UploadInput
         inputRef={answersInput}
         multiple
         onFiles={(list) => {
-          const rows = add(list);
+          const rows = add(
+            list.slice(0, EXTRACTION_ANSWER_FILES_MAX - answers.length)
+          );
           setAnswers((current) => [...current, ...rows]);
         }}
       />
@@ -503,81 +512,48 @@ export function MakeQuizDialog({
               workspaceName={workspaceName}
             />
           ) : (
-            <>
-              {paper.map((row) => (
-                <FileRow
-                  end={
-                    paper.length > 1 ? (
-                      removeButton(setPaper, row)
-                    ) : (
-                      <FileMenu
-                        files={quizFiles}
-                        label={m.make_quiz_question_paper()}
-                        onOpenChange={(open) => setMenu(open ? 'paper' : null)}
-                        onPick={(file) => {
-                          setPaper([pickedOf(file)]);
-                          setMenu(null);
-                        }}
-                        onUpload={() => startUpload('paper')}
-                        open={menu === 'paper'}
-                        policy={policy}
-                        trigger={
-                          <Button size="sm" type="button" variant="outline">
-                            {m.make_quiz_change()}
-                          </Button>
-                        }
-                        wide
-                        workspaceName={workspaceName}
-                      />
-                    )
-                  }
-                  files={files}
-                  key={row.key}
-                  picked={row}
-                  policy={policy}
-                />
-              ))}
-              {imagePaper && room && (
-                <div className="mt-2">
+            paper.map((row) => (
+              <FileRow
+                end={
                   <FileMenu
-                    files={quizFiles.filter((file) => file.kind === 'image')}
+                    files={quizFiles}
                     label={m.make_quiz_question_paper()}
-                    onOpenChange={(open) => setMenu(open ? 'pages' : null)}
+                    onOpenChange={(open) => setMenu(open ? 'paper' : null)}
                     onPick={(file) => {
-                      setPaper((current) => [...current, pickedOf(file)]);
+                      setPaper([pickedOf(file)]);
                       setMenu(null);
                     }}
-                    onUpload={() => startUpload('pages')}
-                    open={menu === 'pages'}
+                    onUpload={() => startUpload('paper')}
+                    open={menu === 'paper'}
                     policy={policy}
                     trigger={
-                      <Button
-                        iconLeft="plus"
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        {m.make_quiz_add_file()}
+                      <Button size="sm" type="button" variant="outline">
+                        {m.make_quiz_change()}
                       </Button>
                     }
                     wide
                     workspaceName={workspaceName}
                   />
-                </div>
-              )}
-            </>
+                }
+                files={files}
+                key={row.key}
+                picked={row}
+                policy={policy}
+              />
+            ))
           )}
         </div>
         <div className="flex min-w-0 flex-col gap-1.5">
           <p className="t-meta font-semibold text-fg-secondary">
             {m.make_quiz_answers()}{' '}
             <span className="font-medium text-fg-muted">
-              · {m.make_quiz_optional()}
+              · {m.make_quiz_optional()},{' '}
+              {m.make_quiz_up_to({ count: EXTRACTION_ANSWER_FILES_MAX })}
             </span>
           </p>
           {answers.map((row) => (
             <FileRow
-              end={removeButton(setAnswers, row)}
+              end={removeButton(row)}
               files={files}
               key={row.key}
               metaAtEnd
@@ -614,6 +590,61 @@ export function MakeQuizDialog({
           </div>
         </div>
       </div>
+    </>
+  );
+  const step: DialogStep = runId
+    ? run
+    : onPages
+      ? pages
+      : {
+          action: (
+            <Button
+              disabled={!canContinue}
+              onClick={() => setOnPages(true)}
+              type="button"
+            >
+              {m.action_continue()}
+            </Button>
+          ),
+          body: null,
+          closable: false,
+          footer: (
+            <>
+              <p className="t-meta mr-auto flex min-w-0 items-center gap-2 self-center text-fg-muted">
+                <Icon className="shrink-0" name="viewOffSlash" size={16} />
+                {m.make_quiz_hidden_note()}
+              </p>
+              <span className="contents max-sm:hidden">
+                <DialogCancel />
+              </span>
+            </>
+          ),
+          onCloseClick: onClose,
+          title: m.make_quiz_title(),
+          width: 600,
+        };
+  return (
+    <SimpleDialog
+      action={step.action}
+      footer={step.footer}
+      onBack={step.onBack}
+      onClose={step.guarded ? () => undefined : onClose}
+      onCloseClick={step.onCloseClick}
+      onEscapeKeyDown={
+        step.guarded ? (event) => event.preventDefault() : undefined
+      }
+      onInteractOutside={
+        step.guarded ? (event) => event.preventDefault() : undefined
+      }
+      open
+      showCloseButton={step.closable ?? true}
+      title={step.title}
+      width={step.width}
+    >
+      {/* Kept mounted, so a step's pages aren't read or drawn again on return. */}
+      <div hidden={onPages || !!runId}>{filesBody}</div>
+      <div hidden={!onPages || !!runId}>{pages.body}</div>
+      {runId && run.body}
     </SimpleDialog>
   );
 }

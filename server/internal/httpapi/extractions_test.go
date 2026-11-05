@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
-	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
@@ -32,22 +31,23 @@ func TestCheckExtractionRequestHoldsTheRunCaps(t *testing.T) {
 		}
 		return out
 	}
+	paper := func(n ...int) apimodel.ExtractionFile { return apimodel.ExtractionFile{FileID: "p", Pages: n} }
 	ok := apimodel.CreateExtractionReq{
-		Paper:         []apimodel.ExtractionPaperFile{{FileID: "p", Pages: pages(30)}, {FileID: "q", Pages: pages(10)}},
-		AnswerFileIDs: []string{"s1", "s2"},
+		Paper:   apimodel.ExtractionFile{FileID: "p", Pages: pages(30)},
+		Answers: []apimodel.ExtractionFile{{FileID: "s1", Pages: pages(10)}, {FileID: "s2"}, {FileID: "s3"}},
 	}
 	if err := checkExtractionRequest(ok); err != nil {
 		t.Fatalf("40 pages in 4 files refused: %v", err)
 	}
 	for name, req := range map[string]apimodel.CreateExtractionReq{
-		"41 pages": {Paper: []apimodel.ExtractionPaperFile{{FileID: "p", Pages: pages(fieldlimits.ExtractionPages + 1)}}},
-		"11 files": {
-			Paper:         []apimodel.ExtractionPaperFile{{FileID: "p", Pages: []int{1}}},
-			AnswerFileIDs: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"},
+		"41 pages": {Paper: apimodel.ExtractionFile{FileID: "p", Pages: pages(30)}, Answers: []apimodel.ExtractionFile{{FileID: "s", Pages: pages(11)}}},
+		"4 answer files": {
+			Paper:   paper(1),
+			Answers: []apimodel.ExtractionFile{{FileID: "1"}, {FileID: "2"}, {FileID: "3"}, {FileID: "4"}},
 		},
-		"page 0":          {Paper: []apimodel.ExtractionPaperFile{{FileID: "p", Pages: []int{0}}}},
-		"page twice":      {Paper: []apimodel.ExtractionPaperFile{{FileID: "p", Pages: []int{2, 2}}}},
-		"paper as answer": {Paper: []apimodel.ExtractionPaperFile{{FileID: "p", Pages: []int{1}}}, AnswerFileIDs: []string{"p"}},
+		"page 0":          {Paper: paper(0)},
+		"page twice":      {Paper: paper(2, 2)},
+		"paper as answer": {Paper: paper(1), Answers: []apimodel.ExtractionFile{{FileID: "p"}}},
 	} {
 		if err := checkExtractionRequest(req); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -106,7 +106,7 @@ func TestFinishedExtractionStoresItsFiguresAsTheQuizsAssets(t *testing.T) {
 	}
 	mem := blob.NewMemory()
 	a := &api{s: st, blob: mem}
-	run, err := st.CreateExtraction(ctx, "ws_e2e_private", "u_editor", "Figures "+uuid.NewString())
+	run, err := st.CreateExtraction(ctx, store.ExtractionStart{ID: uuid.NewString(), WorkspaceID: "ws_e2e_private", UserID: "u_editor", Title: "Figures " + uuid.NewString()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestAQuizWithNoAnswersSavesAndGoesToTheRoom(t *testing.T) {
 		`{"id":"q2","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p2",` +
 		`"blocks":[{"type":"text","text":"Name."}],"answer":{"type":"short","accepted":[]},"marks":1,"solution":[]}]}]`
 	finish := func(title string) store.Extraction {
-		run, err := st.CreateExtraction(ctx, "ws_e2e_private", "u_editor", title+" "+uuid.NewString())
+		run, err := st.CreateExtraction(ctx, store.ExtractionStart{ID: uuid.NewString(), WorkspaceID: "ws_e2e_private", UserID: "u_editor", Title: title + " " + uuid.NewString()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -327,7 +327,7 @@ func TestAFullStarterGetsTheQuizWithoutItsFigures(t *testing.T) {
 	}
 	mem := blob.NewMemory()
 	a := &api{s: st, blob: mem}
-	run, err := st.CreateExtraction(ctx, ws.ID, user, "Full "+uuid.NewString())
+	run, err := st.CreateExtraction(ctx, store.ExtractionStart{ID: uuid.NewString(), WorkspaceID: ws.ID, UserID: user, Title: "Full " + uuid.NewString()})
 	if err != nil {
 		t.Fatal(err)
 	}
