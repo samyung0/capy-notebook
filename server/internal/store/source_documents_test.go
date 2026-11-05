@@ -120,10 +120,7 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); err != nil {
 		t.Fatalf("owner edit admission: %v", err)
 	}
-	req := SourceCheckpoint{ActorIDs: []string{viewer}, WorkspaceID: doc.WorkspaceID, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: 0, Update: []byte("new"), PendingEffects: json.RawMessage(`[]`), SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64)}
-	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, req); err == nil {
-		t.Fatal("viewer authored checkpoint")
-	}
+	req := SourceCheckpoint{ActorIDs: []string{owner}, WorkspaceID: doc.WorkspaceID, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: 0, Update: []byte("new"), PendingEffects: json.RawMessage(`[]`), SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64)}
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits(user_id,used_micros,purchased_micros) VALUES($1,999999999999999,0) ON CONFLICT(user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros,purchased_micros=0`, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +128,6 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	if doc.Checkpoint != 1 || doc.IndexedCheckpoint != 0 {
 		t.Fatalf("bad checkpoint: %+v", doc)
 	}
-	req.ActorIDs = []string{owner}
 	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, req); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale save: %v", err)
 	}

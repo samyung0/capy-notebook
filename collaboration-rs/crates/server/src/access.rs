@@ -308,19 +308,6 @@ pub async fn assert_access<C: GenericClient>(
     Ok(live)
 }
 
-/// A writer in a store's snapshot must still hold an editing role (frozen
-/// and full are enforced at admission, so their admitted updates save).
-pub async fn assert_editor<C: GenericClient>(
-    client: &C,
-    material_id: &str,
-    actor: &str,
-) -> Result<(), AccessError> {
-    if !live_access(client, material_id, actor).await?.editor {
-        return Err(AccessError::Forbidden("material access was revoked".into()));
-    }
-    Ok(())
-}
-
 /// The advisory lock that serializes a material's Yjs writes.
 pub async fn lock_material<C: GenericClient>(
     client: &C,
