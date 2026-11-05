@@ -812,7 +812,7 @@ due date):
 | --- | --- | --- |
 | Owner, teaching assistant | The assignment icon (`assigned`), and it opens their usual view | Theirs as always |
 | A link or public editor | The assignment icon, no Clone | Theirs to read and edit; they can't clone it |
-| A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `editorAssetReadable`, `live_access`, `AccountDocumentAccess`), a device drops its kept copy (`ReadableMaterialIDs`), and it is off Practice, reviews and new items. Publishing drains the quiz's live rooms, so one already reading is refused on reconnecting |
+| A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `editorAssetReadable`, `live_access`, `AccountDocumentAccess`), a device drops its kept copy (`ReadableMaterialIDs`), and it is off Practice, reviews and new items. Every write that may restart this drains the quiz's live rooms while the assignment is open (`drainAssignedRoomsTx`: publishing, reopening, any save of it, such as adding a viewer or moving a No late submissions due date forward, and the workspace switching back to class), so one already reading is refused on reconnecting |
 | A viewer it did not go to | A normal quiz if it is visible; no row if hidden | As it was, the owner's choice |
 
 `quizAssignedToSQL` and `quizAssignmentOpenSQL` in `store/assignments.go` are the

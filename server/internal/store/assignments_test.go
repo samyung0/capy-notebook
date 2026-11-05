@@ -1543,12 +1543,7 @@ func TestPublishingRefusesKeptCopiesAndDrainsTheRoom(t *testing.T) {
 	}
 	drains := func() int {
 		t.Helper()
-		var n int
-		if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM collaboration_eviction_outbox
-			WHERE payload->>'materialId'=$1 AND payload->>'mode'='drain'`, f.quiz.ID).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		return n
+		return f.quizDrains(t)
 	}
 	if !keeps(f.viewer) || drains() != 0 {
 		t.Fatalf("under a draft: viewer keeps %v, %d drains", keeps(f.viewer), drains())
@@ -1572,6 +1567,153 @@ func TestPublishingRefusesKeptCopiesAndDrainsTheRoom(t *testing.T) {
 	}
 	if !keeps(f.viewer) {
 		t.Fatal("after closing the assignee's copy is refused")
+	}
+}
+
+// quizDrains counts the notices that drain the quiz's live rooms.
+func (f assignmentFixture) quizDrains(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := f.s.pool.QueryRow(context.Background(), `SELECT count(*) FROM collaboration_eviction_outbox
+		WHERE payload->>'materialId'=$1 AND payload->>'mode'='drain'`, f.quiz.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// keepsQuiz: whether the user's device may keep a copy of the quiz, the refusal
+// the room's own rule (rooms.rs) holds too.
+func (f assignmentFixture) keepsQuiz(t *testing.T, user string) bool {
+	t.Helper()
+	ids, err := f.s.ReadableMaterialIDs(context.Background(), user, []string{f.quiz.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return slices.Contains(ids, f.quiz.ID)
+}
+
+// TestReopeningDrainsTheRoom (security regression, Q616): closing gives the
+// assignee the quiz back, so they may be in its room when it reopens. Fails
+// without the eviction in SetAssignmentClosed.
+func TestReopeningDrainsTheRoom(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-reopen-room")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if !f.keepsQuiz(t, f.viewer) {
+		t.Fatal("closed: the assignee's quiz is refused")
+	}
+	before := f.quizDrains(t)
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, false, now); err != nil {
+		t.Fatal(err)
+	}
+	if f.keepsQuiz(t, f.viewer) {
+		t.Fatal("reopened: the assignee keeps the quiz")
+	}
+	if got := f.quizDrains(t) - before; got != 1 {
+		t.Fatalf("reopening drained the room %d times, want once", got)
+	}
+}
+
+// TestAddingAViewerDrainsTheRoom (security regression, Q616): a viewer not on the
+// list reads the quiz until a save adds them. Fails without the eviction in
+// UpdateAssignment.
+func TestAddingAViewerDrainsTheRoom(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-add-room")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	form := f.form(t, now.Add(time.Hour))
+	form.AssignAll, form.Assignees = false, []string{f.viewer}
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.keepsQuiz(t, f.other) {
+		t.Fatal("off the list: the member's quiz is refused")
+	}
+	before := f.quizDrains(t)
+	form.Assignees = []string{f.viewer, f.other}
+	if _, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, now); err != nil {
+		t.Fatal(err)
+	}
+	if f.keepsQuiz(t, f.other) {
+		t.Fatal("added: the member keeps the quiz")
+	}
+	if got := f.quizDrains(t) - before; got != 1 {
+		t.Fatalf("adding a viewer drained the room %d times, want once", got)
+	}
+}
+
+// TestMovingANoLateDueDateForwardDrainsTheRoom (security regression, Q616): past
+// its due date a No late submissions assignment gives the quiz back, until a save
+// moves the date on. Fails without the eviction in UpdateAssignment.
+func TestMovingANoLateDueDateForwardDrainsTheRoom(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-due-room")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	form := f.form(t, now.Add(-time.Hour))
+	form.NoLate = true
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.keepsQuiz(t, f.viewer) {
+		t.Fatal("past its due date: the assignee's quiz is refused")
+	}
+	before := f.quizDrains(t)
+	later := now.Add(time.Hour)
+	form.DueAt = &later
+	if _, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, now); err != nil {
+		t.Fatal(err)
+	}
+	if f.keepsQuiz(t, f.viewer) {
+		t.Fatal("due date moved forward: the assignee keeps the quiz")
+	}
+	if got := f.quizDrains(t) - before; got != 1 {
+		t.Fatalf("moving the date drained the room %d times, want once", got)
+	}
+}
+
+// TestSwitchingBackToClassDrainsTheRooms (security regression, Q616): a personal
+// workspace gives every quiz back, so its open assignments' rooms drain on the way
+// back, a quiz under two assignments once, and a save that stays a class leaves
+// them. Fails without the eviction in UpdateWorkspace.
+func TestSwitchingBackToClassDrainsTheRooms(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-kind-room")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	for range 2 {
+		if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	switchTo := func(kind WorkspaceKind) {
+		t.Helper()
+		if _, err := f.s.UpdateWorkspace(ctx, f.user, f.ws.ID, WorkspacePatch{Kind: &kind}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	switchTo(WorkspacePersonal)
+	if !f.keepsQuiz(t, f.viewer) {
+		t.Fatal("personal: the assignee's quiz is refused")
+	}
+	before := f.quizDrains(t)
+	switchTo(WorkspaceClass)
+	if f.keepsQuiz(t, f.viewer) {
+		t.Fatal("back in a class: the assignee keeps the quiz")
+	}
+	if got := f.quizDrains(t) - before; got != 1 {
+		t.Fatalf("the switch drained the room %d times, want once", got)
+	}
+	switchTo(WorkspaceClass)
+	if got := f.quizDrains(t) - before; got != 1 {
+		t.Fatalf("a save that stays a class drained it again: %d", got)
 	}
 }
 

@@ -588,6 +588,12 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 		return Workspace{}, err
 	}
 
+	backToClass := false
+	if p.Kind != nil && *p.Kind == WorkspaceClass {
+		if err := tx.QueryRow(ctx, `SELECT kind<>'class' FROM workspaces WHERE id=$1`, id).Scan(&backToClass); err != nil {
+			return Workspace{}, err
+		}
+	}
 	ct, err := tx.Exec(ctx, `UPDATE workspaces SET
 		name=COALESCE($2,name), description=COALESCE($3,description),
 		auto_process=COALESCE($4,auto_process), icon_id=COALESCE($5,icon_id),
@@ -599,6 +605,11 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 	}
 	if ct.RowsAffected() == 0 {
 		return Workspace{}, ErrNotFound
+	}
+	if backToClass {
+		if err := drainAssignedRoomsTx(ctx, tx, "a.workspace_id", id); err != nil {
+			return Workspace{}, err
+		}
 	}
 	if p.Tags != nil {
 		// Workspace tags live in the owner's tag namespace whoever edits them.

@@ -805,10 +805,18 @@ func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, ac
 	if err != nil {
 		return err
 	}
-	// Its assignees lose the quiz now, so its live rooms drain: one reading it
-	// reconnects and is refused (live_access), and staff rejoin.
-	_, err = tx.Exec(ctx, `SELECT enqueue_material_collaboration_eviction(source_quiz_id, 'access-changed', 'drain')
-		FROM assignments WHERE id=$1 AND source_quiz_id IS NOT NULL`, id)
+	return drainAssignedRoomsTx(ctx, tx, "a.id", id)
+}
+
+// drainAssignedRoomsTx drains the live rooms of the open assignments' quizzes
+// matching where ($1), each once. Every write that may restart the refusal runs
+// it (publish, reopen, a save, the switch back to class), since the refusal only
+// stops new joins: one already reading reconnects and is refused (live_access),
+// and staff rejoin.
+func drainAssignedRoomsTx(ctx context.Context, tx pgx.Tx, where, arg string) error {
+	_, err := tx.Exec(ctx, `SELECT enqueue_material_collaboration_eviction(q.quiz, 'access-changed', 'drain')
+		FROM (SELECT DISTINCT a.source_quiz_id AS quiz FROM assignments a
+			WHERE a.source_quiz_id IS NOT NULL AND `+assignmentOpenSQL+` AND `+where+`=$1) q`, arg)
 	return err
 }
 
@@ -894,7 +902,11 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.ApproveAIMarks, form.ShowAnswers, form.Shuffle); err != nil {
 			return err
 		}
-		return writeAssignmentLists(ctx, tx, id, form)
+		if err := writeAssignmentLists(ctx, tx, id, form); err != nil {
+			return err
+		}
+		// A viewer added, or a No late submissions due date moved forward.
+		return drainAssignedRoomsTx(ctx, tx, "a.id", id)
 	})
 	if err != nil {
 		return Assignment{}, err
@@ -970,8 +982,10 @@ func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, clo
 		if !closed {
 			at = nil
 		}
-		_, err := tx.Exec(ctx, `UPDATE assignments SET closed_at=$2 WHERE id=$1 AND NOT draft`, id, at)
-		return err
+		if _, err := tx.Exec(ctx, `UPDATE assignments SET closed_at=$2 WHERE id=$1 AND NOT draft`, id, at); err != nil {
+			return err
+		}
+		return drainAssignedRoomsTx(ctx, tx, "a.id", id)
 	})
 	if err != nil {
 		return Assignment{}, err
