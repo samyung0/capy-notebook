@@ -798,7 +798,8 @@ published (Epo 2026-11-05, `frozen_by`, `frozen_bytes`,
 doesn't list them. A publisher whose account is suspended or leaving stops nobody:
 staff still delete, which ends the charge, and republish, which moves the questions
 JSON's charge to whoever republished; an image the assignment already holds keeps its
-payer. They resolve for staff, whoever it went to and whoever holds an
+payer (Epo 2026-11-05), so that payer's purge takes it out of the paper. Frozen staff
+still delete an assignment, and Republish, which writes, is refused for them. They resolve for staff, whoever it went to and whoever holds an
 attempt at it (`frozenAssetReadable`), never another member, and they paste for
 nobody (`AdoptEditorAssets`).
 Members are only ever served this copy:
