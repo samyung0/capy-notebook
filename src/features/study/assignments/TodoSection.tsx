@@ -10,7 +10,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { dayLabel } from './assignmentText';
-import { NewAssignmentDialog } from './NewAssignmentDialog';
+import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
 
 /** A chip naming a quiz: the assignment's quill, tinted (Epo 2026-11-03). */
 function WorkChip({ title, done }: { title: string; done?: boolean }) {
