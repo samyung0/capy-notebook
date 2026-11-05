@@ -254,7 +254,9 @@ func (u *user) takeQuiz(ctx context.Context, sp *space) {
 	per := 60 * time.Second / time.Duration(max(1, len(quiz.Questions)))
 	if quiz.check(ctx, u, id, started, func() { u.think(ctx, per) }) == nil {
 		all(
-			func() { _ = u.get(ctx, "/api/workspaces/"+sp.id+"/practice", "/api/workspaces/{id}/practice", true, nil) },
+			func() {
+				_ = u.get(ctx, "/api/workspaces/"+sp.id+"/practice", "/api/workspaces/{id}/practice", true, nil)
+			},
 			func() { _ = u.get(ctx, "/api/workspaces/"+sp.id+"/study", "/api/workspaces/{id}/study", true, nil) },
 		)
 	}

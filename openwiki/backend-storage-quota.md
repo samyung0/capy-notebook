@@ -81,6 +81,7 @@ Storage is charged once per logical row owned by a user:
 | Source files  | `files.size_bytes`         | row exists                    |
 | Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only       |
 | Materials     | `materials.size_bytes`     | always; set from content JSON |
+| An assignment's frozen questions | `assignments.frozen_bytes` | once published, to `frozen_by` |
 | Trashed rows  | same as above              | until the 30-day purge        |
 | Chat Undo     | none                       | never: the browser keeps its payload, the server stores only the receipt (Epo 2026-10-21) |
 
@@ -158,14 +159,21 @@ included, which then read as removed. For a workspace material, `owner_user_id` 
 access, the owner role and the owner's lifecycle (deleted, suspended) follow
 the workspace (`materialEffectiveAccess`, `live_access`).
 
-An assignment's frozen copy (Claude's pick, Epo to confirm): its images are new
-`editor_assets` rows of the workspace with no material and an `assignment_id`,
-charged to whoever published and checked by `gateStorageTx`, as a clone's are; the
-Embeds tab, which joins through a material, doesn't list them, so such a payer's
-meter runs ahead of that tab by their size. Deleting the assignment or the
-workspace deletes them, and a workspace clone leaves them out. The frozen questions
-JSON isn't charged, as an attempt's snapshot isn't
-([study-progress.md](study-progress.md#assignments)).
+An assignment's frozen copy (Epo 2026-11-05) is charged to whoever published it,
+not whoever drafted it. Its images are new `editor_assets` rows of the workspace
+with no material and an `assignment_id`, checked by `gateStorageTx` as a clone's
+are. Its question JSON is `assignments.frozen_bytes`, measured as a material's
+content is and checked by the same gate, so publishing past the limit is refused
+as any creation is, images or not; a trigger moves the charge through the deltas
+(migration `0149_assignment_storage.sql`). Nothing edits a published copy, and the
+trigger moves any change to `frozen_bytes` or `frozen_by` anyway. Deleting the
+assignment or the workspace releases both, and a workspace clone leaves them out.
+Purging the publisher deletes the images, as it deletes everything it pays for, but
+keeps the questions, so the class keeps the paper and its members' work, charged to
+nobody. The Embeds tab joins through a material and doesn't list any of this, so
+such a payer's meter runs ahead of that tab by its size
+([study-progress.md](study-progress.md#assignments)). An attempt's snapshot isn't
+charged.
 
 A curated material's `provenance` record is **never charged** — `size_bytes` is
 the content JSON alone — and its marshalled bytes are counted by `gateStorageTx`

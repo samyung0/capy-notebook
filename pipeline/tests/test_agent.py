@@ -2729,6 +2729,58 @@ async def test_a_chat_stream_is_stoppable_until_it_ends(monkeypatch):
     assert registered == [True] and "m_turn" not in service._running
 
 
+@pytest.mark.parametrize(
+    ("turn", "readers"),
+    [
+        ({"workspaceId": "ws_1", "role": "owner"}, ["ws_1"]),
+        ({"workspaceId": "ws_1", "role": "editor"}, ["ws_1"]),
+        ({"workspaceId": "ws_1", "role": "viewer"}, []),
+        (
+            {
+                "scope": {
+                    "kind": "account",
+                    "userId": "u_1",
+                    "workspaces": [
+                        {"id": "ws_edits", "name": "Edits", "canEdit": True},
+                        {"id": "ws_views", "name": "Views", "canEdit": False},
+                    ],
+                }
+            },
+            ["ws_edits"],
+        ),
+    ],
+)
+async def test_a_chat_turn_reads_hidden_items_only_where_its_user_edits(
+    monkeypatch, turn, readers
+):
+    """(security regression) Every hidden check in retrieval reads the readers this
+    binds for the turn's role: a viewer gets none, an account turn its edited
+    workspaces."""
+    from pipeline.retrieve import service
+
+    bound = []
+
+    async def _agent(**_kwargs):
+        bound.append(agent.store.hidden_readers())
+        yield {"type": "done"}
+
+    monkeypatch.setattr(service, "run_agent", _agent)
+    monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
+    monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a: _model())
+    req = service.ChatStreamReq(
+        userId="u_1",
+        thinking="high",
+        query="q",
+        contractVersion=contract.VERSION,
+        operations=[],
+        spendSessionId="cr_1",
+        **turn,
+    )
+    _chunks = [chunk async for chunk in service._chat_events(req)]
+
+    assert bound == [readers]
+
+
 # ------------------------------------------------------------- trash tools
 
 

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -30,9 +31,8 @@ import (
 )
 
 // Make a quiz (todo-study-tracking.md §8): the retrieval service reads the
-// selected pages of a paper into questions, a map call, then copy batches, then
-// solve batches, and pairs the mark scheme and answer files with them by label;
-// this gateway starts the run, keeps the questions as each copy batch ends and
+// selected pages of a paper into questions, a map call with any answer files, then
+// copy batches, then solve batches; this gateway starts the run, keeps the questions as each copy batch ends and
 // saves the quiz at the end.
 // The run outlives the request, like a chat turn: it relays on a detached
 // context in this process, and FailOrphanedExtractions fails what a restart
@@ -51,9 +51,15 @@ type getExtractionInput struct {
 	ID string `path:"id"`
 }
 
+// extractionBodyDeadline gives a request of 40 drawn pages time to arrive on a
+// slow connection: Huma's default is 5 s.
+func extractionBodyDeadline(op *huma.Operation) {
+	op.BodyReadTimeout = 60 * time.Second
+}
+
 func (a *api) registerExtractions(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/extractions", "createExtraction", "Generate",
-		"Start reading the questions on selected pages into a new quiz", http.StatusAccepted, extractionMaxBody, a.createExtraction)
+		"Start reading the questions on selected pages into a new quiz", http.StatusAccepted, extractionMaxBody, a.createExtraction, extractionBodyDeadline)
 	reg(api, http.MethodGet, "/api/extractions/{id}", "getExtraction", "Generate",
 		"A Make a quiz run its starter began", http.StatusOK, a.getExtraction)
 }
@@ -99,8 +105,8 @@ func checkExtractionRequest(req apimodel.CreateExtractionReq) error {
 
 // extractionLLM is the run's model: the extraction slot's default pin, a vision
 // model on OpenRouter (never direct DeepSeek, Epo 2026-11-03), with reasoning
-// at mid for the map and solve calls and low for the copy calls (Epo 2026-11-05);
-// scheme calls turn it off. The run's starter pays.
+// at mid for the map and solve calls and low for the copy calls (Epo 2026-11-05).
+// The run's starter pays.
 func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, error) {
 	var out resolvedLLM
 	if a.modelReg == nil {

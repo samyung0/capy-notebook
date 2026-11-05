@@ -68,6 +68,21 @@ const materials: Record<string, Partial<Material>> = {
     } as Material['content'],
     kind: 'note',
   },
+  // A note whose refresh failed, or was refused: its read stays in the query.
+  noteFailed: {
+    content: {
+      schemaVersion: 1,
+      value: [{ children: [{ text: 'Note body' }], id: 'p1', type: 'p' }],
+    } as Material['content'],
+    kind: 'note',
+  },
+  noteRefused: {
+    content: {
+      schemaVersion: 1,
+      value: [{ children: [{ text: 'Note body' }], id: 'p1', type: 'p' }],
+    } as Material['content'],
+    kind: 'note',
+  },
   // A note embedding one credited quiz; the read also names a credited row
   // its content no longer references.
   noteWithEmbed: {
@@ -110,7 +125,7 @@ vi.mock('@/api/hooks', async () => {
             error: new ApiError(422, 'Unprocessable Entity', undefined, {
               code: 'material_content_unreadable',
             }),
-            isLoading: false,
+            isPending: false,
           }
         : {
             data: {
@@ -122,8 +137,13 @@ vi.mock('@/api/hooks', async () => {
               workspaceId: 'ws',
               ...materials[id],
             },
-            error: null,
-            isLoading: false,
+            error:
+              id === 'noteFailed'
+                ? new ApiError(503, 'Service Unavailable')
+                : id === 'noteRefused'
+                  ? new ApiError(404, 'Not Found')
+                  : null,
+            isPending: false,
           },
     useMe: () => ({ data: { id: 'u_1' } }),
   };
@@ -228,4 +248,28 @@ it('shows the center file error, named by the kind it opened, for a material who
   );
   expect(html).toContain('data-error-surface="panel"');
   expect(html).toContain('This quiz could not be loaded');
+});
+
+const opened = (materialId: string) =>
+  render(
+    <MaterialContent
+      allowExternalAssets={false}
+      centerQuiz={false}
+      forceReadOnly={false}
+      kind="note"
+      materialId={materialId}
+      onEditorStatusChange={() => {}}
+    />
+  );
+
+it('keeps showing what it read while a refresh cannot answer', async () => {
+  const html = await opened('noteFailed');
+  expect(html).toContain('Note body');
+  expect(html).not.toContain('data-error-surface');
+});
+
+it('shows the center file error, not what it read, once a refresh is refused', async () => {
+  const html = await opened('noteRefused');
+  expect(html).toContain('data-error-surface="panel"');
+  expect(html).not.toContain('Note body');
 });

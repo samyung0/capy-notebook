@@ -23,7 +23,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
 import { useFilePages, useSeen } from './filePages';
-import { hasFileRoom, isOfferable, isQuizFile } from './makeQuiz';
+import { hasFileRoom, isOfferable, isQuizFile, isUnreadable } from './makeQuiz';
 import { useQuizUpload } from './useQuizUpload';
 
 /** A file on the dialog: from Files, or an upload, whose transfer row `key`
@@ -389,10 +389,12 @@ export function MakeQuizDialog({
       file.status !== 'processing'
     );
   };
+  const answerUsable = (row: Picked) => {
+    const file = files?.find((item) => item.id === row.fileId);
+    return !!row.fileId && !row.failure && !(file && isUnreadable(file));
+  };
   const canContinue =
-    paper.length > 0 &&
-    paper.every(readyFile) &&
-    answers.every((row) => !!row.fileId && !row.failure);
+    paper.length > 0 && paper.every(readyFile) && answers.every(answerUsable);
 
   // Which menu asked for the upload, kept past the menu closing.
   const uploadFor = useRef<'pages' | 'paper'>('paper');

@@ -3021,6 +3021,93 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
     assert_eq!(reason, "permission-denied");
 }
 
+/// A quiz under an open assignment refuses its read room to a viewer it went to,
+/// who would read its stems before their clock starts, while a viewer it did not
+/// go to and the owner keep it; a draft changes nothing and closing gives it back
+/// (security regression, study landing item 11). Fails without the assigned rule
+/// in `live_access`.
+#[tokio::test]
+async fn a_quiz_assigned_to_a_viewer_refuses_them_its_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let client = db(&env).await;
+    let (owner, assignee, other) = (user(&env).await, user(&env).await, user(&env).await);
+    let workspace = format!("ws_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO workspaces (id,user_id,name,kind) VALUES ($1,$2,'IT','class')",
+            &[&workspace, &owner],
+        )
+        .await
+        .expect("workspace");
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'viewer'), ($1,$3,'viewer')",
+            &[&workspace, &assignee, &other],
+        )
+        .await
+        .expect("members");
+    let quiz = quiz_material(&env, &owner, "private").await;
+    client
+        .execute(
+            "UPDATE materials SET workspace_id=$2, workspace_name='IT' WHERE id=$1",
+            &[&quiz, &workspace],
+        )
+        .await
+        .expect("quiz in the class");
+    let assignment = format!("as_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO assignments (id,workspace_id,created_by,kind,title,source_quiz_id,due_at,assign_all,draft)
+             VALUES ($1,$2,$3,'marked','IT',$4,now()+interval '1 hour',false,true)",
+            &[&assignment, &workspace, &owner, &quiz],
+        )
+        .await
+        .expect("draft");
+    client
+        .execute(
+            "INSERT INTO assignment_assignees (assignment_id,user_id) VALUES ($1,$2)",
+            &[&assignment, &assignee],
+        )
+        .await
+        .expect("assignee");
+    let room = format!("material:{quiz}:schema:1");
+    let read = |user: &str| token(&room, user, "read");
+    let joins = |user: &str| {
+        let token = read(user);
+        let room = room.clone();
+        let port = server.port;
+        async move { Client::open(port).await.joined(&room, &token).await }
+    };
+    assert_eq!(joins(&assignee).await, 0, "under a draft");
+    client
+        .execute(
+            "UPDATE assignments SET draft=false, questions='[]' WHERE id=$1",
+            &[&assignment],
+        )
+        .await
+        .expect("publish");
+    let mut refused = Client::open(server.port).await;
+    refused.join(&room, &read(&assignee)).await;
+    let reason = text_payload(&refused.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-forbidden");
+    assert_eq!(joins(&other).await, 0, "a viewer it did not go to");
+    let mut staff = Client::open(server.port).await;
+    assert_eq!(
+        staff.joined(&room, &token(&room, &owner, "write")).await,
+        1,
+        "the owner"
+    );
+    client
+        .execute(
+            "UPDATE assignments SET closed_at=now() WHERE id=$1",
+            &[&assignment],
+        )
+        .await
+        .expect("close");
+    assert_eq!(joins(&assignee).await, 0, "after closing");
+}
+
 /// The version gate: a JOIN or draft send without the client protocol (a tab
 /// from before the gate), below its family's minimum (`MIN_MATERIAL`,
 /// `MIN_SOURCE`, read from `protocol.rs`) or above the server's own (a

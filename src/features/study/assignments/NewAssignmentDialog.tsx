@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { type Control, Controller, useForm } from 'react-hook-form';
 import { CreateAssignmentBody } from '@/api/gen/validators';
 import {
@@ -89,7 +89,9 @@ export function NewAssignmentDialog({
   workspaceId: string;
 }) {
   const manage = existing?.manage;
+  const formId = useId();
   const { data: practice } = usePractice(workspaceId, { errorBoundary: false });
+  const { data: members } = useWorkspaceMembers(workspaceId);
   const quizzes = practice?.quizzes ?? [];
   const {
     control,
@@ -175,6 +177,10 @@ export function NewAssignmentDialog({
     const body: AssignmentFormReq = {
       ...values,
       ...latePolicy(values),
+      // Someone who left after this assignment was read can't be assigned.
+      assignees: values.assignees?.filter(
+        (id) => !members || members.some((member) => member.userId === id)
+      ),
       files: kind === 'marked' ? [] : values.files,
       quizId: kind === 'marked' ? values.quizId : undefined,
       timeLimitMin: kind === 'marked' ? values.timeLimitMin : undefined,
@@ -192,8 +198,10 @@ export function NewAssignmentDialog({
   });
   const locked = !!existing || !!presetQuizId;
   const quiz = quizzes.find((q) => q.id === quizId);
+  // In the phone header and the form's footer: either one, or Enter in a field,
+  // submits the form once.
   const createButton = (
-    <Button disabled={saving} onClick={() => void submit()}>
+    <Button disabled={saving} form={formId} type="submit">
       {existing ? m.action_save() : m.assignment_create()}
     </Button>
   );
@@ -211,9 +219,11 @@ export function NewAssignmentDialog({
         </DialogTitle>
         <form
           className="flex flex-col gap-4 pt-1"
+          id={formId}
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            void submit();
+            if (!saving) void submit();
           }}
         >
           {!locked && (
@@ -583,6 +593,7 @@ function DateField({
           icon="x"
           label={m.assignment_clear_due()}
           onClick={() => onChange(undefined)}
+          type="button"
         />
       )}
       <input
@@ -947,6 +958,7 @@ function FilesField({
                     )
                   )
                 }
+                type="button"
               />
             </li>
           ))}

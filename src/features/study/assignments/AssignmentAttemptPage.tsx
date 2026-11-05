@@ -55,13 +55,17 @@ export function AssignmentAttemptPage({
   if (data?.status === 'running') ranHere.current = true;
   // Taking it starts only from this opening's read, never a cached one.
   const waitingForFresh = data?.status === 'running' && !isFetchedAfterMount;
+  const readHere = useRef(false);
+  if (isFetchedAfterMount && !isError) readHere.current = true;
   if (isPending || waitingForFresh)
     return (
       <PracticeFrame>
         <SkeletonList count={8} rowHeight={36} />
       </PracticeFrame>
     );
-  if (isError)
+  // A refresh that fails leaves the page: it may hold typed answers. Only an
+  // opening with nothing to show, or a running attempt it never read, stops.
+  if (isError && (!data || (data.status === 'running' && !readHere.current)))
     return (
       <PracticeFrame>
         <ErrorState

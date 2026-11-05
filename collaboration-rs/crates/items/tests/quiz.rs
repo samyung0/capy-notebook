@@ -1779,7 +1779,7 @@ fn group_shapes_no_editor_writes_are_refused() {
     refused(
         Kind::Quiz,
         |doc| {
-            map_in(doc, &part_path).insert(&mut doc.transact_mut(), "group", "not an id!");
+            map_in(doc, &part_path).insert(&mut doc.transact_mut(), "group", "g".repeat(129));
         },
         "group",
     );
@@ -1789,6 +1789,44 @@ fn group_shapes_no_editor_writes_are_refused() {
             map_in(doc, &part_path).insert(&mut doc.transact_mut(), "group", 3.0);
         },
         "group",
+    );
+}
+
+/// A group's id is held to what the validators hold it to, as a part's is: a
+/// stored question's "sheet 1.a" seeds, passes the store's check and takes a new
+/// sub-part. Only a key a client creates must be `valid_id`, so the fixture stays
+/// out of the corpus (its policy is not `{}`), whose browser-written questions
+/// the room admits from nothing.
+#[test]
+fn a_group_id_the_validators_accept_stays_in_the_room() {
+    let path = format!(
+        "{}/../../../server/internal/questions/testdata/group-id-space-dot.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let fixture: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let question = fixture["question"].clone();
+    let (content, keys, _, _) = rooms(std::slice::from_ref(&question));
+    quiz::check_content_caps(&content.transact()).unwrap();
+    assert_eq!(typed(&content, &keys), question);
+
+    let client = copy_of(&content, 3);
+    let last = order_of(&client, &[&PARTS[..], &["part-b2"]].concat());
+    add_sub_part(
+        &client,
+        "part-b3",
+        "sheet 1.a",
+        &items::order::after(Some(&last)),
+    );
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    quiz::check_content_caps(&content.transact()).unwrap();
+    let parts = &typed(&content, &keys)["parts"];
+    assert!(
+        parts
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|part| part["id"] == json!("part-b3") && part["group"] == json!("sheet 1.a"))
     );
 }
 

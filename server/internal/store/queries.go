@@ -2242,6 +2242,9 @@ func (s *Store) CheckQuizQuestion(ctx context.Context, userID, materialID string
 		return AttemptDetail{}, err
 	}
 	defer tx.Rollback(ctx)
+	if err := lockWorkspaceKeyShareTx(ctx, tx, mt.StudyWorkspaceID()); err != nil {
+		return AttemptDetail{}, err
+	}
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return AttemptDetail{}, err
 	}

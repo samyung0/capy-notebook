@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"hash/fnv"
 	"math"
 	"math/rand"
@@ -15,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
@@ -367,8 +367,10 @@ func (s *Store) fillAssignmentFiles(ctx context.Context, userID string, ids []st
 
 // assigneesSQL lists who each of the assignments in $1 went to: the workspace's
 // viewers when it is for all members, plus anyone named who is still a member.
+// A workspace that is not a class gives them to nobody until it changes back.
 const assigneesSQL = `SELECT a.id AS assignment_id, wm.user_id
-	FROM assignments a JOIN workspace_members wm ON wm.workspace_id=a.workspace_id
+	FROM assignments a JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
+	JOIN workspace_members wm ON wm.workspace_id=a.workspace_id
 	WHERE a.id = ANY($1) AND ((a.assign_all AND wm.role='viewer')
 		OR EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=a.id AND aa.user_id=wm.user_id))`
 
@@ -411,8 +413,11 @@ func (s *Store) fillAssignmentManage(ctx context.Context, ids []string, at map[s
 		return err
 	}
 	rows.Close()
-	named, err := s.pool.Query(ctx, `SELECT assignment_id, user_id FROM assignment_assignees
-		WHERE assignment_id = ANY($1) ORDER BY assignment_id, user_id`, ids)
+	// Who is still a member: a departed name would be refused when the form saves.
+	named, err := s.pool.Query(ctx, `SELECT x.assignment_id, x.user_id FROM assignment_assignees x
+		JOIN assignments a ON a.id=x.assignment_id
+		JOIN workspace_members wm ON wm.workspace_id=a.workspace_id AND wm.user_id=x.user_id
+		WHERE x.assignment_id = ANY($1) ORDER BY x.assignment_id, x.user_id`, ids)
 	if err != nil {
 		return err
 	}
@@ -754,7 +759,8 @@ func writeAssignmentLists(ctx context.Context, tx pgx.Tx, id string, form Assign
 // publishAssignmentTx makes it members', posted now. A marked one freezes its
 // quiz: its questions with their keys, and its images as new rows of the
 // workspace with no material, so editing or deleting the quiz leaves them. The
-// actor pays for the copied images, as for a clone (Epo 2026-10-11).
+// actor pays for the copied images, as for a clone (Epo 2026-10-11), and for the
+// frozen questions (Epo 2026-11-05), so this is the last that fits their storage.
 func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, actorID, kind string, qs []map[string]any, now time.Time) error {
 	if kind == AssignmentUnmarked {
 		_, err := tx.Exec(ctx, `UPDATE assignments SET draft=false, posted_at=$2 WHERE id=$1`, id, now)
@@ -786,8 +792,23 @@ func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, ac
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE assignments SET draft=false, posted_at=$2, questions=$3, question_count=$4, total_marks=$5 WHERE id=$1`,
-		id, now, frozen, len(qs), marks)
+	size, err := storageJSONSizeTx(ctx, tx, string(frozen))
+	if err != nil {
+		return err
+	}
+	if err := s.gateStorageTx(ctx, tx, actorID, size); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE assignments SET draft=false, posted_at=$2, questions=$3, question_count=$4, total_marks=$5,
+		frozen_by=$6, frozen_bytes=$7 WHERE id=$1`,
+		id, now, frozen, len(qs), marks, actorID, size)
+	if err != nil {
+		return err
+	}
+	// Its assignees lose the quiz now, so its live rooms drain: one reading it
+	// reconnects and is refused (live_access), and staff rejoin.
+	_, err = tx.Exec(ctx, `SELECT enqueue_material_collaboration_eviction(source_quiz_id, 'access-changed', 'drain')
+		FROM assignments WHERE id=$1 AND source_quiz_id IS NOT NULL`, id)
 	return err
 }
 
@@ -958,39 +979,35 @@ func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, clo
 	return s.GetAssignment(ctx, actorID, id, now)
 }
 
-// DeleteAssignment deletes it with its attempts and frozen images; its quiz is as
-// it was.
+// DeleteAssignment deletes it with its attempts, frozen questions and images,
+// which leave their payer's meter (a trigger's); its quiz is as it was.
 func (s *Store) DeleteAssignment(ctx context.Context, actorID, id string) error {
 	wsID, err := s.assignmentWorkspace(ctx, id)
 	if err != nil {
 		return err
 	}
-	var creator *string
-	if err := s.pool.QueryRow(ctx, `SELECT created_by FROM assignments WHERE id=$1`, id).Scan(&creator); err != nil {
+	var payer *string
+	if err := s.pool.QueryRow(ctx, `SELECT frozen_by FROM assignments WHERE id=$1`, id).Scan(&payer); err != nil {
 		return err
 	}
 	var also []string
-	if creator != nil {
-		also = append(also, *creator)
+	if payer != nil {
+		also = append(also, *payer)
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID, also...); err != nil {
 			return err
 		}
-		var found bool
-		if err := tx.QueryRow(ctx, `SELECT true FROM assignments WHERE id=$1 FOR UPDATE`, id).Scan(&found); err != nil {
-			if isNoRows(err) {
-				return ErrNotFound
-			}
-			return err
-		}
-		// Its frozen images go with it, and their bytes off the payer's meter.
-		if creator != nil {
-			if err := s.lockStorageRowTx(ctx, tx, *creator); err != nil {
+		// The counter before the row, as reconciliation takes them.
+		if payer != nil {
+			if err := s.lockStorageRowTx(ctx, tx, *payer); err != nil {
 				return err
 			}
 		}
-		_, err := tx.Exec(ctx, `DELETE FROM assignments WHERE id=$1`, id)
+		tag, err := tx.Exec(ctx, `DELETE FROM assignments WHERE id=$1`, id)
+		if err == nil && tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
 		return err
 	})
 }
@@ -1014,13 +1031,17 @@ func assignedTx(ctx context.Context, q rowQueryer, id, userID string) (bool, err
 
 // SetAssignmentDone is a member's tick on an unmarked assignment.
 func (s *Store) SetAssignmentDone(ctx context.Context, userID, id string, done bool, now time.Time) error {
-	var kind string
+	var wsID, kind string
 	var draft bool
-	err := s.pool.QueryRow(ctx, `SELECT kind, draft FROM assignments WHERE id=$1`, id).Scan(&kind, &draft)
+	err := s.pool.QueryRow(ctx, `SELECT workspace_id, kind, draft FROM assignments WHERE id=$1`, id).Scan(&wsID, &kind, &draft)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
+		return err
+	}
+	// Not a class, or its owner's account is locked: nothing is ticked.
+	if _, err := s.assignmentStaff(ctx, s.pool, userID, wsID); err != nil {
 		return err
 	}
 	assigned, err := assignedTx(ctx, s.pool, id, userID)
@@ -1127,19 +1148,30 @@ func (r attemptRow) expired(now time.Time) bool {
 func (s *Store) StartAssignment(ctx context.Context, userID, id string, now time.Time) (AssignmentAttempt, error) {
 	var attemptID string
 	var view AssignmentAttempt
-	err := s.inTx(ctx, func(tx pgx.Tx) error {
+	wsID, err := s.assignmentWorkspace(ctx, id)
+	if err != nil {
+		return view, err
+	}
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := lockWorkspaceKeyShareTx(ctx, tx, wsID); err != nil {
+			return err
+		}
 		if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 			return err
 		}
-		var wsID, kind, title, wsName string
+		// Not a class, or its owner's account is locked: nothing starts or submits.
+		if _, err := s.assignmentStaff(ctx, tx, userID, wsID); err != nil {
+			return err
+		}
+		var kind, title, wsName string
 		var draft, noLate bool
 		var due, closedAt *time.Time
 		var limit, allowed int
 		var hasLimit *int
 		var total float64
-		err := tx.QueryRow(ctx, `SELECT a.workspace_id, a.kind, a.title, w.name, a.draft, a.no_late, a.due_at, a.closed_at, a.time_limit_min, a.attempts_allowed, a.total_marks::float8
+		err := tx.QueryRow(ctx, `SELECT a.kind, a.title, w.name, a.draft, a.no_late, a.due_at, a.closed_at, a.time_limit_min, a.attempts_allowed, a.total_marks::float8
 			FROM assignments a JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1 FOR SHARE OF a`, id).
-			Scan(&wsID, &kind, &title, &wsName, &draft, &noLate, &due, &closedAt, &hasLimit, &allowed, &total)
+			Scan(&kind, &title, &wsName, &draft, &noLate, &due, &closedAt, &hasLimit, &allowed, &total)
 		if isNoRows(err) {
 			return ErrNotFound
 		}
@@ -1238,12 +1270,7 @@ func (s *Store) SaveAssignmentAnswers(ctx context.Context, userID, attemptID str
 		}
 		if r.expired(now) {
 			expired = true
-			full, err := scanAttemptRow(tx.QueryRow(ctx, `SELECT `+attemptRowCols+`
-				FROM attempts t JOIN assignments a ON a.id=t.assignment_id WHERE t.id=$1`, attemptID))
-			if err != nil {
-				return err
-			}
-			return s.finishAttemptTx(ctx, tx, full, nil, true, now)
+			return nil
 		}
 		raw, err := json.Marshal(answers)
 		if err != nil {
@@ -1253,6 +1280,11 @@ func (s *Store) SaveAssignmentAnswers(ctx context.Context, userID, attemptID str
 		return err
 	})
 	if err == nil && expired {
+		// In its own transaction: submitting takes the workspace first, and a save
+		// (every few seconds per member) holds the attempt without it.
+		if err := s.finishAttemptIfRunning(ctx, attemptID, now); err != nil {
+			return err
+		}
 		return ErrAttemptFinished
 	}
 	return err
@@ -1287,6 +1319,9 @@ func (s *Store) SubmitAssignmentAttempt(ctx context.Context, userID, attemptID s
 		return AssignmentAttempt{}, err
 	}
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := lockAttemptWorkspaceTx(ctx, tx, attemptID); err != nil {
+			return err
+		}
 		if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 			return err
 		}
@@ -1496,9 +1531,26 @@ func (s *Store) readAttempt(ctx context.Context, attemptID string) (attemptRow, 
 		FROM attempts t JOIN assignments a ON a.id=t.assignment_id WHERE t.id=$1`, attemptID))
 }
 
+// lockAttemptWorkspaceTx takes an attempt's workspace first (see
+// lockWorkspaceKeyShareTx); an attempt that is gone is its caller's to report.
+func lockAttemptWorkspaceTx(ctx context.Context, tx pgx.Tx, attemptID string) error {
+	var wsID string
+	err := tx.QueryRow(ctx, `SELECT a.workspace_id FROM attempts t JOIN assignments a ON a.id=t.assignment_id WHERE t.id=$1`, attemptID).Scan(&wsID)
+	if isNoRows(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return lockWorkspaceKeyShareTx(ctx, tx, wsID)
+}
+
 // finishAttemptIfRunning submits what was saved, if nothing beat it to it.
 func (s *Store) finishAttemptIfRunning(ctx context.Context, attemptID string, now time.Time) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := lockAttemptWorkspaceTx(ctx, tx, attemptID); err != nil {
+			return err
+		}
 		r, err := scanAttemptRow(tx.QueryRow(ctx, `SELECT `+attemptRowCols+`
 			FROM attempts t JOIN assignments a ON a.id=t.assignment_id WHERE t.id=$1 FOR UPDATE OF t SKIP LOCKED`, attemptID))
 		if errors.Is(err, ErrNotFound) {
@@ -2167,7 +2219,8 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 // what running attempts saved once their time runs out or the assignment closes,
 // by hand or at a No late submissions due date, and shows a closed assignment's
 // quiz as practice, once. A due date alone releases nothing (Epo 2026-11-04).
-// The quiz stays hidden while another open assignment uses it.
+// The quiz stays hidden while another open assignment uses it. One row that
+// fails is logged and passed over, so it never holds up the rest.
 func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) (finished, released int, err error) {
 	rows, err := s.pool.Query(ctx, `SELECT t.id FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 		WHERE t.assignment_id IS NOT NULL AND t.submitted_at IS NULL
@@ -2181,7 +2234,8 @@ func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) 
 	}
 	for _, id := range attemptIDs {
 		if err := s.finishAttemptIfRunning(ctx, id, now); err != nil {
-			return finished, 0, fmt.Errorf("finish attempt %s: %w", id, err)
+			obs.Log(ctx).Warn("assignment attempt not submitted", "attempt_id", id, "error", err)
+			continue
 		}
 		finished++
 	}
@@ -2197,7 +2251,8 @@ func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) 
 	}
 	for _, id := range assignmentIDs {
 		if err := s.releaseAssignment(ctx, id, now); err != nil {
-			return finished, released, fmt.Errorf("release assignment %s: %w", id, err)
+			obs.Log(ctx).Warn("assignment not released", "assignment_id", id, "error", err)
+			continue
 		}
 		released++
 	}
@@ -2206,12 +2261,30 @@ func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) 
 
 // releaseAssignment makes its quiz a normal visible one, practice for members,
 // and rates what they submitted (§4, §11.6, Epo 2026-11-04). The owner can hide
-// it again.
+// it again. Its locks run workspace, quiz, assignment: purging a quiz deletes the
+// material and its foreign key then takes the assignment, with no workspace row
+// held when an account purge does it.
 func (s *Store) releaseAssignment(ctx context.Context, id string, now time.Time) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
+		var wsID string
 		var source *string
+		err := tx.QueryRow(ctx, `SELECT workspace_id, source_quiz_id FROM assignments WHERE id=$1`, id).Scan(&wsID, &source)
+		if isNoRows(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := lockWorkspaceKeyShareTx(ctx, tx, wsID); err != nil {
+			return err
+		}
+		if source != nil {
+			if _, err := tx.Exec(ctx, `SELECT 1 FROM materials WHERE id=$1 FOR NO KEY UPDATE`, *source); err != nil {
+				return err
+			}
+		}
 		var released *time.Time
-		err := tx.QueryRow(ctx, `SELECT source_quiz_id, released_at FROM assignments WHERE id=$1 FOR UPDATE SKIP LOCKED`, id).Scan(&source, &released)
+		err = tx.QueryRow(ctx, `SELECT source_quiz_id, released_at FROM assignments WHERE id=$1 FOR UPDATE SKIP LOCKED`, id).Scan(&source, &released)
 		if isNoRows(err) || released != nil {
 			return nil
 		}

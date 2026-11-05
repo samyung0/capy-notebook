@@ -28,10 +28,13 @@ const DRAFT_RESERVE_BYTES = 100 * 2 ** 20;
 const INDEX = '/capy-source-cache/index.json';
 const SHA256 = /^[0-9a-f]{64}$/;
 /** A row of another format is dropped as it is read. */
-const COPY_FORMAT = 1;
+const COPY_FORMAT = 2;
 
 /** A device copy's row beside its bytes. */
 export interface DeviceCopyRow {
+  /** Whether its reader could edit when it was kept: a reopen loads the editor
+   * before its read answers only then. */
+  canEditContent: boolean;
   /** A room's Yjs state (`content`, a quiz's `keys`), or the answer-free
    * material read itself (`read`): what an item paints from before anything
    * answers, a viewer's whole copy of a quiz (its lists arrive outside Yjs). */

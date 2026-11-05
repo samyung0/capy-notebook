@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
+	"github.com/samyung0/capy-notebook/server/internal/review"
 )
 
 // assignmentQuestions is a multiple choice, a short answer and an open part.
@@ -289,7 +293,7 @@ func (f assignmentFixture) form(t *testing.T, due time.Time) AssignmentForm {
 func TestAssignmentRun(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-run")
 	ctx := context.Background()
-	now := time.Now().UTC()
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	limit := 30
 	form := f.form(t, now.Add(24*time.Hour))
 	form.TimeLimitMin = &limit
@@ -622,7 +626,7 @@ func TestAssignmentLateMissingAndTimeOut(t *testing.T) {
 func TestAssignmentBecomesPractice(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-practice")
 	ctx := context.Background()
-	now := time.Now().UTC()
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	due := now.Add(time.Hour)
 	first, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, due), now)
 	if err != nil {
@@ -715,7 +719,7 @@ func TestAssignmentNoLateClosesAtDue(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-no-late")
 	ctx := context.Background()
 	// In the past, as the lists read the database's clock for an open assignment.
-	now := time.Now().UTC().Add(-2 * time.Hour)
+	now := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Microsecond)
 	due := now.Add(time.Hour)
 	form := f.form(t, due)
 	form.NoLate = true
@@ -931,7 +935,7 @@ func TestAssignmentLatePenalty(t *testing.T) {
 func TestAssignmentFrozenCopyAndDelete(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-frozen")
 	ctx := context.Background()
-	now := time.Now().UTC()
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.Draft, form.Questions = true, nil
 	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
@@ -1370,5 +1374,541 @@ func TestSharingNoticeIsToldOnce(t *testing.T) {
 	}
 	if due(f.other) {
 		t.Fatal("a personal workspace's member is due the notice")
+	}
+}
+
+// TestAssignmentSweepPassesOverABadRow: an attempt that cannot submit and an
+// assignment that cannot release leave the others' to go through.
+func TestAssignmentSweepPassesOverABadRow(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-sweep-bad")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	open := func() (Assignment, AssignmentAttempt) {
+		t.Helper()
+		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return created, run
+	}
+	bad, badRun := open()
+	good, goodRun := open()
+	t.Cleanup(func() { _, _ = f.s.pool.Exec(ctx, `DELETE FROM assignments WHERE id=$1`, bad.ID) })
+	submitted, err := f.s.StartAssignment(ctx, f.other, bad.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.other, submitted.ID, map[string]any{}, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{bad.ID, good.ID} {
+		if _, err := f.s.SetAssignmentClosed(ctx, f.user, id, true, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE assignments SET questions='{"bad":true}' WHERE id=$1`, bad.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE attempts SET questions='{"bad":true}' WHERE id=$1`, submitted.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.s.SweepAssignments(ctx, 200, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	finished := func(attemptID string) bool {
+		t.Helper()
+		var done bool
+		if err := f.s.pool.QueryRow(ctx, `SELECT submitted_at IS NOT NULL FROM attempts WHERE id=$1`, attemptID).Scan(&done); err != nil {
+			t.Fatal(err)
+		}
+		return done
+	}
+	released := func(id string) bool {
+		t.Helper()
+		var done bool
+		if err := f.s.pool.QueryRow(ctx, `SELECT released_at IS NOT NULL FROM assignments WHERE id=$1`, id).Scan(&done); err != nil {
+			t.Fatal(err)
+		}
+		return done
+	}
+	if finished(badRun.ID) || released(bad.ID) {
+		t.Fatal("the bad row went through")
+	}
+	if !finished(goodRun.ID) || !released(good.ID) {
+		t.Fatalf("the good row stayed: submitted %v, released %v", finished(goodRun.ID), released(good.ID))
+	}
+}
+
+// TestDepartedAssigneeLeavesTheForm: a name who left the workspace is off the
+// assignment's list, so the form saves what it was given.
+func TestDepartedAssigneeLeavesTheForm(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-departed")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	form := f.form(t, now.Add(time.Hour))
+	form.AssignAll, form.Assignees = false, []string{f.viewer, f.other}
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, f.ws.ID, f.other); err != nil {
+		t.Fatal(err)
+	}
+	read, err := f.s.GetAssignment(ctx, f.user, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(read.Manage.Assignees, []string{f.viewer}) {
+		t.Fatalf("assignees = %v, want the viewer alone", read.Manage.Assignees)
+	}
+	form.Assignees = read.Manage.Assignees
+	if _, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, now); err != nil {
+		t.Fatalf("saving the form: %v", err)
+	}
+}
+
+// TestPersonalWorkspaceStartsNoAssignment: after a switch to personal a start
+// answers not found before any clock begins, and a tick too. Back in a class both
+// work.
+func TestPersonalWorkspaceStartsNoAssignment(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-personal-start")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	marked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
+		AssignAll: true, Assignees: []string{}, Files: []AssignmentFileRef{}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setKind := func(kind WorkspaceKind) {
+		t.Helper()
+		if _, err := f.s.pool.Exec(ctx, `UPDATE workspaces SET kind=$2 WHERE id=$1`, f.ws.ID, kind); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setKind(WorkspacePersonal)
+	if _, err := f.s.StartAssignment(ctx, f.viewer, marked.ID, now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a start in a personal workspace = %v", err)
+	}
+	var attempts int
+	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM attempts WHERE assignment_id=$1`, marked.ID).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 0 {
+		t.Fatal("the refused start began an attempt")
+	}
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, unmarked.ID, true, now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a tick in a personal workspace = %v", err)
+	}
+	setKind(WorkspaceClass)
+	if _, err := f.s.StartAssignment(ctx, f.viewer, marked.ID, now); err != nil {
+		t.Fatalf("a start back in a class: %v", err)
+	}
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, unmarked.ID, true, now); err != nil {
+		t.Fatalf("a tick back in a class: %v", err)
+	}
+}
+
+// TestPublishingRefusesKeptCopiesAndDrainsTheRoom (security regression): once a
+// draft is published its assignee's device may keep no copy of the quiz and its
+// live room drains, so one already reading is refused on reconnecting, while an
+// unassigned member and staff keep it. After closing the assignee has it back.
+// Fails without the assigned rule in ReadableMaterialIDs or the eviction in
+// publishAssignmentTx; rooms.rs holds the room's own refusal.
+func TestPublishingRefusesKeptCopiesAndDrainsTheRoom(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-publish-room")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	form := f.form(t, now.Add(time.Hour))
+	form.AssignAll, form.Assignees = false, []string{f.viewer}
+	form.Draft, form.Questions = true, nil
+	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keeps := func(user string) bool {
+		t.Helper()
+		ids, err := f.s.ReadableMaterialIDs(ctx, user, []string{f.quiz.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.Contains(ids, f.quiz.ID)
+	}
+	drains := func() int {
+		t.Helper()
+		var n int
+		if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM collaboration_eviction_outbox
+			WHERE payload->>'materialId'=$1 AND payload->>'mode'='drain'`, f.quiz.ID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if !keeps(f.viewer) || drains() != 0 {
+		t.Fatalf("under a draft: viewer keeps %v, %d drains", keeps(f.viewer), drains())
+	}
+	if _, err := f.s.PublishAssignment(ctx, f.user, draft.ID, frozenFixture(t), now); err != nil {
+		t.Fatal(err)
+	}
+	if keeps(f.viewer) {
+		t.Fatal("the assignee's device keeps the published quiz")
+	}
+	if drains() != 1 {
+		t.Fatalf("publishing drained the room %d times, want once", drains())
+	}
+	for _, user := range []string{f.other, f.editor, f.user} {
+		if !keeps(user) {
+			t.Fatalf("%s lost the quiz", user)
+		}
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, draft.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if !keeps(f.viewer) {
+		t.Fatal("after closing the assignee's copy is refused")
+	}
+}
+
+// TestPastedImagesFollowTheReadRule (security regression): pasting an image's id
+// into one's own note copies it only for who may read it, as resolving it does:
+// neither a hidden quiz's image for a viewer, nor a frozen copy's for a member it
+// did not go to. Fails if adopting goes back to workspace access.
+func TestPastedImagesFollowTheReadRule(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-paste")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	asset := func(materialID string) string {
+		t.Helper()
+		id := uid("asset")
+		if _, err := f.s.pool.Exec(ctx, `INSERT INTO editor_assets
+			(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status, completed_at)
+			VALUES ($1,$2,$3,$4,$4,'figure.png','image',$5,'image/png',10,'ready',now())`,
+			id, f.ws.ID, materialID, f.user, "editor-assets/assignment-paste/"+uid("blob")); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	hiddenQuiz, err := f.s.CreateMaterialDraft(ctx, MaterialDraft{
+		ActorUserID: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Kind: MaterialQuiz, Title: "Hidden", Hidden: true,
+		Questions: json.RawMessage(assignmentQuestions),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hiddenAsset, shownAsset := asset(hiddenQuiz.ID), asset(f.quiz.ID)
+
+	questions := frozenFixture(t)
+	questions[0]["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": shownAsset}, "width": 10, "height": 10, "description": "Figure"}}
+	form := f.form(t, now.Add(time.Hour))
+	form.AssignAll, form.Assignees, form.Questions = false, []string{f.viewer}, questions
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frozen string
+	if err := f.s.pool.QueryRow(ctx, `SELECT id FROM editor_assets WHERE assignment_id=$1`, created.ID).Scan(&frozen); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// The other viewer's own workspace and note, where the id gets pasted.
+	own, err := f.s.CreateWorkspace(ctx, f.other, WorkspaceCreate{Name: "Mine", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.other, WorkspaceID: own.ID, WorkspaceName: own.Name,
+		Kind: "note", Title: "Mine", Content: noteWithImages(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adopted, _, err := f.s.AdoptEditorAssets(ctx, f.other, own.ID, note.ID, []string{hiddenAsset, shownAsset, frozen},
+		planlimits.Limits{ImageBytes: 2 << 20, SourceFileBytes: 10 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adopted[hiddenAsset] != "" || adopted[frozen] != "" {
+		t.Fatalf("the viewer pasted what it cannot read: %v", adopted)
+	}
+	if adopted[shownAsset] == "" {
+		t.Fatalf("the viewer cannot paste the visible quiz's image: %v", adopted)
+	}
+}
+
+// TestChangedMarkCountsOnce: a changed mark replaces the earlier one, so a zero
+// corrected to full marks leaves no wrong answer behind in the topic's label.
+func TestChangedMarkCountsOnce(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-changed-mark")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{"p1": []any{float64(1)}, "p2": "wrong", "p3": "because"}, now); err != nil {
+		t.Fatal(err)
+	}
+	mark := func(at time.Time, items ...float64) {
+		t.Helper()
+		if _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
+			QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: items}},
+		}, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mark(now.Add(time.Minute), 0, 0)
+	mark(now.Add(2*time.Minute), 2, 1)
+	topics, err := f.s.topicStandings(ctx, f.viewer, f.ws.ID, now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(topics) != 1 || topics[0].Right != 2 || topics[0].Wrong != 1 || topics[0].Label != review.LabelFamiliar {
+		t.Fatalf("the topic = %+v, want two right of three, familiar", topics)
+	}
+}
+
+// TestAssignmentChargesItsFrozenQuestions: the frozen question JSON is charged to
+// whoever published, not who drafted (Epo 2026-11-05), is refused past the limit
+// with no images in it, and leaves the meter with the assignment or its workspace;
+// a purge ends the charge and the class keeps the paper. The recount agrees at
+// every step.
+func TestAssignmentChargesItsFrozenQuestions(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-charge")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	used := func(user string) int64 {
+		t.Helper()
+		usage, err := f.s.unlockedStorageUsage(ctx, f.s.pool, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var recount, reserved int64
+		if err := f.s.pool.QueryRow(ctx, storageRecountSQL, user).Scan(&recount, &reserved); err != nil {
+			t.Fatal(err)
+		}
+		if usage.UsedBytes != recount {
+			t.Fatalf("the meter reads %d, the recount %d", usage.UsedBytes, recount)
+		}
+		return usage.UsedBytes
+	}
+	owner, editor := used(f.user), used(f.editor)
+
+	form := f.form(t, now.Add(time.Hour))
+	form.Draft, form.Questions = true, nil
+	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if used(f.user) != owner || used(f.editor) != editor {
+		t.Fatal("a draft was charged")
+	}
+	if _, err := f.s.PublishAssignment(ctx, f.editor, draft.ID, frozenFixture(t), now); err != nil {
+		t.Fatal(err)
+	}
+	var size int64
+	if err := f.s.pool.QueryRow(ctx, `SELECT octet_length(questions::text) FROM assignments WHERE id=$1`, draft.ID).Scan(&size); err != nil {
+		t.Fatal(err)
+	}
+	if got := used(f.editor); size == 0 || got != editor+size {
+		t.Fatalf("the publisher's meter = %d, want %d + %d", got, editor, size)
+	}
+	if used(f.user) != owner {
+		t.Fatal("whoever drafted it was charged")
+	}
+	if err := f.s.DeleteAssignment(ctx, f.user, draft.ID); err != nil {
+		t.Fatal(err)
+	}
+	if used(f.editor) != editor {
+		t.Fatal("deleting it left its charge")
+	}
+
+	if _, err := f.s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`,
+		f.editor, mustPlanLimits(t, f.s, PlanFree).StorageBytes-size+1); err != nil {
+		t.Fatal(err)
+	}
+	var quota *QuotaExceededError
+	if _, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, f.form(t, now.Add(time.Hour)), now); !errors.As(err, &quota) {
+		t.Fatalf("publishing past the limit = %v", err)
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`, f.editor, editor); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, f.form(t, now.Add(time.Hour)), now); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.DeleteWorkspace(ctx, f.user, f.ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if used(f.editor) != editor {
+		t.Fatal("deleting the workspace left the charge")
+	}
+
+	// A purge of the publisher: the paper stays, charged to nobody.
+	g := newAssignmentFixture(t, "assignment-charge-purge")
+	kept, err := g.s.CreateAssignment(ctx, g.editor, g.ws.ID, g.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.s.RequestAccountDeletion(ctx, g.editor, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.s.PurgeUser(ctx, g.editor); err != nil {
+		t.Fatal(err)
+	}
+	var payer *string
+	var frozen []byte
+	if err := g.s.pool.QueryRow(ctx, `SELECT frozen_by, questions FROM assignments WHERE id=$1`, kept.ID).Scan(&payer, &frozen); err != nil {
+		t.Fatal(err)
+	}
+	if payer != nil || len(frozen) == 0 {
+		t.Fatalf("after the purge: payer %v, %d bytes of questions", payer, len(frozen))
+	}
+}
+
+// TestLockedOwnerStartsNoAssignment (security regression): the owner's account
+// locked, a class is out of reach, so a start and a tick answer 404 and write
+// nothing, as every other read does (assignmentStaff). Fails without the check in
+// StartAssignment or SetAssignmentDone.
+func TestLockedOwnerStartsNoAssignment(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-locked-owner")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	marked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
+		AssignAll: true, Assignees: []string{}, Files: []AssignmentFileRef{}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=$1`, f.user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.StartAssignment(ctx, f.viewer, marked.ID, now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a start under a locked owner = %v", err)
+	}
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, unmarked.ID, true, now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a tick under a locked owner = %v", err)
+	}
+	var written int
+	if err := f.s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM attempts WHERE assignment_id=$1)
+		+ (SELECT count(*) FROM assignment_done WHERE assignment_id=$2)`, marked.ID, unmarked.ID).Scan(&written); err != nil {
+		t.Fatal(err)
+	}
+	if written != 0 {
+		t.Fatalf("the refused requests wrote %d rows", written)
+	}
+}
+
+// TestFrozenImagesPasteForNobody (security regression): a frozen copy's image
+// reads for who it went to and staff, and pastes for neither; the quiz's own image
+// pastes for staff and not for an assignee it is refused to. Fails without the
+// frozen check in AdoptEditorAssets.
+func TestFrozenImagesPasteForNobody(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-frozen-paste")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	source := uid("asset")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO editor_assets
+		(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status, completed_at)
+		VALUES ($1,$2,$3,$4,$4,'figure.png','image',$5,'image/png',10,'ready',now())`,
+		source, f.ws.ID, f.quiz.ID, f.user, "editor-assets/frozen-paste/"+uid("blob")); err != nil {
+		t.Fatal(err)
+	}
+	questions := frozenFixture(t)
+	questions[0]["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": source}, "width": 10, "height": 10, "description": "Figure"}}
+	form := f.form(t, now.Add(time.Hour))
+	form.Questions = questions
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozen, err := scanEditorAsset(f.s.pool.QueryRow(ctx, `SELECT `+editorAssetCols+` FROM editor_assets WHERE assignment_id=$1`, created.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	limits := planlimits.Limits{ImageBytes: 2 << 20, SourceFileBytes: 10 << 20}
+
+	// The assignee reads it and pastes neither it nor the quiz's own image.
+	if readable, err := f.s.EditorAssetReadable(ctx, f.viewer, frozen); err != nil || !readable {
+		t.Fatalf("the assignee reads the frozen image: %v, %v", readable, err)
+	}
+	own, err := f.s.CreateWorkspace(ctx, f.viewer, WorkspaceCreate{Name: "Mine", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.viewer, WorkspaceID: own.ID, WorkspaceName: own.Name,
+		Kind: "note", Title: "Mine", Content: noteWithImages(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adopted, _, err := f.s.AdoptEditorAssets(ctx, f.viewer, own.ID, note.ID, []string{frozen.ID, source}, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(adopted) != 0 {
+		t.Fatalf("the assignee pasted %v", adopted)
+	}
+
+	// Staff read it and paste only the quiz's.
+	staffNote, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+		Kind: "note", Title: "Staff", Content: noteWithImages(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adopted, _, err = f.s.AdoptEditorAssets(ctx, f.user, f.ws.ID, staffNote.ID, []string{frozen.ID, source}, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adopted[frozen.ID] != "" || adopted[source] == "" {
+		t.Fatalf("staff pasted %v", adopted)
+	}
+}
+
+// TestMovingAFileLeavesItsAssignments: an assignment's files are its workspace's,
+// so one moved elsewhere goes off the list.
+func TestMovingAFileLeavesItsAssignments(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-moved-file")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	file := uploadWorkspaceFile(t, f.s, f.user, f.ws.ID)
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
+		AssignAll: true, Assignees: []string{}, Files: []AssignmentFileRef{{FileID: file.ID}}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created.Files) != 1 {
+		t.Fatalf("files = %+v", created.Files)
+	}
+	target, err := f.s.CreateWorkspace(ctx, f.user, WorkspaceCreate{Name: "Elsewhere", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.MoveFiles(ctx, f.user, []string{file.ID}, MoveTarget{WorkspaceID: target.ID}); err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM assignment_files WHERE file_id=$1`, file.ID).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	read, err := f.s.GetAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 || len(read.Files) != 0 {
+		t.Fatalf("after the move: %d rows, files %+v", left, read.Files)
 	}
 }

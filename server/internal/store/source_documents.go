@@ -238,7 +238,7 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 	}
 	// Access first, so a caller who cannot reach the file learns nothing about
 	// the owner's account; checked again under the account locks below.
-	if err = sourceActorsAllowed(ctx, tx, *actorWS, payer, actors, edit); err != nil {
+	if err = sourceActorsAllowed(ctx, tx, fileID, *actorWS, payer, actors, edit); err != nil {
 		return "", "", err
 	}
 	accounts := append([]string{owner}, actors...)
@@ -251,7 +251,7 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 	if err = s.lockAccountSessionsTx(ctx, tx, accounts...); err != nil {
 		return "", "", err
 	}
-	return ws, owner, sourceActorsAllowed(ctx, tx, *actorWS, payer, actors, edit)
+	return ws, owner, sourceActorsAllowed(ctx, tx, fileID, *actorWS, payer, actors, edit)
 }
 
 // sourceOwnerTx reads a file's workspace ("" for none), its owner and its
@@ -289,7 +289,18 @@ func filePayer(ctx context.Context, q rowQueryer, fileID string) (string, error)
 // workspace (ws "") only the file's payer is allowed, never through a share
 // link (Epo 2026-10-27), and not while its account is deleted or pending
 // deletion; its own suspension is refused by the account check that follows.
-func sourceActorsAllowed(ctx context.Context, q rowQueryer, ws, payer string, actors []string, edit bool) error {
+// A workspace file hidden from members is read only by who can edit it (Epo
+// 2026-11-03).
+func sourceActorsAllowed(ctx context.Context, q rowQueryer, fileID, ws, payer string, actors []string, edit bool) error {
+	if ws != "" && !edit {
+		err := q.QueryRow(ctx, `SELECT hidden FROM files WHERE id=$1`, fileID).Scan(&edit)
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+	}
 	for _, actor := range actors {
 		if actor == "" {
 			return ErrForbidden
@@ -458,7 +469,7 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 	if err != nil {
 		return err
 	}
-	if err = sourceActorsAllowed(ctx, tx, ws, payer, []string{actor}, edit); err != nil {
+	if err = sourceActorsAllowed(ctx, tx, fileID, ws, payer, []string{actor}, edit); err != nil {
 		return err
 	}
 	if err = checkAccountSessions(ctx, tx, false, owner, actor); err != nil {

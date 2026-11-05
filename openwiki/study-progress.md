@@ -138,12 +138,12 @@ workspace; writes need read access plus an account that can sign in
 | `GET /api/workspaces/{id}/study` | `StudySummary`: `enabled`, `recentAttempts` (the last 5 on the workspace's untrashed, non-embedded quizzes), `reviewable` (size of the review pool), `quickReview` and `unfinished` (the latest whole-workspace session left before its end, for Continue review). Since the workspace Study page went (2026-11-03) the app reads only `enabled` (Workspace settings → Study); `quickReview`, `unfinished`, `recentAttempts` and `/study/attempts` have no page, and stay for now. |
 | `GET /api/workspaces/{id}/study/attempts` | `WorkspaceAttempts`: every untrashed, non-embedded quiz and set of the workspace with its `size` (questions or cards, from `itemsOf`), the user's attempt `count` and its latest three attempts, for the Study progress page. |
 | `PUT /api/workspaces/{id}/study/enabled` | Upserts `workspace_study`: `false` is Hide study progress, `true` shows it. |
-| `GET /api/workspaces/{id}/dashboard` | `WorkspaceDashboard` (`dashboard.go`), the workspace Dashboard for any reader: the owner's name, `members` (owner included) and `activity`, the five newest of the workspace's untrashed files (`uploaded`) and top-level materials (`added`), newest first, each with its actor's name and avatar. A material the chat agent made (an `agent_operations` row of kind `create_material` naming it) reads `agent` when the caller asked for it, else `added` under the asker's name. There is no activity log: joins, edits and deletions do not show, and notifications (personal: invites, role changes, removals) are not used. |
-| `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it. Attempts, the review log and the switch stay. |
+| `GET /api/workspaces/{id}/dashboard` | `WorkspaceDashboard` (`dashboard.go`), the workspace Dashboard for any reader: the owner's name, `members` (owner included) and `activity`, the five newest of the workspace's untrashed files (`uploaded`) and top-level materials (`added`), newest first, each with its actor's name and avatar for a caller with a membership (a link or public visitor gets the rows without them). A material the chat agent made (an `agent_operations` row of kind `create_material` naming it) reads `agent` when the caller asked for it, else `added` under the asker's name. There is no activity log: joins, edits and deletions do not show, and notifications (personal: invites, role changes, removals) are not used. |
+| `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it and of their own practice quizzes linked to it. Attempts, the review log and the switch stay. |
 | `GET /api/workspaces/{id}/review?group=&topicId=&mode=&items=&count=&order=` | A new session: a suggestion's items (mode set) or the group's (no mode: a topic, Other files or the whole workspace, new items mixed in), each with its content (card faces, or the answer-free question, `questions.LearnerView`), material title and `reason` (`new` from the new pool, `missed` with an Again among its latest answers, else `fading`), plus the group, mode and evidence to send back with each answer. `items=quiz` serves questions only whatever the review items preference, and 10 of them unless the learner picked a session size (Practice's topic sessions). A topic not in the workspace is 404. |
 | `GET /api/workspaces/{id}/practice` | `Practice` (`practice.go`), Study → Practice for any reader, by the workspace's kind: `suggestions`, this workspace's suggested reviews over its questions only (`groupSuggestions` at full interest, since the learner is here; at most three, none while study progress is hidden); `quizzes`, every untrashed top-level quiz in reading order with its question count (`itemCounts`, refused content left out) and the caller's `best` attempt (best share of marks); `reviews`, the caller's topic and Other files sessions that answered a question, one row per topic: the latest one's served count and the best one's marks. A class's owner and editor members get neither of those but `members` (viewer members) and per quiz `triedBy` (viewer members with an attempt) and `average` (the mean of their best scores, 0 to 1, only once five tried: aggregates need five, Epo 2026-11-03 §11.8); never anyone's answers. |
-| `GET /api/review/sessions/{id}` | Continue: an unfinished session's items still to answer, read now (items that left their material drop), with answered of total. Another user's session is 404. |
-| `GET /api/review/sessions/{id}/result` | A session's result, finished or not: its Past reviews row (`ID` read), its answered items in answer order with their records (the resume read's `done`), and `better`, how many were rated above their latest `review_log` rating before the session started. Another user's session is 404. |
+| `GET /api/review/sessions/{id}` | Continue: an unfinished session's items still to answer, read now (items that left their material drop, as do those of a material the caller may not read now, `materialEffectiveAccess`: hidden or assigned since it was served, or never theirs, since the browser sends the served list), with answered of total. Another user's session is 404. |
+| `GET /api/review/sessions/{id}/result` | A session's result, finished or not: its Past reviews row (`ID` read), its answered items in answer order with their records (the resume read's `done`, under the same read rule), and `better`, how many were rated above their latest `review_log` rating before the session started. Another user's session is 404. |
 | `POST /api/review/sessions/{id}/finish` | Ends a session before its last item. |
 
 The new-session and Continue reads also carry `removedAssetIds`: the card and
@@ -315,7 +315,8 @@ session in their shares. Suggestions, Quick review and every count stay on
 practised items: only a new manual session reads `newPool`, which parses every
 quiz and set in scope (through the cache, documents loaded only on a miss).
 Starting a session has its own rate limit, 60 an hour with a burst of 10
-(`Review` in `ratelimit`); continuing one reads only its own items. The focus
+(`Review` in `ratelimit`), which its start dialog's question count shares since it
+reads the same pools; continuing one reads only its own items. The focus
 preference ranks the practised side as it ranks suggestions.
 
 Preferences live in `users.study_preferences` with the chat's: `reviewSize`
@@ -338,7 +339,9 @@ The page is `src/features/study/practice/PracticePage.tsx`, lazy-loaded into
 the centre while nothing is open and the URL has `study=practice`
 (`parseWorkspaceOpenSearch`). From lg it fills the centre panel without a
 file header (28px 36px padding); one column keeps the header for the Files
-dropdown and ⋮. The rail's Study opens it and its panel (`StudyPanel.tsx`)
+dropdown and ⋮, which with the dropdown's foot lead to Practice, Summary and
+Assignments, each only for whoever has that page. The rail's Study opens it and
+its panel (`StudyPanel.tsx`)
 lists Study's pages: in a class, Members, Assignments and Practice for owner
 and editor members, Summary, Assignments and Practice for others; in a
 personal workspace, Summary and Practice for everyone. Practice, Summary and
@@ -419,7 +422,10 @@ success follows Beta(1 + right, 1 + wrong) over weighted marks. A part weighs
 `repeat x parts x age`: `repeat` 1 for a question's first check, 0.5 a day or more
 after its previous one, 0 for a same-day repeat with `key_seen`; `parts`
 min(1, 3 / parts in the question); `age` 0.5^(days / 30). Only a question's latest
-content counts. A question's topic is its quiz's, questions having none of their
+content counts. A check is one attempt's parts of a question, or with no attempt
+(a review) those sharing a time, and the latest row per attempt and part stands,
+so an assignment's open part marked later joins its check and a changed mark
+replaces the earlier one. A question's topic is its quiz's, questions having none of their
 own yet, so a quiz spanning topics counts wholly to one and a moved quiz takes its
 history along. Flashcards stay out (2026-11-03).
 
@@ -765,26 +771,34 @@ draft or published: a draft is invisible to members, and publishing posts it.
 | --- | --- |
 | `assignments` | Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `approve_ai_marks`, `show_answers`, `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its quiz became practice, once) |
 | `assignment_assignees` | Picked names and a staff member's own "You" |
-| `assignment_files` | An unmarked assignment's files and materials, in order |
+| `assignment_files` | An unmarked assignment's files and materials, in order; a file moved to another workspace leaves (`moveFileTx`) |
 | `assignment_done` | A member's tick |
 | `editor_assets.assignment_id` | A frozen copy's image rows |
+| `assignments.frozen_by`, `frozen_bytes` | Who pays for the frozen question JSON and its size (migration `0149_assignment_storage.sql`) |
 | `attempts` (kind `assignment`) | A try: `assignment_id`, `deadline_at`, `submitted_at`, `auto_submitted`, `waiting_marks`, `waiting_answers`, with no `material_id`, so no practice read (best score, tried by, averages, review pool) ever sees it, and `GET /api/attempts` and its list leave it out |
 | `answer_events` | Source `assignment`, grader `owner`: closed parts at submit, open parts when marked; a changed mark is a new row, and the latest per attempt and part stands |
 | `workspace_members.sharing_notice_seen_at` | When this member was told what they share (migration `0148_sharing_notice.sql`) |
 
 **Who it went to.** `assign_all` is every viewer member, later joiners included,
 and never an editor. Named lists fix who; a removed member drops out of the
-counts and keeps their rows. An owner or editor is left out unless they tick
-"You" (A1b), which then gives them the member's page too (`own=true`).
+counts and off the form's list (so saving it isn't refused) and keeps their rows.
+An owner or editor is left out unless they tick "You" (A1b), which then gives them
+the member's page too (`own=true`). A workspace that is not a class gives them to
+nobody (`assigneesSQL`), and a start or a tick answers 404 and writes nothing there
+or under an owner whose account is locked (`assignmentStaff`).
 
 **The frozen copy.** Publishing (creating, unless it is a draft, whose quiz stays
 live until Publish) copies the quiz's current questions, live edits projected
 first, into `assignments.questions`. Images become new `editor_assets` rows of
 the workspace with no material and an `assignment_id`, so editing or deleting the
 quiz leaves them, deleting the assignment deletes them (the foreign key), and a
-workspace clone leaves them out. They are charged to whoever published, as a clone
-is, and the Embeds tab doesn't list them; the questions JSON itself isn't charged,
-as an attempt's snapshot isn't. Members are only ever served this copy:
+workspace clone leaves them out. They and the questions JSON are charged to whoever
+published (Epo 2026-11-05, `frozen_by`, `frozen_bytes`,
+[backend-storage-quota.md](backend-storage-quota.md#what-counts)), and the Embeds tab
+doesn't list them. They resolve for staff, whoever it went to and whoever holds an
+attempt at it (`frozenAssetReadable`), never another member, and they paste for
+nobody (`AdoptEditorAssets`).
+Members are only ever served this copy:
 answer-free while running (`questions.LearnerViews`), with keys only after
 submitting if Show answers is on.
 
@@ -798,7 +812,7 @@ due date):
 | --- | --- | --- |
 | Owner, teaching assistant | The assignment icon (`assigned`), and it opens their usual view | Theirs as always |
 | A link or public editor | The assignment icon, no Clone | Theirs to read and edit; they can't clone it |
-| A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `AccountDocumentAccess`), and it is off Practice, reviews and new items |
+| A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `editorAssetReadable`, `live_access`, `AccountDocumentAccess`), a device drops its kept copy (`ReadableMaterialIDs`), and it is off Practice, reviews and new items. Publishing drains the quiz's live rooms, so one already reading is refused on reconnecting |
 | A viewer it did not go to | A normal quiz if it is visible; no row if hidden | As it was, the owner's choice |
 
 `quizAssignedToSQL` and `quizAssignmentOpenSQL` in `store/assignments.go` are the
@@ -817,13 +831,16 @@ the assignment stays readable by whoever took it.
 the one running (one per member: `attempts_assignment_running_idx`). A time limit
 asks first (Before you start, A0) because Start starts the clock: `deadline_at`
 is set on the server, and the response's `now` is what the page's timer counts
-against. No limit opens straight away. Answers save whole (`PUT
+against. No limit opens straight away; a start that fails toasts and leaves the
+assignment's page with its way back and Start. Answers save whole (`PUT
 /api/assignment-attempts/{id}/answers`, 2 s after typing rests, on Next and
 Previous, when the tab hides and on leaving the page) and the header says Saved,
-Saving or Not saved. Every opening reads the attempt afresh, never from a cache, so
-its answers and clock are the server's;
-nothing retries a failed save but the next change and Submit, which sends them
-all. A shuffled paper's order comes from a seed of the attempt's id, so a reload
+Saving or Not saved. A change made during a save goes out as that save ends. Every
+opening reads the attempt afresh, never from a cache, so its answers and clock are
+the server's: that read failing asks to retry, while a later refresh failing leaves
+the running attempt on the page. Nothing retries a failed save but the next change
+and Submit, which sends them all; a submit that fails at zero leaves Submit to
+press. A shuffled paper's order comes from a seed of the attempt's id, so a reload
 keeps it. Bookmarks stay in this browser.
 
 **Submitting.** `POST …/submit` grades closed parts with the same deterministic
@@ -832,7 +849,8 @@ Go scoring as a quiz (`questions.Graded`). An answered open part is left
 page submits; a closed tab is the server's: past `deadline_at` by a 15 s grace, or
 once it closes, by hand or at a No late submissions due date, the next request or
 `SweepAssignments` (each minute, in `cmd/api`) submits what was saved,
-`auto_submitted`.
+`auto_submitted`. The sweep logs a row that fails and passes over it, so one bad
+row holds up nobody else.
 
 **The due date's policy** (Epo 2026-11-04, supersedes §11.5's close by the owner
 alone). Set per assignment in New assignment's Advanced; marked work with a due

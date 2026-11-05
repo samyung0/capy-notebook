@@ -8,7 +8,7 @@ import { Icon } from '@/components/ui/Icon';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
-import { extractionNotice } from './makeQuiz';
+import { extractionFailure, extractionNotice } from './makeQuiz';
 
 /** A link back: to the Dashboard, or to the pages. */
 function BackLink({
@@ -65,7 +65,8 @@ export function ExtractionProgress({
     onDone(done);
   }, [done, onDone, qc, report, workspaceId]);
 
-  if (error)
+  // A failed poll leaves the run on screen: the next one reads it again.
+  if (error && !run)
     return (
       <ErrorState
         action={
@@ -86,7 +87,7 @@ export function ExtractionProgress({
             </BackLink>
           )
         }
-        description={run.error ?? m.make_quiz_failed_fallback()}
+        description={extractionFailure(run.errorCode)}
         kind={run.errorCode}
         title={m.make_quiz_failed_title()}
         variant="page"

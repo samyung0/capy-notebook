@@ -216,6 +216,7 @@ describe('device copies', () => {
     materialId: string,
     document: 'content' | 'keys' = 'content'
   ) => ({
+    canEditContent: true,
     document,
     kind: 'note' as const,
     materialId,

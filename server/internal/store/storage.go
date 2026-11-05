@@ -153,6 +153,20 @@ func (s *Store) storageOwnerTx(ctx context.Context, tx pgx.Tx, workspaceID strin
 	return ownerID, err
 }
 
+// lockWorkspaceKeyShareTx holds a workspace against its writers and teardown,
+// which take its row FOR UPDATE and then accounts and rows, for a write that is
+// not a workspace write but whose foreign keys key-share that row anyway. It goes
+// first: taken later, by a foreign key, it waits on a writer that may be waiting
+// for the account or row already held. KEY SHARE conflicts with FOR UPDATE alone,
+// so these writes never wait on each other.
+func lockWorkspaceKeyShareTx(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+	if workspaceID == "" {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR KEY SHARE`, workspaceID)
+	return err
+}
+
 // lockWorkspaceMutationTx is the common final-admission boundary for an
 // authenticated workspace mutation. It makes ownership immutable, then locks
 // the actor and storage owner in stable ID order so suspension/deletion cannot
@@ -643,7 +657,9 @@ const storageRecountSQL = `SELECT
 	+ COALESCE((SELECT sum(size_bytes) FROM editor_assets
 		WHERE user_id=$1 AND status='ready'), 0)
 	+ COALESCE((SELECT sum(size_bytes) FROM materials
-		WHERE owner_user_id=$1), 0),
+		WHERE owner_user_id=$1), 0)
+	+ COALESCE((SELECT sum(frozen_bytes) FROM assignments
+		WHERE frozen_by=$1), 0),
 	COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
 		WHERE user_id=$1 AND status='pending' AND expires_at > now()), 0)`
 
@@ -670,6 +686,7 @@ func (s *Store) reconcileStorageUserTx(
 		`SELECT id FROM files WHERE user_id=$1 FOR UPDATE`,
 		`SELECT id FROM editor_assets WHERE user_id=$1 FOR UPDATE`,
 		`SELECT id FROM materials WHERE owner_user_id=$1 FOR UPDATE`,
+		`SELECT id FROM assignments WHERE frozen_by=$1 FOR UPDATE`,
 		`SELECT id FROM upload_sessions
 			WHERE user_id=$1 AND status='pending' AND expires_at > now() FOR UPDATE`,
 	} {

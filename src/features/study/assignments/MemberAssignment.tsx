@@ -29,17 +29,17 @@ function StartMarked({ assignment }: { assignment: Assignment }) {
       search: { study: 'assignments' as const },
       to: '.',
     });
-  const { dialog, start } = useAssignmentStart(
+  const { dialog, start, starting } = useAssignmentStart(
     assignment.workspaceId,
     backToList
   );
   const { mine } = assignment;
   const closed = !!assignment.closedAt;
+  const attempt = mine?.runningAttemptId ?? mine?.latestAttemptId;
   const once = useRef(false);
   useEffect(() => {
     if (once.current) return;
     once.current = true;
-    const attempt = mine?.runningAttemptId ?? mine?.latestAttemptId;
     if (attempt) {
       void navigate({
         replace: true,
@@ -53,17 +53,23 @@ function StartMarked({ assignment }: { assignment: Assignment }) {
       return;
     }
     if (!closed) start(assignment);
-  }, [assignment, closed, mine, navigate, start]);
+  }, [assignment, attempt, closed, navigate, start]);
   return (
     <PracticeFrame>
+      <BackToAssignments />
+      <h1 className="t-page-title mt-3">{assignment.title}</h1>
       {closed && !mine?.latestAttemptId && (
-        <>
-          <BackToAssignments />
-          <h1 className="t-page-title mt-3">{assignment.title}</h1>
-          <p className="mt-2 text-fg-secondary">
-            {m.assignment_closed_missed()}
-          </p>
-        </>
+        <p className="mt-2 text-fg-secondary">{m.assignment_closed_missed()}</p>
+      )}
+      {/* It starts by itself above; a start that failed is pressed again here. */}
+      {!(closed || attempt) && (
+        <Button
+          className="mt-4"
+          disabled={starting}
+          onClick={() => start(assignment)}
+        >
+          {m.assignment_start()}
+        </Button>
       )}
       {dialog}
     </PracticeFrame>

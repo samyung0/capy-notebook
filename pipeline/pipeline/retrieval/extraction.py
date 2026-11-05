@@ -11,8 +11,8 @@ solve; bench/extraction/reports/2026-11-05-copy-first-structured.md):
    The answer files go with it (Epo 2026-11-05, "dont use code for pairing, send the
    files directly"), as indexed text or page images, so every later call reads them
    from the cache.
-2. Copy batches of 16 of the map's questions, in parallel, each continuing the
-   map's conversation at low reasoning. ``record_question`` carries no answers.
+2. Copy batches of 16 of the map's questions, at most 4 at once, each continuing
+   the map's conversation at low reasoning. ``record_question`` carries no answers.
 3. Code checks the copies against the map and sends a repair for a question left
    out: a map row not copied, a gap in the numbers, or the next number printed on
    a page no row covers. A figure the map lists and a batch left out is added
@@ -70,9 +70,10 @@ log = logging.getLogger("capy.retrieval.extraction")
 # (Epo 2026-11-05).
 COPY_BATCH = 16
 SOLVE_BATCH = 8
-# Solve batches in flight at once (Epo 2026-11-05, "sure"): each settles only when it
-# ends, so more of them overshoot a run's credits further.
-SOLVES_IN_FLIGHT = 4
+# Batches of a run, copying or solving, that run at once. A settlement saying
+# credits ran out stops a thread only before its next call, and a long map is many
+# batches (500 rows, 32): the ones still waiting here stop without spending anything.
+BATCHES_AT_ONCE = 4
 # Model calls a thread may make: the first records, the rest send again what the
 # validator refused or what was not valid JSON, or what a reply cut off at the
 # output cap left out.
@@ -534,15 +535,16 @@ def read_figures(
     """A call's figures, by box number (cropped from them) or, with no box, by
     page image (for the box call), or the tool-result problem
     naming the first that cannot be read."""
+    items = raw if isinstance(raw, list) else []
     read: list[Figure] = []
     # Only pages with an image can give a figure, and only they are counted.
     pictured = [page for page in pages if page.image]
     if not pictured:
         return [], None
-    if isinstance(raw, list) and len(raw) > QUESTION_FIGURES_MAX:
+    if len(items) > QUESTION_FIGURES_MAX:
         return [], f"too many figures, a question holds at most {QUESTION_FIGURES_MAX}"
     parts = {label_key(label) for label in part_labels}
-    for index, item in enumerate(raw if isinstance(raw, list) else []):
+    for index, item in enumerate(items):
         name = f"figures[{index}]"
         item = item if isinstance(item, dict) else {}
         part = str(item.get("part") or "").strip()
@@ -586,14 +588,20 @@ def read_figures(
 async def placed(held: Recorded, crops: dict[str, str]) -> dict[str, Any]:
     """The question with each figure cropped from its page and placed after
     the text of the part it names (the stem for ""); the crops go into
-    ``crops`` by figure id, base64, as the done event carries them."""
+    ``crops`` by figure id, base64, as the done event carries them. A figure
+    whose crop fails leaves ``held.figures``: the run is already paid for."""
     if not held.figures:
         return held.question
     question = copy.deepcopy(held.question)
-    for n, figure in enumerate(held.figures, 1):
+    for n, figure in enumerate(list(held.figures), 1):
         if figure.box is None:
             raise AssertionError("a figure is located before it is placed")
-        jpeg, (width, height) = await figure.page.crop(figure.box)
+        try:
+            jpeg, (width, height) = await figure.page.crop(figure.box)
+        except Exception as exc:  # noqa: BLE001 - the run is already paid for
+            log.warning("figure crop for question %s failed: %s", held.label, exc)
+            held.figures.remove(figure)
+            continue
         figure_id = f"q{label_key(held.label)}-{n}"
         crops[figure_id] = base64.b64encode(jpeg).decode()
         block: dict[str, Any] = {
@@ -827,6 +835,8 @@ class Run:
     # What each question's copy call sent, its keys taken out, and its pages.
     copies: dict[str, dict[str, Any]] = field(default_factory=dict)
     spans: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # Questions whose map boxes could not fill in for what their batch left out.
+    figures_refused: list[str] = field(default_factory=list)
     # Questions with their answers recorded.
     answered: set[str] = field(default_factory=set)
     # Printed order: a label's place is the map's, or its first record attempt.
@@ -998,11 +1008,14 @@ class Run:
         if not numbers:
             return out
         known = {label_key(label) for label in out}
-        out += [
-            str(n)
-            for n in sorted(set(range(min(numbers), max(numbers) + 1)) - numbers)
-            if str(n) not in known
-        ]
+        # A printed number far from the rest (a year, a code) is not a run of
+        # questions, and the range would be as big as the number.
+        if max(numbers) - min(numbers) <= limits.QUIZ_PARTS_MAX:
+            out += [
+                str(n)
+                for n in sorted(set(range(min(numbers), max(numbers) + 1)) - numbers)
+                if str(n) not in known
+            ]
         last_page = max(
             [*(row.last for row in rows), *(span[1] for span in self.spans.values())],
             default=pages[0].number,
@@ -1037,6 +1050,8 @@ class Run:
             if problem is None:
                 held.figures = figures
                 self.copies[key]["figures"] = items
+            else:
+                self.figures_refused.append(held.label)
 
     def in_printed_order(self) -> None:
         """By number once repairs may have come late, unless numbers repeat."""
@@ -1214,7 +1229,20 @@ async def _rounds(
             return
         for call in calls:
             name, args = _call_args(call)
-            result = args if isinstance(args, str) else await handle(name, args)
+            if isinstance(args, str):
+                result = args
+            else:
+                try:
+                    result = await handle(name, args)
+                except TypeError as exc:
+                    # Valid JSON of the wrong shape ("parts": 5) costs this call,
+                    # not the paid run.
+                    log.warning("extraction arguments of the wrong shape: %s", exc)
+                    label = str(args.get("label") or "").strip()
+                    result = (
+                        f"Question {label}: invalid arguments. Fix it and record it "
+                        "again."
+                    )
             messages.append(
                 {"role": "tool", "tool_call_id": call.get("id"), "content": result}
             )
@@ -1292,13 +1320,13 @@ async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> list[st
                     model=model,
                 )
             )
-        except (elitellm.ProviderError, TimeoutError) as exc:
+            # The box grown to the ink on the page image the call saw (Epo 2026-11-04).
+            jpeg = layout.jpeg_of(await page.image())
+            grown = await slots.render_thread(layout.grown_to_ink, jpeg, boxes)
+        except Exception as exc:  # noqa: BLE001 - the run is already paid for
             log.warning("figure boxes for page %d failed: %s", page.number, exc)
             failed.update((id(q), i) for q, i in items)
             return
-        # The box grown to the ink on the page image the call saw (Epo 2026-11-04).
-        jpeg = layout.jpeg_of(await page.image())
-        grown = await slots.render_thread(layout.grown_to_ink, jpeg, boxes)
         for (question, index), box in zip(items, grown):
             question.figures[index] = dataclasses.replace(
                 question.figures[index], box=box
@@ -1383,18 +1411,23 @@ async def run(
 
         return handle
 
+    batch_turns = asyncio.Semaphore(BATCHES_AT_ONCE)
+
     async def copy_batch(index: int, asks: list[list[str]]) -> None:
-        # Its own task, so the level stays with this thread.
-        registry.bind_request_llm(COPY_THINKING)
-        for labels in asks:
-            threads[index].append({"role": "user", "content": prompts.copy_ask(labels)})
-            await _rounds(
-                current,
-                threads[index],
-                model=model,
-                purpose="extraction_copy",
-                handle=copying(index),
-            )
+        async with batch_turns:
+            # Its own task, so the level stays with this thread.
+            registry.bind_request_llm(COPY_THINKING)
+            for labels in asks:
+                threads[index].append(
+                    {"role": "user", "content": prompts.copy_ask(labels)}
+                )
+                await _rounds(
+                    current,
+                    threads[index],
+                    model=model,
+                    purpose="extraction_copy",
+                    handle=copying(index),
+                )
 
     def solving(index: int) -> Handle:
         async def handle(name: str, args: dict[str, Any]) -> str:
@@ -1412,10 +1445,8 @@ async def run(
 
         return handle
 
-    solve_gate = asyncio.Semaphore(SOLVES_IN_FLIGHT)
-
     async def solve_batch(index: int, labels: list[str]) -> None:
-        async with solve_gate:
+        async with batch_turns:
             await _rounds(
                 current,
                 [
@@ -1515,10 +1546,18 @@ async def run(
     answers_missing = [
         name for question in finals for name in _parts_with_no_answer(question)
     ]
-    figures_left_out = await locate_figures(finals, model=model)
-    figures = [question.label for question in finals if question.figures]
+    figures_left_out = [
+        *current.figures_refused,
+        *await locate_figures(finals, model=model),
+    ]
     crops: dict[str, str] = {}
-    saved = [await placed(question, crops) for question in finals]
+    saved = []
+    for question in finals:
+        had = len(question.figures)
+        saved.append(await placed(question, crops))
+        if len(question.figures) < had and question.label not in figures_left_out:
+            figures_left_out.append(question.label)
+    figures = [question.label for question in finals if question.figures]
     for question in saved:
         _tidy_text_in(question)
     recorded = {label_key(label) for label in current.labels()}
@@ -1540,8 +1579,9 @@ async def run(
             "answersMissing": answers_missing,
             # Questions saved with figures cropped from the page, for the
             # starter to check, and questions saved without theirs: they had
-            # no box and the box call for their page failed twice (Go adds
-            # those whose figures did not fit in the starter's storage).
+            # no box and the box call for their page failed twice, or their crop
+            # failed (Go adds those whose figures did not fit in the starter's
+            # storage).
             "figures": figures,
             "figuresLeftOut": figures_left_out,
             "stopped": current.stopped(),

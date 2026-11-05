@@ -190,13 +190,20 @@ def _grown(mask: Image.Image, box: list[float]) -> list[float]:
                 blank += 1
         return edge
 
+    # Both read the edges as they stand when called.
+    def column(p: int) -> tuple[int, int, int, int]:
+        return (p, y0, p + 1, y1 + 1)
+
+    def row(p: int) -> tuple[int, int, int, int]:
+        return (x0, p, x1 + 1, p + 1)
+
     moved = True
     while moved:
         before = (x0, y0, x1, y1)
-        x0 = reach(x0, left, -1, gap_x, lambda p: (p, y0, p + 1, y1 + 1))
-        x1 = reach(x1, right, 1, gap_x, lambda p: (p, y0, p + 1, y1 + 1))
-        y0 = reach(y0, top, -1, gap_y, lambda p: (x0, p, x1 + 1, p + 1))
-        y1 = reach(y1, bottom, 1, gap_y, lambda p: (x0, p, x1 + 1, p + 1))
+        x0 = reach(x0, left, -1, gap_x, column)
+        x1 = reach(x1, right, 1, gap_x, column)
+        y0 = reach(y0, top, -1, gap_y, row)
+        y1 = reach(y1, bottom, 1, gap_y, row)
         moved = (x0, y0, x1, y1) != before
     return [
         max(0.0, x0 / sx - INK_MARGIN),

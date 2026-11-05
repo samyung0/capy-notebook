@@ -1,0 +1,110 @@
+{
+  "name": "group-id-space-dot",
+  "valid": true,
+  "policy": { "bank": false },
+  "question": {
+    "id": "q1",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Blood contains several types of cell."
+      }
+    ],
+    "groups": [
+      {
+        "id": "sheet 1.a",
+        "blocks": []
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-a",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "State the function of red blood cells."
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["oxygen"]
+        },
+        "marks": 1,
+        "solution": []
+      },
+      {
+        "id": "part-b1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Fill in the two empty boxes."
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["fibrin"]
+        },
+        "marks": 2,
+        "solution": [],
+        "group": "sheet 1.a"
+      },
+      {
+        "id": "part-b2",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "State two roles of clotting."
+          }
+        ],
+        "answer": {
+          "type": "open",
+          "accepted": [],
+          "hints": []
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "A correct reason",
+            "marks": 2
+          }
+        ],
+        "solution": [
+          {
+            "type": "text",
+            "text": "Worked solution."
+          }
+        ],
+        "group": "sheet 1.a"
+      },
+      {
+        "id": "part-c",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Explain why the wound stops bleeding."
+          }
+        ],
+        "answer": {
+          "type": "open",
+          "accepted": [],
+          "hints": []
+        },
+        "marks": 3,
+        "markscheme": [
+          {
+            "text": "A correct reason",
+            "marks": 3
+          }
+        ],
+        "solution": [
+          {
+            "type": "text",
+            "text": "Worked solution."
+          }
+        ]
+      }
+    ]
+  }
+}

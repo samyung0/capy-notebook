@@ -30,14 +30,18 @@ describe('announceExtractionEnd', () => {
     expect(open).toHaveBeenCalledWith('ws_1', 'qz_1');
   });
 
-  it('says why a run failed', () => {
+  it('says why a run failed, by its code', () => {
     announceExtractionEnd(
-      run({ error: 'The pages could not be read.', status: 'failed' }),
+      run({
+        error: 'No questions could be read from the selected pages.',
+        errorCode: 'extraction_empty',
+        status: 'failed',
+      }),
       undefined,
       vi.fn()
     );
     expect(toast.mock.calls[0][0]).toMatchObject({
-      description: 'The pages could not be read.',
+      description: m.make_quiz_failed_empty(),
       variant: 'error',
     });
   });

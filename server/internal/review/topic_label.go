@@ -35,9 +35,11 @@ const (
 )
 
 // PartAnswer is one graded part, as answer_events holds it. The parts of one
-// check share QuestionID and At.
+// check share QuestionID and AttemptID (an assignment's open part is marked
+// later) or, with no attempt, At.
 type PartAnswer struct {
 	QuestionID string
+	AttemptID  string
 	Hash       string
 	Awarded    float64
 	Marks      float64
@@ -140,6 +142,7 @@ func groupChecks(parts []PartAnswer) []topicCheck {
 	var checks []topicCheck
 	type key struct {
 		question string
+		attempt  string
 		at       int64
 	}
 	seen := map[key]int{}
@@ -147,7 +150,10 @@ func groupChecks(parts []PartAnswer) []topicCheck {
 		if latestHash[p.QuestionID] != p.Hash || p.Marks <= 0 {
 			continue
 		}
-		k := key{p.QuestionID, p.At.UnixMicro()}
+		k := key{question: p.QuestionID, attempt: p.AttemptID}
+		if p.AttemptID == "" {
+			k.at = p.At.UnixMicro()
+		}
 		i, ok := seen[k]
 		if !ok {
 			i = len(checks)

@@ -25,7 +25,9 @@ import { type DrawnPage, drawnPage } from './drawnPages';
 import {
   drawnPaperFormat,
   estimatedCredits,
+  extractionRefusal,
   extractionRequest,
+  isReadingFile,
   type PaperPage,
   pageKey,
   quizTitleFrom,
@@ -477,9 +479,9 @@ export function PagePicker({
     }))
   );
   const full = selected.size >= EXTRACTION_PAGES_MAX;
-  // An answer file may still be reading after the dialog (X0b); the run only
-  // takes files with indexed text.
-  const answersReading = answerFiles.some((file) => !file.indexed);
+  // An answer file may still be reading after the dialog (X0b). One that then
+  // fails doesn't hold Extract: the server's refusal shows in the footer.
+  const answersReading = answerFiles.some(isReadingFile);
   const first = paperFiles[0];
 
   if (files && (paperFiles.length < paper.length || !first))
@@ -575,7 +577,12 @@ export function PagePicker({
       <footer className="border-divider border-t px-4 py-3 sm:px-10 sm:py-4">
         <FormAlert
           errorId={unexpectedErrorId(error)}
-          message={error ? errorCopy(error, m.source_try_again()) : null}
+          message={
+            error
+              ? (extractionRefusal(error) ??
+                errorCopy(error, m.source_try_again()))
+              : null
+          }
         />
         <div className="mt-0 flex flex-wrap items-center gap-x-3 gap-y-2">
           <p className="flex min-w-0 flex-wrap items-baseline gap-x-2.5">

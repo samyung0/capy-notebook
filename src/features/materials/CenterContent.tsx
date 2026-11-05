@@ -575,7 +575,7 @@ function MaterialContentBody({
   const {
     data: loaded,
     error,
-    isLoading,
+    isPending,
   } = useMaterial(materialId, {
     errorBoundary: false,
   });
@@ -590,9 +590,11 @@ function MaterialContentBody({
     []
   );
   const overBar = useContext(FloatingBarContext);
+  // The static renderer ahead of the paint, for a note or what may turn out to
+  // be one: no other kind draws it.
   useEffect(() => {
-    void loadPreview();
-  }, []);
+    if (!kind || kind === 'note') void loadPreview();
+  }, [kind]);
   const { data: me } = useMe({ errorBoundary: false });
   // A heavy note opened read-only reads nothing of its own beyond its read.
   const seed = useRoomSeed(materialId, staticNote ? null : me?.id);
@@ -605,7 +607,9 @@ function MaterialContentBody({
   useEffect(() => {
     if (lost) void dropDeviceCopies(materialId);
   }, [lost, materialId]);
-  const material = loaded ?? (refused ? undefined : (copied ?? undefined));
+  // A refusal ends what shows; a read that could not answer leaves it, an open
+  // editor included.
+  const material = refused ? undefined : (loaded ?? copied ?? undefined);
   useKeepMaterialCopy(
     loaded?.kind === 'note' ? undefined : loaded,
     me?.id,
@@ -637,12 +641,12 @@ function MaterialContentBody({
         </div>
       </div>
     );
-  if (isLoading && !material) {
+  if (isPending && !material) {
     // Nothing shows for the few milliseconds the store takes.
     if (me && (seed === undefined || copied === undefined)) return null;
     return <MaterialLoading />;
   }
-  if (error || !material) {
+  if (!material) {
     return isMaterialContentUnreadable(error) ? (
       <FileError
         message={m.material_decode_body()}

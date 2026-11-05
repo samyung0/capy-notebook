@@ -127,3 +127,15 @@ func TestTopicNeedsPracticeDoesNotFlicker(t *testing.T) {
 		t.Fatalf("got %s for the same counts arriving right first", got)
 	}
 }
+
+// An attempt's closed part and its open part marked a day later are one check of
+// the question, in the mark they add up to.
+func TestTopicLabelGroupsACheckByAttempt(t *testing.T) {
+	got := TopicLabel([]PartAnswer{
+		{QuestionID: "q", AttemptID: "a", Hash: "h", Awarded: 1, Marks: 1, At: topicStart},
+		{QuestionID: "q", AttemptID: "a", Hash: "h", Awarded: 0, Marks: 1, At: topicStart.Add(24 * time.Hour)},
+	}, topicStart.Add(48*time.Hour))
+	if got.Asked != 1 || got.Partial != 1 {
+		t.Fatalf("standing = %+v, want one partly right check", got)
+	}
+}

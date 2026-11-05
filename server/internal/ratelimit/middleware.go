@@ -123,8 +123,9 @@ func classify(method, path string) class {
 		return classVoice
 	}
 	// A new review session reads the whole review pool, every quiz and set
-	// parsed; continuing one reads only its own items.
-	if strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/review") {
+	// parsed, and so does its start dialog's question count; continuing one
+	// reads only its own items.
+	if strings.HasPrefix(path, "/api/workspaces/") && (strings.HasSuffix(path, "/review") || strings.HasSuffix(path, "/study/question-count")) {
 		return classReview
 	}
 	if method == http.MethodPost && strings.HasPrefix(path, "/api/bank/questions/") && strings.HasSuffix(path, "/comments") {

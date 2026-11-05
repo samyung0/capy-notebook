@@ -537,10 +537,14 @@ func (s *Store) topicStandings(ctx context.Context, userID, wsID string, now tim
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	rows, err = s.pool.Query(ctx, `SELECT COALESCE(m.topic_id, m.practice_topic_id), ae.material_id, ae.question_id, ae.item_hash, ae.awarded, ae.marks, ae.key_seen, ae.created_at
+	// A changed mark is a new row, and the latest for an attempt's part stands. A
+	// review's check has no attempt, so each of its rows does.
+	rows, err = s.pool.Query(ctx, `SELECT COALESCE(m.topic_id, m.practice_topic_id), ae.material_id, ae.question_id, COALESCE(ae.attempt_id, ''), ae.item_hash, ae.awarded, ae.marks, ae.key_seen, ae.created_at
 		FROM answer_events ae JOIN materials m ON m.id=ae.material_id
 		WHERE ae.workspace_id=$1 AND ae.user_id=$2 AND m.kind='quiz' AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL AND workspace_item_visible(m.hidden, m.workspace_id, $2)
+			AND NOT EXISTS (SELECT 1 FROM answer_events newer WHERE newer.material_id=ae.material_id AND newer.question_id=ae.question_id
+				AND newer.attempt_id=ae.attempt_id AND newer.part_id=ae.part_id AND newer.id>ae.id)
 		ORDER BY ae.created_at, ae.id`, wsID, userID)
 	if err != nil {
 		return nil, err
@@ -551,7 +555,7 @@ func (s *Store) topicStandings(ctx context.Context, userID, wsID string, now tim
 		var topicID *string
 		var materialID string
 		var p review.PartAnswer
-		if err := rows.Scan(&topicID, &materialID, &p.QuestionID, &p.Hash, &p.Awarded, &p.Marks, &p.KeySeen, &p.At); err != nil {
+		if err := rows.Scan(&topicID, &materialID, &p.QuestionID, &p.AttemptID, &p.Hash, &p.Awarded, &p.Marks, &p.KeySeen, &p.At); err != nil {
 			return nil, err
 		}
 		// A cloned quiz keeps its question ids.

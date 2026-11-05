@@ -156,16 +156,20 @@ export function AssignmentTake({
     dirty.current = false;
     saving.current = true;
     setSave('saving');
+    let failed = false;
     try {
       await saveAssignmentAnswers(attempt.id, latest.current);
       setSave(dirty.current ? 'saving' : 'saved');
     } catch (error) {
+      failed = true;
       if (isApiError(error) && error.status === 409) return finished();
       // Sent again with the next change and with Submit, which sends them all.
       dirty.current = true;
       setSave('failed');
     } finally {
       saving.current = false;
+      // A change made during this save: its wait may have ended meanwhile.
+      if (dirty.current && !failed) void flush();
     }
   }, [attempt.id, finished]);
 
@@ -273,10 +277,7 @@ export function AssignmentTake({
                   ? m.assignment_saving()
                   : m.assignment_not_saved()}
             </span>
-            <Button
-              disabled={submitting || timedOut}
-              onClick={() => setConfirming(true)}
-            >
+            <Button disabled={submitting} onClick={() => setConfirming(true)}>
               {submitting ? m.assignment_submitting() : m.assignment_submit()}
             </Button>
           </div>

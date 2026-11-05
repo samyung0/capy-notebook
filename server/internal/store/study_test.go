@@ -636,3 +636,29 @@ func TestSuspendedUserRecordsNoFlashcardAttempt(t *testing.T) {
 		t.Fatalf("attempts = %d", n)
 	}
 }
+
+// TestResetStudyTakesOwnPractice: Reset clears the member's own practice quizzes
+// too, which feed the workspace's reviews like its quizzes (reviewPool).
+func TestResetStudyTakesOwnPractice(t *testing.T) {
+	f := newStudyFixture(t, "u_reset_practice")
+	ctx := context.Background()
+	member := newBlobTestUser(t, f.s, "u_reset_practice_member")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, member); err != nil {
+		t.Fatal(err)
+	}
+	made, err := f.s.CreateMaterialDraft(ctx, MaterialDraft{ActorUserID: member, Kind: "quiz", Title: "My practice",
+		Questions: json.RawMessage(studyQuestions), PracticeWorkspaceID: f.ws.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	score := 1.0
+	if err := f.s.RateItem(ctx, member, Rating{MaterialID: made.ID, ItemID: "q1", Score: &score}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.ResetStudy(ctx, member, f.ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM review_states WHERE user_id=$1`, member); n != 0 {
+		t.Fatalf("Reset left %d review states", n)
+	}
+}

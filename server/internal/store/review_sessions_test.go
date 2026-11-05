@@ -2,14 +2,18 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/review"
 )
 
@@ -374,5 +378,134 @@ func TestOrderedItems(t *testing.T) {
 	}
 	if got := ids(topUp([]ReviewItem{item("a")}, []ReviewItem{item("a"), item("b"), item("c")}, 2)); got != "a b" {
 		t.Fatalf("top up = %s", got)
+	}
+}
+
+// TestResumeFollowsTheReadRule (security regression): a session serves what the
+// learner may read now. An item hidden or assigned since it was served drops, an
+// answered one too, and so does what the browser put in the list that was never
+// theirs: a hidden quiz, another learner's own practice quiz. Fails if
+// ResumeReviewSession stops checking materialEffectiveAccess.
+func TestResumeFollowsTheReadRule(t *testing.T) {
+	f := newAssignmentFixture(t, "resume-read-rule")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	quiz := func(actor, practiceWS string, hidden bool) string {
+		t.Helper()
+		draft := MaterialDraft{ActorUserID: actor, Kind: MaterialQuiz, Title: uid("Paper "), Hidden: hidden,
+			Questions: json.RawMessage(assignmentQuestions), PracticeWorkspaceID: practiceWS}
+		if practiceWS == "" {
+			draft.WorkspaceID, draft.WorkspaceName = f.ws.ID, f.ws.Name
+		}
+		made, err := f.s.CreateMaterialDraft(ctx, draft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return made.ID
+	}
+	shown, hiddenLater, assignedLater := f.quiz.ID, quiz(f.user, "", false), quiz(f.user, "", false)
+	hiddenAlready, othersPractice := quiz(f.user, "", true), quiz(f.other, f.ws.ID, false)
+	ownPractice := quiz(f.viewer, f.ws.ID, false)
+
+	session := &SessionAnswer{ID: uuid.NewString(), WorkspaceID: f.ws.ID, Info: ReviewSessionInfo{Group: GroupWorkspace}, Items: []SessionItem{
+		{MaterialID: shown, ItemID: "q1"}, {MaterialID: shown, ItemID: "q2"},
+		{MaterialID: hiddenLater, ItemID: "q1"}, {MaterialID: hiddenLater, ItemID: "q2"},
+		{MaterialID: assignedLater, ItemID: "q1"},
+		{MaterialID: hiddenAlready, ItemID: "q1"}, {MaterialID: othersPractice, ItemID: "q1"},
+		{MaterialID: ownPractice, ItemID: "q1"},
+	}}
+	score := 1.0
+	for i, answered := range []string{shown, hiddenLater} {
+		if err := f.s.RateItem(ctx, f.viewer, Rating{MaterialID: answered, ItemID: "q1", Score: &score, Session: session}, now.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(want []string, wantDone ...string) {
+		t.Helper()
+		resumed, err := f.s.ResumeReviewSession(ctx, f.viewer, session.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := map[string]string{shown: "shown", hiddenLater: "hiddenLater", assignedLater: "assignedLater",
+			hiddenAlready: "hiddenAlready", othersPractice: "othersPractice", ownPractice: "ownPractice"}
+		got := []string{}
+		for _, it := range resumed.Items {
+			got = append(got, names[it.MaterialID]+"/"+it.ItemID)
+		}
+		done := []string{}
+		for _, it := range resumed.Done {
+			done = append(done, names[it.MaterialID]+"/"+it.ItemID)
+		}
+		if !slices.Equal(got, want) || !slices.Equal(done, wantDone) {
+			t.Fatalf("items %v, done %v; want %v, %v", got, done, want, wantDone)
+		}
+	}
+	read([]string{"shown/q2", "hiddenLater/q2", "assignedLater/q1", "ownPractice/q1"}, "shown/q1", "hiddenLater/q1")
+
+	if err := f.s.SetItemHidden(ctx, f.user, agenttools.KindMaterial, hiddenLater, true); err != nil {
+		t.Fatal(err)
+	}
+	form := f.form(t, now.Add(time.Hour))
+	form.QuizID = assignedLater
+	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now); err != nil {
+		t.Fatal(err)
+	}
+	read([]string{"shown/q2", "ownPractice/q1"}, "shown/q1")
+
+	result, err := f.s.ReviewSessionResult(ctx, f.viewer, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 1 || result.Items[0].MaterialID != shown {
+		t.Fatalf("the result = %+v", result.Items)
+	}
+}
+
+// TestReadingAResultLeavesTheCachedQuestion: a graded copy decodes into its own
+// map, never the question the process-wide item cache shares, so reads at once
+// don't race (go test -race) and the next read gets the quiz's own question.
+func TestReadingAResultLeavesTheCachedQuestion(t *testing.T) {
+	f := newStudyFixture(t, "u_result_cache")
+	ctx := context.Background()
+	quiz := f.quiz(t)
+	var snapshot []map[string]any
+	if err := json.Unmarshal([]byte(studySnapshot), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	session := &SessionAnswer{ID: uuid.NewString(), WorkspaceID: f.ws.ID, Info: ReviewSessionInfo{Group: GroupWorkspace},
+		Items: []SessionItem{{MaterialID: quiz.ID, ItemID: "q1"}}, Answers: json.RawMessage(`{"q1:part:1":true}`),
+		Graded: snapshot[0], Correct: 1, Total: 1}
+	score := 1.0
+	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: quiz.ID, ItemID: "q1", Score: &score, Session: session}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var reads sync.WaitGroup
+	for range 8 {
+		reads.Add(1)
+		go func() {
+			defer reads.Done()
+			result, err := f.s.ReviewSessionResult(ctx, f.user, session.ID)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			part := result.Items[0].Question["parts"].([]any)[0].(map[string]any)
+			if part["awarded"] != float64(1) {
+				t.Errorf("the graded copy = %v", part)
+			}
+		}()
+	}
+	reads.Wait()
+	mt, err := f.s.GetMaterial(ctx, quiz.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := itemsOf(mt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	part := items[0].Question["parts"].([]any)[0].(map[string]any)
+	if _, graded := part["awarded"]; graded || questionText(items[0].Question) != "Cells have membranes?" {
+		t.Fatalf("the cached question = %v", items[0].Question)
 	}
 }

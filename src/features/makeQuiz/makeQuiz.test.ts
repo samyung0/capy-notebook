@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { ApiError, parseErrorBody } from '@/api/client';
 import { EXTRACTION_PAGES_MAX } from '@/api/limits.generated';
 import { m } from '@/i18n';
 import {
+  extractionFailure,
   extractionNotice,
+  extractionRefusal,
   extractionRequest,
   hasFileRoom,
   isOfferable,
   isQuizFile,
+  isReadingFile,
+  isUnreadable,
   pageKey,
   quizTitleFrom,
   togglePage,
@@ -48,6 +53,56 @@ describe('Make a quiz', () => {
     expect(isOfferable({ indexed: false, status: 'processing' })).toBe(true);
     expect(isOfferable({ indexed: false, status: 'ready' })).toBe(false);
     expect(isOfferable({ indexed: true, status: 'failed' })).toBe(false);
+  });
+
+  it('waits only for files on their way in, and tells a file that ended unread', () => {
+    expect(isReadingFile({ status: 'pending' })).toBe(true);
+    expect(isReadingFile({ status: 'processing' })).toBe(true);
+    expect(isReadingFile({ status: 'failed' })).toBe(false);
+    expect(isUnreadable({ indexed: false, status: 'failed' })).toBe(true);
+    expect(isUnreadable({ indexed: false, status: 'ready' })).toBe(true);
+    expect(isUnreadable({ indexed: false, status: 'processing' })).toBe(false);
+    // A partial file failed but keeps its index.
+    expect(isUnreadable({ indexed: true, status: 'failed' })).toBe(false);
+  });
+
+  it('names a refused start by its code', () => {
+    const refused = (message: string) =>
+      new ApiError(
+        400,
+        'Bad Request',
+        'detail',
+        parseErrorBody({ errors: [{ message }] })
+      );
+    expect(extractionRefusal(refused('too_many_pages'))).toBe(
+      m.make_quiz_refused_pages({ max: EXTRACTION_PAGES_MAX })
+    );
+    expect(extractionRefusal(refused('file_too_long'))).toBe(
+      m.make_quiz_refused_long()
+    );
+    expect(extractionRefusal(refused('no_indexed_text'))).toBe(
+      m.make_quiz_refused_no_text()
+    );
+  });
+
+  it("names a failed run's reason by its code", () => {
+    expect(extractionFailure('provider_busy')).toBe(m.make_quiz_failed_busy());
+    expect(extractionFailure('storage_full')).toBe(
+      m.make_quiz_failed_storage()
+    );
+    expect(extractionFailure('extraction_empty')).toBe(
+      m.make_quiz_failed_empty()
+    );
+    expect(extractionFailure('interrupted')).toBe(
+      m.make_quiz_failed_interrupted()
+    );
+    expect(extractionFailure('quiz_invalid')).toBe(
+      m.make_quiz_failed_invalid()
+    );
+    expect(extractionFailure('extraction_failed')).toBe(
+      m.make_quiz_failed_fallback()
+    );
+    expect(extractionFailure(undefined)).toBe(m.make_quiz_failed_fallback());
   });
 
   it('counts answer files toward the ten-file cap', () => {

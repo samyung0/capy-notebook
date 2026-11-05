@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
+import dataclasses
 import io
 import json
 import re
@@ -506,37 +507,6 @@ def test_labels_keep_letters_and_numbers_of_any_script():
     assert extraction.label_key("Q3.") == "3"
 
 
-async def test_solve_batches_run_a_few_at_a_time(monkeypatch):
-    items = {str(n): _mcq(str(n), ["p", "q"], 1) for n in range(1, 17)}
-    in_flight = peak = 0
-
-    async def one_solve():
-        nonlocal in_flight, peak
-        in_flight += 1
-        peak = max(peak, in_flight)
-        await asyncio.sleep(0)
-        in_flight -= 1
-
-    monkeypatch.setattr(extraction, "SOLVE_BATCH", 1)
-    monkeypatch.setattr(extraction, "SOLVES_IN_FLIGHT", 2)
-    asks = [f"Give the answers to question {n} now." for n in items]
-    script = Script(
-        "\n".join(_row(n) for n in items),
-        {
-            "Copy questions 1 to 16 now.": [
-                _tools(*(("record_question", _copy(item)) for item in items.values()))
-            ],
-            **{
-                ask: [_tools(("record_answers", _answers(item)))]
-                for ask, item in zip(asks, items.values())
-            },
-        },
-        before={ask: one_solve for ask in asks},
-    )
-    await _run(monkeypatch, script, [_page(5)])
-    assert peak == 2
-
-
 def test_a_question_holds_at_most_five_figures():
     box = extraction.layout.Region("image", 0.9, [100, 100, 200, 200])
     page = _page(5)
@@ -984,6 +954,31 @@ async def test_a_figure_a_batch_leaves_out_is_filled_from_the_map(monkeypatch):
     assert done["questions"][0]["parts"][0]["blocks"][-1]["image"] == {
         "assetId": "figure:q1-1"
     }
+
+
+async def test_map_figures_past_the_cap_are_reported_left_out(monkeypatch):
+    """Figures on six pages, none from the batch: no call can fix them at that point,
+    so the report names the question."""
+    _, chart = _figure_regions()
+    item = _mcq("1", ["p", "q"], 1)
+
+    async def read_regions(images):
+        return [chart] * len(images)
+
+    monkeypatch.setattr(extraction.layout, "read_regions", read_regions)
+    numbers = ", ".join(str(n) for n in range(1, 7))
+    script = Script(
+        _row("1", 5, 10, figures=numbers),
+        {
+            "Copy question 1 now.": [_tools(("record_question", _copy(item)))],
+            "Give the answers to question 1 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(n) for n in range(5, 11)])
+    assert events[-1]["report"]["figuresLeftOut"] == ["1"]
+    assert events[-1]["report"]["figures"] == []
 
 
 async def test_a_failed_stream_is_tried_again_where_it_is(monkeypatch):
@@ -1806,6 +1801,216 @@ async def test_a_page_whose_figure_boxes_fail_saves_its_questions_without_them(
     assert question["parts"][0]["blocks"][-1]["image"] == {"assetId": "figure:q8-1"}
     assert done["report"]["figuresLeftOut"] == ["8"]
     assert done["report"]["figures"] == ["8"]
+
+
+def _two_figures() -> Script:
+    """Questions 8 and 9, a figure each on its own page, for the box call."""
+    items = [_open("8", [("a", 2)]), _open("9", [("a", 2)])]
+    box = [{"boxes": [], "part": "", "description": "Graph"}]
+    return Script(
+        "\n".join([_row("8", 5, 5, "a"), _row("9", 6, 6, "a")]),
+        {
+            "Copy questions 8 to 9 now.": [
+                _tools(
+                    (
+                        "record_question",
+                        _copy(items[0], 5, 5, figures=[{**box[0], "image": 1}]),
+                    ),
+                    (
+                        "record_question",
+                        _copy(items[1], 6, 6, figures=[{**box[0], "image": 2}]),
+                    ),
+                )
+            ],
+            "Give the answers to questions 8 to 9 now.": [
+                _tools(
+                    ("record_answers", _answers(items[0])),
+                    ("record_answers", _answers(items[1])),
+                )
+            ],
+        },
+    )
+
+
+async def _one_box(messages, **kwargs):
+    return SimpleNamespace(content='{"boxes": [[100, 100, 500, 500]]}')
+
+
+async def test_a_figure_whose_crop_fails_leaves_its_question_and_the_run(monkeypatch):
+    """Page 5's crop fails at the end of the paid run: question 8 is saved without
+    its figure and named, and question 9 keeps its own."""
+    script = _two_figures()
+
+    async def fails(box):
+        raise extraction.capture.CaptureUnavailable("the file is not available")
+
+    pages = [dataclasses.replace(_page(5), crop=fails), _page(6)]
+    events = await _run(monkeypatch, script, pages, complete=_one_box)
+    done = events[-1]
+    assert done["type"] == "done"
+    eight, nine = done["questions"]
+    assert [b["type"] for b in eight["stem"]] == ["text"]
+    assert nine["stem"][-1]["type"] == "image"
+    assert done["report"]["figuresLeftOut"] == ["8"]
+    assert done["report"]["figures"] == ["9"]
+    assert [f["id"] for f in done["figures"]] == ["q9-1"]
+
+
+async def test_a_box_that_cannot_be_grown_leaves_its_question_and_the_run(monkeypatch):
+    """Growing the boxes on the page image fails: the question is saved without its
+    figure and named, as when the box call fails."""
+    script = _two_figures()
+
+    def fails(jpeg, boxes):
+        raise OSError("cannot identify image file")
+
+    monkeypatch.setattr(extraction.layout, "grown_to_ink", fails)
+    events = await _run(monkeypatch, script, [_page(5), _page(6)], complete=_one_box)
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["report"]["figuresLeftOut"] == ["8", "9"]
+    assert done["report"]["figures"] == []
+
+
+async def test_arguments_of_the_wrong_shape_cost_a_call_and_not_the_run(monkeypatch):
+    """Valid JSON that cannot be read as a question ("parts": 5) gets the line Epo
+    approved (2026-11-05), word for word, and the model sends it again."""
+    item = _mcq("12", ["p", "q"], 1)
+    script = Script(
+        _row("12"),
+        {
+            "Copy question 12 now.": [
+                _tools(
+                    (
+                        "record_question",
+                        {"label": "12", "pages": [5, 5], "figures": [], "parts": 5},
+                    )
+                ),
+                _tools(("record_question", _copy(item))),
+            ],
+            "Give the answers to question 12 now.": [
+                _tools(("record_answers", {"label": "12", "parts": 5})),
+                _tools(("record_answers", _answers(item))),
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(5)])
+    line = "Question 12: invalid arguments. Fix it and record it again."
+    for ask in ("Copy question 12 now.", "Give the answers to question 12 now."):
+        last = [c for c in script.sent if c["ask"] == ask][-1]
+        results = [m["content"] for m in last["messages"] if m["role"] == "tool"]
+        assert results[-2:] == [line, "Question 12: recorded."]
+    assert events[-1]["questions"][0]["parts"][0]["answer"]["correct"] == [1]
+
+
+async def test_too_many_figures_cost_a_call_and_not_the_run(monkeypatch):
+    """Past the limit a question gets the line Epo approved (2026-11-05), word for
+    word, and the model sends it again."""
+    limit = extraction.QUESTION_FIGURES_MAX
+    item = _mcq("12", ["p", "q"], 1)
+    ask = "Copy question 12 now."
+    figure = {"boxes": [], "image": 1, "part": "", "description": ""}
+    script = Script(
+        _row("12"),
+        {
+            ask: [
+                _tools(
+                    ("record_question", _copy(item, figures=[figure] * (limit + 1)))
+                ),
+                _tools(("record_question", _copy(item))),
+            ],
+            "Give the answers to question 12 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(5)])
+    last = [c for c in script.sent if c["ask"] == ask][-1]
+    line = (
+        f"Question 12: too many figures, a question holds at most {limit}. "
+        "Fix it and record it again."
+    )
+    assert [m["content"] for m in last["messages"] if m["role"] == "tool"] == [
+        line,
+        "Question 12: recorded.",
+    ]
+    assert events[-1]["report"]["recorded"] == ["12"]
+
+
+def test_a_printed_number_far_from_the_rest_fills_no_gap():
+    """A label of 10**8 must not make a set of every number below it: a repair names
+    the rows left out and nothing between them."""
+    far = str(10**8)
+    rows = extraction.parse_map("\n".join([_row("1"), _row(far)]))
+    assert extraction.Run(validate=_ok).uncopied(rows, [_page(5)]) == ["1", far]
+
+
+async def test_a_long_paper_solves_a_few_batches_at_once(monkeypatch):
+    """40 questions are 5 solve batches, and BATCHES_AT_ONCE of them call the model at
+    once."""
+    items = {str(n): _mcq(str(n), ["p", "q"], 1) for n in range(1, 41)}
+    replies = {
+        f"Copy questions {first} to {last} now.": [
+            _tools(
+                *(
+                    ("record_question", _copy(items[str(n)]))
+                    for n in range(first, last + 1)
+                )
+            )
+        ]
+        for first, last in ((1, 16), (17, 32), (33, 40))
+    }
+    for first in range(1, 41, 8):
+        replies[f"Give the answers to questions {first} to {first + 7} now."] = [
+            _tools(
+                *(
+                    ("record_answers", _answers(items[str(n)]))
+                    for n in range(first, first + 8)
+                )
+            )
+        ]
+    script = Script("\n".join(_row(label) for label in items), replies)
+    running = peak = 0
+
+    async def complete(messages, **kwargs):
+        nonlocal running, peak
+        if kwargs["call_purpose"] == "extraction_solve":
+            running += 1
+            peak = max(peak, running)
+            await asyncio.sleep(0)
+            running -= 1
+        return await script(messages, **kwargs)
+
+    await _run(monkeypatch, complete, [_page(5)])
+    assert peak == extraction.BATCHES_AT_ONCE
+
+
+async def test_a_long_map_copies_a_few_batches_at_once(monkeypatch):
+    """500 map rows are 32 copy batches. BATCHES_AT_ONCE of them call the model at
+    once, so when a settlement says credits ran out the rest stop without a call."""
+    state = SimpleNamespace(credits_exhausted=False)
+    script = Script("\n".join(_row(str(n)) for n in range(1, 501)))
+    running = peak = 0
+
+    async def complete(messages, **kwargs):
+        nonlocal running, peak
+        if kwargs["call_purpose"] == "extraction_copy":
+            running += 1
+            peak = max(peak, running)
+            await asyncio.sleep(0)
+            running -= 1
+            state.credits_exhausted = True
+        return await script(messages, **kwargs)
+
+    monkeypatch.setattr(extraction.accounting, "current", lambda: state)
+    events = await _run(monkeypatch, complete, [_page(5)])
+    assert peak == extraction.BATCHES_AT_ONCE
+    copy_calls = [
+        call for call in script.sent if call["call_purpose"] == "extraction_copy"
+    ]
+    assert len(copy_calls) == extraction.BATCHES_AT_ONCE
+    assert events[-1]["report"]["stopped"] == "credits"
+    assert events[-1]["report"]["windows"] == 32
 
 
 async def test_a_failed_layout_call_leaves_every_figure_to_the_box_call(monkeypatch):

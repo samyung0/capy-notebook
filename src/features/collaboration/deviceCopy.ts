@@ -53,13 +53,14 @@ export const keepsCopyOf = ({
 /** What a copy's row says beyond its room. */
 export type CopyLabel = Pick<
   DeviceCopyRow,
-  'kind' | 'owner' | 'standalone' | 'title'
+  'canEditContent' | 'kind' | 'owner' | 'standalone' | 'title'
 >;
 
 export const copyLabel = (
-  material: Pick<Material, 'kind' | 'title' | 'workspaceId'>,
+  material: Pick<Material, 'capabilities' | 'kind' | 'title' | 'workspaceId'>,
   owner: string
 ): CopyLabel => ({
+  canEditContent: material.capabilities.canEditContent,
   kind: material.kind,
   owner,
   standalone: !material.workspaceId,

@@ -2480,7 +2480,8 @@ for connection" (C9).
 
 - **A viewer** stays on the paint, which follows its room on a read channel
   (`LiveNote`, `readNoteLive`, Q158), from its copy when it has one. No cue says
-  it is read-only (D9).
+  it is read-only (D9). A reopen loads no editor: a copy's row keeps its reader's
+  last `canEditContent` (`copyLabel`), which decides until the read answers.
 - **An editor** builds Plate behind the paint: `NoteEditor` mounts `invisible
   absolute inset-0` and `inert`, and asks for its token, discussions and drafts
   meanwhile. Edits are held until there is an editor (C4, no spare client ids):
@@ -2516,7 +2517,9 @@ column; at the sync the editor's page (the question list and the open question)
 replaces them, opening at a link's question. A set is the editor's
 turned tiles. A diagram is the split, source left and preview right, read-only.
 An item room has no saved-copy path: it stays read-only until it joined, and at
-its 30 s goes offline under its banner, still showing what it painted.
+its 30 s goes offline under its banner, still showing what it painted. Only a note,
+or an open whose kind the list does not know, loads the static renderer ahead
+(`loadPreview`, about 1.2 MB minified that no other kind draws).
 
 **Hidden tabs** (D11). The server model is unchanged. A tab hidden for 5 minutes
 with nothing unsent in any note or item room, and no Office or text room on its

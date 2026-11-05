@@ -3408,6 +3408,9 @@ conversation's title, history in the view/edit spot, ⋮ with New chat, Add
 file and Workspace settings, and the usual thread and composer.
 Back, a citation or a created file returns to the file and leaves a chip at
 the bottom left (back arrow, title, ✕) that reopens the conversation.
+Make a quiz's pages hide the overlay (`hidden`), whose corner their footer holds:
+the panel stays mounted, so its draft, its chat page and a running turn are there
+on return, the thread at its end.
 
 The keyboard covers the page instead of resizing it (Chrome's default
 `resizes-visual`; iOS Safari always overlays), so the header and the open file
@@ -3437,8 +3440,8 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
   `fieldlimits.VoiceInputSeconds`, generated into
   `src/api/limits.generated.ts`). The microphone's tracks stop whenever
   a recording ends, and when the recorder fails to start; a recording is
-  dropped when the questions block takes the composer's place or the chat
-  goes.
+  dropped when the questions block takes the composer's place, the dock hides
+  or the chat goes.
 - **Transcription.** The clip goes as the raw body of
   `POST /api/workspaces/{id}/voice-transcriptions` with its own
   `Content-Type` (`useTranscribeVoice`, no toast); a spinner holds the button
@@ -3570,8 +3573,10 @@ materials are sources.
   title never leaves the browser. Go's `chatTurnContext`
   (`server/internal/httpapi/chat_stream.go`) looks the title up itself
   (`store.ChatOpenResource` in `server/internal/store/chat.go`): only an
-  untrashed file or material of this workspace, under the kind given, is kept,
-  and anything else reaches the pipeline as `null`. Go appends `library.read` to every turn's operations for
+  untrashed file or material of this workspace, under the kind given, that the
+  caller can read (`FileEffectiveRole`, `MaterialEffectiveRole`, so not one hidden
+  from them or assigned to them) is kept, and anything else reaches the pipeline
+  as `null`. Go appends `library.read` to every turn's operations for
   any role that can chat, viewers included; writes still follow the role and
   account state (a frozen or full actor loses `material.create` and
   `document.edit`). Go sends `workspaceOnly`, `openResource` and
@@ -5786,8 +5791,8 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      selected page images at once." and each page's heading is "Page image 1: page 2 of
      <file name>." Code still reads the text to look for a next question number when it
      repairs a copy, which sends nothing.
-  2. Copy batches of `COPY_BATCH` (16) of the map's questions, in parallel,
-     reasoning `low`, each continuing the map's messages and reply with
+  2. Copy batches of `COPY_BATCH` (16) of the map's questions, at most
+     `BATCHES_AT_ONCE` (4) at once, solving included, reasoning `low`, each continuing the map's messages and reply with
      "Copy questions 1 to 16 now." `record_question` (one question a call, several
      calls a reply) gives its label, stem, parts with printed labels, blocks, answer
      type and mcq options, marks, a printed total, `pages` and `figures`, and no
@@ -5814,8 +5819,9 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      and its marks from the files, in any layout, "even when your own working disagrees". That wording
      left 2 of 12 planted answers overridden on the bench, and nothing reports a disagreement.
   4. Code checks the copies: a map row with no copy, a number missing inside the map and
-     the copies, or the next number printed on a page past the last question's (a page
-     no row covers) gets a repair in the thread that should hold it ("Copy question 8
+     the copies (only while its numbers span at most `QUIZ_PARTS_MAX`: a far-off printed
+     number is no run of questions), or the next number printed on a page past the last
+     question's (a page no row covers) gets a repair in the thread that should hold it ("Copy question 8
      now."), up to two passes. A question the map gives figures and its batch gave none
      takes the map's boxes, one figure a page (`fill_figures`).
   5. Solve batches of `SOLVE_BATCH` (8) of the copied questions, in parallel, reasoning `mid`, runs of
@@ -5856,8 +5862,9 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      take the box call: one call a page, reasoning off, sees that page alone with its figures
      listed (question label and description) and answers a box on a 0-1000 grid for each
      (`locate_figures`, purpose `extraction_figures`; a reply that is not one box a figure is a
-     failed attempt; a page whose call fails twice keeps its questions without those figures,
-     named in `figuresLeftOut`). Coordinates asked of a call beside other pages were too far off
+     failed attempt; a page whose call fails twice, or whose image cannot be read to grow the
+     boxes, keeps its questions without those figures, named in `figuresLeftOut`, as does a
+     figure whose crop fails). Coordinates asked of a call beside other pages were too far off
      to crop from (2022 Paper 2: 3 of 10 whole, 3 missing the figure; bench report 2026-11-04). The
      box call's box is grown to the ink around it on the page image the call saw
      (`layout.grown_to_ink`, Epo 2026-11-04): each edge moves out while the strip just outside
@@ -5907,8 +5914,8 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   `stopped`, `pages`, and `windows`, the
   copy batches, a name the screens' API keeps). `figures` names the questions saved with cropped figures, for
   the starter to check; `figuresLeftOut` those saved without theirs, because
-  they had no box and their page's box call failed twice, or the figures did not fit in the
-  starter's storage (then the quiz is saved without any figures; Epo
+  they had no box and their page's box call failed twice, their crop failed, or the figures
+  did not fit in the starter's storage (then the quiz is saved without any figures; Epo
   2026-11-04).
 - **Attempts.** The server retries a failed call once, silently (Epo
   2026-11-03): the map and each thread's round get a second
@@ -5916,7 +5923,11 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   runs in the same request. A round is retried where it is, keeping its thread, so a
   failed stream costs that round. A thread that fails twice ends alone: what it
   recorded stays, a copy batch's other questions are named in `missing`, a solve
-  batch's in `answersMissing`, and the rest of the run goes on. A map that fails twice,
+  batch's in `answersMissing`, and the rest of the run goes on. A call whose JSON has the
+  wrong shape (`"parts": 5`) is answered `Question 12: invalid arguments. Fix it and record
+  it again.`, and one with more figures than `QUESTION_FIGURES_MAX` (5) is answered
+  `Question 12: too many figures, a question holds at most 5. Fix it and record it again.`;
+  each costs that call. A map that fails twice,
   or a run left with no copies after a failure, fails the run, as does a definitive
   client error (400, 401, 403, 404, 422) on the map. The starter sees only progress and
   the final error. When the stream goes away the running threads are cancelled.
@@ -5924,8 +5935,9 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   each call settles what it used, and a failed stream settles what it reported or is
   abandoned unbilled (`_tracked_call`). Threads stop before their next call once a
   settlement says credits ran out, but calls in flight finish, so a run can pass zero by
-  what those use. A run is one session, so one of `ConcurrentLLMLeases`, while its calls
-  in flight run from 3 to 8 on a 45-question paper. Each
+  what those use. At most `BATCHES_AT_ONCE` copy or solve batches run at once, however long the map
+  (500 rows are 32 batches), so the ones still waiting stop with no call. A run is one session, so one of `ConcurrentLLMLeases`, while its calls
+  in flight run from 3 to 4 on a 45-question paper. Each
   waits its turn at the model's gate and for `CALL_SLOTS` like a chat's.
 - **Word and PowerPoint papers** (Epo 2026-11-05, "draw those pages on client side"): the page picker
   draws every page with the Office runtime's print path in an off-screen frame, and the selected pages'
@@ -5953,9 +5965,9 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   question, the quiz or the run to the files, pages or regions it was read
   from (Epo 2026-11-02, §8 item 7): they travel only in the request to the
   retrieval service. Account purge deletes a user's runs.
-- **Left out.** Office pages and Markdown sections: the gateway refuses them as
-  a paper, and sending them changes what a page window sends, which needs Epo's
-  sign-off first.
+- **Left out.** Picking parts of a text paper: a Markdown or other text file goes
+  whole, as one page. A question whose map boxes pass `QUESTION_FIGURES_MAX` when
+  they fill in for its batch keeps no figures and is named in `figuresLeftOut`.
 - **Bench.** `bench/extraction`, with findings in
   [`2026-11-03-first-cut.md`](../bench/extraction/reports/2026-11-03-first-cut.md),
   [`2026-11-03-keys-in-one-prompt.md`](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md)
@@ -6518,7 +6530,10 @@ and carry the saved edits as the copy's own `source_documents` row
 ([office-files.md](frontend/office-files.md)).
 
 `retrieval/pending.py` captures all scoped durable changes once per answer,
-including sources with no index or search hit. Text changes come from
+including sources with no index or search hit. A hidden file or note counts only
+for a request that may read it (`store.hidden_readers`, as search): the load's own
+reads filter it and name Go only the notes left, so a viewer's turn gets no hint,
+search tail or read of its changes. Text changes come from
 `source_documents.pending_effects`. Office changes are computed when read (Q405):
 for every scoped Office file with unprocessed edits the load calls
 `POST /api/internal/source-changes` (`{workspaceId, fileIds}`, pipeline

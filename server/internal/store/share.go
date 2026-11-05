@@ -328,7 +328,7 @@ func (s *Store) ReadableMaterialIDs(ctx context.Context, userID string, ids []st
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT wanted.id, m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
-			COALESCE(wm.role, ''), m.hidden,
+			COALESCE(wm.role, ''), m.hidden OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL),
 			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
 				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
 		FROM materials wanted
@@ -2074,10 +2074,12 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 	}
 	defer tx.Rollback(ctx)
 	var sourceWorkspaceID, sourceOwnerID string
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(f.workspace_id, ''), COALESCE(w.user_id, f.user_id) FROM files f
+	var visible bool
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(f.workspace_id, ''), COALESCE(w.user_id, f.user_id),
+			workspace_item_visible(f.hidden, f.workspace_id, $2) FROM files f
 		LEFT JOIN workspaces w ON w.id=f.workspace_id
-		WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).
-		Scan(&sourceWorkspaceID, &sourceOwnerID); isNoRows(err) {
+		WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID, userID).
+		Scan(&sourceWorkspaceID, &sourceOwnerID, &visible); isNoRows(err) {
 		return "", nil, ErrNotFound
 	} else if err != nil {
 		return "", nil, err
@@ -2088,12 +2090,19 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 		if userID != sourceOwnerID {
 			return "", nil, ErrNotFound
 		}
-	} else if err := assertCloneSourceTx(ctx, tx, userID, sourceWorkspaceID); err != nil {
-		// Its payer copies what it pays for after losing access (Epo
-		// 2026-10-27, D3).
-		var payer string
-		if scanErr := tx.QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, fileID).Scan(&payer); scanErr != nil || payer != userID {
-			return "", nil, err
+	} else {
+		err := assertCloneSourceTx(ctx, tx, userID, sourceWorkspaceID)
+		// A viewer cannot reach a file hidden from members, so cannot copy it.
+		if err == nil && !visible {
+			err = ErrNotFound
+		}
+		if err != nil {
+			// Its payer copies what it pays for after losing access (Epo
+			// 2026-10-27, D3).
+			var payer string
+			if scanErr := tx.QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, fileID).Scan(&payer); scanErr != nil || payer != userID {
+				return "", nil, err
+			}
 		}
 	}
 	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)

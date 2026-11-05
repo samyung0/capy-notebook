@@ -253,3 +253,45 @@ func TestLearningOverview(t *testing.T) {
 		t.Fatalf("a class's owner, overview = %+v", got)
 	}
 }
+
+// TestDashboardNamesActorsToMembers (security regression): a link or public
+// visitor gets the Dashboard's rows without who did them, as they get no member
+// list; members and the owner keep the names. Fails if WorkspaceDashboard stops
+// leaving the actor out.
+func TestDashboardNamesActorsToMembers(t *testing.T) {
+	f := newStudyFixture(t, "u_dashboard_visitor")
+	ctx := context.Background()
+	member := newBlobTestUser(t, f.s, "u_dashboard_visitor_member")
+	visitor := newBlobTestUser(t, f.s, "u_dashboard_visitor_public")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, member); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public' WHERE id=$1`, f.ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	quiz := f.quiz(t)
+	file := uploadWorkspaceFile(t, f.s, f.user, f.ws.ID)
+	got, err := f.s.WorkspaceDashboard(ctx, visitor, f.ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Activity) != 2 {
+		t.Fatalf("the visitor's activity = %+v", got.Activity)
+	}
+	for _, it := range got.Activity {
+		if it.ActorID != "" || it.ActorName != "" || it.ActorAvatarURL != "" {
+			t.Fatalf("the visitor reads who did it: %+v", it)
+		}
+	}
+	for _, reader := range []string{member, f.user} {
+		got, err := f.s.WorkspaceDashboard(ctx, reader, f.ws.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, it := range got.Activity {
+			if it.ActorID != f.user || it.ActorName == "" {
+				t.Fatalf("%s reads no actor on %+v (quiz %s, file %s)", reader, it, quiz.ID, file.ID)
+			}
+		}
+	}
+}

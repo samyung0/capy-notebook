@@ -807,7 +807,9 @@ func (s *Store) ReviewSessionWorkspace(ctx context.Context, userID, id string) (
 
 // ResumeReviewSession is an unfinished session's answered items with their
 // records and the items still to answer, read from their materials now; items
-// that left their material or workspace drop.
+// that left their material or workspace drop, as do those of a material the
+// caller may not read now: hidden or assigned since it was served, or never
+// theirs, since the browser sends the served list.
 func (s *Store) ResumeReviewSession(ctx context.Context, userID, id string) (ReviewSession, error) {
 	out := ReviewSession{Items: []ReviewItem{}, Done: []ReviewAnswer{}}
 	var wsID string
@@ -835,7 +837,14 @@ func (s *Store) ResumeReviewSession(ctx context.Context, userID, id string) (Rev
 		items, ok := byMaterial[materialID]
 		if !ok {
 			items = map[string]studyItem{}
-			mt, err := s.GetMaterial(ctx, materialID)
+			_, err := materialEffectiveAccess(ctx, s.pool, userID, materialID)
+			if err != nil && !errors.Is(err, ErrNotFound) {
+				return studyItem{}, false, err
+			}
+			var mt Material
+			if err == nil {
+				mt, err = s.GetMaterial(ctx, materialID)
+			}
 			if err != nil && !errors.Is(err, ErrNotFound) {
 				return studyItem{}, false, err
 			}
@@ -892,8 +901,10 @@ func (s *Store) ResumeReviewSession(ctx context.Context, userID, id string) (Rev
 		done := r.ReviewAnswer
 		done.ReviewItem = it.ReviewItem
 		done.Reason = reasons[r.MaterialID+"/"+r.ItemID]
-		// A question shows as it was graded, key included, with its answers.
+		// A question shows as it was graded, key included, with its answers. Its
+		// Question is the shared cached map until this clears it.
 		if it.Kind == "question" && len(r.graded) > 0 {
+			done.Question = nil
 			if err := json.Unmarshal(r.graded, &done.Question); err != nil {
 				return out, err
 			}

@@ -362,7 +362,7 @@ func (s *Store) ResetStudy(ctx context.Context, userID, wsID string) error {
 			return err
 		}
 		_, err := tx.Exec(ctx, `DELETE FROM review_states WHERE user_id=$1
-			AND material_id IN (SELECT id FROM materials WHERE workspace_id=$2)`, userID, wsID)
+			AND material_id IN (SELECT id FROM materials WHERE workspace_id=$2 OR (practice_workspace_id=$2 AND owner_user_id=$1))`, userID, wsID)
 		return err
 	})
 }
@@ -464,6 +464,9 @@ func (s *Store) RateItem(ctx context.Context, userID string, in Rating, now time
 		return ErrStudyRating
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := lockWorkspaceKeyShareTx(ctx, tx, mt.StudyWorkspaceID()); err != nil {
+			return err
+		}
 		// Writing attempt history or answer events takes the account lock
 		// first, as a quiz attempt does, so a suspended or purged account
 		// records none.

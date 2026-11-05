@@ -10,7 +10,8 @@ import (
 // so the activity is read from what the rows already record: each file's
 // uploader and upload time, each material's creator and creation time, and
 // whether the chat agent created the material. An item hidden from members
-// shows only to the workspace's owners and editors, with its mark (board U1).
+// shows only to the workspace's owners and editors, with its mark (board U1). A
+// link or public visitor, with no membership, gets the rows without who did them.
 
 // dashboardActivity caps the Dashboard's Activity list.
 const dashboardActivity = 5
@@ -34,7 +35,8 @@ type WorkspaceDashboard struct {
 }
 
 // WorkspaceActivity is one file uploaded or material added, newest first.
-// Actor fields are empty once the account is gone.
+// Actor fields are empty once the account is gone, and for a caller with no
+// membership.
 type WorkspaceActivity struct {
 	Kind           string    `json:"kind" enum:"uploaded,added,agent,assigned"`
 	ActorID        string    `json:"actorId,omitempty"`
@@ -51,10 +53,12 @@ type WorkspaceActivity struct {
 
 func (s *Store) WorkspaceDashboard(ctx context.Context, userID, wsID string) (WorkspaceDashboard, error) {
 	out := WorkspaceDashboard{Activity: []WorkspaceActivity{}}
+	var member bool
 	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(NULLIF(u.name,''), u.id),
-			(SELECT count(*) FROM workspace_members wm WHERE wm.workspace_id=w.id)
-		FROM workspaces w JOIN users u ON u.id=w.user_id WHERE w.id=$1`, wsID).
-		Scan(&out.OwnerName, &out.Members); err != nil {
+			(SELECT count(*) FROM workspace_members wm WHERE wm.workspace_id=w.id),
+			w.user_id=$2 OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=w.id AND wm.user_id=$2)
+		FROM workspaces w JOIN users u ON u.id=w.user_id WHERE w.id=$1`, wsID, userID).
+		Scan(&out.OwnerName, &out.Members, &member); err != nil {
 		return out, err
 	}
 	rows, err := s.pool.Query(ctx, `WITH a AS (
@@ -95,6 +99,9 @@ func (s *Store) WorkspaceDashboard(ctx context.Context, userID, wsID string) (Wo
 		if err := rows.Scan(&it.Kind, &it.ActorID, &it.ActorName, &it.ActorAvatarURL,
 			&it.FileID, &it.MaterialID, &it.AssignmentID, &it.Title, &it.At, &it.Hidden); err != nil {
 			return out, err
+		}
+		if !member {
+			it.ActorID, it.ActorName, it.ActorAvatarURL = "", "", ""
 		}
 		out.Activity = append(out.Activity, it)
 	}

@@ -376,6 +376,38 @@ def test_the_shared_line_turns_round_robin_by_requester(workspace):
             _drop_line(conn, key, sessions, other)
 
 
+def test_a_grant_whose_answer_was_lost_is_granted_again(workspace):
+    """The commit of a grant landed and its answer was lost, so the call comes back
+    to the line holding its lease: the round answers it, one lease, instead of failing
+    on the lease's id and with it every round of the process's line."""
+    import psycopg
+
+    key = f"line:{secrets.token_hex(4)}"
+    call = f"{key}:call"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        sessions = _line_sessions(conn, {"chat": (workspace.user_id, "chat")})
+        try:
+            with conn.cursor() as cur:
+                for _ in range(2):
+                    granted = db.admit_line(
+                        cur,
+                        provider=key,
+                        capacity=2,
+                        store=[(call, sessions["chat"], 60)],
+                        waiting=[call],
+                        gone=[],
+                        ttl_s=60,
+                    )
+                    assert granted == {call}
+                leases = cur.execute(
+                    "SELECT count(*) FROM provider_capacity_leases WHERE provider=%s",
+                    (key,),
+                ).fetchone()
+            assert leases == (1,)
+        finally:
+            _drop_line(conn, key, sessions)
+
+
 def test_a_call_goes_straight_through_only_while_nobody_waits(workspace):
     """A live waiting call holds the gate's free units for the line; one past
     its row's lifetime drops out, and a call that left takes its row and any

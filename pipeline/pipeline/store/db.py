@@ -1271,7 +1271,8 @@ def admit_line(
     gate plus its place among that requester's waiting calls, ties in arrival
     order. The free units go to the first calls; this answers those among
     ``waiting`` (this process's), each now holding a one-unit lease under its
-    call id."""
+    call id. A call whose earlier grant committed but whose answer was lost
+    comes back to the line holding that lease, and is granted it again."""
     if gone:
         cur.execute("DELETE FROM provider_capacity_waiters WHERE id = ANY(%s)", (gone,))
         cur.execute("DELETE FROM provider_capacity_leases WHERE id = ANY(%s)", (gone,))
@@ -1328,6 +1329,7 @@ def admit_line(
         INSERT INTO provider_capacity_leases (id, provider, units, expires_at, requester)
         SELECT id, provider, 1, now() + make_interval(secs => lease_seconds), requester
           FROM granted
+        ON CONFLICT (id) DO UPDATE SET expires_at=EXCLUDED.expires_at
         RETURNING id
         """,
         {"provider": provider, "capacity": capacity, "waiting": waiting},

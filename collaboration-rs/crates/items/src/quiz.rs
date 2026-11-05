@@ -1781,8 +1781,10 @@ fn content_shape(
             Ok(())
         }
         ([R, _, "parts"], Some(id)) => new_entry(content, id, full, tally),
+        // Names a group of any id the validators let it have: a stored one may hold
+        // what a key a client creates may not (`new_entry`), as a part's id may.
         ([R, _, "parts", _], Some("group")) => match one_any(content) {
-            Some(Any::String(group)) if valid_id(group) => {
+            Some(Any::String(group)) if !group.is_empty() && group.chars().count() <= MAX_ID => {
                 tally.value(content);
                 Ok(())
             }
@@ -2262,11 +2264,6 @@ pub fn check_content_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
         parts += question_parts.len();
         for part in &question_parts {
             check_marks(num_at(txn, &part.map, "marks"), "a part")?;
-            if let Some(group) = str_at(txn, &part.map, "group")
-                && !valid_id(&group)
-            {
-                return Err("a part's group names no group".into());
-            }
             check_blocks(txn, map_at(txn, &part.map, "blocks").as_ref())?;
             let Some(answer) = map_at(txn, &part.map, "answer") else {
                 continue;

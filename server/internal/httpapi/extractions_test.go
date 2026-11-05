@@ -165,8 +165,7 @@ func TestFiguresLeftOutOfAQuiz(t *testing.T) {
 }
 
 // The report names parts saved with no answer, and says nothing of them when
-// there are none; a question with no key travels as an open part whose one marking item says so, which the
-// quiz's validator takes.
+// there are none.
 func TestAReportNamesMissingAnswers(t *testing.T) {
 	var report store.ExtractionReport
 	raw := `{"recorded":["1","2"],"answersMissing":["2(a)"],"windows":1}`

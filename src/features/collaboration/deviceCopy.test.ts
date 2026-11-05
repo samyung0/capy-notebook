@@ -12,6 +12,7 @@ vi.mock('@/lib/sourceCache', () => ({
 }));
 
 const row = () => ({
+  canEditContent: true,
   document: 'content' as const,
   kind: 'note' as const,
   materialId: 'note',

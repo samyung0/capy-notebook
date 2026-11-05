@@ -366,8 +366,8 @@ export function ChatPanel({
   /** The panel fills the page (the account chat): the thread and composer
    * keep a readable centred column. */
   fill?: boolean;
-  /** Mounted but off screen (another section shows): a thread that moves on
-   * meanwhile shows its end on return. */
+  /** Mounted but off screen (another section shows, or a page takes the dock's
+   * corner): a thread that moves on meanwhile shows its end on return. */
   hidden?: boolean;
   /** Opens a thread (or, with a null id, a new chat) whenever `seq` changes:
    * the left panel's list drives its chat through it. */
@@ -507,11 +507,12 @@ export function ChatPanel({
     [last, streaming, dismissedId]
   );
   // The questions take the composer's place, and a recording stops with it;
-  // the dock on the file has no questions.
+  // the dock on the file has no questions. Nothing shows a hidden dock's
+  // recording, so it stops too.
   const voice = useVoiceInput(
     workspaceId,
     insertVoice,
-    (!!dock && !pageOpen) || questions.length === 0
+    !(dock && hidden) && ((!!dock && !pageOpen) || questions.length === 0)
   );
 
   // Seed local state when a saved conversation opens: cached history paints at
@@ -924,6 +925,7 @@ export function ChatPanel({
   return (
     <div
       className="pointer-events-none absolute inset-0 z-20"
+      hidden={hidden}
       style={colorVars}
     >
       <div
@@ -972,7 +974,7 @@ export function ChatPanel({
         </div>
         {thread}
       </div>
-      {!pageOpen && (
+      {!(pageOpen || hidden) && (
         <ChatDock
           back={
             backShown

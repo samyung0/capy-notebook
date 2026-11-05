@@ -241,3 +241,136 @@ func TestClonesKeepTheHiddenFlag(t *testing.T) {
 		t.Fatalf("one file's clone: hidden %v, shown %v", oneFile.Hidden, oneShownFile.Hidden)
 	}
 }
+
+// TestHiddenFileSourceSessionRefusesAViewer (security regression): a file hidden
+// from members opens in its source room for an owner or editor; a viewer holding
+// its id reads neither its session nor its room's access check, and sees a
+// visible file as before. Fails if sourceActorsAllowed stops checking hidden.
+func TestHiddenFileSourceSessionRefusesAViewer(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "hidden-source-owner")
+	editor := newBlobTestUser(t, s, "hidden-source-editor")
+	viewer := newBlobTestUser(t, s, "hidden-source-viewer")
+	ws, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	addWorkspaceEditor(t, s, ws.ID, editor)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, ws.ID, viewer); err != nil {
+		t.Fatal(err)
+	}
+	doc := sourceTestSeed(t, s, owner, file.ID)
+	if _, err := s.SourceSession(ctx, viewer, file.ID); err != nil {
+		t.Fatalf("the viewer cannot read the visible file: %v", err)
+	}
+	if err := s.CheckSourceAccess(ctx, viewer, file.ID, doc.Epoch, false); err != nil {
+		t.Fatalf("the viewer's room refused on the visible file: %v", err)
+	}
+	if err := s.SetItemHidden(ctx, owner, agenttools.KindSourceFile, file.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SourceSession(ctx, viewer, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the viewer's session on the hidden file = %v, want not found", err)
+	}
+	if err := s.CheckSourceAccess(ctx, viewer, file.ID, doc.Epoch, false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the viewer's room on the hidden file = %v, want not found", err)
+	}
+	for _, reader := range []string{owner, editor} {
+		if _, err := s.SourceSession(ctx, reader, file.ID); err != nil {
+			t.Fatalf("%s cannot read the hidden file: %v", reader, err)
+		}
+		if err := s.CheckSourceAccess(ctx, reader, file.ID, doc.Epoch, false); err != nil {
+			t.Fatalf("%s's room refused on the hidden file: %v", reader, err)
+		}
+	}
+}
+
+// TestViewerCannotCloneAHiddenFile (security regression): a personal workspace's
+// viewer clones its visible files, and a hidden one only as its payer (Epo
+// 2026-10-27, D3): the copy would be theirs to open. Fails if cloneFileOnce stops
+// checking hidden before the payer's way in.
+func TestViewerCannotCloneAHiddenFile(t *testing.T) {
+	f := newStudyFixture(t, "clone-hidden-file")
+	ctx := context.Background()
+	viewer := newBlobTestUser(t, f.s, "clone-hidden-file-viewer")
+	demoted := newBlobTestUser(t, f.s, "clone-hidden-file-demoted")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
+		VALUES ($1,$2,'viewer'), ($1,$3,'editor')`, f.ws.ID, viewer, demoted); err != nil {
+		t.Fatal(err)
+	}
+	upload := func(by string, hidden bool) File {
+		t.Helper()
+		session, err := f.s.CreateUploadSession(ctx, NewUploadSession{
+			ID: uid("up"), WorkspaceID: f.ws.ID, CreatedBy: by, Hidden: hidden,
+			ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+			Name: "answers.zip", Kind: "unknown", ContentType: "application/zip",
+			DeclaredSize: 300, ParseMode: "none", ExpiresAt: time.Now().Add(time.Hour),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		file, err := f.s.FinalizeUploadSession(ctx, by, session.ID, "etag", "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return file
+	}
+	hidden, shown := upload(f.user, true), upload(f.user, false)
+	paid := upload(demoted, true)
+	if _, err := f.s.pool.Exec(ctx, `UPDATE workspace_members SET role='viewer' WHERE workspace_id=$1 AND user_id=$2`, f.ws.ID, demoted); err != nil {
+		t.Fatal(err)
+	}
+	target := CloneTarget{Name: "copy.zip"}
+	if _, _, err := f.s.CloneFile(ctx, viewer, hidden.ID, target); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the viewer cloned the hidden file: %v", err)
+	}
+	if _, _, err := f.s.CloneFile(ctx, viewer, shown.ID, target); err != nil {
+		t.Fatalf("the viewer cannot clone the visible file: %v", err)
+	}
+	if _, _, err := f.s.CloneFile(ctx, demoted, paid.ID, target); err != nil {
+		t.Fatalf("the payer cannot clone the hidden file it pays for: %v", err)
+	}
+}
+
+// TestChatOpenResourceFollowsTheReadRule (security regression): a chat turn names
+// the open item only for one who can read it, so an id alone tells a viewer no
+// hidden file's or material's title, nor an assigned quiz's. Fails if
+// ChatOpenResource stops checking the effective role.
+func TestChatOpenResourceFollowsTheReadRule(t *testing.T) {
+	f := newAssignmentFixture(t, "chat-open")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	hidden, err := f.s.CreateMaterialDraft(ctx, MaterialDraft{ActorUserID: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+		Kind: MaterialQuiz, Title: "Hidden paper", Hidden: true, Questions: json.RawMessage(assignmentQuestions)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := uploadWorkspaceFile(t, f.s, f.user, f.ws.ID)
+	if err := f.s.SetItemHidden(ctx, f.user, agenttools.KindSourceFile, file.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	names := func(user, kind, id string) bool {
+		t.Helper()
+		_, found, err := f.s.ChatOpenResource(ctx, user, f.ws.ID, kind, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return found
+	}
+	if names(f.viewer, "material", hidden.ID) || names(f.viewer, "file", file.ID) {
+		t.Fatal("a viewer's turn named a hidden item")
+	}
+	if !names(f.editor, "material", hidden.ID) || !names(f.editor, "file", file.ID) {
+		t.Fatal("an editor's turn did not name a hidden item")
+	}
+	if !names(f.viewer, "material", f.quiz.ID) {
+		t.Fatal("a viewer's turn did not name a visible quiz")
+	}
+	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now); err != nil {
+		t.Fatal(err)
+	}
+	if names(f.viewer, "material", f.quiz.ID) {
+		t.Fatal("an assignee's turn named the quiz assigned to them")
+	}
+	if !names(f.editor, "material", f.quiz.ID) {
+		t.Fatal("an editor's turn did not name the assigned quiz")
+	}
+}

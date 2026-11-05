@@ -1726,8 +1726,9 @@ input (`/api/workspaces/{id}/voice-transcriptions`) has its own class, 60/hour
 with burst 6 (`ai_rate_limited` when spent): a few recordings a minute from a
 person talking, apart from the chat allowance the turns they send then use.
 Starting a review session (`GET /api/workspaces/{id}/review`, which reads and
-scores every quiz and set in scope) has its own class, 60/hour with burst 10;
-continuing one is not counted.
+scores every quiz and set in scope) and its start dialog's question count
+(`GET /api/workspaces/{id}/study/question-count`, the same reads) have their own
+class, 60/hour with burst 10; continuing one is not counted.
 Credits remain the money bound; these limits only stop abuse patterns.
 
 The rate-limit audit (Epo 2026-10-24) added these classes:

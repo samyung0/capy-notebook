@@ -85,9 +85,11 @@ inline, not as a toast, so the draft and its context stay on screen:
   failure is reported once.
 
 Make a quiz follows the same rule on a page: a refused start shows in the page
-picker's `FormAlert`, selection kept. A run that fails shows the run's own error
-as a page `ErrorState` with Back to the pages; there is no automatic retry beyond
-the server's one. A file that couldn't be added or read says so on its dialog row.
+picker's `FormAlert`, selection kept. A run that fails shows copy for its
+`errorCode` (`extractionFailure`) as a page `ErrorState` with Back to the pages,
+and the same copy in the toast when its page isn't open; there is no automatic
+retry beyond the server's one. A file that couldn't be added or read says so on
+its dialog row.
 
 A file's trash confirmation (`TrashConfirmDialog` from `ContentActions`)
 follows the same rule: it stays open with a spinner while the delete runs
@@ -134,7 +136,9 @@ editing continues to receive content through Yjs.
 
 The query client throws a query error to the nearest boundary only when the
 query has no cached data. A failed background refresh therefore keeps rendering
-the last usable result. Secondary and optional queries must opt out with:
+the last usable result. An open material does too, its editor included
+(`MaterialContentBody`, which opts out): only a refusal (any 4xx) replaces it
+with the file error. Secondary and optional queries must opt out with:
 
 ```ts
 meta: { errorBoundary: false }
@@ -470,7 +474,9 @@ the pause to an error. A paused query is not loading (`isLoading` is false), so
 a page gated on it checks `waitsForConnection(fetchStatus, data)`
 (`src/lib/online.ts`) before its missing state and shows `QueryPausedState`;
 the workspace page does this, so opening a workspace offline reads "Waiting
-for connection", not private or unavailable. The waiting state is only for a
+for connection", not private or unavailable. An opened material with nothing to
+paint reads the same (`isPending` in `MaterialContentBody`), not the file error.
+The waiting state is only for a
 query without data (Epo 2026-10-17): a page or list holding data, such as a
 stale or restored list whose refetch is paused, keeps showing it. Quiz
 attempts and flashcard study read fresh on purpose (`fresh: true`, drawn only

@@ -2,7 +2,7 @@ import { onExtractionEnd } from '@/api/hooks';
 import type { Extraction } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
-import { extractionNotice } from './makeQuiz';
+import { extractionFailure, extractionNotice } from './makeQuiz';
 
 /** The toast when a run ends while its page isn't open: the run's own page
  * follows it and opens the quiz itself. */
@@ -25,7 +25,7 @@ export function announceExtractionEnd(
     });
   } else if (run.status === 'failed')
     userToast({
-      description: run.error ?? m.make_quiz_failed_fallback(),
+      description: extractionFailure(run.errorCode),
       title: m.make_quiz_failed_toast({ title: run.title }),
       variant: 'error',
     });

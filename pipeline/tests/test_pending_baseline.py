@@ -6,7 +6,7 @@ import secrets
 import pytest
 
 from pipeline.registry import ModelConfig
-from pipeline.retrieval import agent, contract, pending, tools, workflows
+from pipeline.retrieval import agent, contract, pending, store, tools, workflows
 from pipeline.retrieval.stream import AssembledResponse, ToolCall
 from pipeline.retrieval.usage_extract import NormalizedUsage
 
@@ -68,6 +68,59 @@ def _seed(workspace):
         )
     _publish(workspace, file_id, A)
     return file_id
+
+
+async def test_a_viewers_load_leaves_out_hidden_items(workspace, monkeypatch):
+    """(security regression) A turn's hints and search tail draw on what the load
+    captures, and Go's note read knows no caller: with no hidden readers bound the
+    load holds no hidden file or note and names Go only the visible note; an
+    editor's holds them all."""
+    shown_file, hidden_file = _seed(workspace), _seed(workspace)
+    shown_note, hidden_note = (f"m_{secrets.token_hex(6)}" for _ in range(2))
+    with workspace._connect() as conn:
+        conn.execute("UPDATE files SET hidden=true WHERE id=%s", (hidden_file,))
+        for note in (shown_note, hidden_note):
+            conn.execute(
+                "INSERT INTO materials (id, workspace_id, owner_user_id, created_by,"
+                " kind, title, hidden) VALUES (%s, %s, %s, %s, 'note', %s, %s)",
+                (
+                    note,
+                    workspace.id,
+                    workspace.user_id,
+                    workspace.user_id,
+                    note,
+                    note == hidden_note,
+                ),
+            )
+
+    def note_changes(_workspace_id, ids):
+        """Go's read: every dirty note when given no ids, else the named ones."""
+        return [
+            {"materialId": note, "title": "Note", "revision": 1, "changes": []}
+            for note in ([shown_note, hidden_note] if ids is None else ids)
+        ]
+
+    monkeypatch.setattr(pending.cfg, "gateway_url", "http://synthetic-gateway")
+    monkeypatch.setattr(pending.cfg, "pipeline_secret", "synthetic")
+    monkeypatch.setattr(pending, "_note_changes", note_changes)
+
+    async def captured(readers: list[str]) -> set[str]:
+        token = store.bind_hidden_readers(readers)
+        try:
+            sources = await pending.load(workspace.id)
+        finally:
+            store.reset_hidden_readers(token)
+        return {str(f["fileId"]) for f in sources.files} | {
+            str(n["materialId"]) for n in sources.notes
+        }
+
+    assert await captured([]) == {shown_file, shown_note}
+    assert await captured([workspace.id]) == {
+        shown_file,
+        hidden_file,
+        shown_note,
+        hidden_note,
+    }
 
 
 async def test_generation_rejects_new_index_paired_with_captured_changes(

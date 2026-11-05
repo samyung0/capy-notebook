@@ -328,6 +328,8 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		`UPDATE materials SET trashed_by=NULL WHERE trashed_by=$1`,
 		`UPDATE editor_assets SET created_by=NULL WHERE created_by=$1`,
 		`UPDATE assignments SET created_by=NULL WHERE created_by=$1`,
+		// The class keeps the paper and its members' work, charged to nobody.
+		`UPDATE assignments SET frozen_by=NULL, frozen_bytes=0 WHERE frozen_by=$1`,
 		`UPDATE materials SET created_by=NULL WHERE created_by=$1`,
 		`UPDATE materials SET updated_by=NULL WHERE updated_by=$1`,
 		`UPDATE material_discussions SET created_by=NULL WHERE created_by=$1`,

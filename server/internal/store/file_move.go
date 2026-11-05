@@ -251,6 +251,10 @@ func (s *Store) moveFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID, work
 		// The orphan trigger drops the old content once nothing holds it.
 		return err
 	}
+	// An assignment's files are its own workspace's.
+	if _, err := tx.Exec(ctx, `DELETE FROM assignment_files WHERE file_id=$1`, fileID); err != nil {
+		return err
+	}
 	position, err := nextContentPosition(ctx, tx, workspaceID, topicID)
 	if err != nil {
 		return err

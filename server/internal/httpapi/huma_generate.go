@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,6 +25,43 @@ type generateInput struct {
 
 type generateOutput struct {
 	Body map[string]any
+}
+
+// withMixedIn adds the mixed-in questions the new quiz can hold: one whose id or
+// part ids are taken, by a clone that kept them or a model that chose them, would
+// fail the whole quiz after the model is paid.
+func withMixedIn(generated, mixed []map[string]any) []map[string]any {
+	taken := map[string]bool{}
+	for _, q := range generated {
+		for _, key := range questionKeys(q) {
+			taken[key] = true
+		}
+	}
+	out := slices.Clone(generated)
+	for _, q := range mixed {
+		keys := questionKeys(q)
+		if slices.ContainsFunc(keys, func(key string) bool { return taken[key] }) {
+			continue
+		}
+		for _, key := range keys {
+			taken[key] = true
+		}
+		out = append(out, q)
+	}
+	return out
+}
+
+// questionKeys names the ids a quiz holds once: its own and each part's.
+func questionKeys(q map[string]any) []string {
+	id, _ := q["id"].(string)
+	keys := []string{"question:" + id}
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		part, _ := p["id"].(string)
+		keys = append(keys, "part:"+part)
+	}
+	return keys
 }
 
 // generateMixShare is how much of a quiz "Mix in questions I have answered"
@@ -302,7 +340,7 @@ func (a *api) generateViaPipe(
 	if len(qp.Questions) == 0 {
 		return nil, usage, errGenerateEmpty
 	}
-	questions, err := json.Marshal(append(qp.Questions, mixed...))
+	questions, err := json.Marshal(withMixedIn(qp.Questions, mixed))
 	if err != nil {
 		return nil, usage, err
 	}

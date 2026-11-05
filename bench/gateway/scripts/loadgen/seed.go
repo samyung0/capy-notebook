@@ -340,11 +340,11 @@ func (u *user) countOffset(ctx context.Context, path string) (int, error) {
 // per card, a graded check per question), then finish.
 func (u *user) finishReview(ctx context.Context, ws string) error {
 	var session struct {
-		TopicID string          `json:"topicId"`
-		Evidence  json.RawMessage `json:"evidence"`
-		Group     string          `json:"group"`
-		Mode      string          `json:"mode"`
-		Items     []struct {
+		TopicID  string          `json:"topicId"`
+		Evidence json.RawMessage `json:"evidence"`
+		Group    string          `json:"group"`
+		Mode     string          `json:"mode"`
+		Items    []struct {
 			ItemID     string `json:"itemId"`
 			MaterialID string `json:"materialId"`
 			Kind       string `json:"kind"`

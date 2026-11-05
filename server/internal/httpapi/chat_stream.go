@@ -479,7 +479,7 @@ func (a *api) chatTurnContext(ctx context.Context, userID, wsID string, req chat
 		return turn, err
 	}
 	if o := req.OpenResource; o != nil && o.ID != "" {
-		title, found, err := a.s.ChatOpenResource(ctx, wsID, o.Kind, o.ID)
+		title, found, err := a.s.ChatOpenResource(ctx, userID, wsID, o.Kind, o.ID)
 		if err != nil {
 			return turn, err
 		}

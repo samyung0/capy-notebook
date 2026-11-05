@@ -141,6 +141,64 @@ test('chat docks as a button, keeps a draft, and grows into its page on send', a
   await expect(button).toBeVisible();
 });
 
+test('Make a quiz hides the dock, and the chat comes back with its draft and thread', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio');
+  await page.addStyleTag({
+    content: '[data-testid=mock-scenario-panel] { display: none }',
+  });
+  const dock = page.locator('[data-workspace-chat-dock]');
+  const button = dock.getByRole('button', {
+    exact: true,
+    name: m.workspace_tab_chat(),
+  });
+  const field = dock.getByRole('textbox', { name: m.chat_placeholder() });
+  await button.click({ timeout: 60_000 });
+  await field.fill('What do mitochondria do?');
+  await dock.getByRole('button', { name: m.chat_send() }).click();
+  const chat = page.locator('[data-workspace-chat-page]');
+  await chat.getByRole('button', { name: m.action_back() }).click();
+  await button.click();
+  await field.fill('And ATP?');
+
+  await page.getByRole('button', { name: m.dashboard_make_quiz() }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: m.make_quiz_choose_file() }).click();
+  await page.getByRole('option', { name: /Past paper 2025 P1\.pdf/ }).click();
+  await dialog.getByRole('button', { name: m.action_continue() }).click();
+  await expect(
+    page.getByRole('heading', { name: m.make_quiz_pages_title() })
+  ).toBeVisible();
+  await expect(dock).toHaveCount(0);
+
+  await page.getByRole('button', { name: m.action_cancel() }).click();
+  await button.click();
+  await expect(field).toHaveValue('And ATP?');
+  await dock.getByRole('button').first().click();
+  await expect(
+    chat.getByRole('heading', { name: 'What do mitochondria do?' })
+  ).toBeVisible();
+});
+
+// A personal workspace: a class's owner and editors have no Summary.
+test('⋮ reaches Summary, which one column has no panel for', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_calc?material=f_7');
+  await page.addStyleTag({
+    content: '[data-testid=mock-scenario-panel] { display: none }',
+  });
+  await page
+    .getByTestId('content-header')
+    .getByRole('button', { name: m.a11y_open_menu() })
+    .click({ timeout: 60_000 });
+  await page.getByRole('menuitem', { name: m.study_panel_summary() }).click();
+  await expect(
+    page.getByRole('heading', { level: 1, name: m.study_panel_summary() })
+  ).toBeVisible();
+});
+
 test('the chat page lists past chats in its history dialog, with See archived', async ({
   page,
 }) => {

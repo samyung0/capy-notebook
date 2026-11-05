@@ -7,6 +7,8 @@ import json
 
 import pytest
 
+from pipeline.retrieval import pending_hints, store
+
 pytestmark = pytest.mark.stack
 
 
@@ -208,3 +210,104 @@ async def test_an_agent_note_and_its_quiz_edit_reach_the_next_turn(stack, turn):
         "- Twice",
         "- Once",
     }
+
+
+async def test_a_hidden_items_unindexed_edits_reach_only_those_who_edit(stack, turn):
+    """T10 (security regression): a hidden note and file with unindexed edits. A
+    viewer's turn whose message and search name words of those edits gets no hints
+    and no search tail, and its model never sees the items' ids; an editor's gets
+    both."""
+    ws = stack.workspace()
+    stack.sql(
+        "INSERT INTO workspace_members (workspace_id, user_id, role)"
+        " VALUES (%s, 'u_viewer', 'viewer')",
+        (ws,),
+    )
+    note = stack.call(
+        "u_owner",
+        "POST",
+        f"/api/workspaces/{ws}/materials",
+        json={
+            "kind": "note",
+            "title": f"Marsh {stack.marker()}",
+            "content": {
+                "schemaVersion": 1,
+                "value": [
+                    {
+                        "type": "p",
+                        "id": "hid_a",
+                        "children": [{"text": "Marsh notes."}],
+                    },
+                    {"type": "p", "id": "hid_b", "children": [{"text": "Tide notes."}]},
+                ],
+            },
+        },
+    )["id"]
+    await stack.index_note(ws, note)
+    text = "# Dunes\n\nDunes hold sand.\n\nGrass binds them.\n"
+    file_id = stack.upload("u_owner", ws, f"{stack.marker()}.md", text.encode())
+    await stack.index_file(ws, file_id, text)
+    hinted = f"{stack.marker()} {stack.marker()}"
+    searched = f"{stack.marker()} {stack.marker()}"
+    stack.edit(
+        "u_editor",
+        ws,
+        {"kind": "material", "id": note},
+        [
+            {
+                "type": "replace_text",
+                "target_id": "hid_a",
+                "expected_text": "Marsh notes.",
+                "text": f"Marsh {hinted}.",
+            },
+            {
+                "type": "replace_text",
+                "target_id": "hid_b",
+                "expected_text": "Tide notes.",
+                "text": f"Tide {searched}.",
+            },
+        ],
+    )
+    stack.edit(
+        "u_editor",
+        ws,
+        {"kind": "source_file", "id": file_id},
+        [
+            {
+                "type": "replace_text",
+                "expected_text": "hold sand",
+                "text": f"hold {hinted} sand",
+            },
+            {
+                "type": "replace_text",
+                "expected_text": "binds them",
+                "text": f"binds {searched} them",
+            },
+        ],
+    )
+    stack.call("u_owner", "PUT", f"/api/materials/{note}/hidden", json={"hidden": True})
+    stack.call("u_owner", "PUT", f"/api/files/{file_id}/hidden", json={"hidden": True})
+
+    async def turn_of(user: str, readers: list[str]):
+        """`user`'s turn, with the hidden readers service.py binds for their role."""
+        token = store.bind_hidden_readers(readers)
+        try:
+            return await turn(
+                stack.owner(ws, user),
+                [("search", "search_workspace", {"query": searched})],
+                query=f"What do my notes say about {hinted}?",
+            )
+        finally:
+            store.reset_hidden_readers(token)
+
+    viewer = await turn_of("u_viewer", [])
+    editor = await turn_of("u_editor", [ws])
+
+    assert not viewer.hints()
+    assert pending_hints.SEARCH_HEADING not in viewer.result("search")
+    for item in (note, file_id):
+        assert item not in str(viewer.requests)
+        assert item in editor.hints() and item in editor.result("search")
+    assert hinted.split()[0] in editor.hints()
+    assert pending_hints.SEARCH_HEADING in editor.result("search")
+    assert searched.split()[0] in editor.result("search")

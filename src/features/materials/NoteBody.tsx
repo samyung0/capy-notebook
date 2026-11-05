@@ -269,9 +269,12 @@ export function NoteBody({
     void queryClient.invalidateQueries({ queryKey: qk.material(materialId) });
   }, [bodyMissing, materialId, queryClient]);
   // The editor's chunk once the paint is up, not behind the read and the token.
-  // A heavy note opened read-only never needs it.
+  // Before the read answers its copy's row says, so a viewer's reopen never
+  // loads it. A heavy note opened read-only never needs it.
   const mayEdit =
-    !!painted && !staticNote && (material?.capabilities.canEditContent ?? true);
+    !!painted &&
+    !staticNote &&
+    (material?.capabilities.canEditContent ?? seed?.row.canEditContent);
   useEffect(() => {
     if (mayEdit) void loadEditor();
   }, [mayEdit]);

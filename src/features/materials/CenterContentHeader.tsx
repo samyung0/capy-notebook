@@ -375,7 +375,6 @@ export function Header({
   readOnly,
   workspaceId,
   leading,
-  trailing,
   standalone = false,
   fileControls,
   fileActions,
@@ -398,8 +397,6 @@ export function Header({
   presence: PresenceStore;
   /** Workspace chrome drawn before the file: layout toggle and workspace menu. */
   leading?: ReactNode;
-  /** Workspace chrome at the header's right end: the right panel toggle. */
-  trailing?: ReactNode;
   topics: Topic[];
   color?: UserColor;
   item: OpenItem;
@@ -672,7 +669,6 @@ export function Header({
         >
           {right}
           {compact && menu}
-          {trailing}
         </div>
       </div>
     );
@@ -713,7 +709,6 @@ export function Header({
       <div className="ml-auto flex items-center gap-0">
         {right}
         {compact && menu}
-        {trailing}
       </div>
     </div>
   );

@@ -1,9 +1,11 @@
 import {
   lazy,
   type ReactNode,
+  type RefObject,
   Suspense,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -41,7 +43,13 @@ import {
 } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { moveQuestion, removeQuestion, writeQuestion } from './liveQuiz';
+import {
+  moveQuestion,
+  questionState,
+  removeQuestion,
+  removeUnchangedQuestion,
+  writeQuestion,
+} from './liveQuiz';
 import { useQuizQuestions, useQuizRooms } from './liveQuizRooms';
 import { QuizRecovery, quizImageUpload } from './QuizForm';
 import { QuizQuestionList } from './QuizPage';
@@ -72,11 +80,16 @@ function questionSummary(question: Question): string {
   return m.quiz_editor_untitled();
 }
 
+/** The question added and not written to yet, and what it held when added. */
+type BlankQuestion = { id: string; state: string };
+
 /** The quiz as a page (Epo 2026-11-02, board X2): the plain question list on
  * the left, the open question's fields on the right, each change written to
  * the quiz's documents at once. Phones have room for one: the list, then the
- * question with a way back to it. A question added and left blank goes. */
+ * question with a way back to it. A question added and left blank goes, when
+ * another opens or the page goes (`QuizEditor`). */
 function QuizEditorBody({
+  blank,
   content,
   keys,
   questions,
@@ -87,6 +100,7 @@ function QuizEditorBody({
   title,
   undo,
 }: {
+  blank: RefObject<BlankQuestion | null>;
   content: Y.Doc;
   keys: Y.Doc;
   questions: Question[];
@@ -99,8 +113,6 @@ function QuizEditorBody({
   undo: UndoTarget | null;
 }) {
   const [picked, setPicked] = useState<string | null>(target ?? null);
-  // Set while the added question hasn't been written to.
-  const [blank, setBlank] = useState<string | null>(null);
   const [phoneOnQuestion, setPhoneOnQuestion] = useState(!!target);
   const index = Math.max(
     0,
@@ -108,8 +120,10 @@ function QuizEditorBody({
   );
   const question = questions[index];
   const open = (id: string) => {
-    if (blank && blank !== id) removeQuestion(content, keys, blank);
-    setBlank(null);
+    if (blank.current && blank.current.id !== id) {
+      removeUnchangedQuestion(content, keys, blank.current);
+      blank.current = null;
+    }
     setPicked(id);
     setPhoneOnQuestion(true);
   };
@@ -133,7 +147,10 @@ function QuizEditorBody({
               const added = blankQuestion();
               writeQuestion(content, keys, added);
               open(added.id);
-              setBlank(added.id);
+              blank.current = {
+                id: added.id,
+                state: questionState(content, keys, added.id),
+              };
             }}
           >
             <Icon name="plus" />
@@ -209,7 +226,7 @@ function QuizEditorBody({
               onRemove={() => {
                 const next = questions[index + 1] ?? questions[index - 1];
                 removeQuestion(content, keys, question.id);
-                setBlank(null);
+                blank.current = null;
                 setPicked(next?.id ?? null);
               }}
               question={question}
@@ -217,7 +234,7 @@ function QuizEditorBody({
               undo={undo}
               uploadAsset={quizImageUpload(quizId)}
               write={(next) => {
-                setBlank(null);
+                blank.current = null;
                 writeQuestion(content, keys, next);
               }}
             />
@@ -282,6 +299,18 @@ export function QuizEditor({
   ]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   useReportPresence(onPresenceChange, rooms.presence);
+  // Leaving the page takes a blank added question with it. A layout effect's
+  // cleanup, because the rooms' documents go in their passive cleanups; and only
+  // while this page can write, since a read-only room refuses the edit.
+  const blank = useRef<BlankQuestion | null>(null);
+  const leave = useRef(() => {});
+  leave.current = () => {
+    const { access, content, keys, ready, recovery } = rooms;
+    if (!(blank.current && content && keys && ready)) return;
+    if (access !== 'write' || recovery || itemEditingStopped(rooms)) return;
+    removeUnchangedQuestion(content.doc, keys.doc, blank.current);
+  };
+  useLayoutEffect(() => () => leave.current(), []);
   // Once its question shows in the paint, and again as the page replaces it:
   // the page opens that question, its list row may be out of view.
   const scrolledTo = useRef<string | null>(null);
@@ -344,6 +373,7 @@ export function QuizEditor({
           {rooms.offline && <SaveBanner state={rooms.offline} />}
           <CollaborationHold className="flex min-h-0 flex-1 flex-col">
             <QuizEditorBody
+              blank={blank}
               content={rooms.content.doc}
               keys={rooms.keys.doc}
               questions={questions}

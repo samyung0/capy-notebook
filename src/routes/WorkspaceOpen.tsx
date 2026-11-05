@@ -743,7 +743,16 @@ function WorkspaceOpen() {
       label: m.workspace_tab_study(),
       onClick: openPractice,
     },
-    // Phones have no Study panel: a class's Assignments sits beside Study.
+    // Phones have no Study panel: the pages this person has sit beside Study.
+    ...(studyView(ws).pages.includes('summary')
+      ? [
+          {
+            icon: 'profile' as const,
+            label: m.study_panel_summary(),
+            onClick: () => openStudy('summary'),
+          },
+        ]
+      : []),
     ...(studyView(ws).pages.includes('assignments')
       ? [
           {
@@ -1210,8 +1219,7 @@ function WorkspaceOpen() {
                   {viewer}
                 </OfficeInsetContext.Provider>
               </FloatingBarContext.Provider>
-              {/* The page picker's footer takes the dock's corner on phones. */}
-              {oneColumnLayout && !makePage && (
+              {oneColumnLayout && (
                 <AppErrorBoundary resetKeys={[workspaceId]}>
                   <ChatPanel
                     canReprocess={ws.isOwner}
@@ -1221,6 +1229,9 @@ function WorkspaceOpen() {
                       menuItems: [...addItems.slice(0, 1), ...settingsItems],
                       office: officeOpen,
                     }}
+                    // The page picker's footer takes the dock's corner on
+                    // phones; hidden, the chat keeps its draft and stream.
+                    hidden={makePage}
                     onOpenCitation={openCitation}
                     onOpenResource={openChatResource}
                     openResource={openItem}

@@ -1,3 +1,4 @@
+import { isApiError } from '@/api/client';
 import { createExtractionBodyTitleMax } from '@/api/gen/validators';
 import {
   EXTRACTION_FILES_MAX,
@@ -26,13 +27,21 @@ export function isQuizFile(file: Pick<SourceFile, 'kind' | 'name'>) {
   return ext !== 'xlsx' && ext !== 'xls';
 }
 
+/** A file on its way in. */
+export function isReadingFile(file: Pick<SourceFile, 'status'>) {
+  return file.status === 'pending' || file.status === 'processing';
+}
+
+/** Finished with no text to read from: it failed or was stored without parsing. */
+export function isUnreadable(file: Pick<SourceFile, 'indexed' | 'status'>) {
+  return !(file.indexed || isReadingFile(file));
+}
+
 /** A file the menus offer: read, or still being read. A failed file or one
  * stored without parsing can never be read from. */
 export function isOfferable(file: Pick<SourceFile, 'indexed' | 'status'>) {
   if (file.status === 'failed') return false;
-  return (
-    file.indexed || file.status === 'pending' || file.status === 'processing'
-  );
+  return file.indexed || isReadingFile(file);
 }
 
 /** Past the 10-file cap, mark scheme and answer files included (Epo
@@ -106,6 +115,40 @@ export function quizTitleFrom(
   let n = 2;
   while (taken.has(`${base} ${n}`.toLowerCase())) n += 1;
   return `${base} ${n}`;
+}
+
+/** Why a run failed, chosen by its code: the run's own text never shows. */
+export function extractionFailure(code: string | undefined): string {
+  switch (code) {
+    case 'provider_busy':
+      return m.make_quiz_failed_busy();
+    case 'storage_full':
+      return m.make_quiz_failed_storage();
+    case 'extraction_empty':
+      return m.make_quiz_failed_empty();
+    case 'interrupted':
+      return m.make_quiz_failed_interrupted();
+    case 'quiz_invalid':
+      return m.make_quiz_failed_invalid();
+    default:
+      return m.make_quiz_failed_fallback();
+  }
+}
+
+/** What a refused start says, chosen by the retrieval service's code; null for
+ * any other error. */
+export function extractionRefusal(error: unknown): string | null {
+  if (!isApiError(error)) return null;
+  switch (error.code) {
+    case 'too_many_pages':
+      return m.make_quiz_refused_pages({ max: EXTRACTION_PAGES_MAX });
+    case 'file_too_long':
+      return m.make_quiz_refused_long();
+    case 'no_indexed_text':
+      return m.make_quiz_refused_no_text();
+    default:
+      return null;
+  }
 }
 
 /** What a finished run leaves out, in plain words, or null when nothing is. A

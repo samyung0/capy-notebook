@@ -87,7 +87,8 @@ closed at until the page is left:
   [study-progress.md](../study-progress.md#practice).
 
 The chat stays mounted from lg whichever section shows, the panel closed too,
-so it keeps its thread, draft and stream; a thread that moves on while hidden
+so it keeps its thread, draft and stream (below lg the dock's chat stays mounted
+too, hidden on Make a quiz's pages); a thread that moves on while hidden
 shows its end on return. Every way into a chat goes to Agent (`openChat`):
 `?chat=new` from Get started, the history's rows and New chat, and voice. A chat
 on screen comes back after a reload or a closed tab (`capy.workspace.chatShown.<id>`,
@@ -101,7 +102,8 @@ panel; Dashboard opens the landing and Study opens Practice. With the rail the
 centre header has no back arrow or panel toggle; Study's pages fill the centre
 without a header. Below lg the one-column layout stays as before: the header's
 title opens the Files dropdown, its ⋮ (and the dropdown's foot) carry Dashboard,
-Study and Workspace settings, and chat is the dock and its chat page.
+Study, the Study pages this person has beside Practice (Summary, Assignments)
+and Workspace settings, and chat is the dock and its chat page.
 
 A page has one `h1`: the Dashboard, Study's pages, a quiz and a flashcards set
 head themselves; with anything else open it is an `sr-only` workspace name.

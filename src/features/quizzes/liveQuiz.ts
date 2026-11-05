@@ -959,6 +959,22 @@ export function removeQuestion(
   }, origin);
 }
 
+/** A question as its documents hold it, to tell later if anyone wrote in it. */
+export function questionState(content: Y.Doc, keys: Y.Doc, id: string) {
+  return JSON.stringify(readQuestions(content, keys).find((q) => q.id === id));
+}
+
+/** Removes a question added and left blank, only while it holds what it did
+ * then (`questionState`): what a co-editor has written in it since stays. */
+export function removeUnchangedQuestion(
+  content: Y.Doc,
+  keys: Y.Doc,
+  { id, state }: { id: string; state: string }
+) {
+  if (questionState(content, keys, id) === state)
+    removeQuestion(content, keys, id);
+}
+
 /** Moves a question to `index` in the quiz's order. */
 export function moveQuestion(
   content: Y.Doc,

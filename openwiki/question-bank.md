@@ -156,7 +156,10 @@ answer events and review, so nothing keyed by part changes. One level only: a
 group is strictly `{id, blocks}`, so it holds no group. A part's `group` must
 name a group of the question, a group has at least one part, and a group's parts
 sit next to each other in `parts`; a group has no place of its own, it sits where
-its first part sits. Every validator refuses the rest, on the shared `group-*`
+its first part sits. A group's id is checked as a part's is, non-blank and at most
+128 characters, so a stored `sheet 1.a` opens and saves in the quiz room; only a key
+a client creates there must be letters, digits, `-` or `_`. Every validator refuses
+the rest, on the shared `group-*`
 fixtures. Reads of a live room repair what a merge leaves instead
 (`repairGroups`, [plate-editor.md](frontend/plate-editor.md)).
 
@@ -242,27 +245,32 @@ who may edit the workspace (a viewer's `?make=` link shows the Dashboard).
   An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden
   from members and in no topic, and shows "Reading pages" until it is indexed.
   Continue waits for the paper's pages and for each answer file to have an id; an
-  answer file may still be reading. Files, mark scheme and answer files included,
+  answer file may still be reading, and one that failed or was stored without
+  parsing holds it until removed. Files, mark scheme and answer files included,
   stop at `EXTRACTION_FILES_MAX`.
 - **The page picker** (`PagePicker`, board X1, `?make=pages&paper=…&answers=…`):
   pages shown large and drawn near the viewport only, one click selects one, up to
   `EXTRACTION_PAGES_MAX`. Page numbers run across a paper's files. The footer's
   "about 60 credits" is `estimatedCredits`, a fixed rate from the board. Extract
-  questions waits for answer files to be read and starts the run; a refusal shows
-  in the footer's `FormAlert`. The quiz takes the paper's name, the next number
-  when it is taken.
+  questions waits for answer files still reading (`pending` or `processing`) and
+  starts the run; a refusal, such as an answer file that failed after the dialog,
+  shows in the footer's `FormAlert`. The quiz takes the paper's name, the next
+  number when it is taken.
 - **The run** (`ExtractionProgress`, `?make=run&run=…`): reads
   `GET /api/extractions/{id}` every 3 s while running, shows the questions read so
-  far, and on `done` opens the quiz, or on `failed` shows the run's error
-  with a way back to the pages. It depends only on the row's status, `recorded`,
+  far, and on `done` opens the quiz, or on `failed` shows copy chosen by the run's
+  `errorCode` (`extractionFailure`; the row's `error` text never shows) with a way
+  back to the pages. A poll that fails leaves the run on screen and the next one
+  reads it again. It depends only on the row's status, `errorCode`, `recorded`,
   `quizId` and `report`, never on how a run batches its calls. Leaving the page
   leaves the run going: the stream's `extraction` event brings a toast with Open
   (`extractionEnd.ts`). A report's left-out questions or early stop show as one
   warning toast (`extractionNotice`); everything else about a saved quiz shows as
   its normal issues.
 - **The pages keep the rail, without the section panel** (`makePage` in
-  `WorkspaceOpen`); a rail section leaves them. Phones drop the chat dock on the
-  pages, whose footer holds its corner.
+  `WorkspaceOpen`); a rail section leaves them. Phones hide the chat dock on the
+  pages, whose footer holds its corner; the chat stays mounted, so it keeps its
+  draft and stream.
 
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part
@@ -292,7 +300,10 @@ Phones show the list, then one question with All questions to go back, under the
 normal header. What the page doesn't lay out (charts, graphs, tables, blanks,
 layout and part labels, adding blocks, parts and groups, a unit or hints) is in
 the question's ⋮, Edit all details: the question dialog on the same question. A
-note's quiz embed keeps the list of questions with Edit and Remove (`QuizForm`).
+question added and left blank goes when another opens or the page is left, before
+its rooms close, while the page can still write; anything anyone wrote in it since,
+a co-editor included, keeps it (`removeUnchangedQuestion`). A note's quiz embed
+keeps the list of questions with Edit and Remove (`QuizForm`).
 
 `QuestionDialog` is shared by the bank and the quiz editor. Its outline
 column (min 15rem, nudged 4px left to line up with the dialog title) keeps

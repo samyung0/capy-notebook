@@ -423,8 +423,8 @@ open or search it. Viewers, members or not, do not see it anywhere: the
 workspace's Files and materials lists, the cross-workspace lists of what the
 caller can open (Dashboard Recent, pickers, the Files page's All files), the
 Dashboard's recent rows and opens, Study's lists, review pool and counts,
-Learning's progress map and counts, search, the account chat's document scope
-and every retrieval tool. Opening it by id answers 404, as for any item the
+Learning's progress map and counts, search, the account chat's document scope,
+every retrieval tool and the chat's unindexed-edit hints. Opening it by id answers 404, as for any item the
 caller cannot reach. The anonymous workspace summary leaves hidden files out.
 The Files page's own list (what the caller pays for) still shows the payer
 its rows. The flag narrows reading only; what editors may do with the item is
@@ -436,7 +436,8 @@ unchanged.
   follows its note, so the flag is read only on a top-level workspace item.
   `workspace_item_visible(hidden, workspace_id, viewer)` is the SQL rule the
   lists and searches call; single-item reads check it in Go
-  (`materialEffectiveAccess`, `FileEffectiveRole`), the collaboration server in
+  (`materialEffectiveAccess`, `FileEffectiveRole`, a file's source room and
+  annotations in `sourceActorsAllowed`), the collaboration server in
   `live_access`, and the internal document reads the pipeline uses through
   the same two.
 - **Switching it.** `PUT /api/files/{id}/hidden` and `PUT
@@ -462,15 +463,17 @@ unchanged.
   only the file id (the list refetch filters it out), and uploads send no
   notification. The Dashboard's Activity query filters with
   `workspace_item_visible`, so a viewer never gets the row; owners and editors
-  get it with `hidden` and the eye after its name (board U1).
+  get it with `hidden` and the eye after its name (board U1). A link or public
+  visitor, with no membership, gets its rows without who did them.
 - **Retrieval.** The pipeline binds the workspaces whose hidden items a turn
   may read (`bind_hidden_readers`): a workspace chat turn its workspace when
   the caller is an owner or editor, an account chat turn the scope's
   workspaces the caller can edit, generation and extraction their workspace
   (both need edit). Search, summary search, the outline, page and range reads
   and history passages filter on it; the knowledge library has no flag.
-- **Clone.** A viewer's workspace clone leaves hidden items out (nor can a
-  viewer reach one to clone it alone). An owner's or editor's clone, of the
+- **Clone.** A viewer's workspace clone leaves hidden items out, and a viewer
+  cannot clone one alone (`cloneFileOnce`, `materialEffectiveAccess`), except a
+  file they pay for (D3). An owner's or editor's clone, of the
   workspace or of one item, copies each item's flag as it is: hidden stays
   hidden and visible stays visible (Epo 2026-11-04). A copy with no workspace
   has no members, so it is not hidden.
@@ -767,6 +770,7 @@ topicName?}` (`MoveFiles` in `store/file_move.go`).
   running (409 `file_processing`), or already in the target (409) is refused.
   A topic move inside one workspace stays `PATCH /api/files/{id}`. Locks
   follow every workspace write: workspace rows by id, accounts, then files.
+- A moved file leaves its old workspace's assignments.
 - Thumbnail keys stay inside their workspace: a moved file drops a key
   borrowed from another file, and files that borrowed the moved file's key
   drop theirs (the next capture redraws them).
