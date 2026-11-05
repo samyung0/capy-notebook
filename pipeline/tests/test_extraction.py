@@ -537,6 +537,18 @@ async def test_solve_batches_run_a_few_at_a_time(monkeypatch):
     assert peak == 2
 
 
+def test_a_question_holds_at_most_five_figures():
+    box = extraction.layout.Region("image", 0.9, [100, 100, 200, 200])
+    page = _page(5)
+    boxes = {1: (page, box)}
+    figures = [{"boxes": [1], "part": "", "description": "x"}]
+    read, problem = extraction.read_figures(figures * 5, [page], [""], boxes)
+    assert problem is None and len(read) == 5
+    read, problem = extraction.read_figures(figures * 6, [page], [""], boxes)
+    assert read == []
+    assert problem == "too many figures, a question holds at most 5"
+
+
 def test_numbers_too_long_to_be_real_fail_nothing():
     long = "9" * 5000
     assert extraction._number(long) is None

@@ -194,6 +194,10 @@ async def generate(args) -> str:
             call(copied("12", figures=[{"boxes": [1], "description": long_words}])),
         ),
         (
+            "More figures than a question holds",
+            call(copied("12", figures=[{"boxes": [1]}] * 6)),
+        ),
+        (
             "A figure with boxes [] and no page image",
             call(copied("12", figures=[{"boxes": []}])),
         ),

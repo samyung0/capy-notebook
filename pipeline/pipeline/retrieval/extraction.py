@@ -90,6 +90,10 @@ COPY_REPAIR_PASSES = 2
 # page and cost 17 times a normal run
 # (bench/extraction/reports/2026-11-03-keys-in-one-prompt.md, Epo 2026-11-04).
 OUTPUT_PER_PAGE = 8_000
+# Figures a whole question holds, stem and parts together (Epo 2026-11-05, "cap at 5, i
+# thought its per part, if whole quesiton then 5"). A call past it is refused. Worked
+# solutions hold text alone, so they can't add one.
+QUESTION_FIGURES_MAX = 5
 # A figure is cropped at the scale that gives its page's long side this many
 # pixels (about 190 DPI on A4, against the page images' 1,568), so its labels read
 # and a small figure stays small; the crop's long side is still at most
@@ -535,6 +539,8 @@ def read_figures(
     pictured = [page for page in pages if page.image]
     if not pictured:
         return [], None
+    if isinstance(raw, list) and len(raw) > QUESTION_FIGURES_MAX:
+        return [], f"too many figures, a question holds at most {QUESTION_FIGURES_MAX}"
     parts = {label_key(label) for label in part_labels}
     for index, item in enumerate(raw if isinstance(raw, list) else []):
         name = f"figures[{index}]"

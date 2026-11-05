@@ -5847,8 +5847,8 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      can't be told from bold and loses them.
   7. Figures (Epo 2026-11-04). Each figure a copy names gives the numbers of the boxes that
      hold it, several for a split figure, the part whose text it follows ("" for the stem) and
-     a few words on what it shows; a number that is no box, boxes on two pages, or a part the
-     question lacks go back to the model. Code crops the chosen boxes together, adds an
+     a few words on what it shows; a number that is no box, boxes on two pages, a part the
+     question lacks, or more than 5 figures on a question (Epo 2026-11-05) go back to the model. Code crops the chosen boxes together, adds an
      adjacent caption (a `figure_title` region at 0.5 or more within 2.5% of the page above or
      below, with its middle over them) and pads 1% of the page all round (`layout.crop_box`). A
      figure no box holds gives `boxes: []` and its page image. After the answers, those figures alone
