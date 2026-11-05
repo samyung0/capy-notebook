@@ -105,6 +105,8 @@ test('a Word file on a bucket shows its pages and its count', async ({
   await drawnSheets(page, 2);
   await page.getByRole('button', { name: m.make_quiz_change_files() }).click();
   await expect(
-    page.getByRole('dialog').getByText(m.source_pages({ count: 2 }))
+    page
+      .getByRole('dialog')
+      .getByText(m.source_pages({ count: 2 }), { exact: true })
   ).toBeVisible({ timeout: 30_000 });
 });
