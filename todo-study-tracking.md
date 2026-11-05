@@ -966,6 +966,6 @@ The batch is on `main` and UAT at bb1b3fb4a (`e2e/uat/journeys/study.spec.ts` ha
 
 **Answered by Epo, 2026-11-05:** the Late badge stays; Attempts stays where it is; Summary keeps counting marks as they land, with no filter (Epo: unmarked work isn't in the data and a filter is needless complexity); with Show answers off, a warning shows once the assignment closes.
 
-**Still with Epo:** whether Windows deploys the layout service to the ingest host (`LAYOUT_WORKERS=2`, `LAYOUT_THREADS=2`; runbook §7.6; UAT has no `CAPY_LAYOUT_URL`, so Make a quiz uses the fallback box call until then).
+**Layout service (Epo, 2026-11-05: "sure"):** Windows deploys it to the ingest host after the current landing has reported (`LAYOUT_WORKERS=2`, `LAYOUT_THREADS=2`; runbook §7.6). Until `CAPY_LAYOUT_URL` is set, Make a quiz on UAT uses the box call: looser crops and one more model call a page.
 
 **Handed over by the Windows session, not started:** the first real UAT check of a question with no answers going through `insert_child`; dotted question ids in `quiz.rs`, on main too; locks in `source_imports.go:763-780`; the `StartAssignment` expired-attempt lock; `DeleteAssignment` returning 404; a cap on a whole run's figures; sweep starvation (200 rows with no ORDER BY). The rest are in the left-for-later lists of `FIXES.md` and `FIXES-2.md` under `2026-11-05-study-landing` in the harness. `assignments.go:327-336` is already handled.
