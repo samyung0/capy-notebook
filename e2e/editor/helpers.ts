@@ -21,6 +21,19 @@ export async function openEditorNote(
 }
 
 /**
+ * Takes the mock scenario panel off the page. It floats at the bottom right,
+ * over the centre since the right panel went (Epo 2026-11-04), and covers what a
+ * test may click there.
+ */
+export async function hideScenarioPanel(page: Page) {
+  await page
+    .getByTestId('mock-scenario-panel')
+    .evaluate((panel: HTMLElement) => {
+      panel.hidden = true;
+    });
+}
+
+/**
  * Put the caret after the last character of a text element. Clicking the text
  * often lands mid-word, and End only moves the native caret, which Slate reads
  * through a throttled selectionchange listener: a re-render in between (TOC,
