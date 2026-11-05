@@ -854,9 +854,10 @@ serves the frozen copy.
 
 **Settings** (Epo 2026-11-05, `AssignmentSettingsTab`). The report has no ⋮: its last
 tab, `tab=settings`, holds every action as a row. Unmarked ones have Members and
-Settings; a draft has no tabs and shows the rows under Publish. Edit quiz opens the
-quiz in its room (hidden with no quiz), Assignment details the edit dialog, then
-Close or Reopen and Delete, each confirming as the menu did.
+Settings; a draft has no tabs, only the rows, with a Publish row and its dark button
+first. Edit quiz opens the quiz in its room (hidden with no quiz), Assignment details
+the edit dialog, then Close or Reopen and Delete, each confirming as the menu did.
+Their buttons share one width, borderless (`ghost-hover`, `danger-light` for Delete).
 
 **Republish** (Epo 2026-11-05, `POST /api/assignments/{id}/republish`,
 `RepublishAssignment`). Editing a quiz never reaches its assignment by itself. An

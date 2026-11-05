@@ -2841,6 +2841,7 @@
   "assignment_tab_settings": "Settings",
   "assignment_settings_quiz": "Quiz",
   "assignment_edit_quiz": "Edit quiz",
+  "assignment_settings_publish": "Publish assignment",
   "assignment_settings_republish": "Republish quiz",
   "assignment_republish": "Republish",
   "assignment_last_published": "Last published {date}",

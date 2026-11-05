@@ -1,7 +1,8 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { type ComponentProps, useState } from 'react';
 import {
   useDeleteAssignment,
+  usePublishAssignment,
   useRepublishAssignment,
   useSetAssignmentClosed,
 } from '@/api/hooks';
@@ -19,8 +20,16 @@ import { NoAnswersWarning } from './NoAnswersWarning';
 
 type Asking = 'republish' | 'close' | 'delete';
 
-/** An assignment's actions (Epo 2026-11-05, in place of its ⋮ menu). Its quiz
- * opens in its room; what a room changes reaches members on Republish. */
+/** The rows' one width, so their buttons line up. */
+function RowButton(props: ComponentProps<typeof Button>) {
+  return (
+    <Button className="w-32 justify-start" variant="ghost-hover" {...props} />
+  );
+}
+
+/** An assignment's actions (Epo 2026-11-05, in place of its ⋮ menu), under
+ * Publish while it is a draft. Its quiz opens in its room; what a room changes
+ * reaches members on Republish. */
 export function AssignmentSettingsTab({
   assignment,
   className,
@@ -33,6 +42,10 @@ export function AssignmentSettingsTab({
   const quizId = manage?.quizId;
   const [editing, setEditing] = useState(false);
   const [asking, setAsking] = useState<Asking | null>(null);
+  const { mutate: publish, isPending: publishing } = usePublishAssignment(
+    workspaceId,
+    id
+  );
   const { mutate: republish, isPending: republishing } = useRepublishAssignment(
     workspaceId,
     id
@@ -54,12 +67,32 @@ export function AssignmentSettingsTab({
   return (
     <div className={className}>
       <div className="flex max-w-180 flex-col gap-4">
+        {draft && (
+          <SettingRow
+            hint={m.assignment_draft_note()}
+            title={m.assignment_settings_publish()}
+          >
+            <Button
+              className="w-32"
+              disabled={publishing}
+              onClick={() => publish(undefined, { onError: failed })}
+            >
+              {m.assignment_publish()}
+            </Button>
+          </SettingRow>
+        )}
+        {draft && quizId && <NoAnswersWarning quizId={quizId} />}
         {quizId && (
           <SettingRow
             hint={manage?.quizTitle}
             title={m.assignment_settings_quiz()}
           >
-            <UnderlineLink asChild className="text-fg">
+            <UnderlineLink
+              asChild
+              className="w-32 justify-start text-fg"
+              size="md"
+              variant="ghost-hover"
+            >
               <Link search={{ material: quizId }} to=".">
                 {m.assignment_edit_quiz()}
               </Link>
@@ -73,24 +106,19 @@ export function AssignmentSettingsTab({
             })}
             title={m.assignment_settings_republish()}
           >
-            <Button
+            <RowButton
               disabled={republishing}
               iconLeft="refresh"
               onClick={() => setAsking('republish')}
-              variant="outline"
             >
               {m.assignment_republish()}
-            </Button>
+            </RowButton>
           </SettingRow>
         )}
         <SettingRow title={m.assignment_settings_details()}>
-          <Button
-            iconLeft="pencil"
-            onClick={() => setEditing(true)}
-            variant="outline"
-          >
+          <RowButton iconLeft="pencil" onClick={() => setEditing(true)}>
             {m.action_edit()}
-          </Button>
+          </RowButton>
         </SettingRow>
         {!draft && !closedItself(assignment) && (
           <SettingRow
@@ -100,7 +128,7 @@ export function AssignmentSettingsTab({
                 : m.assignment_settings_close()
             }
           >
-            <Button
+            <RowButton
               disabled={closing}
               iconLeft="lock"
               onClick={() =>
@@ -108,21 +136,20 @@ export function AssignmentSettingsTab({
                   ? setAsking('close')
                   : close()
               }
-              variant="outline"
             >
               {closedAt ? m.assignment_reopen() : m.assignment_close()}
-            </Button>
+            </RowButton>
           </SettingRow>
         )}
         <SettingRow title={m.assignment_settings_delete()}>
-          <Button
+          <RowButton
             disabled={deleting}
             iconLeft="trash"
             onClick={() => setAsking('delete')}
-            variant="danger-outline"
+            variant="danger-light"
           >
             {m.action_delete()}
-          </Button>
+          </RowButton>
         </SettingRow>
       </div>
       {editing && (

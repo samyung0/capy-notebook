@@ -38,6 +38,18 @@ test('Settings holds the actions: Republish moves the last published time, Edit 
   ).toBeVisible({ timeout: 30_000 });
 });
 
+test('a draft has its Publish row first, and publishing brings the tabs', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio?study=assignments&assignment=as_draft');
+  await page
+    .getByRole('button', { exact: true, name: m.assignment_publish() })
+    .click({ timeout: 60_000 });
+  await expect(
+    page.getByRole('tab', { name: m.assignment_tab_settings() })
+  ).toBeVisible();
+});
+
 test('a closed assignment keeps Edit quiz and has no Republish', async ({
   page,
 }) => {

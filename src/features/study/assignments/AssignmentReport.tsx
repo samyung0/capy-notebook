@@ -1,6 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useAssignmentReport, usePublishAssignment } from '@/api/hooks';
+import { useAssignmentReport } from '@/api/hooks';
 import type {
   Assignment,
   AssignmentMemberRow,
@@ -17,14 +17,13 @@ import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
-import { userToast } from '@/components/ui/userToast';
 import { answerLabels } from '@/features/questions/editorFields';
 import { optionLetter, TextView } from '@/features/questions/QuestionView';
 import { type Question, questionMarks } from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { errorCopy, unexpectedErrorId } from '@/lib/errors';
+import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { questionLine } from '../practice/practiceText';
 import { PracticeFrame, Td, Th } from '../practice/studyPage';
@@ -39,7 +38,6 @@ import {
   takesLateWork,
 } from './assignmentText';
 import { LateBadge } from './LateBadge';
-import { NoAnswersWarning } from './NoAnswersWarning';
 
 /** Questions the report opens with, as the board draws them. */
 const OPEN_FIRST = 3;
@@ -51,8 +49,8 @@ const CHIP =
 
 /** An assignment's report (boards G3, G3m, A3): the facts as chips, then its
  * Questions, Members, Approve AI marks and Settings tabs, each with its own
- * link. An unmarked one lists who has ticked it; a draft waits to be published,
- * with its settings under that. */
+ * link. An unmarked one lists who has ticked it; a draft has its settings alone,
+ * Publish first. */
 export function AssignmentReport({
   assignment,
   search,
@@ -128,10 +126,7 @@ export function AssignmentReport({
         </div>
       </div>
       {assignment.draft ? (
-        <>
-          <DraftBody assignment={assignment} />
-          <AssignmentSettingsTab assignment={assignment} className="mt-8" />
-        </>
+        <AssignmentSettingsTab assignment={assignment} className="mt-6" />
       ) : marked ? (
         <>
           <Tabs
@@ -200,35 +195,6 @@ export function AssignmentReport({
         </>
       )}
     </PracticeFrame>
-  );
-}
-
-function DraftBody({ assignment }: { assignment: Assignment }) {
-  const { mutate, isPending } = usePublishAssignment(
-    assignment.workspaceId,
-    assignment.id
-  );
-  return (
-    <div className="mt-6 flex flex-col items-start gap-3">
-      <p className="text-fg-secondary">{m.assignment_draft_note()}</p>
-      {assignment.manage?.quizId && (
-        <NoAnswersWarning quizId={assignment.manage.quizId} />
-      )}
-      <Button
-        disabled={isPending}
-        onClick={() =>
-          mutate(undefined, {
-            onError: (error) =>
-              userToast({
-                title: errorCopy(error, m.assignment_save_failed()),
-                variant: 'error',
-              }),
-          })
-        }
-      >
-        {m.assignment_publish()}
-      </Button>
-    </div>
   );
 }
 

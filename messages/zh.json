@@ -2841,6 +2841,7 @@
   "assignment_tab_settings": "设置",
   "assignment_settings_quiz": "测验",
   "assignment_edit_quiz": "编辑测验",
+  "assignment_settings_publish": "发布作业",
   "assignment_settings_republish": "重新发布测验",
   "assignment_republish": "重新发布",
   "assignment_last_published": "上次发布：{date}",
