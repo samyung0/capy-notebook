@@ -10,6 +10,7 @@ import {
   DialogFooter,
   DialogTitle,
 } from '@/components/ui/Dialog';
+import { FormAlert } from '@/components/ui/FormAlert';
 import { Icon } from '@/components/ui/Icon';
 import { Menu } from '@/components/ui/Menu';
 import {
@@ -20,9 +21,12 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { Switch } from '@/components/ui/Switch';
-import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
-import { deferStorageRefusal, describeError } from '@/lib/errors';
+import {
+  deferStorageRefusal,
+  describeError,
+  unexpectedErrorId,
+} from '@/lib/errors';
 
 const COUNTS = [5, 10, 15, 20] as const;
 
@@ -175,6 +179,10 @@ export function MakePractice({
   const { isPending, mutateAsync: generate } = useGenerate(workspaceId, {
     errorToast: false,
   });
+  const [formError, setFormError] = useState<{
+    errorId: string | null;
+    message: string;
+  } | null>(null);
   const [from, setFrom] = useState<'topics' | 'files'>('topics');
   const [pickedTopics, setPickedTopics] = useState<string[] | null>(null);
   const [pickedFiles, setPickedFiles] = useState<string[]>([]);
@@ -194,6 +202,7 @@ export function MakePractice({
     )?.name;
 
   async function start() {
+    setFormError(null);
     const picked = from === 'topics' ? chosenTopics : pickedFiles;
     try {
       const made = (await generate({
@@ -212,19 +221,13 @@ export function MakePractice({
           to: '/quizzes/$quizId/attempt',
         });
     } catch (error) {
-      if (isApiError(error) && error.code === 'pending_sources_too_large')
-        userToast({
-          id: 'generate-failed',
-          title: m.source_pending_context(),
-          variant: 'error',
-        });
       // A frozen or storage refusal shows as the workspace status instead.
+      if (isApiError(error) && error.code === 'pending_sources_too_large')
+        setFormError({ errorId: null, message: m.source_pending_context() });
       else if (!deferStorageRefusal(error))
-        userToast({
-          description: describeError(error).description,
-          id: 'generate-failed',
-          title: m.generate_failed(),
-          variant: 'error',
+        setFormError({
+          errorId: unexpectedErrorId(error),
+          message: describeError(error).description,
         });
     }
   }
@@ -300,6 +303,10 @@ export function MakePractice({
           <Icon name="ai" size={14} />
           {onlyYou ? m.practice_credits_only_you() : m.practice_credits()}
         </p>
+        <FormAlert
+          errorId={formError?.errorId}
+          message={formError?.message ?? null}
+        />
         <DialogFooter className="mt-2.5 max-sm:hidden sm:-mx-7 sm:px-7 sm:pb-5">
           <span className="t-meta mr-auto flex items-center gap-1.5 text-fg-muted">
             <Icon name="ai" size={14} />

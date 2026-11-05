@@ -161,7 +161,7 @@ fn text(value: &Value, what: &str) -> Result<String, String> {
 }
 
 /// `identifier`.
-fn identifier(value: &Value, what: &str) -> Result<String, String> {
+pub fn identifier(value: &Value, what: &str) -> Result<String, String> {
     let Some(raw) = value.as_str() else {
         return fail(format!("{what}: expected a string"));
     };

@@ -213,7 +213,9 @@ test('a note painted before its room synced binds at the sync and takes edits an
   await page.evaluate(async (id) => {
     const path = '/src/mocks/collaboration.ts';
     const { holdNoteTokens, setCollaborationSlowed } = await import(path);
-    holdNoteTokens(id, 31_000);
+    // Well past the join's 30 s: that counts from the editor's mount, and on a
+    // slow machine the token's request starts seconds earlier.
+    holdNoteTokens(id, 40_000);
     setCollaborationSlowed(true);
   }, EDITOR_NOTE.id);
   await page.goto(
@@ -221,7 +223,7 @@ test('a note painted before its room synced binds at the sync and takes edits an
   );
   const editor = page.locator('[contenteditable="true"]').first();
   const third = editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true });
-  // The token's 31 s, plus a reload if the dev server optimizes then.
+  // The token's 40 s, plus a reload if the dev server optimizes then.
   await expect(third).toBeVisible({ timeout: 90_000 });
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'error');
   await clickTextEnd(third);

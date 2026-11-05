@@ -199,6 +199,7 @@ import type {
   Syllabus,
   Tag,
   Task,
+  TodoList,
   TopUpReq,
   Topic,
   TopicPage,
@@ -9911,6 +9912,56 @@ const res = await fetch(getUpdateTaskUrl(id),
 
   const data: updateTaskResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateTaskResponse
+}
+
+
+
+export type getTodoResponse200 = {
+  data: TodoList
+  status: 200
+}
+
+export type getTodoResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getTodoResponseSuccess = (getTodoResponse200) & {
+  headers: Headers;
+};
+export type getTodoResponseError = (getTodoResponseDefault) & {
+  headers: Headers;
+};
+
+export type getTodoResponse = (getTodoResponseSuccess | getTodoResponseError)
+
+export const getGetTodoUrl = () => {
+
+
+
+
+  return `/api/todo`
+}
+
+/**
+ * @summary The To do page: what each of the caller's classes holds for them
+ */
+export const getTodo = async ( options?: RequestInit): Promise<getTodoResponse> => {
+
+  const res = await fetch(getGetTodoUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTodoResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTodoResponse
 }
 
 

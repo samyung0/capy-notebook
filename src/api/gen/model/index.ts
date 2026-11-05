@@ -439,6 +439,8 @@ export * from './syllabus.ts';
 export * from './tag.ts';
 export * from './tagInput.ts';
 export * from './task.ts';
+export * from './todoList.ts';
+export * from './todoWorkspace.ts';
 export * from './toolError.ts';
 export * from './topic.ts';
 export * from './topicPage.ts';

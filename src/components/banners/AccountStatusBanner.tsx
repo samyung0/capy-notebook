@@ -4,11 +4,10 @@ import { qk } from '@/api/client';
 import type { EventStreamState } from '@/api/hooks';
 import { useMe } from '@/api/hooks';
 import { AccountState, StorageUsageLevel } from '@/api/types';
-import { storageLimitLabel, usagePercent } from '@/features/billing/format';
+import { storageLimitLabel } from '@/features/billing/format';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useOnlineStatus } from '@/lib/online';
-import { useMediaQuery } from '@/lib/useMediaQuery';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Icon, type IconName } from '../ui/Icon';
@@ -34,14 +33,11 @@ type AccountStatus = {
   links: boolean;
   title: string;
   tone: 'warning' | 'error';
-  /** Storage used, 0 to 100, for the meter. */
-  usedPercent?: number;
 };
 
 /**
  * The viewer's own account or connection problem, if any, one at a time: frozen,
- * grace, full, near the limit, offline, reconnecting. Home's card and the
- * Dashboard's small one both read it.
+ * grace, full, near the limit, offline, reconnecting.
  */
 function useAccountStatus(): AccountStatus | null {
   const { data: me } = useMe({ errorBoundary: false });
@@ -97,11 +93,6 @@ function useAccountStatus(): AccountStatus | null {
         ? m.account_banner_full_title()
         : m.account_banner_near_title(),
       tone: full ? 'error' : 'warning',
-      usedPercent: usagePercent(
-        account.storageUsedBytes,
-        0,
-        account.storageLimitBytes
-      ),
     };
   }
   if (!online)
@@ -125,132 +116,52 @@ function useAccountStatus(): AccountStatus | null {
   return null;
 }
 
-function SubscriptionLink({ small }: { small?: boolean }) {
-  return (
-    <Button asChild size={small ? 'sm' : 'md'}>
-      <Link search={{ tab: 'subscription' }} to="/billing">
-        {m.account_banner_subscription()}
-      </Link>
-    </Button>
-  );
-}
-
-/** Home's banner slot, empty unless the viewer has an account status. */
-export default function HomeBanner() {
-  const status = useAccountStatus();
-  // Phones get the small one (Epo 2026-11-05).
-  const phone = useMediaQuery('(max-width: 639px)');
-  if (!status) return null;
-  if (phone) return <SmallStatus status={status} />;
-  return (
-    <SlotCard
-      action={status.links && <SubscriptionLink />}
-      body={status.body}
-      connection={
-        status.kind === 'offline' || status.kind === 'reconnecting'
-          ? status.kind
-          : undefined
-      }
-      icon={status.icon}
-      title={status.title}
-      tone={status.tone}
-    >
-      {status.usedPercent !== undefined && (
-        <div
-          aria-hidden
-          className="mt-2.5 h-1.5 max-w-[260px] overflow-hidden rounded-full bg-current/18"
-          data-testid="storage-usage-meter"
-        >
-          <div
-            className="h-full rounded-full bg-current"
-            style={{ width: `${status.usedPercent}%` }}
-          />
-        </div>
-      )}
-    </SlotCard>
-  );
-}
-
 /**
- * The same status small, inside a workspace's Dashboard below its title (Epo
- * 2026-11-05, Q631): the same words and links, with no meter.
+ * The viewer's account status, small, below the title of a workspace's Dashboard
+ * and of Workspaces (Epo 2026-11-05, Q631); nothing without one.
  */
 export function AccountStatusBanner() {
   const status = useAccountStatus();
-  return status && <SmallStatus status={status} />;
-}
-
-function SmallStatus({ status }: { status: AccountStatus }) {
+  if (!status) return null;
   return (
-    <SlotCard
-      action={status.links && <SubscriptionLink small />}
-      body={status.body}
-      connection={
+    <Card
+      className={cn(
+        'relative block min-h-fit overflow-hidden px-4 py-3',
+        status.tone === 'warning' &&
+          'bg-tint-warning text-tint-warning-fg hover:bg-tint-warning',
+        status.tone === 'error' &&
+          'bg-tint-error text-tint-error-fg hover:bg-tint-error'
+      )}
+      data-connection-status={
         status.kind === 'offline' || status.kind === 'reconnecting'
           ? status.kind
           : undefined
       }
-      icon={status.icon}
-      kind={status.kind}
-      small
-      title={status.title}
-      tone={status.tone}
-    />
-  );
-}
-
-function SlotCard({
-  action,
-  title,
-  body,
-  icon,
-  tone,
-  connection,
-  kind,
-  small,
-  children,
-}: {
-  action?: React.ReactNode;
-  title: string;
-  body: string;
-  icon: IconName;
-  tone: 'warning' | 'error';
-  connection?: 'offline' | 'reconnecting';
-  kind?: AccountStatus['kind'];
-  small?: boolean;
-  children?: React.ReactNode;
-}) {
-  return (
-    <Card
-      className={cn(
-        'relative block min-h-fit overflow-hidden',
-        small && 'px-4 py-3',
-        tone === 'warning' &&
-          'bg-tint-warning text-tint-warning-fg hover:bg-tint-warning',
-        tone === 'error' &&
-          'bg-tint-error text-tint-error-fg hover:bg-tint-error'
-      )}
-      data-connection-status={connection}
-      data-kind={kind}
-      data-testid={small ? 'account-status-banner' : undefined}
+      data-kind={status.kind}
+      data-testid="account-status-banner"
       radius="card-lg"
       role="status"
     >
       {/* Phones put the action on its own row, right-aligned. */}
       <div className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <p className={cn('font-bold', !small && 't-subtitle')}>{title}</p>
-          <p className={cn(small ? 't-meta' : 'mt-1')}>{body}</p>
-          {children}
+          <p className="font-bold">{status.title}</p>
+          <p className="t-meta">{status.body}</p>
         </div>
-        {action && (
-          <div className="shrink-0 self-end sm:self-auto">{action}</div>
+        {status.links && (
+          <div className="shrink-0 self-end sm:self-auto">
+            <Button asChild size="sm">
+              <Link search={{ tab: 'subscription' }} to="/billing">
+                {m.account_banner_subscription()}
+              </Link>
+            </Button>
+          </div>
         )}
       </div>
       <Icon
         className="absolute -top-3 -right-4 opacity-15"
-        name={icon}
-        size={small ? 72 : 120}
+        name={status.icon}
+        size={72}
         strokeWidth={1.3}
       />
     </Card>

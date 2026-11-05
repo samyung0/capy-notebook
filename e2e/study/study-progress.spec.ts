@@ -540,7 +540,7 @@ test.describe('study progress', () => {
     await openWorkspaceSettings(ownerPage);
     await expect(ownerPage).toHaveURL(/settings=/);
     await ownerPage.goBack();
-    await expect(ownerPage).toHaveURL(/\/workspaces$/);
+    await expect(ownerPage).toHaveURL(/\/$/);
     await expect(ownerPage.getByRole('dialog')).toHaveCount(0);
     expect(errors).toEqual([]);
   });
