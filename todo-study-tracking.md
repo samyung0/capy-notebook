@@ -944,16 +944,18 @@ Updated 2026-11-03. Decided this round, no longer open: the join notice (not an 
 
 The batch is on `main` and UAT at bb1b3fb4a (`e2e/uat/journeys/study.spec.ts` hasn't run on UAT yet). The BetterOffice pin follows at 3464db68a. Study work is now all on the Mac (the Windows session stopped it there).
 
-**On `claude/study-followups`, pushed at b513be1f4 for the Windows session to land once CI passes (review round done: F1, F2, F3, F4 and F7 fixed, F5 didn't reproduce, F6 with the leftovers):**
+**On `main` since b513be1f4, merged with Make a quiz; CI, Audit and UAT quality green at 95cef14cc (review round done: F1, F2, F3, F4 and F7 fixed, F5 didn't reproduce, F6 with the leftovers):**
 - No kick (Epo: "a live room doesnt kick people becuase they receive update"): nothing closes a connection when an assignment is published, reopened or edited. Joining and tokens are still refused.
 - Closing sends `assignment_closed`; a member's open attempt submits what's on the page and goes straight to results. Closing has a 15 s grace, Claude's pick, so that submit counts.
 - Assignments keep the frozen copy, for assignments only; practice stays live. Republish (Epo: "i think republish button maybe more simpler") replaces it for an open marked assignment. Anyone in progress gets it on their next load, with answers to removed questions dropped; submitted attempts keep their marks.
 - The report has a Settings tab holding every action, and no ⋮: Edit quiz opens its room, Republish shows "Last published {date}", then Assignment details, Close or Reopen, Delete.
 - Claude's picks on Republish, told to Epo: `posted_at` moves; the highest share of an attempt's own total counts; a removed question stays last on the report while a submission holds it; an image no longer used stays charged until the assignment is deleted.
 
-**Figures:** at most 5 per whole question (Epo, "cap at 5, i thought its per part, if whole quesiton then 5"), on the extraction branch.
+**Figures:** at most 5 per whole question (Epo, "cap at 5, i thought its per part, if whole quesiton then 5"), on the extraction branch. A run's first 40 figures are kept, on `main` at cfdd3d451; its CI failed on `e2e/editor/open-paint.spec.ts:108`, which looks flaky, and Windows has that spec.
 
-**On `claude/reconnect-cases`, local until the follow-ups land (d2cf6bab1 and on):** a room refusing someone keeps their page, a reader's as it was, an editor's read-only under a grey strip; a discard's notice asks for the read again; a refused read ends what shows, for materials and files (Epo: "if item is e.g. deleted then we hsouldnt letuser keep viewing"). Windows does the server side after the follow-ups land: adding someone or raising a role closes nothing, a removal or lowered role closes only that person's connections, a plan downgrade uses the read-only strip.
+**Waiting for Windows' one review round, then landing once CI is green (all pushed 2026-11-05):** `claude/ui-updates` 1d032e214, `claude/study-leftovers` 50f1c38aa, `claude/study-leftovers-assignments` 2eb3f3b07, `claude/reconnect-cases` dca7efc53.
+
+**On `claude/reconnect-cases`, landing before or with Windows' `claude/room-acl-targeted` (Epo's pick):** a room refusing someone keeps their page, a reader's as it was, an editor's read-only under a grey strip; a discard's notice asks for the read again; a refused read ends what shows, for materials and files (Epo: "if item is e.g. deleted then we hsouldnt letuser keep viewing"). A 4403 close joins again in every room kind, and the token says what the person has now (Claude's fix: item rooms stopped for good on it). Windows' side: adding someone or raising a role closes nothing, a removal or lowered role closes only that person's connections with no notice, a plan lapse closes nothing until the writer's next update brings `room-read-only`. `membership.spec.ts` needs a UAT run once both land; the mock has no 4403 close.
 
 **Still with Epo:** the Late badge; Summary counting open assignments; the picker's Coming soon rows; layout capacity and deploy; moving Attempts into Advanced.
 
