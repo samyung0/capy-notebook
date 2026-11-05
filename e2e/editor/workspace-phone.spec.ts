@@ -127,6 +127,13 @@ test('chat docks as a button, keeps a draft, and grows into its page on send', a
   await expect(
     chat.getByRole('button', { name: m.chat_history() })
   ).toBeVisible();
+  // Its ⋮ is about the chat: back leads to the rest of the workspace.
+  await chat.getByRole('button', { name: m.a11y_open_menu() }).click();
+  await expect(page.getByRole('menuitem')).toHaveText([
+    m.chat_new(),
+    m.workspace_settings(),
+  ]);
+  await page.keyboard.press('Escape');
 
   // Back leaves a chip that reopens the conversation, or closes.
   await chat.getByRole('button', { name: m.action_back() }).click();

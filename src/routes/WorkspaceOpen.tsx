@@ -732,6 +732,11 @@ function WorkspaceOpen() {
         },
       ];
   // One column has no rail: its menus carry the Dashboard and Study.
+  const settingsItem: MenuItem = {
+    icon: 'settings',
+    label: m.workspace_settings(),
+    onClick: openSettings,
+  };
   const settingsItems: MenuItem[] = [
     {
       icon: 'dashboard',
@@ -762,11 +767,7 @@ function WorkspaceOpen() {
           },
         ]
       : []),
-    {
-      icon: 'settings',
-      label: m.workspace_settings(),
-      onClick: openSettings,
-    },
+    settingsItem,
   ];
   function openFiles() {
     filesAnchor.current =
@@ -1225,8 +1226,8 @@ function WorkspaceOpen() {
                     canReprocess={ws.isOwner}
                     color="purple"
                     dock={{
-                      // The page's ⋮ keeps Add file, not Add topic.
-                      menuItems: [...addItems.slice(0, 1), ...settingsItems],
+                      // The chat page's ⋮: back leads to the rest (Epo 2026-11-05).
+                      menuItems: [settingsItem],
                       office: officeOpen,
                     }}
                     // The page picker's footer takes the dock's corner on

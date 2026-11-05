@@ -645,7 +645,7 @@ export function ChatPanel({
   };
   const newAction: TabAction = {
     disabled: !shown,
-    icon: 'ai',
+    icon: 'message',
     label: m.chat_new(),
     onClick: openNew,
   };
