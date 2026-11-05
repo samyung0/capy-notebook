@@ -14,7 +14,7 @@ import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import { closedItself, dayTimeLabel } from './assignmentText';
-import { NewAssignmentDialog } from './NewAssignmentDialog';
+import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
 import { NoAnswersWarning } from './NoAnswersWarning';
 
 type Asking = 'republish' | 'close' | 'delete';

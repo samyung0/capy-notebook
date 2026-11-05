@@ -1160,9 +1160,10 @@ export function useUpdateWorkspaceSharing() {
     },
   });
 }
-export function useDeleteWorkspace() {
+export function useDeleteWorkspace(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (id: string) => api.del<void>(`/workspaces/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['workspaces'] }),
   });
@@ -2642,9 +2643,13 @@ export function useUpdateWorkspaceMember(workspaceId: string) {
 
 /** A member leaving `workspaceId`: the owner's remove call on its own row.
  * Its files drop out of the All files lists and search, as a visitor's do. */
-export function useLeaveWorkspace(workspaceId: string) {
+export function useLeaveWorkspace(
+  workspaceId: string,
+  options?: MutationUiOptions
+) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (userId: string) =>
       api.del<void>(`/workspaces/${workspaceId}/members/${userId}`),
     onSuccess: () => invalidateVisitLists(qc, true),
@@ -3189,9 +3194,11 @@ export function useSetAssignmentDone(workspaceId: string) {
   });
 }
 
+/** Its one caller reports a failure itself: no global toast. */
 export function useStartAssignment(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: (id: string) =>
       api.post<AssignmentAttempt>(`/assignments/${id}/start`, {}),
     onSuccess: (attempt) => {
@@ -3205,9 +3212,11 @@ export function useStartAssignment(workspaceId: string) {
 export const saveAssignmentAnswers = (attemptId: string, answers: Answers) =>
   api.put<void>(`/assignment-attempts/${attemptId}/answers`, { answers });
 
+/** Its one caller reports a failure itself: no global toast. */
 export function useSubmitAssignmentAttempt(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: ({ answers, id }: { answers: Answers; id: string }) =>
       api.post<AssignmentAttempt>(`/assignment-attempts/${id}/submit`, {
         answers,
