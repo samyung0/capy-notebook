@@ -26,7 +26,13 @@ describe('parseWorkspaceOpenSearch', () => {
     }
   );
 
-  it("keeps Make a quiz's page picker and run, with what was chosen", () => {
+  it("keeps Make a quiz's dialog steps, with what was chosen", () => {
+    expect(parseWorkspaceOpenSearch({ make: 'files' })).toEqual({
+      make: 'files',
+    });
+    expect(
+      parseWorkspaceOpenSearch({ make: 'pages', paper: 'f_1', quizFile: 'f_2' })
+    ).toEqual({ make: 'pages', paper: 'f_1', quizFile: 'f_2' });
     expect(
       parseWorkspaceOpenSearch({ answers: 'f_2', make: 'pages', paper: 'f_1' })
     ).toEqual({ answers: 'f_2', make: 'pages', paper: 'f_1' });

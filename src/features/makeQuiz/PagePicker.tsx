@@ -1,5 +1,6 @@
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import {
   useCreateExtraction,
@@ -333,20 +334,24 @@ function OfficeDrawing({
   const stopped = failed || !!error;
   return (
     <>
-      {!stopped && !pages && (
-        <iframe
-          allow={iframeAllow}
-          aria-hidden
-          className="pointer-events-none fixed top-0 left-[-200vw] h-[768px] w-[1024px] border-0"
-          inert
-          key={iframeKey}
-          ref={iframeRef}
-          sandbox={iframeSandbox}
-          src={iframeUrl}
-          tabIndex={-1}
-          title={m.files_office_document_frame_title({ name: file.name })}
-        />
-      )}
+      {/* On the body: a hidden tab or step would leave the frame no layout to draw in. */}
+      {!stopped &&
+        !pages &&
+        createPortal(
+          <iframe
+            allow={iframeAllow}
+            aria-hidden
+            className="pointer-events-none fixed top-0 left-[-200vw] h-[768px] w-[1024px] border-0"
+            inert
+            key={iframeKey}
+            ref={iframeRef}
+            sandbox={iframeSandbox}
+            src={iframeUrl}
+            tabIndex={-1}
+            title={m.files_office_document_frame_title({ name: file.name })}
+          />,
+          document.body
+        )}
       {stopped ? (
         <div className="col-span-full flex items-center gap-3" role="alert">
           <p className="t-meta text-tint-error-fg">
@@ -419,6 +424,8 @@ export interface DialogStep {
   body: React.ReactNode;
   closable?: boolean;
   footer?: React.ReactNode;
+  /** A tall frame of its own columns and bottom bar, as Workspace settings has. */
+  framed?: boolean;
   /** Keeps a stray click or Escape from ending the step. */
   guarded?: boolean;
   onBack?: () => void;
@@ -436,17 +443,22 @@ export interface DialogStep {
 export function usePageStep({
   active,
   answers,
+  file,
   onCancel,
   onChangeFiles,
+  onFile,
   onStarted,
   paper,
   workspaceId,
 }: {
   active: boolean;
   answers: string[];
+  /** The file on show, from the address; a phone's list when there is none. */
+  file: string | undefined;
   onCancel: () => void;
   /** Back to the files, with what was chosen and picked. */
   onChangeFiles: () => void;
+  onFile: (fileId: string | undefined) => void;
   onStarted: (runId: string) => void;
   paper: string | undefined;
   workspaceId: string;
@@ -462,8 +474,7 @@ export function usePageStep({
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [drawn, setDrawn] = useState<ReadonlyMap<string, string>>(new Map());
-  const [activeId, setActiveId] = useState<string>();
-  // A tab's sheets stay mounted once opened, so a file isn't drawn twice.
+  // A file's sheets stay mounted once opened, so it isn't drawn twice.
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
   const onDrawn = useCallback(
     (fileId: string, pages: readonly DrawnPage[]) =>
@@ -532,27 +543,29 @@ export function usePageStep({
         (page) => !drawn.has(pageKey({ fileId: file.id, page }))
       )
   );
-  const current = rows.find((row) => row.id === activeId) ?? first;
+  // A lone file needs no list, and a phone's list is the whole page until a file is
+  // picked, as in Workspace settings.
+  const listed = rows.length > 1;
+  const onList = phone && listed && !rows.some((row) => row.id === file);
+  const current = onList
+    ? undefined
+    : (rows.find((row) => row.id === file) ?? first);
   const kind = current && tabKind(current);
   const activeCount = current ? counts[current.id] : undefined;
   const activePicked = current ? pickedPages(selected, current.id).length : 0;
   const allPicked = !!activeCount && activePicked === activeCount;
-  const shown = new Set(opened);
-  if (current) shown.add(current.id);
-  const tabCount = (file: SourceFile) => {
+  // Nothing opens, or draws, before the pages first show.
+  const pagesShown = useRef(false);
+  pagesShown.current ||= active;
+  const shown = new Set(pagesShown.current ? opened : []);
+  if (current && pagesShown.current) shown.add(current.id);
+  const fileCount = (file: SourceFile) => {
     const tab = tabKind(file);
     if (tab === 'whole') return m.make_quiz_tab_whole();
     if (tab === 'unread') return m.make_quiz_tab_unread();
     if (tab === 'reading') return m.make_quiz_reading_pages();
     const count = pickedPages(selected, file.id).length;
-    return (
-      <>
-        <span className="sm:hidden">{count}</span>
-        <span className="max-sm:hidden">
-          {count === 1 ? m.make_quiz_one_page() : m.source_pages({ count })}
-        </span>
-      </>
-    );
+    return count === 1 ? m.make_quiz_one_page() : m.source_pages({ count });
   };
   const held = answersReading || (unpicked && selected.size > 0) || drawing;
   const counter = (
@@ -584,31 +597,9 @@ export function usePageStep({
     </p>
   );
   const gone = !!files && !first;
+  const rowLabel = (row: SourceFile) =>
+    row.id === paper ? m.make_quiz_tab_questions() : fileTitle(row.name);
   return {
-    action: !gone && (
-      <Button
-        disabled={!!unpicked || answersReading || drawing || isPending}
-        onClick={() => {
-          if (!first) return;
-          start(
-            extractionRequest(
-              quizTitleFrom(
-                first.name,
-                (materials ?? []).map((row) => row.title)
-              ),
-              first.id,
-              answerFiles.map((file) => file.id),
-              selected,
-              drawn
-            ),
-            { onSuccess: (run) => onStarted(run.id) }
-          );
-        }}
-        type="button"
-      >
-        {isPending ? <Spinner /> : m.make_quiz_extract()}
-      </Button>
-    ),
     body: gone ? (
       <div className="flex flex-col gap-3 pb-1">
         <p className="t-meta text-fg-muted">{m.make_quiz_file_gone()}</p>
@@ -624,162 +615,195 @@ export function usePageStep({
         </div>
       </div>
     ) : (
-      <div className="flex min-h-0 flex-col sm:h-[min(66dvh,640px)]">
-        <div className="z-10 bg-overlay max-sm:sticky max-sm:top-14 max-sm:-mx-4 max-sm:px-4">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <p className="t-meta min-w-0 flex-1 basis-40 truncate text-fg-muted">
-              {[
-                current?.name,
-                kind === 'whole'
-                  ? m.make_quiz_whole_note({ max: EXTRACTION_PAGES_MAX })
-                  : activeCount &&
-                    (activeCount === 1
-                      ? m.make_quiz_one_page()
-                      : m.source_pages({ count: activeCount })),
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </p>
-            <div className="flex items-center gap-2">
-              {kind === 'pages' && (
-                <Button
-                  disabled={
-                    !activeCount || (full && !allPicked && activePicked === 0)
-                  }
-                  onClick={() =>
-                    current &&
-                    activeCount &&
-                    setSelected((picks) =>
-                      toggleAllPages(picks, current.id, activeCount)
-                    )
-                  }
-                  size="sm"
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col sm:mt-1 sm:flex-row">
+          {listed && (!phone || onList) && (
+            <nav
+              aria-label={m.make_quiz_title()}
+              className="flex shrink-0 flex-col gap-1 sm:w-56 sm:overflow-y-auto sm:border-divider sm:border-r sm:pr-3"
+            >
+              {rows.map((row) => (
+                <button
+                  aria-current={row.id === current?.id ? 'page' : undefined}
+                  className={cn(
+                    'flex cursor-pointer items-center gap-2.5 rounded-button border-divider px-2 py-2.5 text-left outline-none hover:bg-surface-hover-bg focus-visible:bg-surface-hover-bg max-sm:border-b',
+                    row.id === current?.id && 'bg-surface-hover-bg'
+                  )}
+                  key={row.id}
+                  onClick={() => {
+                    setOpened((was) => new Set(was).add(row.id));
+                    onFile(row.id);
+                  }}
                   type="button"
-                  variant="outline"
                 >
-                  {allPicked
-                    ? m.make_quiz_clear_all()
-                    : m.make_quiz_select_all()}
-                </Button>
+                  <FileIcon
+                    className="size-4 shrink-0"
+                    name={fileIconName(row)}
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-medium text-sm">
+                      {rowLabel(row)}
+                    </span>
+                    <span className="t-meta truncate text-fg-muted">
+                      {fileCount(row)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-fg-muted sm:hidden">
+                    <Icon name="navigationForward" />
+                  </span>
+                </button>
+              ))}
+            </nav>
+          )}
+          {(!phone || !onList) && (
+            <div
+              className={cn(
+                'flex min-h-0 min-w-0 flex-1 flex-col sm:-mr-5.5 sm:overflow-y-auto sm:pr-5.5',
+                listed && 'sm:pl-4'
               )}
-              <Button
-                onClick={onChangeFiles}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
+            >
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <p className="t-meta min-w-0 flex-1 basis-40 truncate text-fg-muted">
+                  {[
+                    current?.name,
+                    kind === 'whole'
+                      ? m.make_quiz_whole_note({ max: EXTRACTION_PAGES_MAX })
+                      : activeCount &&
+                        (activeCount === 1
+                          ? m.make_quiz_one_page()
+                          : m.source_pages({ count: activeCount })),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                {kind === 'pages' && (
+                  <Button
+                    disabled={
+                      !activeCount || (full && !allPicked && activePicked === 0)
+                    }
+                    onClick={() =>
+                      current &&
+                      activeCount &&
+                      setSelected((picks) =>
+                        toggleAllPages(picks, current.id, activeCount)
+                      )
+                    }
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {allPicked
+                      ? m.make_quiz_clear_all()
+                      : m.make_quiz_select_all()}
+                  </Button>
+                )}
+              </div>
+              {rows
+                .filter((row) => shown.has(row.id))
+                .map((row) => {
+                  const tab = tabKind(row);
+                  const format = drawnPaperFormat(row);
+                  return (
+                    <div
+                      aria-label={row.name}
+                      className="grid grid-cols-2 gap-x-6 gap-y-6 pt-4 pb-5 sm:grid-cols-[repeat(auto-fill,190px)] sm:justify-center"
+                      hidden={row.id !== current?.id}
+                      key={row.id}
+                      role="group"
+                    >
+                      {tab === 'whole' ? (
+                        <WholeFileTile file={row} />
+                      ) : tab === 'unread' ? (
+                        <p className="t-meta col-span-full text-center text-fg-muted">
+                          {m.make_quiz_unread_note()}
+                        </p>
+                      ) : tab === 'reading' ? (
+                        <p
+                          className="t-meta col-span-full text-center text-fg-muted"
+                          role="status"
+                        >
+                          {m.make_quiz_waiting_answers()}
+                        </p>
+                      ) : format ? (
+                        <OfficeSheets
+                          file={row}
+                          format={format}
+                          full={full}
+                          onCount={onCount}
+                          onDrawn={onDrawn}
+                          onToggle={onToggle}
+                          selected={selected}
+                        />
+                      ) : (
+                        <PaperSheets
+                          file={row}
+                          full={full}
+                          onCount={onCount}
+                          onToggle={onToggle}
+                          selected={selected}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+        <div className="border-divider border-t bg-overlay pt-3 max-sm:sticky max-sm:bottom-0 max-sm:-mx-4 max-sm:px-4 max-sm:pb-[max(env(safe-area-inset-bottom),12px)] sm:mt-0 sm:pt-4">
+          <FormAlert
+            errorId={unexpectedErrorId(error)}
+            message={
+              error
+                ? (extractionRefusal(error) ??
+                  errorCopy(error, m.source_try_again()))
+                : null
+            }
+          />
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            {counter}
+            <div className="ml-auto flex items-center gap-1">
+              <Button onClick={onChangeFiles} type="button" variant="outline">
                 {m.make_quiz_change_files()}
+              </Button>
+              <span className="contents max-sm:hidden">
+                <Button onClick={onCancel} type="button" variant="ghost-hover">
+                  {m.action_cancel()}
+                </Button>
+              </span>
+              <Button
+                disabled={!!unpicked || answersReading || drawing || isPending}
+                onClick={() => {
+                  if (!first) return;
+                  start(
+                    extractionRequest(
+                      quizTitleFrom(
+                        first.name,
+                        (materials ?? []).map((row) => row.title)
+                      ),
+                      first.id,
+                      answerFiles.map((row) => row.id),
+                      selected,
+                      drawn
+                    ),
+                    { onSuccess: (run) => onStarted(run.id) }
+                  );
+                }}
+                type="button"
+              >
+                {isPending ? <Spinner /> : m.make_quiz_extract()}
               </Button>
             </div>
           </div>
-          <div
-            aria-label={m.make_quiz_title()}
-            className="mt-1.5 flex gap-4.5 overflow-x-auto border-divider border-b sm:gap-6"
-            role="tablist"
-          >
-            {rows.map((file) => (
-              <button
-                aria-selected={file.id === current?.id}
-                className={cn(
-                  'flex h-10 shrink-0 cursor-pointer items-center gap-1.5 border-transparent border-b-2 px-0.5 font-medium text-fg-muted text-sm outline-none focus-visible:text-fg sm:gap-2',
-                  file.id === current?.id && 'border-fg text-fg'
-                )}
-                key={file.id}
-                onClick={() => {
-                  setActiveId(file.id);
-                  setOpened((was) => new Set(was).add(file.id));
-                }}
-                role="tab"
-                type="button"
-              >
-                <span className="max-w-52 truncate">
-                  {file.id === paper
-                    ? m.make_quiz_tab_questions()
-                    : fileTitle(file.name)}
-                </span>
-                <span className="t-meta font-normal text-fg-muted">
-                  {tabCount(file)}
-                </span>
-              </button>
-            ))}
-          </div>
-          {phone && <div className="py-2">{counter}</div>}
         </div>
-        <div className="min-h-0 flex-1 sm:overflow-y-auto">
-          {rows
-            .filter((file) => shown.has(file.id))
-            .map((file) => {
-              const tab = tabKind(file);
-              const format = drawnPaperFormat(file);
-              return (
-                <div
-                  aria-label={file.name}
-                  className="grid grid-cols-2 gap-x-3 gap-y-5 pt-3 pb-5 sm:grid-cols-[repeat(auto-fill,190px)] sm:justify-center sm:gap-x-6 sm:gap-y-6 sm:pt-5"
-                  hidden={file.id !== current?.id}
-                  key={file.id}
-                  role="group"
-                >
-                  {tab === 'whole' ? (
-                    <WholeFileTile file={file} />
-                  ) : tab === 'unread' ? (
-                    <p className="t-meta col-span-full text-center text-fg-muted">
-                      {m.make_quiz_unread_note()}
-                    </p>
-                  ) : tab === 'reading' ? (
-                    <p
-                      className="t-meta col-span-full text-center text-fg-muted"
-                      role="status"
-                    >
-                      {m.make_quiz_waiting_answers()}
-                    </p>
-                  ) : format ? (
-                    <OfficeSheets
-                      file={file}
-                      format={format}
-                      full={full}
-                      onCount={onCount}
-                      onDrawn={onDrawn}
-                      onToggle={onToggle}
-                      selected={selected}
-                    />
-                  ) : (
-                    <PaperSheets
-                      file={file}
-                      full={full}
-                      onCount={onCount}
-                      onToggle={onToggle}
-                      selected={selected}
-                    />
-                  )}
-                </div>
-              );
-            })}
-        </div>
-        <FormAlert
-          errorId={unexpectedErrorId(error)}
-          message={
-            error
-              ? (extractionRefusal(error) ??
-                errorCopy(error, m.source_try_again()))
-              : null
-          }
-        />
       </div>
     ),
     closable: false,
-    footer: (
-      <>
-        {!phone && <div className="mr-auto self-center">{counter}</div>}
-        <span className="contents max-sm:hidden">
-          <Button onClick={onCancel} type="button" variant="ghost-hover">
-            {m.action_cancel()}
-          </Button>
-        </span>
-      </>
-    ),
-    onBack: onChangeFiles,
-    title:
-      kind === 'whole'
+    framed: !gone,
+    // Phones: from one file's pages to the list, from the list to the files.
+    onBack: onList || !listed ? onChangeFiles : () => onFile(undefined),
+    title: onList
+      ? m.make_quiz_choose_pages()
+      : kind === 'whole'
         ? m.make_quiz_whole_title()
         : kind === 'unread'
           ? m.make_quiz_unread_title()

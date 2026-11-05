@@ -321,29 +321,39 @@ function UploadInput({
  * still be reading then.
  */
 export function MakeQuizDialog({
+  file,
   initial,
   onClose,
   onConfirmed,
   onDone,
+  onFile,
   onRunBack,
+  onShowFiles,
+  onShowPages,
   onStarted,
   runId,
-  startOnPages,
+  step: stepName,
   workspaceId,
   workspaceName,
 }: {
-  /** From a link, or a run started over. */
+  /** The file whose pages are on show. */
+  file: string | undefined;
+  /** From the address, for a link or a reload. */
   initial: MakeQuizChoice;
   onClose: () => void;
   /** The questions are confirmed: the dialog gives way to the upload panel. */
   onConfirmed: (run: Extraction, choice: MakeQuizChoice) => void;
   onDone: (quizId: string) => void;
+  onFile: (fileId: string | undefined) => void;
   /** A run failed or was cancelled: back to its pages, picks and all. */
   onRunBack: () => void;
+  onShowFiles: (choice: MakeQuizChoice) => void;
+  onShowPages: (choice: MakeQuizChoice) => void;
   onStarted: (runId: string, choice: MakeQuizChoice) => void;
   /** The run this dialog is on, from the address. */
   runId?: string;
-  startOnPages: boolean;
+  /** Each step is an address, so the browser's Back walks them. */
+  step: 'files' | 'pages' | 'run';
   workspaceId: string;
   workspaceName: string;
 }) {
@@ -358,7 +368,7 @@ export function MakeQuizDialog({
   const [answers, setAnswers] = useState<Picked[]>(() =>
     fromFiles(initial.answers)
   );
-  const [onPages, setOnPages] = useState(startOnPages);
+  const onPages = stepName === 'pages';
   // A link opens before the files arrive.
   const seeded = useRef(!!files);
   useEffect(() => {
@@ -447,14 +457,13 @@ export function MakeQuizDialog({
     paper: paper.flatMap((row) => row.fileId ?? []),
   };
   const pages = usePageStep({
-    active: onPages && !runId,
+    active: onPages,
     answers: choice.answers,
+    file,
     onCancel: onClose,
-    onChangeFiles: () => setOnPages(false),
-    onStarted: (id) => {
-      setOnPages(true);
-      onStarted(id, choice);
-    },
+    onChangeFiles: () => onShowFiles(choice),
+    onFile,
+    onStarted: (id) => onStarted(id, choice),
     paper: choice.paper[0],
     workspaceId,
   });
@@ -592,40 +601,46 @@ export function MakeQuizDialog({
       </div>
     </>
   );
-  const step: DialogStep = runId
-    ? run
-    : onPages
-      ? pages
-      : {
-          action: (
-            <Button
-              disabled={!canContinue}
-              onClick={() => setOnPages(true)}
-              type="button"
-            >
-              {m.action_continue()}
-            </Button>
-          ),
-          body: null,
-          closable: false,
-          footer: (
-            <>
-              <p className="t-meta mr-auto flex min-w-0 items-center gap-2 self-center text-fg-muted">
-                <Icon className="shrink-0" name="viewOffSlash" size={16} />
-                {m.make_quiz_hidden_note()}
-              </p>
-              <span className="contents max-sm:hidden">
-                <DialogCancel />
-              </span>
-            </>
-          ),
-          onCloseClick: onClose,
-          title: m.make_quiz_title(),
-          width: 600,
-        };
+  const step: DialogStep =
+    stepName === 'run'
+      ? run
+      : onPages
+        ? pages
+        : {
+            action: (
+              <Button
+                disabled={!canContinue}
+                onClick={() => onShowPages(choice)}
+                type="button"
+              >
+                {m.action_continue()}
+              </Button>
+            ),
+            body: null,
+            closable: false,
+            footer: (
+              <>
+                <p className="t-meta mr-auto flex min-w-0 items-center gap-2 self-center text-fg-muted">
+                  <Icon className="shrink-0" name="viewOffSlash" size={16} />
+                  {m.make_quiz_hidden_note()}
+                </p>
+                <span className="contents max-sm:hidden">
+                  <DialogCancel />
+                </span>
+              </>
+            ),
+            onCloseClick: onClose,
+            title: m.make_quiz_title(),
+            width: 600,
+          };
   return (
     <SimpleDialog
       action={step.action}
+      cardClassName={cn(step.framed && 'h-full')}
+      cardScrollContainerClassName={cn(
+        step.framed && 'max-sm:pb-0 sm:overflow-hidden'
+      )}
+      className={cn(step.framed && 'flex h-[88dvh] flex-col gap-0')}
       footer={step.footer}
       onBack={step.onBack}
       onClose={step.guarded ? () => undefined : onClose}
@@ -642,9 +657,14 @@ export function MakeQuizDialog({
       width={step.width}
     >
       {/* Kept mounted, so a step's pages aren't read or drawn again on return. */}
-      <div hidden={onPages || !!runId}>{filesBody}</div>
-      <div hidden={!onPages || !!runId}>{pages.body}</div>
-      {runId && run.body}
+      <div hidden={stepName !== 'files'}>{filesBody}</div>
+      <div
+        className={cn(onPages && 'flex min-h-0 flex-1 flex-col')}
+        hidden={!onPages}
+      >
+        {pages.body}
+      </div>
+      {stepName === 'run' && run.body}
     </SimpleDialog>
   );
 }

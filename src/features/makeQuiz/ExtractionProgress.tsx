@@ -152,19 +152,29 @@ export function useRunStep({
     mutate: confirm,
     isPending: confirming,
     error: confirmError,
+    reset: resetConfirm,
   } = useConfirmExtraction(id);
   const {
     mutate: cancel,
     isPending: cancelling,
     error: cancelError,
+    reset: resetCancel,
   } = useCancelExtraction(id);
+  // The dialog outlives a run: the next one starts clean.
+  const lastRun = useRef(id);
+  useEffect(() => {
+    if (lastRun.current === id) return;
+    lastRun.current = id;
+    resetConfirm();
+    resetCancel();
+  }, [id, resetCancel, resetConfirm]);
   const done = run?.status === 'done' ? run.quizId : undefined;
-  const opened = useRef(false);
+  const opened = useRef<string>(undefined);
   const report = run?.report;
   const workspaceId = run?.workspaceId;
   useEffect(() => {
-    if (!done || opened.current) return;
-    opened.current = true;
+    if (!done || opened.current === done) return;
+    opened.current = done;
     const notice = extractionNotice(report);
     if (notice)
       userToast({
@@ -177,12 +187,12 @@ export function useRunStep({
   }, [done, onDone, qc, report, workspaceId]);
   // Cancelled: back to the pages, picks and all.
   const cancelled = run?.status === 'cancelled';
-  const leftCancelled = useRef(false);
+  const leftCancelled = useRef<string>(undefined);
   useEffect(() => {
-    if (!cancelled || leftCancelled.current) return;
-    leftCancelled.current = true;
+    if (!cancelled || leftCancelled.current === id) return;
+    leftCancelled.current = id;
     onBack();
-  }, [cancelled, onBack]);
+  }, [cancelled, id, onBack]);
 
   const found = run?.status === 'confirming' ? run.found : undefined;
   if (run && found) {

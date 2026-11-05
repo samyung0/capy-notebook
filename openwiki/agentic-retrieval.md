@@ -5939,8 +5939,8 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   fails a waiting run as `interrupted`. `POST /api/extractions/{id}/confirm`
   takes how many to make from the first; `.../cancel` ends the run as `cancelled`, the
   starter having paid for the map alone. Fewer than the map found cuts the rows, and the
-  number repairs (gaps, the next number on a later page) stay off so nothing past them is
-  copied. The prompts don't change: a copy ask just lists fewer labels. The provider's
+  number repairs (gaps, the next number on a later page) stay off and a copy past them isn't
+  kept (`Run.only`). The prompts don't change: a copy ask just lists fewer labels. The provider's
   cache may expire during the wait, which costs nothing extra to the starter, since the
   calls after it are free to them, and hasn't been measured.
 - **What a run costs** (Epo 2026-11-05). The map call bills by its tokens like any call.
@@ -5948,7 +5948,10 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   its token rates to zero, so copy, solve and figure calls still write `usage_events`,
   for what they cost us, at no credits. At the end Go charges 4 per saved question, one
   with no answer included, up to the number confirmed (`extraction_question`, keyed by
-  the run), then settling lets the hold go; a run that saves none pays nothing more.
+  the run), then settling lets the hold go; a run that saves none pays nothing more. A map
+  that used the last credits marks its session exhausted; the confirm clears that, since it
+  needs the credits to be there. It also takes the session to an hour (`extractionRunTTL`),
+  and confirmed sessions hold their price, so they don't count towards `ConcurrentLLMLeases`.
   Bench numbers per question excluding the map: 1.5 to 3.2 on ordinary papers, 4.2 and
   4.6 on the two very small selections.
 - **Progress.** While copying and solving the run sends `progress` (`copied`, `answered`)

@@ -1683,6 +1683,47 @@ async def test_a_starter_who_affords_fewer_gets_only_those(monkeypatch):
     assert report["missing"] == []
 
 
+async def test_a_map_that_used_the_last_credits_runs_once_they_are_topped_up(
+    monkeypatch,
+):
+    """The map's settlement said credits ran out; the confirm holds new ones."""
+    state = extraction.accounting.RequestAccounting("session", credits_exhausted=True)
+    monkeypatch.setattr(extraction.accounting, "current", lambda: state)
+
+    async def confirm(count):
+        return count
+
+    _, script = _confirm_script("1", "2", "3")
+    events = await _confirmed_run(monkeypatch, script, confirm)
+    assert events[-1]["report"]["stopped"] == ""
+    assert events[-1]["report"]["recorded"] == ["1", "2", "3"]
+
+
+async def test_a_copy_past_the_confirmed_questions_stays_out(monkeypatch):
+    items = {n: _mcq(n, ["p", "q"], 1) for n in ("1", "2", "3")}
+    script = Script(
+        "\n".join(_row(n) for n in items),
+        {
+            "Copy questions 1 to 2 now.": [
+                _tools(*(("record_question", _copy(items[n])) for n in items))
+            ],
+            "Give the answers to questions 1 to 2 now.": [
+                _tools(
+                    ("record_answers", _answers(items["1"])),
+                    ("record_answers", _answers(items["2"])),
+                )
+            ],
+        },
+    )
+
+    async def confirm(count):
+        return 2
+
+    events = await _confirmed_run(monkeypatch, script, confirm)
+    assert events[-1]["report"]["recorded"] == ["1", "2"]
+    assert len(events[-1]["questions"]) == 2
+
+
 async def test_a_cancelled_run_stops_with_the_map_paid_for(monkeypatch):
     async def confirm(count):
         return None
@@ -1695,10 +1736,13 @@ async def test_a_cancelled_run_stops_with_the_map_paid_for(monkeypatch):
 
 async def test_the_starter_s_answer_is_read_from_the_run(monkeypatch):
     monkeypatch.setattr(extraction, "CONFIRM_POLL_S", 0)
-    answers = iter([("running", None), ("confirming", None), ("running", 2)])
+    answers = iter([("running", None), OSError("blip"), ("running", 2)])
 
     async def decision(run_id):
-        return next(answers)
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
 
     monkeypatch.setattr(extraction.store, "extraction_decision", decision)
     assert await extraction.starter_confirm("r", 3) == 2

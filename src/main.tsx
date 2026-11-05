@@ -75,8 +75,8 @@ enableMocks().finally(() => {
           params: { workspaceId },
           search: {
             answers: answers.join(',') || undefined,
-            make: 'pages',
-            paper: paper.join(','),
+            make: paper.length > 0 ? 'pages' : 'files',
+            paper: paper.join(',') || undefined,
           },
           to: '/workspaces/$workspaceId',
         }),

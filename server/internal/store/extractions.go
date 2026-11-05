@@ -89,6 +89,9 @@ const (
 // ExtractionQuestionMicros is the price of a saved question (Epo 2026-11-05).
 const ExtractionQuestionMicros = fieldlimits.ExtractionQuestionCredits * MicrosPerCredit
 
+// extractionRunTTL bounds a confirmed run's hold: the longest bench run took 16 minutes.
+const extractionRunTTL = time.Hour
+
 // KindExtractionQuestion is the usage row of a run's saved questions.
 const KindExtractionQuestion = "extraction_question"
 
@@ -205,7 +208,9 @@ func (s *Store) AwaitExtractionConfirm(ctx context.Context, id string, found jso
 // ConfirmExtraction sets a paused run going with the first questions questions. It
 // holds their price and takes the session's token rates to zero: from here the calls
 // are recorded and cost no credits, and the run pays per question saved (Epo
-// 2026-11-05). ErrConflict when the run isn't waiting, as when its wait ran out.
+// 2026-11-05). A map that used the last credits marked the session exhausted, which a
+// top-up since has answered, so the mark goes too. ErrConflict when the run isn't
+// waiting, as when its wait ran out.
 func (s *Store) ConfirmExtraction(ctx context.Context, userID, id string, questions int) (Extraction, error) {
 	var out Extraction
 	tx, err := s.pool.Begin(ctx)
@@ -236,8 +241,9 @@ func (s *Store) ConfirmExtraction(ctx context.Context, userID, id string, questi
 	}
 	session, err := tx.Exec(ctx, `UPDATE provider_sessions SET reserved_micros = reserved_micros + $2,
 		llm_micros_per_input_token = 0, llm_micros_per_output_token = 0, llm_micros_per_cached_input_token = 0,
+		credits_exhausted_at = NULL,
 		expires_at = now() + ($3 * interval '1 millisecond')
-		WHERE id = $1 AND status = 'open'`, sessionID, hold, reservationTTL.Milliseconds())
+		WHERE id = $1 AND status = 'open'`, sessionID, hold, extractionRunTTL.Milliseconds())
 	if err != nil {
 		return out, err
 	}

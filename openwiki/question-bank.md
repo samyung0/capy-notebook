@@ -239,9 +239,9 @@ who may edit the workspace (a viewer's `?make=` link shows the Dashboard).
 One dialog (`MakeQuizDialog`, Epo 2026-11-05, "make the select pages from files the same
 dialog rather than inside a page") runs from the files through their pages and the map to
 the questions found, over the Dashboard, then gives way to the upload panel. Each step
-gives the dialog its title, action and body (`DialogStep`); phones show it full screen with
-the action in the header. `?make=pages&paper=…&answers=…` and `?make=run&run=…` open it on
-that step.
+gives the dialog its title, action and body (`DialogStep`); phones show it full screen. Each
+step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=…` and
+`?make=run&run=…`, so the browser's Back walks them and a link or reload opens the step.
 
 - **Files.** One question paper and up to `EXTRACTION_ANSWER_FILES_MAX` (3) mark scheme or
   answer files, from a menu of the workspace's indexed files other than Excel and audio or
@@ -253,16 +253,20 @@ that step.
   members and in no topic, and shows "Reading pages" until it is indexed. Continue waits
   for the paper's pages and for each answer file to have an id; an answer file may still
   be reading, and one that failed or was stored without parsing holds it until removed.
-- **Pages** (`usePageStep`, boards B to E). A tab a file, with its count. Every PDF, Word,
-  PowerPoint and image file picks pages, answer files too; an image is picked already, and
-  a text file goes whole and counts for none. One click selects a page, up to
-  `EXTRACTION_PAGES_MAX` (40) across the files, and Select all takes a whole file up to the
-  cap. The total shows in the footer, or above the pages on phones. Change files goes back
-  and keeps the picks of files left in. Extract questions waits for answer files still
-  reading, an answer file with no page picked and Word or PowerPoint pages still drawing.
-  One that failed after the dialog says so on its tab and doesn't hold the run. A
-  refusal shows in the step (`extractionRefusal`). The quiz takes the paper's name, the next
-  number when it is taken.
+- **Pages** (`usePageStep`, Epo 2026-11-05, "use the 2 column design ... like what we did for
+  workspace settings"). Two columns in a tall frame: the files with their counts on the left,
+  one file's pages on the right, and on phones the same as settings, a list and then a file,
+  with Back returning to the list. A lone file needs no list. Every PDF, Word, PowerPoint and
+  image file picks pages, answer files too; an image is picked already, and a text file goes
+  whole and counts for none. One click selects a page, up to `EXTRACTION_PAGES_MAX` (40) across
+  the files, and Select all takes a whole file up to the cap. The bottom bar holds the total,
+  Change files, Cancel (not on phones) and Extract questions, and sticks on phones. Change
+  files goes back and keeps the picks of files left in. Extract waits for answer files still
+  reading, an answer file with no page picked and Word or PowerPoint pages still drawing. One
+  that failed after the dialog says so in the list and doesn't hold the run. A refusal shows
+  in the bar (`extractionRefusal`). The quiz takes the paper's name, the next number when it
+  is taken. A Word or PowerPoint file's drawing frame sits on the body, so a hidden step or
+  file still lays it out, and nothing draws before the pages first show.
 - **The run** (`useRunStep`). Reading until the map ends, closable: the run keeps going, and
   a toast with Review reopens it when it has found the questions (`extractionEnd.ts`). Then
   the questions found, their price at 4 credits each and what finding them cost, naming any

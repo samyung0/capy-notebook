@@ -126,6 +126,10 @@ const MakeQuizDialog = lazy(() =>
 /** A search value's ids: the paper's or the answer files'. */
 const splitIds = (ids: string | undefined) =>
   ids ? ids.split(',').filter(Boolean) : [];
+const choiceSearch = ({ answers, paper }: MakeQuizChoice) => ({
+  answers: answers.join(',') || undefined,
+  paper: paper.join(',') || undefined,
+});
 
 const AssignmentsPage = lazy(() =>
   import('@/features/study/assignments/AssignmentsPage').then((mod) => ({
@@ -586,7 +590,6 @@ function WorkspaceOpen() {
     { mode: 'add' } | { mode: 'rename'; id: string; name: string } | null
   >(null);
   const [resumeProvider] = useState(() => resumedConnect(workspaceId));
-  const [makeQuiz, setMakeQuiz] = useState<MakeQuizChoice | null>(null);
   const [addSource, setAddSource] = useState<AddSourceMode | null>(
     resumeProvider ? 'import' : null
   );
@@ -907,12 +910,13 @@ function WorkspaceOpen() {
         />
       </Suspense>
     ));
+  const makeChoice = { answers: search.answers, paper: search.paper };
   // The landing is the workspace's Dashboard (boards H1, H2).
   const pageContent =
     studyContent ||
     (!openItem && (
       <WorkspaceDashboard
-        onMakeQuiz={() => setMakeQuiz({ answers: [], paper: [] })}
+        onMakeQuiz={() => void navigate({ search: { make: 'files' }, to: '.' })}
         onUpload={() => setAddSource('upload')}
         workspace={ws}
       />
@@ -1155,7 +1159,7 @@ function WorkspaceOpen() {
                     }}
                     // The dialog takes the screen on phones; hidden, the chat keeps
                     // its draft and stream.
-                    hidden={!!makeQuiz || makeLink}
+                    hidden={makeLink}
                     onOpenCitation={openCitation}
                     onOpenResource={openChatResource}
                     openResource={openItem}
@@ -1236,57 +1240,61 @@ function WorkspaceOpen() {
           title={topicForm.mode === 'add' ? m.topic_new() : m.topic_rename()}
         />
       )}
-      {(makeQuiz || makeLink) && (
+      {makeLink && search.make && (
         <Suspense fallback={null}>
           <MakeQuizDialog
-            initial={
-              makeQuiz ?? {
-                answers: splitIds(search.answers),
-                paper: splitIds(search.paper),
-              }
-            }
-            onClose={() => {
-              setMakeQuiz(null);
-              if (search.make) openDashboard();
+            file={search.quizFile}
+            initial={{
+              answers: splitIds(search.answers),
+              paper: splitIds(search.paper),
             }}
+            onClose={openDashboard}
             onConfirmed={(run, choice) => {
               addQuizRun({ ...choice, id: run.id, workspaceId });
-              setMakeQuiz(null);
               openDashboard();
             }}
-            onDone={(quizId) => {
-              setMakeQuiz(null);
+            onDone={(quizId) =>
               void navigate({
                 replace: true,
                 search: { material: quizId },
                 to: '.',
-              });
-            }}
+              })
+            }
+            onFile={(file) =>
+              void navigate({
+                // A phone's Back returns to the list; wider, the list stays beside it.
+                replace: !window.matchMedia('(max-width: 639.98px)').matches,
+                search: { ...makeChoice, make: 'pages', quizFile: file },
+                to: '.',
+              })
+            }
             onRunBack={() =>
               void navigate({
                 replace: true,
-                search: {
-                  answers: search.answers,
-                  make: 'pages',
-                  paper: search.paper,
-                },
+                search: { ...makeChoice, make: 'pages' },
+                to: '.',
+              })
+            }
+            onShowFiles={(choice) =>
+              void navigate({
+                search: { ...choiceSearch(choice), make: 'files' },
+                to: '.',
+              })
+            }
+            onShowPages={(choice) =>
+              void navigate({
+                search: { ...choiceSearch(choice), make: 'pages' },
                 to: '.',
               })
             }
             onStarted={(run, choice) =>
               void navigate({
-                replace: true,
-                search: {
-                  answers: choice.answers.join(',') || undefined,
-                  make: 'run',
-                  paper: choice.paper.join(','),
-                  run,
-                },
+                search: { ...choiceSearch(choice), make: 'run', run },
                 to: '.',
               })
             }
-            runId={search.make === 'run' && makeLink ? search.run : undefined}
-            startOnPages={search.make === 'pages' || search.make === 'run'}
+            runId={search.run}
+            step={search.make}
             workspaceId={workspaceId}
             workspaceName={ws.name}
           />

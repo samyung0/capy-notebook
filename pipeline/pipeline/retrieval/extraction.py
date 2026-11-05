@@ -846,8 +846,9 @@ class Run:
     # What each question's copy call sent, its keys taken out, and its pages.
     copies: dict[str, dict[str, Any]] = field(default_factory=dict)
     spans: dict[str, tuple[int, int]] = field(default_factory=dict)
-    # The starter confirmed fewer questions than the map found: the rest stay out.
-    capped: bool = False
+    # The starter confirmed fewer questions than the map found: these keys alone are
+    # kept, whatever a batch copies.
+    only: set[str] | None = None
     # Questions whose map boxes could not fill in for what their batch left out.
     figures_refused: list[str] = field(default_factory=list)
     # Questions with their answers recorded.
@@ -879,7 +880,12 @@ class Run:
 
     def held(self) -> list[Recorded]:
         return sorted(
-            self.recorded.values(), key=lambda h: self.order[label_key(h.label)]
+            (
+                held
+                for key, held in self.recorded.items()
+                if self.only is None or key in self.only
+            ),
+            key=lambda h: self.order[label_key(h.label)],
         )
 
     def counts(self, leaving_out: str = "") -> tuple[int, int]:
@@ -1016,7 +1022,7 @@ class Run:
         the map and the copies, and the next number when it is on a page past
         the last question's: a page no row covers."""
         out = [row.label for row in rows if label_key(row.label) not in self.copies]
-        if self.capped:
+        if self.only is not None:
             return out
         labels = [*(row.label for row in rows), *self.copies]
         numbers = {_number(label) for label in labels} - {None}
@@ -1431,8 +1437,13 @@ async def run(
         if chosen is None:
             return
         # Fewer than the map found: what the starter afforded is all it copies.
-        current.capped = chosen < len(rows)
-        rows = rows[:chosen]
+        if chosen < len(rows):
+            rows = rows[:chosen]
+            current.only = {label_key(row.label) for row in rows}
+        # Confirming took the credits to pay for it: a map that crossed zero is over.
+        state = accounting.current()
+        if state:
+            state.credits_exhausted = False
     current.order = {label_key(row.label): n for n, row in enumerate(rows)}
     batches = [[row.label for row in group] for group in _chunks_of(rows, COPY_BATCH)]
     threads: list[list[dict[str, Any]]] = [list(base) for _ in batches]
@@ -1665,11 +1676,15 @@ async def starter_confirm(run_id: str, found: int) -> int | None:
     they cancelled. ``found`` is what the map found, which the row's answer can't pass."""
     deadline = time.monotonic() + CONFIRM_WAIT_S
     while time.monotonic() < deadline:
-        status, confirmed = await store.extraction_decision(run_id)
-        if confirmed is not None:
-            return min(confirmed, found)
-        if status not in ("running", "confirming"):
-            return None
+        try:
+            status, confirmed = await store.extraction_decision(run_id)
+        except Exception as exc:  # noqa: BLE001 - a blip mustn't lose the paid map
+            log.warning("extraction confirm read failed: %s", exc)
+        else:
+            if confirmed is not None:
+                return min(confirmed, found)
+            if status not in ("running", "confirming"):
+                return None
         await asyncio.sleep(CONFIRM_POLL_S)
     raise ConfirmExpired
 

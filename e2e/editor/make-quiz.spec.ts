@@ -90,7 +90,7 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
     page.getByRole('button', { name: m.make_quiz_extract() })
   ).toBeDisabled();
   await dialog(page)
-    .getByRole('tab', { name: /mark scheme/ })
+    .getByRole('button', { name: /mark scheme/ })
     .click();
   await expect(
     page.getByRole('heading', { name: m.make_quiz_answers_title() })
@@ -132,6 +132,30 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   await expect(
     page.getByRole('textbox', { name: m.question_ui_correct_answer() })
   ).toHaveValue('Metaphase');
+});
+
+test("the browser's Back walks the dialog's steps", async ({ page }) => {
+  await page.goto('/workspaces/ws_bio');
+  await page
+    .getByRole('button', { name: m.dashboard_make_quiz() })
+    .click({ timeout: 30_000 });
+  await dialog(page)
+    .getByRole('button', { name: m.make_quiz_choose_file() })
+    .click();
+  await page.getByRole('option', { name: /Past paper 2025 P1\.pdf/ }).click();
+  await dialog(page).getByRole('button', { name: m.action_continue() }).click();
+  await pageSheet(page, 2).click({ timeout: 30_000 });
+  await expect(page).toHaveURL(/make=pages/);
+  await page.goBack();
+  await expect(page).toHaveURL(/make=files/);
+  await expect(
+    dialog(page).getByRole('button', { name: m.make_quiz_change() })
+  ).toBeVisible();
+  await page.goForward();
+  await expect(pageSheet(page, 2)).toHaveAttribute('aria-pressed', 'true');
+  await page.goBack();
+  await page.goBack();
+  await expect(dialog(page)).toHaveCount(0);
 });
 
 test('Change files keeps the picks of files left in', async ({ page }) => {
