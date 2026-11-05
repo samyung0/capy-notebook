@@ -5725,8 +5725,9 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   never page-picked. At most `fieldlimits.ExtractionPages` (40) selected pages
   and `ExtractionFiles` (10) files in all, answer files included (Epo
   2026-11-03); every file must be the workspace's, untrashed and indexed, and a
-  paper file a PDF, an image, or a Word, PowerPoint or text file read whole as page 1
-  (the dialog offers only PDFs and images so far). The gateway checks those,
+  paper file a PDF, an image, a Word or PowerPoint file with its selected pages drawn
+  in the browser and sent as JPEGs (`images`), or any other indexed file read whole as
+  page 1. An Excel file or audio is refused as a paper and as an answer file. The gateway checks those,
   that the title is free, the account can edit and has storage, then opens a
   provider session on surface `generate` (the starter pays, Epo 2026-11-03;
   its calls' purposes are `extraction_map`, `extraction_copy`,
