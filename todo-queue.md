@@ -10,8 +10,8 @@ Windows lands and deploys these, one landing per deploy.
 | Item | Where it is | Waiting on |
 |---|---|---|
 | Room pair | On `main` and UAT at 57a62f208 | Done; `membership.spec.ts` passed its first real run |
-| Make a quiz on UAT: crash screen on both papers (`makeQuiz.spec.ts:211`, run 42067521199) | Extraction, not fixed | Finding the throw; a render error on real data, not the frame position |
-| Grading off Jev | `claude/grading-off-jev` abb0ae70a | The deploy above reporting; then the first real 1017 marks on UAT |
+| Make a quiz on UAT: crash screen on both papers (`makeQuiz.spec.ts:211`, run 42067521199) | `claude/make-quiz-pages-crash` 8d1f59653 | CI, Windows landing it, then a UAT journey to prove it. Cause: the page count gave the worker a bucket link it refuses |
+| Grading off Jev | `claude/grading-off-jev` abb0ae70a, CI red: a submit crashed the server with no pipeline. Fix not pushed yet | Database tests, `e2e_stack` green, then the first real 1017 marks on UAT |
 | Layout service on the ingest host | Built, not running; runbook §7.6 | Epo answering Windows' Q646; Windows wants the Make a quiz fix first |
 | Shared pages lose AI marking (Q640 B) | Windows | After grading |
 | New assignment's quiz picker | `claude/assignment-quiz-picker` eeb6035fc | Windows' review round |
@@ -57,6 +57,7 @@ floating toolbars on e.g. tables and stuff, and affine has a table view as well.
 - **Scanned submissions** (`todo-study-tracking.md`, "Later"): needs its own design round.
 - **Study leftovers** (`todo-study-tracking.md` §11 "Can wait"): AI insights, the app-wide Learning page redesign, "Copy to my workspace", sharing practice with the class, gamification.
 - **Handed over by Windows, not started** (`todo-study-tracking.md`, "Where it stands"): a question with no answers through `insert_child`; dotted question ids in `quiz.rs`; locks in `source_imports.go`; the `StartAssignment` expired-attempt lock; `DeleteAssignment` returning 404; a whole run's figure cap; sweep starvation.
+- **Add dialog's retry** (`AddSourceDialog.tsx:1209`): passes a bucket link to the analysis worker that refuses other origins, the same mistake as Make a quiz's crash. Untested; probably fails analysis on real files. Asked Epo.
 - **Results page and answers:** results hide answers after an assignment closes while Practice shows them. Optional, Epo hasn't decided.
 
 ## Older plan files
