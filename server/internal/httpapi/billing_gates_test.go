@@ -387,6 +387,31 @@ func TestUploadRefusedAfterItsTicketCountsInItsBatchAtOnce(t *testing.T) {
 	}
 }
 
+// A new topic past the cap is refused at the ticket, before any waiting or bytes,
+// with the code the browser has copy for; an existing topic still takes a ticket.
+func TestUploadTicketRefusesANewTopicPastTheCap(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+	if _, err := fx.pool.Exec(ctx, `INSERT INTO topics (id, workspace_id, name, position)
+		SELECT 'tp_full_' || n, $1, 'Topic ' || n, n FROM generate_series(1, 30) n`, fx.workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/workspaces/" + fx.workspaceID + "/sources/uploads"
+	ticket := func(topic string) *httptest.ResponseRecorder {
+		rec, _ := takeTicket(t, fx.handler, path, fx.actorID, map[string]any{
+			"name": "notes.pdf", "parseMode": "none", "sizeBytes": 8, "contentType": "application/pdf",
+			"batchId": fmt.Sprintf("sb_topic_%d", time.Now().UnixNano()), "batchTotal": 1, "topicName": topic,
+		})
+		return rec
+	}
+	if rec := ticket("One too many"); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "too_many_topics") {
+		t.Fatalf("new topic past the cap: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := ticket("topic 1"); rec.Code != http.StatusCreated {
+		t.Fatalf("existing topic: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T) {
 	fx := openBilling(t)
 	rec := doReq(t, fx.handler, http.MethodGet, "/api/source-upload-policy", fx.actorID, nil)

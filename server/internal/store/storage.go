@@ -542,16 +542,19 @@ func (s *Store) AssertWorkspaceFileRoom(ctx context.Context, workspaceID string,
 }
 
 // AssertSourceUploadRoom runs a source upload's reservation gates (the
-// uploader's editor access and storage, the workspace's file cap) and rolls
-// back, so an upload's ticket refuses what its upload would be refused
-// before the browser waits in line. The reservation still gates.
-func (s *Store) AssertSourceUploadRoom(ctx context.Context, workspaceID, userID string, size int64) error {
+// uploader's editor access and storage, the workspace's file cap, a new topic's
+// place) and rolls back, so an upload's ticket refuses what its upload would be
+// refused before the browser waits in line. The reservation still gates.
+func (s *Store) AssertSourceUploadRoom(ctx context.Context, workspaceID, userID, topicName string, size int64) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 	if _, err := s.lockFileEditorMutationTx(ctx, tx, workspaceID, userID, userID); err != nil {
+		return err
+	}
+	if err := s.assertUploadTopicFitsTx(ctx, tx, workspaceID, topicName); err != nil {
 		return err
 	}
 	if err := s.gateStorageTx(ctx, tx, userID, size); err != nil {
