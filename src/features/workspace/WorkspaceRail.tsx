@@ -83,7 +83,7 @@ export function WorkspaceRail({
     // page frame shows straight through.
     <nav
       aria-label={m.workspace_rail_label()}
-      className="flex h-full w-15 shrink-0 flex-col items-center gap-0.5 overflow-y-auto overflow-x-hidden py-3"
+      className="flex h-full w-15 shrink-0 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden py-3"
     >
       <Link className={cn(ITEM, 'mb-1')} preload="intent" to="/">
         <Icon name="navigationBack" size={20} />

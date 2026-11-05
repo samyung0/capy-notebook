@@ -169,8 +169,7 @@ export function WorkspaceCardSkeleton({ className }: { className?: string }) {
         <div className="h-19" />
         <div className="-mt-5 ml-3 size-9" />
         <p className="px-3 pt-1.5 text-sm">&nbsp;</p>
-        <p className="t-meta px-3 pt-0.5">&nbsp;</p>
-        <div className="mx-3 mt-2.5 mb-3 h-5.5" />
+        <p className="t-meta px-3 pt-0.5 pb-3">&nbsp;</p>
       </div>
     </Skeleton>
   );
@@ -226,40 +225,42 @@ export function WorkspaceCardFace({
       <h3 className="truncate px-3 pt-1.5 font-bold text-sm">
         {workspace.name}
       </h3>
-      <p className="t-meta px-3 pt-0.5 text-fg-muted">
+      <p className="t-meta px-3 pt-0.5 pb-3 text-fg-muted">
         {topics === 1
           ? m.workspace_card_one_topic()
           : m.workspace_card_topics({ count: String(topics) })}
       </p>
-      {/* One badge high, so every card and the skeleton share a height:
-          badges that do not fit wrap to a hidden second line. Access comes
-          first so it is never the one hidden. */}
-      <div className="mx-3 mt-2.5 mb-3 flex h-5.5 flex-wrap gap-1 overflow-hidden">
-        {workspace.privacy !== 'private' && (
-          <Badge
-            className={CARD_BADGE}
-            size="sm"
-            tone={workspace.privacy === 'public' ? 'success' : 'info'}
-          >
-            {workspace.privacy === 'public'
-              ? m.share_public()
-              : m.workspace_privacy_shared()}
-          </Badge>
-        )}
-        {workspace.tags.map((t) => (
-          <Badge
-            className={cn(
-              CARD_BADGE,
-              'max-w-full bg-page-hover text-fg-secondary'
-            )}
-            key={t.value}
-            size="sm"
-          >
-            {/* A 35-character tag is wider than a phone card. */}
-            <span className="truncate"># {t.value}</span>
-          </Badge>
-        ))}
-      </div>
+      {/* One badge high: badges that do not fit wrap to a hidden second line.
+          Access comes first so it is never the one hidden. With no badges the
+          card ends under its topics; a taller neighbour still evens a row. */}
+      {(workspace.privacy !== 'private' || workspace.tags.length > 0) && (
+        <div className="mx-3 -mt-0.5 mb-3 flex h-5.5 flex-wrap gap-1 overflow-hidden">
+          {workspace.privacy !== 'private' && (
+            <Badge
+              className={CARD_BADGE}
+              size="sm"
+              tone={workspace.privacy === 'public' ? 'success' : 'info'}
+            >
+              {workspace.privacy === 'public'
+                ? m.share_public()
+                : m.workspace_privacy_shared()}
+            </Badge>
+          )}
+          {workspace.tags.map((t) => (
+            <Badge
+              className={cn(
+                CARD_BADGE,
+                'max-w-full bg-page-hover text-fg-secondary'
+              )}
+              key={t.value}
+              size="sm"
+            >
+              {/* A 35-character tag is wider than a phone card. */}
+              <span className="truncate"># {t.value}</span>
+            </Badge>
+          ))}
+        </div>
+      )}
     </Card>
   );
 }

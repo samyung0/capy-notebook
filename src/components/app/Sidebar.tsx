@@ -40,12 +40,20 @@ function items(): {
     sections: [
       { items: general(), label: m.nav_section_general() },
       { items: tools(), label: m.nav_section_tools() },
-      {
-        items: [
-          { icon: 'quiz', label: m.question_ui_question_bank(), to: '/qb' },
-        ],
-        label: m.nav_section_explore(),
-      },
+      ...(features.questionBank
+        ? [
+            {
+              items: [
+                {
+                  icon: 'quiz' as IconName,
+                  label: m.question_ui_question_bank(),
+                  to: '/qb',
+                },
+              ],
+              label: m.nav_section_explore(),
+            },
+          ]
+        : []),
     ],
   };
 }
@@ -54,8 +62,6 @@ function general(): NavItem[] {
   return [
     { exact: true, icon: 'workspaces', label: m.nav_workspaces(), to: '/' },
     { icon: 'todo', label: m.nav_todo(), to: '/todo' },
-    // Chat across all the user's files (Epo 2026-10-27).
-    { icon: 'ai', label: m.nav_chat(), to: '/chat' },
     ...(features.learning
       ? [
           {
@@ -88,6 +94,8 @@ function general(): NavItem[] {
 
 function tools(): NavItem[] {
   return [
+    // Chat across all the user's files (Epo 2026-10-27).
+    { icon: 'ai', label: m.nav_chat(), to: '/chat' },
     { icon: 'filesNav', label: m.nav_files(), to: '/files' },
     ...(features.tasks
       ? [{ icon: 'todo' as IconName, label: m.nav_tasks(), to: '/tasks' }]
@@ -102,7 +110,7 @@ function isActive(pathname: string, item: NavItem): boolean {
 
 // Rows clip their own label so the 70px rail shows only the icon.
 const ROW_CLASS =
-  'flex h-fit w-full justify-start gap-3 overflow-hidden whitespace-nowrap px-3 py-2 leading-(--body-line-height) active:-rotate-1';
+  'flex h-9 w-full justify-start gap-3 overflow-hidden whitespace-nowrap px-3 leading-(--body-line-height) active:-rotate-1';
 
 /* The rail fades every `data-label` (row labels, the profile's name) in as it
    widens and out as it narrows. */
@@ -261,12 +269,15 @@ export function Sidebar({
       )}
 
       {rail ? (
-        <div className="flex flex-col gap-1">
-          {nav.sections.flatMap((section) =>
-            section.items.map((i) => (
-              <Row active={isActive(pathname, i)} item={i} key={i.to} />
-            ))
-          )}
+        // The full sidebar's groups, without their labels.
+        <div className="flex flex-col gap-4">
+          {nav.sections.map((section) => (
+            <div className="flex flex-col gap-1" key={section.label}>
+              {section.items.map((i) => (
+                <Row active={isActive(pathname, i)} item={i} key={i.to} />
+              ))}
+            </div>
+          ))}
         </div>
       ) : (
         nav.sections.map((section, index) => (

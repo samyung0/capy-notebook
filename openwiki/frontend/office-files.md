@@ -2904,7 +2904,7 @@ SHA-256; a file that fails is deleted and downloaded again (a base) or rebuilt
 (a seed or baseline). The folder is capped (`COLLABORATION_SOURCE_DISK_BYTES`:
 production 10 GiB, UAT 5 GiB): a write first deletes idle files, oldest
 first, and a room load is refused only when the files loaded rooms hold leave
-no room. Edit then shows collaboration unavailable and retries; View needs no
+no room. Edit then shows Cloud unavailable and retries; View needs no
 room. The refusal is logged at warn (`source room refused: disk store full`),
 not captured, and counted in `capy_collaboration_source_disk_refusals_total`.
 A loaded room's save that misses a file (its first DOCX or PPTX baseline, say)
