@@ -450,6 +450,7 @@ mod tests {
             editor: true,
             frozen: false,
             full: false,
+            hidden: false,
         };
         assert_eq!(open.access(), Access::Write);
         for narrowed in [
