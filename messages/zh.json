@@ -2343,6 +2343,7 @@
   "make_quiz_no_spreadsheets": "不能使用 Excel 和音频文件。",
   "make_quiz_whole_file": "整个文件",
   "make_quiz_cannot_extract": "无法从此文件提取。",
+  "make_quiz_drawing_pages": "正在绘制 {name} 的页面",
   "make_quiz_question_paper": "试卷",
   "make_quiz_choose_file": "选择文件",
   "make_quiz_search_files": "搜索文件",

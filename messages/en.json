@@ -2343,6 +2343,7 @@
   "make_quiz_no_spreadsheets": "Excel and audio files can't be used.",
   "make_quiz_whole_file": "Whole file",
   "make_quiz_cannot_extract": "This file can't be extracted.",
+  "make_quiz_drawing_pages": "Drawing the pages of {name}",
   "make_quiz_question_paper": "Question paper",
   "make_quiz_choose_file": "Choose a file",
   "make_quiz_search_files": "Search files",

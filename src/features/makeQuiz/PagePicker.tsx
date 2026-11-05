@@ -281,28 +281,45 @@ function PaperSheets({
   );
 }
 
-/** A Word or PowerPoint file's sheets: the Office runtime draws every page in a frame
- * off screen, with its print path, and each becomes a JPEG the run is sent (Epo
- * 2026-11-05, "draw those pages on client side"). */
-function OfficeSheets({
-  file,
-  firstNumber,
-  format,
-  full,
-  onCount,
-  onDrawn,
-  onToggle,
-  selected,
-}: {
+/** A Word or PowerPoint file's sheets. Retry starts the drawing over in a new frame. */
+function OfficeSheets(props: Omit<OfficeDrawingProps, 'onRetry'>) {
+  const [attempt, setAttempt] = useState(0);
+  return (
+    <OfficeDrawing
+      {...props}
+      key={attempt}
+      onRetry={() => setAttempt((n) => n + 1)}
+    />
+  );
+}
+
+interface OfficeDrawingProps {
   file: SourceFile;
   firstNumber: number;
   format: 'docx' | 'pptx';
   full: boolean;
   onCount: (fileId: string, pages: number) => void;
   onDrawn: (fileId: string, pages: readonly DrawnPage[]) => void;
+  onRetry: () => void;
   onToggle: (key: string) => void;
   selected: ReadonlySet<string>;
-}) {
+}
+
+/** The Office runtime draws every page in a frame off screen, with its print path, and
+ * each becomes a JPEG the run is sent (Epo 2026-11-05, "draw those pages on client
+ * side"). The frame is gone once it has drawn or failed: a render that timed out would
+ * otherwise go on drawing, and it shares the app's main thread, so the wait is still. */
+function OfficeDrawing({
+  file,
+  firstNumber,
+  format,
+  full,
+  onCount,
+  onDrawn,
+  onRetry,
+  onToggle,
+  selected,
+}: OfficeDrawingProps) {
   const {
     analysis,
     error,
@@ -336,23 +353,32 @@ function OfficeSheets({
       })
       .catch(() => setFailed(true));
   }, [analysis, file.id, onCount, onDrawn, ready, render]);
+  const stopped = failed || !!error;
   return (
     <>
-      <iframe
-        allow={iframeAllow}
-        aria-hidden
-        className="pointer-events-none fixed top-0 left-[-200vw] h-[768px] w-[1024px] border-0"
-        key={iframeKey}
-        ref={iframeRef}
-        sandbox={iframeSandbox}
-        src={iframeUrl}
-        tabIndex={-1}
-        title={m.files_office_document_frame_title({ name: file.name })}
-      />
-      {failed || error ? (
-        <p className="t-meta col-span-full text-tint-error-fg" role="alert">
-          {m.make_quiz_pages_unavailable()}
-        </p>
+      {!stopped && !pages && (
+        <iframe
+          allow={iframeAllow}
+          aria-hidden
+          className="pointer-events-none fixed top-0 left-[-200vw] h-[768px] w-[1024px] border-0"
+          inert
+          key={iframeKey}
+          ref={iframeRef}
+          sandbox={iframeSandbox}
+          src={iframeUrl}
+          tabIndex={-1}
+          title={m.files_office_document_frame_title({ name: file.name })}
+        />
+      )}
+      {stopped ? (
+        <div className="col-span-full flex items-center gap-3" role="alert">
+          <p className="t-meta text-tint-error-fg">
+            {m.make_quiz_pages_unavailable()}
+          </p>
+          <Button onClick={onRetry} size="sm" type="button" variant="outline">
+            {m.error_action_retry()}
+          </Button>
+        </div>
       ) : pages ? (
         pages.map((page, i) => {
           const key = pageKey({ fileId: file.id, page: i + 1 });
@@ -376,7 +402,9 @@ function OfficeSheets({
           );
         })
       ) : (
-        <Skeleton className="w-full" style={{ aspectRatio: SHEET_RATIO }} />
+        <p className="t-meta col-span-full text-fg-muted" role="status">
+          {m.make_quiz_drawing_pages({ name: file.name })}
+        </p>
       )}
     </>
   );
