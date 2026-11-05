@@ -3386,7 +3386,7 @@ connection.
 Below 1260px the workspace has no panels and `ChatPanel` takes `dock`
 (`WorkspaceOpen`): it lays an overlay on the viewer holding the chat page and,
 while that is closed, `ChatDock` (`chat/ChatDock.tsx`). The chat page's state is
-`chatPage=true` in the URL, so the back gesture closes it and keeps the file, and
+`panel=agent` in the URL, so the back gesture closes it and keeps the file, and
 its ⋮ holds New chat and Workspace settings (Epo 2026-11-05). Phones, and Office
 files at every width, get a 52px round button at the bottom right that morphs
 into a one-line field (history clock on the left, voice input and send on

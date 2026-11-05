@@ -319,3 +319,37 @@ test('the panel handle trades width with the viewer up to half the group, collap
   ]);
   expect(await width(page, 'left')).toBe(wide);
 });
+
+test('the open panel is in the URL, back steps through it, and each workspace remembers its own', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio');
+  const rail = page.getByRole('navigation', {
+    name: m.workspace_rail_label(),
+  });
+  const section = (name: string) =>
+    rail.getByRole('button', { exact: true, name });
+  const panel = page.locator('[data-workspace-left-panel]');
+  await section(m.workspace_section_agent()).click({ timeout: 60_000 });
+  await expect(page).toHaveURL(/panel=agent/);
+  await section(m.workspace_tab_files()).click();
+  await expect(page).toHaveURL(/panel=files/);
+  await expect(
+    page.locator('[data-workspace-file-tree]').first()
+  ).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/panel=agent/);
+  await expect(section(m.workspace_section_agent())).toHaveAttribute(
+    'aria-current',
+    'page'
+  );
+
+  // Visiting again opens what was last open, here and only here.
+  await page.goto('/workspaces/ws_bio');
+  await expect(page).toHaveURL(/panel=agent/);
+  await expect(panel).toBeVisible();
+  await page.goto('/workspaces/ws_eng');
+  await expect(page).toHaveURL(/panel=none/);
+  await expect(panel).toBeHidden();
+});

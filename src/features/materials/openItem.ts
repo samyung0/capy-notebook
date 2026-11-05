@@ -35,6 +35,18 @@ export type OpenItem =
 /** A note citation: the blocks it came from, and its text for one without. */
 export type NoteCitationTarget = OfficeCitation & { blockIds?: string[] };
 
+/** The panel beside the rail, or `none` for no panel. */
+export type WorkspacePanel = 'files' | 'agent' | 'study' | 'none';
+
+export function isWorkspacePanel(value: unknown): value is WorkspacePanel {
+  return (
+    value === 'files' ||
+    value === 'agent' ||
+    value === 'study' ||
+    value === 'none'
+  );
+}
+
 /** URL search params for the open item — mutually exclusive `file` | `material`. */
 export type WorkspaceOpenSearch = {
   file?: string;
@@ -47,9 +59,9 @@ export type WorkspaceOpenSearch = {
   /** The open item fills the page, header and side panels hidden. In the URL
    * so the back gesture leaves it. */
   fullscreen?: true;
-  /** Below the panels, the chat page is open over the viewer. In the URL so
-   * the back gesture leaves it (Epo 2026-11-05). */
-  chatPage?: true;
+  /** Which panel shows, in the URL so the back gesture steps through them (Epo
+   * 2026-11-05). Below the panels, `agent` is the chat page over the viewer. */
+  panel?: WorkspacePanel;
   /** A Study page in the centre while nothing is open. */
   study?: 'practice' | 'summary' | 'assignments';
   /** Assignments' open assignment, and a try at it: running, or results. */
@@ -163,7 +175,7 @@ export function parseWorkspaceOpenSearch(
     ...parseOpenPage(search),
     add: search.add === 'upload' ? 'upload' : undefined,
     chat: search.chat === 'new' ? 'new' : undefined,
-    chatPage: search.chatPage === true ? true : undefined,
+    panel: isWorkspacePanel(search.panel) ? search.panel : undefined,
     settings: isSettingsView(search.settings) ? search.settings : undefined,
     settingsQuery: isSettingsView(search.settings)
       ? text(search.settingsQuery)

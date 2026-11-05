@@ -11,6 +11,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useEffectEvent,
   useRef,
   useState,
 } from 'react';
@@ -65,11 +66,13 @@ import type { MakeQuizChoice } from '@/features/makeQuiz/MakeQuizDialog';
 import { CenterContent } from '@/features/materials/CenterContent';
 import type { OneColumnChrome } from '@/features/materials/CenterContentHeader';
 import {
+  isWorkspacePanel,
   type NoteCitationTarget,
   type OpenItem,
   openItemFromSearch,
   searchFromOpenItem,
   type WorkspaceOpenSearch,
+  type WorkspacePanel,
 } from '@/features/materials/openItem';
 import { SharingNotice } from '@/features/study/assignments/SharingNotice';
 import { StudyPanel } from '@/features/study/practice/StudyPanel';
@@ -306,10 +309,31 @@ function FollowOpenFile() {
   return null;
 }
 
+type PanelCenter = {
+  makePage: boolean;
+  openKey: string | null;
+  studyPage: boolean;
+};
+
+/** The rail's section after the centre moves: Agent stays, a Study page shows
+ * Study, an open item or a Make a quiz page Files, and leaving Study for the
+ * landing (Back) shows the Dashboard. */
+function sectionForCenter(
+  was: WorkspaceSection,
+  { makePage, openKey, studyPage }: PanelCenter
+): WorkspaceSection {
+  if (was === 'agent') return was;
+  if (studyPage) return 'study';
+  if (makePage || openKey) return 'files';
+  return was === 'study' ? 'dashboard' : was;
+}
+
 export default function WorkspaceOpenPage() {
+  const params = useParams({ strict: false }) as { workspaceId: string };
   return (
     <>
-      <WorkspaceOpen />
+      {/* Its panels are each workspace's own. */}
+      <WorkspaceOpen key={params.workspaceId} />
       {/* After the page, so the follow's normal open (Q462) runs after the
           file view's effects and its URL wins. */}
       <FollowOpenFile />
@@ -362,52 +386,105 @@ function WorkspaceOpen() {
   const makePage =
     !readOnly && !searchedOpenItem && !search.study && !!search.make;
   // Agent shows its chat rather than the history (Epo 2026-11-04, option A). A
-  // chat on screen comes back after a reload or a closed tab, with the thread
-  // the chat panel keeps.
+  // chat on screen comes back on the next visit, with the thread the chat panel
+  // keeps.
   const [chatShown, setChatShown] = useState(() =>
     readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean)
   );
-  // The rail's section: that chat, a Study page in the URL shows Study, an open
-  // item or a Make a quiz page Files, else the Dashboard (no panel). Pressing the
-  // shown section again closes or reopens its panel.
-  const [section, setSection] = useState<WorkspaceSection>(() =>
-    chatShown
-      ? 'agent'
-      : studyPage
-        ? 'study'
-        : searchedOpenItem || makePage
-          ? 'files'
-          : 'dashboard'
-  );
-  const [panelOpen, setPanelOpen] = useState(true);
   const openKey = searchedOpenItem
     ? `${searchedOpenItem.kind}:${searchedOpenItem.id}`
     : null;
+  const center: PanelCenter = { makePage, openKey, studyPage };
+  // The panel opens as the URL says, else as this workspace last had it. These
+  // two states draw it; the effect below keeps the URL and the memory on them.
+  const [firstPanel] = useState(() =>
+    lg
+      ? (search.panel ??
+        readPref<WorkspacePanel | null>(
+          PREF_KEYS.panel(workspaceId),
+          null,
+          (value): value is WorkspacePanel => isWorkspacePanel(value)
+        ))
+      : null
+  );
+  const [section, setSection] = useState<WorkspaceSection>(() => {
+    const first =
+      firstPanel && firstPanel !== 'none' ? firstPanel : 'dashboard';
+    // Study's panel lists Study's pages: the sync below opens Practice.
+    if (first === 'study' && !studyPage && !openKey && !makePage) return first;
+    return sectionForCenter(first, center);
+  });
+  const [panelOpen, setPanelOpen] = useState(
+    () => firstPanel !== 'none' || (!openKey && !studyPage)
+  );
   // The centre moves on while Agent keeps its chat: a citation opens its file
-  // beside the chat, and so does anything else opened there. From the Dashboard
-  // or Study, an item shows in Files and a Study page in Study. Leaving Study for
-  // the landing (Back) shows the Dashboard.
-  useEffect(() => {
-    if (studyPage) setSection((was) => (was === 'agent' ? was : 'study'));
-    else if (makePage) setSection((was) => (was === 'agent' ? was : 'files'));
-  }, [makePage, studyPage]);
-  useEffect(() => {
-    if (openKey)
-      setSection((was) =>
-        was === 'dashboard' || was === 'study' ? 'files' : was
-      );
-    else if (!studyPage)
-      setSection((was) => (was === 'study' ? 'dashboard' : was));
-  }, [openKey, studyPage]);
+  // beside the chat, and so does anything else opened there.
+  const centerKey = `${openKey}|${studyPage}|${makePage}`;
+  const [seenCenter, setSeenCenter] = useState(centerKey);
+  if (centerKey !== seenCenter) {
+    setSeenCenter(centerKey);
+    setSection((was) => sectionForCenter(was, center));
+  }
   const leftOpen = section !== 'dashboard' && panelOpen && !makePage;
   const leftShown = lg && leftOpen;
   const chatOnScreen = leftShown && section === 'agent' && chatShown;
   useEffect(() => {
-    if (!chatOnScreen) return;
+    if (!lg) return;
     const key = PREF_KEYS.chatShown(workspaceId);
-    writePref(key, true);
-    return () => removePref(key);
-  }, [chatOnScreen, workspaceId]);
+    if (chatOnScreen) writePref(key, true);
+    else removePref(key);
+  }, [chatOnScreen, lg, workspaceId]);
+  // The tour's panels aren't the learner's to remember.
+  const beforeTour = useRef<{
+    chatShown: boolean;
+    panelOpen: boolean;
+    section: WorkspaceSection;
+  } | null>(null);
+  const panelNow: WorkspacePanel | null = lg
+    ? section === 'dashboard' || !panelOpen
+      ? 'none'
+      : section
+    : null;
+  const panelPressed = useRef(false);
+  const seenUrlPanel = useRef(search.panel);
+  useEffect(() => {
+    if (!panelNow) return;
+    const urlPanel = search.panel;
+    const moved = urlPanel && urlPanel !== seenUrlPanel.current;
+    seenUrlPanel.current = urlPanel;
+    // Back, forward or a link moved the URL: the panel follows.
+    if (moved && urlPanel !== panelNow) {
+      if (urlPanel !== 'none') {
+        setSection(urlPanel);
+        setPanelOpen(true);
+      } else if (openKey || studyPage) setPanelOpen(false);
+      else {
+        setSection('dashboard');
+        setPanelOpen(true);
+      }
+      return;
+    }
+    if (!beforeTour.current) writePref(PREF_KEYS.panel(workspaceId), panelNow);
+    if (urlPanel === panelNow) return;
+    // A press adds a step for back; anything else only labels the entry, such
+    // as a navigation that left the panel out.
+    const pressed = panelPressed.current && !!urlPanel;
+    panelPressed.current = false;
+    navigate({
+      replace: !pressed,
+      search: (previous) => ({ ...previous, panel: panelNow }),
+      to: '.',
+    });
+  }, [navigate, openKey, panelNow, search.panel, studyPage, workspaceId]);
+  const openPracticeFirst = useEffectEvent(() => {
+    if (lg && section === 'study' && !studyPage && !openKey && !makePage)
+      navigate({
+        replace: true,
+        search: (previous) => ({ ...previous, study: 'practice' as const }),
+        to: '.',
+      });
+  });
+  useEffect(() => openPracticeFirst(), []);
   const panelGroupRef = useGroupRef();
   const [panelGroup, setPanelGroup] = useState<HTMLDivElement | null>(null);
   usePanelLayout({
@@ -430,6 +507,7 @@ function WorkspaceOpen() {
   }
   /** Every way into a chat: Agent's panel, showing that chat. */
   function openChat(id: string | null, prompt?: string) {
+    panelPressed.current = true;
     setSection('agent');
     setPanelOpen(true);
     setChatShown(true);
@@ -471,16 +549,17 @@ function WorkspaceOpen() {
     });
   }
 
-  /** The chat page below the panels. Opening adds a history entry for the back
-   * gesture to leave, and the page's own back arrow takes that same step. */
+  /** The chat page below the panels: `agent` in the URL. Opening adds a history
+   * entry for the back gesture to leave, and the page's back arrow takes that
+   * same step. */
   const chatPagePushed = useRef(false);
   function setChatPageOpen(open: boolean) {
     const latest = router.latestLocation.search as WorkspaceOpenSearch;
-    if (open === !!latest.chatPage) return;
+    if (open === (latest.panel === 'agent')) return;
     if (open) {
       chatPagePushed.current = true;
       navigate({
-        search: (previous) => ({ ...previous, chatPage: true }),
+        search: (previous) => ({ ...previous, panel: 'agent' as const }),
         to: '.',
       });
     } else if (chatPagePushed.current) {
@@ -489,7 +568,7 @@ function WorkspaceOpen() {
     } else {
       navigate({
         replace: true,
-        search: (previous) => ({ ...previous, chatPage: undefined }),
+        search: (previous) => ({ ...previous, panel: undefined }),
         to: '.',
       });
     }
@@ -550,6 +629,7 @@ function WorkspaceOpen() {
    * opens Practice, its only page so far. Pressing the shown section closes
    * or reopens its panel. */
   function selectSection(next: WorkspaceSection) {
+    panelPressed.current = true;
     if (next === 'dashboard') {
       setSection('dashboard');
       if (searchedOpenItem || search.study || search.make) openDashboard();
@@ -657,11 +737,6 @@ function WorkspaceOpen() {
   // page is open; when it stops, the panel goes back as it was before it, with
   // the section fitting what the tour left in the centre.
   const tourPanels = useRef<TourPanels | null>(null);
-  const beforeTour = useRef<{
-    chatShown: boolean;
-    panelOpen: boolean;
-    section: WorkspaceSection;
-  } | null>(null);
   useEffect(() => {
     const show = (next: WorkspaceSection) => {
       beforeTour.current ??= { chatShown, panelOpen, section };
@@ -1254,7 +1329,7 @@ function WorkspaceOpen() {
                       menuItems: [settingsItem],
                       office: officeOpen,
                       onPageOpen: setChatPageOpen,
-                      pageOpen: !!search.chatPage,
+                      pageOpen: search.panel === 'agent',
                     }}
                     // The page picker's footer takes the dock's corner on
                     // phones; hidden, the chat keeps its draft and stream.
