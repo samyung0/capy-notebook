@@ -289,6 +289,69 @@ fn an_incomplete_question_stays_out_of_the_projection() {
     assert_eq!(projected(&content, &keys).len(), questions.len() - 1);
 }
 
+/// What Make a quiz sends for parts left with no answer, each after the question
+/// printed before it: the room holds them in printed order, the caps a server
+/// edit checks pass, and only the complete question projects.
+#[test]
+fn a_server_insert_holds_questions_with_no_answers() {
+    let question = |id: &str, answer: Value| {
+        json!({
+            "id": id, "stem": [], "layout": "paper", "labels": "letters",
+            "parts": [{
+                "id": format!("{id}-p"), "blocks": [{ "type": "text", "text": "Answer." }],
+                "answer": answer, "marks": 1, "solution": [],
+            }],
+        })
+    };
+    let complete = question(
+        "q2",
+        json!({ "type": "mcq", "options": ["a", "b"], "correct": [0] }),
+    );
+    let (content, keys, _, _) = rooms(&[complete]);
+    let insert = |id: &str, after: Option<&str>, answer: Value| DocumentCommand::InsertChild {
+        parent_type: "quiz".into(),
+        after_node_id: after.map(str::to_owned),
+        node: json!({
+            "type": "quiz_question", "id": id, "question": question(id, answer),
+            "children": [{ "text": "" }],
+        }),
+    };
+    let commands = [
+        insert(
+            "q1",
+            None,
+            json!({ "type": "mcq", "options": ["a", "b"], "correct": [] }),
+        ),
+        insert("q3", Some("q2"), json!({ "type": "short", "accepted": [] })),
+        insert(
+            "q4",
+            Some("q3"),
+            json!({ "type": "open", "accepted": [], "hints": [] }),
+        ),
+    ];
+    quiz::apply_commands(
+        &mut content.transact_mut(),
+        &mut keys.transact_mut(),
+        &commands,
+    )
+    .unwrap();
+
+    Kind::Quiz.check_caps(&content.transact()).unwrap();
+    Kind::QuizKeys.check_caps(&keys.transact()).unwrap();
+    let ids = |questions: Vec<Value>| -> Vec<String> {
+        questions
+            .iter()
+            .map(|q| q["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let live = {
+        let (content, keys) = (content.transact(), keys.transact());
+        quiz::questions_json(&content, Some(&quiz::KeysRead::new(&keys)))
+    };
+    assert_eq!(ids(live), ["q1", "q2", "q3", "q4"]);
+    assert_eq!(ids(projected(&content, &keys)), ["q2"]);
+}
+
 #[test]
 fn blanks_are_dropped_from_the_projection() {
     let mut questions = fixtures();
