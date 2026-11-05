@@ -3,9 +3,9 @@
 // owner, progress on, and enough steps to prove each record is written. The
 // detailed cases (review sessions, Practice) live in the Docker suite,
 // e2e/study/study-progress.spec.ts. The quiz parts are true/false, which the
-// server grades without Jev, so those steps make no parser, embedding or LLM
+// server grades with no model, so those steps make no parser, embedding or LLM
 // call. A last quiz with one open part is
-// graded by Jev: the journey's one real grading call.
+// graded by the grading slot's model: the journey's one real grading call.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
@@ -282,9 +282,9 @@ test('study progress: a quiz finished, a set studied and a short review are reco
   await run.attach(`${workspaceId}-study`, { attempts, progress, states });
   await noProviderCalls(run, workspaceId);
 
-  // An open answer, graded by Jev (typesafe.ai, called by Go directly, not
-  // through EliteLLM). The grade itself is not asserted, only that Jev gave
-  // one award per marking item and the call was recorded, uncharged.
+  // An open answer, graded by the grading slot's model through the pipeline.
+  // The grade itself is not asserted, only that the model gave one award per
+  // marking item and the call was recorded, charged to the learner.
   const openQuiz = await quiz(run, workspaceId, 'Open quiz', openPart);
   await page.goto(`${run.env.appUrl}/quizzes/${openQuiz}/attempt`);
   await page
@@ -312,19 +312,29 @@ test('study progress: a quiz finished, a set studied and a short review are reco
     input_tokens,metadata FROM usage_events WHERE workspace_id=%s`,
     [workspaceId]
   );
-  assert.equal(usage.length, 1, 'the Jev grading is the only usage');
-  const [jev] = usage;
+  assert.equal(usage.length, 1, 'the grading is the only usage');
+  const [grading] = usage;
   assert.deepEqual(
-    [jev.actor_user_id, jev.kind, jev.surface, jev.provider, jev.model],
-    [run.owner.id, 'llm', 'quiz', 'typesafe', 'jev-1.13.0']
+    [
+      grading.actor_user_id,
+      grading.kind,
+      grading.surface,
+      grading.provider,
+      grading.model,
+      grading.unit,
+    ],
+    [
+      run.owner.id,
+      'llm',
+      'quiz',
+      'openrouter',
+      'deepseek/deepseek-v4.1-flash-1017',
+      'tokens',
+    ]
   );
-  assert.deepEqual(
-    [Number(jev.credit_micros), Number(jev.units), jev.unit],
-    [0, 1, 'parts']
-  );
-  assert(Number(jev.input_tokens) > 0);
-  assert.equal(object(jev.metadata).quizId, openQuiz);
-  assert(Number(object(jev.metadata).costMicroUsd) >= 0);
+  assert(Number(grading.credit_micros) > 0);
+  assert(Number(grading.input_tokens) > 0);
+  assert.equal(object(grading.metadata).purpose, 'grading');
   assert.equal(
     (
       await run.query(
