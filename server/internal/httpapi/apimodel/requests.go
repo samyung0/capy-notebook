@@ -311,12 +311,12 @@ type GenerateReq struct {
 }
 
 // CreateExtractionReq starts a Make a quiz run (todo-study-tracking.md §8): the
-// question paper and any answer files. The handler holds the run to
-// fieldlimits.ExtractionAnswerFiles answer files and fieldlimits.ExtractionPages
-// picked pages in all.
+// question files and any answer files. The handler holds the run to
+// fieldlimits.ExtractionPaperFiles and ExtractionAnswerFiles files and
+// fieldlimits.ExtractionPages picked pages in all.
 type CreateExtractionReq struct {
 	Title   MaterialTitle    `json:"title" minLength:"1"`
-	Paper   ExtractionFile   `json:"paper"`
+	Paper   []ExtractionFile `json:"paper" minItems:"1" nullable:"false"`
 	Answers []ExtractionFile `json:"answers,omitempty" nullable:"false"`
 }
 

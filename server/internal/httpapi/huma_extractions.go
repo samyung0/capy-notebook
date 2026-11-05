@@ -75,15 +75,19 @@ func (a *api) registerExtractions(api huma.API) {
 }
 
 // checkExtractionRequest holds a run to its caps (Epo 2026-11-05): at most
-// ExtractionAnswerFiles answer files and ExtractionPages picked pages across the
-// paper and them; each file once, each page once and counted from 1.
+// ExtractionPaperFiles question files, ExtractionAnswerFiles answer files and
+// ExtractionPages picked pages across them; each file once, each page once and counted
+// from 1.
 func checkExtractionRequest(req apimodel.CreateExtractionReq) error {
+	if len(req.Paper) > fieldlimits.ExtractionPaperFiles {
+		return fmt.Errorf("a run reads at most %d question files; this one has %d", fieldlimits.ExtractionPaperFiles, len(req.Paper))
+	}
 	if len(req.Answers) > fieldlimits.ExtractionAnswerFiles {
 		return fmt.Errorf("a run reads at most %d answer files; this one has %d", fieldlimits.ExtractionAnswerFiles, len(req.Answers))
 	}
 	seen := map[string]bool{}
 	pages := 0
-	for _, file := range append([]apimodel.ExtractionFile{req.Paper}, req.Answers...) {
+	for _, file := range slices.Concat(req.Paper, req.Answers) {
 		if seen[file.FileID] {
 			return fmt.Errorf("file %q is listed twice", file.FileID)
 		}
@@ -181,10 +185,10 @@ func checkPickedPages(f store.File, p apimodel.ExtractionFile) error {
 
 // extractionFiles checks each file is the workspace's, untrashed and of a kind a run
 // reads: not Excel, which is neither a paper nor an answer file, and not audio. A paper
-// must be indexed. An answer file that failed to read doesn't refuse the run (Epo
+// file must be indexed. An answer file that failed to read doesn't refuse the run (Epo
 // 2026-11-05, Q613): it is left out, named in unread, and the confirm dialog says so.
-func (a *api) extractionFiles(ctx context.Context, wsID string, req apimodel.CreateExtractionReq) (paper extractionFile, answers []extractionFile, unread []string, err error) {
-	answers = []extractionFile{}
+func (a *api) extractionFiles(ctx context.Context, wsID string, req apimodel.CreateExtractionReq) (paper, answers []extractionFile, unread []string, err error) {
+	paper, answers = []extractionFile{}, []extractionFile{}
 	read := func(id string) (store.File, error) {
 		f, err := a.s.GetFile(ctx, id)
 		if errors.Is(err, store.ErrNotFound) || (err == nil && f.WorkspaceID != wsID) {
@@ -202,31 +206,33 @@ func (a *api) extractionFiles(ctx context.Context, wsID string, req apimodel.Cre
 	notYet := func(f store.File) error {
 		return huma.Error400BadRequest(fmt.Sprintf("%s has no indexed text yet: wait until it has been read, or process it.", f.Name))
 	}
-	f, err := read(req.Paper.FileID)
-	if err != nil {
-		return paper, nil, nil, err
+	for _, p := range req.Paper {
+		f, err := read(p.FileID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !f.Indexed {
+			return nil, nil, nil, notYet(f)
+		}
+		if err := checkPickedPages(f, p); err != nil {
+			return nil, nil, nil, err
+		}
+		paper = append(paper, extractionFile{FileID: f.ID, Name: f.Name, Pages: p.Pages, Images: p.Images})
 	}
-	if !f.Indexed {
-		return paper, nil, nil, notYet(f)
-	}
-	if err := checkPickedPages(f, req.Paper); err != nil {
-		return paper, nil, nil, err
-	}
-	paper = extractionFile{FileID: f.ID, Name: f.Name, Pages: req.Paper.Pages, Images: req.Paper.Images}
 	for _, p := range req.Answers {
 		f, err := read(p.FileID)
 		if err != nil {
-			return paper, nil, nil, err
+			return nil, nil, nil, err
 		}
 		if !f.Indexed {
 			if fileStillReading(f) {
-				return paper, nil, nil, notYet(f)
+				return nil, nil, nil, notYet(f)
 			}
 			unread = append(unread, f.Name)
 			continue
 		}
 		if err := checkPickedPages(f, p); err != nil {
-			return paper, nil, nil, err
+			return nil, nil, nil, err
 		}
 		answers = append(answers, extractionFile{FileID: f.ID, Name: f.Name, Pages: p.Pages, Images: p.Images})
 	}
@@ -289,7 +295,7 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 	// The retrieval service reads this run's row for the starter's answer.
 	runID := uuid.NewString()
 	body := map[string]any{
-		"workspaceId": wsID, "runId": runID, "paper": []extractionFile{paper}, "answerFiles": answers, "spendSessionId": charge.id,
+		"workspaceId": wsID, "runId": runID, "paper": paper, "answerFiles": answers, "spendSessionId": charge.id,
 	}
 	llm.attach(body)
 	// The run goes on after this request returns.
@@ -305,13 +311,20 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 		}
 		return nil, hErr(&aiServiceError{cause: err})
 	}
+	names := make([]string, len(paper))
+	paperPages := 0
+	for i, file := range paper {
+		names[i] = file.Name
+		paperPages += len(file.Pages)
+	}
+	paperNames := strings.Join(names, ", ")
 	// The run leaves its files' visibility alone (Epo 2026-11-04): a file
 	// picked from the workspace keeps its setting, and one uploaded in the
 	// Make a quiz dialog was uploaded hidden (CreateSourceUploadReq.Hidden),
 	// so a mark scheme never reaches the students. The quiz starts hidden.
 	run, err := a.s.CreateExtraction(runCtx, store.ExtractionStart{
 		ID: runID, WorkspaceID: wsID, UserID: actor, Title: title, SpendSessionID: charge.id, UnreadAnswers: unread,
-		PaperName: paper.Name, PaperPages: len(paper.Pages), AnswerFiles: len(answers),
+		PaperName: paperNames, PaperPages: paperPages, AnswerFiles: len(answers),
 	})
 	if err != nil {
 		stream.Close()

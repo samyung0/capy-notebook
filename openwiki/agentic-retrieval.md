@@ -5724,13 +5724,13 @@ job. The screens (boards X0a, X0b, X1, X2) are in
 [Make a quiz screens](question-bank.md#make-a-quiz-screens).
 
 - **Start.** `POST /api/workspaces/{id}/extractions` (workspace editors) takes
-  a title, the question paper as `paper: {fileId, pages, images}` and up to
-  `ExtractionAnswerFiles` (3) `answers` of the same shape (Epo 2026-11-05). Pages count
+  a title, up to `ExtractionPaperFiles` (5) question files as `paper: [{fileId, pages,
+  images}]` and up to `ExtractionAnswerFiles` (3) `answers` of the same shape (Epo 2026-11-05). Pages count
   from 1 and every picked page counts towards `fieldlimits.ExtractionPages` (40) across
   the files, however it is sent. A PDF takes any of its pages, an image page 1, a Word
   or PowerPoint file its picked pages as browser-drawn JPEGs (`images`), and any other
   indexed file no pages: it goes whole. Every file must be the workspace's and untrashed.
-  A paper must be indexed. An answer file still being read is refused, and one that
+  A question file must be indexed. An answer file still being read is refused, and one that
   failed to read is left out and named in the run's `unread_answers` (Q613), and the
   run goes on as one without it. An Excel file or audio is refused as a paper and as an answer file. The gateway checks those,
   that the title is free, the account can edit and has storage, then opens a

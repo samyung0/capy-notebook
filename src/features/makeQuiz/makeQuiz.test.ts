@@ -9,7 +9,8 @@ import {
   extractionRefusal,
   extractionRequest,
   foundPagesLabel,
-  hasFileRoom,
+  hasAnswerRoom,
+  hasPaperRoom,
   isOfferable,
   isQuizFile,
   isReadingFile,
@@ -90,9 +91,11 @@ describe('Make a quiz', () => {
     expect(extractionFailure(undefined)).toBe(m.make_quiz_failed_fallback());
   });
 
-  it('takes three answer files beside the one paper', () => {
-    expect(hasFileRoom(2)).toBe(true);
-    expect(hasFileRoom(3)).toBe(false);
+  it('takes five question files and three answer files', () => {
+    expect(hasPaperRoom(4)).toBe(true);
+    expect(hasPaperRoom(5)).toBe(false);
+    expect(hasAnswerRoom(2)).toBe(true);
+    expect(hasAnswerRoom(3)).toBe(false);
   });
 
   it('picks pages up to the cap across files, and all of a file', () => {
@@ -122,14 +125,14 @@ describe('Make a quiz', () => {
     const selected = new Set(['a:3', 'a:1', 's:2', 'd:1']);
     const drawn = new Map([['d:1', 'jpeg']]);
     expect(
-      extractionRequest('Paper', 'a', ['s', 'd', 'notes'], selected, drawn)
+      extractionRequest('Paper', ['a'], ['s', 'd', 'notes'], selected, drawn)
     ).toEqual({
       answers: [
         { fileId: 's', pages: [2] },
         { fileId: 'd', images: ['jpeg'], pages: [1] },
         { fileId: 'notes', pages: [] },
       ],
-      paper: { fileId: 'a', pages: [1, 3] },
+      paper: [{ fileId: 'a', pages: [1, 3] }],
       title: 'Paper',
     });
   });

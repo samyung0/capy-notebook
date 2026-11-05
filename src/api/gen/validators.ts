@@ -7843,6 +7843,7 @@ export const CreateExtractionParams = zod.object({
 
 
 
+
 export const createExtractionBodyTitleMax = 120;
 
 
@@ -7853,11 +7854,11 @@ export const CreateExtractionBody = zod.object({
   "images": zod.array(zod.string()).optional(),
   "pages": zod.array(zod.int()).optional()
 })).optional(),
-  "paper": zod.object({
+  "paper": zod.array(zod.object({
   "fileId": zod.string().min(1),
   "images": zod.array(zod.string()).optional(),
   "pages": zod.array(zod.int()).optional()
-}),
+})).min(1),
   "title": zod.string().min(1).max(createExtractionBodyTitleMax)
 })
 

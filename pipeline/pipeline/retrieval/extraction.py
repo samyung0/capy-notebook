@@ -1065,10 +1065,11 @@ class Run:
             held = self.recorded.get(key)
             if held is None or held.figures:
                 continue
+            # By the page itself: two files both have a page 1.
             by_page: dict[int, list[int]] = {}
             for number in row.figures:
                 if number in self.boxes:
-                    by_page.setdefault(self.boxes[number][0].number, []).append(number)
+                    by_page.setdefault(id(self.boxes[number][0]), []).append(number)
             if not by_page:
                 continue
             items = [

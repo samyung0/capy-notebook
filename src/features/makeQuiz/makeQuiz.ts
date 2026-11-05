@@ -3,6 +3,7 @@ import { createExtractionBodyTitleMax } from '@/api/gen/validators';
 import {
   EXTRACTION_ANSWER_FILES_MAX,
   EXTRACTION_PAGES_MAX,
+  EXTRACTION_PAPER_FILES_MAX,
   EXTRACTION_QUESTION_CREDITS,
 } from '@/api/limits.generated';
 import type {
@@ -47,11 +48,12 @@ export function isOfferable(file: Pick<SourceFile, 'indexed' | 'status'>) {
   return file.indexed || isReadingFile(file);
 }
 
-/** Past the answer-file cap (Epo 2026-11-05: one paper, up to three more), Add a file
- * stops offering more. */
-export function hasFileRoom(answerCount: number) {
-  return answerCount < EXTRACTION_ANSWER_FILES_MAX;
-}
+/** Past its cap (Epo 2026-11-05: five question files, three more), Add a file stops
+ * offering more. */
+export const hasPaperRoom = (paperCount: number) =>
+  paperCount < EXTRACTION_PAPER_FILES_MAX;
+export const hasAnswerRoom = (answerCount: number) =>
+  answerCount < EXTRACTION_ANSWER_FILES_MAX;
 
 /** A file with no pages to pick: the run reads all of it, and it counts for none of the
  * pages (Epo 2026-11-05). */
@@ -120,7 +122,7 @@ function extractionFile(
 /** The run's request: each file with its picked pages and any page the browser drew. */
 export function extractionRequest(
   title: string,
-  paperFileId: string,
+  paperFileIds: readonly string[],
   answerFileIds: readonly string[],
   selected: ReadonlySet<string>,
   /** Each browser-drawn page's base64 JPEG, by its page key. */
@@ -130,7 +132,9 @@ export function extractionRequest(
     answers: answerFileIds.map((fileId) =>
       extractionFile(fileId, selected, drawn)
     ),
-    paper: extractionFile(paperFileId, selected, drawn),
+    paper: paperFileIds.map((fileId) =>
+      extractionFile(fileId, selected, drawn)
+    ),
     title,
   };
 }

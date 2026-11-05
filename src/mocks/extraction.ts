@@ -379,7 +379,7 @@ export function extractionHandlers(
         await delay();
         const workspaceId = String(params.id);
         const body = (await request.json()) as CreateExtractionReq;
-        const files = [body.paper, ...(body.answers ?? [])];
+        const files = [...body.paper, ...(body.answers ?? [])];
         const pages = files.reduce(
           (sum, file) => sum + (file.pages?.length ?? 0),
           0
@@ -406,8 +406,11 @@ export function extractionHandlers(
           workspaceId,
         };
         runs.set(run.id, run);
-        const paperName =
-          db.files.find((file) => file.id === body.paper.fileId)?.name ?? '';
+        const paperName = body.paper
+          .map(
+            (paper) => db.files.find((file) => file.id === paper.fileId)?.name
+          )
+          .join(', ');
         const questions = extractedQuestions();
         const labels = questions.map((_, i) => String(i + 1));
         const unread = (body.answers ?? []).flatMap((answer) => {
@@ -423,7 +426,10 @@ export function extractionHandlers(
             availableCredits: mockCredits(),
             chargedCredits: 4,
             paperName,
-            paperPages: body.paper.pages?.length ?? 0,
+            paperPages: body.paper.reduce(
+              (sum, file) => sum + (file.pages?.length ?? 0),
+              0
+            ),
             questions: questions.map((question, i) => ({
               first: i + 2,
               label: labels[i] ?? '',
@@ -433,8 +439,10 @@ export function extractionHandlers(
             unreadAnswers: unread,
           };
           starts.set(run.id, (confirmed) => {
-            const fails = body.paper.fileId === FAILS;
-            const leaves = body.paper.fileId === LEAVES_ONE_OUT;
+            const fails = body.paper.some((file) => file.fileId === FAILS);
+            const leaves = body.paper.some(
+              (file) => file.fileId === LEAVES_ONE_OUT
+            );
             const end = (status: 'done' | 'failed') => {
               clearInterval(timer);
               run.status = status;

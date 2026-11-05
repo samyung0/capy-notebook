@@ -69,6 +69,7 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   await page.getByRole('option', { name: /Past paper 2025 P1\.pdf/ }).click();
   await dialog(page)
     .getByRole('button', { name: m.make_quiz_add_file() })
+    .last()
     .click();
   await page.getByRole('option', { name: /mark scheme/ }).click();
   await dialog(page).getByRole('button', { name: m.action_continue() }).click();
@@ -296,4 +297,23 @@ test('an uploaded paper is read first, and saved to Files hidden from members', 
     return files.find((row: { name: string }) => row.name === 'new paper.pdf');
   });
   expect(saved).toMatchObject({ hidden: true, topicId: null });
+});
+
+test('several question files share the 40 pages, and the list divides them from the answers', async ({
+  page,
+}) => {
+  await page.goto(
+    '/workspaces/ws_bio?make=pages&paper=f_paper_2025%2Cf_paper_2024&answers=f_paper_scheme'
+  );
+  const list = dialog(page).getByRole('navigation');
+  await expect(list.getByText(m.make_quiz_section_questions())).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(list.getByText(m.make_quiz_section_answers())).toBeVisible();
+  await pageSheet(page, 1).click();
+  await list.getByRole('button', { name: /Past paper 2024/ }).click();
+  await pageSheet(page, 1).click();
+  await expect(
+    page.getByText(m.make_quiz_pages_count({ count: 2, max: 40 }))
+  ).toBeVisible();
 });

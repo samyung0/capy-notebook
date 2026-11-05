@@ -2294,7 +2294,10 @@ components:
             $ref: "#/components/schemas/ExtractionFile"
           type: array
         paper:
-          $ref: "#/components/schemas/ExtractionFile"
+          items:
+            $ref: "#/components/schemas/ExtractionFile"
+          minItems: 1
+          type: array
         title:
           maxLength: 120
           minLength: 1

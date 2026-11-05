@@ -103,10 +103,11 @@ const (
 	QuizOpenParts     = 100
 	QuizMarkscheme    = 5
 	QuizOpenAnswer    = 5_000
-	// A Make a quiz run reads one question paper and at most ExtractionAnswerFiles
-	// answer files, and at most ExtractionPages picked pages across them (Epo
-	// 2026-11-05). Each saved question costs ExtractionQuestionCredits.
+	// A Make a quiz run reads at most ExtractionPaperFiles question files and
+	// ExtractionAnswerFiles answer files, and at most ExtractionPages picked pages across
+	// them (Epo 2026-11-05). Each saved question costs ExtractionQuestionCredits.
 	ExtractionPages           = 40
+	ExtractionPaperFiles      = 5
 	ExtractionAnswerFiles     = 3
 	ExtractionQuestionCredits = 4
 	// AnonymousLocalID bounds the reporting id a signed-out browser sends.

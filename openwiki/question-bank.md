@@ -243,10 +243,10 @@ gives the dialog its title, action and body (`DialogStep`); phones show it full 
 step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=…` and
 `?make=run&run=…`, so the browser's Back walks them and a link or reload opens the step.
 
-- **Files.** One question paper and up to `EXTRACTION_ANSWER_FILES_MAX` (3) mark scheme or
-  answer files, from a menu of the workspace's indexed files other than Excel and audio or
-  a new upload. A photographed paper of several images is no longer one paper: it needs
-  one PDF. Files have no stored page count, so the browser reads "16 pages"
+- **Files.** Up to `EXTRACTION_PAPER_FILES_MAX` (5) question files, such as a photographed
+  paper's images, and up to `EXTRACTION_ANSWER_FILES_MAX` (3) mark scheme or answer files,
+  from a menu of the workspace's indexed files other than Excel and audio or a new upload.
+  Files have no stored page count, so the browser reads "16 pages"
   (`filePages.ts`): a PDF's table through pdf.js with range requests once its row scrolls
   into view, a Word or PowerPoint file through the upload analysis on the chosen rows only.
   An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden from
@@ -254,8 +254,8 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   for the paper's pages and for each answer file to have an id; an answer file may still
   be reading, and one that failed or was stored without parsing holds it until removed.
 - **Pages** (`usePageStep`, Epo 2026-11-05, "use the 2 column design ... like what we did for
-  workspace settings"). Two columns in a tall frame: the files with their counts on the left,
-  one file's pages on the right, and on phones the same as settings, a list and then a file,
+  workspace settings"). Two columns in a tall frame: the files with their counts on the left, a
+  divider between Questions and Mark schemes and answers when there are both, one file's pages on the right, and on phones the same as settings, a list and then a file,
   with Back returning to the list. A lone file needs no list. Every PDF, Word, PowerPoint and
   image file picks pages, answer files too; an image is picked already, and a text file goes
   whole and counts for none. One click selects a page, up to `EXTRACTION_PAGES_MAX` (40) across

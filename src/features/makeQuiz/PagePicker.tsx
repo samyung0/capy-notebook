@@ -460,7 +460,7 @@ export function usePageStep({
   onChangeFiles: () => void;
   onFile: (fileId: string | undefined) => void;
   onStarted: (runId: string) => void;
-  paper: string | undefined;
+  paper: string[];
   workspaceId: string;
 }): DialogStep {
   const phone = useIsPhone();
@@ -469,7 +469,7 @@ export function usePageStep({
     errorBoundary: false,
   });
   const { mutate: start, isPending, error } = useCreateExtraction(workspaceId);
-  const chosen = paper ? [paper, ...answers] : answers;
+  const chosen = [...paper, ...answers];
   const chosenKey = chosen.join(',');
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -512,8 +512,9 @@ export function usePageStep({
     const file = files?.find((row) => row.id === id);
     return file ? [file] : [];
   });
-  const first = rows.find((row) => row.id === paper);
-  const answerFiles = rows.filter((row) => row.id !== paper);
+  const paperFiles = rows.filter((row) => paper.includes(row.id));
+  const first = paperFiles[0];
+  const answerFiles = rows.filter((row) => !paper.includes(row.id));
   // An image is its one page, picked until unclicked.
   const imagesPicked = useRef(new Set<string>());
   useEffect(() => {
@@ -597,8 +598,38 @@ export function usePageStep({
     </p>
   );
   const gone = !!files && !first;
-  const rowLabel = (row: SourceFile) =>
-    row.id === paper ? m.make_quiz_tab_questions() : fileTitle(row.name);
+  const fileRow = (row: SourceFile) => (
+    <button
+      aria-current={row.id === current?.id ? 'page' : undefined}
+      className={cn(
+        'flex cursor-pointer items-center gap-2.5 rounded-button border-divider px-2 py-2.5 text-left outline-none hover:bg-surface-hover-bg focus-visible:bg-surface-hover-bg max-sm:border-b',
+        row.id === current?.id && 'bg-surface-hover-bg'
+      )}
+      key={row.id}
+      onClick={() => {
+        setOpened((was) => new Set(was).add(row.id));
+        onFile(row.id);
+      }}
+      type="button"
+    >
+      <FileIcon className="size-4 shrink-0" name={fileIconName(row)} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate font-medium text-sm">
+          {fileTitle(row.name)}
+        </span>
+        <span className="t-meta truncate text-fg-muted">{fileCount(row)}</span>
+      </span>
+      <span className="shrink-0 text-fg-muted sm:hidden">
+        <Icon name="navigationForward" />
+      </span>
+    </button>
+  );
+  const sectionHead = (label: string) =>
+    answerFiles.length > 0 && (
+      <p className="t-meta px-2 pt-1 pb-0.5 font-semibold text-fg-muted">
+        {label}
+      </p>
+    );
   return {
     body: gone ? (
       <div className="flex flex-col gap-3 pb-1">
@@ -622,37 +653,15 @@ export function usePageStep({
               aria-label={m.make_quiz_title()}
               className="flex shrink-0 flex-col gap-1 sm:w-56 sm:overflow-y-auto sm:border-divider sm:border-r sm:pr-3"
             >
-              {rows.map((row) => (
-                <button
-                  aria-current={row.id === current?.id ? 'page' : undefined}
-                  className={cn(
-                    'flex cursor-pointer items-center gap-2.5 rounded-button border-divider px-2 py-2.5 text-left outline-none hover:bg-surface-hover-bg focus-visible:bg-surface-hover-bg max-sm:border-b',
-                    row.id === current?.id && 'bg-surface-hover-bg'
-                  )}
-                  key={row.id}
-                  onClick={() => {
-                    setOpened((was) => new Set(was).add(row.id));
-                    onFile(row.id);
-                  }}
-                  type="button"
-                >
-                  <FileIcon
-                    className="size-4 shrink-0"
-                    name={fileIconName(row)}
-                  />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-medium text-sm">
-                      {rowLabel(row)}
-                    </span>
-                    <span className="t-meta truncate text-fg-muted">
-                      {fileCount(row)}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-fg-muted sm:hidden">
-                    <Icon name="navigationForward" />
-                  </span>
-                </button>
-              ))}
+              {sectionHead(m.make_quiz_section_questions())}
+              {paperFiles.map(fileRow)}
+              {answerFiles.length > 0 && (
+                <>
+                  <hr className="my-2 border-divider" />
+                  {sectionHead(m.make_quiz_section_answers())}
+                  {answerFiles.map(fileRow)}
+                </>
+              )}
             </nav>
           )}
           {(!phone || !onList) && (
@@ -780,7 +789,7 @@ export function usePageStep({
                         first.name,
                         (materials ?? []).map((row) => row.title)
                       ),
-                      first.id,
+                      paperFiles.map((row) => row.id),
                       answerFiles.map((row) => row.id),
                       selected,
                       drawn
@@ -807,7 +816,7 @@ export function usePageStep({
         ? m.make_quiz_whole_title()
         : kind === 'unread'
           ? m.make_quiz_unread_title()
-          : current && current.id !== paper
+          : current && !paper.includes(current.id)
             ? m.make_quiz_answers_title()
             : m.make_quiz_pages_title(),
     width: 1040,
