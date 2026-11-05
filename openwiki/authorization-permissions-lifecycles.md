@@ -971,10 +971,10 @@ and [material editor checks](../server/internal/store/share.go#L209).
     has committed to (`revoke_local` in `collaboration-rs/crates/server/src/pubsub.rs`:
     `live_role` for a material room, the gateway's access check for a source
     room), and closes those whose role no longer covers what they hold, every
-    channel of theirs, with `RoomCmd::CloseUser`, code 4403 and no notice. They
-    need no role left at all for a read channel; a write channel, a keys
-    channel and a material room's reading tab of an editor (which is in the
-    presence) need an editing role. Everyone else and the room carry on, so a
+    channel of theirs, with `RoomCmd::CloseUser`, code 4403 and no notice. A
+    read channel needs any role; a write channel, a keys channel and a material
+    room's reading tab of an editor (which is in the presence) need an editing
+    role. Everyone else and the room carry on, so a
     transfer closes nobody: the old owner stays an editor. A trigger names no
     one, because a link or public visitor has no row to name; signed-out pages
     are static and join no room, so every connection has a user id and is found
