@@ -882,7 +882,10 @@ Steps 2, 3 and 7 can run side by side.
   - `bench/extraction/fixtures/` (gold, digital, matching; 11 files) holds extracts of copyrighted papers and comes out of git first, history included, so land by squash rather than merging those commits.
   - `claude/study-extraction` alone still has the slot migration naming `platform_enabled` and `byok_enabled`, which 0121 dropped. The fix is only on `claude/study-all`.
 - **Waiting on Epo:** the extraction route. They are reviewing the switch to the paper map (`bench/extraction/reports/2026-11-04-paper-map-parallel.md` on `claude/bench-hosted-figure-boxes`), so what is on the branch may change before it lands.
-- **Needs review from the PC side:** the layout service (`layout/`, `deploy/docker-compose.layout.yml`). `deploy/layout.env.example` still has placeholders for the capacity settings in `2026-11-04-layout-capacity.md`, and the plan of one port per instance over WireGuard is unreviewed. It isn't deployed, and extraction needs `CAPY_LAYOUT_URL`.
+- **Layout service:** no PC review needed; the 2026-11-05 review covered it. What's left is real capacity values in `deploy/model-capacities.sql` and deploying to the ingest host, which is Epo's go-ahead.
+- **Who does what (2026-11-05, after Epo: "the split is weird"):** Windows finishes the fix list and lands, then opening, speed, Office and Rust. The Mac does all new quiz, Make a quiz and assignment work after that.
+- **After landing, from the Mac (Epo, 2026-11-05):** an assignment counts the highest attempt, not the latest. A late submission shows a Late badge with its percentage beside the score, and the penalty comes off the mark earned. Make a quiz's pricing is for the extraction session to decide from its numbers.
+- **Closed by Epo (2026-11-05):** keys used on a later attempt with Show answers on, and Mix in copying keys, are fine. A stopped run needn't name its no-answer questions. UI follows the mocks.
 - **Not part of this landing yet:**
   - `claude/open-highest` (always open at the highest permission, device copy) is still being built on top of `claude/study-all`, for non-Office items only.
   - Office's side of that waits for the ribbon (D1 in `todo-canvas-workspace.md` §1.9).
