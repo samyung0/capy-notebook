@@ -6885,7 +6885,9 @@ fn assert_no_notice(client: &Client) {
     for message in client.inbox.iter().filter(|message| message.kind == 9) {
         let text = text_payload(&message.payload);
         assert!(
-            !text.contains("evictionId") && !text.contains("authorization-revoked"),
+            !text.contains("evictionId")
+                && !text.contains("authorization-revoked")
+                && !text.contains("room-read-only"),
             "{text}"
         );
     }
@@ -7031,10 +7033,11 @@ async fn a_lowered_editor_stops_writing_and_a_rejoin_comes_back_read_only() {
     assert!(!olive.settle(|c| c.block_text().contains('?')).await);
 }
 
-/// Security regression (Q634): a lowered editor's write stops even if the
-/// outbox never delivers: the writer's recheck reads the database every 5 s. So
-/// what the lowering leaves is the edits of those 5 s, Epo's accepted window.
-/// Fails if an update past the recheck is admitted.
+/// Security regression (Q634, review F3): a lowered editor's write stops even
+/// if the outbox never delivers: the writer's recheck reads the database every
+/// 5 s, and closes as the revoke would (4403, no strip, no incident). So what the
+/// lowering leaves is the edits of those 5 s, Epo's accepted window. Fails if an
+/// update past the recheck is admitted, or the close differs from the revoke's.
 #[tokio::test]
 async fn a_lowered_editor_stops_writing_at_the_recheck_with_nothing_delivered() {
     let Some(env) = env() else { return };
@@ -7057,11 +7060,573 @@ async fn a_lowered_editor_stops_writing_at_the_recheck_with_nothing_delivered() 
         .expect("lowered");
     tokio::time::sleep(Duration::from_millis(5100)).await;
     desk.type_text("?").await;
-    let (notice, _) = desk.stateless("room-read-only").await;
-    assert_eq!(notice["room"], room.as_str());
-    desk.until(4).await.expect("closed");
+    closes_quietly(&mut desk).await;
     assert!(olive.settle(|c| c.block_text() == "hello!").await);
     assert!(!olive.settle(|c| c.block_text().contains('?')).await);
+    assert_eq!(file_incidents(&env, material_of(&room)).await, 0);
+}
+
+/// Security regression (Q634, review F3): someone removed while typing closes
+/// the same way whichever arrives first, their next update at the recheck or the
+/// outbox's revoke: 4403, no notice, no strip, no incident. Fails if the recheck
+/// closes with another code, or records the person's last update as lost.
+#[tokio::test]
+async fn a_removed_person_typing_closes_with_4403_whichever_arrives_first() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "hello").await;
+    let third = member(&env, &room, "editor").await;
+    let mut olive = synced(server.port, &room, &owner, "hello").await;
+    let mut desk = synced(server.port, &room, &editor, "hello").await;
+    let mut cal = synced(server.port, &room, &third, "hello").await;
+    for (typist, text) in [(&mut desk, "!"), (&mut cal, "+")] {
+        typist.type_text(text).await;
+        typist.until(6).await.expect("ack");
+    }
+    let removed = "DELETE FROM workspace_members WHERE user_id=$1";
+    let client = db(&env).await;
+
+    // The recheck first: nothing delivered yet.
+    client.execute(removed, &[&editor]).await.expect("removed");
+    tokio::time::sleep(Duration::from_millis(5100)).await;
+    desk.type_text("?").await;
+    closes_quietly(&mut desk).await;
+
+    // The revoke first: their next update finds the channel gone.
+    client.execute(removed, &[&third]).await.expect("removed");
+    deliver_evictions(&env, &room).await;
+    closes_quietly(&mut cal).await;
+    cal.type_text("-").await;
+
+    stays_connected(&mut olive).await;
+    assert!(!olive.settle(|c| c.block_text().contains(['?', '-'])).await);
+    assert_eq!(file_incidents(&env, material_of(&room)).await, 0);
+}
+
+/// Types into a source room, as `Client::type_text` does into a note.
+async fn type_source(client: &mut Client, text: &str) {
+    let before = client.doc.transact().state_vector();
+    client
+        .doc
+        .get_or_insert_text("source")
+        .insert(&mut client.doc.transact_mut(), 0, text);
+    let edit = client.doc.transact().encode_state_as_update_v1(&before);
+    client.send(5, &sync(2, &edit)).await;
+}
+
+/// Security regression (Q634, review F3): a source writer's recheck tells a lost
+/// role from everything else. Go's `role_lost` closes with 4403 and no incident;
+/// a file gone keeps its plain close, and the storage limit or a frozen account
+/// its `room-read-only`, the strip. Fails if a lost role closes otherwise, or a
+/// refusal that is not one closes as if it were.
+#[tokio::test]
+async fn a_source_writers_recheck_closes_a_lost_role_with_4403_and_keeps_the_strip() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (owner, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+    let (lost, gone, frozen) = (user(&env).await, user(&env).await, user(&env).await);
+    let mut olive = Client::open(server.port).await;
+    olive.joined(&room, &token(&room, &owner, "write")).await;
+    let mut writers = Vec::new();
+    for writer in [&lost, &gone, &frozen] {
+        let mut client = Client::open(server.port).await;
+        client.joined(&room, &token(&room, writer, "write")).await;
+        assert!(client.settle(|c| source_text(c).contains("hello")).await);
+        type_source(&mut client, "a").await;
+        client.until(6).await.expect("ack");
+        writers.push(client);
+    }
+    let [mut lost_tab, mut gone_tab, mut frozen_tab] = writers.try_into().ok().expect("three");
+    gateway
+        .no_access
+        .lock()
+        .expect("no access")
+        .push((lost.clone(), true));
+    gateway.access_answers.lock().expect("answers").extend([
+        (gone.clone(), 404, ""),
+        (frozen.clone(), 403, "account_over_quota"),
+    ]);
+    tokio::time::sleep(Duration::from_millis(5100)).await;
+
+    type_source(&mut lost_tab, "b").await;
+    closes_quietly(&mut lost_tab).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(file_incidents(&env, &file).await, 0);
+
+    type_source(&mut gone_tab, "c").await;
+    let closed = gone_tab.until(4).await.expect("closed");
+    let mut at = 0;
+    assert_eq!(read_var(&closed, &mut at), 0);
+
+    type_source(&mut frozen_tab, "d").await;
+    let (notice, _) = frozen_tab.stateless("room-read-only").await;
+    assert_eq!(notice["room"], room.as_str());
+    let closed = frozen_tab.until(4).await.expect("closed");
+    let mut at = 0;
+    assert_eq!(read_var(&closed, &mut at), 0);
+    stays_connected(&mut olive).await;
+}
+
+/// Security regression (Q634): a source revoke closes only a lost role: a writer
+/// the gateway answers frozen or at the limit, and a room whose epoch moved (a
+/// 409, whatever moved it closes the room), stay as they were. Fails if a revoke
+/// closes a writer for being read-only, or for a stale epoch.
+#[tokio::test]
+async fn a_source_revoke_keeps_a_frozen_writer_and_a_moved_epoch() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (_, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+    let (frozen, full, moved, lost) = (
+        user(&env).await,
+        user(&env).await,
+        user(&env).await,
+        user(&env).await,
+    );
+    let mut tabs = Vec::new();
+    for writer in [&frozen, &full, &moved, &lost] {
+        let mut client = Client::open(server.port).await;
+        client.joined(&room, &token(&room, writer, "write")).await;
+        client.drain().await;
+        tabs.push(client);
+    }
+    gateway.access_answers.lock().expect("answers").extend([
+        (frozen.clone(), 403, "account_over_quota"),
+        (full.clone(), 403, "storage_quota_exceeded"),
+        (moved.clone(), 409, "epoch_changed"),
+    ]);
+    gateway
+        .no_access
+        .lock()
+        .expect("no access")
+        .push((lost.clone(), true));
+    let event = serde_json::json!({
+        "evictionId": format!("cev_{}", uuid_like()),
+        "fileId": file,
+        "mode": "revoke",
+        "room": room,
+        "type": "access-changed",
+    });
+    assert!(acknowledged(&env, &event).await);
+    let mut lost_tab = tabs.pop().expect("the lost role's");
+    closes_quietly(&mut lost_tab).await;
+    for tab in &mut tabs {
+        stays_connected(tab).await;
+    }
+}
+
+/// Security regression (Q634): a source room's visitor and a reader of a file
+/// hidden from them close at a revoke, on the gateway's answer, which Go's
+/// `TestCheckSourceAccessNamesALostRole` pins for them; the trigger's own row
+/// reaches the room. A member it still admits stays. Fails if a read channel
+/// escapes a source room's revoke.
+#[tokio::test]
+async fn a_source_rooms_visitor_and_hidden_reader_close_at_a_revoke() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (owner, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+    let client = db(&env).await;
+    let share = "UPDATE workspaces SET privacy=$2
+                 WHERE id=(SELECT workspace_id FROM files WHERE id=$1)";
+    client
+        .execute(share, &[&file, &"public"])
+        .await
+        .expect("public");
+    let (visitor, hidden, stays) = (user(&env).await, user(&env).await, user(&env).await);
+    let mut olive = Client::open(server.port).await;
+    olive.joined(&room, &token(&room, &owner, "write")).await;
+    let mut passing = Client::open(server.port).await;
+    assert_eq!(
+        passing.joined(&room, &token(&room, &visitor, "read")).await,
+        0
+    );
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(
+        reader.joined(&room, &token(&room, &hidden, "read")).await,
+        0
+    );
+    let mut member = Client::open(server.port).await;
+    assert_eq!(member.joined(&room, &token(&room, &stays, "read")).await, 0);
+    gateway
+        .no_access
+        .lock()
+        .expect("no access")
+        .extend([(visitor.clone(), false), (hidden.clone(), false)]);
+    client
+        .execute(share, &[&file, &"private"])
+        .await
+        .expect("narrowed");
+    deliver_evictions(&env, &room).await;
+    closes_quietly(&mut passing).await;
+    closes_quietly(&mut reader).await;
+    stays_connected(&mut member).await;
+    stays_connected(&mut olive).await;
+}
+
+/// Security regression (Q634): a lowered share role closes the visitors it took
+/// editing from, a write channel and an editor's reading tab, with no row naming
+/// them; the write token they hold is refused and they read on at the lower role.
+/// Members stay. Fails if a share role's narrowing leaves a visitor writing.
+#[tokio::test]
+async fn a_lowered_share_role_closes_the_visitors_it_took_editing_from() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "shared").await;
+    let material = material_of(&room).to_owned();
+    let client = db(&env).await;
+    let share = "UPDATE workspaces SET privacy='public', share_role=$2
+                 WHERE id=(SELECT workspace_id FROM materials WHERE id=$1)";
+    client
+        .execute(share, &[&material, &"editor"])
+        .await
+        .expect("public for editing");
+    let visitor = user(&env).await;
+    let write = token(&room, &visitor, "write");
+    let mut desk = Client::open(server.port).await;
+    assert_eq!(desk.joined(&room, &write).await, 1);
+    desk.drain().await;
+    let mut tab = Client::open(server.port).await;
+    assert_eq!(tab.joined(&room, &token(&room, &visitor, "read")).await, 0);
+    let mut olive = synced(server.port, &room, &owner, "shared").await;
+    let mut eddie = synced(server.port, &room, &editor, "shared").await;
+    client
+        .execute(share, &[&material, &"viewer"])
+        .await
+        .expect("lowered");
+    deliver_evictions(&env, &room).await;
+    closes_quietly(&mut desk).await;
+    closes_quietly(&mut tab).await;
+    stays_connected(&mut olive).await;
+    stays_connected(&mut eddie).await;
+    assert_eq!(
+        refused_join(&mut desk, &room, &write).await,
+        "collaboration-read-only"
+    );
+    let mut back = Client::open(server.port).await;
+    assert_eq!(back.joined(&room, &token(&room, &visitor, "read")).await, 0);
+}
+
+/// Security regression (Q634): an ownership transfer, as `TransferWorkspace`
+/// writes it, closes nobody, since nobody loses a role: the old owner stays an
+/// editor and keeps writing past the recheck. Fails if a transfer goes back to
+/// closing the room, or the old owner counts as having lost it.
+#[tokio::test]
+async fn an_ownership_transfer_closes_nobody() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "hello").await;
+    let mut olive = synced(server.port, &room, &owner, "hello").await;
+    let mut eddie = synced(server.port, &room, &editor, "hello").await;
+    let workspace: String = db(&env)
+        .await
+        .query_one(
+            "SELECT workspace_id FROM materials WHERE id=$1",
+            &[&material_of(&room)],
+        )
+        .await
+        .expect("workspace")
+        .get(0);
+    db(&env)
+        .await
+        .batch_execute(&format!(
+            "UPDATE workspaces SET user_id='{editor}' WHERE id='{workspace}';
+             UPDATE workspace_members SET role='owner' WHERE workspace_id='{workspace}' AND user_id='{editor}';
+             INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ('{workspace}', '{owner}', 'editor')
+             ON CONFLICT (workspace_id, user_id) DO UPDATE SET role='editor'"
+        ))
+        .await
+        .expect("transferred");
+    deliver_evictions(&env, &room).await;
+    stays_connected(&mut olive).await;
+    stays_connected(&mut eddie).await;
+    tokio::time::sleep(Duration::from_millis(5100)).await;
+    olive.type_text("!").await;
+    olive.until(6).await.expect("the old owner's ack");
+    eddie.type_text("?").await;
+    eddie.until(6).await.expect("the new owner's ack");
+    stays_connected(&mut olive).await;
+}
+
+/// Security regression (Q634): a revoke leaves a writer whose role holds, frozen
+/// or at the limit: they hear nothing until their next update past the recheck,
+/// the read-only strip. Fails if a revoke closes them for what their account
+/// allows, not their role, or takes the strip from them.
+#[tokio::test]
+async fn a_full_or_frozen_writer_is_a_bystander_of_a_revoke() {
+    for frozen in [false, true] {
+        let Some(env) = env() else { return };
+        let server = start(&env).await;
+        let (owner, editor, room) = shared_note(&env, "hello").await;
+        let mut olive = synced(server.port, &room, &owner, "hello").await;
+        let mut desk = synced(server.port, &room, &editor, "hello").await;
+        olive.type_text("!").await;
+        olive.until(6).await.expect("ack");
+        let client = db(&env).await;
+        client
+            .execute("SELECT ensure_user_storage_row($1)", &[&owner])
+            .await
+            .expect("storage row");
+        client
+            .execute(
+                "UPDATE user_storage SET used_bytes=1000000000000 WHERE user_id=$1",
+                &[&owner],
+            )
+            .await
+            .expect("at the limit");
+        if frozen {
+            client
+                .execute(
+                    "INSERT INTO user_subscriptions (user_id, stripe_subscription_id, status, plan_tier, ended_at)
+                     VALUES ($1, 'sub_' || $1, 'canceled', 'pro', now() - interval '30 days')",
+                    &[&owner],
+                )
+                .await
+                .expect("a Pro period closed long ago");
+        }
+        client
+            .execute("DELETE FROM workspace_members WHERE user_id=$1", &[&editor])
+            .await
+            .expect("removed");
+        deliver_evictions(&env, &room).await;
+        closes_quietly(&mut desk).await;
+        stays_connected(&mut olive).await;
+        tokio::time::sleep(Duration::from_millis(5100)).await;
+        olive.type_text("?").await;
+        let (notice, _) = olive.stateless("room-read-only").await;
+        assert_eq!(notice["room"], room.as_str());
+        let closed = olive.until(4).await.expect("closed");
+        let mut at = 0;
+        assert_eq!(read_var(&closed, &mut at), 0);
+    }
+}
+
+/// A draft send whose headers go now: the server checks them and waits for the
+/// `len` bytes of its body.
+async fn held_draft(port: u16, room: &str, token: &str, len: usize) -> TcpStream {
+    use tokio::io::AsyncWriteExt;
+    let mut stream = TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("connect");
+    let head = format!(
+        "POST /drafts HTTP/1.1\r\nhost: 127.0.0.1\r\nconnection: close\r\norigin: {ORIGIN}\r\n\
+         content-type: application/octet-stream\r\nx-capy-room: {room}\r\nx-capy-protocol: {}\r\n\
+         x-capy-version: 1\r\nauthorization: Bearer {token}\r\ncontent-length: {len}\r\n\r\n",
+        client_protocol()
+    );
+    stream.write_all(head.as_bytes()).await.expect("headers");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    stream
+}
+
+/// What a held draft send answered: its status and body.
+async fn held_answer(stream: &mut TcpStream) -> (u16, serde_json::Value) {
+    use tokio::io::AsyncReadExt;
+    let mut answer = Vec::new();
+    stream.read_to_end(&mut answer).await.expect("the answer");
+    let answer = String::from_utf8_lossy(&answer);
+    let status = answer
+        .split(' ')
+        .nth(1)
+        .and_then(|status| status.parse().ok())
+        .expect("a status");
+    let body = answer.split("\r\n\r\n").nth(1).unwrap_or_default();
+    (
+        status,
+        serde_json::from_str(body).unwrap_or(serde_json::Value::Null),
+    )
+}
+
+/// Security regression (Q634, review F1): a draft body held back past its
+/// sender's removal is refused and nothing is stored, where one that lands while
+/// they keep the role goes in; the role is checked again once the body is here,
+/// since the store no longer asks. Fails if a send checks access only before its
+/// body arrives.
+#[tokio::test]
+async fn a_draft_body_held_across_a_removal_is_refused_and_nothing_is_stored() {
+    use tokio::io::AsyncWriteExt;
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "base").await;
+    let material = material_of(&room).to_owned();
+    let mut olive = synced(server.port, &room, &owner, "base").await;
+    let mut desk = synced(server.port, &room, &editor, "base").await;
+    let write = token(&room, &editor, "write");
+    let kept = drafted(&desk.doc, typed_into_note(" kept"));
+    let mut held = held_draft(server.port, &room, &write, kept.len()).await;
+    held.write_all(&kept).await.expect("the body");
+    let (status, answer) = held_answer(&mut held).await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(olive.settle(|c| c.block_text() == "base kept").await);
+    assert!(desk.settle(|c| c.block_text() == "base kept").await);
+    let stored = stored_version(&env, &material).await;
+
+    let late = drafted(&desk.doc, typed_into_note(" late"));
+    let mut held = held_draft(server.port, &room, &write, late.len()).await;
+    db(&env)
+        .await
+        .execute("DELETE FROM workspace_members WHERE user_id=$1", &[&editor])
+        .await
+        .expect("removed");
+    held.write_all(&late).await.expect("the body");
+    let (status, answer) = held_answer(&mut held).await;
+    assert_eq!(
+        (status, answer["class"].as_str()),
+        (403, Some("permission")),
+        "{answer}"
+    );
+    assert!(!olive.settle(|c| c.block_text().contains("late")).await);
+    assert_eq!(stored_version(&env, &material).await, stored);
+}
+
+/// Security regression (review F1): a draft body is held no longer than its
+/// token lives, so a connection cannot sit in a send. Fails if the body's read
+/// has no deadline.
+#[tokio::test]
+async fn a_draft_body_is_held_no_longer_than_its_token_lives() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (_, editor, room) = shared_note(&env, "base").await;
+    let mut held = held_draft(
+        server.port,
+        &room,
+        &token_for(&room, &editor, "write", 2),
+        10,
+    )
+    .await;
+    let (status, answer) = tokio::time::timeout(Duration::from_secs(10), held_answer(&mut held))
+        .await
+        .expect("answered once the token expired");
+    assert_eq!(
+        (status, answer["class"].as_str()),
+        (403, Some("permission")),
+        "{answer}"
+    );
+}
+
+/// Security regression (Q634, review F2): a note's agent edit whose actor is
+/// removed while it computes is refused with the refusal of its first check, and
+/// nothing lands, since the store no longer asks about the role. Fails if the
+/// room admits it.
+#[tokio::test]
+async fn an_agent_edit_whose_actor_is_removed_while_it_computes_is_refused() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) =
+        shared_note_named(&env, "hello world", "capy-it-slow-compute").await;
+    let material = material_of(&room).to_owned();
+    let mut olive = synced(server.port, &room, &owner, "hello world").await;
+    let operation = format!("e_{material}");
+    let body = note_edit(
+        &editor,
+        &material,
+        &operation,
+        serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }]),
+    );
+    let port = server.port;
+    let edit = tokio::spawn(async move { internal(port, "/internal/documents/edit", &body).await });
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    db(&env)
+        .await
+        .execute("DELETE FROM workspace_members WHERE user_id=$1", &[&editor])
+        .await
+        .expect("removed");
+    let (status, refusal) = edit.await.expect("the edit");
+    assert_eq!(
+        (
+            status,
+            refusal["code"].as_str(),
+            refusal["message"].as_str()
+        ),
+        (
+            403,
+            Some("lifecycle_rejected"),
+            Some("material access was revoked")
+        ),
+        "{refusal}"
+    );
+    assert!(!olive.settle(|c| c.block_text().contains("there")).await);
+    assert_eq!(receipts_now(&env, &operation).await, 0);
+}
+
+/// Security regression (Q634, review F2): a source's agent edit whose actor loses
+/// the role during the engine's call is refused with the words an actor without
+/// it hears, word for word, since a model reads them, and nothing lands. Fails
+/// if the room admits it, or the words change.
+#[tokio::test]
+async fn a_source_agent_edit_whose_actor_is_removed_while_it_computes_is_refused() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (owner, file) =
+        text_file_named(&env, &gateway, "hello world", "capy-it-slow-compute").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut olive = Client::open(server.port).await;
+    olive.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(olive.settle(|c| source_text(c) == "hello world").await);
+    let actor = user(&env).await;
+    let operation = format!("e_{file}");
+    let body = source_edit(
+        &actor,
+        &file,
+        &operation,
+        serde_json::json!([{ "type": "replace_text", "expectedText": "world", "text": "there" }]),
+    );
+    let port = server.port;
+    let edit = tokio::spawn(async move { internal(port, "/internal/documents/edit", &body).await });
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    gateway
+        .no_access
+        .lock()
+        .expect("no access")
+        .push((actor.clone(), false));
+    let (status, refusal) = edit.await.expect("the edit");
+    assert_eq!(
+        (status, refusal["message"].as_str()),
+        (403, Some("Source is not editable by this actor")),
+        "{refusal}"
+    );
+    assert!(!olive.settle(|c| source_text(c).contains("there")).await);
+    assert_eq!(receipts_now(&env, &operation).await, 0);
+}
+
+/// Security regression (review test gap): an open source room refuses an agent
+/// edit by someone whose session reads `read`, in the words a model reads, before
+/// it computes. Fails if the live path stops checking the session.
+#[tokio::test]
+async fn an_open_source_room_refuses_an_agent_edit_by_a_reader() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (owner, file) = text_file(&env, &gateway, "hello world").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut olive = Client::open(server.port).await;
+    olive.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(olive.settle(|c| source_text(c) == "hello world").await);
+    let reader = user(&env).await;
+    gateway
+        .no_access
+        .lock()
+        .expect("no access")
+        .push((reader.clone(), true));
+    let operation = format!("e_{file}");
+    let body = source_edit(
+        &reader,
+        &file,
+        &operation,
+        serde_json::json!([{ "type": "replace_text", "expectedText": "world", "text": "there" }]),
+    );
+    let (status, refusal) = internal(server.port, "/internal/documents/edit", &body).await;
+    assert_eq!(
+        (status, refusal["message"].as_str()),
+        (403, Some("Source is not editable by this actor")),
+        "{refusal}"
+    );
+    assert_eq!(receipts_now(&env, &operation).await, 0);
 }
 
 /// Security regression (Q634): a link viewer, who no row names, is closed when
@@ -8823,6 +9388,9 @@ async fn an_ambiguous_text_source_edit_lists_its_lines() {
 
 // ------------------------------------------------------------ source rooms
 
+/// An actor, and the status and code the access check answers them.
+type AccessAnswer = (String, u16, &'static str);
+
 /// A stand-in for the Go API's internal source routes: the session, access,
 /// the base bytes and the delta-save checkpoint (an Office save's seed SHA
 /// too).
@@ -8848,9 +9416,12 @@ struct Gateway {
     /// Actors the session refuses, as Go refuses one outside the file's
     /// current workspace.
     refused: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
-    /// Actors the access check refuses, for writing only when `true` (a
-    /// lowered role) or for reading too (a removed one).
+    /// Actors the access check refuses as Go refuses a lost role, for writing
+    /// only when `true` (a lowered role, whose session reads `read`) or for
+    /// reading too (a removed one).
     no_access: std::sync::Arc<std::sync::Mutex<Vec<(String, bool)>>>,
+    /// What the access check answers an actor otherwise.
+    access_answers: std::sync::Arc<std::sync::Mutex<Vec<AccessAnswer>>>,
     /// The access check answers 503 while set (a busy Go).
     fail_access: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
@@ -8879,16 +9450,27 @@ async fn gateway_get(
         }
         let actor = query.get("actorId").map(String::as_str).unwrap_or_default();
         let edit = query.get("edit").is_some_and(|edit| edit == "true");
+        let answer = gateway
+            .access_answers
+            .lock()
+            .expect("answers")
+            .iter()
+            .find(|(user, ..)| user == actor)
+            .map(|(_, status, code)| (*status, *code));
         let refused = gateway
             .no_access
             .lock()
             .expect("no access")
             .iter()
             .any(|(user, writing)| user == actor && (edit || !*writing));
-        return if refused {
-            axum::http::StatusCode::NOT_FOUND.into_response()
-        } else {
-            axum::http::StatusCode::NO_CONTENT.into_response()
+        let answer = answer.or(refused.then_some((404, "role_lost")));
+        return match answer {
+            Some((status, code)) => (
+                axum::http::StatusCode::from_u16(status).expect("status"),
+                axum::Json(serde_json::json!({ "errors": [{ "message": code }] })),
+            )
+                .into_response(),
+            None => axum::http::StatusCode::NO_CONTENT.into_response(),
         };
     }
     if endpoint != "bootstrap" {
@@ -8914,8 +9496,14 @@ async fn gateway_get(
         .expect("source row");
     let epoch: i64 = row.get(1);
     let state: Option<Vec<u8>> = row.get(6);
+    let lowered = gateway
+        .no_access
+        .lock()
+        .expect("no access")
+        .iter()
+        .any(|(user, writing)| user == actor && *writing);
     axum::Json(serde_json::json!({
-        "access": "write",
+        "access": if lowered { "read" } else { "write" },
         "baseRevision": row.get::<_, i64>(4),
         "baseSourceSHA256": row.get::<_, String>(5),
         "checkpoint": row.get::<_, i64>(2),
@@ -9151,6 +9739,7 @@ async fn gateway(env: &Env) -> Gateway {
         conflicts: Default::default(),
         refused: Default::default(),
         no_access: Default::default(),
+        access_answers: Default::default(),
         fail_access: Default::default(),
     };
     let app = axum::Router::new()
@@ -9406,12 +9995,22 @@ async fn a_moved_files_drain_save_retried_after_a_conflict_still_stores() {
 
 /// A text file owned by a fresh user; returns (user, file id).
 async fn text_file(env: &Env, gateway: &Gateway, text: &str) -> (String, String) {
+    text_file_named(env, gateway, text, "f_it").await
+}
+
+/// [text_file] whose id starts with `prefix`.
+async fn text_file_named(
+    env: &Env,
+    gateway: &Gateway,
+    text: &str,
+    prefix: &str,
+) -> (String, String) {
     let client = db(env).await;
     let suffix = uuid_like();
     let (user, workspace, file) = (
         format!("u_it_{suffix}"),
         format!("ws_it_{suffix}"),
-        format!("f_it_{suffix}"),
+        format!("{prefix}_{suffix}"),
     );
     client
         .execute("INSERT INTO users (id, name) VALUES ($1, 'IT')", &[&user])
