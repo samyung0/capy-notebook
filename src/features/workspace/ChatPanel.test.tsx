@@ -397,6 +397,60 @@ it('keeps its draft and mounted thread while a page hides the dock, and drops a 
   vi.unstubAllGlobals();
 });
 
+it('drops a recording when the panel leaves the Agent tab, and carries one between the dock and its page', async () => {
+  const { Element, HTMLElement, Node } = window as unknown as Record<
+    string,
+    unknown
+  >;
+  vi.stubGlobal('Element', Element);
+  vi.stubGlobal('HTMLElement', HTMLElement);
+  vi.stubGlobal('Node', Node);
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      disconnect() {}
+      observe() {}
+    }
+  );
+  const client = new QueryClient();
+  const root = createRoot(document.getElementById('root') as never);
+  // From lg: the panel, hidden off the Agent tab.
+  const panel = (hidden: boolean) => (
+    <QueryClientProvider client={client}>
+      <ChatPanel hidden={hidden} workspaceId="ws_bio" />
+    </QueryClientProvider>
+  );
+  await act(async () => root.render(panel(false)));
+  expect(voice.shown).toBe(true);
+  await act(async () => root.render(panel(true)));
+  expect(voice.shown).toBe(false);
+  await act(async () => root.render(panel(false)));
+  expect(voice.shown).toBe(true);
+  act(() => root.unmount());
+
+  // Below lg: the dock grows into its chat page with the recording running.
+  const phone = createRoot(document.getElementById('root') as never);
+  const docked = (pageOpen: boolean) => (
+    <QueryClientProvider client={client}>
+      <ChatPanel
+        dock={{
+          menuItems: [],
+          office: false,
+          onPageOpen: () => {},
+          pageOpen,
+        }}
+        workspaceId="ws_bio"
+      />
+    </QueryClientProvider>
+  );
+  await act(async () => phone.render(docked(false)));
+  expect(voice.shown).toBe(true);
+  await act(async () => phone.render(docked(true)));
+  expect(voice.shown).toBe(true);
+  act(() => phone.unmount());
+  vi.unstubAllGlobals();
+});
+
 // Epo 2026-10-29, Q576 F4 (T19): the panel already shows its chat's answer live.
 it('spins only on running chats other than the one the panel shows', () => {
   const row = (id: string): Conversation => ({

@@ -3442,8 +3442,9 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
   `fieldlimits.VoiceInputSeconds`, generated into
   `src/api/limits.generated.ts`). The microphone's tracks stop whenever
   a recording ends, and when the recorder fails to start; a recording is
-  dropped when the questions block takes the composer's place, the dock hides
-  or the chat goes.
+  dropped when the questions block takes the composer's place, the chat hides
+  (from lg, leaving the Agent tab; below lg, a page taking the dock's corner) or
+  goes. Going between the dock and its chat page keeps it.
 - **Transcription.** The clip goes as the raw body of
   `POST /api/workspaces/{id}/voice-transcriptions` with its own
   `Content-Type` (`useTranscribeVoice`, no toast); a spinner holds the button

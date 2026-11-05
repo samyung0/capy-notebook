@@ -528,12 +528,13 @@ export function ChatPanel({
     [last, streaming, dismissedId]
   );
   // The questions take the composer's place, and a recording stops with it;
-  // the dock on the file has no questions. Nothing shows a hidden dock's
-  // recording, so it stops too.
+  // the dock on the file has no questions. Nothing shows a hidden chat's
+  // recording, the panel's off the Agent tab or the dock's under a page, so it
+  // stops too. Between the dock and its chat page `hidden` stays, so it carries.
   const voice = useVoiceInput(
     workspaceId,
     insertVoice,
-    !(dock && hidden) && ((!!dock && !pageOpen) || questions.length === 0)
+    !hidden && ((!!dock && !pageOpen) || questions.length === 0)
   );
 
   // Seed local state when a saved conversation opens: cached history paints at
