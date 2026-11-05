@@ -100,9 +100,9 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       >
         <WorkspaceCardFace interactive paint={paint} workspace={workspace} />
       </Link>
-      {/* Centred on a phone's short card; from `sm` on the banner (board K3,
-          H2), lifting with the card, which rises on hover (Card interactive). */}
-      <CardActions className="top-1/2 right-2 z-50 -translate-y-1/2 transition-[translate] duration-320 ease-(--motion-ease-bounce-strong) sm:top-2 sm:translate-y-0 sm:group-has-[[data-slot=card]:hover]/card:-translate-y-1 sm:group-has-[[data-slot=card]:hover]/card:ease-(--motion-ease-smooth-out)">
+      {/* At the top right, on the banner from `sm` (board K3, H2). It lifts with
+          the card, which rises on hover (Card interactive). */}
+      <CardActions className="top-2 right-2 z-50 transition-[translate] duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/card:-translate-y-1 group-has-[[data-slot=card]:hover]/card:ease-(--motion-ease-smooth-out)">
         <Menu align="start" items={menuItems} />
       </CardActions>
       {editOpen && (
@@ -208,7 +208,7 @@ export function WorkspaceCardFace({
       className="group h-full flex-row gap-0 overflow-hidden border-divider p-0 sm:flex-col"
       interactive={interactive}
     >
-      <div className="relative w-16 shrink-0 bg-page-hover sm:h-19 sm:w-auto">
+      <div className="relative w-10 shrink-0 bg-page-hover sm:h-19 sm:w-auto">
         {paint && (
           <span
             aria-hidden
@@ -219,7 +219,7 @@ export function WorkspaceCardFace({
       </div>
       {/* Phones: the cover at the side and the icon before the name (canvas
           board P1). From `sm` these wrappers dissolve into the card's column. */}
-      <div className="min-w-0 flex-1 py-2.5 pr-11 pl-3 sm:contents">
+      <div className="min-w-0 flex-1 py-2.5 pr-9 pl-3 sm:contents">
         <div className="flex min-w-0 items-center gap-1.5 sm:contents">
           <img
             alt=""
@@ -232,7 +232,7 @@ export function WorkspaceCardFace({
             {workspace.name}
           </h3>
         </div>
-        <p className="t-meta pt-0.5 text-fg-muted sm:px-3 sm:pb-3">
+        <p className="t-meta pt-1 text-fg-muted sm:px-3 sm:pt-0.5 sm:pb-3">
           {topics === 1
             ? m.workspace_card_one_topic()
             : m.workspace_card_topics({ count: String(topics) })}

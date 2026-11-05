@@ -223,7 +223,7 @@ export function Sidebar({
         // The logo smokes out as the rail widens and the app name fades in
         // in line with the row icons, as on the full sidebar; narrowing drops
         // the name at once and the logo fades back.
-        <div className="relative flex items-center px-0.75 pb-5">
+        <div className="relative flex items-center px-0.75 pb-1">
           <span className="motion-smoke rail-open:motion-smoked shrink-0 group-hover/rail:delay-100">
             <LogoMark size={36} />
           </span>
@@ -253,7 +253,7 @@ export function Sidebar({
       )}
 
       {withAccount && (
-        <div className="mb-4 flex flex-col gap-1">
+        <div className={cn('flex flex-col gap-1', rail ? 'mb-1' : 'mb-4')}>
           <SearchRow />
           <Row
             active={pathname === NOTIFICATIONS}
@@ -269,15 +269,12 @@ export function Sidebar({
       )}
 
       {rail ? (
-        // The full sidebar's groups, without their labels.
-        <div className="flex flex-col gap-4">
-          {nav.sections.map((section) => (
-            <div className="flex flex-col gap-1" key={section.label}>
-              {section.items.map((i) => (
-                <Row active={isActive(pathname, i)} item={i} key={i.to} />
-              ))}
-            </div>
-          ))}
+        <div className="flex flex-col gap-1">
+          {nav.sections.flatMap((section) =>
+            section.items.map((i) => (
+              <Row active={isActive(pathname, i)} item={i} key={i.to} />
+            ))
+          )}
         </div>
       ) : (
         nav.sections.map((section, index) => (

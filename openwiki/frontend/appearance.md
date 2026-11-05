@@ -175,14 +175,14 @@ to Epo as visual options, not a call made in code.
   surface (`--surface-overlay-bg` with an `--border-overlay` ring and
   `text-fg`), so it stands apart from the dark page (T2). Behaviour (one at a
   time, counts, timers) is in `error-handling.md`; motion in `motion.md`.
-- **Workspace card** (below `sm`, canvas board P1: a 64px cover at the side, the
-  icon before the name at 20px, the ⋮ centred; from `sm`:
+- **Workspace card** (below `sm`, canvas board P1: a 40px cover at the side, the
+  icon before the name at 20px, the ⋮ at the top right; from `sm`:
   `WorkspaceCardFace` in `src/components/ui/WorkspaceCard.tsx`,
   board K3 row H2): the cover is a 76px banner across the top (plain
   `--surface-page-hover` without one, N1), the 36px icon sits on its
   bottom-left edge in a 2px card-coloured ring, and the ⋮ on the banner is
-  `CardActions`, the one button the file cards use too: a 28px circle, the
-  card's colour frosted and feathering out past its edge. From 1280px with a
+  `CardActions`, the one button the file cards use too: a plain 24px circle in
+  the card's colour, with a larger invisible hit area. From 1280px with a
   mouse it shows on the card's hover, focus or open menu; narrower and on touch
   screens it always shows. Below: the name (14px bold, one line, L1), the topic
   count (`chapterCount` until chapters become topics), then access and tags as
