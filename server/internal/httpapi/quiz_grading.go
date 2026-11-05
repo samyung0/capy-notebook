@@ -284,6 +284,26 @@ func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, 
 	return partGrade{Items: marks, Comment: reply.Comment, Flag: reply.Flag}, nil
 }
 
+// applyPartGrade writes a late mark into a part left Not marked.
+func applyPartGrade(p map[string]any, grade partGrade) {
+	delete(p, "pending")
+	p["itemAwards"] = grade.Items
+	var awarded float64
+	for _, item := range grade.Items {
+		awarded += item
+	}
+	if marks, ok := p["marks"].(float64); ok && awarded > marks {
+		awarded = marks
+	}
+	p["awarded"] = awarded
+	if grade.Comment != "" {
+		p["aiComment"] = grade.Comment
+		if grade.Flag != "" {
+			p["aiFlag"] = grade.Flag
+		}
+	}
+}
+
 // gradedWithModel applies the model's marks to the plan's questions. An answered
 // open part it has no mark for is "Not marked", counted in the total and not as
 // wrong: nothing logs it, and it joins no review.

@@ -589,7 +589,9 @@ and accuracy marks (M1, A1) thinks at low with 120 s; the rest don't think and h
 30 s, each plus up to 60 s waiting its turn in the model's line; a check someone
 waits on stops at 90 s. A rule that cost credit becomes the AI's warning in plain
 words; an answer instructing the marker gets a fixed one, never the model's words.
-A part it could not mark stays `pending` ("Not marked") and is not scored. The part's award is the sum and the
+A part it could not mark stays `pending` ("Not marked") and is not scored; Check again
+marks only those parts, from the answers first given, since the check already showed
+the key (Epo 2026-11-05). The part's award is the sum and the
 snapshot keeps `itemAwards`. Signed-out checks stay on Jev until shared pages stop
 AI marking. The grading text
 is built in Go (`questions.GradingText`) from the stem, earlier parts and the

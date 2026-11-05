@@ -916,7 +916,7 @@ Go scoring as a quiz (`questions.Graded`). An answered open part is left
 workspace owner's credits (`markAnswersSoon`); a blank one earns 0. With Approve
 AI marks on, its mark waits beside the answer (`aiAwards`, `aiComment`, `aiFlag`)
 where only staff read it; off, it is the mark at once (`markedBy: "ai"`). A part left
-Not marked joins no review. At zero the
+Not marked joins no review; a quiz check can check it again (below). At zero the
 page submits; a closed tab is the server's: 15 s past `deadline_at`, a No late
 submissions due date or its closing by hand, the next request or
 `SweepAssignments` (each minute, in `cmd/api`) submits what was saved,

@@ -2206,6 +2206,7 @@
   "question_ui_close_search": "关闭搜索",
   "question_ui_reviewed_count": "已审核 {count} 道",
   "question_ui_comment_failed": "无法发送评论",
+  "question_ui_check_again": "再次检查",
   "question_ui_check": "检查",
   "question_ui_answer_again": "重新作答",
   "question_ui_status_correct": "答对",

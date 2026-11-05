@@ -47,7 +47,7 @@ func openGradingAPIWith(t *testing.T, choice string, cfg httpapi.Config) (http.H
 	// The grading slot's model, behind the pipeline: each item's share.
 	pipe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		if choice == "fail" {
+		if choice == "fail" || (choice == "fail-once" && calls.Load() == 1) {
 			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
@@ -57,7 +57,7 @@ func openGradingAPIWith(t *testing.T, choice string, cfg httpapi.Config) (http.H
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		shares := make([]float64, len(body.Items))
 		for i := range shares {
-			shares[i] = map[string]float64{"zero": 0, "partial": 0.5, "full": 1}[choice]
+			shares[i] = map[string]float64{"zero": 0, "partial": 0.5, "full": 1, "fail-once": 1}[choice]
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"shares": shares, "comment": "Offered two answers for one point."})
 	}))
@@ -210,6 +210,48 @@ func TestQuizCheckLeavesAFailedPartNotMarked(t *testing.T) {
 	}
 	if parts["closed-b"]["awarded"] != float64(1) {
 		t.Fatalf("closed part = %+v", parts["closed-b"])
+	}
+}
+
+// A part left Not marked can be checked again once credits are back (Epo
+// 2026-11-05): only it is marked, from the answer first given, which the key has
+// since been shown beside. Once marked, the question locks as any checked one.
+func TestQuizCheckAgainMarksOnlyWhatWasNotMarked(t *testing.T) {
+	h, _, calls := openGradingAPI(t, "fail-once")
+	id := gradingQuiz(t, h, "private")
+	check := func(attempt string, answers map[string]any) (int, []map[string]any, map[string]any, string) {
+		t.Helper()
+		rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{
+			"questionId": "q1", "answers": answers, "attemptId": attempt,
+		})
+		var detail struct {
+			ID        string
+			Questions []map[string]any
+			Answers   map[string]any
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &detail)
+		return rec.Code, detail.Questions, detail.Answers, detail.ID
+	}
+	code, questions, _, attempt := check("", map[string]any{"open-a": "Because of reasons.", "closed-b": true})
+	if code != http.StatusOK || gradedParts(t, questions)["open-a"]["pending"] != true {
+		t.Fatalf("first check → %d %+v", code, questions)
+	}
+	code, questions, answers, _ := check(attempt, map[string]any{"open-a": "A better answer, now I have seen the key."})
+	if code != http.StatusOK {
+		t.Fatalf("check again → %d", code)
+	}
+	parts := gradedParts(t, questions)
+	if parts["open-a"]["pending"] != nil || parts["open-a"]["awarded"] != float64(3) || parts["closed-b"]["awarded"] != float64(1) {
+		t.Fatalf("after checking again = %+v", parts)
+	}
+	if answers["open-a"] != "Because of reasons." {
+		t.Fatalf("the answer changed to %v", answers["open-a"])
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("model calls = %d, want the failed one and one more", calls.Load())
+	}
+	if code, _, _, _ := check(attempt, map[string]any{"open-a": "Again."}); code != http.StatusConflict {
+		t.Fatalf("a third check → %d, want 409", code)
 	}
 }
 

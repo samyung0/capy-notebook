@@ -363,11 +363,11 @@ func TestQuizChecksBuildOneAttempt(t *testing.T) {
 	if _, err := check(first.ID, 1); !errors.Is(err, ErrQuestionChecked) {
 		t.Fatalf("second check of a question = %v", err)
 	}
-	if checked, err := f.s.QuizQuestionChecked(ctx, f.user, quiz.ID, first.ID, "q2"); err != nil || !checked {
-		t.Fatalf("q2 checked = %v, %v", checked, err)
+	if held, _, err := f.s.QuizCheckedQuestion(ctx, f.user, quiz.ID, first.ID, "q2"); err != nil || held == nil {
+		t.Fatalf("q2 checked = %v, %v", held, err)
 	}
-	if checked, err := f.s.QuizQuestionChecked(ctx, f.user, quiz.ID, first.ID, "q1"); err != nil || checked {
-		t.Fatalf("q1 checked = %v, %v", checked, err)
+	if held, _, err := f.s.QuizCheckedQuestion(ctx, f.user, quiz.ID, first.ID, "q1"); err != nil || held != nil {
+		t.Fatalf("q1 checked = %v, %v", held, err)
 	}
 	// q2's marks rise after it was checked: it still counts out of the 1 mark
 	// it was checked against, so the score never passes its total.

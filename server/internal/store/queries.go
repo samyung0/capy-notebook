@@ -2203,6 +2203,9 @@ type QuizCheck struct {
 	// Answers are the question's answers by part id; Question is its graded copy.
 	Answers  map[string]any
 	Question map[string]any
+	// Remarked, on a check again of a question with parts left Not marked: the
+	// parts marked this time, the only ones to log.
+	Remarked map[string]bool
 	// Order is the quiz's question ids, which order the attempt's snapshot,
 	// and Marks each one's marks now: unchecked questions score 0 of them.
 	Order []string
@@ -2274,10 +2277,16 @@ func (s *Store) CheckQuizQuestion(ctx context.Context, userID, materialID string
 		if err := json.Unmarshal(rawQuestions, &stored); err != nil {
 			return AttemptDetail{}, err
 		}
-		for _, sq := range stored {
-			if sq["id"] == id {
+		for i, sq := range stored {
+			if sq["id"] != id {
+				continue
+			}
+			// Checked already, unless a part of it was left Not marked.
+			if !questionWaiting(sq) {
 				return AttemptDetail{}, ErrQuestionChecked
 			}
+			stored = append(stored[:i], stored[i+1:]...)
+			break
 		}
 		merged := map[string]any{}
 		if err := json.Unmarshal(rawAnswers, &merged); err != nil {
@@ -2304,7 +2313,7 @@ func (s *Store) CheckQuizQuestion(ctx context.Context, userID, materialID string
 		return AttemptDetail{}, err
 	}
 	// Before the rating, which would count as the key seen.
-	if err := logAnswerTx(ctx, tx, userID, mt, c.Question, c.Answers, answerSourceQuiz, d.ID, now); err != nil {
+	if err := logAnswerPartsTx(ctx, tx, userID, mt, c.Question, c.Answers, answerSourceQuiz, d.ID, now, c.Remarked); err != nil {
 		return AttemptDetail{}, err
 	}
 	if err := rateQuestionTx(ctx, tx, userID, mt, c.Question, c.Answers, now); err != nil {
@@ -2379,16 +2388,35 @@ func orderQuestions(qs []map[string]any, order []string) []map[string]any {
 	return qs
 }
 
-// QuizQuestionChecked reports whether the user's attempt at the quiz already
-// holds the question, so a repeated check is refused before it is graded.
-// CheckQuizQuestion refuses it again under its lock.
-func (s *Store) QuizQuestionChecked(ctx context.Context, userID, materialID, attemptID, questionID string) (bool, error) {
-	var checked bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM attempts
-		WHERE id=$1 AND user_id=$2 AND material_id=$3 AND kind='quiz'
-		AND questions @> jsonb_build_array(jsonb_build_object('id', $4::text)))`,
-		attemptID, userID, materialID, questionID).Scan(&checked)
-	return checked, err
+// QuizCheckedQuestion returns the question as the user's attempt at the quiz holds
+// it, with the attempt's answers, or nil if it holds none; a repeated check is
+// refused on this before it is graded, and CheckQuizQuestion refuses it again under
+// its lock.
+func (s *Store) QuizCheckedQuestion(ctx context.Context, userID, materialID, attemptID, questionID string) (map[string]any, map[string]any, error) {
+	var rawAnswers, rawQuestions []byte
+	err := s.pool.QueryRow(ctx, `SELECT answers, questions FROM attempts
+		WHERE id=$1 AND user_id=$2 AND material_id=$3 AND kind='quiz'`,
+		attemptID, userID, materialID).Scan(&rawAnswers, &rawQuestions)
+	if isNoRows(err) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	var stored []map[string]any
+	if err := json.Unmarshal(rawQuestions, &stored); err != nil {
+		return nil, nil, err
+	}
+	for _, q := range stored {
+		if q["id"] == questionID {
+			answers := map[string]any{}
+			if err := json.Unmarshal(rawAnswers, &answers); err != nil {
+				return nil, nil, err
+			}
+			return q, answers, nil
+		}
+	}
+	return nil, nil, nil
 }
 
 // GetAttempt returns a single attempt with its per-question breakdown, scoped to

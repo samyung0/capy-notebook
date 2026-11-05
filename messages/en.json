@@ -2206,6 +2206,7 @@
   "question_ui_close_search": "Close search",
   "question_ui_reviewed_count": "{count} reviewed",
   "question_ui_comment_failed": "Could not send the comment",
+  "question_ui_check_again": "Check again",
   "question_ui_check": "Check",
   "question_ui_answer_again": "Try again",
   "question_ui_status_correct": "Correct",
