@@ -407,10 +407,11 @@ Important boundaries:
   since a second pool connection can wait behind requests that themselves wait
   on those locks. Read-only admission rechecks take no locks: a source edit
   recheck (`CheckSourceAccess`, one repeatable-read snapshot) and a note writer
-  recheck read committed state. The save that persists the edits rechecks roles
-  and locked accounts (deleted, deletion pending, suspended) under the locks;
-  frozen accounts and the storage limit are admission-only and rely on the 5 s
-  writer recheck window.
+  recheck read committed state. The save that persists the edits rechecks locked
+  accounts (deleted, deletion pending, suspended) under the locks; roles, frozen
+  accounts and the storage limit are admission-only and rely on the 5 s writer
+  recheck window (Q635; an agent edit with no room still has its actor's role
+  checked by its save).
 
 Sources: [role resolution and access rules](../server/internal/store/share.go#L13),
 [transactional editor checks](../server/internal/store/storage.go#L183), and
@@ -940,7 +941,8 @@ and [material editor checks](../server/internal/store/share.go#L209).
   writer's access is rechecked on its updates at most every 5 s
   (`recheck` in `collaboration-rs/crates/server/src/socket.rs`). A refused update
   sends that writer a `room-read-only` stateless message and closes only its
-  connection; a reconnect is refused with reason `collaboration-read-only`.
+  connection; a reconnect is refused with reason `collaboration-read-only`. A
+  role lost by then is no read-only state: it closes as a revoke does (below).
   Co-editors whose access still holds stay connected, while an owner at its
   limit refuses every writer in its rooms, since they share it. The open
   editor drops to view mode under a grey read-only strip and discards its
@@ -990,11 +992,23 @@ and [material editor checks](../server/internal/store/share.go#L209).
     check: a removed person as forbidden (`collaboration-forbidden`, or not found
     in a source room), a lowered editor's write token as read-only
     (`collaboration-read-only`, not found in a source room); Go then mints a
-    lowered editor a read token, a removed one nothing. A lowered editor's open
-    channel stops writing at the close, or, if the outbox has not delivered, at
-    the 5 s recheck of its next update. Up to about 5 s of the person's last
-    edits can survive, which Epo accepted; the store does not refuse them, since
-    that would discard the room under everyone else.
+    lowered editor a read token, a removed one nothing. An open channel stops at
+    the close, or, if the outbox has not delivered, at the 5 s recheck of a
+    writer's next update, which closes it the same way, whichever comes first:
+    4403, no notice, no `room-read-only`, no `DiscardUnsaved` incident
+    (`AccessError::Revoked`). A source room's access check names a lost role with
+    the code `role_lost` (`ErrSourceRoleLost`, a kind of not found), which only
+    the recheck reads: a join still hears not found, so it never tells blocked
+    from gone, and a file gone keeps its plain close. Frozen and the storage limit
+    keep the strip. Up to about 5 s of the person's last edits can survive, which
+    Epo accepted; the store does not refuse them, since that would discard the
+    room under everyone else (Q635). What the room has not admitted gets no such
+    allowance: a draft send checks its token and role again once its body has
+    arrived (`checked_and_stored` in `collaboration-rs/crates/server/src/drafts.rs`),
+    and holds a body no longer than its token lives; an agent edit checks its
+    actor's role again after its compute, just before the room admits it
+    (`edit_in_room` and `source_in_room` in `edits.rs`), with the refusal its first
+    check gives.
   - **A lowered plan or a lapsed subscription: nothing queued.** A writer it puts
     over the limit hears `room-read-only` at its next update and closes alone,
     as at the storage limit (above).

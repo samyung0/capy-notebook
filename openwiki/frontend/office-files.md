@@ -2368,7 +2368,9 @@ check is a lock-free read (no file advisory lock, workspace or account row
 lock) on one snapshot; the checkpoint that saves the edits rechecks every
 contributor's locked account under `sourceLockTx`, while the role, frozen and the
 storage limit stay admission-only (the 5 s recheck window, Q634; an agent edit
-with no room to admit it has its actor's role checked by its own checkpoint). Checkpoint writes do not
+with no room to admit it has its actor's role checked by its own checkpoint, and
+one in an open room has it checked again after the engine's call, just before the
+room admits it). Checkpoint writes do not
 check storage: a save only updates the ledger (see [storage quota](../backend-storage-quota.md)). The checkpoint answers with the new
 checkpoint and an agent edit's receipt only. The browser's editing session read
 carries neither the baseline nor pending effects, and a text state only: an
@@ -2591,9 +2593,11 @@ deletes and replaced pictures no longer drift the estimate toward refusals,
 and it stays an upper bound of the state. The writer's access is revalidated at most every
 5 s per connection. A narrowing membership, role or share change closes the
 connections of those it took the file from, through the collaboration eviction
-outbox's `revoke`, and a user's own account lock closes theirs; anything else
-(such as the owner's account state for a collaborator) takes effect within
-those 5 s, and every checkpoint rechecks each writer's account. Each room has its own state cap (`sources::state_cap`, Epo
+outbox's `revoke`, and a user's own account lock closes theirs. The recheck closes
+a lost role the same way if it comes first (4403, no notice, the access check's
+code `role_lost`); anything else (such as the owner's account state for a
+collaborator, which the read-only strip answers) takes effect within those 5 s,
+and every checkpoint rechecks each writer's account. Each room has its own state cap (`sources::state_cap`, Epo
 2026-10-17): its seed plus the export cap (the largest plan source file,
 `max(plan_limits.source_file_max_bytes)`, read with the room's stored rows)
 less the base file and a 1 MiB margin, within the 100 MiB ceiling every room

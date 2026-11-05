@@ -3077,8 +3077,10 @@ either applied, the later one measured exactly without the earlier), the server
 broadcasts `document-rejected` to the room and evicts it; leaving the room
 loaded would mean it never persists again. A structurally invalid snapshot no
 repair fixes is discarded the same way (`document-rejected` with code
-`invalid_document`), and an `authorization-revoked` eviction makes every editor
-drop its copy too. `NoteEditor` responds to a `document-rejected` (its writer's
+`invalid_document`), and an `authorization-revoked` eviction (a discard: deletion,
+trash, a move, an account lock) makes every editor drop its copy too; an access
+change sends none, it closes only those who lost access, with 4403 and no notice
+([authorization](../authorization-permissions-lifecycles.md)). `NoteEditor` responds to a `document-rejected` (its writer's
 or the room's) by swapping in a new `NoteEditorCore` under a new generation key
 ([room swap](#room-swap)), which reconnects onto the room's state (after a
 discard, the last durable state). Unsaved edits are kept as one refused draft
@@ -3385,14 +3387,15 @@ rejected; the check reads the decoded update against the room rather than
 applying it to a copy, and also rejects an update that writes under the room's
 client, names it as an origin, or deletes past its held clock; otherwise one
 crafted update could erase or forge every later marker. A debounced store
-claims every live marker and rechecks every distinct contributor they name,
-not only the last editor. Its row holds the live markers deleted (no stored
+claims every live marker and rechecks the account of every distinct contributor
+they name, not only the last editor. Its row holds the live markers deleted (no stored
 row carries one), and after commit it clears only the claimed ones, so an update arriving during the
 store belongs to the next batch; a failed store unclaims them, so its retry
-keeps the same contributor set. If an authorization change races an already-applied in-memory Yjs update,
+keeps the same contributor set. If an account lock races an already-applied in-memory Yjs update,
 persistence rejects the whole snapshot and evicts the room; authorized clients
 then reload the last durable state rather than inheriting or later retrying the
-revoked user's update.
+locked user's update. A lost role does not reject it: what the room admitted saves
+(Q635), so up to about 5 s of a removed person's last edits can survive.
 
 None of this gates **opening** a document. Limits protect the collaboration
 service and the database on write; a document that already exists always opens.
