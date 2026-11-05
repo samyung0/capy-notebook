@@ -1636,6 +1636,39 @@ func TestAssignmentSweepReachesARowBehindABadOne(t *testing.T) {
 	t.Fatal("the good attempt never left the queue behind the bad one")
 }
 
+// A publisher locked out of their account hides nothing from the class's staff:
+// the owner still republishes and deletes what that publisher is charged for.
+func TestAssignmentLockedPublisherLeavesStaffWritesOpen(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-locked-publisher")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	publish := func() Assignment {
+		t.Helper()
+		created, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return created
+	}
+	republished, deleted := publish(), publish()
+	if _, err := f.s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=$1`, f.editor); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.RepublishAssignment(ctx, f.user, republished.ID, frozenFixture(t)[:1], now); err != nil {
+		t.Fatalf("republish err=%v", err)
+	}
+	var payer string
+	if err := f.s.pool.QueryRow(ctx, `SELECT frozen_by FROM assignments WHERE id=$1`, republished.ID).Scan(&payer); err != nil || payer != f.user {
+		t.Fatalf("payer=%q err=%v, want the owner who republished", payer, err)
+	}
+	if err := f.s.DeleteAssignment(ctx, f.user, deleted.ID); err != nil {
+		t.Fatalf("delete err=%v", err)
+	}
+	if err := f.s.DeleteAssignment(ctx, f.user, deleted.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second delete err=%v, want not found", err)
+	}
+}
+
 func TestAssignmentSweepPassesOverABadRow(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-sweep-bad")
 	ctx := context.Background()

@@ -683,6 +683,37 @@ func (s *Store) lockAssignmentStaffTx(ctx context.Context, tx pgx.Tx, wsID, acto
 	return nil
 }
 
+// assignmentPayer reads an assignment's workspace and whoever its frozen copy is
+// charged to, for the writes that take that charge off them.
+func (s *Store) assignmentPayer(ctx context.Context, id string) (string, *string, error) {
+	var wsID string
+	var payer *string
+	err := s.pool.QueryRow(ctx, `SELECT workspace_id, frozen_by FROM assignments WHERE id=$1`, id).Scan(&wsID, &payer)
+	if isNoRows(err) {
+		return "", nil, ErrNotFound
+	}
+	return wsID, payer, err
+}
+
+// lockAssignmentPayerStaffTx admits staff to a write that moves a frozen copy's
+// charge off its payer. The payer's row is held with the others in id order, as
+// the meter's foreign key needs it, but their account state decides nothing: a
+// publisher suspended or leaving must not hide the assignment from the class's staff.
+func (s *Store) lockAssignmentPayerStaffTx(ctx context.Context, tx pgx.Tx, wsID, actorID string, payer *string) error {
+	ownerID, err := s.storageOwnerTx(ctx, tx, wsID)
+	if err != nil {
+		return err
+	}
+	ids := []string{ownerID, actorID}
+	if payer != nil {
+		ids = append(ids, *payer)
+	}
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR NO KEY UPDATE`, ids); err != nil {
+		return err
+	}
+	return s.lockAssignmentStaffTx(ctx, tx, wsID, actorID)
+}
+
 // assignmentOpenSQL is a published assignment row a still taking work: neither
 // closed by hand nor past a No late submissions due date.
 const assignmentOpenSQL = `NOT a.draft AND a.closed_at IS NULL AND NOT (a.no_late AND a.due_at <= now())`
@@ -976,24 +1007,19 @@ func (s *Store) PublishAssignment(ctx context.Context, actorID, id string, qs []
 // submitted one keeps its graded copy and marks. Images it stops using stay until
 // it is deleted, as submissions may show them. questions is nil when the quiz is gone.
 func (s *Store) RepublishAssignment(ctx context.Context, actorID, id string, qs []map[string]any, now time.Time) (Assignment, error) {
-	wsID, err := s.assignmentWorkspace(ctx, id)
+	wsID, payer, err := s.assignmentPayer(ctx, id)
 	if err != nil {
 		return Assignment{}, err
 	}
-	var payer *string
-	if err := s.pool.QueryRow(ctx, `SELECT frozen_by FROM assignments WHERE id=$1`, id).Scan(&payer); err != nil {
-		return Assignment{}, err
-	}
-	var also []string
-	if payer != nil {
-		also = append(also, *payer)
-	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID, also...); err != nil {
+		if err := s.lockAssignmentPayerStaffTx(ctx, tx, wsID, actorID, payer); err != nil {
 			return err
 		}
 		// The counters before the row, as reconciliation takes them.
-		counters := uniqueStrings(append([]string{actorID}, also...))
+		counters := []string{actorID}
+		if payer != nil {
+			counters = uniqueStrings(append(counters, *payer))
+		}
 		sort.Strings(counters)
 		for _, user := range counters {
 			if err := s.lockStorageRowTx(ctx, tx, user); err != nil {
@@ -1213,21 +1239,12 @@ func (s *Store) RunningAttemptUsers(ctx context.Context, id string) ([]string, e
 // DeleteAssignment deletes it with its attempts, frozen questions and images,
 // which leave their payer's meter (a trigger's); its quiz is as it was.
 func (s *Store) DeleteAssignment(ctx context.Context, actorID, id string) error {
-	var wsID string
-	var payer *string
-	err := s.pool.QueryRow(ctx, `SELECT workspace_id, frozen_by FROM assignments WHERE id=$1`, id).Scan(&wsID, &payer)
-	if isNoRows(err) {
-		return ErrNotFound
-	}
+	wsID, payer, err := s.assignmentPayer(ctx, id)
 	if err != nil {
 		return err
 	}
-	var also []string
-	if payer != nil {
-		also = append(also, *payer)
-	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID, also...); err != nil {
+		if err := s.lockAssignmentPayerStaffTx(ctx, tx, wsID, actorID, payer); err != nil {
 			return err
 		}
 		// The counter before the row, as reconciliation takes them.
