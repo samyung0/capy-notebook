@@ -261,9 +261,10 @@ function FileMenu({
         align="start"
         alignWidthToTrigger={!wide}
         className={cn(
-          'max-h-[min(420px,70dvh)] gap-0 overflow-hidden p-1.5',
+          'max-h-[min(420px,var(--radix-popover-content-available-height))] gap-0 overflow-hidden p-1.5',
           wide && 'w-[550px] max-w-[calc(100vw-2rem)]'
         )}
+        collisionPadding={8}
       >
         <div className="mb-1 shrink-0">
           <PanelSearchField
