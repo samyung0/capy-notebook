@@ -63,6 +63,7 @@ import {
   FileLoading,
   FileNotIndexedBanner,
   StorageFullBanner,
+  UnavailableItem,
 } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import {
@@ -396,6 +397,14 @@ function listedKind(queryClient: QueryClient, id: string) {
   }
 }
 
+/** A read the server refused. A rate limit, a timeout or a server error says
+ * nothing about the item: such a read could not answer. */
+const isRefusedRead = (error: unknown) =>
+  isApiError(error) &&
+  error.status < 500 &&
+  error.status !== 408 &&
+  error.status !== 429;
+
 const UNREADABLE_TITLES: Partial<Record<Material['kind'], () => string>> = {
   flashcards: m.material_decode_flashcards_title,
   quiz: m.material_decode_quiz_title,
@@ -590,9 +599,18 @@ function MaterialContentBody({
   const [readOnly, setReadOnly] = useState<ReadOnlyCode | 'access' | null>(
     null
   );
+  const queryClient = useQueryClient();
   const onReadOnly = useCallback(
-    (code?: ReadOnlyCode) => setReadOnly(code ?? 'access'),
-    []
+    (code?: ReadOnlyCode) => {
+      // Read-only views draw the read, so it follows. A room's refusal asks for
+      // none: only a refused read ends what shows.
+      if (code !== 'access_lost')
+        void queryClient.invalidateQueries({
+          queryKey: qk.material(materialId),
+        });
+      setReadOnly(code ?? 'access');
+    },
+    [materialId, queryClient]
   );
   const overBar = useContext(FloatingBarContext);
   // The static renderer ahead of the paint, for a note or what may turn out to
@@ -605,13 +623,7 @@ function MaterialContentBody({
   const seed = useRoomSeed(materialId, staticNote ? null : me?.id);
   // An item's last read, painting until this one answers.
   const copied = useMaterialCopy(materialId, staticNote ? null : me?.id);
-  // A rate limit or a timeout says nothing about this item: such a read could
-  // not answer, as a server error could not.
-  const refused =
-    isApiError(error) &&
-    error.status < 500 &&
-    error.status !== 408 &&
-    error.status !== 429;
+  const refused = isRefusedRead(error);
   // No access, or gone: what this device kept of it goes too.
   const lost =
     isApiError(error) && (error.status === 403 || error.status === 404);
@@ -665,10 +677,12 @@ function MaterialContentBody({
           (kind && UNREADABLE_TITLES[kind]?.()) ?? m.material_decode_title()
         }
       />
+    ) : refused ? (
+      <UnavailableItem />
     ) : (
       <FileError
-        errorId={refused ? null : unexpectedErrorId(error)}
-        onRetry={refused ? undefined : () => void refetch()}
+        errorId={unexpectedErrorId(error)}
+        onRetry={() => void refetch()}
       />
     );
   }
@@ -677,6 +691,9 @@ function MaterialContentBody({
     !(forceReadOnly || readOnly) && material.capabilities.canEditContent
       ? 'edit'
       : 'view';
+  // Refused by its room, an editor stays mounted and read-only, showing what it
+  // holds rather than the older read (Epo 2026-11-05).
+  const editorMounted = activeMode === 'edit' || readOnly === 'access_lost';
   const roomCopy: RoomCopy = {
     keep: me && keepsCopyOf(material) ? copyLabel(material, me.id) : undefined,
     seed,
@@ -691,7 +708,9 @@ function MaterialContentBody({
         message={
           readOnly === 'unsupported_block'
             ? m.editor_unsupported_block_strip()
-            : m.editor_read_only_strip()
+            : readOnly === 'access_lost'
+              ? m.editor_access_lost()
+              : m.editor_read_only_strip()
         }
       />
     )
@@ -720,15 +739,17 @@ function MaterialContentBody({
   if (material.kind === 'flashcards') {
     return (
       <div className="flex h-full min-h-0 flex-col">
+        {readOnly && readOnlyStrip}
         <div className="min-h-0 flex-1 overflow-auto">
           <TabContent centered={centerQuiz}>
-            {activeMode === 'edit' ? (
+            {editorMounted ? (
               <LiveFlashcards
                 action={
                   <StudyButton kind="flashcards" materialId={materialId} />
                 }
                 copy={roomCopy}
                 onPresenceChange={onPresenceChange}
+                onReadOnly={onReadOnly}
                 onStatusChange={onEditorStatusChange}
                 openCardId={target}
                 setId={materialId}
@@ -756,11 +777,12 @@ function MaterialContentBody({
 
   if (
     (material.kind === 'mindmap' || material.kind === 'diagram') &&
-    activeMode === 'edit'
+    editorMounted
   )
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <AppErrorBoundary resetKeys={[materialId, activeMode]}>
+        {readOnly && readOnlyStrip}
+        <AppErrorBoundary resetKeys={[materialId, editorMounted]}>
           <Suspense fallback={<FileLoading />}>
             <MermaidMaterialEditor
               content={material.content}
@@ -803,7 +825,7 @@ function MaterialContentBody({
       {readOnlyStrip}
       <div className="min-h-0 flex-1" key="note">
         {material.kind === 'note' ? (
-          noteBody(material, activeMode === 'edit')
+          noteBody(material, editorMounted)
         ) : (
           <div className="relative h-full min-h-0 overflow-auto">
             {material.kind === 'quiz' ? (
@@ -1023,12 +1045,15 @@ function FileBody({
 }) {
   const {
     data: file,
+    error,
     isLoading,
     isError,
   } = useFile(fileId, {
     errorBoundary: false,
   });
   if (isLoading) return <FileLoading />;
+  // A refusal ends what shows, as a material's does (Epo 2026-11-05).
+  if (isRefusedRead(error)) return <UnavailableItem />;
   if (!file && isError) return <FileError />;
   if (file && fileIsIngesting(file.status) && !file.hasBytes) {
     const waiting = file.status === 'pending';

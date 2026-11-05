@@ -96,6 +96,11 @@ follows the same rule: it stays open with a spinner while the delete runs
 and shows a refusal in its `FormAlert` (`trashErrorMessage`), such as an
 audio file still being transcribed (`audio_transcribing`).
 
+Submitting an assignment, Before you start, Make my own practice and deleting or
+leaving a workspace do the same. Start and Submit have no dialog when a timer or a
+closing assignment triggers them, or when there's no time limit to confirm, and then
+a refusal is a toast.
+
 ## Input length limits
 
 Limits come from the backend (`server/internal/fieldlimits`, generated into
@@ -155,8 +160,8 @@ subscribes to those fields. A list that fails without data must never fall
 through to its empty state ("No workspaces yet" reads as data loss after a
 redeploy): a region that fills a page or a page tab renders `ErrorState`
 `variant="panel"` with Retry (Trash); anything smaller, and anything inside
-a dialog, renders `InlineErrorState`, one bold line and Retry (the dashboard
-recent workspaces and recents card, search results, Billing's invoices under
+a dialog, renders `InlineErrorState`, one bold line and Retry (To do's list,
+search results, Billing's invoices under
 the plan and its Details table, a question bank page that failed between loaded
 questions, workspace settings' Statistics tab and member list). Billing's Details table drops its loaded rows when any page fails,
 next pages included, and shows only the inline error. The /notifications page
@@ -389,25 +394,21 @@ stays a 500.
 ## Offline and paused work
 
 Nothing app-wide sits above the page, so connection and account state never
-shift the layout. Home's banner slot (`HomeBanner`) shows only the viewer's own
-account, one tinted card with a faint icon at a time, and is empty otherwise:
-frozen, over-quota grace, storage full (red), storage near the limit (amber),
-offline, reconnecting (stream disconnected). The full and near cards read
+shift the layout. `AccountStatusBanner` shows only the viewer's own account, one
+tinted card with a faint icon at a time, and is empty otherwise: frozen,
+over-quota grace, storage full (red), storage near the limit (amber), offline,
+reconnecting (stream disconnected). The full and near cards read
 `account.storageUsage` from `/me` and show "You've used X of Y" (whole
-megabytes, "96 MB of 100 MB") with a usage
-meter (`[data-testid="storage-usage-meter"]`) above the Subscription and
-Settings links. The connection card carries `[data-connection-status="offline"]`
+megabytes, "96 MB of 100 MB") with a Subscription link. The connection card carries `[data-connection-status="offline"]`
 or `"reconnecting"`. Suspended, deleted and deletion-pending accounts keep the
 full-screen `AccountBlockedScreen`.
 
-A workspace opens on its Dashboard, where the triangle isn't, so the Dashboard
-shows the same status small (Epo 2026-11-05, Q631): `AccountStatusBanner`, in the
-same file and reading the same `useAccountStatus`, the same states in the same order
-with the same words and link, inside the page below its title
-(`[data-testid="account-status-banner"]`, `data-kind` naming the state). It is the
-tinted card in a smaller size, with no meter; both link to Subscription with a solid
-dark button at the right, on its own right-aligned row on phones. Home's card is this small form on phones too. Only the Dashboard has it; Study and
-the other centre pages stay as they are, and the entry toast below still shows.
+It sits inside the page below the title of Workspaces and of a workspace's
+Dashboard (Epo 2026-11-05, Q631;
+`[data-testid="account-status-banner"]`, `data-kind` naming the state), with its
+link a solid dark button at the right, on its own right-aligned row on phones.
+Only those two pages have it; Study and the other centre pages stay as they are,
+and the entry toast below still shows.
 
 Inside a workspace, `WorkspaceHealth` raises one `userToast` per visit for the
 workspace storage status, and one while offline (also whenever the browser
@@ -457,9 +458,10 @@ disable their create controls, Schedule hides event and label Edit, the Canvas
 page is read-only, the dashboard calendar stops creating slots, and their page
 headers show the same red triangle (`AccountStatusButton`) that opens the
 storage details dialog. Flashcard study and quiz attempts only disable
-cloning. A room that turns read-only while open for a storage or frozen
-refusal (`room-read-only`, or a `collaboration-read-only` refusal on
-reconnect) drops the note or source editor to view mode under a grey strip
+cloning. A room that turns read-only while open for a storage, frozen or
+lapsed-plan refusal or a demotion (`room-read-only` on the writer's next update,
+or a read token or `collaboration-read-only` refusal on rejoining) drops the
+note or source editor to view mode under a grey strip
 reading "This file is read-only now" and discards its unsaved edits (a source
 also clears its local drafts without ever reporting Saved, and shows its
 latest saved state through the viewer's session); what was saved before
@@ -774,8 +776,13 @@ not for the account itself; `lostAccess` on the failure message) clears the
 drafts and reloads to the
 file-missing or no-access panel, with no download: the user may no longer see
 that content. A storage or frozen refusal at save drops every writer to view
-under the read-only strip. A trashed or deleted file, or lost access, replaces
-the editor with the file-missing or no-access panel. Drafts are written as
+under the read-only strip. A refused read (any 4xx but 408 and 429) replaces the
+page with "This item is unavailable", which never says blocked rather than gone.
+A room's refusal alone keeps the page (Epo 2026-11-05): a reader's as it was, an
+editor's mounted and read-only under the grey "You no longer have access" strip
+with no save status; with no 4403 close before it, the page also asks for its
+read, which may refuse (Q644; see
+[authorization](../authorization-permissions-lifecycles.md)). Drafts are written as
 each local edit happens, by a dedicated drafts worker, with the whole document
 once per offline episode and at unmount (see
 [plate-editor.md](plate-editor.md#offline-editing-and-drafts)). Draft storage

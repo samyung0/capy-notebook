@@ -21,6 +21,7 @@ import {
 } from '@/features/collaboration/presence';
 import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
 import type { FlashcardContent } from '@/features/materials/blocks';
+import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
 import { FlashcardGrid } from './FlashcardGrid';
@@ -40,6 +41,7 @@ export function LiveFlashcards({
   copy,
   onEmpty,
   onPresenceChange,
+  onReadOnly,
   onStatusChange,
   openCardId,
   showTitle,
@@ -59,6 +61,9 @@ export function LiveFlashcards({
   /** Sits right of the title. */
   action?: ReactNode;
   onEmpty?: () => void;
+  /** A page's editor turned read-only (`access_lost`: its room refused this
+   * person, and it stays mounted). */
+  onReadOnly?: (code?: ReadOnlyCode) => void;
   /** The room's other editors, for the header's avatar group. */
   onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   onStatusChange?: (status: NoteEditorStatus | null) => void;
@@ -102,7 +107,15 @@ export function LiveFlashcards({
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   useReportPresence(onPresenceChange, snapshot.presence);
 
-  if (snapshot.status === 'unavailable')
+  useEffect(() => {
+    if (snapshot.access === 'read')
+      onReadOnly?.(snapshot.readOnlyCode ?? undefined);
+  }, [snapshot.access, snapshot.readOnlyCode, onReadOnly]);
+  const refused = snapshot.status === 'unavailable';
+  useEffect(() => {
+    if (refused) onReadOnly?.('access_lost');
+  }, [refused, onReadOnly]);
+  if (refused && !onReadOnly)
     return (
       <p className="t-meta text-fg-muted">{m.material_ref_unavailable()}</p>
     );
@@ -158,7 +171,9 @@ export function LiveFlashcards({
   return (
     <div className="flex flex-col gap-4">
       {snapshot.offline && <SaveBanner state={snapshot.offline} />}
-      {snapshot.access !== 'write' || itemEditingStopped(snapshot) ? (
+      {refused ||
+      snapshot.access !== 'write' ||
+      itemEditingStopped(snapshot) ? (
         grid
       ) : (
         <CollaborationHold>

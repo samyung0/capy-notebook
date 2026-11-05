@@ -25,11 +25,14 @@ import { FileBanner } from './FileBanner';
  *   read-only on this device until Retry or a reconnect loads it (Q398).
  * - `unreachable`: a note's join ran past its 30 s (Epo 2026-11-04): over the
  *   note on screen, with Retry.
+ * - `access-lost`: an Office or text file's room refused this editor, whose
+ *   page stays read-only (Epo 2026-11-05).
  * - `review`: a note has edits that could not sync waiting in the merge view
  *   (Q252): Review opens it and Discard drops them all; it cannot be closed
  *   and has the lowest priority.
  */
 export type SaveBannerState =
+  | 'access-lost'
   | 'delayed'
   | 'late-unloaded'
   | 'offline'
@@ -64,6 +67,7 @@ const MESSAGES: Record<
   Exclude<SaveBannerState, 'outdated' | 'outdated-unstored'>,
   () => string
 > = {
+  'access-lost': () => m.editor_access_lost(),
   changed: () => m.editor_recovery_changed(),
   delayed: () => m.editor_save_delayed(),
   expired: () => m.editor_recovery_expired(),
@@ -137,6 +141,7 @@ export function SaveBanner({
       message={MESSAGES[state]()}
       testId="save-banner"
       tone={
+        state === 'access-lost' ||
         state === 'offline' ||
         state === 'offline-limit' ||
         state === 'late-unloaded' ||

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
+import { qk } from '@/api/client';
 import { getMaterialCollaborationToken } from '@/api/hooks';
+import { queryClient } from '@/api/queryClient';
 import {
   isOutdatedBanner,
   type SaveBannerState,
@@ -235,6 +237,8 @@ export class ItemRoom {
   private readonly pending = new Map<string, number>();
   /** The mode of the eviction notice that came before a close. */
   private eviction: string | null = null;
+  /** Closed for this person's access change (4403), until it syncs again. */
+  private accessChanged = false;
   /** Stops waiting to start again after a first open that failed. */
   private waiting: (() => void) | null = null;
   /** The draft send of never-accepted stored steps (Q319, Q327, Q328). */
@@ -331,7 +335,8 @@ export class ItemRoom {
       // Gone or no longer this user's (404, 403): unavailable for good.
       // Offline or a server error: paused until it can join (REVIEW5 B1).
       const refusal = roomRefusal('', error);
-      if (refusal === 'notFound' || refusal === 'forbidden') this.unavailable();
+      if (refusal === 'notFound' || refusal === 'forbidden')
+        this.refusedAccess();
       else this.startLater();
       return;
     }
@@ -369,7 +374,7 @@ export class ItemRoom {
         const refusal = roomRefusal(reason, this.tokenError);
         this.tokenError = null;
         if (refusal === 'notFound' || refusal === 'forbidden') {
-          this.unavailable();
+          this.refusedAccess();
           return;
         }
         if (refusal === 'outdated') {
@@ -396,8 +401,12 @@ export class ItemRoom {
       },
       onClose: ({ code, reason }) => {
         this.set({ slowed: false });
+        // This person's access changed, with no notice: a fresh token says
+        // what they have now. A demotion reads on; a removal is refused and
+        // stops at the token, keeping the page (Epo 2026-11-05).
         if (code === 4403) {
-          this.unavailable();
+          this.accessChanged = true;
+          this.rejoin();
           return;
         }
         // A rejoin changes nothing until its 30 s passed (D2).
@@ -415,14 +424,21 @@ export class ItemRoom {
           return;
         }
         if (reason === EVICTED) {
-          // A drain (access widened) stored the room first: rejoin, and
+          // A drain (a Move, a hide) stored the room first: rejoin, and
           // anything in flight goes again. A discard threw the room's
           // unsaved state away and moves its lineage, so a fresh room
           // opens, with this tab's unsent edits to copy.
           const drain = this.eviction === 'drain';
           this.eviction = null;
           if (drain) this.rejoin();
-          else this.moved();
+          else {
+            // It may be gone: the page's read says, and a refusal ends what
+            // shows (Epo 2026-11-05).
+            void queryClient.invalidateQueries({
+              queryKey: qk.material(this.materialId),
+            });
+            this.moved();
+          }
           return;
         }
         if (TRANSIENT_CLOSES.has(reason)) {
@@ -437,6 +453,7 @@ export class ItemRoom {
       onStateless: ({ payload }) => this.stateless(payload),
       onSynced: ({ state }) => {
         if (state) {
+          this.accessChanged = false;
           if (this.snapshot.offline || this.heldEpisode)
             this.recorder?.connected();
           this.heldEpisode = false;
@@ -907,6 +924,16 @@ export class ItemRoom {
     const unstored = !this.storageOk && !!this.recorder?.unsaved;
     if (this.recorder)
       this.set({ offline: unstored ? 'outdated-unstored' : 'outdated' });
+  }
+
+  /** A refusal not told as an access change may mean the item is gone: the
+   * page's read says, and a refused one ends what shows (Epo 2026-11-05, Q644). */
+  private refusedAccess() {
+    if (!this.accessChanged)
+      void queryClient.invalidateQueries({
+        queryKey: qk.material(this.materialId),
+      });
+    this.unavailable();
   }
 
   /** The item is gone or no longer this user's: the room stops for good. */

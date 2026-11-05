@@ -1299,14 +1299,14 @@ The editor reports:
   reconnecting kept failing for 30 s); an editor that synced once keeps
   editing on this device (see [Offline editing](#offline-editing-and-drafts));
 - `Not saved. Retrying…`: a store failed and the server is retrying it;
-- `Collaboration unavailable`: the first connection never synced, or the
+- `Cloud unavailable`: the first connection never synced, or the
   provider could not start.
 
 The header shows these as Hugeicons cloud icons beside the title, on its
 top row at every width, phones included (Epo 2026-10-20): CloudUpload
 for Syncing (and a source's Connecting and Reconnecting), the plain Cloud for Saved (and the
 PDF's Synced), CloudOff for Offline, and a red CloudAlert for Not saved and
-Collaboration unavailable; a live item's footer status uses the same icons.
+Cloud unavailable; a live item's footer status uses the same icons.
 Office and text sources report the same states into the same slot
 (`EditorStatusContext`, `sourceHeaderStatus`). Localized labels remain in
 keyboard-accessible tooltips and the live status text for screen readers.
@@ -1336,15 +1336,18 @@ channel for a fresh token in band (`TOKEN_REQUEST`); the provider answers
 through its `token` function (`TOKEN`), and the server verifies it, rechecks
 access and re-arms both timers. A channel that cannot answer is closed at
 expiry with code 4401. A room closed on an open
-socket (expiry, eviction, an access recheck) only emits the provider's `close`,
+socket (expiry, eviction, an access recheck, one person's access change) only emits the provider's `close`,
 never `disconnect`, so `roomReconnector` (`src/features/notes/roomConnection.ts`)
 reconnects at once with a fresh token and backs off while refusals repeat.
 Authentication refusals carry reasons: `collaboration-read-only` drops to view
 under the read-only strip (it names no reason: a demoted viewer, a frozen
 account and a full owner all see it, and the account banner explains the
 account cases), `collaboration-not-found` (trashed or deleted) and
-`collaboration-forbidden` (lost access) replace the editor with the
-file-missing or no-access panel, `collaboration-outdated` stops the editor
+`collaboration-forbidden` (lost access) keep the page, a reader's as it was and
+an editor's read-only under the "You no longer have access" strip; with no 4403
+close before it the page asks for its read, and a refused read shows "This item
+is unavailable" (see [authorization](../authorization-permissions-lifecycles.md)),
+`collaboration-outdated` stops the editor
 for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
 `collaboration-unassigned-id` is not retried (see [client ids](#client-ids)),
 and anything else (an expired token,
@@ -2099,7 +2102,7 @@ design, option d), and the nudge's release file on 2026-10-17.
   reload.", with Reload in the close button's place. When this device could
   not store the unsent edits (`outdated-unstored`), it says so instead: "This
   device couldn't store your unsent edits, so reloading loses them." The
-  header status is Collaboration unavailable, as in recovery. An item room or
+  header status is Cloud unavailable, as in recovery. An item room or
   source session
   refused before it synced shows the strip alone (a source shows its base
   and this device's drafts, read-only).

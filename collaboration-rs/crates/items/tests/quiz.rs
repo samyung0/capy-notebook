@@ -289,6 +289,69 @@ fn an_incomplete_question_stays_out_of_the_projection() {
     assert_eq!(projected(&content, &keys).len(), questions.len() - 1);
 }
 
+/// What Make a quiz sends for parts left with no answer, each after the question
+/// printed before it: the room holds them in printed order, the caps a server
+/// edit checks pass, and only the complete question projects.
+#[test]
+fn a_server_insert_holds_questions_with_no_answers() {
+    let question = |id: &str, answer: Value| {
+        json!({
+            "id": id, "stem": [], "layout": "paper", "labels": "letters",
+            "parts": [{
+                "id": format!("{id}-p"), "blocks": [{ "type": "text", "text": "Answer." }],
+                "answer": answer, "marks": 1, "solution": [],
+            }],
+        })
+    };
+    let complete = question(
+        "q2",
+        json!({ "type": "mcq", "options": ["a", "b"], "correct": [0] }),
+    );
+    let (content, keys, _, _) = rooms(&[complete]);
+    let insert = |id: &str, after: Option<&str>, answer: Value| DocumentCommand::InsertChild {
+        parent_type: "quiz".into(),
+        after_node_id: after.map(str::to_owned),
+        node: json!({
+            "type": "quiz_question", "id": id, "question": question(id, answer),
+            "children": [{ "text": "" }],
+        }),
+    };
+    let commands = [
+        insert(
+            "q1",
+            None,
+            json!({ "type": "mcq", "options": ["a", "b"], "correct": [] }),
+        ),
+        insert("q3", Some("q2"), json!({ "type": "short", "accepted": [] })),
+        insert(
+            "q4",
+            Some("q3"),
+            json!({ "type": "open", "accepted": [], "hints": [] }),
+        ),
+    ];
+    quiz::apply_commands(
+        &mut content.transact_mut(),
+        &mut keys.transact_mut(),
+        &commands,
+    )
+    .unwrap();
+
+    Kind::Quiz.check_caps(&content.transact()).unwrap();
+    Kind::QuizKeys.check_caps(&keys.transact()).unwrap();
+    let ids = |questions: Vec<Value>| -> Vec<String> {
+        questions
+            .iter()
+            .map(|q| q["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let live = {
+        let (content, keys) = (content.transact(), keys.transact());
+        quiz::questions_json(&content, Some(&quiz::KeysRead::new(&keys)))
+    };
+    assert_eq!(ids(live), ["q1", "q2", "q3", "q4"]);
+    assert_eq!(ids(projected(&content, &keys)), ["q2"]);
+}
+
 #[test]
 fn blanks_are_dropped_from_the_projection() {
     let mut questions = fixtures();
@@ -1828,6 +1891,31 @@ fn a_group_id_the_validators_accept_stays_in_the_room() {
             .iter()
             .any(|part| part["id"] == json!("part-b3") && part["group"] == json!("sheet 1.a"))
     );
+}
+
+/// A question's id is held to the validators too: a stored `q1.1` stays in the
+/// room, takes an edit and saves, where it once left the room without a word.
+#[test]
+fn a_question_id_the_validators_accept_stays_in_the_room() {
+    let mut question = fixtures().remove(0);
+    question["id"] = json!("q1.1");
+    let (content, keys, _, _) = rooms(std::slice::from_ref(&question));
+    assert_eq!(typed(&content, &keys), question);
+
+    let client = copy_of(&content, 3);
+    map_in(&client, &["questions", "q1.1"]).insert(&mut client.transact_mut(), "layout", "split");
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    question["layout"] = json!("split");
+    assert_eq!(typed(&content, &keys), question);
+
+    quiz::set_questions(
+        &mut content.transact_mut(),
+        &mut keys.transact_mut(),
+        std::slice::from_ref(&question),
+    )
+    .unwrap();
+    assert_eq!(typed(&content, &keys), question);
 }
 
 /// A group's blocks take the stem's caps, at admission as in the exact check.

@@ -140,6 +140,7 @@ import type {
   StudyTopics,
   Tag,
   Task,
+  TodoList,
   Topic,
   TopUpReq,
   TrashActionReq,
@@ -1139,6 +1140,7 @@ export function useUpdateWorkspace() {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['workspaces'] }),
         qc.invalidateQueries({ queryKey: qk.workspace(v.id) }),
+        qc.invalidateQueries({ queryKey: qk.todo }),
         qc.invalidateQueries({ queryKey: ['tags'] }),
       ]);
     },
@@ -1156,15 +1158,21 @@ export function useUpdateWorkspaceSharing() {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['workspaces'] }),
         qc.invalidateQueries({ queryKey: qk.workspace(v.id) }),
+        qc.invalidateQueries({ queryKey: qk.todo }),
       ]);
     },
   });
 }
-export function useDeleteWorkspace() {
+export function useDeleteWorkspace(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (id: string) => api.del<void>(`/workspaces/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['workspaces'] }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ['workspaces'] }),
+        qc.invalidateQueries({ queryKey: qk.todo }),
+      ]),
   });
 }
 
@@ -1173,6 +1181,7 @@ export function useDeleteWorkspace() {
  * or leaves them (every mutation marks Recent stale, queryClient.ts). */
 function invalidateVisitLists(qc: QueryClient, visitor: boolean) {
   void qc.invalidateQueries({ queryKey: ['workspaces'] });
+  void qc.invalidateQueries({ queryKey: qk.todo });
   if (!visitor) return;
   void qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
   void qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
@@ -2617,6 +2626,7 @@ export function useAcceptWorkspaceInvite() {
     onSuccess: (member) => {
       track('invite_accepted', { role: member.role });
       qc.invalidateQueries({ queryKey: ['workspaces'] });
+      qc.invalidateQueries({ queryKey: qk.todo });
       qc.invalidateQueries({ queryKey: qk.workspace(member.workspaceId) });
       qc.invalidateQueries({
         queryKey: qk.workspaceMembers(member.workspaceId),
@@ -2642,9 +2652,13 @@ export function useUpdateWorkspaceMember(workspaceId: string) {
 
 /** A member leaving `workspaceId`: the owner's remove call on its own row.
  * Its files drop out of the All files lists and search, as a visitor's do. */
-export function useLeaveWorkspace(workspaceId: string) {
+export function useLeaveWorkspace(
+  workspaceId: string,
+  options?: MutationUiOptions
+) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (userId: string) =>
       api.del<void>(`/workspaces/${workspaceId}/members/${userId}`),
     onSuccess: () => invalidateVisitLists(qc, true),
@@ -3120,6 +3134,7 @@ function refreshAssignment(
     // A quiz's row shows its assignment's icon while it is open.
     qc.invalidateQueries({ queryKey: qk.materials(workspaceId) }),
     qc.invalidateQueries({ queryKey: qk.recent }),
+    qc.invalidateQueries({ queryKey: qk.todo }),
     id
       ? qc.invalidateQueries({ queryKey: qk.assignment(id) })
       : Promise.resolve(),
@@ -3189,9 +3204,11 @@ export function useSetAssignmentDone(workspaceId: string) {
   });
 }
 
+/** Its one caller reports a failure itself: no global toast. */
 export function useStartAssignment(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: (id: string) =>
       api.post<AssignmentAttempt>(`/assignments/${id}/start`, {}),
     onSuccess: (attempt) => {
@@ -3205,9 +3222,11 @@ export function useStartAssignment(workspaceId: string) {
 export const saveAssignmentAnswers = (attemptId: string, answers: Answers) =>
   api.put<void>(`/assignment-attempts/${attemptId}/answers`, { answers });
 
+/** Its one caller reports a failure itself: no global toast. */
 export function useSubmitAssignmentAttempt(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: ({ answers, id }: { answers: Answers; id: string }) =>
       api.post<AssignmentAttempt>(`/assignment-attempts/${id}/submit`, {
         answers,
@@ -3343,6 +3362,16 @@ export const learningOverviewQuery = () =>
   });
 export const useLearningOverview = (options?: QueryUiOptions) =>
   useQuery({ ...learningOverviewQuery(), meta: queryMeta(options) });
+
+/** The To do page: each class's Dashboard To do, across the viewer's classes. */
+export const todoQuery = () =>
+  queryOptions({
+    ...persisted,
+    queryFn: () => api.get<TodoList>('/todo'),
+    queryKey: qk.todo,
+  });
+export const useTodo = (options?: QueryUiOptions) =>
+  useQuery({ ...todoQuery(), meta: queryMeta(options) });
 
 /** How many questions a practice group holds, for its start dialog. */
 export const useStudyQuestionCount = (

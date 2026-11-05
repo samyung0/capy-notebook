@@ -23,8 +23,8 @@ import { AssignmentAttemptPage } from './AssignmentAttemptPage';
 import { AssignmentReport } from './AssignmentReport';
 import { dayLabel, kindLabel, markText, percentText } from './assignmentText';
 import { LateBadge } from './LateBadge';
+import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
 import { MemberAssignment } from './MemberAssignment';
-import { NewAssignmentDialog } from './NewAssignmentDialog';
 import { useAssignmentStart } from './useAssignmentStart';
 
 export type ReportTab = 'questions' | 'members' | 'approve' | 'settings';

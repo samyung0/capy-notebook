@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
-import { ApiError } from '@/api/client';
-import { COLLABORATION_LATE_REASON } from '@/features/notes/collaborationEvents';
+import { ApiError, qk } from '@/api/client';
+import {
+  COLLABORATION_LATE_REASON,
+  COLLABORATION_NOT_FOUND_REASON,
+} from '@/features/notes/collaborationEvents';
 import { m } from '@/i18n';
 import type { RoomProviderConfig } from './roomProvider';
 
@@ -161,6 +164,8 @@ vi.mock('@/lib/editDrafts', () => ({
   }),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
+const invalidateQueries = vi.hoisted(() => vi.fn());
+vi.mock('@/api/queryClient', () => ({ queryClient: { invalidateQueries } }));
 vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
 
 const { ItemRoom, openItemRoom } = await import('./itemRoom');
@@ -381,6 +386,57 @@ it('rejoins after a close the server gives everyone', async () => {
   await vi.advanceTimersByTimeAsync(2000);
   expect(provider.connects).toBe(2);
   expect(onReplace).not.toHaveBeenCalled();
+  room.destroy();
+});
+
+// Epo 2026-11-05: a close for one person's access change comes with no notice,
+// so it joins again and the token says what they have: a demotion reads on, a
+// removal stops there.
+it('joins again after a close for this person, and the token decides', async () => {
+  const { onReplace, room } = await started();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  const targeted = { code: 4403, reason: 'collaboration access changed' };
+
+  provider.config.onClose?.(targeted);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(provider.connects).toBe(2);
+  tokens.push({ access: 'read', room: 'material:q:schema:1' });
+  await provider.config.token();
+  expect(room.getSnapshot()).toMatchObject({ access: 'read' });
+  expect(room.getSnapshot().status).not.toBe('unavailable');
+
+  provider.config.onClose?.(targeted);
+  await vi.advanceTimersByTimeAsync(2000);
+  tokens.push(new ApiError(404, 'Not Found'));
+  await provider.config.token().catch((thrown: Error) =>
+    provider.config.onAuthenticationFailed?.({
+      reason: `Failed to get token: ${thrown.message}`,
+    })
+  );
+  expect(room.getSnapshot().status).toBe('unavailable');
+  expect(onReplace).not.toHaveBeenCalled();
+  // Told its access changed, the page stays: no read asked for.
+  expect(invalidateQueries).not.toHaveBeenCalled();
+  room.destroy();
+});
+
+// Epo 2026-11-05 (Q644): a refusal with no such close may mean the item is gone,
+// so the page's read says.
+it('asks for the read when refused with no access change first', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  provider.config.onAuthenticationFailed?.({
+    reason: COLLABORATION_NOT_FOUND_REASON,
+  });
+  expect(room.getSnapshot().status).toBe('unavailable');
+  expect(invalidateQueries).toHaveBeenCalledWith({
+    queryKey: qk.material('q'),
+  });
+  invalidateQueries.mockClear();
   room.destroy();
 });
 
@@ -654,7 +710,7 @@ const evicted = (mode: 'drain' | 'discard') =>
     { code: 0, reason: 'collaboration room evicted' },
   ] as const;
 
-// REVIEW2 M1: a drain eviction (access widened) stored the room first, so the
+// REVIEW2 M1: a drain eviction (a Move, a hide) stored the room first, so the
 // room rejoins with its document, edits in flight included, and nothing goes
 // to copy-only recovery.
 it('rejoins after a drain eviction, keeping its edits', async () => {
@@ -668,6 +724,7 @@ it('rejoins after a drain eviction, keeping its edits', async () => {
   expect(provider.connects).toBe(2);
   expect(onReplace).not.toHaveBeenCalled();
   expect(drafts.refused).toBe(0);
+  expect(invalidateQueries).not.toHaveBeenCalled();
   room.destroy();
 });
 
@@ -685,6 +742,10 @@ it('ends after a discard eviction, keeping its edits stored', async () => {
   expect(provider.connects).toBe(1);
   expect(drafts.disposed).toBe(1);
   expect(drafts.refused).toBe(0);
+  // It may be gone: the page's read says (Epo 2026-11-05).
+  expect(invalidateQueries).toHaveBeenCalledWith({
+    queryKey: qk.material('q'),
+  });
   room.destroy();
 });
 

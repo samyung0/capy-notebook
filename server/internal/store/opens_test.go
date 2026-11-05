@@ -239,3 +239,24 @@ func TestVisitorReopenWritesAgainAfterAnotherProcessForgets(t *testing.T) {
 		t.Fatalf("after reopening = %v, want the workspace back", ids)
 	}
 }
+
+// TestNewWorkspaceListsAboveOneOpenedEarlier: creating counts as opening.
+func TestNewWorkspaceListsAboveOneOpenedEarlier(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_new_first")
+	opened, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Opened", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordWorkspaceVisit(ctx, owner, opened.ID); err != nil {
+		t.Fatal(err)
+	}
+	created, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "New", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids := listedIDs(t, s, owner); len(ids) != 2 || ids[0] != created.ID {
+		t.Fatalf("order = %v, want the new workspace first", ids)
+	}
+}

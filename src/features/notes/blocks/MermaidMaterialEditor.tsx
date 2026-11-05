@@ -134,10 +134,10 @@ export default function MermaidMaterialEditor({
     if (snapshot.access === 'read')
       onReadOnly(snapshot.readOnlyCode ?? undefined);
   }, [snapshot.access, snapshot.readOnlyCode, onReadOnly]);
-  if (snapshot.status === 'unavailable')
-    return (
-      <p className="t-meta p-6 text-fg-muted">{m.material_ref_unavailable()}</p>
-    );
+  const refused = snapshot.status === 'unavailable';
+  useEffect(() => {
+    if (refused) onReadOnly('access_lost');
+  }, [refused, onReadOnly]);
   if (room && snapshot.recovery)
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
@@ -151,8 +151,9 @@ export default function MermaidMaterialEditor({
       </div>
     );
   // Painted until it syncs (Epo 2026-11-04): what the device copy holds, else
-  // what the read holds, in the same split, taking no input.
-  if (!(room && snapshot.synced && live)) {
+  // what the read holds, in the same split, taking no input. Refused by its
+  // room, it stays so with what it last held.
+  if (refused || !(room && snapshot.synced && live)) {
     const painted = live ?? stored;
     return (
       <div className="flex min-h-0 flex-1 flex-col">

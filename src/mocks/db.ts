@@ -3402,8 +3402,9 @@ export function listWorkspaces(url: URL): Workspace[] {
     case 'files':
       return list.sort((a, b) => b.fileCount - a.fileCount);
     default: {
-      // Never opened last, newest first, as the server.
-      const opened = (w: Workspace) => +new Date(visits.get(w.id) ?? 0);
+      // Creating counts as opening, as on the server.
+      const opened = (w: Workspace) =>
+        +new Date(visits.get(w.id) ?? w.createdAt);
       return list.sort(
         (a, b) =>
           opened(b) - opened(a) ||

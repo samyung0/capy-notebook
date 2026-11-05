@@ -22,6 +22,7 @@ import {
   SimpleDialog,
   useIsPhone,
 } from '@/components/ui/Dialog';
+import { FormAlert } from '@/components/ui/FormAlert';
 import { Skeleton } from '@/components/ui/feedback';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
 import { Switch } from '@/components/ui/Switch';
@@ -91,16 +92,24 @@ export function WorkspaceSettingsDialog({
   const qc = useQueryClient();
   const { mutateAsync: update } = useUpdateWorkspace();
   const [cloneOpen, setCloneOpen] = useState(false);
-  const { mutate: deleteWorkspace, isPending: deleting } = useDeleteWorkspace();
+  const {
+    error: deleteError,
+    isPending: deleting,
+    mutate: deleteWorkspace,
+    reset: resetDelete,
+  } = useDeleteWorkspace({ errorToast: false });
   const { data: me } = useMe();
-  const { mutate: leaveWorkspace, isPending: leaving } = useLeaveWorkspace(
-    workspace.id
-  );
+  const {
+    error: leaveError,
+    isPending: leaving,
+    mutate: leaveWorkspace,
+    reset: resetLeave,
+  } = useLeaveWorkspace(workspace.id, { errorToast: false });
   // Leave before dropping the cache, or the open page refetches it; Back then
   // fetches the workspace and shows its error. Closing matters on
   // /workspaces, where the page stays.
   const leavePage = () =>
-    navigate({ to: '/workspaces' }).then(() => {
+    navigate({ to: '/' }).then(() => {
       onClose();
       qc.removeQueries({ queryKey: qk.workspace(workspace.id) });
     });
@@ -415,24 +424,44 @@ export function WorkspaceSettingsDialog({
       )}
       <ConfirmDialog
         body={m.workspace_delete_confirm_body()}
+        closeOnConfirm={false}
         confirmLabel={m.trash_delete_forever()}
-        onClose={() => setConfirmDelete(false)}
+        isSubmitting={deleting}
+        onClose={() => {
+          setConfirmDelete(false);
+          resetDelete();
+        }}
         onConfirm={() => {
           deleteWorkspace(workspace.id, { onSuccess: leavePage });
         }}
         open={confirmDelete}
         title={m.workspace_delete_confirm_title({ name: workspace.name })}
-      />
+      >
+        <FormAlert
+          errorId={unexpectedErrorId(deleteError)}
+          message={deleteError && describeError(deleteError).description}
+        />
+      </ConfirmDialog>
       <ConfirmDialog
         body={m.workspace_leave_confirm_body()}
+        closeOnConfirm={false}
         confirmLabel={m.action_leave()}
-        onClose={() => setConfirmLeave(false)}
+        isSubmitting={leaving}
+        onClose={() => {
+          setConfirmLeave(false);
+          resetLeave();
+        }}
         onConfirm={() => {
           if (me) leaveWorkspace(me.id, { onSuccess: leavePage });
         }}
         open={confirmLeave}
         title={m.workspace_leave_confirm_title({ name: workspace.name })}
-      />
+      >
+        <FormAlert
+          errorId={unexpectedErrorId(leaveError)}
+          message={leaveError && describeError(leaveError).description}
+        />
+      </ConfirmDialog>
     </SimpleDialog>
   );
 }

@@ -29,8 +29,8 @@ import {
   ownedFilesQuery,
   ownedMaterialsQuery,
   quizQuery,
-  recentQuery,
   tasksQuery,
+  todoQuery,
   topicsQuery,
   usageQuery,
   workspaceQuery,
@@ -73,6 +73,7 @@ import {
   savedSort,
   WORKSPACE_SORT_DEFAULT,
   WORKSPACE_SORTS,
+  type WorkspacesSearch,
   workspaceListParams,
 } from '@/lib/listSearch';
 import {
@@ -220,15 +221,6 @@ const blocksRedirect = <const T extends string>(path: T) =>
   });
 
 const appRoutes = [
-  createRoute({
-    component: lazyPage(() => import('@/routes/Home')),
-    getParentRoute: () => authShellRoute,
-    loader: ({ context: { queryClient: qc } }) => {
-      qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
-      qc.prefetchQuery(recentQuery());
-    },
-    path: '/',
-  }),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
     // A list opened without a sort in the URL shows the viewer's last pick.
@@ -243,7 +235,7 @@ const appRoutes = [
         throw redirect({
           replace: true,
           search: { ...search, ...saved },
-          to: '/workspaces',
+          to: '/',
         });
     },
     component: lazyPage(() => import('@/routes/Workspaces')),
@@ -252,9 +244,31 @@ const appRoutes = [
     loader: ({ context: { queryClient: qc }, deps }) => {
       qc.prefetchQuery(workspacesQuery(workspaceListParams(deps)));
     },
+    path: '/',
+    // `clone` is the public pages' Clone link, which CloneLinkDialog reads.
+    validateSearch: (
+      search: Record<string, unknown>
+    ): WorkspacesSearch & { clone?: unknown } => ({
+      ...parseWorkspacesSearch(search),
+      clone: search.clone,
+    }),
+  }),
+  createRoute({
+    beforeLoad: ({ search }) => {
+      throw redirect({ replace: true, search, to: '/' });
+    },
+    component: () => null,
+    getParentRoute: () => authShellRoute,
     path: '/workspaces',
     validateSearch: parseWorkspacesSearch,
   }),
+  page(
+    '/todo',
+    () => import('@/routes/Todo'),
+    ({ context: { queryClient: qc } }) => {
+      qc.prefetchQuery(todoQuery());
+    }
+  ),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
     component: lazyPage(() => import('@/routes/WorkspaceOpen')),
