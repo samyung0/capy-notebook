@@ -26,6 +26,13 @@ describe('parseWorkspaceOpenSearch', () => {
     }
   );
 
+  it('keeps the chat page open from the URL', () => {
+    expect(parseWorkspaceOpenSearch({ chatPage: true }).chatPage).toBe(true);
+    expect(
+      parseWorkspaceOpenSearch({ chatPage: 'x' }).chatPage
+    ).toBeUndefined();
+  });
+
   it("keeps Make a quiz's page picker and run, with what was chosen", () => {
     expect(
       parseWorkspaceOpenSearch({ answers: 'f_2', make: 'pages', paper: 'f_1' })

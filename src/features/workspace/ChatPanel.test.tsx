@@ -359,7 +359,12 @@ it('keeps its draft and mounted thread while a page hides the dock, and drops a 
   const panel = (hidden: boolean) => (
     <QueryClientProvider client={client}>
       <ChatPanel
-        dock={{ menuItems: [], office: false }}
+        dock={{
+          menuItems: [],
+          office: false,
+          onPageOpen: () => {},
+          pageOpen: false,
+        }}
         hidden={hidden}
         workspaceId="ws_bio"
       />

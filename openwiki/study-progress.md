@@ -933,10 +933,11 @@ it. The board's own line about topic labels waits for topic summaries, and its J
 step and "What members see" link for an invite preview and board G5.
 
 **Dashboard.** `TodoSection` (H1, H2, H2b). A member's To do is what went to them:
-quizzes with Start (Before you start opens over the Dashboard), the rest with a
-tick; Show done brings finished ones back crossed out. Staff's holds answers to
-approve and anything they gave themselves, with New assignment at its top right.
-Empty, the section doesn't show. Activity gains "assigned" rows, to whoever it
+quizzes, and the rest with a tick; Show done brings finished ones back crossed
+out. Staff's holds answers to approve and anything they gave themselves, with New
+assignment at its top right. A row is one button with a square hover and no action
+of its own (Epo 2026-11-05): it opens the assignment's page, which starts or
+continues it, or Approve AI marks. Empty, the section doesn't show. Activity gains "assigned" rows, to whoever it
 went to and staff.
 
 **Not built.** The grading switch and everything behind it (AI marks, Mark with

@@ -6,13 +6,11 @@ import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
-import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { dayLabel } from './assignmentText';
 import { NewAssignmentDialog } from './NewAssignmentDialog';
-import { useAssignmentStart } from './useAssignmentStart';
 
 /** A chip naming a quiz: the assignment's quill, tinted (Epo 2026-11-03). */
 function WorkChip({ title, done }: { title: string; done?: boolean }) {
@@ -52,10 +50,12 @@ function FileChip({ file }: { file: Assignment['files'][number] }) {
 }
 
 /** The Dashboard's To do (boards H1, H2, H2b; Epo 2026-11-03). A member's holds
- * what is assigned to them: quizzes with Start, the rest with a tick. Staff's
- * holds what is for them: answers to approve and anything they assigned
- * themselves, with New assignment at its top right. Done rows leave until Show
- * done brings them back, crossed out. Empty, the section doesn't show. */
+ * what is assigned to them: quizzes, and the rest with a tick. Staff's holds
+ * what is for them: answers to approve and anything they assigned themselves,
+ * with New assignment at its top right. A row is its own button, with nothing
+ * else to press but a tick (Epo 2026-11-05); an assignment's page starts or
+ * continues it. Done rows leave until Show done brings them back, crossed out.
+ * Empty, the section doesn't show. */
 export function TodoSection({
   manages,
   workspaceId,
@@ -66,7 +66,6 @@ export function TodoSection({
   const navigate = useNavigate();
   const { data } = useAssignments(workspaceId, { errorBoundary: false });
   const { mutate: setDone } = useSetAssignmentDone(workspaceId);
-  const { dialog, start, starting } = useAssignmentStart(workspaceId);
   const [showDone, setShowDone] = useState(false);
   const [creating, setCreating] = useState(false);
   const items = data?.items ?? [];
@@ -120,28 +119,26 @@ export function TodoSection({
           )}
         </div>
       </div>
-      <ul className="border-divider border-t">
+      <ul className="-mx-1.5 border-divider border-t">
         {toApprove.map((a) => (
           <Row key={a.id}>
-            <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 pl-3">
+            <Link
+              className="flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
+              search={{
+                assignment: a.id,
+                study: 'assignments' as const,
+                tab: 'approve' as const,
+              }}
+              to="."
+            >
               {m.dashboard_approve_on()}
-              <WorkChip title={a.title} />
-            </span>
-            <span className="t-meta shrink-0 font-semibold text-tint-warning-fg max-sm:order-last max-sm:w-full sm:w-37">
-              {m.dashboard_waiting({ count: a.manage?.toApprove ?? 0 })}
-            </span>
-            <UnderlineLink asChild className="pr-3 text-fg">
-              <Link
-                search={{
-                  assignment: a.id,
-                  study: 'assignments' as const,
-                  tab: 'approve' as const,
-                }}
-                to="."
-              >
-                {m.dashboard_approve()}
-              </Link>
-            </UnderlineLink>
+              <span className="flex min-w-0 items-center gap-2">
+                <WorkChip title={a.title} />
+                <span className="t-meta shrink-0 font-semibold text-tint-warning-fg">
+                  {m.dashboard_waiting({ count: a.manage?.toApprove ?? 0 })}
+                </span>
+              </span>
+            </Link>
           </Row>
         ))}
         {shown.map((a) => {
@@ -151,19 +148,19 @@ export function TodoSection({
             : null;
           return (
             <Row key={a.id}>
-              <span className="grid w-7 shrink-0 place-items-center sm:w-10">
-                {a.kind === 'unmarked' && (
+              {a.kind === 'unmarked' && (
+                <span className="grid w-7 shrink-0 justify-items-start pl-1.5">
                   <Checkbox
                     aria-label={a.title}
                     checked={isDone}
                     onChange={(next) => setDone({ done: next, id: a.id })}
                     size={18}
                   />
-                )}
-              </span>
+                </span>
+              )}
               <button
                 className={cn(
-                  'flex min-w-0 flex-1 basis-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-action',
+                  'flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
                   isDone && 'text-fg-muted line-through'
                 )}
                 onClick={() => void openPage(a)}
@@ -190,34 +187,21 @@ export function TodoSection({
                     ))}
                   </>
                 )}
-              </button>
-              <span
-                className={cn(
-                  't-meta shrink-0 text-fg-secondary max-sm:order-last max-sm:w-full max-sm:pl-9 sm:w-34',
-                  isDone && 'text-fg-muted line-through',
-                  !due && 'max-sm:hidden'
-                )}
-              >
-                {due}
-              </span>
-              <span className="flex shrink-0 justify-end pr-1 sm:w-14 sm:pr-3">
-                {a.kind === 'marked' && !isDone && (
-                  <Button
-                    disabled={starting}
-                    onClick={() => start(a)}
-                    size="sm"
+                {due && (
+                  <span
+                    className={cn(
+                      't-meta shrink-0 text-fg-secondary sm:ml-auto sm:pl-3',
+                      isDone && 'text-fg-muted line-through'
+                    )}
                   >
-                    {a.mine?.runningAttemptId
-                      ? m.assignment_continue()
-                      : m.assignment_start()}
-                  </Button>
+                    {due}
+                  </span>
                 )}
-              </span>
+              </button>
             </Row>
           );
         })}
       </ul>
-      {dialog}
       {creating && (
         <NewAssignmentDialog
           onClose={() => setCreating(false)}
@@ -229,9 +213,10 @@ export function TodoSection({
   );
 }
 
+/** Its hover fills the row, square, past the text's left edge like Activity's. */
 function Row({ children }: { children: ReactNode }) {
   return (
-    <li className="flex min-h-10 items-center gap-2 border-divider border-b py-1 max-sm:flex-wrap">
+    <li className="flex min-w-0 items-center border-divider border-b hover:bg-surface-hover-bg">
       {children}
     </li>
   );

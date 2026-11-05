@@ -47,6 +47,9 @@ export type WorkspaceOpenSearch = {
   /** The open item fills the page, header and side panels hidden. In the URL
    * so the back gesture leaves it. */
   fullscreen?: true;
+  /** Below the panels, the chat page is open over the viewer. In the URL so
+   * the back gesture leaves it (Epo 2026-11-05). */
+  chatPage?: true;
   /** A Study page in the centre while nothing is open. */
   study?: 'practice' | 'summary' | 'assignments';
   /** Assignments' open assignment, and a try at it: running, or results. */
@@ -160,6 +163,7 @@ export function parseWorkspaceOpenSearch(
     ...parseOpenPage(search),
     add: search.add === 'upload' ? 'upload' : undefined,
     chat: search.chat === 'new' ? 'new' : undefined,
+    chatPage: search.chatPage === true ? true : undefined,
     settings: isSettingsView(search.settings) ? search.settings : undefined,
     settingsQuery: isSettingsView(search.settings)
       ? text(search.settingsQuery)

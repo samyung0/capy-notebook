@@ -471,6 +471,30 @@ function WorkspaceOpen() {
     });
   }
 
+  /** The chat page below the panels. Opening adds a history entry for the back
+   * gesture to leave, and the page's own back arrow takes that same step. */
+  const chatPagePushed = useRef(false);
+  function setChatPageOpen(open: boolean) {
+    const latest = router.latestLocation.search as WorkspaceOpenSearch;
+    if (open === !!latest.chatPage) return;
+    if (open) {
+      chatPagePushed.current = true;
+      navigate({
+        search: (previous) => ({ ...previous, chatPage: true }),
+        to: '.',
+      });
+    } else if (chatPagePushed.current) {
+      chatPagePushed.current = false;
+      router.history.back();
+    } else {
+      navigate({
+        replace: true,
+        search: (previous) => ({ ...previous, chatPage: undefined }),
+        to: '.',
+      });
+    }
+  }
+
   /** Workspace settings at `tab`, kept in the URL so a link can open it.
    * Opening, switching tabs and closing replace the entry, so the dialog
    * adds no history. */
@@ -1229,6 +1253,8 @@ function WorkspaceOpen() {
                       // The chat page's ⋮: back leads to the rest (Epo 2026-11-05).
                       menuItems: [settingsItem],
                       office: officeOpen,
+                      onPageOpen: setChatPageOpen,
+                      pageOpen: !!search.chatPage,
                     }}
                     // The page picker's footer takes the dock's corner on
                     // phones; hidden, the chat keeps its draft and stream.

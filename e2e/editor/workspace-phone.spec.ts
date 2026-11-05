@@ -135,6 +135,15 @@ test('chat docks as a button, keeps a draft, and grows into its page on send', a
   ]);
   await page.keyboard.press('Escape');
 
+  // The URL holds it open: the back gesture closes it and keeps the file.
+  await expect(page).toHaveURL(/chatPage=true/);
+  await page.goBack();
+  await expect(chat).toBeHidden();
+  await expect(page).toHaveURL(/material=mat_note_1/);
+  await expect(page).not.toHaveURL(/chatPage/);
+  await dock.getByRole('button').first().click();
+  await expect(chat).toBeVisible();
+
   // Back leaves a chip that reopens the conversation, or closes.
   await chat.getByRole('button', { name: m.action_back() }).click();
   await expect(chat).toBeHidden();
