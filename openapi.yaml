@@ -1820,27 +1820,6 @@ components:
         - itemId
         - answers
       type: object
-    CheckSharedNoteQuizReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CheckSharedNoteQuizReq.json
-          format: uri
-          readOnly: true
-          type: string
-        answers:
-          additionalProperties: {}
-          description: The learner's answers to the question's parts, by part id
-          type: object
-        questionId:
-          maxLength: 128
-          minLength: 1
-          type: string
-      required:
-        - questionId
-        - answers
-      type: object
     Citation:
       additionalProperties: false
       properties:
@@ -3453,15 +3432,9 @@ components:
           additionalProperties: {}
           description: The learner's answers to the question's parts, by part id
           type: object
-        localId:
-          maxLength: 64
-          type: string
         questionId:
           maxLength: 128
           minLength: 1
-          type: string
-        turnstileToken:
-          maxLength: 2048
           type: string
       required:
         - questionId
@@ -12548,7 +12521,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Grade one question of a quiz embedded in a shared note
+      summary: Check one question of a quiz embedded in a shared note; an answered open part stays Not marked
       tags:
         - Sharing
   /api/public/quizzes/{token}:
@@ -12642,7 +12615,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Grade one question of a signed-out attempt at a shared quiz
+      summary: Check one question of a shared quiz; an answered open part stays Not marked
       tags:
         - Sharing
   /api/public/workspaces/{token}/summary:
@@ -13198,42 +13171,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Open a signed share link once
-      tags:
-        - Sharing
-  /api/shared/notes/{token}/quizzes/{quizId}/check:
-    post:
-      operationId: checkSharedNoteQuiz
-      parameters:
-        - in: path
-          name: token
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: quizId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CheckSharedNoteQuizReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GradedQuestion"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Grade a signed-in check of one question of a quiz embedded in a shared note
       tags:
         - Sharing
   /api/source-upload-policy:

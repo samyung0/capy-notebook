@@ -5575,26 +5575,20 @@ export const GetAnonymousNoteAssetResponse = zod.object({
 
 
 /**
- * @summary Grade one question of a quiz embedded in a shared note
+ * @summary Check one question of a quiz embedded in a shared note; an answered open part stays Not marked
  */
 export const GradeAnonymousNoteQuizParams = zod.object({
   "token": zod.string(),
   "quizId": zod.string()
 })
 
-export const gradeAnonymousNoteQuizBodyLocalIdMax = 64;
-
 export const gradeAnonymousNoteQuizBodyQuestionIdMax = 128;
-
-export const gradeAnonymousNoteQuizBodyTurnstileTokenMax = 2048;
 
 
 
 export const GradeAnonymousNoteQuizBody = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers to the question\'s parts, by part id'),
-  "localId": zod.string().max(gradeAnonymousNoteQuizBodyLocalIdMax).optional(),
-  "questionId": zod.string().min(1).max(gradeAnonymousNoteQuizBodyQuestionIdMax),
-  "turnstileToken": zod.string().max(gradeAnonymousNoteQuizBodyTurnstileTokenMax).optional()
+  "questionId": zod.string().min(1).max(gradeAnonymousNoteQuizBodyQuestionIdMax)
 })
 
 export const GradeAnonymousNoteQuizResponse = zod.object({
@@ -5689,25 +5683,19 @@ export const GetAnonymousQuizAssetResponse = zod.object({
 
 
 /**
- * @summary Grade one question of a signed-out attempt at a shared quiz
+ * @summary Check one question of a shared quiz; an answered open part stays Not marked
  */
 export const GradeAnonymousQuizParams = zod.object({
   "token": zod.string()
 })
 
-export const gradeAnonymousQuizBodyLocalIdMax = 64;
-
 export const gradeAnonymousQuizBodyQuestionIdMax = 128;
-
-export const gradeAnonymousQuizBodyTurnstileTokenMax = 2048;
 
 
 
 export const GradeAnonymousQuizBody = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers to the question\'s parts, by part id'),
-  "localId": zod.string().max(gradeAnonymousQuizBodyLocalIdMax).optional(),
-  "questionId": zod.string().min(1).max(gradeAnonymousQuizBodyQuestionIdMax),
-  "turnstileToken": zod.string().max(gradeAnonymousQuizBodyTurnstileTokenMax).optional()
+  "questionId": zod.string().min(1).max(gradeAnonymousQuizBodyQuestionIdMax)
 })
 
 export const GradeAnonymousQuizResponse = zod.object({
@@ -6688,31 +6676,6 @@ export const RedeemShareLinkResponse = zod.object({
   "id": zod.string(),
   "kind": zod.enum(['workspace', 'material']),
   "materialKind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']).optional()
-})
-
-
-/**
- * @summary Grade a signed-in check of one question of a quiz embedded in a shared note
- */
-export const CheckSharedNoteQuizParams = zod.object({
-  "token": zod.string(),
-  "quizId": zod.string()
-})
-
-export const checkSharedNoteQuizBodyQuestionIdMax = 128;
-
-
-
-export const CheckSharedNoteQuizBody = zod.object({
-  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers to the question\'s parts, by part id'),
-  "questionId": zod.string().min(1).max(checkSharedNoteQuizBodyQuestionIdMax)
-})
-
-export const CheckSharedNoteQuizResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "correct": zod.number(),
-  "question": zod.record(zod.string(), zod.unknown()),
-  "total": zod.number()
 })
 
 

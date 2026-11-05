@@ -248,21 +248,8 @@ type FlashcardAttemptRef struct {
 	StartedAt time.Time `json:"startedAt"`
 }
 
-// GradeAnonymousQuizReq checks one question of a signed-out attempt at a
-// shared quiz.
+// GradeAnonymousQuizReq checks one question on a shared page.
 type GradeAnonymousQuizReq struct {
-	QuestionID string  `json:"questionId" minLength:"1" maxLength:"128"`
-	Answers    Answers `json:"answers" nullable:"false" doc:"The learner's answers to the question's parts, by part id"`
-	// LocalID is the anonymous browser's reporting id for the grading caps.
-	LocalID string `json:"localId,omitempty" maxLength:"64"`
-	// TurnstileToken is the Cloudflare Turnstile token the page solved for this
-	// check; the API verifies it before grading.
-	TurnstileToken string `json:"turnstileToken,omitempty" maxLength:"2048"`
-}
-
-// CheckSharedNoteQuizReq is a signed-in visitor's check of one question of a
-// quiz embedded in a shared note (Q311).
-type CheckSharedNoteQuizReq struct {
 	QuestionID string  `json:"questionId" minLength:"1" maxLength:"128"`
 	Answers    Answers `json:"answers" nullable:"false" doc:"The learner's answers to the question's parts, by part id"`
 }

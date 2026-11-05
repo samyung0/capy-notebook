@@ -47,9 +47,9 @@ var aiSuffixes = []string{
 	"/generate",
 	// Make a quiz: one start reads up to 40 pages with a vision model.
 	"/extractions",
-	// Server grading, which sends open answers to Jev: a quiz, review or bank
-	// check, one question each (the signed-out grade is under /api/public/),
-	// and the author's computation check.
+	// Server grading, which sends open answers to a model: a quiz, review or bank
+	// check, one question each, and the author's computation check. A shared
+	// page's check, under /api/public/, calls no model.
 	"/check",
 	"/computation-check",
 }
@@ -99,9 +99,8 @@ func classify(method, path string) class {
 			return classExempt
 		}
 	}
-	// Signed-out share routes key on the client address, which a whole
-	// classroom shares; anonymous grading is bounded by its daily caps instead
-	// of the AI burst guard.
+	// Share routes key on the client address, which a whole classroom shares;
+	// a shared page's check calls no model, so it takes no AI burst guard.
 	if strings.HasPrefix(path, "/api/public/") {
 		return classDefault
 	}

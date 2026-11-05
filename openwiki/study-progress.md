@@ -746,7 +746,8 @@ Signed-out visitors of standalone link or public quizzes and sets use
 interval previews): only due cards are queued, quiz attempts and an
 append-only card review log plus card states live in IndexedDB
 (`src/lib/localDb.ts`, database `capy-local`), and nothing is imported into an
-account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
+account on sign-in. A shared quiz page keeps a signed-in visitor's attempts there
+too, since nothing on it counts (Epo 2026-11-05, Q640 B). `SrsState` is a hand-written type in `src/lib/srs.ts`.
 
 ## Assignments
 

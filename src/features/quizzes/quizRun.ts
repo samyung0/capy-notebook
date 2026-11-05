@@ -1,14 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { api, isApiError, qk } from '@/api/client';
+import { isApiError, qk } from '@/api/client';
 import { useAttempt, useCheckQuizQuestion } from '@/api/hooks';
 import { isMissing } from '@/api/queryClient';
-import type {
-  AttemptDetail,
-  CheckQuizQuestionReq,
-  GradedQuestion,
-  Question,
-} from '@/api/types';
+import type { GradedQuestion, Question } from '@/api/types';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { type LocalQuizAttempt, saveLocalQuizAttempt } from '@/lib/localDb';
 import { isString, PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
@@ -131,44 +126,6 @@ export function useQuizRun(
   };
 }
 
-/** A signed-in try at a shared quiz: recorded on the account, but held only
- * by the page, so opening the page reads nothing (a shared page makes one
- * request, the Worker's). Each check posts to the quiz's check route,
- * continuing the attempt the page's first check started. */
-export function useSharedAccountRun(
-  quizId: string,
-  beforeCheck: () => Promise<unknown>
-): QuizRunControl {
-  const [attemptId, setAttemptId] = useState('');
-  const [run, setRun] = useState<LocalRun>(newLocalRun);
-  return {
-    async check(questionId, answers) {
-      await beforeCheck();
-      const attempt = await api.post<AttemptDetail>(
-        `/quizzes/${quizId}/check`,
-        {
-          answers,
-          attemptId: attemptId || undefined,
-          questionId,
-          startedAt: run.startedAt,
-        } satisfies CheckQuizQuestionReq
-      );
-      setAttemptId(attempt.id);
-      setRun((current) => ({
-        ...current,
-        answers: { ...current.answers, ...answers },
-        checked: attempt.questions,
-        takenAt: attempt.takenAt ?? new Date().toISOString(),
-      }));
-    },
-    redo() {
-      setAttemptId('');
-      setRun(newLocalRun());
-    },
-    run,
-  };
-}
-
 /** A try that lives only on the page: a quiz embedded in a note, in the app
  * (graded and recording nothing) or on a shared note. */
 export function useMemoryRun(
@@ -186,7 +143,7 @@ export function useMemoryRun(
 }
 
 /**
- * A signed-out try at a shared quiz, kept in this browser: its id in
+ * A try at a shared quiz, kept in this browser: its id in
  * localStorage, the attempt itself with the visitor's past attempts in
  * IndexedDB (`past`), saved on every check. The page shows the run it holds,
  * so a failed save loses nothing on the page; `past` only restores a kept try

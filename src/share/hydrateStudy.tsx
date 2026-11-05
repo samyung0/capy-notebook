@@ -7,8 +7,8 @@ import { settleSession } from './session';
 
 /* A shared quiz or flashcard set (`page`, from hydrateQuiz.tsx or
    hydrateFlashcards.tsx): hydrate the Worker's HTML, then load Clerk only to
-   learn whether the visitor is signed in, which decides where an attempt or a
-   rating is saved (session.ts). */
+   learn whether the visitor is signed in, which decides where a rating is saved
+   (session.ts). */
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | string

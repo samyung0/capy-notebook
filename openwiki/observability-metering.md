@@ -757,12 +757,13 @@ credits a 40-part paper (surface `quiz`). A part that fails, or every part when
 there is nothing to pay with, stays "Not marked" and is not retried; closed parts
 still mark and a submission never fails for it.
 
-Signed-out checks and a signed-in visitor's check on a shared page still go to
-typesafe.ai's Jev (`server/internal/jev`, model pinned to `jev-1.13.0`, key
-`JEV_TYPESAFE_API_KEY`), recorded and never charged, until shared pages stop AI
-marking (Epo 2026-11-03). The author's `POST /api/questions/computation-check`
-stays on Jev too, writing one `usage_events` row per check (surface `quiz`,
-provider `typesafe`, `credit_micros` 0). Attempt points stay on the quiz snapshot
+A shared page marks no open answer, so a visitor's check there calls no model and
+costs nothing, signed in or out (Epo 2026-11-05, Q640 B;
+[question-bank.md](question-bank.md)). The author's
+`POST /api/questions/computation-check` stays on typesafe.ai's Jev
+(`server/internal/jev`, model pinned to `jev-1.13.0`, key `JEV_TYPESAFE_API_KEY`),
+writing one `usage_events` row per check (surface `quiz`, provider `typesafe`,
+`credit_micros` 0). Attempt points stay on the quiz snapshot
 for the taker and are not a trusted score.
 
 A signed-in user's open parts are capped at 2,000 per UTC day
@@ -772,47 +773,7 @@ Parts are reserved before any model call and stay counted when grading fails;
 past the cap the API answers 429 `grading_limit` and closed-only attempts are
 still graded.
 
-Anonymous grading has no actor, so it is kept in `anonymous_grading_usage` per
-UTC day, salted client-address hash (HMAC with `SHARE_LINK_SECRET`; an IPv6
-address by its /56) and the random id the browser keeps in IndexedDB. The
-share token is verified before the body is read. Parts are counted before any
-Jev call and stay counted when grading fails. Caps: 300 graded parts per
-address hash per day (generous because a classroom shares one IP) and 50,000
-per day overall; over either, the API answers 429 `anonymous_grading_limit`
-and the page asks the visitor to sign in. There is no per-shared-item cap:
-each signed-out answer check carries a Cloudflare Turnstile token instead (Epo
-2026-10-24, Q243, Q271), since an address-rotating client defeats any per-item
-or per-address count. A shared page runs at most one widget (managed mode, a
-challenge only when Cloudflare asks), rendered at the first signed-out check
-and solved again only when a check asks, never in the background (it renders
-with `refresh-expired: never`, Q350, and `refresh-timeout: manual`, so a
-timed-out interactive challenge waits for the visitor). Answers are checked
-one question at a time, and the widget sits under the Check button that asks,
-rendering again under another question's Check when that one asks; a captcha
-refusal shows under that Check too. Its slot shows while a solve runs (the invisible widget
-takes no room, and its solve needs a rendered container) and is hidden once
-the token settles or the interaction ends, which clears the widget's success
-box. While Cloudflare shows a challenge the hint "Complete the challenge below
-to check your answer." shows above it (Epo 2026-10-25, Q372; `src/share/TurnstileCheck.tsx`). A check stops waiting for its token after
-15 s, a clock that stops while an interactive challenge shows, so the check
-waits until the challenge is solved or errors; the API's refusal of an empty
-token shows the failed-check copy (Epo 2026-10-24, Q309;
-`src/share/turnstile.ts`, loaded only on a shared quiz or a shared note's
-quiz). The API verifies it with siteverify (5 s timeout) after the share
-token's check and before grading (`checkCaptcha`, `server/internal/httpapi/
-turnstile.go`): a missing or refused token, or one solved on a host other
-than the environment's app hosts (the hosts of `APP_URL`,
-`CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS`; not checked in
-development and e2e, whose test keys name no app host), answers 403
-`captcha_failed`, and a siteverify that cannot answer 503
-`captcha_unavailable`, refusing rather than skipping the check; the page shows
-both under the question's Check (Q308). A deployed gateway refuses Cloudflare's published
-test secrets at boot, and an empty app host list, which would check no host
-(Q350; `turnstileHosts`, `server/cmd/api/main.go`). Signed-in checks take no token, a signed-in
-visitor's check of a quiz embedded in a shared note included (Q311). Setup: [deployment-runbook.md](deployment-runbook.md) §2.5. The local id
-is reporting only, because the client chooses it. Rows older than 30 days are pruned by the API's
-maintenance loop. No browser fingerprinting is used.
-The visitor's grading post goes straight to `/api/public/.../grade`, so it
+A shared page's check goes straight to `/api/public/.../grade`, so it
 carries the visitor's own address and takes the anonymous class (60/minute
 per address) rather than the AI class, whose 15/minute burst would stop a
 classroom sharing one IP. The site Worker's own reads of `/api/public/`
@@ -1773,8 +1734,8 @@ address, so the Worker signs it: `X-Capy-Share-Read: {unix}.{address}.
 when the header verifies for that path within a minute of its clock and the
 address parses as an IP (`ratelimit.signedVisitor`); an unsigned, forged,
 stale or other-path claim counts by the request's own address. A visitor's
-direct read and the Worker's read for them share the bucket. Signed-out
-grading posts keep the anonymous class and their daily caps. At the edge,
+direct read and the Worker's read for them share the bucket. A shared page's
+checks keep the anonymous class. At the edge,
 the shared pages (`/share/`, `/w/`) get a Managed Challenge past 600
 requests a minute per address (Epo 2026-10-24, Q324;
 [deployment-runbook.md](deployment-runbook.md) § rate limiting rules). Workers Cache entries are
@@ -1782,7 +1743,7 @@ unchanged (each query string keeps its own).
 
 Signed-out callers are keyed by `CF-Connecting-IP`, an IPv6 address by its
 /56 and IPv4 by the address (`obs.ClientAddress`; Epo 2026-10-24, Q246): the
-anonymous limiter, signed-out grading's allowance and signed-out share reads. `Retry-After` is rounded up, so a client that
+anonymous limiter and signed-out share reads. `Retry-After` is rounded up, so a client that
 waits exactly that long gets through.
 
 **Waiting instead of an immediate 429** (Epo 2026-10-24, Q268;
@@ -1798,7 +1759,7 @@ within 10 s:
   turn with an in-stream `ai_rate_limited` error. A stop ends the wait. The
   base bucket never waits.
 - An answer check (a quiz attempt, the review and bank checks, the
-  computation check, a signed-out grade) waits for every bucket it spends
+  computation check, a shared page's check) waits for every bucket it spends
   behind its normal spinner, then is graded or answers 429.
 
 Every other limited route answers 429 at once, and nothing retries a 429
@@ -1809,7 +1770,7 @@ AI process slot is the other half of the contract: it sends
 `{"type":"phase","phase":"waiting_capacity"}` while it waits (up to 60 s, Q293) and
 ends the stream with the in-stream `provider_busy` error when the wait runs
 out. The chat trace shows both phases as the same row, the thinking hourglass
-with "Waiting" (Epo 2026-10-24, Q300: limit and captcha copy says what the
+with "Waiting" (Epo 2026-10-24, Q300: limit copy says what the
 user sees and can do, not slots, limiters or vendors).
 
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and

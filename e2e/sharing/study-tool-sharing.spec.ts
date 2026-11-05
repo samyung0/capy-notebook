@@ -152,7 +152,7 @@ for (const kind of kinds) {
       await expect(otherPage.getByText(kind.private.text)).toHaveCount(0);
     });
 
-    test('signed-in visitors read link and public ones from the shared data and save to their account', async ({
+    test('signed-in visitors read link and public ones from the shared data', async ({
       otherPage,
       ownerApi,
     }) => {
@@ -179,17 +179,15 @@ for (const kind of kinds) {
           otherPage.getByRole('link', { name: m.summary_sign_up() })
         ).toBeVisible();
       }
-      // The session is read only when saving: signed in, it goes to the account.
+      // A quiz's check counts nowhere, signed in or out (Epo 2026-11-03); a
+      // card's rating reads the session and goes to the account.
       // The server's HTML shows before the page is live; act once hydrated.
       await expect(otherPage.locator('html')).toHaveAttribute(
         'data-hydrated',
         ''
       );
       if (kind.kind === 'quiz') {
-        const saved = waitForApi(
-          otherPage,
-          apiEndsWith(`/api/quizzes/${kind.public.id}/check`, 'POST')
-        );
+        const saved = waitForApi(otherPage, apiEndsWith('/grade', 'POST'));
         await otherPage
           .getByRole('button', {
             exact: true,
