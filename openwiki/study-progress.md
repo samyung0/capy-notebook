@@ -812,7 +812,7 @@ due date):
 | --- | --- | --- |
 | Owner, teaching assistant | The assignment icon (`assigned`), and it opens their usual view | Theirs as always |
 | A link or public editor | The assignment icon, no Clone | Theirs to read and edit; they can't clone it |
-| A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `editorAssetReadable`, `live_access`, `AccountDocumentAccess`), a device drops its kept copy (`ReadableMaterialIDs`), and it is off Practice, reviews and new items. Every write that may restart this drains the quiz's live rooms while the assignment is open (`drainAssignedRoomsTx`: publishing, reopening, any save of it, such as adding a viewer or moving a No late submissions due date forward, and the workspace switching back to class), so one already reading is refused on reconnecting |
+| A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `editorAssetReadable`, `live_access`, `AccountDocumentAccess`), a device drops its kept copy (`ReadableMaterialIDs`), and it is off Practice, reviews and new items. New joins and token requests are refused; nothing about an assignment closes a connection (Epo 2026-11-05) |
 | A viewer it did not go to | A normal quiz if it is visible; no row if hidden | As it was, the owner's choice |
 
 `quizAssignedToSQL` and `quizAssignmentOpenSQL` in `store/assignments.go` are the
@@ -822,8 +822,13 @@ link to the quiz sends its assignee to the assignment (`CenterContent`). Delete
 (the toast's Undo) restores nothing, since nothing changed. Clones: see
 [authorization](authorization-permissions-lifecycles.md#class-clones).
 
-What this leaves open: an unassigned member of a visible quiz keeps normal access
-with its checks. A signed-out browser on a public or link workspace's share page is
+What this leaves open: someone already connected when a quiz is assigned keeps
+seeing it, with no keys, until they leave or lose connection (Epo 2026-11-05). The
+room lets them be: their live updates stop when its token next renews, within five
+minutes, and what is on screen stays as it was, with no error, toast or status
+(`ItemRoom.unavailable`; `useLiveQuizQuestions` keeps its last questions, and a quiz
+attempt page its opening read). An unassigned member of a visible quiz keeps normal
+access with its checks. A signed-out browser on a public or link workspace's share page is
 nobody in particular, so an assignee could open it there. An attempt made before
 the assignment stays readable by whoever took it.
 

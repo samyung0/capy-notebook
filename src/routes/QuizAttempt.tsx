@@ -5,7 +5,7 @@ import {
   useParams,
   useRouter,
 } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuiz, useWorkspace } from '@/api/hooks';
 import { isMissing } from '@/api/queryClient';
 import { PagePanel } from '@/components/app/layout';
@@ -67,6 +67,10 @@ function Attempt({ quizId }: { quizId: string }) {
   const router = useRouter();
   const canGoBack = useCanGoBack();
   const removed = useRemovedAssets(quiz?.removedAssetIds, refetch);
+  // Only the opening read refuses the page. A later one refused (the quiz
+  // assigned to them since, say) leaves what shows (Epo 2026-11-05).
+  const opened = useRef(false);
+  if (quiz && isFetchedAfterMount && !isError) opened.current = true;
 
   if (fetchStatus === 'paused') {
     return (
@@ -84,7 +88,7 @@ function Attempt({ quizId }: { quizId: string }) {
       </PagePanel>
     );
   // Other failures without data go to the error boundary.
-  if (isMissing(error) || !quiz)
+  if ((isMissing(error) && !opened.current) || !quiz)
     return <WorkspaceError backLabel={m.quiz_back()} backTo="/quizzes" />;
 
   return (
