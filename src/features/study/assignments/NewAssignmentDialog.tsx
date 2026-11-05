@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
+import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input, InputError } from '@/components/ui/Input';
@@ -69,9 +70,8 @@ const FIELD_TRIGGER =
 
 /** New assignment and its edit (boards A1, A1b, A1c, A1d): Kind first, then a
  * quiz with its marks rules, or a title with optional files. Editing keeps the
- * kind and the quiz. `newQuiz` is the seam for making a quiz on the spot (New
- * quiz, Make a quiz from a file, Generate questions; A1c, A1e): without it those
- * rows show as Coming soon. */
+ * kind and the quiz. `newQuiz` opens the ways to make a quiz on the spot (New
+ * quiz, Make a quiz from a file, Generate questions; A1c, A1e). */
 export function NewAssignmentDialog({
   existing,
   newQuiz,
@@ -90,7 +90,12 @@ export function NewAssignmentDialog({
 }) {
   const manage = existing?.manage;
   const formId = useId();
-  const { data: practice } = usePractice(workspaceId, { errorBoundary: false });
+  const { data: practice, isPending: quizzesPending } = usePractice(
+    workspaceId,
+    {
+      errorBoundary: false,
+    }
+  );
   const { data: members } = useWorkspaceMembers(workspaceId);
   const quizzes = practice?.quizzes ?? [];
   const {
@@ -279,6 +284,7 @@ export function NewAssignmentDialog({
                     setValue('quizId', id, { shouldValidate: true });
                     if (!titleEdited) setValue('title', title);
                   }}
+                  pending={quizzesPending}
                   quizzes={quizzes}
                   value={quizId}
                 />
@@ -625,11 +631,13 @@ function DateField({
 function QuizPicker({
   newQuiz,
   onPick,
+  pending,
   quizzes,
   value,
 }: {
   newQuiz?: (how: 'blank' | 'file' | 'generate') => void;
   onPick: (id: string, title: string) => void;
+  pending: boolean;
   quizzes: { id: string; title: string; questions: number }[];
   value?: string;
 }) {
@@ -681,46 +689,55 @@ function QuizPicker({
         align="start"
         className="w-(--radix-popover-trigger-width) p-1.5"
       >
-        <PanelSearchField
-          label={m.assignment_search_quizzes()}
-          onChange={setQuery}
-          value={query}
-        />
-        <ul className="mt-1.5 max-h-60 overflow-auto">
-          {shown.map((q) => (
-            <li key={q.id}>
-              <button
-                className="flex min-h-9 w-full items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none hover:bg-overlay-hover focus-visible:bg-overlay-hover"
-                onClick={() => {
-                  onPick(q.id, q.title);
-                  setOpen(false);
-                }}
-                type="button"
-              >
-                <FileIcon
-                  className="size-4 shrink-0"
-                  name={materialIconName('quiz')}
-                />
-                <span className="min-w-0 flex-1 truncate">{q.title}</span>
-                <span className="t-meta shrink-0 font-medium text-fg-muted">
-                  {questionsLabel(q.questions)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        {pending ? (
+          <Skeleton className="h-9 w-full" />
+        ) : quizzes.length === 0 ? (
+          <p className="px-2.5 py-2 text-fg-secondary text-sm">
+            {m.assignment_make_quiz_to_begin()}
+          </p>
+        ) : (
+          <>
+            <PanelSearchField
+              label={m.assignment_search_quizzes()}
+              onChange={setQuery}
+              value={query}
+            />
+            <ul className="mt-1.5 max-h-60 overflow-auto">
+              {shown.map((q) => (
+                <li key={q.id}>
+                  <button
+                    className="flex min-h-9 w-full items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none hover:bg-overlay-hover focus-visible:bg-overlay-hover"
+                    onClick={() => {
+                      onPick(q.id, q.title);
+                      setOpen(false);
+                    }}
+                    type="button"
+                  >
+                    <FileIcon
+                      className="size-4 shrink-0"
+                      name={materialIconName('quiz')}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{q.title}</span>
+                    <span className="t-meta shrink-0 font-medium text-fg-muted">
+                      {questionsLabel(q.questions)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {shown.length === 0 && (
+              <p className="px-2.5 py-2 text-fg-secondary text-sm">
+                {m.assignment_no_quizzes_match()}
+              </p>
+            )}
+          </>
+        )}
         <div className="mt-1.5 border-divider border-t pt-1.5">
           {makers.map(({ how, icon, label }) => (
             <button
-              className={cn(
-                'flex min-h-9 w-full items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none',
-                newQuiz
-                  ? 'hover:bg-overlay-hover focus-visible:bg-overlay-hover'
-                  : 'cursor-default text-fg-muted'
-              )}
+              className="flex min-h-9 w-full items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none hover:bg-overlay-hover focus-visible:bg-overlay-hover"
               key={how}
               onClick={() => newQuiz?.(how)}
-              title={newQuiz ? undefined : m.study_panel_soon()}
               type="button"
             >
               <Icon className="shrink-0" name={icon} size={16} />

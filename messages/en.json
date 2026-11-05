@@ -2777,6 +2777,8 @@
   "assignment_choose_quiz": "Choose a quiz",
   "assignment_choose_date": "Choose a date",
   "assignment_clear_due": "Clear the due date",
+  "assignment_make_quiz_to_begin": "Make a quiz to begin.",
+  "assignment_no_quizzes_match": "No quizzes match.",
   "assignment_new_quiz": "New quiz",
   "assignment_generate_questions": "Generate questions",
   "assignment_add_file": "Add a file",

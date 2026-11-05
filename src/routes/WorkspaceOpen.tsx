@@ -993,6 +993,7 @@ function WorkspaceOpen() {
     ) : studyShown === 'assignments' ? (
       <Suspense fallback={null}>
         <AssignmentsPage
+          onAddFile={() => setAddSource('create')}
           search={{
             assignment: search.assignment,
             attempt: search.attempt,

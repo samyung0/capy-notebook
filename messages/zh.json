@@ -2777,6 +2777,8 @@
   "assignment_choose_quiz": "选择测验",
   "assignment_choose_date": "选择日期",
   "assignment_clear_due": "清除截止日期",
+  "assignment_make_quiz_to_begin": "先制作一个测验。",
+  "assignment_no_quizzes_match": "没有符合的测验。",
   "assignment_new_quiz": "新建测验",
   "assignment_generate_questions": "生成题目",
   "assignment_add_file": "添加文件",

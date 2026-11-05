@@ -11,12 +11,15 @@ const { document, window } = parseHTML(
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 const save = vi.hoisted(() => vi.fn());
+const practice = vi.hoisted(() => ({
+  quizzes: [] as { id: string; questions: number; title: string }[],
+}));
 vi.mock('@/api/hooks', () => ({
   useCreateAssignment: () => ({ isPending: false, mutate: save }),
   useFiles: () => ({ data: [] }),
   useMaterials: () => ({ data: [] }),
   useMe: () => ({ data: { id: 'owner' } }),
-  usePractice: () => ({ data: { quizzes: [] } }),
+  usePractice: () => ({ data: practice, isPending: false }),
   useUpdateAssignment: () => ({ isPending: false, mutate: save }),
   useWorkspaceMembers: () => ({
     data: [
@@ -53,7 +56,7 @@ vi.mock('@/components/ui/Select', () => ({
 }));
 vi.mock('@/components/ui/Popover', () => ({
   Popover: pass,
-  PopoverContent: () => null,
+  PopoverContent: pass,
   PopoverTrigger: pass,
 }));
 vi.mock('@/components/ui/Switch', () => ({ Switch: () => null }));
@@ -86,12 +89,16 @@ const existing = {
 
 const host = document.createElement('div');
 document.body.append(host);
-const show = async (value?: Assignment) => {
+const show = async (
+  value?: Assignment,
+  newQuiz?: (how: 'blank' | 'file' | 'generate') => void
+) => {
   const root = createRoot(host);
   await act(async () =>
     root.render(
       <NewAssignmentDialog
         existing={value}
+        newQuiz={newQuiz}
         onClose={vi.fn()}
         onDone={vi.fn()}
         workspaceId="ws1"
@@ -109,7 +116,47 @@ const submitForm = () =>
       );
   });
 
-beforeEach(() => save.mockReset());
+beforeEach(() => {
+  save.mockReset();
+  practice.quizzes = [];
+});
+
+const searchBox = () =>
+  host.querySelector(`[aria-label="${m.assignment_search_quizzes()}"]`);
+
+it('asks for a quiz to be made when there are none, with no search', async () => {
+  const root = await show();
+  expect(host.textContent).toContain(m.assignment_make_quiz_to_begin());
+  expect(searchBox()).toBeNull();
+  await act(async () => root.unmount());
+});
+
+it('searches once there are quizzes', async () => {
+  practice.quizzes = [{ id: 'q1', questions: 3, title: 'Cells' }];
+  const root = await show();
+  expect(host.textContent).not.toContain(m.assignment_make_quiz_to_begin());
+  expect(searchBox()).not.toBeNull();
+  await act(async () => root.unmount());
+});
+
+it('sends each maker row to its own dialog', async () => {
+  const newQuiz = vi.fn();
+  const root = await show(undefined, newQuiz);
+  for (const [label, how] of [
+    [m.assignment_new_quiz(), 'blank'],
+    [m.dashboard_make_quiz(), 'file'],
+    [m.assignment_generate_questions(), 'generate'],
+  ]) {
+    const row = [...host.querySelectorAll('button')].find(
+      (button) => button.textContent === label
+    );
+    await act(async () => {
+      row?.dispatchEvent(new window.Event('click', { bubbles: true }));
+    });
+    expect(newQuiz).toHaveBeenLastCalledWith(how);
+  }
+  await act(async () => root.unmount());
+});
 
 it('sends the form once, whichever Create is pressed', async () => {
   const root = await show(existing);
