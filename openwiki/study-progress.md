@@ -796,7 +796,9 @@ workspace clone leaves them out. They and the questions JSON are charged to whoe
 published (Epo 2026-11-05, `frozen_by`, `frozen_bytes`,
 [backend-storage-quota.md](backend-storage-quota.md#what-counts)), and the Embeds tab
 doesn't list them. A publisher whose account is suspended or leaving stops nobody:
-staff still delete and republish, which takes the charge off them. They resolve for staff, whoever it went to and whoever holds an
+staff still delete, which ends the charge, and republish, which moves the questions
+JSON's charge to whoever republished; an image the assignment already holds keeps its
+payer. They resolve for staff, whoever it went to and whoever holds an
 attempt at it (`frozenAssetReadable`), never another member, and they paste for
 nobody (`AdoptEditorAssets`).
 Members are only ever served this copy:
