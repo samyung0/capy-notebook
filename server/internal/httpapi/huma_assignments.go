@@ -230,6 +230,9 @@ func (a *api) setAssignmentClosed(ctx context.Context, in *assignmentClosedInput
 	if err != nil {
 		return nil, assignmentError(err)
 	}
+	if in.Body.Closed {
+		a.publishAssignmentClosed(ctx, in.ID)
+	}
 	return &assignmentOutput{Body: res}, nil
 }
 

@@ -1,7 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isApiError, qk } from '@/api/client';
-import { saveAssignmentAnswers, useSubmitAssignmentAttempt } from '@/api/hooks';
+import {
+  onAssignmentClosed,
+  saveAssignmentAnswers,
+  useSubmitAssignmentAttempt,
+} from '@/api/hooks';
 import type { AssignmentAttempt } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import {
@@ -121,8 +125,9 @@ function clockText(ms: number) {
 
 /** Answering an assignment (A2): one question at a time beside a grid of
  * numbers, ruled lines for written answers, answers saving as they change, and
- * the server's clock. At zero it submits what is on the page; if the tab is
- * closed the server submits what was saved. */
+ * the server's clock. At zero, or when staff close the assignment (Epo
+ * 2026-11-05), it submits what is on the page; if the tab is closed the server
+ * submits what was saved. */
 export function AssignmentTake({
   attempt,
   workspaceId,
@@ -226,11 +231,21 @@ export function AssignmentTake({
   }, [attempt.id, finished, submitAttempt]);
   const timedOut = left !== null && left <= 0;
   const once = useRef(false);
-  useEffect(() => {
-    if (!timedOut || once.current) return;
+  const end = useCallback(() => {
+    if (once.current) return;
     once.current = true;
     submit();
-  }, [submit, timedOut]);
+  }, [submit]);
+  useEffect(() => {
+    if (timedOut) end();
+  }, [end, timedOut]);
+  useEffect(
+    () =>
+      onAssignmentClosed((id) => {
+        if (id === attempt.assignmentId) end();
+      }),
+    [attempt.assignmentId, end]
+  );
 
   const isAnswered = (q: (typeof questions)[number]) =>
     q.parts.some((part) => answered(answers[part.id]));

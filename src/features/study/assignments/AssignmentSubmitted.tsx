@@ -7,7 +7,7 @@ import type {
 import { Icon } from '@/components/ui/Icon';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { m } from '@/i18n';
-import { markText, minutesText } from './assignmentText';
+import { dayLabel, markText, minutesText } from './assignmentText';
 import { LateBadge } from './LateBadge';
 
 /** Submitted (A4): the mark so far, what still waits for the owner, and the
@@ -52,10 +52,16 @@ export function AssignmentSubmitted({
       </span>
       <h1 className="t-page-title mt-4">{m.assignment_submitted()}</h1>
       <p className="mt-2 font-medium text-fg-secondary">{line}</p>
-      {attempt.autoSubmitted && (
+      {attempt.autoSubmitted ? (
         <p className="t-meta mt-1 text-fg-muted">
           {m.assignment_time_ran_out()}
         </p>
+      ) : (
+        assignment.closedAt && (
+          <p className="t-meta mt-1 text-fg-muted">
+            {m.assignment_closed_on({ date: dayLabel(assignment.closedAt) })}
+          </p>
+        )
       )}
       <p className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 font-medium">
         <span>

@@ -65,6 +65,7 @@ type Attempt = {
 };
 
 const WS = 'ws_bio';
+const ASSIGNMENT_GRACE_MS = 15_000;
 const DAY = 86_400_000;
 const at = (days: number, hours = 18) => {
   const d = new Date(Date.now() + days * DAY);
@@ -545,14 +546,17 @@ function totals(graded: AssignmentGradedQuestion[]) {
   return { correct, total, waitingAnswers, waitingMarks };
 }
 
-/** Submits what a running attempt saved once its time is out or it closed. */
+/** Submits what a running attempt saved once its time is out or it closed,
+ * past the grace the page's own submit has (`attemptRow.expired`). */
 function sweep(row: Row) {
+  const past = (at?: string) =>
+    !!at && Date.now() > Date.parse(at) + ASSIGNMENT_GRACE_MS;
   for (const attempt of attempts.values()) {
     if (attempt.assignmentId !== row.id || attempt.submittedAt) continue;
-    const late =
-      attempt.deadlineAt &&
-      Date.now() > Date.parse(attempt.deadlineAt) + 15_000;
-    if (late || closedAtOf(row)) finish(row, attempt, attempt.answers, true);
+    const timedOut =
+      past(attempt.deadlineAt) || (row.noLate && past(row.dueAt));
+    if (timedOut || past(row.closedAt))
+      finish(row, attempt, attempt.answers, timedOut);
   }
 }
 
@@ -1133,6 +1137,18 @@ export const assignmentHandlers = (viewer: Viewer) => {
       const { closed } = (await request.json()) as { closed: boolean };
       row.closedAt = closed ? new Date().toISOString() : undefined;
       if (closed) row.releasedAt ??= new Date().toISOString();
+      // The stream's word to whoever is taking it (`publishAssignmentClosed`).
+      if (
+        closed &&
+        [...attempts.values()].some(
+          (a) => a.assignmentId === row.id && !a.submittedAt
+        )
+      )
+        window.dispatchEvent(
+          new CustomEvent('capy:mock-stream', {
+            detail: { assignmentId: row.id, type: 'assignment_closed' },
+          })
+        );
       return HttpResponse.json(toAssignment(row, viewer));
     }),
     http.put('/api/assignments/:id/done', async ({ params, request }) => {

@@ -602,12 +602,13 @@ func TestAssignmentLateMissingAndTimeOut(t *testing.T) {
 	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, pastDue); err != nil {
 		t.Fatal(err)
 	}
-	finished, _, err := f.s.SweepAssignments(ctx, 50, pastDue)
+	afterGrace := pastDue.Add(assignmentGrace + time.Second)
+	finished, _, err := f.s.SweepAssignments(ctx, 50, afterGrace)
 	if err != nil || finished == 0 {
 		t.Fatalf("sweep = %d, err %v", finished, err)
 	}
-	swept, err := f.s.GetAssignmentAttempt(ctx, third, running.ID, pastDue)
-	if err != nil || swept.Status != "submitted" || !swept.AutoSubmitted {
+	swept, err := f.s.GetAssignmentAttempt(ctx, third, running.ID, afterGrace)
+	if err != nil || swept.Status != "submitted" || swept.AutoSubmitted {
 		t.Fatalf("swept = %+v, err %v", swept, err)
 	}
 	fourth := newBlobTestUser(t, f.s, "assignment-late-fourth")
@@ -1852,6 +1853,72 @@ func TestTheRefusalComesBack(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestClosingGivesTheOpenPageTheGrace (Epo 2026-11-05): after staff close it, the
+// page taking it has the grace to send what it holds; past that the server submits
+// what was saved. Neither reads as the time running out.
+func TestClosingGivesTheOpenPageTheGrace(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-close-grace")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third := newBlobTestUser(t, f.s, "assignment-close-grace-third")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, third); err != nil {
+		t.Fatal(err)
+	}
+	saved := map[string]any{"p1": []any{float64(1)}}
+	onPage := map[string]any{"p1": []any{float64(1)}, "p2": "osmosis"}
+	start := func(user string) string {
+		t.Helper()
+		run, err := f.s.StartAssignment(ctx, user, created.ID, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.s.SaveAssignmentAnswers(ctx, user, run.ID, saved, now); err != nil {
+			t.Fatal(err)
+		}
+		return run.ID
+	}
+	inGrace, pastGrace, left := start(f.viewer), start(f.other), start(third)
+	running, err := f.s.RunningAttemptUsers(ctx, created.ID)
+	if err != nil || len(running) != 3 {
+		t.Fatalf("running = %v, err %v", running, err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+
+	during := now.Add(assignmentGrace - time.Second)
+	got, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, inGrace, onPage, during)
+	if err != nil || got.Status != "submitted" || got.Correct != 3 || got.AutoSubmitted {
+		t.Fatalf("a submit in the grace = %+v, err %v", got, err)
+	}
+	if _, _, err := f.s.SweepAssignments(ctx, 50, during); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := f.s.GetAssignmentAttempt(ctx, third, left, during); err != nil || got.Status != "running" {
+		t.Fatalf("the sweep in the grace = %+v, err %v", got, err)
+	}
+
+	after := now.Add(assignmentGrace + time.Second)
+	got, err = f.s.SubmitAssignmentAttempt(ctx, f.other, pastGrace, onPage, after)
+	if err != nil || got.Correct != 1 || got.AutoSubmitted {
+		t.Fatalf("a submit past the grace = %+v, err %v", got, err)
+	}
+	if _, _, err := f.s.SweepAssignments(ctx, 50, after); err != nil {
+		t.Fatal(err)
+	}
+	got, err = f.s.GetAssignmentAttempt(ctx, third, left, after)
+	if err != nil || got.Status != "submitted" || got.Correct != 1 || got.AutoSubmitted {
+		t.Fatalf("swept = %+v, err %v", got, err)
+	}
+	if running, err := f.s.RunningAttemptUsers(ctx, created.ID); err != nil || len(running) != 0 {
+		t.Fatalf("running after = %v, err %v", running, err)
+	}
 }
 
 // TestPastedImagesFollowTheReadRule (security regression): pasting an image's id

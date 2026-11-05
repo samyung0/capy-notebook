@@ -14,7 +14,12 @@ const api = vi.hoisted(() => ({
   save: vi.fn(),
   submit: vi.fn(),
 }));
+const closedListeners = vi.hoisted(() => new Set<(id: string) => void>());
 vi.mock('@/api/hooks', () => ({
+  onAssignmentClosed: (listener: (id: string) => void) => {
+    closedListeners.add(listener);
+    return () => closedListeners.delete(listener);
+  },
   saveAssignmentAnswers: api.save,
   useSubmitAssignmentAttempt: () => ({ isPending: false, mutate: api.submit }),
 }));
@@ -40,6 +45,7 @@ const { AssignmentTake } = await import('./AssignmentTake');
 const attempt = (over: Partial<AssignmentAttempt> = {}) =>
   ({
     answers: {},
+    assignmentId: 'as1',
     id: 'at1',
     now: new Date().toISOString(),
     questions: [
@@ -127,4 +133,24 @@ it('leaves Submit to press after the submit at zero failed', async () => {
     (item) => item.textContent === m.assignment_submit()
   );
   expect(button?.hasAttribute('disabled')).toBe(false);
+});
+
+// Epo 2026-11-05: staff closing the assignment ends the attempt open on the page,
+// with what is on the page, and no other assignment's closing does.
+it('submits what is on the page when its assignment closes', async () => {
+  await show(attempt());
+  await typeAnswer();
+  const close = (id: string) =>
+    act(async () => {
+      for (const listener of closedListeners) listener(id);
+    });
+  await close('as_other');
+  expect(api.submit).not.toHaveBeenCalled();
+  await close('as1');
+  await close('as1');
+  expect(api.submit).toHaveBeenCalledTimes(1);
+  expect(api.submit.mock.calls[0][0]).toEqual({
+    answers: { p1: 'typed' },
+    id: 'at1',
+  });
 });

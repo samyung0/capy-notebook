@@ -827,8 +827,11 @@ seeing it, with no keys, until they leave or lose connection (Epo 2026-11-05). T
 room lets them be: their live updates stop when its token next renews, within five
 minutes, and what is on screen stays as it was, with no error, toast or status
 (`ItemRoom.unavailable`; `useLiveQuizQuestions` keeps its last questions, and a quiz
-attempt page its opening read). An unassigned member of a visible quiz keeps normal
-access with its checks. A signed-out browser on a public or link workspace's share page is
+attempt page its opening read). The quiz's own page in a workspace goes further than
+the room: the next refetch of the file list sends them to the assignment
+(`CenterContent`), at most 30 minutes on, as the event stream renews, or sooner on any
+tree change. An unassigned member of a visible quiz keeps normal access with its
+checks. A signed-out browser on a public or link workspace's share page is
 nobody in particular, so an assignee could open it there. An attempt made before
 the assignment stays readable by whoever took it.
 
@@ -846,16 +849,30 @@ the server's: that read failing asks to retry, while a later refresh failing lea
 the running attempt on the page. Nothing retries a failed save but the next change
 and Submit, which sends them all; a submit that fails at zero leaves Submit to
 press. A shuffled paper's order comes from a seed of the attempt's id, so a reload
-keeps it. Bookmarks stay in this browser.
+keeps it. Bookmarks stay in this browser. Taking it never joins a room, since it
+serves the frozen copy.
+
+**Closing while someone takes it** (Epo 2026-11-05). Staff closing it tells whoever
+has an attempt running: `assignment_closed` with its id on the user's stream
+(`publishAssignmentClosed`, after the commit, best effort; reopening sends nothing).
+A page taking it (`AssignmentTake`) ends as it does at zero, submitting what is on
+the page, then Submitted and See results; anyone else ignores it. The close gets the
+same 15 s grace as the time and a No late due date (`attemptRow.expired`, Claude's
+pick), or the page's submit would be ignored for what was saved. A tab that doesn't
+hear it, or answers past the grace, loses what wasn't saved: normally at most the
+2 s wait, more if saves were failing. Its next save or the sweep submits what was
+saved. `auto_submitted` now means the time ran out (`attemptRow.timedOut`), so closing
+never says so: Submitted reads "Closed {date}" instead. During the grace the quiz is
+already open to them, the same short window a No late due date has.
 
 **Submitting.** `POST …/submit` grades closed parts with the same deterministic
 Go scoring as a quiz (`questions.Graded`). An answered open part is left
 `pending` ("Not marked") with no model call; a blank one earns 0. At zero the
-page submits; a closed tab is the server's: past `deadline_at` by a 15 s grace, or
-once it closes, by hand or at a No late submissions due date, the next request or
+page submits; a closed tab is the server's: 15 s past `deadline_at`, a No late
+submissions due date or its closing by hand, the next request or
 `SweepAssignments` (each minute, in `cmd/api`) submits what was saved,
-`auto_submitted`. The sweep logs a row that fails and passes over it, so one bad
-row holds up nobody else.
+`auto_submitted` unless closing was the cause. The sweep logs a row that fails and
+passes over it, so one bad row holds up nobody else.
 
 **The due date's policy** (Epo 2026-11-04, supersedes §11.5's close by the owner
 alone). Set per assignment in New assignment's Advanced; marked work with a due

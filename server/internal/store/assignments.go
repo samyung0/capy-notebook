@@ -28,8 +28,9 @@ const (
 	AssignmentMarked   = "marked"
 	AssignmentUnmarked = "unmarked"
 
-	// assignmentGrace is how long past its time an attempt still takes a save
-	// or a submit: the browser submits at zero, and the request takes a moment.
+	// assignmentGrace is how long past its time or its closing an attempt still
+	// takes a save or a submit: the browser submits at zero or on hearing it
+	// closed, and the request takes a moment.
 	assignmentGrace = 15 * time.Second
 	// assignmentAggregateMin is how many results a shared number needs (Epo
 	// 2026-11-03, §11.8: aggregates need at least 5 members).
@@ -963,9 +964,10 @@ func (s *Store) AssignmentSourceQuiz(ctx context.Context, id string) (string, er
 	return *quizID, nil
 }
 
-// SetAssignmentClosed closes it by hand, stopping late submissions, submitting
-// what running attempts saved (the sweep, or the member's next request) and
-// making its quiz practice; or reopens it.
+// SetAssignmentClosed closes it by hand, stopping late submissions and making its
+// quiz practice, or reopens it. A running attempt goes on for the grace, for its
+// page to send what it holds (the caller tells it, Epo 2026-11-05); past that the
+// sweep or the member's next request submits what was saved.
 func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, closed bool, now time.Time) (Assignment, error) {
 	wsID, err := s.assignmentWorkspace(ctx, id)
 	if err != nil {
@@ -986,6 +988,15 @@ func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, clo
 		return Assignment{}, err
 	}
 	return s.GetAssignment(ctx, actorID, id, now)
+}
+
+// RunningAttemptUsers names who has an attempt running on the assignment.
+func (s *Store) RunningAttemptUsers(ctx context.Context, id string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT user_id FROM attempts WHERE assignment_id=$1 AND submitted_at IS NULL`, id)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 // DeleteAssignment deletes it with its attempts, frozen questions and images,
@@ -1140,12 +1151,16 @@ func scanAttemptRow(row pgx.Row) (attemptRow, error) {
 	return r, err
 }
 
-// expired: closed by hand, or its time or a No late submissions due date ran
-// out, past the grace (the browser submits at zero, and that takes a moment).
+// expired: closed by hand or timed out, past the grace (the browser submits what
+// is on the page, and that takes a moment).
 func (r attemptRow) expired(now time.Time) bool {
-	if r.closedAt != nil {
-		return true
-	}
+	return (r.closedAt != nil && now.After(r.closedAt.Add(assignmentGrace))) || r.timedOut(now)
+}
+
+// timedOut: its time or a No late submissions due date ran out, past the grace.
+// It marks a submission automatic, which the page says was the time running out;
+// staff closing it is not that.
+func (r attemptRow) timedOut(now time.Time) bool {
 	if r.noLate && r.dueAt != nil && now.After(r.dueAt.Add(assignmentGrace)) {
 		return true
 	}
@@ -1209,7 +1224,7 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, now time
 				attemptID = running.id
 				return nil
 			}
-			if err := s.finishAttemptTx(ctx, tx, running, nil, true, now); err != nil {
+			if err := s.finishAttemptTx(ctx, tx, running, nil, running.timedOut(now), now); err != nil {
 				return err
 			}
 		} else if !errors.Is(err, ErrNotFound) {
@@ -1347,7 +1362,7 @@ func (s *Store) SubmitAssignmentAttempt(ctx context.Context, userID, attemptID s
 			return nil
 		}
 		if r.expired(now) {
-			return s.finishAttemptTx(ctx, tx, r, nil, true, now)
+			return s.finishAttemptTx(ctx, tx, r, nil, r.timedOut(now), now)
 		}
 		return s.finishAttemptTx(ctx, tx, r, answers, false, now)
 	})
@@ -1571,7 +1586,7 @@ func (s *Store) finishAttemptIfRunning(ctx context.Context, attemptID string, no
 		if r.submitted != nil || !r.expired(now) {
 			return nil
 		}
-		return s.finishAttemptTx(ctx, tx, r, nil, true, now)
+		return s.finishAttemptTx(ctx, tx, r, nil, r.timedOut(now), now)
 	})
 }
 
@@ -2283,14 +2298,15 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 
 // SweepAssignments is the server closing what a closed tab cannot: it submits
 // what running attempts saved once their time runs out or the assignment closes,
-// by hand or at a No late submissions due date, and shows a closed assignment's
-// quiz as practice, once. A due date alone releases nothing (Epo 2026-11-04).
+// by hand or at a No late submissions due date, past the grace, and shows a closed
+// assignment's quiz as practice, once. A due date alone releases nothing (Epo
+// 2026-11-04).
 // The quiz stays hidden while another open assignment uses it. One row that
 // fails is logged and passed over, so it never holds up the rest.
 func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) (finished, released int, err error) {
 	rows, err := s.pool.Query(ctx, `SELECT t.id FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 		WHERE t.assignment_id IS NOT NULL AND t.submitted_at IS NULL
-			AND (t.deadline_at <= $1 OR a.closed_at IS NOT NULL OR (a.no_late AND a.due_at <= $1)) LIMIT $2`, now.Add(-assignmentGrace), limit)
+			AND (t.deadline_at <= $1 OR a.closed_at <= $1 OR (a.no_late AND a.due_at <= $1)) LIMIT $2`, now.Add(-assignmentGrace), limit)
 	if err != nil {
 		return 0, 0, err
 	}

@@ -33,6 +33,8 @@ type notificationEvent struct {
 	Status         string `json:"status,omitempty"`
 	// extraction: a Make a quiz run ended (Status done or failed).
 	ExtractionID string `json:"extractionId,omitempty"`
+	// assignment_closed: staff closed an assignment the user is taking.
+	AssignmentID string `json:"assignmentId,omitempty"`
 }
 
 func (a *api) publishNotificationEvent(ctx context.Context, userID string, event notificationEvent) {
@@ -50,6 +52,24 @@ func (a *api) publishNotificationEvent(ctx context.Context, userID string, event
 // Stripe or the reload worker changed it; the event carries no billing data.
 func (a *api) publishBillingChanged(ctx context.Context, userID string) {
 	a.publishNotificationEvent(ctx, userID, notificationEvent{Type: "billing"})
+}
+
+// publishAssignmentClosed tells whoever has an attempt running on the assignment
+// it closed, once that committed, so a page taking it submits what it holds (Epo
+// 2026-11-05). Best effort: a tab that misses it learns at its next save, and the
+// sweep submits what was saved.
+func (a *api) publishAssignmentClosed(ctx context.Context, id string) {
+	if a.rdb == nil {
+		return
+	}
+	users, err := a.s.RunningAttemptUsers(ctx, id)
+	if err != nil {
+		obs.Log(ctx).Warn("assignment closing not announced", "assignment_id", id, "error", err)
+		return
+	}
+	for _, user := range users {
+		a.publishNotificationEvent(ctx, user, notificationEvent{Type: "assignment_closed", AssignmentID: id})
+	}
 }
 
 func (a *api) publishNotificationRemovals(ctx context.Context, removals []store.NotificationRemoval) {

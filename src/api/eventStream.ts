@@ -27,7 +27,9 @@ export type NotificationStreamEvent =
    * the running mark in the conversation lists (Epo 2026-10-27, T19). */
   | { conversationId: string; status: ChatStatus; type: 'chat_turn' }
   /** A Make a quiz run its reader started ended. */
-  | { extractionId: string; status: string; type: 'extraction' };
+  | { extractionId: string; status: string; type: 'extraction' }
+  /** Staff closed an assignment this user has an attempt running on. */
+  | { assignmentId: string; type: 'assignment_closed' };
 
 export type StreamEvent =
   | { data: NotificationStreamEvent; name: 'notification' }
@@ -71,6 +73,11 @@ function parseEvent(chunk: string): StreamEvent | null {
       )
         return null;
       if (value.type === 'extraction' && typeof value.extractionId !== 'string')
+        return null;
+      if (
+        value.type === 'assignment_closed' &&
+        typeof value.assignmentId !== 'string'
+      )
         return null;
       return {
         data: value as unknown as NotificationStreamEvent,

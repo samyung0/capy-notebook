@@ -412,6 +412,17 @@ export const useUnreadNotificationCount = (options?: QueryUiOptions) =>
     queryKey: qk.notificationUnread,
   });
 
+const assignmentClosedListeners = new Set<(assignmentId: string) => void>();
+
+/** Hears each `assignment_closed` as it arrives: an attempt open on the page
+ * ends with it, and nothing else minds. */
+export function onAssignmentClosed(listener: (assignmentId: string) => void) {
+  assignmentClosedListeners.add(listener);
+  return () => {
+    assignmentClosedListeners.delete(listener);
+  };
+}
+
 export function applyNotificationEvent(
   qc: QueryClient,
   event: NotificationStreamEvent
@@ -423,6 +434,11 @@ export function applyNotificationEvent(
   }
   if (event.type === 'chat_turn') {
     applyChatTurn(qc, event.conversationId, event.status);
+    return;
+  }
+  if (event.type === 'assignment_closed') {
+    for (const listener of assignmentClosedListeners)
+      listener(event.assignmentId);
     return;
   }
   if (event.type === 'extraction') {
