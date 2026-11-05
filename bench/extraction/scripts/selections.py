@@ -85,6 +85,14 @@ JOBS = {
     # in for what the parser would index.
     "word": Job([], text_paper="2021-p1"),
     "word-scheme": Job([], text_paper="2021-p1", answers="2021-ans.txt"),
+    # Epo's samples, 2026-11-05: a born-digital maths mock with systems of equations, the
+    # same as a Word file's text, and a scanned JLPT with its scanned answers and script.
+    "s5": Job([(str(bench.RESULTS / "selections/files/s5.pdf"), list(range(1, 13)), "")]),
+    "s5-word": Job([], text_paper="s5"),
+    "jlpt": Job(
+        [(str(bench.RESULTS / "selections/files/n1-paper.pdf"), list(range(1, 16)), "")],
+        answers=str(bench.RESULTS / "selections/files/n1-answers.pdf"),
+    ),
     # The working rule, on Epo's whiteboard and worksheet.
     "whiteboard-rule": Job(
         [("local:thumb2.jpg", [1], "")], system_change=(WORKING_BEFORE, WORKING_RULE)

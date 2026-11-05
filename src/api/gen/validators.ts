@@ -7731,6 +7731,7 @@ export const CreateExtractionBody = zod.object({
   "answerFileIds": zod.array(zod.string()).optional(),
   "paper": zod.array(zod.object({
   "fileId": zod.string().min(1),
+  "images": zod.array(zod.string()).optional(),
   "pages": zod.array(zod.int()).min(1).nullable()
 })).min(1).nullable(),
   "title": zod.string().min(1).max(createExtractionBodyTitleMax)

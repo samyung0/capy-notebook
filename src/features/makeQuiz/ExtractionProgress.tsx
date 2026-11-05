@@ -55,7 +55,11 @@ export function ExtractionProgress({
     if (!done || opened.current) return;
     opened.current = true;
     const notice = extractionNotice(report);
-    if (notice) userToast({ title: notice, variant: 'warning' });
+    if (notice)
+      userToast({
+        title: notice,
+        variant: report?.stopped === 'credits' ? 'error' : 'warning',
+      });
     if (workspaceId)
       void qc.invalidateQueries({ queryKey: qk.materials(workspaceId) });
     onDone(done);

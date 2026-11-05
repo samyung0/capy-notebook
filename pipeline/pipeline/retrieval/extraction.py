@@ -43,6 +43,7 @@ import base64
 import copy
 import dataclasses
 import functools
+import io
 import json
 import logging
 import math
@@ -51,6 +52,8 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+from PIL import Image
 
 from .. import elitellm, registry
 from ..config import cfg
@@ -67,6 +70,9 @@ log = logging.getLogger("capy.retrieval.extraction")
 # (Epo 2026-11-05).
 COPY_BATCH = 16
 SOLVE_BATCH = 8
+# Solve batches in flight at once (Epo 2026-11-05, "sure"): each settles only when it
+# ends, so more of them overshoot a run's credits further.
+SOLVES_IN_FLIGHT = 4
 # Model calls a thread may make: the first records, the rest send again what the
 # validator refused or what was not valid JSON, or what a reply cut off at the
 # output cap left out.
@@ -121,8 +127,8 @@ class Page:
     """One selected page: its number in its file, the file's name, the
     page's indexed text, its image as a data URL, a box on it as a JPEG with
     its pixel size, for a figure, what the layout model found on it, and what
-    it is (``page_layer``); what is not known counts as a scan. A Word, PowerPoint or
-    text paper is one page with no image and no crop: its whole indexed text."""
+    it is (``page_layer``); what is not known counts as a scan. A text paper is one page
+    with no image and no crop: its whole indexed text."""
 
     number: int
     file_name: str
@@ -1399,17 +1405,20 @@ async def run(
 
         return handle
 
+    solve_gate = asyncio.Semaphore(SOLVES_IN_FLIGHT)
+
     async def solve_batch(index: int, labels: list[str]) -> None:
-        await _rounds(
-            current,
-            [
-                *threads[index],
-                {"role": "user", "content": prompts.solve_ask(labels)},
-            ],
-            model=model,
-            purpose="extraction_solve",
-            handle=solving(index),
-        )
+        async with solve_gate:
+            await _rounds(
+                current,
+                [
+                    *threads[index],
+                    {"role": "user", "content": prompts.solve_ask(labels)},
+                ],
+                model=model,
+                purpose="extraction_solve",
+                handle=solving(index),
+            )
 
     def solve_tasks() -> list[asyncio.Task[None]]:
         """Solve batches for what has no answers yet: runs of contiguous numbers, in
@@ -1683,6 +1692,51 @@ async def _answer_file(
     return AnswerFile(name, _whole_text(name, passages))
 
 
+async def _drawn_image(jpeg: bytes) -> str:
+    return capture.data_url(jpeg)
+
+
+async def _drawn_crop(jpeg: bytes, box: list[float]) -> tuple[bytes, tuple[int, int]]:
+    """A box on a page the browser drew: the page's own pixels, so a figure is only as
+    sharp as the page sent."""
+
+    def cut() -> tuple[bytes, tuple[int, int]]:
+        with Image.open(io.BytesIO(jpeg)) as page:
+            width, height = page.size
+            piece = page.convert("RGB").crop(
+                (
+                    int(box[0] * width / 1000),
+                    int(box[1] * height / 1000),
+                    int(box[2] * width / 1000),
+                    int(box[3] * height / 1000),
+                )
+            )
+        out = io.BytesIO()
+        piece.save(out, "JPEG", quality=capture.JPEG_QUALITY)
+        return out.getvalue(), piece.size
+
+    return await slots.render_thread(cut)
+
+
+def _drawn_pages(file: dict[str, Any]) -> list[Page]:
+    """A Word or PowerPoint paper's selected pages, as the browser drew them (Epo
+    2026-11-05, "draw those pages on client side"). They go as a scan's do: their page
+    breaks are the browser's, which the indexed text's need not match."""
+    return [
+        Page(
+            number,
+            file["name"],
+            "",
+            functools.partial(_drawn_image, jpeg),
+            functools.partial(_drawn_crop, jpeg),
+            layer=SCAN,
+        )
+        for number, jpeg in zip(
+            file["pages"], (base64.b64decode(image) for image in file["images"])
+        )
+    ]
+
+
 async def prepare(
     workspace_id: str, paper: list[dict[str, Any]], answers: list[dict[str, Any]]
 ) -> tuple[list[Page], list[AnswerFile]]:
@@ -1691,6 +1745,9 @@ async def prepare(
     reads is refused."""
     pages: list[Page] = []
     for file in paper:
+        if file.get("images"):
+            pages.extend(_drawn_pages(file))
+            continue
         file_id, name, numbers = file["fileId"], file["name"], file["pages"]
         row = await store.file_page_source(workspace_id, file_id)
         if row is None:
@@ -1707,7 +1764,7 @@ async def prepare(
         elif row.get("kind") == "image":
             count = 1
         else:
-            # Word, PowerPoint or text: the whole file's indexed text, as one page.
+            # A text file: its whole indexed text, as one page.
             pages.append(
                 Page(
                     1,

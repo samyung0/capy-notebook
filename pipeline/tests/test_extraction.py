@@ -506,6 +506,37 @@ def test_labels_keep_letters_and_numbers_of_any_script():
     assert extraction.label_key("Q3.") == "3"
 
 
+async def test_solve_batches_run_a_few_at_a_time(monkeypatch):
+    items = {str(n): _mcq(str(n), ["p", "q"], 1) for n in range(1, 17)}
+    in_flight = peak = 0
+
+    async def one_solve():
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0)
+        in_flight -= 1
+
+    monkeypatch.setattr(extraction, "SOLVE_BATCH", 1)
+    monkeypatch.setattr(extraction, "SOLVES_IN_FLIGHT", 2)
+    asks = [f"Give the answers to question {n} now." for n in items]
+    script = Script(
+        "\n".join(_row(n) for n in items),
+        {
+            "Copy questions 1 to 16 now.": [
+                _tools(*(("record_question", _copy(item)) for item in items.values()))
+            ],
+            **{
+                ask: [_tools(("record_answers", _answers(item)))]
+                for ask, item in zip(asks, items.values())
+            },
+        },
+        before={ask: one_solve for ask in asks},
+    )
+    await _run(monkeypatch, script, [_page(5)])
+    assert peak == 2
+
+
 def test_a_map_row_called_none_is_no_row():
     assert extraction.parse_map("none | pages 1-1 | parts none | figures none") == []
 
@@ -559,9 +590,24 @@ def test_a_text_paper_counts_its_whole_text_in_the_output_budget():
     assert worth(extraction.FILE_TEXT_CHARS) == extraction.limits.EXTRACTION_PAGES_MAX
 
 
-async def test_prepare_reads_a_word_paper_whole(monkeypatch):
-    pages = await _prepared(monkeypatch, "doc")
+async def test_prepare_reads_a_text_paper_whole(monkeypatch):
+    pages = await _prepared(monkeypatch, "txt")
     assert [(p.number, p.text, p.image) for p in pages] == [(1, LINE.strip(), None)]
+
+
+async def test_a_word_papers_drawn_pages_go_as_a_scans_do():
+    """The browser drew them: the image goes, a figure crops from it, and no text."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (200, 100), "white").save(buffer, "JPEG")
+    drawn = base64.b64encode(buffer.getvalue()).decode()
+    file = {"fileId": "f", "name": "paper.docx", "pages": [3], "images": [drawn]}
+    pages, files = await extraction.prepare("w", [file], [])
+    assert files == [] and [(p.number, p.text, p.layer) for p in pages] == [
+        (3, "", extraction.SCAN)
+    ]
+    assert (await pages[0].image()).startswith("data:image/jpeg;base64,")
+    _, size = await pages[0].crop([0, 0, 500, 500])
+    assert size == (100, 50)
 
 
 def test_copying_carries_no_answers_and_answers_require_a_model_answer():

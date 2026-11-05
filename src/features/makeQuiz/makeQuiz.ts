@@ -8,13 +8,22 @@ import type {
   ExtractionReport,
   SourceFile,
 } from '@/api/types';
+import { fileExt } from '@/features/workspace/sourceUpload';
 import { m } from '@/i18n';
 
-/** What Make a quiz reads pages from today: the gateway refuses anything else
- * as a question paper. Office files and text sections wait on how a run sends
- * them (todo-study-tracking.md §8, Page sources by file type). */
-export function isPaperFile(file: Pick<SourceFile, 'kind'>) {
-  return file.kind === 'pdf' || file.kind === 'image';
+/** The Office formats a paper's pages are drawn from in the browser (Epo
+ * 2026-11-05). A spreadsheet is no paper. */
+export function drawnPaperFormat(file: Pick<SourceFile, 'name'>) {
+  const ext = fileExt(file.name);
+  return ext === 'docx' || ext === 'pptx' ? ext : null;
+}
+
+/** What Make a quiz reads pages from: the gateway refuses anything else as a
+ * question paper. */
+export function isPaperFile(file: Pick<SourceFile, 'kind' | 'name'>) {
+  return (
+    file.kind === 'pdf' || file.kind === 'image' || !!drawnPaperFormat(file)
+  );
 }
 
 /** A mark scheme or answers file: anything with indexed text. */
@@ -61,7 +70,9 @@ export function extractionRequest(
   title: string,
   pages: readonly PaperPage[],
   selected: ReadonlySet<string>,
-  answerFileIds: readonly string[]
+  answerFileIds: readonly string[],
+  /** Each browser-drawn page's base64 JPEG, by its page key. */
+  drawn: ReadonlyMap<string, string> = new Map()
 ): CreateExtractionReq {
   const byFile = new Map<string, number[]>();
   for (const page of pages) {
@@ -70,7 +81,16 @@ export function extractionRequest(
   }
   return {
     answerFileIds: [...answerFileIds],
-    paper: [...byFile].map(([fileId, list]) => ({ fileId, pages: list })),
+    paper: [...byFile].map(([fileId, list]) => {
+      const images = list.flatMap(
+        (page) => drawn.get(pageKey({ fileId, page })) ?? []
+      );
+      return {
+        fileId,
+        pages: list,
+        ...(images.length > 0 ? { images } : {}),
+      };
+    }),
     title,
   };
 }

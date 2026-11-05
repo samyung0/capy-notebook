@@ -51,8 +51,8 @@ SYSTEM_NO_PAGE_TEXT = SYSTEM.replace(
     1,
 )
 
-# A Word, PowerPoint or text paper (Epo 2026-11-05, "keep going"): only its indexed text
-# exists, so the opening says so and nothing asks for figures.
+# A text paper (Epo 2026-11-05, "keep going"): only its indexed text exists, so the
+# opening says so and nothing asks for figures.
 SYSTEM_TEXT_ONLY = (
     SYSTEM.split("\n\n", 1)[1]
     .split("\n\nFigures:", 1)[0]

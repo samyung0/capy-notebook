@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/samyung0/capy-notebook/server/internal/imagecheck"
 	"io"
 	"net/http"
 	"slices"
@@ -49,8 +51,8 @@ type getExtractionInput struct {
 }
 
 func (a *api) registerExtractions(api huma.API) {
-	reg(api, http.MethodPost, "/api/workspaces/{id}/extractions", "createExtraction", "Generate",
-		"Start reading the questions on selected pages into a new quiz", http.StatusAccepted, a.createExtraction)
+	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/extractions", "createExtraction", "Generate",
+		"Start reading the questions on selected pages into a new quiz", http.StatusAccepted, extractionMaxBody, a.createExtraction)
 	reg(api, http.MethodGet, "/api/extractions/{id}", "getExtraction", "Generate",
 		"A Make a quiz run its starter began", http.StatusOK, a.getExtraction)
 }
@@ -114,16 +116,40 @@ func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, er
 	return out, nil
 }
 
+// A browser-drawn page: at most this many bytes of JPEG, and a request's body holds
+// a run's worth of them in base64.
+const (
+	extractionImageBytes = 1 << 20
+	extractionMaxBody    = fieldlimits.ExtractionPages*extractionImageBytes*4/3 + 1<<20
+)
+
 // extractionFile is a file as the retrieval service reads it.
 type extractionFile struct {
-	FileID string `json:"fileId"`
-	Name   string `json:"name"`
-	Pages  []int  `json:"pages,omitempty"`
+	FileID string   `json:"fileId"`
+	Name   string   `json:"name"`
+	Pages  []int    `json:"pages,omitempty"`
+	Images []string `json:"images,omitempty"`
+}
+
+// checkDrawnPages holds a Word or PowerPoint paper's browser-drawn pages: one JPEG a
+// selected page.
+func checkDrawnPages(f store.File, p apimodel.ExtractionPaperFile) error {
+	if len(p.Images) != len(p.Pages) {
+		return huma.Error400BadRequest(fmt.Sprintf("%s: each selected page needs its drawn image.", f.Name))
+	}
+	for i, image := range p.Images {
+		data, err := base64.StdEncoding.DecodeString(image)
+		if err != nil || len(data) > extractionImageBytes || imagecheck.Format(data) != "jpeg" {
+			return huma.Error400BadRequest(fmt.Sprintf("%s: page %d's drawn image is not a JPEG of at most 1 MB.", f.Name, p.Pages[i]))
+		}
+	}
+	return nil
 }
 
 // extractionFiles checks each file is the workspace's, untrashed and indexed;
-// a paper is a PDF, an image, or a Word, PowerPoint or text file, the last read whole
-// from its indexed text (Epo 2026-11-05).
+// a paper is a PDF, an image, a Word or PowerPoint file with its pages drawn by the
+// browser, or a text file read whole (Epo 2026-11-05); a spreadsheet is refused
+// ("reject xlsx").
 func (a *api) extractionFiles(ctx context.Context, wsID string, req apimodel.CreateExtractionReq) (paper, answers []extractionFile, err error) {
 	paper, answers = []extractionFile{}, []extractionFile{}
 	read := func(id string) (store.File, error) {
@@ -144,13 +170,22 @@ func (a *api) extractionFiles(ctx context.Context, wsID string, req apimodel.Cre
 		if err != nil {
 			return nil, nil, err
 		}
-		if f.Kind == store.FileAudio || f.Kind == store.FileUnknown {
+		switch format := store.SourceEditFormat(f.Name, string(f.Kind)); {
+		case format == "docx" || format == "pptx":
+			if err := checkDrawnPages(f, p); err != nil {
+				return nil, nil, err
+			}
+		case len(p.Images) > 0:
+			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s: only a Word or PowerPoint file sends drawn pages.", f.Name))
+		case f.Kind == store.FilePDF:
+		case f.Kind == store.FileImage || f.Kind == store.FileTxt || f.Kind == store.FileMD:
+			if !slices.Equal(p.Pages, []int{1}) {
+				return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s is read whole: its one page is page 1.", f.Name))
+			}
+		default:
 			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s: questions can't be read from this kind of file.", f.Name))
 		}
-		if f.Kind != store.FilePDF && !slices.Equal(p.Pages, []int{1}) {
-			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s is read whole: its one page is page 1.", f.Name))
-		}
-		paper = append(paper, extractionFile{FileID: f.ID, Name: f.Name, Pages: p.Pages})
+		paper = append(paper, extractionFile{FileID: f.ID, Name: f.Name, Pages: p.Pages, Images: p.Images})
 	}
 	for _, id := range req.AnswerFileIDs {
 		f, err := read(id)

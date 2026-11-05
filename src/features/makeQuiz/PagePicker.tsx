@@ -16,11 +16,14 @@ import { FormAlert } from '@/components/ui/FormAlert';
 import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { useOfficeRuntime } from '@/features/files/useOfficeRuntime';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { fileIconName } from '@/lib/fileIcons';
+import { type DrawnPage, drawnPage } from './drawnPages';
 import {
+  drawnPaperFormat,
   estimatedCredits,
   extractionRequest,
   type PaperPage,
@@ -252,6 +255,107 @@ function PaperSheets({
   );
 }
 
+/** A Word or PowerPoint file's sheets: the Office runtime draws every page in a frame
+ * off screen, with its print path, and each becomes a JPEG the run is sent (Epo
+ * 2026-11-05, "draw those pages on client side"). */
+function OfficeSheets({
+  file,
+  firstNumber,
+  format,
+  full,
+  onCount,
+  onDrawn,
+  onToggle,
+  selected,
+}: {
+  file: SourceFile;
+  firstNumber: number;
+  format: 'docx' | 'pptx';
+  full: boolean;
+  onCount: (fileId: string, pages: number) => void;
+  onDrawn: (fileId: string, pages: readonly DrawnPage[]) => void;
+  onToggle: (key: string) => void;
+  selected: ReadonlySet<string>;
+}) {
+  const {
+    analysis,
+    error,
+    iframeAllow,
+    iframeKey,
+    iframeRef,
+    iframeSandbox,
+    iframeUrl,
+    ready,
+    render,
+  } = useOfficeRuntime({
+    canEdit: false,
+    file,
+    format,
+    revision: file.revision,
+  });
+  const [pages, setPages] = useState<readonly DrawnPage[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const asked = useRef(false);
+  useEffect(() => {
+    if (!ready || !analysis || asked.current) return;
+    asked.current = true;
+    render('print')
+      .then(async ({ pages: rendered }) => {
+        const drawn: DrawnPage[] = [];
+        // One at a time: a long deck decodes large PNGs.
+        for (const page of rendered) drawn.push(await drawnPage(page));
+        setPages(drawn);
+        onCount(file.id, drawn.length);
+        onDrawn(file.id, drawn);
+      })
+      .catch(() => setFailed(true));
+  }, [analysis, file.id, onCount, onDrawn, ready, render]);
+  return (
+    <>
+      <iframe
+        allow={iframeAllow}
+        aria-hidden
+        className="pointer-events-none fixed top-0 left-[-200vw] h-[768px] w-[1024px] border-0"
+        key={iframeKey}
+        ref={iframeRef}
+        sandbox={iframeSandbox}
+        src={iframeUrl}
+        tabIndex={-1}
+        title={m.files_office_document_frame_title({ name: file.name })}
+      />
+      {failed || error ? (
+        <p className="t-meta col-span-full text-tint-error-fg" role="alert">
+          {m.make_quiz_pages_unavailable()}
+        </p>
+      ) : pages ? (
+        pages.map((page, i) => {
+          const key = pageKey({ fileId: file.id, page: i + 1 });
+          const on = selected.has(key);
+          return (
+            <Sheet
+              disabled={full && !on}
+              key={key}
+              number={firstNumber + i}
+              onToggle={() => onToggle(key)}
+              ratio={page.width / page.height}
+              selected={on}
+            >
+              <img
+                alt=""
+                className="h-full w-full object-contain"
+                decoding="async"
+                src={page.url}
+              />
+            </Sheet>
+          );
+        })
+      ) : (
+        <Skeleton className="w-full" style={{ aspectRatio: SHEET_RATIO }} />
+      )}
+    </>
+  );
+}
+
 /**
  * Click the pages with questions (Epo 2026-11-02, board X1): pages shown large,
  * one click selects one, up to 40 in a run, and pages left unclicked are
@@ -280,6 +384,18 @@ export function PagePicker({
   const { mutate: start, isPending, error } = useCreateExtraction(workspaceId);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [drawn, setDrawn] = useState<ReadonlyMap<string, string>>(new Map());
+  const onDrawn = useCallback(
+    (fileId: string, pages: readonly DrawnPage[]) =>
+      setDrawn((current) => {
+        const next = new Map(current);
+        pages.forEach((page, i) => {
+          next.set(pageKey({ fileId, page: i + 1 }), page.jpegBase64);
+        });
+        return next;
+      }),
+    []
+  );
   const onCount = useCallback(
     (fileId: string, pages: number) =>
       setCounts((current) =>
@@ -371,22 +487,35 @@ export function PagePicker({
           className="grid grid-cols-2 gap-x-3 gap-y-5 px-4 pt-2.5 pb-6 sm:grid-cols-[repeat(auto-fill,220px)] sm:justify-center sm:gap-x-7.5 sm:gap-y-6.5 sm:px-10"
           role="group"
         >
-          {paperFiles.map((file, i) => (
-            <PaperSheets
-              file={file}
-              firstNumber={
-                1 +
-                paper
-                  .slice(0, i)
-                  .reduce((sum, id) => sum + (counts[id] ?? 0), 0)
-              }
-              full={full}
-              key={file.id}
-              onCount={onCount}
-              onToggle={onToggle}
-              selected={selected}
-            />
-          ))}
+          {paperFiles.map((file, i) => {
+            const firstNumber =
+              1 +
+              paper.slice(0, i).reduce((sum, id) => sum + (counts[id] ?? 0), 0);
+            const format = drawnPaperFormat(file);
+            return format ? (
+              <OfficeSheets
+                file={file}
+                firstNumber={firstNumber}
+                format={format}
+                full={full}
+                key={file.id}
+                onCount={onCount}
+                onDrawn={onDrawn}
+                onToggle={onToggle}
+                selected={selected}
+              />
+            ) : (
+              <PaperSheets
+                file={file}
+                firstNumber={firstNumber}
+                full={full}
+                key={file.id}
+                onCount={onCount}
+                onToggle={onToggle}
+                selected={selected}
+              />
+            );
+          })}
         </div>
       </div>
       <footer className="border-divider border-t px-4 py-3 sm:px-10 sm:py-4">
@@ -428,7 +557,8 @@ export function PagePicker({
                     ),
                     allPages,
                     selected,
-                    answers
+                    answers,
+                    drawn
                   ),
                   { onSuccess: (run) => onStarted(run.id) }
                 )

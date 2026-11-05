@@ -2888,6 +2888,10 @@ components:
         fileId:
           minLength: 1
           type: string
+        images:
+          items:
+            type: string
+          type: array
         pages:
           items:
             format: int64

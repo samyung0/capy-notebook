@@ -322,9 +322,12 @@ type CreateExtractionReq struct {
 }
 
 // ExtractionPaperFile is one question-paper file and the pages selected in it.
+// A Word or PowerPoint file has no stored pages: the browser draws them (Epo
+// 2026-11-05) and sends each selected page here as a base64 JPEG, in Pages' order.
 type ExtractionPaperFile struct {
-	FileID string `json:"fileId" minLength:"1"`
-	Pages  []int  `json:"pages" minItems:"1"`
+	FileID string   `json:"fileId" minLength:"1"`
+	Pages  []int    `json:"pages" minItems:"1"`
+	Images []string `json:"images,omitempty" nullable:"false"`
 }
 
 // CreateSourceUploadReq is a streamed source upload's metadata part (see

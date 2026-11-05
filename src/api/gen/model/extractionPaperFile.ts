@@ -8,6 +8,7 @@
 export interface ExtractionPaperFile {
   /** @minLength 1 */
   fileId: string;
+  images?: string[];
   /**
      * @minItems 1
      * @nullable

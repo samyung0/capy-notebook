@@ -693,6 +693,9 @@ class ExtractFile(BaseModel):
     name: str
     # A question paper's selected pages, counted from 1; empty for an answer file.
     pages: list[int] = Field(default_factory=list)
+    # A Word or PowerPoint paper's pages as the browser drew them, base64 JPEGs in
+    # pages' order.
+    images: list[str] = Field(default_factory=list)
 
 
 class ExtractReq(LLMPin):

@@ -13,10 +13,31 @@ import {
 } from './makeQuiz';
 
 describe('Make a quiz', () => {
-  it('reads question papers from PDFs and images', () => {
-    expect(isPaperFile({ kind: 'pdf' })).toBe(true);
-    expect(isPaperFile({ kind: 'image' })).toBe(true);
-    expect(isPaperFile({ kind: 'doc' })).toBe(false);
+  it('reads question papers from PDFs, images, Word and PowerPoint', () => {
+    expect(isPaperFile({ kind: 'pdf', name: 'a.pdf' })).toBe(true);
+    expect(isPaperFile({ kind: 'image', name: 'a.png' })).toBe(true);
+    expect(isPaperFile({ kind: 'doc', name: 'a.docx' })).toBe(true);
+    expect(isPaperFile({ kind: 'slides', name: 'a.pptx' })).toBe(true);
+    expect(isPaperFile({ kind: 'sheet', name: 'a.xlsx' })).toBe(false);
+  });
+
+  it('sends a drawn page with its image, in page order', () => {
+    const pages = [
+      { fileId: 'w', page: 1 },
+      { fileId: 'w', page: 2 },
+    ];
+    expect(
+      extractionRequest(
+        'T',
+        pages,
+        new Set(['w:2']),
+        [],
+        new Map([
+          ['w:1', 'one'],
+          ['w:2', 'two'],
+        ])
+      ).paper
+    ).toEqual([{ fileId: 'w', images: ['two'], pages: [2] }]);
   });
 
   it('offers files that are read or being read', () => {

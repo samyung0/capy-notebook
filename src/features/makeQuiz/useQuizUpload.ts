@@ -108,7 +108,11 @@ export function useQuizUpload(workspaceId: string) {
         }),
         variant: 'error',
       });
-    const usable = papersOnly ? accepted.filter(isPaperFile) : accepted;
+    const usable = papersOnly
+      ? accepted.filter((item) =>
+          isPaperFile({ kind: item.kind, name: item.file.name })
+        )
+      : accepted;
     if (usable.length < accepted.length)
       userToast({ title: m.make_quiz_paper_kinds(), variant: 'error' });
     const rows = localRows(usable, policy, noCredits);

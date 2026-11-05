@@ -21,7 +21,7 @@ export function announceExtractionEnd(
       },
       description: extractionNotice(run.report) ?? undefined,
       title: m.make_quiz_ready_toast({ title: run.title }),
-      variant: 'success',
+      variant: run.report?.stopped === 'credits' ? 'error' : 'success',
     });
   } else if (run.status === 'failed')
     userToast({
