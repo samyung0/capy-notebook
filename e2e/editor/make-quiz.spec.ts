@@ -185,9 +185,11 @@ test('cancelling the questions found goes back to the picks', async ({
   await page.goto('/workspaces/ws_bio?make=pages&paper=f_paper_2025');
   await pageSheet(page, 2).click({ timeout: 30_000 });
   await extract(page);
-  await dialog(page)
-    .getByRole('button', { name: m.action_cancel() })
-    .click({ timeout: 30_000 });
+  // The pages step has its own Cancel, which closes the dialog.
+  await expect(
+    page.getByRole('heading', { name: m.make_quiz_found_title({ count: 12 }) })
+  ).toBeVisible({ timeout: 30_000 });
+  await dialog(page).getByRole('button', { name: m.action_cancel() }).click();
   await expect(pageSheet(page, 2)).toHaveAttribute('aria-pressed', 'true', {
     timeout: 30_000,
   });
