@@ -149,6 +149,9 @@ pub struct LiveAccess {
     pub editor: bool,
     pub frozen: bool,
     pub full: bool,
+    /// Hidden from this actor unless they edit: the material itself, or a quiz
+    /// assigned to this viewer.
+    pub hidden: bool,
 }
 
 impl LiveAccess {
@@ -171,9 +174,26 @@ fn rank(role: &str) -> u8 {
 }
 
 /// `liveCollaborationAccess`: the actor's role on the material and the
-/// read-only narrowing. An embedded item (a note's quiz or set) is reachable
-/// exactly as its note is (Go `materialEffectiveAccess`).
+/// read-only narrowing; a material hidden from them is refused.
 pub async fn live_access<C: GenericClient>(
+    client: &C,
+    material_id: &str,
+    actor: &str,
+) -> Result<LiveAccess, AccessError> {
+    let live = live_role(client, material_id, actor).await?;
+    // A material hidden from members, or a quiz assigned to this viewer, is
+    // the owners' and editors' alone (Go's materialEffectiveAccess, Epo
+    // 2026-11-03, 2026-11-04).
+    if live.hidden && !live.editor {
+        return Err(AccessError::Forbidden("material access was revoked".into()));
+    }
+    Ok(live)
+}
+
+/// The actor's role on the material, refused only when they hold none. An
+/// embedded item (a note's quiz or set) is reachable exactly as its note is
+/// (Go `materialEffectiveAccess`).
+pub async fn live_role<C: GenericClient>(
     client: &C,
     material_id: &str,
     actor: &str,
@@ -277,16 +297,13 @@ pub async fn live_access<C: GenericClient>(
             shared
         }
     };
-    // Viewers hold read channels only; anyone else holds nothing. A material
-    // hidden from members, or a quiz assigned to this viewer, is the owners' and
-    // editors' alone (Go's materialEffectiveAccess, Epo 2026-11-03, 2026-11-04).
-    if rank(&role) < rank("viewer")
-        || (row.get::<_, bool>("hidden") && rank(&role) < rank("editor"))
-    {
+    // Viewers hold read channels only; anyone else holds nothing.
+    if rank(&role) < rank("viewer") {
         return Err(AccessError::Forbidden("material access was revoked".into()));
     }
     Ok(LiveAccess {
         editor: rank(&role) >= rank("editor"),
+        hidden: row.get("hidden"),
         frozen: row.get::<_, bool>("payer_frozen")
             || row.get::<_, bool>("payer_locked")
             || row.get::<_, bool>("actor_frozen"),

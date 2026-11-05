@@ -138,8 +138,11 @@ pub enum RoomCmd {
         notification: Option<String>,
         reply: oneshot::Sender<Result<(), String>>,
     },
-    /// Close every channel of a user (account access changed).
+    /// Close every channel of a user (their access changed), with no notice.
     CloseUser(String, u16, String),
+    /// Who is connected, each user with whether a channel of theirs needs an
+    /// editing role (`pubsub::revoke_local`).
+    Holders(oneshot::Sender<HashMap<String, bool>>),
     /// A fold of the log finished: rows and bytes it removed, the new base
     /// size; with a collection, its window and held set
     /// (`note_store::Folded`).
@@ -441,7 +444,7 @@ struct Member {
     channel_id: u64,
     read_only: bool,
     /// A viewer's channel: no awareness either way (kept across refreshes;
-    /// a role change evicts the channel).
+    /// a lowered role closes the channel, a raised one waits for a reload).
     viewer: bool,
     /// The source handoff made this channel read-only until RestoreAccess;
     /// a token refresh keeps it so.
@@ -1487,6 +1490,18 @@ impl Room {
                 for key in keys {
                     self.close_channel(key, None, code, &reason);
                 }
+            }
+            RoomCmd::Holders(reply) => {
+                let mut holders: HashMap<String, bool> = HashMap::new();
+                for member in self.members.values() {
+                    // A writer needs the role; so does a material room's
+                    // reading tab of an editor, which is in the presence
+                    // (a source room's read channels never are).
+                    let editor = member.context.access == Access::Write
+                        || (matches!(self.kind, Kindly::Note(_)) && !member.viewer);
+                    *holders.entry(member.context.user_id.clone()).or_default() |= editor;
+                }
+                let _ = reply.send(holders);
             }
             RoomCmd::Folded(folded, collected) => {
                 let (folding, log_rows, log_bytes, base_bytes) = match &mut self.kind {
