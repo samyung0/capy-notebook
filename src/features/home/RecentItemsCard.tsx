@@ -92,7 +92,7 @@ export function useRecentItems() {
     refetch: refetchWorkspaces,
   } = useWorkspaces({ sort: 'accessed' }, { errorBoundary: false });
 
-  const items = fromRecent(recent?.items ?? [], workspaces ?? []);
+  const items = fromRecent(recent?.items ?? []);
   const paused =
     waitsForConnection(recentFetchStatus, recent) ||
     waitsForConnection(workspacesFetchStatus, workspaces);

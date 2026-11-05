@@ -67,14 +67,13 @@ export default function Workspaces() {
   const navigate = useNavigate({ from: '/' });
   const setSearch = (patch: WorkspacesSearch) =>
     void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
-  const { sort, tag: tagFilters } = workspaceListParams(search);
+  const params = workspaceListParams(search);
+  const { sort } = params;
+  const tagFilters = params.tag ?? [];
   const ascending = search.dir === 'asc';
   const [createOpen, setCreateOpen] = useState(false);
 
-  const { data, fetchStatus, isLoading } = useWorkspaces({
-    sort,
-    tag: tagFilters,
-  });
+  const { data, fetchStatus, isLoading } = useWorkspaces(params);
   const revealRef = useLoadingReveal(isLoading);
   const { data: tags = [] } = useTags('workspace', { errorBoundary: false });
   const { mutateAsync: createWorkspace } = useCreateWorkspace();

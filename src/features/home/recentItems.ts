@@ -4,20 +4,10 @@ import type {
   MaterialListItem,
   RecentOpen,
   SourceFile,
-  Workspace,
 } from '@/api/types';
-import {
-  fileCanClone,
-  fileCanMoveTo,
-  materialCanClone,
-} from '@/features/files/fileUtils';
 
 export type RecentItem =
   | {
-      canClone: boolean;
-      canEdit: boolean;
-      /** Move to… (fileCanMoveTo). */
-      canMoveTo: boolean;
       createdAt: string;
       file: SourceFile;
       fileKind: FileKind;
@@ -27,8 +17,6 @@ export type RecentItem =
       workspaceId: string;
     }
   | {
-      canClone: boolean;
-      canEdit: boolean;
       createdAt: string;
       id: string;
       kind: 'material';
@@ -41,23 +29,13 @@ export type RecentItem =
 /** A Recent row: the item and when the caller last opened it. */
 export type OpenedRecentItem = RecentItem & { openedAt: string };
 
-/** The rows as recent items; workspaces supply edit, clone and move rights. */
+/** The rows as recent items. */
 function toRecentItems(
   files: SourceFile[],
-  materials: MaterialListItem[],
-  workspaces: Workspace[]
+  materials: MaterialListItem[]
 ): RecentItem[] {
-  const workspaceById = new Map(workspaces.map((ws) => [ws.id, ws]));
-  // A standalone material in this list is always the caller's own.
-  const canEdit = (workspaceId: string) =>
-    !workspaceId || !!workspaceById.get(workspaceId)?.capabilities.canEdit;
-  const canClone = (workspaceId: string) =>
-    !workspaceId || !!workspaceById.get(workspaceId)?.canClone;
   return [
     ...files.map((file) => ({
-      canClone: fileCanClone(file) && canClone(file.workspaceId),
-      canEdit: canEdit(file.workspaceId),
-      canMoveTo: fileCanMoveTo(file, workspaceById.get(file.workspaceId)),
       createdAt: file.addedAt,
       file,
       fileKind: file.kind,
@@ -67,13 +45,6 @@ function toRecentItems(
       workspaceId: file.workspaceId,
     })),
     ...materials.map((material) => ({
-      canClone:
-        !material.workspaceId ||
-        materialCanClone(
-          workspaceById.get(material.workspaceId),
-          material.assigned
-        ),
-      canEdit: canEdit(material.workspaceId),
       createdAt: material.createdAt,
       id: material.id,
       kind: 'material' as const,
@@ -91,10 +62,9 @@ function toRecentItems(
 export function mergeRecentItems(
   files: SourceFile[],
   materials: MaterialListItem[],
-  workspaces: Workspace[],
   limit: number
 ): RecentItem[] {
-  return toRecentItems(files, materials, workspaces)
+  return toRecentItems(files, materials)
     .sort((a, b) => {
       const byDate = Date.parse(b.createdAt) - Date.parse(a.createdAt);
       return byDate === 0 ? a.id.localeCompare(b.id) : byDate;
@@ -103,16 +73,12 @@ export function mergeRecentItems(
 }
 
 /** GET /recent's rows as recent items, in its open order, each with its open
- * time; workspaces supply edit and clone rights. */
-export function fromRecent(
-  rows: RecentOpen[],
-  workspaces: Workspace[]
-): OpenedRecentItem[] {
+ * time. */
+export function fromRecent(rows: RecentOpen[]): OpenedRecentItem[] {
   return rows.flatMap((row) => {
     const [item] = toRecentItems(
       row.file ? [row.file] : [],
-      row.material ? [row.material] : [],
-      workspaces
+      row.material ? [row.material] : []
     );
     return item ? [{ ...item, openedAt: row.openedAt }] : [];
   });

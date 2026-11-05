@@ -54,7 +54,6 @@ export function WorkspaceDashboard({
   const items = mergeRecentItems(
     recent?.files ?? [],
     recent?.materials ?? [],
-    [],
     RECENT
   );
   const canAdd = !isWorkspaceReadOnly(workspace.capabilities);

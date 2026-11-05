@@ -90,9 +90,9 @@ closed at until the page is left:
 
 Which panel shows is `panel` in the URL (`files`, `agent`, `study` or `none`, Epo
 2026-11-05): `section` and `panelOpen` draw it, an effect keeps the URL and
-`capy.workspace.panel.<id>` on them, a rail press adds a back step, and back or a
-link moves the panel. The next visit to a workspace opens its last panel, and
-Study's opens Practice. Below lg `panel=agent` is the chat page.
+them, a rail press adds a back step, and back or a link moves the panel. With no
+`panel` in the URL a workspace opens on its Dashboard (Epo 2026-11-05); `panel=study`
+opens Practice. Below lg `panel=agent` is the chat page.
 
 The chat stays mounted from lg whichever section shows, the panel closed too,
 so it keeps its thread, draft and stream (below lg the dock's chat stays mounted

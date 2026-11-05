@@ -20,6 +20,14 @@ func TestListTodo(t *testing.T) {
 	if err != nil || len(mine.Workspaces) != 1 || mine.Workspaces[0].Manages || mine.Workspaces[0].WorkspaceID != f.ws.ID {
 		t.Fatalf("a member's To do = %+v, err %v", mine, err)
 	}
+	// Out of the class there is nothing, and in it with nothing assigned too.
+	stranger := newBlobTestUser(t, f.s, "assignment-todo-stranger")
+	if none, err := f.s.ListTodo(ctx, stranger, now); err != nil || len(none.Workspaces) != 0 {
+		t.Fatalf("a non-member's To do = %+v, err %v", none, err)
+	}
+	if none, err := f.s.ListTodo(ctx, f.editor, now); err != nil || len(none.Workspaces) != 0 {
+		t.Fatalf("an editor with nothing assigned or waiting = %+v, err %v", none, err)
+	}
 	if items := mine.Workspaces[0].Items; len(items) != 1 || items[0].ID != created.ID || items[0].Mine == nil || items[0].Manage != nil {
 		t.Fatalf("a member's rows = %+v", items)
 	}

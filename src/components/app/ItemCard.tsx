@@ -150,7 +150,6 @@ export function ItemCard({
   pickKey,
   selected = false,
   thumbnail,
-  dense = false,
 }: {
   view: ListView;
   icon: FileIconName;
@@ -167,7 +166,6 @@ export function ItemCard({
   /** Grid view only. */
   thumbnail?: Thumbnail;
   /** Grid view only: the dashboard's cards, with a shorter thumbnail. */
-  dense?: boolean;
   link?: LinkProps;
   /** What opening a pickable item with no link does instead (a lost-access
    * item explains itself). */
@@ -250,7 +248,7 @@ export function ItemCard({
     >
       {overlay}
       <div className="relative">
-        <ThumbnailPanel dense={dense} icon={icon} {...thumbnail} />
+        <ThumbnailPanel icon={icon} {...thumbnail} />
         {actions ? (
           <CardActions className="top-2 right-2">{actions}</CardActions>
         ) : null}
@@ -411,22 +409,15 @@ export function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
 export function ItemSkeletonGrid({
   count,
   className,
-  dense = false,
 }: {
   count: number;
   className?: string;
-  dense?: boolean;
 }) {
   return (
     <ItemGrid aria-label={m.a11y_loading()} className={className} role="status">
       {Array.from({ length: count }, (_, i) => (
         <div className="@container sm:p-1.5" key={i}>
-          <Skeleton
-            className={cn(
-              'rounded-[calc(var(--radius-tile)-1px)]',
-              dense ? 'aspect-[16/10]' : 'aspect-[16/11]'
-            )}
-          />
+          <Skeleton className="aspect-[16/11] rounded-[calc(var(--radius-tile)-1px)]" />
           <div className="box-content flex h-5 items-center gap-2 px-1.5 pt-2.5">
             <Skeleton className="size-4 shrink-0" />
             <Skeleton className="h-3.5 w-2/3" />

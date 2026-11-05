@@ -97,10 +97,14 @@ export const parseWorkspacesSearch = (
   tag: anyList(search.tag),
 });
 /** The server sorts and filters workspaces; the page reverses for `asc`. */
-export const workspaceListParams = (search: WorkspacesSearch) => ({
-  sort: search.sort ?? WORKSPACE_SORT_DEFAULT,
-  tag: commaList(search.tag),
-});
+export const workspaceListParams = (search: WorkspacesSearch) => {
+  const tag = commaList(search.tag);
+  // With no tags it shares the query every other reader of the list uses.
+  return {
+    sort: search.sort ?? WORKSPACE_SORT_DEFAULT,
+    ...(tag.length > 0 ? { tag } : {}),
+  };
+};
 
 export const FILE_KINDS: FileKind[] = [
   'pdf',

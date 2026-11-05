@@ -21,6 +21,18 @@ type TodoList struct {
 	Workspaces []TodoWorkspace `json:"workspaces" nullable:"false"`
 }
 
+// The rows worth reading for To do, so a class's old work costs nothing; isTodo
+// still decides, as closing under No late is worked out on read. Only a viewer
+// goes to everyone, so staff's own work is what names them.
+const (
+	todoOpenRows = `NOT a.draft AND a.closed_at IS NULL`
+	todoNamed    = `EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=a.id AND aa.user_id=$2)`
+	todoWaiting  = `EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=a.id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0)`
+
+	todoStaffRows  = `a.workspace_id = ANY($1) AND (` + todoWaiting + ` OR (` + todoOpenRows + ` AND ` + todoNamed + `))`
+	todoMemberRows = `a.workspace_id = ANY($1) AND ` + todoOpenRows + ` AND (a.assign_all OR ` + todoNamed + `)`
+)
+
 // ListTodo is what each class's Dashboard lists under To do, across the classes
 // the caller belongs to: answers waiting for them and what was given to them
 // and is still open, done or not. A class with nothing for them is left out.
@@ -30,7 +42,9 @@ func (s *Store) ListTodo(ctx context.Context, userID string, now time.Time) (Tod
 		FROM workspaces w
 		JOIN users owner ON owner.id=w.user_id
 		LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$1
-		WHERE w.kind='class' AND (w.user_id=$1 OR wm.user_id IS NOT NULL)
+		WHERE w.kind='class'
+			AND w.id IN (SELECT id FROM workspaces WHERE user_id=$1
+				UNION ALL SELECT workspace_id FROM workspace_members WHERE user_id=$1)
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
 			AND (owner.suspended_at IS NULL OR owner.id=$1)
 		ORDER BY w.name, w.id`, userID)
@@ -62,11 +76,12 @@ func (s *Store) ListTodo(ctx context.Context, userID string, now time.Time) (Tod
 	for _, group := range []struct {
 		ids   []string
 		staff bool
-	}{{staff, true}, {members, false}} {
+		where string
+	}{{staff, true, todoStaffRows}, {members, false, todoMemberRows}} {
 		if len(group.ids) == 0 {
 			continue
 		}
-		list, err := s.readAssignments(ctx, userID, group.staff, now, `a.workspace_id = ANY($1)`, group.ids)
+		list, err := s.readAssignments(ctx, userID, group.staff, now, group.where, group.ids, userID)
 		if err != nil {
 			return out, err
 		}

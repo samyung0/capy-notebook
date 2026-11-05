@@ -148,7 +148,7 @@ test('workspace cards open settings and statistics without entering the workspac
   await page.getByRole('menuitem', { name: m.workspace_settings() }).click();
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await expect(settings).toBeVisible();
-  await expect(page).toHaveURL(/\/workspaces$/);
+  await expect(page).toHaveURL(/\/$/);
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_stats_title() })
     .click();

@@ -79,6 +79,7 @@ describe('list search', () => {
       sort: 'updated',
       workspaceIds: ['ws_a'],
     });
+    expect(workspaceListParams({})).toEqual({ sort: 'accessed' });
     expect(workspaceListParams({ tag: 'bio,chem' })).toEqual({
       sort: 'accessed',
       tag: ['bio', 'chem'],

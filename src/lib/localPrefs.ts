@@ -36,7 +36,6 @@ export const PREF_KEYS = {
     `capy.workspace.openTopics.${workspaceId}`,
   /** The panel last open in a workspace, which opens again on the next visit
    * (Epo 2026-11-05). */
-  panel: (workspaceId: string) => `capy.workspace.panel.${workspaceId}`,
   /** The quiz attempt this browser continues, by its id: the account's
    * (`account`) or, signed out on a shared quiz, this browser's (`local`). */
   quizAttempt: (owner: 'account' | 'local', quizId: string) =>
