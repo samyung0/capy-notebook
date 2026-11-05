@@ -179,31 +179,6 @@ export function ApproveTab({
           <span className="t-meta text-fg-secondary">
             {m.assignment_to_approve({ count: toApprove })}
           </span>
-          {report.marking ? (
-            <span className="t-meta text-fg-secondary">
-              {m.assignment_marking_progress({
-                done: report.marking.done,
-                total: report.marking.total,
-              })}
-            </span>
-          ) : report.answers.some((row) => row.waiting && !row.aiMarked) ? (
-            <Button
-              disabled={marking}
-              onClick={() =>
-                markWithAI(undefined, {
-                  onError: () =>
-                    userToast({
-                      title: m.assignment_mark_failed(),
-                      variant: 'error',
-                    }),
-                })
-              }
-              size="sm"
-              variant="outline"
-            >
-              {m.assignment_mark_with_ai()}
-            </Button>
-          ) : null}
           <span
             title={approvable ? undefined : m.assignment_approve_all_waits()}
           >
@@ -226,6 +201,32 @@ export function ApproveTab({
             </Button>
           </span>
         </div>
+        {report.marking ? (
+          <p className="t-meta mt-2 px-2.5 text-fg-secondary">
+            {m.assignment_marking_progress({
+              done: report.marking.done,
+              total: report.marking.total,
+            })}
+          </p>
+        ) : report.answers.some((row) => row.waiting && !row.aiMarked) ? (
+          <Button
+            className="mt-2 w-full"
+            disabled={marking}
+            onClick={() =>
+              markWithAI(undefined, {
+                onError: () =>
+                  userToast({
+                    title: m.assignment_mark_failed(),
+                    variant: 'error',
+                  }),
+              })
+            }
+            size="sm"
+            variant="outline"
+          >
+            {m.assignment_mark_with_ai()}
+          </Button>
+        ) : null}
         <ul className="mt-2 flex flex-col gap-0.5 max-md:max-h-56 max-md:overflow-auto">
           {rows.map((row) => {
             const person = names.get(row.userId);
@@ -293,7 +294,8 @@ export function ApproveTab({
             assignment={assignment}
             avatar={names.get(current.userId)?.avatarUrl}
             canGoBack={rows.findIndex((row) => same(row, selected)) > 0}
-            key={`${current.attemptId}/${current.questionId}`}
+            // Starts over from the AI's marks when they arrive.
+            key={`${current.attemptId}/${current.questionId}/${current.aiMarked}`}
             name={names.get(current.userId)?.name ?? ''}
             onApproved={moveOn}
             onPrevious={() => step(-1)}
@@ -342,6 +344,8 @@ function MarkPane({
       attemptNumber={row.attemptNumber}
       avatar={avatar}
       canGoBack={canGoBack}
+      // Starts over from the AI's marks when its read brings them.
+      key={question.parts.some((p) => p.aiAwards) ? 'ai' : 'none'}
       name={name}
       onApproved={onApproved}
       onPrevious={onPrevious}

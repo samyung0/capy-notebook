@@ -507,6 +507,19 @@ const assignedTo = (row: Row, viewer: Viewer) => {
   ];
 };
 
+/** A report row's view of the AI's waiting marks. */
+const aiRow = (q: AssignmentGradedQuestion) => ({
+  aiAwarded: q.parts.reduce(
+    (n, p) =>
+      n +
+      (p.aiAwards
+        ? p.aiAwards.reduce((sum, v) => sum + v, 0)
+        : (p.awarded ?? 0)),
+    0
+  ),
+  aiMarked: q.parts.every((p) => !p.pending || p.aiAwards),
+});
+
 function submissions(assignmentId: string, userId: string) {
   return [...attempts.values()]
     .filter(
@@ -870,8 +883,7 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
       if (isOpen) {
         for (const { attempt, q } of graded)
           answers.push({
-            aiAwarded: 0,
-            aiMarked: false,
+            ...aiRow(q),
             attemptId: attempt.id,
             attemptNumber: number(attempt),
             awarded: score(q),
@@ -887,8 +899,7 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
           const q = attempt.graded.find((g) => g.id === question.id);
           if (q?.parts.some((p) => p.pending) && !countedRows.includes(attempt))
             answers.push({
-              aiAwarded: 0,
-              aiMarked: false,
+              ...aiRow(q),
               attemptId: attempt.id,
               attemptNumber: number(attempt),
               awarded: score(q),
@@ -1236,14 +1247,53 @@ export const assignmentHandlers = (viewer: Viewer) => {
       attempts.set(attempt.id, attempt);
       return HttpResponse.json(attemptView(attempt, row, viewer));
     }),
+    // The AI's mark on every waiting part: full marks on its first point only.
     http.post('/api/assignments/:id/mark-with-ai', ({ params }) => {
       if (!rowOf(params.id) || viewer !== 'owner') return gone();
-      return HttpResponse.json({ total: 0 });
+      let total = 0;
+      for (const attempt of attempts.values()) {
+        if (attempt.assignmentId !== params.id) continue;
+        for (const q of attempt.graded)
+          for (const part of q.parts) {
+            if (!part.pending || part.aiAwards) continue;
+            part.aiAwards = (part.markscheme ?? []).map((item, i) =>
+              i === 0 ? item.marks : 0
+            );
+            part.aiComment = 'Offered two answers for one point.';
+            total++;
+          }
+      }
+      return HttpResponse.json({ total });
     }),
-    http.post('/api/assignments/:id/approve-ai-marks', ({ params }) => {
-      if (!rowOf(params.id) || viewer !== 'owner') return gone();
-      return HttpResponse.json({ approved: 0 });
-    }),
+    http.post(
+      '/api/assignments/:id/approve-ai-marks',
+      async ({ params, request }) => {
+        if (!rowOf(params.id) || viewer !== 'owner') return gone();
+        const { questionId } = (await request.json()) as {
+          questionId: string;
+        };
+        let approved = 0;
+        for (const attempt of attempts.values()) {
+          if (attempt.assignmentId !== params.id) continue;
+          const q = attempt.graded.find((g) => g.id === questionId);
+          if (!q?.parts.some((p) => p.pending) || !aiRow(q).aiMarked) continue;
+          q.parts = q.parts.map((part) => {
+            if (!part.pending) return part;
+            const { pending: _, ...rest } = part;
+            const items = part.aiAwards ?? [];
+            if (part.aiComment) q.comment ??= part.aiComment;
+            return {
+              ...rest,
+              awarded: items.reduce((sum, v) => sum + v, 0),
+              itemAwards: items,
+              markedBy: db.user.id,
+            };
+          });
+          approved++;
+        }
+        return HttpResponse.json({ approved });
+      }
+    ),
     http.get('/api/assignments/:id/report', ({ params }) => {
       const row = rowOf(params.id);
       if (!row || viewer !== 'owner') return gone();

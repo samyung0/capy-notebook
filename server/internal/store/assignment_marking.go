@@ -30,7 +30,7 @@ type AnswerToMark struct {
 // its attempts (attemptID), and who pays: AI marking of an assignment's answers is
 // its workspace owner's (Epo 2026-11-03).
 func (s *Store) AnswersToMark(ctx context.Context, assignmentID, attemptID string) (payerID, workspaceID string, answers []AnswerToMark, err error) {
-	if err = s.pool.QueryRow(ctx, `SELECT w.owner_user_id, a.workspace_id FROM assignments a
+	if err = s.pool.QueryRow(ctx, `SELECT w.user_id, a.workspace_id FROM assignments a
 		JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1`, assignmentID).Scan(&payerID, &workspaceID); err != nil {
 		if isNoRows(err) {
 			err = ErrNotFound
