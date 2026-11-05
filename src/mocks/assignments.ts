@@ -1136,6 +1136,17 @@ export const assignmentHandlers = (viewer: Viewer) => {
       if (!row) return gone();
       freeze(row);
       row.postedAt = new Date().toISOString();
+      // The stream's word to whoever is taking it, as closing has it.
+      if (
+        [...attempts.values()].some(
+          (a) => a.assignmentId === row.id && !a.submittedAt
+        )
+      )
+        window.dispatchEvent(
+          new CustomEvent('capy:mock-stream', {
+            detail: { assignmentId: row.id, type: 'assignment_republished' },
+          })
+        );
       return HttpResponse.json(toAssignment(row, viewer));
     }),
     http.put('/api/assignments/:id/closed', async ({ params, request }) => {

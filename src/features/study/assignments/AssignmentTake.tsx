@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isApiError, qk } from '@/api/client';
 import {
-  onAssignmentClosed,
+  onAssignmentEvent,
   saveAssignmentAnswers,
   useSubmitAssignmentAttempt,
 } from '@/api/hooks';
@@ -33,6 +33,7 @@ import {
   emptyAnswer,
 } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
+import { keptAnswers, partsById } from '@/features/quizzes/stillAnswers';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
@@ -140,7 +141,9 @@ export function AssignmentTake({
 }) {
   const qc = useQueryClient();
   const questions = attempt.questions as LearnerQuestion[];
-  const [index, setIndex] = useState(0);
+  const [wantedIndex, setIndex] = useState(0);
+  // New questions can be fewer: the last one stands in.
+  const index = Math.min(wantedIndex, Math.max(questions.length - 1, 0));
   const [answers, setAnswers] = useState<Answers>(attempt.answers);
   const [save, setSave] = useState<SaveState>('saved');
   const [confirming, setConfirming] = useState(false);
@@ -154,8 +157,8 @@ export function AssignmentTake({
   const dirty = useRef(false);
   const saving = useRef(false);
 
-  // The server submitted it already: its page shows what it holds.
-  const finished = useCallback(() => {
+  // The server submitted it already, or republished it: read what it holds.
+  const reread = useCallback(() => {
     void qc.invalidateQueries({ queryKey: qk.assignmentAttempt(attempt.id) });
   }, [attempt.id, qc]);
 
@@ -170,7 +173,7 @@ export function AssignmentTake({
       setSave(dirty.current ? 'saving' : 'saved');
     } catch (error) {
       failed = true;
-      if (isApiError(error) && error.status === 409) return finished();
+      if (isApiError(error) && error.status === 409) return reread();
       // Sent again with the next change and with Submit, which sends them all.
       dirty.current = true;
       setSave('failed');
@@ -179,7 +182,7 @@ export function AssignmentTake({
       // A change made during this save: its wait may have ended meanwhile.
       if (dirty.current && !failed) void flush();
     }
-  }, [attempt.id, finished]);
+  }, [attempt.id, reread]);
 
   const change = (partId: string, value: Answer) => {
     setAnswers((current) => ({ ...current, [partId]: value }));
@@ -200,6 +203,19 @@ export function AssignmentTake({
       leaving();
     };
   }, [flush]);
+  // Republished under the page: answers that no longer fit go, as on its next
+  // load (`dropStaleAnswersTx`).
+  const parts = useMemo(() => partsById(questions), [questions]);
+  const previousParts = useRef(parts);
+  useEffect(() => {
+    const before = previousParts.current;
+    previousParts.current = parts;
+    if (before === parts) return;
+    const kept = keptAnswers(before, parts, latest.current);
+    if (kept === latest.current) return;
+    setAnswers(kept);
+    dirty.current = true;
+  }, [parts]);
   // An ordering part always shows an order, so showing it is answering it.
   const question = questions[index];
   useEffect(() => {
@@ -221,7 +237,7 @@ export function AssignmentTake({
       { answers: latest.current, id: attempt.id },
       {
         onError: (error) => {
-          if (isApiError(error) && error.status === 409) return finished();
+          if (isApiError(error) && error.status === 409) return reread();
           dirty.current = true;
           userToast({
             description: errorCopy(error, m.assignment_submit_failed_body()),
@@ -231,7 +247,7 @@ export function AssignmentTake({
         },
       }
     );
-  }, [attempt.id, finished, submitAttempt]);
+  }, [attempt.id, reread, submitAttempt]);
   const timedOut = left !== null && left <= 0;
   const once = useRef(false);
   const end = useCallback(() => {
@@ -244,12 +260,17 @@ export function AssignmentTake({
   }, [end, timedOut]);
   useEffect(
     () =>
-      onAssignmentClosed((id) => {
-        if (id !== attempt.assignmentId) return;
+      onAssignmentEvent((event) => {
+        if (event.assignmentId !== attempt.assignmentId) return;
+        if (event.type === 'assignment_republished') {
+          reread();
+          userToast({ title: m.assignment_questions_updated() });
+          return;
+        }
         onClosed();
         end();
       }),
-    [attempt.assignmentId, end, onClosed]
+    [attempt.assignmentId, end, onClosed, reread]
   );
 
   const isAnswered = (q: (typeof questions)[number]) =>

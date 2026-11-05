@@ -89,6 +89,7 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 			{http.MethodGet, path + "/report", nil},
 			{http.MethodPut, path + "/closed", map[string]any{"closed": true}},
 			{http.MethodPost, path + "/publish", map[string]any{}},
+			{http.MethodPost, path + "/republish", map[string]any{}},
 			{http.MethodDelete, path, nil},
 		} {
 			if rec := doReq(t, h, call.method, call.path, user, call.body); rec.Code != http.StatusNotFound {
@@ -226,6 +227,18 @@ func TestClosingTellsWhoIsTakingIt(t *testing.T) {
 		}
 	}
 	setClosed(false)
+	if rec := doReq(t, h, http.MethodPost, path+"/republish", "u_owner", map[string]any{}); rec.Code != http.StatusOK {
+		t.Fatalf("republish: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case msg := <-sub.Channel():
+		want := fmt.Sprintf(`{"type":"assignment_republished","assignmentId":%q}`, strings.TrimPrefix(path, "/api/assignments/"))
+		if msg.Channel != "notif:u_viewer" || msg.Payload != want {
+			t.Fatalf("heard %s on %s", msg.Payload, msg.Channel)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the member taking it heard no republish")
+	}
 	setClosed(true)
 	select {
 	case msg := <-sub.Channel():

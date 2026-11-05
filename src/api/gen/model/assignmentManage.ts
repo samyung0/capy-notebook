@@ -14,6 +14,7 @@ export interface AssignmentManage {
   done: number;
   quizId?: string;
   quizTitle?: string;
+  quizTrashed?: boolean;
   showAnswers: boolean;
   shuffle: boolean;
   toApprove: number;

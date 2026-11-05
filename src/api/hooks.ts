@@ -412,14 +412,18 @@ export const useUnreadNotificationCount = (options?: QueryUiOptions) =>
     queryKey: qk.notificationUnread,
   });
 
-const assignmentClosedListeners = new Set<(assignmentId: string) => void>();
+type AssignmentEvent = Extract<
+  NotificationStreamEvent,
+  { assignmentId: string }
+>;
+const assignmentListeners = new Set<(event: AssignmentEvent) => void>();
 
-/** Hears each `assignment_closed` as it arrives: an attempt open on the page
- * ends with it, and nothing else minds. */
-export function onAssignmentClosed(listener: (assignmentId: string) => void) {
-  assignmentClosedListeners.add(listener);
+/** Hears each assignment event as it arrives: an attempt open on the page ends
+ * or takes the new questions with it, and nothing else minds. */
+export function onAssignmentEvent(listener: (event: AssignmentEvent) => void) {
+  assignmentListeners.add(listener);
   return () => {
-    assignmentClosedListeners.delete(listener);
+    assignmentListeners.delete(listener);
   };
 }
 
@@ -436,9 +440,11 @@ export function applyNotificationEvent(
     applyChatTurn(qc, event.conversationId, event.status);
     return;
   }
-  if (event.type === 'assignment_closed') {
-    for (const listener of assignmentClosedListeners)
-      listener(event.assignmentId);
+  if (
+    event.type === 'assignment_closed' ||
+    event.type === 'assignment_republished'
+  ) {
+    for (const listener of assignmentListeners) listener(event);
     return;
   }
   if (event.type === 'extraction') {

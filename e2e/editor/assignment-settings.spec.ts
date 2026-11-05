@@ -62,6 +62,85 @@ test('a closed assignment keeps Edit quiz and has no Republish', async ({
   await expect(page.getByText(LAST_PUBLISHED)).toHaveCount(0);
 });
 
+test.describe('as a member', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() =>
+      sessionStorage.setItem('capy.scenario.last', 'workspace-member')
+    );
+  });
+
+  test('a page open through a republish reads the new questions', async ({
+    page,
+  }) => {
+    await page.goto('/workspaces/ws_bio?study=assignments&assignment=as_paper');
+    await page
+      .getByRole('button', { exact: true, name: m.assignment_start() })
+      .click({ timeout: 30_000 });
+    await page.getByRole('button', { name: m.sharing_notice_ok() }).click();
+    const take = page.locator('[data-assignment-take]');
+    const first = take.getByText('Which organelle makes most');
+    await expect(first).toBeVisible({ timeout: 30_000 });
+    await page.evaluate(() =>
+      fetch('/api/assignments/as_paper/republish', { method: 'POST' })
+    );
+    await expect(page.getByText(m.assignment_questions_updated())).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(first).toHaveCount(0);
+    await expect(take).toBeVisible();
+  });
+
+  test('a quiz open when it gets assigned stays, and a fresh open goes to the assignment', async ({
+    page,
+  }) => {
+    const quiz = '/workspaces/ws_bio?material=qz_bio_near';
+    await page.goto(quiz);
+    await expect(page.getByTestId('content-header')).toBeVisible({
+      timeout: 60_000,
+    });
+    const assigned = await page.evaluate(async () => {
+      await fetch('/api/workspaces/ws_bio/assignments', {
+        body: JSON.stringify({
+          approveAiMarks: true,
+          assignAll: true,
+          assignees: [],
+          attempts: 1,
+          draft: false,
+          dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+          files: [],
+          kind: 'marked',
+          latePenaltyPct: 0,
+          noLate: false,
+          quizId: 'qz_bio_near',
+          showAnswers: true,
+          shuffle: false,
+          title: 'Assigned while open',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      });
+      const paths = ['/src/api/queryClient.ts', '/src/api/client.ts'];
+      const [{ queryClient }, { qk }] = await Promise.all(
+        paths.map((path) => import(path))
+      );
+      await queryClient.invalidateQueries();
+      const list: { assignmentId?: string; id: string }[] =
+        queryClient.getQueryData(qk.materials('ws_bio'));
+      return list.find((row) => row.id === 'qz_bio_near')?.assignmentId;
+    });
+    // The list says it is assigned now, and the page stays.
+    expect(assigned).toBeTruthy();
+    await page.waitForTimeout(500);
+    await expect(page).toHaveURL(/material=qz_bio_near/);
+    await expect(page).not.toHaveURL(/assignment=/);
+    await expect(page.getByTestId('content-header')).toBeVisible();
+
+    // A quiz assigned already, opened afresh (a reload resets the mock's data).
+    await page.goto('/workspaces/ws_bio?material=qz_1');
+    await expect(page).toHaveURL(/assignment=/, { timeout: 60_000 });
+  });
+});
+
 test.describe('at phone width', () => {
   test.use({ viewport: { height: 740, width: 360 } });
 

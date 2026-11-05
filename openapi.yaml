@@ -781,6 +781,8 @@ components:
           type: string
         quizTitle:
           type: string
+        quizTrashed:
+          type: boolean
         showAnswers:
           type: boolean
         shuffle:

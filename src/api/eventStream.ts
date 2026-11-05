@@ -28,8 +28,12 @@ export type NotificationStreamEvent =
   | { conversationId: string; status: ChatStatus; type: 'chat_turn' }
   /** A Make a quiz run its reader started ended. */
   | { extractionId: string; status: string; type: 'extraction' }
-  /** Staff closed an assignment this user has an attempt running on. */
-  | { assignmentId: string; type: 'assignment_closed' };
+  /** Staff closed an assignment this user has an attempt running on, or gave
+   * it new questions. */
+  | {
+      assignmentId: string;
+      type: 'assignment_closed' | 'assignment_republished';
+    };
 
 export type StreamEvent =
   | { data: NotificationStreamEvent; name: 'notification' }
@@ -75,7 +79,8 @@ function parseEvent(chunk: string): StreamEvent | null {
       if (value.type === 'extraction' && typeof value.extractionId !== 'string')
         return null;
       if (
-        value.type === 'assignment_closed' &&
+        (value.type === 'assignment_closed' ||
+          value.type === 'assignment_republished') &&
         typeof value.assignmentId !== 'string'
       )
         return null;

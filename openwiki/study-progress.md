@@ -818,7 +818,8 @@ due date):
 `quizAssignedToSQL` and `quizAssignmentOpenSQL` in `store/assignments.go` are the
 two reads; `materialIconName(kind, assigned)` is the icon, a quill in the file-icon
 sprite, on the file tree, Recent, Blocks cards and the open file's header. A direct
-link to the quiz sends its assignee to the assignment (`CenterContent`). Delete
+link to the quiz, or any fresh open of it, sends its assignee to the assignment
+(`CenterContent`). Delete
 (the toast's Undo) restores nothing, since nothing changed. Clones: see
 [authorization](authorization-permissions-lifecycles.md#class-clones).
 
@@ -827,10 +828,11 @@ seeing it, with no keys, until they leave or lose connection (Epo 2026-11-05). T
 room lets them be: their live updates stop when its token next renews, within five
 minutes, and what is on screen stays as it was, with no error, toast or status
 (`ItemRoom.unavailable`; `useLiveQuizQuestions` keeps its last questions, and a quiz
-attempt page its opening read). The quiz's own page in a workspace goes further than
-the room: the next refetch of the file list sends them to the assignment
-(`CenterContent`), at most 30 minutes on, as the event stream renews, or sooner on any
-tree change. An unassigned member of a visible quiz keeps normal access with its
+attempt page its opening read). The quiz's page in a workspace stays too: the next
+refetch of the file list changes nothing while it is open (`alreadyOpen` in
+`CenterContent`). A read of the material answering 404 can still show the error page
+when the browser comes back online and its data is over five minutes old. An
+unassigned member of a visible quiz keeps normal access with its
 checks. A signed-out browser on a public or link workspace's share page is
 nobody in particular, so an assignee could open it there. An attempt made before
 the assignment stays readable by whoever took it.
@@ -856,7 +858,8 @@ serves the frozen copy.
 tab, `tab=settings`, holds every action as a row. Unmarked ones have Members and
 Settings; a draft has no tabs, only the rows, with a Publish row and its dark button
 first. Edit quiz opens the quiz in its room (hidden with no quiz), Assignment details
-the edit dialog, then Close or Reopen and Delete, each confirming as the menu did.
+the edit dialog, then Close or Reopen and Delete, each confirming as the menu did. A
+quiz in the trash has no Edit quiz or Republish (`manage.quizTrashed`).
 Their buttons share one width, borderless (`ghost-hover`, `danger-light` for Delete).
 
 **Republish** (Epo 2026-11-05, `POST /api/assignments/{id}/republish`,
@@ -864,10 +867,24 @@ Their buttons share one width, borderless (`ghost-hover`, `danger-light` for Del
 open marked assignment's Republish row, hinted "Last published {date}", replaces the
 frozen copy with the quiz as it is now, after a confirm, with the same projection and
 no-answers warning as publishing. `posted_at` moves, so members read the new Posted
-date and it rises in the lists. A running attempt reads the new copy on its next
-load, and `gradeAttempt` drops answers to parts it no longer has. A submitted attempt
-keeps its graded copy and marks, and a question it holds that left the copy stays
-last on the report (`withRemovedQuestions`), so its open answers can still be marked.
+date and it rises in the lists.
+
+A running attempt takes the new copy. `assignment_republished` on the user's stream
+(`publishAssignmentRepublished`, after the commit, best effort) has a page taking it
+read the new questions and say "The questions were updated."; a tab that misses it
+shows the old ones until its next load, and its submit is graded on the new, where a
+question it never showed counts 0. Saved answers that no longer mean what the member
+chose go with practice's rule (D9, `stillAnswers` in Go and in
+`features/quizzes/stillAnswers.ts`): a chosen option gone or moved, a changed set of
+ordering items, a matching option gone, another number of gaps. A change to the key
+or the wording keeps them. `dropStaleAnswersTx` does this in the republish for what
+was saved, and the open page for what it holds.
+
+A submitted attempt keeps its graded copy and marks. What left the copy that a
+submission holds stays on the report (`withRemoved`), whole questions last and lost
+parts at the end of their question, so its open answers can still be marked. Approve
+lists a member only if their own copy of the question has an open part.
+
 Storage: an image the assignment already holds keeps its row (same `object_path`),
 so republishing the same image charges nothing; an image it stops using stays charged
 until the assignment is deleted, as submissions may show it. The questions' JSON

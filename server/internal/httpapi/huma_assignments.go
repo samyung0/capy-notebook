@@ -199,7 +199,11 @@ func (a *api) publishAssignment(ctx context.Context, in *assignmentIDInput) (*as
 }
 
 func (a *api) republishAssignment(ctx context.Context, in *assignmentIDInput) (*assignmentOutput, error) {
-	return a.freezeAssignment(ctx, in.ID, a.s.RepublishAssignment)
+	out, err := a.freezeAssignment(ctx, in.ID, a.s.RepublishAssignment)
+	if err == nil {
+		a.publishAssignmentRepublished(ctx, in.ID)
+	}
+	return out, err
 }
 
 // freezeAssignment gives the store its quiz as it is now, to publish or republish.

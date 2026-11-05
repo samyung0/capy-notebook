@@ -2324,6 +2324,16 @@ func TestRepublishReplacesTheFrozenCopy(t *testing.T) {
 	if len(report.Questions) != 3 || !waiting {
 		t.Fatalf("report questions = %d, q3 waiting = %v", len(report.Questions), waiting)
 	}
+	// What left the copy can still be marked.
+	marked, err := f.s.MarkAssignmentAnswer(ctx, f.editor, done.ID, AssignmentMark{
+		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{2, 0}}},
+	}, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marked.Correct != 4 || marked.WaitingAnswers != 0 {
+		t.Fatalf("marked = %+v", marked)
+	}
 
 	if _, err := f.s.RepublishAssignment(ctx, f.user, created.ID, nil, later); !errors.Is(err, ErrAssignmentQuizGone) {
 		t.Fatalf("no quiz = %v", err)
@@ -2406,6 +2416,56 @@ func TestRepublishPaysOnlyForWhatItAdds(t *testing.T) {
 	if used(f.editor) != editor+size || used(f.user) != owner-size {
 		t.Fatalf("after an editor's: editor %d, owner %d, want %d and %d", used(f.editor), used(f.user), editor+size, owner-size)
 	}
+
+	// Past the limit it is refused; what it replaces doesn't count against it.
+	room := mustPlanLimits(t, f.s, PlanFree).StorageBytes - used(f.editor)
+	if _, err := f.s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=used_bytes+$2 WHERE user_id=$1`, f.editor, room); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.RepublishAssignment(ctx, f.editor, created.ID, decoded(), now); err != nil {
+		t.Fatalf("no bigger, at the limit: %v", err)
+	}
+	longer := decoded()
+	longer[0]["title"] = strings.Repeat("x", 500)
+	var quota *QuotaExceededError
+	if _, err := f.s.RepublishAssignment(ctx, f.editor, created.ID, longer, now); !errors.As(err, &quota) {
+		t.Fatalf("bigger, at the limit = %v", err)
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=used_bytes-$2 WHERE user_id=$1`, f.editor, room); err != nil {
+		t.Fatal(err)
+	}
+
+	// A new image beside the one it holds goes to who republished, and deleting
+	// frees each from its own payer.
+	secondID := uid("asset")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO editor_assets
+		(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status, completed_at)
+		VALUES ($1,$2,$3,$4,$4,'second.png','image',$5,'image/png',20,'ready',now())`,
+		secondID, f.ws.ID, f.quiz.ID, f.user, "editor-assets/assignment-republish/"+uid("blob")); err != nil {
+		t.Fatal(err)
+	}
+	both := decoded()
+	both[0]["stem"] = append(both[0]["stem"].([]any), map[string]any{"type": "image", "image": map[string]any{"assetId": secondID}, "width": 10.0, "height": 10.0, "description": "Second"})
+	if _, err := f.s.RepublishAssignment(ctx, f.editor, created.ID, both, now); err != nil {
+		t.Fatal(err)
+	}
+	var grown int64
+	if err := f.s.pool.QueryRow(ctx, `SELECT frozen_bytes FROM assignments WHERE id=$1`, created.ID).Scan(&grown); err != nil {
+		t.Fatal(err)
+	}
+	if used(f.editor) != editor+grown+20 {
+		t.Fatalf("with a second image: editor %d, want %d", used(f.editor), editor+grown+20)
+	}
+	if err := f.s.DeleteAssignment(ctx, f.user, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	if used(f.editor) != editor {
+		t.Fatalf("deleted: editor %d, want %d", used(f.editor), editor)
+	}
+	// Less the questions and its image; plus the quiz's new image, which is theirs.
+	if got := used(f.user); got != owner-size-10+20 {
+		t.Fatalf("deleted: owner %d, want %d", got, owner-size-10+20)
+	}
 }
 
 // TestCountedAttemptComparesShares: after a republish changes the total, the
@@ -2445,5 +2505,144 @@ func TestCountedAttemptComparesShares(t *testing.T) {
 	}
 	if got.Mine == nil || got.Mine.CountedAttemptID == nil || *got.Mine.CountedAttemptID != second.ID {
 		t.Fatalf("their row = %+v, want %s", got.Mine, second.ID)
+	}
+}
+
+// TestRepublishDropsAnswersThatNoLongerFit: a saved answer goes when what it chose
+// changed, and stays when only the key or the wording did.
+func TestRepublishDropsAnswersThatNoLongerFit(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-republish-answers")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.SaveAssignmentAnswers(ctx, f.viewer, run.ID, map[string]any{"p1": []any{float64(1)}, "p2": "osmosis"}, now); err != nil {
+		t.Fatal(err)
+	}
+	// Its key and wording only: both answers stay.
+	keyed := frozenFixture(t)
+	first := keyed[0]["parts"].([]any)[0].(map[string]any)
+	first["answer"].(map[string]any)["correct"] = []any{float64(0)}
+	first["blocks"] = []any{map[string]any{"type": "text", "text": "Pick one"}}
+	if _, err := f.s.RepublishAssignment(ctx, f.user, created.ID, keyed, now); err != nil {
+		t.Fatal(err)
+	}
+	view, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Answers) != 2 {
+		t.Fatalf("after a key change: %v", view.Answers)
+	}
+	// The chosen option moved: its answer goes, the other stays.
+	moved := frozenFixture(t)
+	moved[0]["parts"].([]any)[0].(map[string]any)["answer"].(map[string]any)["options"] = []any{"b", "a"}
+	if _, err := f.s.RepublishAssignment(ctx, f.user, created.ID, moved, now); err != nil {
+		t.Fatal(err)
+	}
+	if view, err = f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, gone := view.Answers["p1"]; gone || view.Answers["p2"] != "osmosis" {
+		t.Fatalf("after moving an option: %v", view.Answers)
+	}
+}
+
+func TestStillAnswers(t *testing.T) {
+	mcq := func(options ...any) map[string]any { return map[string]any{"type": "mcq", "options": options} }
+	ordering := func(items ...any) map[string]any { return map[string]any{"type": "ordering", "items": items} }
+	matching := func(options ...any) map[string]any { return map[string]any{"type": "matching", "options": options} }
+	gaps := func(n int) map[string]any { return map[string]any{"type": "gaps", "accepted": make([]any, n)} }
+	for _, c := range []struct {
+		name          string
+		before, after map[string]any
+		value         any
+		want          bool
+	}{
+		{"an option added after it", mcq("a", "b"), mcq("a", "b", "c"), []any{float64(1)}, true},
+		{"its option moved", mcq("a", "b"), mcq("b", "a"), []any{float64(1)}, false},
+		{"its option gone", mcq("a", "b"), mcq("a"), []any{float64(1)}, false},
+		{"an ordering's items reordered", ordering("a", "b"), ordering("b", "a"), []any{"a", "b"}, true},
+		{"an ordering's item retyped", ordering("a", "b"), ordering("a", "c"), []any{"a", "b"}, false},
+		{"a matching option kept", matching("x", "y"), matching("x"), map[string]any{"l": "x"}, true},
+		{"a matching option gone", matching("x", "y"), matching("x"), map[string]any{"l": "y"}, false},
+		{"as many gaps", gaps(2), gaps(2), []any{"a", "b"}, true},
+		{"another number of gaps", gaps(2), gaps(3), []any{"a", "b"}, false},
+		{"another type", mcq("a"), ordering("a"), []any{float64(0)}, false},
+		{"a short answer", map[string]any{"type": "short"}, map[string]any{"type": "short", "unit": "m"}, "1", true},
+	} {
+		if got := stillAnswers(c.before, c.after, c.value); got != c.want {
+			t.Errorf("%s: got %v", c.name, got)
+		}
+	}
+}
+
+// TestReportKeepsWhatLeftTheCopy: a part a republish took from a question stays on
+// the report with its waiting answer, and a member whose copy has no open part gets
+// no row when the question gains one.
+func TestReportKeepsWhatLeftTheCopy(t *testing.T) {
+	take := func(id string, answers map[string]any, qs []map[string]any) reportAttempt {
+		graded, given := gradeAttempt(qs, answers)
+		byID := map[string]map[string]any{}
+		for _, q := range graded {
+			byID[q["id"].(string)] = q
+		}
+		return reportAttempt{id: id, userID: "u" + id, answers: given, graded: byID}
+	}
+	waiting := take("a", map[string]any{"p3": "Long answer"}, frozenFixture(t))
+
+	// q3 keeps its id and gets a closed part in place of its open one.
+	now := frozenFixture(t)
+	now[2]["parts"] = []any{map[string]any{"id": "p4", "blocks": []any{map[string]any{"type": "text", "text": "Pick"}},
+		"answer": map[string]any{"type": "mcq", "options": []any{"a", "b"}, "correct": []any{float64(1)}}, "marks": float64(1), "solution": []any{}}}
+	reports, rows := questionReports(withRemoved(now, []reportAttempt{waiting}), []reportAttempt{waiting}, nil)
+	if parts := reports[2].Question["parts"].([]any); len(parts) != 2 {
+		t.Fatalf("q3 has %d parts, want its new one and the one it lost", len(parts))
+	}
+	found := false
+	for _, row := range rows {
+		found = found || (row.QuestionID == "q3" && row.Waiting)
+	}
+	if !found {
+		t.Fatalf("the waiting answer has no row: %+v", rows)
+	}
+
+	// q1 gains an open part: a member who took the old copy has nothing to mark.
+	gained := frozenFixture(t)
+	gained[0]["parts"] = append(gained[0]["parts"].([]any), frozenFixture(t)[2]["parts"].([]any)[0])
+	_, rows = questionReports(withRemoved(gained, []reportAttempt{waiting}), []reportAttempt{waiting}, nil)
+	for _, row := range rows {
+		if row.QuestionID == "q1" {
+			t.Fatalf("a row with nothing to mark: %+v", row)
+		}
+	}
+}
+
+func TestAssignmentSaysItsQuizIsTrashed(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-quiz-trashed")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Manage.QuizTrashed {
+		t.Fatal("a quiz in place reads as trashed")
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id=$2, purge_after=now()+interval '30 days' WHERE id=$1`, f.quiz.ID, uid("ep")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.s.GetAssignment(ctx, f.user, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Manage.QuizTrashed {
+		t.Fatal("a trashed quiz doesn't read as trashed")
 	}
 }

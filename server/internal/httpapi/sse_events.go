@@ -59,16 +59,28 @@ func (a *api) publishBillingChanged(ctx context.Context, userID string) {
 // 2026-11-05). Best effort: a tab that misses it learns at its next save, and the
 // sweep submits what was saved.
 func (a *api) publishAssignmentClosed(ctx context.Context, id string) {
+	a.tellRunningAttempts(ctx, id, "assignment_closed")
+}
+
+// publishAssignmentRepublished tells them it has new questions, once that
+// committed, so a page taking it reads them (Epo 2026-11-05). Best effort: a tab
+// that misses it shows the old ones until its next load, and its submit is graded
+// on the new.
+func (a *api) publishAssignmentRepublished(ctx context.Context, id string) {
+	a.tellRunningAttempts(ctx, id, "assignment_republished")
+}
+
+func (a *api) tellRunningAttempts(ctx context.Context, id, event string) {
 	if a.rdb == nil {
 		return
 	}
 	users, err := a.s.RunningAttemptUsers(ctx, id)
 	if err != nil {
-		obs.Log(ctx).Warn("assignment closing not announced", "assignment_id", id, "error", err)
+		obs.Log(ctx).Warn("assignment event not announced", "assignment_id", id, "event", event, "error", err)
 		return
 	}
 	for _, user := range users {
-		a.publishNotificationEvent(ctx, user, notificationEvent{Type: "assignment_closed", AssignmentID: id})
+		a.publishNotificationEvent(ctx, user, notificationEvent{Type: event, AssignmentID: id})
 	}
 }
 

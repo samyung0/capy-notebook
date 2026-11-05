@@ -14,20 +14,23 @@ const api = vi.hoisted(() => ({
   save: vi.fn(),
   submit: vi.fn(),
 }));
-const closedListeners = vi.hoisted(() => new Set<(id: string) => void>());
+type AssignmentEvent = { assignmentId: string; type: string };
+const listeners = vi.hoisted(() => new Set<(event: AssignmentEvent) => void>());
 const closed = vi.hoisted(() => vi.fn());
+const invalidate = vi.hoisted(() => vi.fn());
+const toast = vi.hoisted(() => vi.fn());
 vi.mock('@/api/hooks', () => ({
-  onAssignmentClosed: (listener: (id: string) => void) => {
-    closedListeners.add(listener);
-    return () => closedListeners.delete(listener);
+  onAssignmentEvent: (listener: (event: AssignmentEvent) => void) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
   },
   saveAssignmentAnswers: api.save,
   useSubmitAssignmentAttempt: () => ({ isPending: false, mutate: api.submit }),
 }));
 vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => ({ invalidateQueries: invalidate }),
 }));
-vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
+vi.mock('@/components/ui/userToast', () => ({ userToast: toast }));
 vi.mock('@/features/quizzes/QuestionRunner', () => ({
   QuestionRunner: ({
     onChange,
@@ -86,6 +89,10 @@ const typeAnswer = () =>
     host.querySelector<HTMLButtonElement>('[data-type]')?.click()
   );
 const wait = (ms: number) => act(async () => vi.advanceTimersByTime(ms));
+const hear = (assignmentId: string, type: string) =>
+  act(async () => {
+    for (const listener of listeners) listener({ assignmentId, type });
+  });
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -143,10 +150,7 @@ it('leaves Submit to press after the submit at zero failed', async () => {
 it('submits what is on the page when its assignment closes', async () => {
   await show(attempt());
   await typeAnswer();
-  const close = (id: string) =>
-    act(async () => {
-      for (const listener of closedListeners) listener(id);
-    });
+  const close = (id: string) => hear(id, 'assignment_closed');
   await close('as_other');
   expect(api.submit).not.toHaveBeenCalled();
   expect(closed).not.toHaveBeenCalled();
@@ -158,4 +162,52 @@ it('submits what is on the page when its assignment closes', async () => {
     answers: { p1: 'typed' },
     id: 'at1',
   });
+});
+
+// Epo 2026-11-05: Republish reaches the open page, which reads the new questions
+// and lets go of what no longer fits.
+it('rereads when republished, and drops an answer whose option moved', async () => {
+  const mcq = (options: string[]) =>
+    attempt({
+      answers: { p1: [1] },
+      questions: [
+        {
+          id: 'q1',
+          labels: 'letters',
+          layout: 'paper',
+          parts: [
+            {
+              answer: { options, type: 'mcq' },
+              blocks: [{ text: 'Pick', type: 'text' }],
+              id: 'p1',
+              marks: 1,
+            },
+          ],
+          stem: [],
+        },
+      ],
+    } as Partial<AssignmentAttempt>);
+  api.save.mockResolvedValue(undefined);
+  await show(mcq(['a', 'b']));
+  invalidate.mockClear();
+  await hear('as_other', 'assignment_republished');
+  expect(invalidate).not.toHaveBeenCalled();
+  await hear('as1', 'assignment_republished');
+  expect(invalidate).toHaveBeenCalled();
+  expect(toast).toHaveBeenCalledWith({
+    title: m.assignment_questions_updated(),
+  });
+  expect(api.submit).not.toHaveBeenCalled();
+
+  await act(async () =>
+    root.render(
+      <AssignmentTake
+        attempt={mcq(['b', 'a'])}
+        onClosed={closed}
+        workspaceId="ws1"
+      />
+    )
+  );
+  await wait(5000);
+  expect(api.save).toHaveBeenLastCalledWith('at1', {});
 });

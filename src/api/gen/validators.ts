@@ -326,6 +326,7 @@ export const GetAssignmentResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -426,6 +427,7 @@ export const UpdateAssignmentResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -494,6 +496,7 @@ export const SetAssignmentClosedResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -572,6 +575,7 @@ export const PublishAssignmentResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -693,6 +697,7 @@ export const RepublishAssignmentResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -7412,6 +7417,7 @@ export const ListAssignmentsResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -7514,6 +7520,7 @@ export const CreateAssignmentResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()

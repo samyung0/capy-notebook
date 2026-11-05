@@ -4,6 +4,7 @@ import { api, qk } from './client';
 import {
   filesQuery,
   materialsQuery,
+  onAssignmentEvent,
   useEventStream,
   workspacesQuery,
 } from './hooks';
@@ -154,6 +155,21 @@ it('authenticates every connection, reconciles on connect, applies stream events
         serverFiles
       )
     );
+
+    // An assignment event reaches whoever listens; a malformed one doesn't.
+    const heard: unknown[] = [];
+    const stop = onAssignmentEvent((event) => heard.push(event));
+    send('notification', { assignmentId: 7, type: 'assignment_closed' });
+    send('notification', {
+      assignmentId: 'as1',
+      type: 'assignment_republished',
+    });
+    await vi.waitFor(() =>
+      expect(heard).toEqual([
+        { assignmentId: 'as1', type: 'assignment_republished' },
+      ])
+    );
+    stop();
 
     // A clean end is the server's bounded lifetime: reconnect with a fresh
     // token, without raising the banner.

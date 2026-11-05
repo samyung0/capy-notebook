@@ -7,6 +7,8 @@ import (
 	"hash/fnv"
 	"math"
 	"math/rand"
+	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -107,7 +109,9 @@ type AssignmentFile struct {
 type AssignmentManage struct {
 	QuizID *string `json:"quizId,omitempty"`
 	// QuizTitle is its quiz's current title, for the edit form.
-	QuizTitle      string   `json:"quizTitle,omitempty"`
+	QuizTitle string `json:"quizTitle,omitempty"`
+	// QuizTrashed: its quiz is in the trash, with nothing to open or republish.
+	QuizTrashed    bool     `json:"quizTrashed,omitempty"`
 	AssignAll      bool     `json:"assignAll"`
 	Assignees      []string `json:"assignees" nullable:"false"`
 	ApproveAIMarks bool     `json:"approveAiMarks"`
@@ -248,6 +252,7 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 			a.TopicIDs = []string{*src.topicID}
 		}
 		manage.Assignees = []string{}
+		manage.QuizTrashed = src.trashed
 		if staff {
 			a.Manage = &manage
 		}
@@ -967,9 +972,9 @@ func (s *Store) PublishAssignment(ctx context.Context, actorID, id string, qs []
 
 // RepublishAssignment replaces an open marked assignment's frozen copy with its
 // quiz as it is now (Epo 2026-11-05). A running attempt reads the new copy on its
-// next load and answers to parts it no longer has go at submit; a submitted one
-// keeps its graded copy and marks. Images it stops using stay until it is deleted,
-// as submissions may show them. questions is nil when the quiz is gone.
+// next load, without the saved answers that no longer fit (dropStaleAnswersTx); a
+// submitted one keeps its graded copy and marks. Images it stops using stay until
+// it is deleted, as submissions may show them. questions is nil when the quiz is gone.
 func (s *Store) RepublishAssignment(ctx context.Context, actorID, id string, qs []map[string]any, now time.Time) (Assignment, error) {
 	wsID, err := s.assignmentWorkspace(ctx, id)
 	if err != nil {
@@ -1014,12 +1019,145 @@ func (s *Store) RepublishAssignment(ctx context.Context, actorID, id string, qs 
 		if qs == nil {
 			return ErrAssignmentQuizGone
 		}
-		return s.publishAssignmentTx(ctx, tx, id, wsID, actorID, kind, qs, now)
+		var raw []byte
+		if err := tx.QueryRow(ctx, `SELECT questions FROM assignments WHERE id=$1`, id).Scan(&raw); err != nil {
+			return err
+		}
+		before, err := decodeFrozen(raw)
+		if err != nil {
+			return err
+		}
+		if err := s.publishAssignmentTx(ctx, tx, id, wsID, actorID, kind, qs, now); err != nil {
+			return err
+		}
+		return dropStaleAnswersTx(ctx, tx, id, before, qs)
 	})
 	if err != nil {
 		return Assignment{}, err
 	}
 	return s.GetAssignment(ctx, actorID, id, now)
+}
+
+// dropStaleAnswersTx takes out of its running attempts the saved answers that no
+// longer mean what the member chose in the new copy. Every writer of an attempt
+// takes the workspace first, which the caller holds.
+func dropStaleAnswersTx(ctx context.Context, tx pgx.Tx, id string, before, after []map[string]any) error {
+	rows, err := tx.Query(ctx, `SELECT id, answers FROM attempts WHERE assignment_id=$1 AND submitted_at IS NULL FOR UPDATE`, id)
+	if err != nil {
+		return err
+	}
+	saved := map[string][]byte{}
+	for rows.Next() {
+		var attempt string
+		var raw []byte
+		if err := rows.Scan(&attempt, &raw); err != nil {
+			rows.Close()
+			return err
+		}
+		saved[attempt] = raw
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	was, now := partAnswers(before), partAnswers(after)
+	for attempt, raw := range saved {
+		var answers map[string]any
+		if err := json.Unmarshal(raw, &answers); err != nil {
+			return err
+		}
+		kept := make(map[string]any, len(answers))
+		for part, value := range answers {
+			if a, b := was[part], now[part]; a != nil && b != nil && stillAnswers(a, b, value) {
+				kept[part] = value
+			}
+		}
+		if len(kept) == len(answers) {
+			continue
+		}
+		next, err := json.Marshal(kept)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE attempts SET answers=$2 WHERE id=$1`, attempt, next); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// partAnswers maps each part's id to its answer.
+func partAnswers(qs []map[string]any) map[string]map[string]any {
+	out := map[string]map[string]any{}
+	for _, q := range qs {
+		parts, _ := q["parts"].([]any)
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			id, _ := p["id"].(string)
+			a, _ := p["answer"].(map[string]any)
+			out[id] = a
+		}
+	}
+	return out
+}
+
+// stillAnswers reads whether a saved answer still means what the member chose
+// once a part changed, as practice's readers have it (AttemptBody's stillAnswers,
+// D9): a chosen option, ordering item or matching option that is gone or moved, or
+// a changed number of gaps, drops it.
+func stillAnswers(before, after map[string]any, value any) bool {
+	if before["type"] != after["type"] {
+		return false
+	}
+	switch before["type"] {
+	case "mcq":
+		chosen, ok := value.([]any)
+		was, _ := before["options"].([]any)
+		now, _ := after["options"].([]any)
+		if !ok {
+			return false
+		}
+		for _, raw := range chosen {
+			at, isNumber := raw.(float64)
+			i := int(at)
+			if !isNumber || i < 0 || i >= len(was) || i >= len(now) || !reflect.DeepEqual(was[i], now[i]) {
+				return false
+			}
+		}
+	case "ordering":
+		return sameItems(before["items"], after["items"])
+	case "matching":
+		chosen, ok := value.(map[string]any)
+		now, _ := after["options"].([]any)
+		if !ok {
+			return false
+		}
+		for _, option := range chosen {
+			if !slices.ContainsFunc(now, func(o any) bool { return reflect.DeepEqual(o, option) }) {
+				return false
+			}
+		}
+	case "gaps":
+		was, _ := before["accepted"].([]any)
+		now, _ := after["accepted"].([]any)
+		return len(was) == len(now)
+	}
+	return true
+}
+
+// sameItems reads whether two ordering parts hold the same items, in any order.
+func sameItems(a, b any) bool {
+	sorted := func(raw any) []string {
+		list, _ := raw.([]any)
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			text, _ := item.(string)
+			out = append(out, text)
+		}
+		slices.Sort(out)
+		return out
+	}
+	return slices.Equal(sorted(a), sorted(b))
 }
 
 // AssignmentSourceQuiz names a draft's quiz, for the caller to read before
@@ -2118,17 +2256,38 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 			out.Members[i].WaitingAnswers += attempt.waitingAnswers
 		}
 	}
-	out.Questions, out.Answers = questionReports(withRemovedQuestions(frozen, counted, waiting), counted, waiting)
+	out.Questions, out.Answers = questionReports(withRemoved(frozen, counted, waiting), counted, waiting)
 	return out, nil
 }
 
-// withRemovedQuestions adds, last, the questions a republish took out that a
-// submission still holds: their marks stand and their open answers wait.
-func withRemovedQuestions(frozen []map[string]any, attempts ...[]reportAttempt) []map[string]any {
+// withRemoved adds, last, what a republish took out that a submission still holds:
+// its marks stand and its open answers wait. A question that stayed takes back the
+// parts it lost; one that left comes back whole.
+func withRemoved(frozen []map[string]any, attempts ...[]reportAttempt) []map[string]any {
 	seen := make(map[string]bool, len(frozen))
 	for _, q := range frozen {
 		id, _ := q["id"].(string)
 		seen[id] = true
+		parts, _ := q["parts"].([]any)
+		held := map[string]bool{}
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			part, _ := p["id"].(string)
+			held[part] = true
+		}
+		for _, list := range attempts {
+			for _, attempt := range list {
+				theirs, _ := attempt.graded[id]["parts"].([]any)
+				for _, raw := range theirs {
+					p, _ := raw.(map[string]any)
+					if part, _ := p["id"].(string); !held[part] {
+						held[part] = true
+						parts = append(parts, raw)
+					}
+				}
+			}
+		}
+		q["parts"] = parts
 	}
 	removed := map[string]map[string]any{}
 	for _, list := range attempts {
@@ -2276,7 +2435,8 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 					fullMarks++
 				}
 			}
-			if open {
+			// By their own copy: a republish may have changed the question since.
+			if hasOpenPart(graded) {
 				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
 					Waiting: waiting, Awarded: awarded, Marks: marks})
 			}
@@ -2301,6 +2461,17 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 		reports = append(reports, report)
 	}
 	return reports, rows
+}
+
+func hasOpenPart(q map[string]any) bool {
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		if a, _ := p["answer"].(map[string]any); a["type"] == "open" {
+			return true
+		}
+	}
+	return false
 }
 
 func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport {

@@ -2847,6 +2847,7 @@
   "assignment_last_published": "Last published {date}",
   "assignment_republish_title": "Republish the quiz?",
   "assignment_republish_body": "This replaces the assignment's questions with the quiz as it is now. Anyone in progress gets them on their next load, and answers to removed questions are dropped. Submitted attempts keep their marks.",
+  "assignment_questions_updated": "The questions were updated.",
   "assignment_settings_details": "Assignment details",
   "assignment_settings_close": "Close assignment",
   "assignment_settings_reopen": "Reopen assignment",

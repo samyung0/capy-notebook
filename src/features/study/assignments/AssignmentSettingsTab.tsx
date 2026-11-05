@@ -42,7 +42,8 @@ export function AssignmentSettingsTab({
 }) {
   const navigate = useNavigate();
   const { workspaceId, id, draft, closedAt, manage } = assignment;
-  const quizId = manage?.quizId;
+  // A quiz in the trash has nothing to open or republish.
+  const quizId = manage?.quizTrashed ? undefined : manage?.quizId;
   const [editing, setEditing] = useState(false);
   const [asking, setAsking] = useState<Asking | null>(null);
   const { mutate: publish, isPending: publishing } = usePublishAssignment(
