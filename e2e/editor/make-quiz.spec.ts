@@ -290,8 +290,15 @@ test('an uploaded paper is read first, and saved to Files hidden from members', 
   const next = dialog(page).getByRole('button', {
     name: m.action_continue(),
   });
-  await expect(next).toBeDisabled();
   await expect(next).toBeEnabled({ timeout: 30_000 });
+  // Still reading: the dialog gives way to the panel until the pages can open.
+  await next.click();
+  await expect(dialog(page)).toHaveCount(0);
+  await page
+    .getByTestId('source-transfer-panel')
+    .getByRole('button', { name: m.make_quiz_choose_pages_action() })
+    .click({ timeout: 30_000 });
+  await expect(pageSheet(page, 1)).toBeVisible({ timeout: 30_000 });
   const saved = await page.evaluate(async () => {
     const files = await (await fetch('/api/workspaces/ws_bio/files')).json();
     return files.find((row: { name: string }) => row.name === 'new paper.pdf');

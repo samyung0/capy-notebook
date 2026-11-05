@@ -1,5 +1,5 @@
 import { useQueries } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { fileQuery, filesQuery } from '@/api/hooks';
 import type { SourceFile } from '@/api/types';
@@ -16,6 +16,7 @@ import { userToast } from '@/components/ui/userToast';
 import { fileIsIngesting } from '@/features/files/fileUtils';
 import { QuizRunRows } from '@/features/makeQuiz/QuizRunRows';
 import { dismissQuizRuns, useQuizRuns } from '@/features/makeQuiz/quizRuns';
+import { useQuizWaitStates } from '@/features/makeQuiz/quizWaits';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
@@ -245,7 +246,13 @@ export function SourceTransferPanel() {
     return () => clearTimeout(timer);
   }, [allDone]);
   const quizRuns = useQuizRuns((state) => state.runs);
-  if (transfers.length === 0 && quizRuns.length === 0) return null;
+  const quizWaits = useQuizWaitStates();
+  const [waitsHidden, setWaitsHidden] = useState(false);
+  const shownWaits = waitsHidden ? [] : quizWaits;
+  useEffect(() => {
+    if (quizWaits.length === 0) setWaitsHidden(false);
+  }, [quizWaits.length]);
+  if (transfers.length + quizRuns.length + shownWaits.length === 0) return null;
   const finished = kinds.filter(
     (kind) =>
       kind !== 'progress' && kind !== 'indeterminate' && kind !== 'queued'
@@ -266,6 +273,8 @@ export function SourceTransferPanel() {
         onClick={() => {
           dismissSourceTransfers();
           dismissQuizRuns();
+          // The toast still says when its files are ready.
+          setWaitsHidden(true);
         }}
         size="xs"
         strokeWidth={2}
@@ -287,7 +296,7 @@ export function SourceTransferPanel() {
           </ul>
         </>
       )}
-      <QuizRunRows />
+      <QuizRunRows waits={shownWaits} />
     </Card>,
     document.body
   );

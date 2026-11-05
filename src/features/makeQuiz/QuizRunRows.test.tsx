@@ -13,6 +13,7 @@ vi.mock('@tanstack/react-query', () => ({
   useQueries: () => [read.value],
 }));
 // The server render reads a store's first state, so the run is the mock's.
+vi.mock('./quizWaits', () => ({ openQuizWait: vi.fn() }));
 vi.mock('./quizRuns', () => ({
   quizRunLinks: () => undefined,
   useQuizRuns: () => [
@@ -41,7 +42,7 @@ const report = {
   stopped: '' as const,
   windows: 1,
 };
-const rows = () => renderToStaticMarkup(<QuizRunRows />);
+const rows = () => renderToStaticMarkup(<QuizRunRows waits={[]} />);
 
 it('shows a running run with how far it has got', () => {
   read.value = { data: run({}) };

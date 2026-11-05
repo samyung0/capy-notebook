@@ -34,9 +34,11 @@ import {
   hasPaperRoom,
   isOfferable,
   isQuizFile,
+  isReadingFile,
   isUnreadable,
 } from './makeQuiz';
 import { type DialogStep, usePageStep } from './PagePicker';
+import { addQuizWait } from './quizWaits';
 import { useQuizUpload } from './useQuizUpload';
 
 /** A file on the dialog: from Files, or an upload, whose transfer row `key`
@@ -436,20 +438,23 @@ export function MakeQuizDialog({
     setPaper(settle);
     setAnswers(settle);
   }, [transfers]);
-  const readyFile = (row: Picked) => {
+  // An upload goes on without the dialog once it has started: before that the browser
+  // is still reading its page count, here.
+  const usable = (row: Picked) => {
     const file = files?.find((item) => item.id === row.fileId);
     return (
-      !!file?.indexed &&
-      file.status !== 'pending' &&
-      file.status !== 'processing'
+      !row.failure &&
+      !(file && isUnreadable(file)) &&
+      (!!row.fileId || transfers.some((item) => item.key === row.key))
     );
   };
-  const answerUsable = (row: Picked) => {
+  const allRead = [...paper, ...answers].every((row) => {
     const file = files?.find((item) => item.id === row.fileId);
-    return !!row.fileId && !row.failure && !(file && isUnreadable(file));
-  };
+    return !!file && !(isReadingFile(file) && !file.indexed);
+  });
   const canContinue =
-    paper.length > 0 && paper.every(readyFile) && answers.every(answerUsable);
+    paper.length > 0 && paper.every(usable) && answers.every(usable);
+  const waitingFile = ({ fileId, key }: Picked) => ({ fileId, key });
 
   // Which menu asked for the upload, kept past the menu closing.
   const uploadFor = useRef<'more' | 'paper'>('paper');
@@ -677,26 +682,39 @@ export function MakeQuizDialog({
       : onPages
         ? pages
         : {
-            action: (
-              <Button
-                disabled={!canContinue}
-                onClick={() => onShowPages(choice)}
-                type="button"
-              >
-                {m.action_continue()}
-              </Button>
-            ),
             body: null,
             closable: false,
             footer: (
               <>
-                <p className="t-meta mr-auto flex min-w-0 items-center gap-2 self-center text-fg-muted">
+                <p className="t-meta mr-auto flex min-w-0 items-center gap-2 self-center text-fg-muted max-sm:w-full">
                   <Icon className="shrink-0" name="viewOffSlash" size={16} />
                   {m.make_quiz_hidden_note()}
                 </p>
                 <span className="contents max-sm:hidden">
                   <DialogCancel />
                 </span>
+                <Button
+                  className="max-sm:ml-auto"
+                  disabled={!canContinue}
+                  onClick={() => {
+                    if (allRead) {
+                      onShowPages(choice);
+                      return;
+                    }
+                    // Still reading, which may take a while: the panel follows it, and
+                    // the pages open once it is done.
+                    addQuizWait({
+                      answers: answers.map(waitingFile),
+                      paper: paper.map(waitingFile),
+                      title: paper[0]?.name ?? '',
+                      workspaceId,
+                    });
+                    onClose();
+                  }}
+                  type="button"
+                >
+                  {m.action_continue()}
+                </Button>
               </>
             ),
             onCloseClick: onClose,
