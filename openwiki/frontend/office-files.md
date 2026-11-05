@@ -49,7 +49,7 @@ git submodule update --init vendor/betteroffice
 `scripts/prepare-betteroffice.mjs`; `pnpm dev` and Playwright's Vite servers do
 not, so run `pnpm office:prepare` first (browser E2E CI does). It installs the fork's locked Bun workspace
 and builds the scoped DOCX stylesheet plus DOCX/XLSX/PPTX viewer/editor WASM artifacts and the headless checkpoint bundle. The fork builder verifies source/output fingerprints before reusing WASM. A cold build
-requires Bun, Rust, `wasm-pack` 0.15.0, and `wasm-opt` from Binaryen. Existing,
+requires Bun 1.4.3 (CI's), Rust, `wasm-pack` 0.15.0, and `wasm-opt` from Binaryen. Existing,
 intact generated artifacts are reused.
 
 Frontend CI, browser E2E CI, and SPA deployment restore
@@ -76,6 +76,13 @@ seeds and `shared/office-checkpoint.test.ts`, then the XLSX golden seeds in
 CI runs it inside `vendor/betteroffice` after the office build. A golden seed
 hash that differs between the old and the new pin means the seed output
 changed, so the bump ships in a [maintenance window](#maintenance-window).
+`collaboration-rs/crates/sources/tests/seed_parity.rs` holds the server's build
+to the same golden hashes for all three formats: this workspace enables
+serde_json's `preserve_order` and the browser's WASM does not, so docx-parse
+writes text-box and SmartArt paragraph JSON with sorted keys and every build
+seeds the same bytes (Epo 2026-10-17). A seed change also regenerates the mock
+checkpoints in `src/mocks/fixtures/` (`pnpm exec tsx
+scripts/dev/seed-scenario-office.ts`).
 Golden seeds cover a few fixtures; stored Office changes depend on every stored
 base seeding the same bytes. Before deploying a pin to an environment, run the
 seed check there: `office-maintenance seed-manifest` in the gateway container
@@ -103,6 +110,26 @@ carrying its run's marks, a drawn SmartArt shape carries its source XML, and
 a SmartArt frame the parser cannot draw becomes a raw unit. The goldens hold
 neither, so the seed check on each environment decides whether DOCX joins the
 reset.
+
+**The 0.5.1 pin.** The fork carries upstream's 0.5.1 (4e982c3ae) on Capy's
+engines, with deck schema 6.0 (every PPTX seed changes, so every PPTX room
+resets at deploy) and XLSX and DOCX seed changes the seed check lists. What
+changes for a reader of this page is in the sections below; what deliberately
+stays Capy's:
+
+- DOCX: upstream's style rebase (#1606) is out, since a mark keeps its own font
+  size (2026-10-06); legacy comment reply threading (#1706) and the three speed
+  ports wait; a peer's typing in a table another peer deleted is lost on Undo
+  until Capy's own room fix (#1530, Q549).
+- XLSX: the auto filter stays in place on a row or column edit, in both the
+  standalone engine and rooms (Q554, #1653 reverted); a room keeps one hyperlink
+  per cell, as Excel does (Q555); Capy's reader index stays (upstream's #1623 is
+  20 to 200 times slower per typed edit); recalculation is 4-5% slower than
+  before, from 0.5.1's own take layers (Q556).
+- PPTX: slide backgrounds wait for their own deck format change (Q505); a joined
+  paragraph's lost hyperlink on save (#1508) waits for the save-fidelity work;
+  a peer's edits to a deleted shape are lost on Undo until the room fix (#1506,
+  Q549).
 
 ## Browser loading model
 
@@ -472,6 +499,8 @@ Cursors cross the same way: the editor's own goes to the room's awareness and
 the co-editors' come back under the names the room's presence gives them
 ([plate-editor](plate-editor.md#office-cursors)). Input in the frame reaches
 Capy's idle close as an `activity` message ([plate-editor](plate-editor.md#idle-close)).
+A DOCX or PPTX replica takes the room's updates as they arrived, not the
+parent's Y.Doc events ([Undo of what a co-editor changed](#undo-of-what-a-co-editor-changed)).
 
 The parent's Y.Doc runs no formatting cleanup, matching yrs in the DOCX and
 PPTX editors (`docx-edit`, `pptx-edit`) and the room. Stock Yjs, after every remote update to a text with formatting,
@@ -774,8 +803,14 @@ the two (`merge_paragraphs` in `crates/docx-edit`):
   so the section break stays.
 
 Delete or Backspace right next to a table or block content control never
-deletes it: the user selects it to delete it. A break next to the caret goes
-like any character. Backspace and Delete beside a field that shows nothing (a
+deletes it: the user selects it to delete it. Backspace at the start of a slot
+that opens with a table moves the caret to the end of the table's last cell and
+edits nothing (`delete_adjacent`; Q543, upstream #1680), so before a table the
+empty-paragraph rule above is Delete's alone. Offset 0 (Home, Left from the
+text's start, Right from the paragraph above, Ctrl+Home in a table-led document)
+and offset 1 (a click) draw at the same place and act the same; a click reaches
+the engine through the resident path's refusal and `deleteAt`. A break next to
+the caret goes like any character. Backspace and Delete beside a field that shows nothing (a
 table of contents' own marker, a REF over links only, the first half of a
 split field, a comment reference) step over it and delete the visible
 character past it, or join at the paragraph mark there; Delete before one that
@@ -794,7 +829,15 @@ the new paragraph restores the document; the editor's Enter then gives the
 next style to neither paragraph. Every split keeps the paragraph's borders on
 both halves, as Word copies the paragraph mark (mid-paragraph, at its start or
 end and before a block), and leaves a section with the mark that ends it (the
-new mark never takes `sectPr` or `sectionBreakType`). Enter at a paragraph's
+new mark never takes `sectPr` or `sectionBreakType`). Enter at the end of a
+paragraph gives the new empty paragraph the formatting of the run before the
+caret, whichever host or paste asks (`split_at`, `mark_run_formatting` in
+`seed.rs`; Q605, upstream #1453), and typing with inherited formatting into a
+paragraph without content takes its mark's run formatting, so that text saves
+with direct formatting. Reopened before anything is typed in it, such a
+paragraph's mark has the source mark's `rPr` (known gap, as upstream). Shift+Enter
+and `insertLineBreak` input put one line break inside the paragraph (#1488).
+Enter at a paragraph's
 end inserts the new mark after the existing one (`split_paragraph` in
 `ops/paragraph.rs`): the text keeps its mark and id, so a peer's concurrent
 paragraph change stays on the text and two peers' Enters at one end give each
@@ -821,7 +864,8 @@ renames once after the load (`seedYrsSession`), so a state stored before both
 splitting peers exchanged does not keep the duplicate for a later session. If
 the peer whose split kept the id undoes it after the rename, the survivor
 keeps the other half's renamed id and no paragraph carries the source id any
-more. Exports
+more. An Undo or Redo that re-inserts marks duplicating an id renames them right
+after the step by the same rule (Q550, upstream #1456). Exports
 from a stored state that still holds the duplicate (office-checkpoint loads
 without renaming) take the save's backstop: a source `w14:paraId` stays on
 the first paragraph and each repeat gets a hex id, as for editor ids, in
@@ -1422,7 +1466,16 @@ of the sheet, as in Excel (Tab and Shift+Tab stop at columns A and XFD), and a
 click, drag or Shift+click selects the cells under the pointer anywhere, while
 Ctrl/Cmd+arrow, End, Ctrl/Cmd+End and Select all stop at the used range, which
 the engine reports with the sheet info (Ctrl/Cmd+End lands on the last used
-cell). Clear and cut act on the selection's part inside the used range
+cell). Moves step over hidden rows and columns (#1511), End goes to the row's
+last data cell (#1580), a merged range counts as one cell: a move leaves it from
+its far edge and lands on its top-left cell (#1665). A jump past the drawn window
+asks the engine, and keys pressed meanwhile queue and act where it lands (#1539).
+A value typed as a date, time, percentage or accounting negative is stored as a
+number, and a General cell takes the implied format in the same undo step
+(#1491). A formula copied in the editor and pasted shifts its relative references
+from the cell it came from, in one undo step, and text from elsewhere pastes as
+typed (#1520); a cut pastes its formulas as they were, since a cut clears at cut
+time. Clear and cut act on the selection's part inside the used range
 (inputs committed but not drawn yet count) and resolve in the engine
 (`clearContents`) to edits for only the cells that hold a value or a formula,
 so their cost is bounded by the cells that hold content. Any edit (a clear,
@@ -1748,7 +1801,16 @@ slide, move slide, delete object) are host menu commands that
 `PptxEditorApi.runCommand` runs by id (`PPTX_COMMAND_IDS`), with
 `onCommandState` reporting what each can do and `PPTX_COMMAND_EDITS` saying
 which edit. Delete or Backspace deletes a selected object unless its text is
-being edited.
+being edited. A corner drag on a picture whose source locks its aspect
+(`a:picLocks@noChangeAspect`) scales continuously along the frame's diagonal
+(#1510, #1537), and a click in a second text column finds its line (#1533).
+
+A deck's run `kern` is read from the source, kept through edits and written on
+save (0-4000 pt; clear formatting removes it). It made deck schema 6.0, the one
+version the engine reads (2026-10-17). An added text box saves as `txBox="1"`
+(#1507). A save from the browser's renderer refits normal autofit for typed text
+and leaves out a refit equal to what the layout or master gives (#1526, #1701);
+server and checkpoint exports keep the stored scale, as upstream's do (Q558).
 
 PPTX lists, levels and paragraph spacing are written as PowerPoint writes them
 (`crates/pptx-edit/src/story.rs`): a bulleted item gets `a:buChar` with
@@ -3036,6 +3098,70 @@ returns; it now stays near the opened workbook (338 MiB). Measurements:
 [2026-10-05 replica report](../bench/collaboration/reports/2026-10-05-office-engine-replicas.md),
 [2026-10-05 effects reader report](../bench/collaboration/reports/2026-10-05-office-engine-effects.md).
 
+### Undo of what a co-editor changed
+
+One person deletes a DOCX table or a PPTX slide or shape, another types or moves
+something inside it, and the first presses Undo: the content comes back with the
+other's edit, for both of them and for whoever joins after (Epo 2026-11-04, Q549 A;
+landed 2026-11-05, Q623). Room state, seeds, joiner payloads and readers are
+unchanged: before the Undo the room holds nothing of the kept text, and the Undo's
+update is ordinary growth under the room's cap.
+
+- **Engine.** `UndoManager::adopt_concurrent_edits` in the vendored yrs, opt-in, on
+  for the DOCX and PPTX engines only. What a peer's update lands in content a step
+  deleted joins the step and is kept; a map value replaces the key's earlier value
+  in the step; what the update names as deleted inside that content, without naming
+  the content and with no later value for the key, leaves the step as the peer's
+  deliberate delete. While restoring, a value its writer's collection emptied does
+  not block the one before it (Q625). `forward_concurrent_edits` copies what lands
+  after an Undo into the restored copy, as a system edit outside Undo. The server's
+  own `ydoc::undo` (agent edits) does not opt in.
+- **Room.** Yrs collects an item landing in deleted content in the commit that
+  brought it, so the room's own update would not carry it. `ydoc::apply_freeing`
+  reports it (`Lost`), and `Room::apply_update` then relays the writer's bytes in
+  yrs's own encoding (`yrs::merge_updates_v1`), as it does for a delete of what the
+  room already holds deleted; a reconnect's step 2 names its whole delete set, so
+  there only what landed counts. Frames the commit lost nothing of keep the room's
+  encoding.
+- **Host.** `RoomProvider.onFrame` hands the frame over before the parent's Y.Doc
+  applies it, since Yjs reports an update after collecting it; `deliverToEngine`
+  (`useOfficeRuntime.ts`) gives DOCX and PPTX engines those frames and keeps XLSX on
+  the document's update event. Host documents keep garbage collection (Q431).
+
+The other person's caret in a deleted DOCX table no longer resolves, so the
+session's `selection()` reads null and the editor places it again at the start of
+the body's first paragraph (`ensureSelection`); it stays there after the Undo.
+
+Limits the developer accepted (Q623, Q626):
+
+- The undoer's socket is down while the typing passes: the Undo restores without
+  it, and everyone reads alike.
+- The undoer's tab closed or reloaded: its Undo stack is gone anyway.
+- The other person's own Undo after the restore does nothing; the text stays.
+- An agent's delete undone from its payload does not carry a person's edit made
+  meanwhile.
+- The other person heard the delete before their typing left the browser: their
+  own collection took the text.
+- Another person's slide reorder or z-order move of deleted content is not kept.
+- A co-editor's delete arriving after the Undo is not forwarded to the restored copy.
+- Undoing further back, past the restore, overrides the other person's value.
+- Restored text is written under the undoer's client id.
+
+**A cell with no stored content (Epo 2026-11-05, Q624).** A table's `rows` value can
+name a story nobody holds: two people insert rows and the first undoes, or a kept
+`rows` value names a story a third person deleted. The cell reads as empty and the
+document keeps working, with no error, as Sheets and Excel treat a cell with no
+content. `lower_table` gives it one empty paragraph with no positions, so the row
+keeps a line's height and no caret lands in it; the position projection, the
+sidebar's index, Find and `yrsCellStory` pass over it; the save writes the `<w:p/>`
+every `w:tc` needs. A click in the cell lands on the nearest paragraph someone
+holds, and Tab stops before it. Merging a selection that holds such a cell is refused
+as an operation error.
+
+Older and queued apart (Q626): Undo of concurrent row operations can lose a table's
+`grid`, and when both people delete a DOCX table and both undo, the body holds it
+twice.
+
 ## Maintenance window
 
 An engine upgrade that changes seed output runs in a maintenance window; the
@@ -3142,7 +3268,8 @@ The DOCX engine round (export memory fixes, bookmarks anchored in one walk,
 yrs compacting its block list once per commit) also starts each seeded story
 without a placeholder paragraph mark, which changes every DOCX seed and the
 DOCX golden hashes. While Capy has no users such a pin deploys without the
-window (2026-10-18), so migration `0103_docx_engine_round_reset.sql` is the
+window (2026-10-18), so migration `0103_docx_engine_round_reset.sql` (and for
+BetterOffice 0.5.1, all three formats, `0150_office_051_reset.sql`) is the
 template's reset for `'docx'` without its guard: unpublished DOCX edits are
 dropped and the files end published, a DOCX refresh in flight is superseded as
 an epoch reset supersedes it, and a deferred publication's pending rebuild ends

@@ -39,6 +39,9 @@ yrs.workspace = true
 rlimit = "0.10"
 
 [dev-dependencies]
+# Run as a browser runs them, in the Q549 rooms tests.
+docx-edit = { package = "betteroffice-docx-edit", path = "../../../vendor/betteroffice/crates/docx-edit" }
+pptx-edit = { package = "betteroffice-pptx-edit", path = "../../../vendor/betteroffice/crates/pptx-edit" }
 # Reads the notes corpus for the Undo cost calibration (`edits.rs`).
 flate2 = "1"
 # The browser's late merge, run natively by the Q443 rooms test.

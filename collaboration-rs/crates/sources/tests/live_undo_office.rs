@@ -1739,3 +1739,54 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
     }
     assert!(short.is_empty(), "{short:#?}");
 }
+
+/// Q549, an accepted limit: an agent's delete undone from its payload brings back
+/// what the payload was built with; a person's edit that landed in the deleted
+/// slide meanwhile stays lost (the fix in the editors' Undo does not reach this path).
+#[test]
+fn an_agents_undo_keeps_no_edit_made_inside_what_it_deleted() {
+    let file = File::open(Format::Pptx, LESSON_PPTX);
+    let room = file.room();
+    let slides = file.slides(&room);
+    let expected_text = file.slide_text(&room, 1);
+    let entry = file
+        .entries(&room)
+        .into_iter()
+        .find(|entry| entry.value.len() > 3 && expected_text.contains(&entry.value))
+        .unwrap();
+    let before = state(&room);
+    let edited = format!("{} edited", entry.value);
+    let person = office_service::apply_commands(
+        &file.base,
+        file.checkpoint(&before),
+        &[Command::ReplaceText {
+            target_id: entry.id.clone(),
+            expected_text: entry.value.clone(),
+            text: edited.clone(),
+        }],
+    )
+    .unwrap();
+    let undo = file.durable_edit(
+        &room,
+        &[Command::DeleteSlide {
+            slide_id: slides[0].clone(),
+            expected_text,
+        }],
+    );
+    let copy = doc_of(&before);
+    copy.transact_mut()
+        .apply_update(Update::decode_v1(&person.state).unwrap())
+        .unwrap();
+    let update = copy
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    ydoc::apply(&room, Update::decode_v1(&update).unwrap()).unwrap();
+    let room = undone(&room, &undo);
+    let now = file
+        .entries(&room)
+        .into_iter()
+        .find(|now| now.id == entry.id)
+        .unwrap()
+        .value;
+    assert_eq!(now, entry.value);
+}

@@ -6,6 +6,7 @@ import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
 import { useCollaborationHeld } from '@/features/collaboration/held';
 import { frameInput } from '@/features/collaboration/idle';
+import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { getLocale, m } from '@/i18n';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { imageLimit } from '@/lib/fitImage';
@@ -52,6 +53,7 @@ import {
   uploadThumbnail,
 } from './thumbnailCapture';
 import {
+  type RoomFrames,
   SOURCE_IFRAME_ORIGIN,
   sessionReported,
   useSizeLimitView,
@@ -564,6 +566,7 @@ export function useOfficeRuntime({
     source.doc,
   ]);
 
+  const frames = source.frames;
   // The co-editors' cursors (Epo 2026-10-20), and this editor's gone when it
   // leaves Edit.
   const cursors = source.cursors;
@@ -591,8 +594,7 @@ export function useOfficeRuntime({
     const doc = source.doc;
     if (!doc || mode !== 'edit' || !source.session) return;
     const epoch = source.session.epoch;
-    const send = (update: Uint8Array, origin: unknown) => {
-      if (origin === SOURCE_IFRAME_ORIGIN) return;
+    const deliver = (update: Uint8Array) => {
       // Not this editor's own edit: a capture drawn before it is stale.
       captureRef.current?.remote();
       const bytes = update.slice().buffer;
@@ -600,9 +602,8 @@ export function useOfficeRuntime({
         bytes,
       ]);
     };
-    doc.on('update', send);
-    return () => doc.off('update', send);
-  }, [source.doc, source.session, mode, post]);
+    return deliverToEngine(doc, format, frames, deliver);
+  }, [format, frames, source.doc, source.session, mode, post]);
 
   /**
    * A `popup: 'presenter'` command: opens the presenter window from the
@@ -1175,6 +1176,32 @@ const OFFICE_NOTICE_TOASTS: Record<
  * as for any pause; the XLSX editor takes `sending` instead and refuses edits
  * with a busy cursor.
  */
+/**
+ * Hands an editor's engine what it did not write. A DOCX or PPTX engine takes
+ * the room's updates as they arrived: this document's update event comes after
+ * its collection, and the engine's Undo keeps what lands in what it deleted
+ * (Q549). XLSX has no such step.
+ */
+export function deliverToEngine(
+  doc: Y.Doc,
+  format: string,
+  frames: RoomFrames,
+  deliver: (update: Uint8Array) => void
+) {
+  const asArrived = format !== 'xlsx';
+  const send = (update: Uint8Array, origin: unknown) => {
+    if (origin === SOURCE_IFRAME_ORIGIN) return;
+    if (asArrived && origin instanceof RoomProvider) return;
+    deliver(update);
+  };
+  doc.on('update', send);
+  const stopFrames = asArrived ? frames.subscribe(deliver) : undefined;
+  return () => {
+    doc.off('update', send);
+    stopFrames?.();
+  };
+}
+
 export function frameCanEdit({
   current,
   editable,

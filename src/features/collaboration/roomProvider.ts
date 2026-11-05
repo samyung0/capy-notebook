@@ -45,6 +45,10 @@ export interface RoomProviderConfig {
   onDestroy?: () => void;
   /** The socket dropped or the room was left. */
   onDisconnect?: () => void;
+  /** A room update as it arrived, before the document applies it. Yjs's own
+   * update event reports it after collecting what landed in deleted content,
+   * which an Office editor's Undo may bring back (Q549). */
+  onFrame?: (update: Uint8Array) => void;
   /** The room's other editors (`presence.ts`); none once the channel ends. */
   onPresence?: (connections: PresenceConnection[]) => void;
   /** The room's answer waits on the user's open budget (many large opens
@@ -789,6 +793,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       );
       return;
     }
+    this.config.onFrame?.(body);
     Y.applyUpdate(this.document, body, this);
     if (kind === SyncKind.Step2 && !this.isSynced) {
       this.isSynced = true;

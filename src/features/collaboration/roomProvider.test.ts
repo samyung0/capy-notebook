@@ -1492,3 +1492,39 @@ it('ends its channel quietly when the page sleeps and joins again on wake', asyn
   await flush();
   expect(next.take(MessageKind.Join)).toHaveLength(1);
 });
+
+// Q549: an update landing in what this document holds deleted is collected
+// before Yjs's update event reports it, so an Office engine takes the frame.
+it('hands a room update over as it arrived', async () => {
+  const frames: Uint8Array[] = [];
+  const { document, join, socket } = await joined({
+    onFrame: (update) => frames.push(update),
+  });
+  const peer = new Y.Doc();
+  const text = new Y.Text();
+  peer.getMap('stories').set('story', text);
+  text.insert(0, 'hello');
+  const seed = Y.encodeStateAsUpdate(peer);
+  socket.deliver(
+    message(join.channel, MessageKind.Sync, syncMessage(SyncKind.Update, seed))
+  );
+  document.getMap('stories').delete('story');
+  text.insert(5, ' PEER');
+  const typed = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(document));
+  const reported: Uint8Array[] = [];
+  document.on('update', (update) => reported.push(update));
+  frames.length = 0;
+  socket.deliver(
+    message(join.channel, MessageKind.Sync, syncMessage(SyncKind.Update, typed))
+  );
+  const strings = (update: Uint8Array) =>
+    Y.decodeUpdate(update)
+      .structs.map((struct) =>
+        struct instanceof Y.Item && struct.content instanceof Y.ContentString
+          ? struct.content.str
+          : ''
+      )
+      .join('');
+  expect(frames.map(strings)).toEqual([' PEER']);
+  expect(reported.map(strings)).toEqual(['']);
+});
