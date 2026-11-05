@@ -173,3 +173,18 @@ def test_the_grade_route_needs_the_secret_and_answers_shares(monkeypatch):
     assert done.status_code == 200
     assert done.json()["shares"] == [1.0]
     assert pinned["slot"].value == "grading"
+
+
+@pytest.mark.asyncio
+async def test_a_call_past_its_time_fails_with_room_for_the_line(monkeypatch):
+    """Each part's time holds its own bound plus chat's 60 s wait in the line."""
+    import asyncio
+
+    async def never(messages, **kwargs):
+        await asyncio.sleep(5)
+
+    assert grading._TIMEOUT_S == {"thinking": 180.0, "plain": 90.0}
+    monkeypatch.setattr(grading, "_TIMEOUT_S", {"thinking": 0.01, "plain": 0.01})
+    monkeypatch.setattr(grading.models, "complete", never)
+    with pytest.raises(TimeoutError):
+        await grading.grade_part("Name a cell part.", ITEMS, ANSWER, model=None)

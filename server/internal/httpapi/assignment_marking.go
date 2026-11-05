@@ -12,7 +12,7 @@ import (
 // markingAttemptTimeout bounds one attempt from when its turn comes, however long
 // the line of attempts before it (thirty members handing in one paper took about
 // 15 minutes in the 2026-11-04 concurrency run). A 40-part paper took under 90 s.
-const markingAttemptTimeout = 10 * time.Minute
+var markingAttemptTimeout = 10 * time.Minute
 
 // assignmentMarking is what the gateway is marking: the run's progress per
 // assignment, and one lock per payer, since a payer's sessions are few

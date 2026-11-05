@@ -52,12 +52,18 @@ func openGradingAPIWith(t *testing.T, choice string, cfg httpapi.Config) (http.H
 			return
 		}
 		var body struct {
-			Items []any `json:"items"`
+			Question string `json:"question"`
+			Items    []any  `json:"items"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		// One part never answers, until the caller gives up on it.
+		if choice == "slow-second" && strings.Contains(body.Question, "Second part") {
+			<-r.Context().Done()
+			return
+		}
 		shares := make([]float64, len(body.Items))
 		for i := range shares {
-			shares[i] = map[string]float64{"zero": 0, "partial": 0.5, "full": 1, "fail-once": 1}[choice]
+			shares[i] = map[string]float64{"zero": 0, "partial": 0.5, "full": 1, "fail-once": 1, "slow-second": 1}[choice]
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"shares": shares, "comment": "Offered two answers for one point."})
 	}))
