@@ -117,7 +117,7 @@ Pages range from 1 to 11 credits, and questions from 1.5 to 4.3. So cost follows
 
 ## Spend
 
-$1.63 in all for this work against a $1.80 stop: $0.91 for the answer files report and $0.72 here. That includes the failed Chinese
+$1.62 in all for this work against a $1.80 stop: $0.91 for the answer files report and $0.71 here. That includes the failed Chinese
 runs and those lost to sleep. The fixes above were tested with unit tests after the money ran out, except where a table says a
 run followed them. Keys stayed in the process.
 
