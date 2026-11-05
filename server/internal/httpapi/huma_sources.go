@@ -197,10 +197,11 @@ func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *st
 	if err := readTicketMetadata(w, r, &body); err != nil {
 		return uploadTurn{}, err
 	}
-	if _, _, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch); err != nil {
+	_, topicName, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch)
+	if err != nil {
 		return uploadTurn{}, err
 	}
-	if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), body.SizeBytes); err != nil {
+	if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), topicName, body.SizeBytes); err != nil {
 		return uploadTurn{}, err
 	}
 	return a.uploads.take(uid(r), sourceUploadTarget(wsID), sourceClaim(&body))

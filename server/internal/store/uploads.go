@@ -131,6 +131,9 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 	if _, err := s.lockFileEditorMutationTx(ctx, tx, in.WorkspaceID, in.CreatedBy, in.CreatedBy); err != nil {
 		return UploadSession{}, err
 	}
+	if err := s.assertUploadTopicFitsTx(ctx, tx, in.WorkspaceID, in.TopicName); err != nil {
+		return UploadSession{}, err
+	}
 	// The uploader pays (Sam 2026-10-18).
 	if err := s.reserveStorageTx(ctx, tx, in.CreatedBy, in.DeclaredSize); err != nil {
 		return UploadSession{}, err

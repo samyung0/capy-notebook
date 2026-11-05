@@ -114,7 +114,7 @@ function ListPopover({
         search,
         to: '/workspaces/$workspaceId',
       });
-    else void navigate({ to: '/workspaces' });
+    else void navigate({ to: '/' });
   };
 
   return (

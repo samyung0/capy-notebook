@@ -43,7 +43,7 @@ func (a *api) createBlankFile(ctx context.Context, in *createBlankFileInput) (*f
 	// Refused before the engine builds anything: access, the account, its
 	// storage, the workspace's file cap and then the topic, as an upload's.
 	// The insert gates them again.
-	if err := a.s.AssertSourceUploadRoom(ctx, in.ID, actor, 0); err != nil {
+	if err := a.s.AssertSourceUploadRoom(ctx, in.ID, actor, "", 0); err != nil {
 		return nil, hErr(err)
 	}
 	var topicID *string

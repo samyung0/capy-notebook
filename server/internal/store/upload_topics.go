@@ -31,6 +31,27 @@ func (s *Store) nextTopicPositionTx(ctx context.Context, tx pgx.Tx, wsID string)
 	return count, nil
 }
 
+// assertUploadTopicFitsTx refuses an upload naming a new topic the workspace has
+// no room for, at its ticket and again when its session starts.
+// resolveUploadTopicID still decides when the file arrives, as another topic may
+// take the last place in between.
+func (s *Store) assertUploadTopicFitsTx(ctx context.Context, tx pgx.Tx, workspaceID, topicName string) error {
+	topicName = strings.TrimSpace(topicName)
+	if workspaceID == "" || topicName == "" {
+		return nil
+	}
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM topics WHERE workspace_id=$1 AND lower(name)=lower($2))`,
+		workspaceID, topicName).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	_, err := s.nextTopicPositionTx(ctx, tx, workspaceID)
+	return err
+}
+
 // resolveUploadTopicID validates an existing topic or find-or-creates a
 // named topic inside the caller's transaction. Locking the workspace row
 // serializes concurrent topics created by name (uploads, bank copies).

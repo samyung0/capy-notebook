@@ -1300,14 +1300,14 @@ The editor reports:
   reconnecting kept failing for 30 s); an editor that synced once keeps
   editing on this device (see [Offline editing](#offline-editing-and-drafts));
 - `Not saved. Retrying…`: a store failed and the server is retrying it;
-- `Collaboration unavailable`: the first connection never synced, or the
+- `Cloud unavailable`: the first connection never synced, or the
   provider could not start.
 
 The header shows these as Hugeicons cloud icons beside the title, on its
 top row at every width, phones included (Epo 2026-10-20): CloudUpload
 for Syncing (and a source's Connecting and Reconnecting), the plain Cloud for Saved (and the
 PDF's Synced), CloudOff for Offline, and a red CloudAlert for Not saved and
-Collaboration unavailable; a live item's footer status uses the same icons.
+Cloud unavailable; a live item's footer status uses the same icons.
 Office and text sources report the same states into the same slot
 (`EditorStatusContext`, `sourceHeaderStatus`). Localized labels remain in
 keyboard-accessible tooltips and the live status text for screen readers.
@@ -2103,7 +2103,7 @@ design, option d), and the nudge's release file on 2026-10-17.
   reload.", with Reload in the close button's place. When this device could
   not store the unsent edits (`outdated-unstored`), it says so instead: "This
   device couldn't store your unsent edits, so reloading loses them." The
-  header status is Collaboration unavailable, as in recovery. An item room or
+  header status is Cloud unavailable, as in recovery. An item room or
   source session
   refused before it synced shows the strip alone (a source shows its base
   and this device's drafts, read-only).

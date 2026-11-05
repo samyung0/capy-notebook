@@ -157,9 +157,9 @@ group is strictly `{id, blocks}`, so it holds no group. A part's `group` must
 name a group of the question, a group has at least one part, and a group's parts
 sit next to each other in `parts`; a group has no place of its own, it sits where
 its first part sits. A group's id is checked as a part's is, non-blank and at most
-128 characters, so a stored `sheet 1.a` opens and saves in the quiz room; only a key
-a client creates there must be letters, digits, `-` or `_`. Every validator refuses
-the rest, on the shared `group-*`
+128 characters, so a stored `sheet 1.a` opens and saves in the quiz room, and so is a
+question's, so a stored `q1.1` stays in it; only a key a client creates there must be
+letters, digits, `-` or `_`. Every validator refuses the rest, on the shared `group-*`
 fixtures. Reads of a live room repair what a merge leaves instead
 (`repairGroups`, [plate-editor.md](frontend/plate-editor.md)).
 

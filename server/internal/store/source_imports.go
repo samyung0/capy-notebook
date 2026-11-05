@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 )
 
 const importAttemptLease = 12 * time.Minute
@@ -329,6 +327,9 @@ func (s *Store) createSourceImports(
 	out := make([]SourceImportJob, 0, len(imports))
 	for _, item := range imports {
 		u := item.Upload
+		if err := s.assertUploadTopicFitsTx(ctx, tx, u.WorkspaceID, u.TopicName); err != nil {
+			return nil, err
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO upload_sessions
 			(id, target, workspace_id, user_id, created_by, topic_id, topic_name,
 			 object_path, final_path, name, kind, content_type, declared_size, reserved_size,
@@ -723,9 +724,6 @@ func (s *Store) finalizeSourceImport(
 		!job.LeaseActive {
 		return File{}, ErrImportLeaseLost
 	}
-	if err := assertSourceImportActorTx(ctx, tx, job); err != nil {
-		return File{}, err
-	}
 
 	file, err := s.finalizeUploadSessionTx(
 		ctx, tx, job.UploadSessionID, sourceETag, sourceSHA256, parser,
@@ -748,55 +746,6 @@ func (s *Store) finalizeSourceImport(
 		return File{}, err
 	}
 	return file, nil
-}
-
-func assertSourceImportActorTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	job SourceImportJob,
-) error {
-	if job.ActorUserID == nil {
-		return ErrForbidden
-	}
-	var deletedAt, suspendedAt, deletionRequestedAt *time.Time
-	if err := tx.QueryRow(ctx, `SELECT deleted_at, suspended_at,
-		deletion_requested_at FROM users WHERE id=$1 FOR SHARE`,
-		*job.ActorUserID).
-		Scan(&deletedAt, &suspendedAt, &deletionRequestedAt); err != nil {
-		if isNoRows(err) {
-			return ErrForbidden
-		}
-		return err
-	}
-	if deletedAt != nil || suspendedAt != nil || deletionRequestedAt != nil {
-		return ErrForbidden
-	}
-	// A standalone import is its actor's own file.
-	if job.WorkspaceID == "" {
-		return nil
-	}
-	var ownerID string
-	if err := tx.QueryRow(ctx, `SELECT user_id FROM workspaces
-		WHERE id=$1 FOR SHARE`, job.WorkspaceID).Scan(&ownerID); err != nil {
-		if isNoRows(err) {
-			return ErrForbidden
-		}
-		return err
-	}
-	if ownerID == *job.ActorUserID {
-		return nil
-	}
-	_, role, err := workspaceRoles(ctx, tx, *job.ActorUserID, job.WorkspaceID)
-	if errors.Is(err, ErrNotFound) {
-		return ErrForbidden
-	}
-	if err != nil {
-		return err
-	}
-	if !RoleCanEdit(role) {
-		return ErrForbidden
-	}
-	return nil
 }
 
 // MarkSourceImportRetry releases a live attempt so the pipeline's next queue

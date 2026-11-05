@@ -1,6 +1,8 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
+import { USE_MSW } from '@/api/auth';
 import { useCreateWorkspace, useTags, useWorkspaces } from '@/api/hooks';
+import { CloneLinkDialog } from '@/components/app/CloneLinkDialog';
 import {
   ListToolbar,
   type SortOption,
@@ -8,6 +10,7 @@ import {
 } from '@/components/app/ListToolbar';
 import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { AccountStatusBanner } from '@/components/banners/AccountStatusBanner';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
@@ -15,6 +18,7 @@ import {
   WorkspaceCard,
   WorkspaceCardSkeleton,
 } from '@/components/ui/WorkspaceCard';
+import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
 import { WorkspaceFormCreateDialog } from '@/features/workspace/WorkspaceFormCreateDialog';
 import {
   AccountStatusButton,
@@ -32,6 +36,8 @@ import {
 } from '@/lib/listSearch';
 import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
+
+const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 export default function Workspaces() {
   const sorts: SortOption<WorkspaceSort>[] = [
@@ -57,18 +63,17 @@ export default function Workspaces() {
     },
   ];
   // Sort and tags live in the URL; picks replace the entry, not add to it.
-  const search = useSearch({ from: '/auth-shell/workspaces' });
-  const navigate = useNavigate({ from: '/workspaces' });
+  const search = useSearch({ from: '/auth-shell/' });
+  const navigate = useNavigate({ from: '/' });
   const setSearch = (patch: WorkspacesSearch) =>
     void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
-  const { sort, tag: tagFilters } = workspaceListParams(search);
+  const params = workspaceListParams(search);
+  const { sort } = params;
+  const tagFilters = params.tag ?? [];
   const ascending = search.dir === 'asc';
   const [createOpen, setCreateOpen] = useState(false);
 
-  const { data, fetchStatus, isLoading } = useWorkspaces({
-    sort,
-    tag: tagFilters,
-  });
+  const { data, fetchStatus, isLoading } = useWorkspaces(params);
   const revealRef = useLoadingReveal(isLoading);
   const { data: tags = [] } = useTags('workspace', { errorBoundary: false });
   const { mutateAsync: createWorkspace } = useCreateWorkspace();
@@ -84,6 +89,9 @@ export default function Workspaces() {
         />
       }
     >
+      <div className="page-px empty:hidden">
+        <AccountStatusBanner />
+      </div>
       <ListToolbar
         action={
           <Button
@@ -126,7 +134,7 @@ export default function Workspaces() {
         ) : isLoading ? (
           <div
             aria-label={m.a11y_loading()}
-            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
+            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-2.5 sm:gap-4"
             role="status"
           >
             {Array.from({ length: 6 }, (_, i) => (
@@ -135,7 +143,7 @@ export default function Workspaces() {
           </div>
         ) : (
           <div
-            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
+            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-2.5 sm:gap-4"
             ref={revealRef}
           >
             {sortedWorkspaces?.map((w) => (
@@ -143,7 +151,7 @@ export default function Workspaces() {
             ))}
             <Card
               border="dashed"
-              className="min-h-34 cursor-pointer items-center justify-center frosted:bg-transparent focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none"
+              className="min-h-16 cursor-pointer items-center justify-center frosted:bg-transparent p-2 focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-34 sm:p-5.5"
               interactive
               onClick={() => setCreateOpen(true)}
               radius="card-lg"
@@ -168,6 +176,8 @@ export default function Workspaces() {
         setOpen={setCreateOpen}
         workspace={{ kind: 'personal', name: '', tags: [] }}
       />
+      {CLERK_ACTIVE && <OnboardingDialog />}
+      <CloneLinkDialog />
     </PagePanel>
   );
 }

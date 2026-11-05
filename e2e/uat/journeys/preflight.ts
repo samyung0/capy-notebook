@@ -170,6 +170,8 @@ export default async function preflight() {
     'basic/digital.pdf',
     'basic/column-limit.csv',
     'toc/report.docx',
+    'make-quiz/paper.docx',
+    'make-quiz/paper.pptx',
     'rich-content/exchange-plan.docx',
     'rich-content/course-guide.xlsx',
     'rich-content/lecture.pptx',

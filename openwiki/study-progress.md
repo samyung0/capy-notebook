@@ -795,7 +795,10 @@ quiz leaves them, deleting the assignment deletes them (the foreign key), and a
 workspace clone leaves them out. They and the questions JSON are charged to whoever
 published (Epo 2026-11-05, `frozen_by`, `frozen_bytes`,
 [backend-storage-quota.md](backend-storage-quota.md#what-counts)), and the Embeds tab
-doesn't list them. They resolve for staff, whoever it went to and whoever holds an
+doesn't list them. A publisher whose account is suspended or leaving stops nobody:
+staff still delete, which ends the charge, and republish, which moves the questions
+JSON's charge to whoever republished; an image the assignment already holds keeps its
+payer. They resolve for staff, whoever it went to and whoever holds an
 attempt at it (`frozenAssetReadable`), never another member, and they paste for
 nobody (`AdoptEditorAssets`).
 Members are only ever served this copy:
@@ -914,7 +917,8 @@ page submits; a closed tab is the server's: 15 s past `deadline_at`, a No late
 submissions due date or its closing by hand, the next request or
 `SweepAssignments` (each minute, in `cmd/api`) submits what was saved,
 `auto_submitted` unless closing was the cause. The sweep logs a row that fails and
-passes over it, so one bad row holds up nobody else.
+passes over it, and picks each batch at random, so rows that keep failing never fill
+it and hold up the rest.
 
 **The due date's policy** (Epo 2026-11-04, supersedes §11.5's close by the owner
 alone). Set per assignment in New assignment's Advanced; marked work with a due
@@ -1008,6 +1012,12 @@ part of a class count and average, and one button (`SharingNotice.tsx`, `GET` an
 row, so leaving and rejoining tells again. Staff and personal workspaces never see
 it. The board's own line about topic labels waits for topic summaries, and its Join
 step and "What members see" link for an invite preview and board G5.
+
+**To do page.** `/todo` (`src/routes/Todo.tsx`, `GET /api/todo`,
+`store/assignment_todo.go`) lists each class's Dashboard rows across the classes
+the viewer owns or belongs to, in `TodoRows`, the rows both share. A class with
+nothing to show is left out; those with answers waiting come first, then by the
+soonest due.
 
 **Dashboard.** `TodoSection` (H1, H2, H2b). A member's To do is what went to them:
 quizzes, and the rest with a tick; Show done brings finished ones back crossed

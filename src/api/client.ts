@@ -415,6 +415,8 @@ export const qk = {
     ['workspace', wsId, 'study', 'topics'] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
+  /** GET /todo: the To do page, across the viewer's classes. */
+  todo: ['todo'] as const,
   topics: (wsId: string) => ['workspace', wsId, 'topics'] as const,
   trash: (wsId?: string) => ['trash', wsId ?? 'all'] as const,
   usage: ['usage'] as const,
