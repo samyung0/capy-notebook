@@ -5916,7 +5916,7 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   question saved is `extraction_empty`. `GET /api/extractions/{id}` reads a
   run its starter began: status, the questions copied so far (`recorded`),
   the quiz and the report (`expected`, the map's labels, `missing`, those with no
-  copy, `recorded`, `answersMissing` only when it applies, `figures`, `figuresLeftOut`,
+  copy, `recorded`, `answersMissing` only when it applies, `figures`, `figuresLeftOut` (a run keeps its first 40 figures in printed order, so those past that are left out too),
   `stopped`, `pages`, and `windows`, the
   copy batches, a name the screens' API keeps). `figures` names the questions saved with cropped figures, for
   the starter to check; `figuresLeftOut` those saved without theirs, because

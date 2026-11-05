@@ -10,6 +10,7 @@ import dataclasses
 import io
 import json
 import re
+import types
 from types import SimpleNamespace
 
 import pymupdf
@@ -2335,3 +2336,13 @@ def test_a_large_request_gets_time_to_upload_before_its_first_event():
     assert client._first_event_bound({"image": "x" * 8_000_000}) == pytest.approx(
         flat + 64, abs=0.1
     )
+
+
+def test_a_run_keeps_its_first_figures_in_printed_order(monkeypatch):
+    monkeypatch.setattr(extraction, "RUN_FIGURES_MAX", 3)
+    question = lambda label, count: types.SimpleNamespace(
+        label=label, figures=list(range(count))
+    )
+    held = [question("1", 2), question("2", 0), question("3", 2), question("4", 1)]
+    assert extraction._capped_figures(held) == ["3", "4"]
+    assert [len(q.figures) for q in held] == [2, 0, 1, 0]
