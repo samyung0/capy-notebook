@@ -259,7 +259,9 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   quiz's row, and a toast with it, offering Make quiz, which opens the pages, anywhere in the app. Any file that
   fails ends the wait: its reason goes on the quiz's row, with no upload toast, and Try again
   reopens the files step with those still good. The panel's close hides a wait while it
-  reads; its row comes back when it ends. The wait's file names and ids stay in `localStorage`
+  reads; its row comes back when it ends. A toast's Make quiz with another Make a quiz dialog
+  open starts that dialog again on the new files (`useQuizDialogKey`); the panel's own button
+  sits under the dialog's overlay. The wait's file names and ids stay in `localStorage`
   (`capy.quiz.waits`, with the account they belong to, dropped when another signs in), so a
   reload finds it and takes the statuses from the server; a file whose bytes a reload cut off
   has no id, so it counts as failed. The runs the panel follows stay the same way

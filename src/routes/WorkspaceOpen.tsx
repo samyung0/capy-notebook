@@ -62,7 +62,7 @@ import {
   type TourPanels,
 } from '@/features/guide/tourStore';
 import type { MakeQuizChoice } from '@/features/makeQuiz/MakeQuizDialog';
-import { addQuizRun } from '@/features/makeQuiz/quizRuns';
+import { addQuizRun, useQuizDialogKey } from '@/features/makeQuiz/quizRuns';
 import { CenterContent } from '@/features/materials/CenterContent';
 import type { OneColumnChrome } from '@/features/materials/CenterContentHeader';
 import {
@@ -354,6 +354,7 @@ function WorkspaceOpen() {
   const studyPage = !searchedOpenItem && !!search.study;
   // Make a quiz from a link: its dialog opens over the Dashboard, on its pages or run
   // (Epo 2026-11-05).
+  const quizDialogKey = useQuizDialogKey((state) => state.key);
   const makeLink =
     !readOnly && !searchedOpenItem && !search.study && !!search.make;
   // Agent shows its chat rather than the history (Epo 2026-11-04, option A). A
@@ -1248,6 +1249,7 @@ function WorkspaceOpen() {
               answers: splitIds(search.answers),
               paper: splitIds(search.paper),
             }}
+            key={quizDialogKey}
             onClose={openDashboard}
             onConfirmed={(run, choice) => {
               addQuizRun({ ...choice, id: run.id, workspaceId });

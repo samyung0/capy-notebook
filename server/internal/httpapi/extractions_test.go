@@ -16,6 +16,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -387,5 +388,55 @@ func TestDrawnPagesAreHeldToTheirPixels(t *testing.T) {
 	}
 	if err := checkDrawnPages(file, apimodel.ExtractionFile{Pages: []int{1}, Images: []string{drawnPage(t, 3000)}}); err == nil {
 		t.Fatal("a 9 megapixel page was taken")
+	}
+}
+
+// The wait can outlast the role that started the run: confirming checks it again, and
+// the run stays waiting, so its starter can still cancel.
+func TestARemovedEditorCannotConfirmARun(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	if err := st.LoadPlanLimits(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, editor := "u_confirm_owner_"+uuid.NewString()[:8], "u_confirm_editor_"+uuid.NewString()[:8]
+	for _, user := range []string{owner, editor} {
+		if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id,name,email) VALUES ($1,'Confirm',$2)`, user, user+"@example.test"); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, user) })
+	}
+	ws, err := st.CreateWorkspace(ctx, owner, store.WorkspaceCreate{Name: "Quiz", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM workspaces WHERE id=$1`, ws.ID) })
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')`, ws.ID, editor); err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.CreateExtraction(ctx, store.ExtractionStart{ID: uuid.NewString(), WorkspaceID: ws.ID, UserID: editor, Title: "Paper"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := json.RawMessage(`[{"label":"1","first":1,"last":1,"parts":[]}]`)
+	if err := st.AwaitExtractionConfirm(ctx, run.ID, found); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Pool().Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, ws.ID, editor); err != nil {
+		t.Fatal(err)
+	}
+	a := &api{s: st, blob: blob.NewMemory()}
+	asEditor := auth.WithUserID(ctx, editor)
+	in := &confirmExtractionInput{ID: run.ID, Body: apimodel.ConfirmExtractionReq{Questions: 1}}
+	if _, err := a.confirmExtraction(asEditor, in); err == nil {
+		t.Fatal("a removed editor confirmed the run")
+	}
+	waiting, err := st.GetExtraction(ctx, editor, run.ID)
+	if err != nil || waiting.Status != store.ExtractionConfirming {
+		t.Fatalf("after the refusal: %+v, %v", waiting, err)
 	}
 }

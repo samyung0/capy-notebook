@@ -5904,6 +5904,8 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   file's visibility: a picked file keeps its setting and a file uploaded in
   the Make a quiz dialog is uploaded hidden (Epo 2026-11-04; see
   [Hidden from members](authorization-permissions-lifecycles.md#hidden-from-members)).
+  Confirming checks again what a start checks (the starter's editor role, a frozen or full
+  account), since the wait can outlast them; a refusal leaves the run waiting, to cancel.
   An API restart fails the runs it finds running or waiting and settles their sessions
   (`FailOrphanedExtractions`), so a confirmed run's hold goes at once.
   It then records the quiz id and report, settles the session and sends `{type:

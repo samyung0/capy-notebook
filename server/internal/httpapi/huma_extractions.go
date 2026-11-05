@@ -340,6 +340,20 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 
 // confirmExtraction sets a run waiting on its starter going with its first questions.
 func (a *api) confirmExtraction(ctx context.Context, in *confirmExtractionInput) (*extractionOutput, error) {
+	paused, err := a.s.GetExtraction(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	// The wait can outlast what let the run start: the role, or room for its quiz.
+	if err := a.assertWorkspaceEditor(ctx, paused.WorkspaceID); err != nil {
+		return nil, hErr(err)
+	}
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	if err := a.s.StorageFullErr(ctx, userID(ctx)); err != nil {
+		return nil, hErr(err)
+	}
 	run, err := a.s.ConfirmExtraction(ctx, userID(ctx), in.ID, in.Body.Questions)
 	if err != nil {
 		return nil, hErr(err)

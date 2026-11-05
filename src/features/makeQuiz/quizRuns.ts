@@ -1,3 +1,4 @@
+import { create } from 'zustand';
 import { PREF_KEYS } from '@/lib/localPrefs';
 import type { MakeQuizChoice } from './MakeQuizDialog';
 import { savedForAccount } from './savedForAccount';
@@ -44,6 +45,13 @@ export function dismissQuizRuns() {
 
 export function isPanelRun(id: string) {
   return useQuizRuns.getState().runs.some((run) => run.id === id);
+}
+
+/** Counts the links that reopened the dialog. One already open read its files when it
+ * opened, so it starts again for these. */
+export const useQuizDialogKey = create<{ key: number }>(() => ({ key: 0 }));
+export function nextQuizDialog() {
+  useQuizDialogKey.setState(({ key }) => ({ key: key + 1 }));
 }
 
 /** Where a run's links go: the router lives above the panel, which stays outside it. */

@@ -434,6 +434,45 @@ test('a reload finds the runs the panel follows, and forgets one the server no l
     .not.toContain('ex_gone');
 });
 
+test('a toast that opens other files replaces the dialog already open', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('seeded')) return;
+    sessionStorage.setItem('seeded', '1');
+    localStorage.setItem(
+      'capy.quiz.waits',
+      JSON.stringify({
+        owner: null,
+        state: {
+          waits: [
+            {
+              announced: false,
+              answers: [],
+              id: 'read',
+              paper: [{ fileId: 'f_paper_2024', key: 'a', name: 'other.pdf' }],
+              title: 'Other paper',
+              workspaceId: 'ws_bio',
+            },
+          ],
+        },
+      })
+    );
+  });
+  await page.goto('/workspaces/ws_bio?make=files&paper=f_paper_2025');
+  await expect(dialog(page).getByText(/2025/).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await page
+    .locator('[data-toast] button', { hasText: m.make_quiz_make_action() })
+    .click({ timeout: 30_000 });
+  await expect(page).toHaveURL(/make=pages&paper=f_paper_2024/);
+  await expect(dialog(page).getByRole('group', { name: /2024/ })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(dialog(page).getByText(/2025/)).toHaveCount(0);
+});
+
 test('several question files share the 40 pages, and the list divides them from the answers', async ({
   page,
 }) => {
