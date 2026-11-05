@@ -398,8 +398,11 @@ export class ItemRoom {
       },
       onClose: ({ code, reason }) => {
         this.set({ slowed: false });
+        // This person's access changed, with no notice: a fresh token says
+        // what they have now. A demotion reads on; a removal is refused and
+        // stops at the token (Epo 2026-11-05).
         if (code === 4403) {
-          this.unavailable();
+          this.rejoin();
           return;
         }
         // A rejoin changes nothing until its 30 s passed (D2).
@@ -417,7 +420,7 @@ export class ItemRoom {
           return;
         }
         if (reason === EVICTED) {
-          // A drain (access widened) stored the room first: rejoin, and
+          // A drain (a Move, a hide) stored the room first: rejoin, and
           // anything in flight goes again. A discard threw the room's
           // unsaved state away and moves its lineage, so a fresh room
           // opens, with this tab's unsent edits to copy.

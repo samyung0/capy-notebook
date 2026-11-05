@@ -1337,15 +1337,18 @@ channel for a fresh token in band (`TOKEN_REQUEST`); the provider answers
 through its `token` function (`TOKEN`), and the server verifies it, rechecks
 access and re-arms both timers. A channel that cannot answer is closed at
 expiry with code 4401. A room closed on an open
-socket (expiry, eviction, an access recheck) only emits the provider's `close`,
+socket (expiry, eviction, an access recheck, one person's access change) only emits the provider's `close`,
 never `disconnect`, so `roomReconnector` (`src/features/notes/roomConnection.ts`)
 reconnects at once with a fresh token and backs off while refusals repeat.
 Authentication refusals carry reasons: `collaboration-read-only` drops to view
 under the read-only strip (it names no reason: a demoted viewer, a frozen
 account and a full owner all see it, and the account banner explains the
 account cases), `collaboration-not-found` (trashed or deleted) and
-`collaboration-forbidden` (lost access) replace the editor with the
-file-missing or no-access panel, `collaboration-outdated` stops the editor
+`collaboration-forbidden` (lost access) keep the page, a reader's as it was and
+an editor's read-only under the "You no longer have access" strip, while a
+refused read or a discard notice decides the file-missing or no-access panel
+(see [authorization](../authorization-permissions-lifecycles.md)),
+`collaboration-outdated` stops the editor
 for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
 `collaboration-unassigned-id` is not retried (see [client ids](#client-ids)),
 and anything else (an expired token,

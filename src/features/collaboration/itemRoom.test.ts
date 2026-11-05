@@ -386,6 +386,37 @@ it('rejoins after a close the server gives everyone', async () => {
   room.destroy();
 });
 
+// Epo 2026-11-05: a close for one person's access change comes with no notice,
+// so it joins again and the token says what they have: a demotion reads on, a
+// removal stops there.
+it('joins again after a close for this person, and the token decides', async () => {
+  const { onReplace, room } = await started();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  const targeted = { code: 4403, reason: 'account access changed' };
+
+  provider.config.onClose?.(targeted);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(provider.connects).toBe(2);
+  tokens.push({ access: 'read', room: 'material:q:schema:1' });
+  await provider.config.token();
+  expect(room.getSnapshot()).toMatchObject({ access: 'read' });
+  expect(room.getSnapshot().status).not.toBe('unavailable');
+
+  provider.config.onClose?.(targeted);
+  await vi.advanceTimersByTimeAsync(2000);
+  tokens.push(new ApiError(404, 'Not Found'));
+  await provider.config.token().catch((thrown: Error) =>
+    provider.config.onAuthenticationFailed?.({
+      reason: `Failed to get token: ${thrown.message}`,
+    })
+  );
+  expect(room.getSnapshot().status).toBe('unavailable');
+  expect(onReplace).not.toHaveBeenCalled();
+  room.destroy();
+});
+
 // Q425: a note View's read channel answered late (its version behind the
 // collection window) ends, so a fresh document joins naming no version,
 // instead of rejoining with the same version, late again, forever.
@@ -656,7 +687,7 @@ const evicted = (mode: 'drain' | 'discard') =>
     { code: 0, reason: 'collaboration room evicted' },
   ] as const;
 
-// REVIEW2 M1: a drain eviction (access widened) stored the room first, so the
+// REVIEW2 M1: a drain eviction (a Move, a hide) stored the room first, so the
 // room rejoins with its document, edits in flight included, and nothing goes
 // to copy-only recovery.
 it('rejoins after a drain eviction, keeping its edits', async () => {

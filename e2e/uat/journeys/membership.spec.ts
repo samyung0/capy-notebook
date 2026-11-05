@@ -24,9 +24,10 @@ import { type Actor, expect, test, type UatRun } from './runtime';
 
 // A member's role over time (openwiki/authorization-permissions-lifecycles.md):
 // an editor saves a note line and a store-only DOCX edit from the browser, then
-// the owner demotes them to viewer and removes them in the members UI. Both
-// changes discard-evict the workspace's rooms, and the open editors reconnect
-// with a fresh token (plate-editor.md, connection lifetime and refusals).
+// the owner demotes them to viewer and removes them in the members UI. Each
+// change closes only the member's own connections, with no notice, and the open
+// editors reconnect with a fresh token (plate-editor.md, connection lifetime and
+// refusals).
 // The member's own upload stays charged to it after the removal, listed as
 // lost access until it deletes it (uploader pays, Sam 2026-10-18). Then the
 // workspace is shared with anyone with the link: the removed member reaches it
@@ -184,7 +185,7 @@ test('membership: an editor demoted to viewer has open note and Office editors t
   const frame = await openEditor(run, office, workspaceId, fileId, 'docx');
   await editOffice(office, frame, 'docx', true);
   await savedFacts(run, fileId, [SENTENCE]);
-  // A clean room: the discard below throws nothing away and keeps its epoch.
+  // Saved before the demotion below closes this connection.
   await saved(office.page);
   const editor = await openNote(run, member, workspaceId, noteId);
   await lineAfter(member.page, editor, body);
