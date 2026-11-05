@@ -32,8 +32,9 @@ func (s *Store) nextTopicPositionTx(ctx context.Context, tx pgx.Tx, wsID string)
 }
 
 // assertUploadTopicFitsTx refuses an upload naming a new topic the workspace has
-// no room for, before its bytes are sent. resolveUploadTopicID still decides when
-// the file arrives, as another topic may take the last place in between.
+// no room for, at its ticket and again when its session starts.
+// resolveUploadTopicID still decides when the file arrives, as another topic may
+// take the last place in between.
 func (s *Store) assertUploadTopicFitsTx(ctx context.Context, tx pgx.Tx, workspaceID, topicName string) error {
 	topicName = strings.TrimSpace(topicName)
 	if workspaceID == "" || topicName == "" {
