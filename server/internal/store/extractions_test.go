@@ -76,7 +76,7 @@ func TestExtractionConfirmHoldsThePriceAndChargesPerQuestion(t *testing.T) {
 		}
 		run, err := f.s.CreateExtraction(ctx, ExtractionStart{
 			ID: uuid.NewString(), WorkspaceID: f.ws.ID, UserID: f.user, Title: title, SpendSessionID: session,
-			UnreadAnswers: []string{"Scheme.pdf"},
+			UnreadAnswers: []string{"Scheme.pdf"}, PaperName: "Paper.pdf",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -104,6 +104,17 @@ func TestExtractionConfirmHoldsThePriceAndChargesPerQuestion(t *testing.T) {
 	held, err := f.s.CreditBalance(ctx, f.user)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The row keeps the run's record, and nothing of the files.
+	var kept int
+	var foundNull bool
+	var paperName string
+	if err := f.s.pool.QueryRow(ctx, `SELECT found_questions, found IS NULL, paper_name
+		FROM question_extractions WHERE id=$1`, run.ID).Scan(&kept, &foundNull, &paperName); err != nil {
+		t.Fatal(err)
+	}
+	if kept != 3 || !foundNull || paperName != "" {
+		t.Fatalf("after the confirm: found %d, cleared %v, paper %q", kept, foundNull, paperName)
 	}
 	if held.ReservedMicros != before.ReservedMicros+2*ExtractionQuestionMicros {
 		t.Fatalf("held %d, was %d", held.ReservedMicros, before.ReservedMicros)

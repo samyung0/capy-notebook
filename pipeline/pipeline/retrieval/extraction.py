@@ -1399,9 +1399,10 @@ async def run(
     confirm: Confirm | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Events: ``map`` with the questions found when ``confirm`` is given, which then
-    says how many to make (None ends the run), ``progress`` while it copies and solves,
-    ``questions`` after each copy batch (every question copied so far, with no answers
-    yet), then ``done`` with the quiz's questions and the report."""
+    says how many to make (None ends the run), and ``progress`` while it copies and
+    solves; with no starter, as on the bench, ``questions`` after each copy batch (every
+    question copied so far, with no answers yet). Then ``done`` with the quiz's questions
+    and the report."""
     found = iter(
         await layout.read_regions([page.image for page in pages if page.image])
     )
@@ -1551,10 +1552,11 @@ async def run(
                 except _THREAD_FAILURES as exc:
                     failures.append(exc)
                     log.warning("extraction copy batch failed: %s", exc)
-                yield {
-                    "type": "questions",
-                    "questions": [held.question for held in current.held()],
-                }
+                if not confirm:
+                    yield {
+                        "type": "questions",
+                        "questions": [held.question for held in current.held()],
+                    }
             if confirm:
                 yield current.progress()
         tried: set[str] = set()
@@ -1585,10 +1587,13 @@ async def run(
             failures += _kept_going(
                 await asyncio.gather(*repairs, return_exceptions=True)
             )
-            yield {
-                "type": "questions",
-                "questions": [held.question for held in current.held()],
-            }
+            if confirm:
+                yield current.progress()
+            else:
+                yield {
+                    "type": "questions",
+                    "questions": [held.question for held in current.held()],
+                }
         current.fill_figures(rows, pages)
         current.in_printed_order()
         if failures and not current.copies:

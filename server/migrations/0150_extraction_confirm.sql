@@ -7,11 +7,16 @@ ALTER TABLE question_extractions
     CHECK (status IN ('running', 'confirming', 'done', 'failed', 'cancelled')),
   ADD CONSTRAINT question_extractions_finished_check
     CHECK ((status IN ('running', 'confirming')) = (finished_at IS NULL)),
+  -- Nothing reads the copies since runs count their progress (Epo 2026-11-05): the row
+  -- is the run's record, with no question text.
+  DROP COLUMN questions,
   -- The run's provider session, which the confirm turns into a hold of the price.
   ADD COLUMN spend_session_id text,
-  -- The map's questions: label, first and last page, parts.
+  -- The map's questions for the confirm dialog: label, first and last page, parts.
+  -- Cleared with the file names below once the wait ends; the count stays, for analytics.
   ADD COLUMN found jsonb CHECK (found IS NULL OR jsonb_typeof(found) = 'array'),
   -- What the map call cost, read when the run paused.
+  ADD COLUMN found_questions integer,
   ADD COLUMN found_credit_micros bigint,
   -- What the confirm dialog says was read: the paper, its picked pages and how many
   -- answer files went with it.

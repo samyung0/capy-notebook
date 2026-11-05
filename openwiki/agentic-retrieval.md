@@ -5890,11 +5890,10 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   404). The bench compared 1017 with the unpinned V4.1 Flash and with direct
   Flash
   ([report](../bench/extraction/reports/2026-11-03-keys-in-one-prompt.md)).
-- **Progress and the end.** The service streams `questions` (every question
-  copied so far, with no answers yet) after each copy batch and repair, which the
-  gateway saves on the row, so `recorded` counts copies and stops moving while the
-  solve calls run, and then `done` with the quiz's questions and the report, or
-  `error`. The relay
+- **Progress and the end.** The service streams `progress` counts, which the gateway
+  saves on the row, then `done` with the quiz's questions and the report, or `error`. The
+  row never holds question text; with no starter to confirm, as on the bench, `run` yields
+  `questions` after each copy batch instead. The relay
   runs in the API process on a detached context, like a chat turn; a restart
   fails what was running (`FailOrphanedExtractions` at boot, code
   `interrupted`). On `done` the gateway creates the quiz under the run's title
@@ -5985,8 +5984,11 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   output tokens per selected page (`output_limit`, `OUTPUT_PER_PAGE`: a runaway on
   Wafer wrote 21,700 at 17 times a normal run's cost; Epo 2026-11-04), and saves what it
   has, naming the answers left out.
-- **Stored.** `question_extractions` (migration 0139) keeps the run: starter,
-  title, status, the recorded questions, report, quiz, error. Nothing links a
+- **Stored.** `question_extractions` keeps the run as a record, with no question text
+  (Epo 2026-11-05): starter, title, status, how far it got, questions found and confirmed,
+  what the map cost, pages picked, number of answer files, report (labels only), quiz, error.
+  What only the confirm dialog needs, the map's rows, the paper's name and the unread file
+  names, goes when the wait ends. Each call's cost is in `usage_events`. Nothing links a
   question, the quiz or the run to the files, pages or regions it was read
   from (Epo 2026-11-02, §8 item 7): they travel only in the request to the
   retrieval service. Account purge deletes a user's runs.

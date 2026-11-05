@@ -86,6 +86,10 @@ const (
 	ExtractionCancelled  = "cancelled"
 )
 
+// extractionDialogCleared takes off what only the confirm dialog needed, once the wait
+// has ended: the row stays as the run's record, with no text from the files.
+const extractionDialogCleared = `found=NULL, unread_answers='[]', paper_name=''`
+
 // ExtractionQuestionMicros is the price of a saved question (Epo 2026-11-05).
 const ExtractionQuestionMicros = fieldlimits.ExtractionQuestionCredits * MicrosPerCredit
 
@@ -180,14 +184,6 @@ func (s *Store) GetExtraction(ctx context.Context, userID, id string) (Extractio
 	return e, nil
 }
 
-// SaveExtractionQuestions keeps the questions copied so far on a running run,
-// with no answers yet, as each copy batch ends.
-func (s *Store) SaveExtractionQuestions(ctx context.Context, id string, questions json.RawMessage) error {
-	_, err := s.pool.Exec(ctx, `UPDATE question_extractions SET questions=$2
-		WHERE id=$1 AND status='running'`, id, questions)
-	return err
-}
-
 // SaveExtractionProgress keeps how far a running run has got, for its panel.
 func (s *Store) SaveExtractionProgress(ctx context.Context, id string, copied, answered int) error {
 	_, err := s.pool.Exec(ctx, `UPDATE question_extractions SET copied=$2, answered=$3
@@ -199,6 +195,7 @@ func (s *Store) SaveExtractionProgress(ctx context.Context, id string, copied, a
 // what the map call cost, which is all its session has spent so far.
 func (s *Store) AwaitExtractionConfirm(ctx context.Context, id string, found json.RawMessage) error {
 	_, err := s.pool.Exec(ctx, `UPDATE question_extractions e SET status='confirming', found=$2,
+		found_questions=jsonb_array_length($2),
 		found_credit_micros=(SELECT COALESCE(sum(credit_micros), 0) FROM usage_events
 			WHERE reservation_id = e.spend_session_id)
 		WHERE id=$1 AND status='running'`, id, found)
@@ -220,7 +217,7 @@ func (s *Store) ConfirmExtraction(ctx context.Context, userID, id string, questi
 	defer func() { _ = tx.Rollback(ctx) }()
 	var status, sessionID string
 	var found int
-	err = tx.QueryRow(ctx, `SELECT status, COALESCE(jsonb_array_length(found), 0), COALESCE(spend_session_id, '')
+	err = tx.QueryRow(ctx, `SELECT status, COALESCE(found_questions, 0), COALESCE(spend_session_id, '')
 		FROM question_extractions WHERE id=$1 AND user_id=$2 FOR UPDATE`, id, userID).Scan(&status, &found, &sessionID)
 	if isNoRows(err) {
 		return out, ErrNotFound
@@ -254,7 +251,7 @@ func (s *Store) ConfirmExtraction(ctx context.Context, userID, id string, questi
 		WHERE user_id = $1`, userID, hold); err != nil {
 		return out, err
 	}
-	out, err = scanExtraction(tx.QueryRow(ctx, `UPDATE question_extractions SET status='running', confirmed=$2
+	out, err = scanExtraction(tx.QueryRow(ctx, `UPDATE question_extractions SET status='running', confirmed=$2, `+extractionDialogCleared+`
 		WHERE id=$1 RETURNING `+extractionCols, id, questions))
 	if err != nil {
 		return out, err
@@ -266,7 +263,7 @@ func (s *Store) ConfirmExtraction(ctx context.Context, userID, id string, questi
 // more. ErrConflict when the run isn't waiting.
 func (s *Store) CancelExtraction(ctx context.Context, userID, id string) (Extraction, error) {
 	e, err := scanExtraction(s.pool.QueryRow(ctx, `
-		UPDATE question_extractions SET status='cancelled', finished_at=now()
+		UPDATE question_extractions SET status='cancelled', finished_at=now(), `+extractionDialogCleared+`
 		WHERE id=$1 AND user_id=$2 AND status='confirming'
 		RETURNING `+extractionCols, id, userID))
 	if !isNoRows(err) {
@@ -315,7 +312,8 @@ func (s *Store) FailExtraction(ctx context.Context, id, code, message string, re
 		stored = report
 	}
 	e, err := scanExtraction(s.pool.QueryRow(ctx, `
-		UPDATE question_extractions SET status='failed', error_code=$2, error=$3, report=$4, finished_at=now()
+		UPDATE question_extractions SET status='failed', error_code=$2, error=$3, report=$4, finished_at=now(),
+			`+extractionDialogCleared+`
 		WHERE id=$1 AND status IN ('running', 'confirming')
 		RETURNING `+extractionCols, id, code, message, stored))
 	if isNoRows(err) {
@@ -330,7 +328,8 @@ func (s *Store) FailExtraction(ctx context.Context, id, code, message string, re
 func (s *Store) FailOrphanedExtractions(ctx context.Context) error {
 	_, err := s.pool.Exec(ctx, `UPDATE question_extractions
 		SET status='failed', error_code='interrupted',
-		    error='The server restarted while the questions were being read.', finished_at=now()
+		    error='The server restarted while the questions were being read.', finished_at=now(),
+		    `+extractionDialogCleared+`
 		WHERE status IN ('running', 'confirming')`)
 	return err
 }

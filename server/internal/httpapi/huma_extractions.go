@@ -33,7 +33,7 @@ import (
 
 // Make a quiz (todo-study-tracking.md §8): the retrieval service reads the
 // selected pages of a paper into questions, a map call with any answer files, then
-// copy batches, then solve batches; this gateway starts the run, keeps the questions as each copy batch ends and
+// copy batches, then solve batches; this gateway starts the run, keeps how far it has got and
 // saves the quiz at the end.
 // The run outlives the request, like a chat turn: it relays on a detached
 // context in this process, and FailOrphanedExtractions fails what a restart
@@ -396,8 +396,8 @@ type extractionEvent struct {
 	Answered  int             `json:"answered"`
 }
 
-// relayExtraction follows a run to its end: it keeps the copied questions
-// after each copy batch, pauses on the starter after the map, then saves the quiz, or
+// relayExtraction follows a run to its end: it keeps how far it has got, pauses on
+// the starter after the map, then saves the quiz, or
 // fails the run. The map's credits were charged as it ended and the questions' are
 // charged here, so the session closes as settled either way.
 func (a *api) relayExtraction(ctx context.Context, stream io.ReadCloser, charge *spend, run store.Extraction, actor, wsName string) {
@@ -438,10 +438,6 @@ func (a *api) followExtraction(ctx context.Context, stream io.Reader, run store.
 			case "progress":
 				if err := a.s.SaveExtractionProgress(ctx, run.ID, ev.Copied, ev.Answered); err != nil {
 					obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_progress"})
-				}
-			case "questions":
-				if err := a.s.SaveExtractionQuestions(ctx, run.ID, ev.Questions); err != nil {
-					obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_save"})
 				}
 			case "done":
 				return a.finishExtraction(ctx, run, actor, wsName, ev)
