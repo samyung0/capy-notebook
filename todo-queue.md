@@ -29,13 +29,14 @@ boards K6, K7 and K8 on the study Design canvas. Scanned submissions build on it
   - **Worked:** pen, typed labels and note cards in the image, a saved answer reopening, the axes sheet that no tool can erase, touch drawing at 360 px.
   - **Only tried on mocks:** Chromium on this Mac with simulated touch, no real phone or pen.
 - [ ] Fix what the try found: a typed label throws a `ZodError` from `recordLastProps` (probably zod 4 on the vendored schema); the zoom bar covers the toolbar at 360 px; the sheet opens small on phones; the note image and attachment items need removing; undo, redo and the formula and graph presets aren't in AFFiNE's toolbar and need adding; note cards need drawing onto the sheet in the image
-- [ ] Bring `vendor/blocksuite` to `main` in a lazy chunk (today it's only on `blocksuite-notes`)
+- [ ] Bring `vendor/blocksuite` to `main` in a lazy chunk (Epo, 2026-11-06: "sure"): on `claude/drawing-answers`, dev route only until the answer flow opens it
 - [ ] `drawing` answer type with its background (blank, squared grid, axes, figure) in the shared question format: Go, Rust, TypeScript, pipeline
 - [ ] The board: full screen, question pinned at top left, Done returning to a preview and "Edit drawing", phones
 - [ ] Saving: strokes kept, an image rendered for marking, and who pays for its storage
 - [ ] Marking by a vision model against the marking points, with the same approval and credits rules. Needs grading landed, and the prompt shown to Epo first
 - [ ] Results, the approve tab and the report show the drawing
 - [ ] Specs, wiki, test catalog
+- [ ] Tune the board once it works (Epo, 2026-11-06): more common shapes, graphs and coordinate planes, for easier answering
 
 ### 2. Note look: copy Notion's styles
 
