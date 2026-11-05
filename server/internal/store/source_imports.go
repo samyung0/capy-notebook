@@ -327,6 +327,9 @@ func (s *Store) createSourceImports(
 	out := make([]SourceImportJob, 0, len(imports))
 	for _, item := range imports {
 		u := item.Upload
+		if err := s.assertUploadTopicFitsTx(ctx, tx, u.WorkspaceID, u.TopicName); err != nil {
+			return nil, err
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO upload_sessions
 			(id, target, workspace_id, user_id, created_by, topic_id, topic_name,
 			 object_path, final_path, name, kind, content_type, declared_size, reserved_size,
