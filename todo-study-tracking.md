@@ -905,7 +905,7 @@ Steps 2, 3 and 7 can run side by side.
 - **No right panel (Epo, 2026-11-05; option A):** from lg the workspace has one left panel. Agent replaces Files there: chat history, then an opened chat or New chat in the same panel with the file staying open in the centre. Being built on `claude/study-shell`; `claude/study-all` isn't final until it merges.
 - **Office (Epo, Q608 A, 2026-11-04):** the PC session builds Office's always-highest-permission together with the ribbon, after the 0.5.1 pin. The Office, text and CSV switch and `FileModeControl.tsx`, `OfficeMenuBar.tsx`, `CenterContentHeader.tsx`, `prefetchOfficeFile.ts` stay with it.
 
-**Next after this rework's mocks (Epo, 2026-11-03): the AFFiNE canvas** (`todo-canvas-workspace.md`, on hold since 2026-11-02). Drawing answers and the note tool build on the same BlockSuite edgeless editor, so they are planned with it.
+**Next: see `todo-queue.md` (Epo, 2026-11-06).** Drawing answers come first, then the note look. The AFFiNE workspace canvas (`todo-canvas-workspace.md`, on hold since 2026-11-02) was next after this rework's mocks (Epo, 2026-11-03); it reuses the same BlockSuite edgeless editor and its place is open.
 
 **Later (Epo, 2026-11-03): the app-wide Learning page.** The workspace's centre Study page goes (the Study tab's pages replace it). The app's Learning page stays in the sidebar for now and is redesigned later, perhaps to show the AI suggestions across workspaces.
 
@@ -966,6 +966,6 @@ The batch is on `main` and UAT at bb1b3fb4a (`e2e/uat/journeys/study.spec.ts` ha
 
 **Answered by Epo, 2026-11-05:** the Late badge stays; Attempts stays where it is; Summary keeps counting marks as they land, with no filter (Epo: unmarked work isn't in the data and a filter is needless complexity); with Show answers off, a warning shows once the assignment closes.
 
-**Layout service (Epo, 2026-11-05: "sure"):** Windows deploys it to the ingest host after the current landing has reported (`LAYOUT_WORKERS=2`, `LAYOUT_THREADS=2`; runbook §7.6). Until `CAPY_LAYOUT_URL` is set, Make a quiz on UAT uses the box call: looser crops and one more model call a page.
+**Layout service (Epo, 2026-11-06: "sure"; Windows is confirming as Q646):** Windows deploys it to the ingest host after grading, as its own landing (`LAYOUT_WORKERS=2`, `LAYOUT_THREADS=2`; runbook §7.6). Until `CAPY_LAYOUT_URL` is set, Make a quiz on UAT uses the box call: looser crops and one more model call a page.
 
 **Handed over by the Windows session, not started:** the first real UAT check of a question with no answers going through `insert_child`; dotted question ids in `quiz.rs`, on main too; locks in `source_imports.go:763-780`; the `StartAssignment` expired-attempt lock; `DeleteAssignment` returning 404; a cap on a whole run's figures; sweep starvation (200 rows with no ORDER BY). The rest are in the left-for-later lists of `FIXES.md` and `FIXES-2.md` under `2026-11-05-study-landing` in the harness. `assignments.go:327-336` is already handled.
