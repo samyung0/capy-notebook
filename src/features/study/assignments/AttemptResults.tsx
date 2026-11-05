@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { userToast } from '@/components/ui/userToast';
+import { AiWarning } from '@/features/questions/AiWarning';
 import { QuestionBlockView, TextView } from '@/features/questions/QuestionView';
 import type { Question, QuestionBlock } from '@/features/questions/types';
 import { questionMarks } from '@/features/questions/types';
@@ -527,6 +528,14 @@ function OpenPart({
           data-not-marked
         >
           {m.assignment_not_marked()}
+        </span>
+      )}
+      {part.aiComment && (
+        <AiWarning flag={part.aiFlag} message={part.aiComment} />
+      )}
+      {part.markedBy === 'ai' && !editing && (
+        <span className="t-meta text-fg-muted">
+          {m.assignment_marked_by_ai()}
         </span>
       )}
       {showKeys && scheme.length > 0 && (

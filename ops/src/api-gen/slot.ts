@@ -13,6 +13,7 @@ export const Slot = {
   editor: 'editor',
   ingest: 'ingest',
   extraction: 'extraction',
+  grading: 'grading',
   retrieval: 'retrieval',
   captioning: 'captioning',
   rerank: 'rerank',
