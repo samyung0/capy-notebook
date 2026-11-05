@@ -33,16 +33,7 @@ export async function hideScenarioPanel(page: Page) {
     });
 }
 
-/**
- * Put the caret after the last character of a text element. Clicking the text
- * often lands mid-word, and End only moves the native caret, which Slate reads
- * through a throttled selectionchange listener: a re-render in between (TOC,
- * mention menu) restores the click's caret and typing lands mid-word.
- */
-export async function clickTextEnd(text: Locator) {
-  const box = (await text.boundingBox())!;
-  await text.click({ position: { x: box.width - 1, y: box.height / 2 } });
-}
+export { clickTextEnd } from '../helpers/editor';
 
 /** Select one rendered text line and wait for Slate's range to update. */
 export async function selectEditorLine(page: Page, line: Locator) {
