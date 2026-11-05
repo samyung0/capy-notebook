@@ -22,7 +22,11 @@ type Asking = 'republish' | 'close' | 'delete';
 /** The rows' one width, so their buttons line up. */
 function RowButton(props: ComponentProps<typeof Button>) {
   return (
-    <Button className="w-32 justify-end" variant="ghost-hover" {...props} />
+    <Button
+      className="w-32 justify-end border-none"
+      variant="ghost-hover"
+      {...props}
+    />
   );
 }
 
