@@ -5971,7 +5971,7 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   in flight run from 3 to 4 on a 45-question paper. Each
   waits its turn at the model's gate and for `CALL_SLOTS` like a chat's.
 - **Word and PowerPoint papers** (Epo 2026-11-05, "draw those pages on client side"): the page picker
-  draws every page with the Office runtime's print path in an off-screen frame, and the selected pages'
+  draws every page with the Office runtime's print path in a frame kept in the viewport and unseen (`opacity-0`, `-z-10`, no pointer events), since Chromium stops animation frames in an off-screen cross-origin frame, and the selected pages'
   JPEGs (1,568 px long side, at most 1 MB) go with the request. The frame is inert, and unmounts once it has
   drawn or failed; a failure offers Retry. Measured off screen in Chromium by the Office session: a 62-page DOCX
   2.6 s, an 84-slide deck 4.8 s, about 0.5 MB of PNG a page; 60 s is about 300 pages or 200 slides at 4x CPU. Only

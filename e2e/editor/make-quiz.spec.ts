@@ -475,6 +475,32 @@ test('a toast that opens other files replaces the dialog already open', async ({
   await expect(dialog(page).getByText(/2025/)).toHaveCount(0);
 });
 
+for (const [name, width, height] of [
+  ['a laptop', 1280, 720],
+  ['a phone', 360, 740],
+] as const) {
+  test(`the file menus keep their last file on the screen on ${name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height, width });
+    await page.goto('/workspaces/ws_bio?make=files');
+    await page.addStyleTag({
+      content: '[data-testid=mock-scenario-panel] { display: none }',
+    });
+    await dialog(page)
+      .getByRole('button', { name: m.make_quiz_choose_file() })
+      .click({ timeout: 30_000 });
+    await page.getByRole('option').last().click();
+    await expect(page.getByRole('option')).toHaveCount(0);
+    await dialog(page)
+      .getByRole('button', { name: m.make_quiz_add_file() })
+      .last()
+      .click();
+    await page.getByRole('option').last().click();
+    await expect(page.getByRole('option')).toHaveCount(0);
+  });
+}
+
 test('several question files share the 40 pages, and the list divides them from the answers', async ({
   page,
 }) => {
