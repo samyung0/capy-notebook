@@ -11,8 +11,8 @@ import { useState } from 'react';
  */
 export const PREF_KEYS = {
   /** Agent's panel shows a chat rather than the history: kept while it is on
-   * screen, so a reload or a reopened tab comes back to it (Epo 2026-10-27,
-   * T19), and gone when the page is left. */
+   * screen, so coming back to the workspace finds it (Epo 2026-10-27, T19),
+   * and gone when Agent moves off it. */
   chatShown: (workspaceId: string) => `capy.workspace.chatShown.${workspaceId}`,
   filesView: 'capy.files.view',
   /** The flashcard run this browser continues: its attempt and each card's
@@ -34,6 +34,9 @@ export const PREF_KEYS = {
     `capy.chat.open.${workspaceId ?? 'account'}`,
   openTopics: (workspaceId: string) =>
     `capy.workspace.openTopics.${workspaceId}`,
+  /** The panel last open in a workspace, which opens again on the next visit
+   * (Epo 2026-11-05). */
+  panel: (workspaceId: string) => `capy.workspace.panel.${workspaceId}`,
   /** The quiz attempt this browser continues, by its id: the account's
    * (`account`) or, signed out on a shared quiz, this browser's (`local`). */
   quizAttempt: (owner: 'account' | 'local', quizId: string) =>

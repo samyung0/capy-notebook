@@ -311,6 +311,9 @@ export interface ChatDockOptions {
   menuItems: MenuItem[];
   /** An Office file is open: the dock stays a button above its bottom chrome. */
   office: boolean;
+  /** The chat page's state lives in the URL, so the back gesture leaves it. */
+  onPageOpen: (open: boolean) => void;
+  pageOpen: boolean;
 }
 
 export interface ChatRequest {
@@ -410,11 +413,29 @@ export function ChatPanel({
   const sendKey = me?.chatSendKey ?? 'enter';
   // Dock only: the chat page is open, or a chip leads back to it after a
   // citation or a created file took the learner to the file.
-  const [pageOpen, setPageOpen] = useState(false);
+  const urlPageOpen = !!dock?.pageOpen;
+  // Shown at once for the view transition; the URL follows and can close it.
+  const [pageOpen, setPageShown] = useState(urlPageOpen);
   const [backShown, setBackShown] = useState(false);
+  function setPageOpen(open: boolean) {
+    setPageShown(open);
+    dock?.onPageOpen(open);
+  }
+  // Back and forward move the URL: the page follows, leaving the chip when
+  // there is a conversation to return to.
+  const urlWasOpen = useRef(urlPageOpen);
+  const hasMessages = messages.length > 0;
+  useEffect(() => {
+    if (urlWasOpen.current === urlPageOpen) return;
+    urlWasOpen.current = urlPageOpen;
+    setPageShown(urlPageOpen);
+    if (urlPageOpen) setBackShown(false);
+    else setBackShown(hasMessages);
+  }, [hasMessages, urlPageOpen]);
   function toFile() {
     if (!dock) return;
-    setPageOpen(false);
+    // Opening the file drops the URL's flag.
+    setPageShown(false);
     setBackShown(true);
   }
   const openCitation =
@@ -507,12 +528,13 @@ export function ChatPanel({
     [last, streaming, dismissedId]
   );
   // The questions take the composer's place, and a recording stops with it;
-  // the dock on the file has no questions. Nothing shows a hidden dock's
-  // recording, so it stops too.
+  // the dock on the file has no questions. Nothing shows a hidden chat's
+  // recording, the panel's off the Agent tab or the dock's under a page, so it
+  // stops too. Between the dock and its chat page `hidden` stays, so it carries.
   const voice = useVoiceInput(
     workspaceId,
     insertVoice,
-    !(dock && hidden) && ((!!dock && !pageOpen) || questions.length === 0)
+    !hidden && ((!!dock && !pageOpen) || questions.length === 0)
   );
 
   // Seed local state when a saved conversation opens: cached history paints at
@@ -645,7 +667,7 @@ export function ChatPanel({
   };
   const newAction: TabAction = {
     disabled: !shown,
-    icon: 'ai',
+    icon: 'message',
     label: m.chat_new(),
     onClick: openNew,
   };

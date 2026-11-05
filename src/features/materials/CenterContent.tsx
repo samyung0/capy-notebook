@@ -430,6 +430,7 @@ function MaterialBody({
   const { data: materials, isPending } = useMaterials(workspaceId);
   const queryClient = useQueryClient();
   const [choice, setChoice] = useState<HeavyMaterialChoice | null>(null);
+  const alreadyOpen = useRef(false);
 
   // Wait for the list before deciding. Rendering first and gating afterwards
   // would download the very document the gate exists to avoid, then throw the
@@ -437,8 +438,9 @@ function MaterialBody({
   if (workspaceId && isPending) return <MaterialLoading />;
 
   const reference = materials?.find((entry) => entry.id === materialId);
-  // A direct link to a quiz assigned to the reader opens the assignment.
-  if (reference?.assignmentId) {
+  // A direct link to a quiz assigned to the reader opens the assignment. One
+  // already open when it was assigned stays until they leave (Epo 2026-11-05).
+  if (reference?.assignmentId && !alreadyOpen.current) {
     return (
       <Navigate
         params={{ workspaceId }}
@@ -451,6 +453,7 @@ function MaterialBody({
       />
     );
   }
+  if (reference) alreadyOpen.current = true;
   const heavy = heavyMaterial(reference);
   if (heavy && !choice) {
     return (

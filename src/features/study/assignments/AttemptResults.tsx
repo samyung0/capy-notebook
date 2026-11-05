@@ -32,7 +32,6 @@ import { PracticeFrame } from '../practice/studyPage';
 import { BackToAssignments } from './AssignmentAttemptPage';
 import {
   dayLabel,
-  lateLabel,
   markSteps,
   markText,
   OUTCOME_LABEL,
@@ -41,6 +40,7 @@ import {
   percentText,
   questionOutcome,
 } from './assignmentText';
+import { LateBadge } from './LateBadge';
 import { useAssignmentStart } from './useAssignmentStart';
 
 const OUTCOME_CHIP: Record<Outcome, string> = {
@@ -128,27 +128,28 @@ export function AttemptResults({
                 </span>
               )}
               {m.assignment_submitted_on({ date: when })}
-              {attempt.late && (
-                <span className="font-semibold text-tint-warning-fg">
-                  {lateLabel(attempt.latePenaltyPct)}
-                </span>
-              )}
               {attempt.autoSubmitted && (
                 <span>{m.assignment_auto_submitted()}</span>
               )}
             </p>
           </div>
           <div className="shrink-0 text-right">
-            <p className="flex items-baseline justify-end gap-1.5 whitespace-nowrap">
-              <span className="font-extrabold text-[1.875rem] leading-none tracking-[-0.02rem] sm:text-[2.125rem]">
-                {markText(attempt.mark, decided)}
-              </span>
-              {decided > 0 && (
-                <span className="t-meta font-semibold text-fg-muted">
-                  {percentText(attempt.mark / decided)}
+            {/* The badge beside the score; under it on phones, to leave the title room. */}
+            <div className="flex flex-col items-end gap-1 sm:flex-row-reverse sm:items-center sm:gap-2">
+              <p className="flex items-baseline gap-1.5 whitespace-nowrap">
+                <span className="font-extrabold text-[1.875rem] leading-none tracking-[-0.02rem] sm:text-[2.125rem]">
+                  {markText(attempt.mark, decided)}
                 </span>
+                {decided > 0 && (
+                  <span className="t-meta font-semibold text-fg-muted">
+                    {percentText(attempt.mark / decided)}
+                  </span>
+                )}
+              </p>
+              {attempt.late && (
+                <LateBadge penaltyPct={attempt.latePenaltyPct} />
               )}
-            </p>
+            </div>
             {attempt.latePenaltyPct > 0 && (
               // On phones it wraps under the mark rather than squeezing the title.
               <p className="t-meta mt-1 w-0 min-w-full text-fg-muted sm:w-auto sm:min-w-0 sm:whitespace-nowrap">

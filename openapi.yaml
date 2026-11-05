@@ -459,6 +459,9 @@ components:
       properties:
         attemptId:
           type: string
+        attemptNumber:
+          format: int64
+          type: integer
         awarded:
           format: double
           type: number
@@ -475,6 +478,7 @@ components:
         - questionId
         - userId
         - attemptId
+        - attemptNumber
         - waiting
         - awarded
         - marks
@@ -777,6 +781,8 @@ components:
           type: string
         quizTitle:
           type: string
+        quizTrashed:
+          type: boolean
         showAnswers:
           type: boolean
         shuffle:
@@ -873,6 +879,8 @@ components:
         correct:
           format: double
           type: number
+        countedAttemptId:
+          type: string
         done:
           type: boolean
         doneAt:
@@ -883,8 +891,6 @@ components:
         latePenaltyPct:
           format: int64
           type: integer
-        latestAttemptId:
-          type: string
         mark:
           format: double
           type: number
@@ -8998,6 +9004,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: "An assignment's report: its questions, members and answers to mark"
+      tags:
+        - Assignments
+  /api/assignments/{id}/republish:
+    post:
+      operationId: republishAssignment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace an open assignment's questions with its quiz as it is now
       tags:
         - Assignments
   /api/assignments/{id}/start:

@@ -7,6 +7,7 @@
 
 export interface AssignmentAnswerRow {
   attemptId: string;
+  attemptNumber: number;
   awarded: number;
   marks: number;
   questionId: string;

@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
@@ -10,6 +11,7 @@ import { m } from '@/i18n';
 import { shortTime, WorkspaceDashboard } from './WorkspaceDashboard';
 
 const page = vi.hoisted(() => ({
+  account: undefined as Record<string, unknown> | undefined,
   assignments: [] as Assignment[],
   data: undefined as Dashboard | undefined,
   kind: 'personal' as 'class' | 'personal',
@@ -30,6 +32,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/api/hooks', () => ({
   useAssignments: () => ({ data: { items: page.assignments } }),
+  useMe: () => ({ data: { account: page.account } }),
   usePractice: (_id: string, { enabled }: { enabled: boolean }) => ({
     data: enabled
       ? { quizzes: page.quizzes, suggestions: page.suggestions }
@@ -43,18 +46,37 @@ vi.mock('@/api/hooks', () => ({
 
 const render = (canEdit = true) =>
   renderToStaticMarkup(
-    <WorkspaceDashboard
-      onMakeQuiz={() => undefined}
-      onUpload={() => undefined}
-      workspace={{
-        capabilities: { canEdit } as never,
-        id: 'ws',
-        kind: page.kind,
-        name: 'Biology 101',
-        role: 'owner',
-      }}
-    />
+    <QueryClientProvider client={new QueryClient()}>
+      <WorkspaceDashboard
+        onMakeQuiz={() => undefined}
+        onUpload={() => undefined}
+        workspace={{
+          capabilities: { canEdit } as never,
+          id: 'ws',
+          kind: page.kind,
+          name: 'Biology 101',
+          role: 'owner',
+        }}
+      />
+    </QueryClientProvider>
   );
+
+// Epo 2026-11-05, Q631: Home's status reaches a workspace that opens on this page.
+it('shows the viewer account status as a small banner below the title', () => {
+  page.account = {
+    state: 'over_quota_frozen',
+    storageLimitBytes: 100_000_000,
+    storageUsage: 'full',
+    storageUsedBytes: 96_000_000,
+  };
+  const html = render();
+  expect(html).toContain(m.account_banner_frozen_title());
+  expect(html.indexOf('account-status-banner')).toBeGreaterThan(
+    html.indexOf('Biology 101')
+  );
+  page.account = undefined;
+  expect(render()).not.toContain('account-status-banner');
+});
 
 it('opens each activity row on its file or material', () => {
   page.data = {

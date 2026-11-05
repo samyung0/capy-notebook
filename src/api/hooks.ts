@@ -413,6 +413,21 @@ export const useUnreadNotificationCount = (options?: QueryUiOptions) =>
     queryKey: qk.notificationUnread,
   });
 
+type AssignmentEvent = Extract<
+  NotificationStreamEvent,
+  { assignmentId: string }
+>;
+const assignmentListeners = new Set<(event: AssignmentEvent) => void>();
+
+/** Hears each assignment event as it arrives: an attempt open on the page ends
+ * or takes the new questions with it, and nothing else minds. */
+export function onAssignmentEvent(listener: (event: AssignmentEvent) => void) {
+  assignmentListeners.add(listener);
+  return () => {
+    assignmentListeners.delete(listener);
+  };
+}
+
 export function applyNotificationEvent(
   qc: QueryClient,
   event: NotificationStreamEvent
@@ -424,6 +439,13 @@ export function applyNotificationEvent(
   }
   if (event.type === 'chat_turn') {
     applyChatTurn(qc, event.conversationId, event.status);
+    return;
+  }
+  if (
+    event.type === 'assignment_closed' ||
+    event.type === 'assignment_republished'
+  ) {
+    for (const listener of assignmentListeners) listener(event);
     return;
   }
   if (event.type === 'extraction') {
@@ -3136,6 +3158,14 @@ export function usePublishAssignment(workspaceId: string, id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post<Assignment>(`/assignments/${id}/publish`, {}),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
+export function useRepublishAssignment(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<Assignment>(`/assignments/${id}/republish`, {}),
     onSuccess: () => refreshAssignment(qc, workspaceId, id),
   });
 }

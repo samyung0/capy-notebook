@@ -319,3 +319,53 @@ test('the panel handle trades width with the viewer up to half the group, collap
   ]);
   expect(await width(page, 'left')).toBe(wide);
 });
+
+test('the open panel is in the URL, back steps through it, and each workspace remembers its own', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio');
+  const rail = page.getByRole('navigation', {
+    name: m.workspace_rail_label(),
+  });
+  const section = (name: string) =>
+    rail.getByRole('button', { exact: true, name });
+  const panel = page.locator('[data-workspace-left-panel]');
+  await section(m.workspace_section_agent()).click({ timeout: 60_000 });
+  await expect(page).toHaveURL(/panel=agent/);
+  await section(m.workspace_tab_files()).click();
+  await expect(page).toHaveURL(/panel=files/);
+  await expect(
+    page.locator('[data-workspace-file-tree]').first()
+  ).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/panel=agent/);
+  await expect(section(m.workspace_section_agent())).toHaveAttribute(
+    'aria-current',
+    'page'
+  );
+
+  // Visiting again opens what was last open, here and only here.
+  await page.goto('/workspaces/ws_bio');
+  await expect(page).toHaveURL(/panel=agent/, { timeout: 60_000 });
+  await expect(panel).toBeVisible();
+  await page.goto('/workspaces/ws_eng');
+  await expect(page).toHaveURL(/panel=none/, { timeout: 60_000 });
+  await expect(panel).toBeHidden();
+});
+
+// The panel labels the URL during a slow first load, when the router reports any
+// navigation as a path change: a dialog open from the URL stays open through it.
+test('settings opened by the URL stay open while the panel labels it', async ({
+  context,
+  page,
+}) => {
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto('/workspaces/ws_bio?settings=study');
+  await expect(page).toHaveURL(/settings=study&panel=/, { timeout: 60_000 });
+  await expect(
+    page.getByRole('switch', { name: m.study_hide_progress() })
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(page).toHaveURL(/settings=study/);
+});

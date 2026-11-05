@@ -26,6 +26,11 @@ describe('parseWorkspaceOpenSearch', () => {
     }
   );
 
+  it('keeps the open panel from the URL', () => {
+    expect(parseWorkspaceOpenSearch({ panel: 'agent' }).panel).toBe('agent');
+    expect(parseWorkspaceOpenSearch({ panel: 'x' }).panel).toBeUndefined();
+  });
+
   it("keeps Make a quiz's dialog steps, with what was chosen", () => {
     expect(parseWorkspaceOpenSearch({ make: 'files' })).toEqual({
       make: 'files',

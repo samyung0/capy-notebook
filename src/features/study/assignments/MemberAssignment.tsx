@@ -35,7 +35,7 @@ function StartMarked({ assignment }: { assignment: Assignment }) {
   );
   const { mine } = assignment;
   const closed = !!assignment.closedAt;
-  const attempt = mine?.runningAttemptId ?? mine?.latestAttemptId;
+  const attempt = mine?.runningAttemptId ?? mine?.countedAttemptId;
   const once = useRef(false);
   useEffect(() => {
     if (once.current) return;
@@ -58,7 +58,7 @@ function StartMarked({ assignment }: { assignment: Assignment }) {
     <PracticeFrame>
       <BackToAssignments />
       <h1 className="t-page-title mt-3">{assignment.title}</h1>
-      {closed && !mine?.latestAttemptId && (
+      {closed && !mine?.countedAttemptId && (
         <p className="mt-2 text-fg-secondary">{m.assignment_closed_missed()}</p>
       )}
       {/* It starts by itself above; a start that failed is pressed again here. */}

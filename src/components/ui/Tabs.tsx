@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, useRef } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect, useRef } from 'react';
 import { cn } from '@/lib/cn';
 import { useHorizontalWheelScroll } from '@/lib/useHorizontalWheelScroll';
 import { usePointerDownPress } from '@/lib/usePointerDownPress';
@@ -33,6 +33,16 @@ export function Tabs({
   useHorizontalWheelScroll(rowRef);
   const press = usePointerDownPress();
   const items = tabs.map(norm);
+  // On a phone a link or the arrow keys can select a tab past the row's edge.
+  useEffect(() => {
+    const row = rowRef.current;
+    const tab = row?.querySelector('[aria-selected="true"]');
+    if (!(row && tab) || vertical) return;
+    const box = row.getBoundingClientRect();
+    const { left, right } = tab.getBoundingClientRect();
+    if (right > box.right) row.scrollLeft += right - box.right;
+    else if (left < box.left) row.scrollLeft -= box.left - left;
+  }, [value, vertical]);
   const focusable = items.some((t) => t.value === value)
     ? value
     : items[0]?.value;

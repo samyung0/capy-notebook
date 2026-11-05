@@ -226,7 +226,7 @@ test('User scenarios opens errors in the actual workspace', async ({
     .getByRole('button', { exact: true, name: 'Broken preview.txt' })
     .click();
   await expect(page).toHaveURL(
-    /\/workspaces\/ws_bio\?file=mock-preview-text-load$/
+    /\/workspaces\/ws_bio\?file=mock-preview-text-load(&panel=\w+)?$/
   );
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const error = await expectErrorSurface(page, 'panel', 'text', 30_000);
@@ -262,7 +262,7 @@ test('User scenarios opens seeded material errors in the workspace and survives 
     await panel.locator('summary').click();
     await panel.getByRole('button', { exact: true, name: label }).click();
     await expect(page).toHaveURL(
-      new RegExp(`/workspaces/ws_bio\\?material=${id}$`)
+      new RegExp(`/workspaces/ws_bio\\?material=${id}(&panel=\\w+)?$`)
     );
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(shown).toBeVisible({ timeout: 30_000 });

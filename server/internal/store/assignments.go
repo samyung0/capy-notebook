@@ -7,6 +7,8 @@ import (
 	"hash/fnv"
 	"math"
 	"math/rand"
+	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -28,8 +30,9 @@ const (
 	AssignmentMarked   = "marked"
 	AssignmentUnmarked = "unmarked"
 
-	// assignmentGrace is how long past its time an attempt still takes a save
-	// or a submit: the browser submits at zero, and the request takes a moment.
+	// assignmentGrace is how long past its time or its closing an attempt still
+	// takes a save or a submit: the browser submits at zero or on hearing it
+	// closed, and the request takes a moment.
 	assignmentGrace = 15 * time.Second
 	// assignmentAggregateMin is how many results a shared number needs (Epo
 	// 2026-11-03, §11.8: aggregates need at least 5 members).
@@ -106,7 +109,9 @@ type AssignmentFile struct {
 type AssignmentManage struct {
 	QuizID *string `json:"quizId,omitempty"`
 	// QuizTitle is its quiz's current title, for the edit form.
-	QuizTitle      string   `json:"quizTitle,omitempty"`
+	QuizTitle string `json:"quizTitle,omitempty"`
+	// QuizTrashed: its quiz is in the trash, with nothing to open or republish.
+	QuizTrashed    bool     `json:"quizTrashed,omitempty"`
 	AssignAll      bool     `json:"assignAll"`
 	Assignees      []string `json:"assignees" nullable:"false"`
 	ApproveAIMarks bool     `json:"approveAiMarks"`
@@ -115,10 +120,11 @@ type AssignmentManage struct {
 	// Assigned counts who it went to; Done those who submitted or ticked it.
 	Assigned int `json:"assigned"`
 	Done     int `json:"done"`
-	// Average is the submitted members' marks, after any late penalty, over the
-	// marks decided so far (0 to 1), once at least five submitted.
+	// Average is the submitted members' counted marks, after any late penalty, over
+	// the marks decided so far (0 to 1), once at least five submitted.
 	Average *float64 `json:"average,omitempty"`
-	// ToApprove counts answers waiting for the owner.
+	// ToApprove counts answers waiting for the owner, in any submission of a
+	// member's: one that does not count yet can still become the highest.
 	ToApprove int `json:"toApprove"`
 }
 
@@ -130,8 +136,9 @@ type AssignmentMine struct {
 	// RunningAttemptID is the attempt in progress.
 	RunningAttemptID *string `json:"runningAttemptId,omitempty"`
 	AttemptsUsed     int     `json:"attemptsUsed"`
-	// LatestAttemptID is the submission that counts (the latest).
-	LatestAttemptID *string `json:"latestAttemptId,omitempty"`
+	// CountedAttemptID is the submission that counts (countedAttemptOrder), which
+	// the rest of this reads.
+	CountedAttemptID *string `json:"countedAttemptId,omitempty"`
 	// Correct is the marks decided; Mark the same after any late penalty, which
 	// is what counts.
 	Correct        *float64 `json:"correct,omitempty"`
@@ -245,6 +252,7 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 			a.TopicIDs = []string{*src.topicID}
 		}
 		manage.Assignees = []string{}
+		manage.QuizTrashed = src.trashed
 		if staff {
 			a.Manage = &manage
 		}
@@ -322,6 +330,18 @@ func penalisedMark(correct float64, pct int) float64 {
 	return math.Round(correct*float64(100-pct)) / 100
 }
 
+// attemptMarkSQL is a submission's mark after any late penalty (attempts t of
+// assignments a), as assignmentLate and penalisedMark have it.
+const attemptMarkSQL = `round(t.correct * (100 - CASE WHEN NOT a.no_late AND t.submitted_at > a.due_at
+	THEN a.late_penalty_pct ELSE 0 END) / 100.0, 2)`
+
+// countedAttemptOrder puts first the submission of a member's that counts (Epo
+// 2026-11-05): the highest share of its own total after any late penalty, as a
+// republish can change the total, a tie to the latest. It reads live: correct is
+// the marks decided so far, so marking an open part or changing the penalty or
+// due date can change which one it is.
+const countedAttemptOrder = attemptMarkSQL + ` / NULLIF(t.total, 0) DESC NULLS LAST, t.submitted_at DESC`
+
 // fillAssignmentFiles adds each unmarked assignment's files the caller can see,
 // in the order added, and takes its topics from them, the most used first.
 func (s *Store) fillAssignmentFiles(ctx context.Context, userID string, ids []string, at map[string]int, list []Assignment) error {
@@ -378,20 +398,22 @@ const assigneesSQL = `SELECT a.id AS assignment_id, wm.user_id
 func (s *Store) fillAssignmentManage(ctx context.Context, ids []string, at map[string]int, list []Assignment) error {
 	rows, err := s.pool.Query(ctx, `WITH e AS (`+assigneesSQL+`),
 		l AS (
-			SELECT DISTINCT ON (t.assignment_id, t.user_id) t.assignment_id, t.total, t.waiting_marks, t.waiting_answers,
-				t.correct * CASE WHEN t.submitted_at > s.due_at THEN (100 - s.late_penalty_pct) / 100.0 ELSE 1 END AS mark
+			SELECT DISTINCT ON (t.assignment_id, t.user_id) t.assignment_id, t.total, t.waiting_marks, `+attemptMarkSQL+` AS mark
 			FROM attempts t JOIN e ON e.assignment_id=t.assignment_id AND e.user_id=t.user_id
-			JOIN assignments s ON s.id=t.assignment_id
+			JOIN assignments a ON a.id=t.assignment_id
 			WHERE t.submitted_at IS NOT NULL
-			ORDER BY t.assignment_id, t.user_id, t.submitted_at DESC),
+			ORDER BY t.assignment_id, t.user_id, `+countedAttemptOrder+`),
 		c AS (SELECT assignment_id, count(*) AS n FROM e GROUP BY 1),
 		d AS (SELECT d.assignment_id, count(*) AS n FROM assignment_done d
 			JOIN e ON e.assignment_id=d.assignment_id AND e.user_id=d.user_id GROUP BY 1),
-		r AS (SELECT assignment_id, count(*) AS n, avg(mark / NULLIF(total - waiting_marks, 0))::float8 AS mean,
-				sum(waiting_answers)::int AS waiting
-			FROM l GROUP BY 1)
-		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), r.mean, COALESCE(r.waiting, 0)
-		FROM c LEFT JOIN d ON d.assignment_id=c.assignment_id LEFT JOIN r ON r.assignment_id=c.assignment_id`, ids)
+		r AS (SELECT assignment_id, count(*) AS n, avg(mark / NULLIF(total - waiting_marks, 0))::float8 AS mean
+			FROM l GROUP BY 1),
+		w AS (SELECT t.assignment_id, sum(t.waiting_answers)::int AS n
+			FROM attempts t JOIN e ON e.assignment_id=t.assignment_id AND e.user_id=t.user_id
+			WHERE t.submitted_at IS NOT NULL GROUP BY 1)
+		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), r.mean, COALESCE(w.n, 0)
+		FROM c LEFT JOIN d ON d.assignment_id=c.assignment_id LEFT JOIN r ON r.assignment_id=c.assignment_id
+		LEFT JOIN w ON w.assignment_id=c.assignment_id`, ids)
 	if err != nil {
 		return err
 	}
@@ -444,8 +466,9 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 			l.id, l.correct::float8, l.total::float8, COALESCE(l.waiting_marks, 0)::float8, COALESCE(l.waiting_answers, 0), l.submitted_at
 		FROM e
 		LEFT JOIN LATERAL (SELECT t.id, t.correct, t.total, t.waiting_marks, t.waiting_answers, t.submitted_at
-			FROM attempts t WHERE t.assignment_id=e.assignment_id AND t.user_id=$2 AND t.submitted_at IS NOT NULL
-			ORDER BY t.submitted_at DESC LIMIT 1) l ON true
+			FROM attempts t JOIN assignments a ON a.id=t.assignment_id
+			WHERE t.assignment_id=e.assignment_id AND t.user_id=$2 AND t.submitted_at IS NOT NULL
+			ORDER BY `+countedAttemptOrder+` LIMIT 1) l ON true
 		WHERE e.user_id=$2`, ids, userID)
 	if err != nil {
 		return err
@@ -456,7 +479,7 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 		var mine AssignmentMine
 		var submittedAt *time.Time
 		if err := rows.Scan(&id, &mine.DoneAt, &mine.RunningAttemptID, &mine.AttemptsUsed,
-			&mine.LatestAttemptID, &mine.Correct, &mine.Total, &mine.WaitingMarks, &mine.WaitingAnswers, &submittedAt); err != nil {
+			&mine.CountedAttemptID, &mine.Correct, &mine.Total, &mine.WaitingMarks, &mine.WaitingAnswers, &submittedAt); err != nil {
 			return err
 		}
 		a := &list[at[id]]
@@ -761,6 +784,7 @@ func writeAssignmentLists(ctx context.Context, tx pgx.Tx, id string, form Assign
 // workspace with no material, so editing or deleting the quiz leaves them. The
 // actor pays for the copied images, as for a clone (Epo 2026-10-11), and for the
 // frozen questions (Epo 2026-11-05), so this is the last that fits their storage.
+// A republish pays only for what it adds to what it replaces.
 func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, actorID, kind string, qs []map[string]any, now time.Time) error {
 	if kind == AssignmentUnmarked {
 		_, err := tx.Exec(ctx, `UPDATE assignments SET draft=false, posted_at=$2 WHERE id=$1`, id, now)
@@ -796,43 +820,50 @@ func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, ac
 	if err != nil {
 		return err
 	}
-	if err := s.gateStorageTx(ctx, tx, actorID, size); err != nil {
+	var replaced int64
+	if err := tx.QueryRow(ctx, `SELECT COALESCE((SELECT frozen_bytes FROM assignments WHERE id=$1 AND frozen_by=$2), 0)`, id, actorID).Scan(&replaced); err != nil {
+		return err
+	}
+	if err := s.gateStorageTx(ctx, tx, actorID, max(size-replaced, 0)); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `UPDATE assignments SET draft=false, posted_at=$2, questions=$3, question_count=$4, total_marks=$5,
 		frozen_by=$6, frozen_bytes=$7 WHERE id=$1`,
 		id, now, frozen, len(qs), marks, actorID, size)
-	if err != nil {
-		return err
-	}
-	// Its assignees lose the quiz now, so its live rooms drain: one reading it
-	// reconnects and is refused (live_access), and staff rejoin.
-	_, err = tx.Exec(ctx, `SELECT enqueue_material_collaboration_eviction(source_quiz_id, 'access-changed', 'drain')
-		FROM assignments WHERE id=$1 AND source_quiz_id IS NOT NULL`, id)
 	return err
 }
 
 // copyFrozenAssetsTx copies the quiz's ready images and returns old id → new id.
+// An image the assignment already holds from an earlier publish keeps its row.
 func (s *Store) copyFrozenAssetsTx(ctx context.Context, tx pgx.Tx, assignmentID, wsID, actorID string, ids []string, now time.Time) (map[string]string, error) {
 	idMap := map[string]string{}
 	if len(ids) == 0 {
 		return idMap, nil
 	}
-	rows, err := tx.Query(ctx, `SELECT id, object_path, size_bytes FROM editor_assets
-		WHERE id = ANY($1) AND workspace_id=$2 AND status='ready' AND trashed_at IS NULL`, uniqueStrings(ids), wsID)
+	rows, err := tx.Query(ctx, `SELECT s.id, s.object_path, s.size_bytes, h.id FROM editor_assets s
+		LEFT JOIN LATERAL (SELECT x.id FROM editor_assets x WHERE x.assignment_id=$3 AND x.object_path=s.object_path
+			AND x.status='ready' AND x.trashed_at IS NULL LIMIT 1) h ON true
+		WHERE s.id = ANY($1) AND s.workspace_id=$2 AND s.status='ready' AND s.trashed_at IS NULL`, uniqueStrings(ids), wsID, assignmentID)
 	if err != nil {
 		return nil, err
 	}
+	copies := map[string]string{}
 	var paths []string
 	var bytes int64
 	for rows.Next() {
 		var id, path string
 		var size int64
-		if err := rows.Scan(&id, &path, &size); err != nil {
+		var held *string
+		if err := rows.Scan(&id, &path, &size, &held); err != nil {
 			rows.Close()
 			return nil, err
 		}
+		if held != nil {
+			idMap[id] = *held
+			continue
+		}
 		idMap[id] = uid("asset")
+		copies[id] = idMap[id]
 		paths = append(paths, path)
 		bytes += size
 	}
@@ -848,7 +879,7 @@ func (s *Store) copyFrozenAssetsTx(ctx context.Context, tx pgx.Tx, assignmentID,
 	if err := lockCloneBlobPathsTx(ctx, tx, paths); err != nil {
 		return nil, err
 	}
-	for oldID, newID := range idMap {
+	for oldID, newID := range copies {
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
 			(id, workspace_id, material_id, assignment_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes,
 			 status, etag, created_at, completed_at, thumbnail_key)
@@ -939,6 +970,196 @@ func (s *Store) PublishAssignment(ctx context.Context, actorID, id string, qs []
 	return s.GetAssignment(ctx, actorID, id, now)
 }
 
+// RepublishAssignment replaces an open marked assignment's frozen copy with its
+// quiz as it is now (Epo 2026-11-05). A running attempt reads the new copy on its
+// next load, without the saved answers that no longer fit (dropStaleAnswersTx); a
+// submitted one keeps its graded copy and marks. Images it stops using stay until
+// it is deleted, as submissions may show them. questions is nil when the quiz is gone.
+func (s *Store) RepublishAssignment(ctx context.Context, actorID, id string, qs []map[string]any, now time.Time) (Assignment, error) {
+	wsID, err := s.assignmentWorkspace(ctx, id)
+	if err != nil {
+		return Assignment{}, err
+	}
+	var payer *string
+	if err := s.pool.QueryRow(ctx, `SELECT frozen_by FROM assignments WHERE id=$1`, id).Scan(&payer); err != nil {
+		return Assignment{}, err
+	}
+	var also []string
+	if payer != nil {
+		also = append(also, *payer)
+	}
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID, also...); err != nil {
+			return err
+		}
+		// The counters before the row, as reconciliation takes them.
+		counters := uniqueStrings(append([]string{actorID}, also...))
+		sort.Strings(counters)
+		for _, user := range counters {
+			if err := s.lockStorageRowTx(ctx, tx, user); err != nil {
+				return err
+			}
+		}
+		var kind string
+		var draft, noLate bool
+		var due, closed *time.Time
+		if err := tx.QueryRow(ctx, `SELECT kind, draft, no_late, due_at, closed_at FROM assignments WHERE id=$1 FOR UPDATE`, id).
+			Scan(&kind, &draft, &noLate, &due, &closed); err != nil {
+			if isNoRows(err) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if kind != AssignmentMarked || draft {
+			return assignmentInput("only a published marked assignment can be republished")
+		}
+		if assignmentClosedAt(noLate, due, closed, now) != nil {
+			return ErrAssignmentClosed
+		}
+		if qs == nil {
+			return ErrAssignmentQuizGone
+		}
+		var raw []byte
+		if err := tx.QueryRow(ctx, `SELECT questions FROM assignments WHERE id=$1`, id).Scan(&raw); err != nil {
+			return err
+		}
+		before, err := decodeFrozen(raw)
+		if err != nil {
+			return err
+		}
+		if err := s.publishAssignmentTx(ctx, tx, id, wsID, actorID, kind, qs, now); err != nil {
+			return err
+		}
+		return dropStaleAnswersTx(ctx, tx, id, before, qs)
+	})
+	if err != nil {
+		return Assignment{}, err
+	}
+	return s.GetAssignment(ctx, actorID, id, now)
+}
+
+// dropStaleAnswersTx takes out of its running attempts the saved answers that no
+// longer mean what the member chose in the new copy. Every writer of an attempt
+// takes the workspace first, which the caller holds.
+func dropStaleAnswersTx(ctx context.Context, tx pgx.Tx, id string, before, after []map[string]any) error {
+	rows, err := tx.Query(ctx, `SELECT id, answers FROM attempts WHERE assignment_id=$1 AND submitted_at IS NULL FOR UPDATE`, id)
+	if err != nil {
+		return err
+	}
+	saved := map[string][]byte{}
+	for rows.Next() {
+		var attempt string
+		var raw []byte
+		if err := rows.Scan(&attempt, &raw); err != nil {
+			rows.Close()
+			return err
+		}
+		saved[attempt] = raw
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	was, now := partAnswers(before), partAnswers(after)
+	for attempt, raw := range saved {
+		var answers map[string]any
+		if err := json.Unmarshal(raw, &answers); err != nil {
+			return err
+		}
+		kept := make(map[string]any, len(answers))
+		for part, value := range answers {
+			if a, b := was[part], now[part]; a != nil && b != nil && stillAnswers(a, b, value) {
+				kept[part] = value
+			}
+		}
+		if len(kept) == len(answers) {
+			continue
+		}
+		next, err := json.Marshal(kept)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE attempts SET answers=$2 WHERE id=$1`, attempt, next); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// partAnswers maps each part's id to its answer.
+func partAnswers(qs []map[string]any) map[string]map[string]any {
+	out := map[string]map[string]any{}
+	for _, q := range qs {
+		parts, _ := q["parts"].([]any)
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			id, _ := p["id"].(string)
+			a, _ := p["answer"].(map[string]any)
+			out[id] = a
+		}
+	}
+	return out
+}
+
+// stillAnswers reads whether a saved answer still means what the member chose
+// once a part changed, as practice's readers have it (AttemptBody's stillAnswers,
+// D9): a chosen option, ordering item or matching option that is gone or moved, or
+// a changed number of gaps, drops it.
+func stillAnswers(before, after map[string]any, value any) bool {
+	if before["type"] != after["type"] {
+		return false
+	}
+	switch before["type"] {
+	case "mcq":
+		chosen, ok := value.([]any)
+		was, _ := before["options"].([]any)
+		now, _ := after["options"].([]any)
+		if !ok {
+			return false
+		}
+		for _, raw := range chosen {
+			at, isNumber := raw.(float64)
+			i := int(at)
+			if !isNumber || i < 0 || i >= len(was) || i >= len(now) || !reflect.DeepEqual(was[i], now[i]) {
+				return false
+			}
+		}
+	case "ordering":
+		return sameItems(before["items"], after["items"])
+	case "matching":
+		chosen, ok := value.(map[string]any)
+		now, _ := after["options"].([]any)
+		if !ok {
+			return false
+		}
+		for _, option := range chosen {
+			if !slices.ContainsFunc(now, func(o any) bool { return reflect.DeepEqual(o, option) }) {
+				return false
+			}
+		}
+	case "gaps":
+		was, _ := before["accepted"].([]any)
+		now, _ := after["accepted"].([]any)
+		return len(was) == len(now)
+	}
+	return true
+}
+
+// sameItems reads whether two ordering parts hold the same items, in any order.
+func sameItems(a, b any) bool {
+	sorted := func(raw any) []string {
+		list, _ := raw.([]any)
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			text, _ := item.(string)
+			out = append(out, text)
+		}
+		slices.Sort(out)
+		return out
+	}
+	return slices.Equal(sorted(a), sorted(b))
+}
+
 // AssignmentSourceQuiz names a draft's quiz, for the caller to read before
 // publishing; empty when it was deleted or trashed.
 func (s *Store) AssignmentSourceQuiz(ctx context.Context, id string) (string, error) {
@@ -954,9 +1175,10 @@ func (s *Store) AssignmentSourceQuiz(ctx context.Context, id string) (string, er
 	return *quizID, nil
 }
 
-// SetAssignmentClosed closes it by hand, stopping late submissions, submitting
-// what running attempts saved (the sweep, or the member's next request) and
-// making its quiz practice; or reopens it.
+// SetAssignmentClosed closes it by hand, stopping late submissions and making its
+// quiz practice, or reopens it. A running attempt goes on for the grace, for its
+// page to send what it holds (the caller tells it, Epo 2026-11-05); past that the
+// sweep or the member's next request submits what was saved.
 func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, closed bool, now time.Time) (Assignment, error) {
 	wsID, err := s.assignmentWorkspace(ctx, id)
 	if err != nil {
@@ -977,6 +1199,15 @@ func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, clo
 		return Assignment{}, err
 	}
 	return s.GetAssignment(ctx, actorID, id, now)
+}
+
+// RunningAttemptUsers names who has an attempt running on the assignment.
+func (s *Store) RunningAttemptUsers(ctx context.Context, id string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT user_id FROM attempts WHERE assignment_id=$1 AND submitted_at IS NULL`, id)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 // DeleteAssignment deletes it with its attempts, frozen questions and images,
@@ -1131,12 +1362,16 @@ func scanAttemptRow(row pgx.Row) (attemptRow, error) {
 	return r, err
 }
 
-// expired: closed by hand, or its time or a No late submissions due date ran
-// out, past the grace (the browser submits at zero, and that takes a moment).
+// expired: closed by hand or timed out, past the grace (the browser submits what
+// is on the page, and that takes a moment).
 func (r attemptRow) expired(now time.Time) bool {
-	if r.closedAt != nil {
-		return true
-	}
+	return (r.closedAt != nil && now.After(r.closedAt.Add(assignmentGrace))) || r.timedOut(now)
+}
+
+// timedOut: its time or a No late submissions due date ran out, past the grace.
+// It marks a submission automatic, which the page says was the time running out;
+// staff closing it is not that.
+func (r attemptRow) timedOut(now time.Time) bool {
 	if r.noLate && r.dueAt != nil && now.After(r.dueAt.Add(assignmentGrace)) {
 		return true
 	}
@@ -1200,7 +1435,7 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, now time
 				attemptID = running.id
 				return nil
 			}
-			if err := s.finishAttemptTx(ctx, tx, running, nil, true, now); err != nil {
+			if err := s.finishAttemptTx(ctx, tx, running, nil, running.timedOut(now), now); err != nil {
 				return err
 			}
 		} else if !errors.Is(err, ErrNotFound) {
@@ -1338,7 +1573,7 @@ func (s *Store) SubmitAssignmentAttempt(ctx context.Context, userID, attemptID s
 			return nil
 		}
 		if r.expired(now) {
-			return s.finishAttemptTx(ctx, tx, r, nil, true, now)
+			return s.finishAttemptTx(ctx, tx, r, nil, r.timedOut(now), now)
 		}
 		return s.finishAttemptTx(ctx, tx, r, answers, false, now)
 	})
@@ -1562,7 +1797,7 @@ func (s *Store) finishAttemptIfRunning(ctx context.Context, attemptID string, no
 		if r.submitted != nil || !r.expired(now) {
 			return nil
 		}
-		return s.finishAttemptTx(ctx, tx, r, nil, true, now)
+		return s.finishAttemptTx(ctx, tx, r, nil, r.timedOut(now), now)
 	})
 }
 
@@ -1779,10 +2014,17 @@ func (s *Store) MarkAssignmentAnswer(ctx context.Context, actorID, attemptID str
 		if err := logAnswerPartsTx(ctx, tx, r.userID, mt, question, given, answerSourceAssignment, attemptID, now, changed); err != nil {
 			return err
 		}
-		if r.released != nil && waited && !questionWaiting(question) {
-			return s.rateAttemptTx(ctx, tx, r.userID, r.sourceID, []map[string]any{question}, given, now)
+		if r.released == nil || !waited || questionWaiting(question) {
+			return nil
 		}
-		return nil
+		// Reviews rate a member's latest submission (latestAttempts): an earlier one
+		// marked now moves its mark alone.
+		var latest bool
+		if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM attempts
+			WHERE assignment_id=$1 AND user_id=$2 AND submitted_at > $3)`, r.assignmentID, r.userID, r.submitted).Scan(&latest); err != nil || !latest {
+			return err
+		}
+		return s.rateAttemptTx(ctx, tx, r.userID, r.sourceID, []map[string]any{question}, given, now)
 	})
 	if err != nil {
 		return AssignmentAttempt{}, err
@@ -1850,8 +2092,9 @@ func applyPartMarks(question map[string]any, marks []AssignmentPartMark, actorID
 type AssignmentReport struct {
 	Members   []AssignmentMemberRow      `json:"members" nullable:"false"`
 	Questions []AssignmentQuestionReport `json:"questions" nullable:"false"`
-	// Answers lists every submitted answer to a question with an open part,
-	// one row per member, for the Approve AI marks tab.
+	// Answers lists, for the Approve AI marks tab, each member's counted answer to
+	// a question with an open part, and any other submission's answer still
+	// waiting: once marked it can become the highest.
 	Answers []AssignmentAnswerRow `json:"answers" nullable:"false"`
 }
 
@@ -1861,19 +2104,21 @@ type AssignmentMemberRow struct {
 	Name      string  `json:"name"`
 	AvatarURL string  `json:"avatarUrl,omitempty"`
 	AttemptID *string `json:"attemptId,omitempty"`
-	// SubmittedAt: the latest submission, which counts; an unmarked one's tick.
+	// AttemptID and SubmittedAt: the submission that counts (countedAttemptOrder),
+	// which the rest of this reads; an unmarked one's tick.
 	SubmittedAt *time.Time `json:"submittedAt,omitempty"`
 	// Minutes taken, whole minutes rounded up.
 	Minutes *int `json:"minutes,omitempty"`
 	// Correct is the marks decided; Mark the same after any late penalty, which
 	// is what counts.
-	Correct        *float64 `json:"correct,omitempty"`
-	Mark           *float64 `json:"mark,omitempty"`
-	Total          *float64 `json:"total,omitempty"`
-	WaitingAnswers int      `json:"waitingAnswers"`
-	Late           bool     `json:"late"`
-	LatePenaltyPct int      `json:"latePenaltyPct"`
-	Running        bool     `json:"running"`
+	Correct *float64 `json:"correct,omitempty"`
+	Mark    *float64 `json:"mark,omitempty"`
+	Total   *float64 `json:"total,omitempty"`
+	// WaitingAnswers counts every submission of theirs (AssignmentReport.Answers).
+	WaitingAnswers int  `json:"waitingAnswers"`
+	Late           bool `json:"late"`
+	LatePenaltyPct int  `json:"latePenaltyPct"`
+	Running        bool `json:"running"`
 	// Missing: past due, nothing submitted.
 	Missing bool `json:"missing"`
 }
@@ -1921,6 +2166,8 @@ type AssignmentAnswerRow struct {
 	QuestionID string `json:"questionId"`
 	UserID     string `json:"userId"`
 	AttemptID  string `json:"attemptId"`
+	// AttemptNumber is which of the member's submissions it is, the first being 1.
+	AttemptNumber int `json:"attemptNumber"`
 	// Waiting: an open part still waits for the owner.
 	Waiting bool    `json:"waiting"`
 	Awarded float64 `json:"awarded"`
@@ -1965,7 +2212,7 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 	if kind != AssignmentMarked {
 		return out, nil
 	}
-	attempts, err := reportAttempts(ctx, s.pool, id)
+	attempts, err := countedAttempts(ctx, s.pool, id)
 	if err != nil {
 		return out, err
 	}
@@ -1974,7 +2221,9 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 		at[m.UserID] = i
 	}
 	var counted []reportAttempt
+	countedIDs := make([]string, 0, len(attempts))
 	for _, attempt := range attempts {
+		countedIDs = append(countedIDs, attempt.id)
 		i, ok := at[attempt.userID]
 		if !ok {
 			continue
@@ -1982,7 +2231,7 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 		counted = append(counted, attempt)
 		row := &out.Members[i]
 		row.AttemptID, row.SubmittedAt, row.Correct, row.Total = &attempt.id, &attempt.submitted, &attempt.correct, &attempt.total
-		row.WaitingAnswers = attempt.waitingAnswers
+		row.WaitingAnswers += attempt.waitingAnswers
 		row.Late = assignmentLate(noLate, due, attempt.submitted)
 		row.LatePenaltyPct = penaltyFor(row.Late, penalty)
 		mark := penalisedMark(attempt.correct, row.LatePenaltyPct)
@@ -1996,8 +2245,70 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 			row.Minutes = &minutes
 		}
 	}
-	out.Questions, out.Answers = questionReports(frozen, counted)
+	others, err := waitingAttempts(ctx, s.pool, id, countedIDs)
+	if err != nil {
+		return out, err
+	}
+	var waiting []reportAttempt
+	for _, attempt := range others {
+		if i, ok := at[attempt.userID]; ok {
+			waiting = append(waiting, attempt)
+			out.Members[i].WaitingAnswers += attempt.waitingAnswers
+		}
+	}
+	out.Questions, out.Answers = questionReports(withRemoved(frozen, counted, waiting), counted, waiting)
 	return out, nil
+}
+
+// withRemoved adds, last, what a republish took out that a submission still holds:
+// its marks stand and its open answers wait. A question that stayed takes back the
+// parts it lost; one that left comes back whole.
+func withRemoved(frozen []map[string]any, attempts ...[]reportAttempt) []map[string]any {
+	seen := make(map[string]bool, len(frozen))
+	for _, q := range frozen {
+		id, _ := q["id"].(string)
+		seen[id] = true
+		parts, _ := q["parts"].([]any)
+		held := map[string]bool{}
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			part, _ := p["id"].(string)
+			held[part] = true
+		}
+		for _, list := range attempts {
+			for _, attempt := range list {
+				theirs, _ := attempt.graded[id]["parts"].([]any)
+				for _, raw := range theirs {
+					p, _ := raw.(map[string]any)
+					if part, _ := p["id"].(string); !held[part] {
+						held[part] = true
+						parts = append(parts, raw)
+					}
+				}
+			}
+		}
+		q["parts"] = parts
+	}
+	removed := map[string]map[string]any{}
+	for _, list := range attempts {
+		for _, attempt := range list {
+			for id, q := range attempt.graded {
+				if !seen[id] {
+					removed[id] = q
+				}
+			}
+		}
+	}
+	ids := make([]string, 0, len(removed))
+	for id := range removed {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := append([]map[string]any{}, frozen...)
+	for _, id := range ids {
+		out = append(out, removed[id])
+	}
+	return out
 }
 
 // reportMembers lists who it went to, by name; a member who ticked it reads as
@@ -2027,6 +2338,7 @@ func (s *Store) reportMembers(ctx context.Context, id, kind string, due *time.Ti
 
 type reportAttempt struct {
 	id, userID     string
+	number         int
 	started        *time.Time
 	submitted      time.Time
 	correct, total float64
@@ -2035,11 +2347,33 @@ type reportAttempt struct {
 	graded         map[string]map[string]any
 }
 
-// reportAttempts reads each member's latest submission.
-func reportAttempts(ctx context.Context, q rowsQueryer, id string) ([]reportAttempt, error) {
-	rows, err := q.Query(ctx, `SELECT DISTINCT ON (user_id) id, user_id, started_at, submitted_at, correct::float8, total::float8,
-			waiting_answers, answers, questions
-		FROM attempts WHERE assignment_id=$1 AND submitted_at IS NOT NULL ORDER BY user_id, submitted_at DESC`, id)
+const reportAttemptCols = `t.id, t.user_id, (SELECT count(*) FROM attempts x
+		WHERE x.assignment_id=t.assignment_id AND x.user_id=t.user_id AND x.submitted_at <= t.submitted_at),
+	t.started_at, t.submitted_at, t.correct::float8, t.total::float8, t.waiting_answers, t.answers, t.questions`
+
+// countedAttempts reads each member's submission that counts.
+func countedAttempts(ctx context.Context, q rowsQueryer, id string) ([]reportAttempt, error) {
+	return readReportAttempts(ctx, q, `SELECT DISTINCT ON (t.user_id) `+reportAttemptCols+`
+		FROM attempts t JOIN assignments a ON a.id=t.assignment_id
+		WHERE t.assignment_id=$1 AND t.submitted_at IS NOT NULL ORDER BY t.user_id, `+countedAttemptOrder, id)
+}
+
+// waitingAttempts reads the other submissions with an answer still waiting.
+func waitingAttempts(ctx context.Context, q rowsQueryer, id string, counted []string) ([]reportAttempt, error) {
+	return readReportAttempts(ctx, q, `SELECT `+reportAttemptCols+` FROM attempts t
+		WHERE t.assignment_id=$1 AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0 AND t.id <> ALL($2)
+		ORDER BY t.user_id, t.submitted_at`, id, counted)
+}
+
+// latestAttempts reads each member's latest submission, which reviews rate: what
+// they know now, whichever submission scored highest.
+func latestAttempts(ctx context.Context, q rowsQueryer, id string) ([]reportAttempt, error) {
+	return readReportAttempts(ctx, q, `SELECT DISTINCT ON (t.user_id) `+reportAttemptCols+` FROM attempts t
+		WHERE t.assignment_id=$1 AND t.submitted_at IS NOT NULL ORDER BY t.user_id, t.submitted_at DESC`, id)
+}
+
+func readReportAttempts(ctx context.Context, q rowsQueryer, sql string, args ...any) ([]reportAttempt, error) {
+	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2048,7 +2382,7 @@ func reportAttempts(ctx context.Context, q rowsQueryer, id string) ([]reportAtte
 	for rows.Next() {
 		var a reportAttempt
 		var rawAnswers, rawQuestions []byte
-		if err := rows.Scan(&a.id, &a.userID, &a.started, &a.submitted, &a.correct, &a.total, &a.waitingAnswers, &rawAnswers, &rawQuestions); err != nil {
+		if err := rows.Scan(&a.id, &a.userID, &a.number, &a.started, &a.submitted, &a.correct, &a.total, &a.waitingAnswers, &rawAnswers, &rawQuestions); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(rawAnswers, &a.answers); err != nil {
@@ -2068,8 +2402,9 @@ func reportAttempts(ctx context.Context, q rowsQueryer, id string) ([]reportAtte
 	return out, rows.Err()
 }
 
-// questionReports works out each question's numbers from the submissions.
-func questionReports(frozen []map[string]any, attempts []reportAttempt) ([]AssignmentQuestionReport, []AssignmentAnswerRow) {
+// questionReports works out each question's numbers from the counted submissions,
+// and its answer rows from those and the waiting answers of the others.
+func questionReports(frozen []map[string]any, attempts, others []reportAttempt) ([]AssignmentQuestionReport, []AssignmentAnswerRow) {
 	reports := make([]AssignmentQuestionReport, 0, len(frozen))
 	rows := []AssignmentAnswerRow{}
 	for _, q := range frozen {
@@ -2100,9 +2435,18 @@ func questionReports(frozen []map[string]any, attempts []reportAttempt) ([]Assig
 					fullMarks++
 				}
 			}
-			if open {
-				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id,
+			// By their own copy: a republish may have changed the question since.
+			if hasOpenPart(graded) {
+				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
 					Waiting: waiting, Awarded: awarded, Marks: marks})
+			}
+		}
+		for _, attempt := range others {
+			graded := attempt.graded[id]
+			if graded != nil && questionWaiting(graded) {
+				awarded, marks := questionMarks(graded)
+				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
+					Waiting: true, Awarded: awarded, Marks: marks})
 			}
 		}
 		if marked >= assignmentAggregateMin {
@@ -2117,6 +2461,17 @@ func questionReports(frozen []map[string]any, attempts []reportAttempt) ([]Assig
 		reports = append(reports, report)
 	}
 	return reports, rows
+}
+
+func hasOpenPart(q map[string]any) bool {
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		if a, _ := p["answer"].(map[string]any); a["type"] == "open" {
+			return true
+		}
+	}
+	return false
 }
 
 func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport {
@@ -2217,14 +2572,15 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 
 // SweepAssignments is the server closing what a closed tab cannot: it submits
 // what running attempts saved once their time runs out or the assignment closes,
-// by hand or at a No late submissions due date, and shows a closed assignment's
-// quiz as practice, once. A due date alone releases nothing (Epo 2026-11-04).
+// by hand or at a No late submissions due date, past the grace, and shows a closed
+// assignment's quiz as practice, once. A due date alone releases nothing (Epo
+// 2026-11-04).
 // The quiz stays hidden while another open assignment uses it. One row that
 // fails is logged and passed over, so it never holds up the rest.
 func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) (finished, released int, err error) {
 	rows, err := s.pool.Query(ctx, `SELECT t.id FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 		WHERE t.assignment_id IS NOT NULL AND t.submitted_at IS NULL
-			AND (t.deadline_at <= $1 OR a.closed_at IS NOT NULL OR (a.no_late AND a.due_at <= $1)) LIMIT $2`, now.Add(-assignmentGrace), limit)
+			AND (t.deadline_at <= $1 OR a.closed_at <= $1 OR (a.no_late AND a.due_at <= $1)) LIMIT $2`, now.Add(-assignmentGrace), limit)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -2307,7 +2663,7 @@ func (s *Store) releaseAssignment(ctx context.Context, id string, now time.Time)
 				return err
 			}
 		}
-		attempts, err := reportAttempts(ctx, tx, id)
+		attempts, err := latestAttempts(ctx, tx, id)
 		if err != nil {
 			return err
 		}

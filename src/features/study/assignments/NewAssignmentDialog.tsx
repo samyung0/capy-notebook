@@ -153,6 +153,7 @@ export function NewAssignmentDialog({
   const quizId = watch('quizId');
   const dueAt = watch('dueAt');
   const noLate = watch('noLate');
+  const attempts = watch('attempts');
   const [advancedOpen, setAdvancedOpen] = useState(() =>
     advancedStartsOpen(existing)
   );
@@ -404,6 +405,11 @@ export function NewAssignmentDialog({
                       </Select>
                     )}
                   />
+                  {attempts > 1 && (
+                    <span className="t-meta text-fg-muted">
+                      {m.assignment_highest_counts()}
+                    </span>
+                  )}
                 </Field>
                 <AssignToField control={control} workspaceId={workspaceId} />
               </>

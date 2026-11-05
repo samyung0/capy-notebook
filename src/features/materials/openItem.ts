@@ -35,6 +35,18 @@ export type OpenItem =
 /** A note citation: the blocks it came from, and its text for one without. */
 export type NoteCitationTarget = OfficeCitation & { blockIds?: string[] };
 
+/** The panel beside the rail, or `none` for no panel. */
+export type WorkspacePanel = 'files' | 'agent' | 'study' | 'none';
+
+export function isWorkspacePanel(value: unknown): value is WorkspacePanel {
+  return (
+    value === 'files' ||
+    value === 'agent' ||
+    value === 'study' ||
+    value === 'none'
+  );
+}
+
 /** URL search params for the open item — mutually exclusive `file` | `material`. */
 export type WorkspaceOpenSearch = {
   file?: string;
@@ -47,6 +59,9 @@ export type WorkspaceOpenSearch = {
   /** The open item fills the page, header and side panels hidden. In the URL
    * so the back gesture leaves it. */
   fullscreen?: true;
+  /** Which panel shows, in the URL so the back gesture steps through them (Epo
+   * 2026-11-05). Below the panels, `agent` is the chat page over the viewer. */
+  panel?: WorkspacePanel;
   /** A Study page in the centre while nothing is open. */
   study?: 'practice' | 'summary' | 'assignments';
   /** Assignments' open assignment, and a try at it: running, or results. */
@@ -57,7 +72,7 @@ export type WorkspaceOpenSearch = {
   own?: true;
   /** An assignment's report: its tab, and on Approve AI marks a question or
    * member to open at. */
-  tab?: 'questions' | 'members' | 'approve';
+  tab?: 'questions' | 'members' | 'approve' | 'settings';
   question?: string;
   member?: string;
   /** Assignments' New assignment, opened with this quiz (board A1). */
@@ -164,6 +179,7 @@ export function parseWorkspaceOpenSearch(
     ...parseOpenPage(search),
     add: search.add === 'upload' ? 'upload' : undefined,
     chat: search.chat === 'new' ? 'new' : undefined,
+    panel: isWorkspacePanel(search.panel) ? search.panel : undefined,
     settings: isSettingsView(search.settings) ? search.settings : undefined,
     settingsQuery: isSettingsView(search.settings)
       ? text(search.settingsQuery)
@@ -218,7 +234,7 @@ const text = (value: unknown) =>
 const GROUPS = ['topic', 'others', 'workspace'] as const;
 const MODES: readonly ReviewMode[] = ['tricky', 'fading', 'learned'];
 
-const TABS = ['questions', 'members', 'approve'] as const;
+const TABS = ['questions', 'members', 'approve', 'settings'] as const;
 
 /** Assignments, one assignment (its report's view), or a try at one. Unknown
  * tabs clear; ids are the page's to answer. */

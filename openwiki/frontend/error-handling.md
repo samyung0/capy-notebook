@@ -389,9 +389,8 @@ stays a 500.
 ## Offline and paused work
 
 Nothing app-wide sits above the page, so connection and account state never
-shift the layout. The dashboard banner slot (`DashboardBanner`) shows only the
-viewer's own account, one tinted card with a faint icon at a time, and is
-empty otherwise:
+shift the layout. Home's banner slot (`HomeBanner`) shows only the viewer's own
+account, one tinted card with a faint icon at a time, and is empty otherwise:
 frozen, over-quota grace, storage full (red), storage near the limit (amber),
 offline, reconnecting (stream disconnected). The full and near cards read
 `account.storageUsage` from `/me` and show "You've used X of Y" (whole
@@ -400,6 +399,15 @@ meter (`[data-testid="storage-usage-meter"]`) above the Subscription and
 Settings links. The connection card carries `[data-connection-status="offline"]`
 or `"reconnecting"`. Suspended, deleted and deletion-pending accounts keep the
 full-screen `AccountBlockedScreen`.
+
+A workspace opens on its Dashboard, where the triangle isn't, so the Dashboard
+shows the same status small (Epo 2026-11-05, Q631): `AccountStatusBanner`, in the
+same file and reading the same `useAccountStatus`, the same states in the same order
+with the same words and link, inside the page below its title
+(`[data-testid="account-status-banner"]`, `data-kind` naming the state). It is the
+tinted card in a smaller size, with no meter; both link to Subscription with a solid
+dark button at the right, on its own right-aligned row on phones. Home's card is this small form on phones too. Only the Dashboard has it; Study and
+the other centre pages stay as they are, and the entry toast below still shows.
 
 Inside a workspace, `WorkspaceHealth` raises one `userToast` per visit for the
 workspace storage status, and one while offline (also whenever the browser

@@ -757,6 +757,44 @@ it('stops on a refused token and backs off on a failing one', async () => {
   room.destroy();
 });
 
+// Epo 2026-11-05 ("never reconnect ... show stale ones if necessary"): a quiz
+// assigned to a viewer since refuses their next join, at a token's expiry or a
+// lost connection. The reader's document stays, with nothing to show for it: no
+// toast, no fresh room, no retries.
+it('a reader refused on its next join keeps its document, quietly', async () => {
+  vi.mocked(userToast).mockClear();
+  tokens.push({ access: 'read', room: 'material:q:schema:1' });
+  const onReplace = vi.fn();
+  const room = new ItemRoom('q', { onReplace, read: true });
+  await room.start();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  room.doc.getMap('questions').set('q1', 'Name a cell part.');
+  provider.config.onClose?.({
+    code: 4401,
+    reason: 'collaboration token expired',
+  });
+  tokens.push(new ApiError(404, 'Not Found'));
+  await provider.config.token().catch((thrown: Error) =>
+    provider.config.onAuthenticationFailed?.({
+      reason: `Failed to get token: ${thrown.message}`,
+    })
+  );
+  const connects = provider.connects;
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(provider.connects).toBe(connects);
+  expect(room.getSnapshot()).toMatchObject({
+    offline: null,
+    status: 'unavailable',
+    synced: true,
+  });
+  expect(room.doc.getMap('questions').get('q1')).toBe('Name a cell part.');
+  expect(onReplace).not.toHaveBeenCalled();
+  expect(userToast).not.toHaveBeenCalled();
+  room.destroy();
+});
+
 // The version gate (Epo 2026-10-16): a room that refuses this build stops
 // for the page load. A writer turns read-only under the outdated strip and
 // keeps its unsent edits stored for the reloaded page; a reader keeps what

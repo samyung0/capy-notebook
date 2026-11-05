@@ -226,14 +226,15 @@ func TestStudyWritesTakeTheWorkspaceFirst(t *testing.T) {
 		}
 		return f, created, run
 	}
-	// A running attempt with something saved, past its time because it closed.
+	// A running attempt with something saved, past its time because it closed
+	// longer ago than the grace.
 	overrun := func(t *testing.T, label string) (assignmentFixture, AssignmentAttempt) {
 		t.Helper()
 		f, created, run := running(t, label)
 		if err := f.s.SaveAssignmentAnswers(ctx, f.viewer, run.ID, answers, now); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
+		if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(-2*assignmentGrace)); err != nil {
 			t.Fatal(err)
 		}
 		return f, run

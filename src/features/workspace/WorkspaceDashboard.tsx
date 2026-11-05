@@ -7,6 +7,7 @@ import {
 } from '@/api/hooks';
 import type { Workspace, WorkspaceActivity } from '@/api/types';
 import { PreviewCard } from '@/components/app/PreviewCard';
+import { AccountStatusBanner } from '@/components/banners/HomeBanner';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -71,7 +72,7 @@ export function WorkspaceDashboard({
     // One column leaves room under the page for the floating chat button.
     <div className="flex min-h-0 flex-1 flex-col gap-6.5 overflow-auto px-4 pt-5 pb-24 sm:px-6 lg:px-9 lg:pt-7 lg:pb-10">
       {/* Spread apart on one line; wrapped, the actions start their own line
-          at the left, 16px from the text above and below. Their negative
+          at the left, 20px from the text above and more from what follows. Their negative
           margins give that whatever the width: on one line the name's height
           decides, so they cancel out. */}
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-6">
@@ -80,7 +81,7 @@ export function WorkspaceDashboard({
           <span className="t-meta min-h-[1lh] text-fg-muted">{meta}</span>
         </div>
         {canAdd && !empty && (
-          <div className="-my-3.5 flex flex-wrap items-center gap-2">
+          <div className="-mt-2.5 -mb-1 flex flex-wrap items-center gap-2">
             <Button iconLeft="upload" onClick={onUpload} variant="outline">
               {m.action_upload()}
             </Button>
@@ -88,6 +89,7 @@ export function WorkspaceDashboard({
           </div>
         )}
       </header>
+      <AccountStatusBanner />
       {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
       {pages.includes('assignments') && (
         <TodoSection manages={manages} workspaceId={workspace.id} />
