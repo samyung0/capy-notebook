@@ -10,7 +10,6 @@ import type { Assignment } from '@/api/types';
 import { SettingRow } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
-import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
@@ -23,7 +22,7 @@ type Asking = 'republish' | 'close' | 'delete';
 /** The rows' one width, so their buttons line up. */
 function RowButton(props: ComponentProps<typeof Button>) {
   return (
-    <Button className="w-32 justify-start" variant="ghost-hover" {...props} />
+    <Button className="w-32 justify-end" variant="ghost-hover" {...props} />
   );
 }
 
@@ -87,16 +86,11 @@ export function AssignmentSettingsTab({
             hint={manage?.quizTitle}
             title={m.assignment_settings_quiz()}
           >
-            <UnderlineLink
-              asChild
-              className="w-32 justify-start text-fg"
-              size="md"
-              variant="ghost-hover"
-            >
+            <RowButton asChild iconLeft="pencil">
               <Link search={{ material: quizId }} to=".">
                 {m.assignment_edit_quiz()}
               </Link>
-            </UnderlineLink>
+            </RowButton>
           </SettingRow>
         )}
         {quizId && !draft && !closedAt && (
