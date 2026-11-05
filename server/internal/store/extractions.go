@@ -324,12 +324,26 @@ func (s *Store) FailExtraction(ctx context.Context, id, code, message string, re
 
 // FailOrphanedExtractions fails the runs left running by a process that
 // stopped: a run lives in the API process that relays it, so at boot none is
-// live. Like AbortOrphanedStreams, it must run on every API start.
+// live. Like AbortOrphanedStreams, it must run on every API start. A run's session
+// settles with it, so the hold on its questions goes now and not when it expires.
 func (s *Store) FailOrphanedExtractions(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx, `UPDATE question_extractions
+	rows, err := s.pool.Query(ctx, `UPDATE question_extractions
 		SET status='failed', error_code='interrupted',
 		    error='The server restarted while the questions were being read.', finished_at=now(),
 		    `+extractionDialogCleared+`
-		WHERE status IN ('running', 'confirming')`)
-	return err
+		WHERE status IN ('running', 'confirming')
+		RETURNING COALESCE(spend_session_id, '')`)
+	if err != nil {
+		return err
+	}
+	sessions, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	for _, session := range sessions {
+		if err := s.SettleCredits(ctx, session); err != nil {
+			return err
+		}
+	}
+	return nil
 }

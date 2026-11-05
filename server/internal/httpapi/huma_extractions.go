@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -153,8 +154,10 @@ func checkDrawnPages(f store.File, p apimodel.ExtractionFile) error {
 	}
 	for i, image := range p.Images {
 		data, err := base64.StdEncoding.DecodeString(image)
-		if err != nil || len(data) > extractionImageBytes || imagecheck.Format(data) != "jpeg" {
-			return huma.Error400BadRequest(fmt.Sprintf("%s: page %d's drawn image is not a JPEG of at most 1 MB.", f.Name, p.Pages[i]))
+		// The pixels too: a flat page small in bytes can be huge once decoded.
+		if err != nil || len(data) > extractionImageBytes || imagecheck.Format(data) != "jpeg" ||
+			imagecheck.CheckSourceImage(bytes.NewReader(data)) != nil {
+			return huma.Error400BadRequest(fmt.Sprintf("%s: page %d's drawn image is not a JPEG of at most 1 MB and 5 megapixels.", f.Name, p.Pages[i]))
 		}
 	}
 	return nil

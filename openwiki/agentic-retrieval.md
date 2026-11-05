@@ -5728,7 +5728,7 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   images}]` and up to `ExtractionAnswerFiles` (3) `answers` of the same shape (Epo 2026-11-05). Pages count
   from 1 and every picked page counts towards `fieldlimits.ExtractionPages` (40) across
   the files, however it is sent. A PDF takes any of its pages, an image page 1, a Word
-  or PowerPoint file its picked pages as browser-drawn JPEGs (`images`), and any other
+  or PowerPoint file its picked pages as browser-drawn JPEGs (`images`, at most 1 MB and 5 megapixels in Go, then shrunk by `capture.image_jpeg` to `capture_max_edge` like any image to a model), and any other
   indexed file no pages: it goes whole. Every file must be the workspace's and untrashed.
   A question file must be indexed. An answer file still being read is refused, and one that
   failed to read is left out and named in the run's `unread_answers` (Q613), and the
@@ -5904,6 +5904,8 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   file's visibility: a picked file keeps its setting and a file uploaded in
   the Make a quiz dialog is uploaded hidden (Epo 2026-11-04; see
   [Hidden from members](authorization-permissions-lifecycles.md#hidden-from-members)).
+  An API restart fails the runs it finds running or waiting and settles their sessions
+  (`FailOrphanedExtractions`), so a confirmed run's hold goes at once.
   It then records the quiz id and report, settles the session and sends `{type:
   extraction, extractionId, status}` on the starter's event stream. No
   question saved is `extraction_empty`. `GET /api/extractions/{id}` reads a

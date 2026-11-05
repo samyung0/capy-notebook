@@ -158,4 +158,21 @@ func TestExtractionConfirmHoldsThePriceAndChargesPerQuestion(t *testing.T) {
 	if _, err := f.s.FailExtraction(ctx, cancelled.ID, "late", "late", nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("failed a cancelled run: %v", err)
 	}
+
+	// A restart mid-run gives the hold back at once.
+	cut := paused("Paper C")
+	free, err := f.s.CreditBalance(ctx, f.user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.ConfirmExtraction(ctx, f.user, cut.ID, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.FailOrphanedExtractions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	released, err := f.s.CreditBalance(ctx, f.user)
+	if err != nil || released.ReservedMicros >= free.ReservedMicros+ExtractionQuestionMicros {
+		t.Fatalf("after a restart: held %d, was %d, %v", released.ReservedMicros, free.ReservedMicros, err)
+	}
 }

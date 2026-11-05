@@ -56,8 +56,6 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from PIL import Image
-
 from .. import elitellm, registry
 from ..config import cfg
 from ..generated import limits
@@ -1854,29 +1852,21 @@ async def _answer_file(workspace_id: str, file: dict[str, Any]) -> AnswerFile:
 
 
 async def _drawn_image(jpeg: bytes) -> str:
-    return capture.data_url(jpeg)
+    """Shrunk as any image on its way to a model is (Epo 2026-11-05): the picker already
+    draws at this size, and a larger one sent by hand costs no more than a page."""
+    small, _box, _size = await slots.render_thread(
+        capture.image_jpeg, io.BytesIO(jpeg), None, cfg.capture_max_edge
+    )
+    return capture.data_url(small)
 
 
 async def _drawn_crop(jpeg: bytes, box: list[float]) -> tuple[bytes, tuple[int, int]]:
     """A box on a page the browser drew: the page's own pixels, so a figure is only as
     sharp as the page sent."""
-
-    def cut() -> tuple[bytes, tuple[int, int]]:
-        with Image.open(io.BytesIO(jpeg)) as page:
-            width, height = page.size
-            piece = page.convert("RGB").crop(
-                (
-                    int(box[0] * width / 1000),
-                    int(box[1] * height / 1000),
-                    int(box[2] * width / 1000),
-                    int(box[3] * height / 1000),
-                )
-            )
-        out = io.BytesIO()
-        piece.save(out, "JPEG", quality=capture.JPEG_QUALITY)
-        return out.getvalue(), piece.size
-
-    return await slots.render_thread(cut)
+    piece, _box, size = await slots.render_thread(
+        capture.image_jpeg, io.BytesIO(jpeg), box, cfg.capture_max_edge
+    )
+    return piece, size
 
 
 def _drawn_pages(file: dict[str, Any]) -> list[Page]:

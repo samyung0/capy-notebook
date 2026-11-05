@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"image"
@@ -366,5 +367,25 @@ func TestAFullStarterGetsTheQuizWithoutItsFigures(t *testing.T) {
 	}
 	if listing, err := mem.ListObjects(ctx, "editor-assets/", "", 10); err != nil || len(listing.Keys) != 0 {
 		t.Fatalf("stored objects = %+v (%v)", listing, err)
+	}
+}
+
+func drawnPage(t *testing.T, side int) string {
+	t.Helper()
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, image.NewGray(image.Rect(0, 0, side, side)), nil); err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(out.Bytes())
+}
+
+// A flat page is small in bytes whatever its size, so its pixels are held too.
+func TestDrawnPagesAreHeldToTheirPixels(t *testing.T) {
+	file := store.File{Name: "paper.docx"}
+	if err := checkDrawnPages(file, apimodel.ExtractionFile{Pages: []int{1}, Images: []string{drawnPage(t, 1568)}}); err != nil {
+		t.Fatalf("a page as the picker draws it: %v", err)
+	}
+	if err := checkDrawnPages(file, apimodel.ExtractionFile{Pages: []int{1}, Images: []string{drawnPage(t, 3000)}}); err == nil {
+		t.Fatal("a 9 megapixel page was taken")
 	}
 }

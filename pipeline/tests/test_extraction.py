@@ -603,6 +603,17 @@ async def test_a_word_papers_drawn_pages_go_as_a_scans_do():
     assert size == (100, 50)
 
 
+async def test_a_drawn_page_larger_than_the_picker_draws_is_shrunk_for_the_model():
+    buffer = io.BytesIO()
+    Image.new("RGB", (3000, 1500), "white").save(buffer, "JPEG")
+    drawn = base64.b64encode(buffer.getvalue()).decode()
+    file = {"fileId": "f", "name": "paper.docx", "pages": [1], "images": [drawn]}
+    pages, _ = await extraction.prepare("w", [file], [])
+    sent = base64.b64decode(str(await pages[0].image()).split(",", 1)[1])
+    with Image.open(io.BytesIO(sent)) as image:
+        assert image.size == (extraction.cfg.capture_max_edge, 784)
+
+
 def test_copying_carries_no_answers_and_answers_require_a_model_answer():
     record_question, record_answers = extraction.prompts.TOOLS
     question = record_question["function"]["parameters"]
