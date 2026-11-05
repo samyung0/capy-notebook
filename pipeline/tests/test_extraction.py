@@ -1887,3 +1887,13 @@ def test_extract_route_refuses_first_then_streams(monkeypatch):
     ]
     assert [e["type"] for e in events] == ["questions", "done"]
     assert limits.TURN_SLOTS.used == 0
+
+
+def test_a_large_request_gets_time_to_upload_before_its_first_event():
+    from pipeline.elitellm import client
+
+    flat = client._call_timeout()
+    assert client._first_event_bound({"messages": []}) == flat
+    assert client._first_event_bound({"image": "x" * 8_000_000}) == pytest.approx(
+        flat + 64, abs=0.1
+    )

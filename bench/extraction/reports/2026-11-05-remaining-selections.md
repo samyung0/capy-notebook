@@ -71,6 +71,39 @@ That system prompt has no figures paragraph, and its message has no boxes. The w
 on a paper. Its worksheet runs still misread marks in some runs, so it doesn't help there. The rest of the prompt is
 `todo-study-tracking/R6-extraction-prompt.md`.
 
+## Epo's samples
+
+| Paper | Run | Wall | Billed | Credits | Result |
+|---|---|---:|---:|---:|---|
+| S5 M2 mock, born digital, 12 pages | 2 | 126-143 s | $0.0163 | 33.7-39.6 | 13 questions, all answered. The paper prints no marks, so each part has 1. The system of equations comes back as `\\begin{cases}` and KaTeX renders that form |
+| The same, as text with no images | 2 | 139-188 s | $0.0169 | 35.6-39.2 | The same 13 questions and the same Q5. It stands in for a Word file; no real file went through the parser |
+| JLPT N1, scanned, 15 pages, with a scanned answer grid and script, 13 pages | 1 | 947 s | $0.0744 | 170.4 | 70 questions, and all 70 keys match the printed grid, checked by eye |
+
+**JLPT failed twice at the 15 s first-event limit.** Each of its calls is 8.6 MB, and from this Mac they took 20 to 58 s to start, 947 s
+and 437 MB in all, with the limit raised for the run. The limit counts the upload. It now allows 8 s for each MB on a request over 1 MB,
+which needs a run to confirm on production's connection, since its upload speed isn't this Mac's. Sending images by short-lived URL would
+remove the upload, and it is untested.
+
+## Pricing
+
+A run already settles what its calls used, so a flat price would be a new rule. Measured, on the extraction rates:
+
+| Run | Pages | Questions | Credits | A page | A question |
+|---|---:|---:|---:|---:|---:|
+| 2021 P1, no answer file | 7 | 10 | 16.9 | 2.4 | 1.7 |
+| 2021 P1, scheme as text | 7 | 10 | 19.8 | 2.8 | 2.0 |
+| 2021 P1, scheme as images | 7 | 10 | 27.9 | 4.0 | 2.8 |
+| 2021 P1, whole paper, scheme as images | 22 | 19 | 55.0 | 2.5 | 2.9 |
+| S5 M2 mock, no answer file | 12 | 13 | 36.7 | 3.1 | 2.8 |
+| Dense reading, no answer file | 6 | 13 | 19.8 | 3.3 | 1.5 |
+| Chinese, no answer file | 6 | 9 | 23.4 | 3.9 | 2.6 |
+| Chinese, long scheme as text, the run without the label fault | 6 | 9 | 39.1 | 6.5 | 4.3 |
+| Worksheet that prints its key | 6 | 3 | 5.7 | 1.0 | 1.9 |
+| JLPT, scheme as images | 15 | 70 | 170.4 | 11.4 | 2.4 |
+| 40 pages, quiz full, all answered | 40 | 90 | 239.6 | 6.0 | 2.7 |
+
+Pages range from 1 to 11 credits, and questions from 1.5 to 4.3. So cost follows questions, and an answer file adds less than a dense paper does.
+
 ## Open
 
 - **The dialog offers only PDFs and images** (`isPaperFile`), so a Word paper can't be picked yet. It needs a whole-file row in
@@ -84,7 +117,7 @@ on a paper. Its worksheet runs still misread marks in some runs, so it doesn't h
 
 ## Spend
 
-$1.48 in all for this work against a $1.50 stop: $0.91 for the answer files report and $0.57 here. That includes the failed Chinese
+$1.63 in all for this work against a $1.80 stop: $0.91 for the answer files report and $0.72 here. That includes the failed Chinese
 runs and those lost to sleep. The fixes above were tested with unit tests after the money ran out, except where a table says a
 run followed them. Keys stayed in the process.
 
