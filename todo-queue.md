@@ -30,7 +30,8 @@ boards K6, K7 and K8 on the study Design canvas. Scanned submissions build on it
   - **Answer size:** about 2 KB for a sketch with a label, 30 KB for 42 long strokes. Image for marking: about 115 KB.
   - **Worked:** pen, typed labels and note cards in the image, a saved answer reopening, the axes sheet that no tool can erase, touch drawing at 360 px.
   - **Only tried on mocks:** Chromium on this Mac with simulated touch, no real phone or pen.
-- [ ] Fix what the try found: a typed label throws a `ZodError` from `recordLastProps` (probably zod 4 on the vendored schema); the zoom bar covers the toolbar at 360 px; the sheet opens small on phones; the note image and attachment items need removing; undo, redo and the formula and graph presets aren't in AFFiNE's toolbar and need adding; note cards need drawing onto the sheet in the image
+- [x] Fix what the try found (`claude/drawing-answers`, local): the `ZodError` on every partial edit (a zod 4 port slip), zoom at the bottom right and none on phones, the sheet filling a phone's width, the note menu's image, link and file buttons off, undo and redo in the toolbar, note cards drawn onto the sheet in the image
+- [ ] Note card text comes out slightly clipped in the image (html2canvas); readable, revisit with tuning
 - [ ] Bring `vendor/blocksuite` to `main` in a lazy chunk (Epo, 2026-11-06: "sure"): on `claude/drawing-answers`, dev route only until the answer flow opens it
 - [ ] `drawing` answer type with its background (blank, squared grid, axes, figure) in the shared question format: Go, Rust, TypeScript, pipeline
 - [ ] The board: full screen, question pinned at top left, Done returning to a preview and "Edit drawing", phones
