@@ -12,6 +12,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/imagecheck"
 	"io"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -148,8 +149,8 @@ func checkDrawnPages(f store.File, p apimodel.ExtractionPaperFile) error {
 
 // extractionFiles checks each file is the workspace's, untrashed and indexed;
 // a paper is a PDF, an image, a Word or PowerPoint file with its pages drawn by the
-// browser, or a text file read whole (Epo 2026-11-05); a spreadsheet is refused
-// ("reject xlsx").
+// browser, or any other indexed file read whole (Epo 2026-11-05). An Excel file is
+// neither a paper nor an answer file, and audio isn't either.
 func (a *api) extractionFiles(ctx context.Context, wsID string, req apimodel.CreateExtractionReq) (paper, answers []extractionFile, err error) {
 	paper, answers = []extractionFile{}, []extractionFile{}
 	read := func(id string) (store.File, error) {
@@ -159,6 +160,10 @@ func (a *api) extractionFiles(ctx context.Context, wsID string, req apimodel.Cre
 		}
 		if err != nil {
 			return f, err
+		}
+		ext := strings.ToLower(filepath.Ext(f.Name))
+		if f.Kind == store.FileAudio || f.Kind == store.FileUnknown || ext == ".xlsx" || ext == ".xls" {
+			return f, huma.Error400BadRequest(fmt.Sprintf("%s: questions and answers can't be read from this kind of file.", f.Name))
 		}
 		if !f.Indexed {
 			return f, huma.Error400BadRequest(fmt.Sprintf("%s has no indexed text yet: wait until it has been read, or process it.", f.Name))
@@ -178,12 +183,10 @@ func (a *api) extractionFiles(ctx context.Context, wsID string, req apimodel.Cre
 		case len(p.Images) > 0:
 			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s: only a Word or PowerPoint file sends drawn pages.", f.Name))
 		case f.Kind == store.FilePDF:
-		case f.Kind == store.FileImage || f.Kind == store.FileTxt || f.Kind == store.FileMD:
+		default:
 			if !slices.Equal(p.Pages, []int{1}) {
 				return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s is read whole: its one page is page 1.", f.Name))
 			}
-		default:
-			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s: questions can't be read from this kind of file.", f.Name))
 		}
 		paper = append(paper, extractionFile{FileID: f.ID, Name: f.Name, Pages: p.Pages, Images: p.Images})
 	}

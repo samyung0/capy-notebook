@@ -41,6 +41,7 @@ const SHEET_RATIO = 220 / 296;
 
 /** One page: a large sheet, one click selects it (Epo 2026-11-02). */
 function Sheet({
+  caption,
   children,
   disabled,
   number,
@@ -49,6 +50,8 @@ function Sheet({
   selected,
   sheetRef,
 }: {
+  /** After the number: what a tile that isn't a page stands for. */
+  caption?: string;
   children: React.ReactNode;
   /** The cap is reached and this page isn't one of them. */
   disabled: boolean;
@@ -104,7 +107,7 @@ function Sheet({
           selected && 'text-tint-accent-1-fg'
         )}
       >
-        {number}
+        {caption ? `${number} · ${caption}` : number}
       </span>
     </button>
   );
@@ -186,15 +189,38 @@ function PaperSheets({
   const [count, setCount] = useState(0);
   const url = links?.url;
   const image = file.kind === 'image';
+  const pdf = file.kind === 'pdf';
   useEffect(() => {
-    if (image) onCount(file.id, 1);
-  }, [file.id, image, onCount]);
+    if (!pdf) onCount(file.id, 1);
+  }, [file.id, onCount, pdf]);
   if (isError)
     return (
       <p className="t-meta col-span-full text-tint-error-fg" role="alert">
         {m.make_quiz_pages_unavailable()}
       </p>
     );
+  if (!image && !pdf) {
+    // A text file has no pages: the run reads all of it, as one tile.
+    const key = pageKey({ fileId: file.id, page: 1 });
+    const on = selected.has(key);
+    return (
+      <Sheet
+        caption={m.make_quiz_whole_file()}
+        disabled={full && !on}
+        number={firstNumber}
+        onToggle={() => onToggle(key)}
+        ratio={SHEET_RATIO}
+        selected={on}
+      >
+        <span className="flex h-full flex-col items-center justify-center gap-3 p-4">
+          <FileIcon className="size-11 shrink-0" name={fileIconName(file)} />
+          <span className="wrap-anywhere text-center font-semibold text-sm">
+            {file.name}
+          </span>
+        </span>
+      </Sheet>
+    );
+  }
   if (image) {
     const key = pageKey({ fileId: file.id, page: 1 });
     const on = selected.has(key);

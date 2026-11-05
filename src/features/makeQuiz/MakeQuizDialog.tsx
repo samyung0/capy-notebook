@@ -23,12 +23,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
 import { useFilePages, useSeen } from './filePages';
-import {
-  hasFileRoom,
-  isAnswersFile,
-  isOfferable,
-  isPaperFile,
-} from './makeQuiz';
+import { hasFileRoom, isOfferable, isQuizFile } from './makeQuiz';
 import { useQuizUpload } from './useQuizUpload';
 
 /** A file on the dialog: from Files, or an upload, whose transfer row `key`
@@ -358,8 +353,7 @@ export function MakeQuizDialog({
   const offered = (files ?? []).filter(
     (file) => isOfferable(file) && !usedIds.has(file.id)
   );
-  const paperFiles = offered.filter(isPaperFile);
-  const answerFiles = offered.filter(isAnswersFile);
+  const quizFiles = offered.filter(isQuizFile);
   const room = hasFileRoom(paper.length, answers.length);
   // A photographed paper can be several images, one a page (§8).
   const imagePaper =
@@ -403,7 +397,7 @@ export function MakeQuizDialog({
   // Which menu asked for the upload, kept past the menu closing.
   const uploadFor = useRef<'pages' | 'paper'>('paper');
   const addPaperFiles = (list: File[]) => {
-    const rows = add(list, true);
+    const rows = add(list);
     if (rows.length === 0) return;
     setPaper((current) =>
       uploadFor.current === 'pages' ? [...current, ...rows] : rows
@@ -464,11 +458,7 @@ export function MakeQuizDialog({
       title={m.make_quiz_title()}
       width={600}
     >
-      <UploadInput
-        accept=".pdf,image/*"
-        inputRef={paperInput}
-        onFiles={addPaperFiles}
-      />
+      <UploadInput inputRef={paperInput} onFiles={addPaperFiles} />
       <UploadInput
         inputRef={answersInput}
         multiple
@@ -478,16 +468,14 @@ export function MakeQuizDialog({
         }}
       />
       <div className="flex flex-col gap-4 pb-1">
+        <p className="t-meta text-fg-muted">{m.make_quiz_no_spreadsheets()}</p>
         <div className="flex min-w-0 flex-col gap-1.5">
           <p className="t-meta font-semibold text-fg-secondary">
             {m.make_quiz_question_paper()}
           </p>
-          <p className="t-meta text-fg-muted">
-            {m.make_quiz_no_spreadsheets()}
-          </p>
           {paper.length === 0 ? (
             <FileMenu
-              files={paperFiles}
+              files={quizFiles}
               label={m.make_quiz_question_paper()}
               onOpenChange={(open) => setMenu(open ? 'paper' : null)}
               onPick={(file) => {
@@ -521,7 +509,7 @@ export function MakeQuizDialog({
                       removeButton(setPaper, row)
                     ) : (
                       <FileMenu
-                        files={paperFiles}
+                        files={quizFiles}
                         label={m.make_quiz_question_paper()}
                         onOpenChange={(open) => setMenu(open ? 'paper' : null)}
                         onPick={(file) => {
@@ -550,7 +538,7 @@ export function MakeQuizDialog({
               {imagePaper && room && (
                 <div className="mt-2">
                   <FileMenu
-                    files={paperFiles.filter((file) => file.kind === 'image')}
+                    files={quizFiles.filter((file) => file.kind === 'image')}
                     label={m.make_quiz_question_paper()}
                     onOpenChange={(open) => setMenu(open ? 'pages' : null)}
                     onPick={(file) => {
@@ -597,7 +585,7 @@ export function MakeQuizDialog({
           ))}
           <div className={cn(answers.length > 0 && 'mt-2')}>
             <FileMenu
-              files={answerFiles}
+              files={quizFiles}
               label={m.make_quiz_answers()}
               onOpenChange={(open) => setMenu(open ? 'answers' : null)}
               onPick={(file) => {

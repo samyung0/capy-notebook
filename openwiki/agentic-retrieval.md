@@ -5926,7 +5926,11 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   what those use. A run is one session, so one of `ConcurrentLLMLeases`, while its calls
   in flight run from 3 to 8 on a 45-question paper. Each
   waits its turn at the model's gate and for `CALL_SLOTS` like a chat's.
-- **A paper with no page view** (Epo 2026-11-05): Word, PowerPoint or text. Its whole indexed text is
+- **Word and PowerPoint papers** (Epo 2026-11-05, "draw those pages on client side"): the page picker
+  draws every page with the Office runtime's print path in an off-screen frame, and the selected pages'
+  JPEGs (1,568 px long side, at most 1 MB) go with the request. They go as a scan's pages do, and a figure
+  crops from the same JPEG.
+- **A paper with no page view** (Epo 2026-11-05): a text file, CSV or similar. Its whole indexed text is
   one page with no image: `Page 1 of <name>. Its indexed text:`, a system prompt that says so and has no
   figures rule, no boxes, no layout call. Any page numbers the model gives are ignored, and a figure it
   names is dropped, so a question that needs a picture loses it. The output budget counts one page for

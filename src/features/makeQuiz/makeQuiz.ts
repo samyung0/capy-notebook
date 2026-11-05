@@ -18,17 +18,12 @@ export function drawnPaperFormat(file: Pick<SourceFile, 'name'>) {
   return ext === 'docx' || ext === 'pptx' ? ext : null;
 }
 
-/** What Make a quiz reads pages from: the gateway refuses anything else as a
- * question paper. */
-export function isPaperFile(file: Pick<SourceFile, 'kind' | 'name'>) {
-  return (
-    file.kind === 'pdf' || file.kind === 'image' || !!drawnPaperFormat(file)
-  );
-}
-
-/** A mark scheme or answers file: anything with indexed text. */
-export function isAnswersFile(file: Pick<SourceFile, 'kind'>) {
-  return file.kind !== 'audio' && file.kind !== 'unknown';
+/** A file Make a quiz can read, as a question paper or for its answers: anything that
+ * is indexed, except a spreadsheet (Epo 2026-11-05) and audio. */
+export function isQuizFile(file: Pick<SourceFile, 'kind' | 'name'>) {
+  if (file.kind === 'audio' || file.kind === 'unknown') return false;
+  const ext = fileExt(file.name);
+  return ext !== 'xlsx' && ext !== 'xls';
 }
 
 /** A file the menus offer: read, or still being read. A failed file or one

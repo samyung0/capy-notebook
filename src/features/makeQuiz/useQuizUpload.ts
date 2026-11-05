@@ -20,7 +20,7 @@ import {
   startSourceTransfer,
 } from '@/features/workspace/sourceTransfers';
 import { m } from '@/i18n';
-import { isPaperFile } from './makeQuiz';
+import { isQuizFile } from './makeQuiz';
 
 /** A file being added in the Make a quiz dialog: the normal upload and reading
  * path, saved to Files, hidden from members from its first moment (Epo
@@ -91,11 +91,9 @@ export function useQuizUpload(workspaceId: string) {
   ]);
 
   /** Takes the picked files and returns their rows; a file over the plan's
-   * size says so and stays out. With `papersOnly`, so does one that can't be a
-   * question paper. */
+   * size says so and stays out, and so does one a run can't read. */
   function add(
-    list: File[],
-    papersOnly = false
+    list: File[]
   ): { key: string; kind: SourceFile['kind']; name: string }[] {
     // Upload a file waits for the policy.
     if (!policy) return [];
@@ -108,13 +106,18 @@ export function useQuizUpload(workspaceId: string) {
         }),
         variant: 'error',
       });
-    const usable = papersOnly
-      ? accepted.filter((item) =>
-          isPaperFile({ kind: item.kind, name: item.file.name })
-        )
-      : accepted;
+    const usable = accepted.filter((item) =>
+      isQuizFile({ kind: item.kind, name: item.file.name })
+    );
     if (usable.length < accepted.length)
-      userToast({ title: m.make_quiz_paper_kinds(), variant: 'error' });
+      userToast({
+        description: accepted
+          .filter((item) => !usable.includes(item))
+          .map((item) => item.file.name)
+          .join(', '),
+        title: m.make_quiz_cannot_extract(),
+        variant: 'error',
+      });
     const rows = localRows(usable, policy, noCredits);
     batch.add(rows);
     return rows.map(({ key, kind, name }) => ({ key, kind, name }));

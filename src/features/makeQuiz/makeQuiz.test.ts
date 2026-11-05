@@ -6,19 +6,22 @@ import {
   extractionRequest,
   hasFileRoom,
   isOfferable,
-  isPaperFile,
+  isQuizFile,
   pageKey,
   quizTitleFrom,
   togglePage,
 } from './makeQuiz';
 
 describe('Make a quiz', () => {
-  it('reads question papers from PDFs, images, Word and PowerPoint', () => {
-    expect(isPaperFile({ kind: 'pdf', name: 'a.pdf' })).toBe(true);
-    expect(isPaperFile({ kind: 'image', name: 'a.png' })).toBe(true);
-    expect(isPaperFile({ kind: 'doc', name: 'a.docx' })).toBe(true);
-    expect(isPaperFile({ kind: 'slides', name: 'a.pptx' })).toBe(true);
-    expect(isPaperFile({ kind: 'sheet', name: 'a.xlsx' })).toBe(false);
+  it('reads every indexed file but a spreadsheet and audio', () => {
+    expect(isQuizFile({ kind: 'pdf', name: 'a.pdf' })).toBe(true);
+    expect(isQuizFile({ kind: 'image', name: 'a.png' })).toBe(true);
+    expect(isQuizFile({ kind: 'doc', name: 'a.docx' })).toBe(true);
+    expect(isQuizFile({ kind: 'slides', name: 'a.pptx' })).toBe(true);
+    expect(isQuizFile({ kind: 'md', name: 'a.md' })).toBe(true);
+    expect(isQuizFile({ kind: 'sheet', name: 'a.csv' })).toBe(true);
+    expect(isQuizFile({ kind: 'sheet', name: 'a.xlsx' })).toBe(false);
+    expect(isQuizFile({ kind: 'audio', name: 'a.mp3' })).toBe(false);
   });
 
   it('sends a drawn page with its image, in page order', () => {
