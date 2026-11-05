@@ -965,7 +965,9 @@ and [material editor checks](../server/internal/store/share.go#L209).
     widening sharing (privacy or the share role; a share role is dormant while
     the workspace is private, so changing it, or widening from private, takes
     nothing from anyone) close no room and no connection, not even for the
-    person who gained. They pick up edit at their next reload, with no hint.
+    person who gained. They pick up edit at their next reload, with no hint;
+    a quiz or flashcard room already open turns editable at its next token
+    refresh (Q642), since a refreshed token decides that connection's access.
   - **Access narrowed: `revoke`, one row per room.** Removing a member, lowering
     a role, narrowing sharing, a link going (`link` to `private`, which clears
     its grants) and a transfer of ownership. Each instance holding the room
