@@ -6848,6 +6848,708 @@ async fn redis_comments_and_user_evictions_reach_the_room() {
     assert_eq!(read_var(&closed, &mut at), 4403);
 }
 
+/// Delivers what an access change queued for `room`, as the API's worker does
+/// (a worker that got there first delivers it the same).
+async fn deliver_evictions(env: &Env, room: &str) {
+    let rows = db(env)
+        .await
+        .query(
+            "DELETE FROM collaboration_eviction_outbox WHERE payload->>'room'=$1
+             RETURNING channel, payload::text",
+            &[&room],
+        )
+        .await
+        .expect("outbox");
+    let mut redis = redis_at(&env.redis).await;
+    for row in rows {
+        let _: i64 = redis::cmd("PUBLISH")
+            .arg(row.get::<_, String>(0))
+            .arg(row.get::<_, String>(1))
+            .query_async(&mut redis)
+            .await
+            .expect("publish");
+    }
+}
+
+/// The server closes this channel with 4403, no notice before it.
+async fn closes_quietly(client: &mut Client) {
+    let closed = client.until(4).await.expect("closed");
+    assert_no_notice(client);
+    let mut at = 0;
+    let code = read_var(&closed, &mut at);
+    assert_eq!(code, 4403, "{}", String::from_utf8_lossy(&closed));
+}
+
+/// Nothing this client read told it of an eviction or a discard.
+fn assert_no_notice(client: &Client) {
+    for message in client.inbox.iter().filter(|message| message.kind == 9) {
+        let text = text_payload(&message.payload);
+        assert!(
+            !text.contains("evictionId") && !text.contains("authorization-revoked"),
+            "{text}"
+        );
+    }
+}
+
+/// Stays connected for a second and hears no notice.
+async fn stays_connected(client: &mut Client) {
+    assert!(!client.hears(4, 1000).await, "closed");
+    assert_no_notice(client);
+}
+
+/// A JOIN of `room` with `token` on a new channel: the refusal's reason.
+async fn refused_join(client: &mut Client, room: &str, token: &str) -> String {
+    client.channel += 1;
+    client.join(room, token).await;
+    text_payload(&client.until(2).await.expect("refused"))
+}
+
+/// Security regression (Q634, Epo 2026-11-05): removing a member closes that
+/// person's connections, both tabs, with 4403 and no notice, and nobody else's;
+/// the others keep editing, and the room stores the person's last admitted edit
+/// rather than discarding itself under them. Fails if the removal goes back to a
+/// discard or a drain (the others close and hear it), closes nobody (no 4403), or
+/// a store refuses the person's edit (the others hear `authorization-revoked`).
+#[tokio::test]
+async fn a_removed_members_connections_close_and_the_others_keep_editing() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "hello").await;
+    let third = member(&env, &room, "editor").await;
+    let mut olive = Client::open(server.port).await;
+    olive.joined(&room, &token(&room, &owner, "write")).await;
+    let mut cal = Client::open(server.port).await;
+    cal.joined(&room, &token(&room, &third, "write")).await;
+    let mut desk = Client::open(server.port).await;
+    desk.joined(&room, &token(&room, &editor, "write")).await;
+    let mut phone = Client::open(server.port).await;
+    phone.joined(&room, &token(&room, &editor, "read")).await;
+    assert!(desk.settle(|c| c.block_text() == "hello").await);
+    // Its last edit, the store a moment away.
+    desk.type_text("!").await;
+    desk.until(6).await.expect("ack");
+    assert!(olive.settle(|c| c.block_text() == "hello!").await);
+
+    db(&env)
+        .await
+        .execute("DELETE FROM workspace_members WHERE user_id=$1", &[&editor])
+        .await
+        .expect("removed");
+    deliver_evictions(&env, &room).await;
+
+    closes_quietly(&mut desk).await;
+    closes_quietly(&mut phone).await;
+    stays_connected(&mut olive).await;
+    olive.type_text("?").await;
+    olive.until(6).await.expect("ack");
+    assert!(cal.settle(|c| c.block_text() == "hello!?").await);
+    stays_connected(&mut cal).await;
+    persisted(&mut olive, "after-the-removal").await;
+    stays_connected(&mut olive).await;
+}
+
+/// Security regression (Q634): a token held from before the removal joins
+/// nothing and sends no draft, whatever access it names. Fails if a join or a
+/// draft send trusts the token instead of the database.
+#[tokio::test]
+async fn a_held_token_cannot_rejoin_after_removal() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (_, editor, room) = shared_note(&env, "hello").await;
+    let (write, read) = (
+        token(&room, &editor, "write"),
+        token(&room, &editor, "read"),
+    );
+    let mut desk = Client::open(server.port).await;
+    desk.joined(&room, &write).await;
+    assert!(desk.settle(|c| c.block_text() == "hello").await);
+    db(&env)
+        .await
+        .execute("DELETE FROM workspace_members WHERE user_id=$1", &[&editor])
+        .await
+        .expect("removed");
+    deliver_evictions(&env, &room).await;
+    closes_quietly(&mut desk).await;
+    for held in [&write, &read] {
+        assert_eq!(
+            refused_join(&mut desk, &room, held).await,
+            "collaboration-forbidden"
+        );
+    }
+    let (status, _) = send_drafts(
+        server.port,
+        &room,
+        Some(&write),
+        Some(ORIGIN),
+        drafted(&desk.doc, typed_into_note("!")),
+    )
+    .await;
+    assert_eq!(status, 403);
+}
+
+/// Security regression (Q634): a lowered editor's open connection stops writing.
+/// Its channel closes with 4403 once the change is delivered, a rejoin with the
+/// write token it holds is refused, and the read token it gets instead comes
+/// back read-only, where an update closes it. Others stay. Fails if the channel
+/// stays open, the held token rejoins, or a read channel can write.
+#[tokio::test]
+async fn a_lowered_editor_stops_writing_and_a_rejoin_comes_back_read_only() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "hello").await;
+    let mut olive = Client::open(server.port).await;
+    olive.joined(&room, &token(&room, &owner, "write")).await;
+    let write = token(&room, &editor, "write");
+    let mut desk = Client::open(server.port).await;
+    assert_eq!(desk.joined(&room, &write).await, 1);
+    assert!(desk.settle(|c| c.block_text() == "hello").await);
+
+    db(&env)
+        .await
+        .execute(
+            "UPDATE workspace_members SET role='viewer' WHERE user_id=$1",
+            &[&editor],
+        )
+        .await
+        .expect("lowered");
+    deliver_evictions(&env, &room).await;
+    closes_quietly(&mut desk).await;
+    stays_connected(&mut olive).await;
+
+    assert_eq!(
+        refused_join(&mut desk, &room, &write).await,
+        "collaboration-read-only"
+    );
+    let mut back = Client::open(server.port).await;
+    assert_eq!(back.joined(&room, &token(&room, &editor, "read")).await, 0);
+    assert!(back.settle(|c| c.block_text() == "hello").await);
+    olive.type_text("!").await;
+    assert!(back.settle(|c| c.block_text() == "hello!").await);
+    back.type_text("?").await;
+    let closed = back.until(4).await.expect("closed");
+    assert!(String::from_utf8_lossy(&closed).contains("read-only"));
+    assert!(!olive.settle(|c| c.block_text().contains('?')).await);
+}
+
+/// Security regression (Q634): a lowered editor's write stops even if the
+/// outbox never delivers: the writer's recheck reads the database every 5 s. So
+/// what the lowering leaves is the edits of those 5 s, Epo's accepted window.
+/// Fails if an update past the recheck is admitted.
+#[tokio::test]
+async fn a_lowered_editor_stops_writing_at_the_recheck_with_nothing_delivered() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "hello").await;
+    let mut olive = Client::open(server.port).await;
+    olive.joined(&room, &token(&room, &owner, "write")).await;
+    let mut desk = Client::open(server.port).await;
+    desk.joined(&room, &token(&room, &editor, "write")).await;
+    assert!(desk.settle(|c| c.block_text() == "hello").await);
+    desk.type_text("!").await;
+    desk.until(6).await.expect("ack");
+    db(&env)
+        .await
+        .execute(
+            "UPDATE workspace_members SET role='viewer' WHERE user_id=$1",
+            &[&editor],
+        )
+        .await
+        .expect("lowered");
+    tokio::time::sleep(Duration::from_millis(5100)).await;
+    desk.type_text("?").await;
+    let (notice, _) = desk.stateless("room-read-only").await;
+    assert_eq!(notice["room"], room.as_str());
+    desk.until(4).await.expect("closed");
+    assert!(olive.settle(|c| c.block_text() == "hello!").await);
+    assert!(!olive.settle(|c| c.block_text().contains('?')).await);
+}
+
+/// Security regression (Q634): a link viewer, who no row names, is closed when
+/// the link goes, on a standalone note and on a workspace, and a narrowed
+/// workspace keeps those it still reaches: a member, a visitor holding the link.
+/// Fails if a nonmember stays connected past the link, or anyone it still
+/// reaches is closed.
+#[tokio::test]
+async fn a_link_viewer_is_closed_when_the_link_goes() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, material) = note(&env, "shared").await;
+    let room = format!("material:{material}:schema:1");
+    let client = db(&env).await;
+    client
+        .execute(
+            "UPDATE materials SET privacy='link' WHERE id=$1",
+            &[&material],
+        )
+        .await
+        .expect("link share");
+    let viewer = user(&env).await;
+    redeem(&env, &material, &viewer).await;
+    let mut olive = Client::open(server.port).await;
+    olive.joined(&room, &token(&room, &owner, "write")).await;
+    let read = token(&room, &viewer, "read");
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(reader.joined(&room, &read).await, 0);
+    client
+        .execute(
+            "UPDATE materials SET privacy='private' WHERE id=$1",
+            &[&material],
+        )
+        .await
+        .expect("the link goes");
+    deliver_evictions(&env, &room).await;
+    closes_quietly(&mut reader).await;
+    stays_connected(&mut olive).await;
+    assert_eq!(
+        refused_join(&mut reader, &room, &read).await,
+        "collaboration-forbidden"
+    );
+
+    // A public workspace, whose visitors hold no row at all.
+    let (_, editor, room) = shared_note(&env, "shared").await;
+    let material = material_of(&room).to_owned();
+    client
+        .execute(
+            "UPDATE workspaces SET privacy='public'
+             WHERE id=(SELECT workspace_id FROM materials WHERE id=$1)",
+            &[&material],
+        )
+        .await
+        .expect("public");
+    let (linked, visitor) = (user(&env).await, user(&env).await);
+    client
+        .execute(
+            "INSERT INTO workspace_link_grants (workspace_id, user_id)
+             SELECT workspace_id, $2 FROM materials WHERE id=$1",
+            &[&material, &linked],
+        )
+        .await
+        .expect("grant");
+    let mut ed = Client::open(server.port).await;
+    ed.joined(&room, &token(&room, &editor, "write")).await;
+    let mut holder = Client::open(server.port).await;
+    assert_eq!(
+        holder.joined(&room, &token(&room, &linked, "read")).await,
+        0
+    );
+    let mut passing = Client::open(server.port).await;
+    assert_eq!(
+        passing.joined(&room, &token(&room, &visitor, "read")).await,
+        0
+    );
+    let narrow = "UPDATE workspaces SET privacy=$2
+                  WHERE id=(SELECT workspace_id FROM materials WHERE id=$1)";
+    client
+        .execute(narrow, &[&material, &"link"])
+        .await
+        .expect("public to link");
+    deliver_evictions(&env, &room).await;
+    closes_quietly(&mut passing).await;
+    stays_connected(&mut holder).await;
+    stays_connected(&mut ed).await;
+    client
+        .execute(narrow, &[&material, &"private"])
+        .await
+        .expect("the link goes");
+    deliver_evictions(&env, &room).await;
+    closes_quietly(&mut holder).await;
+    stays_connected(&mut ed).await;
+}
+
+/// Security regression (Q634, Epo 2026-10-10: keys go only to editors who can
+/// write): a lowered editor's keys channel closes with its content channel,
+/// though the event names only the content room, and neither token rejoins the
+/// keys. The owner keeps both. Fails if a viewer keeps a keys room, or can join
+/// one.
+#[tokio::test]
+async fn a_lowered_editors_keys_room_ends_with_its_content_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, note_room) = shared_note(&env, "note").await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let client = db(&env).await;
+    client
+        .execute(
+            "UPDATE materials SET workspace_id=(SELECT workspace_id FROM materials WHERE id=$2)
+             WHERE id=$1",
+            &[&quiz, &material_of(&note_room)],
+        )
+        .await
+        .expect("filed");
+    let (keys, content) = (
+        format!("keys:{quiz}:schema:1"),
+        format!("material:{quiz}:schema:1"),
+    );
+    drop_queued_evictions(&env, &content).await;
+    let keys_write = token(&keys, &editor, "write");
+    let mut key_tab = Client::open(server.port).await;
+    assert_eq!(key_tab.joined(&keys, &keys_write).await, 1);
+    let mut content_tab = Client::open(server.port).await;
+    assert_eq!(
+        content_tab
+            .joined(&content, &token(&content, &editor, "write"))
+            .await,
+        1
+    );
+    let mut olive = Client::open(server.port).await;
+    assert_eq!(olive.joined(&keys, &token(&keys, &owner, "write")).await, 1);
+    // Their sync replies go out while they edit (the recheck reads each update).
+    key_tab.drain().await;
+    content_tab.drain().await;
+
+    client
+        .execute(
+            "UPDATE workspace_members SET role='viewer' WHERE user_id=$1",
+            &[&editor],
+        )
+        .await
+        .expect("lowered");
+    deliver_evictions(&env, &content).await;
+    closes_quietly(&mut key_tab).await;
+    closes_quietly(&mut content_tab).await;
+    stays_connected(&mut olive).await;
+    for held in [&keys_write, &token(&keys, &editor, "read")] {
+        assert_eq!(
+            refused_join(&mut key_tab, &keys, held).await,
+            "collaboration-read-only"
+        );
+    }
+}
+
+/// Security regression (Q634): a note's embedded item goes with it: the link
+/// going closes a viewer's channel on the note's set, though the event names
+/// only the note. Fails if the item's room is left out.
+#[tokio::test]
+async fn a_notes_embedded_item_closes_with_the_note() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, note) = note(&env, "shared").await;
+    let client = db(&env).await;
+    client
+        .execute("UPDATE materials SET privacy='link' WHERE id=$1", &[&note])
+        .await
+        .expect("link share");
+    let set = flashcard_set(&env, &owner, Some(&note), &[("c1", "Cell", "")]).await;
+    let viewer = user(&env).await;
+    redeem(&env, &note, &viewer).await;
+    let set_room = format!("material:{set}:schema:1");
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(
+        reader
+            .joined(&set_room, &token(&set_room, &viewer, "read"))
+            .await,
+        0
+    );
+    let mut olive = Client::open(server.port).await;
+    olive
+        .joined(&set_room, &token(&set_room, &owner, "write"))
+        .await;
+    client
+        .execute(
+            "UPDATE materials SET privacy='private' WHERE id=$1",
+            &[&note],
+        )
+        .await
+        .expect("the link goes");
+    deliver_evictions(&env, &format!("material:{note}:schema:1")).await;
+    closes_quietly(&mut reader).await;
+    stays_connected(&mut olive).await;
+}
+
+/// Security regression (Q634): a source room closes as a material room does, for
+/// whoever the gateway no longer admits for what they hold: a removed reader, a
+/// lowered writer, and nobody else; a held token is refused. Fails if a source
+/// room's revoke closes the wrong people or none.
+#[tokio::test]
+async fn a_source_room_closes_only_those_who_lost_it() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (owner, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+    let (lowered, removed, stays) = (user(&env).await, user(&env).await, user(&env).await);
+    let client = db(&env).await;
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role)
+             SELECT workspace_id, $2, 'editor' FROM files WHERE id=$1",
+            &[&file, &lowered],
+        )
+        .await
+        .expect("member");
+    let mut olive = Client::open(server.port).await;
+    olive.joined(&room, &token(&room, &owner, "write")).await;
+    let lowered_write = token(&room, &lowered, "write");
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(writer.joined(&room, &lowered_write).await, 1);
+    let removed_read = token(&room, &removed, "read");
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(reader.joined(&room, &removed_read).await, 0);
+    let mut still = Client::open(server.port).await;
+    assert_eq!(still.joined(&room, &token(&room, &stays, "read")).await, 0);
+    writer.drain().await;
+
+    {
+        let mut refused = gateway.no_access.lock().expect("no access");
+        refused.push((lowered.clone(), true));
+        refused.push((removed.clone(), false));
+    }
+    client
+        .execute(
+            "UPDATE workspace_members SET role='viewer' WHERE user_id=$1",
+            &[&lowered],
+        )
+        .await
+        .expect("lowered");
+    deliver_evictions(&env, &room).await;
+    closes_quietly(&mut writer).await;
+    closes_quietly(&mut reader).await;
+    stays_connected(&mut olive).await;
+    stays_connected(&mut still).await;
+    assert_eq!(
+        refused_join(&mut reader, &room, &removed_read).await,
+        "collaboration-not-found"
+    );
+    assert_eq!(
+        refused_join(&mut writer, &room, &lowered_write).await,
+        "collaboration-not-found"
+    );
+    let mut back = Client::open(server.port).await;
+    assert_eq!(back.joined(&room, &token(&room, &lowered, "read")).await, 0);
+}
+
+/// One delivery of `event`: what this server acknowledged.
+async fn acknowledged(env: &Env, event: &serde_json::Value) -> bool {
+    let mut acks = redis::Client::open(env.redis.as_str())
+        .expect("redis url")
+        .get_async_pubsub()
+        .await
+        .expect("pub/sub");
+    acks.subscribe("capy:collaboration:eviction-delivered")
+        .await
+        .expect("subscribe");
+    let mut redis = redis_at(&env.redis).await;
+    let _: i64 = redis::cmd("PUBLISH")
+        .arg("capy:collaboration:evict")
+        .arg(event.to_string())
+        .query_async(&mut redis)
+        .await
+        .expect("publish");
+    let mut messages = acks.on_message();
+    loop {
+        let message = tokio::time::timeout(Duration::from_secs(15), messages.next())
+            .await
+            .expect("an acknowledgement")
+            .expect("a message");
+        let ack: serde_json::Value =
+            serde_json::from_str(&message.get_payload::<String>().expect("payload")).expect("json");
+        if ack["evictionId"] == event["evictionId"] {
+            return ack["ok"] == true;
+        }
+    }
+}
+
+/// Security regression (Q634): a revoke that cannot check someone answers
+/// negatively so the outbox retries, and the retry of the same eviction id runs
+/// again and closes them. A room on no server acknowledges (nobody to close), and
+/// someone with tabs on two servers loses both. Fails if a failed check
+/// acknowledges (they would keep the room) or a retry is deduplicated away.
+#[tokio::test]
+async fn a_revoke_retries_until_it_can_check_and_reaches_every_server() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let other = start_with(&env, Some(&gateway.url)).await;
+    let (owner, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+    let removed = user(&env).await;
+    let mut here = Client::open(server.port).await;
+    here.joined(&room, &token(&room, &removed, "read")).await;
+    let mut there = Client::open(other.port).await;
+    there.joined(&room, &token(&room, &removed, "read")).await;
+    let mut olive = Client::open(server.port).await;
+    olive.joined(&room, &token(&room, &owner, "write")).await;
+    gateway
+        .no_access
+        .lock()
+        .expect("no access")
+        .push((removed.clone(), false));
+    let event = serde_json::json!({
+        "evictionId": format!("cev_{}", uuid_like()),
+        "fileId": file,
+        "mode": "revoke",
+        "room": room,
+        "type": "access-changed",
+    });
+    gateway
+        .fail_access
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    assert!(!acknowledged(&env, &event).await, "a failed check");
+    assert!(!here.hears(4, 300).await, "closed on a failed check");
+    gateway
+        .fail_access
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    assert!(acknowledged(&env, &event).await, "the retry");
+    closes_quietly(&mut here).await;
+    closes_quietly(&mut there).await;
+    stays_connected(&mut olive).await;
+    let nowhere = serde_json::json!({
+        "evictionId": format!("cev_{}", uuid_like()),
+        "fileId": "f_nowhere",
+        "mode": "revoke",
+        "room": "source:f_nowhere:epoch:1",
+        "type": "access-changed",
+    });
+    assert!(acknowledged(&env, &nowhere).await, "a room on no server");
+}
+
+/// Q634 with Epo's 2026-11-05 assignment line (nothing about an assignment
+/// closes a connection): a reader whose quiz was assigned to them after they
+/// joined keeps it until they leave, so someone else's removal does not close
+/// them, though their own join is refused now. Fails if a revoke holds a reader
+/// to the join's hidden check.
+#[tokio::test]
+async fn a_revoke_leaves_a_reader_whose_quiz_was_assigned_to_them() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, note_room) = shared_note(&env, "note").await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let client = db(&env).await;
+    client
+        .execute(
+            "UPDATE materials SET workspace_id=(SELECT workspace_id FROM materials WHERE id=$2)
+             WHERE id=$1",
+            &[&quiz, &material_of(&note_room)],
+        )
+        .await
+        .expect("filed");
+    let room = format!("material:{quiz}:schema:1");
+    drop_queued_evictions(&env, &room).await;
+    let reader = member(&env, &note_room, "viewer").await;
+    let mut tab = Client::open(server.port).await;
+    let read = token(&room, &reader, "read");
+    assert_eq!(tab.joined(&room, &read).await, 0);
+    let mut removed = Client::open(server.port).await;
+    removed.joined(&room, &token(&room, &editor, "write")).await;
+    removed.drain().await;
+    client
+        .batch_execute(&format!(
+            "UPDATE workspaces SET kind='class'
+             WHERE id=(SELECT workspace_id FROM materials WHERE id='{quiz}');
+             INSERT INTO assignments (id, workspace_id, kind, title, source_quiz_id, questions, due_at)
+             SELECT 'as_' || id, workspace_id, 'marked', 'IT', id, '[]', now() + interval '1 day'
+             FROM materials WHERE id='{quiz}'"
+        ))
+        .await
+        .expect("assigned to them since");
+    client
+        .execute("DELETE FROM workspace_members WHERE user_id=$1", &[&editor])
+        .await
+        .expect("removed");
+    deliver_evictions(&env, &room).await;
+    closes_quietly(&mut removed).await;
+    stays_connected(&mut tab).await;
+    let mut again = Client::open(server.port).await;
+    assert_eq!(
+        refused_join(&mut again, &room, &read).await,
+        "collaboration-forbidden"
+    );
+}
+
+/// Security regression (Q634): a lapsed plan queues nothing and closes nobody
+/// until a writer's next update, which hears `room-read-only` and closes as at the
+/// storage limit, the same strip; the owner's rooms go read-only because the
+/// lapse put it over the Free limit. A reader stays, and a rejoin with the held
+/// write token is refused. Fails if a lapse queues a discard again, or an owner
+/// over the limit keeps writing.
+#[tokio::test]
+async fn a_plan_lapse_turns_the_rooms_read_only_at_the_next_update() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, material) = note(&env, "hello").await;
+    let room = format!("material:{material}:schema:1");
+    let client = db(&env).await;
+    let free: i64 = client
+        .query_one(
+            "SELECT storage_limit_bytes FROM plan_limits WHERE plan_tier='free'",
+            &[],
+        )
+        .await
+        .expect("limit")
+        .get(0);
+    client
+        .execute(
+            "UPDATE users SET plan_tier='pro', subscription_status='active' WHERE id=$1",
+            &[&owner],
+        )
+        .await
+        .expect("pro");
+    client
+        .execute(
+            "INSERT INTO user_storage (user_id, used_bytes) VALUES ($1, $2)
+             ON CONFLICT (user_id) DO UPDATE SET used_bytes=user_storage.used_bytes + $2",
+            &[&owner, &free],
+        )
+        .await
+        .expect("over the free limit");
+    client
+        .execute(
+            "UPDATE materials SET privacy='link' WHERE id=$1",
+            &[&material],
+        )
+        .await
+        .expect("link share");
+    let queued = "payload->>'room'=$1 OR payload->>'userId'=$2";
+    client
+        .execute(
+            &format!("DELETE FROM collaboration_eviction_outbox WHERE {queued}"),
+            &[&room, &owner],
+        )
+        .await
+        .expect("buying the plan's restoration");
+    let viewer = user(&env).await;
+    redeem(&env, &material, &viewer).await;
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &viewer, "read")).await;
+    let write = token(&room, &owner, "write");
+    let mut desk = Client::open(server.port).await;
+    assert_eq!(desk.joined(&room, &write).await, 1);
+    assert!(desk.settle(|c| c.block_text() == "hello").await);
+    desk.type_text("!").await;
+    desk.until(6).await.expect("ack");
+
+    client
+        .execute(
+            "UPDATE users SET plan_tier='free', subscription_status='canceled' WHERE id=$1",
+            &[&owner],
+        )
+        .await
+        .expect("lapsed");
+    let lapse_queued: i64 = client
+        .query_one(
+            &format!("SELECT count(*) FROM collaboration_eviction_outbox WHERE {queued}"),
+            &[&room, &owner],
+        )
+        .await
+        .expect("outbox")
+        .get(0);
+    assert_eq!(lapse_queued, 0, "the lapse queued something");
+    stays_connected(&mut desk).await;
+
+    tokio::time::sleep(Duration::from_millis(5100)).await;
+    desk.type_text("?").await;
+    let (notice, _) = desk.stateless("room-read-only").await;
+    assert_eq!(notice["room"], room.as_str());
+    desk.until(4).await.expect("closed");
+    assert!(reader.settle(|c| c.block_text() == "hello!").await);
+    assert!(!reader.settle(|c| c.block_text().contains('?')).await);
+    stays_connected(&mut reader).await;
+    assert_eq!(
+        refused_join(&mut desk, &room, &write).await,
+        "collaboration-read-only"
+    );
+}
+
 /// POSTs an internal route with the service secret.
 async fn internal(port: u16, path: &str, body: &serde_json::Value) -> (u16, serde_json::Value) {
     let response = reqwest::Client::new()
@@ -8146,6 +8848,11 @@ struct Gateway {
     /// Actors the session refuses, as Go refuses one outside the file's
     /// current workspace.
     refused: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// Actors the access check refuses, for writing only when `true` (a
+    /// lowered role) or for reading too (a removed one).
+    no_access: std::sync::Arc<std::sync::Mutex<Vec<(String, bool)>>>,
+    /// The access check answers 503 while set (a busy Go).
+    fail_access: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 async fn gateway_db(gateway: &Gateway) -> tokio_postgres::Client {
@@ -8164,7 +8871,25 @@ async fn gateway_get(
     use axum::response::IntoResponse;
     use base64::Engine;
     if endpoint == "access" {
-        return axum::http::StatusCode::NO_CONTENT.into_response();
+        if gateway
+            .fail_access
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+        let actor = query.get("actorId").map(String::as_str).unwrap_or_default();
+        let edit = query.get("edit").is_some_and(|edit| edit == "true");
+        let refused = gateway
+            .no_access
+            .lock()
+            .expect("no access")
+            .iter()
+            .any(|(user, writing)| user == actor && (edit || !*writing));
+        return if refused {
+            axum::http::StatusCode::NOT_FOUND.into_response()
+        } else {
+            axum::http::StatusCode::NO_CONTENT.into_response()
+        };
     }
     if endpoint != "bootstrap" {
         return axum::http::StatusCode::NOT_FOUND.into_response();
@@ -8425,6 +9150,8 @@ async fn gateway(env: &Env) -> Gateway {
         fail_checkpoints: Default::default(),
         conflicts: Default::default(),
         refused: Default::default(),
+        no_access: Default::default(),
+        fail_access: Default::default(),
     };
     let app = axum::Router::new()
         .route(
@@ -10464,7 +11191,6 @@ async fn the_rooms_presence_lists_editors_by_their_tokens_and_never_viewers() {
     let server = start(&env).await;
     let (owner, editor, room) = shared_note(&env, "presence").await;
     let viewer = member(&env, &room, "viewer").await;
-    drop_queued_evictions(&env, &room).await;
     let mut desk = Client::open(server.port).await;
     desk.joined(&room, &identity_token(&room, &owner, "write", "Olive"))
         .await;
@@ -10557,10 +11283,8 @@ async fn the_rooms_presence_lists_editors_by_their_tokens_and_never_viewers() {
     }
 }
 
-/// Drops the evictions that inserting `room`'s workspace, members and
-/// material queued: the API's worker delivers them whenever it gets to them,
-/// and one landing after a join drains the room, closing its channels. The
-/// room is not loaded yet, so they have nothing to do.
+/// Drops the discard that filing `room`'s material queued, before the room
+/// loads: the API's worker delivers it whenever it gets to it.
 async fn drop_queued_evictions(env: &Env, room: &str) {
     db(env)
         .await
@@ -10596,7 +11320,6 @@ async fn the_rooms_presence_drops_a_channel_that_leaves_and_a_socket_that_closes
     let server = start(&env).await;
     let (owner, editor, room) = shared_note(&env, "presence").await;
     let third = member(&env, &room, "editor").await;
-    drop_queued_evictions(&env, &room).await;
     let mut olive = Client::open(server.port).await;
     olive
         .joined(&room, &identity_token(&room, &owner, "write", "Olive"))
@@ -10628,7 +11351,6 @@ async fn a_source_rooms_presence_lists_its_writers_and_never_a_reader() {
     let (owner, file) = text_file(&env, &gateway, "hello").await;
     let (second, viewer) = (user(&env).await, user(&env).await);
     let room = format!("source:{file}:epoch:1");
-    drop_queued_evictions(&env, &room).await;
     let mut reader = Client::open(server.port).await;
     reader
         .joined(&room, &identity_token(&room, &viewer, "read", "Rae"))
@@ -10671,7 +11393,6 @@ async fn an_embed_channel_is_listed_but_hears_no_presence() {
         .await
         .try_into()
         .expect("one set");
-    drop_queued_evictions(&env, &set).await;
     let (kind, _) = note
         .join_embed(2, &set, &embed_token(&set, &user, &note_id))
         .await;
@@ -10715,7 +11436,6 @@ async fn a_released_client_id_is_never_drawn_under_its_users_name() {
     let server = start(&env).await;
     let (owner, editor, room) = shared_note(&env, "presence").await;
     let other = member(&env, &room, "editor").await;
-    drop_queued_evictions(&env, &room).await;
     let mut observer = Client::open(server.port).await;
     observer
         .joined(&room, &identity_token(&room, &owner, "write", "Olive"))
@@ -15000,13 +15720,14 @@ async fn a_viewer_whose_token_turns_writable_gets_a_session_at_its_first_write()
     let mut v = Client::open(server.port).await;
     assert_eq!(v.joined(&room, &token(&room, &viewer, "read")).await, 0);
     assert!(v.settle(|c| c.block_text() == "abcdef").await);
-    // A role change evicts the channel (its outbox row); dropped here, in
-    // the same transaction, to reach a token turned writable on a live one.
-    let upgrade = format!(
-        "BEGIN; UPDATE workspace_members SET role='editor' WHERE user_id='{viewer}';
-         DELETE FROM collaboration_eviction_outbox; COMMIT;"
-    );
-    client.batch_execute(&upgrade).await.expect("upgrade");
+    // A raised role closes nothing, so the channel's token turns writable.
+    client
+        .execute(
+            "UPDATE workspace_members SET role='editor' WHERE user_id=$1",
+            &[&viewer],
+        )
+        .await
+        .expect("upgrade");
     let mut refresh = Vec::new();
     varbytes(&mut refresh, token(&room, &viewer, "write").as_bytes());
     v.send(11, &refresh).await;
