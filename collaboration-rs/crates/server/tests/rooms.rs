@@ -6336,6 +6336,220 @@ async fn a_join_past_the_users_cap_closes_their_oldest_channel() {
 }
 
 impl Client {
+    /// Joins `room` for writing on `channel` of this socket, on a document it
+    /// never syncs: a page's many rooms on its one socket.
+    async fn holds(&mut self, channel: u64, room: &str, token: &str) {
+        let token = session_token(token);
+        let client = token_client_id(&token).expect("a client id");
+        let join = join_payload_as(room, &token, Some(client_protocol()), client);
+        self.send_on(channel, 0, &join).await;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            for (heard, kind, payload) in self.raw_until(deadline).await {
+                if (heard, kind) == (channel, 1) {
+                    assert_eq!(payload[0], 1, "{room} joined for writing");
+                    return;
+                }
+            }
+        }
+    }
+}
+
+/// Channels 1 to `channels` of this socket each close with 4403, and no Stateless
+/// frame arrives on any of them first.
+async fn channels_close_quietly(socket: &mut Client, channels: u64) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut open: std::collections::BTreeSet<u64> = (1..=channels).collect();
+    while !open.is_empty() {
+        for (channel, kind, payload) in socket.raw_until(deadline).await {
+            assert_ne!(kind, 9, "{channel} heard {}", text_payload(&payload));
+            if kind == 4 {
+                let mut at = 0;
+                assert_eq!(read_var(&payload, &mut at), 4403, "channel {channel}");
+                assert!(open.remove(&channel), "channel {channel} closed twice");
+            }
+        }
+    }
+}
+
+/// Security regression (Q634, pair review): one person holds a note, a quiz's
+/// content and keys, a flashcard set and a Mermaid diagram on one socket, the
+/// owner on each room beside them. Removing them closes every one of their
+/// channels with 4403 and no Stateless frame first, and a write rejoin of each is
+/// refused on that socket; the owner hears nothing and keeps typing in each room,
+/// past the recheck, and the edits store. Fails if a revoke leaves a kind of room
+/// out, tells anyone, or takes a room from under its owner.
+#[tokio::test]
+async fn a_removed_persons_rooms_of_every_kind_on_one_socket_close_and_the_owner_keeps_typing() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, removed, note_room) = shared_note(&env, "note").await;
+    let note = material_of(&note_room).to_owned();
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let set = flashcard_set(&env, &owner, None, &[("c1", "Cell", "")]).await;
+    let drawing = diagram_of(&env, &owner, "graph TD").await;
+    let client = db(&env).await;
+    for material in [&quiz, &set, &drawing] {
+        client
+            .execute(
+                "UPDATE materials SET workspace_id=(SELECT workspace_id FROM materials WHERE id=$2)
+                 WHERE id=$1",
+                &[material, &note],
+            )
+            .await
+            .expect("filed");
+        drop_queued_evictions(&env, &format!("material:{material}:schema:1")).await;
+    }
+    let (content, keys, set_room, drawing_room) = (
+        format!("material:{quiz}:schema:1"),
+        format!("keys:{quiz}:schema:1"),
+        format!("material:{set}:schema:1"),
+        format!("material:{drawing}:schema:1"),
+    );
+    let rooms = [&note_room, &content, &keys, &set_room, &drawing_room];
+
+    let mut tabs = Vec::new();
+    for room in rooms {
+        let mut tab = Client::open(server.port).await;
+        assert_eq!(tab.joined(room, &token(room, &owner, "write")).await, 1);
+        tabs.push(tab);
+    }
+    let [
+        mut note_tab,
+        mut content_tab,
+        mut keys_tab,
+        mut set_tab,
+        mut drawing_tab,
+    ] = tabs.try_into().ok().expect("five");
+    assert!(note_tab.settle(|c| c.block_text() == "note").await);
+    let option = [
+        "questions",
+        "q1",
+        "parts",
+        "q1-p",
+        "answer",
+        "options",
+        "o0",
+    ];
+    assert!(
+        content_tab
+            .settle(|c| map_at(&c.doc, &option).is_some())
+            .await
+    );
+    let ticks = ["keys", "q1-p", "correct"];
+    assert!(keys_tab.settle(|c| map_at(&c.doc, &ticks).is_some()).await);
+    assert!(set_tab.settle(|c| c.cards().len() == 1).await);
+    assert!(drawing_tab.settle(|c| c.source() == "graph TD").await);
+
+    let mut socket = Client::open(server.port).await;
+    let mut channel = 0;
+    for room in rooms {
+        channel += 1;
+        socket
+            .holds(channel, room, &token(room, &removed, "write"))
+            .await;
+    }
+    // What joining sent, the presence at most a second later: anything from here
+    // on follows the removal.
+    while let Ok(Some(Ok(_))) =
+        tokio::time::timeout(Duration::from_millis(1100), socket.ws.next()).await
+    {}
+
+    client
+        .execute(
+            "DELETE FROM workspace_members WHERE user_id=$1",
+            &[&removed],
+        )
+        .await
+        .expect("removed");
+    for room in [&note_room, &content, &set_room, &drawing_room] {
+        deliver_evictions(&env, room).await;
+    }
+    channels_close_quietly(&mut socket, channel).await;
+    socket.channel = channel;
+    for room in rooms {
+        assert_eq!(
+            refused_join(&mut socket, room, &token(room, &removed, "write")).await,
+            "collaboration-forbidden",
+            "{room}"
+        );
+    }
+
+    let stored = [
+        ("material_yjs_updates", &note),
+        ("material_yjs_updates", &quiz),
+        ("material_yjs_key_updates", &quiz),
+        ("material_yjs_updates", &set),
+        ("material_yjs_updates", &drawing),
+    ];
+    let mut before = Vec::new();
+    for (table, material) in stored {
+        before.push(update_rows(&env, table, material).await);
+    }
+    // At once, and again past the recheck.
+    for (round, mark) in ["+", "-"].into_iter().enumerate() {
+        note_tab.type_text(mark).await;
+        content_tab
+            .write(|doc| {
+                use yrs::Map;
+                let option = map_at(doc, &option).expect("option");
+                let Some(yrs::Out::YText(text)) = option.get(&doc.transact(), "text") else {
+                    panic!("text")
+                };
+                text.insert(&mut doc.transact_mut(), 0, mark);
+            })
+            .await;
+        keys_tab
+            .write(|doc| {
+                use yrs::Map;
+                let ticks = map_at(doc, &ticks).expect("ticks");
+                let mut txn = doc.transact_mut();
+                if round == 0 {
+                    ticks.insert(&mut txn, "o1", true);
+                } else {
+                    ticks.remove(&mut txn, "o0");
+                }
+            })
+            .await;
+        set_tab
+            .write(|doc| {
+                let front = card_face(doc, "c1", "front").expect("front");
+                yrs::Text::insert(&front, &mut doc.transact_mut(), 0, mark);
+            })
+            .await;
+        let typed = drawing_tab.type_source(0, mark);
+        drawing_tab.send(5, &sync(2, &typed)).await;
+        let tabs = [
+            &mut note_tab,
+            &mut content_tab,
+            &mut keys_tab,
+            &mut set_tab,
+            &mut drawing_tab,
+        ];
+        for tab in tabs {
+            assert!(tab.until(6).await.is_some(), "{mark} acknowledged");
+            assert_no_notice(tab);
+        }
+        tokio::time::sleep(Duration::from_millis(5100)).await;
+    }
+    let tabs = [
+        &mut note_tab,
+        &mut content_tab,
+        &mut keys_tab,
+        &mut set_tab,
+        &mut drawing_tab,
+    ];
+    for tab in tabs {
+        persisted(tab, "typed").await;
+        stays_connected(tab).await;
+    }
+    for ((table, material), before) in stored.into_iter().zip(before) {
+        let now = update_rows(&env, table, material).await;
+        assert!(now > before, "{table} of {material}: {before} then {now}");
+    }
+}
+
+impl Client {
     /// Joins an embedded set's room on `channel` inside the note channel 1
     /// (Epo 2026-10-20), and waits for the answer to that channel: JOINED
     /// (1), REFUSED (2) or CLOSED (4), with its payload. Nothing read is
@@ -13133,6 +13347,12 @@ async fn a_keys_room_refuses_a_read_token_at_refresh() {
 /// (user, material).
 async fn diagram(env: &Env, source: &str) -> (String, String) {
     let owner = user(env).await;
+    let material = diagram_of(env, &owner, source).await;
+    (owner, material)
+}
+
+/// A standalone diagram owned by `owner`; returns the material.
+async fn diagram_of(env: &Env, owner: &str, source: &str) -> String {
     let material = format!("dg_it_{}", uuid_like());
     let content = serde_json::json!({
         "schemaVersion": 1,
@@ -13151,7 +13371,7 @@ async fn diagram(env: &Env, source: &str) -> (String, String) {
         )
         .await
         .expect("diagram");
-    (owner, material)
+    material
 }
 
 /// The source text of the client's Mermaid block (shape A).
