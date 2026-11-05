@@ -471,18 +471,20 @@ export async function runJourney(
     return;
   }
 
+  // An own-account status in a workspace opens a file: its header holds the
+  // triangle, and the Dashboard has no header.
   const readRoutes: Partial<Record<JourneyId, string>> = {
     'account-deleted': '/settings',
     'account-deletion-pending': '/settings',
     'account-frozen-create': '/workspaces',
-    'account-frozen-member': scenarioPath,
-    'account-frozen-workspace': scenarioPath,
+    'account-frozen-member': `${scenarioPath}?material=${scenarioNote}`,
+    'account-frozen-workspace': `${scenarioPath}?material=${scenarioNote}`,
     'account-grace': '/',
-    'account-grace-workspace': scenarioPath,
+    'account-grace-workspace': `${scenarioPath}?material=${scenarioNote}`,
     'account-over-quota': '/',
-    'account-storage-full': scenarioPath,
+    'account-storage-full': `${scenarioPath}?material=${scenarioNote}`,
     'account-storage-full-dashboard': '/',
-    'account-storage-near': scenarioPath,
+    'account-storage-near': `${scenarioPath}?material=${scenarioNote}`,
     'account-storage-near-dashboard': '/',
     'account-suspended': '/settings',
     'annotations-load': `${scenarioPath}?file=mock-scenario-pdf`,
@@ -603,8 +605,8 @@ export async function runJourney(
         return "Your own frozen account keeps this healthy owner's workspace read-only; the header shows your status.";
       if (id.startsWith('workspace-owner-'))
         return "The owner's note opens view-only under the storage strip; what the member adds is its own.";
-      return route === scenarioPath
-        ? 'The workspace header triangle and entry toast show your storage status.'
+      return route.startsWith(scenarioPath)
+        ? 'The file header triangle and entry toast show your storage status.'
         : 'The dashboard banner slot or the blocked-account page shows the account status.';
     }
     if (id === 'workspace-timeout')
