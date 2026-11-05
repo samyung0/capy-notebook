@@ -256,7 +256,7 @@ test('workspace sorting picks an order and reverses it from the active option', 
 }) => {
   await page.goto('/workspaces');
   const trigger = page.locator('button[data-sort]');
-  await expect(trigger).toHaveAttribute('data-sort', 'created', {
+  await expect(trigger).toHaveAttribute('data-sort', 'accessed', {
     timeout: 30_000,
   });
   await expect(trigger).toHaveAttribute('data-order', 'descending');
@@ -278,14 +278,14 @@ test('workspace sorting picks an order and reverses it from the active option', 
     await menu.getByRole('menuitem', { exact: true, name: label }).click();
     await closed();
   };
-  // Created is the default (2026-09-21), so it needs no click first.
+  // Last accessed is the default (2026-11-05), so it needs no click first.
   for (const [sort, label] of [
-    ['created', m.workspaces_sort_created()],
     ['accessed', m.workspaces_sort_accessed()],
+    ['created', m.workspaces_sort_created()],
     ['topics', m.workspaces_sort_topics()],
     ['files', m.workspaces_sort_files()],
   ] as const) {
-    if (sort !== 'created') await choose(label);
+    if (sort !== 'accessed') await choose(label);
     await expect(trigger).toHaveAttribute('data-sort', sort);
     await expect(trigger).toHaveAttribute('data-order', 'descending');
     await expect(cards.first()).toBeVisible();

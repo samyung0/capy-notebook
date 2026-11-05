@@ -41,7 +41,6 @@ export const PREF_KEYS = {
    * (`account`) or, signed out on a shared quiz, this browser's (`local`). */
   quizAttempt: (owner: 'account' | 'local', quizId: string) =>
     `capy.quizAttempt.${owner}.${quizId}`,
-  recentsView: 'capy.recents.view',
   /** When each workspace, file and material open was last sent (sentOpens.ts). */
   sentOpens: 'capy.opens.sent',
   sort: (list: SortedList) => `capy.sort.${list}`,

@@ -52,10 +52,10 @@ function items(): {
 
 function general(): NavItem[] {
   return [
-    { exact: true, icon: 'home', label: m.nav_home(), to: '/' },
+    { exact: true, icon: 'workspaces', label: m.nav_workspaces(), to: '/' },
+    { icon: 'todo', label: m.nav_todo(), to: '/todo' },
     // Chat across all the user's files (Epo 2026-10-27).
     { icon: 'ai', label: m.nav_chat(), to: '/chat' },
-    { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
     ...(features.learning
       ? [
           {

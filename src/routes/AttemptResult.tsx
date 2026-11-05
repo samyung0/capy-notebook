@@ -137,7 +137,7 @@ export default function AttemptResult() {
                   {
                     label: attempt.workspaceId
                       ? attempt.workspaceName
-                      : m.nav_home(),
+                      : m.nav_workspaces(),
                     link: home,
                   },
                 ]

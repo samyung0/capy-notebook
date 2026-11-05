@@ -7388,6 +7388,44 @@ components:
         - done
         - dueDate
       type: object
+    TodoList:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TodoList.json
+          format: uri
+          readOnly: true
+          type: string
+        workspaces:
+          items:
+            $ref: "#/components/schemas/TodoWorkspace"
+          type: array
+      required:
+        - workspaces
+      type: object
+    TodoWorkspace:
+      additionalProperties: false
+      properties:
+        iconId:
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/Assignment"
+          type: array
+        manages:
+          type: boolean
+        name:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - workspaceId
+        - name
+        - iconId
+        - manages
+        - items
+      type: object
     ToolError:
       additionalProperties: false
       properties:
@@ -13160,6 +13198,25 @@ paths:
       summary: Update a task
       tags:
         - Schedule
+  /api/todo:
+    get:
+      operationId: getTodo
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodoList"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "The To do page: what each of the caller's classes holds for them"
+      tags:
+        - Assignments
   /api/topics/{id}:
     delete:
       operationId: deleteTopic

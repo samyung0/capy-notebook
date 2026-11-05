@@ -20,9 +20,9 @@ import { type CoverPaint, coverPaint } from '@/lib/coverArt';
 import { iconUrl } from '@/lib/icon-catalog';
 import { Badge } from './Badge';
 import { Card } from './Card';
+import { CardActions } from './CardActions';
 import { coverBackground } from './CoverArt';
 import { Skeleton } from './feedback';
-import { IconButton } from './IconButton';
 
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const qc = useQueryClient();
@@ -100,23 +100,11 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       >
         <WorkspaceCardFace interactive paint={paint} workspace={workspace} />
       </Link>
-      {/* On the banner (board K3, H2). From desktop widths with a mouse it
-          shows on the card's hover, focus or while its menu is open; below
-          them and on touch screens it always shows (V2). It lifts with the
-          card, which rises on hover (Card interactive). */}
-      <div className="absolute top-2 right-2 z-50 transition-[translate] duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/card:-translate-y-1 group-has-[[data-slot=card]:hover]/card:ease-(--motion-ease-smooth-out) lg:[&_button]:opacity-0 lg:pointer-coarse:[&_button]:opacity-100 lg:has-data-[state=open]:[&_button]:opacity-100 lg:group-hover/card:[&_button]:opacity-100 lg:focus-within:[&_button]:opacity-100">
-        <Menu
-          align="start"
-          items={menuItems}
-          trigger={
-            <IconButton
-              className="size-7 rounded-full bg-white/85 p-0 text-[#4b4b4b] hover:bg-white [&>svg]:size-4"
-              icon="moreVertical"
-              label={m.a11y_open_menu()}
-            />
-          }
-        />
-      </div>
+      {/* On the banner (board K3, H2). It lifts with the card, which rises on
+          hover (Card interactive). */}
+      <CardActions className="top-2 right-2 z-50 transition-[translate] duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/card:-translate-y-1 group-has-[[data-slot=card]:hover]/card:ease-(--motion-ease-smooth-out)">
+        <Menu align="start" items={menuItems} />
+      </CardActions>
       {editOpen && (
         <WorkspaceSettingsDialog
           onClose={() => setEditOpen(false)}

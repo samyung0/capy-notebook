@@ -28,10 +28,12 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   it instead.
 - The opened workspace has no app sidebar. Its panels sit straight on the
   shell, 8px apart, so the frame shows around and between them.
-- **Names (Epo, 2026-11-03):** the app's front page (`/`, `src/routes/Home.tsx`,
-  `nav_home`, the house icon) is **Home**; a workspace's front page, its
-  landing with no file open, is its **Dashboard**. "Home" always means the
-  app's own home.
+- **Names (Epo, 2026-11-05):** the app's front page (`/`,
+  `src/routes/Workspaces.tsx`) is **Workspaces**, and `/workspaces` redirects
+  there; there is no Home. A workspace's front page, its landing with no file
+  open, is its **Dashboard**. **To do** (`/todo`, `src/routes/Todo.tsx`) sits
+  under Workspaces in the nav: every class's Dashboard To do, one section per
+  workspace whose heading opens its Dashboard, at most 860px wide.
 - **Dashboard (Epo 2026-11-03, boards H1 owner, H2 member, H3):**
   `WorkspaceDashboard.tsx`, the centre with nothing open (from lg without a
   file header; one column keeps it). The workspace's name with "owner · N
@@ -59,7 +61,7 @@ From lg (1260px) every workspace page leads with a labelled icon rail
 (`WorkspaceRail.tsx`): 60px wide, straight on the shell with no panel of its own
 (Epo 2026-11-04), so it has the app sidebar's page colour and a frame shows
 through behind it, with
-← Home (to `/`), the workspace's icon as a 34px badge that only
+← Workspaces (to `/`), the workspace's icon as a 34px badge that only
 says where you are, then Dashboard (Hugeicons' `DashboardSquare01Icon`),
 Files (a folder), Agent (the AI icon) and Study (an open book), each icon
 over its 11px label in a 56px item that takes the sidebar's dark fill while
@@ -176,10 +178,11 @@ to Epo as visual options, not a call made in code.
 - **Workspace card** (`WorkspaceCardFace` in `src/components/ui/WorkspaceCard.tsx`,
   board K3 row H2): the cover is a 76px banner across the top (plain
   `--surface-page-hover` without one, N1), the 36px icon sits on its
-  bottom-left edge in a 2px card-coloured ring, and the ⋮ is a 28px white
-  circle on the banner: from desktop widths with a mouse it shows on the
-  card's hover, focus or open menu, and below them and on touch screens it
-  always shows (V2). Below: the name (14px bold, one line, L1), the topic
+  bottom-left edge in a 2px card-coloured ring, and the ⋮ on the banner is
+  `CardActions`, the one button the file cards use too: 32px, `rounded-md`, the
+  card's colour frosted and feathering out past its edge. From 1280px with a
+  mouse it shows on the card's hover, focus or open menu; narrower and on touch
+  screens it always shows. Below: the name (14px bold, one line, L1), the topic
   count (`chapterCount` until chapters become topics), then access and tags as
   22px boxes with 6px corners. The card border is `--divider`. The settings
   cover picker previews the same face; covers and the picker are unchanged.

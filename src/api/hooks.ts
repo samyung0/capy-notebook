@@ -139,6 +139,7 @@ import type {
   StudyTopics,
   Tag,
   Task,
+  TodoList,
   Topic,
   TopUpReq,
   TrashActionReq,
@@ -3091,6 +3092,7 @@ function refreshAssignment(
     // A quiz's row shows its assignment's icon while it is open.
     qc.invalidateQueries({ queryKey: qk.materials(workspaceId) }),
     qc.invalidateQueries({ queryKey: qk.recent }),
+    qc.invalidateQueries({ queryKey: qk.todo }),
     id
       ? qc.invalidateQueries({ queryKey: qk.assignment(id) })
       : Promise.resolve(),
@@ -3314,6 +3316,16 @@ export const learningOverviewQuery = () =>
   });
 export const useLearningOverview = (options?: QueryUiOptions) =>
   useQuery({ ...learningOverviewQuery(), meta: queryMeta(options) });
+
+/** The To do page: each class's Dashboard To do, across the viewer's classes. */
+export const todoQuery = () =>
+  queryOptions({
+    ...persisted,
+    queryFn: () => api.get<TodoList>('/todo'),
+    queryKey: qk.todo,
+  });
+export const useTodo = (options?: QueryUiOptions) =>
+  useQuery({ ...todoQuery(), meta: queryMeta(options) });
 
 /** How many questions a practice group holds, for its start dialog. */
 export const useStudyQuestionCount = (

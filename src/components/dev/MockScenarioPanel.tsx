@@ -114,7 +114,8 @@ export default function MockScenarioPanel() {
         await router.navigate({
           ignoreBlocker:
             router.state.location.pathname === '/workspaces/ws_scenarios',
-          to: '/workspaces',
+          // Off every journey's page, so the next one mounts and reads afresh.
+          to: '/todo',
         });
         const ui = scenarioDriver(current.signal);
         await ui.wait(

@@ -5,7 +5,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { qk } from '@/api/client';
 import { AccountState, StorageUsageLevel } from '@/api/types';
 import { m } from '@/i18n';
-import HomeBanner, { AccountStatusBanner } from './HomeBanner';
+import { AccountStatusBanner } from './AccountStatusBanner';
 
 const state = vi.hoisted(() => ({
   account: undefined as Record<string, unknown> | undefined,
@@ -40,7 +40,7 @@ beforeEach(() => {
   state.online = true;
 });
 
-it('both sizes show the same state, frozen before the rest', () => {
+it('shows one state, frozen before the rest', () => {
   for (const [account, title] of [
     [
       {
@@ -61,11 +61,9 @@ it('both sizes show the same state, frozen before the rest', () => {
   ] as const) {
     state.account = account;
     state.online = false;
-    for (const Status of [HomeBanner, AccountStatusBanner]) {
-      const html = render(<Status />, 'disconnected');
-      expect(html).toContain(title);
-      expect(html).toContain('href="/billing"');
-    }
+    const html = render(<AccountStatusBanner />, 'disconnected');
+    expect(html).toContain(title);
+    expect(html).toContain('href="/billing"');
   }
 });
 
@@ -80,7 +78,7 @@ it('the connection comes after the account, with no links', () => {
   );
 });
 
-it('the small banner has the same words and links, with no meter', () => {
+it('says how much storage is used and links to the subscription', () => {
   state.account = storage(StorageUsageLevel.near_limit);
   const small = render(<AccountStatusBanner />, 'connected');
   expect(small).toContain('data-kind="near"');
@@ -88,13 +86,10 @@ it('the small banner has the same words and links, with no meter', () => {
   expect(small).toContain(
     m.account_banner_near_body({ limit: '100 MB', used: '96 MB' })
   );
-  expect(small).not.toContain('storage-usage-meter');
-  expect(render(<HomeBanner />, 'connected')).toContain('storage-usage-meter');
 });
 
 it('shows nothing with nothing wrong', () => {
   state.account = storage(StorageUsageLevel.ok);
   const healthy = render(<AccountStatusBanner />, 'connected');
   expect(healthy).toBe('');
-  expect(render(<HomeBanner />, 'connected')).toBe('');
 });

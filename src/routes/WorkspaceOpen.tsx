@@ -773,7 +773,7 @@ function WorkspaceOpen() {
     return (
       <LoadingLarge
         backLabel={m.workspace_back_to()}
-        backTo="/workspaces"
+        backTo="/"
         title={m.workspace_loading()}
       />
     );
@@ -791,9 +791,7 @@ function WorkspaceOpen() {
     );
 
   if (!ws)
-    return (
-      <WorkspaceError backLabel={m.workspace_back_to()} backTo="/workspaces" />
-    );
+    return <WorkspaceError backLabel={m.workspace_back_to()} backTo="/" />;
 
   // Everyone has settings: phones open on the tab list, wider screens on the
   // first tab (General for owner and editor members, else their own Study).
@@ -1119,7 +1117,7 @@ function WorkspaceOpen() {
               oneColumnLayout ? (
                 <ToolbarButton
                   label={m.workspace_back_to()}
-                  onClick={() => navigate({ to: '/workspaces' })}
+                  onClick={() => navigate({ to: '/' })}
                 >
                   <Icon name="navigationBack" />
                 </ToolbarButton>

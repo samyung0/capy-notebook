@@ -62,8 +62,8 @@ function RailItem({
   );
 }
 
-/** The labelled icon rail on every workspace page from lg: Home back to the
- * app, the workspace's badge (it only says where you are), the sections,
+/** The labelled icon rail on every workspace page from lg: Workspaces back to
+ * the list, the workspace's badge (it only says where you are), the sections,
  * and your avatar opening the workspace and account menu. */
 export function WorkspaceRail({
   accountItems,
@@ -87,7 +87,7 @@ export function WorkspaceRail({
     >
       <Link className={cn(ITEM, 'mb-1')} preload="intent" to="/">
         <Icon name="navigationBack" size={20} />
-        <span>{m.nav_home()}</span>
+        <span>{m.nav_workspaces()}</span>
       </Link>
       <img
         alt={workspace.name}

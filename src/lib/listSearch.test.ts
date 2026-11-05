@@ -80,7 +80,7 @@ describe('list search', () => {
       workspaceIds: ['ws_a'],
     });
     expect(workspaceListParams({ tag: 'bio,chem' })).toEqual({
-      sort: 'created',
+      sort: 'accessed',
       tag: ['bio', 'chem'],
     });
     expect(sortSearch('files', 'added', false, 'added')).toEqual({});

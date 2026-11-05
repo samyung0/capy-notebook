@@ -83,7 +83,7 @@ export const WORKSPACE_SORTS = [
   'files',
 ] as const;
 export type WorkspaceSort = (typeof WORKSPACE_SORTS)[number];
-export const WORKSPACE_SORT_DEFAULT: WorkspaceSort = 'created';
+export const WORKSPACE_SORT_DEFAULT: WorkspaceSort = 'accessed';
 export type WorkspacesSearch = {
   sort?: WorkspaceSort;
   dir?: 'asc';

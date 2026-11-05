@@ -1,33 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link, linkOptions } from '@tanstack/react-router';
+import { linkOptions } from '@tanstack/react-router';
 import { recentQuery, useWorkspaces } from '@/api/hooks';
-import { InlineErrorState } from '@/components/app/ErrorState';
-import {
-  ItemCard,
-  ItemGrid,
-  ItemSkeletonGrid,
-} from '@/components/app/ItemCard';
-import { ListViewToggle, useListView } from '@/components/app/ListToolbar';
-import { QueryPausedState } from '@/components/app/QueryPausedState';
-import {
-  type Thumbnail,
-  ThumbnailPanel,
-} from '@/components/app/ThumbnailPanel';
-import { SkeletonList } from '@/components/ui/feedback';
+import type { Thumbnail } from '@/components/app/ThumbnailPanel';
 import {
   materialDetails,
   relativeTime,
 } from '@/features/materials/MaterialListCard';
-import { ContentActions } from '@/features/workspace/ContentActions';
-import {
-  toFileActionTarget,
-  toMaterialActionTarget,
-} from '@/features/workspace/contentActionTarget';
-import { m } from '@/i18n';
-import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
-import { iconUrl } from '@/lib/icon-catalog';
-import { PREF_KEYS } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import {
   fromRecent,
@@ -62,35 +41,6 @@ export function recentThumbnail(item: RecentItem): Thumbnail {
 
 /** The topic-only Move is left out: the list spans workspaces, so there is
  * no single topic list to move within. Move to… picks its own. */
-function RecentActions({
-  item,
-  display,
-}: {
-  item: RecentItem;
-  display: 'hover' | 'menu';
-}) {
-  return (
-    <ContentActions
-      canClone={item.canClone}
-      canMoveTo={item.kind === 'file' && item.canMoveTo}
-      content={
-        item.kind === 'file'
-          ? toFileActionTarget(item.file)
-          : toMaterialActionTarget(item.material)
-      }
-      display={display}
-      hoverClassName="mr-1.5"
-      menuAlign="end"
-      // Its menu shows only on the grid card; the list row has hover actions.
-      menuTriggerIcon="moreVertical"
-      readOnly={!item.canEdit}
-      showMove={false}
-      topics={[]}
-      workspaceId={item.workspaceId}
-    />
-  );
-}
-
 export function recentLink(item: RecentItem) {
   // A standalone item (no workspace) opens on its own page.
   if (!item.workspaceId && item.kind === 'file') {
@@ -155,126 +105,4 @@ export function useRecentItems() {
   ] as const;
   const missing = failed.filter(([data, isError]) => !data && isError);
   return { isLoading, items, missing, paused, workspaces };
-}
-
-export type RecentItems = ReturnType<typeof useRecentItems>;
-
-/** Home leaves it out while `recent.items` is empty and loaded. */
-export function RecentItemsCard({ recent }: { recent: RecentItems }) {
-  const [view, setView] = useListView(PREF_KEYS.recentsView);
-  const { isLoading, items, missing, paused, workspaces } = recent;
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <h2 className="t-large-card-title">{m.home_recent()}</h2>
-        <ListViewToggle onViewChange={setView} view={view} />
-      </div>
-      {paused ? (
-        <QueryPausedState />
-      ) : isLoading ? (
-        view === 'grid' ? (
-          <ItemSkeletonGrid count={8} dense />
-        ) : (
-          <SkeletonList
-            className="grid gap-1 md:grid-cols-2 md:gap-x-4"
-            count={8}
-            rowHeight={52}
-          />
-        )
-      ) : missing.length ? (
-        <InlineErrorState
-          className="pt-10 pb-6"
-          // The first failed list's id: the line has room for one.
-          errorId={
-            missing
-              .map(([, , , error]) => unexpectedErrorId(error))
-              .find(Boolean) ?? null
-          }
-          message={m.home_recent_error()}
-          onRetry={() => {
-            for (const [, , refetch] of missing) void refetch();
-          }}
-        />
-      ) : view === 'grid' ? (
-        <ItemGrid>
-          {items.map((item) => {
-            const workspace = workspaces?.find(
-              (ws) => ws.id === item.workspaceId
-            );
-            return (
-              <ItemCard
-                actions={<RecentActions display="menu" item={item} />}
-                dense
-                icon={recentIcon(item)}
-                key={`${item.kind}-${item.id}`}
-                link={{ ...recentLink(item), preload: 'intent' }}
-                meta={recentHint(item)}
-                thumbnail={recentThumbnail(item)}
-                title={item.title}
-                view="grid"
-                workspace={workspace?.name}
-                workspaceIconId={workspace?.iconId}
-              />
-            );
-          })}
-        </ItemGrid>
-      ) : (
-        // Two items to a row from `md`, filled left to right.
-        <div className="-mx-1.5 grid gap-1 md:grid-cols-2 md:gap-x-4">
-          {items.map((item) => {
-            const workspace = workspaces?.find(
-              (ws) => ws.id === item.workspaceId
-            );
-            return (
-              <div
-                className="group relative flex items-center justify-between rounded-button hover:bg-surface-hover-bg"
-                key={`${item.kind}-${item.id}`}
-              >
-                <Link
-                  className="flex min-w-0 flex-1 items-center gap-3 rounded-button px-1.5 py-1.5"
-                  preload="intent"
-                  {...recentLink(item)}
-                >
-                  <ThumbnailPanel
-                    icon={recentIcon(item)}
-                    small
-                    {...recentThumbnail(item)}
-                  />
-                  <span className="flex min-w-0 flex-1 flex-col gap-1 leading-tight">
-                    <span className="line-clamp-2 font-semibold text-fg">
-                      {item.title}
-                    </span>
-                    {/* Like the grid card's hint: workspace · date. */}
-                    <span className="flex min-w-0 items-center gap-1.5 text-sm">
-                      {workspace && (
-                        <>
-                          <img
-                            alt=""
-                            className="size-4.5 shrink-0 -translate-y-px rounded-[4px]"
-                            height={18}
-                            src={iconUrl(workspace.iconId)}
-                            width={18}
-                          />
-                          <span className="min-w-0 truncate text-fg">
-                            {workspace.name}
-                          </span>
-                          <span aria-hidden className="shrink-0 text-fg-muted">
-                            ·
-                          </span>
-                        </>
-                      )}
-                      <span className="shrink-0 whitespace-nowrap text-fg-muted">
-                        {recentHint(item)}
-                      </span>
-                    </span>
-                  </span>
-                </Link>
-                <RecentActions display="hover" item={item} />
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
 }
